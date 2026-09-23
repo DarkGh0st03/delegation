@@ -2,12 +2,5 @@ pub mod accumulator_manager;
 pub mod accumulator_utils;
 pub mod accumulator_verifier;
 pub mod dlt_acc_entry;
-#[cfg(feature = "efficient")]
-pub mod dlt_efficient_acc_entry;
-#[cfg(feature = "efficient")]
-pub mod our_efficient_issuer;
-#[cfg(feature = "efficient")]
-pub mod our_efficient_verifier;
 pub mod our_issuer;
 pub mod our_verifier;
-pub mod signature_utils;

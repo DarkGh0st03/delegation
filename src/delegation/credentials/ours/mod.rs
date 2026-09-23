@@ -1,10 +1,3 @@
-pub mod asymmetric_mechanism;
 pub mod our_delegation;
 pub mod our_delegation_credential;
 pub mod our_delegator;
-#[cfg(feature = "efficient")]
-pub mod our_efficient_delegation;
-#[cfg(feature = "efficient")]
-pub mod our_efficient_delegation_credential;
-#[cfg(feature = "efficient")]
-pub mod our_efficient_delegator;

@@ -1,34 +1,68 @@
-#### Decentralized and Transitive Delegation with Verifiable Credentials
+# Delegation — thesis working baseline
 
-This repository contains the implementation associated with the paper "Decentralized and Transitive Delegation with
-Verifiable Credentials". The Rust-based code provides a benchmark of the proposed protocol against the protocol
-proposed by the short paper "A Self Sovereign Identity Approach to Decentralized Access Control with Transitive
-Delegations" by Pieter Jan Vrielynck et Al. available [here](https://dl.acm.org/doi/10.1145/3649158.3657045) and the Delegate SD-JWT Draft proposed [here](https://www.ietf.org/archive/id/draft-gco-oauth-delegate-sd-jwt-00.html).
+This repository is the working codebase for the master's thesis project based on the original Delegation Credential implementation.
 
+## Current purpose
 
+The active `src/` tree intentionally contains only the baseline implementation needed to understand and adapt the proposed Delegation Credential:
 
-The benchmark offers three distinct types of evaluation for delegation credentials:
+- generic credential / VC / VP structures;
+- the "ours" Delegation Credential model;
+- issuer and verifier logic;
+- cryptographic accumulator management and verification;
+- the in-memory DLT simulator used by the original implementation.
 
-* Retain Permissions.
-* Iterating over Permissions.
-* Iterating over Delegators.
+The repository has been simplified before starting the thesis-specific modifications so that the core execution path is easier to study.
 
-More information about this in the paper and in the \_paper\_plots.ipynb file in this repository.
+## Active source tree
 
+```text
+src/
+├── lib.rs
+└── delegation/
+    ├── credentials/
+    │   ├── mod.rs
+    │   ├── verifiable_credential.rs
+    │   ├── verifiable_presentation.rs
+    │   └── ours/
+    │       ├── mod.rs
+    │       ├── our_delegation.rs
+    │       ├── our_delegator.rs
+    │       └── our_delegation_credential.rs
+    ├── entities/
+    │   ├── mod.rs
+    │   ├── dtl_sim.rs
+    │   ├── issuer.rs
+    │   ├── verifier.rs
+    │   └── ours/
+    │       ├── mod.rs
+    │       ├── accumulator_manager.rs
+    │       ├── accumulator_utils.rs
+    │       ├── accumulator_verifier.rs
+    │       ├── dlt_acc_entry.rs
+    │       ├── our_issuer.rs
+    │       └── our_verifier.rs
+    └── traits/
+        ├── mod.rs
+        └── credential.rs
+```
 
+## Temporary reference material
 
-The benchmark produces a way to get key metrics for both methods:
+Code that is not part of the thesis baseline but may be useful later has been moved to:
 
-* The issuance time required to produce a VC.
-* The issuance time required to produce a VP.
-* The time required to verify a VP for a given verifier.
-* The length of the VP encoded in a JWT.
+```text
+reference_temporary/
+```
 
-The high level API allow to specify custom parameters in the `main.rs` file of the library.
+This includes the original benchmark machinery, alternative PJV / SD-JWT implementations, efficient variants and auxiliary code used by those variants. It is kept only as reference and is not part of the active Rust module tree.
 
+Generated CSV benchmark outputs, plots and plotting notebooks from the original paper were removed from the working branch because they are not required for implementation. The untouched original state is preserved in the Git branch:
 
+```text
+original-backup-before-thesis-cleanup
+```
 
-&#x20;To run all the available tests in the library, execute in the project directory `cargo test`.
+## Development direction
 
-To run the benchmark, execute in the project directory `cargo run -r`.
-
+The active baseline will first be understood and validated, then adapted to the thesis scenario involving delegated authorization for AI agents. Later phases are expected to integrate the delegation core with a Cloud Access Gateway, OPA/Rego policy evaluation, A2A-based agent communication, Gitea as the protected Git platform, and a local blockchain trust/revocation layer.
