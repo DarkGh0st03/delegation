@@ -26,9 +26,11 @@ src/
 └── delegation/
     ├── authorization/
     │   ├── mod.rs
+    │   ├── authorization_request.rs
     │   ├── operation.rs
     │   ├── permission.rs
-    │   └── resource_uri.rs
+    │   ├── resource_uri.rs
+    │   └── verified_delegation.rs
     ├── credentials/
     │   ├── mod.rs
     │   ├── verifiable_credential.rs
