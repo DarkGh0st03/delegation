@@ -1,7 +1,5 @@
-use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Display, Formatter};
-use std::sync::OnceLock;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ResourceUri(String);
@@ -12,15 +10,20 @@ impl ResourceUri {
             return Err(String::from("Resource URI cannot be empty"));
         }
 
-        static URI_PATTERN: OnceLock<Regex> = OnceLock::new();
-        let uri_pattern = URI_PATTERN.get_or_init(|| {
-            Regex::new(
-                r"^[A-Za-z][A-Za-z0-9+.-]*:[A-Za-z0-9._~:/?#[]@!$&'()*+,;=%-]+$",
-            )
-            .expect("resource URI regex must be valid")
-        });
+        if !value.is_ascii() {
+            return Err(format!("Resource URI must contain ASCII characters only: {value}"));
+        }
 
-        if !uri_pattern.is_match(&value) || !Self::has_valid_percent_encoding(&value) {
+        let (scheme, remainder) = match value.split_once(':') {
+            Some(parts) => parts,
+            None => return Err(format!("Resource URI must be absolute: {value}")),
+        };
+
+        if !Self::is_valid_scheme(scheme)
+            || remainder.is_empty()
+            || !Self::has_only_valid_uri_characters(remainder)
+            || !Self::has_valid_percent_encoding(&value)
+        {
             return Err(format!("Invalid absolute resource URI: {value}"));
         }
 
@@ -29,6 +32,50 @@ impl ResourceUri {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    fn is_valid_scheme(scheme: &str) -> bool {
+        let mut chars = scheme.chars();
+
+        match chars.next() {
+            Some(first) if first.is_ascii_alphabetic() => {}
+            _ => return false,
+        }
+
+        chars.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
+        })
+    }
+
+    fn has_only_valid_uri_characters(value: &str) -> bool {
+        value.chars().all(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(
+                    character,
+                    '-' | '.'
+                        | '_'
+                        | '~'
+                        | ':'
+                        | '/'
+                        | '?'
+                        | '#'
+                        | '['
+                        | ']'
+                        | '@'
+                        | '!'
+                        | '$'
+                        | '&'
+                        | '\''
+                        | '('
+                        | ')'
+                        | '*'
+                        | '+'
+                        | ','
+                        | ';'
+                        | '='
+                        | '%'
+                )
+        })
     }
 
     fn has_valid_percent_encoding(value: &str) -> bool {
@@ -84,24 +131,20 @@ mod tests {
 
     #[test]
     fn accepts_absolute_resource_uris() {
-        assert!(ResourceUri::new(String::from(
-            "https://gitea.local/repos/project-a/branches/main"
-        ))
-        .is_ok());
-        assert!(ResourceUri::new(String::from(
-            "gitea://team/project-a/files/src/main.rs"
-        ))
-        .is_ok());
+        assert!(
+            ResourceUri::new(String::from(
+                "https://gitea.local/repos/project-a/branches/main"
+            ))
+            .is_ok()
+        );
+        assert!(ResourceUri::new(String::from("gitea://team/project-a/files/src/main.rs")).is_ok());
         assert!(ResourceUri::new(String::from("urn:delegation:project-a")).is_ok());
     }
 
     #[test]
     fn rejects_relative_or_malformed_resource_uris() {
         assert!(ResourceUri::new(String::from("project-a/src/main.rs")).is_err());
-        assert!(ResourceUri::new(String::from(
-            "https://gitea.local/repos/project a"
-        ))
-        .is_err());
+        assert!(ResourceUri::new(String::from("https://gitea.local/repos/project a")).is_err());
         assert!(ResourceUri::new(String::from("gitea://project-a/%ZZ")).is_err());
     }
 

@@ -87,8 +87,8 @@ mod tests {
 
     #[test]
     fn operation_serializes_as_snake_case() -> Result<(), String> {
-        let json = serde_json::to_string(&Operation::CreatePullRequest)
-            .map_err(|err| err.to_string())?;
+        let json =
+            serde_json::to_string(&Operation::CreatePullRequest).map_err(|err| err.to_string())?;
 
         assert_eq!(json, r#""create_pull_request""#);
         Ok(())

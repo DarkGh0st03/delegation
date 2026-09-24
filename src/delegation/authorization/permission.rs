@@ -62,9 +62,11 @@ mod tests {
             "https://gitea.local/repos/project-a"
         );
         assert_eq!(permission.operation(), &Operation::UpdateFile);
-        assert!(permission
-            .canonical_value()
-            .contains("https://gitea.local/repos/project-a"));
+        assert!(
+            permission
+                .canonical_value()
+                .contains("https://gitea.local/repos/project-a")
+        );
         assert!(permission.canonical_value().contains("update_file"));
 
         Ok(())
