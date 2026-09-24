@@ -147,8 +147,33 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
         let iat = numeric_iat.to_string();
         let mut exp = numeric_exp.to_string();
 
-        // Set exp to the lowest expiration value in hierarchy
+        // A non-root issuer may only delegate from a credential issued to itself.
+        // The child expiration is also capped by both the immediate parent credential and
+        // every earlier delegation in the hierarchy.
         if let Some(vc) = &optional_issuer_vc {
+            if vc.credential().delegatee_id() != &self.id {
+                return Err(format!(
+                    "Previous Delegation Credential belongs to {}, not to current issuer {}",
+                    vc.credential().delegatee_id(),
+                    self.id
+                ));
+            }
+
+            let parent_exp = match u128::from_str(vc.credential().exp()) {
+                Ok(parent_exp) => parent_exp,
+                Err(err) => {
+                    return Err(format!(
+                        "Could not parse parent credential exp {} [{err}]",
+                        vc.credential().exp()
+                    ));
+                }
+            };
+
+            if parent_exp < numeric_exp {
+                numeric_exp = parent_exp;
+                exp = numeric_exp.to_string();
+            }
+
             for delegator in vc.credential().hierarchy() {
                 let delegator_exp = match u128::from_str(delegator.exp()) {
                     Ok(delegator_exp) => delegator_exp,
@@ -326,6 +351,10 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
         }
     }
 
+    fn holder_id(&self) -> &String {
+        &self.id
+    }
+
     fn holder_jwk(&self) -> &Jwk {
         &self.signature_jwk
     }
@@ -342,9 +371,25 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
         &self,
         vc: VerifiableCredential<OurDelegationCredential>,
         disclosed_permissions: Vec<Permission>,
+        audience: String,
+        challenge: String,
     ) -> Result<String, String> {
+        if vc.credential().delegatee_id() != &self.id {
+            return Err(format!(
+                "Cannot present credential delegated to {} as holder {}",
+                vc.credential().delegatee_id(),
+                self.id
+            ));
+        }
+
         let vp: VerifiablePresentation<OurDelegationCredential> =
-            VerifiablePresentation::from_verifiable_credential(vc, disclosed_permissions)?;
+            VerifiablePresentation::from_verifiable_credential(
+                vc,
+                disclosed_permissions,
+                self.id.clone(),
+                audience,
+                challenge,
+            )?;
 
         vp.to_signed_jwt(&self.signature_jwk)
     }
@@ -531,12 +576,102 @@ mod tests {
         )?;
 
         let disclosed_permissions: Vec<Permission> = vec![permission(Operation::WriteFile)];
-        let signed_vp =
-            issuer.issue_delegation_verifiable_presentation(vc, disclosed_permissions)?;
+        let signed_vp = issuer.issue_delegation_verifiable_presentation(
+            vc,
+            disclosed_permissions,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-1"),
+        )?;
 
         println!("{signed_vp}");
         println!("{}", signed_vp.len());
 
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_subdelegation_with_foreign_credential() -> Result<(), String> {
+        type Curve = Bn254;
+        let acc_sim: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let ecc_sim: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            acc_sim.clone(),
+            ecc_sim.clone(),
+        )?;
+
+        let foreign_vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/foreign"),
+            String::from("2026-01-01T00:00:00Z"),
+            String::from("https://vc.example/delegators/d1"),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let attacker = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d2"),
+            acc_sim,
+            ecc_sim,
+        )?;
+
+        let result = attacker.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/invalid-child"),
+            String::from("2026-01-01T00:00:00Z"),
+            String::from("https://vc.example/delegators/d3"),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            Some(foreign_vc),
+        );
+
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn child_expiration_is_capped_by_immediate_parent() -> Result<(), String> {
+        type Curve = Bn254;
+        let acc_sim: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let ecc_sim: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            acc_sim.clone(),
+            ecc_sim.clone(),
+        )?;
+
+        let parent_vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/parent"),
+            String::from("2026-01-01T00:00:00Z"),
+            String::from("https://vc.example/delegators/d1"),
+            Duration::new(60, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let parent_exp = parent_vc.credential().exp().clone();
+
+        let child_issuer = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d1"),
+            acc_sim,
+            ecc_sim,
+        )?;
+
+        let child_vc = child_issuer.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/child"),
+            String::from("2026-01-01T00:00:00Z"),
+            String::from("https://vc.example/delegators/d2"),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            Some(parent_vc),
+        )?;
+
+        assert_eq!(child_vc.credential().exp(), &parent_exp);
         Ok(())
     }
 }

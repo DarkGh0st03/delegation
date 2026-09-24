@@ -1,4 +1,6 @@
+use crate::delegation::authorization::authorization_request::AuthorizationRequest;
 use crate::delegation::authorization::permission::Permission;
+use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
 use crate::delegation::credentials::ours::our_delegation::OurDelegation;
 use crate::delegation::credentials::ours::our_delegation_credential::OurDelegationCredential;
 use crate::delegation::credentials::verifiable_presentation::VerifiablePresentation;
@@ -9,6 +11,7 @@ use crate::delegation::entities::ours::dlt_acc_entry::DLTSimAccEntry;
 use crate::delegation::entities::verifier::{Verifier, verify_timings};
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
+use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub struct OurVerifier<E: Pairing> {
@@ -45,10 +48,11 @@ impl<E: Pairing> Verifier<DLTSimAccEntry<E>> for OurVerifier<E> {
     /// A result containing an error as a string in case of failure.
     fn verify_verifiable_presentation(
         &self,
-        presenter_id: String,
+        request: AuthorizationRequest,
         signed_jwt: String,
-    ) -> Result<(), String> {
-        let ecc_pk = match self.holder_dlt.borrow().get(&presenter_id) {
+    ) -> Result<VerifiedDelegation, String> {
+        let presenter_id = request.presenter_id();
+        let ecc_pk = match self.holder_dlt.borrow().get(presenter_id) {
             None => return Err(format!("Could not find presenter {presenter_id} in DLTSim")),
             Some(ecc_pk) => ecc_pk.clone(),
         };
@@ -59,7 +63,43 @@ impl<E: Pairing> Verifier<DLTSimAccEntry<E>> for OurVerifier<E> {
             )?;
         let dc = vp.credential();
 
+        if vp.holder() != presenter_id {
+            return Err(format!(
+                "VP holder {} does not match presenter {}",
+                vp.holder(),
+                presenter_id
+            ));
+        }
+
+        if dc.delegatee_id() != presenter_id {
+            return Err(format!(
+                "Delegation credential belongs to {}, not to presenter {}",
+                dc.delegatee_id(),
+                presenter_id
+            ));
+        }
+
+        if vp.audience() != request.audience() {
+            return Err(format!(
+                "VP audience {} does not match expected audience {}",
+                vp.audience(),
+                request.audience()
+            ));
+        }
+
+        if vp.challenge() != request.challenge() {
+            return Err(String::from(
+                "VP challenge does not match the authorization request challenge",
+            ));
+        }
+
         let permissions = dc.permissions().clone();
+        if !permissions.contains(request.required_permission()) {
+            return Err(format!(
+                "Required permission {} is not disclosed in the VP",
+                request.required_permission()
+            ));
+        }
 
         // Get now timestamp and convert it to nanoseconds
         let now: Duration = match SystemTime::now().duration_since(UNIX_EPOCH) {
@@ -92,7 +132,24 @@ impl<E: Pairing> Verifier<DLTSimAccEntry<E>> for OurVerifier<E> {
         }
         self.verify_delegation(dc, &vp.issuer(), &permissions, now_ns)?;
 
-        Ok(())
+        let expiration = match u128::from_str(dc.exp()) {
+            Ok(expiration) => expiration,
+            Err(err) => {
+                return Err(format!(
+                    "Could not parse verified credential expiration {} [{err}]",
+                    dc.exp()
+                ));
+            }
+        };
+
+        Ok(VerifiedDelegation::new(
+            presenter_id.clone(),
+            vp.id().clone(),
+            vp.issuer().clone(),
+            permissions,
+            hierarchy.len(),
+            expiration,
+        ))
     }
 }
 
@@ -144,6 +201,7 @@ impl<E: Pairing> OurVerifier<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::delegation::authorization::authorization_request::AuthorizationRequest;
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::entities::dtl_sim::new_dlt_sim;
     use crate::delegation::entities::issuer::Issuer;
@@ -266,12 +324,222 @@ mod tests {
         )?;
 
         let disclosed_permissions: Vec<Permission> = vec![permission(Operation::ReadFile)];
-        let signed_vp =
-            issuer.issue_delegation_verifiable_presentation(vc, disclosed_permissions)?;
+        let audience = String::from("cloud-access-gateway");
+        let challenge = String::from("challenge-1");
+        let signed_vp = issuer.issue_delegation_verifiable_presentation(
+            vc,
+            disclosed_permissions,
+            audience.clone(),
+            challenge.clone(),
+        )?;
 
         let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
-        verifier.verify_verifiable_presentation(id, signed_vp)?;
+        let request = AuthorizationRequest::new(
+            id.clone(),
+            audience,
+            challenge,
+            permission(Operation::ReadFile),
+        )?;
+        let verified = verifier.verify_verifiable_presentation(request, signed_vp)?;
 
+        assert_eq!(verified.presenter_id(), &id);
+        assert_eq!(verified.permissions(), &vec![permission(Operation::ReadFile)]);
+        assert_eq!(verified.hierarchy_depth(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_wrong_audience() -> Result<(), String> {
+        type Curve = Bn254;
+        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+
+        let holder_id = String::from("https://vc.example/delegators/d1");
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/audience-test"),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let holder = OurIssuer::<Curve>::new(
+            holder_id.clone(),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            vc,
+            vec![permission(Operation::ReadFile)],
+            String::from("gateway-a"),
+            String::from("challenge-a"),
+        )?;
+
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let request = AuthorizationRequest::new(
+            holder_id,
+            String::from("gateway-b"),
+            String::from("challenge-a"),
+            permission(Operation::ReadFile),
+        )?;
+
+        assert!(verifier.verify_verifiable_presentation(request, signed_vp).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_wrong_challenge() -> Result<(), String> {
+        type Curve = Bn254;
+        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+
+        let holder_id = String::from("https://vc.example/delegators/d1");
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/challenge-test"),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let holder = OurIssuer::<Curve>::new(
+            holder_id.clone(),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            vc,
+            vec![permission(Operation::ReadFile)],
+            String::from("cloud-access-gateway"),
+            String::from("challenge-a"),
+        )?;
+
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let request = AuthorizationRequest::new(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-b"),
+            permission(Operation::ReadFile),
+        )?;
+
+        assert!(verifier.verify_verifiable_presentation(request, signed_vp).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_permission_not_disclosed() -> Result<(), String> {
+        type Curve = Bn254;
+        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+
+        let holder_id = String::from("https://vc.example/delegators/d1");
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/permission-test"),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![
+                permission(Operation::ReadFile),
+                permission(Operation::WriteFile),
+            ],
+            None,
+        )?;
+
+        let holder = OurIssuer::<Curve>::new(
+            holder_id.clone(),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            vc,
+            vec![permission(Operation::ReadFile)],
+            String::from("cloud-access-gateway"),
+            String::from("challenge-a"),
+        )?;
+
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let request = AuthorizationRequest::new(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-a"),
+            permission(Operation::WriteFile),
+        )?;
+
+        assert!(verifier.verify_verifiable_presentation(request, signed_vp).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_presenter_that_is_not_delegatee() -> Result<(), String> {
+        type Curve = Bn254;
+        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/holder-test"),
+            String::from("2026-01-01T00:00:00Z"),
+            String::from("https://vc.example/delegators/d1"),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let attacker_id = String::from("https://vc.example/delegators/d2");
+        let attacker = OurIssuer::<Curve>::new(
+            attacker_id.clone(),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+
+        let vp = VerifiablePresentation::from_verifiable_credential(
+            vc,
+            vec![permission(Operation::ReadFile)],
+            attacker_id.clone(),
+            String::from("cloud-access-gateway"),
+            String::from("challenge-a"),
+        )?;
+        let signed_vp = vp.to_signed_jwt(attacker.holder_jwk())?;
+
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let request = AuthorizationRequest::new(
+            attacker_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-a"),
+            permission(Operation::ReadFile),
+        )?;
+
+        assert!(verifier.verify_verifiable_presentation(request, signed_vp).is_err());
         Ok(())
     }
 }

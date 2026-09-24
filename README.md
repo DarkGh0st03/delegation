@@ -11,6 +11,8 @@ The active `src/` tree intentionally contains only the baseline implementation n
 - generic credential / VC / VP structures;
 - the "ours" Delegation Credential model;
 - issuer and verifier logic;
+- request-bound presentation verification through holder, audience, challenge, and required-permission checks;
+- structured verification results that can be consumed by the future Cloud Access Gateway / OPA layer;
 - cryptographic accumulator management and verification;
 - the in-memory DLT simulator used by the original implementation.
 
@@ -72,4 +74,4 @@ original-backup-before-thesis-cleanup
 
 ## Development direction
 
-The active baseline will first be understood and validated, then adapted to the thesis scenario involving delegated authorization for AI agents. Later phases are expected to integrate the delegation core with a Cloud Access Gateway, OPA/Rego policy evaluation, A2A-based agent communication, Gitea as the protected Git platform, and a local blockchain trust/revocation layer.
+The delegation core is being adapted to the thesis scenario involving delegated authorization for AI agents. Presentations are now bound to a concrete holder, audience, challenge and required permission before a structured verified result is produced. Challenge uniqueness and one-time consumption will be enforced by the future Cloud Access Gateway. Later phases are expected to integrate this core with OPA/Rego policy evaluation, A2A-based agent communication, Gitea as the protected Git platform, and a local blockchain trust/revocation layer.

@@ -19,6 +19,12 @@ pub struct VerifiablePresentation<C: Credential> {
     id: String,
     #[serde(rename = "issuer")]
     issuer: String,
+    #[serde(rename = "holder")]
+    holder: String,
+    #[serde(rename = "audience")]
+    audience: String,
+    #[serde(rename = "challenge")]
+    challenge: String,
     #[serde(rename = "validFrom")]
     valid_from: String,
     #[serde(rename = "credentialSubject")]
@@ -42,6 +48,9 @@ impl<C: Credential> VerifiablePresentation<C> {
         credential_type: Vec<String>,
         id: String,
         issuer: String,
+        holder: String,
+        audience: String,
+        challenge: String,
         valid_from: String,
         credential: C,
     ) -> Self {
@@ -50,6 +59,9 @@ impl<C: Credential> VerifiablePresentation<C> {
             credential_type,
             id,
             issuer,
+            holder,
+            audience,
+            challenge,
             valid_from,
             credential,
         }
@@ -70,6 +82,18 @@ impl<C: Credential> VerifiablePresentation<C> {
     /// Getter function that returns the variable containing the issuer of the VC.
     pub fn issuer(&self) -> &String {
         &self.issuer
+    }
+    /// Getter function that returns the VP holder.
+    pub fn holder(&self) -> &String {
+        &self.holder
+    }
+    /// Getter function that returns the request audience bound to this VP.
+    pub fn audience(&self) -> &String {
+        &self.audience
+    }
+    /// Getter function that returns the request challenge bound to this VP.
+    pub fn challenge(&self) -> &String {
+        &self.challenge
     }
     /// Getter function that returns the valid_from variable.
     pub fn valid_from(&self) -> &String {
@@ -95,12 +119,28 @@ impl<C: Credential> VerifiablePresentation<C> {
     pub fn from_verifiable_credential(
         vc: VerifiableCredential<C>,
         claims_to_keep: Vec<C::Claim>,
+        holder: String,
+        audience: String,
+        challenge: String,
     ) -> Result<Self, String> {
+        if holder.trim().is_empty() {
+            return Err(String::from("VerifiablePresentation holder cannot be empty"));
+        }
+        if audience.trim().is_empty() {
+            return Err(String::from("VerifiablePresentation audience cannot be empty"));
+        }
+        if challenge.trim().is_empty() {
+            return Err(String::from("VerifiablePresentation challenge cannot be empty"));
+        }
+
         let mut vc = VerifiablePresentation::new(
             vc.context().clone(),
             vc.credential_type().clone(),
             vc.id().clone(),
             vc.issuer().clone(),
+            holder,
+            audience,
+            challenge,
             vc.valid_from().clone(),
             vc.credential().clone(),
         );
@@ -179,7 +219,7 @@ impl<C: Credential> VerifiablePresentation<C> {
         };
 
         let mut header: JwsHeader = JwsHeader::new();
-        header.set_algorithm("P256");
+        header.set_algorithm("EdDSA");
 
         let payload: JwtPayload = match JwtPayload::from_map(map) {
             Ok(payload) => payload,

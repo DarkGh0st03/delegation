@@ -1,3 +1,5 @@
+use crate::delegation::authorization::authorization_request::AuthorizationRequest;
+use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
 use crate::delegation::entities::dtl_sim::DLTSim;
 use josekit::jwk::Jwk;
 use std::str::FromStr;
@@ -9,9 +11,9 @@ pub trait Verifier<E> {
 
     fn verify_verifiable_presentation(
         &self,
-        presenter_id: String,
+        request: AuthorizationRequest,
         signed_jwt: String,
-    ) -> Result<(), String>;
+    ) -> Result<VerifiedDelegation, String>;
 }
 
 /// Utility function to let verifiers verify timings.
