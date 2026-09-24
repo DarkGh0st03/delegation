@@ -73,9 +73,11 @@ mod tests {
 
         assert_eq!(permission.resource(), "https://gitea.local/repos/project-a");
         assert_eq!(permission.operation(), "write_file");
-        assert!(permission
-            .canonical_value()
-            .contains("https://gitea.local/repos/project-a"));
+        assert!(
+            permission
+                .canonical_value()
+                .contains("https://gitea.local/repos/project-a")
+        );
 
         Ok(())
     }

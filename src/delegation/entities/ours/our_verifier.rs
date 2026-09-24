@@ -200,10 +200,7 @@ mod tests {
         let valid_from = String::from("2026-01-01T00:00:00Z");
         let delegatee_id = String::from("https://vc.example/delegators/d2");
         let validity_period: Duration = Duration::new(3600, 0);
-        let permissions: Vec<Permission> = vec![
-            permission("read_file"),
-            permission("write_file"),
-        ];
+        let permissions: Vec<Permission> = vec![permission("read_file"), permission("write_file")];
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
@@ -222,10 +219,7 @@ mod tests {
             OurIssuer::new(id, accumulator_dlt.clone(), verification_dlt.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let delegatee_id = String::from("https://vc.example/delegators/d3");
-        let permissions: Vec<Permission> = vec![
-            permission("read_file"),
-            permission("write_file"),
-        ];
+        let permissions: Vec<Permission> = vec![permission("read_file"), permission("write_file")];
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
@@ -264,8 +258,7 @@ mod tests {
             verification_dlt.clone(),
         )?;
 
-        let disclosed_permissions: Vec<Permission> =
-            vec![permission("read_file")];
+        let disclosed_permissions: Vec<Permission> = vec![permission("read_file")];
         let signed_vp =
             issuer.issue_delegation_verifiable_presentation(vc, disclosed_permissions)?;
 
