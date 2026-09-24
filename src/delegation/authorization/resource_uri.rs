@@ -11,7 +11,9 @@ impl ResourceUri {
         }
 
         if !value.is_ascii() {
-            return Err(format!("Resource URI must contain ASCII characters only: {value}"));
+            return Err(format!(
+                "Resource URI must contain ASCII characters only: {value}"
+            ));
         }
 
         let (scheme, remainder) = match value.split_once(':') {
