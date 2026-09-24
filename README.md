@@ -7,6 +7,7 @@ This repository is the working codebase for the master's thesis project based on
 The active `src/` tree intentionally contains only the baseline implementation needed to understand and adapt the proposed Delegation Credential:
 
 - structured resource/operation permissions for the thesis authorization domain;
+  Resources are validated as absolute URIs, while operations are selected from an explicit software-engineering vocabulary;
 - generic credential / VC / VP structures;
 - the "ours" Delegation Credential model;
 - issuer and verifier logic;
@@ -23,7 +24,9 @@ src/
 └── delegation/
     ├── authorization/
     │   ├── mod.rs
-    │   └── permission.rs
+    │   ├── operation.rs
+    │   ├── permission.rs
+    │   └── resource_uri.rs
     ├── credentials/
     │   ├── mod.rs
     │   ├── verifiable_credential.rs

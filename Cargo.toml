@@ -13,6 +13,7 @@ josekit = "0.10.3"
 serde = { version = "1.0.210", default-features = false }
 serde_json = { version = "1.0.128", default-features = false }
 rand = "0.10.2"
+regex = "1.12.2"
 multibase = "0.9.1"
 digest = "0.11.3"
 sha2 = "0.11.0"

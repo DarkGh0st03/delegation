@@ -144,6 +144,7 @@ impl<E: Pairing> OurVerifier<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::delegation::authorization::operation::Operation;
     use crate::delegation::entities::dtl_sim::new_dlt_sim;
     use crate::delegation::entities::issuer::Issuer;
     use crate::delegation::entities::ours::our_issuer::OurIssuer;
@@ -151,10 +152,10 @@ mod tests {
     use josekit::jwk::Jwk;
     use std::time::Duration;
 
-    fn permission(operation: &str) -> Permission {
+    fn permission(operation: Operation) -> Permission {
         Permission::new(
             String::from("https://gitea.local/repos/project-a"),
-            operation.to_string(),
+            operation,
         )
         .expect("test permission must be valid")
     }
@@ -175,9 +176,9 @@ mod tests {
         let delegatee_id = String::from("https://vc.example/delegators/d1");
         let validity_period: Duration = Duration::new(3600, 0);
         let permissions: Vec<Permission> = vec![
-            permission("read_file"),
-            permission("write_file"),
-            permission("create_branch"),
+            permission(Operation::ReadFile),
+            permission(Operation::WriteFile),
+            permission(Operation::CreateBranch),
         ];
         let vc = issuer.issue_delegation_verifiable_credential(
             context,
@@ -200,7 +201,7 @@ mod tests {
         let valid_from = String::from("2026-01-01T00:00:00Z");
         let delegatee_id = String::from("https://vc.example/delegators/d2");
         let validity_period: Duration = Duration::new(3600, 0);
-        let permissions: Vec<Permission> = vec![permission("read_file"), permission("write_file")];
+        let permissions: Vec<Permission> = vec![permission(Operation::ReadFile), permission(Operation::WriteFile)];
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
@@ -219,7 +220,7 @@ mod tests {
             OurIssuer::new(id, accumulator_dlt.clone(), verification_dlt.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let delegatee_id = String::from("https://vc.example/delegators/d3");
-        let permissions: Vec<Permission> = vec![permission("read_file"), permission("write_file")];
+        let permissions: Vec<Permission> = vec![permission(Operation::ReadFile), permission(Operation::WriteFile)];
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
@@ -238,7 +239,7 @@ mod tests {
             OurIssuer::new(id, accumulator_dlt.clone(), verification_dlt.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1340");
         let delegatee_id = String::from("https://vc.example/delegators/d4");
-        let permissions: Vec<Permission> = vec![permission("read_file")];
+        let permissions: Vec<Permission> = vec![permission(Operation::ReadFile)];
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
@@ -258,7 +259,7 @@ mod tests {
             verification_dlt.clone(),
         )?;
 
-        let disclosed_permissions: Vec<Permission> = vec![permission("read_file")];
+        let disclosed_permissions: Vec<Permission> = vec![permission(Operation::ReadFile)];
         let signed_vp =
             issuer.issue_delegation_verifiable_presentation(vc, disclosed_permissions)?;
 
