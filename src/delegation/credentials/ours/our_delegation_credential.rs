@@ -1,3 +1,4 @@
+use crate::delegation::authorization::permission::Permission;
 use crate::delegation::credentials::ours::our_delegation::OurDelegation;
 use crate::delegation::credentials::ours::our_delegator::OurDelegator;
 use crate::delegation::traits::credential::Credential;
@@ -16,7 +17,7 @@ pub struct OurDelegationCredential {
     #[serde(rename = "exp")]
     exp: String,
     #[serde(rename = "per")]
-    permissions: Vec<String>,
+    permissions: Vec<Permission>,
     #[serde(rename = "mw")]
     metadata_witness: String,
     #[serde(rename = "pw")]
@@ -33,7 +34,7 @@ impl OurDelegationCredential {
     /// * `accumulator_value` - string containing the value of the accumulator.
     /// * `iat` - string containing the "issued at" parameter.
     /// * `exp` - string containing the "expiration" parameter.
-    /// * `permissions` - vector of strings containing the permissions granted.
+    /// * `permissions` - vector of structured Permission values granted.
     /// * `metadata_witnesses` - string containing the serialized metadata witness.
     /// * `permission_witnesses` - vector of strings containing the permission witnesses.
     /// * `hierarchy` - vector of OurDelegator containing previous delegators in the delegation chain.
@@ -45,7 +46,7 @@ impl OurDelegationCredential {
         accumulator_value: String,
         iat: String,
         exp: String,
-        permissions: Vec<String>,
+        permissions: Vec<Permission>,
         metadata_witness: String,
         permission_witnesses: Vec<String>,
         hierarchy: Vec<OurDelegator>,
@@ -63,7 +64,7 @@ impl OurDelegationCredential {
     }
 
     /// Getter function for the permissions variable.
-    pub fn permissions(&self) -> &Vec<String> {
+    pub fn permissions(&self) -> &Vec<Permission> {
         &self.permissions
     }
 
@@ -101,6 +102,8 @@ impl OurDelegation for OurDelegationCredential {
 }
 
 impl Credential for OurDelegationCredential {
+    type Claim = Permission;
+
     /// Function that returns a static string containing the type of the credential.
     fn credential_type(&self) -> &'static str {
         "OurDelegationCredential"
@@ -176,7 +179,7 @@ impl Credential for OurDelegationCredential {
     ///
     /// # Returns
     /// A result containing the indices of the claims removed from the credential or an error as a string in case of failure.
-    fn retain_only(&mut self, allowed: Vec<String>) -> Result<Vec<usize>, String> {
+    fn retain_only(&mut self, allowed: Vec<Permission>) -> Result<Vec<usize>, String> {
         let permissions_to_keep = allowed;
 
         let mut removable_indices: Vec<usize> = vec![];
@@ -257,7 +260,7 @@ mod tests {
         "av": "accumulator_value_d1",
         "iat": "0000000001",
         "exp": "1000000000",
-        "per": [ "https://vc.example/resources/r1:p0", "https://vc.example/resources/r1:p1", "https://vc.example/resources/r1:p2" ],
+        "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "write_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "create_branch" } ],
         "mw": "w_metadata_d1",
         "pw": [ "w0d1", "w1d1", "w2d1" ],
         "hierarchy": []
@@ -268,7 +271,7 @@ mod tests {
         "av": "accumulator_value_d2",
         "iat": "0000000002",
         "exp": "1000000000",
-        "per": [ "https://vc.example/resources/r1:p0", "https://vc.example/resources/r1:p1" ],
+        "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "write_file" } ],
         "mw": "w_metadata_d2",
         "pw": [ "w0d2", "w1d2" ],
         "hierarchy": [
@@ -289,7 +292,7 @@ mod tests {
         "av": "accumulator_value_d3",
         "iat": "0000000003",
         "exp": "1000000000",
-        "per": [ "https://vc.example/resources/r1:p0", "https://vc.example/resources/r1:p1" ],
+        "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "write_file" } ],
         "mw": "w_metadata_d3",
         "pw": [ "w0d3", "w1d3" ],
         "hierarchy": [
@@ -319,7 +322,7 @@ mod tests {
         "av": "accumulator_value_d4",
         "iat": "0000000004",
         "exp": "1000000000",
-        "per": [ "https://vc.example/resources/r1:p0" ],
+        "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" } ],
         "mw": "w_metadata_d4",
         "pw": [ "w0d4" ],
         "hierarchy": [

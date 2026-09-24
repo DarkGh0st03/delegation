@@ -3,6 +3,9 @@ use serde_json::{Map, Value};
 use std::fmt::Display;
 
 pub trait Credential: Clone + Display + Serialize {
+    /// Type of claim selectively disclosed by this credential.
+    type Claim: Clone + PartialEq;
+
     /// Function that returns a static string containing the type of the credential.
     fn credential_type(&self) -> &'static str;
 
@@ -47,7 +50,7 @@ pub trait Credential: Clone + Display + Serialize {
     ///
     /// # Returns
     /// A result containing the indices of the claims removed from the credential or an error as a string in case of failure.
-    fn retain_only(&mut self, allowed: Vec<String>) -> Result<Vec<usize>, String>;
+    fn retain_only(&mut self, allowed: Vec<Self::Claim>) -> Result<Vec<usize>, String>;
 
     /// Checks whether the credential still contains the necessary elements for a presentation.
     /// # Returns

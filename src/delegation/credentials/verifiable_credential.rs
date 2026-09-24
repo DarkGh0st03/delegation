@@ -141,7 +141,7 @@ mod tests {
         "av": "av_d1",
         "iat": "0000000001",
         "exp": "1000000000",
-        "per": [ "https://vc.example/resources/r1:p0", "https://vc.example/resources/r1:p1", "https://vc.example/resources/r1:p2" ],
+        "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "write_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "create_branch" } ],
         "mw": "w_metadata_d1",
         "pw": [ "w0d1", "w1d1", "w2d1" ],
         "hierarchy": []
@@ -160,7 +160,7 @@ mod tests {
         "av": "av_d2",
         "iat": "0000000002",
         "exp": "1000000000",
-        "per": [ "https://vc.example/resources/r1:p0", "https://vc.example/resources/r1:p1" ],
+        "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "write_file" } ],
         "mw": "w_metadata_d2",
         "pw": [ "w0d2", "w1d2" ],
         "hierarchy": [
@@ -189,7 +189,7 @@ mod tests {
         "av": "av_d3",
         "iat": "0000000003",
         "exp": "1000000000",
-        "per": [ "https://vc.example/resources/r1:p0", "https://vc.example/resources/r1:p1" ],
+        "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "write_file" } ],
         "mw": "w_metadata_d3",
         "pw": [ "w0d3", "w1d3" ],
         "hierarchy": [
@@ -227,7 +227,7 @@ mod tests {
         "av": "av_d4",
         "iat": "0000000004",
         "exp": "1000000000",
-        "per": [ "https://vc.example/resources/r1:p0" ],
+        "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" } ],
         "mw": "w_metadata_d4",
         "pw": [ "w0d4" ],
         "hierarchy": [

@@ -88,13 +88,13 @@ impl<C: Credential> VerifiablePresentation<C> {
     ///
     /// # Arguments
     /// * `vc` - the instance of VerifiableCredential that will be used to create the VerifiablePresentation.
-    /// * `claims_to_keep` - vector of strings containing the claims to be kept (if a claim is key:value, the vector contains key).
+    /// * `claims_to_keep` - claims to be kept according to the concrete Credential claim type.
     ///
     /// # Returns
     /// A result containing either an instance of VerifiablePresentation or an error as a string in case of failure.
     pub fn from_verifiable_credential(
         vc: VerifiableCredential<C>,
-        claims_to_keep: Vec<String>,
+        claims_to_keep: Vec<C::Claim>,
     ) -> Result<Self, String> {
         let mut vc = VerifiablePresentation::new(
             vc.context().clone(),

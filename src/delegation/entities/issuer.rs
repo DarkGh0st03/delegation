@@ -17,7 +17,7 @@ pub trait Issuer<E, C: Credential> {
         valid_from: String,
         delegatee_id: String,
         validity_period: Duration,
-        permissions: Vec<String>,
+        permissions: Vec<C::Claim>,
         optional_issuer_vc: Option<VerifiableCredential<C>>,
     ) -> Result<VerifiableCredential<C>, String>;
 
@@ -26,7 +26,7 @@ pub trait Issuer<E, C: Credential> {
     fn issue_delegation_verifiable_presentation(
         &self,
         vc: VerifiableCredential<C>,
-        disclosed_permissions: Vec<String>,
+        disclosed_permissions: Vec<C::Claim>,
     ) -> Result<String, String> {
         let vp: VerifiablePresentation<C> =
             VerifiablePresentation::from_verifiable_credential(vc, disclosed_permissions)?;
