@@ -124,13 +124,19 @@ impl<C: Credential> VerifiablePresentation<C> {
         challenge: String,
     ) -> Result<Self, String> {
         if holder.trim().is_empty() {
-            return Err(String::from("VerifiablePresentation holder cannot be empty"));
+            return Err(String::from(
+                "VerifiablePresentation holder cannot be empty",
+            ));
         }
         if audience.trim().is_empty() {
-            return Err(String::from("VerifiablePresentation audience cannot be empty"));
+            return Err(String::from(
+                "VerifiablePresentation audience cannot be empty",
+            ));
         }
         if challenge.trim().is_empty() {
-            return Err(String::from("VerifiablePresentation challenge cannot be empty"));
+            return Err(String::from(
+                "VerifiablePresentation challenge cannot be empty",
+            ));
         }
 
         let mut vc = VerifiablePresentation::new(

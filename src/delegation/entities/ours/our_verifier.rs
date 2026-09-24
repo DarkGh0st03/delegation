@@ -343,7 +343,10 @@ mod tests {
         let verified = verifier.verify_verifiable_presentation(request, signed_vp)?;
 
         assert_eq!(verified.presenter_id(), &id);
-        assert_eq!(verified.permissions(), &vec![permission(Operation::ReadFile)]);
+        assert_eq!(
+            verified.permissions(),
+            &vec![permission(Operation::ReadFile)]
+        );
         assert_eq!(verified.hierarchy_depth(), 3);
 
         Ok(())
@@ -392,7 +395,11 @@ mod tests {
             permission(Operation::ReadFile),
         )?;
 
-        assert!(verifier.verify_verifiable_presentation(request, signed_vp).is_err());
+        assert!(
+            verifier
+                .verify_verifiable_presentation(request, signed_vp)
+                .is_err()
+        );
         Ok(())
     }
 
@@ -439,7 +446,11 @@ mod tests {
             permission(Operation::ReadFile),
         )?;
 
-        assert!(verifier.verify_verifiable_presentation(request, signed_vp).is_err());
+        assert!(
+            verifier
+                .verify_verifiable_presentation(request, signed_vp)
+                .is_err()
+        );
         Ok(())
     }
 
@@ -489,7 +500,11 @@ mod tests {
             permission(Operation::WriteFile),
         )?;
 
-        assert!(verifier.verify_verifiable_presentation(request, signed_vp).is_err());
+        assert!(
+            verifier
+                .verify_verifiable_presentation(request, signed_vp)
+                .is_err()
+        );
         Ok(())
     }
 
@@ -539,7 +554,11 @@ mod tests {
             permission(Operation::ReadFile),
         )?;
 
-        assert!(verifier.verify_verifiable_presentation(request, signed_vp).is_err());
+        assert!(
+            verifier
+                .verify_verifiable_presentation(request, signed_vp)
+                .is_err()
+        );
         Ok(())
     }
 }

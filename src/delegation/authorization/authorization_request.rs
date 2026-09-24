@@ -26,10 +26,14 @@ impl AuthorizationRequest {
             return Err(String::from("Presenter id cannot be empty"));
         }
         if audience.trim().is_empty() {
-            return Err(String::from("Authorization request audience cannot be empty"));
+            return Err(String::from(
+                "Authorization request audience cannot be empty",
+            ));
         }
         if challenge.trim().is_empty() {
-            return Err(String::from("Authorization request challenge cannot be empty"));
+            return Err(String::from(
+                "Authorization request challenge cannot be empty",
+            ));
         }
 
         Ok(Self {
