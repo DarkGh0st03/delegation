@@ -575,8 +575,14 @@ mod tests {
             previous_vc,
         )?;
 
+        let holder = OurIssuer::<Bn254>::new(
+            String::from("https://vc.example/delegators/d3"),
+            acc_sim.clone(),
+            ecc_sim.clone(),
+        )?;
+
         let disclosed_permissions: Vec<Permission> = vec![permission(Operation::WriteFile)];
-        let signed_vp = issuer.issue_delegation_verifiable_presentation(
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
             disclosed_permissions,
             String::from("cloud-access-gateway"),
