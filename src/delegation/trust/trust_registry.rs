@@ -13,11 +13,7 @@ pub trait TrustRegistry<E: Pairing> {
 
     fn get_identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String>;
 
-    fn set_identity_status(
-        &self,
-        identity_id: &str,
-        status: IdentityStatus,
-    ) -> Result<(), String>;
+    fn set_identity_status(&self, identity_id: &str, status: IdentityStatus) -> Result<(), String>;
 
     fn set_trust_anchor(&self, identity_id: &str, trusted: bool) -> Result<(), String>;
 

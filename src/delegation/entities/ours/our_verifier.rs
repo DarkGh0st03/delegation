@@ -984,5 +984,4 @@ mod tests {
         assert!(error.contains("revoked"));
         Ok(())
     }
-
 }

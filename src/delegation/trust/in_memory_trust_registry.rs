@@ -36,7 +36,10 @@ impl<E: Pairing> InMemoryTrustRegistry<E> {
         }
     }
 
-    fn ensure_record_active(identity_id: &str, record: &IdentityTrustRecord<E>) -> Result<(), String> {
+    fn ensure_record_active(
+        identity_id: &str,
+        record: &IdentityTrustRecord<E>,
+    ) -> Result<(), String> {
         match record.status {
             IdentityStatus::Active => Ok(()),
             status => Err(format!("Identity {identity_id} is {status}")),
@@ -71,11 +74,7 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
             .ok_or_else(|| format!("Identity {identity_id} is not registered"))
     }
 
-    fn set_identity_status(
-        &self,
-        identity_id: &str,
-        status: IdentityStatus,
-    ) -> Result<(), String> {
+    fn set_identity_status(&self, identity_id: &str, status: IdentityStatus) -> Result<(), String> {
         let mut identities = self.identities.borrow_mut();
         let record = identities
             .get_mut(identity_id)
@@ -171,8 +170,8 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
 mod tests {
     use super::*;
     use ark_bn254::Bn254;
-    use ark_std::rand::prelude::StdRng;
     use ark_std::rand::SeedableRng;
+    use ark_std::rand::prelude::StdRng;
     use vb_accumulator::prelude::{Keypair, SetupParams};
 
     fn verification_key() -> Result<Jwk, String> {
@@ -261,11 +260,7 @@ mod tests {
     fn unknown_identity_fails_closed() {
         let registry = InMemoryTrustRegistry::<Bn254>::new();
 
-        assert!(
-            registry
-                .get_identity_status("did:example:missing")
-                .is_err()
-        );
+        assert!(registry.get_identity_status("did:example:missing").is_err());
         assert!(
             registry
                 .get_accumulator_data("did:example:missing")
