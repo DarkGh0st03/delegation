@@ -458,6 +458,7 @@ dependencies = [
  "csv",
  "digest 0.11.3",
  "ed25519-dalek",
+ "flate2",
  "josekit",
  "multibase",
  "rand 0.10.2",
