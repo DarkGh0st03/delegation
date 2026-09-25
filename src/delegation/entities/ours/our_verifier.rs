@@ -242,20 +242,14 @@ impl<E: Pairing> OurVerifier<E> {
                 "Credential {credential_id} uses unsupported message status purpose"
             )),
             StatusPurpose::Revocation => {
-                if self
-                    .status_list_resolver
-                    .is_status_set(credential_status)?
-                {
+                if self.status_list_resolver.is_status_set(credential_status)? {
                     Err(format!("Credential {credential_id} is revoked"))
                 } else {
                     Ok(())
                 }
             }
             StatusPurpose::Suspension => {
-                if self
-                    .status_list_resolver
-                    .is_status_set(credential_status)?
-                {
+                if self.status_list_resolver.is_status_set(credential_status)? {
                     Err(format!("Credential {credential_id} is suspended"))
                 } else {
                     Ok(())
@@ -270,9 +264,9 @@ mod tests {
     use super::*;
     use crate::delegation::authorization::authorization_request::AuthorizationRequest;
     use crate::delegation::authorization::operation::Operation;
+    use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
     use crate::delegation::entities::dtl_sim::new_dlt_sim;
     use crate::delegation::entities::issuer::Issuer;
-    use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
     use crate::delegation::entities::ours::our_issuer::OurIssuer;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::status::in_memory_status_list_resolver::InMemoryStatusListResolver;
@@ -435,8 +429,7 @@ mod tests {
             challenge.clone(),
         )?;
 
-        let verifier =
-            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             id.clone(),
             audience,
@@ -492,8 +485,7 @@ mod tests {
             String::from("challenge-a"),
         )?;
 
-        let verifier =
-            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("gateway-b"),
@@ -546,8 +538,7 @@ mod tests {
             String::from("challenge-a"),
         )?;
 
-        let verifier =
-            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -603,8 +594,7 @@ mod tests {
             String::from("challenge-a"),
         )?;
 
-        let verifier =
-            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -660,8 +650,7 @@ mod tests {
         )?;
         let signed_vp = vp.to_signed_jwt(attacker.holder_jwk())?;
 
-        let verifier =
-            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             attacker_id,
             String::from("cloud-access-gateway"),
@@ -726,8 +715,7 @@ mod tests {
             String::from("challenge-status-binding"),
         )?;
 
-        let verifier =
-            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -785,8 +773,7 @@ mod tests {
             String::from("challenge-revoked-current"),
         )?;
 
-        let verifier =
-            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -861,8 +848,7 @@ mod tests {
             String::from("challenge-revoked-ancestor"),
         )?;
 
-        let verifier =
-            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -876,5 +862,4 @@ mod tests {
         assert!(error.contains("revoked"));
         Ok(())
     }
-
 }
