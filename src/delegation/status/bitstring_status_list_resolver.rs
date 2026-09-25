@@ -115,15 +115,12 @@ impl StatusListResolver for BitstringStatusListResolver {
             ));
         }
 
-        let credential_index = entry
-            .status_list_index()
-            .parse::<usize>()
-            .map_err(|err| {
-                format!(
-                    "Could not parse statusListIndex {} [{err}]",
-                    entry.status_list_index()
-                )
-            })?;
+        let credential_index = entry.status_list_index().parse::<usize>().map_err(|err| {
+            format!(
+                "Could not parse statusListIndex {} [{err}]",
+                entry.status_list_index()
+            )
+        })?;
 
         Self::read_status_bit(&bitstring, credential_index * STATUS_SIZE_BITS)
     }
@@ -168,8 +165,8 @@ mod tests {
     use super::*;
     use crate::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
     use crate::delegation::status::status_purpose::StatusPurpose;
-    use flate2::write::GzEncoder;
     use flate2::Compression;
+    use flate2::write::GzEncoder;
     use multibase::Base;
     use serde_json::json;
     use std::io::Write;
@@ -199,10 +196,7 @@ mod tests {
         Ok(multibase::encode(Base::Base64Url, compressed))
     }
 
-    fn status_list_credential(
-        purpose: serde_json::Value,
-        encoded_list: String,
-    ) -> String {
+    fn status_list_credential(purpose: serde_json::Value, encoded_list: String) -> String {
         json!({
             "@context": ["https://www.w3.org/ns/credentials/v2"],
             "id": STATUS_LIST_URL,
