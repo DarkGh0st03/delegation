@@ -653,8 +653,7 @@ mod tests {
 
         let attacker = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d2"),
-            acc_sim,
-            ecc_sim,
+            trust_registry.clone(),
         )?;
 
         let result = attacker.issue_delegation_verifiable_credential(
@@ -698,8 +697,7 @@ mod tests {
 
         let child_issuer = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d1"),
-            acc_sim,
-            ecc_sim,
+            trust_registry.clone(),
         )?;
 
         let child_vc = child_issuer.issue_delegation_verifiable_credential(
@@ -743,8 +741,7 @@ mod tests {
 
         let child_issuer = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d1"),
-            accumulator_dlt,
-            verification_dlt,
+            trust_registry.clone(),
         )?;
         let child_vc = child_issuer.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],

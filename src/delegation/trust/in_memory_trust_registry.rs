@@ -92,7 +92,7 @@ mod tests {
         let keypair = Keypair::<Curve>::generate_using_rng(&mut rng, &params);
         registry.publish_accumulator_data(
             identity.clone(),
-            AccumulatorPublicData::new(keypair.public_key, params),
+            AccumulatorPublicData::new(keypair.public_key.clone(), params),
         )?;
 
         let mut jwk = Jwk::new("OKP");
