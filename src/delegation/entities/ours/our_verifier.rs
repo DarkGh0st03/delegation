@@ -150,6 +150,14 @@ impl<E: Pairing> Verifier<E> for OurVerifier<E> {
             now_ns,
         )?;
 
+        // Registration alone is not sufficient for the root of authority.
+        // The root issuer must be explicitly configured as a trust anchor.
+        let root_issuer = hierarchy
+            .first()
+            .map(|delegator| delegator.id())
+            .unwrap_or(vp.issuer());
+        self.trust_registry.ensure_trust_anchor(root_issuer)?;
+
         let expiration = match u128::from_str(dc.exp()) {
             Ok(expiration) => expiration,
             Err(err) => {
@@ -257,6 +265,7 @@ mod tests {
     use crate::delegation::entities::ours::our_issuer::OurIssuer;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::status::in_memory_status_list_resolver::InMemoryStatusListResolver;
+    use crate::delegation::trust::identity_status::IdentityStatus;
     use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
     use crate::delegation::trust::trust_registry::TrustRegistryRef;
     use ark_bn254::Bn254;
@@ -306,6 +315,7 @@ mod tests {
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
         let issuer: OurIssuer<Curve> = OurIssuer::new(id, trust_registry.clone())?;
+        trust_registry.set_trust_anchor(issuer.holder_id(), true)?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1337");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -438,6 +448,7 @@ mod tests {
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
         let vc = root.issue_delegation_verifiable_credential(
@@ -486,6 +497,7 @@ mod tests {
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
         let vc = root.issue_delegation_verifiable_credential(
@@ -534,6 +546,7 @@ mod tests {
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
         let vc = root.issue_delegation_verifiable_credential(
@@ -585,6 +598,7 @@ mod tests {
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let vc = root.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
@@ -636,6 +650,7 @@ mod tests {
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
         let vc = root.issue_delegation_verifiable_credential(
@@ -696,6 +711,7 @@ mod tests {
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
         let vc = root.issue_delegation_verifiable_credential(
@@ -748,6 +764,7 @@ mod tests {
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let parent_vc = root.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
@@ -806,4 +823,166 @@ mod tests {
         assert!(error.contains("revoked"));
         Ok(())
     }
+
+    #[test]
+    fn rejects_untrusted_root_identity() -> Result<(), String> {
+        type Curve = Bn254;
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            trust_registry.clone(),
+        )?;
+
+        let holder_id = String::from("https://vc.example/delegators/d1");
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/untrusted-root"),
+            test_status(940),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let status_resolver = resolver_for_vc(&vc)?;
+        let holder = OurIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            vc,
+            vec![permission(Operation::ReadFile)],
+            String::from("cloud-access-gateway"),
+            String::from("challenge-untrusted-root"),
+        )?;
+
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
+        let request = AuthorizationRequest::new(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-untrusted-root"),
+            permission(Operation::ReadFile),
+        )?;
+
+        let error = verifier
+            .verify_verifiable_presentation(request, signed_vp)
+            .expect_err("registered but untrusted root must be rejected");
+        assert!(error.contains("not a trust anchor"));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_suspended_presenter_identity() -> Result<(), String> {
+        type Curve = Bn254;
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            trust_registry.clone(),
+        )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
+
+        let holder_id = String::from("https://vc.example/delegators/d1");
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/suspended-presenter"),
+            test_status(941),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let status_resolver = resolver_for_vc(&vc)?;
+        let holder = OurIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            vc,
+            vec![permission(Operation::ReadFile)],
+            String::from("cloud-access-gateway"),
+            String::from("challenge-suspended-presenter"),
+        )?;
+
+        trust_registry.set_identity_status(&holder_id, IdentityStatus::Suspended)?;
+
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
+        let request = AuthorizationRequest::new(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-suspended-presenter"),
+            permission(Operation::ReadFile),
+        )?;
+
+        let error = verifier
+            .verify_verifiable_presentation(request, signed_vp)
+            .expect_err("suspended presenter must be rejected");
+        assert!(error.contains("suspended"));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_revoked_issuer_identity_in_chain() -> Result<(), String> {
+        type Curve = Bn254;
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            trust_registry.clone(),
+        )?;
+        trust_registry.set_trust_anchor(root.holder_id(), true)?;
+
+        let intermediate_id = String::from("https://vc.example/delegators/d1");
+        let parent_vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/identity-parent"),
+            test_status(942),
+            String::from("2026-01-01T00:00:00Z"),
+            intermediate_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let intermediate =
+            OurIssuer::<Curve>::new(intermediate_id.clone(), trust_registry.clone())?;
+        let holder_id = String::from("https://vc.example/delegators/d2");
+        let child_vc = intermediate.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/identity-child"),
+            test_status(943),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            Some(parent_vc),
+        )?;
+
+        let status_resolver = resolver_for_vc(&child_vc)?;
+        let holder = OurIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            child_vc,
+            vec![permission(Operation::ReadFile)],
+            String::from("cloud-access-gateway"),
+            String::from("challenge-revoked-issuer"),
+        )?;
+
+        trust_registry.set_identity_status(&intermediate_id, IdentityStatus::Revoked)?;
+
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
+        let request = AuthorizationRequest::new(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-revoked-issuer"),
+            permission(Operation::ReadFile),
+        )?;
+
+        let error = verifier
+            .verify_verifiable_presentation(request, signed_vp)
+            .expect_err("descendant of revoked issuer identity must be rejected");
+        assert!(error.contains("revoked"));
+        Ok(())
+    }
+
 }

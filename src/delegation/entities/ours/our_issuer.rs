@@ -38,6 +38,8 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
     /// # Returns
     /// A result containing either the instance of OurIssuer or an error as a string in case of failure.
     fn new(id: String, trust_registry: TrustRegistryRef<E>) -> Result<Self, String> {
+        trust_registry.register_identity(id.clone())?;
+
         let mut rng: StdRng = StdRng::from_entropy();
         let params = SetupParams::<E>::generate_using_rng(&mut rng);
         let acc_keypair = Keypair::<E>::generate_using_rng(&mut rng, &params);
