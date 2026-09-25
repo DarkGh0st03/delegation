@@ -1,11 +1,16 @@
 use crate::delegation::authorization::authorization_request::AuthorizationRequest;
 use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
 use crate::delegation::entities::dtl_sim::DLTSim;
+use crate::delegation::status::status_list_resolver::StatusListResolverRef;
 use josekit::jwk::Jwk;
 use std::str::FromStr;
 
 pub trait Verifier<E> {
-    fn new(issuer_dlt: DLTSim<E>, holder_dlt: DLTSim<Jwk>) -> Result<Self, String>
+    fn new(
+        issuer_dlt: DLTSim<E>,
+        holder_dlt: DLTSim<Jwk>,
+        status_list_resolver: StatusListResolverRef,
+    ) -> Result<Self, String>
     where
         Self: Sized;
 

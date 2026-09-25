@@ -10,6 +10,8 @@ use crate::delegation::entities::ours::accumulator_verifier::AccumulatorVerifier
 use crate::delegation::entities::ours::dlt_acc_entry::DLTSimAccEntry;
 use crate::delegation::entities::verifier::{Verifier, verify_timings};
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
+use crate::delegation::status::status_list_resolver::StatusListResolverRef;
+use crate::delegation::status::status_purpose::StatusPurpose;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::str::FromStr;
@@ -18,6 +20,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub struct OurVerifier<E: Pairing> {
     issuer_dlt: DLTSim<DLTSimAccEntry<E>>,
     holder_dlt: DLTSim<Jwk>,
+    status_list_resolver: StatusListResolverRef,
 }
 
 impl<E: Pairing> Verifier<DLTSimAccEntry<E>> for OurVerifier<E> {
@@ -26,16 +29,22 @@ impl<E: Pairing> Verifier<DLTSimAccEntry<E>> for OurVerifier<E> {
     /// # Arguments
     /// * `accumulator_dlt` - a reference to the DLT Simulator (a hashmap containing public keys) for accumulators.
     /// * `verification_dlt` - a reference to the DLT Simulator (a hashmap containing public keys) for ECC signature schemes.
+    /// * `status_list_resolver` - resolver used to obtain the current status bit for every credential in the chain.
     ///
     /// # Returns
     /// A result containing either the instance of OurVerifier or an error as a string in case of failure.
-    fn new(issuer_dlt: DLTSim<DLTSimAccEntry<E>>, holder_dlt: DLTSim<Jwk>) -> Result<Self, String>
+    fn new(
+        issuer_dlt: DLTSim<DLTSimAccEntry<E>>,
+        holder_dlt: DLTSim<Jwk>,
+        status_list_resolver: StatusListResolverRef,
+    ) -> Result<Self, String>
     where
         Self: Sized,
     {
         Ok(OurVerifier {
             issuer_dlt,
             holder_dlt,
+            status_list_resolver,
         })
     }
 
@@ -216,7 +225,43 @@ impl<E: Pairing> OurVerifier<E> {
         delegator_av.verify_accumulator_witness(metadata_witness, &metadata)?;
         delegator_av.verify_accumulator_witnesses(permission_witnesses, &permission_values)?;
 
+        // Resolve status only after the status reference has been authenticated by the
+        // accumulator metadata witness.
+        self.verify_credential_status(credential_id, credential_status)?;
+
         Ok(())
+    }
+
+    fn verify_credential_status(
+        &self,
+        credential_id: &String,
+        credential_status: &BitstringStatusListEntry,
+    ) -> Result<(), String> {
+        match credential_status.status_purpose() {
+            StatusPurpose::Message => Err(format!(
+                "Credential {credential_id} uses unsupported message status purpose"
+            )),
+            StatusPurpose::Revocation => {
+                if self
+                    .status_list_resolver
+                    .is_status_set(credential_status)?
+                {
+                    Err(format!("Credential {credential_id} is revoked"))
+                } else {
+                    Ok(())
+                }
+            }
+            StatusPurpose::Suspension => {
+                if self
+                    .status_list_resolver
+                    .is_status_set(credential_status)?
+                {
+                    Err(format!("Credential {credential_id} is suspended"))
+                } else {
+                    Ok(())
+                }
+            }
+        }
     }
 }
 
@@ -227,10 +272,13 @@ mod tests {
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::entities::dtl_sim::new_dlt_sim;
     use crate::delegation::entities::issuer::Issuer;
+    use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
     use crate::delegation::entities::ours::our_issuer::OurIssuer;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
+    use crate::delegation::status::in_memory_status_list_resolver::InMemoryStatusListResolver;
     use ark_bn254::Bn254;
     use josekit::jwk::Jwk;
+    use std::rc::Rc;
     use std::time::Duration;
 
     fn test_status(index: u64) -> BitstringStatusListEntry {
@@ -240,6 +288,23 @@ mod tests {
             String::from("https://status.example/lists/revocation-1"),
         )
         .expect("test status entry must be valid")
+    }
+
+    fn resolver_for_vc(
+        vc: &VerifiableCredential<OurDelegationCredential>,
+    ) -> Result<Rc<InMemoryStatusListResolver>, String> {
+        let resolver = Rc::new(InMemoryStatusListResolver::new());
+
+        for delegator in vc.credential().hierarchy() {
+            resolver.set_status(delegator.credential_status(), false);
+        }
+
+        let current_status = vc
+            .credential_status()
+            .ok_or_else(|| String::from("Test credential has no credentialStatus"))?;
+        resolver.set_status(current_status, false);
+
+        Ok(resolver)
     }
 
     fn permission(operation: Operation) -> Permission {
@@ -352,6 +417,7 @@ mod tests {
 
         // println!("{}", serde_json::to_string_pretty(&vc).unwrap());
 
+        let status_resolver = resolver_for_vc(&vc)?;
         let id = delegatee_id.clone();
         let issuer: OurIssuer<Bn254> = OurIssuer::new(
             id.clone(),
@@ -369,7 +435,8 @@ mod tests {
             challenge.clone(),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let verifier =
+            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             id.clone(),
             audience,
@@ -412,6 +479,7 @@ mod tests {
             None,
         )?;
 
+        let status_resolver = resolver_for_vc(&vc)?;
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
             accumulator_dlt.clone(),
@@ -424,7 +492,8 @@ mod tests {
             String::from("challenge-a"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let verifier =
+            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("gateway-b"),
@@ -464,6 +533,7 @@ mod tests {
             None,
         )?;
 
+        let status_resolver = resolver_for_vc(&vc)?;
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
             accumulator_dlt.clone(),
@@ -476,7 +546,8 @@ mod tests {
             String::from("challenge-a"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let verifier =
+            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -519,6 +590,7 @@ mod tests {
             None,
         )?;
 
+        let status_resolver = resolver_for_vc(&vc)?;
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
             accumulator_dlt.clone(),
@@ -531,7 +603,8 @@ mod tests {
             String::from("challenge-a"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let verifier =
+            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -570,6 +643,7 @@ mod tests {
             None,
         )?;
 
+        let status_resolver = resolver_for_vc(&vc)?;
         let attacker_id = String::from("https://vc.example/delegators/d2");
         let attacker = OurIssuer::<Curve>::new(
             attacker_id.clone(),
@@ -586,7 +660,8 @@ mod tests {
         )?;
         let signed_vp = vp.to_signed_jwt(attacker.holder_jwk())?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let verifier =
+            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             attacker_id,
             String::from("cloud-access-gateway"),
@@ -626,15 +701,18 @@ mod tests {
             None,
         )?;
 
-        let tampered_vc =
-            crate::delegation::credentials::verifiable_credential::VerifiableCredential::new_with_status(
-                vc.context().clone(),
-                vc.id().clone(),
-                vc.issuer().clone(),
-                vc.valid_from().clone(),
-                test_status(901),
-                vc.credential().clone(),
-            );
+        let status_resolver = resolver_for_vc(&vc)?;
+        let tampered_status = test_status(901);
+        status_resolver.set_status(&tampered_status, false);
+
+        let tampered_vc = VerifiableCredential::new_with_status(
+            vc.context().clone(),
+            vc.id().clone(),
+            vc.issuer().clone(),
+            vc.valid_from().clone(),
+            tampered_status,
+            vc.credential().clone(),
+        );
 
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
@@ -648,7 +726,8 @@ mod tests {
             String::from("challenge-status-binding"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let verifier =
+            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -663,4 +742,139 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn rejects_revoked_current_credential() -> Result<(), String> {
+        type Curve = Bn254;
+        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+
+        let holder_id = String::from("https://vc.example/delegators/d1");
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/revoked-current"),
+            test_status(920),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let status_resolver = resolver_for_vc(&vc)?;
+        let current_status = vc
+            .credential_status()
+            .ok_or_else(|| String::from("Credential has no credentialStatus"))?;
+        status_resolver.set_status(current_status, true);
+
+        let holder = OurIssuer::<Curve>::new(
+            holder_id.clone(),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            vc,
+            vec![permission(Operation::ReadFile)],
+            String::from("cloud-access-gateway"),
+            String::from("challenge-revoked-current"),
+        )?;
+
+        let verifier =
+            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let request = AuthorizationRequest::new(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-revoked-current"),
+            permission(Operation::ReadFile),
+        )?;
+
+        let error = verifier
+            .verify_verifiable_presentation(request, signed_vp)
+            .expect_err("revoked current credential must be rejected");
+        assert!(error.contains("revoked"));
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_revoked_ancestor_credential() -> Result<(), String> {
+        type Curve = Bn254;
+        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+
+        let parent_vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/revoked-ancestor"),
+            test_status(930),
+            String::from("2026-01-01T00:00:00Z"),
+            String::from("https://vc.example/delegators/d1"),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let child_issuer = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d1"),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+        let holder_id = String::from("https://vc.example/delegators/d2");
+        let child_vc = child_issuer.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/revoked-descendant"),
+            test_status(931),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            Some(parent_vc),
+        )?;
+
+        let status_resolver = resolver_for_vc(&child_vc)?;
+        let ancestor = child_vc
+            .credential()
+            .hierarchy()
+            .first()
+            .ok_or_else(|| String::from("Expected ancestor in delegation hierarchy"))?;
+        status_resolver.set_status(ancestor.credential_status(), true);
+
+        let holder = OurIssuer::<Curve>::new(
+            holder_id.clone(),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            child_vc,
+            vec![permission(Operation::ReadFile)],
+            String::from("cloud-access-gateway"),
+            String::from("challenge-revoked-ancestor"),
+        )?;
+
+        let verifier =
+            OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let request = AuthorizationRequest::new(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-revoked-ancestor"),
+            permission(Operation::ReadFile),
+        )?;
+
+        let error = verifier
+            .verify_verifiable_presentation(request, signed_vp)
+            .expect_err("descendant of a revoked credential must be rejected");
+        assert!(error.contains("revoked"));
+        Ok(())
+    }
+
 }
