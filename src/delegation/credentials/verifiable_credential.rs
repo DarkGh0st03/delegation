@@ -1,3 +1,4 @@
+use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::traits::credential::Credential;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -14,6 +15,8 @@ pub struct VerifiableCredential<C: Credential> {
     issuer: String,
     #[serde(rename = "validFrom")]
     valid_from: String,
+    #[serde(rename = "credentialStatus", skip_serializing_if = "Option::is_none")]
+    credential_status: Option<BitstringStatusListEntry>,
     #[serde(rename = "credentialSubject")]
     credential: C,
 }
@@ -44,6 +47,28 @@ impl<C: Credential> VerifiableCredential<C> {
             id,
             issuer,
             valid_from,
+            credential_status: None,
+            credential,
+        }
+    }
+
+    /// Creates a VerifiableCredential with an explicit W3C credentialStatus entry.
+    pub fn new_with_status(
+        context: Vec<String>,
+        id: String,
+        issuer: String,
+        valid_from: String,
+        credential_status: BitstringStatusListEntry,
+        credential: C,
+    ) -> VerifiableCredential<C> {
+        let credential_type = vec![credential.credential_type().to_string()];
+        VerifiableCredential {
+            context,
+            credential_type,
+            id,
+            issuer,
+            valid_from,
+            credential_status: Some(credential_status),
             credential,
         }
     }
@@ -67,6 +92,10 @@ impl<C: Credential> VerifiableCredential<C> {
     /// Getter function that returns the valid_from variable.
     pub fn valid_from(&self) -> &String {
         &self.valid_from
+    }
+    /// Getter function that returns the optional credential status entry.
+    pub fn credential_status(&self) -> Option<&BitstringStatusListEntry> {
+        self.credential_status.as_ref()
     }
     /// Getter function that returns the nested credential.
     pub fn credential(&self) -> &C {
@@ -166,6 +195,13 @@ mod tests {
         "hierarchy": [
             {
                 "id": "https://vc.example/delegators/d0",
+                "credentialId": "http://delegation.example/credentials/1337",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "0",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
@@ -195,6 +231,13 @@ mod tests {
         "hierarchy": [
             {
                 "id": "https://vc.example/delegators/d0",
+                "credentialId": "http://delegation.example/credentials/1337",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "0",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
@@ -204,6 +247,13 @@ mod tests {
             },
             {
                 "id": "https://vc.example/delegators/d1",
+                "credentialId": "http://delegation.example/credentials/1338",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "1",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d2",
                 "iat": "0000000002",
                 "exp": "1000000000",
@@ -233,6 +283,13 @@ mod tests {
         "hierarchy": [
             {
                 "id": "https://vc.example/delegators/d0",
+                "credentialId": "http://delegation.example/credentials/1337",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "0",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
@@ -242,6 +299,13 @@ mod tests {
             },
             {
                 "id": "https://vc.example/delegators/d1",
+                "credentialId": "http://delegation.example/credentials/1338",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "1",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d2",
                 "iat": "0000000002",
                 "exp": "1000000000",
@@ -251,6 +315,13 @@ mod tests {
             },
             {
                 "id": "https://vc.example/delegators/d2",
+                "credentialId": "http://delegation.example/credentials/1339",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "2",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d3",
                 "iat": "0000000003",
                 "exp": "1000000000",

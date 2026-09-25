@@ -277,6 +277,13 @@ mod tests {
         "hierarchy": [
             {
                 "id": "https://vc.example/delegators/d0",
+                "credentialId": "http://delegation.example/credentials/1337",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "0",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
@@ -298,6 +305,13 @@ mod tests {
         "hierarchy": [
             {
                 "id": "https://vc.example/delegators/d0",
+                "credentialId": "http://delegation.example/credentials/1337",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "0",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
@@ -307,6 +321,13 @@ mod tests {
             },
             {
                 "id": "https://vc.example/delegators/d1",
+                "credentialId": "http://delegation.example/credentials/1338",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "1",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d2",
                 "iat": "0000000002",
                 "exp": "1000000000",
@@ -328,6 +349,13 @@ mod tests {
         "hierarchy": [
             {
                 "id": "https://vc.example/delegators/d0",
+                "credentialId": "http://delegation.example/credentials/1337",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "0",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
@@ -337,6 +365,13 @@ mod tests {
             },
             {
                 "id": "https://vc.example/delegators/d1",
+                "credentialId": "http://delegation.example/credentials/1338",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "1",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d2",
                 "iat": "0000000002",
                 "exp": "1000000000",
@@ -346,6 +381,13 @@ mod tests {
             },
             {
                 "id": "https://vc.example/delegators/d2",
+                "credentialId": "http://delegation.example/credentials/1339",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "2",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d3",
                 "iat": "0000000003",
                 "exp": "1000000000",

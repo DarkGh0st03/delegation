@@ -1,4 +1,5 @@
 use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
+use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::traits::credential::Credential;
 use josekit::jwk::Jwk;
 use josekit::jws::{EdDSA, JwsHeader};
@@ -27,6 +28,8 @@ pub struct VerifiablePresentation<C: Credential> {
     challenge: String,
     #[serde(rename = "validFrom")]
     valid_from: String,
+    #[serde(rename = "credentialStatus", skip_serializing_if = "Option::is_none")]
+    credential_status: Option<BitstringStatusListEntry>,
     #[serde(rename = "credentialSubject")]
     credential: C,
 }
@@ -63,6 +66,34 @@ impl<C: Credential> VerifiablePresentation<C> {
             audience,
             challenge,
             valid_from,
+            credential_status: None,
+            credential,
+        }
+    }
+
+    /// Creates a VerifiablePresentation while preserving an optional credentialStatus entry.
+    pub fn new_with_status(
+        context: Vec<String>,
+        credential_type: Vec<String>,
+        id: String,
+        issuer: String,
+        holder: String,
+        audience: String,
+        challenge: String,
+        valid_from: String,
+        credential_status: Option<BitstringStatusListEntry>,
+        credential: C,
+    ) -> Self {
+        VerifiablePresentation {
+            context,
+            credential_type,
+            id,
+            issuer,
+            holder,
+            audience,
+            challenge,
+            valid_from,
+            credential_status,
             credential,
         }
     }
@@ -98,6 +129,10 @@ impl<C: Credential> VerifiablePresentation<C> {
     /// Getter function that returns the valid_from variable.
     pub fn valid_from(&self) -> &String {
         &self.valid_from
+    }
+    /// Getter function that returns the optional credential status entry.
+    pub fn credential_status(&self) -> Option<&BitstringStatusListEntry> {
+        self.credential_status.as_ref()
     }
     /// Getter function that returns the nested credential.
     pub fn credential(&self) -> &C {
@@ -139,7 +174,7 @@ impl<C: Credential> VerifiablePresentation<C> {
             ));
         }
 
-        let mut vc = VerifiablePresentation::new(
+        let mut vc = VerifiablePresentation::new_with_status(
             vc.context().clone(),
             vc.credential_type().clone(),
             vc.id().clone(),
@@ -148,6 +183,7 @@ impl<C: Credential> VerifiablePresentation<C> {
             audience,
             challenge,
             vc.valid_from().clone(),
+            vc.credential_status().cloned(),
             vc.credential().clone(),
         );
 

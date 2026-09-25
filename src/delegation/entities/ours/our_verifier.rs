@@ -9,6 +9,7 @@ use crate::delegation::entities::ours::accumulator_utils::AccumulatorUtils;
 use crate::delegation::entities::ours::accumulator_verifier::AccumulatorVerifier;
 use crate::delegation::entities::ours::dlt_acc_entry::DLTSimAccEntry;
 use crate::delegation::entities::verifier::{Verifier, verify_timings};
+use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::str::FromStr;
@@ -127,10 +128,27 @@ impl<E: Pairing> Verifier<DLTSimAccEntry<E>> for OurVerifier<E> {
             }
 
             // Verify the delegation credential
-            self.verify_delegation(delegator, &delegator.id(), &permissions, now_ns)?;
+            self.verify_delegation(
+                delegator,
+                delegator.id(),
+                delegator.credential_id(),
+                delegator.credential_status(),
+                &permissions,
+                now_ns,
+            )?;
             current = delegator.id();
         }
-        self.verify_delegation(dc, &vp.issuer(), &permissions, now_ns)?;
+        let credential_status = vp
+            .credential_status()
+            .ok_or_else(|| String::from("Presented Delegation Credential has no credentialStatus"))?;
+        self.verify_delegation(
+            dc,
+            vp.issuer(),
+            vp.id(),
+            credential_status,
+            &permissions,
+            now_ns,
+        )?;
 
         let expiration = match u128::from_str(dc.exp()) {
             Ok(expiration) => expiration,
@@ -159,6 +177,8 @@ impl<E: Pairing> OurVerifier<E> {
         &self,
         delegation: &D,
         issuer: &String,
+        credential_id: &String,
+        credential_status: &BitstringStatusListEntry,
         permissions: &Vec<Permission>,
         now_ns: u128,
     ) -> Result<(), String> {
@@ -175,9 +195,11 @@ impl<E: Pairing> OurVerifier<E> {
         let accumulator_value = delegation.accumulator_value();
         let metadata_witness = delegation.metadata_witness();
         let metadata = AccumulatorUtils::<E>::map_metadata_to_string(vec![
+            credential_id.clone(),
             delegation.delegatee_id().clone(),
             delegation.iat().clone(),
             delegation.exp().clone(),
+            credential_status.canonical_value(),
         ]);
         let permission_witnesses = delegation.permission_witnesses();
         let permission_values = permissions
@@ -206,9 +228,19 @@ mod tests {
     use crate::delegation::entities::dtl_sim::new_dlt_sim;
     use crate::delegation::entities::issuer::Issuer;
     use crate::delegation::entities::ours::our_issuer::OurIssuer;
+    use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use ark_bn254::Bn254;
     use josekit::jwk::Jwk;
     use std::time::Duration;
+
+    fn test_status(index: u64) -> BitstringStatusListEntry {
+        BitstringStatusListEntry::revocation(
+            None,
+            index.to_string(),
+            String::from("https://status.example/lists/revocation-1"),
+        )
+        .expect("test status entry must be valid")
+    }
 
     fn permission(operation: Operation) -> Permission {
         Permission::new(
@@ -241,6 +273,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context,
             credential_id,
+            test_status(101),
             valid_from,
             delegatee_id,
             validity_period,
@@ -266,6 +299,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
+            test_status(102),
             valid_from.clone(),
             delegatee_id.clone(),
             validity_period,
@@ -288,6 +322,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
+            test_status(103),
             valid_from.clone(),
             delegatee_id.clone(),
             validity_period,
@@ -307,6 +342,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
+            test_status(104),
             valid_from.clone(),
             delegatee_id.clone(),
             validity_period,
@@ -368,6 +404,7 @@ mod tests {
         let vc = root.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("http://delegation.example/credentials/audience-test"),
+            test_status(105),
             String::from("2026-01-01T00:00:00Z"),
             holder_id.clone(),
             Duration::new(3600, 0),
@@ -419,6 +456,7 @@ mod tests {
         let vc = root.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("http://delegation.example/credentials/challenge-test"),
+            test_status(106),
             String::from("2026-01-01T00:00:00Z"),
             holder_id.clone(),
             Duration::new(3600, 0),
@@ -470,6 +508,7 @@ mod tests {
         let vc = root.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("http://delegation.example/credentials/permission-test"),
+            test_status(107),
             String::from("2026-01-01T00:00:00Z"),
             holder_id.clone(),
             Duration::new(3600, 0),
@@ -523,6 +562,7 @@ mod tests {
         let vc = root.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("http://delegation.example/credentials/holder-test"),
+            test_status(108),
             String::from("2026-01-01T00:00:00Z"),
             String::from("https://vc.example/delegators/d1"),
             Duration::new(3600, 0),
@@ -561,4 +601,67 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn rejects_tampered_credential_status() -> Result<(), String> {
+        type Curve = Bn254;
+        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+
+        let holder_id = String::from("https://vc.example/delegators/d1");
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/status-binding-test"),
+            test_status(900),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let tampered_vc =
+            crate::delegation::credentials::verifiable_credential::VerifiableCredential::new_with_status(
+                vc.context().clone(),
+                vc.id().clone(),
+                vc.issuer().clone(),
+                vc.valid_from().clone(),
+                test_status(901),
+                vc.credential().clone(),
+            );
+
+        let holder = OurIssuer::<Curve>::new(
+            holder_id.clone(),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            tampered_vc,
+            vec![permission(Operation::ReadFile)],
+            String::from("cloud-access-gateway"),
+            String::from("challenge-status-binding"),
+        )?;
+
+        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt)?;
+        let request = AuthorizationRequest::new(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("challenge-status-binding"),
+            permission(Operation::ReadFile),
+        )?;
+
+        assert!(
+            verifier
+                .verify_verifiable_presentation(request, signed_vp)
+                .is_err()
+        );
+        Ok(())
+    }
+
 }

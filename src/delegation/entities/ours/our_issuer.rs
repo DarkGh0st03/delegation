@@ -1,4 +1,5 @@
 use crate::delegation::authorization::permission::Permission;
+use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::credentials::ours::our_delegation::OurDelegation;
 use crate::delegation::credentials::ours::our_delegation_credential::OurDelegationCredential;
 use crate::delegation::credentials::ours::our_delegator::OurDelegator;
@@ -110,6 +111,7 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
     /// # Arguments
     /// * `context` - array of strings containing the context for the VC.
     /// * `credential_id` - unique identifier of the VC.
+    /// * `credential_status` - W3C Bitstring Status List entry associated with the new VC.
     /// * `valid_from` - string containing the validity of the VC.
     /// * `delegatee_id` - string containing the subject of the credential (the delegatee).
     /// * `validity_period` - duration for which the credential can be used.
@@ -122,6 +124,7 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
         &self,
         context: Vec<String>,
         credential_id: String,
+        credential_status: BitstringStatusListEntry,
         valid_from: String,
         delegatee_id: String,
         validity_period: Duration,
@@ -206,7 +209,13 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
 
         // Convert each metadata into a scalar
 
-        let metadata_vector: Vec<String> = vec![delegatee_id.clone(), iat.clone(), exp.clone()];
+        let metadata_vector: Vec<String> = vec![
+            credential_id.clone(),
+            delegatee_id.clone(),
+            iat.clone(),
+            exp.clone(),
+            credential_status.canonical_value(),
+        ];
         let metadata_string: String =
             AccumulatorUtils::<E>::map_metadata_to_string(metadata_vector);
         let metadata_element: E::ScalarField =
@@ -239,7 +248,14 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
                     permission_witnesses,
                     hierarchy,
                 )?;
-                let vc = VerifiableCredential::new(context, credential_id, issuer, valid_from, dc);
+                let vc = VerifiableCredential::new_with_status(
+                    context,
+                    credential_id,
+                    issuer,
+                    valid_from,
+                    credential_status,
+                    dc,
+                );
                 Ok(vc)
             }
 
@@ -316,8 +332,15 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
                     }
                 }
 
+                let issuer_credential_status =
+                    issuer_vc.credential_status().cloned().ok_or_else(|| {
+                        String::from("Previous Delegation Credential has no credentialStatus")
+                    })?;
+
                 let issuer_delegator = OurDelegator::new(
                     issuer_vc.issuer().clone(),
+                    issuer_vc.id().clone(),
+                    issuer_credential_status,
                     issuer_dc.delegatee_id().clone(), // should be equal to self.id
                     issuer_dc.iat().clone(),
                     issuer_dc.exp().clone(),
@@ -338,11 +361,12 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
                     issuer_hierarchy.clone(),
                 )?;
 
-                let result_vc = VerifiableCredential::new(
+                let result_vc = VerifiableCredential::new_with_status(
                     context,
                     credential_id,
                     issuer,
                     valid_from,
+                    credential_status,
                     result_dc,
                 );
 
@@ -399,8 +423,18 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
 mod tests {
     use super::*;
     use crate::delegation::authorization::operation::Operation;
+    use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::entities::dtl_sim::new_dlt_sim;
     use ark_bn254::Bn254;
+
+    fn test_status(index: u64) -> BitstringStatusListEntry {
+        BitstringStatusListEntry::revocation(
+            None,
+            index.to_string(),
+            String::from("https://status.example/lists/revocation-1"),
+        )
+        .expect("test status entry must be valid")
+    }
 
     fn permission(operation: Operation) -> Permission {
         Permission::new(
@@ -432,6 +466,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context,
             credential_id,
+            test_status(1),
             valid_from,
             delegatee_id,
             validity_period,
@@ -454,6 +489,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context,
             credential_id,
+            test_status(2),
             valid_from,
             delegatee_id,
             validity_period,
@@ -476,6 +512,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context,
             credential_id,
+            test_status(3),
             valid_from,
             delegatee_id,
             validity_period,
@@ -495,6 +532,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context,
             credential_id,
+            test_status(4),
             valid_from,
             delegatee_id,
             validity_period,
@@ -530,6 +568,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
+            test_status(5),
             valid_from.clone(),
             delegatee_id,
             validity_period,
@@ -549,6 +588,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
+            test_status(6),
             valid_from.clone(),
             delegatee_id,
             validity_period,
@@ -568,6 +608,7 @@ mod tests {
         let vc = issuer.issue_delegation_verifiable_credential(
             context.clone(),
             credential_id,
+            test_status(7),
             valid_from.clone(),
             delegatee_id,
             validity_period,
@@ -610,6 +651,7 @@ mod tests {
         let foreign_vc = root.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("http://delegation.example/credentials/foreign"),
+            test_status(8),
             String::from("2026-01-01T00:00:00Z"),
             String::from("https://vc.example/delegators/d1"),
             Duration::new(3600, 0),
@@ -626,6 +668,7 @@ mod tests {
         let result = attacker.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("http://delegation.example/credentials/invalid-child"),
+            test_status(9),
             String::from("2026-01-01T00:00:00Z"),
             String::from("https://vc.example/delegators/d3"),
             Duration::new(3600, 0),
@@ -652,6 +695,7 @@ mod tests {
         let parent_vc = root.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("http://delegation.example/credentials/parent"),
+            test_status(10),
             String::from("2026-01-01T00:00:00Z"),
             String::from("https://vc.example/delegators/d1"),
             Duration::new(60, 0),
@@ -670,6 +714,7 @@ mod tests {
         let child_vc = child_issuer.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("http://delegation.example/credentials/child"),
+            test_status(11),
             String::from("2026-01-01T00:00:00Z"),
             String::from("https://vc.example/delegators/d2"),
             Duration::new(3600, 0),
@@ -680,4 +725,57 @@ mod tests {
         assert_eq!(child_vc.credential().exp(), &parent_exp);
         Ok(())
     }
+
+    #[test]
+    fn propagates_parent_status_into_hierarchy() -> Result<(), String> {
+        type Curve = Bn254;
+        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
+        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+
+        let root = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d0"),
+            accumulator_dlt.clone(),
+            verification_dlt.clone(),
+        )?;
+
+        let parent_status = test_status(800);
+        let parent_vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/status-parent"),
+            parent_status.clone(),
+            String::from("2026-01-01T00:00:00Z"),
+            String::from("https://vc.example/delegators/d1"),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+        let parent_credential_id = parent_vc.id().clone();
+
+        let child_issuer = OurIssuer::<Curve>::new(
+            String::from("https://vc.example/delegators/d1"),
+            accumulator_dlt,
+            verification_dlt,
+        )?;
+        let child_vc = child_issuer.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/status-child"),
+            test_status(801),
+            String::from("2026-01-01T00:00:00Z"),
+            String::from("https://vc.example/delegators/d2"),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            Some(parent_vc),
+        )?;
+
+        let ancestor = child_vc
+            .credential()
+            .hierarchy()
+            .first()
+            .ok_or_else(|| String::from("Expected parent delegation in hierarchy"))?;
+
+        assert_eq!(ancestor.credential_id(), &parent_credential_id);
+        assert_eq!(ancestor.credential_status(), &parent_status);
+        Ok(())
+    }
+
 }

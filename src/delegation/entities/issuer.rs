@@ -1,6 +1,7 @@
 use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
 use crate::delegation::credentials::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::entities::dtl_sim::DLTSim;
+use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::traits::credential::Credential;
 use josekit::jwk::Jwk;
 use std::time::Duration;
@@ -14,6 +15,7 @@ pub trait Issuer<E, C: Credential> {
         &self,
         context: Vec<String>,
         credential_id: String,
+        credential_status: BitstringStatusListEntry,
         valid_from: String,
         delegatee_id: String,
         validity_period: Duration,

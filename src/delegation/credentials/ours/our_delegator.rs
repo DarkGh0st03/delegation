@@ -1,4 +1,5 @@
 use crate::delegation::credentials::ours::our_delegation::OurDelegation;
+use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -6,6 +7,10 @@ use std::fmt::Display;
 pub struct OurDelegator {
     #[serde(rename = "id")]
     id: String,
+    #[serde(rename = "credentialId")]
+    credential_id: String,
+    #[serde(rename = "credentialStatus")]
+    credential_status: BitstringStatusListEntry,
     #[serde(rename = "sub")]
     delegatee_id: String,
     #[serde(rename = "iat")]
@@ -36,6 +41,8 @@ impl OurDelegator {
     /// An instance of OurDelegator.
     pub fn new(
         id: String,
+        credential_id: String,
+        credential_status: BitstringStatusListEntry,
         delegatee_id: String,
         iat: String,
         exp: String,
@@ -45,6 +52,8 @@ impl OurDelegator {
     ) -> OurDelegator {
         OurDelegator {
             id,
+            credential_id,
+            credential_status,
             delegatee_id,
             iat,
             exp,
@@ -54,9 +63,19 @@ impl OurDelegator {
         }
     }
 
-    /// Getter function that returns the issuers id.
+    /// Getter function that returns the issuer's id.
     pub fn id(&self) -> &String {
         &self.id
+    }
+
+    /// Getter function that returns the parent credential id.
+    pub fn credential_id(&self) -> &String {
+        &self.credential_id
+    }
+
+    /// Getter function that returns the parent credential status entry.
+    pub fn credential_status(&self) -> &BitstringStatusListEntry {
+        &self.credential_status
     }
 
     /// Removes a permission witness from the array.
@@ -118,6 +137,13 @@ mod tests {
 
     const DELEGATOR_OBJECT: &str = r#"{
                 "id": "https://vc.example/delegators/d0",
+                "credentialId": "http://delegation.example/credentials/1337",
+                "credentialStatus": {
+                    "type": "BitstringStatusListEntry",
+                    "statusPurpose": "revocation",
+                    "statusListIndex": "0",
+                    "statusListCredential": "https://status.example/lists/revocation-1"
+                },
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
