@@ -138,9 +138,9 @@ impl<E: Pairing> Verifier<DLTSimAccEntry<E>> for OurVerifier<E> {
             )?;
             current = delegator.id();
         }
-        let credential_status = vp
-            .credential_status()
-            .ok_or_else(|| String::from("Presented Delegation Credential has no credentialStatus"))?;
+        let credential_status = vp.credential_status().ok_or_else(|| {
+            String::from("Presented Delegation Credential has no credentialStatus")
+        })?;
         self.verify_delegation(
             dc,
             vp.issuer(),
@@ -663,5 +663,4 @@ mod tests {
         );
         Ok(())
     }
-
 }

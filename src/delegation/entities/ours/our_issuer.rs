@@ -1,5 +1,4 @@
 use crate::delegation::authorization::permission::Permission;
-use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::credentials::ours::our_delegation::OurDelegation;
 use crate::delegation::credentials::ours::our_delegation_credential::OurDelegationCredential;
 use crate::delegation::credentials::ours::our_delegator::OurDelegator;
@@ -10,6 +9,7 @@ use crate::delegation::entities::issuer::Issuer;
 use crate::delegation::entities::ours::accumulator_manager::AccumulatorManager;
 use crate::delegation::entities::ours::accumulator_utils::AccumulatorUtils;
 use crate::delegation::entities::ours::dlt_acc_entry::DLTSimAccEntry;
+use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use ark_ec::pairing::Pairing;
 use ark_std::rand::prelude::StdRng;
 use ark_std::rand::{RngCore, SeedableRng};
@@ -423,8 +423,8 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
 mod tests {
     use super::*;
     use crate::delegation::authorization::operation::Operation;
-    use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::entities::dtl_sim::new_dlt_sim;
+    use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use ark_bn254::Bn254;
 
     fn test_status(index: u64) -> BitstringStatusListEntry {
@@ -777,5 +777,4 @@ mod tests {
         assert_eq!(ancestor.credential_status(), &parent_status);
         Ok(())
     }
-
 }

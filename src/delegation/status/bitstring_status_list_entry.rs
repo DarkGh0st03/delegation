@@ -30,11 +30,15 @@ impl BitstringStatusListEntry {
         status_list_credential: String,
     ) -> Result<Self, String> {
         if id.as_ref().is_some_and(|value| value.trim().is_empty()) {
-            return Err(String::from("Bitstring Status List entry id cannot be empty"));
+            return Err(String::from(
+                "Bitstring Status List entry id cannot be empty",
+            ));
         }
 
         if status_list_index.is_empty()
-            || !status_list_index.chars().all(|value| value.is_ascii_digit())
+            || !status_list_index
+                .chars()
+                .all(|value| value.is_ascii_digit())
         {
             return Err(String::from(
                 "statusListIndex must be a non-empty base-10 integer string",
