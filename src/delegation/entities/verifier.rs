@@ -1,14 +1,13 @@
 use crate::delegation::authorization::authorization_request::AuthorizationRequest;
 use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
-use crate::delegation::entities::dtl_sim::DLTSim;
+use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use crate::delegation::status::status_list_resolver::StatusListResolverRef;
-use josekit::jwk::Jwk;
+use ark_ec::pairing::Pairing;
 use std::str::FromStr;
 
-pub trait Verifier<E> {
+pub trait Verifier<E: Pairing> {
     fn new(
-        issuer_dlt: DLTSim<E>,
-        holder_dlt: DLTSim<Jwk>,
+        trust_registry: TrustRegistryRef<E>,
         status_list_resolver: StatusListResolverRef,
     ) -> Result<Self, String>
     where

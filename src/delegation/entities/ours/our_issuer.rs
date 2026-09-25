@@ -4,12 +4,12 @@ use crate::delegation::credentials::ours::our_delegation_credential::OurDelegati
 use crate::delegation::credentials::ours::our_delegator::OurDelegator;
 use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
 use crate::delegation::credentials::verifiable_presentation::VerifiablePresentation;
-use crate::delegation::entities::dtl_sim::DLTSim;
 use crate::delegation::entities::issuer::Issuer;
 use crate::delegation::entities::ours::accumulator_manager::AccumulatorManager;
 use crate::delegation::entities::ours::accumulator_utils::AccumulatorUtils;
-use crate::delegation::entities::ours::dlt_acc_entry::DLTSimAccEntry;
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
+use crate::delegation::trust::accumulator_public_data::AccumulatorPublicData;
+use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use ark_ec::pairing::Pairing;
 use ark_std::rand::prelude::StdRng;
 use ark_std::rand::{RngCore, SeedableRng};
@@ -28,28 +28,22 @@ pub struct OurIssuer<E: Pairing> {
     signature_jwk: Jwk,
 }
 
-impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssuer<E> {
+impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
     /// Creates a new OurIssuer structure. The VC issuer of our proposed protocol.
     ///
     /// # Arguments
     /// * `id` - the issuer's unique id.
-    /// * `accumulator_dlt` - a reference to the DLT Simulator (a hashmap containing public keys) for accumulators.
-    /// * `verification_dlt` - a reference to the DLT Simulator (a hashmap containing public keys) for ECC signature schemes.
+    /// * `trust_registry` - shared registry used to publish the issuer's public verification material.
     ///
     /// # Returns
     /// A result containing either the instance of OurIssuer or an error as a string in case of failure.
-    fn new(
-        id: String,
-        accumulator_dlt: DLTSim<DLTSimAccEntry<E>>,
-        verification_dlt: DLTSim<Jwk>,
-    ) -> Result<Self, String> {
+    fn new(id: String, trust_registry: TrustRegistryRef<E>) -> Result<Self, String> {
         let mut rng: StdRng = StdRng::from_entropy();
         let params = SetupParams::<E>::generate_using_rng(&mut rng);
         let acc_keypair = Keypair::<E>::generate_using_rng(&mut rng, &params);
 
-        let entry = DLTSimAccEntry::new(acc_keypair.public_key.clone(), params.clone());
-
-        accumulator_dlt.borrow_mut().insert(id.clone(), entry);
+        let entry = AccumulatorPublicData::new(acc_keypair.public_key.clone(), params.clone());
+        trust_registry.publish_accumulator_data(id.clone(), entry)?;
 
         let mut sk: SecretKey = [0u8; 32];
         // let signing_algorithm = String::from("EdDSA");
@@ -81,11 +75,9 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
             }
         };
 
-        // Take the public key for verification and put it in the DLT
+        // Publish only the public verification key. The private parameter is kept locally.
         let public_signature_jwk = signature_jwk.clone();
-        verification_dlt
-            .borrow_mut()
-            .insert(id.clone(), public_signature_jwk);
+        trust_registry.publish_verification_key(id.clone(), public_signature_jwk)?;
 
         // Add the private parameter d to the jwk to enable the signing operation.
         match signature_jwk.set_parameter(
@@ -423,9 +415,11 @@ impl<E: Pairing> Issuer<DLTSimAccEntry<E>, OurDelegationCredential> for OurIssue
 mod tests {
     use super::*;
     use crate::delegation::authorization::operation::Operation;
-    use crate::delegation::entities::dtl_sim::new_dlt_sim;
+    use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
+    use crate::delegation::trust::trust_registry::TrustRegistryRef;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use ark_bn254::Bn254;
+    use std::rc::Rc;
 
     fn test_status(index: u64) -> BitstringStatusListEntry {
         BitstringStatusListEntry::revocation(
@@ -447,12 +441,12 @@ mod tests {
     #[test]
     fn issue_vc() -> Result<(), String> {
         type Curve = Bn254;
-        let acc_sim: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let ecc_sim: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
-        let issuer: OurIssuer<Curve> = OurIssuer::new(id, acc_sim.clone(), ecc_sim.clone())?;
+        let issuer: OurIssuer<Curve> = OurIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1337");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -476,7 +470,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d1");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, acc_sim.clone(), ecc_sim.clone())?;
+        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1338");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -499,7 +493,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d2");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, acc_sim.clone(), ecc_sim.clone())?;
+        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -522,7 +516,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d3");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, acc_sim.clone(), ecc_sim.clone())?;
+        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1340");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -549,12 +543,12 @@ mod tests {
     #[test]
     fn issue_vp() -> Result<(), String> {
         type Curve = Bn254;
-        let acc_sim: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let ecc_sim: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
-        let issuer: OurIssuer<Curve> = OurIssuer::new(id, acc_sim.clone(), ecc_sim.clone())?;
+        let issuer: OurIssuer<Curve> = OurIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1337");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -578,7 +572,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d1");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, acc_sim.clone(), ecc_sim.clone())?;
+        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1338");
         let delegatee_id = String::from("https://vc.example/delegators/d2");
         let permissions: Vec<Permission> = vec![
@@ -598,7 +592,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d2");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, acc_sim.clone(), ecc_sim.clone())?;
+        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let delegatee_id = String::from("https://vc.example/delegators/d3");
         let permissions: Vec<Permission> = vec![
@@ -618,8 +612,7 @@ mod tests {
 
         let holder = OurIssuer::<Bn254>::new(
             String::from("https://vc.example/delegators/d3"),
-            acc_sim.clone(),
-            ecc_sim.clone(),
+            trust_registry.clone(),
         )?;
 
         let disclosed_permissions: Vec<Permission> = vec![permission(Operation::WriteFile)];
@@ -639,13 +632,12 @@ mod tests {
     #[test]
     fn rejects_subdelegation_with_foreign_credential() -> Result<(), String> {
         type Curve = Bn254;
-        let acc_sim: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let ecc_sim: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            acc_sim.clone(),
-            ecc_sim.clone(),
+            trust_registry.clone(),
         )?;
 
         let foreign_vc = root.issue_delegation_verifiable_credential(
@@ -683,13 +675,12 @@ mod tests {
     #[test]
     fn child_expiration_is_capped_by_immediate_parent() -> Result<(), String> {
         type Curve = Bn254;
-        let acc_sim: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let ecc_sim: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            acc_sim.clone(),
-            ecc_sim.clone(),
+            trust_registry.clone(),
         )?;
 
         let parent_vc = root.issue_delegation_verifiable_credential(
@@ -729,13 +720,12 @@ mod tests {
     #[test]
     fn propagates_parent_status_into_hierarchy() -> Result<(), String> {
         type Curve = Bn254;
-        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let parent_status = test_status(800);

@@ -4,46 +4,40 @@ use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
 use crate::delegation::credentials::ours::our_delegation::OurDelegation;
 use crate::delegation::credentials::ours::our_delegation_credential::OurDelegationCredential;
 use crate::delegation::credentials::verifiable_presentation::VerifiablePresentation;
-use crate::delegation::entities::dtl_sim::DLTSim;
 use crate::delegation::entities::ours::accumulator_utils::AccumulatorUtils;
 use crate::delegation::entities::ours::accumulator_verifier::AccumulatorVerifier;
-use crate::delegation::entities::ours::dlt_acc_entry::DLTSimAccEntry;
 use crate::delegation::entities::verifier::{Verifier, verify_timings};
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::status::status_list_resolver::StatusListResolverRef;
 use crate::delegation::status::status_purpose::StatusPurpose;
+use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use ark_ec::pairing::Pairing;
-use josekit::jwk::Jwk;
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub struct OurVerifier<E: Pairing> {
-    issuer_dlt: DLTSim<DLTSimAccEntry<E>>,
-    holder_dlt: DLTSim<Jwk>,
+    trust_registry: TrustRegistryRef<E>,
     status_list_resolver: StatusListResolverRef,
 }
 
-impl<E: Pairing> Verifier<DLTSimAccEntry<E>> for OurVerifier<E> {
+impl<E: Pairing> Verifier<E> for OurVerifier<E> {
     /// Creates an instance of an OurVerifier structure (a verifier as proposed by our protocol).
     ///
     /// # Arguments
-    /// * `accumulator_dlt` - a reference to the DLT Simulator (a hashmap containing public keys) for accumulators.
-    /// * `verification_dlt` - a reference to the DLT Simulator (a hashmap containing public keys) for ECC signature schemes.
+    /// * `trust_registry` - shared registry used to resolve public verification material.
     /// * `status_list_resolver` - resolver used to obtain the current status bit for every credential in the chain.
     ///
     /// # Returns
     /// A result containing either the instance of OurVerifier or an error as a string in case of failure.
     fn new(
-        issuer_dlt: DLTSim<DLTSimAccEntry<E>>,
-        holder_dlt: DLTSim<Jwk>,
+        trust_registry: TrustRegistryRef<E>,
         status_list_resolver: StatusListResolverRef,
     ) -> Result<Self, String>
     where
         Self: Sized,
     {
         Ok(OurVerifier {
-            issuer_dlt,
-            holder_dlt,
+            trust_registry,
             status_list_resolver,
         })
     }
@@ -62,10 +56,9 @@ impl<E: Pairing> Verifier<DLTSimAccEntry<E>> for OurVerifier<E> {
         signed_jwt: String,
     ) -> Result<VerifiedDelegation, String> {
         let presenter_id = request.presenter_id();
-        let ecc_pk = match self.holder_dlt.borrow().get(presenter_id) {
-            None => return Err(format!("Could not find presenter {presenter_id} in DLTSim")),
-            Some(ecc_pk) => ecc_pk.clone(),
-        };
+        let ecc_pk = self
+            .trust_registry
+            .get_verification_key(presenter_id)?;
 
         let vp: VerifiablePresentation<OurDelegationCredential> =
             VerifiablePresentation::<OurDelegationCredential>::from_signed_jwt(
@@ -194,11 +187,8 @@ impl<E: Pairing> OurVerifier<E> {
         // First, verify that timing constraints are indeed respected
         verify_timings(now_ns, delegation.iat(), delegation.exp())?;
 
-        // Check for the issuer's public key and setup parameters in the dlt
-        let entry = match self.issuer_dlt.borrow().get(issuer) {
-            None => return Err(format!("Could not find issuer {issuer} in DLTSim")),
-            Some(entry) => entry.clone(),
-        };
+        // Resolve the issuer's public accumulator material through the trust abstraction.
+        let entry = self.trust_registry.get_accumulator_data(issuer)?;
 
         // Clone the accumulator value and all the witnesses from the delegation credential
         let accumulator_value = delegation.accumulator_value();
@@ -265,13 +255,13 @@ mod tests {
     use crate::delegation::authorization::authorization_request::AuthorizationRequest;
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
-    use crate::delegation::entities::dtl_sim::new_dlt_sim;
+    use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
+    use crate::delegation::trust::trust_registry::TrustRegistryRef;
     use crate::delegation::entities::issuer::Issuer;
     use crate::delegation::entities::ours::our_issuer::OurIssuer;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::status::in_memory_status_list_resolver::InMemoryStatusListResolver;
     use ark_bn254::Bn254;
-    use josekit::jwk::Jwk;
     use std::rc::Rc;
     use std::time::Duration;
 
@@ -312,13 +302,13 @@ mod tests {
     #[test]
     fn verify_vp() -> Result<(), String> {
         type Curve = Bn254;
-        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
         let issuer: OurIssuer<Curve> =
-            OurIssuer::new(id, accumulator_dlt.clone(), verification_dlt.clone())?;
+            OurIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1337");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -345,7 +335,7 @@ mod tests {
         let id = String::from("https://vc.example/delegators/d1");
         let previous_vc = Some(vc);
         let issuer: OurIssuer<Bn254> =
-            OurIssuer::new(id, accumulator_dlt.clone(), verification_dlt.clone())?;
+            OurIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1338");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -371,7 +361,7 @@ mod tests {
         let id = String::from("https://vc.example/delegators/d2");
         let previous_vc = Some(vc);
         let issuer: OurIssuer<Bn254> =
-            OurIssuer::new(id, accumulator_dlt.clone(), verification_dlt.clone())?;
+            OurIssuer::new(id, trust_registry.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let delegatee_id = String::from("https://vc.example/delegators/d3");
         let permissions: Vec<Permission> = vec![
@@ -394,7 +384,7 @@ mod tests {
         let id = String::from("https://vc.example/delegators/d3");
         let previous_vc = Some(vc);
         let issuer: OurIssuer<Bn254> =
-            OurIssuer::new(id, accumulator_dlt.clone(), verification_dlt.clone())?;
+            OurIssuer::new(id, trust_registry.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1340");
         let delegatee_id = String::from("https://vc.example/delegators/d4");
         let permissions: Vec<Permission> = vec![permission(Operation::ReadFile)];
@@ -415,8 +405,7 @@ mod tests {
         let id = delegatee_id.clone();
         let issuer: OurIssuer<Bn254> = OurIssuer::new(
             id.clone(),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let disclosed_permissions: Vec<Permission> = vec![permission(Operation::ReadFile)];
@@ -429,7 +418,7 @@ mod tests {
             challenge.clone(),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
         let request = AuthorizationRequest::new(
             id.clone(),
             audience,
@@ -451,13 +440,12 @@ mod tests {
     #[test]
     fn rejects_wrong_audience() -> Result<(), String> {
         type Curve = Bn254;
-        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -475,8 +463,7 @@ mod tests {
         let status_resolver = resolver_for_vc(&vc)?;
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
@@ -485,7 +472,7 @@ mod tests {
             String::from("challenge-a"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("gateway-b"),
@@ -504,13 +491,12 @@ mod tests {
     #[test]
     fn rejects_wrong_challenge() -> Result<(), String> {
         type Curve = Bn254;
-        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -528,8 +514,7 @@ mod tests {
         let status_resolver = resolver_for_vc(&vc)?;
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
@@ -538,7 +523,7 @@ mod tests {
             String::from("challenge-a"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -557,13 +542,12 @@ mod tests {
     #[test]
     fn rejects_permission_not_disclosed() -> Result<(), String> {
         type Curve = Bn254;
-        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -584,8 +568,7 @@ mod tests {
         let status_resolver = resolver_for_vc(&vc)?;
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
@@ -594,7 +577,7 @@ mod tests {
             String::from("challenge-a"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -613,13 +596,12 @@ mod tests {
     #[test]
     fn rejects_presenter_that_is_not_delegatee() -> Result<(), String> {
         type Curve = Bn254;
-        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let vc = root.issue_delegation_verifiable_credential(
@@ -637,8 +619,7 @@ mod tests {
         let attacker_id = String::from("https://vc.example/delegators/d2");
         let attacker = OurIssuer::<Curve>::new(
             attacker_id.clone(),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let vp = VerifiablePresentation::from_verifiable_credential(
@@ -650,7 +631,7 @@ mod tests {
         )?;
         let signed_vp = vp.to_signed_jwt(attacker.holder_jwk())?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
         let request = AuthorizationRequest::new(
             attacker_id,
             String::from("cloud-access-gateway"),
@@ -669,13 +650,12 @@ mod tests {
     #[test]
     fn rejects_tampered_credential_status() -> Result<(), String> {
         type Curve = Bn254;
-        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -705,8 +685,7 @@ mod tests {
 
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             tampered_vc,
@@ -715,7 +694,7 @@ mod tests {
             String::from("challenge-status-binding"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -734,13 +713,12 @@ mod tests {
     #[test]
     fn rejects_revoked_current_credential() -> Result<(), String> {
         type Curve = Bn254;
-        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -763,8 +741,7 @@ mod tests {
 
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
@@ -773,7 +750,7 @@ mod tests {
             String::from("challenge-revoked-current"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
@@ -791,13 +768,12 @@ mod tests {
     #[test]
     fn rejects_revoked_ancestor_credential() -> Result<(), String> {
         type Curve = Bn254;
-        let accumulator_dlt: DLTSim<DLTSimAccEntry<Curve>> = new_dlt_sim();
-        let verification_dlt: DLTSim<Jwk> = new_dlt_sim();
+        let trust_registry: TrustRegistryRef<Curve> =
+            Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
 
         let parent_vc = root.issue_delegation_verifiable_credential(
@@ -813,8 +789,7 @@ mod tests {
 
         let child_issuer = OurIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d1"),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
         let holder_id = String::from("https://vc.example/delegators/d2");
         let child_vc = child_issuer.issue_delegation_verifiable_credential(
@@ -838,8 +813,7 @@ mod tests {
 
         let holder = OurIssuer::<Curve>::new(
             holder_id.clone(),
-            accumulator_dlt.clone(),
-            verification_dlt.clone(),
+            trust_registry.clone(),
         )?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             child_vc,
@@ -848,7 +822,7 @@ mod tests {
             String::from("challenge-revoked-ancestor"),
         )?;
 
-        let verifier = OurVerifier::new(accumulator_dlt, verification_dlt, status_resolver)?;
+        let verifier = OurVerifier::new(trust_registry.clone(), status_resolver)?;
         let request = AuthorizationRequest::new(
             holder_id,
             String::from("cloud-access-gateway"),
