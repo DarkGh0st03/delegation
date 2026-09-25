@@ -1,8 +1,8 @@
 use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
 use crate::delegation::credentials::verifiable_presentation::VerifiablePresentation;
-use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::traits::credential::Credential;
+use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::time::Duration;

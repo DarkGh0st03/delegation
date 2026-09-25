@@ -14,10 +14,7 @@ pub trait TrustRegistry<E: Pairing> {
         data: AccumulatorPublicData<E>,
     ) -> Result<(), String>;
 
-    fn get_accumulator_data(
-        &self,
-        identity_id: &str,
-    ) -> Result<AccumulatorPublicData<E>, String>;
+    fn get_accumulator_data(&self, identity_id: &str) -> Result<AccumulatorPublicData<E>, String>;
 
     fn publish_verification_key(
         &self,

@@ -38,10 +38,7 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
         Ok(())
     }
 
-    fn get_accumulator_data(
-        &self,
-        identity_id: &str,
-    ) -> Result<AccumulatorPublicData<E>, String> {
+    fn get_accumulator_data(&self, identity_id: &str) -> Result<AccumulatorPublicData<E>, String> {
         self.accumulator_data
             .borrow()
             .get(identity_id)
@@ -67,9 +64,7 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
             .borrow()
             .get(identity_id)
             .cloned()
-            .ok_or_else(|| {
-                format!("No verification key registered for identity {identity_id}")
-            })
+            .ok_or_else(|| format!("No verification key registered for identity {identity_id}"))
     }
 }
 
@@ -77,8 +72,8 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
 mod tests {
     use super::*;
     use ark_bn254::Bn254;
-    use ark_std::rand::prelude::StdRng;
     use ark_std::rand::SeedableRng;
+    use ark_std::rand::prelude::StdRng;
     use vb_accumulator::prelude::{Keypair, SetupParams};
 
     #[test]
@@ -96,8 +91,11 @@ mod tests {
         )?;
 
         let mut jwk = Jwk::new("OKP");
-        jwk.set_parameter("crv", Some(serde_json::Value::String(String::from("Ed25519"))))
-            .map_err(|err| err.to_string())?;
+        jwk.set_parameter(
+            "crv",
+            Some(serde_json::Value::String(String::from("Ed25519"))),
+        )
+        .map_err(|err| err.to_string())?;
         registry.publish_verification_key(identity.clone(), jwk)?;
 
         registry.get_accumulator_data(&identity)?;
