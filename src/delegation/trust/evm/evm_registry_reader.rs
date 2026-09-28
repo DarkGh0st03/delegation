@@ -1,5 +1,5 @@
 use crate::delegation::trust::identity_status::IdentityStatus;
-use alloy::primitives::{keccak256, Address, B256};
+use alloy::primitives::{Address, B256, keccak256};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::sol;
 use std::str::FromStr;
@@ -94,8 +94,8 @@ impl EvmRegistryReader {
         issuer_registry: &str,
         expected_chain_id: u64,
     ) -> Result<Self, String> {
-        let runtime = Runtime::new()
-            .map_err(|err| format!("Could not create Tokio runtime [{err}]"))?;
+        let runtime =
+            Runtime::new().map_err(|err| format!("Could not create Tokio runtime [{err}]"))?;
 
         let provider = runtime
             .block_on(async {
@@ -142,7 +142,7 @@ impl EvmRegistryReader {
         let contract = EthereumDIDRegistryContract::new(self.did_registry, &self.provider);
 
         self.runtime
-            .block_on(contract.identityOwner(identity).call())
+            .block_on(async { contract.identityOwner(identity).call().await })
             .map(|result| result.owner)
             .map_err(|err| format!("Could not resolve DID owner for {identity_id} [{err}]"))
     }
@@ -154,10 +154,8 @@ impl EvmRegistryReader {
 
         let result = self
             .runtime
-            .block_on(contract.getIdentity(identity).call())
-            .map_err(|err| {
-                format!("Could not read enterprise identity {identity_id} [{err}]")
-            })?;
+            .block_on(async { contract.getIdentity(identity).call().await })
+            .map_err(|err| format!("Could not read enterprise identity {identity_id} [{err}]"))?;
 
         match result.status {
             0 => Err(format!(
@@ -178,20 +176,19 @@ impl EvmRegistryReader {
             EnterpriseTrustRegistryContract::new(self.enterprise_trust_registry, &self.provider);
 
         self.runtime
-            .block_on(contract.isTrustAnchor(identity).call())
+            .block_on(async { contract.isTrustAnchor(identity).call().await })
             .map(|result| result._0)
             .map_err(|err| format!("Could not read trust-anchor state for {identity_id} [{err}]"))
     }
 
-    pub fn latest_accumulator_material_version(
-        &self,
-        issuer_id: &str,
-    ) -> Result<u64, String> {
+    pub fn latest_accumulator_material_version(&self, issuer_id: &str) -> Result<u64, String> {
         let issuer = self.identity_address(issuer_id)?;
         let contract = IssuerRegistryContract::new(self.issuer_registry, &self.provider);
 
         self.runtime
-            .block_on(contract.latestAccumulatorMaterialVersion(issuer).call())
+            .block_on(async {
+                contract.latestAccumulatorMaterialVersion(issuer).call().await
+            })
             .map(|result| result._0)
             .map_err(|err| {
                 format!(
@@ -215,7 +212,9 @@ impl EvmRegistryReader {
         let contract = IssuerRegistryContract::new(self.issuer_registry, &self.provider);
 
         self.runtime
-            .block_on(contract.getAccumulatorMaterial(issuer, version).call())
+            .block_on(async {
+                contract.getAccumulatorMaterial(issuer, version).call().await
+            })
             .map(|result| AccumulatorMaterialAnchor {
                 material_hash: result.materialHash,
                 published_at: result.publishedAt,
@@ -242,7 +241,7 @@ impl EvmRegistryReader {
         let contract = IssuerRegistryContract::new(self.issuer_registry, &self.provider);
 
         self.runtime
-            .block_on(contract.getStatusList(issuer, list_id).call())
+            .block_on(async { contract.getStatusList(issuer, list_id).call().await })
             .map(|result| StatusListAnchor {
                 purpose: result.purpose,
                 current_document_hash: result.currentDocumentHash,
@@ -309,8 +308,7 @@ fn parse_chain_id(value: &str) -> Result<u64, String> {
 mod tests {
     use super::*;
 
-    const LOCAL_DID: &str =
-        "did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+    const LOCAL_DID: &str = "did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
     #[test]
     fn parses_local_did_ethr_identity() -> Result<(), String> {
