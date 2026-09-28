@@ -25,6 +25,7 @@ pub struct OurIssuer<E: Pairing> {
     id: String,
     params: SetupParams<E>,
     acc_keypair: Keypair<E>,
+    accumulator_material_version: u64,
     signature_jwk: Jwk,
 }
 
@@ -45,7 +46,8 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
         let acc_keypair = Keypair::<E>::generate_using_rng(&mut rng, &params);
 
         let entry = AccumulatorPublicData::new(acc_keypair.public_key.clone(), params.clone());
-        trust_registry.publish_accumulator_data(id.clone(), entry)?;
+        let accumulator_material_version =
+            trust_registry.publish_accumulator_data(id.clone(), entry)?;
 
         let mut sk: SecretKey = [0u8; 32];
         // let signing_algorithm = String::from("EdDSA");
@@ -96,6 +98,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
             id,
             params,
             acc_keypair,
+            accumulator_material_version,
             signature_jwk,
         })
     }
@@ -208,6 +211,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
             delegatee_id.clone(),
             iat.clone(),
             exp.clone(),
+            self.accumulator_material_version.to_string(),
             credential_status.canonical_value(),
         ];
         let metadata_string: String =
@@ -237,6 +241,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
                     accumulator_value,
                     iat,
                     exp,
+                    self.accumulator_material_version,
                     permissions,
                     metadata_witness,
                     permission_witnesses,
@@ -338,6 +343,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
                     issuer_dc.delegatee_id().clone(), // should be equal to self.id
                     issuer_dc.iat().clone(),
                     issuer_dc.exp().clone(),
+                    issuer_dc.issuer_material_version(),
                     issuer_dc.accumulator_value().clone(),
                     issuer_dc.metadata_witness().clone(),
                     issuer_permission_witnesses.clone(),
@@ -349,6 +355,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
                     accumulator_value,
                     iat,
                     exp,
+                    self.accumulator_material_version,
                     permissions,
                     metadata_witness,
                     permission_witnesses,
