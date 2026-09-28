@@ -165,7 +165,6 @@ mod tests {
         }
     }
 
-
     fn entry() -> BitstringStatusListEntry {
         BitstringStatusListEntry::revocation(
             None,
