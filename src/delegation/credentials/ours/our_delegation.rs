@@ -7,6 +7,8 @@ pub trait OurDelegation {
     fn iat(&self) -> &String;
     /// Getter function for the exp variable.
     fn exp(&self) -> &String;
+    /// Exact issuer accumulator public-material version used at issuance.
+    fn issuer_material_version(&self) -> u64;
     /// Getter function for the metadata_witnesses variable.
     fn metadata_witness(&self) -> &String;
     /// Getter function for the permission_witnesses variable.
