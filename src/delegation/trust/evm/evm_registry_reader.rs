@@ -102,7 +102,7 @@ impl EvmRegistryReader {
                 ProviderBuilder::new()
                     .connect(rpc_url)
                     .await
-                    .map(Provider::erased)
+                    .map(|provider| provider.erased())
             })
             .map_err(|err| format!("Could not connect to EVM RPC {rpc_url} [{err}]"))?;
 
