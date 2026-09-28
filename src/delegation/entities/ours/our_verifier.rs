@@ -269,10 +269,18 @@ mod tests {
     use crate::delegation::entities::ours::our_issuer::OurIssuer;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::status::in_memory_status_list_resolver::InMemoryStatusListResolver;
+    use crate::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
+    use crate::delegation::trust::evm::evm_registry_reader::{
+        AccumulatorMaterialAnchor, EvmTrustReader,
+    };
     use crate::delegation::trust::identity_status::IdentityStatus;
     use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
-    use crate::delegation::trust::trust_registry::TrustRegistryRef;
+    use crate::delegation::trust::public_material_provider::InMemoryPublicMaterialProvider;
+    use crate::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
+    use alloy::primitives::B256;
     use ark_bn254::Bn254;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::rc::Rc;
     use std::time::Duration;
 
@@ -308,6 +316,175 @@ mod tests {
             operation,
         )
         .expect("test permission must be valid")
+    }
+
+    struct VerifierMockEvmTrustReader {
+        statuses: RefCell<HashMap<String, IdentityStatus>>,
+        trust_anchors: RefCell<HashMap<String, bool>>,
+        latest_versions: RefCell<HashMap<String, u64>>,
+        accumulator_anchors: RefCell<HashMap<(String, u64), AccumulatorMaterialAnchor>>,
+    }
+
+    impl VerifierMockEvmTrustReader {
+        fn new() -> Self {
+            Self {
+                statuses: RefCell::new(HashMap::new()),
+                trust_anchors: RefCell::new(HashMap::new()),
+                latest_versions: RefCell::new(HashMap::new()),
+                accumulator_anchors: RefCell::new(HashMap::new()),
+            }
+        }
+
+        fn set_active(&self, identity_id: &str) {
+            self.statuses
+                .borrow_mut()
+                .insert(identity_id.to_string(), IdentityStatus::Active);
+        }
+
+        fn set_trust_anchor(&self, identity_id: &str, trusted: bool) {
+            self.trust_anchors
+                .borrow_mut()
+                .insert(identity_id.to_string(), trusted);
+        }
+
+        fn set_accumulator_anchor(
+            &self,
+            identity_id: &str,
+            version: u64,
+            material_hash: B256,
+        ) {
+            self.latest_versions
+                .borrow_mut()
+                .insert(identity_id.to_string(), version);
+            self.accumulator_anchors.borrow_mut().insert(
+                (identity_id.to_string(), version),
+                AccumulatorMaterialAnchor {
+                    material_hash,
+                    published_at: 1,
+                    exists: true,
+                },
+            );
+        }
+    }
+
+    impl EvmTrustReader for VerifierMockEvmTrustReader {
+        fn identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String> {
+            self.statuses
+                .borrow()
+                .get(identity_id)
+                .copied()
+                .ok_or_else(|| format!("Identity {identity_id} is not enrolled"))
+        }
+
+        fn is_trust_anchor(&self, identity_id: &str) -> Result<bool, String> {
+            self.trust_anchors
+                .borrow()
+                .get(identity_id)
+                .copied()
+                .ok_or_else(|| format!("Identity {identity_id} is not enrolled"))
+        }
+
+        fn latest_accumulator_material_version(&self, issuer_id: &str) -> Result<u64, String> {
+            Ok(*self.latest_versions.borrow().get(issuer_id).unwrap_or(&0))
+        }
+
+        fn accumulator_material_anchor(
+            &self,
+            issuer_id: &str,
+            version: u64,
+        ) -> Result<AccumulatorMaterialAnchor, String> {
+            self.accumulator_anchors
+                .borrow()
+                .get(&(issuer_id.to_string(), version))
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "No accumulator anchor for identity {issuer_id} version {version}"
+                    )
+                })
+        }
+    }
+
+    #[test]
+    fn verify_vp_with_evm_backed_trust_registry() -> Result<(), String> {
+        type Curve = Bn254;
+
+        // Issuance remains local in this checkpoint. We then move only the public
+        // verification material behind the same off-chain/EVM split used in deployment.
+        let source_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let source_registry_ref: TrustRegistryRef<Curve> = source_registry.clone();
+
+        let root_id = String::from(
+            "did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        );
+        let holder_id = String::from(
+            "did:ethr:0x7a69:0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        );
+
+        let root = OurIssuer::<Curve>::new(root_id.clone(), source_registry_ref.clone())?;
+        let vc = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/evm-backed"),
+            test_status(950),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        )?;
+
+        let material_version = vc.credential().issuer_material_version();
+        let root_material =
+            source_registry.get_accumulator_data_at_version(&root_id, material_version)?;
+        let root_commitment =
+            EvmBackedTrustRegistry::<Curve>::accumulator_material_commitment(&root_material)?;
+
+        let holder = OurIssuer::<Curve>::new(holder_id.clone(), source_registry_ref)?;
+        let signed_vp = holder.issue_delegation_verifiable_presentation(
+            vc.clone(),
+            vec![permission(Operation::ReadFile)],
+            String::from("cloud-access-gateway"),
+            String::from("challenge-evm-backed"),
+        )?;
+
+        let public_material = Rc::new(InMemoryPublicMaterialProvider::<Curve>::new());
+        public_material.insert_accumulator_data(
+            root_id.clone(),
+            material_version,
+            root_material,
+        )?;
+        public_material.insert_verification_key(
+            holder_id.clone(),
+            source_registry.get_verification_key(&holder_id)?,
+        )?;
+
+        let chain = Rc::new(VerifierMockEvmTrustReader::new());
+        chain.set_active(&root_id);
+        chain.set_active(&holder_id);
+        chain.set_trust_anchor(&root_id, true);
+        chain.set_accumulator_anchor(&root_id, material_version, root_commitment);
+
+        let evm_registry: TrustRegistryRef<Curve> = Rc::new(
+            EvmBackedTrustRegistry::<Curve>::new(chain, public_material),
+        );
+        let status_resolver = resolver_for_vc(&vc)?;
+        let verifier = OurVerifier::new(evm_registry, status_resolver)?;
+
+        let request = AuthorizationRequest::new(
+            holder_id.clone(),
+            String::from("cloud-access-gateway"),
+            String::from("challenge-evm-backed"),
+            permission(Operation::ReadFile),
+        )?;
+
+        let verified = verifier.verify_verifiable_presentation(request, signed_vp)?;
+
+        assert_eq!(verified.presenter_id(), &holder_id);
+        assert_eq!(verified.issuer_id(), &root_id);
+        assert_eq!(verified.permissions(), &vec![permission(Operation::ReadFile)]);
+        assert_eq!(verified.hierarchy_depth(), 0);
+
+        Ok(())
     }
 
     #[test]
