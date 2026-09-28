@@ -133,7 +133,9 @@ mod tests {
                 (issuer.to_string(), url.to_string()),
                 StatusListAnchor {
                     purpose: 1,
-                    current_document_hash: AnchoredStatusListResolver::document_commitment(document),
+                    current_document_hash: AnchoredStatusListResolver::document_commitment(
+                        document,
+                    ),
                     current_version: version,
                     updated_at: version,
                     exists: true,
