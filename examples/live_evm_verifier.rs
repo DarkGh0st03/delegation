@@ -257,11 +257,7 @@ fn main() -> Result<(), String> {
     }
 
     let public_material = Rc::new(InMemoryPublicMaterialProvider::<Curve>::new());
-    public_material.insert_accumulator_data(
-        root_id.clone(),
-        material_version,
-        root_material,
-    )?;
+    public_material.insert_accumulator_data(root_id.clone(), material_version, root_material)?;
     public_material.insert_verification_key(holder_id.clone(), holder_verification_key)?;
 
     let evm_registry: TrustRegistryRef<Curve> = Rc::new(EvmBackedTrustRegistry::<Curve>::new(
