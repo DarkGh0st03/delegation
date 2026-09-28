@@ -19,13 +19,25 @@ pub trait TrustRegistry<E: Pairing> {
 
     fn is_trust_anchor(&self, identity_id: &str) -> Result<bool, String>;
 
+    /// Publishes a new immutable version of the issuer's accumulator public material.
+    ///
+    /// Returns the monotonically increasing version assigned to the material.
     fn publish_accumulator_data(
         &self,
         identity_id: String,
         data: AccumulatorPublicData<E>,
-    ) -> Result<(), String>;
+    ) -> Result<u64, String>;
 
+    /// Resolves the latest accumulator public material for an active identity.
     fn get_accumulator_data(&self, identity_id: &str) -> Result<AccumulatorPublicData<E>, String>;
+
+    /// Resolves the exact historical accumulator public-material version referenced
+    /// by a Delegation Credential.
+    fn get_accumulator_data_at_version(
+        &self,
+        identity_id: &str,
+        version: u64,
+    ) -> Result<AccumulatorPublicData<E>, String>;
 
     fn publish_verification_key(
         &self,
