@@ -17,6 +17,8 @@ pub struct OurDelegator {
     iat: String,
     #[serde(rename = "exp")]
     exp: String,
+    #[serde(rename = "imv")]
+    issuer_material_version: u64,
     #[serde(rename = "av")]
     accumulator_value: String,
     #[serde(rename = "mw")]
@@ -46,6 +48,7 @@ impl OurDelegator {
         delegatee_id: String,
         iat: String,
         exp: String,
+        issuer_material_version: u64,
         accumulator_value: String,
         metadata_witness: String,
         permission_witnesses: Vec<String>,
@@ -57,6 +60,7 @@ impl OurDelegator {
             delegatee_id,
             iat,
             exp,
+            issuer_material_version,
             accumulator_value,
             metadata_witness,
             permission_witnesses,
@@ -108,6 +112,9 @@ impl OurDelegation for OurDelegator {
     fn exp(&self) -> &String {
         &self.exp
     }
+    fn issuer_material_version(&self) -> u64 {
+        self.issuer_material_version
+    }
     /// Getter function that returns the metadata_witness variable.
     fn metadata_witness(&self) -> &String {
         &self.metadata_witness
@@ -147,6 +154,7 @@ mod tests {
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
+                "imv": 1,
                 "av": "accumulator_value_d1",
                 "mw": "w_metadata_d1",
                 "pw": [ "w0d1", "w1d1" ]
