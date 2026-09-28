@@ -258,6 +258,41 @@ mod tests {
     }
 
     #[test]
+    fn accumulator_material_versions_are_preserved() -> Result<(), String> {
+        type Curve = Bn254;
+        let registry = InMemoryTrustRegistry::<Curve>::new();
+        let identity = String::from("did:example:versioned-issuer");
+        registry.register_identity(identity.clone())?;
+
+        let mut rng = StdRng::from_entropy();
+
+        let params_v1 = SetupParams::<Curve>::generate_using_rng(&mut rng);
+        let keypair_v1 = Keypair::<Curve>::generate_using_rng(&mut rng, &params_v1);
+        let version_1 = registry.publish_accumulator_data(
+            identity.clone(),
+            AccumulatorPublicData::new(keypair_v1.public_key.clone(), params_v1),
+        )?;
+
+        let params_v2 = SetupParams::<Curve>::generate_using_rng(&mut rng);
+        let keypair_v2 = Keypair::<Curve>::generate_using_rng(&mut rng, &params_v2);
+        let version_2 = registry.publish_accumulator_data(
+            identity.clone(),
+            AccumulatorPublicData::new(keypair_v2.public_key.clone(), params_v2),
+        )?;
+
+        assert_eq!(version_1, 1);
+        assert_eq!(version_2, 2);
+        registry.get_accumulator_data_at_version(&identity, 1)?;
+        registry.get_accumulator_data_at_version(&identity, 2)?;
+        assert!(
+            registry
+                .get_accumulator_data_at_version(&identity, 3)
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
     fn registered_identity_is_active_but_not_automatically_trusted() -> Result<(), String> {
         let registry = InMemoryTrustRegistry::<Bn254>::new();
         let identity = String::from("did:example:registered");
