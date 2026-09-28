@@ -77,6 +77,17 @@ pub struct StatusListAnchor {
 /// The rest of the Delegation Credential code is currently synchronous. This
 /// wrapper owns a Tokio runtime internally and exposes blocking read methods,
 /// keeping asynchronous JSON-RPC details out of `OurVerifier`.
+pub trait EvmTrustReader {
+    fn identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String>;
+    fn is_trust_anchor(&self, identity_id: &str) -> Result<bool, String>;
+    fn latest_accumulator_material_version(&self, issuer_id: &str) -> Result<u64, String>;
+    fn accumulator_material_anchor(
+        &self,
+        issuer_id: &str,
+        version: u64,
+    ) -> Result<AccumulatorMaterialAnchor, String>;
+}
+
 pub struct EvmRegistryReader {
     runtime: Runtime,
     provider: DynProvider,
@@ -263,6 +274,28 @@ impl EvmRegistryReader {
     /// listId = keccak256(UTF-8 Status List Credential identifier).
     pub fn status_list_id(status_list_credential: &str) -> B256 {
         keccak256(status_list_credential.as_bytes())
+    }
+}
+
+impl EvmTrustReader for EvmRegistryReader {
+    fn identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String> {
+        EvmRegistryReader::identity_status(self, identity_id)
+    }
+
+    fn is_trust_anchor(&self, identity_id: &str) -> Result<bool, String> {
+        EvmRegistryReader::is_trust_anchor(self, identity_id)
+    }
+
+    fn latest_accumulator_material_version(&self, issuer_id: &str) -> Result<u64, String> {
+        EvmRegistryReader::latest_accumulator_material_version(self, issuer_id)
+    }
+
+    fn accumulator_material_anchor(
+        &self,
+        issuer_id: &str,
+        version: u64,
+    ) -> Result<AccumulatorMaterialAnchor, String> {
+        EvmRegistryReader::accumulator_material_anchor(self, issuer_id, version)
     }
 }
 

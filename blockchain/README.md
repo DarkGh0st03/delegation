@@ -240,3 +240,38 @@ cargo run --example evm_registry_probe
 ```
 
 This probe validates real Rust -> JSON-RPC -> Solidity reads before the reader is wired into the `TrustRegistry` implementation used by `OurVerifier`.
+
+
+---
+
+# Phase 4B.2 — verifier-side EVM-backed TrustRegistry
+
+`EvmBackedTrustRegistry` now implements the existing Rust `TrustRegistry` interface for verification.
+
+The split is intentional:
+
+```text
+EVM contracts
+  -> identity lifecycle
+  -> trust-anchor state
+  -> accumulator material hash/version
+
+Off-chain PublicMaterialProvider
+  -> complete AccumulatorPublicData
+  -> DID verification JWK
+```
+
+When the verifier requests accumulator material version `N`, the adapter:
+
+1. checks that the issuer is currently `Active` on-chain;
+2. reads the exact version-`N` commitment from `IssuerRegistry`;
+3. obtains the full public material off-chain;
+4. canonical-serializes it with arkworks;
+5. computes `keccak256`;
+6. rejects it unless the hash equals the on-chain commitment.
+
+This keeps large cryptographic material off-chain while making tampering detectable.
+
+The current `InMemoryPublicMaterialProvider` is a PoC provider. Its verification-key side will later be replaced by the `did:ethr` resolver boundary, and its accumulator side by the delegation-material service endpoint already published in the DID Document.
+
+The EVM-backed registry is verifier-side/read-only. Issuer and governance mutations remain explicit signed blockchain transaction workflows rather than local `TrustRegistry` mutations.
