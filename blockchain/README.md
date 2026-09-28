@@ -100,3 +100,34 @@ The reconstructed DID Document should now contain the original EVM controller pl
 ## What remains after Phase 1
 
 Once this enriched DID resolves correctly, the DID layer is sufficient for the thesis PoC. The next blockchain component is the thesis-specific `EnterpriseTrustRegistry`, followed by the `IssuerRegistry`.
+
+
+---
+
+# Phase 2A — Enterprise Trust Registry
+
+After the DID layer is working end-to-end, the next thesis-specific contract is `EnterpriseTrustRegistry.sol`.
+
+Its responsibility is deliberately separate from DID resolution. ERC-1056 answers who controls an identity; this registry answers whether the enterprise currently trusts that identity.
+
+The contract implements:
+
+- fail-closed state for unknown identities;
+- governance enrollment for strong enterprise identities;
+- `Active / Suspended / Revoked` lifecycle;
+- terminal revocation;
+- governance-only trust-anchor assignment;
+- sponsored enrollment for dynamic agents;
+- proof-of-control for sponsored agents through the current ERC-1056 DID controller;
+- sponsor kill-switch for its own agents;
+- two-step governance-address rotation.
+
+Sponsored enrollment records provenance only. It does not create business authorization and does not replace Delegation Credentials.
+
+Run:
+
+```powershell
+forge test
+```
+
+The new tests cover governance enrollment, trust anchors, sponsored enrollment, controller rotation, suspension/reactivation, sponsor revocation, and fail-closed behavior.
