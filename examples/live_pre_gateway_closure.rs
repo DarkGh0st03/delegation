@@ -401,9 +401,9 @@ fn main() -> Result<(), String> {
         sign_status_list_credential_jwt(&revoked_document, root.holder_jwk())?;
 
     let active_status_hash =
-        AnchoredStatusListResolver::document_commitment(&active_status_jwt);
+        AnchoredStatusListResolver::artifact_commitment(&active_status_jwt);
     let revoked_status_hash =
-        AnchoredStatusListResolver::document_commitment(&revoked_status_jwt);
+        AnchoredStatusListResolver::artifact_commitment(&revoked_status_jwt);
     let status_list_id = EvmRegistryReader::status_list_id(STATUS_LIST_URL);
 
     let runtime =
