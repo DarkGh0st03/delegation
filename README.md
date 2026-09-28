@@ -14,7 +14,10 @@ The active `src/` tree intentionally contains only the baseline implementation n
 - request-bound presentation verification through holder, audience, challenge, and required-permission checks;
 - structured verification results that can be consumed by the future Cloud Access Gateway / OPA layer;
 - cryptographic accumulator management and verification;
-- the in-memory DLT simulator used by the original implementation.
+- the original in-memory trust simulator for deterministic issuer-side tests;
+- a live Anvil-backed trust layer using did:ethr/ERC-1056, EnterpriseTrustRegistry and IssuerRegistry;
+- blockchain-anchored accumulator-material versioning and Bitstring Status List revocation;
+- fresh DID-resolved Ed25519 verification keys and authenticated Status List JWTs.
 
 The repository has been simplified before starting the thesis-specific modifications so that the core execution path is easier to study.
 
@@ -76,4 +79,6 @@ original-backup-before-thesis-cleanup
 
 ## Development direction
 
-The delegation core is being adapted to the thesis scenario involving delegated authorization for AI agents. Presentations are now bound to a concrete holder, audience, challenge and required permission before a structured verified result is produced. Challenge uniqueness and one-time consumption will be enforced by the future Cloud Access Gateway. Later phases are expected to integrate this core with OPA/Rego policy evaluation, A2A-based agent communication, Gitea as the protected Git platform, and a local blockchain trust/revocation layer.
+The delegation core is being adapted to the thesis scenario involving delegated authorization for AI agents. Presentations are bound to a concrete holder, audience, challenge and required permission before a structured verified result is produced.
+
+The pre-Gateway trust/blockchain implementation is now complete pending the final local validation described in `blockchain/PRE_GATEWAY_CHECKPOINT.md`. The next implementation phase is the Cloud Access Gateway, which will enforce challenge uniqueness/replay protection, consume `VerifiedDelegation`, call OPA/Rego for local policy, and protect Gitea. A2A-based agent communication remains a later integration phase.
