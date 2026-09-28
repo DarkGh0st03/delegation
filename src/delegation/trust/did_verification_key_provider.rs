@@ -4,8 +4,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use josekit::jwk::Jwk;
 use serde::Deserialize;
 use serde_json::Value;
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -20,7 +19,6 @@ pub struct DidEthrVerificationKeyProvider {
     rpc_url: String,
     registry_address: String,
     chain_id: u64,
-    cache: RefCell<HashMap<String, Jwk>>,
 }
 
 impl DidEthrVerificationKeyProvider {
@@ -36,7 +34,6 @@ impl DidEthrVerificationKeyProvider {
             rpc_url: rpc_url.into(),
             registry_address: registry_address.into(),
             chain_id,
-            cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -124,22 +121,20 @@ impl DidEthrVerificationKeyProvider {
 
     fn select_assertion_key(document: &DidDocument) -> Result<Jwk, String> {
         let mut assertion_ids = HashSet::new();
-        let mut embedded = Vec::new();
+        let mut candidates = Vec::new();
 
         for assertion in &document.assertion_method {
             match assertion {
                 AssertionMethod::Reference(id) => {
                     assertion_ids.insert(id.clone());
                 }
-                AssertionMethod::Embedded(method) => embedded.push(method),
-            }
-        }
-
-        for method in embedded {
-            if method.method_type == "Ed25519VerificationKey2020"
-                || method.method_type == "JsonWebKey2020"
-            {
-                return Self::jwk_from_method(method);
+                AssertionMethod::Embedded(method)
+                    if method.method_type == "Ed25519VerificationKey2020"
+                        || method.method_type == "JsonWebKey2020" =>
+                {
+                    candidates.push(Self::jwk_from_method(method)?);
+                }
+                AssertionMethod::Embedded(_) => {}
             }
         }
 
@@ -150,23 +145,28 @@ impl DidEthrVerificationKeyProvider {
             if method.method_type == "Ed25519VerificationKey2020"
                 || method.method_type == "JsonWebKey2020"
             {
-                return Self::jwk_from_method(method);
+                candidates.push(Self::jwk_from_method(method)?);
             }
         }
 
-        Err(format!(
-            "DID Document {} has no Ed25519 assertionMethod",
-            document.id
-        ))
+        match candidates.len() {
+            1 => Ok(candidates.remove(0)),
+            0 => Err(format!(
+                "DID Document {} has no Ed25519 assertionMethod",
+                document.id
+            )),
+            count => Err(format!(
+                "DID Document {} has {count} active Ed25519 assertion methods; the PoC profile requires exactly one",
+                document.id
+            )),
+        }
     }
 }
 
 impl VerificationKeyProvider for DidEthrVerificationKeyProvider {
     fn get_verification_key(&self, identity_id: &str) -> Result<Jwk, String> {
-        if let Some(cached) = self.cache.borrow().get(identity_id).cloned() {
-            return Ok(cached);
-        }
-
+        // Resolve on every authorization path so ERC-1056 key rotation/revocation
+        // takes effect immediately instead of being hidden by a long-lived cache.
         let document = self.resolve_document(identity_id)?;
         if document.id != identity_id {
             return Err(format!(
@@ -175,11 +175,7 @@ impl VerificationKeyProvider for DidEthrVerificationKeyProvider {
             ));
         }
 
-        let key = Self::select_assertion_key(&document)?;
-        self.cache
-            .borrow_mut()
-            .insert(identity_id.to_string(), key.clone());
-        Ok(key)
+        Self::select_assertion_key(&document)
     }
 }
 
