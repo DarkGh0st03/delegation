@@ -4,12 +4,13 @@ use crate::delegation::trust::trust_registry::TrustRegistry;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 struct IdentityTrustRecord<E: Pairing> {
     status: IdentityStatus,
     trust_anchor: bool,
-    accumulator_data: Option<AccumulatorPublicData<E>>,
+    accumulator_data: BTreeMap<u64, AccumulatorPublicData<E>>,
+    latest_accumulator_version: u64,
     verification_key: Option<Jwk>,
 }
 
@@ -18,7 +19,8 @@ impl<E: Pairing> IdentityTrustRecord<E> {
         Self {
             status: IdentityStatus::Active,
             trust_anchor: false,
-            accumulator_data: None,
+            accumulator_data: BTreeMap::new(),
+            latest_accumulator_version: 0,
             verification_key: None,
         }
     }
@@ -116,14 +118,23 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
         &self,
         identity_id: String,
         data: AccumulatorPublicData<E>,
-    ) -> Result<(), String> {
+    ) -> Result<u64, String> {
         let mut identities = self.identities.borrow_mut();
         let record = identities
             .get_mut(&identity_id)
             .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
         Self::ensure_record_active(&identity_id, record)?;
-        record.accumulator_data = Some(data);
-        Ok(())
+
+        let version = record
+            .latest_accumulator_version
+            .checked_add(1)
+            .ok_or_else(|| {
+                format!("Accumulator material version overflow for identity {identity_id}")
+            })?;
+
+        record.accumulator_data.insert(version, data);
+        record.latest_accumulator_version = version;
+        Ok(version)
     }
 
     fn get_accumulator_data(&self, identity_id: &str) -> Result<AccumulatorPublicData<E>, String> {
@@ -133,9 +144,50 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
             .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
         Self::ensure_record_active(identity_id, record)?;
 
-        record.accumulator_data.clone().ok_or_else(|| {
-            format!("No accumulator public data registered for identity {identity_id}")
-        })
+        if record.latest_accumulator_version == 0 {
+            return Err(format!(
+                "No accumulator public data registered for identity {identity_id}"
+            ));
+        }
+
+        record
+            .accumulator_data
+            .get(&record.latest_accumulator_version)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "Accumulator public data version {} is missing for identity {identity_id}",
+                    record.latest_accumulator_version
+                )
+            })
+    }
+
+    fn get_accumulator_data_at_version(
+        &self,
+        identity_id: &str,
+        version: u64,
+    ) -> Result<AccumulatorPublicData<E>, String> {
+        if version == 0 {
+            return Err(String::from(
+                "Accumulator material version must be greater than zero",
+            ));
+        }
+
+        let identities = self.identities.borrow();
+        let record = identities
+            .get(identity_id)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
+        Self::ensure_record_active(identity_id, record)?;
+
+        record
+            .accumulator_data
+            .get(&version)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "No accumulator public data version {version} registered for identity {identity_id}"
+                )
+            })
     }
 
     fn publish_verification_key(
