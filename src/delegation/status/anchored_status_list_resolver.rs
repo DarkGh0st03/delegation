@@ -7,12 +7,15 @@ use crate::delegation::trust::evm::evm_registry_reader::EvmStatusListReader;
 use alloy::primitives::{B256, keccak256};
 use std::rc::Rc;
 
-/// Status List resolver that binds the exact off-chain document bytes to the
+/// Status List resolver that binds the exact off-chain artifact bytes to the
 /// issuer's current on-chain Status List anchor before reading the status bit.
 ///
-/// Commitment convention for this PoC:
-/// `currentDocumentHash = keccak256(exact UTF-8 bytes returned by the provider)`.
-/// No JSON reserialization or normalization is performed.
+/// The artifact may be the JSON document itself or an authenticated envelope
+/// such as the compact JWT used by the final PoC profile.
+///
+/// Commitment convention:
+/// `currentDocumentHash = keccak256(exact fetched artifact bytes)`.
+/// No JSON reserialization or normalization is performed before hashing.
 pub struct AnchoredStatusListResolver {
     provider: StatusListCredentialProviderRef,
     chain: Rc<dyn EvmStatusListReader>,
@@ -26,8 +29,13 @@ impl AnchoredStatusListResolver {
         Self { provider, chain }
     }
 
+    pub fn artifact_commitment(raw_artifact: &str) -> B256 {
+        keccak256(raw_artifact.as_bytes())
+    }
+
+    /// Backwards-compatible name retained for JSON-document tests.
     pub fn document_commitment(raw_credential: &str) -> B256 {
-        keccak256(raw_credential.as_bytes())
+        Self::artifact_commitment(raw_credential)
     }
 
     fn expected_chain_purpose(purpose: &StatusPurpose) -> Result<u8, String> {
