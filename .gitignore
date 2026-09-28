@@ -6,3 +6,4 @@
 /blockchain/broadcast/
 /blockchain/lib/
 /blockchain/.env
+/blockchain/did-client/node_modules/

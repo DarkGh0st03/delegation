@@ -1,0 +1,12 @@
+{
+  "name": "delegation-did-client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "resolve": "node resolve-did.mjs"
+  },
+  "dependencies": {
+    "did-resolver": "^6.0.0",
+    "ethr-did-resolver": "^14.1.4"
+  }
+}
