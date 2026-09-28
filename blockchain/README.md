@@ -204,3 +204,39 @@ Old versions remain addressable through `get_accumulator_data_at_version`. `OurV
 Status List semantics remain intentionally different: the credential still carries only the stable Status List reference, index, and purpose; the current anchored Status List version will be resolved at verification time.
 
 This checkpoint prepares the codebase for Phase 4B, where an EVM-backed Rust adapter will implement the same trust/material interfaces against `EthereumDIDRegistry`, `EnterpriseTrustRegistry`, and `IssuerRegistry`.
+
+
+---
+
+# Phase 4B.1 — Rust EVM registry reader
+
+The first Rust/EVM bridge is intentionally read-only. `EvmRegistryReader` uses Alloy over JSON-RPC and exposes synchronous methods to the current synchronous verifier code.
+
+It reads:
+
+- the current ERC-1056 DID owner;
+- enterprise lifecycle status and trust-anchor state;
+- the latest accumulator material version and any historical commitment;
+- the current Status List anchor.
+
+The reader accepts the thesis `did:ethr:<chainId>:<address>` identifiers directly and rejects DIDs from a different configured chain.
+
+Run the unit tests first:
+
+```powershell
+cargo fmt --check
+cargo test
+```
+
+With the Anvil deployment used during Phase 3B, the live probe can be executed from Git Bash with:
+
+```bash
+DID_REGISTRY_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3 \
+ENTERPRISE_TRUST_REGISTRY_ADDRESS=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 \
+ISSUER_REGISTRY_ADDRESS=0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9 \
+ISSUER_ID=did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8 \
+STATUS_LIST_CREDENTIAL=urn:delegation:status-list:root:revocation-1 \
+cargo run --example evm_registry_probe
+```
+
+This probe validates real Rust -> JSON-RPC -> Solidity reads before the reader is wired into the `TrustRegistry` implementation used by `OurVerifier`.

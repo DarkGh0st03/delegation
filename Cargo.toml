@@ -29,3 +29,6 @@ vb_accumulator = { version = "0.29.0", default-features = false }
 ed25519-dalek = "3.0.0"
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
 
+alloy = "2.5.0"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
