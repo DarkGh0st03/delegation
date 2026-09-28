@@ -419,3 +419,64 @@ material continues to use the historical version recorded in the credential.
 The Status List Credential used in this checkpoint is structurally W3C-compatible and
 blockchain-anchored, but it is not yet cryptographically signed/authenticated as a VC.
 That proof/authentication boundary remains the next status-layer step.
+
+
+---
+
+# Phase 4C.3 — authenticated Status List Credential
+
+The Status List boundary now authenticates the off-chain artifact before its status bit can influence authorization.
+
+The final PoC profile uses a compact EdDSA JWT whose payload is the W3C Bitstring Status List Credential JSON object. The exact compact JWT bytes are the artifact committed on-chain.
+
+Verification is fail-closed:
+
+```text
+issuer + statusListCredential
+  -> fetch compact Status List JWT
+  -> resolve issuer Ed25519 assertion key from did:ethr
+  -> verify EdDSA signature
+  -> require payload issuer == expected delegation issuer
+  -> keccak256(exact compact JWT bytes)
+  -> compare with IssuerRegistry currentDocumentHash
+  -> validate Bitstring Status List payload
+  -> read current status bit
+```
+
+This separates two guarantees:
+
+- the DID signature authenticates who issued the current Status List artifact;
+- the blockchain commitment/version prevents substitution or rollback to a different current artifact.
+
+The DID key itself is no longer injected from an in-memory map in the final live path. Rust invokes the official `ethr-did-resolver` client and extracts the current Ed25519 assertion method from the reconstructed DID Document. Resolution is fresh on the authorization path so ERC-1056 key rotation/revocation takes effect immediately.
+
+The PoC profile requires exactly one active Ed25519 assertion method and fails closed if the DID Document contains none or more than one.
+
+---
+
+# Phase 4D — pre-Gateway blockchain closure
+
+`examples/live_pre_gateway_closure.rs` is the final integration checkpoint before the Cloud Access Gateway.
+
+It combines:
+
+- real Rust DC/VP issuance;
+- live Anvil enterprise lifecycle and trust-anchor state;
+- historical accumulator material commitment verification;
+- publication of the exact Rust-generated Ed25519 keys in ERC-1056;
+- fresh did:ethr resolution through the official resolver;
+- EdDSA-authenticated Status List JWTs;
+- current Status List hash/version anchoring;
+- live revocation of an already-issued unchanged credential.
+
+The large accumulator public material remains off-chain behind `AccumulatorMaterialProvider`; its transport is deliberately abstract because every payload is canonical-serialized and checked against the exact historical on-chain commitment before use. A future Gateway/service deployment can replace the local transport without changing the blockchain trust semantics.
+
+Run the complete validation with:
+
+```bash
+bash blockchain/scripts/check-pre-gateway.sh
+```
+
+The detailed handoff and scope decisions are recorded in `PRE_GATEWAY_CHECKPOINT.md`.
+
+After this checkpoint the initial thesis PoC requires no further blockchain contracts or blockchain-side verification features. The next phase is the Cloud Access Gateway.
