@@ -23,7 +23,7 @@ deploy() {
   local label="$1"
   shift
 
-  echo
+  echo >&2
   echo "==> Deploying $label" >&2
 
   local output
