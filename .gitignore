@@ -1,2 +1,8 @@
 # Project exclude paths
 /target/
+
+/blockchain/cache/
+/blockchain/out/
+/blockchain/broadcast/
+/blockchain/lib/
+/blockchain/.env
