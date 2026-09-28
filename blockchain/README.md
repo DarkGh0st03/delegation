@@ -390,3 +390,32 @@ There is intentionally no JSON normalization in this convention.
 This phase proves freshness/anti-rollback against the blockchain anchor. Authentication
 of the Status List Credential's own VC proof/signature is still a separate boundary and
 must be added before treating arbitrary remote documents as production-trusted input.
+
+
+---
+
+# Phase 4C.2 — live Status List revocation on Anvil
+
+`examples/live_status_revocation.rs` extends the live verifier path with a real
+`IssuerRegistry` Status List anchor.
+
+The example is deliberately one-shot and uses a fresh root/holder pair. It:
+
+1. creates a real Delegation Credential and VP in Rust;
+2. publishes the root's real accumulator-material commitment on Anvil;
+3. creates a 131072-entry Bitstring Status List with the credential bit clear;
+4. registers the exact document hash as Status List version 1;
+5. verifies the unchanged VP and obtains `beforeRevocation=ACCEPT`;
+6. creates version 2 of the same Status List with the credential bit set;
+7. updates the on-chain current Status List hash/version;
+8. replaces only the off-chain current Status List document;
+9. verifies the exact same VP and credential again;
+10. obtains `afterRevocation=REJECT`.
+
+The credential itself is never rewritten. Revocation is therefore demonstrated as a
+current-state decision driven by the latest anchored Status List, while accumulator
+material continues to use the historical version recorded in the credential.
+
+The Status List Credential used in this checkpoint is structurally W3C-compatible and
+blockchain-anchored, but it is not yet cryptographically signed/authenticated as a VC.
+That proof/authentication boundary remains the next status-layer step.
