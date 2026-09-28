@@ -37,6 +37,8 @@ sol! {
     interface EnterpriseTrustRegistryWriterContract {
         function enrollEnterpriseIdentity(address identity) external;
         function setTrustAnchor(address identity, bool enabled) external;
+        function isActive(address identity) external view returns (bool);
+        function isTrustAnchor(address identity) external view returns (bool);
     }
 
     #[sol(rpc)]
@@ -144,32 +146,56 @@ async fn provision_live_chain(
     let trust =
         EnterpriseTrustRegistryWriterContract::new(enterprise_trust_registry, &governance_provider);
 
-    trust
-        .enrollEnterpriseIdentity(root)
-        .send()
+    let root_active = trust
+        .isActive(root)
+        .call()
         .await
-        .map_err(|err| format!("Could not enroll root identity [{err}]"))?
-        .get_receipt()
-        .await
-        .map_err(|err| format!("Could not confirm root enrollment [{err}]"))?;
+        .map_err(|err| format!("Could not read root enterprise status [{err}]"))?;
 
-    trust
-        .enrollEnterpriseIdentity(holder)
-        .send()
-        .await
-        .map_err(|err| format!("Could not enroll holder identity [{err}]"))?
-        .get_receipt()
-        .await
-        .map_err(|err| format!("Could not confirm holder enrollment [{err}]"))?;
+    if !root_active {
+        trust
+            .enrollEnterpriseIdentity(root)
+            .send()
+            .await
+            .map_err(|err| format!("Could not enroll root identity [{err}]"))?
+            .get_receipt()
+            .await
+            .map_err(|err| format!("Could not confirm root enrollment [{err}]"))?;
+    }
 
-    trust
-        .setTrustAnchor(root, true)
-        .send()
+    let holder_active = trust
+        .isActive(holder)
+        .call()
         .await
-        .map_err(|err| format!("Could not assign root trust anchor [{err}]"))?
-        .get_receipt()
+        .map_err(|err| format!("Could not read holder enterprise status [{err}]"))?;
+
+    if !holder_active {
+        trust
+            .enrollEnterpriseIdentity(holder)
+            .send()
+            .await
+            .map_err(|err| format!("Could not enroll holder identity [{err}]"))?
+            .get_receipt()
+            .await
+            .map_err(|err| format!("Could not confirm holder enrollment [{err}]"))?;
+    }
+
+    let root_is_anchor = trust
+        .isTrustAnchor(root)
+        .call()
         .await
-        .map_err(|err| format!("Could not confirm trust-anchor assignment [{err}]"))?;
+        .map_err(|err| format!("Could not read root trust-anchor state [{err}]"))?;
+
+    if !root_is_anchor {
+        trust
+            .setTrustAnchor(root, true)
+            .send()
+            .await
+            .map_err(|err| format!("Could not assign root trust anchor [{err}]"))?
+            .get_receipt()
+            .await
+            .map_err(|err| format!("Could not confirm trust-anchor assignment [{err}]"))?;
+    }
 
     let root_signer: PrivateKeySigner = root_private_key
         .parse()
@@ -387,8 +413,7 @@ fn main() -> Result<(), String> {
         permission(Operation::ReadFile)?,
     )?;
 
-    let accepted =
-        verifier.verify_verifiable_presentation(request.clone(), signed_vp.clone())?;
+    let accepted = verifier.verify_verifiable_presentation(request.clone(), signed_vp.clone())?;
     println!("beforeRevocation=ACCEPT");
     println!("verifiedPresenter={}", accepted.presenter_id());
     println!("statusListVersion=1");
