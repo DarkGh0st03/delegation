@@ -2,9 +2,12 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { Resolver } from "did-resolver";
+import { getResolver } from "ethr-did-resolver";
 import {
   Contract,
   JsonRpcProvider,
+  NonceManager,
   Wallet,
   encodeBytes32String,
   toUtf8Bytes,
@@ -36,8 +39,9 @@ if (network.chainId !== expectedChainId) {
   );
 }
 
-const signer = new Wallet(identityPrivateKey, provider);
-const identityAddress = await signer.getAddress();
+const wallet = new Wallet(identityPrivateKey, provider);
+const identityAddress = await wallet.getAddress();
+const signer = new NonceManager(wallet);
 
 const registry = new Contract(
   registryAddress,
@@ -90,44 +94,104 @@ if (rawEd25519PublicKey.length !== 32) {
   );
 }
 
+const networkId = `0x${expectedChainId.toString(16)}`;
+const did = `did:ethr:${networkId}:${identityAddress}`;
+
+const didResolver = new Resolver(
+  getResolver({
+    networks: [
+      {
+        name: "local",
+        chainId: expectedChainId,
+        rpcUrl,
+        registry: registryAddress,
+      },
+    ],
+  }),
+);
+
+const before = await didResolver.resolve(did);
+if (before.didResolutionMetadata?.error) {
+  throw new Error(
+    `Unable to resolve DID before update: ${before.didResolutionMetadata.error}`,
+  );
+}
+
+const existingVerificationMethods =
+  before.didDocument?.verificationMethod ?? [];
+const existingServices = before.didDocument?.service ?? [];
+
+const alreadyHasEd25519 = existingVerificationMethods.some(
+  (method) => method.type === "Ed25519VerificationKey2020",
+);
+
+const alreadyHasDelegationService = existingServices.some(
+  (service) =>
+    service.type === "DelegationService" &&
+    service.serviceEndpoint === serviceEndpoint,
+);
+
 const ed25519AttributeName = encodeBytes32String(
   "did/pub/Ed25519/veriKey",
 );
-
-console.log("");
-console.log("Publishing Ed25519 verification method...");
-const keyTx = await registry.setAttribute(
-  identityAddress,
-  ed25519AttributeName,
-  rawEd25519PublicKey,
-  validitySeconds,
-);
-const keyReceipt = await keyTx.wait();
-
 const serviceAttributeName = encodeBytes32String(
   "did/svc/DelegationService",
 );
 
-console.log("Publishing DelegationService endpoint...");
-const serviceTx = await registry.setAttribute(
-  identityAddress,
-  serviceAttributeName,
-  toUtf8Bytes(serviceEndpoint),
-  validitySeconds,
-);
-const serviceReceipt = await serviceTx.wait();
-
-const networkId = `0x${expectedChainId.toString(16)}`;
-const did = `did:ethr:${networkId}:${identityAddress}`;
+let keyReceipt = null;
+let serviceReceipt = null;
 
 console.log("");
-console.log("DID attributes published successfully.");
+
+if (alreadyHasEd25519) {
+  console.log(
+    "Ed25519 verification method already present in the resolved DID Document; skipping publication.",
+  );
+} else {
+  console.log("Publishing Ed25519 verification method...");
+  const keyTx = await registry.setAttribute(
+    identityAddress,
+    ed25519AttributeName,
+    rawEd25519PublicKey,
+    validitySeconds,
+  );
+  keyReceipt = await keyTx.wait();
+}
+
+if (alreadyHasDelegationService) {
+  console.log(
+    "DelegationService endpoint already present in the resolved DID Document; skipping publication.",
+  );
+} else {
+  console.log("Publishing DelegationService endpoint...");
+  const serviceTx = await registry.setAttribute(
+    identityAddress,
+    serviceAttributeName,
+    toUtf8Bytes(serviceEndpoint),
+    validitySeconds,
+  );
+  serviceReceipt = await serviceTx.wait();
+}
+
+console.log("");
+console.log("DID publication step completed.");
 console.log(`DID: ${did}`);
 console.log(`Identity/controller: ${identityAddress}`);
 console.log(`Ed25519 public JWK: ${JSON.stringify(publicJwk)}`);
 console.log(`DelegationService: ${serviceEndpoint}`);
-console.log(`Ed25519 transaction: ${keyReceipt.hash}`);
-console.log(`Service transaction: ${serviceReceipt.hash}`);
+
+if (keyReceipt) {
+  console.log(`Ed25519 transaction: ${keyReceipt.hash}`);
+}
+
+if (serviceReceipt) {
+  console.log(`Service transaction: ${serviceReceipt.hash}`);
+}
+
+if (!keyReceipt && !serviceReceipt) {
+  console.log("No transaction was needed; both DID attributes were already present.");
+}
+
 console.log("");
 console.log(
   "The Ed25519 private JWK is stored only under did-client/local/ and is ignored by Git.",
