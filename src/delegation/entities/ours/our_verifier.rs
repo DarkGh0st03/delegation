@@ -347,12 +347,7 @@ mod tests {
                 .insert(identity_id.to_string(), trusted);
         }
 
-        fn set_accumulator_anchor(
-            &self,
-            identity_id: &str,
-            version: u64,
-            material_hash: B256,
-        ) {
+        fn set_accumulator_anchor(&self, identity_id: &str, version: u64, material_hash: B256) {
             self.latest_versions
                 .borrow_mut()
                 .insert(identity_id.to_string(), version);
@@ -398,9 +393,7 @@ mod tests {
                 .get(&(issuer_id.to_string(), version))
                 .cloned()
                 .ok_or_else(|| {
-                    format!(
-                        "No accumulator anchor for identity {issuer_id} version {version}"
-                    )
+                    format!("No accumulator anchor for identity {issuer_id} version {version}")
                 })
         }
     }
@@ -414,12 +407,8 @@ mod tests {
         let source_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
         let source_registry_ref: TrustRegistryRef<Curve> = source_registry.clone();
 
-        let root_id = String::from(
-            "did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-        );
-        let holder_id = String::from(
-            "did:ethr:0x7a69:0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-        );
+        let root_id = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
+        let holder_id = String::from("did:ethr:0x7a69:0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
 
         let root = OurIssuer::<Curve>::new(root_id.clone(), source_registry_ref.clone())?;
         let vc = root.issue_delegation_verifiable_credential(
@@ -464,9 +453,8 @@ mod tests {
         chain.set_trust_anchor(&root_id, true);
         chain.set_accumulator_anchor(&root_id, material_version, root_commitment);
 
-        let evm_registry: TrustRegistryRef<Curve> = Rc::new(
-            EvmBackedTrustRegistry::<Curve>::new(chain, public_material),
-        );
+        let evm_registry: TrustRegistryRef<Curve> =
+            Rc::new(EvmBackedTrustRegistry::<Curve>::new(chain, public_material));
         let status_resolver = resolver_for_vc(&vc)?;
         let verifier = OurVerifier::new(evm_registry, status_resolver)?;
 
@@ -481,7 +469,10 @@ mod tests {
 
         assert_eq!(verified.presenter_id(), &holder_id);
         assert_eq!(verified.issuer_id(), &root_id);
-        assert_eq!(verified.permissions(), &vec![permission(Operation::ReadFile)]);
+        assert_eq!(
+            verified.permissions(),
+            &vec![permission(Operation::ReadFile)]
+        );
         assert_eq!(verified.hierarchy_depth(), 0);
 
         Ok(())
