@@ -180,3 +180,27 @@ forge test
 ```
 
 The Phase 3A tests cover historical accumulator versions, lifecycle gating, DID controller rotation, current Status List versioning, duplicate/no-op protection, and sponsored active agents acting as issuers.
+
+
+---
+
+# Phase 4A — Rust material-version binding
+
+The Rust Delegation Credential now carries an `imv` (`issuerMaterialVersion`) field for every delegation hop.
+
+The value identifies the exact accumulator public-material version used by that issuer when the credential was created. It is also included in the accumulator-protected metadata together with the credential id, delegatee, issuance/expiration times, and status-list reference. Changing `imv` therefore invalidates the metadata witness.
+
+The in-memory `TrustRegistry` mirrors the Solidity `IssuerRegistry` semantics:
+
+```text
+issuer
+  ├── version 1 -> AccumulatorPublicData
+  ├── version 2 -> AccumulatorPublicData
+  └── ...
+```
+
+Old versions remain addressable through `get_accumulator_data_at_version`. `OurVerifier` resolves the version carried by each credential/hierarchy hop instead of implicitly using the issuer's latest accumulator material.
+
+Status List semantics remain intentionally different: the credential still carries only the stable Status List reference, index, and purpose; the current anchored Status List version will be resolved at verification time.
+
+This checkpoint prepares the codebase for Phase 4B, where an EVM-backed Rust adapter will implement the same trust/material interfaces against `EthereumDIDRegistry`, `EnterpriseTrustRegistry`, and `IssuerRegistry`.
