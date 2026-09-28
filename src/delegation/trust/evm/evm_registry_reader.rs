@@ -143,7 +143,6 @@ impl EvmRegistryReader {
 
         self.runtime
             .block_on(async { contract.identityOwner(identity).call().await })
-            .map(|result| result.owner)
             .map_err(|err| format!("Could not resolve DID owner for {identity_id} [{err}]"))
     }
 
@@ -177,7 +176,6 @@ impl EvmRegistryReader {
 
         self.runtime
             .block_on(async { contract.isTrustAnchor(identity).call().await })
-            .map(|result| result._0)
             .map_err(|err| format!("Could not read trust-anchor state for {identity_id} [{err}]"))
     }
 
@@ -187,9 +185,11 @@ impl EvmRegistryReader {
 
         self.runtime
             .block_on(async {
-                contract.latestAccumulatorMaterialVersion(issuer).call().await
+                contract
+                    .latestAccumulatorMaterialVersion(issuer)
+                    .call()
+                    .await
             })
-            .map(|result| result._0)
             .map_err(|err| {
                 format!(
                     "Could not read latest accumulator material version for {issuer_id} [{err}]"
@@ -213,7 +213,10 @@ impl EvmRegistryReader {
 
         self.runtime
             .block_on(async {
-                contract.getAccumulatorMaterial(issuer, version).call().await
+                contract
+                    .getAccumulatorMaterial(issuer, version)
+                    .call()
+                    .await
             })
             .map(|result| AccumulatorMaterialAnchor {
                 material_hash: result.materialHash,
