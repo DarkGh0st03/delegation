@@ -227,13 +227,14 @@ impl<E: Pairing> OurVerifier<E> {
 
         // Resolve status only after the status reference has been authenticated by the
         // accumulator metadata witness.
-        self.verify_credential_status(credential_id, credential_status)?;
+        self.verify_credential_status(issuer, credential_id, credential_status)?;
 
         Ok(())
     }
 
     fn verify_credential_status(
         &self,
+        issuer: &String,
         credential_id: &String,
         credential_status: &BitstringStatusListEntry,
     ) -> Result<(), String> {
@@ -242,7 +243,10 @@ impl<E: Pairing> OurVerifier<E> {
                 "Credential {credential_id} uses unsupported message status purpose"
             )),
             StatusPurpose::Revocation => {
-                if self.status_list_resolver.is_status_set(credential_status)? {
+                if self
+                    .status_list_resolver
+                    .is_status_set_for_issuer(issuer, credential_status)?
+                {
                     Err(format!("Credential {credential_id} is revoked"))
                 } else {
                     Ok(())

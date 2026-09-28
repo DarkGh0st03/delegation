@@ -58,21 +58,29 @@ impl BitstringStatusListResolver {
         let mask = 0b1000_0000u8 >> bit_offset;
         Ok(bitstring[byte_index] & mask != 0)
     }
-}
 
-impl StatusListResolver for BitstringStatusListResolver {
-    fn is_status_set(&self, entry: &BitstringStatusListEntry) -> Result<bool, String> {
-        let raw_credential = self
-            .provider
-            .get_status_list_credential(entry.status_list_credential())?;
-
+    /// Resolves an entry against the exact Status List Credential bytes supplied by
+    /// the caller. Anchored resolvers use this after hashing those same bytes, which
+    /// avoids fetching the document twice and prevents a check/use race.
+    pub fn is_status_set_in_document(
+        entry: &BitstringStatusListEntry,
+        raw_credential: &str,
+    ) -> Result<bool, String> {
         let credential: BitstringStatusListCredentialDocument =
-            serde_json::from_str(&raw_credential).map_err(|err| {
+            serde_json::from_str(raw_credential).map_err(|err| {
                 format!(
                     "Could not parse BitstringStatusListCredential {} [{err}]",
                     entry.status_list_credential()
                 )
             })?;
+
+        if credential.id != *entry.status_list_credential() {
+            return Err(format!(
+                "Status list document id {} does not match referenced credential {}",
+                credential.id,
+                entry.status_list_credential()
+            ));
+        }
 
         if !credential
             .credential_type
@@ -126,8 +134,18 @@ impl StatusListResolver for BitstringStatusListResolver {
     }
 }
 
+impl StatusListResolver for BitstringStatusListResolver {
+    fn is_status_set(&self, entry: &BitstringStatusListEntry) -> Result<bool, String> {
+        let raw_credential = self
+            .provider
+            .get_status_list_credential(entry.status_list_credential())?;
+        Self::is_status_set_in_document(entry, &raw_credential)
+    }
+}
+
 #[derive(Deserialize)]
 struct BitstringStatusListCredentialDocument {
+    id: String,
     #[serde(rename = "type")]
     credential_type: OneOrManyString,
     #[serde(rename = "credentialSubject")]

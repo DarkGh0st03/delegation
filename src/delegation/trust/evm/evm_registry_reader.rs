@@ -88,6 +88,16 @@ pub trait EvmTrustReader {
     ) -> Result<AccumulatorMaterialAnchor, String>;
 }
 
+/// Narrow reader used by the Status List resolver. Kept separate from
+/// `EvmTrustReader` so verifier trust mocks do not need status-list behavior.
+pub trait EvmStatusListReader {
+    fn status_list_anchor(
+        &self,
+        issuer_id: &str,
+        status_list_credential: &str,
+    ) -> Result<StatusListAnchor, String>;
+}
+
 pub struct EvmRegistryReader {
     runtime: Runtime,
     provider: DynProvider,
@@ -296,6 +306,16 @@ impl EvmTrustReader for EvmRegistryReader {
         version: u64,
     ) -> Result<AccumulatorMaterialAnchor, String> {
         EvmRegistryReader::accumulator_material_anchor(self, issuer_id, version)
+    }
+}
+
+impl EvmStatusListReader for EvmRegistryReader {
+    fn status_list_anchor(
+        &self,
+        issuer_id: &str,
+        status_list_credential: &str,
+    ) -> Result<StatusListAnchor, String> {
+        EvmRegistryReader::status_list_anchor(self, issuer_id, status_list_credential)
     }
 }
 

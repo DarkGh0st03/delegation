@@ -351,3 +351,42 @@ cargo run --example live_evm_verifier
 ```
 
 Use only disposable local Anvil accounts for the two private-key environment variables.
+
+
+---
+
+# Phase 4C.1 — issuer-aware anchored Bitstring Status List
+
+The verifier status path is now issuer-aware. `OurVerifier` passes the issuer of each
+delegation hop to the status resolver, allowing the resolver to read the matching
+`IssuerRegistry[issuer][listId]` anchor rather than trusting a URL in isolation.
+
+`AnchoredStatusListResolver` performs the following fail-closed sequence:
+
+```text
+credentialStatus
+  -> issuer + statusListCredential
+  -> IssuerRegistry current StatusListAnchor
+  -> exact off-chain Status List Credential bytes
+  -> keccak256(exact UTF-8 bytes)
+  -> compare with currentDocumentHash
+  -> validate W3C Bitstring Status List structure/purpose
+  -> read status bit
+```
+
+The document is fetched only once. The exact bytes whose hash is compared with the
+blockchain are the same bytes parsed for the authorization decision, avoiding a
+fetch/check/fetch race.
+
+PoC commitment convention:
+
+```text
+listId              = keccak256(exact UTF-8 statusListCredential identifier)
+currentDocumentHash = keccak256(exact UTF-8 Status List Credential document bytes)
+```
+
+There is intentionally no JSON normalization in this convention.
+
+This phase proves freshness/anti-rollback against the blockchain anchor. Authentication
+of the Status List Credential's own VC proof/signature is still a separate boundary and
+must be added before treating arbitrary remote documents as production-trusted input.
