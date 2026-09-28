@@ -119,6 +119,25 @@ impl DidEthrVerificationKeyProvider {
         build_public_ed25519_jwk(&URL_SAFE_NO_PAD.encode(raw_key))
     }
 
+    fn is_ed25519_method(method: &VerificationMethod) -> bool {
+        if method.method_type == "Ed25519VerificationKey2020" {
+            return true;
+        }
+
+        if method.method_type != "JsonWebKey2020" {
+            return false;
+        }
+
+        method
+            .public_key_jwk
+            .as_ref()
+            .and_then(Value::as_object)
+            .is_some_and(|jwk| {
+                jwk.get("kty").and_then(Value::as_str) == Some("OKP")
+                    && jwk.get("crv").and_then(Value::as_str) == Some("Ed25519")
+            })
+    }
+
     fn select_assertion_key(document: &DidDocument) -> Result<Jwk, String> {
         let mut assertion_ids = HashSet::new();
         let mut candidates = Vec::new();
@@ -128,10 +147,7 @@ impl DidEthrVerificationKeyProvider {
                 AssertionMethod::Reference(id) => {
                     assertion_ids.insert(id.clone());
                 }
-                AssertionMethod::Embedded(method)
-                    if method.method_type == "Ed25519VerificationKey2020"
-                        || method.method_type == "JsonWebKey2020" =>
-                {
+                AssertionMethod::Embedded(method) if Self::is_ed25519_method(method) => {
                     candidates.push(Self::jwk_from_method(method)?);
                 }
                 AssertionMethod::Embedded(_) => {}
@@ -142,9 +158,7 @@ impl DidEthrVerificationKeyProvider {
             if !assertion_ids.contains(&method.id) {
                 continue;
             }
-            if method.method_type == "Ed25519VerificationKey2020"
-                || method.method_type == "JsonWebKey2020"
-            {
+            if Self::is_ed25519_method(method) {
                 candidates.push(Self::jwk_from_method(method)?);
             }
         }
