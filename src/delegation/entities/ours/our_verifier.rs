@@ -193,8 +193,12 @@ impl<E: Pairing> OurVerifier<E> {
         // First, verify that timing constraints are indeed respected
         verify_timings(now_ns, delegation.iat(), delegation.exp())?;
 
-        // Resolve the issuer's public accumulator material through the trust abstraction.
-        let entry = self.trust_registry.get_accumulator_data(issuer)?;
+        // Resolve the exact historical accumulator public-material version bound into
+        // this delegation at issuance time.
+        let entry = self.trust_registry.get_accumulator_data_at_version(
+            issuer,
+            delegation.issuer_material_version(),
+        )?;
 
         // Clone the accumulator value and all the witnesses from the delegation credential
         let accumulator_value = delegation.accumulator_value();
@@ -204,6 +208,7 @@ impl<E: Pairing> OurVerifier<E> {
             delegation.delegatee_id().clone(),
             delegation.iat().clone(),
             delegation.exp().clone(),
+            delegation.issuer_material_version().to_string(),
             credential_status.canonical_value(),
         ]);
         let permission_witnesses = delegation.permission_witnesses();
