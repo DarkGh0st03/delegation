@@ -275,3 +275,28 @@ This keeps large cryptographic material off-chain while making tampering detecta
 The current `InMemoryPublicMaterialProvider` is a PoC provider. Its verification-key side will later be replaced by the `did:ethr` resolver boundary, and its accumulator side by the delegation-material service endpoint already published in the DID Document.
 
 The EVM-backed registry is verifier-side/read-only. Issuer and governance mutations remain explicit signed blockchain transaction workflows rather than local `TrustRegistry` mutations.
+
+
+---
+
+# Phase 4B.3 — OurVerifier through EVM-backed trust
+
+The verifier test suite now exercises a real `OurVerifier` instance with `EvmBackedTrustRegistry` instead of `InMemoryTrustRegistry`.
+
+Issuance is still created locally for deterministic tests, then the public data is split exactly as in the deployment architecture:
+
+```text
+mock EVM state
+  -> issuer Active
+  -> presenter Active
+  -> root trustAnchor=true
+  -> accumulator version/hash anchor
+
+off-chain provider
+  -> exact AccumulatorPublicData
+  -> presenter Ed25519 verification JWK
+```
+
+The resulting VP is verified by the unchanged `OurVerifier` API. This demonstrates that the verifier already consumes the `TrustRegistry` abstraction correctly and can switch from in-memory trust to blockchain-backed trust without changing delegation-proof logic.
+
+The next integration step is to replace the mock EVM reader in this verification path with the live `EvmRegistryReader`, and then replace the in-memory public-material provider with the real DID/delegation-material resolution boundary.
