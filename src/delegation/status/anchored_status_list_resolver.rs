@@ -148,7 +148,8 @@ mod tests {
             issuer_id: &str,
             status_list_credential: &str,
         ) -> Result<StatusListAnchor, String> {
-            self.anchors
+            Ok(self
+                .anchors
                 .borrow()
                 .get(&(issuer_id.to_string(), status_list_credential.to_string()))
                 .cloned()
@@ -158,17 +159,10 @@ mod tests {
                     current_version: 0,
                     updated_at: 0,
                     exists: false,
-                })
-                .pipe(Ok)
+                }))
         }
     }
 
-    trait Pipe: Sized {
-        fn pipe<T>(self, f: impl FnOnce(Self) -> T) -> T {
-            f(self)
-        }
-    }
-    impl<T> Pipe for T {}
 
     fn entry() -> BitstringStatusListEntry {
         BitstringStatusListEntry::revocation(
