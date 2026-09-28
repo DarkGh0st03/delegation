@@ -7,3 +7,4 @@
 /blockchain/lib/
 /blockchain/.env
 /blockchain/did-client/node_modules/
+/blockchain/did-client/local/

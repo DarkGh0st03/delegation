@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "resolve": "node resolve-did.mjs"
+    "resolve": "node resolve-did.mjs",
+    "publish": "node publish-did.mjs"
   },
   "dependencies": {
     "did-resolver": "^6.0.0",
-    "ethr-did-resolver": "^14.1.4"
+    "ethr-did-resolver": "^14.1.4",
+    "ethers": "^6.16.0"
   }
 }

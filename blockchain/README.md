@@ -1,31 +1,20 @@
 # Blockchain layer — Phase 1: DID infrastructure
 
-This directory starts the blockchain portion of the thesis prototype.
+This directory contains the DID foundation for the blockchain portion of the thesis prototype.
 
-## Phase 1A — ERC-1056 registry foundation
+## Architectural scope
 
-The first checkpoint intentionally does **not** implement enterprise trust, delegation material anchoring, or Bitstring Status List anchoring yet.
+The production architecture targets a private permissioned EVM network. The PoC uses Anvil because the goal is to validate the application-level contracts and DID integration, not the consensus layer.
 
-It establishes only the EVM/DID foundation:
+DID management is not the research contribution of the thesis, so the project reuses the established `did:ethr` / ERC-1056 model rather than defining a new DID method.
 
-1. a Foundry workspace;
-2. the standard ERC-1056 `EthereumDIDRegistry` used by `did:ethr`;
-3. local tests for identity ownership, controller rotation, and owner-only DID updates;
-4. a deployment helper for a local Anvil network.
+The vendored contract in `src/vendor/EthereumDIDRegistry.sol` comes from the upstream `decentralized-identity/ethr-did-resolver` monorepo.
 
-The production architecture targets a private permissioned EVM network. The PoC uses Anvil because the goal is to validate the application-level contracts and their integration, not the consensus layer.
+A `did:ethr` identifier based on an EVM address exists implicitly: creating the EVM key pair is enough to define the DID. The ERC-1056 registry is used for DID updates such as controller rotation, delegates, verification methods, and service endpoints.
 
-## Why use EthereumDIDRegistry instead of a custom DID contract?
+## Phase 1A — registry foundation
 
-DID management is not the research contribution of the thesis. The project therefore reuses the established `did:ethr` registry rather than implementing a new DID method.
-
-The vendored Solidity source in `src/vendor/EthereumDIDRegistry.sol` is taken from the upstream `decentralized-identity/ethr-did-resolver` monorepo, package `ethr-did-registry`.
-
-A `did:ethr` identifier based on an EVM address exists implicitly: creating the EVM key pair is enough to define the DID. The ERC-1056 registry is needed when the controller wants to rotate control, add delegates, or publish DID attributes such as additional verification methods and service endpoints.
-
-## Test Phase 1A
-
-From this directory:
+Run the Solidity tests:
 
 ```powershell
 forge test
@@ -37,34 +26,26 @@ Run a persistent local chain:
 anvil --chain-id 31337
 ```
 
-Deploy the DID registry from a second terminal with one of the private keys printed by Anvil:
+Deploy the registry from another terminal:
 
 ```powershell
 .\scripts\deploy-did-registry.ps1 -PrivateKey "<ANVIL_PRIVATE_KEY>"
 ```
 
-The script deploys to `http://127.0.0.1:8545` by default.
+For a fresh default Anvil instance the first deployment is typically deterministic, but the registry address must always be taken from the actual `forge create` output.
+
+If Anvil is stopped and restarted without persistence, its chain state is reset and the registry must be deployed again.
 
 ## Phase 1B — resolve a real did:ethr DID
 
-The second checkpoint uses the official `ethr-did-resolver` off-chain library to resolve a DID against the ERC-1056 registry running on Anvil.
-
-Install the small DID client:
+Install the DID client:
 
 ```powershell
 cd did-client
 npm install
 ```
 
-Set the address of the deployed registry and the EVM identity to resolve. Example for the default Anvil chain:
-
-```powershell
-$env:REGISTRY_ADDRESS="0x5FbDB2315678afecb367f032d93F642f64180aa3"
-$env:IDENTITY_ADDRESS="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-npm run resolve
-```
-
-In Git Bash use:
+Example using the default Anvil account 1 as the DID identity:
 
 ```bash
 REGISTRY_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3 \
@@ -72,14 +53,50 @@ IDENTITY_ADDRESS=0x70997970C51812dc3A010C7d01b50e0d17dc79C8 \
 npm run resolve
 ```
 
-For Anvil chain ID `31337`, the DID uses the hexadecimal chain identifier `0x7a69`, so the example identity resolves as:
+For Anvil chain ID `31337`, the hexadecimal network identifier is `0x7a69`:
 
 ```text
 did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 ```
 
-At this point no DID update transaction is required. The resolver should return the minimal DID Document derived from the EVM identity and the configured network.
+The minimal DID Document contains the default secp256k1 controller derived from the EVM identity.
 
-## Next Phase 1B checkpoint
+## Phase 1B — enrich the DID Document
 
-After minimal resolution works, the same DID will publish an Ed25519 verification method and a service endpoint through ERC-1056 events, then the resolver will reconstruct the enriched DID Document.
+The next step publishes two ERC-1056 attributes owned by the same DID controller:
+
+- an Ed25519 verification method, using the official `did/pub/Ed25519/veriKey` attribute form;
+- a `DelegationService` endpoint that will later expose delegation verification material off-chain.
+
+For the local PoC, `publish-did.mjs` generates an Ed25519 key pair once and stores it under `did-client/local/`. That directory is ignored by Git. This demo key will later be replaced/wired to the Ed25519 key material managed by the Rust identity layer.
+
+With the default Anvil account 1:
+
+```bash
+REGISTRY_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3 \
+IDENTITY_PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d \
+npm run publish
+```
+
+The script defaults to:
+
+```text
+RPC_URL=http://127.0.0.1:8545
+CHAIN_ID=31337
+DELEGATION_SERVICE_ENDPOINT=http://127.0.0.1:3000/delegation-material
+VALIDITY_SECONDS=31536000
+```
+
+After the two transactions are confirmed, resolve the DID again:
+
+```bash
+REGISTRY_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3 \
+IDENTITY_ADDRESS=0x70997970C51812dc3A010C7d01b50e0d17dc79C8 \
+npm run resolve
+```
+
+The reconstructed DID Document should now contain the original EVM controller plus an `Ed25519VerificationKey2020` verification method and a `DelegationService` service entry.
+
+## What remains after Phase 1
+
+Once this enriched DID resolves correctly, the DID layer is sufficient for the thesis PoC. The next blockchain component is the thesis-specific `EnterpriseTrustRegistry`, followed by the `IssuerRegistry`.
