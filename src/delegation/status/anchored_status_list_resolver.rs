@@ -82,11 +82,12 @@ impl StatusListResolver for AnchoredStatusListResolver {
 
         // Fetch exactly once: the bytes checked against the chain are the same bytes
         // subsequently parsed and used for the status-bit decision.
-        let raw_credential = self
-            .provider
-            .get_status_list_credential(entry.status_list_credential())?;
+        let artifact = self.provider.get_status_list_credential_for_issuer(
+            issuer_id,
+            entry.status_list_credential(),
+        )?;
 
-        let observed_hash = Self::document_commitment(&raw_credential);
+        let observed_hash = keccak256(&artifact.commitment_bytes);
         if observed_hash != anchor.current_document_hash {
             return Err(format!(
                 "Status List commitment mismatch for issuer {issuer_id}, list {} version {}: on-chain {}, observed {}",
@@ -97,7 +98,7 @@ impl StatusListResolver for AnchoredStatusListResolver {
             ));
         }
 
-        BitstringStatusListResolver::is_status_set_in_document(entry, &raw_credential)
+        BitstringStatusListResolver::is_status_set_in_document(entry, &artifact.document)
     }
 }
 
