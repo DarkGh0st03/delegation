@@ -131,3 +131,52 @@ forge test
 ```
 
 The new tests cover governance enrollment, trust anchors, sponsored enrollment, controller rotation, suspension/reactivation, sponsor revocation, and fail-closed behavior.
+
+
+---
+
+# Phase 3A — Issuer Registry
+
+`IssuerRegistry.sol` anchors the public material needed to verify Delegation Credentials without putting the credentials, permissions, witnesses, or Status List bitstrings on-chain.
+
+The contract deliberately treats the two kinds of mutable public material differently.
+
+## Accumulator material: historical versions
+
+Accumulator public material is published as an immutable sequence of hash commitments per issuer:
+
+```text
+issuer
+  ├── version 1 -> materialHash 1
+  ├── version 2 -> materialHash 2
+  └── version 3 -> materialHash 3
+```
+
+Old versions remain readable. A Delegation Credential issued against version 1 must still be verified against version 1 even after the issuer rotates to version 2.
+
+The credential will later carry the exact `issuerMaterialVersion`; the Rust verifier will retrieve the corresponding off-chain public material and compare its digest with the on-chain commitment.
+
+## Status Lists: current version
+
+A Bitstring Status List uses a stable `listId`, a fixed purpose, and only the latest anchored document hash:
+
+```text
+issuer + listId
+  purpose = Revocation | Suspension
+  currentVersion
+  currentDocumentHash
+```
+
+Status updates advance `currentVersion`. Verification intentionally uses the current version so a credential revoked after issuance is rejected.
+
+The full Status List Credential and its `encodedList` remain off-chain. The chain stores only the opaque list identifier, purpose, current version, and document hash. The integration layer will derive `listId` deterministically from the Status List Credential identifier.
+
+Only the current ERC-1056 controller of an `Active` enterprise identity may publish issuer material or update its Status Lists.
+
+Run:
+
+```powershell
+forge test
+```
+
+The Phase 3A tests cover historical accumulator versions, lifecycle gating, DID controller rotation, current Status List versioning, duplicate/no-op protection, and sponsored active agents acting as issuers.
