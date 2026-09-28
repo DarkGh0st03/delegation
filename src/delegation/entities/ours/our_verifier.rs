@@ -195,10 +195,9 @@ impl<E: Pairing> OurVerifier<E> {
 
         // Resolve the exact historical accumulator public-material version bound into
         // this delegation at issuance time.
-        let entry = self.trust_registry.get_accumulator_data_at_version(
-            issuer,
-            delegation.issuer_material_version(),
-        )?;
+        let entry = self
+            .trust_registry
+            .get_accumulator_data_at_version(issuer, delegation.issuer_material_version())?;
 
         // Clone the accumulator value and all the witnesses from the delegation credential
         let accumulator_value = delegation.accumulator_value();
