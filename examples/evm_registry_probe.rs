@@ -35,10 +35,7 @@ fn main() -> Result<(), String> {
         let anchor = reader.accumulator_material_anchor(&issuer_id, latest_version)?;
         println!(
             "accumulatorMaterial(version={}, hash={}, publishedAt={}, exists={})",
-            latest_version,
-            anchor.material_hash,
-            anchor.published_at,
-            anchor.exists
+            latest_version, anchor.material_hash, anchor.published_at, anchor.exists
         );
     }
 
