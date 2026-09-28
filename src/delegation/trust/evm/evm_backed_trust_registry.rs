@@ -208,9 +208,7 @@ mod tests {
                 .get(&(issuer_id.to_string(), version))
                 .cloned()
                 .ok_or_else(|| {
-                    format!(
-                        "No accumulator anchor for identity {issuer_id} version {version}"
-                    )
+                    format!("No accumulator anchor for identity {issuer_id} version {version}")
                 })
         }
     }
@@ -219,7 +217,7 @@ mod tests {
         let mut rng = StdRng::from_entropy();
         let params = SetupParams::<Bn254>::generate_using_rng(&mut rng);
         let keypair = Keypair::<Bn254>::generate_using_rng(&mut rng, &params);
-        AccumulatorPublicData::new(keypair.public_key, params)
+        AccumulatorPublicData::new(keypair.public_key.clone(), params)
     }
 
     fn verification_key() -> Result<Jwk, String> {
@@ -234,9 +232,7 @@ mod tests {
 
     #[test]
     fn accepts_off_chain_material_only_when_commitment_matches() -> Result<(), String> {
-        let identity = String::from(
-            "did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-        );
+        let identity = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
         let version = 1;
         let material = accumulator_data();
         let commitment =
@@ -270,9 +266,7 @@ mod tests {
 
     #[test]
     fn rejects_off_chain_material_when_commitment_mismatches() -> Result<(), String> {
-        let identity = String::from(
-            "did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-        );
+        let identity = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
         let version = 1;
 
         let chain = Rc::new(MockEvmTrustReader::new());
@@ -303,9 +297,7 @@ mod tests {
 
     #[test]
     fn lifecycle_and_trust_anchor_come_from_chain() -> Result<(), String> {
-        let identity = String::from(
-            "did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-        );
+        let identity = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
 
         let chain = Rc::new(MockEvmTrustReader::new());
         chain
@@ -325,9 +317,7 @@ mod tests {
 
     #[test]
     fn suspended_identity_cannot_resolve_verification_material() -> Result<(), String> {
-        let identity = String::from(
-            "did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-        );
+        let identity = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
 
         let chain = Rc::new(MockEvmTrustReader::new());
         chain
