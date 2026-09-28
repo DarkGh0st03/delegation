@@ -253,7 +253,10 @@ impl<E: Pairing> OurVerifier<E> {
                 }
             }
             StatusPurpose::Suspension => {
-                if self.status_list_resolver.is_status_set(credential_status)? {
+                if self
+                    .status_list_resolver
+                    .is_status_set_for_issuer(issuer, credential_status)?
+                {
                     Err(format!("Credential {credential_id} is suspended"))
                 } else {
                     Ok(())
