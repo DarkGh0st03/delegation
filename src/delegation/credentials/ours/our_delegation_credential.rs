@@ -16,6 +16,8 @@ pub struct OurDelegationCredential {
     iat: String,
     #[serde(rename = "exp")]
     exp: String,
+    #[serde(rename = "imv")]
+    issuer_material_version: u64,
     #[serde(rename = "per")]
     permissions: Vec<Permission>,
     #[serde(rename = "mw")]
@@ -46,6 +48,7 @@ impl OurDelegationCredential {
         accumulator_value: String,
         iat: String,
         exp: String,
+        issuer_material_version: u64,
         permissions: Vec<Permission>,
         metadata_witness: String,
         permission_witnesses: Vec<String>,
@@ -56,6 +59,7 @@ impl OurDelegationCredential {
             accumulator_value,
             iat,
             exp,
+            issuer_material_version,
             permissions,
             metadata_witness,
             permission_witnesses,
@@ -90,6 +94,9 @@ impl OurDelegation for OurDelegationCredential {
     /// Getter function for the exp variable.
     fn exp(&self) -> &String {
         &self.exp
+    }
+    fn issuer_material_version(&self) -> u64 {
+        self.issuer_material_version
     }
     /// Getter function for the metadata_witnesses variable.
     fn metadata_witness(&self) -> &String {
@@ -260,6 +267,7 @@ mod tests {
         "av": "accumulator_value_d1",
         "iat": "0000000001",
         "exp": "1000000000",
+        "imv": 1,
         "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "write_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "create_branch" } ],
         "mw": "w_metadata_d1",
         "pw": [ "w0d1", "w1d1", "w2d1" ],
@@ -271,6 +279,7 @@ mod tests {
         "av": "accumulator_value_d2",
         "iat": "0000000002",
         "exp": "1000000000",
+        "imv": 1,
         "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "write_file" } ],
         "mw": "w_metadata_d2",
         "pw": [ "w0d2", "w1d2" ],
@@ -287,6 +296,7 @@ mod tests {
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
+                "imv": 1,
                 "av": "accumulator_value_d1",
                 "mw": "w_metadata_d1",
                 "pw": [ "w0d1", "w1d1" ]
@@ -299,6 +309,7 @@ mod tests {
         "av": "accumulator_value_d3",
         "iat": "0000000003",
         "exp": "1000000000",
+        "imv": 1,
         "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" }, { "resource": "https://gitea.local/repos/project-a", "operation": "write_file" } ],
         "mw": "w_metadata_d3",
         "pw": [ "w0d3", "w1d3" ],
@@ -315,6 +326,7 @@ mod tests {
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
+                "imv": 1,
                 "av": "accumulator_value_d1",
                 "mw": "w_metadata_d1",
                 "pw": [ "w0d1", "w1d1" ]
@@ -331,6 +343,7 @@ mod tests {
                 "sub": "https://vc.example/delegators/d2",
                 "iat": "0000000002",
                 "exp": "1000000000",
+                "imv": 1,
                 "av": "accumulator_value_d2",
                 "mw": "w_metadata_d2",
                 "pw": [ "w0d2", "w1d2" ]
@@ -343,6 +356,7 @@ mod tests {
         "av": "accumulator_value_d4",
         "iat": "0000000004",
         "exp": "1000000000",
+        "imv": 1,
         "per": [ { "resource": "https://gitea.local/repos/project-a", "operation": "read_file" } ],
         "mw": "w_metadata_d4",
         "pw": [ "w0d4" ],
@@ -359,6 +373,7 @@ mod tests {
                 "sub": "https://vc.example/delegators/d1",
                 "iat": "0000000001",
                 "exp": "1000000000",
+                "imv": 1,
                 "av": "accumulator_value_d1",
                 "mw": "w_metadata_d1",
                 "pw": [ "w0d1" ]
@@ -375,6 +390,7 @@ mod tests {
                 "sub": "https://vc.example/delegators/d2",
                 "iat": "0000000002",
                 "exp": "1000000000",
+                "imv": 1,
                 "av": "accumulator_value_d2",
                 "mw": "w_metadata_d2",
                 "pw": [ "w0d2" ]
@@ -391,6 +407,7 @@ mod tests {
                 "sub": "https://vc.example/delegators/d3",
                 "iat": "0000000003",
                 "exp": "1000000000",
+                "imv": 1,
                 "av": "accumulator_value_d3",
                 "mw": "w_metadata_d3",
                 "pw": [ "w0d3" ]
