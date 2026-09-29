@@ -13,7 +13,7 @@ use delegation::delegation::status::anchored_status_list_resolver::AnchoredStatu
 use delegation::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
 use delegation::delegation::status::jwt_status_list_credential_provider::{
-    sign_status_list_credential_jwt, JwtAuthenticatedStatusListCredentialProvider,
+    JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
 };
 use delegation::delegation::trust::did_verification_key_provider::DidEthrVerificationKeyProvider;
 use delegation::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
@@ -28,8 +28,8 @@ use delegation::delegation::trust::public_material_provider::{
 use delegation::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
-use flate2::write::GzEncoder;
 use flate2::Compression;
+use flate2::write::GzEncoder;
 use josekit::jwk::Jwk;
 use multibase::Base;
 use serde_json::json;
@@ -38,6 +38,8 @@ use std::io::Write;
 use std::process::Command;
 use std::rc::Rc;
 use std::str::FromStr;
+use std::time::Duration;
+use tokio::runtime::Runtime;
 
 sol! {
     #[sol(rpc)]
