@@ -11,7 +11,7 @@ use delegation::delegation::issuance::issuer_trait::Issuer;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
-use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmEvmAnchoredStatusListResolver;
+use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListProvider;
 use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
