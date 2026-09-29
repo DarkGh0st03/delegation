@@ -28,7 +28,7 @@ IssuerRegistry
         +--> current Status List version/hash/purpose
         |
         v
-Rust OurVerifier
+Rust DelegationVerifier
         |
         +--> exact historical accumulator material version
         +--> live enterprise lifecycle/trust
@@ -72,7 +72,7 @@ NEXT: Cloud Access Gateway -> OPA -> Gitea
 - The chain stores only its hash commitment.
 - Commitments are historical and versioned.
 - Each Delegation Credential carries `issuerMaterialVersion` (`imv`).
-- `OurVerifier` fetches the exact historical version referenced by each delegation hop.
+- `DelegationVerifier` fetches the exact historical version referenced by each delegation hop.
 - The off-chain material is canonical-compressed with arkworks and hashed with Keccak-256 before comparison with the on-chain commitment.
 
 The transport used to obtain the large off-chain accumulator payload is intentionally hidden behind `AccumulatorMaterialProvider`. The blockchain security property does not depend on that transport because the exact payload is commitment-checked before use. Wiring this provider to the future Gateway/service deployment is an integration concern, not another blockchain contract.
@@ -99,7 +99,7 @@ The blockchain does not store Delegation Credentials, Verifiable Presentations, 
 
 ## Final live validation
 
-`examples/live_pre_gateway_closure.rs` validates the full pre-Gateway trust path using two fresh Anvil identities.
+`examples/live_pre_gateway_closure.rs` validates the full pre-Gateway trust path using two fresh Anvil identities. The validation was rerun successfully after the Rust architecture reorganization, confirming that the refactor changed module structure and names without changing behavior.
 
 It performs:
 
@@ -144,6 +144,8 @@ The embedded Anvil mnemonic/private keys are the standard public development key
 
 For manual/debug operation, `check-pre-gateway.sh` remains available when Anvil, contract addresses, governance key, and fresh root/holder keys have already been configured. It derives the two did:ethr identifiers, runs Rust formatting/tests, Solidity tests, verifies Node resolver dependencies, and executes the final live integration.
 
-## Next phase
+## Current freeze point
 
-After this checkpoint, no new blockchain functionality is required for the initial thesis PoC. The next implementation phase is the Cloud Access Gateway, which will consume `VerifiedDelegation`, enforce one-time challenge/replay handling, call OPA for local policy, and act as the PEP in front of Gitea.
+After this checkpoint, no new blockchain functionality is required for the initial thesis PoC.
+
+The Cloud Access Gateway, OPA/Gitea integration, and agent communication protocols are intentionally frozen while the implemented pre-Gateway architecture is studied and reviewed. When development resumes, the Gateway remains the next planned integration layer: it will consume `VerifiedDelegation`, enforce one-time challenge/replay handling, call OPA for local policy, and act as the PEP in front of Gitea.
