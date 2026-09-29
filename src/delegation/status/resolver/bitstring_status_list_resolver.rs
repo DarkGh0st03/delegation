@@ -181,8 +181,8 @@ impl OneOrManyString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
     use crate::delegation::status::model::status_purpose::StatusPurpose;
+    use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use multibase::Base;
