@@ -1,8 +1,8 @@
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::status::resolver::bitstring_status_list_resolver::BitstringStatusListResolver;
-use crate::delegation::status::provider::status_list_credential_provider_trait::StatusListCredentialProviderRef;
-use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
 use crate::delegation::status::model::status_purpose::StatusPurpose;
+use crate::delegation::status::provider::status_list_credential_provider_trait::StatusListCredentialProviderRef;
+use crate::delegation::status::resolver::bitstring_status_list_resolver::BitstringStatusListResolver;
+use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
 use crate::delegation::trust::evm::evm_reader_traits::EvmStatusListReader;
 use alloy::primitives::{B256, keccak256};
 use std::rc::Rc;
