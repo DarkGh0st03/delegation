@@ -1,5 +1,5 @@
-use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::status::status_list_resolver::StatusListResolver;
+use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

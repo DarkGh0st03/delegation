@@ -1,4 +1,4 @@
-use crate::delegation::status::status_purpose::StatusPurpose;
+use crate::delegation::status::model::status_purpose::StatusPurpose;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

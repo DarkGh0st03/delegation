@@ -1,4 +1,4 @@
-use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
+use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use std::rc::Rc;
 
 /// Resolves the current value associated with a Bitstring Status List entry.

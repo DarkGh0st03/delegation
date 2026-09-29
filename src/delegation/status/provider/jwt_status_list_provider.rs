@@ -1,5 +1,6 @@
-use crate::delegation::status::status_list_credential_provider::{
-    StatusListCredentialArtifact, StatusListCredentialProvider, StatusListCredentialProviderRef,
+use crate::delegation::status::model::status_list_credential_artifact::StatusListCredentialArtifact;
+use crate::delegation::status::provider::status_list_credential_provider_trait::{
+    StatusListCredentialProvider, StatusListCredentialProviderRef,
 };
 use crate::delegation::trust::public_material_provider::VerificationKeyProviderRef;
 use josekit::jwk::Jwk;
@@ -115,7 +116,7 @@ impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvid
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
+    use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
     use crate::delegation::trust::public_material_provider::InMemoryVerificationKeyProvider;
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;

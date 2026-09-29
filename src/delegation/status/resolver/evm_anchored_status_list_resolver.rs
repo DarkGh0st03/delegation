@@ -1,8 +1,8 @@
-use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::status::bitstring_status_list_resolver::BitstringStatusListResolver;
-use crate::delegation::status::status_list_credential_provider::StatusListCredentialProviderRef;
-use crate::delegation::status::status_list_resolver::StatusListResolver;
-use crate::delegation::status::status_purpose::StatusPurpose;
+use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+use crate::delegation::status::resolver::bitstring_status_list_resolver::BitstringStatusListResolver;
+use crate::delegation::status::provider::status_list_credential_provider_trait::StatusListCredentialProviderRef;
+use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
+use crate::delegation::status::model::status_purpose::StatusPurpose;
 use crate::delegation::trust::evm::evm_registry_reader::EvmStatusListReader;
 use alloy::primitives::{B256, keccak256};
 use std::rc::Rc;
@@ -16,12 +16,12 @@ use std::rc::Rc;
 /// Commitment convention:
 /// `currentDocumentHash = keccak256(exact fetched artifact bytes)`.
 /// No JSON reserialization or normalization is performed before hashing.
-pub struct AnchoredStatusListResolver {
+pub struct EvmAnchoredStatusListResolver {
     provider: StatusListCredentialProviderRef,
     chain: Rc<dyn EvmStatusListReader>,
 }
 
-impl AnchoredStatusListResolver {
+impl EvmAnchoredStatusListResolver {
     pub fn new(
         provider: StatusListCredentialProviderRef,
         chain: Rc<dyn EvmStatusListReader>,
@@ -49,10 +49,10 @@ impl AnchoredStatusListResolver {
     }
 }
 
-impl StatusListResolver for AnchoredStatusListResolver {
+impl StatusListResolver for EvmAnchoredStatusListResolver {
     fn is_status_set(&self, _entry: &BitstringStatusListEntry) -> Result<bool, String> {
         Err(String::from(
-            "AnchoredStatusListResolver requires the credential issuer; use issuer-aware resolution",
+            "EvmAnchoredStatusListResolver requires the credential issuer; use issuer-aware resolution",
         ))
     }
 
@@ -112,7 +112,7 @@ impl StatusListResolver for AnchoredStatusListResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
+    use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
     use crate::delegation::trust::evm::evm_registry_reader::StatusListAnchor;
     use flate2::Compression;
     use flate2::write::GzEncoder;
@@ -141,7 +141,7 @@ mod tests {
                 (issuer.to_string(), url.to_string()),
                 StatusListAnchor {
                     purpose: 1,
-                    current_document_hash: AnchoredStatusListResolver::document_commitment(
+                    current_document_hash: EvmAnchoredStatusListResolver::document_commitment(
                         document,
                     ),
                     current_version: version,
@@ -225,7 +225,7 @@ mod tests {
         let chain = Rc::new(MockStatusListReader::new());
         chain.set_anchor(ISSUER, STATUS_LIST_URL, &raw, 1);
 
-        let resolver = AnchoredStatusListResolver::new(provider, chain);
+        let resolver = EvmAnchoredStatusListResolver::new(provider, chain);
         assert!(!resolver.is_status_set_for_issuer(ISSUER, &entry())?);
         Ok(())
     }
@@ -240,7 +240,7 @@ mod tests {
         let chain = Rc::new(MockStatusListReader::new());
         chain.set_anchor(ISSUER, STATUS_LIST_URL, &original, 1);
 
-        let resolver = AnchoredStatusListResolver::new(provider, chain);
+        let resolver = EvmAnchoredStatusListResolver::new(provider, chain);
         assert!(resolver.is_status_set_for_issuer(ISSUER, &entry()).is_err());
         Ok(())
     }
@@ -256,7 +256,7 @@ mod tests {
         let chain = Rc::new(MockStatusListReader::new());
         chain.set_anchor(ISSUER, STATUS_LIST_URL, &active, 1);
 
-        let resolver = AnchoredStatusListResolver::new(provider.clone(), chain.clone());
+        let resolver = EvmAnchoredStatusListResolver::new(provider.clone(), chain.clone());
         assert!(!resolver.is_status_set_for_issuer(ISSUER, &entry())?);
 
         provider.insert(String::from(STATUS_LIST_URL), revoked.clone());

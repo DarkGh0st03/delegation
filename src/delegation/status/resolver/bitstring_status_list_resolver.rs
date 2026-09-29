@@ -1,6 +1,6 @@
-use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::status::status_list_credential_provider::StatusListCredentialProviderRef;
-use crate::delegation::status::status_list_resolver::StatusListResolver;
+use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+use crate::delegation::status::provider::status_list_credential_provider_trait::StatusListCredentialProviderRef;
+use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
 use flate2::read::GzDecoder;
 use serde::Deserialize;
 use std::io::Read;
@@ -181,8 +181,8 @@ impl OneOrManyString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
-    use crate::delegation::status::status_purpose::StatusPurpose;
+    use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
+    use crate::delegation::status::model::status_purpose::StatusPurpose;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use multibase::Base;

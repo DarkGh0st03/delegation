@@ -1,4 +1,4 @@
-use crate::delegation::status::status_list_credential_provider::StatusListCredentialProvider;
+use crate::delegation::status::provider::status_list_credential_provider_trait::StatusListCredentialProvider;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
