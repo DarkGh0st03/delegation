@@ -6,21 +6,21 @@ use ark_bn254::Bn254;
 use delegation::delegation::authorization::authorization_request::AuthorizationRequest;
 use delegation::delegation::authorization::operation::Operation;
 use delegation::delegation::authorization::permission::Permission;
-use delegation::delegation::credentials::ours::our_delegation::OurDelegation;
-use delegation::delegation::entities::issuer::Issuer;
-use delegation::delegation::entities::ours::our_issuer::OurIssuer;
-use delegation::delegation::entities::ours::our_verifier::OurVerifier;
-use delegation::delegation::entities::verifier::Verifier;
-use delegation::delegation::status::anchored_status_list_resolver::AnchoredStatusListResolver;
-use delegation::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use delegation::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
-use delegation::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
-use delegation::delegation::trust::evm::evm_registry_reader::{
+use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
+use delegation::delegation::issuance::issuer_trait::Issuer;
+use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
+use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
+use delegation::delegation::verification::verifier_trait::Verifier;
+use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmEvmAnchoredStatusListResolver;
+use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+use delegation::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListProvider;
+use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
+use delegation::delegation::trust::evm::{
     EvmRegistryReader, EvmStatusListReader, EvmTrustReader,
 };
-use delegation::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
-use delegation::delegation::trust::public_material_provider::InMemoryPublicMaterialProvider;
-use delegation::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
+use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+use delegation::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
+use delegation::delegation::trust::registry::trust_registry_trait::{TrustRegistry, TrustRegistryRef};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use multibase::Base;
@@ -293,7 +293,7 @@ fn main() -> Result<(), String> {
     let source_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
     let source_registry_ref: TrustRegistryRef<Curve> = source_registry.clone();
 
-    let root = OurIssuer::<Curve>::new(root_id.clone(), source_registry_ref.clone())?;
+    let root = DelegationIssuer::<Curve>::new(root_id.clone(), source_registry_ref.clone())?;
     let status_entry = BitstringStatusListEntry::revocation(
         None,
         STATUS_LIST_INDEX.to_string(),
@@ -323,7 +323,7 @@ fn main() -> Result<(), String> {
     let root_commitment =
         EvmBackedTrustRegistry::<Curve>::accumulator_material_commitment(&root_material)?;
 
-    let holder = OurIssuer::<Curve>::new(holder_id.clone(), source_registry_ref)?;
+    let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), source_registry_ref)?;
     let signed_vp = holder.issue_delegation_verifiable_presentation(
         vc,
         vec![permission(Operation::ReadFile)?],
@@ -334,8 +334,8 @@ fn main() -> Result<(), String> {
 
     let active_document = status_list_document(&root_id, false)?;
     let revoked_document = status_list_document(&root_id, true)?;
-    let active_status_hash = AnchoredStatusListResolver::document_commitment(&active_document);
-    let revoked_status_hash = AnchoredStatusListResolver::document_commitment(&revoked_document);
+    let active_status_hash = EvmAnchoredStatusListResolver::document_commitment(&active_document);
+    let revoked_status_hash = EvmAnchoredStatusListResolver::document_commitment(&revoked_document);
     let status_list_id = EvmRegistryReader::status_list_id(STATUS_LIST_URL);
 
     let preflight = EvmRegistryReader::connect(
@@ -396,16 +396,16 @@ fn main() -> Result<(), String> {
         public_material,
     ));
 
-    let status_provider = Rc::new(InMemoryStatusListCredentialProvider::new());
+    let status_provider = Rc::new(InMemoryStatusListProvider::new());
     status_provider.insert(String::from(STATUS_LIST_URL), active_document);
 
     let status_reader: Rc<dyn EvmStatusListReader> = chain_reader.clone();
-    let status_resolver = Rc::new(AnchoredStatusListResolver::new(
+    let status_resolver = Rc::new(EvmAnchoredStatusListResolver::new(
         status_provider.clone(),
         status_reader,
     ));
 
-    let verifier = OurVerifier::<Curve>::new(evm_registry, status_resolver)?;
+    let verifier = DelegationVerifier::<Curve>::new(evm_registry, status_resolver)?;
     let request = AuthorizationRequest::new(
         holder_id.clone(),
         String::from("cloud-access-gateway"),
