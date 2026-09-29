@@ -1,7 +1,9 @@
+use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::trust::material::public_material_provider_traits::{
     AccumulatorMaterialProviderRef, PublicMaterialProvider, VerificationKeyProviderRef,
 };
 use ark_ec::pairing::Pairing;
+use josekit::jwk::Jwk;
 
 /// Composes independent accumulator-material and DID-key resolution boundaries.
 pub struct CompositePublicMaterialProvider<E: Pairing> {
