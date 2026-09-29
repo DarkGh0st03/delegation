@@ -587,7 +587,8 @@ mod tests {
 
         let status_resolver = resolver_for_vc(&vc)?;
         let id = delegatee_id.clone();
-        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id.clone(), trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> =
+            DelegationIssuer::new(id.clone(), trust_registry.clone())?;
 
         let disclosed_permissions: Vec<Permission> = vec![permission(Operation::ReadFile)];
         let audience = String::from("cloud-access-gateway");
