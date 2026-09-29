@@ -1,6 +1,6 @@
 use crate::delegation::authorization::permission::Permission;
 use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
-use crate::delegation::credentials::delegation::delegation_evidence_trait_credential::DelegationCredential;
+use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
 use crate::delegation::credentials::delegation::delegation_chain_entry::DelegationChainEntry;
 use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
