@@ -90,10 +90,9 @@ impl StatusListResolver for AnchoredStatusListResolver {
 
         // Fetch exactly once: the bytes checked against the chain are the same bytes
         // subsequently parsed and used for the status-bit decision.
-        let artifact = self.provider.get_status_list_credential_for_issuer(
-            issuer_id,
-            entry.status_list_credential(),
-        )?;
+        let artifact = self
+            .provider
+            .get_status_list_credential_for_issuer(issuer_id, entry.status_list_credential())?;
 
         let observed_hash = keccak256(&artifact.commitment_bytes);
         if observed_hash != anchor.current_document_hash {

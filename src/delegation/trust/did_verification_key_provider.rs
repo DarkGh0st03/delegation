@@ -97,7 +97,9 @@ impl DidEthrVerificationKeyProvider {
         }
 
         let multibase_key = method.public_key_multibase.as_ref().ok_or_else(|| {
-            String::from("Ed25519 DID verification method has neither publicKeyJwk nor publicKeyMultibase")
+            String::from(
+                "Ed25519 DID verification method has neither publicKeyJwk nor publicKeyMultibase",
+            )
         })?;
 
         let (_, decoded) = multibase::decode(multibase_key).map_err(|err| {

@@ -132,8 +132,8 @@ fn status_list_document(issuer_id: &str, revoked: bool) -> Result<String, String
 }
 
 fn public_jwk_json(private_jwk: &Jwk) -> Result<String, String> {
-    let mut value =
-        serde_json::to_value(private_jwk).map_err(|err| format!("Could not serialize JWK [{err}]"))?;
+    let mut value = serde_json::to_value(private_jwk)
+        .map_err(|err| format!("Could not serialize JWK [{err}]"))?;
     let object = value
         .as_object_mut()
         .ok_or_else(|| String::from("JWK serialization was not a JSON object"))?;
@@ -397,13 +397,10 @@ fn main() -> Result<(), String> {
     let active_document = status_list_document(&root_id, false)?;
     let revoked_document = status_list_document(&root_id, true)?;
     let active_status_jwt = sign_status_list_credential_jwt(&active_document, root.holder_jwk())?;
-    let revoked_status_jwt =
-        sign_status_list_credential_jwt(&revoked_document, root.holder_jwk())?;
+    let revoked_status_jwt = sign_status_list_credential_jwt(&revoked_document, root.holder_jwk())?;
 
-    let active_status_hash =
-        AnchoredStatusListResolver::artifact_commitment(&active_status_jwt);
-    let revoked_status_hash =
-        AnchoredStatusListResolver::artifact_commitment(&revoked_status_jwt);
+    let active_status_hash = AnchoredStatusListResolver::artifact_commitment(&active_status_jwt);
+    let revoked_status_hash = AnchoredStatusListResolver::artifact_commitment(&revoked_status_jwt);
     let status_list_id = EvmRegistryReader::status_list_id(STATUS_LIST_URL);
 
     let runtime =
@@ -466,7 +463,10 @@ fn main() -> Result<(), String> {
         &holder_private_key,
         holder.holder_jwk(),
     )?;
-    println!("rootDidPublication={}", root_did_publish.replace('\n', " | "));
+    println!(
+        "rootDidPublication={}",
+        root_did_publish.replace('\n', " | ")
+    );
     println!(
         "holderDidPublication={}",
         holder_did_publish.replace('\n', " | ")
@@ -505,11 +505,7 @@ fn main() -> Result<(), String> {
     // Verifier side: accumulator payload remains off-chain, but its version/hash is
     // EVM-anchored. Ed25519 keys are no longer injected: they are resolved from did:ethr.
     let accumulator_source = Rc::new(InMemoryPublicMaterialProvider::<Curve>::new());
-    accumulator_source.insert_accumulator_data(
-        root_id.clone(),
-        material_version,
-        root_material,
-    )?;
+    accumulator_source.insert_accumulator_data(root_id.clone(), material_version, root_material)?;
     let accumulator_provider: AccumulatorMaterialProviderRef<Curve> = accumulator_source;
 
     let did_keys = Rc::new(DidEthrVerificationKeyProvider::new(
@@ -530,20 +526,16 @@ fn main() -> Result<(), String> {
         verification_key_provider.clone(),
     ));
     let trust_reader: Rc<dyn EvmTrustReader> = chain_reader.clone();
-    let evm_registry: TrustRegistryRef<Curve> = Rc::new(EvmBackedTrustRegistry::new(
-        trust_reader,
-        public_material,
-    ));
+    let evm_registry: TrustRegistryRef<Curve> =
+        Rc::new(EvmBackedTrustRegistry::new(trust_reader, public_material));
 
     let raw_status_provider = Rc::new(InMemoryStatusListCredentialProvider::new());
     raw_status_provider.insert(String::from(STATUS_LIST_URL), active_status_jwt);
 
-    let authenticated_status_provider = Rc::new(
-        JwtAuthenticatedStatusListCredentialProvider::new(
-            raw_status_provider.clone(),
-            verification_key_provider,
-        ),
-    );
+    let authenticated_status_provider = Rc::new(JwtAuthenticatedStatusListCredentialProvider::new(
+        raw_status_provider.clone(),
+        verification_key_provider,
+    ));
     let status_reader: Rc<dyn EvmStatusListReader> = chain_reader.clone();
     let status_resolver = Rc::new(AnchoredStatusListResolver::new(
         authenticated_status_provider,

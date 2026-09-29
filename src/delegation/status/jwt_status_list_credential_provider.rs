@@ -101,8 +101,9 @@ impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvid
             ));
         }
 
-        let document = serde_json::to_string(&Value::Object(claims))
-            .map_err(|err| format!("Could not serialize authenticated Status List payload [{err}]"))?;
+        let document = serde_json::to_string(&Value::Object(claims)).map_err(|err| {
+            format!("Could not serialize authenticated Status List payload [{err}]")
+        })?;
 
         Ok(StatusListCredentialArtifact {
             document,

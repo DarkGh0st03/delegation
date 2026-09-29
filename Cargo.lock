@@ -1811,6 +1811,7 @@ dependencies = [
  "ark-ff 0.4.2",
  "ark-serialize 0.4.2",
  "ark-std 0.4.0",
+ "base64 0.22.1",
  "csv",
  "digest 0.11.3",
  "ed25519-dalek",
