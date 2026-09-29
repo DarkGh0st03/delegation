@@ -1,6 +1,3 @@
-use ark_ec::pairing::Pairing;
-use ark_std::rand::{RngCore, SeedableRng};
-use ark_std::rand::prelude::StdRng;
 use crate::delegation::accumulator::accumulator_manager::AccumulatorManager;
 use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
@@ -13,6 +10,9 @@ use crate::delegation::credentials::generic::verifiable_presentation::Verifiable
 use crate::delegation::issuance::issuer_trait::Issuer;
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::trust::trust_registry::TrustRegistryRef;
+use ark_ec::pairing::Pairing;
+use ark_std::rand::prelude::StdRng;
+use ark_std::rand::{RngCore, SeedableRng};
 use ed25519_dalek::{SecretKey, SigningKey};
 use josekit::jwk::Jwk;
 use multibase::Base::Base64Url;

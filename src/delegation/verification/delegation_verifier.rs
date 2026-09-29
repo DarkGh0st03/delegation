@@ -1,4 +1,3 @@
-use ark_ec::pairing::Pairing;
 use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
 use crate::delegation::accumulator::accumulator_verifier::AccumulatorVerifier;
 use crate::delegation::authorization::authorization_request::AuthorizationRequest;
@@ -13,6 +12,7 @@ use crate::delegation::status::status_purpose::StatusPurpose;
 use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use crate::delegation::verification::timing::verify_timings;
 use crate::delegation::verification::verifier_trait::Verifier;
+use ark_ec::pairing::Pairing;
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

@@ -5,9 +5,9 @@ use josekit::jwk::Jwk;
 use josekit::jws::{EdDSA, JwsHeader};
 use josekit::jwt;
 use josekit::jwt::JwtPayload;
-use serde_json::Value;
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fmt::Display;
 
 #[derive(Clone, Serialize, Deserialize)]
