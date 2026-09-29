@@ -235,7 +235,7 @@ impl Display for DelegationCredential {
 
 #[cfg(test)]
 mod tests {
-    use crate::delegation::credentials::delegation::delegation_evidence_trait_credential::DelegationCredential;
+    use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
     use crate::delegation::credentials::generic::credential_trait::Credential;
 
     #[test]
