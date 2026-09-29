@@ -422,13 +422,13 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
 
 #[cfg(test)]
 mod tests {
-    use ark_bn254::Bn254;
+    use super::*;
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
     use crate::delegation::trust::trust_registry::TrustRegistryRef;
+    use ark_bn254::Bn254;
     use std::rc::Rc;
-    use super::*;
 
     fn test_status(index: u64) -> BitstringStatusListEntry {
         BitstringStatusListEntry::revocation(

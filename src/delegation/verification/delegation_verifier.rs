@@ -267,8 +267,7 @@ impl<E: Pairing> DelegationVerifier<E> {
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::B256;
-    use ark_bn254::Bn254;
+    use super::*;
     use crate::delegation::authorization::authorization_request::AuthorizationRequest;
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
@@ -284,11 +283,12 @@ mod tests {
     use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
     use crate::delegation::trust::public_material_provider::InMemoryPublicMaterialProvider;
     use crate::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
+    use alloy::primitives::B256;
+    use ark_bn254::Bn254;
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::rc::Rc;
     use std::time::Duration;
-    use super::*;
 
     fn test_status(index: u64) -> BitstringStatusListEntry {
         BitstringStatusListEntry::revocation(
