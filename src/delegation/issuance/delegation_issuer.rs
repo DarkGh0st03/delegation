@@ -425,7 +425,7 @@ mod tests {
     use super::*;
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-    use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
+    use crate::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
     use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
     use ark_bn254::Bn254;
     use std::rc::Rc;
