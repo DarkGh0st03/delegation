@@ -7,10 +7,8 @@ use delegation::delegation::authorization::authorization_request::AuthorizationR
 use delegation::delegation::authorization::operation::Operation;
 use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
-use delegation::delegation::issuance::issuer_trait::Issuer;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
-use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
-use delegation::delegation::verification::verifier_trait::Verifier;
+use delegation::delegation::issuance::issuer_trait::Issuer;
 use delegation::delegation::status::anchored_status_list_resolver::AnchoredStatusListResolver;
 use delegation::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
@@ -21,6 +19,8 @@ use delegation::delegation::trust::evm::evm_registry_reader::{
 use delegation::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
 use delegation::delegation::trust::public_material_provider::InMemoryPublicMaterialProvider;
 use delegation::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
+use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
+use delegation::delegation::verification::verifier_trait::Verifier;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use multibase::Base;

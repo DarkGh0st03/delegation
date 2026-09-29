@@ -1,9 +1,9 @@
 use crate::delegation::authorization::permission::Permission;
-use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use crate::delegation::credentials::delegation::delegation_chain_entry::DelegationChainEntry;
+use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use crate::delegation::credentials::generic::credential_trait::Credential;
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
 #[derive(Clone, Serialize, Deserialize)]

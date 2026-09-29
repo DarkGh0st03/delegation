@@ -1,13 +1,13 @@
+use crate::delegation::credentials::generic::credential_trait::Credential;
 use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::credentials::generic::credential_trait::Credential;
 use josekit::jwk::Jwk;
 use josekit::jws::{EdDSA, JwsHeader};
 use josekit::jwt;
 use josekit::jwt::JwtPayload;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use std::fmt::Display;
 
 #[derive(Clone, Serialize, Deserialize)]
