@@ -9,25 +9,25 @@ use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
-use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
 use delegation::delegation::status::provider::jwt_status_list_provider::{
     JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
 };
-use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
-use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
-use delegation::delegation::trust::evm::evm_reader_traits::{
-    EvmStatusListReader, EvmTrustReader,
-};
+use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
+use delegation::delegation::trust::evm::evm_reader_traits::{EvmStatusListReader, EvmTrustReader};
 use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
-use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
 use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
+use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
 use delegation::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
 use delegation::delegation::trust::material::public_material_provider_traits::{
     AccumulatorMaterialProviderRef, VerificationKeyProviderRef,
 };
-use delegation::delegation::trust::registry::trust_registry_trait::{TrustRegistry, TrustRegistryRef};
+use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
+use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+use delegation::delegation::trust::registry::trust_registry_trait::{
+    TrustRegistry, TrustRegistryRef,
+};
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
 use flate2::Compression;
@@ -402,7 +402,8 @@ fn main() -> Result<(), String> {
     let revoked_status_jwt = sign_status_list_credential_jwt(&revoked_document, root.holder_jwk())?;
 
     let active_status_hash = EvmAnchoredStatusListResolver::artifact_commitment(&active_status_jwt);
-    let revoked_status_hash = EvmAnchoredStatusListResolver::artifact_commitment(&revoked_status_jwt);
+    let revoked_status_hash =
+        EvmAnchoredStatusListResolver::artifact_commitment(&revoked_status_jwt);
     let status_list_id = EvmRegistryReader::status_list_id(STATUS_LIST_URL);
 
     let runtime =
