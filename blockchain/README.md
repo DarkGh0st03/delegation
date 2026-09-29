@@ -361,7 +361,7 @@ The verifier status path is now issuer-aware. `DelegationVerifier` passes the is
 delegation hop to the status resolver, allowing the resolver to read the matching
 `IssuerRegistry[issuer][listId]` anchor rather than trusting a URL in isolation.
 
-`AnchoredStatusListResolver` performs the following fail-closed sequence:
+`EvmAnchoredStatusListResolver` performs the following fail-closed sequence:
 
 ```text
 credentialStatus
