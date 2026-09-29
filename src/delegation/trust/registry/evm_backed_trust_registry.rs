@@ -1,8 +1,8 @@
 use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
-use crate::delegation::trust::evm::evm_registry_reader::EvmTrustReader;
-use crate::delegation::trust::identity_status::IdentityStatus;
-use crate::delegation::trust::public_material_provider::PublicMaterialProviderRef;
-use crate::delegation::trust::trust_registry::TrustRegistry;
+use crate::delegation::trust::evm::evm_reader_traits::EvmTrustReader;
+use crate::delegation::trust::model::identity_status::IdentityStatus;
+use crate::delegation::trust::material::public_material_provider_traits::PublicMaterialProviderRef;
+use crate::delegation::trust::registry::trust_registry_trait::TrustRegistry;
 use alloy::primitives::{B256, keccak256};
 use ark_ec::pairing::Pairing;
 use ark_serialize::CanonicalSerialize;
@@ -150,8 +150,8 @@ impl<E: Pairing> TrustRegistry<E> for EvmBackedTrustRegistry<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::trust::evm::evm_registry_reader::AccumulatorMaterialAnchor;
-    use crate::delegation::trust::public_material_provider::InMemoryPublicMaterialProvider;
+    use crate::delegation::trust::evm::evm_reader_traits::AccumulatorMaterialAnchor;
+    use crate::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
     use ark_bn254::Bn254;
     use ark_std::rand::SeedableRng;
     use ark_std::rand::prelude::StdRng;

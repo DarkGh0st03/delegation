@@ -1,5 +1,5 @@
 use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
-use crate::delegation::trust::identity_status::IdentityStatus;
+use crate::delegation::trust::model::identity_status::IdentityStatus;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::rc::Rc;

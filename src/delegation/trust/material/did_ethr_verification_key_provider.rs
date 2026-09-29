@@ -1,4 +1,4 @@
-use crate::delegation::trust::public_material_provider::VerificationKeyProvider;
+use crate::delegation::trust::material::public_material_provider_traits::VerificationKeyProvider;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use josekit::jwk::Jwk;
