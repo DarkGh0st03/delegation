@@ -1,18 +1,18 @@
+use ark_ec::pairing::Pairing;
+use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
+use crate::delegation::accumulator::accumulator_verifier::AccumulatorVerifier;
 use crate::delegation::authorization::authorization_request::AuthorizationRequest;
 use crate::delegation::authorization::permission::Permission;
 use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
-use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
-use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
-use crate::delegation::accumulator::accumulator_verifier::AccumulatorVerifier;
-use crate::delegation::verification::verifier_trait::Verifier;
-use crate::delegation::verification::timing::verify_timings;
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::status::status_list_resolver::StatusListResolverRef;
 use crate::delegation::status::status_purpose::StatusPurpose;
 use crate::delegation::trust::trust_registry::TrustRegistryRef;
-use ark_ec::pairing::Pairing;
+use crate::delegation::verification::timing::verify_timings;
+use crate::delegation::verification::verifier_trait::Verifier;
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -60,9 +60,7 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
         let ecc_pk = self.trust_registry.get_verification_key(presenter_id)?;
 
         let vp: VerifiablePresentation<DelegationCredential> =
-            VerifiablePresentation::<DelegationCredential>::from_signed_jwt(
-                signed_jwt, &ecc_pk,
-            )?;
+            VerifiablePresentation::<DelegationCredential>::from_signed_jwt(signed_jwt, &ecc_pk)?;
         let dc = vp.credential();
 
         if vp.holder() != presenter_id {
@@ -269,12 +267,13 @@ impl<E: Pairing> DelegationVerifier<E> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use alloy::primitives::B256;
+    use ark_bn254::Bn254;
     use crate::delegation::authorization::authorization_request::AuthorizationRequest;
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
-    use crate::delegation::issuance::issuer_trait::Issuer;
     use crate::delegation::issuance::delegation_issuer::DelegationIssuer;
+    use crate::delegation::issuance::issuer_trait::Issuer;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::status::in_memory_status_list_resolver::InMemoryStatusListResolver;
     use crate::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
@@ -285,12 +284,11 @@ mod tests {
     use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
     use crate::delegation::trust::public_material_provider::InMemoryPublicMaterialProvider;
     use crate::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
-    use alloy::primitives::B256;
-    use ark_bn254::Bn254;
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::rc::Rc;
     use std::time::Duration;
+    use super::*;
 
     fn test_status(index: u64) -> BitstringStatusListEntry {
         BitstringStatusListEntry::revocation(

@@ -1,18 +1,18 @@
+use ark_ec::pairing::Pairing;
+use ark_std::rand::{RngCore, SeedableRng};
+use ark_std::rand::prelude::StdRng;
+use crate::delegation::accumulator::accumulator_manager::AccumulatorManager;
+use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
+use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
 use crate::delegation::authorization::permission::Permission;
-use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
-use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
 use crate::delegation::credentials::delegation::delegation_chain_entry::DelegationChainEntry;
+use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::issuance::issuer_trait::Issuer;
-use crate::delegation::accumulator::accumulator_manager::AccumulatorManager;
-use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::trust::trust_registry::TrustRegistryRef;
-use ark_ec::pairing::Pairing;
-use ark_std::rand::prelude::StdRng;
-use ark_std::rand::{RngCore, SeedableRng};
 use ed25519_dalek::{SecretKey, SigningKey};
 use josekit::jwk::Jwk;
 use multibase::Base::Base64Url;
@@ -422,13 +422,13 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use ark_bn254::Bn254;
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
     use crate::delegation::trust::trust_registry::TrustRegistryRef;
-    use ark_bn254::Bn254;
     use std::rc::Rc;
+    use super::*;
 
     fn test_status(index: u64) -> BitstringStatusListEntry {
         BitstringStatusListEntry::revocation(
