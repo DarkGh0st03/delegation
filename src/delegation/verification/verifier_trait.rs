@@ -1,7 +1,7 @@
 use crate::delegation::authorization::authorization_request::AuthorizationRequest;
 use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
 use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
-use crate::delegation::trust::trust_registry::TrustRegistryRef;
+use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
 use ark_ec::pairing::Pairing;
 
 pub trait Verifier<E: Pairing> {

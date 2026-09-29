@@ -2,7 +2,7 @@ use crate::delegation::status::model::status_list_credential_artifact::StatusLis
 use crate::delegation::status::provider::status_list_credential_provider_trait::{
     StatusListCredentialProvider, StatusListCredentialProviderRef,
 };
-use crate::delegation::trust::public_material_provider::VerificationKeyProviderRef;
+use crate::delegation::trust::material::public_material_provider_traits::VerificationKeyProviderRef;
 use josekit::jwk::Jwk;
 use josekit::jws::{EdDSA, JwsHeader};
 use josekit::jwt::{self, JwtPayload};
@@ -117,7 +117,7 @@ impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvid
 mod tests {
     use super::*;
     use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
-    use crate::delegation::trust::public_material_provider::InMemoryVerificationKeyProvider;
+    use crate::delegation::trust::material::in_memory_verification_key_provider::InMemoryVerificationKeyProvider;
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use ed25519_dalek::SigningKey;

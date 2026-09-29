@@ -3,7 +3,7 @@ use crate::delegation::status::resolver::bitstring_status_list_resolver::Bitstri
 use crate::delegation::status::provider::status_list_credential_provider_trait::StatusListCredentialProviderRef;
 use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
 use crate::delegation::status::model::status_purpose::StatusPurpose;
-use crate::delegation::trust::evm::evm_registry_reader::EvmStatusListReader;
+use crate::delegation::trust::evm::evm_reader_traits::EvmStatusListReader;
 use alloy::primitives::{B256, keccak256};
 use std::rc::Rc;
 
@@ -113,7 +113,7 @@ impl StatusListResolver for EvmAnchoredStatusListResolver {
 mod tests {
     use super::*;
     use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
-    use crate::delegation::trust::evm::evm_registry_reader::StatusListAnchor;
+    use crate::delegation::trust::evm::evm_reader_traits::StatusListAnchor;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use multibase::Base;

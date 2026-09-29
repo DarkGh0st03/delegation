@@ -9,7 +9,7 @@ use crate::delegation::credentials::generic::verifiable_credential::VerifiableCr
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::issuance::issuer_trait::Issuer;
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::trust::trust_registry::TrustRegistryRef;
+use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
 use ark_ec::pairing::Pairing;
 use ark_std::rand::prelude::StdRng;
 use ark_std::rand::{RngCore, SeedableRng};
@@ -425,8 +425,8 @@ mod tests {
     use super::*;
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-    use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
-    use crate::delegation::trust::trust_registry::TrustRegistryRef;
+    use crate::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+    use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
     use ark_bn254::Bn254;
     use std::rc::Rc;
 

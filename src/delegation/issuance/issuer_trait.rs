@@ -2,7 +2,7 @@ use crate::delegation::credentials::generic::credential_trait::Credential;
 use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::trust::trust_registry::TrustRegistryRef;
+use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::time::Duration;

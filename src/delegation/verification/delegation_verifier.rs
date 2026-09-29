@@ -9,7 +9,7 @@ use crate::delegation::credentials::generic::verifiable_presentation::Verifiable
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
 use crate::delegation::status::model::status_purpose::StatusPurpose;
-use crate::delegation::trust::trust_registry::TrustRegistryRef;
+use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
 use crate::delegation::verification::timing::verify_timings;
 use crate::delegation::verification::verifier_trait::Verifier;
 use ark_ec::pairing::Pairing;
@@ -275,14 +275,14 @@ mod tests {
     use crate::delegation::issuance::issuer_trait::Issuer;
     use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::status::resolver::in_memory_status_list_resolver::InMemoryStatusListResolver;
-    use crate::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
-    use crate::delegation::trust::evm::evm_registry_reader::{
+    use crate::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
+    use crate::delegation::trust::evm::evm_reader_traits::{
         AccumulatorMaterialAnchor, EvmTrustReader,
     };
-    use crate::delegation::trust::identity_status::IdentityStatus;
-    use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
-    use crate::delegation::trust::public_material_provider::InMemoryPublicMaterialProvider;
-    use crate::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
+    use crate::delegation::trust::model::identity_status::IdentityStatus;
+    use crate::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+    use crate::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
+    use crate::delegation::trust::registry::trust_registry_trait::{TrustRegistry, TrustRegistryRef};
     use alloy::primitives::B256;
     use ark_bn254::Bn254;
     use std::cell::RefCell;

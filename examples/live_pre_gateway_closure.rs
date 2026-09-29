@@ -15,17 +15,19 @@ use delegation::delegation::status::provider::in_memory_status_list_provider::In
 use delegation::delegation::status::provider::jwt_status_list_provider::{
     JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
 };
-use delegation::delegation::trust::did_verification_key_provider::DidEthrVerificationKeyProvider;
-use delegation::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
-use delegation::delegation::trust::evm::evm_registry_reader::{
-    EvmRegistryReader, EvmStatusListReader, EvmTrustReader,
+use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
+use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
+use delegation::delegation::trust::evm::evm_reader_traits::{
+    EvmStatusListReader, EvmTrustReader,
 };
-use delegation::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
-use delegation::delegation::trust::public_material_provider::{
-    AccumulatorMaterialProviderRef, CompositePublicMaterialProvider,
-    InMemoryPublicMaterialProvider, VerificationKeyProviderRef,
+use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
+use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
+use delegation::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
+use delegation::delegation::trust::material::public_material_provider_traits::{
+    AccumulatorMaterialProviderRef, VerificationKeyProviderRef,
 };
-use delegation::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
+use delegation::delegation::trust::registry::trust_registry_trait::{TrustRegistry, TrustRegistryRef};
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
 use flate2::Compression;

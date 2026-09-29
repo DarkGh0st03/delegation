@@ -12,13 +12,14 @@ use delegation::delegation::issuance::issuer_trait::Issuer;
 use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
-use delegation::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
-use delegation::delegation::trust::evm::evm_registry_reader::{
-    EvmRegistryReader, EvmStatusListReader, EvmTrustReader,
+use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
+use delegation::delegation::trust::evm::evm_reader_traits::{
+    EvmStatusListReader, EvmTrustReader,
 };
-use delegation::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
-use delegation::delegation::trust::public_material_provider::InMemoryPublicMaterialProvider;
-use delegation::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
+use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
+use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+use delegation::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
+use delegation::delegation::trust::registry::trust_registry_trait::{TrustRegistry, TrustRegistryRef};
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
 use flate2::Compression;
