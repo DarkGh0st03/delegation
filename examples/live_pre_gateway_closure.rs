@@ -6,28 +6,29 @@ use ark_bn254::Bn254;
 use delegation::delegation::authorization::authorization_request::AuthorizationRequest;
 use delegation::delegation::authorization::operation::Operation;
 use delegation::delegation::authorization::permission::Permission;
-use delegation::delegation::credentials::ours::our_delegation::OurDelegation;
-use delegation::delegation::entities::issuer::Issuer;
-use delegation::delegation::entities::ours::our_issuer::OurIssuer;
-use delegation::delegation::entities::ours::our_verifier::OurVerifier;
-use delegation::delegation::entities::verifier::Verifier;
-use delegation::delegation::status::anchored_status_list_resolver::AnchoredStatusListResolver;
-use delegation::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use delegation::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
-use delegation::delegation::status::jwt_status_list_credential_provider::{
-    JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
+use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
+use delegation::delegation::issuance::issuer_trait::Issuer;
+use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
+use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
+use delegation::delegation::verification::verifier_trait::Verifier;
+use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmEvmAnchoredStatusListResolver;
+use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+use delegation::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListProvider;
+use delegation::delegation::status::provider::jwt_status_list_provider::{
+    JwtAuthenticatedStatusListProvider, sign_status_list_credential_jwt,
 };
-use delegation::delegation::trust::did_verification_key_provider::DidEthrVerificationKeyProvider;
-use delegation::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
-use delegation::delegation::trust::evm::evm_registry_reader::{
+use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
+use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
+use delegation::delegation::trust::evm::{
     EvmRegistryReader, EvmStatusListReader, EvmTrustReader,
 };
-use delegation::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
-use delegation::delegation::trust::public_material_provider::{
-    AccumulatorMaterialProviderRef, CompositePublicMaterialProvider,
-    InMemoryPublicMaterialProvider, VerificationKeyProviderRef,
+use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+use delegation::delegation::trust::material::public_material_provider_traits::{
+    AccumulatorMaterialProviderRef, VerificationKeyProviderRef,
 };
-use delegation::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
+use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
+use delegation::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
+use delegation::delegation::trust::registry::trust_registry_trait::{TrustRegistry, TrustRegistryRef};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use josekit::jwk::Jwk;
@@ -355,8 +356,8 @@ fn main() -> Result<(), String> {
     // Issuance side: generate the real accumulator and Ed25519 keys used by this run.
     let issuance_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
     let issuance_registry_ref: TrustRegistryRef<Curve> = issuance_registry.clone();
-    let root = OurIssuer::<Curve>::new(root_id.clone(), issuance_registry_ref.clone())?;
-    let holder = OurIssuer::<Curve>::new(holder_id.clone(), issuance_registry_ref)?;
+    let root = DelegationIssuer::<Curve>::new(root_id.clone(), issuance_registry_ref.clone())?;
+    let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), issuance_registry_ref)?;
 
     let status_entry = BitstringStatusListEntry::revocation(
         None,
@@ -399,8 +400,8 @@ fn main() -> Result<(), String> {
     let active_status_jwt = sign_status_list_credential_jwt(&active_document, root.holder_jwk())?;
     let revoked_status_jwt = sign_status_list_credential_jwt(&revoked_document, root.holder_jwk())?;
 
-    let active_status_hash = AnchoredStatusListResolver::artifact_commitment(&active_status_jwt);
-    let revoked_status_hash = AnchoredStatusListResolver::artifact_commitment(&revoked_status_jwt);
+    let active_status_hash = EvmAnchoredStatusListResolver::artifact_commitment(&active_status_jwt);
+    let revoked_status_hash = EvmAnchoredStatusListResolver::artifact_commitment(&revoked_status_jwt);
     let status_list_id = EvmRegistryReader::status_list_id(STATUS_LIST_URL);
 
     let runtime =
@@ -529,20 +530,20 @@ fn main() -> Result<(), String> {
     let evm_registry: TrustRegistryRef<Curve> =
         Rc::new(EvmBackedTrustRegistry::new(trust_reader, public_material));
 
-    let raw_status_provider = Rc::new(InMemoryStatusListCredentialProvider::new());
+    let raw_status_provider = Rc::new(InMemoryStatusListProvider::new());
     raw_status_provider.insert(String::from(STATUS_LIST_URL), active_status_jwt);
 
-    let authenticated_status_provider = Rc::new(JwtAuthenticatedStatusListCredentialProvider::new(
+    let authenticated_status_provider = Rc::new(JwtAuthenticatedStatusListProvider::new(
         raw_status_provider.clone(),
         verification_key_provider,
     ));
     let status_reader: Rc<dyn EvmStatusListReader> = chain_reader.clone();
-    let status_resolver = Rc::new(AnchoredStatusListResolver::new(
+    let status_resolver = Rc::new(EvmAnchoredStatusListResolver::new(
         authenticated_status_provider,
         status_reader,
     ));
 
-    let verifier = OurVerifier::<Curve>::new(evm_registry, status_resolver)?;
+    let verifier = DelegationVerifier::<Curve>::new(evm_registry, status_resolver)?;
     let request = AuthorizationRequest::new(
         holder_id.clone(),
         String::from("cloud-access-gateway"),
