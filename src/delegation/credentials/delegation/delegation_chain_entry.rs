@@ -31,7 +31,7 @@ impl DelegationChainEntry {
     /// Creates a new DelegationChainEntry instance.
     ///
     /// # Arguments
-    /// * `id` - a string containing the delegator's identity.
+    /// * `id` - a string containing the issuer/delegator identity represented by this chain entry.
     /// * `delegatee_id` - a string containing the delegatee.
     /// * `iat` - a string containing the "issued at" parameter.
     /// * `exp` - a string containing the "expiration" parameter.
@@ -142,7 +142,7 @@ mod tests {
     use super::*;
     use serde_json::Value;
 
-    const DELEGATOR_OBJECT: &str = r#"{
+    const CHAIN_ENTRY_OBJECT: &str = r#"{
                 "id": "https://vc.example/delegators/d0",
                 "credentialId": "http://delegation.example/credentials/1337",
                 "credentialStatus": {
@@ -161,27 +161,27 @@ mod tests {
         }"#;
 
     #[test]
-    fn display_delegator() -> Result<(), String> {
-        let delegator_value = match serde_json::from_str::<Value>(DELEGATOR_OBJECT) {
-            Ok(delegator_value) => delegator_value,
-            Err(e) => return Err(format!("Failed to parse delegator object: [{e}]")),
+    fn displays_delegation_chain_entry() -> Result<(), String> {
+        let chain_entry_value = match serde_json::from_str::<Value>(CHAIN_ENTRY_OBJECT) {
+            Ok(chain_entry_value) => chain_entry_value,
+            Err(e) => return Err(format!("Failed to parse delegation chain entry: [{e}]")),
         };
-        let delegator_map = match delegator_value {
-            Value::Object(delegator_map) => delegator_map,
+        let chain_entry_map = match chain_entry_value {
+            Value::Object(chain_entry_map) => chain_entry_map,
             _ => {
                 return Err(format!(
-                    "Parsed delegator {delegator_value} is not an object."
+                    "Parsed delegation chain entry {chain_entry_value} is not an object."
                 ));
             }
         };
 
-        let delegator_value = Value::Object(delegator_map);
-        let delegator = match serde_json::from_value::<DelegationChainEntry>(delegator_value) {
-            Ok(delegator) => delegator,
-            Err(err) => return Err(format!("Failed to parse delegator object: [{err}]")),
+        let chain_entry_value = Value::Object(chain_entry_map);
+        let chain_entry = match serde_json::from_value::<DelegationChainEntry>(chain_entry_value) {
+            Ok(chain_entry) => chain_entry,
+            Err(err) => return Err(format!("Failed to parse delegation chain entry: [{err}]")),
         };
 
-        println!("{delegator}");
+        println!("{chain_entry}");
 
         Ok(())
     }
