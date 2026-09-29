@@ -28,7 +28,7 @@ IssuerRegistry
         +--> current Status List version/hash/purpose
         |
         v
-Rust OurVerifier
+Rust DelegationVerifier
         |
         +--> exact historical accumulator material version
         +--> live enterprise lifecycle/trust
@@ -72,7 +72,7 @@ NEXT: Cloud Access Gateway -> OPA -> Gitea
 - The chain stores only its hash commitment.
 - Commitments are historical and versioned.
 - Each Delegation Credential carries `issuerMaterialVersion` (`imv`).
-- `OurVerifier` fetches the exact historical version referenced by each delegation hop.
+- `DelegationVerifier` fetches the exact historical version referenced by each delegation hop.
 - The off-chain material is canonical-compressed with arkworks and hashed with Keccak-256 before comparison with the on-chain commitment.
 
 The transport used to obtain the large off-chain accumulator payload is intentionally hidden behind `AccumulatorMaterialProvider`. The blockchain security property does not depend on that transport because the exact payload is commitment-checked before use. Wiring this provider to the future Gateway/service deployment is an integration concern, not another blockchain contract.
