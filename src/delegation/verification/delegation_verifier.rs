@@ -2,11 +2,12 @@ use crate::delegation::authorization::authorization_request::AuthorizationReques
 use crate::delegation::authorization::permission::Permission;
 use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
 use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
-use crate::delegation::credentials::delegation::delegation_evidence_trait_credential::DelegationCredential;
+use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
 use crate::delegation::accumulator::accumulator_verifier::AccumulatorVerifier;
-use crate::delegation::entities::verifier::{Verifier, verify_timings};
+use crate::delegation::verification::timing::verify_timings;
+use crate::delegation::verification::verifier_trait::Verifier;
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
 use crate::delegation::status::model::status_purpose::StatusPurpose;
