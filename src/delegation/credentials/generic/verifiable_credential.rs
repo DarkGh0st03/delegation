@@ -1,5 +1,5 @@
 use crate::delegation::credentials::generic::credential_trait::Credential;
-use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
+use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 

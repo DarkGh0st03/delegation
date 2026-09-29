@@ -6,9 +6,9 @@ use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
 use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
 use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
-use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::status::status_list_resolver::StatusListResolverRef;
-use crate::delegation::status::status_purpose::StatusPurpose;
+use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
+use crate::delegation::status::model::status_purpose::StatusPurpose;
 use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use crate::delegation::verification::timing::verify_timings;
 use crate::delegation::verification::verifier_trait::Verifier;
@@ -273,8 +273,8 @@ mod tests {
     use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
     use crate::delegation::issuance::delegation_issuer::DelegationIssuer;
     use crate::delegation::issuance::issuer_trait::Issuer;
-    use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-    use crate::delegation::status::in_memory_status_list_resolver::InMemoryStatusListResolver;
+    use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+    use crate::delegation::status::resolver::in_memory_status_list_resolver::InMemoryStatusListResolver;
     use crate::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
     use crate::delegation::trust::evm::evm_registry_reader::{
         AccumulatorMaterialAnchor, EvmTrustReader,

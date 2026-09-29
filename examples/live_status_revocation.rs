@@ -9,9 +9,9 @@ use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
-use delegation::delegation::status::anchored_status_list_resolver::AnchoredStatusListResolver;
-use delegation::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use delegation::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
+use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
+use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+use delegation::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
 use delegation::delegation::trust::evm::evm_backed_trust_registry::EvmBackedTrustRegistry;
 use delegation::delegation::trust::evm::evm_registry_reader::{
     EvmRegistryReader, EvmStatusListReader, EvmTrustReader,
@@ -334,8 +334,8 @@ fn main() -> Result<(), String> {
 
     let active_document = status_list_document(&root_id, false)?;
     let revoked_document = status_list_document(&root_id, true)?;
-    let active_status_hash = AnchoredStatusListResolver::document_commitment(&active_document);
-    let revoked_status_hash = AnchoredStatusListResolver::document_commitment(&revoked_document);
+    let active_status_hash = EvmAnchoredStatusListResolver::document_commitment(&active_document);
+    let revoked_status_hash = EvmAnchoredStatusListResolver::document_commitment(&revoked_document);
     let status_list_id = EvmRegistryReader::status_list_id(STATUS_LIST_URL);
 
     let preflight = EvmRegistryReader::connect(
@@ -400,7 +400,7 @@ fn main() -> Result<(), String> {
     status_provider.insert(String::from(STATUS_LIST_URL), active_document);
 
     let status_reader: Rc<dyn EvmStatusListReader> = chain_reader.clone();
-    let status_resolver = Rc::new(AnchoredStatusListResolver::new(
+    let status_resolver = Rc::new(EvmAnchoredStatusListResolver::new(
         status_provider.clone(),
         status_reader,
     ));

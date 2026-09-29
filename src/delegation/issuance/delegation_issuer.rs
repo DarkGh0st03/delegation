@@ -8,7 +8,7 @@ use crate::delegation::credentials::delegation::delegation_evidence_trait::Deleg
 use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::issuance::issuer_trait::Issuer;
-use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
+use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use ark_ec::pairing::Pairing;
 use ark_std::rand::prelude::StdRng;
@@ -424,7 +424,7 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
 mod tests {
     use super::*;
     use crate::delegation::authorization::operation::Operation;
-    use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
+    use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::trust::in_memory_trust_registry::InMemoryTrustRegistry;
     use crate::delegation::trust::trust_registry::TrustRegistryRef;
     use ark_bn254::Bn254;

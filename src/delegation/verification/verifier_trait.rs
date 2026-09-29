@@ -1,6 +1,6 @@
 use crate::delegation::authorization::authorization_request::AuthorizationRequest;
 use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
-use crate::delegation::status::status_list_resolver::StatusListResolverRef;
+use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
 use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use ark_ec::pairing::Pairing;
 

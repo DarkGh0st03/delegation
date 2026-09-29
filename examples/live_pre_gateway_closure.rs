@@ -9,10 +9,10 @@ use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
-use delegation::delegation::status::anchored_status_list_resolver::AnchoredStatusListResolver;
-use delegation::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use delegation::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
-use delegation::delegation::status::jwt_status_list_credential_provider::{
+use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
+use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+use delegation::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
+use delegation::delegation::status::provider::jwt_status_list_provider::{
     JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
 };
 use delegation::delegation::trust::did_verification_key_provider::DidEthrVerificationKeyProvider;
@@ -399,8 +399,8 @@ fn main() -> Result<(), String> {
     let active_status_jwt = sign_status_list_credential_jwt(&active_document, root.holder_jwk())?;
     let revoked_status_jwt = sign_status_list_credential_jwt(&revoked_document, root.holder_jwk())?;
 
-    let active_status_hash = AnchoredStatusListResolver::artifact_commitment(&active_status_jwt);
-    let revoked_status_hash = AnchoredStatusListResolver::artifact_commitment(&revoked_status_jwt);
+    let active_status_hash = EvmAnchoredStatusListResolver::artifact_commitment(&active_status_jwt);
+    let revoked_status_hash = EvmAnchoredStatusListResolver::artifact_commitment(&revoked_status_jwt);
     let status_list_id = EvmRegistryReader::status_list_id(STATUS_LIST_URL);
 
     let runtime =
@@ -537,7 +537,7 @@ fn main() -> Result<(), String> {
         verification_key_provider,
     ));
     let status_reader: Rc<dyn EvmStatusListReader> = chain_reader.clone();
-    let status_resolver = Rc::new(AnchoredStatusListResolver::new(
+    let status_resolver = Rc::new(EvmAnchoredStatusListResolver::new(
         authenticated_status_provider,
         status_reader,
     ));
