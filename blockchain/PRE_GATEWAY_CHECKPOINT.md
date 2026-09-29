@@ -136,9 +136,11 @@ For a completely fresh local validation, with no Anvil node already running, exe
 bash blockchain/scripts/run-pre-gateway-local.sh
 ```
 
-The wrapper adds the local Foundry installation to `PATH`, starts a fresh deterministic Anvil chain, waits for JSON-RPC readiness, configures the standard disposable local development identities, calls `deploy-local.sh`, extracts and exports the three deployed contract addresses automatically, and then calls `check-pre-gateway.sh`. On success it stops the Anvil process it started.
+The wrapper adds the local Foundry installation to `PATH`, starts a fresh deterministic Anvil chain, waits for JSON-RPC readiness, configures the standard disposable local development identities, calls `deploy-local.sh`, extracts and exports the three deployed contract addresses automatically, and then calls `check-pre-gateway.sh`.
 
-The embedded Anvil mnemonic/private keys are the standard public development keys and MUST NEVER be reused on a real network or with real funds.
+On Git Bash for Windows, Anvil is opened in a separate Mintty/Git Bash window and intentionally remains running after validation. The original terminal becomes an interactive Bash with the RPC URL, private development keys, DID identifiers, and deployed registry addresses already exported, so additional manual `cast`, Rust, or integration checks can be executed against the exact validated chain state. The generated local environment is also saved under `.git/pre-gateway-local.env` for reuse from another terminal. The final live validation intentionally leaves the demo credential revoked in Status List version 2.
+
+The embedded Anvil mnemonic/private keys are the standard public development keys and MUST NEVER be reused on a real network or with real funds. Stop the persistent local chain with `Ctrl+C` in the Anvil window when it is no longer needed.
 
 For manual/debug operation, `check-pre-gateway.sh` remains available when Anvil, contract addresses, governance key, and fresh root/holder keys have already been configured. It derives the two did:ethr identifiers, runs Rust formatting/tests, Solidity tests, verifies Node resolver dependencies, and executes the final live integration.
 
