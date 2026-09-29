@@ -1,7 +1,7 @@
-/// Supplies a BitstringStatusListCredential for a stable status-list identifier.
 use crate::delegation::status::model::status_list_credential_artifact::StatusListCredentialArtifact;
 use std::rc::Rc;
 
+/// Supplies a BitstringStatusListCredential for a stable status-list identifier.
 pub trait StatusListCredentialProvider {
     fn get_status_list_credential(&self, url: &str) -> Result<String, String>;
 
