@@ -9,8 +9,8 @@ The active `src/` tree intentionally contains only the baseline implementation n
 - structured resource/operation permissions for the thesis authorization domain;
   Resources are validated as absolute URIs, while operations are selected from an explicit software-engineering vocabulary;
 - generic credential / VC / VP structures;
-- the "ours" Delegation Credential model;
-- issuer and verifier logic;
+- the thesis Delegation Credential model and delegation-chain representation;
+- explicit issuance and verification modules built around `DelegationIssuer` and `DelegationVerifier`;
 - request-bound presentation verification through holder, audience, challenge, and required-permission checks;
 - structured verification results that can be consumed by the future Cloud Access Gateway / OPA layer;
 - cryptographic accumulator management and verification;
@@ -23,43 +23,89 @@ The repository has been simplified before starting the thesis-specific modificat
 
 ## Active source tree
 
+The active Rust tree is organized by architectural responsibility so that traits, models, concrete providers, and concrete resolvers can be identified directly from the directory structure.
+
 ```text
 src/
 ├── lib.rs
 └── delegation/
+    ├── accumulator/
+    │   ├── accumulator_manager.rs
+    │   ├── accumulator_public_data.rs
+    │   ├── accumulator_utils.rs
+    │   ├── accumulator_verifier.rs
+    │   └── mod.rs
     ├── authorization/
-    │   ├── mod.rs
     │   ├── authorization_request.rs
     │   ├── operation.rs
     │   ├── permission.rs
     │   ├── resource_uri.rs
-    │   └── verified_delegation.rs
+    │   ├── verified_delegation.rs
+    │   └── mod.rs
     ├── credentials/
-    │   ├── mod.rs
-    │   ├── verifiable_credential.rs
-    │   ├── verifiable_presentation.rs
-    │   └── ours/
-    │       ├── mod.rs
-    │       ├── our_delegation.rs
-    │       ├── our_delegator.rs
-    │       └── our_delegation_credential.rs
-    ├── entities/
-    │   ├── mod.rs
-    │   ├── dtl_sim.rs
-    │   ├── issuer.rs
-    │   ├── verifier.rs
-    │   └── ours/
-    │       ├── mod.rs
-    │       ├── accumulator_manager.rs
-    │       ├── accumulator_utils.rs
-    │       ├── accumulator_verifier.rs
-    │       ├── dlt_acc_entry.rs
-    │       ├── our_issuer.rs
-    │       └── our_verifier.rs
-    └── traits/
-        ├── mod.rs
-        └── credential.rs
+    │   ├── delegation/
+    │   │   ├── delegation_chain_entry.rs
+    │   │   ├── delegation_credential.rs
+    │   │   ├── delegation_evidence_trait.rs
+    │   │   └── mod.rs
+    │   ├── generic/
+    │   │   ├── credential_trait.rs
+    │   │   ├── verifiable_credential.rs
+    │   │   ├── verifiable_presentation.rs
+    │   │   └── mod.rs
+    │   └── mod.rs
+    ├── issuance/
+    │   ├── delegation_issuer.rs
+    │   ├── issuer_trait.rs
+    │   └── mod.rs
+    ├── status/
+    │   ├── model/
+    │   │   ├── bitstring_status_list_entry.rs
+    │   │   ├── status_list_credential_artifact.rs
+    │   │   ├── status_purpose.rs
+    │   │   └── mod.rs
+    │   ├── provider/
+    │   │   ├── in_memory_status_list_provider.rs
+    │   │   ├── jwt_status_list_provider.rs
+    │   │   ├── status_list_credential_provider_trait.rs
+    │   │   └── mod.rs
+    │   ├── resolver/
+    │   │   ├── bitstring_status_list_resolver.rs
+    │   │   ├── evm_anchored_status_list_resolver.rs
+    │   │   ├── in_memory_status_list_resolver.rs
+    │   │   ├── status_list_resolver_trait.rs
+    │   │   └── mod.rs
+    │   └── mod.rs
+    ├── trust/
+    │   ├── evm/
+    │   │   ├── evm_reader_traits.rs
+    │   │   ├── evm_registry_reader.rs
+    │   │   └── mod.rs
+    │   ├── material/
+    │   │   ├── composite_public_material_provider.rs
+    │   │   ├── did_ethr_verification_key_provider.rs
+    │   │   ├── in_memory_public_material_provider.rs
+    │   │   ├── in_memory_verification_key_provider.rs
+    │   │   ├── public_material_provider_traits.rs
+    │   │   └── mod.rs
+    │   ├── model/
+    │   │   ├── identity_status.rs
+    │   │   └── mod.rs
+    │   ├── registry/
+    │   │   ├── evm_backed_trust_registry.rs
+    │   │   ├── in_memory_trust_registry.rs
+    │   │   ├── trust_registry_trait.rs
+    │   │   └── mod.rs
+    │   └── mod.rs
+    ├── verification/
+    │   ├── delegation_verifier.rs
+    │   ├── timing.rs
+    │   ├── verifier_trait.rs
+    │   └── mod.rs
+    └── mod.rs
 ```
+
+The former `ours/`, `entities/`, and global `traits/` organization has been removed from the active code. Traits now live beside the domain they define, while concrete implementations are grouped by responsibility.
 
 ## Temporary reference material
 
@@ -77,8 +123,27 @@ Generated CSV benchmark outputs, plots and plotting notebooks from the original 
 original-backup-before-thesis-cleanup
 ```
 
-## Development direction
+## Current checkpoint
 
-The delegation core is being adapted to the thesis scenario involving delegated authorization for AI agents. Presentations are bound to a concrete holder, audience, challenge and required permission before a structured verified result is produced.
+The pre-Gateway trust/blockchain phase is complete and has been validated after the architecture cleanup.
 
-The pre-Gateway trust/blockchain implementation is now complete pending the final local validation described in `blockchain/PRE_GATEWAY_CHECKPOINT.md`. The next implementation phase is the Cloud Access Gateway, which will enforce challenge uniqueness/replay protection, consume `VerifiedDelegation`, call OPA/Rego for local policy, and protect Gitea. A2A-based agent communication remains a later integration phase.
+The current reproducible validation checks:
+
+- `cargo fmt --check`;
+- 58 Rust tests;
+- 18 Solidity tests;
+- fresh local Anvil deployment;
+- DID resolution through `did:ethr`;
+- authenticated Status List JWT verification;
+- authorization before revocation;
+- rejection of the same credential after the current Status List is updated.
+
+For a fresh full local run:
+
+```bash
+bash blockchain/scripts/run-pre-gateway-local.sh
+```
+
+The script starts a fresh Anvil chain in a separate Git Bash/Mintty window on Windows, deploys the contracts, configures all local identities and addresses, runs the complete validation, and intentionally leaves Anvil running for further manual inspection.
+
+The Cloud Access Gateway, OPA/Gitea integration, and agent communication protocols are intentionally frozen for now. The current work phase is study and review of the implemented delegation, status, trust, and blockchain architecture before new functionality is added.
