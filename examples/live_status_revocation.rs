@@ -21,8 +21,8 @@ use delegation::delegation::trust::public_material_provider::InMemoryPublicMater
 use delegation::delegation::trust::trust_registry::{TrustRegistry, TrustRegistryRef};
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
-use flate2::write::GzEncoder;
 use flate2::Compression;
+use flate2::write::GzEncoder;
 use multibase::Base;
 use serde_json::json;
 use std::env;
