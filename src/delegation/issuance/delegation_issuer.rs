@@ -4,11 +4,11 @@ use crate::delegation::credentials::delegation::delegation_credential::Delegatio
 use crate::delegation::credentials::delegation::delegation_chain_entry::DelegationChainEntry;
 use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
-use crate::delegation::entities::issuer::Issuer;
-use crate::delegation::entities::ours::accumulator_manager::AccumulatorManager;
-use crate::delegation::entities::ours::accumulator_utils::AccumulatorUtils;
+use crate::delegation::issuance::issuer_trait::Issuer;
+use crate::delegation::accumulator::accumulator_manager::AccumulatorManager;
+use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::trust::accumulator_public_data::AccumulatorPublicData;
+use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::trust::trust_registry::TrustRegistryRef;
 use ark_ec::pairing::Pairing;
 use ark_std::rand::prelude::StdRng;
@@ -21,7 +21,7 @@ use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use vb_accumulator::prelude::{Keypair, SetupParams};
 
-pub struct OurIssuer<E: Pairing> {
+pub struct DelegationIssuer<E: Pairing> {
     id: String,
     params: SetupParams<E>,
     acc_keypair: Keypair<E>,
@@ -29,15 +29,15 @@ pub struct OurIssuer<E: Pairing> {
     signature_jwk: Jwk,
 }
 
-impl<E: Pairing> Issuer<E, DelegationCredential> for OurIssuer<E> {
-    /// Creates a new OurIssuer structure. The VC issuer of our proposed protocol.
+impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
+    /// Creates a new DelegationIssuer structure. The VC issuer of our proposed protocol.
     ///
     /// # Arguments
     /// * `id` - the issuer's unique id.
     /// * `trust_registry` - shared registry used to publish the issuer's public verification material.
     ///
     /// # Returns
-    /// A result containing either the instance of OurIssuer or an error as a string in case of failure.
+    /// A result containing either the instance of DelegationIssuer or an error as a string in case of failure.
     fn new(id: String, trust_registry: TrustRegistryRef<E>) -> Result<Self, String> {
         trust_registry.register_identity(id.clone())?;
 
@@ -94,7 +94,7 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for OurIssuer<E> {
             }
         };
 
-        Ok(OurIssuer {
+        Ok(DelegationIssuer {
             id,
             params,
             acc_keypair,
@@ -455,7 +455,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
-        let issuer: OurIssuer<Curve> = OurIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Curve> = DelegationIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1337");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -479,7 +479,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d1");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1338");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -502,7 +502,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d2");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -525,7 +525,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d3");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1340");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -557,7 +557,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
-        let issuer: OurIssuer<Curve> = OurIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Curve> = DelegationIssuer::new(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1337");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -581,7 +581,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d1");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1338");
         let delegatee_id = String::from("https://vc.example/delegators/d2");
         let permissions: Vec<Permission> = vec![
@@ -601,7 +601,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d2");
         let previous_vc = Some(vc);
-        let issuer: OurIssuer<Bn254> = OurIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let delegatee_id = String::from("https://vc.example/delegators/d3");
         let permissions: Vec<Permission> = vec![
@@ -619,7 +619,7 @@ mod tests {
             previous_vc,
         )?;
 
-        let holder = OurIssuer::<Bn254>::new(
+        let holder = DelegationIssuer::<Bn254>::new(
             String::from("https://vc.example/delegators/d3"),
             trust_registry.clone(),
         )?;
@@ -644,7 +644,7 @@ mod tests {
         let trust_registry: TrustRegistryRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = OurIssuer::<Curve>::new(
+        let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
@@ -660,7 +660,7 @@ mod tests {
             None,
         )?;
 
-        let attacker = OurIssuer::<Curve>::new(
+        let attacker = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d2"),
             trust_registry.clone(),
         )?;
@@ -686,7 +686,7 @@ mod tests {
         let trust_registry: TrustRegistryRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = OurIssuer::<Curve>::new(
+        let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
@@ -704,7 +704,7 @@ mod tests {
 
         let parent_exp = parent_vc.credential().exp().clone();
 
-        let child_issuer = OurIssuer::<Curve>::new(
+        let child_issuer = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d1"),
             trust_registry.clone(),
         )?;
@@ -730,7 +730,7 @@ mod tests {
         let trust_registry: TrustRegistryRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = OurIssuer::<Curve>::new(
+        let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
             trust_registry.clone(),
         )?;
@@ -748,7 +748,7 @@ mod tests {
         )?;
         let parent_credential_id = parent_vc.id().clone();
 
-        let child_issuer = OurIssuer::<Curve>::new(
+        let child_issuer = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d1"),
             trust_registry.clone(),
         )?;

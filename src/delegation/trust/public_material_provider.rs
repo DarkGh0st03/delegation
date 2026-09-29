@@ -1,4 +1,4 @@
-use crate::delegation::trust::accumulator_public_data::AccumulatorPublicData;
+use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::cell::RefCell;

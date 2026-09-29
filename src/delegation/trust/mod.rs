@@ -1,4 +1,3 @@
-pub mod accumulator_public_data;
 pub mod did_verification_key_provider;
 pub mod evm;
 pub mod identity_status;

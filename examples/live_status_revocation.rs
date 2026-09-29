@@ -7,10 +7,10 @@ use delegation::delegation::authorization::authorization_request::AuthorizationR
 use delegation::delegation::authorization::operation::Operation;
 use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
-use delegation::delegation::entities::issuer::Issuer;
-use delegation::delegation::entities::ours::our_issuer::OurIssuer;
-use delegation::delegation::entities::ours::our_verifier::OurVerifier;
-use delegation::delegation::entities::verifier::Verifier;
+use delegation::delegation::issuance::issuer_trait::Issuer;
+use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
+use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
+use delegation::delegation::verification::verifier_trait::Verifier;
 use delegation::delegation::status::anchored_status_list_resolver::AnchoredStatusListResolver;
 use delegation::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::in_memory_status_list_credential_provider::InMemoryStatusListCredentialProvider;
@@ -293,7 +293,7 @@ fn main() -> Result<(), String> {
     let source_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
     let source_registry_ref: TrustRegistryRef<Curve> = source_registry.clone();
 
-    let root = OurIssuer::<Curve>::new(root_id.clone(), source_registry_ref.clone())?;
+    let root = DelegationIssuer::<Curve>::new(root_id.clone(), source_registry_ref.clone())?;
     let status_entry = BitstringStatusListEntry::revocation(
         None,
         STATUS_LIST_INDEX.to_string(),
@@ -323,7 +323,7 @@ fn main() -> Result<(), String> {
     let root_commitment =
         EvmBackedTrustRegistry::<Curve>::accumulator_material_commitment(&root_material)?;
 
-    let holder = OurIssuer::<Curve>::new(holder_id.clone(), source_registry_ref)?;
+    let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), source_registry_ref)?;
     let signed_vp = holder.issue_delegation_verifiable_presentation(
         vc,
         vec![permission(Operation::ReadFile)?],
@@ -405,7 +405,7 @@ fn main() -> Result<(), String> {
         status_reader,
     ));
 
-    let verifier = OurVerifier::<Curve>::new(evm_registry, status_resolver)?;
+    let verifier = DelegationVerifier::<Curve>::new(evm_registry, status_resolver)?;
     let request = AuthorizationRequest::new(
         holder_id.clone(),
         String::from("cloud-access-gateway"),

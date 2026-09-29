@@ -1,24 +1,4 @@
-use crate::delegation::authorization::authorization_request::AuthorizationRequest;
-use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
-use crate::delegation::status::status_list_resolver::StatusListResolverRef;
-use crate::delegation::trust::trust_registry::TrustRegistryRef;
-use ark_ec::pairing::Pairing;
 use std::str::FromStr;
-
-pub trait Verifier<E: Pairing> {
-    fn new(
-        trust_registry: TrustRegistryRef<E>,
-        status_list_resolver: StatusListResolverRef,
-    ) -> Result<Self, String>
-    where
-        Self: Sized;
-
-    fn verify_verifiable_presentation(
-        &self,
-        request: AuthorizationRequest,
-        signed_jwt: String,
-    ) -> Result<VerifiedDelegation, String>;
-}
 
 /// Utility function to let verifiers verify timings.
 pub fn verify_timings(now: u128, iat: &String, exp: &String) -> Result<(), String> {

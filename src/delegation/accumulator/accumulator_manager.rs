@@ -1,4 +1,4 @@
-use crate::delegation::entities::ours::accumulator_utils::AccumulatorUtils;
+use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
 use ark_ec::pairing::Pairing;
 use std::collections::HashSet;
 use std::hash::Hash;

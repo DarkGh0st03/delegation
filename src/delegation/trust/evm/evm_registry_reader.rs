@@ -76,7 +76,7 @@ pub struct StatusListAnchor {
 ///
 /// The rest of the Delegation Credential code is currently synchronous. This
 /// wrapper owns a Tokio runtime internally and exposes blocking read methods,
-/// keeping asynchronous JSON-RPC details out of `OurVerifier`.
+/// keeping asynchronous JSON-RPC details out of `DelegationVerifier`.
 pub trait EvmTrustReader {
     fn identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String>;
     fn is_trust_anchor(&self, identity_id: &str) -> Result<bool, String>;

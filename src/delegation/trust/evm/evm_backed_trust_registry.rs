@@ -1,4 +1,4 @@
-use crate::delegation::trust::accumulator_public_data::AccumulatorPublicData;
+use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::trust::evm::evm_registry_reader::EvmTrustReader;
 use crate::delegation::trust::identity_status::IdentityStatus;
 use crate::delegation::trust::public_material_provider::PublicMaterialProviderRef;

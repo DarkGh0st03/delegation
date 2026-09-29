@@ -1,4 +1,4 @@
-use crate::delegation::trust::accumulator_public_data::AccumulatorPublicData;
+use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::trust::identity_status::IdentityStatus;
 use crate::delegation::trust::trust_registry::TrustRegistry;
 use ark_ec::pairing::Pairing;
