@@ -1,7 +1,7 @@
 use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::trust::evm::evm_reader_traits::EvmTrustReader;
-use crate::delegation::trust::model::identity_status::IdentityStatus;
 use crate::delegation::trust::material::public_material_provider_traits::PublicMaterialProviderRef;
+use crate::delegation::trust::model::identity_status::IdentityStatus;
 use crate::delegation::trust::registry::trust_registry_trait::TrustRegistry;
 use alloy::primitives::{B256, keccak256};
 use ark_ec::pairing::Pairing;
