@@ -130,13 +130,17 @@ preGatewayBlockchainPhase=COMPLETE
 
 ## One-command validation
 
-Keep Anvil running, export the three deployed contract addresses, the governance key, and two fresh local Anvil private keys, then run:
+For a completely fresh local validation, with no Anvil node already running, execute from the repository root:
 
 ```bash
-bash blockchain/scripts/check-pre-gateway.sh
+bash blockchain/scripts/run-pre-gateway-local.sh
 ```
 
-The script derives the two did:ethr identifiers from the supplied private keys, runs Rust formatting/tests, Solidity tests, verifies Node resolver dependencies, and executes the final live integration.
+The wrapper adds the local Foundry installation to `PATH`, starts a fresh deterministic Anvil chain, waits for JSON-RPC readiness, configures the standard disposable local development identities, calls `deploy-local.sh`, extracts and exports the three deployed contract addresses automatically, and then calls `check-pre-gateway.sh`. On success it stops the Anvil process it started.
+
+The embedded Anvil mnemonic/private keys are the standard public development keys and MUST NEVER be reused on a real network or with real funds.
+
+For manual/debug operation, `check-pre-gateway.sh` remains available when Anvil, contract addresses, governance key, and fresh root/holder keys have already been configured. It derives the two did:ethr identifiers, runs Rust formatting/tests, Solidity tests, verifies Node resolver dependencies, and executes the final live integration.
 
 ## Next phase
 
