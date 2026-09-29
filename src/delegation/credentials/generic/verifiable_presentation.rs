@@ -1,6 +1,6 @@
-use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
+use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::traits::credential::Credential;
+use crate::delegation::credentials::generic::credential_trait::Credential;
 use josekit::jwk::Jwk;
 use josekit::jws::{EdDSA, JwsHeader};
 use josekit::jwt;

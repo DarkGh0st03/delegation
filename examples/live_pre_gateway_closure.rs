@@ -6,7 +6,7 @@ use ark_bn254::Bn254;
 use delegation::delegation::authorization::authorization_request::AuthorizationRequest;
 use delegation::delegation::authorization::operation::Operation;
 use delegation::delegation::authorization::permission::Permission;
-use delegation::delegation::credentials::ours::our_delegation::OurDelegation;
+use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::entities::issuer::Issuer;
 use delegation::delegation::entities::ours::our_issuer::OurIssuer;
 use delegation::delegation::entities::ours::our_verifier::OurVerifier;

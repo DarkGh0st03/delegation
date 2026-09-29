@@ -1,4 +1,4 @@
-pub trait OurDelegation {
+pub trait DelegationEvidence {
     /// Getter function for the delegatee_id variable.
     fn delegatee_id(&self) -> &String;
     /// Getter function for the accumulator_value variable.

@@ -1,9 +1,9 @@
 use crate::delegation::authorization::authorization_request::AuthorizationRequest;
 use crate::delegation::authorization::permission::Permission;
 use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
-use crate::delegation::credentials::ours::our_delegation::OurDelegation;
-use crate::delegation::credentials::ours::our_delegation_credential::OurDelegationCredential;
-use crate::delegation::credentials::verifiable_presentation::VerifiablePresentation;
+use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
+use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::entities::ours::accumulator_utils::AccumulatorUtils;
 use crate::delegation::entities::ours::accumulator_verifier::AccumulatorVerifier;
 use crate::delegation::entities::verifier::{Verifier, verify_timings};
@@ -42,7 +42,7 @@ impl<E: Pairing> Verifier<E> for OurVerifier<E> {
         })
     }
 
-    /// Verifies a VerifiablePresentation containing a OurDelegationCredential.
+    /// Verifies a VerifiablePresentation containing a DelegationCredential.
     ///
     /// # Arguments
     /// * `presenter_id` - the id of the VP presenter.
@@ -58,8 +58,8 @@ impl<E: Pairing> Verifier<E> for OurVerifier<E> {
         let presenter_id = request.presenter_id();
         let ecc_pk = self.trust_registry.get_verification_key(presenter_id)?;
 
-        let vp: VerifiablePresentation<OurDelegationCredential> =
-            VerifiablePresentation::<OurDelegationCredential>::from_signed_jwt(
+        let vp: VerifiablePresentation<DelegationCredential> =
+            VerifiablePresentation::<DelegationCredential>::from_signed_jwt(
                 signed_jwt, &ecc_pk,
             )?;
         let dc = vp.credential();
@@ -180,8 +180,8 @@ impl<E: Pairing> Verifier<E> for OurVerifier<E> {
 }
 
 impl<E: Pairing> OurVerifier<E> {
-    /// Private function useful to verify an OurDelegationCredential.
-    fn verify_delegation<D: OurDelegation>(
+    /// Private function useful to verify an DelegationCredential.
+    fn verify_delegation<D: DelegationEvidence>(
         &self,
         delegation: &D,
         issuer: &String,
@@ -271,7 +271,7 @@ mod tests {
     use super::*;
     use crate::delegation::authorization::authorization_request::AuthorizationRequest;
     use crate::delegation::authorization::operation::Operation;
-    use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
+    use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
     use crate::delegation::entities::issuer::Issuer;
     use crate::delegation::entities::ours::our_issuer::OurIssuer;
     use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
@@ -301,7 +301,7 @@ mod tests {
     }
 
     fn resolver_for_vc(
-        vc: &VerifiableCredential<OurDelegationCredential>,
+        vc: &VerifiableCredential<DelegationCredential>,
     ) -> Result<Rc<InMemoryStatusListResolver>, String> {
         let resolver = Rc::new(InMemoryStatusListResolver::new());
 

@@ -1,9 +1,9 @@
 use crate::delegation::authorization::permission::Permission;
-use crate::delegation::credentials::ours::our_delegation::OurDelegation;
-use crate::delegation::credentials::ours::our_delegation_credential::OurDelegationCredential;
-use crate::delegation::credentials::ours::our_delegator::OurDelegator;
-use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
-use crate::delegation::credentials::verifiable_presentation::VerifiablePresentation;
+use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
+use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+use crate::delegation::credentials::delegation::delegation_chain_entry::DelegationChainEntry;
+use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
+use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::entities::issuer::Issuer;
 use crate::delegation::entities::ours::accumulator_manager::AccumulatorManager;
 use crate::delegation::entities::ours::accumulator_utils::AccumulatorUtils;
@@ -29,7 +29,7 @@ pub struct OurIssuer<E: Pairing> {
     signature_jwk: Jwk,
 }
 
-impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
+impl<E: Pairing> Issuer<E, DelegationCredential> for OurIssuer<E> {
     /// Creates a new OurIssuer structure. The VC issuer of our proposed protocol.
     ///
     /// # Arguments
@@ -103,7 +103,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
         })
     }
 
-    /// Issues a VerifiableCredential containing a OurDelegationCredential.
+    /// Issues a VerifiableCredential containing a DelegationCredential.
     ///
     /// # Arguments
     /// * `context` - array of strings containing the context for the VC.
@@ -126,8 +126,8 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
         delegatee_id: String,
         validity_period: Duration,
         permissions: Vec<Permission>,
-        optional_issuer_vc: Option<VerifiableCredential<OurDelegationCredential>>,
-    ) -> Result<VerifiableCredential<OurDelegationCredential>, String> {
+        optional_issuer_vc: Option<VerifiableCredential<DelegationCredential>>,
+    ) -> Result<VerifiableCredential<DelegationCredential>, String> {
         // Validity_period refers to a short-lived credential: since its issuance moment, the delegation
         // credential could be valid for a month, a week, a day, or anything really.
 
@@ -235,8 +235,8 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
             // If the issued credential is from the root delegator, we simply set the hierarchy to an
             // empty array.
             None => {
-                let hierarchy: Vec<OurDelegator> = vec![];
-                let dc = OurDelegationCredential::new(
+                let hierarchy: Vec<DelegationChainEntry> = vec![];
+                let dc = DelegationCredential::new(
                     delegatee_id,
                     accumulator_value,
                     iat,
@@ -336,7 +336,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
                         String::from("Previous Delegation Credential has no credentialStatus")
                     })?;
 
-                let issuer_delegator = OurDelegator::new(
+                let issuer_delegator = DelegationChainEntry::new(
                     issuer_vc.issuer().clone(),
                     issuer_vc.id().clone(),
                     issuer_credential_status,
@@ -350,7 +350,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
                 );
                 issuer_hierarchy.push(issuer_delegator);
 
-                let result_dc = OurDelegationCredential::new(
+                let result_dc = DelegationCredential::new(
                     delegatee_id,
                     accumulator_value,
                     iat,
@@ -394,7 +394,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
     /// A result containing either the VerifiablePresentation or an error as a string in case of failure.
     fn issue_delegation_verifiable_presentation(
         &self,
-        vc: VerifiableCredential<OurDelegationCredential>,
+        vc: VerifiableCredential<DelegationCredential>,
         disclosed_permissions: Vec<Permission>,
         audience: String,
         challenge: String,
@@ -407,7 +407,7 @@ impl<E: Pairing> Issuer<E, OurDelegationCredential> for OurIssuer<E> {
             ));
         }
 
-        let vp: VerifiablePresentation<OurDelegationCredential> =
+        let vp: VerifiablePresentation<DelegationCredential> =
             VerifiablePresentation::from_verifiable_credential(
                 vc,
                 disclosed_permissions,

@@ -1,10 +1,10 @@
-use crate::delegation::credentials::ours::our_delegation::OurDelegation;
+use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct OurDelegator {
+pub struct DelegationChainEntry {
     #[serde(rename = "id")]
     id: String,
     #[serde(rename = "credentialId")]
@@ -27,8 +27,8 @@ pub struct OurDelegator {
     permission_witnesses: Vec<String>,
 }
 
-impl OurDelegator {
-    /// Creates a new OurDelegator instance.
+impl DelegationChainEntry {
+    /// Creates a new DelegationChainEntry instance.
     ///
     /// # Arguments
     /// * `id` - a string containing the delegator's identity.
@@ -40,7 +40,7 @@ impl OurDelegator {
     /// * `permission_witnesses` - a vector of strings containing the witnesses of permissions.
     ///
     /// # Returns
-    /// An instance of OurDelegator.
+    /// An instance of DelegationChainEntry.
     pub fn new(
         id: String,
         credential_id: String,
@@ -52,8 +52,8 @@ impl OurDelegator {
         accumulator_value: String,
         metadata_witness: String,
         permission_witnesses: Vec<String>,
-    ) -> OurDelegator {
-        OurDelegator {
+    ) -> DelegationChainEntry {
+        DelegationChainEntry {
             id,
             credential_id,
             credential_status,
@@ -95,7 +95,7 @@ impl OurDelegator {
     }
 }
 
-impl OurDelegation for OurDelegator {
+impl DelegationEvidence for DelegationChainEntry {
     /// Getter function that returns the delegatee id variable.
     fn delegatee_id(&self) -> &String {
         &self.delegatee_id
@@ -125,12 +125,12 @@ impl OurDelegation for OurDelegator {
     }
 }
 
-impl Display for OurDelegator {
+impl Display for DelegationChainEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match serde_json::to_string(self) {
             Ok(result) => write!(f, "{}", result),
             Err(e) => {
-                eprintln!("OurDelegator serialization failed: {}", e);
+                eprintln!("DelegationChainEntry serialization failed: {}", e);
                 Err(std::fmt::Error)
             }
         }
@@ -176,7 +176,7 @@ mod tests {
         };
 
         let delegator_value = Value::Object(delegator_map);
-        let delegator = match serde_json::from_value::<OurDelegator>(delegator_value) {
+        let delegator = match serde_json::from_value::<DelegationChainEntry>(delegator_value) {
             Ok(delegator) => delegator,
             Err(err) => return Err(format!("Failed to parse delegator object: [{err}]")),
         };

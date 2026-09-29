@@ -1,5 +1,5 @@
 use crate::delegation::status::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::traits::credential::Credential;
+use crate::delegation::credentials::generic::credential_trait::Credential;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -117,8 +117,8 @@ impl<C: Credential> Display for VerifiableCredential<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::delegation::credentials::ours::our_delegation_credential::OurDelegationCredential;
-    use crate::delegation::credentials::verifiable_credential::VerifiableCredential;
+    use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+    use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
     use serde_json::{Map, Value};
 
     #[test]
@@ -145,7 +145,7 @@ mod tests {
                 }
             };
 
-            let vc = match serde_json::from_value::<VerifiableCredential<OurDelegationCredential>>(
+            let vc = match serde_json::from_value::<VerifiableCredential<DelegationCredential>>(
                 Value::Object(raw_vc),
             ) {
                 Ok(vc) => vc,

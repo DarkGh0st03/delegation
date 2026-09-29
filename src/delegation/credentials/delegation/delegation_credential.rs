@@ -1,13 +1,13 @@
 use crate::delegation::authorization::permission::Permission;
-use crate::delegation::credentials::ours::our_delegation::OurDelegation;
-use crate::delegation::credentials::ours::our_delegator::OurDelegator;
-use crate::delegation::traits::credential::Credential;
+use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
+use crate::delegation::credentials::delegation::delegation_chain_entry::DelegationChainEntry;
+use crate::delegation::credentials::generic::credential_trait::Credential;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fmt::Display;
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct OurDelegationCredential {
+pub struct DelegationCredential {
     #[serde(rename = "sub")]
     delegatee_id: String,
     #[serde(rename = "av")]
@@ -25,10 +25,10 @@ pub struct OurDelegationCredential {
     #[serde(rename = "pw")]
     permission_witnesses: Vec<String>,
     #[serde(rename = "hierarchy")]
-    hierarchy: Vec<OurDelegator>,
+    hierarchy: Vec<DelegationChainEntry>,
 }
 
-impl OurDelegationCredential {
+impl DelegationCredential {
     /// Creates a new instance of the Delegation Credential we have proposed in the paper
     ///
     /// # Arguments
@@ -39,10 +39,10 @@ impl OurDelegationCredential {
     /// * `permissions` - vector of structured Permission values granted.
     /// * `metadata_witnesses` - string containing the serialized metadata witness.
     /// * `permission_witnesses` - vector of strings containing the permission witnesses.
-    /// * `hierarchy` - vector of OurDelegator containing previous delegators in the delegation chain.
+    /// * `hierarchy` - vector of DelegationChainEntry containing previous delegators in the delegation chain.
     ///
     /// # Returns
-    /// A result containing the OurDelegationCredential instance or an error as a string in case of failure.
+    /// A result containing the DelegationCredential instance or an error as a string in case of failure.
     pub fn new(
         delegatee_id: String,
         accumulator_value: String,
@@ -52,9 +52,9 @@ impl OurDelegationCredential {
         permissions: Vec<Permission>,
         metadata_witness: String,
         permission_witnesses: Vec<String>,
-        hierarchy: Vec<OurDelegator>,
-    ) -> Result<OurDelegationCredential, String> {
-        Ok(OurDelegationCredential {
+        hierarchy: Vec<DelegationChainEntry>,
+    ) -> Result<DelegationCredential, String> {
+        Ok(DelegationCredential {
             delegatee_id,
             accumulator_value,
             iat,
@@ -73,12 +73,12 @@ impl OurDelegationCredential {
     }
 
     /// Getter function for the hierarchy variable.
-    pub fn hierarchy(&self) -> &Vec<OurDelegator> {
+    pub fn hierarchy(&self) -> &Vec<DelegationChainEntry> {
         &self.hierarchy
     }
 }
 
-impl OurDelegation for OurDelegationCredential {
+impl DelegationEvidence for DelegationCredential {
     /// Getter function for the delegatee_id variable.
     fn delegatee_id(&self) -> &String {
         &self.delegatee_id
@@ -108,45 +108,45 @@ impl OurDelegation for OurDelegationCredential {
     }
 }
 
-impl Credential for OurDelegationCredential {
+impl Credential for DelegationCredential {
     type Claim = Permission;
 
     /// Function that returns a static string containing the type of the credential.
     fn credential_type(&self) -> &'static str {
-        "OurDelegationCredential"
+        "DelegationCredential"
     }
 
-    /// Builds an OurDelegationCredential instance from a serde_json Map<String, Value>.
+    /// Builds an DelegationCredential instance from a serde_json Map<String, Value>.
     ///
     /// # Arguments
-    /// * `map` - the map object to build the OurDelegationCredential instance from.
+    /// * `map` - the map object to build the DelegationCredential instance from.
     ///
     /// # Returns
-    /// A result containing the OurDelegationCredential instance or an error containing a string in case of failure.
+    /// A result containing the DelegationCredential instance or an error containing a string in case of failure.
     fn from_map(map: Map<String, Value>) -> Result<Self, String> {
-        match serde_json::from_value::<OurDelegationCredential>(Value::Object(map.clone())) {
+        match serde_json::from_value::<DelegationCredential>(Value::Object(map.clone())) {
             Ok(credential) => Ok(credential),
-            Err(err) => Err(format!("Error in parsing OurDelegationCredential: {err}")),
+            Err(err) => Err(format!("Error in parsing DelegationCredential: {err}")),
         }
     }
 
-    /// Builds an OurDelegationCredential instance from a json string.
+    /// Builds an DelegationCredential instance from a json string.
     ///
     /// # Arguments
     /// * `str` - the json string used to build the instance.
     ///
     /// # Returns
-    /// A result containing the OurDelegationCredential instance or an error as a string in case of failure.
+    /// A result containing the DelegationCredential instance or an error as a string in case of failure.
     fn from_string(str: String) -> Result<Self, String> {
-        match serde_json::from_str::<OurDelegationCredential>(&str) {
+        match serde_json::from_str::<DelegationCredential>(&str) {
             Ok(credential) => Ok(credential),
             Err(err) => Err(format!(
-                "Failed to deserialize OurDelegationCredential [{err}]"
+                "Failed to deserialize DelegationCredential [{err}]"
             )),
         }
     }
 
-    /// Generates a serde_json Map<String, Value> object from the current OurDelegationCredential instance.
+    /// Generates a serde_json Map<String, Value> object from the current DelegationCredential instance.
     ///
     /// # Returns
     /// A result containing the Map<String, Value> or an error as a string in case of failure.
@@ -155,7 +155,7 @@ impl Credential for OurDelegationCredential {
             Ok(map_value) => map_value,
             Err(err) => {
                 return Err(format!(
-                    "Failed to serialize OurDelegationCredential to map [{err}]"
+                    "Failed to serialize DelegationCredential to map [{err}]"
                 ));
             }
         };
@@ -166,7 +166,7 @@ impl Credential for OurDelegationCredential {
         }
     }
 
-    /// Generates a serde_json Map<String, Value> object from the current OurDelegationCredential instance.
+    /// Generates a serde_json Map<String, Value> object from the current DelegationCredential instance.
     ///
     /// # Returns
     /// A result containing the Map<String, Value> or an error as a string in case of failure.
@@ -174,7 +174,7 @@ impl Credential for OurDelegationCredential {
         match serde_json::to_string(&self) {
             Ok(str) => Ok(str),
             Err(err) => Err(format!(
-                "Failed to serialize OurDelegationCredential to json string [{err}]"
+                "Failed to serialize DelegationCredential to json string [{err}]"
             )),
         }
     }
@@ -221,12 +221,12 @@ impl Credential for OurDelegationCredential {
     }
 }
 
-impl Display for OurDelegationCredential {
+impl Display for DelegationCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match Credential::to_string(self) {
             Ok(result) => write!(f, "{}", result),
             Err(e) => {
-                eprintln!("OurDelegationCredential serialization failed: {}", e);
+                eprintln!("DelegationCredential serialization failed: {}", e);
                 Err(std::fmt::Error)
             }
         }
@@ -235,8 +235,8 @@ impl Display for OurDelegationCredential {
 
 #[cfg(test)]
 mod tests {
-    use crate::delegation::credentials::ours::our_delegation_credential::OurDelegationCredential;
-    use crate::delegation::traits::credential::Credential;
+    use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+    use crate::delegation::credentials::generic::credential_trait::Credential;
 
     #[test]
     fn parse_dc() -> Result<(), String> {
@@ -244,7 +244,7 @@ mod tests {
         let names: Vec<&str> = vec!["D1", "D2", "D3", "D4"];
 
         for (name, dc) in names.iter().zip(dcs.iter()) {
-            let dc: OurDelegationCredential = match serde_json::from_str(dc) {
+            let dc: DelegationCredential = match serde_json::from_str(dc) {
                 Ok(dc) => dc,
                 Err(err) => {
                     return Err(format!(
@@ -254,7 +254,7 @@ mod tests {
             };
 
             let dc_map = dc.to_map()?;
-            let dc = OurDelegationCredential::from_map(dc_map)?;
+            let dc = DelegationCredential::from_map(dc_map)?;
 
             println!("[{name}]\nDelegationCredential object: [{dc}]");
         }
