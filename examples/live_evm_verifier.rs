@@ -3,7 +3,7 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use ark_bn254::Bn254;
-use delegation::delegation::authorization::authorization_request::AuthorizationRequest;
+use delegation::delegation::authorization::authorization_context::AuthorizationContext;
 use delegation::delegation::authorization::operation::Operation;
 use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
@@ -271,14 +271,14 @@ fn main() -> Result<(), String> {
     status_resolver.set_status(&status, false);
 
     let verifier = DelegationVerifier::<Curve>::new(evm_registry, status_resolver)?;
-    let request = AuthorizationRequest::new(
+    let context = AuthorizationContext::new(
         holder_id.clone(),
         String::from("cloud-access-gateway"),
         String::from("challenge-live-evm"),
         permission(Operation::ReadFile)?,
     )?;
 
-    let verified = verifier.verify_verifiable_presentation(request, signed_vp)?;
+    let verified = verifier.verify_verifiable_presentation(context, signed_vp)?;
 
     println!("verifiedPresenter={}", verified.presenter_id());
     println!("verifiedIssuer={}", verified.issuer_id());

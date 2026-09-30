@@ -36,7 +36,7 @@ src/
     │   ├── accumulator_verifier.rs
     │   └── mod.rs
     ├── authorization/
-    │   ├── authorization_request.rs
+    │   ├── authorization_context.rs
     │   ├── operation.rs
     │   ├── permission.rs
     │   ├── resource_uri.rs

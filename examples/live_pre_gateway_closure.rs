@@ -3,7 +3,7 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use ark_bn254::Bn254;
-use delegation::delegation::authorization::authorization_request::AuthorizationRequest;
+use delegation::delegation::authorization::authorization_context::AuthorizationContext;
 use delegation::delegation::authorization::operation::Operation;
 use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
@@ -546,14 +546,14 @@ fn main() -> Result<(), String> {
     ));
 
     let verifier = DelegationVerifier::<Curve>::new(evm_registry, status_resolver)?;
-    let request = AuthorizationRequest::new(
+    let context = AuthorizationContext::new(
         holder_id.clone(),
         String::from("cloud-access-gateway"),
         String::from("challenge-pre-gateway-final"),
         permission(Operation::ReadFile)?,
     )?;
 
-    verifier.verify_verifiable_presentation(request.clone(), signed_vp.clone())?;
+    verifier.verify_verifiable_presentation(context.clone(), signed_vp.clone())?;
     println!("statusCredentialSignature=VALID");
     println!("beforeRevocation=ACCEPT");
     println!("statusListVersion=1");
@@ -577,7 +577,7 @@ fn main() -> Result<(), String> {
     }
 
     let rejection = verifier
-        .verify_verifiable_presentation(request, signed_vp)
+        .verify_verifiable_presentation(context, signed_vp)
         .expect_err("revoked credential must be rejected");
 
     if !rejection.contains("revoked") {

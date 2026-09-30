@@ -1,4 +1,4 @@
-use crate::delegation::authorization::authorization_request::AuthorizationRequest;
+use crate::delegation::authorization::authorization_context::AuthorizationContext;
 use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
 use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
 use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
@@ -14,7 +14,7 @@ pub trait Verifier<E: Pairing> {
 
     fn verify_verifiable_presentation(
         &self,
-        request: AuthorizationRequest,
+        context: AuthorizationContext,
         signed_jwt: String,
     ) -> Result<VerifiedDelegation, String>;
 }

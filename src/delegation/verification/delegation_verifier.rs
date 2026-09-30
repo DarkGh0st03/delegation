@@ -1,6 +1,6 @@
 use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
 use crate::delegation::accumulator::accumulator_verifier::AccumulatorVerifier;
-use crate::delegation::authorization::authorization_request::AuthorizationRequest;
+use crate::delegation::authorization::authorization_context::AuthorizationContext;
 use crate::delegation::authorization::permission::Permission;
 use crate::delegation::authorization::verified_delegation::VerifiedDelegation;
 use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
@@ -53,10 +53,10 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
     /// A result containing an error as a string in case of failure.
     fn verify_verifiable_presentation(
         &self,
-        request: AuthorizationRequest,
+        context: AuthorizationContext,
         signed_jwt: String,
     ) -> Result<VerifiedDelegation, String> {
-        let presenter_id = request.presenter_id();
+        let presenter_id = context.presenter_id();
         let ecc_pk = self.trust_registry.get_verification_key(presenter_id)?;
 
         let vp: VerifiablePresentation<DelegationCredential> =
@@ -79,25 +79,25 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
             ));
         }
 
-        if vp.audience() != request.audience() {
+        if vp.audience() != context.audience() {
             return Err(format!(
                 "VP audience {} does not match expected audience {}",
                 vp.audience(),
-                request.audience()
+                context.audience()
             ));
         }
 
-        if vp.challenge() != request.challenge() {
+        if vp.challenge() != context.challenge() {
             return Err(String::from(
-                "VP challenge does not match the authorization request challenge",
+                "VP challenge does not match the authorization context challenge",
             ));
         }
 
         let permissions = dc.permissions().clone();
-        if !permissions.contains(request.required_permission()) {
+        if !permissions.contains(context.required_permission()) {
             return Err(format!(
                 "Required permission {} is not disclosed in the VP",
-                request.required_permission()
+                context.required_permission()
             ));
         }
 
@@ -268,7 +268,7 @@ impl<E: Pairing> DelegationVerifier<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::authorization::authorization_request::AuthorizationRequest;
+    use crate::delegation::authorization::authorization_context::AuthorizationContext;
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
     use crate::delegation::issuance::delegation_issuer::DelegationIssuer;
@@ -466,14 +466,14 @@ mod tests {
         let status_resolver = resolver_for_vc(&vc)?;
         let verifier = DelegationVerifier::new(evm_registry, status_resolver)?;
 
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id.clone(),
             String::from("cloud-access-gateway"),
             String::from("challenge-evm-backed"),
             permission(Operation::ReadFile),
         )?;
 
-        let verified = verifier.verify_verifiable_presentation(request, signed_vp)?;
+        let verified = verifier.verify_verifiable_presentation(context, signed_vp)?;
 
         assert_eq!(verified.presenter_id(), &holder_id);
         assert_eq!(verified.issuer_id(), &root_id);
@@ -601,13 +601,13 @@ mod tests {
         )?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             id.clone(),
             audience,
             challenge,
             permission(Operation::ReadFile),
         )?;
-        let verified = verifier.verify_verifiable_presentation(request, signed_vp)?;
+        let verified = verifier.verify_verifiable_presentation(context, signed_vp)?;
 
         assert_eq!(verified.presenter_id(), &id);
         assert_eq!(
@@ -653,7 +653,7 @@ mod tests {
         )?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id,
             String::from("gateway-b"),
             String::from("challenge-a"),
@@ -662,7 +662,7 @@ mod tests {
 
         assert!(
             verifier
-                .verify_verifiable_presentation(request, signed_vp)
+                .verify_verifiable_presentation(context, signed_vp)
                 .is_err()
         );
         Ok(())
@@ -702,7 +702,7 @@ mod tests {
         )?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id,
             String::from("cloud-access-gateway"),
             String::from("challenge-b"),
@@ -711,7 +711,7 @@ mod tests {
 
         assert!(
             verifier
-                .verify_verifiable_presentation(request, signed_vp)
+                .verify_verifiable_presentation(context, signed_vp)
                 .is_err()
         );
         Ok(())
@@ -754,7 +754,7 @@ mod tests {
         )?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id,
             String::from("cloud-access-gateway"),
             String::from("challenge-a"),
@@ -763,7 +763,7 @@ mod tests {
 
         assert!(
             verifier
-                .verify_verifiable_presentation(request, signed_vp)
+                .verify_verifiable_presentation(context, signed_vp)
                 .is_err()
         );
         Ok(())
@@ -806,7 +806,7 @@ mod tests {
         let signed_vp = vp.to_signed_jwt(attacker.holder_jwk())?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             attacker_id,
             String::from("cloud-access-gateway"),
             String::from("challenge-a"),
@@ -815,7 +815,7 @@ mod tests {
 
         assert!(
             verifier
-                .verify_verifiable_presentation(request, signed_vp)
+                .verify_verifiable_presentation(context, signed_vp)
                 .is_err()
         );
         Ok(())
@@ -867,7 +867,7 @@ mod tests {
         )?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id,
             String::from("cloud-access-gateway"),
             String::from("challenge-status-binding"),
@@ -876,7 +876,7 @@ mod tests {
 
         assert!(
             verifier
-                .verify_verifiable_presentation(request, signed_vp)
+                .verify_verifiable_presentation(context, signed_vp)
                 .is_err()
         );
         Ok(())
@@ -921,7 +921,7 @@ mod tests {
         )?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id,
             String::from("cloud-access-gateway"),
             String::from("challenge-revoked-current"),
@@ -929,7 +929,7 @@ mod tests {
         )?;
 
         let error = verifier
-            .verify_verifiable_presentation(request, signed_vp)
+            .verify_verifiable_presentation(context, signed_vp)
             .expect_err("revoked current credential must be rejected");
         assert!(error.contains("revoked"));
         Ok(())
@@ -991,7 +991,7 @@ mod tests {
         )?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id,
             String::from("cloud-access-gateway"),
             String::from("challenge-revoked-ancestor"),
@@ -999,7 +999,7 @@ mod tests {
         )?;
 
         let error = verifier
-            .verify_verifiable_presentation(request, signed_vp)
+            .verify_verifiable_presentation(context, signed_vp)
             .expect_err("descendant of a revoked credential must be rejected");
         assert!(error.contains("revoked"));
         Ok(())
@@ -1038,7 +1038,7 @@ mod tests {
         )?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id,
             String::from("cloud-access-gateway"),
             String::from("challenge-untrusted-root"),
@@ -1046,7 +1046,7 @@ mod tests {
         )?;
 
         let error = verifier
-            .verify_verifiable_presentation(request, signed_vp)
+            .verify_verifiable_presentation(context, signed_vp)
             .expect_err("registered but untrusted root must be rejected");
         assert!(error.contains("not a trust anchor"));
         Ok(())
@@ -1088,7 +1088,7 @@ mod tests {
         trust_registry.set_identity_status(&holder_id, IdentityStatus::Suspended)?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id,
             String::from("cloud-access-gateway"),
             String::from("challenge-suspended-presenter"),
@@ -1096,7 +1096,7 @@ mod tests {
         )?;
 
         let error = verifier
-            .verify_verifiable_presentation(request, signed_vp)
+            .verify_verifiable_presentation(context, signed_vp)
             .expect_err("suspended presenter must be rejected");
         assert!(error.contains("suspended"));
         Ok(())
@@ -1152,7 +1152,7 @@ mod tests {
         trust_registry.set_identity_status(&intermediate_id, IdentityStatus::Revoked)?;
 
         let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
-        let request = AuthorizationRequest::new(
+        let context = AuthorizationContext::new(
             holder_id,
             String::from("cloud-access-gateway"),
             String::from("challenge-revoked-issuer"),
@@ -1160,7 +1160,7 @@ mod tests {
         )?;
 
         let error = verifier
-            .verify_verifiable_presentation(request, signed_vp)
+            .verify_verifiable_presentation(context, signed_vp)
             .expect_err("descendant of revoked issuer identity must be rejected");
         assert!(error.contains("revoked"));
         Ok(())
