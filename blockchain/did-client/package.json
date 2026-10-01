@@ -3,9 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "resolve": "node resolve-did.mjs",
-    "publish": "node publish-did.mjs",
-    "resolve-json": "node resolve-did-json.mjs",
+    "resolve": "node resolve-did-json.mjs",
     "publish-key": "node publish-ed25519.mjs"
   },
   "dependencies": {
