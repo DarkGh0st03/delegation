@@ -3,8 +3,8 @@ use std::rc::Rc;
 
 /// Resolves the current value associated with a Bitstring Status List entry.
 ///
-/// Implementations may read an in-memory store, an HTTP-hosted status list, or an
-/// externally anchored status list. Missing or unavailable entries must return an error
+/// Implementations may resolve an authenticated off-chain Status List artifact and/or
+/// validate it against an external anchor. Missing or unavailable entries must return an error
 /// so authorization remains fail-closed.
 pub trait StatusListResolver {
     fn is_status_set(&self, entry: &BitstringStatusListEntry) -> Result<bool, String>;
