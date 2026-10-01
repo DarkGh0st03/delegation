@@ -274,7 +274,7 @@ mod tests {
     use crate::delegation::issuance::delegation_issuer::DelegationIssuer;
     use crate::delegation::issuance::issuer_trait::Issuer;
     use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-    use crate::delegation::status::resolver::in_memory_status_list_resolver::InMemoryStatusListResolver;
+    use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
     use crate::delegation::trust::evm::evm_reader_traits::{
         AccumulatorMaterialAnchor, EvmTrustReader,
     };
@@ -301,10 +301,46 @@ mod tests {
         .expect("test status entry must be valid")
     }
 
+    #[derive(Clone, Default)]
+    struct TestStatusListResolver {
+        values: Rc<RefCell<HashMap<(String, String, String), bool>>>,
+    }
+
+    impl TestStatusListResolver {
+        fn key(entry: &BitstringStatusListEntry) -> (String, String, String) {
+            (
+                entry.status_list_credential().clone(),
+                entry.status_purpose().as_str().to_string(),
+                entry.status_list_index().clone(),
+            )
+        }
+
+        fn set_status(&self, entry: &BitstringStatusListEntry, is_set: bool) {
+            self.values.borrow_mut().insert(Self::key(entry), is_set);
+        }
+    }
+
+    impl StatusListResolver for TestStatusListResolver {
+        fn is_status_set(&self, entry: &BitstringStatusListEntry) -> Result<bool, String> {
+            self.values
+                .borrow()
+                .get(&Self::key(entry))
+                .copied()
+                .ok_or_else(|| {
+                    format!(
+                        "Status entry {}:{} ({}) is not available",
+                        entry.status_list_credential(),
+                        entry.status_list_index(),
+                        entry.status_purpose()
+                    )
+                })
+        }
+    }
+
     fn resolver_for_vc(
         vc: &VerifiableCredential<DelegationCredential>,
-    ) -> Result<Rc<InMemoryStatusListResolver>, String> {
-        let resolver = Rc::new(InMemoryStatusListResolver::new());
+    ) -> Result<Rc<TestStatusListResolver>, String> {
+        let resolver = Rc::new(TestStatusListResolver::default());
 
         for delegator in vc.credential().hierarchy() {
             resolver.set_status(delegator.credential_status(), false);
