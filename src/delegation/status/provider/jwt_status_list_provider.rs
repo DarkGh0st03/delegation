@@ -117,14 +117,37 @@ impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvid
 mod tests {
     use super::*;
     use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
-    use crate::delegation::trust::material::in_memory_verification_key_provider::InMemoryVerificationKeyProvider;
+    use crate::delegation::trust::material::public_material_provider_traits::VerificationKeyProvider;
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use ed25519_dalek::SigningKey;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
     use std::rc::Rc;
 
     const ISSUER: &str = "did:ethr:0x7a69:0x0000000000000000000000000000000000000001";
     const URL: &str = "https://status.example/lists/1";
+
+    #[derive(Default)]
+    struct TestVerificationKeyProvider {
+        keys: RefCell<HashMap<String, Jwk>>,
+    }
+
+    impl TestVerificationKeyProvider {
+        fn insert(&self, identity_id: String, key: Jwk) {
+            self.keys.borrow_mut().insert(identity_id, key);
+        }
+    }
+
+    impl VerificationKeyProvider for TestVerificationKeyProvider {
+        fn get_verification_key(&self, identity_id: &str) -> Result<Jwk, String> {
+            self.keys
+                .borrow()
+                .get(identity_id)
+                .cloned()
+                .ok_or_else(|| format!("No verification key available for identity {identity_id}"))
+        }
+    }
 
     fn keys(seed: u8) -> Result<(Jwk, Jwk), String> {
         let signing = SigningKey::from_bytes(&[seed; 32]);
@@ -178,8 +201,8 @@ mod tests {
         let source = Rc::new(InMemoryStatusListCredentialProvider::new());
         source.insert(String::from(URL), token.clone());
 
-        let keys = Rc::new(InMemoryVerificationKeyProvider::new());
-        keys.insert(String::from(ISSUER), public)?;
+        let keys = Rc::new(TestVerificationKeyProvider::default());
+        keys.insert(String::from(ISSUER), public);
 
         let provider = JwtAuthenticatedStatusListCredentialProvider::new(source, keys);
         let artifact = provider.get_status_list_credential_for_issuer(ISSUER, URL)?;
@@ -200,8 +223,8 @@ mod tests {
         let source = Rc::new(InMemoryStatusListCredentialProvider::new());
         source.insert(String::from(URL), token);
 
-        let keys = Rc::new(InMemoryVerificationKeyProvider::new());
-        keys.insert(String::from(ISSUER), wrong_public)?;
+        let keys = Rc::new(TestVerificationKeyProvider::default());
+        keys.insert(String::from(ISSUER), wrong_public);
 
         let provider = JwtAuthenticatedStatusListCredentialProvider::new(source, keys);
         assert!(
