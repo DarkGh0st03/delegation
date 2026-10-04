@@ -48,8 +48,8 @@ expected_hex="$(node -e 'process.stdout.write("0x"+Number(process.argv[1]).toStr
 }
 
 echo "Checking imported protected repository..."
-ref_json="$(curl -fsS   -H "Authorization: token $GITEA_GATEWAY_TOKEN"   "$GITEA_HOST_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/git/refs/heads/main")"
-observed_sha="$(printf '%s' "$ref_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.object?.sha ?? "")})')"
+branch_json="$(curl -fsS   -H "Authorization: token $GITEA_GATEWAY_TOKEN"   "$GITEA_HOST_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/branches/main")"
+observed_sha="$(printf '%s' "$branch_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.commit?.id ?? "")})')"
 [[ "$observed_sha" == "$GITEA_BASELINE_SHA" ]] || {
   echo "Protected repository baseline mismatch: expected $GITEA_BASELINE_SHA, got $observed_sha" >&2
   exit 1
