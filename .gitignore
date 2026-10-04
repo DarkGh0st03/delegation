@@ -18,3 +18,5 @@
 /poc/**/.env
 /poc/infra/data/
 /services/**/target/
+/poc/infra/.env
+/poc/infra/runtime/
