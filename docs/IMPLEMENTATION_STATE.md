@@ -49,7 +49,13 @@ Final Phase 0A checkpoint:
 
 ### Phase 0B — Scaffold integration workspace
 
-Completed.
+Completed and validated.
+
+Validated code checkpoint:
+
+`ce60f7506a5c8cb075f1d84f19943daabc1cc1d6`
+
+GitHub Actions validation run: `37208656247` — success (`cargo fmt --check`, `cargo test`, scaffold sanity check).
 
 Added:
 
