@@ -123,6 +123,37 @@ Generated CSV benchmark outputs, plots and plotting notebooks from the original 
 original-backup-before-thesis-cleanup
 ```
 
+## Thesis PoC integration workspace
+
+The implementation phase now adds a separate integration workspace without changing the existing Rust core boundary:
+
+```text
+services/
+└── delegation-adapter/   # Rust bridge implemented in Phase 2
+
+poc/
+├── apps/                 # Gateway and Agent services
+├── packages/             # shared TypeScript runtime/contracts
+├── opa/                  # contextual workflow policy
+├── runner/               # controlled execution + researcher acceptance
+├── infra/                # local Gitea/OPA/Anvil topology
+└── scripts/
+
+docs/
+├── IMPLEMENTATION_STATE.md
+└── ARCHITECTURE_DECISIONS.md
+```
+
+The PoC is implemented bottom-up: authorization boundary first, protected provider second, then A2A, and only afterwards LLM-backed Agents.
+
+Read `docs/IMPLEMENTATION_STATE.md` before continuing the implementation.
+
+For the scaffold sanity check:
+
+```bash
+npm --prefix poc run check:scaffold
+```
+
 ## Current checkpoint
 
 The pre-Gateway trust/blockchain phase is complete and has been validated after the architecture cleanup.
@@ -146,4 +177,4 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 The script starts a fresh Anvil chain in a separate Git Bash/Mintty window on Windows, deploys the contracts, configures all local identities and addresses, runs the complete validation, and intentionally leaves Anvil running for further manual inspection.
 
-The Cloud Access Gateway, OPA/Gitea integration, and agent communication protocols are intentionally frozen for now. The current work phase is study and review of the implemented delegation, status, trust, and blockchain architecture before new functionality is added.
+The pre-Gateway Rust/trust implementation remains the cryptographic baseline. The integration workspace is now scaffolded; the next milestone is the local Gitea/OPA/Anvil infrastructure layer.
