@@ -129,8 +129,8 @@ ensure_repository() {
 wait_for_main_ref() {
   echo "Waiting for imported main ref..."
   for _ in $(seq 1 80); do
-    if ref_json="$(curl -fsS -u "$ADMIN_AUTH" "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/git/refs/heads/main" 2>/dev/null)"; then
-      observed_sha="$(printf '%s' "$ref_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.object?.sha ?? "")})')"
+    if branch_json="$(curl -fsS -u "$ADMIN_AUTH" "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/branches/main" 2>/dev/null)"; then
+      observed_sha="$(printf '%s' "$branch_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.commit?.id ?? "")})')"
       if [[ -n "$observed_sha" ]]; then
         if [[ "$observed_sha" != "$GITEA_BASELINE_SHA" ]]; then
           echo "Imported main SHA mismatch: expected $GITEA_BASELINE_SHA, got $observed_sha" >&2
@@ -199,8 +199,8 @@ verify_gateway_access() {
 
   curl -fsS -H "Authorization: token $GITEA_GATEWAY_TOKEN" "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY" >/dev/null
 
-  ref_json="$(curl -fsS -H "Authorization: token $GITEA_GATEWAY_TOKEN" "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/git/refs/heads/main")"
-  observed_sha="$(printf '%s' "$ref_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.object?.sha ?? "")})')"
+  branch_json="$(curl -fsS -H "Authorization: token $GITEA_GATEWAY_TOKEN" "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/branches/main")"
+  observed_sha="$(printf '%s' "$branch_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.commit?.id ?? "")})')"
 
   [[ "$observed_sha" == "$GITEA_BASELINE_SHA" ]] || {
     echo "Gateway credential sees unexpected main SHA: $observed_sha" >&2
