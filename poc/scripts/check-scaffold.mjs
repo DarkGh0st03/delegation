@@ -13,6 +13,13 @@ const required = [
   "poc/runner/acceptance",
   "poc/infra/gitea",
   "poc/infra/env",
+  "poc/infra/docker-compose.yml",
+  "poc/scripts/init-local-env.mjs",
+  "poc/scripts/bootstrap-gitea.sh",
+  "poc/scripts/bootstrap-trust.sh",
+  "poc/scripts/phase1-up.sh",
+  "poc/scripts/phase1-check.sh",
+  "poc/scripts/phase1-down.sh",
   "services/delegation-adapter",
   "docs/IMPLEMENTATION_STATE.md",
   "docs/ARCHITECTURE_DECISIONS.md"
