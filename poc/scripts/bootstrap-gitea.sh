@@ -56,9 +56,9 @@ ensure_user() {
 
   echo "Creating Gitea user: $username"
   if [[ "$admin_flag" == "admin" ]]; then
-    compose exec -T gitea gitea admin user create       --username "$username"       --password "$password"       --email "$email"       --admin       --must-change-password=false
+    compose exec -T --user 1000:1000 gitea gitea admin user create       --username "$username"       --password "$password"       --email "$email"       --admin       --must-change-password=false
   else
-    compose exec -T gitea gitea admin user create       --username "$username"       --password "$password"       --email "$email"       --must-change-password=false
+    compose exec -T --user 1000:1000 gitea gitea admin user create       --username "$username"       --password "$password"       --email "$email"       --must-change-password=false
   fi
 }
 
