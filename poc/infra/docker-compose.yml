@@ -44,7 +44,7 @@ services:
     networks:
       - infra
     healthcheck:
-      test: ["/opa", "eval", "true"]
+      test: ["CMD", "/opa", "eval", "true"]
       interval: 5s
       timeout: 3s
       retries: 20
