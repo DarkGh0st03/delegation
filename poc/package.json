@@ -13,6 +13,10 @@
     "packages/*"
   ],
   "scripts": {
-    "check:scaffold": "node ./scripts/check-scaffold.mjs"
+    "check:scaffold": "node ./scripts/check-scaffold.mjs",
+    "infra:init": "node ./scripts/init-local-env.mjs",
+    "infra:up": "bash ./scripts/phase1-up.sh",
+    "infra:check": "bash ./scripts/phase1-check.sh",
+    "infra:down": "bash ./scripts/phase1-down.sh"
   }
 }
