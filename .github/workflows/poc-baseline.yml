@@ -29,3 +29,27 @@ jobs:
 
       - name: PoC scaffold sanity check
         run: npm --prefix poc run check:scaffold
+
+  phase1-smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - name: Generate local Phase 1 environment
+        run: node poc/scripts/init-local-env.mjs --force
+
+      - name: Validate Compose model
+        run: docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml config
+
+      - name: Start and validate Phase 1 infrastructure
+        run: bash poc/scripts/phase1-up.sh
+
+      - name: Tear down Phase 1 infrastructure
+        if: always()
+        run: bash poc/scripts/phase1-down.sh --volumes
