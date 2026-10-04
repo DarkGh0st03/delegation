@@ -13,7 +13,11 @@ export ANVIL_DEPLOYER_PRIVATE_KEY="${ANVIL_DEPLOYER_PRIVATE_KEY:-0xac0974bec39a1
 
 echo "Deploying local trust contracts against $RPC_URL ..."
 
-deploy_output="$(bash "$ROOT_DIR/blockchain/scripts/deploy-local.sh" 2>&1)"
+if ! deploy_output="$(bash "$ROOT_DIR/blockchain/scripts/deploy-local.sh" 2>&1)"; then
+  printf '%s\n' "$deploy_output" >&2
+  echo "Trust contract deployment failed." >&2
+  exit 1
+fi
 printf '%s\n' "$deploy_output"
 
 extract_value() {
