@@ -7,6 +7,15 @@ ENV_FILE="${PHASE1_ENV_FILE:-$INFRA_DIR/.env}"
 COMPOSE_FILE="$INFRA_DIR/docker-compose.yml"
 RUNTIME_DIR="$INFRA_DIR/runtime"
 
+export PATH="$HOME/.foundry/bin:$PATH"
+
+for command_name in docker node curl cast; do
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    echo "Required command not found: $command_name" >&2
+    exit 1
+  fi
+done
+
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing $ENV_FILE" >&2
   exit 1
@@ -39,16 +48,16 @@ echo "Checking OPA health..."
 curl -fsS "$OPA_HOST_URL/health?plugins" >/dev/null
 
 echo "Checking Anvil JSON-RPC..."
-rpc_response="$(curl -fsS   -H 'Content-Type: application/json'   --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'   "$ANVIL_HOST_URL")"
-chain_id_hex="$(printf '%s' "$rpc_response" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.result ?? "")})')"
-expected_hex="$(node -e 'process.stdout.write("0x"+Number(process.argv[1]).toString(16))' "${ANVIL_CHAIN_ID:-31337}")"
-[[ "$chain_id_hex" == "$expected_hex" ]] || {
-  echo "Unexpected Anvil chain id: expected $expected_hex, got $chain_id_hex" >&2
+observed_chain_id="$(cast chain-id --rpc-url "$ANVIL_HOST_URL" | tr -d '\r\n ')"
+[[ "$observed_chain_id" == "${ANVIL_CHAIN_ID:-31337}" ]] || {
+  echo "Unexpected Anvil chain id: expected ${ANVIL_CHAIN_ID:-31337}, got $observed_chain_id" >&2
   exit 1
 }
 
 echo "Checking imported protected repository..."
-branch_json="$(curl -fsS   -H "Authorization: token $GITEA_GATEWAY_TOKEN"   "$GITEA_HOST_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/branches/main")"
+branch_json="$(curl -fsS \
+  -H "Authorization: token $GITEA_GATEWAY_TOKEN" \
+  "$GITEA_HOST_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/branches/main")"
 observed_sha="$(printf '%s' "$branch_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.commit?.id ?? "")})')"
 [[ "$observed_sha" == "$GITEA_BASELINE_SHA" ]] || {
   echo "Protected repository baseline mismatch: expected $GITEA_BASELINE_SHA, got $observed_sha" >&2
@@ -57,8 +66,7 @@ observed_sha="$(printf '%s' "$branch_json" | node -e 'let s="";process.stdin.on(
 
 echo "Checking deployed trust contracts..."
 for address in "$DID_REGISTRY_ADDRESS" "$ENTERPRISE_TRUST_REGISTRY_ADDRESS" "$ISSUER_REGISTRY_ADDRESS"; do
-  code_response="$(curl -fsS     -H 'Content-Type: application/json'     --data "{"jsonrpc":"2.0","id":1,"method":"eth_getCode","params":["$address","latest"]}"     "$ANVIL_HOST_URL")"
-  code="$(printf '%s' "$code_response" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.result ?? "")})')"
+  code="$(cast code "$address" --rpc-url "$ANVIL_HOST_URL")"
   if [[ -z "$code" || "$code" == "0x" ]]; then
     echo "No bytecode found for trust contract $address" >&2
     exit 1
@@ -81,6 +89,6 @@ process.stdin.on("data",d=>s+=d).on("end",()=>{
 
 echo "PHASE1_CHECK=PASS"
 echo "giteaBaselineSha=$observed_sha"
-echo "anvilChainId=$chain_id_hex"
+echo "anvilChainId=$observed_chain_id"
 echo "trustContracts=DEPLOYED"
 echo "providerNetworkBoundary=DECLARED"

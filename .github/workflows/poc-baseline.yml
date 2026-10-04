@@ -41,6 +41,10 @@ jobs:
         with:
           node-version: 22.15.0
 
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+
       - name: Generate local Phase 1 environment
         run: node poc/scripts/init-local-env.mjs --force
 
