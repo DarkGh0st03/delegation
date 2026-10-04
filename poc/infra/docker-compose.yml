@@ -1,0 +1,102 @@
+name: delegation-thesis-poc
+
+services:
+  gitea:
+    image: ${GITEA_IMAGE:-docker.gitea.com/gitea:28.0.0}
+    container_name: delegation-poc-gitea
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__database__PATH: /data/gitea/gitea.db
+      GITEA__server__DOMAIN: localhost
+      GITEA__server__ROOT_URL: http://localhost:${GITEA_HOST_PORT:-3000}/
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__DISABLE_SSH: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__actions__ENABLED: "false"
+    volumes:
+      - gitea-data:/data
+    ports:
+      - "127.0.0.1:${GITEA_HOST_PORT:-3000}:3000"
+    networks:
+      - infra
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 40
+      start_period: 10s
+
+  opa:
+    image: ${OPA_IMAGE:-openpolicyagent/opa:1.21.1}
+    container_name: delegation-poc-opa
+    restart: unless-stopped
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-format=json
+    ports:
+      - "127.0.0.1:${OPA_HOST_PORT:-8181}:8181"
+    networks:
+      - infra
+    healthcheck:
+      test: ["/opa", "eval", "true"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  anvil:
+    image: ${FOUNDRY_IMAGE:-ghcr.io/foundry-rs/foundry:v1.8.4}
+    container_name: delegation-poc-anvil
+    restart: unless-stopped
+    entrypoint: ["anvil"]
+    command:
+      - --host
+      - 0.0.0.0
+      - --chain-id
+      - "${ANVIL_CHAIN_ID:-31337}"
+      - --mnemonic
+      - "${ANVIL_MNEMONIC:-test test test test test test test test test test test junk}"
+    ports:
+      - "127.0.0.1:${ANVIL_HOST_PORT:-8545}:8545"
+    networks:
+      - infra
+    healthcheck:
+      test: ["CMD", "cast", "chain-id", "--rpc-url", "http://127.0.0.1:8545"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  trust-bootstrap:
+    image: ${FOUNDRY_IMAGE:-ghcr.io/foundry-rs/foundry:v1.8.4}
+    profiles: ["bootstrap"]
+    working_dir: /workspace
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["bash /workspace/poc/scripts/bootstrap-trust.sh"]
+    environment:
+      RPC_URL: http://anvil:8545
+      CHAIN_ID: "${ANVIL_CHAIN_ID:-31337}"
+      ANVIL_DEPLOYER_PRIVATE_KEY: "${ANVIL_DEPLOYER_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+    volumes:
+      - ../..:/workspace
+    networks:
+      - infra
+    depends_on:
+      anvil:
+        condition: service_healthy
+
+networks:
+  infra:
+    name: delegation-poc-infra
+  agent:
+    name: delegation-poc-agent
+    internal: true
+
+volumes:
+  gitea-data:
+    name: delegation-poc-gitea-data
