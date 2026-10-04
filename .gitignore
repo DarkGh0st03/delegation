@@ -8,3 +8,13 @@
 /blockchain/.env
 /blockchain/did-client/node_modules/
 /blockchain/did-client/local/
+
+# Thesis PoC integration workspace
+/poc/node_modules/
+/poc/**/node_modules/
+/poc/**/dist/
+/poc/**/.cache/
+/poc/.env
+/poc/**/.env
+/poc/infra/data/
+/services/**/target/
