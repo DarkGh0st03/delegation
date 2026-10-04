@@ -30,6 +30,46 @@ http_code() {
   curl -sS -o /dev/null -w '%{http_code}' "$@"
 }
 
+json_org_payload() {
+  node -e '
+    process.stdout.write(JSON.stringify({
+      username: process.argv[1],
+      full_name: "Thesis PoC",
+      description: "Protected repository namespace for the delegated-authorization PoC",
+      visibility: "private"
+    }))
+  ' "$GITEA_ORG"
+}
+
+json_migration_payload() {
+  node -e '
+    process.stdout.write(JSON.stringify({
+      clone_addr: process.argv[1],
+      repo_owner: process.argv[2],
+      repo_name: process.argv[3],
+      service: "git",
+      mirror: false,
+      private: true,
+      issues: false,
+      labels: false,
+      milestones: false,
+      pull_requests: false,
+      releases: false,
+      wiki: false,
+      lfs: false
+    }))
+  ' "$GITEA_SOURCE_REPO" "$GITEA_ORG" "$GITEA_REPOSITORY"
+}
+
+json_token_payload() {
+  node -e '
+    process.stdout.write(JSON.stringify({
+      name: process.argv[1],
+      scopes: ["write:repository", "read:user"]
+    }))
+  ' "$1"
+}
+
 wait_for_gitea() {
   echo "Waiting for Gitea..."
   for _ in $(seq 1 80); do
@@ -47,7 +87,7 @@ ensure_user() {
   local username="$1"
   local password="$2"
   local email="$3"
-  local admin_flag="$4"
+  local role="$4"
 
   if [[ "$(http_code "$BASE_URL/api/v1/users/$username")" == "200" ]]; then
     echo "Gitea user already exists: $username"
@@ -55,10 +95,10 @@ ensure_user() {
   fi
 
   echo "Creating Gitea user: $username"
-  if [[ "$admin_flag" == "admin" ]]; then
-    compose exec -T --user 1000:1000 gitea gitea admin user create       --username "$username"       --password "$password"       --email "$email"       --admin       --must-change-password=false
+  if [[ "$role" == "admin" ]]; then
+    compose exec -T --user 1000:1000 gitea gitea admin user create --username "$username" --password "$password" --email "$email" --admin --must-change-password=false
   else
-    compose exec -T --user 1000:1000 gitea gitea admin user create       --username "$username"       --password "$password"       --email "$email"       --must-change-password=false
+    compose exec -T --user 1000:1000 gitea gitea admin user create --username "$username" --password "$password" --email "$email" --must-change-password=false
   fi
 }
 
@@ -69,7 +109,9 @@ ensure_org() {
   fi
 
   echo "Creating Gitea organization: $GITEA_ORG"
-  curl -fsS -u "$ADMIN_AUTH"     -H 'Content-Type: application/json'     -X POST "$BASE_URL/api/v1/orgs"     --data "{"username":"$GITEA_ORG","full_name":"Thesis PoC","description":"Protected repository namespace for the delegated-authorization PoC","visibility":"private"}"     >/dev/null
+  local payload
+  payload="$(json_org_payload)"
+  curl -fsS -u "$ADMIN_AUTH" -H 'Content-Type: application/json' -X POST "$BASE_URL/api/v1/orgs" --data "$payload" >/dev/null
 }
 
 ensure_repository() {
@@ -79,21 +121,9 @@ ensure_repository() {
   fi
 
   echo "Importing protected baseline repository into Gitea..."
-  curl -fsS -u "$ADMIN_AUTH"     -H 'Content-Type: application/json'     -X POST "$BASE_URL/api/v1/repos/migrate"     --data "{
-      "clone_addr":"$GITEA_SOURCE_REPO",
-      "repo_owner":"$GITEA_ORG",
-      "repo_name":"$GITEA_REPOSITORY",
-      "service":"git",
-      "mirror":false,
-      "private":true,
-      "issues":false,
-      "labels":false,
-      "milestones":false,
-      "pull_requests":false,
-      "releases":false,
-      "wiki":false,
-      "lfs":false
-    }" >/dev/null
+  local payload
+  payload="$(json_migration_payload)"
+  curl -fsS -u "$ADMIN_AUTH" -H 'Content-Type: application/json' -X POST "$BASE_URL/api/v1/repos/migrate" --data "$payload" >/dev/null
 }
 
 wait_for_main_ref() {
@@ -119,7 +149,7 @@ wait_for_main_ref() {
 
 grant_gateway_write() {
   echo "Granting repository write permission to service user: $GITEA_GATEWAY_USER"
-  curl -fsS -u "$ADMIN_AUTH"     -H 'Content-Type: application/json'     -X PUT "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/collaborators/$GITEA_GATEWAY_USER"     --data '{"permission":"write"}'     >/dev/null
+  curl -fsS -u "$ADMIN_AUTH" -H 'Content-Type: application/json' -X PUT "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/collaborators/$GITEA_GATEWAY_USER" --data '{"permission":"write"}' >/dev/null
 }
 
 gateway_token_is_valid() {
@@ -139,8 +169,10 @@ ensure_gateway_token() {
   fi
 
   echo "Creating a repository-scoped Gateway access credential..."
+  local token_name payload response token
   token_name="gateway-poc-$(date +%s)"
-  response="$(curl -fsS -u "$GATEWAY_AUTH"     -H 'Content-Type: application/json'     -X POST "$BASE_URL/api/v1/users/$GITEA_GATEWAY_USER/tokens"     --data "{"name":"$token_name","scopes":["write:repository","read:user"]}")"
+  payload="$(json_token_payload "$token_name")"
+  response="$(curl -fsS -u "$GATEWAY_AUTH" -H 'Content-Type: application/json' -X POST "$BASE_URL/api/v1/users/$GITEA_GATEWAY_USER/tokens" --data "$payload")"
 
   token="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.sha1 ?? "")})')"
   if [[ -z "$token" ]]; then
@@ -165,11 +197,11 @@ verify_gateway_access() {
   # shellcheck disable=SC1090
   source "$GATEWAY_ENV"
 
-  curl -fsS     -H "Authorization: token $GITEA_GATEWAY_TOKEN"     "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY"     >/dev/null
+  curl -fsS -H "Authorization: token $GITEA_GATEWAY_TOKEN" "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY" >/dev/null
 
-  ref_json="$(curl -fsS     -H "Authorization: token $GITEA_GATEWAY_TOKEN"     "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/git/refs/heads/main")"
-
+  ref_json="$(curl -fsS -H "Authorization: token $GITEA_GATEWAY_TOKEN" "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/git/refs/heads/main")"
   observed_sha="$(printf '%s' "$ref_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.object?.sha ?? "")})')"
+
   [[ "$observed_sha" == "$GITEA_BASELINE_SHA" ]] || {
     echo "Gateway credential sees unexpected main SHA: $observed_sha" >&2
     exit 1
