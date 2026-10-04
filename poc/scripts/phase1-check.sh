@@ -80,12 +80,20 @@ let s="";
 process.stdin.on("data",d=>s+=d).on("end",()=>{
   const j=JSON.parse(s);
   const giteaNetworks=j.services?.gitea?.networks ?? {};
-  const agentInternal=j.networks?.agent?.internal;
   if (!("infra" in giteaNetworks)) throw new Error("Gitea is not attached to infra network");
   if ("agent" in giteaNetworks) throw new Error("Gitea must not be attached to agent network");
-  if (agentInternal !== true) throw new Error("Agent network must be internal");
 });
 '
+
+if ! awk '
+  /^  agent:/ { in_agent=1; next }
+  in_agent && /^  [^ ]/ { in_agent=0 }
+  in_agent && /internal:[[:space:]]*true/ { found=1 }
+  END { exit(found ? 0 : 1) }
+' "$COMPOSE_FILE"; then
+  echo "Agent network must be declared internal in docker-compose.yml" >&2
+  exit 1
+fi
 
 echo "PHASE1_CHECK=PASS"
 echo "giteaBaselineSha=$observed_sha"

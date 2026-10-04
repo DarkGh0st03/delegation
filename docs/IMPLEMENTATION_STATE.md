@@ -6,9 +6,9 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 0B — Scaffold workspace and continuity documentation: COMPLETE**
+**Phase 1 — Local infrastructure (Gitea + OPA + Anvil): COMPLETE**
 
-Next milestone: **Phase 1 — Local infrastructure (Gitea + OPA + Anvil)**
+Next milestone: **Phase 2A — Rust Delegation Adapter skeleton and caller-to-identity binding**
 
 ## Source-of-truth repositories
 
@@ -68,6 +68,25 @@ Added:
 
 No Gateway, Agent, Adapter, OPA, Gitea or Runner business logic has been implemented yet.
 
+### Phase 1 — Local infrastructure
+
+Completed.
+
+Implemented and validated:
+
+- pinned local Docker topology for Gitea, OPA and Anvil;
+- Gitea namespace `thesis/iam-console-poc`;
+- import and exact SHA validation of hardened `iam-console-poc` baseline;
+- separate local admin user and Gateway service user;
+- Gateway-only repository write credential persisted only in a gitignored runtime file;
+- explicit Agent network declared as internal, with Gitea excluded from that network;
+- reuse of the existing trust deployment script against containerized Anvil;
+- runtime export of deployed DID, Enterprise Trust and Issuer registry addresses;
+- health checks for Gitea, OPA and Anvil;
+- CI smoke test that boots the Phase 1 stack, imports the baseline, deploys trust contracts, validates boundaries and tears the stack down.
+
+Phase 1 deliberately does **not** implement authorization logic, Rego workflow policy, protected Gitea tool calls, A2A or LLM behavior.
+
 ## Validation commands
 
 ```bash
@@ -86,16 +105,16 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 1
+## Next action — Phase 2A
 
-Implement:
+Implement the Rust Delegation Adapter skeleton:
 
-- Docker Compose services for Gitea, OPA and Anvil;
-- explicit internal network layout;
-- health checks;
-- reuse of existing trust-contract deployment scripts;
-- Gitea namespace `thesis/iam-console-poc`;
-- Gateway-owned Gitea credential design;
-- caller credential placeholders for the future identity-bound Adapter.
+- new Rust service under `services/delegation-adapter/`;
+- health endpoint;
+- identity store for Engineer / Orchestrator / Backend / Frontend / Test;
+- distinct internal caller authentication;
+- server-side mapping from caller credential to allowed identity and role;
+- explicit denial when a caller attempts to select another identity;
+- no issuance/VP/verification API yet beyond the minimum skeleton required to validate identity binding.
 
-Do not implement Agent or LLM behavior in Phase 1.
+Do not move cryptographic logic to TypeScript.
