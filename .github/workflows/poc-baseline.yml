@@ -1665,3 +1665,118 @@ jobs:
           kill "$(cat /tmp/runner-stub.pid)" 2>/dev/null || true
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
 
+  phase9b6-full-sequential-smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ADAPTER_CALLER_ENGINEER: engineer-phase9b6-secret
+      ADAPTER_CALLER_GATEWAY: gateway-phase9b6-secret
+      ADAPTER_CALLER_ORCHESTRATOR: orchestrator-phase9b6-secret
+      ADAPTER_CALLER_BACKEND: backend-phase9b6-secret
+      ADAPTER_CALLER_FRONTEND: frontend-phase9b6-secret
+      ADAPTER_CALLER_TEST: test-phase9b6-secret
+      ADAPTER_ID_ENGINEER: did:thesis:engineer
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_ID_ORCHESTRATOR: did:thesis:orchestrator
+      ADAPTER_ID_BACKEND: did:thesis:backend-agent
+      ADAPTER_ID_FRONTEND: did:thesis:frontend-agent
+      ADAPTER_ID_TEST: did:thesis:test-agent
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      DELEGATION_ADAPTER_URL: http://127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GATEWAY_PROVIDER_MODE: gitea
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+      GITEA_TIMEOUT_MS: "3000"
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: "2000"
+      TEST_RUNNER_URL: http://127.0.0.1:8091
+      TEST_RUNNER_GATEWAY_TOKEN: phase9b6-runner-secret
+      TEST_RUNNER_TIMEOUT_MS: "3000"
+      RUNNER_STUB_COUNT_FILE: /tmp/phase9b6-runner-count.txt
+      ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase9b6:orchestrator-root
+      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - name: Install Phase 9B.6 Node dependencies
+        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+
+      - name: Generate local infrastructure environment
+        run: node poc/scripts/init-local-env.mjs --force
+
+      - name: Start Gitea and OPA
+        run: docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d gitea opa
+
+      - name: Bootstrap protected Gitea repository
+        run: bash poc/scripts/bootstrap-gitea.sh
+
+      - name: Build Delegation Adapter
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Start Delegation Adapter
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/adapter.log 2>&1 &
+          echo $! > /tmp/adapter.pid
+
+      - name: Start controlled positive Runner stub
+        run: |
+          node poc/scripts/phase9b5-controlled-runner-stub.mjs > /tmp/runner-stub.log 2>&1 &
+          echo $! > /tmp/runner-stub.pid
+
+      - name: Start Gateway with Gitea and Runner boundaries
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_BASE_URL="$GITEA_HOST_BASE_URL"
+          export GATEWAY_PROVIDER_MODE=gitea
+          export DELEGATION_ADAPTER_URL=http://127.0.0.1:8090
+          export OPA_URL=http://127.0.0.1:8181
+          export TEST_RUNNER_URL=http://127.0.0.1:8091
+          export TEST_RUNNER_GATEWAY_TOKEN=phase9b6-runner-secret
+          export TEST_RUNNER_TIMEOUT_MS=3000
+          npm --prefix poc run gateway:start > /tmp/gateway.log 2>&1 &
+          echo $! > /tmp/gateway.pid
+
+      - name: Run full sequential delegated A2A workflow and PR gate
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
+          node --experimental-strip-types poc/scripts/phase9b6-full-sequential-smoke.mjs
+
+      - name: Show Phase 9B.6 logs on failure
+        if: failure()
+        run: |
+          echo "=== Adapter ==="
+          cat /tmp/adapter.log || true
+          echo "=== Gateway ==="
+          cat /tmp/gateway.log || true
+          echo "=== Runner stub ==="
+          cat /tmp/runner-stub.log || true
+          echo "=== Runner count ==="
+          cat /tmp/phase9b6-runner-count.txt || true
+          echo "=== Gitea ==="
+          docker logs delegation-poc-gitea || true
+          echo "=== OPA ==="
+          docker logs delegation-poc-opa || true
+
+      - name: Stop Phase 9B.6 services
+        if: always()
+        run: |
+          kill "$(cat /tmp/gateway.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/adapter.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/runner-stub.pid)" 2>/dev/null || true
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
