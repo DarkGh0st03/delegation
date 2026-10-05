@@ -324,6 +324,15 @@ export async function executeAuthorization(
             runner_tested_commit_sha: execution.tested_commit_sha,
             runner_profile: execution.runner_profile,
             runner_status: execution.status,
+            ...(execution.project_tests === undefined
+              ? {}
+              : { runner_project_tests_status: execution.project_tests.status }),
+            ...(execution.researcher_acceptance === undefined
+              ? {}
+              : {
+                  runner_researcher_acceptance_status:
+                    execution.researcher_acceptance.status
+                }),
             ...(execution.log_reference === undefined
               ? {}
               : { runner_log_reference: execution.log_reference })
