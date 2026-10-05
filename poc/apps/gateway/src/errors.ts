@@ -30,3 +30,24 @@ export class PolicyUnavailableError extends Error {
     this.name = "PolicyUnavailableError";
   }
 }
+
+export class ProviderUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderUnavailableError";
+  }
+}
+
+export class ProviderNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderNotFoundError";
+  }
+}
+
+export class ProviderOperationUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderOperationUnavailableError";
+  }
+}
