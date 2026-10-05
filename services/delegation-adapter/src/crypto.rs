@@ -372,6 +372,7 @@ mod tests {
     use super::*;
     use crate::auth::{CallerCapability, CallerRecord};
     use delegation::delegation::authorization::operation::Operation;
+    use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 
     const STATUS_LIST: &str = "https://status.example/lists/adapter-revocation-1";
 
