@@ -216,3 +216,180 @@ test("Gitea branch conflicts become structured provider conflicts", async () => 
     ProviderConflictError
   );
 });
+
+
+test("createFile sends base64 content and returns commit/blob metadata", async () => {
+  const calls: Array<{ method: string; url: string; body: Record<string, unknown> }> = [];
+  const client = clientWith((async (url, init) => {
+    calls.push({
+      method: init?.method ?? "GET",
+      url: String(url),
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : {}
+    });
+    return new Response(
+      JSON.stringify({
+        content: {
+          path: "tests/e2e/account-suspension.spec.ts",
+          sha: "blob-created"
+        },
+        commit: { sha: "commit-created" }
+      }),
+      { status: 201 }
+    );
+  }) as typeof fetch);
+
+  const result = await client.createFile(
+    "feature/account-suspension",
+    "tests/e2e/account-suspension.spec.ts",
+    "test content\n",
+    "thesis-gateway: create"
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, "POST");
+  assert.match(calls[0].url, /\/contents\/tests\/e2e\/account-suspension\.spec\.ts$/u);
+  assert.deepEqual(calls[0].body, {
+    branch: "feature/account-suspension",
+    content: Buffer.from("test content\n", "utf8").toString("base64"),
+    message: "thesis-gateway: create"
+  });
+  assert.deepEqual(result, {
+    path: "tests/e2e/account-suspension.spec.ts",
+    branch: "feature/account-suspension",
+    revision: "commit-created",
+    commit_sha: "commit-created",
+    blob_sha: "blob-created"
+  });
+});
+
+test("createFile maps Gitea validation conflicts to provider conflict", async () => {
+  const client = clientWith((async () =>
+    new Response(JSON.stringify({ message: "file already exists" }), {
+      status: 422
+    })) as typeof fetch);
+
+  await assert.rejects(
+    client.createFile(
+      "feature/account-suspension",
+      "tests/e2e/account-suspension.spec.ts",
+      "duplicate",
+      "thesis-gateway: create"
+    ),
+    ProviderConflictError
+  );
+});
+
+test("updateFile binds the PUT to the current blob SHA and returns the new revision", async () => {
+  const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
+  const content = Buffer.from("old source\n", "utf8").toString("base64");
+  let call = 0;
+  const client = clientWith((async (url, init) => {
+    call += 1;
+    const method = init?.method ?? "GET";
+    calls.push({
+      method,
+      url: String(url),
+      ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {})
+    });
+
+    if (call === 1) {
+      return new Response(
+        JSON.stringify({
+          name: "feature/account-suspension",
+          commit: { id: "branch-before" }
+        }),
+        { status: 200 }
+      );
+    }
+    if (call === 2) {
+      return new Response(
+        JSON.stringify({
+          type: "file",
+          path: "apps/backend/src/users/user.service.ts",
+          sha: "blob-before",
+          last_commit_sha: "commit-before",
+          encoding: "base64",
+          content
+        }),
+        { status: 200 }
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        content: {
+          path: "apps/backend/src/users/user.service.ts",
+          sha: "blob-after"
+        },
+        commit: { sha: "commit-after" }
+      }),
+      { status: 200 }
+    );
+  }) as typeof fetch);
+
+  const result = await client.updateFile(
+    "feature/account-suspension",
+    "apps/backend/src/users/user.service.ts",
+    "new source\n",
+    "thesis-gateway: update"
+  );
+
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].method, "PUT");
+  assert.deepEqual(calls[2].body, {
+    branch: "feature/account-suspension",
+    content: Buffer.from("new source\n", "utf8").toString("base64"),
+    message: "thesis-gateway: update",
+    sha: "blob-before"
+  });
+  assert.deepEqual(result, {
+    path: "apps/backend/src/users/user.service.ts",
+    branch: "feature/account-suspension",
+    revision: "commit-after",
+    commit_sha: "commit-after",
+    blob_sha: "blob-after",
+    previous_revision: "branch-before",
+    precondition_blob_sha: "blob-before"
+  });
+});
+
+test("updateFile maps a stale blob precondition to provider conflict", async () => {
+  const content = Buffer.from("old source\n", "utf8").toString("base64");
+  let call = 0;
+  const client = clientWith((async () => {
+    call += 1;
+    if (call === 1) {
+      return new Response(
+        JSON.stringify({
+          name: "feature/account-suspension",
+          commit: { id: "branch-before" }
+        }),
+        { status: 200 }
+      );
+    }
+    if (call === 2) {
+      return new Response(
+        JSON.stringify({
+          type: "file",
+          path: "apps/backend/src/users/user.service.ts",
+          sha: "stale-blob",
+          encoding: "base64",
+          content
+        }),
+        { status: 200 }
+      );
+    }
+    return new Response(JSON.stringify({ message: "sha does not match" }), {
+      status: 409
+    });
+  }) as typeof fetch);
+
+  await assert.rejects(
+    client.updateFile(
+      "feature/account-suspension",
+      "apps/backend/src/users/user.service.ts",
+      "new source",
+      "thesis-gateway: update"
+    ),
+    ProviderConflictError
+  );
+});
