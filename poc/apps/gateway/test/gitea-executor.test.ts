@@ -180,16 +180,87 @@ test("Gitea executor rejects file writes outside the frozen feature branch befor
   assert.equal(calls, 0);
 });
 
-test("Gitea executor keeps create_pull_request disabled until Phase 5B.3", async () => {
-  const executor = new GiteaExecutor({} as GiteaClient);
+test("Gitea executor creates only the frozen feature -> main pull request", async () => {
+  const client = {
+    async createPullRequest(
+      headBranch: string,
+      baseBranch: string,
+      title: string,
+      body?: string
+    ) {
+      assert.equal(headBranch, "feature/account-suspension");
+      assert.equal(baseBranch, "main");
+      assert.equal(title, "Account suspension");
+      assert.equal(body, "PoC");
+      return {
+        id: 77,
+        number: 5,
+        url: "http://gitea/pulls/5",
+        head_branch: headBranch,
+        base_branch: baseBranch,
+        head_revision: "head123"
+      };
+    }
+  } as unknown as GiteaClient;
+
+  const executor = new GiteaExecutor(client);
+  const result = await executor.execute(
+    record({
+      tool: "create_pull_request",
+      arguments: {
+        head_branch: "feature/account-suspension",
+        base_branch: "main",
+        title: "Account suspension",
+        body: "PoC"
+      }
+    })
+  );
+
+  assert.equal(result.tool, "create_pull_request");
+  if (result.tool === "create_pull_request") {
+    assert.equal(result.pull_request_id, 77);
+    assert.equal(result.pull_request_number, 5);
+    assert.equal(result.revision, "head123");
+    assert.equal(result.head_branch, "feature/account-suspension");
+    assert.equal(result.base_branch, "main");
+  }
+});
+
+test("Gitea executor rejects a pull request outside the frozen direction before provider access", async () => {
+  let calls = 0;
+  const client = {
+    async createPullRequest() {
+      calls += 1;
+      throw new Error("should not be called");
+    }
+  } as unknown as GiteaClient;
+  const executor = new GiteaExecutor(client);
+
   await assert.rejects(
     executor.execute(
       record({
         tool: "create_pull_request",
         arguments: {
-          head_branch: "feature/account-suspension",
-          base_branch: "main",
-          title: "Account suspension"
+          head_branch: "main",
+          base_branch: "feature/account-suspension",
+          title: "forbidden"
+        }
+      })
+    ),
+    ProviderOperationUnavailableError
+  );
+  assert.equal(calls, 0);
+});
+
+test("Gitea executor keeps run_tests unavailable for the future Controlled Runner", async () => {
+  const executor = new GiteaExecutor({} as GiteaClient);
+  await assert.rejects(
+    executor.execute(
+      record({
+        tool: "run_tests",
+        arguments: {
+          branch: "feature/account-suspension",
+          profile: "poc-default"
         }
       })
     ),
