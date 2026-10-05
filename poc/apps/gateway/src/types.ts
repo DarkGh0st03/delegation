@@ -138,6 +138,8 @@ export interface ExecuteAuditEvent {
   runner_tested_commit_sha?: string;
   runner_profile?: "poc-default";
   runner_status?: "pass" | "fail";
+  runner_project_tests_status?: "pass" | "fail";
+  runner_researcher_acceptance_status?: "pass" | "fail" | "skipped";
   runner_log_reference?: string;
   provider: "mock" | "gitea" | "runner";
 }
@@ -255,6 +257,16 @@ export interface RunnerPhaseExecutionResult {
   errors?: string[];
 }
 
+export interface RunnerProjectTestsExecutionResult {
+  status: "pass" | "fail";
+  phases: RunnerPhaseExecutionResult[];
+}
+
+export interface RunnerResearcherAcceptanceExecutionResult
+  extends RunnerPhaseExecutionResult {
+  phase: "researcher_acceptance";
+}
+
 export interface RunnerExecutionResult {
   provider: "runner";
   performed: true;
@@ -265,6 +277,8 @@ export interface RunnerExecutionResult {
   runner_profile: "poc-default";
   status: "pass" | "fail";
   phases: RunnerPhaseExecutionResult[];
+  project_tests?: RunnerProjectTestsExecutionResult;
+  researcher_acceptance?: RunnerResearcherAcceptanceExecutionResult;
   log_reference?: string;
 }
 
