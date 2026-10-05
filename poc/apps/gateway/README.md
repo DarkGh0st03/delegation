@@ -32,3 +32,20 @@ Run:
 ```bash
 npm --prefix poc run gateway:test
 ```
+
+
+## Phase 3B — verify then mock-execute
+
+The Gateway now exposes:
+
+- `POST /v1/authorization/prepare`;
+- `POST /v1/authorization/execute`;
+- `GET /health`.
+
+`execute` accepts only `request_id` and a signed VP. The Gateway retrieves role, challenge, audience, tool arguments and required permission from the prepared server-side record; the caller cannot replace them during execution.
+
+The prepared request is marked consumed before the asynchronous verifier call. Verification rejection, verifier outage and expiration all fail closed, and a failed request cannot be replayed with the same challenge.
+
+At this phase successful authorization reaches only `MockExecutor`, which reports `performed: false`. No Gitea mutation or test execution exists yet. OPA is intentionally inserted in Phase 4 before any real provider connection in Phase 5.
+
+Structured audit output includes request/task identifiers, canonical resource + operation, decision, VP size, chain depth, disclosed permission count and timing fields. Full VP and source-file contents are never written to the audit event.

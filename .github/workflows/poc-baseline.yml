@@ -36,7 +36,7 @@ jobs:
       - name: PoC scaffold sanity check
         run: npm --prefix poc run check:scaffold
 
-      - name: Gateway Phase 3A tests
+      - name: Gateway Phase 3 tests
         run: npm --prefix poc run gateway:test
 
   phase1-smoke:
@@ -66,3 +66,68 @@ jobs:
       - name: Tear down Phase 1 infrastructure
         if: always()
         run: bash poc/scripts/phase1-down.sh --volumes
+
+
+  phase3-smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ADAPTER_CALLER_ENGINEER: engineer-phase3-secret
+      ADAPTER_CALLER_GATEWAY: gateway-phase3-secret
+      ADAPTER_CALLER_ORCHESTRATOR: orchestrator-phase3-secret
+      ADAPTER_CALLER_BACKEND: backend-phase3-secret
+      ADAPTER_CALLER_FRONTEND: frontend-phase3-secret
+      ADAPTER_CALLER_TEST: test-phase3-secret
+      ADAPTER_ID_ENGINEER: did:thesis:engineer
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_ID_ORCHESTRATOR: did:thesis:orchestrator
+      ADAPTER_ID_BACKEND: did:thesis:backend-agent
+      ADAPTER_ID_FRONTEND: did:thesis:frontend-agent
+      ADAPTER_ID_TEST: did:thesis:test-agent
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      DELEGATION_ADAPTER_URL: http://127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - name: Build Delegation Adapter
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Start Delegation Adapter
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/adapter.log 2>&1 &
+          echo $! > /tmp/adapter.pid
+
+      - name: Start Gateway
+        run: |
+          npm --prefix poc run gateway:start > /tmp/gateway.log 2>&1 &
+          echo $! > /tmp/gateway.pid
+
+      - name: Run real Adapter-Gateway smoke
+        run: node poc/scripts/phase3-smoke.mjs
+
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          echo "=== Adapter ==="
+          cat /tmp/adapter.log || true
+          echo "=== Gateway ==="
+          cat /tmp/gateway.log || true
+
+      - name: Stop Phase 3 services
+        if: always()
+        run: |
+          kill "$(cat /tmp/gateway.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/adapter.pid)" 2>/dev/null || true

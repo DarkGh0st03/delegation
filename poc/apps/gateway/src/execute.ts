@@ -169,6 +169,8 @@ export async function executeAuthorization(
     throw new GatewayError(503, reason, "Delegation verification failed closed");
   }
 
+  const verificationMs = elapsed(verificationStarted, durationNow());
+
   const providerStarted = durationNow();
   const execution = await dependencies.executor.execute(record);
   const providerMs = elapsed(providerStarted, durationNow);
@@ -185,7 +187,7 @@ export async function executeAuthorization(
     operation: record.required_permission.operation,
     decision: "allow",
     reason: "verified_mock_execution",
-    verification_ms: 0,
+    verification_ms: verificationMs,
     provider_ms: providerMs,
     total_ms: totalMs,
     vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
