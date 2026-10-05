@@ -1,0 +1,12 @@
+{
+  "name": "@thesis/orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bootstrap": "node --experimental-strip-types ./src/bootstrap-engineer.ts"
+  },
+  "dependencies": {
+    "@thesis/orchestrator-runtime": "0.1.0"
+  }
+}
