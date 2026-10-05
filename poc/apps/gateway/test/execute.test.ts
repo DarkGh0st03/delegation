@@ -75,13 +75,16 @@ class SuccessVerifier implements VerifierPort {
 
 class FixedPolicy implements PolicyPort {
   calls: PolicyInput[] = [];
+  readonly decision: PolicyDecision;
 
   constructor(
-    private readonly decision: PolicyDecision = {
+    decision: PolicyDecision = {
       allow: true,
       policy_version: "phase4a-v1"
     }
-  ) {}
+  ) {
+    this.decision = decision;
+  }
 
   async evaluate(input: PolicyInput): Promise<PolicyDecision> {
     this.calls.push(input);
