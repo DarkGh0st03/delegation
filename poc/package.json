@@ -19,6 +19,11 @@
     "infra:check": "bash ./scripts/phase1-check.sh",
     "infra:down": "bash ./scripts/phase1-down.sh",
     "gateway:test": "npm run test -w @thesis/gateway",
-    "gateway:start": "npm run start -w @thesis/gateway"
+    "gateway:start": "npm run start -w @thesis/gateway",
+    "agent-runtime:test": "npm run test -w @thesis/agent-runtime"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "1.3.0",
+    "express": "5.1.0"
   }
 }
