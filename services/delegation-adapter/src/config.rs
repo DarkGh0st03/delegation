@@ -12,8 +12,8 @@ impl AdapterConfig {
         let bind_addr =
             env::var("ADAPTER_BIND_ADDR").unwrap_or_else(|_| String::from("0.0.0.0:8090"));
 
-        let engineer_id = env::var("ADAPTER_ID_ENGINEER")
-            .unwrap_or_else(|_| String::from("did:thesis:engineer"));
+        let engineer_id =
+            env::var("ADAPTER_ID_ENGINEER").unwrap_or_else(|_| String::from("did:thesis:engineer"));
         let orchestrator_id = env::var("ADAPTER_ID_ORCHESTRATOR")
             .unwrap_or_else(|_| String::from("did:thesis:orchestrator"));
         let backend_id = env::var("ADAPTER_ID_BACKEND")

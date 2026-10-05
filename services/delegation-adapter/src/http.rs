@@ -47,11 +47,7 @@ pub fn run(config: AdapterConfig) -> Result<(), String> {
     Ok(())
 }
 
-fn handle_request(
-    mut request: Request,
-    config: &AdapterConfig,
-    crypto: &mut CryptoRuntime,
-) {
+fn handle_request(mut request: Request, config: &AdapterConfig, crypto: &mut CryptoRuntime) {
     let method = request.method().clone();
     let url = request.url().to_string();
 

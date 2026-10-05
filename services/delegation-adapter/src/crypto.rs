@@ -138,10 +138,7 @@ impl CryptoRuntime {
             issuers.insert(role, issuer);
         }
 
-        trust_registry.set_trust_anchor(
-            callers.identity_for_role(CallerRole::Engineer)?,
-            true,
-        )?;
+        trust_registry.set_trust_anchor(callers.identity_for_role(CallerRole::Engineer)?, true)?;
 
         let status_resolver = Rc::new(AdapterStatusResolver::default());
         let status_ref: StatusListResolverRef = status_resolver.clone();
@@ -164,7 +161,9 @@ impl CryptoRuntime {
     ) -> Result<VerifiableCredential<DelegationCredential>, String> {
         require_capability(caller, CallerCapability::IssueRoot)?;
         if caller.role() != CallerRole::Engineer {
-            return Err(String::from("Only the Engineer caller may issue the root credential"));
+            return Err(String::from(
+                "Only the Engineer caller may issue the root credential",
+            ));
         }
         if request.delegatee != CallerRole::Orchestrator {
             return Err(String::from(
@@ -243,10 +242,9 @@ impl CryptoRuntime {
             })?;
 
         let delegatee_id = callers.identity_for_role(request.delegatee)?.to_string();
-        let issuer = self
-            .issuers
-            .get(&CallerRole::Orchestrator)
-            .ok_or_else(|| String::from("Orchestrator cryptographic identity is not initialized"))?;
+        let issuer = self.issuers.get(&CallerRole::Orchestrator).ok_or_else(|| {
+            String::from("Orchestrator cryptographic identity is not initialized")
+        })?;
 
         self.status_resolver
             .register_active(&request.credential_status);
@@ -341,10 +339,7 @@ impl CryptoRuntime {
     }
 }
 
-fn require_capability(
-    caller: &CallerRecord,
-    capability: CallerCapability,
-) -> Result<(), String> {
+fn require_capability(caller: &CallerRecord, capability: CallerCapability) -> Result<(), String> {
     if caller.has_capability(capability) {
         Ok(())
     } else {
@@ -475,9 +470,7 @@ mod tests {
         let mut runtime = CryptoRuntime::new(&registry).unwrap();
         issue_root(&mut runtime, &registry);
 
-        let orchestrator = registry
-            .record_for_role(CallerRole::Orchestrator)
-            .unwrap();
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
         let child = runtime
             .issue_child(
                 orchestrator,
@@ -494,10 +487,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(
-            child.credential().delegatee_id(),
-            "did:thesis:backend"
-        );
+        assert_eq!(child.credential().delegatee_id(), "did:thesis:backend");
 
         let backend = registry.record_for_role(CallerRole::Backend).unwrap();
         let presentation = runtime
@@ -529,7 +519,10 @@ mod tests {
 
         assert_eq!(verified.presenter_id(), "did:thesis:backend");
         assert_eq!(verified.hierarchy_depth(), 1);
-        assert_eq!(verified.permissions(), &vec![permission(Operation::ReadFile)]);
+        assert_eq!(
+            verified.permissions(),
+            &vec![permission(Operation::ReadFile)]
+        );
     }
 
     #[test]
@@ -538,9 +531,7 @@ mod tests {
         let mut runtime = CryptoRuntime::new(&registry).unwrap();
         issue_root(&mut runtime, &registry);
 
-        let orchestrator = registry
-            .record_for_role(CallerRole::Orchestrator)
-            .unwrap();
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
         let error = runtime
             .issue_child(
                 orchestrator,
@@ -566,9 +557,7 @@ mod tests {
         let mut runtime = CryptoRuntime::new(&registry).unwrap();
         issue_root(&mut runtime, &registry);
 
-        let orchestrator = registry
-            .record_for_role(CallerRole::Orchestrator)
-            .unwrap();
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
         runtime
             .issue_child(
                 orchestrator,
