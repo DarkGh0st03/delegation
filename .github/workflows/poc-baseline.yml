@@ -862,7 +862,7 @@ jobs:
           source poc/infra/runtime/gateway.env
           set +a
           export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
-          node poc/scripts/phase8a-agent-runtime-smoke.mjs
+          node --experimental-strip-types poc/scripts/phase8a-agent-runtime-smoke.mjs
 
       - name: Show Phase 8A logs on failure
         if: failure()
