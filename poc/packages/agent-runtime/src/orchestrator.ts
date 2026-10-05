@@ -108,7 +108,12 @@ export class DeterministicA2AOrchestrator {
           extensions: [DELEGATED_AUTHORIZATION_EXTENSION_URI],
           referenceTaskIds: []
         },
-        configuration: undefined,
+        configuration: {
+          acceptedOutputModes: ["application/json"],
+          taskPushNotificationConfig: undefined,
+          historyLength: 0,
+          returnImmediately: false
+        },
         metadata: {
           workflow: "account-suspension"
         }
