@@ -6,6 +6,7 @@ import { GiteaExecutor } from "./gitea-executor.ts";
 import { GiteaReadOnlyExecutor } from "./gitea-read-executor.ts";
 import { MockExecutor } from "./mock-executor.ts";
 import { OpaPolicyClient } from "./policy-client.ts";
+import { RunnerClient } from "./runner-client.ts";
 import {
   InMemoryAuditSink,
   InMemoryRequestStore,
@@ -50,9 +51,23 @@ function defaultExecutor(config: GatewayRuntimeConfig): ExecutionPort {
     timeoutMs: config.gitea_timeout_ms
   });
 
-  return config.provider_mode === "gitea-readonly"
-    ? new GiteaReadOnlyExecutor(client)
-    : new GiteaExecutor(client);
+  if (config.provider_mode === "gitea-readonly") {
+    return new GiteaReadOnlyExecutor(client);
+  }
+
+  const runnerClient =
+    config.runner_url && config.runner_gateway_token
+      ? new RunnerClient({
+          baseUrl: config.runner_url,
+          gatewayToken: config.runner_gateway_token,
+          timeoutMs: config.runner_timeout_ms
+        })
+      : undefined;
+  const repositoryUri =
+    `gitea://${config.prepare.repository.authority}/` +
+    `${config.prepare.repository.owner}/${config.prepare.repository.repository}`;
+
+  return new GiteaExecutor(client, runnerClient, repositoryUri);
 }
 
 export class GatewayRuntime {
