@@ -306,7 +306,16 @@ export async function executeAuthorization(
           ...("commit_sha" in execution
             ? { provider_commit_sha: execution.commit_sha }
             : {}),
-          ...("blob_sha" in execution ? { provider_blob_sha: execution.blob_sha } : {})
+          ...("blob_sha" in execution ? { provider_blob_sha: execution.blob_sha } : {}),
+          ...("pull_request_id" in execution
+            ? { provider_pull_request_id: execution.pull_request_id }
+            : {}),
+          ...("pull_request_number" in execution
+            ? { provider_pull_request_number: execution.pull_request_number }
+            : {}),
+          ...("url" in execution && execution.url !== undefined
+            ? { provider_pull_request_url: execution.url }
+            : {})
         }
       : {};
 
