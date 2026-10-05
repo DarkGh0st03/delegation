@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   IsolatedDockerRunnerExecutor,
-  runnerFixedPhaseCommands
+  runnerFixedPhaseCommands,
+  runnerResearcherAcceptanceCommand
 } from "../src/isolated-executor.ts";
 
 const request = {
@@ -51,6 +52,65 @@ test("Phase 6B Playwright phase boots the controlled app services before E2E", (
   assert.match(command, /wait_port 3000/u);
   assert.match(command, /wait_port 5173/u);
   assert.match(command, /npm run test:e2e/u);
+});
+
+test("Phase 6C mounts researcher acceptance read-only and reports a separate verdict", async () => {
+  const calls: Array<{ command: string; args: string[] }> = [];
+  let fetchCount = 0;
+
+  const executor = new IsolatedDockerRunnerExecutor(
+    {
+      ...config,
+      acceptance_enabled: true,
+      acceptance_dir: "/researcher-owned/acceptance"
+    },
+    {
+      fetch_fn: async () => {
+        fetchCount += 1;
+        if (fetchCount === 1) {
+          return new Response(
+            JSON.stringify({ commit: { id: request.commit_sha } }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          );
+        }
+        return new Response(Buffer.from("fake-tar-gz"), { status: 200 });
+      },
+      command_runner: async (command, args) => {
+        calls.push({ command, args });
+        return {
+          exit_code: 0,
+          stdout: "",
+          stderr: "",
+          timed_out: false
+        };
+      }
+    }
+  );
+
+  const result = await executor.run(request);
+
+  const create = calls.find(
+    (call) => call.command === "docker" && call.args[0] === "create"
+  );
+  assert.ok(create);
+  const mountIndex = create.args.indexOf("--mount");
+  assert.notEqual(mountIndex, -1);
+  assert.equal(
+    create.args[mountIndex + 1],
+    "type=bind,src=/researcher-owned/acceptance,dst=/workspace/.researcher-acceptance,readonly"
+  );
+
+  const acceptance = calls.find(
+    (call) =>
+      call.command === "docker" &&
+      call.args[0] === "exec" &&
+      call.args.at(-1) === runnerResearcherAcceptanceCommand
+  );
+  assert.ok(acceptance);
+  assert.equal(result.status, "pass");
+  assert.equal(result.project_tests?.status, "pass");
+  assert.equal(result.researcher_acceptance?.status, "pass");
+  assert.equal(result.researcher_acceptance?.phase, "researcher_acceptance");
 });
 
 test("isolated executor pins branch head to the exact requested SHA and destroys its container", async () => {
