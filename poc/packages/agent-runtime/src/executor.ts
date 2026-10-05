@@ -14,11 +14,11 @@ import {
 } from "@a2a-js/sdk/server";
 import {
   DELEGATED_AUTHORIZATION_EXTENSION_URI,
-  type AgentArtifactPayload,
   type DelegationEvidence,
   type DeterministicSubtask,
   type SpecializedAgentRole
 } from "./contracts.ts";
+import { buildDeterministicArtifactPayload } from "./artifact-builder.ts";
 import { InMemoryAgentTaskContextStore } from "./task-context.ts";
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -74,23 +74,6 @@ function subtask(message: Message): DeterministicSubtask {
     instruction: string(raw.instruction, "subtask.instruction"),
     branch: "feature/account-suspension",
     relevant_paths: raw.relevant_paths as string[]
-  };
-}
-
-function artifactPayload(
-  role: SpecializedAgentRole,
-  task: DeterministicSubtask
-): AgentArtifactPayload {
-  return {
-    role,
-    summary: `${role} agent accepted deterministic subtask ${task.subtask_id}`,
-    files_modified: [],
-    files_created: [],
-    branch: task.branch,
-    revision: null,
-    commit_sha: null,
-    test_outcome: "not_run",
-    errors: []
   };
 }
 
@@ -185,7 +168,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
         {
           content: {
             $case: "data",
-            value: artifactPayload(this.#role, taskInput)
+            value: buildDeterministicArtifactPayload(this.#role, taskInput)
           },
           metadata: undefined,
           filename: "",
