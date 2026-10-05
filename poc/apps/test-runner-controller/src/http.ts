@@ -96,6 +96,9 @@ export function createRunnerHttpServer(
         return;
       }
 
+      process.stderr.write(
+        `Controlled Test Runner execution failed: ${error instanceof Error ? error.message : String(error)}\n`
+      );
       json(response, 503, {
         error: "runner_execution_failed",
         message: "Controlled Test Runner failed closed"
