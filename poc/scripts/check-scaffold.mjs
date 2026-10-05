@@ -8,6 +8,8 @@ const root = resolve(here, "..", "..");
 const required = [
   "poc/package.json",
   "poc/apps",
+  "poc/apps/gateway/package.json",
+  "poc/apps/gateway/src/canonical.ts",
   "poc/packages",
   "poc/opa",
   "poc/runner/acceptance",

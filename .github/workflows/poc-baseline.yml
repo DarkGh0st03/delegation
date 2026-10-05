@@ -36,6 +36,9 @@ jobs:
       - name: PoC scaffold sanity check
         run: npm --prefix poc run check:scaffold
 
+      - name: Gateway Phase 3A tests
+        run: npm --prefix poc run gateway:test
+
   phase1-smoke:
     needs: validate
     runs-on: ubuntu-latest

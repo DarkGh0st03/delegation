@@ -17,6 +17,7 @@
     "infra:init": "node ./scripts/init-local-env.mjs",
     "infra:up": "bash ./scripts/phase1-up.sh",
     "infra:check": "bash ./scripts/phase1-check.sh",
-    "infra:down": "bash ./scripts/phase1-down.sh"
+    "infra:down": "bash ./scripts/phase1-down.sh",
+    "gateway:test": "npm run test -w @thesis/gateway"
   }
 }
