@@ -106,3 +106,25 @@ From Gateway Phase 3 onward, audit events should capture stable identifiers and 
 - effective model ID for LLM-backed runs.
 
 Sensitive credential or presentation payloads are not recorded in full.
+
+## ADR-011 — Use the official A2A 1.0 JavaScript SDK and keep authority out of Artifacts
+
+**Status:** Accepted
+
+Phase 7 uses the official `@a2a-js/sdk` package, pinned to `1.3.0`, with the
+A2A Protocol v1.0 HTTP+JSON binding.
+
+The delegated-authorization extension URI is frozen as:
+
+`urn:thesis:a2a:delegated-authorization:v1`
+
+The Agent Card advertises the extension as required. The Orchestrator activates
+it using the A2A `A2A-Extensions` service parameter, the Message declares the
+same URI in `Message.extensions`, and serialized Delegation Evidence is carried
+in `Message.metadata.delegation_evidence`.
+
+The remote Agent stores Delegation Evidence in internal task context. External
+task responses request zero message history and Artifacts contain result data
+only. A2A transports task context; it never replaces the
+`Delegation Credential -> Gateway -> DelegationVerifier -> OPA` authority path.
+
