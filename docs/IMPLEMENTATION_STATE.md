@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 8B — specialized Backend, Frontend and Test Agents: COMPLETE**
+**Phase 8C — model-driven authority-boundary validation: COMPLETE**
 
 Completed checkpoints:
 
@@ -20,8 +20,9 @@ Completed checkpoints:
 - **Phase 7 — deterministic A2A 1.0 flow: COMPLETE**
 - **Phase 8A — shared LLM Agent runtime and OpenAI Responses API client: COMPLETE**
 - **Phase 8B — specialized Backend, Frontend and Test Agents: COMPLETE**
+- **Phase 8C — model-driven authority-boundary validation: COMPLETE**
 
-Next checkpoint: **Phase 8C — authority-boundary tests for model-driven tool attempts**
+Next checkpoint: **Phase 9A — deterministic Orchestrator authority templates**
 
 ## Source-of-truth repositories
 
@@ -548,6 +549,33 @@ GitHub Actions validation run:
 
 `37331735246` — success, including `phase8b-specialized-agents-smoke`, `phase8a-agent-runtime-smoke`, `phase7-a2a-smoke` and all regression jobs.
 
+### Phase 8C — Model-driven authority-boundary validation
+
+Completed and validated.
+
+The boundary smoke keeps the specialized Phase 8B prompt profiles unchanged and drives out-of-scope operations through the normal model -> Tool Registry -> Gateway wrapper -> Delegation Evidence path.
+
+Validated denial cases:
+
+- Backend `update_file` against a Frontend resource;
+- Backend `update_file` against `security/`;
+- Frontend `update_file` against a Backend resource;
+- Backend operation mismatch: `ReadFile` authority on `user.model.ts` does not imply `UpdateFile`;
+- Test Agent `update_file` against Backend application source;
+- Test Agent `run_tests` when its child Delegation Credential intentionally omits `RunTests`.
+
+The smoke verifies that every attempted operation returns a controlled `authorization_denied` outcome, the Gitea feature-branch head and target contents remain unchanged, and a configured Runner sentinel receives zero execution requests.
+
+Effective model IDs are captured for every boundary run. The CI uses deterministic scripted model clients so the authorization test remains reproducible and does not depend on an external model call.
+
+Validated code checkpoint:
+
+`a72ce9611af5436cb7b1bb9e93084c068a27ef84`
+
+GitHub Actions validation run:
+
+`37333310653` — success, including `phase8c-authority-boundaries-smoke` and all previous regression jobs.
+
 ## Validation commands
 
 ```bash
@@ -568,16 +596,16 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 8C
+## Next action — Phase 9A
 
-Harden and automate the model-driven authority-boundary matrix before Phase 9:
+Introduce deterministic authority decomposition for the Orchestrator:
 
-- exercise Backend attempts against Frontend and `security/` resources;
-- exercise Frontend attempts against Backend resources;
-- exercise Test `update_file` attempts against application source;
-- include an operation mismatch case where a resource is readable but not writable;
-- prove denied operations do not mutate Gitea and do not start the Controlled Test Runner;
-- keep prompt text unchanged during these tests so denial is attributable to Delegation Credential / Gateway / verifier / OPA enforcement;
-- record the effective model id for every boundary run.
+- provide the PoC Software Engineer entrypoint used to bootstrap the fixed Account Suspension workflow;
+- define the Engineer -> Orchestrator root authority as the exact union of the frozen delegated permission matrix plus the Orchestrator workflow permissions;
+- encode static `DC_Backend`, `DC_Frontend` and `DC_Test` permission templates in code;
+- map selected role/skill to a fixed permission template; the LLM must never supply arbitrary permission arrays;
+- issue child Delegation Credentials through the identity-bound Orchestrator Adapter capability;
+- add exact-equality tests between every template and the frozen permission matrix;
+- add escalation tests proving a role cannot receive a permission outside its template or outside the parent authority.
 
-Do not start Phase 9 authority templates until Phase 8C is green.
+Do not start Phase 9B A2A task sequencing until the Phase 9A authority-template checkpoint is green.
