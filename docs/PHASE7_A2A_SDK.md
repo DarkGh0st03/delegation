@@ -45,3 +45,12 @@ A2A does not replace delegated authorization. Phase 7 transports task context
 and Delegation Evidence only. Repository authority remains enforced through the
 existing Delegation Credential -> Cloud Access Gateway -> DelegationVerifier ->
 OPA -> provider path.
+
+## Phase 7 validation scope
+
+The final Phase 7 checkpoint validates the shared workspace export, all three
+specialized Agent Cards, extension negotiation, deterministic
+`Message -> Task -> Artifact` execution, zero-history external responses for
+authority-bearing Messages, internal Task Context retention, result-only
+Artifacts, and rejection of an incompatible Agent Card before execution.
+
