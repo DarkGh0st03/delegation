@@ -29,6 +29,14 @@ function artifact(
     commit_sha: revision,
     test_outcome: role === "test" ? "pass" : "not_run",
     errors: [],
+    ...(role === "test"
+      ? {
+          tested_commit_sha: revision,
+          runner_profile: "poc-default",
+          project_tests: "pass",
+          researcher_acceptance: "pass"
+        }
+      : {}),
     ...overrides
   };
 }
