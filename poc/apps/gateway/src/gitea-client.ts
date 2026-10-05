@@ -45,6 +45,16 @@ export interface GiteaCreatedBranch {
   commit_sha: string;
 }
 
+export interface GiteaFileMutation {
+  path: string;
+  branch: string;
+  revision: string;
+  commit_sha: string;
+  blob_sha: string;
+  previous_revision?: string;
+  precondition_blob_sha?: string;
+}
+
 function object(value: unknown, label: string): JsonObject {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new ProviderUnavailableError(`${label} is not an object`);
@@ -111,7 +121,7 @@ export class GiteaClient {
     if (response.status === 404) {
       throw new ProviderNotFoundError("Requested Gitea repository resource was not found");
     }
-    if (response.status === 409) {
+    if (response.status === 409 || response.status === 422) {
       throw new ProviderConflictError(
         "Gitea rejected the operation because the repository state conflicts"
       );
@@ -201,6 +211,80 @@ export class GiteaClient {
       base_branch: baseBranch,
       base_revision: base.commit_sha,
       commit_sha: commitSha
+    };
+  }
+
+  async createFile(
+    branch: string,
+    path: string,
+    content: string,
+    message: string
+  ): Promise<GiteaFileMutation> {
+    const body = object(
+      await this.#requestJson(this.#repoApi(`/contents/${encodePath(path)}`), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          branch,
+          content: Buffer.from(content, "utf8").toString("base64"),
+          message
+        })
+      }),
+      "Gitea create file response"
+    );
+
+    return this.#parseFileMutation(body, branch, path);
+  }
+
+  async updateFile(
+    branch: string,
+    path: string,
+    content: string,
+    message: string
+  ): Promise<GiteaFileMutation> {
+    // Resolve the current file first and pass its exact blob SHA back to Gitea.
+    // If the file changes before the write is committed, Gitea rejects the stale SHA.
+    const snapshot = await this.readTextFile(branch, path);
+    const body = object(
+      await this.#requestJson(this.#repoApi(`/contents/${encodePath(path)}`), {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          branch,
+          content: Buffer.from(content, "utf8").toString("base64"),
+          message,
+          sha: snapshot.blob_sha
+        })
+      }),
+      "Gitea update file response"
+    );
+
+    return {
+      ...this.#parseFileMutation(body, branch, path),
+      previous_revision: snapshot.revision,
+      precondition_blob_sha: snapshot.blob_sha
+    };
+  }
+
+  #parseFileMutation(body: JsonObject, branch: string, path: string): GiteaFileMutation {
+    const content = object(body.content, "Gitea file mutation content");
+    const commit = object(body.commit, "Gitea file mutation commit");
+    const returnedPath = requiredString(content.path, "content.path");
+    if (returnedPath !== path) {
+      throw new ProviderUnavailableError("Gitea returned an unexpected mutated file path");
+    }
+
+    const commitSha =
+      typeof commit.sha === "string" && commit.sha.trim().length > 0
+        ? commit.sha
+        : requiredString(commit.id, "commit.sha");
+
+    return {
+      path,
+      branch,
+      revision: commitSha,
+      commit_sha: commitSha,
+      blob_sha: requiredString(content.sha, "content.sha")
     };
   }
 
