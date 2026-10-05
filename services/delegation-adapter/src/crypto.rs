@@ -4,7 +4,6 @@ use delegation::delegation::authorization::authorization_context::AuthorizationC
 use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::authorization::verified_delegation::VerifiedDelegation;
 use delegation::delegation::credentials::delegation::delegation_credential::DelegationCredential;
-use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
@@ -532,21 +531,22 @@ mod tests {
         issue_root(&mut runtime, &registry);
 
         let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
-        let error = runtime
-            .issue_child(
-                orchestrator,
-                &registry,
-                IssueChildRequest {
-                    parent_credential_id: String::from("urn:credential:root"),
-                    credential_id: String::from("urn:credential:bad-child"),
-                    delegatee: CallerRole::Backend,
-                    valid_from: String::from("2026-10-05T00:00:00Z"),
-                    validity_seconds: 1800,
-                    credential_status: status(3),
-                    permissions: vec![permission(Operation::CreatePullRequest)],
-                },
-            )
-            .expect_err("child escalation must fail");
+        let error = match runtime.issue_child(
+            orchestrator,
+            &registry,
+            IssueChildRequest {
+                parent_credential_id: String::from("urn:credential:root"),
+                credential_id: String::from("urn:credential:bad-child"),
+                delegatee: CallerRole::Backend,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 1800,
+                credential_status: status(3),
+                permissions: vec![permission(Operation::CreatePullRequest)],
+            },
+        ) {
+            Ok(_) => panic!("child escalation must fail"),
+            Err(error) => error,
+        };
 
         assert!(error.contains("cannot be granted"));
     }
@@ -597,21 +597,22 @@ mod tests {
         issue_root(&mut runtime, &registry);
 
         let backend = registry.record_for_role(CallerRole::Backend).unwrap();
-        let error = runtime
-            .issue_child(
-                backend,
-                &registry,
-                IssueChildRequest {
-                    parent_credential_id: String::from("urn:credential:root"),
-                    credential_id: String::from("urn:credential:forbidden"),
-                    delegatee: CallerRole::Test,
-                    valid_from: String::from("2026-10-05T00:00:00Z"),
-                    validity_seconds: 1800,
-                    credential_status: status(5),
-                    permissions: vec![permission(Operation::ReadFile)],
-                },
-            )
-            .expect_err("backend must not issue child credentials");
+        let error = match runtime.issue_child(
+            backend,
+            &registry,
+            IssueChildRequest {
+                parent_credential_id: String::from("urn:credential:root"),
+                credential_id: String::from("urn:credential:forbidden"),
+                delegatee: CallerRole::Test,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 1800,
+                credential_status: status(5),
+                permissions: vec![permission(Operation::ReadFile)],
+            },
+        ) {
+            Ok(_) => panic!("backend must not issue child credentials"),
+            Err(error) => error,
+        };
 
         assert!(error.contains("does not have capability"));
     }
