@@ -1,7 +1,7 @@
 use crate::auth::{CallerCapability, CallerRecord, CallerRegistry, CallerRole};
 use std::env;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AdapterConfig {
     pub bind_addr: String,
     pub callers: CallerRegistry,
