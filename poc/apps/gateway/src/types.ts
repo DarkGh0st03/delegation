@@ -132,6 +132,9 @@ export interface ExecuteAuditEvent {
   provider_revision?: string;
   provider_commit_sha?: string;
   provider_blob_sha?: string;
+  provider_pull_request_id?: number;
+  provider_pull_request_number?: number;
+  provider_pull_request_url?: string;
   provider: "mock" | "gitea";
 }
 
@@ -221,12 +224,25 @@ export interface GiteaUpdateFileExecutionResult {
   precondition_blob_sha: string;
 }
 
+export interface GiteaCreatePullRequestExecutionResult {
+  provider: "gitea";
+  performed: true;
+  tool: "create_pull_request";
+  pull_request_id: number;
+  pull_request_number: number;
+  url?: string;
+  head_branch: string;
+  base_branch: string;
+  revision: string;
+}
+
 export type ExecutionResult =
   | MockExecutionResult
   | GiteaReadFileExecutionResult
   | GiteaCreateBranchExecutionResult
   | GiteaCreateFileExecutionResult
-  | GiteaUpdateFileExecutionResult;
+  | GiteaUpdateFileExecutionResult
+  | GiteaCreatePullRequestExecutionResult;
 
 export interface ExecutionPort {
   readonly provider: "mock" | "gitea";
