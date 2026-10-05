@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type { RunnerContractConfig } from "./types.ts";
 import type { IsolatedRunnerConfig } from "./isolated-executor.ts";
 
@@ -62,7 +63,12 @@ export function runnerConfigFromEnv(): RunnerServiceConfig {
         "Runner phase timeout"
       ),
       log_dir:
-        process.env.TEST_RUNNER_LOG_DIR ?? "/tmp/delegation-runner-logs"
+        process.env.TEST_RUNNER_LOG_DIR ?? "/tmp/delegation-runner-logs",
+      acceptance_enabled:
+        (process.env.TEST_RUNNER_ACCEPTANCE_ENABLED ?? "true").toLowerCase() !== "false",
+      acceptance_dir:
+        process.env.TEST_RUNNER_ACCEPTANCE_DIR ??
+        fileURLToPath(new URL("../../../runner/acceptance/", import.meta.url))
     }
   };
 }
