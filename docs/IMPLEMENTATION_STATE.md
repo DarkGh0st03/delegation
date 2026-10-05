@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 5 — Protected Gitea provider operations: COMPLETE**
+**Phase 6 — Controlled Test Runner + acceptance: IN PROGRESS**
 
 Completed checkpoints:
 
@@ -14,8 +14,10 @@ Completed checkpoints:
 - **Phase 5B.1 — mutation contracts + real `create_branch`: COMPLETE**
 - **Phase 5B.2 — conditional `create_file` + `update_file`: COMPLETE**
 - **Phase 5B.3 — real `create_pull_request` + provider closure: COMPLETE**
+- **Phase 6A — Controlled Test Runner contract: COMPLETE**
+- **Phase 6B — exact-SHA isolated execution + Gateway integration: COMPLETE**
 
-Next checkpoint: **Phase 6A — Controlled Test Runner contract**
+Next checkpoint: **Phase 6C — researcher-owned acceptance suite**
 
 ## Source-of-truth repositories
 
@@ -388,6 +390,55 @@ GitHub Actions validation run:
 
 At this checkpoint the mutable Gitea provider supports exactly the PoC Git operations needed before the Runner: `read_file`, `create_branch`, `create_file`, `update_file` and `create_pull_request`. Automated merge is intentionally unavailable.
 
+### Phase 6A — Controlled Test Runner contract
+
+Completed and validated.
+
+Implemented:
+
+- dedicated `test-runner-controller` service boundary;
+- structured run request containing only request id, controlled repository URI, frozen feature branch, exact 40-character commit SHA and fixed `poc-default` profile;
+- internal Gateway bearer authentication;
+- strict rejection of unexpected caller-controlled execution fields such as `command`, `shell` or `script`;
+- contract and HTTP tests for exact-SHA validation, fixed repository/branch/profile and unauthorized requests.
+
+Validated checkpoint:
+
+`34fdd7fa3e66eea2c3e91abcec56193cff22c7f5`
+
+GitHub Actions validation run:
+
+`37306807144` — success.
+
+### Phase 6B — Exact-SHA isolated execution and Gateway integration
+
+Completed and validated.
+
+Implemented:
+
+- read-only Runner credential for the protected Gitea repository;
+- exact branch-head precondition before execution and fail-closed rejection when the requested SHA is stale;
+- exact repository archive download by commit SHA;
+- execution inside an ephemeral constrained Docker container, with the snapshot copied into the container instead of bind-mounting a writable host workspace;
+- fixed pipeline: dependency install, typecheck, backend tests, frontend tests, build and Playwright E2E;
+- deterministic startup of backend and frontend services before the Playwright phase, with explicit readiness checks;
+- `researcher_acceptance` remains intentionally skipped until Phase 6C;
+- structured phase results and private log references;
+- container destruction after every run;
+- Gateway `run_tests` integration after `DelegationVerifier -> OPA`, with Runner-specific audit metadata;
+- negative smoke proving an invalid presentation is rejected before Runner invocation;
+- exact-SHA isolated smoke and full Gateway-Verifier-OPA-Runner smoke.
+
+Validated code checkpoint:
+
+`f480106e02e4249264f68da8b60f1edcd60923c6`
+
+GitHub Actions validation run:
+
+`37313384537` — success. Both `phase6b-isolated-smoke` and `phase6b-gateway-smoke` are green, together with all Phase 5 regression smoke jobs.
+
+Phase 6B does **not** include the researcher-owned acceptance suite. That is the next isolated checkpoint.
+
 ## Validation commands
 
 ```bash
@@ -408,15 +459,13 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 6A
+## Next action — Phase 6C
 
-Start the Controlled Test Runner as a new boundary; do not put test execution inside the Gitea provider:
+Add the researcher-owned acceptance layer without giving Agents write authority over it:
 
-- define a Runner controller/service with structured input containing repository, branch, exact commit SHA, fixed profile and request id;
-- expose no caller-controlled command or shell field;
-- keep `RunTests` authorization in the Gateway, so the Runner is invoked only after `DelegationVerifier -> OPA` succeeds;
-- pin execution to the exact authorized commit SHA rather than a moving branch;
-- return a structured execution result suitable for later project-test and researcher-acceptance reporting;
-- add contract/unit tests proving arbitrary command execution is impossible.
-
-Do not start containerized test execution or the researcher-owned acceptance suite until the Phase 6A contract is green.
+- keep acceptance tests under `poc/runner/acceptance/`, outside the protected application repository and outside Agent write authority;
+- cover the Account Suspension acceptance criteria defined by the PoC, including valid suspend/reactivate transitions, repeated-transition rejection and essential frontend behavior;
+- preserve the fixed Runner contract and exact-SHA execution model from Phase 6B;
+- keep caller-controlled shell/command input impossible;
+- extend structured Runner results so the independent acceptance outcome is distinguishable from project-owned tests;
+- do not start A2A Phase 7 until the Phase 6C checkpoint is validated.
