@@ -22,6 +22,8 @@ export interface IsolatedRunnerConfig {
   docker_image: string;
   phase_timeout_ms: number;
   log_dir: string;
+  acceptance_enabled?: boolean;
+  acceptance_dir?: string;
 }
 
 interface CommandOptions {
@@ -68,6 +70,16 @@ const FIXED_PHASES: ReadonlyArray<{
       "wait_port 3000; wait_port 5173; npm run test:e2e"
   }
 ];
+
+const RESEARCHER_ACCEPTANCE_COMMAND =
+  "set -euo pipefail; " +
+  "npm run start -w @iam/backend >/tmp/runner-acceptance-backend.log 2>&1 & backend_pid=$!; " +
+  "npm run dev -w @iam/frontend -- --host 127.0.0.1 >/tmp/runner-acceptance-frontend.log 2>&1 & frontend_pid=$!; " +
+  "cleanup() { kill \"$backend_pid\" \"$frontend_pid\" 2>/dev/null || true; }; " +
+  "trap cleanup EXIT; " +
+  "wait_port() { for _ in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/\"$1\") >/dev/null 2>&1 && return 0; sleep 0.5; done; echo \"Timed out waiting for port $1\" >&2; return 1; }; " +
+  "wait_port 3000; wait_port 5173; " +
+  "npx playwright test --config .researcher-acceptance/playwright.config.ts";
 
 function cappedAppend(current: string, chunk: Buffer): string {
   if (Buffer.byteLength(current, "utf8") >= MAX_COMMAND_OUTPUT_BYTES) return current;
@@ -240,28 +252,37 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         throw new Error("Could not materialize exact repository archive");
       }
 
+      const dockerCreateArgs = [
+        "create",
+        "--name",
+        containerName,
+        "--workdir",
+        "/workspace",
+        "--tmpfs",
+        "/tmp:rw,nosuid,nodev",
+        "--pids-limit",
+        "512",
+        "--memory",
+        "3g",
+        "--cpus",
+        "2",
+        "-e",
+        "CI=1"
+      ];
+      if (this.#config.acceptance_enabled) {
+        if (!this.#config.acceptance_dir) {
+          throw new Error("Researcher acceptance directory is not configured");
+        }
+        dockerCreateArgs.push(
+          "--mount",
+          `type=bind,src=${resolve(this.#config.acceptance_dir)},dst=/workspace/.researcher-acceptance,readonly`
+        );
+      }
+      dockerCreateArgs.push(this.#config.docker_image, "sleep", "infinity");
+
       const create = await this.#runCommand(
         "docker",
-        [
-          "create",
-          "--name",
-          containerName,
-          "--workdir",
-          "/workspace",
-          "--tmpfs",
-          "/tmp:rw,nosuid,nodev",
-          "--pids-limit",
-          "512",
-          "--memory",
-          "3g",
-          "--cpus",
-          "2",
-          "-e",
-          "CI=1",
-          this.#config.docker_image,
-          "sleep",
-          "infinity"
-        ],
+        dockerCreateArgs,
         { timeout_ms: this.#config.phase_timeout_ms }
       );
       if (create.exit_code !== 0 || create.timed_out) {
@@ -320,7 +341,47 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         }
       }
 
-      phases.push({ phase: "researcher_acceptance", status: "skipped" });
+      const projectPhases = [...phases];
+      const projectStatus = failed ? "fail" : "pass";
+
+      let researcherAcceptance: RunnerPhaseResult = {
+        phase: "researcher_acceptance",
+        status: "skipped"
+      };
+      if (this.#config.acceptance_enabled && !failed) {
+        const result = await this.#runCommand(
+          "docker",
+          ["exec", containerName, "bash", "-lc", RESEARCHER_ACCEPTANCE_COMMAND],
+          { timeout_ms: this.#config.phase_timeout_ms }
+        );
+
+        logs.push(
+          `=== researcher_acceptance ===\n${result.stdout}\n${result.stderr}\n`
+        );
+
+        if (result.exit_code === 0 && !result.timed_out) {
+          researcherAcceptance = {
+            phase: "researcher_acceptance",
+            status: "pass",
+            passed: 1,
+            failed: 0
+          };
+        } else {
+          failed = true;
+          researcherAcceptance = {
+            phase: "researcher_acceptance",
+            status: "fail",
+            passed: 0,
+            failed: 1,
+            errors: [
+              result.timed_out
+                ? "researcher acceptance timed out"
+                : `researcher acceptance exited with code ${result.exit_code}`
+            ]
+          };
+        }
+      }
+      phases.push(researcherAcceptance);
 
       await mkdir(this.#config.log_dir, { recursive: true });
       await writeFile(
@@ -337,6 +398,11 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         runner_profile: request.profile,
         status: failed ? "fail" : "pass",
         phases,
+        project_tests: {
+          status: projectStatus,
+          phases: projectPhases
+        },
+        researcher_acceptance: researcherAcceptance,
         log_reference: logReference
       };
     } finally {
@@ -353,3 +419,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
 }
 
 export const runnerFixedPhaseCommands = FIXED_PHASES;
+
+
+export const runnerResearcherAcceptanceCommand = RESEARCHER_ACCEPTANCE_COMMAND;
