@@ -382,3 +382,40 @@ test("successful Gitea mutation records resulting provider identifiers without s
     assert.equal("content" in event, false);
   }
 });
+
+
+test("successful Gitea pull request records structured PR audit identifiers", async () => {
+  const { store, audit, response, now } = prepared();
+  const verifier = new SuccessVerifier();
+  const policy = new FixedPolicy();
+  const executor: ExecutionPort = {
+    provider: "gitea",
+    async execute() {
+      return {
+        provider: "gitea",
+        performed: true,
+        tool: "create_pull_request",
+        pull_request_id: 77,
+        pull_request_number: 5,
+        url: "http://gitea/pulls/5",
+        head_branch: "feature/account-suspension",
+        base_branch: "main",
+        revision: "head123"
+      };
+    }
+  };
+
+  await executeAuthorization(
+    { request_id: response.request_id, signed_vp: "signed.jwt.value" },
+    deps(store, audit, verifier, policy, executor, now)
+  );
+
+  const event = audit.events.at(-1);
+  assert.equal(event?.event, "authorization_executed");
+  if (event?.event === "authorization_executed") {
+    assert.equal(event.provider_revision, "head123");
+    assert.equal(event.provider_pull_request_id, 77);
+    assert.equal(event.provider_pull_request_number, 5);
+    assert.equal(event.provider_pull_request_url, "http://gitea/pulls/5");
+  }
+});
