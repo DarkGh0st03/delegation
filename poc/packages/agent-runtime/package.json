@@ -1,0 +1,13 @@
+{
+  "name": "@thesis/agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test ./test/*.test.ts"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "1.3.0",
+    "express": "5.1.0"
+  }
+}
