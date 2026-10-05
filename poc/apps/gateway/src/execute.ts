@@ -102,12 +102,13 @@ export async function executeAuthorization(
   const nowMs = (dependencies.nowMs ?? Date.now)();
   const durationNow = dependencies.durationNowMs ?? (() => performance.now());
   const totalStarted = durationNow();
-  const provider = dependencies.executor.provider;
 
   const record = dependencies.store.get(request.request_id);
   if (!record) {
     throw new GatewayError(404, "unknown_request", "Prepared authorization request was not found");
   }
+  const provider =
+    dependencies.executor.providerFor?.(record) ?? dependencies.executor.provider;
   if (record.consumed) {
     throw new GatewayError(409, "replay_detected", "Prepared authorization request was already consumed");
   }
@@ -317,7 +318,17 @@ export async function executeAuthorization(
             ? { provider_pull_request_url: execution.url }
             : {})
         }
-      : {};
+      : execution.provider === "runner"
+        ? {
+            provider_revision: execution.revision,
+            runner_tested_commit_sha: execution.tested_commit_sha,
+            runner_profile: execution.runner_profile,
+            runner_status: execution.status,
+            ...(execution.log_reference === undefined
+              ? {}
+              : { runner_log_reference: execution.log_reference })
+          }
+        : {};
 
   dependencies.audit.emit({
     event: "authorization_executed",
