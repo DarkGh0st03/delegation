@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 7 — deterministic A2A 1.0 interoperability: COMPLETE**
+**Phase 8A — shared LLM Agent runtime: COMPLETE**
 
 Completed checkpoints:
 
@@ -18,8 +18,9 @@ Completed checkpoints:
 - **Phase 6B — exact-SHA isolated execution + Gateway integration: COMPLETE**
 - **Phase 6C — researcher-owned acceptance suite: COMPLETE**
 - **Phase 7 — deterministic A2A 1.0 flow: COMPLETE**
+- **Phase 8A — shared LLM Agent runtime and OpenAI Responses API client: COMPLETE**
 
-Next checkpoint: **Phase 8A — shared LLM Agent runtime and OpenAI Responses API client**
+Next checkpoint: **Phase 8B — specialized Backend, Frontend and Test Agents**
 
 ## Source-of-truth repositories
 
@@ -495,6 +496,29 @@ GitHub Actions validation run:
 
 `37322686937` — success. `validate`, `phase7-a2a-smoke`, and all regression smoke jobs completed successfully.
 
+### Phase 8A — Shared LLM Agent runtime
+
+Completed and validated.
+
+Implemented:
+
+- OpenAI Responses API client with configurable `OPENAI_MODEL` and effective `model_id` capture;
+- bounded Agent Controller reasoning/tool loop;
+- controlled Tool Registry;
+- Delegation Evidence Handler that owns credential/presentation material outside model-visible context;
+- Gateway wrapper hiding `prepare -> signed VP -> execute`;
+- controlled outcomes for authorization denial, test failure, invalid calls and iteration limits;
+- model-visible secrecy checks for credential, VP and service-token material;
+- protected smoke proving an allowed backend read/update reaches Gitea while an out-of-scope security write is denied by the authorization infrastructure.
+
+Validated checkpoint:
+
+`392234c042668906d056236f4d1b937e47c6a79a`
+
+GitHub Actions validation run:
+
+`37327753671` — success, including `phase8a-agent-runtime-smoke` and all regression jobs.
+
 ## Validation commands
 
 ```bash
@@ -515,17 +539,16 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 8A
+## Next action — Phase 8B
 
-After the Phase 7 checkpoint is green, add the shared LLM Agent runtime above the already-protected tools:
+Specialize the shared runtime without changing the authorization architecture:
 
-- add the OpenAI Responses API client with configured `OPENAI_MODEL` and record the effective model ID;
-- implement a bounded Agent Controller reasoning/tool loop;
-- add Task Context, Tool Registry and Delegation Evidence Handler integration;
-- provide a Gateway client wrapper that hides prepare -> VP creation -> execute from model-visible context;
-- keep child credential, VP, witness material, signing keys and provider tokens out of prompts and model-visible logs;
-- expose only role-appropriate controlled tools and rely on the existing infrastructure to deny out-of-scope calls;
-- handle authorization deny and test failure as explicit controlled outcomes.
+- Backend Agent: expose only `read_file` and `update_file`;
+- Frontend Agent: expose only `read_file` and `update_file`;
+- Test Agent: expose `read_file`, `update_file`, `create_file` and `run_tests`;
+- give each role a dedicated prompt/skill with the frozen target files from the permission matrix;
+- treat prompt scope as guidance only: effective enforcement must remain in Delegation Credentials, Gateway, Verifier and OPA;
+- validate one small sandbox task for each role;
+- validate that Test cannot edit application source and Backend/Frontend cannot cross their delegated file sets.
 
-Do not specialize Backend/Frontend/Test LLM behavior (Phase 8B) until the shared Phase 8A runtime is validated.
-
+Do not start Phase 9 authority templates/orchestration until the specialized Agent checkpoint is green.
