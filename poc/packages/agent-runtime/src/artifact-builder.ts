@@ -1,3 +1,4 @@
+import type { AgentControllerRunResult } from "./agent-controller.ts";
 import type {
   AgentArtifactPayload,
   DeterministicSubtask,
@@ -18,5 +19,28 @@ export function buildDeterministicArtifactPayload(
     commit_sha: null,
     test_outcome: "not_run",
     errors: []
+  };
+}
+
+
+export function buildLlmArtifactPayload(
+  role: SpecializedAgentRole,
+  task: DeterministicSubtask,
+  result: AgentControllerRunResult
+): AgentArtifactPayload {
+  return {
+    role,
+    summary: result.summary,
+    files_modified: [],
+    files_created: [],
+    branch: task.branch,
+    revision: null,
+    commit_sha: null,
+    test_outcome: "not_run",
+    errors: result.controlled_failures.map(
+      (failure) => `${failure.kind}: ${failure.message}`
+    ),
+    ...(result.model_id === null ? {} : { model_id: result.model_id }),
+    model_iterations: result.iterations
   };
 }
