@@ -16,7 +16,8 @@ import {
 import { createSpecializedAgentCard } from "./cards.ts";
 import {
   DeterministicSpecializedAgentExecutor,
-  type DeterministicArtifactPayloadBuilder
+  type DeterministicArtifactPayloadBuilder,
+  type DeterministicTaskHandler
 } from "./executor.ts";
 import type { SpecializedAgentRole } from "./contracts.ts";
 
@@ -26,6 +27,7 @@ export interface SpecializedAgentServerOptions {
   host?: string;
   delegatedAuthorization?: boolean;
   artifactBuilder?: DeterministicArtifactPayloadBuilder;
+  taskHandler?: DeterministicTaskHandler;
 }
 
 export interface SpecializedAgentServer {
@@ -48,7 +50,8 @@ export async function startSpecializedAgentServer(
   const executor = new DeterministicSpecializedAgentExecutor(
     options.role,
     undefined,
-    options.artifactBuilder
+    options.artifactBuilder,
+    options.taskHandler
   );
   const requestHandler = new DefaultRequestHandler(
     card,
