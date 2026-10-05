@@ -6,14 +6,16 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 5B — Protected Gitea mutations after Verifier + OPA: IN PROGRESS**
+**Phase 5 — Protected Gitea provider operations: COMPLETE**
 
 Completed checkpoints:
 
+- **Phase 5A — protected Gitea read-only integration: COMPLETE**
 - **Phase 5B.1 — mutation contracts + real `create_branch`: COMPLETE**
 - **Phase 5B.2 — conditional `create_file` + `update_file`: COMPLETE**
+- **Phase 5B.3 — real `create_pull_request` + provider closure: COMPLETE**
 
-Next checkpoint: **Phase 5B.3 — real `create_pull_request` + Phase 5 closure**
+Next checkpoint: **Phase 6A — Controlled Test Runner contract**
 
 ## Source-of-truth repositories
 
@@ -358,7 +360,33 @@ GitHub Actions validation run:
 
 `37303157783` — success (`validate`, Phase 1 smoke, Phase 4 smoke, Phase 5A regression smoke, Phase 5B.1 regression smoke and the new `phase5b2-smoke` all green).
 
-Phase 5B.2 deliberately leaves `create_pull_request` disabled until Phase 5B.3. `MergePullRequest` remains absent from the automated workflow.
+Phase 5B.2 deliberately left `create_pull_request` disabled until Phase 5B.3. `MergePullRequest` remained absent from the automated workflow.
+
+### Phase 5B.3 — Protected Gitea Pull Request creation
+
+Completed and validated.
+
+Implemented:
+
+- Gitea Pull Request creation through the repository API;
+- exact head revision resolution before PR creation and fail-closed validation that the returned PR still points to that revision;
+- mutable provider dispatch for `create_pull_request` only in the frozen direction `feature/account-suspension -> main`;
+- structured PR result with provider, PR id/number, optional URL, head/base and head revision;
+- duplicate/conflicting PR creation mapped to a structured provider conflict;
+- audit metadata includes PR identifiers and provider revision without logging source content, credentials or the signed VP;
+- `run_tests` remains unavailable in the Gitea executor and is reserved for the Controlled Test Runner;
+- no `MergePullRequest` tool or provider operation was added;
+- real smoke path creates the feature branch, performs an authorized backend file mutation, proves a reverse-direction PR is denied by OPA before Gitea, creates the allowed PR after DelegationVerifier + OPA, rejects a duplicate PR, and confirms `main` remains at the hardened baseline revision.
+
+Validated code checkpoint:
+
+`807caac8a99101e508fec0bf4eaffdb58129f2c4`
+
+GitHub Actions validation run:
+
+`37304548966` — success (`validate`, Phase 1 smoke, Phase 4 smoke, Phase 5A regression smoke, Phase 5B.1 regression smoke, Phase 5B.2 regression smoke and the new `phase5b3-smoke` all green).
+
+At this checkpoint the mutable Gitea provider supports exactly the PoC Git operations needed before the Runner: `read_file`, `create_branch`, `create_file`, `update_file` and `create_pull_request`. Automated merge is intentionally unavailable.
 
 ## Validation commands
 
@@ -380,16 +408,15 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 5B.3
+## Next action — Phase 6A
 
-Close the Gitea provider phase behind the already validated `DelegationVerifier -> OPA -> GiteaExecutor` chain:
+Start the Controlled Test Runner as a new boundary; do not put test execution inside the Gitea provider:
 
-- implement `create_pull_request` through the Gitea API;
-- accept only `feature/account-suspension -> main` in the mutable provider as defense in depth in addition to OPA;
-- return structured PR number/ID, URL, head/base and resulting provider metadata;
-- reject duplicate/conflicting PR creation with a structured provider conflict;
-- keep `MergePullRequest` unimplemented and unavailable;
-- add a real Phase 5B.3 smoke that creates the branch, performs controlled file mutation(s), verifies the resulting branch revision, creates the PR only after Verifier + OPA, and includes a deny path before provider execution;
-- after the smoke is green, update the Gateway README and mark Phase 5 COMPLETE.
+- define a Runner controller/service with structured input containing repository, branch, exact commit SHA, fixed profile and request id;
+- expose no caller-controlled command or shell field;
+- keep `RunTests` authorization in the Gateway, so the Runner is invoked only after `DelegationVerifier -> OPA` succeeds;
+- pin execution to the exact authorized commit SHA rather than a moving branch;
+- return a structured execution result suitable for later project-test and researcher-acceptance reporting;
+- add contract/unit tests proving arbitrary command execution is impossible.
 
-Do not start the Controlled Test Runner until Phase 5B.3 is green.
+Do not start containerized test execution or the researcher-owned acceptance suite until the Phase 6A contract is green.
