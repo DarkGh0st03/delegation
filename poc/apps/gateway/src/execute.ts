@@ -16,6 +16,7 @@ import type {
   ExecuteAuthorizationRequest,
   ExecuteAuthorizationResponse,
   ExecutionPort,
+  ExecutionResult,
   GatewayRepositoryConfig,
   Permission,
   PolicyDecision,
@@ -247,7 +248,7 @@ export async function executeAuthorization(
   }
 
   const providerStarted = durationNow();
-  let execution;
+  let execution: ExecutionResult;
   try {
     execution = await dependencies.executor.execute(record);
   } catch (error) {
@@ -298,6 +299,16 @@ export async function executeAuthorization(
 
   const providerMs = elapsed(providerStarted, durationNow);
   const totalMs = elapsed(totalStarted, durationNow);
+  const providerIdentifiers =
+    execution.provider === "gitea"
+      ? {
+          ...("revision" in execution ? { provider_revision: execution.revision } : {}),
+          ...("commit_sha" in execution
+            ? { provider_commit_sha: execution.commit_sha }
+            : {}),
+          ...("blob_sha" in execution ? { provider_blob_sha: execution.blob_sha } : {})
+        }
+      : {};
 
   dependencies.audit.emit({
     event: "authorization_executed",
@@ -320,6 +331,7 @@ export async function executeAuthorization(
     vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
     chain_depth: verified.hierarchy_depth,
     disclosed_permission_count: verified.permissions.length,
+    ...providerIdentifiers,
     provider: execution.provider
   });
 
