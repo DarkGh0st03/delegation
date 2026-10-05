@@ -112,7 +112,7 @@ export class DelegatedA2ARoleRunner {
     nonEmpty(input.parent_credential_id, "Parent credential id");
     nonEmpty(input.credential_id, "Child credential id");
     nonEmpty(input.agent_base_url, "Agent base URL");
-    const revision = expectedRevision(input.expected_revision);
+    expectedRevision(input.expected_revision);
 
     const issued = await this.#authorityIssuer.issueSpecializedChild({
       parent_credential_id: input.parent_credential_id,
@@ -154,11 +154,6 @@ export class DelegatedA2ARoleRunner {
       }
     );
 
-    if (artifact.revision !== revision) {
-      throw new Error(
-        `Artifact revision ${artifact.revision} does not match expected branch revision ${revision}`
-      );
-    }
 
     return {
       role: input.role,
