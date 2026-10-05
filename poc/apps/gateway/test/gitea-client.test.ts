@@ -393,3 +393,90 @@ test("updateFile maps a stale blob precondition to provider conflict", async () 
     ProviderConflictError
   );
 });
+
+
+test("createPullRequest pins the head revision and validates the returned branch direction", async () => {
+  const calls: Array<{ method: string; url: string; body?: Record<string, unknown> }> = [];
+  let call = 0;
+  const client = clientWith((async (url, init) => {
+    call += 1;
+    calls.push({
+      method: init?.method ?? "GET",
+      url: String(url),
+      ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {})
+    });
+    if (call === 1) {
+      return new Response(
+        JSON.stringify({
+          name: "feature/account-suspension",
+          commit: { id: "head123" }
+        }),
+        { status: 200 }
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        id: 77,
+        number: 5,
+        html_url: "http://gitea/thesis/iam-console-poc/pulls/5",
+        head: { ref: "feature/account-suspension", sha: "head123" },
+        base: { ref: "main" }
+      }),
+      { status: 201 }
+    );
+  }) as typeof fetch);
+
+  const result = await client.createPullRequest(
+    "feature/account-suspension",
+    "main",
+    "Account suspension",
+    "Automated PoC pull request"
+  );
+
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].url, /\/branches\/feature%2Faccount-suspension$/u);
+  assert.equal(calls[1].method, "POST");
+  assert.match(calls[1].url, /\/pulls$/u);
+  assert.deepEqual(calls[1].body, {
+    head: "feature/account-suspension",
+    base: "main",
+    title: "Account suspension",
+    body: "Automated PoC pull request"
+  });
+  assert.deepEqual(result, {
+    id: 77,
+    number: 5,
+    url: "http://gitea/thesis/iam-console-poc/pulls/5",
+    head_branch: "feature/account-suspension",
+    base_branch: "main",
+    head_revision: "head123"
+  });
+});
+
+test("createPullRequest maps duplicate PR validation failures to provider conflict", async () => {
+  let call = 0;
+  const client = clientWith((async () => {
+    call += 1;
+    if (call === 1) {
+      return new Response(
+        JSON.stringify({
+          name: "feature/account-suspension",
+          commit: { id: "head123" }
+        }),
+        { status: 200 }
+      );
+    }
+    return new Response(JSON.stringify({ message: "pull request already exists" }), {
+      status: 422
+    });
+  }) as typeof fetch);
+
+  await assert.rejects(
+    client.createPullRequest(
+      "feature/account-suspension",
+      "main",
+      "Account suspension"
+    ),
+    ProviderConflictError
+  );
+});
