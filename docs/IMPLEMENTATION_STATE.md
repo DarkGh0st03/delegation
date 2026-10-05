@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 7 — deterministic A2A 1.0 interoperability: IMPLEMENTED, FINAL VALIDATION IN PROGRESS**
+**Phase 7 — deterministic A2A 1.0 interoperability: COMPLETE**
 
 Completed checkpoints:
 
@@ -17,9 +17,9 @@ Completed checkpoints:
 - **Phase 6A — Controlled Test Runner contract: COMPLETE**
 - **Phase 6B — exact-SHA isolated execution + Gateway integration: COMPLETE**
 - **Phase 6C — researcher-owned acceptance suite: COMPLETE**
-- **Phase 7 — deterministic A2A 1.0 flow: validation pending on current HEAD**
+- **Phase 7 — deterministic A2A 1.0 flow: COMPLETE**
 
-Do not start Phase 8A until the current Phase 7 CI checkpoint is green.
+Next checkpoint: **Phase 8A — shared LLM Agent runtime and OpenAI Responses API client**
 
 ## Source-of-truth repositories
 
@@ -487,7 +487,13 @@ Implemented:
 
 The A2A layer does not grant repository authority. The existing `Delegation Credential -> Gateway -> DelegationVerifier -> OPA -> provider` boundary remains authoritative.
 
-Final validation checkpoint: pending.
+Validated checkpoint:
+
+`5df2417b529c376e72396c7066682482a74c26e6`
+
+GitHub Actions validation run:
+
+`37322686937` — success. `validate`, `phase7-a2a-smoke`, and all regression smoke jobs completed successfully.
 
 ## Validation commands
 
