@@ -1,56 +1,69 @@
-# Delegation Adapter service
+# Rust Delegation Adapter
 
-The Delegation Adapter exposes the existing Rust delegated-authorization framework to the TypeScript/Node PoC without moving cryptographic logic or private keys into the LLM execution layer.
+The Delegation Adapter is the internal Rust service that exposes the existing delegated-authorization framework to the future TypeScript Gateway and Agent runtime.
 
-## Phase 2A — identity-bound service skeleton
+## Phase 2 boundary
 
-Implemented now:
+The service provides:
 
-- Axum HTTP service;
-- public `GET /health`;
-- protected `GET /v1/whoami`;
-- one service credential per internal caller;
-- server-side mapping from caller credential to role, identity and capabilities;
-- no request body can select a signing identity;
-- fail-closed startup if any required binding is missing.
+- `GET /health`;
+- authenticated `GET /v1/whoami`;
+- `POST /v1/credentials/root`;
+- `POST /v1/credentials/child`;
+- `POST /v1/presentations`;
+- `POST /v1/verify`;
+- distinct internal caller credentials;
+- deterministic caller -> role -> identity binding;
+- capability separation between Engineer, Orchestrator, specialized Agents and Gateway.
 
-Roles and capabilities at this checkpoint:
+Internal callers authenticate with:
 
-| Caller | Capabilities |
-| --- | --- |
-| Engineer | `issue_root` |
-| Gateway | `verify` |
-| Orchestrator | `issue_child`, `present` |
-| Backend Agent | `present` |
-| Frontend Agent | `present` |
-| Test Agent | `present` |
+```http
+Authorization: Bearer <service-token>
+```
 
-Phase 2B adds the actual delegation issuance, signed VP creation and verification endpoints while reusing the root Rust framework.
+The signing/issuer identity is selected server-side from the authenticated caller. The request body never chooses the identity whose private signing material is used.
 
-## Required environment variables
+## Capability model
 
-Service credentials:
+- Engineer -> root Delegation Credential issuance
+- Orchestrator -> child Delegation Credential issuance + own VP creation
+- Backend -> own VP creation
+- Frontend -> own VP creation
+- Test -> own VP creation
+- Gateway -> VP verification only
 
-- `ADAPTER_CALLER_ENGINEER`
-- `ADAPTER_CALLER_GATEWAY`
-- `ADAPTER_CALLER_ORCHESTRATOR`
-- `ADAPTER_CALLER_BACKEND`
-- `ADAPTER_CALLER_FRONTEND`
-- `ADAPTER_CALLER_TEST`
+The root credential is restricted to Engineer -> Orchestrator. Child issuance is restricted to Orchestrator -> Backend/Frontend/Test.
 
-Server-side identities:
+The existing Rust framework remains responsible for non-escalation, temporal capping, accumulator/witness construction, selective disclosure, VP Ed25519 signing and DelegationVerifier checks.
 
-- `ADAPTER_ID_ENGINEER`
-- `ADAPTER_ID_GATEWAY`
-- `ADAPTER_ID_ORCHESTRATOR`
-- `ADAPTER_ID_BACKEND`
-- `ADAPTER_ID_FRONTEND`
-- `ADAPTER_ID_TEST`
+## Current trust backend
 
-The caller credential determines the identity. A future issuance/presentation request is therefore not allowed to say “sign as Backend” or “sign as Orchestrator”.
+Phase 2 closes the HTTP/cryptographic bridge with the existing framework using its deterministic in-memory trust/status providers inside the Adapter process. This makes issuer keys, accumulator material and credential state process-local while exercising the real DelegationIssuer and DelegationVerifier code paths.
 
-## Test
+The EVM trust layer built in Phase 1 remains independently validated and is not reimplemented here. Before the final positive end-to-end experiment, the Adapter deployment mode will bind verification/public-material resolution to the already implemented EVM-backed providers.
+
+## Required caller environment variables
+
+```text
+ADAPTER_CALLER_ENGINEER
+ADAPTER_CALLER_ORCHESTRATOR
+ADAPTER_CALLER_BACKEND
+ADAPTER_CALLER_FRONTEND
+ADAPTER_CALLER_TEST
+ADAPTER_CALLER_GATEWAY
+```
+
+Identity IDs can be overridden with `ADAPTER_ID_*`.
+
+Run tests:
 
 ```bash
 cargo test --manifest-path services/delegation-adapter/Cargo.toml
+```
+
+Run service:
+
+```bash
+cargo run --manifest-path services/delegation-adapter/Cargo.toml
 ```

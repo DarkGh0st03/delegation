@@ -1,17 +1,13 @@
-use delegation_adapter::{IdentityBindings, app};
-use std::{env, net::SocketAddr};
+use delegation_adapter::config::AdapterConfig;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let bindings = IdentityBindings::from_env()
-        .map_err(|err| format!("Delegation Adapter configuration error: {err}"))?;
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("Delegation Adapter failed: {error}");
+        std::process::exit(1);
+    }
+}
 
-    let bind = env::var("DELEGATION_ADAPTER_BIND")
-        .unwrap_or_else(|_| String::from("0.0.0.0:8090"))
-        .parse::<SocketAddr>()?;
-
-    let listener = tokio::net::TcpListener::bind(bind).await?;
-    println!("delegation-adapter listening on {bind}");
-    axum::serve(listener, app(bindings)).await?;
-    Ok(())
+fn run() -> Result<(), String> {
+    let config = AdapterConfig::from_env()?;
+    delegation_adapter::http::run(config)
 }
