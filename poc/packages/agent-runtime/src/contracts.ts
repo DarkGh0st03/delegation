@@ -35,6 +35,10 @@ export interface AgentArtifactPayload {
   commit_sha: string | null;
   test_outcome: "not_run" | "pass" | "fail";
   errors: string[];
+  tested_commit_sha?: string;
+  runner_profile?: "poc-default";
+  project_tests?: "pass" | "fail";
+  researcher_acceptance?: "pass" | "fail" | "skipped";
   model_id?: string;
   model_iterations?: number;
 }
