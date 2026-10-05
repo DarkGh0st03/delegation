@@ -57,6 +57,7 @@ test("deterministic A2A flow performs discovery -> Message -> Task -> Artifact w
 
     assert.equal(result.task.status?.state, TaskState.TASK_STATE_COMPLETED);
     assert.equal(result.task.artifacts.length, 1);
+    assert.equal(result.task.history.length, 0);
     assert.equal(agent.executor.executionCount, 1);
 
     const stored = agent.executor.taskContexts.get(result.task.id);
