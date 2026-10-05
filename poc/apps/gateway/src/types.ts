@@ -96,8 +96,8 @@ export interface GatewayPrepareConfig {
   repository: GatewayRepositoryConfig;
 }
 
-export interface AuditEvent {
-  event: string;
+export interface PrepareAuditEvent {
+  event: "authorization_prepared";
   timestamp: string;
   request_id: string;
   task_id: string;
@@ -108,6 +108,72 @@ export interface AuditEvent {
   prepare_ms: number;
 }
 
+export interface ExecuteAuditEvent {
+  event: "authorization_executed";
+  timestamp: string;
+  request_id: string;
+  task_id: string;
+  agent_role: AgentRole;
+  tool: ToolName;
+  resource_uri: string;
+  operation: Operation;
+  decision: "allow" | "deny";
+  reason: string;
+  verification_ms: number;
+  provider_ms: number;
+  total_ms: number;
+  vp_size_bytes: number;
+  chain_depth?: number;
+  disclosed_permission_count?: number;
+  provider: "mock";
+}
+
+export type AuditEvent = PrepareAuditEvent | ExecuteAuditEvent;
+
 export interface AuditSink {
   emit(event: AuditEvent): void;
+}
+
+export interface ExecuteAuthorizationRequest {
+  request_id: string;
+  signed_vp: string;
+}
+
+export interface VerifiedDelegation {
+  presenter_id: string;
+  credential_id: string;
+  issuer_id: string;
+  permissions: Permission[];
+  hierarchy_depth: number;
+  expiration: string | number;
+}
+
+export interface VerificationRequest {
+  presenter: AgentRole;
+  audience: string;
+  challenge: string;
+  required_permission: Permission;
+  signed_vp: string;
+}
+
+export interface VerifierPort {
+  verify(request: VerificationRequest): Promise<VerifiedDelegation>;
+}
+
+export interface MockExecutionResult {
+  provider: "mock";
+  performed: false;
+  tool: ToolName;
+  request_fingerprint: string;
+}
+
+export interface ExecutionPort {
+  execute(record: PreparedRequestRecord): Promise<MockExecutionResult>;
+}
+
+export interface ExecuteAuthorizationResponse {
+  request_id: string;
+  decision: "allow";
+  verified_delegation: VerifiedDelegation;
+  execution: MockExecutionResult;
 }
