@@ -60,3 +60,27 @@ test("runtime rejects gitea-readonly mode when provider credentials are absent",
     /requires Gitea URL and Gateway token/u
   );
 });
+
+test("runtime rejects mutable gitea mode when provider credentials are absent", () => {
+  assert.throws(
+    () =>
+      new GatewayRuntime(
+        { ...baseConfig, provider_mode: "gitea" as const },
+        { verifier, policy, audit: new InMemoryAuditSink() }
+      ),
+    /requires Gitea URL and Gateway token/u
+  );
+});
+
+test("runtime wires mutable gitea mode without contacting the provider at startup", () => {
+  const runtime = new GatewayRuntime(
+    {
+      ...baseConfig,
+      provider_mode: "gitea" as const,
+      gitea_base_url: "http://gitea:3000",
+      gitea_gateway_token: "gateway-secret"
+    },
+    { verifier, policy, audit: new InMemoryAuditSink() }
+  );
+  assert.equal(runtime.providerLabel, "gitea");
+});

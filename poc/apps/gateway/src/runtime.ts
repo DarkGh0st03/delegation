@@ -2,6 +2,7 @@ import { AdapterVerifierClient } from "./adapter-client.ts";
 import type { GatewayRuntimeConfig } from "./config.ts";
 import { executeAuthorization } from "./execute.ts";
 import { GiteaClient } from "./gitea-client.ts";
+import { GiteaExecutor } from "./gitea-executor.ts";
 import { GiteaReadOnlyExecutor } from "./gitea-read-executor.ts";
 import { MockExecutor } from "./mock-executor.ts";
 import { OpaPolicyClient } from "./policy-client.ts";
@@ -38,18 +39,20 @@ function defaultExecutor(config: GatewayRuntimeConfig): ExecutionPort {
   if (config.provider_mode === "mock") return new MockExecutor();
 
   if (!config.gitea_base_url || !config.gitea_gateway_token) {
-    throw new Error("Gitea read-only provider mode requires Gitea URL and Gateway token");
+    throw new Error("Gitea provider mode requires Gitea URL and Gateway token");
   }
 
-  return new GiteaReadOnlyExecutor(
-    new GiteaClient({
-      baseUrl: config.gitea_base_url,
-      token: config.gitea_gateway_token,
-      owner: config.prepare.repository.owner,
-      repository: config.prepare.repository.repository,
-      timeoutMs: config.gitea_timeout_ms
-    })
-  );
+  const client = new GiteaClient({
+    baseUrl: config.gitea_base_url,
+    token: config.gitea_gateway_token,
+    owner: config.prepare.repository.owner,
+    repository: config.prepare.repository.repository,
+    timeoutMs: config.gitea_timeout_ms
+  });
+
+  return config.provider_mode === "gitea-readonly"
+    ? new GiteaReadOnlyExecutor(client)
+    : new GiteaExecutor(client);
 }
 
 export class GatewayRuntime {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ProviderConflictError,
   ProviderNotFoundError,
   ProviderUnavailableError
 } from "../src/errors.ts";
@@ -124,5 +125,94 @@ test("readTextFile rejects directory, binary and unexpected response metadata", 
       "apps/backend/src/users/user.service.ts"
     ),
     ProviderUnavailableError
+  );
+});
+
+
+test("createBranch pins the requested base revision and posts the Gitea branch contract", async () => {
+  const calls: Array<{ url: string; method: string; body?: string }> = [];
+  const client = clientWith((async (url, init) => {
+    calls.push({
+      url: String(url),
+      method: init?.method ?? "GET",
+      ...(typeof init?.body === "string" ? { body: init.body } : {})
+    });
+
+    if ((init?.method ?? "GET") === "GET") {
+      return new Response(
+        JSON.stringify({ name: "main", commit: { id: "baseline123" } }),
+        { status: 200 }
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        name: "feature/account-suspension",
+        commit: { id: "baseline123" }
+      }),
+      { status: 201 }
+    );
+  }) as typeof fetch);
+
+  const created = await client.createBranch("main", "feature/account-suspension");
+
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].url, /\/branches\/main$/u);
+  assert.equal(calls[1].method, "POST");
+  assert.match(calls[1].url, /\/branches$/u);
+  assert.deepEqual(JSON.parse(calls[1].body ?? "{}"), {
+    new_branch_name: "feature/account-suspension",
+    old_branch_name: "main"
+  });
+  assert.deepEqual(created, {
+    name: "feature/account-suspension",
+    base_branch: "main",
+    base_revision: "baseline123",
+    commit_sha: "baseline123"
+  });
+});
+
+test("createBranch fails closed if Gitea creates from a different revision", async () => {
+  let call = 0;
+  const client = clientWith((async () => {
+    call += 1;
+    if (call === 1) {
+      return new Response(
+        JSON.stringify({ name: "main", commit: { id: "baseline123" } }),
+        { status: 200 }
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        name: "feature/account-suspension",
+        commit: { id: "unexpected456" }
+      }),
+      { status: 201 }
+    );
+  }) as typeof fetch);
+
+  await assert.rejects(
+    client.createBranch("main", "feature/account-suspension"),
+    ProviderUnavailableError
+  );
+});
+
+test("Gitea branch conflicts become structured provider conflicts", async () => {
+  let call = 0;
+  const client = clientWith((async () => {
+    call += 1;
+    if (call === 1) {
+      return new Response(
+        JSON.stringify({ name: "main", commit: { id: "baseline123" } }),
+        { status: 200 }
+      );
+    }
+    return new Response(JSON.stringify({ message: "branch already exists" }), {
+      status: 409
+    });
+  }) as typeof fetch);
+
+  await assert.rejects(
+    client.createBranch("main", "feature/account-suspension"),
+    ProviderConflictError
   );
 });
