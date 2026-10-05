@@ -241,9 +241,15 @@ Implemented:
 - Phase 1 validation checks that policy version `phase4a-v1` is loaded;
 - real CI smoke path is now Agent signed VP -> DelegationVerifier -> OPA -> MockExecutor, followed by replay rejection.
 
-Checkpoint 4B.1:
+Checkpoints:
 
-`9b4fac555b87b487c9392eb61ed597d9f6ac6a64`
+- 4B.1 OPA client + server-derived policy input: `9b4fac555b87b487c9392eb61ed597d9f6ac6a64`;
+- 4B.2 OPA enforcement in the Gateway runtime: `3c6140beb8b3d8ad59098d34783b6982c4840b4f`;
+- final strip-types compatibility fix: `8d920c2b729aa18a5d37de7011cacc195eb202fd`.
+
+Validation run:
+
+`37283853183` — success (Gateway 4B tests, OPA policy tests, Phase 1 smoke and real Adapter -> Gateway -> OPA -> MockExecutor smoke).
 
 Gitea is still disconnected from Gateway execution. The executor remains a no-op mock until Phase 5.
 
