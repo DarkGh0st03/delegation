@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 6 — Controlled Test Runner + independent acceptance: COMPLETE**
+**Phase 7 — deterministic A2A 1.0 interoperability: IMPLEMENTED, FINAL VALIDATION IN PROGRESS**
 
 Completed checkpoints:
 
@@ -17,8 +17,9 @@ Completed checkpoints:
 - **Phase 6A — Controlled Test Runner contract: COMPLETE**
 - **Phase 6B — exact-SHA isolated execution + Gateway integration: COMPLETE**
 - **Phase 6C — researcher-owned acceptance suite: COMPLETE**
+- **Phase 7 — deterministic A2A 1.0 flow: validation pending on current HEAD**
 
-Next checkpoint: **Phase 7 — deterministic A2A 1.0 flow, without LLM reasoning**
+Do not start Phase 8A until the current Phase 7 CI checkpoint is green.
 
 ## Source-of-truth repositories
 
@@ -465,6 +466,29 @@ GitHub Actions validation run:
 
 `37317272950` — success. `validate`, `phase6c-acceptance-smoke`, both Phase 6B regression smoke jobs, all Phase 5 regression smoke jobs, Phase 4 smoke and Phase 1 smoke are green.
 
+### Phase 7 — Deterministic A2A 1.0 interoperability
+
+Implementation complete; final validation is running on the current HEAD.
+
+Implemented:
+
+- official `@a2a-js/sdk` pinned to `1.3.0`, targeting A2A Protocol v1.0;
+- HTTP+JSON Agent Cards for Backend, Frontend and Test Agents with `application/json` media modes;
+- frozen delegated-authorization extension URI `urn:thesis:a2a:delegated-authorization:v1`;
+- extension activation through the official `A2A-Extensions` service-parameter helper;
+- `Message.extensions` plus `Message.metadata.delegation_evidence` transport for child Delegation Evidence;
+- internal per-task context retention of Delegation Evidence;
+- deterministic task lifecycle and result-only Artifact Builder;
+- external task responses request `historyLength: 0` so authority-bearing Messages are not echoed back;
+- deterministic Orchestrator discovery and `sendMessage` over HTTP+JSON;
+- configurable Backend/Frontend/Test A2A service launcher;
+- incompatible-Agent-Card rejection before protected task execution;
+- a three-Agent smoke covering discovery -> Message -> Task -> Artifact for every specialized role.
+
+The A2A layer does not grant repository authority. The existing `Delegation Credential -> Gateway -> DelegationVerifier -> OPA -> provider` boundary remains authoritative.
+
+Final validation checkpoint: pending.
+
 ## Validation commands
 
 ```bash
@@ -485,17 +509,17 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 7
+## Next action — Phase 8A
 
-Implement deterministic A2A 1.0 interoperability before adding any LLM reasoning:
+After the Phase 7 checkpoint is green, add the shared LLM Agent runtime above the already-protected tools:
 
-- verify the current official JavaScript A2A SDK/API surface before coding;
-- introduce the shared Agent runtime with A2A server, task context, artifact builder and task lifecycle;
-- publish Agent Cards for Backend, Frontend and Test Agents with the required thesis Delegation Evidence extension URI;
-- carry Delegation Evidence through A2A message extensions/metadata and keep credential, VP, witness and secret material out of A2A payloads;
-- implement deterministic Message -> Task -> Artifact handling for the three specialized Agents;
-- have the Orchestrator use A2A discovery and SendMessage without making generative planning decisions yet;
-- add the incompatible-Agent-Card negative case: a protected task must not select an Agent that does not advertise the required extension;
-- keep authority enforcement in the existing Delegation Credential -> Gateway -> Verifier -> OPA path; A2A transports task context, not authorization authority.
+- add the OpenAI Responses API client with configured `OPENAI_MODEL` and record the effective model ID;
+- implement a bounded Agent Controller reasoning/tool loop;
+- add Task Context, Tool Registry and Delegation Evidence Handler integration;
+- provide a Gateway client wrapper that hides prepare -> VP creation -> execute from model-visible context;
+- keep child credential, VP, witness material, signing keys and provider tokens out of prompts and model-visible logs;
+- expose only role-appropriate controlled tools and rely on the existing infrastructure to deny out-of-scope calls;
+- handle authorization deny and test failure as explicit controlled outcomes.
 
-Do not start Phase 8 LLM Agent behavior until discovery, Message, Task, Artifact and extension compatibility are validated end to end.
+Do not specialize Backend/Frontend/Test LLM behavior (Phase 8B) until the shared Phase 8A runtime is validated.
+
