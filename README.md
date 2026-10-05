@@ -177,4 +177,4 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 The script starts a fresh Anvil chain in a separate Git Bash/Mintty window on Windows, deploys the contracts, configures all local identities and addresses, runs the complete validation, and intentionally leaves Anvil running for further manual inspection.
 
-The pre-Gateway Rust/trust implementation remains the cryptographic baseline. Phase 1 local infrastructure is now implemented and CI-validated: Gitea hosts the hardened protected baseline, OPA is available as the policy-engine boundary, and the existing trust contracts deploy against containerized Anvil. The next milestone is Phase 2A, the identity-bound Rust Delegation Adapter skeleton.
+The Rust/trust implementation remains the cryptographic baseline. Phases 1–3 are now CI-validated: the local Gitea/OPA/Anvil environment is reproducible, the identity-bound Rust Delegation Adapter exposes issuance/presentation/verification, and the TypeScript Gateway performs canonical prepare → signed VP verification → one-shot mock execution. The next milestone is Phase 4: insert OPA after DelegationVerifier success and before any executor/provider call.
