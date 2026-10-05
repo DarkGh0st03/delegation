@@ -33,6 +33,8 @@ export interface AgentArtifactPayload {
   branch: "feature/account-suspension";
   revision: string | null;
   commit_sha: string | null;
-  test_outcome: "not_run";
+  test_outcome: "not_run" | "pass" | "fail";
   errors: string[];
+  model_id?: string;
+  model_iterations?: number;
 }
