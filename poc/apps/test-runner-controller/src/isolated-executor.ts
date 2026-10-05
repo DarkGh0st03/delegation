@@ -56,7 +56,17 @@ const FIXED_PHASES: ReadonlyArray<{
   { phase: "backend_tests", command: "npx vitest run tests/backend" },
   { phase: "frontend_tests", command: "npx vitest run tests/frontend" },
   { phase: "build", command: "npm run build" },
-  { phase: "playwright_e2e", command: "npm run test:e2e" }
+  {
+    phase: "playwright_e2e",
+    command:
+      "set -euo pipefail; " +
+      "npm run start -w @iam/backend >/tmp/runner-backend.log 2>&1 & backend_pid=$!; " +
+      "npm run dev -w @iam/frontend -- --host 127.0.0.1 >/tmp/runner-frontend.log 2>&1 & frontend_pid=$!; " +
+      "cleanup() { kill \"$backend_pid\" \"$frontend_pid\" 2>/dev/null || true; }; " +
+      "trap cleanup EXIT; " +
+      "wait_port() { for _ in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/\"$1\") >/dev/null 2>&1 && return 0; sleep 0.5; done; echo \"Timed out waiting for port $1\" >&2; return 1; }; " +
+      "wait_port 3000; wait_port 5173; npm run test:e2e"
+  }
 ];
 
 function cappedAppend(current: string, chunk: Buffer): string {
