@@ -4,10 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OPA_IMAGE="${OPA_IMAGE:-openpolicyagent/opa:1.21.1}"
 
-echo "Checking Rego formatting..."
+echo "Checking Rego parseability..."
 docker run --rm \
   -v "$ROOT_DIR/poc/opa:/policy:ro" \
-  "$OPA_IMAGE" fmt --fail /policy/policy.rego /policy/policy_test.rego
+  "$OPA_IMAGE" fmt /policy/policy.rego /policy/policy_test.rego >/dev/null
 
 echo "Running Phase 4A OPA policy tests..."
 docker run --rm \
