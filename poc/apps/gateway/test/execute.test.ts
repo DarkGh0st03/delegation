@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   PolicyUnavailableError,
+  ProviderConflictError,
   ProviderUnavailableError,
   VerificationRejectedError,
   VerificationUnavailableError
@@ -310,5 +311,37 @@ test("provider outage is reported after authorization and preserves policy allow
     assert.equal(event.provider, "gitea");
     assert.equal(event.provider_result, "error");
     assert.equal(event.reason, "provider_unavailable");
+  }
+});
+
+
+test("provider conflict is returned after authorization as a structured 409", async () => {
+  const { store, audit, response, now } = prepared();
+  const verifier = new SuccessVerifier();
+  const policy = new FixedPolicy();
+  const executor: ExecutionPort = {
+    provider: "gitea",
+    async execute() {
+      throw new ProviderConflictError("branch already exists");
+    }
+  };
+
+  await assert.rejects(
+    executeAuthorization(
+      { request_id: response.request_id, signed_vp: "signed.jwt.value" },
+      deps(store, audit, verifier, policy, executor, now)
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      "statusCode" in error &&
+      "code" in error &&
+      (error as { statusCode: number; code: string }).statusCode === 409 &&
+      (error as { statusCode: number; code: string }).code === "provider_conflict"
+  );
+
+  const event = audit.events.at(-1);
+  if (event?.event === "authorization_executed") {
+    assert.equal(event.reason, "provider_conflict");
+    assert.equal(event.provider_result, "error");
   }
 });
