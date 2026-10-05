@@ -39,6 +39,9 @@ jobs:
       - name: Gateway Phase 5A tests
         run: npm --prefix poc run gateway:test
 
+      - name: Runner Phase 6A contract tests
+        run: npm --prefix poc run test -w @thesis/test-runner-controller
+
       - name: OPA Phase 4A policy tests
         run: bash poc/scripts/phase4a-policy-test.sh
 
