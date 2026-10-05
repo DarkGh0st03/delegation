@@ -15,7 +15,8 @@ import {
 } from "@a2a-js/sdk/server/express";
 import { createSpecializedAgentCard } from "./cards.ts";
 import {
-  DeterministicSpecializedAgentExecutor
+  DeterministicSpecializedAgentExecutor,
+  type DeterministicArtifactPayloadBuilder
 } from "./executor.ts";
 import type { SpecializedAgentRole } from "./contracts.ts";
 
@@ -24,6 +25,7 @@ export interface SpecializedAgentServerOptions {
   port: number;
   host?: string;
   delegatedAuthorization?: boolean;
+  artifactBuilder?: DeterministicArtifactPayloadBuilder;
 }
 
 export interface SpecializedAgentServer {
@@ -43,7 +45,11 @@ export async function startSpecializedAgentServer(
   const card = createSpecializedAgentCard(options.role, baseUrl, {
     delegatedAuthorization: options.delegatedAuthorization
   });
-  const executor = new DeterministicSpecializedAgentExecutor(options.role);
+  const executor = new DeterministicSpecializedAgentExecutor(
+    options.role,
+    undefined,
+    options.artifactBuilder
+  );
   const requestHandler = new DefaultRequestHandler(
     card,
     new InMemoryTaskStore(),
