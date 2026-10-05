@@ -6,9 +6,9 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 2 — Rust Delegation Adapter: COMPLETE**
+**Phase 3 — Cloud Access Gateway core: COMPLETE**
 
-Next milestone: **Phase 3A — Gateway canonical permission mapping and request preparation**
+Next milestone: **Phase 4 — OPA contextual workflow policy**
 
 ## Source-of-truth repositories
 
@@ -150,12 +150,65 @@ A later concurrent edit briefly replaced some Adapter entry files; commit `339cf
 
 At this component-test checkpoint, the Adapter uses the framework's in-memory trust/status providers while exercising the real `DelegationIssuer` and `DelegationVerifier` paths. The EVM trust layer from Phase 1 remains independently validated. Before the final positive end-to-end experiment, the deployed Adapter profile must bind verification/public-material resolution to the existing EVM-backed trust/status providers. This is an integration task, not a rewrite of the cryptographic core.
 
+### Phase 3A — Canonical permission preparation
+
+Completed.
+
+Checkpoint:
+
+`97e80e0cecb38d0c2bc2ad82c9faef6d2e8da4a6`
+
+Implemented:
+
+- TypeScript Gateway workspace under `poc/apps/gateway/`;
+- strict tool-request validation;
+- deterministic `tool -> Operation` mapping;
+- canonical Gitea repository, branch and file `ResourceUri` derivation;
+- repository-relative path validation and traversal rejection;
+- Git branch-name validation;
+- explicit rejection of caller-supplied `resource_uri`, `operation` or `permission`;
+- server-generated `request_id`, audience and cryptographic challenge;
+- server-side prepared-request record binding task, role, tool arguments and required permission;
+- request fingerprint and TTL;
+- initial audit event and `prepare_ms` measurement;
+- no provider mutation.
+
+### Phase 3B — One-shot verification and mock execution
+
+Completed.
+
+Primary checkpoints:
+
+- `ff9d14fd188e716d51b645e4c6579f08bf863f27` — one-shot verification execution core;
+- `7d229f6ff27bdecfa38a4470c97c7f638d01a556` — HTTP prepare/execute flow and real Adapter-Gateway smoke test;
+- `9723b82cc1aeec326012950d50061859df18032f` — final timing fix and validated Phase 3 checkpoint.
+
+Implemented:
+
+- `POST /v1/authorization/prepare`;
+- `POST /v1/authorization/execute`;
+- Gateway-authenticated call to Adapter `POST /v1/verify`;
+- execute request accepts only `request_id + signed_vp`;
+- audience, challenge, presenter role and required permission are loaded from server-side prepared state;
+- prepared request is consumed before asynchronous verification, enforcing fail-closed one-shot semantics;
+- expired request, replay, invalid proof and verifier outage prevent execution;
+- successful authorization reaches only `MockExecutor`, never Gitea;
+- structured audit metrics include `verification_ms`, `provider_ms`, `total_ms`, `vp_size_bytes`, `chain_depth` and `disclosed_permission_count`;
+- real CI smoke path: Gateway prepare -> root DC -> child DC -> Agent signed VP -> Adapter verifier -> Gateway allow -> mock execution -> replay rejection.
+
+Validation run for the final Phase 3 checkpoint:
+
+`37278075507` — success.
+
+OPA is still deliberately absent from the allow path. Phase 4 inserts OPA after successful delegation verification and before the mock executor, so Phase 5 can connect Gitea only after both authorization layers are active.
+
 ## Validation commands
 
 ```bash
 cargo test
 cargo fmt --check
 npm --prefix poc run check:scaffold
+npm --prefix poc run gateway:test
 ```
 
 Full pre-Gateway trust closure, when a local Anvil-capable environment is available:
@@ -168,16 +221,19 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 3A
+## Next action — Phase 4
 
-Implement the TypeScript Cloud Access Gateway core:
+Insert OPA into the Gateway allow path while the executor is still a mock:
 
-- strict tool request schemas;
-- canonical Gitea `ResourceUri` construction;
-- deterministic `tool -> Operation` mapping;
-- rejection of path traversal, malformed branch names and caller-supplied authority values;
-- `prepare` request creation with `request_id`, required permission, audience and challenge;
-- no real Gitea mutation yet;
-- begin structured audit/measurement fields from this phase onward.
+- define the Rego input contract from the verified server-side request context;
+- implement default-deny workflow policy;
+- deny writes to `main`;
+- restrict protected file operations to `feature/account-suspension`;
+- allow Pull Request creation only from `feature/account-suspension` to `main`;
+- deny automated merge;
+- constrain `RunTests` to the feature branch;
+- treat OPA errors/timeouts as fail-closed;
+- add `opa_ms` and policy decision fields to audit events;
+- keep Gitea disconnected until Phase 5.
 
-The Gateway must derive authority requirements itself; Agents must never supply an arbitrary `ResourceUri` or `Operation`.
+Do not duplicate the exact file-level Delegation Credential permission matrix in Rego.
