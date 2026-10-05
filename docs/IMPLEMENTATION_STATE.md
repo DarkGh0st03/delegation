@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 9A — deterministic Orchestrator authority templates: COMPLETE**
+**Phase 9B — sequential delegated A2A workflow: COMPLETE**
 
 Completed checkpoints:
 
@@ -22,8 +22,9 @@ Completed checkpoints:
 - **Phase 8B — specialized Backend, Frontend and Test Agents: COMPLETE**
 - **Phase 8C — model-driven authority-boundary validation: COMPLETE**
 - **Phase 9A — deterministic Orchestrator authority templates: COMPLETE**
+- **Phase 9B — sequential delegated A2A workflow: COMPLETE**
 
-Next checkpoint: **Phase 9B — sequential delegated A2A workflow**
+Next checkpoint: **Phase 10 — positive end-to-end Account Suspension experiment**
 
 ## Source-of-truth repositories
 
@@ -603,6 +604,24 @@ GitHub Actions validation run:
 
 `37335879534` — success, including `phase9a-authority-templates-smoke` and every previous regression job.
 
+### Phase 9B — Sequential delegated A2A workflow
+
+Completed and validated through the incremental Phase 9B.1–9B.6 checkpoints.
+
+Implemented:
+
+- deterministic Orchestrator state machine for the frozen Backend -> Frontend -> Test plan;
+- protected creation of `feature/account-suspension` through Gateway authority;
+- A2A discovery and delegated-authorization extension enforcement;
+- just-in-time issuance of the fixed Backend, Frontend and Test child Delegation Credentials;
+- strict Artifact validation before advancing between specialized roles;
+- sequential Backend then Frontend delegated execution;
+- Test Agent / Runner gate before Pull Request creation;
+- full sequential delegated A2A coordinator with Pull Request gating;
+- no merge tool and no automated merge.
+
+Final Phase 9B.6 validation run: `37362285773`. On the final attempt, `validate`, `phase9b5-test-runner-gate-smoke` and `phase9b6-full-sequential-smoke` completed successfully. The Phase 9B.6 key step `Run full sequential delegated A2A workflow and PR gate` passed.
+
 ## Validation commands
 
 ```bash
@@ -623,18 +642,16 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 9B
+## Next action — Phase 10
 
-Coordinate the fixed Account Suspension workflow sequentially through A2A:
+Run the first positive end-to-end Account Suspension experiment against the protected application:
 
-- create `feature/account-suspension` through the Orchestrator's protected Gateway authority;
-- perform A2A Agent Card discovery and require the delegated-authorization extension;
-- use a deterministic task plan selecting Backend -> Frontend -> Test;
-- issue the corresponding fixed child DC immediately before each delegated task;
-- send A2A Messages carrying only the appropriate Delegation Evidence;
-- wait for Task completion and validate the returned Artifact before moving to the next role;
-- require the Test Agent / Runner outcome to be acceptable before creating the Pull Request;
-- create the Pull Request only in the frozen `feature/account-suspension -> main` direction;
+- start from the hardened baseline where Account Suspension is absent;
+- let the delegated Backend, Frontend and Test Agents implement the feature through the Phase 9B coordinator;
+- preserve the frozen authority boundaries and Backend -> Frontend -> Test ordering;
+- require project tests and researcher-owned acceptance tests to pass on the exact final feature-branch SHA;
+- create the final Pull Request only after the Runner evidence is acceptable;
+- preserve the tested exact SHA in the evidence used for the final gate;
 - expose no merge tool and perform no automated merge.
 
-Do not start Phase 10 positive E2E until the full sequential Orchestrator workflow is observable and green.
+Do not start Phase 11 security/negative experiments until the positive E2E is reproducible and green.
