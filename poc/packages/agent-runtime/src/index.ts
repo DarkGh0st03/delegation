@@ -1,3 +1,4 @@
+export * from "./specialized-agents.ts";
 export * from "./tool-registry.ts";
 export * from "./llm-client.ts";
 export * from "./gateway-tool-client.ts";
