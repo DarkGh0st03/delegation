@@ -14,6 +14,7 @@ import {
 } from "@a2a-js/sdk/server";
 import {
   DELEGATED_AUTHORIZATION_EXTENSION_URI,
+  type AgentArtifactPayload,
   type DelegationEvidence,
   type DeterministicSubtask,
   type SpecializedAgentRole
@@ -77,17 +78,26 @@ function subtask(message: Message): DeterministicSubtask {
   };
 }
 
+export type DeterministicArtifactPayloadBuilder = (
+  role: SpecializedAgentRole,
+  task: DeterministicSubtask
+) => AgentArtifactPayload;
+
 export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
   readonly #role: SpecializedAgentRole;
   readonly #contexts: InMemoryAgentTaskContextStore;
+  readonly #artifactBuilder: DeterministicArtifactPayloadBuilder;
   #executionCount = 0;
 
   constructor(
     role: SpecializedAgentRole,
-    contexts: InMemoryAgentTaskContextStore = new InMemoryAgentTaskContextStore()
+    contexts: InMemoryAgentTaskContextStore = new InMemoryAgentTaskContextStore(),
+    artifactBuilder: DeterministicArtifactPayloadBuilder =
+      buildDeterministicArtifactPayload
   ) {
     this.#role = role;
     this.#contexts = contexts;
+    this.#artifactBuilder = artifactBuilder;
   }
 
   get executionCount(): number {
@@ -168,7 +178,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
         {
           content: {
             $case: "data",
-            value: buildDeterministicArtifactPayload(this.#role, taskInput)
+            value: this.#artifactBuilder(this.#role, taskInput)
           },
           metadata: undefined,
           filename: "",
