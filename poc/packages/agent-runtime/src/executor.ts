@@ -1,5 +1,4 @@
 import {
-  Role,
   TaskState,
   type Artifact,
   type Message,
@@ -237,16 +236,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
         status: {
           state: TaskState.TASK_STATE_CANCELED,
           timestamp: new Date().toISOString(),
-          message: {
-            role: Role.ROLE_AGENT,
-            messageId: crypto.randomUUID(),
-            contextId: context.context_id,
-            taskId,
-            parts: [],
-            metadata: {},
-            extensions: [],
-            referenceTaskIds: []
-          }
+          message: undefined
         },
         metadata: {
           agent_role: this.#role
