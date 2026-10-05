@@ -38,6 +38,13 @@ export class ProviderUnavailableError extends Error {
   }
 }
 
+export class ProviderConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderConflictError";
+  }
+}
+
 export class ProviderNotFoundError extends Error {
   constructor(message: string) {
     super(message);
