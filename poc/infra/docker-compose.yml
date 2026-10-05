@@ -39,6 +39,9 @@ services:
       - --server
       - --addr=0.0.0.0:8181
       - --log-format=json
+      - /policy
+    volumes:
+      - ../opa:/policy:ro
     ports:
       - "127.0.0.1:${OPA_HOST_PORT:-8181}:8181"
     networks:

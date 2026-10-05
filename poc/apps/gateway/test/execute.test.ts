@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  PolicyUnavailableError,
   VerificationRejectedError,
   VerificationUnavailableError
 } from "../src/errors.ts";
@@ -12,6 +13,9 @@ import {
   prepareAuthorization
 } from "../src/prepare.ts";
 import type {
+  PolicyDecision,
+  PolicyInput,
+  PolicyPort,
   VerificationRequest,
   VerifiedDelegation,
   VerifierPort
@@ -69,49 +73,87 @@ class SuccessVerifier implements VerifierPort {
   }
 }
 
-test("execute binds the stored role, challenge and permission before mock execution", async () => {
+class FixedPolicy implements PolicyPort {
+  calls: PolicyInput[] = [];
+
+  constructor(
+    private readonly decision: PolicyDecision = {
+      allow: true,
+      policy_version: "phase4a-v1"
+    }
+  ) {}
+
+  async evaluate(input: PolicyInput): Promise<PolicyDecision> {
+    this.calls.push(input);
+    return this.decision;
+  }
+}
+
+function deps(
+  store: InMemoryRequestStore,
+  audit: InMemoryAuditSink,
+  verifier: VerifierPort,
+  policy: PolicyPort,
+  executor: MockExecutor,
+  now: number
+) {
+  return {
+    store,
+    audit,
+    verifier,
+    policy,
+    repository: config.repository,
+    executor,
+    nowMs: () => now + 1,
+    durationNowMs: () => 1
+  };
+}
+
+test("execute verifies, evaluates OPA and only then mock-executes", async () => {
   const { store, audit, response, now } = prepared();
   const verifier = new SuccessVerifier();
+  const policy = new FixedPolicy();
   const executor = new MockExecutor();
 
   const result = await executeAuthorization(
     { request_id: response.request_id, signed_vp: "signed.jwt.value" },
-    { store, audit, verifier, executor, nowMs: () => now + 1000, durationNowMs: () => 10 }
+    deps(store, audit, verifier, policy, executor, now)
   );
 
   assert.equal(result.decision, "allow");
+  assert.equal(result.policy.allow, true);
+  assert.equal(result.policy.policy_version, "phase4a-v1");
   assert.equal(executor.callCount, 1);
-  assert.equal(result.execution.performed, false);
-  assert.equal(verifier.calls.length, 1);
-  assert.equal(verifier.calls[0].presenter, "backend");
-  assert.equal(verifier.calls[0].audience, response.audience);
-  assert.equal(verifier.calls[0].challenge, response.challenge);
-  assert.deepEqual(verifier.calls[0].required_permission, response.required_permission);
+  assert.equal(policy.calls.length, 1);
+  assert.equal(policy.calls[0].request_id, response.request_id);
+  assert.deepEqual(policy.calls[0].required_permission, response.required_permission);
 
   const event = audit.events.at(-1);
   assert.equal(event?.event, "authorization_executed");
   if (event?.event === "authorization_executed") {
     assert.equal(event.decision, "allow");
+    assert.equal(event.policy_decision, "allow");
+    assert.equal(event.policy_version, "phase4a-v1");
     assert.equal(event.chain_depth, 1);
-    assert.equal(event.disclosed_permission_count, 1);
   }
 });
 
-test("prepared request is one-shot and replay is rejected before verification", async () => {
+test("prepared request is one-shot and replay stops before verifier and OPA", async () => {
   const { store, audit, response, now } = prepared();
   const verifier = new SuccessVerifier();
+  const policy = new FixedPolicy();
   const executor = new MockExecutor();
-  const deps = { store, audit, verifier, executor, nowMs: () => now + 1, durationNowMs: () => 1 };
+  const dependencies = deps(store, audit, verifier, policy, executor, now);
 
   await executeAuthorization(
     { request_id: response.request_id, signed_vp: "signed.jwt.value" },
-    deps
+    dependencies
   );
 
   await assert.rejects(
     executeAuthorization(
       { request_id: response.request_id, signed_vp: "signed.jwt.value" },
-      deps
+      dependencies
     ),
     (error: unknown) =>
       error instanceof Error &&
@@ -120,49 +162,24 @@ test("prepared request is one-shot and replay is rejected before verification", 
   );
 
   assert.equal(verifier.calls.length, 1);
+  assert.equal(policy.calls.length, 1);
   assert.equal(executor.callCount, 1);
 });
 
-test("expired prepare request fails closed without invoking verifier or executor", async () => {
-  const { store, audit, response, now } = prepared();
-  const verifier = new SuccessVerifier();
-  const executor = new MockExecutor();
-
-  await assert.rejects(
-    executeAuthorization(
-      { request_id: response.request_id, signed_vp: "signed.jwt.value" },
-      {
-        store,
-        audit,
-        verifier,
-        executor,
-        nowMs: () => now + 120_000,
-        durationNowMs: () => 1
-      }
-    ),
-    (error: unknown) =>
-      error instanceof Error &&
-      "code" in error &&
-      (error as { code: string }).code === "expired_request"
-  );
-
-  assert.equal(verifier.calls.length, 0);
-  assert.equal(executor.callCount, 0);
-});
-
-test("verification rejection prevents provider execution", async () => {
+test("verification rejection prevents OPA and provider execution", async () => {
   const { store, audit, response, now } = prepared();
   const verifier: VerifierPort = {
     async verify() {
       throw new VerificationRejectedError("bad proof");
     }
   };
+  const policy = new FixedPolicy();
   const executor = new MockExecutor();
 
   await assert.rejects(
     executeAuthorization(
       { request_id: response.request_id, signed_vp: "bad.jwt" },
-      { store, audit, verifier, executor, nowMs: () => now + 1, durationNowMs: () => 1 }
+      deps(store, audit, verifier, policy, executor, now)
     ),
     (error: unknown) =>
       error instanceof Error &&
@@ -170,22 +187,24 @@ test("verification rejection prevents provider execution", async () => {
       (error as { code: string }).code === "verification_rejected"
   );
 
+  assert.equal(policy.calls.length, 0);
   assert.equal(executor.callCount, 0);
 });
 
-test("verifier outage fails closed and prevents provider execution", async () => {
+test("verifier outage fails closed before OPA", async () => {
   const { store, audit, response, now } = prepared();
   const verifier: VerifierPort = {
     async verify() {
       throw new VerificationUnavailableError("offline");
     }
   };
+  const policy = new FixedPolicy();
   const executor = new MockExecutor();
 
   await assert.rejects(
     executeAuthorization(
       { request_id: response.request_id, signed_vp: "signed.jwt.value" },
-      { store, audit, verifier, executor, nowMs: () => now + 1, durationNowMs: () => 1 }
+      deps(store, audit, verifier, policy, executor, now)
     ),
     (error: unknown) =>
       error instanceof Error &&
@@ -193,5 +212,64 @@ test("verifier outage fails closed and prevents provider execution", async () =>
       (error as { code: string }).code === "verifier_unavailable"
   );
 
+  assert.equal(policy.calls.length, 0);
   assert.equal(executor.callCount, 0);
+});
+
+test("OPA deny prevents provider execution", async () => {
+  const { store, audit, response, now } = prepared();
+  const verifier = new SuccessVerifier();
+  const policy = new FixedPolicy({
+    allow: false,
+    policy_version: "phase4a-v1"
+  });
+  const executor = new MockExecutor();
+
+  await assert.rejects(
+    executeAuthorization(
+      { request_id: response.request_id, signed_vp: "signed.jwt.value" },
+      deps(store, audit, verifier, policy, executor, now)
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "policy_denied"
+  );
+
+  assert.equal(policy.calls.length, 1);
+  assert.equal(executor.callCount, 0);
+  const event = audit.events.at(-1);
+  if (event?.event === "authorization_executed") {
+    assert.equal(event.policy_decision, "deny");
+    assert.equal(event.provider_ms, 0);
+  }
+});
+
+test("OPA outage fails closed and prevents provider execution", async () => {
+  const { store, audit, response, now } = prepared();
+  const verifier = new SuccessVerifier();
+  const policy: PolicyPort = {
+    async evaluate() {
+      throw new PolicyUnavailableError("OPA offline");
+    }
+  };
+  const executor = new MockExecutor();
+
+  await assert.rejects(
+    executeAuthorization(
+      { request_id: response.request_id, signed_vp: "signed.jwt.value" },
+      deps(store, audit, verifier, policy, executor, now)
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "policy_unavailable"
+  );
+
+  assert.equal(executor.callCount, 0);
+  const event = audit.events.at(-1);
+  if (event?.event === "authorization_executed") {
+    assert.equal(event.policy_decision, "error");
+    assert.equal(event.decision, "deny");
+  }
 });

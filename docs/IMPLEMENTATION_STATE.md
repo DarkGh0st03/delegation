@@ -6,9 +6,9 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 4A — OPA contextual workflow policy: COMPLETE**
+**Phase 4 — OPA contextual workflow enforcement: COMPLETE**
 
-Next milestone: **Phase 4B — Gateway OPA client, fail-closed enforcement and OPA metrics**
+Next milestone: **Phase 5A — Protected Gitea provider client and read-only integration**
 
 ## Source-of-truth repositories
 
@@ -222,7 +222,30 @@ Implemented under `poc/opa/`:
 
 This policy deliberately does not duplicate the exact file-level Delegation Credential permission matrix.
 
-Phase 4B will connect this policy to the Gateway after verifier success and before the existing mock executor.
+### Phase 4B — Gateway OPA enforcement
+
+Completed.
+
+Implemented:
+
+- OPA Data API client for `data.thesis.gateway.decision`;
+- policy input built only from server-side prepared state, repository configuration and `VerifiedDelegation`;
+- source-file content and Pull Request text excluded from OPA input because they are not needed for contextual authorization;
+- Gateway runtime order is now `DelegationVerifier -> OPA -> MockExecutor`;
+- OPA deny prevents executor invocation;
+- OPA network errors, timeouts, malformed JSON, malformed decisions and non-2xx responses fail closed;
+- one-shot challenge consumption still occurs before verifier/OPA execution;
+- audit events now include `opa_ms`, `policy_decision` and `policy_version`;
+- successful execute responses include the policy decision used;
+- the local OPA container loads `poc/opa/` at startup;
+- Phase 1 validation checks that policy version `phase4a-v1` is loaded;
+- real CI smoke path is now Agent signed VP -> DelegationVerifier -> OPA -> MockExecutor, followed by replay rejection.
+
+Checkpoint 4B.1:
+
+`9b4fac555b87b487c9392eb61ed597d9f6ac6a64`
+
+Gitea is still disconnected from Gateway execution. The executor remains a no-op mock until Phase 5.
 
 ## Validation commands
 
@@ -244,15 +267,15 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 4B
+## Next action — Phase 5A
 
-Connect the tested Rego policy to the Gateway while the executor remains a mock:
+Introduce the protected Gitea provider conservatively:
 
-- add an OPA HTTP client that queries `data.thesis.gateway.decision`;
-- build policy input only from server-side prepared state, repository configuration and `VerifiedDelegation`;
-- call OPA only after successful delegation verification;
-- call the executor only after OPA returns `allow: true`;
-- treat timeout, malformed response, non-2xx response and OPA outage as fail-closed;
-- record `opa_ms`, policy allow/deny and policy version in the audit event;
-- add Gateway unit/integration tests and a real Adapter -> Gateway -> OPA -> MockExecutor smoke test;
-- keep Gitea disconnected until Phase 5.
+- implement a Gateway-owned Gitea HTTP client using the existing service credential;
+- start with read-only provider operations and repository metadata required for safe writes;
+- preserve the existing `Verifier -> OPA` gate before any provider call;
+- map provider errors into structured Gateway failures;
+- never expose the Gitea credential to Agents;
+- keep write mutations behind a separate Phase 5B checkpoint.
+
+Phase 5B will add real create/update file, create branch and create Pull Request mutations after the read/provider boundary is validated.

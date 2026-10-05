@@ -120,6 +120,9 @@ export interface ExecuteAuditEvent {
   decision: "allow" | "deny";
   reason: string;
   verification_ms: number;
+  opa_ms: number;
+  policy_decision: "allow" | "deny" | "error" | "not_evaluated";
+  policy_version?: string;
   provider_ms: number;
   total_ms: number;
   vp_size_bytes: number;
@@ -175,6 +178,7 @@ export interface ExecuteAuthorizationResponse {
   request_id: string;
   decision: "allow";
   verified_delegation: VerifiedDelegation;
+  policy: PolicyDecision;
   execution: MockExecutionResult;
 }
 

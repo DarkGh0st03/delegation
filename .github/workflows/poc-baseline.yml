@@ -36,7 +36,7 @@ jobs:
       - name: PoC scaffold sanity check
         run: npm --prefix poc run check:scaffold
 
-      - name: Gateway Phase 3 tests
+      - name: Gateway Phase 4B tests
         run: npm --prefix poc run gateway:test
 
       - name: OPA Phase 4A policy tests
@@ -71,7 +71,7 @@ jobs:
         run: bash poc/scripts/phase1-down.sh --volumes
 
 
-  phase3-smoke:
+  phase4-smoke:
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -96,6 +96,8 @@ jobs:
       GATEWAY_RESOURCE_AUTHORITY: gitea.local
       GITEA_OWNER: thesis
       GITEA_REPOSITORY: iam-console-poc
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: "2000"
     steps:
       - uses: actions/checkout@v4
 
@@ -104,6 +106,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.15.0
+
+      - name: Start OPA with thesis policy
+        run: |
+          docker run --rm -d --name phase4-opa \
+            -p 127.0.0.1:8181:8181 \
+            -v "$GITHUB_WORKSPACE/poc/opa:/policy:ro" \
+            openpolicyagent/opa:1.21.1 \
+            run --server --addr=0.0.0.0:8181 /policy
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:8181/health >/dev/null; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker logs phase4-opa
+          exit 1
 
       - name: Build Delegation Adapter
         run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
@@ -118,8 +136,8 @@ jobs:
           npm --prefix poc run gateway:start > /tmp/gateway.log 2>&1 &
           echo $! > /tmp/gateway.pid
 
-      - name: Run real Adapter-Gateway smoke
-        run: node poc/scripts/phase3-smoke.mjs
+      - name: Run real Adapter-Gateway-OPA smoke
+        run: node poc/scripts/phase4-smoke.mjs
 
       - name: Show service logs on failure
         if: failure()
@@ -128,9 +146,12 @@ jobs:
           cat /tmp/adapter.log || true
           echo "=== Gateway ==="
           cat /tmp/gateway.log || true
+          echo "=== OPA ==="
+          docker logs phase4-opa || true
 
-      - name: Stop Phase 3 services
+      - name: Stop Phase 4 services
         if: always()
         run: |
           kill "$(cat /tmp/gateway.pid)" 2>/dev/null || true
           kill "$(cat /tmp/adapter.pid)" 2>/dev/null || true
+          docker rm -f phase4-opa 2>/dev/null || true

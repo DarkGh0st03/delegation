@@ -44,8 +44,13 @@ ANVIL_HOST_URL="http://127.0.0.1:${ANVIL_HOST_PORT:-8545}"
 echo "Checking Gitea health..."
 curl -fsS "$GITEA_HOST_URL/api/healthz" >/dev/null
 
-echo "Checking OPA health..."
+echo "Checking OPA health and loaded thesis policy..."
 curl -fsS "$OPA_HOST_URL/health?plugins" >/dev/null
+policy_version="$(curl -fsS "$OPA_HOST_URL/v1/data/thesis/gateway/policy_version" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.result ?? "")})')"
+[[ "$policy_version" == "phase4a-v1" ]] || {
+  echo "Unexpected or missing OPA thesis policy version: $policy_version" >&2
+  exit 1
+}
 
 echo "Checking Anvil JSON-RPC..."
 observed_chain_id="$(cast chain-id --rpc-url "$ANVIL_HOST_URL" | tr -d '\r\n ')"

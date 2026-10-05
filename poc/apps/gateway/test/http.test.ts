@@ -3,7 +3,12 @@ import test from "node:test";
 import { createGatewayHttpServer } from "../src/http.ts";
 import { InMemoryAuditSink } from "../src/prepare.ts";
 import { GatewayRuntime } from "../src/runtime.ts";
-import type { VerificationRequest, VerifierPort } from "../src/types.ts";
+import type {
+  PolicyInput,
+  PolicyPort,
+  VerificationRequest,
+  VerifierPort
+} from "../src/types.ts";
 
 const config = {
   bind_host: "127.0.0.1",
@@ -18,7 +23,9 @@ const config = {
     }
   },
   adapter_url: "http://unused",
-  adapter_gateway_token: "unused"
+  adapter_gateway_token: "unused",
+  opa_url: "http://unused",
+  opa_timeout_ms: 2_000
 };
 
 class Verifier implements VerifierPort {
@@ -34,9 +41,16 @@ class Verifier implements VerifierPort {
   }
 }
 
-test("HTTP prepare and execute expose only verified mock execution", async () => {
+class Policy implements PolicyPort {
+  async evaluate(_input: PolicyInput) {
+    return { allow: true, policy_version: "phase4a-v1" };
+  }
+}
+
+test("HTTP prepare and execute expose verified and policy-allowed mock execution", async () => {
   const runtime = new GatewayRuntime(config, {
     verifier: new Verifier(),
+    policy: new Policy(),
     audit: new InMemoryAuditSink()
   });
   const server = createGatewayHttpServer(runtime);
@@ -46,6 +60,10 @@ test("HTTP prepare and execute expose only verified mock execution", async () =>
     const address = server.address();
     assert.ok(address && typeof address === "object");
     const base = `http://127.0.0.1:${address.port}`;
+
+    const health = await fetch(`${base}/health`);
+    const healthBody = await health.json();
+    assert.equal(healthBody.policy, "opa");
 
     const prepareResponse = await fetch(`${base}/v1/authorization/prepare`, {
       method: "POST",
@@ -74,6 +92,7 @@ test("HTTP prepare and execute expose only verified mock execution", async () =>
     assert.equal(executeResponse.status, 200);
     const executed = await executeResponse.json();
     assert.equal(executed.decision, "allow");
+    assert.equal(executed.policy.policy_version, "phase4a-v1");
     assert.equal(executed.execution.provider, "mock");
     assert.equal(executed.execution.performed, false);
 

@@ -2,6 +2,7 @@ import { AdapterVerifierClient } from "./adapter-client.ts";
 import type { GatewayRuntimeConfig } from "./config.ts";
 import { executeAuthorization } from "./execute.ts";
 import { MockExecutor } from "./mock-executor.ts";
+import { OpaPolicyClient } from "./policy-client.ts";
 import {
   InMemoryAuditSink,
   InMemoryRequestStore,
@@ -12,6 +13,7 @@ import type {
   AuditSink,
   ExecuteAuthorizationResponse,
   ExecutionPort,
+  PolicyPort,
   PreparedAuthorizationResponse,
   VerifierPort
 } from "./types.ts";
@@ -26,6 +28,7 @@ export interface GatewayRuntimeDependencies {
   store?: InMemoryRequestStore;
   audit?: AuditSink;
   verifier?: VerifierPort;
+  policy?: PolicyPort;
   executor?: ExecutionPort;
 }
 
@@ -34,6 +37,7 @@ export class GatewayRuntime {
   readonly #store: InMemoryRequestStore;
   readonly #audit: AuditSink;
   readonly #verifier: VerifierPort;
+  readonly #policy: PolicyPort;
   readonly #executor: ExecutionPort;
 
   constructor(config: GatewayRuntimeConfig, dependencies: GatewayRuntimeDependencies = {}) {
@@ -45,6 +49,12 @@ export class GatewayRuntime {
       new AdapterVerifierClient({
         baseUrl: config.adapter_url,
         gatewayToken: config.adapter_gateway_token
+      });
+    this.#policy =
+      dependencies.policy ??
+      new OpaPolicyClient({
+        baseUrl: config.opa_url,
+        timeoutMs: config.opa_timeout_ms
       });
     this.#executor = dependencies.executor ?? new MockExecutor();
   }
@@ -61,6 +71,8 @@ export class GatewayRuntime {
       store: this.#store,
       audit: this.#audit,
       verifier: this.#verifier,
+      policy: this.#policy,
+      repository: this.#config.prepare.repository,
       executor: this.#executor
     });
   }

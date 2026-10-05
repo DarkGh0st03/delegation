@@ -1,16 +1,21 @@
 import { performance } from "node:perf_hooks";
 import {
   GatewayError,
+  PolicyUnavailableError,
   VerificationRejectedError,
   VerificationUnavailableError
 } from "./errors.ts";
+import { buildPolicyInput } from "./policy-input.ts";
 import { InMemoryRequestStore } from "./prepare.ts";
 import type {
   AuditSink,
   ExecuteAuthorizationRequest,
   ExecuteAuthorizationResponse,
   ExecutionPort,
+  GatewayRepositoryConfig,
   Permission,
+  PolicyDecision,
+  PolicyPort,
   PreparedRequestRecord,
   VerifierPort,
   VerifiedDelegation
@@ -50,10 +55,7 @@ function validateExecuteRequest(raw: unknown): ExecuteAuthorizationRequest {
   };
 }
 
-function includesPermission(
-  permissions: Permission[],
-  required: Permission
-): boolean {
+function includesPermission(permissions: Permission[], required: Permission): boolean {
   return permissions.some(
     (permission) =>
       permission.resource === required.resource &&
@@ -80,6 +82,8 @@ export interface ExecuteDependencies {
   store: InMemoryRequestStore;
   audit: AuditSink;
   verifier: VerifierPort;
+  policy: PolicyPort;
+  repository: GatewayRepositoryConfig;
   executor: ExecutionPort;
   nowMs?: () => number;
   durationNowMs?: () => number;
@@ -102,8 +106,6 @@ export async function executeAuthorization(
     throw new GatewayError(409, "replay_detected", "Prepared authorization request was already consumed");
   }
 
-  // One-shot semantics are fail-closed. Once execution is attempted, the challenge
-  // cannot be retried; callers must prepare a fresh request after any failure.
   record.consumed = true;
 
   if (nowMs >= record.expires_at_ms) {
@@ -119,6 +121,8 @@ export async function executeAuthorization(
       decision: "deny",
       reason: "expired_request",
       verification_ms: 0,
+      opa_ms: 0,
+      policy_decision: "not_evaluated",
       provider_ms: 0,
       total_ms: elapsed(totalStarted, durationNow),
       vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
@@ -154,6 +158,8 @@ export async function executeAuthorization(
       decision: "deny",
       reason,
       verification_ms: verificationMs,
+      opa_ms: 0,
+      policy_decision: "not_evaluated",
       provider_ms: 0,
       total_ms: elapsed(totalStarted, durationNow),
       vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
@@ -170,6 +176,66 @@ export async function executeAuthorization(
   }
 
   const verificationMs = elapsed(verificationStarted, durationNow);
+  const policyInput = buildPolicyInput(record, dependencies.repository, verified);
+  const opaStarted = durationNow();
+  let policyDecision: PolicyDecision;
+  try {
+    policyDecision = await dependencies.policy.evaluate(policyInput);
+  } catch (error) {
+    const opaMs = elapsed(opaStarted, durationNow);
+    dependencies.audit.emit({
+      event: "authorization_executed",
+      timestamp: new Date(nowMs).toISOString(),
+      request_id: record.request_id,
+      task_id: record.task_id,
+      agent_role: record.agent_role,
+      tool: record.request.tool,
+      resource_uri: record.required_permission.resource,
+      operation: record.required_permission.operation,
+      decision: "deny",
+      reason: "policy_unavailable",
+      verification_ms: verificationMs,
+      opa_ms: opaMs,
+      policy_decision: "error",
+      provider_ms: 0,
+      total_ms: elapsed(totalStarted, durationNow),
+      vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
+      chain_depth: verified.hierarchy_depth,
+      disclosed_permission_count: verified.permissions.length,
+      provider: "mock"
+    });
+    if (error instanceof PolicyUnavailableError) {
+      throw new GatewayError(503, "policy_unavailable", "OPA policy evaluation is unavailable");
+    }
+    throw new GatewayError(503, "policy_unavailable", "OPA policy evaluation failed closed");
+  }
+
+  const opaMs = elapsed(opaStarted, durationNow);
+  if (!policyDecision.allow) {
+    dependencies.audit.emit({
+      event: "authorization_executed",
+      timestamp: new Date(nowMs).toISOString(),
+      request_id: record.request_id,
+      task_id: record.task_id,
+      agent_role: record.agent_role,
+      tool: record.request.tool,
+      resource_uri: record.required_permission.resource,
+      operation: record.required_permission.operation,
+      decision: "deny",
+      reason: "policy_denied",
+      verification_ms: verificationMs,
+      opa_ms: opaMs,
+      policy_decision: "deny",
+      policy_version: policyDecision.policy_version,
+      provider_ms: 0,
+      total_ms: elapsed(totalStarted, durationNow),
+      vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
+      chain_depth: verified.hierarchy_depth,
+      disclosed_permission_count: verified.permissions.length,
+      provider: "mock"
+    });
+    throw new GatewayError(403, "policy_denied", "Workflow policy denied the operation");
+  }
 
   const providerStarted = durationNow();
   const execution = await dependencies.executor.execute(record);
@@ -186,8 +252,11 @@ export async function executeAuthorization(
     resource_uri: record.required_permission.resource,
     operation: record.required_permission.operation,
     decision: "allow",
-    reason: "verified_mock_execution",
+    reason: "verified_policy_allowed_mock_execution",
     verification_ms: verificationMs,
+    opa_ms: opaMs,
+    policy_decision: "allow",
+    policy_version: policyDecision.policy_version,
     provider_ms: providerMs,
     total_ms: totalMs,
     vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
@@ -200,6 +269,7 @@ export async function executeAuthorization(
     request_id: record.request_id,
     decision: "allow",
     verified_delegation: verified,
+    policy: policyDecision,
     execution
   };
 }

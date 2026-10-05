@@ -56,7 +56,7 @@ export function createGatewayHttpServer(runtime: GatewayRuntime): Server {
           status: "ok",
           service: "cloud-access-gateway",
           authorization: "delegation-verifier",
-          policy: "not-configured-phase-3",
+          policy: "opa",
           provider: "mock"
         });
         return;
