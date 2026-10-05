@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   PolicyUnavailableError,
+  ProviderUnavailableError,
   VerificationRejectedError,
   VerificationUnavailableError
 } from "../src/errors.ts";
@@ -13,6 +14,7 @@ import {
   prepareAuthorization
 } from "../src/prepare.ts";
 import type {
+  ExecutionPort,
   PolicyDecision,
   PolicyInput,
   PolicyPort,
@@ -97,7 +99,7 @@ function deps(
   audit: InMemoryAuditSink,
   verifier: VerifierPort,
   policy: PolicyPort,
-  executor: MockExecutor,
+  executor: ExecutionPort,
   now: number
 ) {
   return {
@@ -274,5 +276,39 @@ test("OPA outage fails closed and prevents provider execution", async () => {
   if (event?.event === "authorization_executed") {
     assert.equal(event.policy_decision, "error");
     assert.equal(event.decision, "deny");
+  }
+});
+
+
+test("provider outage is reported after authorization and preserves policy allow", async () => {
+  const { store, audit, response, now } = prepared();
+  const verifier = new SuccessVerifier();
+  const policy = new FixedPolicy();
+  const executor: ExecutionPort = {
+    provider: "gitea",
+    async execute() {
+      throw new ProviderUnavailableError("Gitea offline");
+    }
+  };
+
+  await assert.rejects(
+    executeAuthorization(
+      { request_id: response.request_id, signed_vp: "signed.jwt.value" },
+      deps(store, audit, verifier, policy, executor, now)
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "provider_unavailable"
+  );
+
+  assert.equal(policy.calls.length, 1);
+  const event = audit.events.at(-1);
+  if (event?.event === "authorization_executed") {
+    assert.equal(event.decision, "allow");
+    assert.equal(event.policy_decision, "allow");
+    assert.equal(event.provider, "gitea");
+    assert.equal(event.provider_result, "error");
+    assert.equal(event.reason, "provider_unavailable");
   }
 });
