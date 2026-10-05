@@ -22,10 +22,22 @@ jobs:
           node-version: 22.15.0
 
       - name: Rust formatting
-        run: cargo fmt --check
+        run: |
+          cargo fmt --check
+          cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check
 
       - name: Rust regression tests
         run: cargo test
+
+      - name: Delegation Adapter Phase 2A tests
+        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Upload Adapter lockfile candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: delegation-adapter-cargo-lock
+          path: services/delegation-adapter/Cargo.lock
+          if-no-files-found: error
 
       - name: Adapter formatting
         run: cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check
