@@ -21,7 +21,7 @@ pub enum CallerCapability {
     VerifyPresentation,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CallerRecord {
     role: CallerRole,
     token: String,
@@ -84,7 +84,7 @@ impl CallerRecord {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CallerRegistry {
     by_token: HashMap<String, CallerRecord>,
     by_role: HashMap<CallerRole, CallerRecord>,
