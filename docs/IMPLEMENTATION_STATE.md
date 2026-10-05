@@ -1,14 +1,16 @@
 # Implementation State
 
-Last updated: 2026-10-04
+Last updated: 2026-10-05
 
 This file is the primary continuation checkpoint for the thesis PoC. A future implementation session should read it before proposing architectural changes.
 
 ## Current milestone
 
-**Phase 5A — Protected Gitea provider read-only integration: COMPLETE**
+**Phase 5B — Protected Gitea mutations after Verifier + OPA: IN PROGRESS**
 
-Next milestone: **Phase 5B — Protected Gitea mutations after Verifier + OPA**
+Completed checkpoint: **Phase 5B.1 — mutation contracts + real `create_branch`: COMPLETE**
+
+Next checkpoint: **Phase 5B.2 — conditional `create_file` + `update_file`**
 
 ## Source-of-truth repositories
 
@@ -297,6 +299,35 @@ The real smoke verified:
 - a fully authorized + OPA-allowed `update_file` is still blocked by the Phase 5A read-only provider;
 - a second authorized read confirms that the protected file and branch revision did not change.
 
+### Phase 5B.1 — Real Gitea branch mutation
+
+Completed and validated.
+
+Implemented:
+
+- mutable `gitea` Gateway provider mode while preserving `mock` and `gitea-readonly`;
+- Gitea client branch creation through the repository API;
+- base-branch revision resolution before mutation and fail-closed validation that the created branch points to that exact revision;
+- dedicated `GiteaExecutor` for the mutable provider path;
+- Phase 5B.1 provider dispatch limited to `read_file` and `create_branch`; later mutations remain unavailable;
+- defense-in-depth provider restriction to exactly `main -> feature/account-suspension`;
+- structured `create_branch` result with branch, base branch, revision and commit SHA;
+- structured provider-conflict mapping to HTTP 409;
+- unit tests for branch request payloads, response/revision validation, provider dispatch and conflict handling;
+- real smoke path: Orchestrator signed VP -> DelegationVerifier -> OPA -> Gitea `create_branch`;
+- negative real smoke proving an out-of-policy branch request is denied before Gitea and the denied branch is not created;
+- post-create protected read proving the new feature branch starts at the exact hardened baseline revision.
+
+Validated code checkpoint:
+
+`ad89695ede73b0fe4ec1c8692e56dc64ff6e44ba`
+
+GitHub Actions validation run:
+
+`37299268013` — success (`validate`, Phase 1 smoke, Phase 4 smoke, Phase 5A regression smoke and the new `phase5b1-smoke` all green).
+
+Phase 5B.1 deliberately does **not** enable `create_file`, `update_file` or `create_pull_request`. Those remain fail-closed until their own checkpoints.
+
 ## Validation commands
 
 ```bash
@@ -317,16 +348,16 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 5B
+## Next action — Phase 5B.2
 
-Add real Gitea mutations only behind the already validated authorization chain:
+Add conditional file mutations behind the already validated `DelegationVerifier -> OPA -> GiteaExecutor` chain:
 
-- `create_branch` for exactly `main -> feature/account-suspension`;
-- `create_file` using Gateway-generated commit metadata;
-- `update_file` using the current Gitea blob SHA to avoid blind overwrites;
-- `create_pull_request` only for `feature/account-suspension -> main`;
-- preserve `DelegationVerifier -> OPA -> provider` ordering;
-- surface resulting commit/branch/PR identifiers in structured results and audit events;
-- keep `MergePullRequest` unavailable to the automated workflow.
+- implement `create_file` through the Gitea Contents API and reject existing paths instead of overwriting;
+- implement `update_file` using the current file/blob SHA as a precondition so stale state fails instead of blind-overwriting newer content;
+- generate commit metadata inside the Gateway/provider rather than accepting arbitrary Git identity or commit metadata from the caller;
+- keep every write on `feature/account-suspension`; `main` remains non-writable;
+- return structured commit/blob/revision metadata and add provider result identifiers to audit without logging source content;
+- test the restricted `CreateFile` path for `tests/e2e/account-suspension.spec.ts`;
+- add a real Phase 5B.2 smoke showing an authorized file mutation, a post-write read at the new revision, unchanged `main`, and a stale-precondition rejection.
 
-Phase 5B should be split into smaller checkpoints rather than enabling all mutations at once.
+Do not enable `create_pull_request` until Phase 5B.3, and do not implement `MergePullRequest`.
