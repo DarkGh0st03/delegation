@@ -26,6 +26,15 @@ export interface RunnerPhaseResult {
   errors?: string[];
 }
 
+export interface RunnerProjectTestsResult {
+  status: "pass" | "fail";
+  phases: RunnerPhaseResult[];
+}
+
+export interface RunnerResearcherAcceptanceResult extends RunnerPhaseResult {
+  phase: "researcher_acceptance";
+}
+
 export interface RunnerRunResult {
   request_id: string;
   repository: string;
@@ -34,6 +43,8 @@ export interface RunnerRunResult {
   runner_profile: RunnerProfile;
   status: "pass" | "fail";
   phases: RunnerPhaseResult[];
+  project_tests?: RunnerProjectTestsResult;
+  researcher_acceptance?: RunnerResearcherAcceptanceResult;
   log_reference?: string;
 }
 
