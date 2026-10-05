@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: 22.15.0
 
+      - name: Install PoC Node dependencies
+        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+
       - name: Rust formatting
         run: cargo fmt --check
 
@@ -41,6 +44,9 @@ jobs:
 
       - name: Runner Phase 6A contract tests
         run: npm --prefix poc run test -w @thesis/test-runner-controller
+
+      - name: A2A Phase 7 runtime tests
+        run: npm --prefix poc run agent-runtime:test
 
       - name: OPA Phase 4A policy tests
         run: bash poc/scripts/phase4a-policy-test.sh
@@ -756,6 +762,24 @@ jobs:
           kill "$(cat /tmp/test-runner.pid)" 2>/dev/null || true
           docker ps -aq --filter 'name=delegation-runner-' | xargs -r docker rm -f
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
+
+
+  phase7-a2a-smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - name: Install pinned A2A dependencies
+        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+
+      - name: Run deterministic A2A discovery Message Task Artifact smoke
+        run: node --experimental-strip-types poc/scripts/phase7-a2a-smoke.mjs
 
 
   phase5b3-smoke:
