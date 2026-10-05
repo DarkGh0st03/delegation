@@ -4,6 +4,7 @@ use delegation::delegation::authorization::authorization_context::AuthorizationC
 use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::authorization::verified_delegation::VerifiedDelegation;
 use delegation::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
