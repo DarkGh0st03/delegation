@@ -169,7 +169,7 @@ export async function executeAuthorization(
     throw new GatewayError(503, reason, "Delegation verification failed closed");
   }
 
-  const verificationMs = elapsed(verificationStarted, durationNow());
+  const verificationMs = elapsed(verificationStarted, durationNow);
 
   const providerStarted = durationNow();
   const execution = await dependencies.executor.execute(record);
