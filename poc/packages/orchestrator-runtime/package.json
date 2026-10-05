@@ -1,0 +1,13 @@
+{
+  "name": "@thesis/orchestrator-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test ./test/*.test.ts"
+  },
+  "dependencies": {
+    "@thesis/agent-runtime": "0.1.0"
+  },
+  "exports": "./src/index.ts"
+}
