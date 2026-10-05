@@ -135,6 +135,10 @@ export interface ExecuteAuditEvent {
   provider_pull_request_id?: number;
   provider_pull_request_number?: number;
   provider_pull_request_url?: string;
+  runner_tested_commit_sha?: string;
+  runner_profile?: "poc-default";
+  runner_status?: "pass" | "fail";
+  runner_log_reference?: string;
   provider: "mock" | "gitea" | "runner";
 }
 
