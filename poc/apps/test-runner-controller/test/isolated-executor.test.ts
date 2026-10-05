@@ -41,6 +41,18 @@ test("Phase 6B fixed pipeline contains no caller-controlled command", () => {
   );
 });
 
+test("Phase 6B Playwright phase boots the controlled app services before E2E", () => {
+  const command = runnerFixedPhaseCommands.find(
+    (entry) => entry.phase === "playwright_e2e"
+  )?.command;
+  assert.ok(command);
+  assert.match(command, /npm run start -w @iam\/backend/u);
+  assert.match(command, /npm run dev -w @iam\/frontend/u);
+  assert.match(command, /wait_port 3000/u);
+  assert.match(command, /wait_port 5173/u);
+  assert.match(command, /npm run test:e2e/u);
+});
+
 test("isolated executor pins branch head to the exact requested SHA and destroys its container", async () => {
   const calls: Array<{ command: string; args: string[] }> = [];
   let fetchCount = 0;
