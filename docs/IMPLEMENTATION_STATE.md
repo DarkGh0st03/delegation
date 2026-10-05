@@ -8,9 +8,12 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 **Phase 5B — Protected Gitea mutations after Verifier + OPA: IN PROGRESS**
 
-Completed checkpoint: **Phase 5B.1 — mutation contracts + real `create_branch`: COMPLETE**
+Completed checkpoints:
 
-Next checkpoint: **Phase 5B.2 — conditional `create_file` + `update_file`**
+- **Phase 5B.1 — mutation contracts + real `create_branch`: COMPLETE**
+- **Phase 5B.2 — conditional `create_file` + `update_file`: COMPLETE**
+
+Next checkpoint: **Phase 5B.3 — real `create_pull_request` + Phase 5 closure**
 
 ## Source-of-truth repositories
 
@@ -326,7 +329,36 @@ GitHub Actions validation run:
 
 `37299268013` — success (`validate`, Phase 1 smoke, Phase 4 smoke, Phase 5A regression smoke and the new `phase5b1-smoke` all green).
 
-Phase 5B.1 deliberately does **not** enable `create_file`, `update_file` or `create_pull_request`. Those remain fail-closed until their own checkpoints.
+Phase 5B.1 deliberately did **not** enable `create_file`, `update_file` or `create_pull_request`; later mutations remained fail-closed until their own checkpoints.
+
+### Phase 5B.2 — Conditional Gitea file mutations
+
+Completed and validated.
+
+Implemented:
+
+- Gitea Contents API `create_file` through POST with UTF-8 content encoded to base64;
+- existing-path create attempts fail closed as structured provider conflicts instead of overwriting;
+- `update_file` resolves the current protected file snapshot and sends its exact blob SHA as the Gitea update precondition;
+- stale SHA conflicts are mapped to HTTP 409 at the Gateway boundary;
+- Gateway/provider-generated deterministic commit messages; callers cannot supply Git author/committer identity or arbitrary commit metadata;
+- defense-in-depth write restriction to `feature/account-suspension`; `main` remains non-writable;
+- structured create/update results include branch, path, resulting revision/commit SHA and blob SHA; updates also surface the blob SHA used as the precondition;
+- successful Gitea execution audit now records resulting revision/commit/blob identifiers without logging source content;
+- unit tests cover create payloads, duplicate-create conflicts, conditional update payloads, stale preconditions, branch restrictions and audit metadata;
+- real smoke uses root + child Delegation Credentials for Orchestrator, Backend Agent and Test Agent, then exercises `create_branch`, protected read, real `update_file`, post-write read and restricted `create_file`;
+- duplicate `create_file` is rejected and a stale Gitea SHA write is rejected;
+- the smoke verifies that `main` remains exactly at the hardened baseline revision.
+
+Validated code checkpoint:
+
+`63edba4a06391348384d0b9de2088b7a7edb6de5`
+
+GitHub Actions validation run:
+
+`37303157783` — success (`validate`, Phase 1 smoke, Phase 4 smoke, Phase 5A regression smoke, Phase 5B.1 regression smoke and the new `phase5b2-smoke` all green).
+
+Phase 5B.2 deliberately leaves `create_pull_request` disabled until Phase 5B.3. `MergePullRequest` remains absent from the automated workflow.
 
 ## Validation commands
 
@@ -348,16 +380,16 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 5B.2
+## Next action — Phase 5B.3
 
-Add conditional file mutations behind the already validated `DelegationVerifier -> OPA -> GiteaExecutor` chain:
+Close the Gitea provider phase behind the already validated `DelegationVerifier -> OPA -> GiteaExecutor` chain:
 
-- implement `create_file` through the Gitea Contents API and reject existing paths instead of overwriting;
-- implement `update_file` using the current file/blob SHA as a precondition so stale state fails instead of blind-overwriting newer content;
-- generate commit metadata inside the Gateway/provider rather than accepting arbitrary Git identity or commit metadata from the caller;
-- keep every write on `feature/account-suspension`; `main` remains non-writable;
-- return structured commit/blob/revision metadata and add provider result identifiers to audit without logging source content;
-- test the restricted `CreateFile` path for `tests/e2e/account-suspension.spec.ts`;
-- add a real Phase 5B.2 smoke showing an authorized file mutation, a post-write read at the new revision, unchanged `main`, and a stale-precondition rejection.
+- implement `create_pull_request` through the Gitea API;
+- accept only `feature/account-suspension -> main` in the mutable provider as defense in depth in addition to OPA;
+- return structured PR number/ID, URL, head/base and resulting provider metadata;
+- reject duplicate/conflicting PR creation with a structured provider conflict;
+- keep `MergePullRequest` unimplemented and unavailable;
+- add a real Phase 5B.3 smoke that creates the branch, performs controlled file mutation(s), verifies the resulting branch revision, creates the PR only after Verifier + OPA, and includes a deny path before provider execution;
+- after the smoke is green, update the Gateway README and mark Phase 5 COMPLETE.
 
-Do not enable `create_pull_request` until Phase 5B.3, and do not implement `MergePullRequest`.
+Do not start the Controlled Test Runner until Phase 5B.3 is green.
