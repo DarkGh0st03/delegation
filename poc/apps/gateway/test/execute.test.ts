@@ -345,3 +345,40 @@ test("provider conflict is returned after authorization as a structured 409", as
     assert.equal(event.provider_result, "error");
   }
 });
+
+
+test("successful Gitea mutation records resulting provider identifiers without source content", async () => {
+  const { store, audit, response, now } = prepared();
+  const verifier = new SuccessVerifier();
+  const policy = new FixedPolicy();
+  const executor: ExecutionPort = {
+    provider: "gitea",
+    async execute() {
+      return {
+        provider: "gitea",
+        performed: true,
+        tool: "update_file",
+        branch: "feature/account-suspension",
+        path: "apps/backend/src/users/user.service.ts",
+        revision: "commit-after",
+        commit_sha: "commit-after",
+        blob_sha: "blob-after",
+        precondition_blob_sha: "blob-before"
+      };
+    }
+  };
+
+  await executeAuthorization(
+    { request_id: response.request_id, signed_vp: "signed.jwt.value" },
+    deps(store, audit, verifier, policy, executor, now)
+  );
+
+  const event = audit.events.at(-1);
+  assert.equal(event?.event, "authorization_executed");
+  if (event?.event === "authorization_executed") {
+    assert.equal(event.provider_revision, "commit-after");
+    assert.equal(event.provider_commit_sha, "commit-after");
+    assert.equal(event.provider_blob_sha, "blob-after");
+    assert.equal("content" in event, false);
+  }
+});
