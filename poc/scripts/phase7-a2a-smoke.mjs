@@ -46,6 +46,7 @@ try {
 
     assert.equal(result.task.status?.state, TaskState.TASK_STATE_COMPLETED);
     assert.equal(result.task.artifacts.length, 1);
+    assert.equal(result.task.history.length, 0);
     assert.equal(server.executor.executionCount, 1);
 
     const context = server.executor.taskContexts.get(result.task.id);
