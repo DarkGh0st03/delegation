@@ -238,8 +238,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           containerName,
           "--workdir",
           "/workspace",
-          "--mount",
-          `type=bind,src=${resolve(workspace)},dst=/workspace`,
           "--tmpfs",
           "/tmp:rw,nosuid,nodev",
           "--pids-limit",
@@ -260,6 +258,15 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         throw new Error("Could not create isolated Runner container");
       }
       containerCreated = true;
+
+      const copy = await this.#runCommand(
+        "docker",
+        ["cp", `${resolve(workspace)}/.`, `${containerName}:/workspace`],
+        { timeout_ms: this.#config.phase_timeout_ms }
+      );
+      if (copy.exit_code !== 0 || copy.timed_out) {
+        throw new Error("Could not copy exact repository snapshot into Runner container");
+      }
 
       const start = await this.#runCommand(
         "docker",
