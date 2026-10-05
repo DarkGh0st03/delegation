@@ -8,16 +8,18 @@ export type ControlledToolErrorKind =
 export class ControlledToolError extends Error {
   readonly kind: ControlledToolErrorKind;
   readonly statusCode?: number;
+  readonly details?: unknown;
 
   constructor(
     kind: ControlledToolErrorKind,
     message: string,
-    options: { statusCode?: number } = {}
+    options: { statusCode?: number; details?: unknown } = {}
   ) {
     super(message);
     this.name = "ControlledToolError";
     this.kind = kind;
     this.statusCode = options.statusCode;
+    this.details = options.details;
   }
 }
 
@@ -26,6 +28,7 @@ export function controlledToolErrorPayload(error: unknown): {
   error: {
     kind: ControlledToolErrorKind;
     message: string;
+    details?: unknown;
   };
 } {
   if (error instanceof ControlledToolError) {
@@ -33,7 +36,8 @@ export function controlledToolErrorPayload(error: unknown): {
       ok: false,
       error: {
         kind: error.kind,
-        message: error.message
+        message: error.message,
+        ...(error.details === undefined ? {} : { details: error.details })
       }
     };
   }
