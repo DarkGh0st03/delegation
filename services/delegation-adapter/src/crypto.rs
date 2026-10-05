@@ -617,4 +617,84 @@ mod tests {
 
         assert!(error.contains("does not have capability"));
     }
+    #[test]
+    fn reordered_child_subset_keeps_hierarchy_witnesses_aligned() -> Result<(), String> {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry)?;
+
+        let engineer = registry.record_for_role(CallerRole::Engineer)?;
+        runtime.issue_root(
+            engineer,
+            &registry,
+            IssueRootRequest {
+                credential_id: String::from("urn:credential:ordered-root"),
+                delegatee: CallerRole::Orchestrator,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 3600,
+                credential_status: status(6),
+                permissions: vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::UpdateFile),
+                    permission(Operation::CreateFile),
+                ],
+            },
+        )?;
+
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator)?;
+        let child = runtime.issue_child(
+            orchestrator,
+            &registry,
+            IssueChildRequest {
+                parent_credential_id: String::from("urn:credential:ordered-root"),
+                credential_id: String::from("urn:credential:reordered-child"),
+                delegatee: CallerRole::Backend,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 1800,
+                credential_status: status(7),
+                permissions: vec![
+                    permission(Operation::CreateFile),
+                    permission(Operation::ReadFile),
+                ],
+            },
+        )?;
+
+        assert_eq!(
+            child.credential().permissions(),
+            &vec![
+                permission(Operation::CreateFile),
+                permission(Operation::ReadFile),
+            ]
+        );
+
+        let backend = registry.record_for_role(CallerRole::Backend)?;
+        let presentation = runtime.create_presentation(
+            backend,
+            CreatePresentationRequest {
+                credential_id: String::from("urn:credential:reordered-child"),
+                disclosed_permissions: vec![permission(Operation::CreateFile)],
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-reordered-subset"),
+            },
+        )?;
+
+        let gateway = registry.record_for_role(CallerRole::Gateway)?;
+        let verified = runtime.verify_presentation(
+            gateway,
+            &registry,
+            VerifyPresentationRequest {
+                presenter: CallerRole::Backend,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-reordered-subset"),
+                required_permission: permission(Operation::CreateFile),
+                signed_vp: presentation.signed_vp,
+            },
+        )?;
+
+        assert_eq!(
+            verified.permissions(),
+            &vec![permission(Operation::CreateFile)]
+        );
+        Ok(())
+    }
+
 }
