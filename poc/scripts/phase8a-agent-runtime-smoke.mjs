@@ -380,7 +380,15 @@ const denied = await deniedController.run({
 assert.equal(denied.status, "completed");
 assert.equal(denied.controlled_failures.length, 1);
 assert.equal(denied.controlled_failures[0]?.kind, "authorization_denied");
-assert.equal(deniedRuntime.audit.events.at(-1)?.failure_kind, "authorization_denied");
+assert.equal(
+  deniedRuntime.audit.events.some(
+    (event) =>
+      event.event === "tool_result" &&
+      event.outcome === "controlled_failure" &&
+      event.failure_kind === "authorization_denied"
+  ),
+  true
+);
 
 const afterSecurity = await giteaFile(securityPath);
 assert.equal(afterSecurity, beforeSecurity);
