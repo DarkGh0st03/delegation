@@ -30,8 +30,18 @@ test("RunnerClient sends the exact authorized SHA and validates the response bin
           status: "pass",
           phases: [
             { phase: "dependency_install", status: "pass" },
-            { phase: "researcher_acceptance", status: "skipped" }
+            { phase: "researcher_acceptance", status: "pass", passed: 1, failed: 0 }
           ],
+          project_tests: {
+            status: "pass",
+            phases: [{ phase: "dependency_install", status: "pass" }]
+          },
+          researcher_acceptance: {
+            phase: "researcher_acceptance",
+            status: "pass",
+            passed: 1,
+            failed: 0
+          },
           log_reference: "runner-log://abc"
         }),
         { status: 200, headers: { "content-type": "application/json" } }
@@ -45,6 +55,8 @@ test("RunnerClient sends the exact authorized SHA and validates the response bin
   assert.deepEqual(observedBody, request);
   assert.equal(result.tested_commit_sha, request.commit_sha);
   assert.equal(result.status, "pass");
+  assert.equal(result.project_tests?.status, "pass");
+  assert.equal(result.researcher_acceptance?.status, "pass");
 });
 
 test("RunnerClient fails closed on a mismatched tested SHA", async () => {
