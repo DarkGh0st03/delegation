@@ -262,22 +262,15 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
             // issued credentials and filter out the permissions and witnesses to grant
             Some(issuer_vc) => {
                 let issuer_dc = issuer_vc.credential();
-                let mut issuer_permissions = issuer_dc.permissions().clone();
-                let mut issuer_permission_witnesses = issuer_dc.permission_witnesses().clone();
-
-                // Permissions are only available in the VC, not in hierarchy, so no need to check those
-                for permission in &permissions {
-                    if !issuer_permissions.contains(&permission) {
-                        return Err(format!(
-                            "Permission {permission} cannot be granted since it was not included in the previous Delegation Credential"
-                        ));
-                    }
-                }
-
+                let issuer_permissions = issuer_dc.permissions().clone();
+                let issuer_permission_witnesses = issuer_dc.permission_witnesses().clone();
                 let mut issuer_hierarchy = issuer_dc.hierarchy().clone();
+
                 let issuer_permissions_size = issuer_permissions.len();
                 let permissions_size = permissions.len();
-                // We check that the issuer's permissions have the same cardinality of the witnesses
+
+                // The immediate parent's permission witnesses and every ancestor witness vector
+                // are indexed according to the parent's permission order.
                 if issuer_permissions_size != issuer_permission_witnesses.len() {
                     return Err(format!(
                         "Witnesses and permissions have different cardinality [{} - {}]",
@@ -285,8 +278,6 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                         issuer_permission_witnesses.len()
                     ));
                 }
-                // We check that every delegator in the hierarchy has an amount of witnesses that
-                // is equal to the number of permissions that the issuer has
                 for delegator in issuer_hierarchy.iter() {
                     if issuer_permissions_size != delegator.permission_witnesses().len() {
                         return Err(format!(
@@ -297,38 +288,37 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                     }
                 }
 
-                // If the delegation credential does have more permissions than the previous one,
-                // it incurs in an error
                 if permissions_size > issuer_permissions_size {
                     return Err(format!(
                         "Cannot grant more permissions than those included in the previous Delegation Credential [{} < {}]",
                         permissions_size, issuer_permissions_size
                     ));
                 }
-                // Otherwise, if it has fewer permissions than the previous one, we must filter out
-                // the unnecessary permissions and witnesses from the previous one (and its hierarchy)
-                // We assume here that permissions are granted in the same order as the previous ones
-                else if permissions_size < issuer_permissions_size {
-                    let mut removable_indices: Vec<usize> = vec![];
 
-                    // For every issuer permission check whether it is contained in the permissions
-                    // to be delegated. If not, add it to an array of indices to be removed
-                    for (i, issuer_permission) in issuer_permissions.iter().enumerate() {
-                        if !permissions.contains(&issuer_permission) {
-                            removable_indices.push(i);
-                        }
-                    }
+                // Select witnesses in the exact order of the child permission vector.
+                // A child template can legitimately be a subset whose order differs from the
+                // parent credential. Preserving parent order here would misalign hierarchy
+                // witnesses with the child's permissions during selective disclosure.
+                let mut selected_parent_indices = Vec::with_capacity(permissions_size);
+                for permission in &permissions {
+                    let index = issuer_permissions
+                        .iter()
+                        .position(|issuer_permission| issuer_permission == permission)
+                        .ok_or_else(|| {
+                            format!(
+                                "Permission {permission} cannot be granted since it was not included in the previous Delegation Credential"
+                            )
+                        })?;
+                    selected_parent_indices.push(index);
+                }
 
-                    // Remove indices from issuer permissions, issuer witnesses, and delegator
-                    // witnesses contained in hierarchy
-                    for i in removable_indices.iter().rev() {
-                        issuer_permissions.remove(*i);
-                        issuer_permission_witnesses.remove(*i);
+                let issuer_permission_witnesses = selected_parent_indices
+                    .iter()
+                    .map(|index| issuer_permission_witnesses[*index].clone())
+                    .collect::<Vec<String>>();
 
-                        for delegator in issuer_hierarchy.iter_mut() {
-                            delegator.remove_permission_witness(*i)?;
-                        }
-                    }
+                for delegator in issuer_hierarchy.iter_mut() {
+                    delegator.retain_permission_witnesses_in_order(&selected_parent_indices)?;
                 }
 
                 let issuer_credential_status =
