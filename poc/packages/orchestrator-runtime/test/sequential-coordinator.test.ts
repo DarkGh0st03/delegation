@@ -8,16 +8,20 @@ import {
 } from "../src/index.ts";
 
 const branchRevision = "a".repeat(40);
+const backendRevision = "b".repeat(40);
+const frontendRevision = "c".repeat(40);
 
 function artifact(role: SpecializedAgentRole) {
+  const revision =
+    role === "backend" ? backendRevision : frontendRevision;
   return {
     role,
     summary: `${role} completed`,
     files_modified: [],
     files_created: [],
     branch: "feature/account-suspension" as const,
-    revision: branchRevision,
-    commit_sha: branchRevision,
+    revision,
+    commit_sha: revision,
     test_outcome:
       role === "test"
         ? ("pass" as const)
@@ -81,7 +85,7 @@ test("sequential coordinator enforces branch -> Backend -> Frontend -> Test -> P
         pull_request_number: 3,
         head_branch: "feature/account-suspension",
         base_branch: "main",
-        revision: branchRevision
+        revision: frontendRevision
       };
     }
   };
@@ -137,7 +141,7 @@ test("sequential coordinator enforces branch -> Backend -> Frontend -> Test -> P
   assert.equal(result.workflow.pull_request?.number, 3);
   assert.equal(
     result.delegated_tasks.test.artifact.tested_commit_sha,
-    branchRevision
+    frontendRevision
   );
 });
 
