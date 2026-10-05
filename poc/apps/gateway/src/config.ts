@@ -14,6 +14,9 @@ export interface GatewayRuntimeConfig {
   gitea_base_url?: string;
   gitea_gateway_token?: string;
   gitea_timeout_ms: number;
+  runner_url?: string;
+  runner_gateway_token?: string;
+  runner_timeout_ms: number;
 }
 
 function required(name: string): string {
@@ -81,6 +84,17 @@ export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
     gitea_timeout_ms: positiveInteger(
       process.env.GITEA_TIMEOUT_MS ?? "3000",
       "GITEA_TIMEOUT_MS"
+    ),
+    ...((process.env.TEST_RUNNER_URL ?? "").trim().length > 0 &&
+    (process.env.TEST_RUNNER_GATEWAY_TOKEN ?? "").trim().length > 0
+      ? {
+          runner_url: process.env.TEST_RUNNER_URL,
+          runner_gateway_token: process.env.TEST_RUNNER_GATEWAY_TOKEN
+        }
+      : {}),
+    runner_timeout_ms: positiveInteger(
+      process.env.TEST_RUNNER_TIMEOUT_MS ?? "900000",
+      "TEST_RUNNER_TIMEOUT_MS"
     )
   };
 }
