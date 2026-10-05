@@ -193,6 +193,12 @@ export class GiteaExecutor implements ExecutionPort {
         runner_profile: run.runner_profile,
         status: run.status,
         phases: run.phases,
+        ...(run.project_tests === undefined
+          ? {}
+          : { project_tests: run.project_tests }),
+        ...(run.researcher_acceptance === undefined
+          ? {}
+          : { researcher_acceptance: run.researcher_acceptance }),
         ...(run.log_reference === undefined
           ? {}
           : { log_reference: run.log_reference })
