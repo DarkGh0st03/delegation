@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 8A — shared LLM Agent runtime: COMPLETE**
+**Phase 8B — specialized Backend, Frontend and Test Agents: COMPLETE**
 
 Completed checkpoints:
 
@@ -19,8 +19,9 @@ Completed checkpoints:
 - **Phase 6C — researcher-owned acceptance suite: COMPLETE**
 - **Phase 7 — deterministic A2A 1.0 flow: COMPLETE**
 - **Phase 8A — shared LLM Agent runtime and OpenAI Responses API client: COMPLETE**
+- **Phase 8B — specialized Backend, Frontend and Test Agents: COMPLETE**
 
-Next checkpoint: **Phase 8B — specialized Backend, Frontend and Test Agents**
+Next checkpoint: **Phase 8C — authority-boundary tests for model-driven tool attempts**
 
 ## Source-of-truth repositories
 
@@ -519,6 +520,34 @@ GitHub Actions validation run:
 
 `37327753671` — success, including `phase8a-agent-runtime-smoke` and all regression jobs.
 
+### Phase 8B — Specialized Backend, Frontend and Test Agents
+
+Completed and validated.
+
+Implemented:
+
+- frozen role profiles for Backend, Frontend and Test Agents;
+- role-specific system prompts containing the exact writable/read-only target files from the permission matrix;
+- Backend Tool Registry: `read_file`, `update_file`;
+- Frontend Tool Registry: `read_file`, `update_file`;
+- Test Tool Registry: `read_file`, `update_file`, `create_file`, `run_tests`;
+- explicit prompt language that scope text is guidance rather than the authorization boundary;
+- shared specialized-controller factory over the Phase 8A runtime;
+- unit coverage for role prompts, skills and tool exposure;
+- real Adapter/Gateway/Gitea sandbox smoke for all three roles;
+- Backend allowed to modify a delegated backend file and denied a Frontend mutation;
+- Frontend allowed to modify a delegated frontend file and denied a Backend mutation;
+- Test allowed to create the delegated E2E test and denied application-source mutation;
+- child Delegation Credentials are issued through the Orchestrator identity in the smoke, preserving the PoC root-authority rule.
+
+Validated code checkpoint:
+
+`b76645ce9d0b2a00e024297e858c868d37a41725`
+
+GitHub Actions validation run:
+
+`37331735246` — success, including `phase8b-specialized-agents-smoke`, `phase8a-agent-runtime-smoke`, `phase7-a2a-smoke` and all regression jobs.
+
 ## Validation commands
 
 ```bash
@@ -539,16 +568,16 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 8B
+## Next action — Phase 8C
 
-Specialize the shared runtime without changing the authorization architecture:
+Harden and automate the model-driven authority-boundary matrix before Phase 9:
 
-- Backend Agent: expose only `read_file` and `update_file`;
-- Frontend Agent: expose only `read_file` and `update_file`;
-- Test Agent: expose `read_file`, `update_file`, `create_file` and `run_tests`;
-- give each role a dedicated prompt/skill with the frozen target files from the permission matrix;
-- treat prompt scope as guidance only: effective enforcement must remain in Delegation Credentials, Gateway, Verifier and OPA;
-- validate one small sandbox task for each role;
-- validate that Test cannot edit application source and Backend/Frontend cannot cross their delegated file sets.
+- exercise Backend attempts against Frontend and `security/` resources;
+- exercise Frontend attempts against Backend resources;
+- exercise Test `update_file` attempts against application source;
+- include an operation mismatch case where a resource is readable but not writable;
+- prove denied operations do not mutate Gitea and do not start the Controlled Test Runner;
+- keep prompt text unchanged during these tests so denial is attributable to Delegation Credential / Gateway / verifier / OPA enforcement;
+- record the effective model id for every boundary run.
 
-Do not start Phase 9 authority templates/orchestration until the specialized Agent checkpoint is green.
+Do not start Phase 9 authority templates until Phase 8C is green.
