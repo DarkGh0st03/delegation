@@ -107,6 +107,58 @@ export function validateWorkflowArtifact(
     );
   }
 
+  const runnerFields = [
+    raw.tested_commit_sha,
+    raw.runner_profile,
+    raw.project_tests,
+    raw.researcher_acceptance
+  ];
+  if (
+    expectedRole !== "test" &&
+    runnerFields.some((value) => value !== undefined)
+  ) {
+    throw new Error(
+      "Backend and Frontend Artifacts must not contain Runner verdict fields"
+    );
+  }
+
+  let testedCommitSha: string | undefined;
+  let runnerProfile: "poc-default" | undefined;
+  let projectTests: "pass" | "fail" | undefined;
+  let researcherAcceptance: "pass" | "fail" | "skipped" | undefined;
+
+  if (expectedRole === "test" && requireTestPass) {
+    testedCommitSha = commitSha(
+      raw.tested_commit_sha,
+      "Artifact tested_commit_sha"
+    );
+    if (testedCommitSha !== revision) {
+      throw new Error(
+        "Test Artifact tested_commit_sha must match the Artifact revision"
+      );
+    }
+    if (raw.runner_profile !== "poc-default") {
+      throw new Error(
+        "Test Artifact runner_profile must be poc-default"
+      );
+    }
+    runnerProfile = "poc-default";
+
+    if (raw.project_tests !== "pass") {
+      throw new Error(
+        "Test Artifact is not acceptable until project_tests is pass"
+      );
+    }
+    projectTests = "pass";
+
+    if (raw.researcher_acceptance !== "pass") {
+      throw new Error(
+        "Test Artifact is not acceptable until researcher_acceptance is pass"
+      );
+    }
+    researcherAcceptance = "pass";
+  }
+
   if (!Array.isArray(raw.errors)) {
     throw new Error("Artifact errors must be an array");
   }
@@ -129,7 +181,19 @@ export function validateWorkflowArtifact(
     revision,
     commit_sha: commitShaValue,
     test_outcome: testOutcome as AgentArtifactPayload["test_outcome"],
-    errors: []
+    errors: [],
+    ...(testedCommitSha === undefined
+      ? {}
+      : { tested_commit_sha: testedCommitSha }),
+    ...(runnerProfile === undefined
+      ? {}
+      : { runner_profile: runnerProfile }),
+    ...(projectTests === undefined
+      ? {}
+      : { project_tests: projectTests }),
+    ...(researcherAcceptance === undefined
+      ? {}
+      : { researcher_acceptance: researcherAcceptance })
   };
 
   if (raw.model_id !== undefined) {
