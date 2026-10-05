@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 6 — Controlled Test Runner + acceptance: IN PROGRESS**
+**Phase 6 — Controlled Test Runner + independent acceptance: COMPLETE**
 
 Completed checkpoints:
 
@@ -16,8 +16,9 @@ Completed checkpoints:
 - **Phase 5B.3 — real `create_pull_request` + provider closure: COMPLETE**
 - **Phase 6A — Controlled Test Runner contract: COMPLETE**
 - **Phase 6B — exact-SHA isolated execution + Gateway integration: COMPLETE**
+- **Phase 6C — researcher-owned acceptance suite: COMPLETE**
 
-Next checkpoint: **Phase 6C — researcher-owned acceptance suite**
+Next checkpoint: **Phase 7 — deterministic A2A 1.0 flow, without LLM reasoning**
 
 ## Source-of-truth repositories
 
@@ -439,6 +440,31 @@ GitHub Actions validation run:
 
 Phase 6B does **not** include the researcher-owned acceptance suite. That is the next isolated checkpoint.
 
+### Phase 6C — Researcher-owned acceptance suite
+
+Completed and validated.
+
+Implemented:
+
+- researcher-owned acceptance tests under `poc/runner/acceptance/`, outside the protected `iam-console-poc` repository and outside specialized Agent write authority;
+- acceptance coverage split into explicit criteria for `ACTIVE -> SUSPENDED`, `SUSPENDED -> ACTIVE`, duplicate-transition rejection with HTTP 409, and frontend state/action behavior;
+- acceptance files are mounted into the ephemeral Runner container as a read-only bind mount, independently from the exact application snapshot fetched from Gitea;
+- the fixed project pipeline remains unchanged and Phase 6B regression jobs explicitly run with researcher acceptance disabled;
+- normal Runner operation enables researcher acceptance by default;
+- Runner output now separates `project_tests` from `researcher_acceptance`, while the overall result includes both verdicts;
+- the Gateway parses and propagates both verdicts and records separate audit status fields;
+- CI verifies the researcher-owned source remains unchanged and that the execution container is destroyed after the run.
+
+The hardened baseline intentionally does not contain the Account Suspension feature. Therefore the Phase 6C smoke expects the baseline project tests to pass while the independent researcher acceptance verdict fails. The CI job itself succeeds only when this separation is observed. Later, the Agent-produced feature branch must make both verdicts pass.
+
+Validated code checkpoint:
+
+`2956a9c5c36eff0203d8efa3c178dc25e69a3cd7`
+
+GitHub Actions validation run:
+
+`37317272950` — success. `validate`, `phase6c-acceptance-smoke`, both Phase 6B regression smoke jobs, all Phase 5 regression smoke jobs, Phase 4 smoke and Phase 1 smoke are green.
+
 ## Validation commands
 
 ```bash
@@ -459,13 +485,17 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 6C
+## Next action — Phase 7
 
-Add the researcher-owned acceptance layer without giving Agents write authority over it:
+Implement deterministic A2A 1.0 interoperability before adding any LLM reasoning:
 
-- keep acceptance tests under `poc/runner/acceptance/`, outside the protected application repository and outside Agent write authority;
-- cover the Account Suspension acceptance criteria defined by the PoC, including valid suspend/reactivate transitions, repeated-transition rejection and essential frontend behavior;
-- preserve the fixed Runner contract and exact-SHA execution model from Phase 6B;
-- keep caller-controlled shell/command input impossible;
-- extend structured Runner results so the independent acceptance outcome is distinguishable from project-owned tests;
-- do not start A2A Phase 7 until the Phase 6C checkpoint is validated.
+- verify the current official JavaScript A2A SDK/API surface before coding;
+- introduce the shared Agent runtime with A2A server, task context, artifact builder and task lifecycle;
+- publish Agent Cards for Backend, Frontend and Test Agents with the required thesis Delegation Evidence extension URI;
+- carry Delegation Evidence through A2A message extensions/metadata and keep credential, VP, witness and secret material out of A2A payloads;
+- implement deterministic Message -> Task -> Artifact handling for the three specialized Agents;
+- have the Orchestrator use A2A discovery and SendMessage without making generative planning decisions yet;
+- add the incompatible-Agent-Card negative case: a protected task must not select an Agent that does not advertise the required extension;
+- keep authority enforcement in the existing Delegation Credential -> Gateway -> Verifier -> OPA path; A2A transports task context, not authorization authority.
+
+Do not start Phase 8 LLM Agent behavior until discovery, Message, Task, Artifact and extension compatibility are validated end to end.
