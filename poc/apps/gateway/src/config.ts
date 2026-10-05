@@ -1,6 +1,6 @@
 import type { GatewayPrepareConfig } from "./types.ts";
 
-export type GatewayProviderMode = "mock" | "gitea-readonly";
+export type GatewayProviderMode = "mock" | "gitea-readonly" | "gitea";
 
 export interface GatewayRuntimeConfig {
   bind_host: string;
@@ -41,8 +41,8 @@ function bindAddress(value: string): { host: string; port: number } {
 }
 
 function providerMode(value: string): GatewayProviderMode {
-  if (value === "mock" || value === "gitea-readonly") return value;
-  throw new Error("GATEWAY_PROVIDER_MODE must be mock or gitea-readonly");
+  if (value === "mock" || value === "gitea-readonly" || value === "gitea") return value;
+  throw new Error("GATEWAY_PROVIDER_MODE must be mock, gitea-readonly or gitea");
 }
 
 export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
@@ -72,7 +72,7 @@ export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
       "OPA_TIMEOUT_MS"
     ),
     provider_mode: mode,
-    ...(mode === "gitea-readonly"
+    ...(mode !== "mock"
       ? {
           gitea_base_url: required("GITEA_BASE_URL"),
           gitea_gateway_token: required("GITEA_GATEWAY_TOKEN")
