@@ -6,9 +6,9 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 3 — Cloud Access Gateway core: COMPLETE**
+**Phase 4A — OPA contextual workflow policy: COMPLETE**
 
-Next milestone: **Phase 4 — OPA contextual workflow policy**
+Next milestone: **Phase 4B — Gateway OPA client, fail-closed enforcement and OPA metrics**
 
 ## Source-of-truth repositories
 
@@ -202,6 +202,28 @@ Validation run for the final Phase 3 checkpoint:
 
 OPA is still deliberately absent from the allow path. Phase 4 inserts OPA after successful delegation verification and before the mock executor, so Phase 5 can connect Gitea only after both authorization layers are active.
 
+### Phase 4A — OPA contextual workflow policy
+
+Completed.
+
+Implemented under `poc/opa/`:
+
+- Rego v1 default-deny policy;
+- explicit policy input contract based on Gateway-owned prepared request state plus `VerifiedDelegation`;
+- controlled repository enforcement for `gitea.local/thesis/iam-console-poc`;
+- file operations restricted to `feature/account-suspension`;
+- feature branch creation restricted to `main -> feature/account-suspension`;
+- Pull Request creation restricted to `feature/account-suspension -> main`;
+- `RunTests` restricted to the feature branch and fixed `poc-default` profile;
+- `MergePullRequest` and unknown tools denied by default;
+- missing verified-delegation context denied;
+- tool/operation mismatch denied;
+- policy version exposed through `data.thesis.gateway.decision`.
+
+This policy deliberately does not duplicate the exact file-level Delegation Credential permission matrix.
+
+Phase 4B will connect this policy to the Gateway after verifier success and before the existing mock executor.
+
 ## Validation commands
 
 ```bash
@@ -209,6 +231,7 @@ cargo test
 cargo fmt --check
 npm --prefix poc run check:scaffold
 npm --prefix poc run gateway:test
+bash poc/scripts/phase4a-policy-test.sh
 ```
 
 Full pre-Gateway trust closure, when a local Anvil-capable environment is available:
@@ -221,19 +244,15 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 4
+## Next action — Phase 4B
 
-Insert OPA into the Gateway allow path while the executor is still a mock:
+Connect the tested Rego policy to the Gateway while the executor remains a mock:
 
-- define the Rego input contract from the verified server-side request context;
-- implement default-deny workflow policy;
-- deny writes to `main`;
-- restrict protected file operations to `feature/account-suspension`;
-- allow Pull Request creation only from `feature/account-suspension` to `main`;
-- deny automated merge;
-- constrain `RunTests` to the feature branch;
-- treat OPA errors/timeouts as fail-closed;
-- add `opa_ms` and policy decision fields to audit events;
+- add an OPA HTTP client that queries `data.thesis.gateway.decision`;
+- build policy input only from server-side prepared state, repository configuration and `VerifiedDelegation`;
+- call OPA only after successful delegation verification;
+- call the executor only after OPA returns `allow: true`;
+- treat timeout, malformed response, non-2xx response and OPA outage as fail-closed;
+- record `opa_ms`, policy allow/deny and policy version in the audit event;
+- add Gateway unit/integration tests and a real Adapter -> Gateway -> OPA -> MockExecutor smoke test;
 - keep Gitea disconnected until Phase 5.
-
-Do not duplicate the exact file-level Delegation Credential permission matrix in Rego.
