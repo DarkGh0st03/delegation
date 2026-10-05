@@ -2,6 +2,7 @@ import { performance } from "node:perf_hooks";
 import {
   GatewayError,
   PolicyUnavailableError,
+  ProviderConflictError,
   ProviderNotFoundError,
   ProviderOperationUnavailableError,
   ProviderUnavailableError,
@@ -277,6 +278,10 @@ export async function executeAuthorization(
     if (error instanceof ProviderNotFoundError) {
       dependencies.audit.emit({ ...common, reason: "provider_not_found" });
       throw new GatewayError(404, "provider_not_found", error.message);
+    }
+    if (error instanceof ProviderConflictError) {
+      dependencies.audit.emit({ ...common, reason: "provider_conflict" });
+      throw new GatewayError(409, "provider_conflict", error.message);
     }
     if (error instanceof ProviderOperationUnavailableError) {
       dependencies.audit.emit({ ...common, reason: "provider_operation_unavailable" });
