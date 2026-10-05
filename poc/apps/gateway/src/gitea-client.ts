@@ -1,4 +1,5 @@
 import {
+  ProviderConflictError,
   ProviderNotFoundError,
   ProviderUnavailableError
 } from "./errors.ts";
@@ -35,6 +36,13 @@ export interface GiteaFileSnapshot {
   size: number;
   content: string;
   encoding: "utf-8";
+}
+
+export interface GiteaCreatedBranch {
+  name: string;
+  base_branch: string;
+  base_revision: string;
+  commit_sha: string;
 }
 
 function object(value: unknown, label: string): JsonObject {
@@ -81,14 +89,15 @@ export class GiteaClient {
     return `${this.#baseUrl}/api/v1/repos/${encodeURIComponent(this.#owner)}/${encodeURIComponent(this.#repository)}${suffix}`;
   }
 
-  async #json(url: string): Promise<unknown> {
+  async #requestJson(url: string, init: RequestInit = {}): Promise<unknown> {
     let response: Response;
     try {
       response = await this.#fetch(url, {
-        method: "GET",
+        ...init,
         headers: {
           authorization: `token ${this.#token}`,
-          accept: "application/json"
+          accept: "application/json",
+          ...(init.headers as Record<string, string> | undefined)
         },
         signal: AbortSignal.timeout(this.#timeoutMs)
       });
@@ -102,6 +111,11 @@ export class GiteaClient {
     if (response.status === 404) {
       throw new ProviderNotFoundError("Requested Gitea repository resource was not found");
     }
+    if (response.status === 409) {
+      throw new ProviderConflictError(
+        "Gitea rejected the operation because the repository state conflicts"
+      );
+    }
     if (!response.ok) {
       throw new ProviderUnavailableError(`Gitea returned HTTP ${response.status}`);
     }
@@ -111,6 +125,10 @@ export class GiteaClient {
     } catch {
       throw new ProviderUnavailableError("Gitea returned invalid JSON");
     }
+  }
+
+  async #json(url: string): Promise<unknown> {
+    return this.#requestJson(url, { method: "GET" });
   }
 
   async getRepositoryMetadata(): Promise<GiteaRepositoryMetadata> {
@@ -148,6 +166,41 @@ export class GiteaClient {
     return {
       name: returnedName,
       commit_sha: requiredString(commit.id, "branch.commit.id")
+    };
+  }
+
+  async createBranch(baseBranch: string, branch: string): Promise<GiteaCreatedBranch> {
+    const base = await this.getBranchMetadata(baseBranch);
+    const body = object(
+      await this.#requestJson(this.#repoApi("/branches"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          new_branch_name: branch,
+          old_branch_name: baseBranch
+        })
+      }),
+      "Gitea create branch response"
+    );
+
+    const returnedName = requiredString(body.name, "branch.name");
+    if (returnedName !== branch) {
+      throw new ProviderUnavailableError("Gitea returned an unexpected created branch");
+    }
+
+    const commit = object(body.commit, "Gitea created branch commit");
+    const commitSha = requiredString(commit.id, "branch.commit.id");
+    if (commitSha !== base.commit_sha) {
+      throw new ProviderUnavailableError(
+        "Created Gitea branch does not point to the requested base revision"
+      );
+    }
+
+    return {
+      name: returnedName,
+      base_branch: baseBranch,
+      base_revision: base.commit_sha,
+      commit_sha: commitSha
     };
   }
 
