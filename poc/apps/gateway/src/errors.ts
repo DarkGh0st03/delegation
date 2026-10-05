@@ -23,3 +23,10 @@ export class VerificationUnavailableError extends Error {
     this.name = "VerificationUnavailableError";
   }
 }
+
+export class PolicyUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PolicyUnavailableError";
+  }
+}

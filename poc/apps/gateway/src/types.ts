@@ -177,3 +177,28 @@ export interface ExecuteAuthorizationResponse {
   verified_delegation: VerifiedDelegation;
   execution: MockExecutionResult;
 }
+
+export interface PolicyInput {
+  request_id: string;
+  task_id: string;
+  agent_role: AgentRole;
+  tool: ToolName;
+  arguments: Record<string, unknown>;
+  required_permission: Permission;
+  repository: GatewayRepositoryConfig;
+  verified_delegation: {
+    presenter_id: string;
+    credential_id: string;
+    issuer_id: string;
+    hierarchy_depth: number;
+  };
+}
+
+export interface PolicyDecision {
+  allow: boolean;
+  policy_version: string;
+}
+
+export interface PolicyPort {
+  evaluate(input: PolicyInput): Promise<PolicyDecision>;
+}

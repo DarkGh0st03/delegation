@@ -6,6 +6,8 @@ export interface GatewayRuntimeConfig {
   prepare: GatewayPrepareConfig;
   adapter_url: string;
   adapter_gateway_token: string;
+  opa_url: string;
+  opa_timeout_ms: number;
 }
 
 function required(name: string): string {
@@ -50,6 +52,11 @@ export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
       }
     },
     adapter_url: required("DELEGATION_ADAPTER_URL"),
-    adapter_gateway_token: required("ADAPTER_CALLER_GATEWAY")
+    adapter_gateway_token: required("ADAPTER_CALLER_GATEWAY"),
+    opa_url: required("OPA_URL"),
+    opa_timeout_ms: positiveInteger(
+      process.env.OPA_TIMEOUT_MS ?? "2000",
+      "OPA_TIMEOUT_MS"
+    )
   };
 }
