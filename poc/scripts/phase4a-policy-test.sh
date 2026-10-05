@@ -7,7 +7,7 @@ OPA_IMAGE="${OPA_IMAGE:-openpolicyagent/opa:1.21.1}"
 echo "Checking Rego formatting..."
 docker run --rm \
   -v "$ROOT_DIR/poc/opa:/policy:ro" \
-  "$OPA_IMAGE" fmt --check /policy
+  "$OPA_IMAGE" fmt --fail /policy/policy.rego /policy/policy_test.rego
 
 echo "Running Phase 4A OPA policy tests..."
 docker run --rm \
