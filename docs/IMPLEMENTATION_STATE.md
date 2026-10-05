@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 8C — model-driven authority-boundary validation: COMPLETE**
+**Phase 9A — deterministic Orchestrator authority templates: COMPLETE**
 
 Completed checkpoints:
 
@@ -21,8 +21,9 @@ Completed checkpoints:
 - **Phase 8A — shared LLM Agent runtime and OpenAI Responses API client: COMPLETE**
 - **Phase 8B — specialized Backend, Frontend and Test Agents: COMPLETE**
 - **Phase 8C — model-driven authority-boundary validation: COMPLETE**
+- **Phase 9A — deterministic Orchestrator authority templates: COMPLETE**
 
-Next checkpoint: **Phase 9A — deterministic Orchestrator authority templates**
+Next checkpoint: **Phase 9B — sequential delegated A2A workflow**
 
 ## Source-of-truth repositories
 
@@ -576,6 +577,32 @@ GitHub Actions validation run:
 
 `37333310653` — success, including `phase8c-authority-boundaries-smoke` and all previous regression jobs.
 
+### Phase 9A — Deterministic Orchestrator authority templates
+
+Completed and validated.
+
+Implemented:
+
+- new `@thesis/orchestrator-runtime` workspace package;
+- exact frozen `DC_Backend`, `DC_Frontend` and `DC_Test` permission templates;
+- canonical ResourceUri generation aligned by tests with the Gateway;
+- Engineer -> Orchestrator root authority as the exact deduplicated union of all child templates plus `CreateBranch` and `CreatePullRequest`;
+- validated root size of 30 unique permissions;
+- deterministic role/skill -> template resolution with strict rejection of unexpected fields such as model-supplied `permissions`;
+- Software Engineer bootstrap CLI that cannot accept an arbitrary permission list;
+- identity-bound Orchestrator child issuance client that sends only the selected fixed template to the Adapter;
+- exact-equality tests against the frozen permission matrix;
+- real Adapter smoke issuing the three child credentials and validating their returned permission arrays: Backend 12, Frontend 9, Test 20;
+- existing Rust non-escalation tests remain green for child permissions outside the parent authority.
+
+Validated code checkpoint:
+
+`851ee4fc643112200e2a20f87342ca42c7d843f3`
+
+GitHub Actions validation run:
+
+`37335879534` — success, including `phase9a-authority-templates-smoke` and every previous regression job.
+
 ## Validation commands
 
 ```bash
@@ -596,16 +623,18 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 9A
+## Next action — Phase 9B
 
-Introduce deterministic authority decomposition for the Orchestrator:
+Coordinate the fixed Account Suspension workflow sequentially through A2A:
 
-- provide the PoC Software Engineer entrypoint used to bootstrap the fixed Account Suspension workflow;
-- define the Engineer -> Orchestrator root authority as the exact union of the frozen delegated permission matrix plus the Orchestrator workflow permissions;
-- encode static `DC_Backend`, `DC_Frontend` and `DC_Test` permission templates in code;
-- map selected role/skill to a fixed permission template; the LLM must never supply arbitrary permission arrays;
-- issue child Delegation Credentials through the identity-bound Orchestrator Adapter capability;
-- add exact-equality tests between every template and the frozen permission matrix;
-- add escalation tests proving a role cannot receive a permission outside its template or outside the parent authority.
+- create `feature/account-suspension` through the Orchestrator's protected Gateway authority;
+- perform A2A Agent Card discovery and require the delegated-authorization extension;
+- use a deterministic task plan selecting Backend -> Frontend -> Test;
+- issue the corresponding fixed child DC immediately before each delegated task;
+- send A2A Messages carrying only the appropriate Delegation Evidence;
+- wait for Task completion and validate the returned Artifact before moving to the next role;
+- require the Test Agent / Runner outcome to be acceptable before creating the Pull Request;
+- create the Pull Request only in the frozen `feature/account-suspension -> main` direction;
+- expose no merge tool and perform no automated merge.
 
-Do not start Phase 9B A2A task sequencing until the Phase 9A authority-template checkpoint is green.
+Do not start Phase 10 positive E2E until the full sequential Orchestrator workflow is observable and green.
