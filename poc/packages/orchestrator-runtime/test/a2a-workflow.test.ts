@@ -152,7 +152,7 @@ test("child authority is issued immediately before the protected Backend A2A tas
   );
 });
 
-test("role runner rejects an Artifact for a different revision", async () => {
+test("role runner accepts a newer Artifact revision produced by the delegated task", async () => {
   const issuer: ChildAuthorityIssuerPort = {
     async issueSpecializedChild() {
       return {
@@ -178,32 +178,30 @@ test("role runner rejects an Artifact for a different revision", async () => {
     a2a
   });
 
-  await assert.rejects(
-    () =>
-      runner.issueAndRun({
-        role: "backend",
-        parent_credential_id: "urn:phase9b:root",
-        credential_id: "urn:phase9b:backend",
-        valid_from: "2026-10-05T00:00:00Z",
-        validity_seconds: 1800,
-        credential_status: {
-          type: "BitstringStatusListEntry",
-          statusPurpose: "revocation",
-          statusListIndex: "9301",
-          statusListCredential:
-            "https://status.example/lists/phase9b"
-        },
-        agent_base_url: "http://backend.local",
-        subtask: {
-          subtask_id: "backend-task",
-          instruction: "Validate Backend delegation.",
-          branch: "feature/account-suspension",
-          relevant_paths: []
-        },
-        expected_revision: revision
-      }),
-    /does not match expected branch revision/u
-  );
+  const result = await runner.issueAndRun({
+    role: "backend",
+    parent_credential_id: "urn:phase9b:root",
+    credential_id: "urn:phase9b:backend",
+    valid_from: "2026-10-05T00:00:00Z",
+    validity_seconds: 1800,
+    credential_status: {
+      type: "BitstringStatusListEntry",
+      statusPurpose: "revocation",
+      statusListIndex: "9301",
+      statusListCredential:
+        "https://status.example/lists/phase9b"
+    },
+    agent_base_url: "http://backend.local",
+    subtask: {
+      subtask_id: "backend-task",
+      instruction: "Validate Backend delegation.",
+      branch: "feature/account-suspension",
+      relevant_paths: []
+    },
+    expected_revision: revision
+  });
+
+  assert.equal(result.artifact.revision, "c".repeat(40));
 });
 
 test("role runner rejects a non-completed A2A Task before accepting its Artifact", async () => {
