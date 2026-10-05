@@ -135,7 +135,7 @@ export interface ExecuteAuditEvent {
   provider_pull_request_id?: number;
   provider_pull_request_number?: number;
   provider_pull_request_url?: string;
-  provider: "mock" | "gitea";
+  provider: "mock" | "gitea" | "runner";
 }
 
 export type AuditEvent = PrepareAuditEvent | ExecuteAuditEvent;
@@ -236,16 +236,46 @@ export interface GiteaCreatePullRequestExecutionResult {
   revision: string;
 }
 
+export interface RunnerPhaseExecutionResult {
+  phase:
+    | "dependency_install"
+    | "typecheck"
+    | "backend_tests"
+    | "frontend_tests"
+    | "build"
+    | "playwright_e2e"
+    | "researcher_acceptance";
+  status: "pass" | "fail" | "skipped";
+  passed?: number;
+  failed?: number;
+  errors?: string[];
+}
+
+export interface RunnerExecutionResult {
+  provider: "runner";
+  performed: true;
+  tool: "run_tests";
+  branch: string;
+  revision: string;
+  tested_commit_sha: string;
+  runner_profile: "poc-default";
+  status: "pass" | "fail";
+  phases: RunnerPhaseExecutionResult[];
+  log_reference?: string;
+}
+
 export type ExecutionResult =
   | MockExecutionResult
   | GiteaReadFileExecutionResult
   | GiteaCreateBranchExecutionResult
   | GiteaCreateFileExecutionResult
   | GiteaUpdateFileExecutionResult
-  | GiteaCreatePullRequestExecutionResult;
+  | GiteaCreatePullRequestExecutionResult
+  | RunnerExecutionResult;
 
 export interface ExecutionPort {
   readonly provider: "mock" | "gitea";
+  providerFor?(record: PreparedRequestRecord): "mock" | "gitea" | "runner";
   execute(record: PreparedRequestRecord): Promise<ExecutionResult>;
 }
 
