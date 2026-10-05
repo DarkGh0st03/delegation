@@ -5,6 +5,7 @@ import type {
   ExecutionResult,
   GiteaCreateBranchExecutionResult,
   GiteaCreateFileExecutionResult,
+  GiteaCreatePullRequestExecutionResult,
   GiteaReadFileExecutionResult,
   GiteaUpdateFileExecutionResult,
   PreparedRequestRecord
@@ -74,6 +75,34 @@ export class GiteaExecutor implements ExecutionPort {
       return result;
     }
 
+    if (record.request.tool === "create_pull_request") {
+      const { head_branch, base_branch, title, body } = record.request.arguments;
+      if (head_branch !== FEATURE_BRANCH || base_branch !== MAIN_BRANCH) {
+        throw new ProviderOperationUnavailableError(
+          "Phase 5B.3 Gitea provider only creates feature/account-suspension -> main pull requests"
+        );
+      }
+
+      const created = await this.#client.createPullRequest(
+        head_branch,
+        base_branch,
+        title,
+        body
+      );
+      const result: GiteaCreatePullRequestExecutionResult = {
+        provider: "gitea",
+        performed: true,
+        tool: "create_pull_request",
+        pull_request_id: created.id,
+        pull_request_number: created.number,
+        ...(created.url === undefined ? {} : { url: created.url }),
+        head_branch: created.head_branch,
+        base_branch: created.base_branch,
+        revision: created.head_revision
+      };
+      return result;
+    }
+
     if (record.request.tool === "create_file") {
       const { branch, path, content } = record.request.arguments;
       requireFeatureBranch(branch);
@@ -123,7 +152,7 @@ export class GiteaExecutor implements ExecutionPort {
     }
 
     throw new ProviderOperationUnavailableError(
-      `${record.request.tool} is not enabled in the current Phase 5B.2 Gitea provider mode`
+      `${record.request.tool} is not enabled in the current Phase 5B.3 Gitea provider mode`
     );
   }
 }
