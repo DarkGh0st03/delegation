@@ -45,7 +45,7 @@ jobs:
       - name: Runner Phase 6A contract tests
         run: npm --prefix poc run test -w @thesis/test-runner-controller
 
-      - name: A2A Phase 7 runtime tests
+      - name: Agent runtime Phase 7 and 8A tests
         run: npm --prefix poc run agent-runtime:test
 
       - name: OPA Phase 4A policy tests
@@ -780,6 +780,108 @@ jobs:
 
       - name: Run deterministic A2A discovery Message Task Artifact smoke
         run: node --experimental-strip-types poc/scripts/phase7-a2a-smoke.mjs
+
+
+  phase8a-agent-runtime-smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ADAPTER_CALLER_ENGINEER: engineer-phase8a-secret
+      ADAPTER_CALLER_GATEWAY: gateway-phase8a-secret
+      ADAPTER_CALLER_ORCHESTRATOR: orchestrator-phase8a-secret
+      ADAPTER_CALLER_BACKEND: backend-phase8a-secret
+      ADAPTER_CALLER_FRONTEND: frontend-phase8a-secret
+      ADAPTER_CALLER_TEST: test-phase8a-secret
+      ADAPTER_ID_ENGINEER: did:thesis:engineer
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_ID_ORCHESTRATOR: did:thesis:orchestrator
+      ADAPTER_ID_BACKEND: did:thesis:backend-agent
+      ADAPTER_ID_FRONTEND: did:thesis:frontend-agent
+      ADAPTER_ID_TEST: did:thesis:test-agent
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      DELEGATION_ADAPTER_URL: http://127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GATEWAY_PROVIDER_MODE: gitea
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+      GITEA_TIMEOUT_MS: "3000"
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: "2000"
+      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - name: Install Phase 8A Node dependencies
+        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+
+      - name: Generate local infrastructure environment
+        run: node poc/scripts/init-local-env.mjs --force
+
+      - name: Start Gitea and OPA
+        run: docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d gitea opa
+
+      - name: Bootstrap protected Gitea repository
+        run: bash poc/scripts/bootstrap-gitea.sh
+
+      - name: Create controlled feature-branch fixture
+        run: bash poc/scripts/phase5a-create-fixture.sh
+
+      - name: Build Delegation Adapter
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Start Delegation Adapter
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/adapter.log 2>&1 &
+          echo $! > /tmp/adapter.pid
+
+      - name: Start Gateway with mutable Gitea provider
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_BASE_URL="$GITEA_HOST_BASE_URL"
+          export GATEWAY_PROVIDER_MODE=gitea
+          export DELEGATION_ADAPTER_URL=http://127.0.0.1:8090
+          export OPA_URL=http://127.0.0.1:8181
+          npm --prefix poc run gateway:start > /tmp/gateway.log 2>&1 &
+          echo $! > /tmp/gateway.pid
+
+      - name: Run shared LLM Agent runtime smoke with scripted model
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
+          node poc/scripts/phase8a-agent-runtime-smoke.mjs
+
+      - name: Show Phase 8A logs on failure
+        if: failure()
+        run: |
+          echo "=== Adapter ==="
+          cat /tmp/adapter.log || true
+          echo "=== Gateway ==="
+          cat /tmp/gateway.log || true
+          echo "=== Gitea ==="
+          docker logs delegation-poc-gitea || true
+          echo "=== OPA ==="
+          docker logs delegation-poc-opa || true
+
+      - name: Stop Phase 8A services
+        if: always()
+        run: |
+          kill "$(cat /tmp/gateway.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/adapter.pid)" 2>/dev/null || true
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
 
 
   phase5b3-smoke:
