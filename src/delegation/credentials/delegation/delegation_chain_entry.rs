@@ -93,6 +93,30 @@ impl DelegationChainEntry {
         self.permission_witnesses.remove(i);
         Ok(())
     }
+
+    /// Retains and reorders permission witnesses according to indices from the
+    /// parent credential's permission array.
+    ///
+    /// This is required when a child delegates a subset whose order differs
+    /// from the parent's order: every hierarchy witness must remain aligned
+    /// with the child permission vector used during verification.
+    pub fn retain_permission_witnesses_in_order(
+        &mut self,
+        indices: &[usize],
+    ) -> Result<(), String> {
+        let mut selected = Vec::with_capacity(indices.len());
+        for index in indices {
+            let witness = self.permission_witnesses.get(*index).cloned().ok_or_else(|| {
+                format!(
+                    "Permission witness index {} is out of bounds for hierarchy entry {}",
+                    index, self.id
+                )
+            })?;
+            selected.push(witness);
+        }
+        self.permission_witnesses = selected;
+        Ok(())
+    }
 }
 
 impl DelegationEvidence for DelegationChainEntry {
