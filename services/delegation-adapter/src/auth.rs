@@ -1,7 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CallerRole {
     Engineer,
@@ -12,7 +12,7 @@ pub enum CallerRole {
     Gateway,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CallerCapability {
     IssueRoot,
@@ -43,7 +43,9 @@ impl CallerRecord {
             return Err(String::from("Adapter caller identity cannot be empty"));
         }
         if capabilities.is_empty() {
-            return Err(String::from("Adapter caller must have at least one capability"));
+            return Err(String::from(
+                "Adapter caller must have at least one capability",
+            ));
         }
 
         Ok(Self {
@@ -114,11 +116,14 @@ impl CallerRegistry {
             .ok_or_else(|| String::from("Invalid adapter caller credential"))
     }
 
-    pub fn identity_for_role(&self, role: CallerRole) -> Result<&str, String> {
+    pub fn record_for_role(&self, role: CallerRole) -> Result<&CallerRecord, String> {
         self.by_role
             .get(&role)
-            .map(|record| record.identity_id())
-            .ok_or_else(|| format!("No adapter identity configured for role {role:?}"))
+            .ok_or_else(|| format!("No adapter caller configured for role {role:?}"))
+    }
+
+    pub fn identity_for_role(&self, role: CallerRole) -> Result<&str, String> {
+        Ok(self.record_for_role(role)?.identity_id())
     }
 }
 
@@ -145,7 +150,10 @@ mod tests {
                 CallerRole::Orchestrator,
                 String::from("orchestrator-secret"),
                 String::from("did:thesis:orchestrator"),
-                vec![CallerCapability::IssueChild, CallerCapability::CreatePresentation],
+                vec![
+                    CallerCapability::IssueChild,
+                    CallerCapability::CreatePresentation,
+                ],
             )
             .unwrap(),
             CallerRecord::new(
