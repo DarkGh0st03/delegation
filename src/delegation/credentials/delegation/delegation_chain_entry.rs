@@ -106,12 +106,16 @@ impl DelegationChainEntry {
     ) -> Result<(), String> {
         let mut selected = Vec::with_capacity(indices.len());
         for index in indices {
-            let witness = self.permission_witnesses.get(*index).cloned().ok_or_else(|| {
-                format!(
-                    "Permission witness index {} is out of bounds for hierarchy entry {}",
-                    index, self.id
-                )
-            })?;
+            let witness = self
+                .permission_witnesses
+                .get(*index)
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "Permission witness index {} is out of bounds for hierarchy entry {}",
+                        index, self.id
+                    )
+                })?;
             selected.push(witness);
         }
         self.permission_witnesses = selected;
