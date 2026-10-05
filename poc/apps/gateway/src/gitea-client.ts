@@ -55,6 +55,15 @@ export interface GiteaFileMutation {
   precondition_blob_sha?: string;
 }
 
+export interface GiteaCreatedPullRequest {
+  id: number;
+  number: number;
+  url?: string;
+  head_branch: string;
+  base_branch: string;
+  head_revision: string;
+}
+
 function object(value: unknown, label: string): JsonObject {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new ProviderUnavailableError(`${label} is not an object`);
@@ -65,6 +74,13 @@ function object(value: unknown, label: string): JsonObject {
 function requiredString(value: unknown, label: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new ProviderUnavailableError(`Gitea response is missing ${label}`);
+  }
+  return value;
+}
+
+function requiredSafeInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new ProviderUnavailableError(`Gitea response is missing valid ${label}`);
   }
   return value;
 }
@@ -211,6 +227,62 @@ export class GiteaClient {
       base_branch: baseBranch,
       base_revision: base.commit_sha,
       commit_sha: commitSha
+    };
+  }
+
+  async createPullRequest(
+    headBranch: string,
+    baseBranch: string,
+    title: string,
+    body?: string
+  ): Promise<GiteaCreatedPullRequest> {
+    const headMetadata = await this.getBranchMetadata(headBranch);
+    const response = object(
+      await this.#requestJson(this.#repoApi("/pulls"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          head: headBranch,
+          base: baseBranch,
+          title,
+          ...(body === undefined ? {} : { body })
+        })
+      }),
+      "Gitea create pull request response"
+    );
+
+    const head = object(response.head, "Gitea pull request head");
+    const base = object(response.base, "Gitea pull request base");
+    const returnedHead = requiredString(head.ref, "pull_request.head.ref");
+    const returnedBase = requiredString(base.ref, "pull_request.base.ref");
+    if (returnedHead !== headBranch || returnedBase !== baseBranch) {
+      throw new ProviderUnavailableError(
+        "Gitea returned an unexpected pull request branch direction"
+      );
+    }
+
+    const returnedHeadSha =
+      typeof head.sha === "string" && head.sha.trim().length > 0
+        ? head.sha
+        : headMetadata.commit_sha;
+    if (returnedHeadSha !== headMetadata.commit_sha) {
+      throw new ProviderUnavailableError(
+        "Gitea pull request head revision does not match the requested branch"
+      );
+    }
+
+    const url =
+      typeof response.html_url === "string" && response.html_url.trim().length > 0
+        ? response.html_url
+        : undefined;
+
+    return {
+      id: requiredSafeInteger(response.id, "pull_request.id"),
+      number: requiredSafeInteger(response.number, "pull_request.number"),
+      ...(url === undefined ? {} : { url }),
+      head_branch: returnedHead,
+      base_branch: returnedBase,
+      head_revision: returnedHeadSha
     };
   }
 
