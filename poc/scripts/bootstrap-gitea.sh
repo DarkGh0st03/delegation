@@ -262,7 +262,7 @@ verify_runner_access() {
   source "$RUNNER_ENV"
 
   repo_json="$(curl -fsS -H "Authorization: token $GITEA_RUNNER_TOKEN" "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY")"
-  read -r can_pull can_push < <(printf '%s' "$repo_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(String(Boolean(j.permissions?.pull))+" "+String(Boolean(j.permissions?.push))+"\\n")})')
+  read -r can_pull can_push < <(printf '%s' "$repo_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(String(Boolean(j.permissions?.pull))+" "+String(Boolean(j.permissions?.push))+"\n")})')
 
   [[ "$can_pull" == "true" && "$can_push" == "false" ]] || {
     echo "Runner credential must be read-only (pull=true, push=false), observed pull=$can_pull push=$can_push" >&2
