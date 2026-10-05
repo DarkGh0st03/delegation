@@ -20,7 +20,9 @@
     "infra:down": "bash ./scripts/phase1-down.sh",
     "gateway:test": "npm run test -w @thesis/gateway",
     "gateway:start": "npm run start -w @thesis/gateway",
-    "agent-runtime:test": "npm run test -w @thesis/agent-runtime"
+    "agent-runtime:test": "npm run test -w @thesis/agent-runtime",
+    "orchestrator-runtime:test": "npm run test -w @thesis/orchestrator-runtime",
+    "orchestrator:bootstrap": "npm run bootstrap -w @thesis/orchestrator"
   },
   "dependencies": {
     "@a2a-js/sdk": "1.3.0",
