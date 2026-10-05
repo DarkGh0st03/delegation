@@ -534,6 +534,135 @@ jobs:
           docker ps -aq --filter 'name=delegation-runner-' | xargs -r docker rm -f
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
 
+
+  phase6b-gateway-smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ADAPTER_CALLER_ENGINEER: engineer-phase6b-secret
+      ADAPTER_CALLER_GATEWAY: gateway-phase6b-secret
+      ADAPTER_CALLER_ORCHESTRATOR: orchestrator-phase6b-secret
+      ADAPTER_CALLER_BACKEND: backend-phase6b-secret
+      ADAPTER_CALLER_FRONTEND: frontend-phase6b-secret
+      ADAPTER_CALLER_TEST: test-phase6b-secret
+      ADAPTER_ID_ENGINEER: did:thesis:engineer
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_ID_ORCHESTRATOR: did:thesis:orchestrator
+      ADAPTER_ID_BACKEND: did:thesis:backend-agent
+      ADAPTER_ID_FRONTEND: did:thesis:frontend-agent
+      ADAPTER_ID_TEST: did:thesis:test-agent
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      DELEGATION_ADAPTER_URL: http://127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GATEWAY_PROVIDER_MODE: gitea
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+      GITEA_TIMEOUT_MS: "3000"
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: "2000"
+      TEST_RUNNER_GATEWAY_TOKEN: phase6b-gateway-runner-secret
+      TEST_RUNNER_BIND_ADDR: 127.0.0.1:8095
+      TEST_RUNNER_URL: http://127.0.0.1:8095
+      TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+      TEST_RUNNER_PHASE_TIMEOUT_MS: "600000"
+      TEST_RUNNER_TIMEOUT_MS: "900000"
+      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - name: Generate local infrastructure environment
+        run: node poc/scripts/init-local-env.mjs --force
+
+      - name: Start Gitea and OPA
+        run: docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d gitea opa
+
+      - name: Bootstrap protected Gitea repository and service credentials
+        run: bash poc/scripts/bootstrap-gitea.sh
+
+      - name: Build Delegation Adapter
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Start Delegation Adapter
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/adapter.log 2>&1 &
+          echo $! > /tmp/adapter.pid
+
+      - name: Start Controlled Test Runner
+        run: |
+          set -a
+          source poc/infra/.env
+          source poc/infra/runtime/runner.env
+          set +a
+          npm --prefix poc run start -w @thesis/test-runner-controller > /tmp/test-runner.log 2>&1 &
+          echo $! > /tmp/test-runner.pid
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:8095/health >/dev/null; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          cat /tmp/test-runner.log
+          exit 1
+
+      - name: Start Gateway with Gitea and Runner
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_BASE_URL="$GITEA_HOST_BASE_URL"
+          export DELEGATION_ADAPTER_URL=http://127.0.0.1:8090
+          export OPA_URL=http://127.0.0.1:8181
+          export TEST_RUNNER_URL=http://127.0.0.1:8095
+          npm --prefix poc run gateway:start > /tmp/gateway.log 2>&1 &
+          echo $! > /tmp/gateway.pid
+
+      - name: Run authorized Gateway-Verifier-OPA-Runner smoke
+        run: node poc/scripts/phase6b-gateway-smoke.mjs
+
+      - name: Verify execution container was destroyed
+        run: |
+          remaining="$(docker ps -a --filter 'name=delegation-runner-' --format '{{.Names}}')"
+          if [[ -n "$remaining" ]]; then
+            echo "Runner left execution containers behind:" >&2
+            printf '%s\n' "$remaining" >&2
+            exit 1
+          fi
+
+      - name: Show Phase 6B Gateway logs on failure
+        if: failure()
+        run: |
+          echo "=== Adapter ==="
+          cat /tmp/adapter.log || true
+          echo "=== Gateway ==="
+          cat /tmp/gateway.log || true
+          echo "=== Test Runner ==="
+          cat /tmp/test-runner.log || true
+          echo "=== Gitea ==="
+          docker logs delegation-poc-gitea || true
+          echo "=== OPA ==="
+          docker logs delegation-poc-opa || true
+          echo "=== Residual execution containers ==="
+          docker ps -a --filter 'name=delegation-runner-' || true
+
+      - name: Stop Phase 6B Gateway services
+        if: always()
+        run: |
+          kill "$(cat /tmp/gateway.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/test-runner.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/adapter.pid)" 2>/dev/null || true
+          docker ps -aq --filter 'name=delegation-runner-' | xargs -r docker rm -f
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
+
   phase5b3-smoke:
     needs: validate
     runs-on: ubuntu-latest
