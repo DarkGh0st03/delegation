@@ -362,17 +362,13 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         if (result.exit_code === 0 && !result.timed_out) {
           researcherAcceptance = {
             phase: "researcher_acceptance",
-            status: "pass",
-            passed: 1,
-            failed: 0
+            status: "pass"
           };
         } else {
           failed = true;
           researcherAcceptance = {
             phase: "researcher_acceptance",
             status: "fail",
-            passed: 0,
-            failed: 1,
             errors: [
               result.timed_out
                 ? "researcher acceptance timed out"
