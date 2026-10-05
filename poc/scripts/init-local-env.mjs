@@ -39,6 +39,7 @@ const env = [
   "GITEA_REPOSITORY=iam-console-poc",
   "GITEA_SOURCE_REPO=https://github.com/DarkGh0st03/iam-console-poc.git",
   "GITEA_BASELINE_SHA=ea9984fa15098771fc451f9ae51c82824b6a40fd",
+  `ADAPTER_CALLER_ENGINEER=${randomHex(32)}`,
   `ADAPTER_CALLER_GATEWAY=${randomHex(32)}`,
   `ADAPTER_CALLER_ORCHESTRATOR=${randomHex(32)}`,
   `ADAPTER_CALLER_BACKEND=${randomHex(32)}`,

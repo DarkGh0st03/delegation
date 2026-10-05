@@ -8,7 +8,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 **Phase 1 — Local infrastructure (Gitea + OPA + Anvil): COMPLETE**
 
-Next milestone: **Phase 2A — Rust Delegation Adapter skeleton and caller-to-identity binding**
+Current implementation work: **Phase 2A — Rust Delegation Adapter skeleton and caller-to-identity binding**
 
 ## Source-of-truth repositories
 

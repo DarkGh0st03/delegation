@@ -27,6 +27,12 @@ jobs:
       - name: Rust regression tests
         run: cargo test
 
+      - name: Adapter formatting
+        run: cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check
+
+      - name: Adapter unit tests
+        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml
+
       - name: PoC scaffold sanity check
         run: npm --prefix poc run check:scaffold
 
