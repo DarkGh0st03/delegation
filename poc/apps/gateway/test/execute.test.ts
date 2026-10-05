@@ -419,3 +419,70 @@ test("successful Gitea pull request records structured PR audit identifiers", as
     assert.equal(event.provider_pull_request_url, "http://gitea/pulls/5");
   }
 });
+
+
+test("successful Controlled Runner execution records Runner-specific audit metadata", async () => {
+  const store = new InMemoryRequestStore();
+  const audit = new InMemoryAuditSink();
+  const now = 1_800_000_000_000;
+  const response = prepareAuthorization(
+    {
+      task_id: "task-test-1",
+      agent_role: "test",
+      tool: "run_tests",
+      arguments: {
+        branch: "feature/account-suspension",
+        profile: "poc-default"
+      }
+    },
+    config,
+    {
+      store,
+      audit,
+      nowMs: () => now,
+      durationNowMs: () => 1,
+      requestId: () => "req-runner-1",
+      challenge: () => "challenge-runner-1"
+    }
+  );
+
+  const executor: ExecutionPort = {
+    provider: "gitea",
+    providerFor() {
+      return "runner";
+    },
+    async execute() {
+      return {
+        provider: "runner",
+        performed: true,
+        tool: "run_tests",
+        branch: "feature/account-suspension",
+        revision: "d".repeat(40),
+        tested_commit_sha: "d".repeat(40),
+        runner_profile: "poc-default",
+        status: "pass",
+        phases: [
+          { phase: "dependency_install", status: "pass" },
+          { phase: "researcher_acceptance", status: "skipped" }
+        ],
+        log_reference: "runner-log://audit"
+      };
+    }
+  };
+
+  await executeAuthorization(
+    { request_id: response.request_id, signed_vp: "signed.jwt.value" },
+    deps(store, audit, new SuccessVerifier(), new FixedPolicy(), executor, now)
+  );
+
+  const event = audit.events.at(-1);
+  assert.equal(event?.event, "authorization_executed");
+  if (event?.event === "authorization_executed") {
+    assert.equal(event.provider, "runner");
+    assert.equal(event.provider_revision, "d".repeat(40));
+    assert.equal(event.runner_tested_commit_sha, "d".repeat(40));
+    assert.equal(event.runner_profile, "poc-default");
+    assert.equal(event.runner_status, "pass");
+    assert.equal(event.runner_log_reference, "runner-log://audit");
+  }
+});
