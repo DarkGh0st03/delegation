@@ -185,7 +185,20 @@ export interface GiteaReadFileExecutionResult {
   content: string;
 }
 
-export type ExecutionResult = MockExecutionResult | GiteaReadFileExecutionResult;
+export interface GiteaCreateBranchExecutionResult {
+  provider: "gitea";
+  performed: true;
+  tool: "create_branch";
+  branch: string;
+  base_branch: string;
+  revision: string;
+  commit_sha: string;
+}
+
+export type ExecutionResult =
+  | MockExecutionResult
+  | GiteaReadFileExecutionResult
+  | GiteaCreateBranchExecutionResult;
 
 export interface ExecutionPort {
   readonly provider: "mock" | "gitea";
