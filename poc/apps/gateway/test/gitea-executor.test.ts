@@ -3,6 +3,7 @@ import test from "node:test";
 import { ProviderOperationUnavailableError } from "../src/errors.ts";
 import type { GiteaClient } from "../src/gitea-client.ts";
 import { GiteaExecutor } from "../src/gitea-executor.ts";
+import type { RunnerClient } from "../src/runner-client.ts";
 import type { NormalizedToolRequest, PreparedRequestRecord } from "../src/types.ts";
 
 function record(request: NormalizedToolRequest): PreparedRequestRecord {
@@ -252,7 +253,7 @@ test("Gitea executor rejects a pull request outside the frozen direction before 
   assert.equal(calls, 0);
 });
 
-test("Gitea executor keeps run_tests unavailable for the future Controlled Runner", async () => {
+test("Gitea executor keeps run_tests unavailable when the Controlled Runner is not configured", async () => {
   const executor = new GiteaExecutor({} as GiteaClient);
   await assert.rejects(
     executor.execute(
@@ -266,4 +267,65 @@ test("Gitea executor keeps run_tests unavailable for the future Controlled Runne
     ),
     ProviderOperationUnavailableError
   );
+});
+
+test("Gitea executor resolves the exact feature-branch SHA before invoking the Controlled Runner", async () => {
+  const runnerCalls: unknown[] = [];
+  const client = {
+    async getBranchMetadata(branch: string) {
+      assert.equal(branch, "feature/account-suspension");
+      return { name: branch, commit_sha: "c".repeat(40) };
+    }
+  } as unknown as GiteaClient;
+  const runner = {
+    async run(request: unknown) {
+      runnerCalls.push(request);
+      return {
+        request_id: "req-fixed",
+        repository: "gitea://gitea.local/thesis/iam-console-poc",
+        branch: "feature/account-suspension",
+        tested_commit_sha: "c".repeat(40),
+        runner_profile: "poc-default",
+        status: "pass",
+        phases: [
+          { phase: "dependency_install", status: "pass" },
+          { phase: "researcher_acceptance", status: "skipped" }
+        ],
+        log_reference: "runner-log://fixed"
+      };
+    }
+  } as unknown as RunnerClient;
+
+  const executor = new GiteaExecutor(
+    client,
+    runner,
+    "gitea://gitea.local/thesis/iam-console-poc"
+  );
+  const prepared = record({
+    tool: "run_tests",
+    arguments: {
+      branch: "feature/account-suspension",
+      profile: "poc-default"
+    }
+  });
+
+  assert.equal(executor.providerFor(prepared), "runner");
+  const result = await executor.execute(prepared);
+
+  assert.deepEqual(runnerCalls, [
+    {
+      request_id: "req-fixed",
+      repository: "gitea://gitea.local/thesis/iam-console-poc",
+      branch: "feature/account-suspension",
+      commit_sha: "c".repeat(40),
+      profile: "poc-default"
+    }
+  ]);
+  assert.equal(result.provider, "runner");
+  assert.equal(result.tool, "run_tests");
+  if (result.tool === "run_tests") {
+    assert.equal(result.tested_commit_sha, "c".repeat(40));
+    assert.equal(result.status, "pass");
+    assert.equal(result.log_reference, "runner-log://fixed");
+  }
 });
