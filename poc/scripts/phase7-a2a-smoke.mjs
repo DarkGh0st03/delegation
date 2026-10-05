@@ -4,7 +4,7 @@ import {
   DeterministicA2AOrchestrator,
   IncompatibleAgentError,
   startSpecializedAgentServer
-} from "../packages/agent-runtime/src/index.ts";
+} from "@thesis/agent-runtime";
 
 const roles = [
   { role: "backend", port: 43211 },
