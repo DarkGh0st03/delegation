@@ -15,6 +15,7 @@ import {
 import {
   DELEGATED_AUTHORIZATION_EXTENSION_URI,
   type AgentArtifactPayload,
+  type AgentTaskContext,
   type DelegationEvidence,
   type DeterministicSubtask,
   type SpecializedAgentRole
@@ -83,21 +84,28 @@ export type DeterministicArtifactPayloadBuilder = (
   task: DeterministicSubtask
 ) => AgentArtifactPayload;
 
+export type DeterministicTaskHandler = (
+  context: AgentTaskContext
+) => AgentArtifactPayload | Promise<AgentArtifactPayload>;
+
 export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
   readonly #role: SpecializedAgentRole;
   readonly #contexts: InMemoryAgentTaskContextStore;
   readonly #artifactBuilder: DeterministicArtifactPayloadBuilder;
+  readonly #taskHandler?: DeterministicTaskHandler;
   #executionCount = 0;
 
   constructor(
     role: SpecializedAgentRole,
     contexts: InMemoryAgentTaskContextStore = new InMemoryAgentTaskContextStore(),
     artifactBuilder: DeterministicArtifactPayloadBuilder =
-      buildDeterministicArtifactPayload
+      buildDeterministicArtifactPayload,
+    taskHandler?: DeterministicTaskHandler
   ) {
     this.#role = role;
     this.#contexts = contexts;
     this.#artifactBuilder = artifactBuilder;
+    this.#taskHandler = taskHandler;
   }
 
   get executionCount(): number {
@@ -130,13 +138,14 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
       DELEGATED_AUTHORIZATION_EXTENSION_URI
     );
 
-    this.#contexts.save({
+    const taskContext: AgentTaskContext = {
       task_id: requestContext.taskId,
       context_id: requestContext.contextId,
       role: this.#role,
       subtask: taskInput,
       delegation_evidence: evidence
-    });
+    };
+    this.#contexts.save(taskContext);
     this.#executionCount += 1;
 
     const taskSnapshot: Task = requestContext.task ?? {
@@ -169,6 +178,11 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
     };
     eventBus.publish(AgentEvent.statusUpdate(working));
 
+    const artifactPayload =
+      this.#taskHandler === undefined
+        ? this.#artifactBuilder(this.#role, taskInput)
+        : await this.#taskHandler(structuredClone(taskContext));
+
     const artifact: Artifact = {
       artifactId: crypto.randomUUID(),
       name: `${this.#role}-deterministic-result`,
@@ -178,7 +192,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
         {
           content: {
             $case: "data",
-            value: this.#artifactBuilder(this.#role, taskInput)
+            value: artifactPayload
           },
           metadata: undefined,
           filename: "",
