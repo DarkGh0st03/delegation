@@ -29,7 +29,7 @@ function artifact(role: SpecializedAgentRole) {
     errors: [],
     ...(role === "test"
       ? {
-          tested_commit_sha: branchRevision,
+          tested_commit_sha: revision,
           runner_profile: "poc-default" as const,
           project_tests: "pass" as const,
           researcher_acceptance: "pass" as const
