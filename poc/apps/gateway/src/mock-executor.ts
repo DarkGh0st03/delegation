@@ -5,6 +5,7 @@ import type {
 } from "./types.ts";
 
 export class MockExecutor implements ExecutionPort {
+  readonly provider = "mock" as const;
   callCount = 0;
 
   async execute(record: PreparedRequestRecord): Promise<MockExecutionResult> {

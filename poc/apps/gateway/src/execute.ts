@@ -2,6 +2,9 @@ import { performance } from "node:perf_hooks";
 import {
   GatewayError,
   PolicyUnavailableError,
+  ProviderNotFoundError,
+  ProviderOperationUnavailableError,
+  ProviderUnavailableError,
   VerificationRejectedError,
   VerificationUnavailableError
 } from "./errors.ts";
@@ -97,6 +100,7 @@ export async function executeAuthorization(
   const nowMs = (dependencies.nowMs ?? Date.now)();
   const durationNow = dependencies.durationNowMs ?? (() => performance.now());
   const totalStarted = durationNow();
+  const provider = dependencies.executor.provider;
 
   const record = dependencies.store.get(request.request_id);
   if (!record) {
@@ -124,9 +128,10 @@ export async function executeAuthorization(
       opa_ms: 0,
       policy_decision: "not_evaluated",
       provider_ms: 0,
+      provider_result: "not_called",
       total_ms: elapsed(totalStarted, durationNow),
       vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
-      provider: "mock"
+      provider
     });
     throw new GatewayError(410, "expired_request", "Prepared authorization request has expired");
   }
@@ -161,9 +166,10 @@ export async function executeAuthorization(
       opa_ms: 0,
       policy_decision: "not_evaluated",
       provider_ms: 0,
+      provider_result: "not_called",
       total_ms: elapsed(totalStarted, durationNow),
       vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
-      provider: "mock"
+      provider
     });
 
     if (unavailable) {
@@ -198,11 +204,12 @@ export async function executeAuthorization(
       opa_ms: opaMs,
       policy_decision: "error",
       provider_ms: 0,
+      provider_result: "not_called",
       total_ms: elapsed(totalStarted, durationNow),
       vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
       chain_depth: verified.hierarchy_depth,
       disclosed_permission_count: verified.permissions.length,
-      provider: "mock"
+      provider
     });
     if (error instanceof PolicyUnavailableError) {
       throw new GatewayError(503, "policy_unavailable", "OPA policy evaluation is unavailable");
@@ -228,17 +235,62 @@ export async function executeAuthorization(
       policy_decision: "deny",
       policy_version: policyDecision.policy_version,
       provider_ms: 0,
+      provider_result: "not_called",
       total_ms: elapsed(totalStarted, durationNow),
       vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
       chain_depth: verified.hierarchy_depth,
       disclosed_permission_count: verified.permissions.length,
-      provider: "mock"
+      provider
     });
     throw new GatewayError(403, "policy_denied", "Workflow policy denied the operation");
   }
 
   const providerStarted = durationNow();
-  const execution = await dependencies.executor.execute(record);
+  let execution;
+  try {
+    execution = await dependencies.executor.execute(record);
+  } catch (error) {
+    const providerMs = elapsed(providerStarted, durationNow);
+    const common = {
+      event: "authorization_executed" as const,
+      timestamp: new Date(nowMs).toISOString(),
+      request_id: record.request_id,
+      task_id: record.task_id,
+      agent_role: record.agent_role,
+      tool: record.request.tool,
+      resource_uri: record.required_permission.resource,
+      operation: record.required_permission.operation,
+      decision: "allow" as const,
+      verification_ms: verificationMs,
+      opa_ms: opaMs,
+      policy_decision: "allow" as const,
+      policy_version: policyDecision.policy_version,
+      provider_ms: providerMs,
+      provider_result: "error" as const,
+      total_ms: elapsed(totalStarted, durationNow),
+      vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
+      chain_depth: verified.hierarchy_depth,
+      disclosed_permission_count: verified.permissions.length,
+      provider
+    };
+
+    if (error instanceof ProviderNotFoundError) {
+      dependencies.audit.emit({ ...common, reason: "provider_not_found" });
+      throw new GatewayError(404, "provider_not_found", error.message);
+    }
+    if (error instanceof ProviderOperationUnavailableError) {
+      dependencies.audit.emit({ ...common, reason: "provider_operation_unavailable" });
+      throw new GatewayError(501, "provider_operation_unavailable", error.message);
+    }
+    if (error instanceof ProviderUnavailableError) {
+      dependencies.audit.emit({ ...common, reason: "provider_unavailable" });
+      throw new GatewayError(503, "provider_unavailable", error.message);
+    }
+
+    dependencies.audit.emit({ ...common, reason: "provider_unavailable" });
+    throw new GatewayError(503, "provider_unavailable", "Protected provider failed");
+  }
+
   const providerMs = elapsed(providerStarted, durationNow);
   const totalMs = elapsed(totalStarted, durationNow);
 
@@ -252,17 +304,18 @@ export async function executeAuthorization(
     resource_uri: record.required_permission.resource,
     operation: record.required_permission.operation,
     decision: "allow",
-    reason: "verified_policy_allowed_mock_execution",
+    reason: `verified_policy_allowed_${execution.provider}_execution`,
     verification_ms: verificationMs,
     opa_ms: opaMs,
     policy_decision: "allow",
     policy_version: policyDecision.policy_version,
     provider_ms: providerMs,
+    provider_result: "success",
     total_ms: totalMs,
     vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
     chain_depth: verified.hierarchy_depth,
     disclosed_permission_count: verified.permissions.length,
-    provider: "mock"
+    provider: execution.provider
   });
 
   return {

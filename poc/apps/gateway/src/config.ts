@@ -1,5 +1,7 @@
 import type { GatewayPrepareConfig } from "./types.ts";
 
+export type GatewayProviderMode = "mock" | "gitea-readonly";
+
 export interface GatewayRuntimeConfig {
   bind_host: string;
   bind_port: number;
@@ -8,6 +10,10 @@ export interface GatewayRuntimeConfig {
   adapter_gateway_token: string;
   opa_url: string;
   opa_timeout_ms: number;
+  provider_mode: GatewayProviderMode;
+  gitea_base_url?: string;
+  gitea_gateway_token?: string;
+  gitea_timeout_ms: number;
 }
 
 function required(name: string): string {
@@ -34,8 +40,15 @@ function bindAddress(value: string): { host: string; port: number } {
   return { host: match[1], port: positiveInteger(match[2], "Gateway port") };
 }
 
+function providerMode(value: string): GatewayProviderMode {
+  if (value === "mock" || value === "gitea-readonly") return value;
+  throw new Error("GATEWAY_PROVIDER_MODE must be mock or gitea-readonly");
+}
+
 export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
   const bind = bindAddress(process.env.GATEWAY_BIND_ADDR ?? "0.0.0.0:8080");
+  const mode = providerMode(process.env.GATEWAY_PROVIDER_MODE ?? "mock");
+
   return {
     bind_host: bind.host,
     bind_port: bind.port,
@@ -57,6 +70,17 @@ export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
     opa_timeout_ms: positiveInteger(
       process.env.OPA_TIMEOUT_MS ?? "2000",
       "OPA_TIMEOUT_MS"
+    ),
+    provider_mode: mode,
+    ...(mode === "gitea-readonly"
+      ? {
+          gitea_base_url: required("GITEA_BASE_URL"),
+          gitea_gateway_token: required("GITEA_GATEWAY_TOKEN")
+        }
+      : {}),
+    gitea_timeout_ms: positiveInteger(
+      process.env.GITEA_TIMEOUT_MS ?? "3000",
+      "GITEA_TIMEOUT_MS"
     )
   };
 }

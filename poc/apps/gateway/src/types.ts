@@ -124,11 +124,12 @@ export interface ExecuteAuditEvent {
   policy_decision: "allow" | "deny" | "error" | "not_evaluated";
   policy_version?: string;
   provider_ms: number;
+  provider_result: "success" | "error" | "not_called";
   total_ms: number;
   vp_size_bytes: number;
   chain_depth?: number;
   disclosed_permission_count?: number;
-  provider: "mock";
+  provider: "mock" | "gitea";
 }
 
 export type AuditEvent = PrepareAuditEvent | ExecuteAuditEvent;
@@ -170,8 +171,25 @@ export interface MockExecutionResult {
   request_fingerprint: string;
 }
 
+export interface GiteaReadFileExecutionResult {
+  provider: "gitea";
+  performed: true;
+  tool: "read_file";
+  branch: string;
+  path: string;
+  revision: string;
+  blob_sha: string;
+  last_commit_sha: string;
+  size: number;
+  encoding: "utf-8";
+  content: string;
+}
+
+export type ExecutionResult = MockExecutionResult | GiteaReadFileExecutionResult;
+
 export interface ExecutionPort {
-  execute(record: PreparedRequestRecord): Promise<MockExecutionResult>;
+  readonly provider: "mock" | "gitea";
+  execute(record: PreparedRequestRecord): Promise<ExecutionResult>;
 }
 
 export interface ExecuteAuthorizationResponse {
@@ -179,7 +197,7 @@ export interface ExecuteAuthorizationResponse {
   decision: "allow";
   verified_delegation: VerifiedDelegation;
   policy: PolicyDecision;
-  execution: MockExecutionResult;
+  execution: ExecutionResult;
 }
 
 export interface PolicyInput {

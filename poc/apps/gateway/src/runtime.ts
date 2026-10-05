@@ -1,6 +1,8 @@
 import { AdapterVerifierClient } from "./adapter-client.ts";
 import type { GatewayRuntimeConfig } from "./config.ts";
 import { executeAuthorization } from "./execute.ts";
+import { GiteaClient } from "./gitea-client.ts";
+import { GiteaReadOnlyExecutor } from "./gitea-read-executor.ts";
 import { MockExecutor } from "./mock-executor.ts";
 import { OpaPolicyClient } from "./policy-client.ts";
 import {
@@ -32,6 +34,24 @@ export interface GatewayRuntimeDependencies {
   executor?: ExecutionPort;
 }
 
+function defaultExecutor(config: GatewayRuntimeConfig): ExecutionPort {
+  if (config.provider_mode === "mock") return new MockExecutor();
+
+  if (!config.gitea_base_url || !config.gitea_gateway_token) {
+    throw new Error("Gitea read-only provider mode requires Gitea URL and Gateway token");
+  }
+
+  return new GiteaReadOnlyExecutor(
+    new GiteaClient({
+      baseUrl: config.gitea_base_url,
+      token: config.gitea_gateway_token,
+      owner: config.prepare.repository.owner,
+      repository: config.prepare.repository.repository,
+      timeoutMs: config.gitea_timeout_ms
+    })
+  );
+}
+
 export class GatewayRuntime {
   readonly #config: GatewayRuntimeConfig;
   readonly #store: InMemoryRequestStore;
@@ -56,7 +76,11 @@ export class GatewayRuntime {
         baseUrl: config.opa_url,
         timeoutMs: config.opa_timeout_ms
       });
-    this.#executor = dependencies.executor ?? new MockExecutor();
+    this.#executor = dependencies.executor ?? defaultExecutor(config);
+  }
+
+  get providerLabel(): "mock" | "gitea" {
+    return this.#executor.provider;
   }
 
   prepare(raw: unknown): PreparedAuthorizationResponse {
