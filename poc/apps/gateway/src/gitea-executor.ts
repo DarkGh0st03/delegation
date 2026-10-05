@@ -1,5 +1,6 @@
 import { ProviderOperationUnavailableError } from "./errors.ts";
 import type { GiteaClient } from "./gitea-client.ts";
+import type { RunnerClient } from "./runner-client.ts";
 import type {
   ExecutionPort,
   ExecutionResult,
@@ -8,7 +9,8 @@ import type {
   GiteaCreatePullRequestExecutionResult,
   GiteaReadFileExecutionResult,
   GiteaUpdateFileExecutionResult,
-  PreparedRequestRecord
+  PreparedRequestRecord,
+  RunnerExecutionResult
 } from "./types.ts";
 
 const MAIN_BRANCH = "main";
@@ -33,9 +35,21 @@ function requireFeatureBranch(branch: string): void {
 export class GiteaExecutor implements ExecutionPort {
   readonly provider = "gitea" as const;
   readonly #client: GiteaClient;
+  readonly #runnerClient?: RunnerClient;
+  readonly #runnerRepositoryUri?: string;
 
-  constructor(client: GiteaClient) {
+  constructor(
+    client: GiteaClient,
+    runnerClient?: RunnerClient,
+    runnerRepositoryUri?: string
+  ) {
     this.#client = client;
+    this.#runnerClient = runnerClient;
+    this.#runnerRepositoryUri = runnerRepositoryUri;
+  }
+
+  providerFor(record: PreparedRequestRecord): "gitea" | "runner" {
+    return record.request.tool === "run_tests" ? "runner" : "gitea";
   }
 
   async execute(record: PreparedRequestRecord): Promise<ExecutionResult> {
@@ -147,6 +161,41 @@ export class GiteaExecutor implements ExecutionPort {
         commit_sha: updated.commit_sha,
         blob_sha: updated.blob_sha,
         precondition_blob_sha: updated.precondition_blob_sha
+      };
+      return result;
+    }
+
+    if (record.request.tool === "run_tests") {
+      const { branch, profile } = record.request.arguments;
+      requireFeatureBranch(branch);
+      if (!this.#runnerClient || !this.#runnerRepositoryUri) {
+        throw new ProviderOperationUnavailableError(
+          "Controlled Test Runner is not configured"
+        );
+      }
+
+      const branchMetadata = await this.#client.getBranchMetadata(branch);
+      const run = await this.#runnerClient.run({
+        request_id: record.request_id,
+        repository: this.#runnerRepositoryUri,
+        branch,
+        commit_sha: branchMetadata.commit_sha,
+        profile
+      });
+
+      const result: RunnerExecutionResult = {
+        provider: "runner",
+        performed: true,
+        tool: "run_tests",
+        branch,
+        revision: run.tested_commit_sha,
+        tested_commit_sha: run.tested_commit_sha,
+        runner_profile: run.runner_profile,
+        status: run.status,
+        phases: run.phases,
+        ...(run.log_reference === undefined
+          ? {}
+          : { log_reference: run.log_reference })
       };
       return result;
     }
