@@ -27,6 +27,13 @@ export interface RunnerClientResult {
   runner_profile: "poc-default";
   status: "pass" | "fail";
   phases: RunnerPhaseExecutionResult[];
+  project_tests?: {
+    status: "pass" | "fail";
+    phases: RunnerPhaseExecutionResult[];
+  };
+  researcher_acceptance?: RunnerPhaseExecutionResult & {
+    phase: "researcher_acceptance";
+  };
   log_reference?: string;
 }
 
@@ -54,31 +61,33 @@ function string(value: unknown, label: string): string {
   return value;
 }
 
+function parsePhase(value: unknown, label: string): RunnerPhaseExecutionResult {
+  const phase = object(value, label);
+  const name = string(phase.phase, `${label}.phase`);
+  const status = string(phase.status, `${label}.status`);
+  if (!PHASES.has(name)) {
+    throw new ProviderUnavailableError(`Runner returned unknown phase ${name}`);
+  }
+  if (!["pass", "fail", "skipped"].includes(status)) {
+    throw new ProviderUnavailableError(`Runner returned invalid phase status ${status}`);
+  }
+  return {
+    phase: name as RunnerPhaseExecutionResult["phase"],
+    status: status as RunnerPhaseExecutionResult["status"],
+    ...(typeof phase.passed === "number" ? { passed: phase.passed } : {}),
+    ...(typeof phase.failed === "number" ? { failed: phase.failed } : {}),
+    ...(Array.isArray(phase.errors) &&
+    phase.errors.every((entry) => typeof entry === "string")
+      ? { errors: phase.errors as string[] }
+      : {})
+  };
+}
+
 function parsePhases(value: unknown): RunnerPhaseExecutionResult[] {
   if (!Array.isArray(value)) {
     throw new ProviderUnavailableError("Runner response is missing phases");
   }
-  return value.map((raw, index) => {
-    const phase = object(raw, `Runner phase ${index}`);
-    const name = string(phase.phase, `phases[${index}].phase`);
-    const status = string(phase.status, `phases[${index}].status`);
-    if (!PHASES.has(name)) {
-      throw new ProviderUnavailableError(`Runner returned unknown phase ${name}`);
-    }
-    if (!["pass", "fail", "skipped"].includes(status)) {
-      throw new ProviderUnavailableError(`Runner returned invalid phase status ${status}`);
-    }
-    return {
-      phase: name as RunnerPhaseExecutionResult["phase"],
-      status: status as RunnerPhaseExecutionResult["status"],
-      ...(typeof phase.passed === "number" ? { passed: phase.passed } : {}),
-      ...(typeof phase.failed === "number" ? { failed: phase.failed } : {}),
-      ...(Array.isArray(phase.errors) &&
-      phase.errors.every((entry) => typeof entry === "string")
-        ? { errors: phase.errors as string[] }
-        : {})
-    };
-  });
+  return value.map((raw, index) => parsePhase(raw, `phases[${index}]`));
 }
 
 export class RunnerClient {
@@ -143,6 +152,37 @@ export class RunnerClient {
       throw new ProviderUnavailableError("Runner returned an unexpected profile");
     }
 
+    const projectTests =
+      body.project_tests === undefined
+        ? undefined
+        : object(body.project_tests, "project_tests");
+    const projectStatus =
+      projectTests === undefined
+        ? undefined
+        : string(projectTests.status, "project_tests.status");
+    if (
+      projectStatus !== undefined &&
+      projectStatus !== "pass" &&
+      projectStatus !== "fail"
+    ) {
+      throw new ProviderUnavailableError(
+        `Runner returned invalid project_tests status ${projectStatus}`
+      );
+    }
+
+    const researcherAcceptance =
+      body.researcher_acceptance === undefined
+        ? undefined
+        : parsePhase(body.researcher_acceptance, "researcher_acceptance");
+    if (
+      researcherAcceptance !== undefined &&
+      researcherAcceptance.phase !== "researcher_acceptance"
+    ) {
+      throw new ProviderUnavailableError(
+        "Runner researcher_acceptance has an unexpected phase name"
+      );
+    }
+
     const result: RunnerClientResult = {
       request_id: string(body.request_id, "request_id"),
       repository: string(body.repository, "repository"),
@@ -151,6 +191,21 @@ export class RunnerClient {
       runner_profile: "poc-default",
       status,
       phases: parsePhases(body.phases),
+      ...(projectTests !== undefined && projectStatus !== undefined
+        ? {
+            project_tests: {
+              status: projectStatus as "pass" | "fail",
+              phases: parsePhases(projectTests.phases)
+            }
+          }
+        : {}),
+      ...(researcherAcceptance !== undefined
+        ? {
+            researcher_acceptance: researcherAcceptance as RunnerPhaseExecutionResult & {
+              phase: "researcher_acceptance";
+            }
+          }
+        : {}),
       ...(typeof body.log_reference === "string" && body.log_reference.length > 0
         ? { log_reference: body.log_reference }
         : {})
