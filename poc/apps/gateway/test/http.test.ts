@@ -25,7 +25,9 @@ const config = {
   adapter_url: "http://unused",
   adapter_gateway_token: "unused",
   opa_url: "http://unused",
-  opa_timeout_ms: 2_000
+  opa_timeout_ms: 2_000,
+  provider_mode: "mock" as const,
+  gitea_timeout_ms: 3_000
 };
 
 class Verifier implements VerifierPort {
