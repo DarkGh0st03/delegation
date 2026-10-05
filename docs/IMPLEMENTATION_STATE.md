@@ -6,9 +6,9 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 1 — Local infrastructure (Gitea + OPA + Anvil): COMPLETE**
+**Phase 2 — Rust Delegation Adapter: COMPLETE**
 
-Current implementation work: **Phase 2A — Rust Delegation Adapter skeleton and caller-to-identity binding**
+Next milestone: **Phase 3A — Gateway canonical permission mapping and request preparation**
 
 ## Source-of-truth repositories
 
@@ -87,6 +87,69 @@ Implemented and validated:
 
 Phase 1 deliberately does **not** implement authorization logic, Rego workflow policy, protected Gitea tool calls, A2A or LLM behavior.
 
+### Phase 2A — Identity-bound Delegation Adapter skeleton
+
+Completed.
+
+Implemented:
+
+- Rust service under `services/delegation-adapter/`;
+- `GET /health` and authenticated `GET /v1/whoami`;
+- distinct internal caller credentials for Engineer, Orchestrator, Backend, Frontend, Test and Gateway;
+- deterministic caller -> role -> identity mapping;
+- capability separation:
+  - Engineer -> root issuance;
+  - Orchestrator -> child issuance + own presentation;
+  - specialized Agents -> own presentation;
+  - Gateway -> verification only;
+- request bodies cannot freely select the signing/issuer identity.
+
+Initial implementation checkpoints:
+
+- `05feb4dff0e18932e4909d236c9e5eaeb22d9706`
+- `e7c946b3f5271b75ce2a7c09ae33d81959b4707a`
+
+### Phase 2B — Issuance, signed presentation and verification bridge
+
+Completed.
+
+Implemented HTTP endpoints:
+
+- `POST /v1/credentials/root`;
+- `POST /v1/credentials/child`;
+- `POST /v1/presentations`;
+- `POST /v1/verify`.
+
+The Adapter reuses the existing Rust framework for:
+
+- Delegation Credential construction;
+- accumulator value and witness construction;
+- child non-escalation and temporal capping;
+- selective disclosure;
+- Ed25519-signed Verifiable Presentation creation;
+- `AuthorizationContext` binding;
+- `DelegationVerifier` execution and `VerifiedDelegation` output.
+
+Negative tests cover permission escalation, unauthorized child issuance and cross-identity presentation attempts.
+
+Main Phase 2B implementation checkpoint:
+
+`00a15fff163e32fd697fdaf36076614bdfd8f2f1`
+
+Fixes and final validated implementation reached:
+
+`46ef752174e757feb66b93cbbf4a1ac95d96908c`
+
+Validation run:
+
+`37273004394` — success (Rust regression tests, Adapter formatting/tests, scaffold check and Phase 1 infrastructure smoke test).
+
+A later concurrent edit briefly replaced some Adapter entry files; commit `339cfc4ac5163d312b742ee640a41786fa7faef5` restores and preserves the validated Phase 2 implementation. Validation run `37274322694` is also successful.
+
+#### Trust backend note
+
+At this component-test checkpoint, the Adapter uses the framework's in-memory trust/status providers while exercising the real `DelegationIssuer` and `DelegationVerifier` paths. The EVM trust layer from Phase 1 remains independently validated. Before the final positive end-to-end experiment, the deployed Adapter profile must bind verification/public-material resolution to the existing EVM-backed trust/status providers. This is an integration task, not a rewrite of the cryptographic core.
+
 ## Validation commands
 
 ```bash
@@ -105,16 +168,16 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 2A
+## Next action — Phase 3A
 
-Implement the Rust Delegation Adapter skeleton:
+Implement the TypeScript Cloud Access Gateway core:
 
-- new Rust service under `services/delegation-adapter/`;
-- health endpoint;
-- identity store for Engineer / Orchestrator / Backend / Frontend / Test;
-- distinct internal caller authentication;
-- server-side mapping from caller credential to allowed identity and role;
-- explicit denial when a caller attempts to select another identity;
-- no issuance/VP/verification API yet beyond the minimum skeleton required to validate identity binding.
+- strict tool request schemas;
+- canonical Gitea `ResourceUri` construction;
+- deterministic `tool -> Operation` mapping;
+- rejection of path traversal, malformed branch names and caller-supplied authority values;
+- `prepare` request creation with `request_id`, required permission, audience and challenge;
+- no real Gitea mutation yet;
+- begin structured audit/measurement fields from this phase onward.
 
-Do not move cryptographic logic to TypeScript.
+The Gateway must derive authority requirements itself; Agents must never supply an arbitrary `ResourceUri` or `Operation`.
