@@ -15,6 +15,7 @@ const repository = process.env.GITEA_REPOSITORY ?? "iam-console-poc";
 
 const tokens = {
   engineer: process.env.ADAPTER_CALLER_ENGINEER,
+  orchestrator: process.env.ADAPTER_CALLER_ORCHESTRATOR,
   backend: process.env.ADAPTER_CALLER_BACKEND,
   frontend: process.env.ADAPTER_CALLER_FRONTEND,
   test: process.env.ADAPTER_CALLER_TEST
@@ -84,13 +85,14 @@ function uniquePermissions(permissions) {
 
 async function issueRoleCredential(role, permissions, statusIndex) {
   const credentialId = `urn:phase8b:${role}`;
-  const { body } = await request(`${adapter}/v1/credentials/root`, {
+  const { body } = await request(`${adapter}/v1/credentials/child`, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${tokens.engineer}`,
+      authorization: `Bearer ${tokens.orchestrator}`,
       "content-type": "application/json"
     },
     body: JSON.stringify({
+      parent_credential_id: "urn:phase8b:orchestrator",
       credential_id: credentialId,
       delegatee: role,
       valid_from: new Date().toISOString(),
@@ -332,6 +334,33 @@ const testPermissions = uniquePermissions([
     content: "derive-only"
   }, "create")
 ]);
+
+const rootPermissions = uniquePermissions([
+  ...backendPermissions,
+  ...frontendPermissions,
+  ...testPermissions
+]);
+
+await request(`${adapter}/v1/credentials/root`, {
+  method: "POST",
+  headers: {
+    authorization: `Bearer ${tokens.engineer}`,
+    "content-type": "application/json"
+  },
+  body: JSON.stringify({
+    credential_id: "urn:phase8b:orchestrator",
+    delegatee: "orchestrator",
+    valid_from: new Date().toISOString(),
+    validity_seconds: 3600,
+    credential_status: {
+      type: "BitstringStatusListEntry",
+      statusPurpose: "revocation",
+      statusListIndex: "819",
+      statusListCredential: "https://status.example/lists/phase8b-smoke"
+    },
+    permissions: rootPermissions
+  })
+});
 
 const credentials = {
   backend: await issueRoleCredential("backend", backendPermissions, 820),
