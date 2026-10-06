@@ -1,12 +1,12 @@
 # Implementation State
 
-Last updated: 2026-10-05
+Last updated: 2026-10-06
 
 This file is the primary continuation checkpoint for the thesis PoC. A future implementation session should read it before proposing architectural changes.
 
 ## Current milestone
 
-**Phase 9B — sequential delegated A2A workflow: COMPLETE**
+**Phase 11A — EVM identity suspension security experiment: COMPLETE**
 
 Completed checkpoints:
 
@@ -23,8 +23,10 @@ Completed checkpoints:
 - **Phase 8C — model-driven authority-boundary validation: COMPLETE**
 - **Phase 9A — deterministic Orchestrator authority templates: COMPLETE**
 - **Phase 9B — sequential delegated A2A workflow: COMPLETE**
+- **Phase 10 — positive end-to-end Account Suspension experiment: COMPLETE**
+- **Phase 11A — EVM identity suspension security experiment: COMPLETE**
 
-Next checkpoint: **Phase 10 — positive end-to-end Account Suspension experiment**
+Next checkpoint: **Phase 11B — credential/status revocation negative experiment**
 
 ## Source-of-truth repositories
 
