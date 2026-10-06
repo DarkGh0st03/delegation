@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
 import {
   DelegationEvidenceHandler,
   DeterministicA2AOrchestrator,
@@ -449,32 +450,35 @@ try {
   assert.equal(frontendServer.executor.executionCount, 1);
   assert.equal(testServer.executor.executionCount, 1);
 
-  process.stdout.write(
-    JSON.stringify(
-      {
-        result: "phase10b-positive-e2e-pass",
-        trust_profile: adapterHealth.trust_profile,
-        workflow_state: result.workflow.state,
-        completed_roles: result.workflow.completed_roles,
-        baseline_revision: result.branch.revision,
-        backend_revision: backendArtifact.revision,
-        frontend_revision: frontendArtifact.revision,
-        tested_commit_sha: testedRevision,
-        project_tests: testArtifact.project_tests,
-        researcher_acceptance: testArtifact.researcher_acceptance,
-        pull_request_number: result.pull_request.pull_request_number,
-        main_unchanged: true,
-        automatic_merge: false,
-        model_ids: {
-          backend: backendArtifact.model_id,
-          frontend: frontendArtifact.model_id,
-          test: testArtifact.model_id
-        }
-      },
-      null,
-      2
-    ) + "\n"
-  );
+  const resultPayload = {
+    result: "phase10b-positive-e2e-pass",
+    trust_profile: adapterHealth.trust_profile,
+    workflow_state: result.workflow.state,
+    completed_roles: result.workflow.completed_roles,
+    baseline_revision: result.branch.revision,
+    backend_revision: backendArtifact.revision,
+    frontend_revision: frontendArtifact.revision,
+    tested_commit_sha: testedRevision,
+    project_tests: testArtifact.project_tests,
+    researcher_acceptance: testArtifact.researcher_acceptance,
+    pull_request_number: result.pull_request.pull_request_number,
+    main_unchanged: true,
+    automatic_merge: false,
+    model_ids: {
+      backend: backendArtifact.model_id,
+      frontend: frontendArtifact.model_id,
+      test: testArtifact.model_id
+    }
+  };
+  const resultJson = JSON.stringify(resultPayload, null, 2) + "\n";
+  process.stdout.write(resultJson);
+
+  if (process.env.PHASE10B_RESULT_FILE) {
+    await writeFile(process.env.PHASE10B_RESULT_FILE, resultJson, {
+      encoding: "utf8",
+      mode: 0o600
+    });
+  }
 } finally {
   await testServer.close().catch(() => undefined);
   await frontendServer.close().catch(() => undefined);

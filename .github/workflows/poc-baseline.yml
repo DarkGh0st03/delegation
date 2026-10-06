@@ -39,6 +39,11 @@ jobs:
       - name: PoC scaffold sanity check
         run: npm --prefix poc run check:scaffold
 
+      - name: Phase 12A evidence tooling syntax
+        run: |
+          node --check poc/scripts/phase10b-positive-e2e.mjs
+          node --check poc/scripts/phase12a-build-measurement-evidence.mjs
+
       - name: Gateway Phase 5A tests
         run: npm --prefix poc run gateway:test
 
@@ -1915,6 +1920,7 @@ jobs:
       TEST_RUNNER_ACCEPTANCE_ENABLED: "true"
       EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
       ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase10b:orchestrator-root
+      PHASE10B_RESULT_FILE: /tmp/phase10b-result.json
       ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"
@@ -2034,6 +2040,21 @@ jobs:
           set +a
           export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
           node --experimental-strip-types poc/scripts/phase10b-positive-e2e.mjs
+
+      - name: Build Phase 12A measurement evidence
+        run: |
+          node poc/scripts/phase12a-build-measurement-evidence.mjs \
+            /tmp/phase10b-gateway.log \
+            "$PHASE10B_RESULT_FILE" \
+            /tmp/phase12a-measurement-evidence.json
+
+      - name: Upload Phase 12A measurement evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase12a-measurement-evidence
+          path: /tmp/phase12a-measurement-evidence.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Verify Runner execution containers were destroyed
         run: |
