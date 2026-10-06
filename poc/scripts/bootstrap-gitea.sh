@@ -149,6 +149,51 @@ wait_for_main_ref() {
   exit 1
 }
 
+
+ensure_main_branch_protection() {
+  local protection_url payload code
+  protection_url="$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/branch_protections/main"
+  code="$(http_code -u "$ADMIN_AUTH" "$protection_url")"
+
+  if [[ "$code" == "200" ]]; then
+    echo "Gitea main branch protection already exists."
+    return 0
+  fi
+
+  if [[ "$code" != "404" ]]; then
+    echo "Could not inspect Gitea main branch protection (HTTP $code)." >&2
+    exit 1
+  fi
+
+  echo "Protecting Gitea main against direct push and unreviewed merge..."
+  payload='{"branch_name":"main","enable_push":false,"enable_force_push":false,"required_approvals":1,"block_admin_merge_override":true,"dismiss_stale_approvals":true,"block_on_outdated_branch":true}'
+  curl -fsS -u "$ADMIN_AUTH" -H 'Content-Type: application/json' -X POST     "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/branch_protections"     --data "$payload" >/dev/null
+}
+
+verify_main_branch_protection() {
+  local protection_json
+  protection_json="$(curl -fsS -u "$ADMIN_AUTH"     "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/branch_protections/main")"
+
+  printf '%s' "$protection_json" | node -e '
+    let s="";
+    process.stdin.on("data",d=>s+=d).on("end",()=>{
+      const p=JSON.parse(s);
+      const ok=
+        p.branch_name==="main" &&
+        p.enable_push===false &&
+        p.enable_force_push===false &&
+        Number(p.required_approvals)>=1 &&
+        p.block_admin_merge_override===true;
+      if(!ok){
+        console.error("Unexpected main branch protection:", JSON.stringify(p));
+        process.exit(1);
+      }
+    })
+  '
+
+  echo "Gitea main branch protection verified."
+}
+
 grant_gateway_write() {
   echo "Granting repository write permission to service user: $GITEA_GATEWAY_USER"
   curl -fsS -u "$ADMIN_AUTH" -H 'Content-Type: application/json' -X PUT "$BASE_URL/api/v1/repos/$GITEA_ORG/$GITEA_REPOSITORY/collaborators/$GITEA_GATEWAY_USER" --data '{"permission":"write"}' >/dev/null
@@ -286,6 +331,8 @@ ensure_user "$GITEA_RUNNER_USER" "$GITEA_RUNNER_PASSWORD" "$GITEA_RUNNER_EMAIL" 
 ensure_org
 ensure_repository
 wait_for_main_ref
+ensure_main_branch_protection
+verify_main_branch_protection
 grant_gateway_write
 grant_runner_read
 ensure_gateway_token

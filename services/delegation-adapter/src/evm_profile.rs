@@ -11,6 +11,9 @@ use delegation::delegation::issuance::issuer_trait::Issuer;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::model::status_list_credential_artifact::StatusListCredentialArtifact;
 use delegation::delegation::status::model::status_purpose::StatusPurpose;
+use delegation::delegation::status::provider::jwt_status_list_provider::{
+    JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
+};
 use delegation::delegation::status::provider::status_list_credential_provider_trait::{
     StatusListCredentialProvider, StatusListCredentialProviderRef,
 };
@@ -32,6 +35,7 @@ use delegation::delegation::verification::delegation_verifier::DelegationVerifie
 use delegation::delegation::verification::verifier_trait::Verifier;
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use josekit::jwk::Jwk;
 use multibase::Base;
 use serde::Serialize;
 use std::cell::RefCell;
@@ -183,13 +187,19 @@ impl EvmAdapterProfile {
 
         let public_material = Rc::new(CompositePublicMaterialProvider::<Curve>::new(
             accumulator_provider,
-            verification_keys,
+            verification_keys.clone(),
         ));
         let trust_reader: Rc<dyn EvmTrustReader> = profile.chain_reader.clone();
         let trust_registry: TrustRegistryRef<Curve> =
             Rc::new(EvmBackedTrustRegistry::new(trust_reader, public_material));
 
-        let status_provider: StatusListCredentialProviderRef = profile.status_source.clone();
+        let raw_status_provider: StatusListCredentialProviderRef = profile.status_source.clone();
+        let status_provider: StatusListCredentialProviderRef = Rc::new(
+            JwtAuthenticatedStatusListCredentialProvider::new(
+                raw_status_provider,
+                verification_keys,
+            ),
+        );
         let status_reader: Rc<dyn EvmStatusListReader> = profile.chain_reader.clone();
         let status_resolver: StatusListResolverRef = Rc::new(EvmAnchoredStatusListResolver::new(
             status_provider,
@@ -205,10 +215,12 @@ impl EvmAdapterProfile {
         issuer_role: CallerRole,
         issuer_id: &str,
         entry: &BitstringStatusListEntry,
+        signing_jwk: &Jwk,
     ) -> Result<(), String> {
         let (purpose_code, purpose_name) = status_purpose(entry.status_purpose())?;
         let document = status_list_document(issuer_id, entry, purpose_name)?;
-        let commitment = EvmAnchoredStatusListResolver::artifact_commitment(&document);
+        let signed_status = sign_status_list_credential_jwt(&document, signing_jwk)?;
+        let commitment = EvmAnchoredStatusListResolver::artifact_commitment(&signed_status);
         let existing = self
             .chain_reader
             .status_list_anchor(issuer_id, entry.status_list_credential())?;
@@ -251,7 +263,7 @@ impl EvmAdapterProfile {
         self.status_source.insert(
             issuer_id.to_string(),
             entry.status_list_credential().to_string(),
-            document,
+            signed_status,
         );
         Ok(())
     }

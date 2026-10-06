@@ -79,7 +79,10 @@ impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvid
         issuer_id: &str,
         url: &str,
     ) -> Result<StatusListCredentialArtifact, String> {
-        let compact_jwt = self.source.get_status_list_credential(url)?;
+        let source_artifact = self
+            .source
+            .get_status_list_credential_for_issuer(issuer_id, url)?;
+        let compact_jwt = source_artifact.document;
         let verification_key = self.verification_keys.get_verification_key(issuer_id)?;
         let verifier = EdDSA
             .verifier_from_jwk(&verification_key)
@@ -108,7 +111,7 @@ impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvid
 
         Ok(StatusListCredentialArtifact {
             document,
-            commitment_bytes: compact_jwt.into_bytes(),
+            commitment_bytes: source_artifact.commitment_bytes,
         })
     }
 }

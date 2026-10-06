@@ -22,6 +22,10 @@ jobs:
         with:
           node-version: 22.15.0
 
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+
       - name: Install PoC Node dependencies
         run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
 
@@ -30,6 +34,9 @@ jobs:
 
       - name: Rust regression tests
         run: cargo test
+
+      - name: Solidity regression tests
+        run: forge test --root blockchain
 
       - name: Adapter formatting
         run: cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check

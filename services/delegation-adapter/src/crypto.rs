@@ -207,10 +207,15 @@ impl CryptoRuntime {
         entry: &BitstringStatusListEntry,
     ) -> Result<(), String> {
         if let Some(profile) = &self.evm_profile {
+            let issuer = self
+                .issuers
+                .get(&issuer_role)
+                .ok_or_else(|| format!("Missing Adapter issuer for {issuer_role:?}"))?;
             return profile.register_active_status(
                 issuer_role,
                 callers.identity_for_role(issuer_role)?,
                 entry,
+                issuer.holder_jwk(),
             );
         }
 
