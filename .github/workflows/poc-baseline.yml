@@ -1880,3 +1880,198 @@ jobs:
         run: |
           kill "$(cat /tmp/phase10a-adapter.pid)" 2>/dev/null || true
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
+
+  phase10b-positive-e2e:
+    needs: [validate, phase10a-evm-adapter-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_CALLER_ENGINEER: engineer-phase10b-secret
+      ADAPTER_CALLER_GATEWAY: gateway-phase10b-secret
+      ADAPTER_CALLER_ORCHESTRATOR: orchestrator-phase10b-secret
+      ADAPTER_CALLER_BACKEND: backend-phase10b-secret
+      ADAPTER_CALLER_FRONTEND: frontend-phase10b-secret
+      ADAPTER_CALLER_TEST: test-phase10b-secret
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      DELEGATION_ADAPTER_URL: http://127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GATEWAY_PROVIDER_MODE: gitea
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+      GITEA_TIMEOUT_MS: "3000"
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: "2000"
+      TEST_RUNNER_GATEWAY_TOKEN: phase10b-gateway-runner-secret
+      TEST_RUNNER_BIND_ADDR: 127.0.0.1:8091
+      TEST_RUNNER_URL: http://127.0.0.1:8091
+      TEST_RUNNER_TIMEOUT_MS: "900000"
+      TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+      TEST_RUNNER_PHASE_TIMEOUT_MS: "600000"
+      TEST_RUNNER_ACCEPTANCE_ENABLED: "true"
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
+      ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase10b:orchestrator-root
+      ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"
+      ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR: "0x0000000000000000000000000000000000000000000000000000000000000002"
+      ADAPTER_EVM_PRIVATE_KEY_BACKEND: "0x0000000000000000000000000000000000000000000000000000000000000003"
+      ADAPTER_EVM_PRIVATE_KEY_FRONTEND: "0x0000000000000000000000000000000000000000000000000000000000000004"
+      ADAPTER_EVM_PRIVATE_KEY_TEST: "0x0000000000000000000000000000000000000000000000000000000000000005"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+
+      - name: Install Phase 10B dependencies
+        run: |
+          npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+
+      - name: Generate local Phase 10B environment
+        run: node poc/scripts/init-local-env.mjs --force
+
+      - name: Start Gitea OPA and Anvil
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d gitea opa anvil
+          for i in {1..80}; do
+            if curl -fsS http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1 &&
+               cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
+          exit 1
+
+      - name: Bootstrap protected Gitea and read-only Runner identity
+        run: bash poc/scripts/bootstrap-gitea.sh
+
+      - name: Deploy Phase 10B trust contracts
+        run: |
+          RPC_URL=http://127.0.0.1:8545 \
+          CHAIN_ID=31337 \
+          ANVIL_DEPLOYER_PRIVATE_KEY="$ANVIL_DEPLOYER_PRIVATE_KEY" \
+            bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for name in RPC_URL CHAIN_ID DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$name=${!name}" >> "$GITHUB_ENV"
+          done
+
+      - name: Prepare Phase 10B EVM identities
+        run: |
+          chain_hex="$(printf '0x%x' "$CHAIN_ID")"
+          configure_identity() {
+            role="$1"
+            private_key="$2"
+            address="$(cast wallet address --private-key "$private_key")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+            echo "ADAPTER_ID_${role}=did:ethr:${chain_hex}:${address}" >> "$GITHUB_ENV"
+          }
+          configure_identity ENGINEER "$ADAPTER_EVM_PRIVATE_KEY_ENGINEER"
+          configure_identity ORCHESTRATOR "$ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR"
+          configure_identity BACKEND "$ADAPTER_EVM_PRIVATE_KEY_BACKEND"
+          configure_identity FRONTEND "$ADAPTER_EVM_PRIVATE_KEY_FRONTEND"
+          configure_identity TEST "$ADAPTER_EVM_PRIVATE_KEY_TEST"
+
+      - name: Build Delegation Adapter
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Start EVM-backed Delegation Adapter
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/phase10b-adapter.log 2>&1 &
+          echo $! > /tmp/phase10b-adapter.pid
+
+      - name: Start real Controlled Test Runner
+        run: |
+          set -a
+          source poc/infra/.env
+          source poc/infra/runtime/runner.env
+          set +a
+          npm --prefix poc run start -w @thesis/test-runner-controller > /tmp/phase10b-runner.log 2>&1 &
+          echo $! > /tmp/phase10b-runner.pid
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8091/health >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          cat /tmp/phase10b-runner.log
+          exit 1
+
+      - name: Start Gateway with real Gitea and Runner boundaries
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_BASE_URL="$GITEA_HOST_BASE_URL"
+          export GATEWAY_PROVIDER_MODE=gitea
+          export DELEGATION_ADAPTER_URL=http://127.0.0.1:8090
+          export OPA_URL=http://127.0.0.1:8181
+          export TEST_RUNNER_URL=http://127.0.0.1:8091
+          npm --prefix poc run gateway:start > /tmp/phase10b-gateway.log 2>&1 &
+          echo $! > /tmp/phase10b-gateway.pid
+
+      - name: Run positive Account Suspension end-to-end experiment
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
+          node --experimental-strip-types poc/scripts/phase10b-positive-e2e.mjs
+
+      - name: Verify Runner execution containers were destroyed
+        run: |
+          remaining="$(docker ps -a --filter 'name=delegation-runner-' --format '{{.Names}}')"
+          if [[ -n "$remaining" ]]; then
+            echo "Runner left execution containers behind:" >&2
+            printf '%s\n' "$remaining" >&2
+            exit 1
+          fi
+
+      - name: Verify researcher acceptance source remained unchanged
+        run: git diff --exit-code -- poc/runner/acceptance
+
+      - name: Show Phase 10B logs on failure
+        if: failure()
+        run: |
+          echo "=== Adapter ==="
+          cat /tmp/phase10b-adapter.log || true
+          echo "=== Gateway ==="
+          cat /tmp/phase10b-gateway.log || true
+          echo "=== Controlled Runner ==="
+          cat /tmp/phase10b-runner.log || true
+          echo "=== Runner execution logs ==="
+          if [[ -d /tmp/delegation-runner-logs ]]; then
+            find /tmp/delegation-runner-logs -maxdepth 1 -type f -print -exec cat {} \;
+          fi
+          echo "=== Gitea ==="
+          docker logs delegation-poc-gitea || true
+          echo "=== OPA ==="
+          docker logs delegation-poc-opa || true
+          echo "=== Anvil ==="
+          docker logs delegation-poc-anvil || true
+
+      - name: Stop Phase 10B services
+        if: always()
+        run: |
+          kill "$(cat /tmp/phase10b-gateway.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/phase10b-runner.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/phase10b-adapter.pid)" 2>/dev/null || true
+          docker ps -aq --filter 'name=delegation-runner-' | xargs -r docker rm -f
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
