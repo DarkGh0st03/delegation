@@ -194,12 +194,11 @@ impl EvmAdapterProfile {
             Rc::new(EvmBackedTrustRegistry::new(trust_reader, public_material));
 
         let raw_status_provider: StatusListCredentialProviderRef = profile.status_source.clone();
-        let status_provider: StatusListCredentialProviderRef = Rc::new(
-            JwtAuthenticatedStatusListCredentialProvider::new(
+        let status_provider: StatusListCredentialProviderRef =
+            Rc::new(JwtAuthenticatedStatusListCredentialProvider::new(
                 raw_status_provider,
                 verification_keys,
-            ),
-        );
+            ));
         let status_reader: Rc<dyn EvmStatusListReader> = profile.chain_reader.clone();
         let status_resolver: StatusListResolverRef = Rc::new(EvmAnchoredStatusListResolver::new(
             status_provider,
