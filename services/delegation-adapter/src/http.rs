@@ -15,6 +15,7 @@ const MAX_BODY_BYTES: u64 = 1024 * 1024;
 struct HealthResponse<'a> {
     status: &'a str,
     service: &'a str,
+    trust_profile: &'a str,
 }
 
 #[derive(Serialize)]
@@ -36,7 +37,7 @@ pub fn run(config: AdapterConfig) -> Result<(), String> {
             config.bind_addr
         )
     })?;
-    let mut crypto = CryptoRuntime::new(&config.callers)?;
+    let mut crypto = CryptoRuntime::from_config(&config)?;
 
     eprintln!("Delegation Adapter listening on {}", config.bind_addr);
 
@@ -58,6 +59,7 @@ fn handle_request(mut request: Request, config: &AdapterConfig, crypto: &mut Cry
             &HealthResponse {
                 status: "ok",
                 service: "delegation-adapter",
+                trust_profile: config.trust_profile.as_str(),
             },
         );
         return;

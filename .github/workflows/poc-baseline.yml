@@ -1779,4 +1779,104 @@ jobs:
           kill "$(cat /tmp/gateway.pid)" 2>/dev/null || true
           kill "$(cat /tmp/adapter.pid)" 2>/dev/null || true
           kill "$(cat /tmp/runner-stub.pid)" 2>/dev/null || true
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v\n
+  phase10a-evm-adapter-smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_CALLER_ENGINEER: engineer-phase10a-secret
+      ADAPTER_CALLER_GATEWAY: gateway-phase10a-secret
+      ADAPTER_CALLER_ORCHESTRATOR: orchestrator-phase10a-secret
+      ADAPTER_CALLER_BACKEND: backend-phase10a-secret
+      ADAPTER_CALLER_FRONTEND: frontend-phase10a-secret
+      ADAPTER_CALLER_TEST: test-phase10a-secret
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      DELEGATION_ADAPTER_URL: http://127.0.0.1:8090
+      ANVIL_DEPLOYER_PRIVATE_KEY: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      GOVERNANCE_PRIVATE_KEY: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+      ADAPTER_EVM_PRIVATE_KEY_ENGINEER: 0x0000000000000000000000000000000000000000000000000000000000000001
+      ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR: 0x0000000000000000000000000000000000000000000000000000000000000002
+      ADAPTER_EVM_PRIVATE_KEY_BACKEND: 0x0000000000000000000000000000000000000000000000000000000000000003
+      ADAPTER_EVM_PRIVATE_KEY_FRONTEND: 0x0000000000000000000000000000000000000000000000000000000000000004
+      ADAPTER_EVM_PRIVATE_KEY_TEST: 0x0000000000000000000000000000000000000000000000000000000000000005
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+
+      - name: Install Phase 10A dependencies
+        run: |
+          npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+
+      - name: Generate local infrastructure environment
+        run: node poc/scripts/init-local-env.mjs --force
+
+      - name: Start Anvil and deploy trust contracts
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil
+          for i in {1..60}; do
+            if cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+              break
+            fi
+            sleep 0.5
+          done
+          RPC_URL=http://127.0.0.1:8545           CHAIN_ID=31337           ANVIL_DEPLOYER_PRIVATE_KEY="$ANVIL_DEPLOYER_PRIVATE_KEY"             bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for name in RPC_URL CHAIN_ID DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$name=${!name}" >> "$GITHUB_ENV"
+          done
+
+      - name: Prepare EVM-backed Adapter identities
+        run: |
+          chain_hex="$(printf '0x%x' "$CHAIN_ID")"
+          configure_identity() {
+            role="$1"
+            private_key="$2"
+            address="$(cast wallet address --private-key "$private_key")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+            echo "ADAPTER_ID_${role}=did:ethr:${chain_hex}:${address}" >> "$GITHUB_ENV"
+          }
+          configure_identity ENGINEER "$ADAPTER_EVM_PRIVATE_KEY_ENGINEER"
+          configure_identity ORCHESTRATOR "$ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR"
+          configure_identity BACKEND "$ADAPTER_EVM_PRIVATE_KEY_BACKEND"
+          configure_identity FRONTEND "$ADAPTER_EVM_PRIVATE_KEY_FRONTEND"
+          configure_identity TEST "$ADAPTER_EVM_PRIVATE_KEY_TEST"
+
+      - name: Build EVM-backed Delegation Adapter
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Start EVM-backed Delegation Adapter
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/phase10a-adapter.log 2>&1 &
+          echo $! > /tmp/phase10a-adapter.pid
+
+      - name: Verify EVM-backed root-child presentation path
+        run: node --experimental-strip-types poc/scripts/phase10a-evm-adapter-smoke.mjs
+
+      - name: Show Phase 10A logs on failure
+        if: failure()
+        run: |
+          echo "=== Adapter ==="
+          cat /tmp/phase10a-adapter.log || true
+          echo "=== Anvil ==="
+          docker logs delegation-poc-anvil || true
+
+      - name: Stop Phase 10A services
+        if: always()
+        run: |
+          kill "$(cat /tmp/phase10a-adapter.pid)" 2>/dev/null || true
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v

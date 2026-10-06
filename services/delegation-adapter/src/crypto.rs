@@ -1,4 +1,6 @@
 use crate::auth::{CallerCapability, CallerRecord, CallerRegistry, CallerRole};
+use crate::config::{AdapterConfig, AdapterTrustProfile, EvmAdapterConfig};
+use crate::evm_profile::EvmAdapterProfile;
 use ark_bn254::Bn254;
 use delegation::delegation::authorization::authorization_context::AuthorizationContext;
 use delegation::delegation::authorization::permission::Permission;
@@ -113,7 +115,8 @@ impl StatusListResolver for AdapterStatusResolver {
 
 pub struct CryptoRuntime {
     _trust_registry: Rc<InMemoryTrustRegistry<Curve>>,
-    status_resolver: Rc<AdapterStatusResolver>,
+    status_resolver: Option<Rc<AdapterStatusResolver>>,
+    evm_profile: Option<EvmAdapterProfile>,
     issuers: HashMap<CallerRole, DelegationIssuer<Curve>>,
     credentials: HashMap<String, VerifiableCredential<DelegationCredential>>,
     verifier: DelegationVerifier<Curve>,
@@ -121,9 +124,26 @@ pub struct CryptoRuntime {
 
 impl CryptoRuntime {
     pub fn new(callers: &CallerRegistry) -> Result<Self, String> {
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
-        let trust_ref: TrustRegistryRef<Curve> = trust_registry.clone();
+        Self::new_in_memory(callers)
+    }
 
+    pub fn from_config(config: &AdapterConfig) -> Result<Self, String> {
+        match config.trust_profile {
+            AdapterTrustProfile::InMemory => Self::new_in_memory(&config.callers),
+            AdapterTrustProfile::Evm => {
+                let evm = config
+                    .evm
+                    .as_ref()
+                    .ok_or_else(|| String::from("EVM Adapter profile is missing configuration"))?;
+                Self::new_evm(&config.callers, evm)
+            }
+        }
+    }
+
+    fn initialize_issuers(
+        callers: &CallerRegistry,
+        trust_ref: TrustRegistryRef<Curve>,
+    ) -> Result<HashMap<CallerRole, DelegationIssuer<Curve>>, String> {
         let mut issuers = HashMap::new();
         for role in [
             CallerRole::Engineer,
@@ -136,6 +156,13 @@ impl CryptoRuntime {
             let issuer = DelegationIssuer::<Curve>::new(identity, trust_ref.clone())?;
             issuers.insert(role, issuer);
         }
+        Ok(issuers)
+    }
+
+    fn new_in_memory(callers: &CallerRegistry) -> Result<Self, String> {
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_ref: TrustRegistryRef<Curve> = trust_registry.clone();
+        let issuers = Self::initialize_issuers(callers, trust_ref.clone())?;
 
         trust_registry.set_trust_anchor(callers.identity_for_role(CallerRole::Engineer)?, true)?;
 
@@ -145,11 +172,53 @@ impl CryptoRuntime {
 
         Ok(Self {
             _trust_registry: trust_registry,
-            status_resolver,
+            status_resolver: Some(status_resolver),
+            evm_profile: None,
             issuers,
             credentials: HashMap::new(),
             verifier,
         })
+    }
+
+    fn new_evm(callers: &CallerRegistry, config: &EvmAdapterConfig) -> Result<Self, String> {
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_ref: TrustRegistryRef<Curve> = trust_registry.clone();
+        let issuers = Self::initialize_issuers(callers, trust_ref)?;
+
+        trust_registry.set_trust_anchor(callers.identity_for_role(CallerRole::Engineer)?, true)?;
+
+        let (evm_profile, verifier) =
+            EvmAdapterProfile::initialize(config, callers, trust_registry.clone(), &issuers)?;
+
+        Ok(Self {
+            _trust_registry: trust_registry,
+            status_resolver: None,
+            evm_profile: Some(evm_profile),
+            issuers,
+            credentials: HashMap::new(),
+            verifier,
+        })
+    }
+
+    fn register_active_status(
+        &self,
+        issuer_role: CallerRole,
+        callers: &CallerRegistry,
+        entry: &BitstringStatusListEntry,
+    ) -> Result<(), String> {
+        if let Some(profile) = &self.evm_profile {
+            return profile.register_active_status(
+                issuer_role,
+                callers.identity_for_role(issuer_role)?,
+                entry,
+            );
+        }
+
+        self.status_resolver
+            .as_ref()
+            .ok_or_else(|| String::from("Adapter status resolver is not initialized"))?
+            .register_active(entry);
+        Ok(())
     }
 
     pub fn issue_root(
@@ -182,8 +251,11 @@ impl CryptoRuntime {
             .get(&CallerRole::Engineer)
             .ok_or_else(|| String::from("Engineer cryptographic identity is not initialized"))?;
 
-        self.status_resolver
-            .register_active(&request.credential_status);
+        self.register_active_status(
+            CallerRole::Engineer,
+            callers,
+            &request.credential_status,
+        )?;
 
         let credential = issuer.issue_delegation_verifiable_credential(
             vec![String::from(VC_CONTEXT)],
@@ -245,8 +317,11 @@ impl CryptoRuntime {
             String::from("Orchestrator cryptographic identity is not initialized")
         })?;
 
-        self.status_resolver
-            .register_active(&request.credential_status);
+        self.register_active_status(
+            CallerRole::Orchestrator,
+            callers,
+            &request.credential_status,
+        )?;
 
         let credential = issuer.issue_delegation_verifiable_credential(
             vec![String::from(VC_CONTEXT)],
