@@ -18,6 +18,7 @@
     "infra:up": "bash ./scripts/phase1-up.sh",
     "infra:check": "bash ./scripts/phase1-check.sh",
     "infra:down": "bash ./scripts/phase1-down.sh",
+    "demo:local": "bash ./scripts/demo-local.sh",
     "gateway:test": "npm run test -w @thesis/gateway",
     "gateway:start": "npm run start -w @thesis/gateway",
     "agent-runtime:test": "npm run test -w @thesis/agent-runtime",
