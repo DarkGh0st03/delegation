@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 11 — security/negative experiments: COMPLETE**
+**Phase 12 — reproducibility + measurements: COMPLETE**
 
 Completed checkpoints:
 
@@ -25,8 +25,9 @@ Completed checkpoints:
 - **Phase 9B — sequential delegated A2A workflow: COMPLETE**
 - **Phase 10 — positive end-to-end Account Suspension experiment: COMPLETE**
 - **Phase 11 — security/negative experiments (11A–11E): COMPLETE**
+- **Phase 12 — reproducibility + measurements: COMPLETE**
 
-Next checkpoint: **Phase 12 — reproducibility + measurements**
+Implementation roadmap: **COMPLETE through Phase 12**
 
 ## Source-of-truth repositories
 
@@ -624,6 +625,116 @@ Implemented:
 
 Final Phase 9B.6 validation run: `37362285773`. On the final attempt, `validate`, `phase9b5-test-runner-gate-smoke` and `phase9b6-full-sequential-smoke` completed successfully. The Phase 9B.6 key step `Run full sequential delegated A2A workflow and PR gate` passed.
 
+
+### Phase 10 — Positive end-to-end Account Suspension experiment
+
+Completed and validated.
+
+Implemented:
+
+- EVM-backed Delegation Adapter verification profile using the deployed trust registries, did:ethr verification keys, accumulator commitments and anchored Status Lists;
+- sequential Backend -> Frontend -> Test specialized Agent execution through the real shared Agent Controller and Gateway-controlled tools;
+- real Controlled Runner execution against the exact final feature-branch SHA;
+- separate project-test and researcher-owned acceptance verdicts;
+- Pull Request creation only after both verdicts pass;
+- no merge tool and no automated merge.
+
+Representative positive E2E validation run:
+
+`37430125752` — success.
+
+The later fully pinned Phase 12 validation run `37436837586` also reran `phase10b-positive-e2e` successfully.
+
+### Phase 11 — Security/negative experiments
+
+Completed and validated through 11A–11E.
+
+Covered:
+
+- **11A:** enterprise Backend identity suspension acts as an immediate authorization kill switch;
+- **11B:** terminal Backend identity revocation remains fail-closed;
+- **11C:** stale/mismatched Status List commitment is rejected;
+- **11D:** one-shot authorization replay is rejected;
+- **11E:** stale exact-SHA Runner execution is rejected before isolated test execution.
+
+Pinned-toolchain validation run:
+
+`37436837879` — success.
+
+### Phase 12 — Reproducibility + measurements
+
+Completed and validated.
+
+#### Phase 12A — Measurement evidence
+
+The positive E2E now writes a structured result file and the Gateway JSON-line audit stream is converted into `phase12a-measurement-evidence/v1`.
+
+The evidence includes:
+
+- framework commit and workflow run identity;
+- exact protected baseline and final Runner-tested SHA;
+- project-test and researcher-acceptance verdicts;
+- effective model IDs;
+- provider/operation counts;
+- `prepare_ms`, `verification_ms`, `opa_ms`, `provider_ms`, `total_ms`;
+- VP size;
+- delegation chain depth;
+- disclosed permission count;
+- per-operation records.
+
+Final pinned-toolchain measurement run:
+
+`37436837586` — success.
+
+Measurement artifact:
+
+- name: `phase12a-measurement-evidence`;
+- artifact id: `11398989390`;
+- artifact zip SHA-256: `9ef305d09351b048751194085a15dcaa4b7b23274a2e0126dd8722c2702c77a5`.
+
+The same artifact also contains the resolved `poc/package-lock.json` and the reproducibility manifest.
+
+#### Phase 12B — Reproducibility contract
+
+Added:
+
+- `poc/experiments/reproducibility-manifest.json`;
+- `poc/scripts/phase12b-check-reproducibility.mjs`;
+- `docs/REPRODUCIBILITY.md`;
+- dedicated `Phase 12 Reproducibility Contract` workflow;
+- explicit `workflow_dispatch` support on the full baseline validation;
+- Rust pinned from moving `stable` to the validated `1.99.0` across baseline/security workflows;
+- exact Node/npm, Foundry, Solidity, A2A SDK, Gitea, OPA, Runner image, chain id and protected baseline checks;
+- generated PoC npm dependency lock captured as experimental evidence.
+
+Reproducibility validation run:
+
+`37436837667` — success.
+
+Observed runtime:
+
+- Node.js `22.15.0`;
+- npm `10.9.2`;
+- Rust `1.99.0`;
+- Foundry `1.8.4`.
+
+Resolved PoC npm lock:
+
+- lockfile version: `3`;
+- SHA-256: `3a576a4153f2253a2edd20ec047156747e2fe0e51d254f4b30fce4dcd6659edd`.
+
+Reproducibility artifact:
+
+- name: `phase12b-reproducibility-evidence`;
+- artifact id: `11398872897`;
+- artifact zip SHA-256: `ba63e93654af83e9bb229c75452b524d2bdea12c60440b6444c0755f87ed5c92`.
+
+Final full regression validation after the reproducibility changes:
+
+`37436837586` — **success**, including `validate`, all prior smoke/regression jobs, `phase10a-evm-adapter-smoke` and `phase10b-positive-e2e`.
+
+The implementation roadmap `0A -> 12` is complete. Remaining work is thesis analysis/reporting: repeat measurement runs as needed, analyze distributions, document threats to validity and integrate results into the dissertation.
+
 ## Validation commands
 
 ```bash
@@ -644,16 +755,15 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — Phase 10
+## Next action — thesis analysis and reporting
 
-Run the first positive end-to-end Account Suspension experiment against the protected application:
+The implementation roadmap is complete through Phase 12.
 
-- start from the hardened baseline where Account Suspension is absent;
-- let the delegated Backend, Frontend and Test Agents implement the feature through the Phase 9B coordinator;
-- preserve the frozen authority boundaries and Backend -> Frontend -> Test ordering;
-- require project tests and researcher-owned acceptance tests to pass on the exact final feature-branch SHA;
-- create the final Pull Request only after the Runner evidence is acceptable;
-- preserve the tested exact SHA in the evidence used for the final gate;
-- expose no merge tool and perform no automated merge.
+Next research/reporting work:
 
-Do not start Phase 11 security/negative experiments until the positive E2E is reproducible and green.
+- rerun the pinned positive experiment enough times for the thesis measurement protocol;
+- aggregate authorization latency by operation/provider instead of treating the long Runner execution as ordinary Gateway overhead;
+- report p50/p95 and raw sample counts from the evidence bundles;
+- compare positive and fail-closed security cases;
+- document reproducibility assumptions and threats to validity;
+- use the exact run/commit/artifact identifiers from this file in the thesis.

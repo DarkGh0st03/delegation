@@ -156,25 +156,27 @@ npm --prefix poc run check:scaffold
 
 ## Current checkpoint
 
-The pre-Gateway trust/blockchain phase is complete and has been validated after the architecture cleanup.
+The thesis PoC implementation roadmap is complete through **Phase 12 — reproducibility + measurements**.
 
-The current reproducible validation checks:
+Validated end state includes:
 
-- `cargo fmt --check`;
-- 58 Rust tests;
-- 18 Solidity tests;
-- fresh local Anvil deployment;
-- DID resolution through `did:ethr`;
-- authenticated Status List JWT verification;
-- authorization before revocation;
-- rejection of the same credential after the current Status List is updated.
+- EVM-backed delegated-authorization verification;
+- Gateway + OPA + protected Gitea execution;
+- deterministic Backend -> Frontend -> Test delegation;
+- real exact-SHA Controlled Runner;
+- researcher-owned acceptance gating;
+- positive Account Suspension E2E;
+- Phase 11 security/negative experiments;
+- structured measurement evidence and a machine-checked reproducibility contract.
 
-For a fresh full local run:
+Final pinned full-regression run: `37436837586` — success.
 
-```bash
-bash blockchain/scripts/run-pre-gateway-local.sh
-```
+Dedicated reproducibility run: `37436837667` — success.
 
-The script starts a fresh Anvil chain in a separate Git Bash/Mintty window on Windows, deploys the contracts, configures all local identities and addresses, runs the complete validation, and intentionally leaves Anvil running for further manual inspection.
+See:
 
-The Rust/trust implementation remains the cryptographic baseline. Phases 1–3 are now CI-validated: the local Gitea/OPA/Anvil environment is reproducible, the identity-bound Rust Delegation Adapter exposes issuance/presentation/verification, and the TypeScript Gateway performs canonical prepare → signed VP verification → one-shot mock execution. The next milestone is Phase 4: insert OPA after DelegationVerifier success and before any executor/provider call.
+- `docs/IMPLEMENTATION_STATE.md` for the complete checkpoint history;
+- `docs/REPRODUCIBILITY.md` for the frozen runtime and measurement protocol;
+- `poc/experiments/reproducibility-manifest.json` for the machine-readable environment contract.
+
+The next work is experimental repetition, statistical analysis, threats-to-validity discussion and thesis writing.
