@@ -766,6 +766,28 @@ Full results and data-quality notes: `docs/MEASUREMENT_RESULTS.md`.
 Machine-readable reference summary: `poc/experiments/phase12c-reference-summary.json`.
 
 
+
+### Final hardening checkpoint
+
+Implemented after the Phase 12 audit and validated first on the isolated `final-hardening` branch.
+
+Hardening changes:
+
+- EVM-backed Status List documents are now signed as EdDSA JWTs by the issuer and verified through the current `did:ethr` Ed25519 verification key before the EVM anchor/bit checks are accepted;
+- the full baseline `validate` job now runs `forge test --root blockchain` in addition to the Rust/Node/OPA regression suites;
+- `poc/package-lock.json` is committed from the previously validated dependency tree and all PoC CI installs use `npm ci`;
+- the reproducibility contract verifies the committed lockfile SHA-256;
+- Gitea bootstrap creates and verifies protection for protected `main`: direct push and force-push are disabled and one approval is required for merge;
+- the measurement workflow now reruns when authorization/EVM/status/bootstrap/dependency inputs that can affect the measurements change.
+
+Pre-promotion hardening validation on commit `aebaf4fb16d4f5fab05a8dfde4063f76ea71affa`:
+
+- full baseline validation `37446327646` — **success**;
+- security experiments `37446327651` — **success**;
+- reproducibility contract `37446327672` — **success**.
+
+The final promotion to `main` must rerun baseline, security, reproducibility and the five-replica measurement campaign before the repository is treated as the frozen thesis baseline.
+
 ## Validation commands
 
 ```bash

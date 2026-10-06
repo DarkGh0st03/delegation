@@ -7,6 +7,12 @@ on:
     paths:
       - ".github/workflows/phase12-measurement-campaign.yml"
       - "poc/scripts/phase12c-aggregate-measurements.mjs"
+      - "poc/scripts/phase10b-positive-e2e.mjs"
+      - "services/delegation-adapter/**"
+      - "src/delegation/status/**"
+      - "poc/package-lock.json"
+      - "poc/scripts/bootstrap-gitea.sh"
+      - "poc/experiments/reproducibility-manifest.json"
   workflow_dispatch:
 
 permissions:

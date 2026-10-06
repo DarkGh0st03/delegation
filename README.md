@@ -154,6 +154,11 @@ For the scaffold sanity check:
 npm --prefix poc run check:scaffold
 ```
 
+
+### Final hardening
+
+The final audit added authenticated JWT Status Lists to the EVM Adapter path, direct Solidity regression testing, a committed PoC npm lockfile with `npm ci`, and Gitea `main` branch protection. These changes were validated on an isolated hardening branch before promotion.
+
 ## Current checkpoint
 
 The thesis PoC implementation roadmap is complete through **Phase 12 — reproducibility + measurements**.
