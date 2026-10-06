@@ -3,6 +3,7 @@ name: PoC Baseline Validation
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt
 
@@ -118,7 +119,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -207,7 +208,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -301,7 +302,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -407,7 +408,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -594,7 +595,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -823,7 +824,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -924,7 +925,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1030,7 +1031,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1137,7 +1138,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1213,7 +1214,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1309,7 +1310,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1407,7 +1408,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1500,7 +1501,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1597,7 +1598,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1708,7 +1709,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1810,7 +1811,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1931,7 +1932,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.0
 
       - uses: actions/setup-node@v4
         with:
@@ -1943,7 +1944,7 @@ jobs:
 
       - name: Install Phase 10B dependencies
         run: |
-          npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm --prefix poc install --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local Phase 10B environment
@@ -2052,7 +2053,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: phase12a-measurement-evidence
-          path: /tmp/phase12a-measurement-evidence.json
+          path: |
+            /tmp/phase12a-measurement-evidence.json
+            poc/package-lock.json
+            poc/experiments/reproducibility-manifest.json
           if-no-files-found: error
           retention-days: 30
 

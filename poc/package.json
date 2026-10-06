@@ -22,7 +22,8 @@
     "gateway:start": "npm run start -w @thesis/gateway",
     "agent-runtime:test": "npm run test -w @thesis/agent-runtime",
     "orchestrator-runtime:test": "npm run test -w @thesis/orchestrator-runtime",
-    "orchestrator:bootstrap": "npm run bootstrap -w @thesis/orchestrator"
+    "orchestrator:bootstrap": "npm run bootstrap -w @thesis/orchestrator",
+    "experiment:repro-check": "node ./scripts/phase12b-check-reproducibility.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "1.3.0",

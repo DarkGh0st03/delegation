@@ -1,0 +1,49 @@
+name: Phase 12 Reproducibility Contract
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase12b-reproducibility-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - uses: dtolnay/rust-toolchain@1.99.0
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+
+      - name: Resolve exact PoC npm dependency tree
+        run: npm --prefix poc install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Validate reproducibility contract and runtime
+        env:
+          PHASE12_VERIFY_RUNTIME: "1"
+          PHASE12_RESOLVED_LOCK: poc/package-lock.json
+          PHASE12_REPORT_FILE: /tmp/phase12b-reproducibility-report.json
+        run: node poc/scripts/phase12b-check-reproducibility.mjs
+
+      - name: Upload reproducibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase12b-reproducibility-evidence
+          path: |
+            /tmp/phase12b-reproducibility-report.json
+            poc/package-lock.json
+            poc/experiments/reproducibility-manifest.json
+            docs/REPRODUCIBILITY.md
+          if-no-files-found: error
+          retention-days: 30

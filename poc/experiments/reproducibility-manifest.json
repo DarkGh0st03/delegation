@@ -1,0 +1,54 @@
+{
+  "schema_version": "phase12b-reproducibility-manifest/v1",
+  "protected_application": {
+    "repository": "DarkGh0st03/iam-console-poc",
+    "baseline_branch": "baseline-before-account-suspension",
+    "baseline_sha": "405748b1e77992b6bd8630a3ab6f990658d32f6b"
+  },
+  "validated_evidence": {
+    "positive_e2e_run_id": "37435049292",
+    "positive_e2e_commit_sha": "c40eea80f6a69c4885074e768b2cb11d6879e6c5",
+    "measurement_artifact_name": "phase12a-measurement-evidence",
+    "measurement_schema": "phase12a-measurement-evidence/v1",
+    "security_run_id": "37434681909"
+  },
+  "runtime": {
+    "ci_os": "ubuntu-24.04",
+    "observed_ci_image_release": "ubuntu24/20260927.320",
+    "node": "22.15.0",
+    "npm": "10.9.2",
+    "rust": "1.99.0",
+    "solidity": "0.8.24",
+    "foundry": "v1.8.4",
+    "a2a_sdk": "1.3.0"
+  },
+  "infrastructure": {
+    "gitea_image": "docker.gitea.com/gitea:28.0.0",
+    "opa_image": "openpolicyagent/opa:1.21.1",
+    "foundry_image": "ghcr.io/foundry-rs/foundry:v1.8.4",
+    "runner_image": "node:22.15.0-bookworm",
+    "anvil_chain_id": 31337,
+    "repository_uri": "gitea://gitea.local/thesis/iam-console-poc",
+    "feature_branch": "feature/account-suspension",
+    "runner_profile": "poc-default"
+  },
+  "experiment_contract": {
+    "agent_order": [
+      "backend",
+      "frontend",
+      "test"
+    ],
+    "trust_profile": "evm",
+    "project_tests_required": "pass",
+    "researcher_acceptance_required": "pass",
+    "exact_sha_gate": true,
+    "automatic_merge": false,
+    "researcher_acceptance_agent_writable": false
+  },
+  "dependency_resolution": {
+    "poc_top_level_versions_are_exact": true,
+    "poc_resolved_lockfile": "captured-as-ci-artifact",
+    "rust_cargo_lock_committed": true,
+    "did_client_lock_committed": true
+  }
+}
