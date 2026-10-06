@@ -1779,7 +1779,7 @@ jobs:
           kill "$(cat /tmp/gateway.pid)" 2>/dev/null || true
           kill "$(cat /tmp/adapter.pid)" 2>/dev/null || true
           kill "$(cat /tmp/runner-stub.pid)" 2>/dev/null || true
-          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v\n
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
   phase10a-evm-adapter-smoke:
     needs: validate
     runs-on: ubuntu-latest
