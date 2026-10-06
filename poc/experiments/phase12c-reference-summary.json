@@ -1,0 +1,166 @@
+{
+  "schema_version": "phase12c-reference-summary/v1",
+  "campaign": {
+    "workflow_run_id": "37439708880",
+    "framework_commit_sha": "f457f6f194497f9567f67ae72cdb465085c65ca5",
+    "replica_count": 5,
+    "authorizations": 140,
+    "gitea_authorizations": 135,
+    "runner_authorizations": 5,
+    "outcome": "success"
+  },
+  "aggregate_artifact": {
+    "id": 11401146619,
+    "name": "phase12c-aggregate-evidence",
+    "sha256": "67d30cb54e052fad320b9155599558391004fe6072a7ca290908af232c09d150",
+    "retention_days": 90
+  },
+  "metrics": {
+    "all": {
+      "verification_ms": {
+        "mean": 623.78,
+        "p50": 674.286,
+        "p95": 702.932
+      },
+      "opa_ms": {
+        "mean": 1.758,
+        "p50": 1.612,
+        "p95": 2.81
+      },
+      "provider_ms": {
+        "mean": 2595.023,
+        "p50": 181.834,
+        "p95": 440.758
+      },
+      "total_ms": {
+        "mean": 3220.584,
+        "p50": 712.385,
+        "p95": 1056.962
+      },
+      "vp_size_bytes": {
+        "mean": 2268.036,
+        "p50": 2334,
+        "p95": 2343
+      }
+    },
+    "gitea_only": {
+      "verification_ms": {
+        "mean": 623.467,
+        "p50": 674.286,
+        "p95": 702.932
+      },
+      "opa_ms": {
+        "mean": 1.771,
+        "p50": 1.62,
+        "p95": 2.844
+      },
+      "provider_ms": {
+        "mean": 152.725,
+        "p50": 168.368,
+        "p95": 311.042
+      },
+      "total_ms": {
+        "mean": 777.984,
+        "p50": 710.376,
+        "p95": 1011.694
+      },
+      "mean_share_percent": {
+        "verification": 80.139,
+        "opa": 0.228,
+        "provider": 19.631
+      }
+    },
+    "runner_only": {
+      "verification_ms": {
+        "mean": 632.237,
+        "p50": 676.339,
+        "p95": 707.856
+      },
+      "opa_ms": {
+        "mean": 1.42,
+        "p50": 1.489,
+        "p95": 1.553
+      },
+      "provider_ms": {
+        "mean": 68537.09,
+        "p50": 71161.932,
+        "p95": 73689.306
+      },
+      "total_ms": {
+        "mean": 69170.777,
+        "p50": 71839.782,
+        "p95": 74381.204
+      },
+      "mean_share_percent": {
+        "verification": 0.914,
+        "opa": 0.002,
+        "provider": 99.084
+      }
+    }
+  },
+  "by_operation": {
+    "create_branch": {
+      "count": 5,
+      "verification_mean_ms": 566.326,
+      "provider_mean_ms": 298.39,
+      "total_mean_ms": 869.498,
+      "total_p50_ms": 880.605,
+      "total_p95_ms": 1100.435
+    },
+    "create_file": {
+      "count": 5,
+      "verification_mean_ms": 629.5,
+      "provider_mean_ms": 274.971,
+      "total_mean_ms": 906.007,
+      "total_p50_ms": 946.581,
+      "total_p95_ms": 1131.635
+    },
+    "create_pull_request": {
+      "count": 5,
+      "verification_mean_ms": 554.861,
+      "provider_mean_ms": 274.603,
+      "total_mean_ms": 831.827,
+      "total_p50_ms": 880.873,
+      "total_p95_ms": 929.231
+    },
+    "read_file": {
+      "count": 70,
+      "verification_mean_ms": 626.845,
+      "provider_mean_ms": 41.241,
+      "total_mean_ms": 669.795,
+      "total_p50_ms": 699.718,
+      "total_p95_ms": 760.63
+    },
+    "update_file": {
+      "count": 50,
+      "verification_mean_ms": 630.708,
+      "provider_mean_ms": 269.823,
+      "total_mean_ms": 902.111,
+      "total_p50_ms": 967.802,
+      "total_p95_ms": 1015.648
+    },
+    "run_tests": {
+      "count": 5,
+      "verification_mean_ms": 632.237,
+      "provider_mean_ms": 68537.09,
+      "total_mean_ms": 69170.777,
+      "total_p50_ms": 71839.782,
+      "total_p95_ms": 74381.204
+    }
+  },
+  "data_quality": {
+    "clean_campaign_only": true,
+    "excluded_exploratory_run_id": "37438980717",
+    "exclusion_reasons": [
+      "one replica failed before experiment execution because foundryup download returned HTTP 500",
+      "one replica exposed a flaky Playwright locator that matched list-page ACTIVE badges before detail navigation stabilized"
+    ],
+    "stabilization_commit": "f457f6f194497f9567f67ae72cdb465085c65ca5",
+    "regression_run_after_stabilization": "37439708773",
+    "regression_conclusion": "success",
+    "security_run_after_stabilization": "37439708739",
+    "security_conclusion": "success",
+    "reproducibility_run_after_stabilization": "37439708780",
+    "reproducibility_conclusion": "success"
+  }
+}

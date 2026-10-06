@@ -735,6 +735,37 @@ Final full regression validation after the reproducibility changes:
 
 The implementation roadmap `0A -> 12` is complete. Remaining work is thesis analysis/reporting: repeat measurement runs as needed, analyze distributions, document threats to validity and integrate results into the dissertation.
 
+#### Phase 12C — Reference repeated measurement campaign
+
+Completed after the implementation roadmap.
+
+Clean campaign run:
+
+`37439708880` — **success** on framework commit `f457f6f194497f9567f67ae72cdb465085c65ca5`.
+
+Results:
+
+- 5/5 independent positive E2E replicas succeeded;
+- 28 authorizations per replica;
+- 140 total authorization executions;
+- 135 Gitea executions + 5 Controlled Runner executions;
+- Gitea-path total mean `777.984 ms`, p50 `710.376 ms`, p95 `1011.694 ms`;
+- Gitea-path delegation verification mean `623.467 ms`;
+- Gitea-path OPA mean `1.771 ms`;
+- Gitea provider mean `152.725 ms`;
+- Runner total mean `69.171 s`, analyzed separately from ordinary provider operations.
+
+Aggregate evidence artifact:
+
+- `phase12c-aggregate-evidence`;
+- artifact id `11401146619`;
+- SHA-256 `67d30cb54e052fad320b9155599558391004fe6072a7ca290908af232c09d150`.
+
+Full results and data-quality notes: `docs/MEASUREMENT_RESULTS.md`.
+
+Machine-readable reference summary: `poc/experiments/phase12c-reference-summary.json`.
+
+
 ## Validation commands
 
 ```bash

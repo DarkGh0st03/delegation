@@ -86,3 +86,12 @@ Researcher-owned acceptance tests remain outside specialized Agent write authori
 ## Validated Phase 12A reference
 
 GitHub Actions run `37435049292` successfully produced and uploaded the first measurement evidence bundle while the complete regression suite and Phase 10B positive E2E remained green.
+
+
+## Reference repeated campaign
+
+The clean five-replica reference campaign is GitHub Actions run `37439708880`, framework SHA `f457f6f194497f9567f67ae72cdb465085c65ca5`.
+
+All five replicas passed the complete positive E2E, producing 140 authorization samples. The aggregate artifact is `phase12c-aggregate-evidence` (artifact `11401146619`, SHA-256 `67d30cb54e052fad320b9155599558391004fe6072a7ca290908af232c09d150`).
+
+See `docs/MEASUREMENT_RESULTS.md` for the interpretation and `poc/experiments/phase12c-reference-summary.json` for the compact machine-readable reference values.
