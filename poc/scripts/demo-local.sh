@@ -385,11 +385,27 @@ cmd_run() {
   export TEST_RUNNER_GATEWAY_TOKEN="phase10b-gateway-runner-secret"
   export TEST_RUNNER_URL=http://127.0.0.1:8091
 
-  node --experimental-strip-types "$ROOT_DIR/poc/scripts/phase10b-positive-e2e.mjs"
+  NODE_NO_WARNINGS=1 node --experimental-strip-types \
+    "$ROOT_DIR/poc/scripts/phase10b-positive-e2e.mjs" \
+    | tee "$RUNTIME_DIR/phase10b-console.log"
 
   step "4/4" "Demo result"
   [[ -f "$RESULT_FILE" ]] || fail "The E2E script did not write its result file."
-  cat "$RESULT_FILE"
+  node - "$RESULT_FILE" <<'NODE_SUMMARY'
+const fs = require("node:fs");
+const path = process.argv[2];
+const r = JSON.parse(fs.readFileSync(path, "utf8"));
+console.log("  result                " + r.result);
+console.log("  trust profile         " + r.trust_profile);
+console.log("  workflow              " + r.workflow_state);
+console.log("  completed roles       " + r.completed_roles.join(" -> "));
+console.log("  project tests         " + r.project_tests);
+console.log("  researcher acceptance " + r.researcher_acceptance);
+console.log("  pull request          #" + r.pull_request_number);
+console.log("  main unchanged        " + r.main_unchanged);
+console.log("  automatic merge       " + r.automatic_merge);
+console.log("  tested commit         " + r.tested_commit_sha);
+NODE_SUMMARY
   printf '\nNow refresh Gitea and open Pull Requests -> #1.\n'
   printf 'Expected: feature/account-suspension -> main, with main still unchanged.\n'
 }
