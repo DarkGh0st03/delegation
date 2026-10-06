@@ -6,11 +6,13 @@
     "baseline_sha": "405748b1e77992b6bd8630a3ab6f990658d32f6b"
   },
   "validated_evidence": {
-    "positive_e2e_run_id": "37435049292",
-    "positive_e2e_commit_sha": "c40eea80f6a69c4885074e768b2cb11d6879e6c5",
+    "positive_e2e_run_id": "37439708773",
+    "positive_e2e_commit_sha": "f457f6f194497f9567f67ae72cdb465085c65ca5",
     "measurement_artifact_name": "phase12a-measurement-evidence",
     "measurement_schema": "phase12a-measurement-evidence/v1",
-    "security_run_id": "37434681909"
+    "security_run_id": "37439708739",
+    "reference_campaign_run_id": "37439708880",
+    "reference_campaign_commit_sha": "f457f6f194497f9567f67ae72cdb465085c65ca5"
   },
   "runtime": {
     "ci_os": "ubuntu-24.04",
@@ -47,7 +49,9 @@
   },
   "dependency_resolution": {
     "poc_top_level_versions_are_exact": true,
-    "poc_resolved_lockfile": "captured-as-ci-artifact",
+    "poc_lock_committed": true,
+    "poc_lockfile": "poc/package-lock.json",
+    "poc_lock_sha256": "a8ea376636548da3d3bdb48b96de0eb2dc6639105d7352ba3ac793553a76d745",
     "rust_cargo_lock_committed": true,
     "did_client_lock_committed": true
   }

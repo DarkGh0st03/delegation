@@ -26,8 +26,8 @@ jobs:
         with:
           version: v1.8.4
 
-      - name: Resolve exact PoC npm dependency tree
-        run: npm --prefix poc install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install committed PoC npm dependency tree
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Validate reproducibility contract and runtime
         env:

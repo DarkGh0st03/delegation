@@ -13,6 +13,11 @@ assert.equal(
   "phase12b-reproducibility-manifest/v1"
 );
 
+const lockContract = manifest.dependency_resolution;
+assert.equal(lockContract.poc_lock_committed, true);
+assert.equal(lockContract.poc_lockfile, "poc/package-lock.json");
+assert.match(lockContract.poc_lock_sha256, /^[0-9a-f]{64}$/u);
+
 const packageJson = JSON.parse(await readFile("poc/package.json", "utf8"));
 assert.equal(packageJson.engines.node, manifest.runtime.node);
 assert.equal(packageJson.engines.npm, manifest.runtime.npm);
@@ -138,10 +143,16 @@ if (lockPath) {
     Number.isSafeInteger(lock.lockfileVersion) && lock.lockfileVersion >= 3,
     "Resolved PoC lockfile must use npm lockfileVersion >= 3"
   );
+  const sha256 = createHash("sha256").update(raw).digest("hex");
+  assert.equal(
+    sha256,
+    manifest.dependency_resolution.poc_lock_sha256,
+    "Committed PoC lockfile hash drifted"
+  );
   resolvedLock = {
     path: lockPath,
     lockfile_version: lock.lockfileVersion,
-    sha256: createHash("sha256").update(raw).digest("hex")
+    sha256
   };
 }
 

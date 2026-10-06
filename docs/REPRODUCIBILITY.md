@@ -38,9 +38,9 @@ The hosted GitHub runner image build is recorded as evidence but is not treated 
 
 ## Dependency resolution
 
-`Cargo.lock` and `blockchain/did-client/package-lock.json` are committed.
+`Cargo.lock`, `blockchain/did-client/package-lock.json`, and `poc/package-lock.json` are committed.
 
-The PoC workspace historically did not commit an npm lockfile. Phase 12 therefore resolves a `poc/package-lock.json` during the experimental run and uploads that exact resolved tree alongside the measurement/reproducibility evidence. A reproduction of a specific run should use the lockfile attached to that run.
+The PoC npm lockfile is the exact dependency tree captured from the validated reference regression and is now part of the repository. CI installs that tree with `npm ci`; the reproducibility contract checks its SHA-256 so transitive dependency drift fails closed. Historical evidence bundles still preserve the lockfile used by their original run.
 
 ## Validation
 
@@ -50,7 +50,7 @@ Run the lightweight reproducibility check with:
 npm --prefix poc run experiment:repro-check
 ```
 
-The dedicated GitHub Actions workflow additionally installs the exact Rust and Foundry versions, resolves the PoC npm lockfile, validates the runtime, and uploads a `phase12b-reproducibility-evidence` artifact.
+The dedicated GitHub Actions workflow additionally installs the exact Rust and Foundry versions, installs the committed PoC npm tree with `npm ci`, validates the runtime and lockfile hash, and uploads a `phase12b-reproducibility-evidence` artifact.
 
 The main `PoC Baseline Validation` workflow also supports `workflow_dispatch`, allowing an explicit rerun of the complete positive E2E against the frozen protected baseline.
 
@@ -85,7 +85,7 @@ Researcher-owned acceptance tests remain outside specialized Agent write authori
 
 ## Validated Phase 12A reference
 
-GitHub Actions run `37435049292` successfully produced and uploaded the first measurement evidence bundle while the complete regression suite and Phase 10B positive E2E remained green.
+GitHub Actions run `37439708773` is the final pre-hardening full regression reference on framework commit `f457f6f194497f9567f67ae72cdb465085c65ca5`; it successfully produced the measurement evidence bundle while the complete regression suite and Phase 10B positive E2E remained green.
 
 
 ## Reference repeated campaign

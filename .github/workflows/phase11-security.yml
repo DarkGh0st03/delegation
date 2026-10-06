@@ -59,7 +59,7 @@ jobs:
 
       - name: Install Phase 11A dependencies
         run: |
-          npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local Phase 11A environment

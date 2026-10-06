@@ -27,7 +27,7 @@ jobs:
           version: v1.8.4
 
       - name: Install PoC Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Rust formatting
         run: cargo fmt --check
@@ -792,7 +792,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install pinned A2A dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Run deterministic A2A discovery Message Task Artifact smoke
         run: node --experimental-strip-types poc/scripts/phase7-a2a-smoke.mjs
@@ -838,7 +838,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install Phase 8A Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local infrastructure environment
         run: node poc/scripts/init-local-env.mjs --force
@@ -939,7 +939,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install Phase 8B Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local infrastructure environment
         run: node poc/scripts/init-local-env.mjs --force
@@ -1045,7 +1045,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install Phase 8C Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local infrastructure environment
         run: node poc/scripts/init-local-env.mjs --force
@@ -1152,7 +1152,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install Phase 9A Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Build Delegation Adapter
         run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
@@ -1324,7 +1324,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install Phase 9B.2 Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local infrastructure environment
         run: node poc/scripts/init-local-env.mjs --force
@@ -1422,7 +1422,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install Phase 9B.3 Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local infrastructure environment
         run: node poc/scripts/init-local-env.mjs --force
@@ -1515,7 +1515,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install Phase 9B.4 Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local infrastructure environment
         run: node poc/scripts/init-local-env.mjs --force
@@ -1612,7 +1612,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install Phase 9B.5 Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local infrastructure environment
         run: node poc/scripts/init-local-env.mjs --force
@@ -1723,7 +1723,7 @@ jobs:
           node-version: 22.15.0
 
       - name: Install Phase 9B.6 Node dependencies
-        run: npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local infrastructure environment
         run: node poc/scripts/init-local-env.mjs --force
@@ -1830,7 +1830,7 @@ jobs:
 
       - name: Install Phase 10A dependencies
         run: |
-          npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local infrastructure environment
@@ -1951,7 +1951,7 @@ jobs:
 
       - name: Install Phase 10B dependencies
         run: |
-          npm --prefix poc install --ignore-scripts --no-audit --no-fund
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local Phase 10B environment

@@ -13,3 +13,4 @@ alloy = "2.5.0"
 flate2 = "1.1.8"
 multibase = "0.9.1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
+josekit = "0.10.3"

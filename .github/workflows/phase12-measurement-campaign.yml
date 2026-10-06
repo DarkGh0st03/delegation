@@ -75,7 +75,7 @@ jobs:
 
       - name: Install Phase 10B dependencies
         run: |
-          npm --prefix poc install --ignore-scripts --no-audit --no-fund
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
 
       - name: Generate local Phase 10B environment
