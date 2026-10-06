@@ -251,11 +251,7 @@ impl CryptoRuntime {
             .get(&CallerRole::Engineer)
             .ok_or_else(|| String::from("Engineer cryptographic identity is not initialized"))?;
 
-        self.register_active_status(
-            CallerRole::Engineer,
-            callers,
-            &request.credential_status,
-        )?;
+        self.register_active_status(CallerRole::Engineer, callers, &request.credential_status)?;
 
         let credential = issuer.issue_delegation_verifiable_credential(
             vec![String::from(VC_CONTEXT)],

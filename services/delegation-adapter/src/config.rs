@@ -75,18 +75,14 @@ impl EvmAdapterConfig {
             rpc_url: required("RPC_URL")?,
             chain_id,
             did_registry_address: required("DID_REGISTRY_ADDRESS")?,
-            enterprise_trust_registry_address: required(
-                "ENTERPRISE_TRUST_REGISTRY_ADDRESS",
-            )?,
+            enterprise_trust_registry_address: required("ENTERPRISE_TRUST_REGISTRY_ADDRESS")?,
             issuer_registry_address: required("ISSUER_REGISTRY_ADDRESS")?,
             governance_private_key: required("GOVERNANCE_PRIVATE_KEY")?,
             identity_private_keys,
-            did_resolver_script: env::var("ADAPTER_DID_RESOLVER_SCRIPT").unwrap_or_else(|_| {
-                String::from("blockchain/did-client/resolve-did-json.mjs")
-            }),
-            did_publisher_script: env::var("ADAPTER_DID_PUBLISHER_SCRIPT").unwrap_or_else(|_| {
-                String::from("blockchain/did-client/publish-ed25519.mjs")
-            }),
+            did_resolver_script: env::var("ADAPTER_DID_RESOLVER_SCRIPT")
+                .unwrap_or_else(|_| String::from("blockchain/did-client/resolve-did-json.mjs")),
+            did_publisher_script: env::var("ADAPTER_DID_PUBLISHER_SCRIPT")
+                .unwrap_or_else(|_| String::from("blockchain/did-client/publish-ed25519.mjs")),
         })
     }
 }

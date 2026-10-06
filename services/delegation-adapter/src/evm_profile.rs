@@ -16,9 +16,7 @@ use delegation::delegation::status::provider::status_list_credential_provider_tr
 };
 use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
 use delegation::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
-use delegation::delegation::trust::evm::evm_reader_traits::{
-    EvmStatusListReader, EvmTrustReader,
-};
+use delegation::delegation::trust::evm::evm_reader_traits::{EvmStatusListReader, EvmTrustReader};
 use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
 use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
@@ -125,9 +123,7 @@ impl StatusListCredentialProvider for IssuerAwareStatusProvider {
             .get(&(issuer_id.to_string(), url.to_string()))
             .cloned()
             .ok_or_else(|| {
-                format!(
-                    "Status List Credential {url} is not available for issuer {issuer_id}"
-                )
+                format!("Status List Credential {url} is not available for issuer {issuer_id}")
             })?;
 
         Ok(StatusListCredentialArtifact {
@@ -227,8 +223,7 @@ impl EvmAdapterProfile {
             }
         } else {
             let issuer_address = did_address(issuer_id)?;
-            let list_id =
-                EvmRegistryReader::status_list_id(entry.status_list_credential());
+            let list_id = EvmRegistryReader::status_list_id(entry.status_list_credential());
             self.runtime.block_on(register_status_list(
                 &self.config.rpc_url,
                 &self.config.issuer_registry_address,
@@ -379,10 +374,12 @@ fn status_list_document(
     entry: &BitstringStatusListEntry,
     purpose: &str,
 ) -> Result<String, String> {
-    let index = entry
-        .status_list_index()
-        .parse::<usize>()
-        .map_err(|err| format!("Invalid statusListIndex {} [{err}]", entry.status_list_index()))?;
+    let index = entry.status_list_index().parse::<usize>().map_err(|err| {
+        format!(
+            "Invalid statusListIndex {} [{err}]",
+            entry.status_list_index()
+        )
+    })?;
     if index >= STATUS_LIST_BYTES * 8 {
         return Err(format!(
             "statusListIndex {index} exceeds the EVM Adapter status-list capacity"
@@ -467,9 +464,7 @@ fn publish_did_ed25519<T: Serialize>(
         .lines()
         .find_map(|line| line.trim().strip_prefix("did="))
         .ok_or_else(|| {
-            format!(
-                "DID publication for {expected_identity} did not report the published DID"
-            )
+            format!("DID publication for {expected_identity} did not report the published DID")
         })?;
 
     if did_address(published)? != did_address(expected_identity)? {
