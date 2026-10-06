@@ -151,7 +151,15 @@ jobs:
           export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
           node --experimental-strip-types poc/scripts/phase11a-identity-suspension-kill-switch.mjs
 
-      - name: Show Phase 11A logs on failure
+      - name: Run terminal Backend identity revocation experiment
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
+          node --experimental-strip-types poc/scripts/phase11b-identity-revocation-terminal.mjs
+
+      - name: Show Phase 11A/11B logs on failure
         if: failure()
         run: |
           echo "=== Adapter ==="
