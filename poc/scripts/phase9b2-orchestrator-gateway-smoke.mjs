@@ -18,7 +18,7 @@ const rootCredentialId =
   "urn:phase9b2:orchestrator-root";
 const expectedRevision =
   process.env.EXPECTED_GITEA_REVISION ??
-  "ea9984fa15098771fc451f9ae51c82824b6a40fd";
+  "405748b1e77992b6bd8630a3ab6f990658d32f6b";
 
 for (const [name, value] of Object.entries({
   GITEA_SMOKE_BASE_URL: gitea,

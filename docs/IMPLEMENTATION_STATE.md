@@ -42,7 +42,7 @@ Repository: `DarkGh0st03/iam-console-poc`
 
 Current hardened baseline SHA:
 
-`ea9984fa15098771fc451f9ae51c82824b6a40fd`
+`405748b1e77992b6bd8630a3ab6f990658d32f6b`
 
 `main` and `baseline-before-account-suspension` point to the same hardened baseline. The Account Suspension feature is intentionally absent.
 
@@ -61,7 +61,7 @@ Completed.
 
 Final Phase 0A checkpoint:
 
-`ea9984fa15098771fc451f9ae51c82824b6a40fd`
+`405748b1e77992b6bd8630a3ab6f990658d32f6b`
 
 ### Phase 0B — Scaffold integration workspace
 
@@ -307,7 +307,7 @@ Validation run:
 
 The real smoke verified:
 
-- imported protected feature branch revision `ea9984fa15098771fc451f9ae51c82824b6a40fd`;
+- imported protected feature branch revision `405748b1e77992b6bd8630a3ab6f990658d32f6b`;
 - real Gitea `read_file` through Gateway after DelegationVerifier and OPA;
 - returned immutable blob metadata;
 - a fully authorized + OPA-allowed `update_file` is still blocked by the Phase 5A read-only provider;

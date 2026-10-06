@@ -6,7 +6,7 @@ const giteaOwner = process.env.GITEA_OWNER ?? "thesis";
 const giteaRepository = process.env.GITEA_REPOSITORY ?? "iam-console-poc";
 const expectedMainRevision =
   process.env.EXPECTED_GITEA_REVISION ??
-  "ea9984fa15098771fc451f9ae51c82824b6a40fd";
+  "405748b1e77992b6bd8630a3ab6f990658d32f6b";
 
 const tokens = {
   engineer: process.env.ADAPTER_CALLER_ENGINEER,

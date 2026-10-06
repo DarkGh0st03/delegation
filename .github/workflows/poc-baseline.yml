@@ -198,7 +198,7 @@ jobs:
       GITEA_TIMEOUT_MS: "3000"
       OPA_URL: http://127.0.0.1:8181
       OPA_TIMEOUT_MS: "2000"
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
@@ -292,7 +292,7 @@ jobs:
       GITEA_TIMEOUT_MS: "3000"
       OPA_URL: http://127.0.0.1:8181
       OPA_TIMEOUT_MS: "2000"
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
@@ -398,7 +398,7 @@ jobs:
       GITEA_TIMEOUT_MS: "3000"
       OPA_URL: http://127.0.0.1:8181
       OPA_TIMEOUT_MS: "2000"
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
@@ -477,7 +477,7 @@ jobs:
       TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
       TEST_RUNNER_PHASE_TIMEOUT_MS: "600000"
       TEST_RUNNER_ACCEPTANCE_ENABLED: "false"
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
@@ -585,7 +585,7 @@ jobs:
       TEST_RUNNER_PHASE_TIMEOUT_MS: "600000"
       TEST_RUNNER_ACCEPTANCE_ENABLED: "false"
       TEST_RUNNER_TIMEOUT_MS: "900000"
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
@@ -693,7 +693,7 @@ jobs:
       TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
       TEST_RUNNER_PHASE_TIMEOUT_MS: "600000"
       TEST_RUNNER_ACCEPTANCE_ENABLED: "true"
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
@@ -814,7 +814,7 @@ jobs:
       GITEA_TIMEOUT_MS: "3000"
       OPA_URL: http://127.0.0.1:8181
       OPA_TIMEOUT_MS: "2000"
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
@@ -1204,7 +1204,7 @@ jobs:
       GITEA_TIMEOUT_MS: "3000"
       OPA_URL: http://127.0.0.1:8181
       OPA_TIMEOUT_MS: "2000"
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
@@ -1300,7 +1300,7 @@ jobs:
       OPA_URL: http://127.0.0.1:8181
       OPA_TIMEOUT_MS: "2000"
       ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase9b2:orchestrator-root
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
@@ -1699,7 +1699,7 @@ jobs:
       TEST_RUNNER_TIMEOUT_MS: "3000"
       RUNNER_STUB_COUNT_FILE: /tmp/phase9b6-runner-count.txt
       ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase9b6:orchestrator-root
-      EXPECTED_GITEA_REVISION: ea9984fa15098771fc451f9ae51c82824b6a40fd
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
     steps:
       - uses: actions/checkout@v4
 
