@@ -2,7 +2,7 @@ use crate::auth::{CallerRegistry, CallerRole};
 use crate::config::EvmAdapterConfig;
 use alloy::primitives::{Address, B256};
 use alloy::providers::ProviderBuilder;
-use alloy::signers::{Signer, local::PrivateKeySigner};
+use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use ark_bn254::Bn254;
 use delegation::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
@@ -21,15 +21,14 @@ use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
 use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
 use delegation::delegation::trust::material::public_material_provider_traits::{
-    AccumulatorMaterialProvider, AccumulatorMaterialProviderRef, VerificationKeyProvider,
-    VerificationKeyProviderRef,
+    AccumulatorMaterialProvider, AccumulatorMaterialProviderRef, VerificationKeyProviderRef,
 };
 use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
 use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
 use delegation::delegation::trust::registry::trust_registry_trait::{
     TrustRegistry, TrustRegistryRef,
 };
-use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
+use delegation::delegation::verification::delegation_verifier::DelegationVerifier;\nuse delegation::delegation::verification::verifier_trait::Verifier;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use multibase::Base;
