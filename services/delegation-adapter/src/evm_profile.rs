@@ -28,7 +28,8 @@ use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryT
 use delegation::delegation::trust::registry::trust_registry_trait::{
     TrustRegistry, TrustRegistryRef,
 };
-use delegation::delegation::verification::delegation_verifier::DelegationVerifier;\nuse delegation::delegation::verification::verifier_trait::Verifier;
+use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
+use delegation::delegation::verification::verifier_trait::Verifier;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use multibase::Base;
