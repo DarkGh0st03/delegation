@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current milestone
 
-**Phase 11A — EVM identity suspension security experiment: COMPLETE**
+**Phase 11 — security/negative experiments: COMPLETE**
 
 Completed checkpoints:
 
@@ -24,9 +24,9 @@ Completed checkpoints:
 - **Phase 9A — deterministic Orchestrator authority templates: COMPLETE**
 - **Phase 9B — sequential delegated A2A workflow: COMPLETE**
 - **Phase 10 — positive end-to-end Account Suspension experiment: COMPLETE**
-- **Phase 11A — EVM identity suspension security experiment: COMPLETE**
+- **Phase 11 — security/negative experiments (11A–11E): COMPLETE**
 
-Next checkpoint: **Phase 11B — credential/status revocation negative experiment**
+Next checkpoint: **Phase 12 — reproducibility + measurements**
 
 ## Source-of-truth repositories
 
