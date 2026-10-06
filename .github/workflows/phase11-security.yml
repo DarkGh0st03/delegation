@@ -1,0 +1,173 @@
+name: Phase 11 Security Experiments
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase11a-identity-suspension-kill-switch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_CALLER_ENGINEER: engineer-phase11a-secret
+      ADAPTER_CALLER_GATEWAY: gateway-phase11a-secret
+      ADAPTER_CALLER_ORCHESTRATOR: orchestrator-phase11a-secret
+      ADAPTER_CALLER_BACKEND: backend-phase11a-secret
+      ADAPTER_CALLER_FRONTEND: frontend-phase11a-secret
+      ADAPTER_CALLER_TEST: test-phase11a-secret
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      DELEGATION_ADAPTER_URL: http://127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GATEWAY_PROVIDER_MODE: gitea
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+      GITEA_TIMEOUT_MS: "3000"
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: "2000"
+      EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
+      ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase11a:orchestrator-root
+      RPC_URL: http://127.0.0.1:8545
+      CHAIN_ID: "31337"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+
+      - name: Install Phase 11A dependencies
+        run: |
+          npm --prefix poc install --no-package-lock --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+
+      - name: Generate local Phase 11A environment
+        run: node poc/scripts/init-local-env.mjs --force
+
+      - name: Start Gitea OPA and Anvil
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d gitea opa anvil
+          for i in {1..80}; do
+            if curl -fsS http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1 &&
+               cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
+          exit 1
+
+      - name: Generate and fund local EVM identities
+        run: |
+          local_key() {
+            printf '0x%064x' "$1"
+          }
+          export ANVIL_DEPLOYER_PRIVATE_KEY="$(local_key 1)"
+          export GOVERNANCE_PRIVATE_KEY="$ANVIL_DEPLOYER_PRIVATE_KEY"
+          export ADAPTER_EVM_PRIVATE_KEY_ENGINEER="$(local_key 2)"
+          export ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR="$(local_key 3)"
+          export ADAPTER_EVM_PRIVATE_KEY_BACKEND="$(local_key 4)"
+          export ADAPTER_EVM_PRIVATE_KEY_FRONTEND="$(local_key 5)"
+          export ADAPTER_EVM_PRIVATE_KEY_TEST="$(local_key 6)"
+
+          for name in             ANVIL_DEPLOYER_PRIVATE_KEY             GOVERNANCE_PRIVATE_KEY             ADAPTER_EVM_PRIVATE_KEY_ENGINEER             ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR             ADAPTER_EVM_PRIVATE_KEY_BACKEND             ADAPTER_EVM_PRIVATE_KEY_FRONTEND             ADAPTER_EVM_PRIVATE_KEY_TEST; do
+            value="${!name}"
+            echo "$name=$value" >> "$GITHUB_ENV"
+            address="$(cast wallet address --private-key "$value")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+          done
+
+      - name: Bootstrap protected Gitea
+        run: bash poc/scripts/bootstrap-gitea.sh
+
+      - name: Deploy Phase 11A trust contracts
+        run: |
+          bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for name in DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$name=${!name}" >> "$GITHUB_ENV"
+          done
+
+      - name: Prepare Phase 11A did:ethr identities
+        run: |
+          chain_hex="$(printf '0x%x' "$CHAIN_ID")"
+          configure_identity() {
+            role="$1"
+            private_key="$2"
+            address="$(cast wallet address --private-key "$private_key")"
+            echo "ADAPTER_ID_${role}=did:ethr:${chain_hex}:${address}" >> "$GITHUB_ENV"
+          }
+          configure_identity ENGINEER "$ADAPTER_EVM_PRIVATE_KEY_ENGINEER"
+          configure_identity ORCHESTRATOR "$ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR"
+          configure_identity BACKEND "$ADAPTER_EVM_PRIVATE_KEY_BACKEND"
+          configure_identity FRONTEND "$ADAPTER_EVM_PRIVATE_KEY_FRONTEND"
+          configure_identity TEST "$ADAPTER_EVM_PRIVATE_KEY_TEST"
+
+      - name: Build Delegation Adapter
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Start EVM-backed Delegation Adapter
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/phase11a-adapter.log 2>&1 &
+          echo $! > /tmp/phase11a-adapter.pid
+
+      - name: Start Gateway without Runner
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_BASE_URL="$GITEA_HOST_BASE_URL"
+          export GATEWAY_PROVIDER_MODE=gitea
+          export DELEGATION_ADAPTER_URL=http://127.0.0.1:8090
+          export OPA_URL=http://127.0.0.1:8181
+          unset TEST_RUNNER_URL
+          unset TEST_RUNNER_GATEWAY_TOKEN
+          npm --prefix poc run gateway:start > /tmp/phase11a-gateway.log 2>&1 &
+          echo $! > /tmp/phase11a-gateway.pid
+
+      - name: Run Backend identity suspension kill-switch experiment
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
+          node --experimental-strip-types poc/scripts/phase11a-identity-suspension-kill-switch.mjs
+
+      - name: Show Phase 11A logs on failure
+        if: failure()
+        run: |
+          echo "=== Adapter ==="
+          cat /tmp/phase11a-adapter.log || true
+          echo "=== Gateway ==="
+          cat /tmp/phase11a-gateway.log || true
+          echo "=== Gitea ==="
+          docker logs delegation-poc-gitea || true
+          echo "=== OPA ==="
+          docker logs delegation-poc-opa || true
+          echo "=== Anvil ==="
+          docker logs delegation-poc-anvil || true
+
+      - name: Stop Phase 11A services
+        if: always()
+        run: |
+          kill "$(cat /tmp/phase11a-gateway.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/phase11a-adapter.pid)" 2>/dev/null || true
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
