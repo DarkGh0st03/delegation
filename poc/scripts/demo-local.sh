@@ -95,11 +95,19 @@ stop_application_processes() {
   stop_pidfile "$RUNTIME_DIR/runner.pid"
   stop_pidfile "$RUNTIME_DIR/adapter.pid"
 
-  # Compatibility with the manual commands used while preparing this machine.
+  # Compatibility with the manual/npm/cargo commands used while preparing this
+  # workstation. Those wrappers can leave the real child process alive.
   stop_pidfile /tmp/phase10b-gateway.pid
   stop_pidfile /tmp/phase10b-runner.pid
   stop_pidfile /tmp/phase10b-adapter.pid
   stop_pidfile /tmp/phase10a-adapter.pid
+
+  pkill -f 'node --experimental-strip-types ./src/main.ts' 2>/dev/null || true
+  pkill -f "$ROOT_DIR/poc/apps/gateway/src/main.ts" 2>/dev/null || true
+  pkill -f "$ROOT_DIR/poc/apps/test-runner-controller/src/main.ts" 2>/dev/null || true
+  pkill -f 'services/delegation-adapter/target/debug/delegation-adapter' 2>/dev/null || true
+  pkill -f "$ROOT_DIR/services/delegation-adapter/target/debug/delegation-adapter" 2>/dev/null || true
+  sleep 0.3
 }
 
 stop_native_anvil() {
@@ -190,9 +198,16 @@ prepare_evm_identities() {
 }
 
 start_adapter() {
-  cargo run --manifest-path "$ROOT_DIR/services/delegation-adapter/Cargo.toml" \
+  cargo build --manifest-path "$ROOT_DIR/services/delegation-adapter/Cargo.toml" \
+    > "$RUNTIME_DIR/adapter-build.log" 2>&1
+  "$ROOT_DIR/services/delegation-adapter/target/debug/delegation-adapter" \
     > "$RUNTIME_DIR/adapter.log" 2>&1 &
   echo $! > "$RUNTIME_DIR/adapter.pid"
+  sleep 0.3
+  kill -0 "$(cat "$RUNTIME_DIR/adapter.pid")" 2>/dev/null || {
+    cat "$RUNTIME_DIR/adapter.log" >&2 || true
+    fail "Delegation Adapter exited during startup"
+  }
   wait_http http://127.0.0.1:8090/health "Delegation Adapter (EVM)"
   local health
   health="$(curl -fsS http://127.0.0.1:8090/health)"
@@ -210,9 +225,15 @@ start_runner() {
   export TEST_RUNNER_ACCEPTANCE_ENABLED="true"
   export EXPECTED_GITEA_REVISION="$EXPECTED_BASELINE"
 
-  npm --prefix "$ROOT_DIR/poc" run start -w @thesis/test-runner-controller \
+  node --experimental-strip-types \
+    "$ROOT_DIR/poc/apps/test-runner-controller/src/main.ts" \
     > "$RUNTIME_DIR/runner.log" 2>&1 &
   echo $! > "$RUNTIME_DIR/runner.pid"
+  sleep 0.3
+  kill -0 "$(cat "$RUNTIME_DIR/runner.pid")" 2>/dev/null || {
+    cat "$RUNTIME_DIR/runner.log" >&2 || true
+    fail "Controlled Test Runner exited during startup"
+  }
   wait_http http://127.0.0.1:8091/health "Controlled Test Runner"
 }
 
@@ -230,9 +251,15 @@ start_gateway() {
   export TEST_RUNNER_URL="http://127.0.0.1:8091"
   export TEST_RUNNER_GATEWAY_TOKEN="phase10b-gateway-runner-secret"
 
-  npm --prefix "$ROOT_DIR/poc" run gateway:start \
+  node --experimental-strip-types \
+    "$ROOT_DIR/poc/apps/gateway/src/main.ts" \
     > "$RUNTIME_DIR/gateway.log" 2>&1 &
   echo $! > "$RUNTIME_DIR/gateway.pid"
+  sleep 0.3
+  kill -0 "$(cat "$RUNTIME_DIR/gateway.pid")" 2>/dev/null || {
+    cat "$RUNTIME_DIR/gateway.log" >&2 || true
+    fail "Cloud Access Gateway exited during startup"
+  }
   wait_http http://127.0.0.1:8080/health "Cloud Access Gateway"
 }
 
