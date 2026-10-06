@@ -140,7 +140,11 @@ function controlledClient(context, role, adapterToken) {
       adapterBaseUrl: adapter,
       adapterToken,
       evidence: context.delegation_evidence
-    })
+    }),
+    timeoutMs:
+      role === "test"
+        ? Number(process.env.TEST_RUNNER_TIMEOUT_MS ?? "900000")
+        : 30_000
   });
 }
 
