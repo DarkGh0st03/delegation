@@ -38,6 +38,12 @@ jobs:
       ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase11a:orchestrator-root
       RPC_URL: http://127.0.0.1:8545
       CHAIN_ID: "31337"
+      TEST_RUNNER_GATEWAY_TOKEN: phase11e-gateway-runner-secret
+      TEST_RUNNER_BIND_ADDR: 127.0.0.1:8091
+      TEST_RUNNER_URL: http://127.0.0.1:8091
+      TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+      TEST_RUNNER_PHASE_TIMEOUT_MS: "600000"
+      TEST_RUNNER_ACCEPTANCE_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -175,13 +181,50 @@ jobs:
           export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
           node --experimental-strip-types poc/scripts/phase11d-one-shot-replay.mjs
 
-      - name: Show Phase 11A/11B/11C/11D logs on failure
+      - name: Start real Controlled Runner for stale-SHA experiment
+        run: |
+          set -a
+          source poc/infra/.env
+          source poc/infra/runtime/runner.env
+          set +a
+          npm --prefix poc run start -w @thesis/test-runner-controller > /tmp/phase11e-runner.log 2>&1 &
+          echo $! > /tmp/phase11e-runner.pid
+          for i in {1..60}; do
+            if curl -fsS "$TEST_RUNNER_URL/health" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          cat /tmp/phase11e-runner.log
+          exit 1
+
+      - name: Run stale exact-SHA Runner experiment
+        run: |
+          set -a
+          source poc/infra/runtime/gateway.env
+          set +a
+          export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
+          node --experimental-strip-types poc/scripts/phase11e-runner-stale-exact-sha.mjs
+
+      - name: Verify stale SHA failed before isolated execution
+        run: |
+          grep -q "Runner exact-SHA precondition failed" /tmp/phase11e-runner.log
+          remaining="$(docker ps -a --filter 'name=delegation-runner-' --format '{{.Names}}')"
+          if [[ -n "$remaining" ]]; then
+            echo "Stale-SHA request created Runner execution containers:" >&2
+            printf '%s\n' "$remaining" >&2
+            exit 1
+          fi
+
+      - name: Show Phase 11A/11B/11C/11D/11E logs on failure
         if: failure()
         run: |
           echo "=== Adapter ==="
           cat /tmp/phase11a-adapter.log || true
           echo "=== Gateway ==="
           cat /tmp/phase11a-gateway.log || true
+          echo "=== Controlled Runner ==="
+          cat /tmp/phase11e-runner.log || true
           echo "=== Gitea ==="
           docker logs delegation-poc-gitea || true
           echo "=== OPA ==="
@@ -192,6 +235,7 @@ jobs:
       - name: Stop Phase 11A services
         if: always()
         run: |
+          kill "$(cat /tmp/phase11e-runner.pid)" 2>/dev/null || true
           kill "$(cat /tmp/phase11a-gateway.pid)" 2>/dev/null || true
           kill "$(cat /tmp/phase11a-adapter.pid)" 2>/dev/null || true
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
