@@ -17,6 +17,7 @@ jobs:
     name: phase12c-measurement-replica-${{ matrix.replica }}
     strategy:
       fail-fast: false
+      max-parallel: 3
       matrix:
         replica: [1, 2, 3, 4, 5]
     runs-on: ubuntu-24.04
@@ -225,11 +226,13 @@ jobs:
       - name: Stop Phase 10B services
         if: always()
         run: |
-          kill "$(cat /tmp/phase10b-gateway.pid)" 2>/dev/null || true
-          kill "$(cat /tmp/phase10b-runner.pid)" 2>/dev/null || true
-          kill "$(cat /tmp/phase10b-adapter.pid)" 2>/dev/null || true
+          [[ -f /tmp/phase10b-gateway.pid ]] && kill "$(cat /tmp/phase10b-gateway.pid)" 2>/dev/null || true
+          [[ -f /tmp/phase10b-runner.pid ]] && kill "$(cat /tmp/phase10b-runner.pid)" 2>/dev/null || true
+          [[ -f /tmp/phase10b-adapter.pid ]] && kill "$(cat /tmp/phase10b-adapter.pid)" 2>/dev/null || true
           docker ps -aq --filter 'name=delegation-runner-' | xargs -r docker rm -f
-          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
+          if [[ -f poc/infra/.env ]]; then
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v || true
+          fi
 
 
   phase12c-aggregate:
