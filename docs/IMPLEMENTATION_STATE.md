@@ -735,13 +735,11 @@ Final full regression validation after the reproducibility changes:
 
 The implementation roadmap `0A -> 12` is complete. Remaining work is thesis analysis/reporting: repeat measurement runs as needed, analyze distributions, document threats to validity and integrate results into the dissertation.
 
-#### Phase 12C — Reference repeated measurement campaign
+#### Phase 12C — Final hardened reference measurement campaign
 
-Completed after the implementation roadmap.
+Final reference run:
 
-Clean campaign run:
-
-`37439708880` — **success** on framework commit `f457f6f194497f9567f67ae72cdb465085c65ca5`.
+`37448047642` — **success** on framework code checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a`.
 
 Results:
 
@@ -749,44 +747,52 @@ Results:
 - 28 authorizations per replica;
 - 140 total authorization executions;
 - 135 Gitea executions + 5 Controlled Runner executions;
-- Gitea-path total mean `777.984 ms`, p50 `710.376 ms`, p95 `1011.694 ms`;
-- Gitea-path delegation verification mean `623.467 ms`;
-- Gitea-path OPA mean `1.771 ms`;
-- Gitea provider mean `152.725 ms`;
-- Runner total mean `69.171 s`, analyzed separately from ordinary provider operations.
+- Gitea-path total mean `1772.341 ms`, p50 `1716.047 ms`, p95 `1993.305 ms`;
+- Gitea-path authenticated SSI/EVM verification mean `1598.406 ms`;
+- Gitea-path OPA mean `1.800 ms`;
+- Gitea provider mean `172.116 ms`;
+- Runner total mean `70.322 s`, analyzed separately.
 
-Aggregate evidence artifact:
+Aggregate evidence:
 
-- `phase12c-aggregate-evidence`;
-- artifact id `11401146619`;
-- SHA-256 `67d30cb54e052fad320b9155599558391004fe6072a7ca290908af232c09d150`.
+- artifact `phase12c-aggregate-evidence`;
+- artifact id `11405060742`;
+- SHA-256 `94aebc164f66b7087f55b3b749d40bdabcfe70f89b909e10b6e5793ca746fe96`.
 
-Full results and data-quality notes: `docs/MEASUREMENT_RESULTS.md`.
+The earlier clean campaign `37439708880` is now a historical **pre-hardening** comparison only. The final thesis measurement reference is `37448047642`.
 
-Machine-readable reference summary: `poc/experiments/phase12c-reference-summary.json`.
+Full results: `docs/MEASUREMENT_RESULTS.md`.
 
+Machine-readable summary: `poc/experiments/phase12c-reference-summary.json`.
 
 
 ### Final hardening checkpoint
 
-Implemented after the Phase 12 audit and validated first on the isolated `final-hardening` branch.
+**COMPLETE and promoted to `main`.**
+
+Final executable-code checkpoint:
+
+`cbadb5440db408d4047d4eb870a9fb231362414a`
 
 Hardening changes:
 
-- EVM-backed Status List documents are now signed as EdDSA JWTs by the issuer and verified through the current `did:ethr` Ed25519 verification key before the EVM anchor/bit checks are accepted;
-- the full baseline `validate` job now runs `forge test --root blockchain` in addition to the Rust/Node/OPA regression suites;
-- `poc/package-lock.json` is committed from the previously validated dependency tree and all PoC CI installs use `npm ci`;
+- EVM-backed Status List documents are signed as EdDSA JWTs by the issuer and authenticated through the current `did:ethr` Ed25519 verification key before EVM commitment and bit-status checks are accepted;
+- `forge test --root blockchain` is part of the full regression validation;
+- `poc/package-lock.json` is committed and PoC CI installs use `npm ci`;
 - the reproducibility contract verifies the committed lockfile SHA-256;
-- Gitea bootstrap creates and verifies protection for protected `main`: direct push and force-push are disabled and one approval is required for merge;
-- the measurement workflow now reruns when authorization/EVM/status/bootstrap/dependency inputs that can affect the measurements change.
+- local protected Gitea `main` has direct push and force-push disabled with one approval required for merge;
+- measurement CI is retriggered by authorization/EVM/status/bootstrap/dependency changes that can affect latency.
 
-Pre-promotion hardening validation on commit `aebaf4fb16d4f5fab05a8dfde4063f76ea71affa`:
+Final validation on `main`:
 
-- full baseline validation `37446327646` — **success**;
-- security experiments `37446327651` — **success**;
-- reproducibility contract `37446327672` — **success**.
+- full baseline/regression `37448047612` — **success**;
+- security experiments `37448047677` — **success**;
+- reproducibility contract `37448047526` — **success**;
+- five-replica measurement campaign `37448047642` — **success**.
 
-The final promotion to `main` must rerun baseline, security, reproducibility and the five-replica measurement campaign before the repository is treated as the frozen thesis baseline.
+The protected application remained frozen at `405748b1e77992b6bd8630a3ab6f990658d32f6b`.
+
+This checkpoint is the frozen implementation baseline for thesis analysis. Later documentation-only commits do not change the validated executable-code checkpoint.
 
 ## Validation commands
 
@@ -814,9 +820,9 @@ The implementation roadmap is complete through Phase 12.
 
 Next research/reporting work:
 
-- rerun the pinned positive experiment enough times for the thesis measurement protocol;
-- aggregate authorization latency by operation/provider instead of treating the long Runner execution as ordinary Gateway overhead;
-- report p50/p95 and raw sample counts from the evidence bundles;
+- use the completed five-replica final reference campaign for quantitative analysis;
+- report authorization latency by operation/provider instead of treating the long Runner execution as ordinary Gateway overhead;
+- report mean, p50/p95 and raw sample counts from the final evidence bundle;
 - compare positive and fail-closed security cases;
 - document reproducibility assumptions and threats to validity;
 - use the exact run/commit/artifact identifiers from this file in the thesis.

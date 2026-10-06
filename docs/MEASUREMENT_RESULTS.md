@@ -1,110 +1,142 @@
-# Phase 12C Reference Measurement Results
+# Phase 12C Final Reference Measurement Results
 
-This document records the first clean repeated measurement campaign for the thesis PoC.
+This document records the **final hardened** repeated measurement campaign for the thesis PoC.
 
-## Dataset
+## Final dataset
 
-The reference campaign is GitHub Actions run `37439708880`, executed from framework commit:
+Reference GitHub Actions run:
 
-`f457f6f194497f9567f67ae72cdb465085c65ca5`
+`37448047642`
 
-Five independent replicas of the same pinned positive Account Suspension E2E all completed successfully.
+Framework code checkpoint:
+
+`cbadb5440db408d4047d4eb870a9fb231362414a`
+
+This is the first five-replica campaign after the final audit hardening: authenticated Status List JWT verification, direct Solidity regression coverage, committed npm dependency lock and Gitea `main` protection are all active.
+
+Five independent replicas of the same pinned Account Suspension positive E2E completed successfully.
 
 Each replica executed 28 Gateway authorizations:
 
 - 27 protected Gitea operations;
 - 1 exact-SHA Controlled Runner operation.
 
-The final dataset therefore contains **140 authorization executions**:
+The final reference dataset therefore contains **140 authorization executions**:
 
 - **135 Gitea executions**;
 - **5 Runner executions**.
 
-All five replicas passed project tests and researcher-owned acceptance, created the PR only after the exact-SHA test gate, left protected `main` unchanged and performed no automated merge.
+All five replicas passed project tests and researcher-owned acceptance, created a Pull Request only after the exact-SHA test gate, left the protected application baseline unchanged and performed no automated merge.
 
-## Main authorization results
-
-For the 135 ordinary protected Gitea operations:
+## Ordinary protected Gitea path
 
 | Metric | Mean | p50 | p95 |
 | --- | ---: | ---: | ---: |
-| Preparation | 0.184 ms | 0.128 ms | 0.432 ms |
-| SSI/EVM delegation verification | 623.467 ms | 674.286 ms | 702.932 ms |
-| OPA evaluation | 1.771 ms | 1.620 ms | 2.844 ms |
-| Gitea provider execution | 152.725 ms | 168.368 ms | 311.042 ms |
-| Total authorization + execution | **777.984 ms** | **710.376 ms** | **1011.694 ms** |
+| Preparation | 0.186 ms | 0.132 ms | 0.391 ms |
+| SSI/EVM + authenticated Status List verification | **1598.406 ms** | **1669.083 ms** | **1704.448 ms** |
+| OPA evaluation | 1.800 ms | 1.562 ms | 2.945 ms |
+| Gitea provider execution | 172.116 ms | 227.304 ms | 357.550 ms |
+| Total authorization + execution | **1772.341 ms** | **1716.047 ms** | **1993.305 ms** |
 
-At the arithmetic-mean level, the Gitea-path latency is approximately:
+At the arithmetic-mean level the Gitea-path total is approximately:
 
-- **80.14% SSI/EVM delegation verification**;
-- **0.23% OPA policy evaluation**;
-- **19.63% protected Gitea provider execution**.
+- **90.19%** verification;
+- **0.10%** OPA;
+- **9.71%** protected Gitea execution;
+- the remaining fraction is request preparation/rounding.
 
-This means OPA is negligible in this PoC's positive-path latency. The dominant authorization cost is the SSI/EVM verification path.
+The dominant cost is therefore the complete SSI/EVM verification path. OPA remains negligible in comparison.
+
+## Cost of the final JWT hardening
+
+The earlier clean pre-hardening campaign `37439708880` used the same high-level experiment but did not yet authenticate the off-chain Status List document as an EdDSA JWT in the integrated Adapter profile.
+
+Pre-hardening Gitea-path values:
+
+- verification mean: `623.467 ms`;
+- total mean: `777.984 ms`.
+
+Final hardened values:
+
+- verification mean: `1598.406 ms`;
+- total mean: `1772.341 ms`.
+
+In this CI PoC, adding the complete JWT/DID authentication path increased mean verification latency by approximately **156.4% (2.56x)** and mean Gitea-path total latency by approximately **127.8%**.
+
+This comparison is useful for the thesis because it quantifies the security-hardening cost under the same architecture. It should not be generalized as a universal cost of SSI/JWT/DID verification.
 
 ## Controlled Runner
 
-The Runner is intentionally analyzed separately because it executes the complete isolated project validation suite.
-
-Across five Runner executions:
+The Runner is analyzed separately because it executes the complete isolated project validation suite.
 
 | Metric | Mean | p50 | p95 |
 | --- | ---: | ---: | ---: |
-| SSI/EVM verification | 632.237 ms | 676.339 ms | 707.856 ms |
-| OPA evaluation | 1.420 ms | 1.489 ms | 1.553 ms |
-| Isolated Runner provider | **68.537 s** | **71.162 s** | **73.689 s** |
-| Total | **69.171 s** | **71.840 s** | **74.381 s** |
+| SSI/EVM + JWT verification | 1642.933 ms | 1667.339 ms | 1693.533 ms |
+| OPA evaluation | 1.644 ms | 1.587 ms | 2.017 ms |
+| Isolated Runner provider | **68.677 s** | **69.045 s** | **70.589 s** |
+| Total | **70.322 s** | **70.720 s** | **72.284 s** |
 
-The Runner provider accounts for approximately **99.08%** of its mean total duration. The authorization layer is therefore small compared with full dependency/test/build/browser execution.
+The Runner provider accounts for approximately **97.66%** of mean Runner duration. Even with JWT hardening, authorization remains small compared with dependency installation, build, tests and browser execution.
 
-The Runner samples must not be pooled with ordinary Gitea operations when describing interactive authorization latency.
+Runner samples must not be pooled with ordinary Gitea operations when describing interactive authorization latency.
 
 ## By operation
 
 | Operation | n | Verification mean | Provider mean | Total mean | Total p50 | Total p95 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `read_file` | 70 | 626.845 ms | 41.241 ms | **669.795 ms** | 699.718 ms | 760.630 ms |
-| `update_file` | 50 | 630.708 ms | 269.823 ms | **902.111 ms** | 967.802 ms | 1015.648 ms |
-| `create_branch` | 5 | 566.326 ms | 298.390 ms | **869.498 ms** | 880.605 ms | 1100.435 ms |
-| `create_file` | 5 | 629.500 ms | 274.971 ms | **906.007 ms** | 946.581 ms | 1131.635 ms |
-| `create_pull_request` | 5 | 554.861 ms | 274.603 ms | **831.827 ms** | 880.873 ms | 929.231 ms |
-| `run_tests` | 5 | 632.237 ms | 68.537 s | **69.171 s** | 71.840 s | 74.381 s |
+| `read_file` | 70 | 1639.915 ms | 53.028 ms | **1694.686 ms** | 1697.795 ms | 1780.633 ms |
+| `update_file` | 50 | 1641.348 ms | 292.867 ms | **1935.794 ms** | 1964.851 ms | 2007.980 ms |
+| `create_branch` | 5 | 1087.239 ms | 262.981 ms | **1355.436 ms** | 1356.495 ms | 1381.401 ms |
+| `create_file` | 5 | 1635.979 ms | 295.169 ms | **1932.623 ms** | 1937.358 ms | 1958.238 ms |
+| `create_pull_request` | 5 | 1061.446 ms | 417.909 ms | **1481.618 ms** | 1380.920 ms | 1895.960 ms |
+| `run_tests` | 5 | 1642.933 ms | 68.677 s | **70.322 s** | 70.720 s | 72.284 s |
 
-The measurement evidence also preserves every individual execution row, enabling later statistical analysis without relying only on the summary table.
+The aggregate artifact preserves all 140 execution rows, so later statistical analysis is not limited to these summaries.
 
-## Data-quality decision
+## Final validation set
 
-The earlier exploratory campaign `37438980717` is **not part of the reference dataset**.
+All final runs use framework code checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a`:
 
-It exposed two independent issues:
+- full baseline/regression: `37448047612` — **success**;
+- Phase 11 security experiments: `37448047677` — **success**;
+- Phase 12 reproducibility contract: `37448047526` — **success**;
+- Phase 12 five-replica measurement campaign: `37448047642` — **success**, 5/5 replicas.
 
-1. one replica failed before experiment execution because the Foundry installer received an external HTTP 500;
-2. another replica exposed a flaky generated Playwright locator: immediately after clicking Alice Romano, the test could still observe the list route and `getByText("ACTIVE")` matched three user badges.
+The protected application GitHub repository remained frozen at:
 
-The Playwright test was stabilized by waiting for `/users/usr-001` and scoping lifecycle assertions to `.detail-header`. Matrix parallelism was reduced to three. The clean campaign was then rerun from a single new commit and achieved **5/5 successful replicas**.
+`405748b1e77992b6bd8630a3ab6f990658d32f6b`
 
-The stabilization did not weaken the product or researcher acceptance criteria. Full regression run `37439708773`, security run `37439708739` and reproducibility run `37439708780` all completed successfully on the same stabilized commit.
+for both `main` and `baseline-before-account-suspension`.
 
 ## Evidence
 
-Aggregate artifact:
+Final aggregate artifact:
 
 - name: `phase12c-aggregate-evidence`;
-- artifact id: `11401146619`;
-- SHA-256: `67d30cb54e052fad320b9155599558391004fe6072a7ca290908af232c09d150`;
+- artifact id: `11405060742`;
+- SHA-256: `94aebc164f66b7087f55b3b749d40bdabcfe70f89b909e10b6e5793ca746fe96`;
 - retention: 90 days.
 
-It contains:
+The artifact contains:
 
 - `phase12c-summary.json`;
-- `phase12c-executions.csv` with all 140 execution rows.
+- `phase12c-executions.csv` containing all 140 final execution rows.
 
-A compact machine-readable reference copy of the principal results is committed at:
+The final full-regression Phase 12A artifact is `11405535262` (SHA-256 `e03cdd0b391a3a1064dcd83527ec9669475c36d58e7f12f720e04560a828dc73`).
 
-`poc/experiments/phase12c-reference-summary.json`
+The final reproducibility artifact is `11403313725` (SHA-256 `dd9f6db184cdf96eb01f3d93a5dfb87076009289c04dbc6d51651ef16db17235`).
+
+## Data-quality history
+
+Two earlier campaigns remain useful as audit history but are **not** the final thesis reference:
+
+- `37438980717`: exploratory campaign; excluded because one replica hit an external Foundry HTTP 500 and another exposed a flaky Playwright locator;
+- `37439708880`: clean pre-hardening reference; 5/5 successful and retained only to quantify the cost of adding authenticated Status List JWT verification.
+
+The final reference is exclusively `37448047642`.
 
 ## Interpretation boundary
 
-These numbers characterize this PoC and its pinned local/CI environment. They should not be presented as universal SSI or blockchain performance figures. The verifier currently performs the complete configured EVM-backed trust/public-material/status resolution path, while Gitea, OPA and Anvil run locally on the same hosted CI runner.
+These measurements characterize this PoC, its pinned implementation and the GitHub-hosted/local-service CI environment. They are not universal performance claims for SSI, Ethereum, JWT or DID systems.
 
-For the thesis, the strongest defensible conclusions are comparative: where time is spent inside the implemented architecture, whether enforcement remains fail-closed, and whether repeated executions preserve the same successful security/functionality outcome.
+The defensible thesis conclusions are architectural and comparative: the implementation remains fail-closed, OPA contributes negligible positive-path latency, authenticated SSI/EVM verification dominates ordinary protected operations, and the real Controlled Runner dominates full-test execution time.

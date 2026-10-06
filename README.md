@@ -157,7 +157,7 @@ npm --prefix poc run check:scaffold
 
 ### Final hardening
 
-The final audit added authenticated JWT Status Lists to the EVM Adapter path, direct Solidity regression testing, a committed PoC npm lockfile with `npm ci`, and Gitea `main` branch protection. These changes were validated on an isolated hardening branch before promotion.
+The final audit added authenticated JWT Status Lists to the EVM Adapter path, direct Solidity regression testing, a committed PoC npm lockfile with `npm ci`, and Gitea `main` branch protection. The hardening was validated on an isolated branch and then promoted to `main`.
 
 ## Current checkpoint
 
@@ -174,9 +174,15 @@ Validated end state includes:
 - Phase 11 security/negative experiments;
 - structured measurement evidence and a machine-checked reproducibility contract.
 
-Final pinned full-regression run: `37436837586` — success.
+Final pinned full-regression run: `37448047612` — success.
 
-Dedicated reproducibility run: `37436837667` — success.
+Dedicated reproducibility run: `37448047526` — success.
+
+Final security run: `37448047677` — success.
+
+Final five-replica measurement campaign: `37448047642` — success (5/5 replicas, 140 authorization samples).
+
+Frozen executable-code checkpoint: `cbadb5440db408d4047d4eb870a9fb231362414a`.
 
 See:
 
@@ -184,4 +190,4 @@ See:
 - `docs/REPRODUCIBILITY.md` for the frozen runtime and measurement protocol;
 - `poc/experiments/reproducibility-manifest.json` for the machine-readable environment contract.
 
-The next work is experimental repetition, statistical analysis, threats-to-validity discussion and thesis writing.
+The implementation and reference measurement campaign are frozen. The next work is statistical interpretation, threats-to-validity discussion and thesis writing.

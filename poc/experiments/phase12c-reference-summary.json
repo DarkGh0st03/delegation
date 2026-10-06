@@ -1,166 +1,906 @@
 {
-  "schema_version": "phase12c-reference-summary/v1",
+  "schema_version": "phase12c-reference-summary/v2",
+  "status": "final-hardened-reference",
   "campaign": {
-    "workflow_run_id": "37439708880",
-    "framework_commit_sha": "f457f6f194497f9567f67ae72cdb465085c65ca5",
+    "workflow_run_id": "37448047642",
+    "framework_commit_sha": "cbadb5440db408d4047d4eb870a9fb231362414a",
     "replica_count": 5,
     "authorizations": 140,
     "gitea_authorizations": 135,
     "runner_authorizations": 5,
-    "outcome": "success"
+    "outcome": "success",
+    "replica_tested_commit_shas": [
+      "b565f9eb42ac2e4a2ea349b3a23dad1eabf1a6f7",
+      "dcc6341a5545b50ad71b472fade181c994c75a7d",
+      "d43a41cfc0dc055ec4f244a1dcd08405cbaeb4af",
+      "069c274e5efe8250addaefc67a29f87f32b0461d",
+      "e0840ff83a14825b32b79663d0b230930979070e"
+    ]
   },
   "aggregate_artifact": {
-    "id": 11401146619,
+    "id": 11405060742,
     "name": "phase12c-aggregate-evidence",
-    "sha256": "67d30cb54e052fad320b9155599558391004fe6072a7ca290908af232c09d150",
+    "sha256": "94aebc164f66b7087f55b3b749d40bdabcfe70f89b909e10b6e5793ca746fe96",
     "retention_days": 90
   },
   "metrics": {
     "all": {
+      "prepare_ms": {
+        "count": 140,
+        "min": 0.089,
+        "max": 1.119,
+        "mean": 0.186,
+        "p50": 0.133,
+        "p95": 0.37,
+        "stdev_population": 0.179,
+        "unit": "ms"
+      },
       "verification_ms": {
-        "mean": 623.78,
-        "p50": 674.286,
-        "p95": 702.932
+        "count": 140,
+        "min": 980.357,
+        "max": 1731.503,
+        "mean": 1599.996,
+        "p50": 1668.571,
+        "p95": 1704.066,
+        "stdev_population": 164.397,
+        "unit": "ms"
       },
       "opa_ms": {
-        "mean": 1.758,
-        "p50": 1.612,
-        "p95": 2.81
+        "count": 140,
+        "min": 1.213,
+        "max": 5.976,
+        "mean": 1.794,
+        "p50": 1.562,
+        "p95": 2.723,
+        "stdev_population": 0.752,
+        "unit": "ms"
       },
       "provider_ms": {
-        "mean": 2595.023,
-        "p50": 181.834,
-        "p95": 440.758
+        "count": 140,
+        "min": 15.955,
+        "max": 70588.992,
+        "mean": 2618.736,
+        "p50": 239.381,
+        "p95": 511.271,
+        "stdev_population": 12717.21,
+        "unit": "ms"
       },
       "total_ms": {
-        "mean": 3220.584,
-        "p50": 712.385,
-        "p95": 1056.962
+        "count": 140,
+        "min": 1331.059,
+        "max": 72284.078,
+        "mean": 4220.546,
+        "p50": 1719.261,
+        "p95": 2007.98,
+        "stdev_population": 12725.905,
+        "unit": "ms"
       },
       "vp_size_bytes": {
+        "count": 140,
+        "min": 1436,
+        "max": 2346,
         "mean": 2268.036,
         "p50": 2334,
-        "p95": 2343
+        "p95": 2343,
+        "stdev_population": 230.018,
+        "unit": "bytes"
       }
     },
     "gitea_only": {
+      "prepare_ms": {
+        "count": 135,
+        "min": 0.089,
+        "max": 1.119,
+        "mean": 0.186,
+        "p50": 0.132,
+        "p95": 0.391,
+        "stdev_population": 0.182,
+        "unit": "ms"
+      },
       "verification_ms": {
-        "mean": 623.467,
-        "p50": 674.286,
-        "p95": 702.932
+        "count": 135,
+        "min": 980.357,
+        "max": 1731.503,
+        "mean": 1598.406,
+        "p50": 1669.083,
+        "p95": 1704.448,
+        "stdev_population": 166.795,
+        "unit": "ms"
       },
       "opa_ms": {
-        "mean": 1.771,
-        "p50": 1.62,
-        "p95": 2.844
+        "count": 135,
+        "min": 1.213,
+        "max": 5.976,
+        "mean": 1.8,
+        "p50": 1.562,
+        "p95": 2.945,
+        "stdev_population": 0.765,
+        "unit": "ms"
       },
       "provider_ms": {
-        "mean": 152.725,
-        "p50": 168.368,
-        "p95": 311.042
+        "count": 135,
+        "min": 15.955,
+        "max": 913.762,
+        "mean": 172.116,
+        "p50": 227.304,
+        "p95": 357.55,
+        "stdev_population": 153.385,
+        "unit": "ms"
       },
       "total_ms": {
-        "mean": 777.984,
-        "p50": 710.376,
-        "p95": 1011.694
+        "count": 135,
+        "min": 1331.059,
+        "max": 2017.353,
+        "mean": 1772.341,
+        "p50": 1716.047,
+        "p95": 1993.305,
+        "stdev_population": 175.56,
+        "unit": "ms"
+      },
+      "vp_size_bytes": {
+        "count": 135,
+        "min": 1436,
+        "max": 2346,
+        "mean": 2267.889,
+        "p50": 2335,
+        "p95": 2343,
+        "stdev_population": 234.237,
+        "unit": "bytes"
       },
       "mean_share_percent": {
-        "verification": 80.139,
-        "opa": 0.228,
-        "provider": 19.631
+        "preparation": 0.01,
+        "verification": 90.186,
+        "opa": 0.102,
+        "provider": 9.711
       }
     },
     "runner_only": {
+      "prepare_ms": {
+        "count": 5,
+        "min": 0.17,
+        "max": 0.221,
+        "mean": 0.19,
+        "p50": 0.173,
+        "p95": 0.221,
+        "stdev_population": 0.023,
+        "unit": "ms"
+      },
       "verification_ms": {
-        "mean": 632.237,
-        "p50": 676.339,
-        "p95": 707.856
+        "count": 5,
+        "min": 1524.078,
+        "max": 1693.533,
+        "mean": 1642.933,
+        "p50": 1667.339,
+        "p95": 1693.533,
+        "stdev_population": 60.6,
+        "unit": "ms"
       },
       "opa_ms": {
-        "mean": 1.42,
-        "p50": 1.489,
-        "p95": 1.553
+        "count": 5,
+        "min": 1.49,
+        "max": 2.017,
+        "mean": 1.644,
+        "p50": 1.587,
+        "p95": 2.017,
+        "stdev_population": 0.19,
+        "unit": "ms"
       },
       "provider_ms": {
-        "mean": 68537.09,
-        "p50": 71161.932,
-        "p95": 73689.306
+        "count": 5,
+        "min": 66672.075,
+        "max": 70588.992,
+        "mean": 68677.471,
+        "p50": 69045.338,
+        "p95": 70588.992,
+        "stdev_population": 1534.713,
+        "unit": "ms"
       },
       "total_ms": {
-        "mean": 69170.777,
-        "p50": 71839.782,
-        "p95": 74381.204
+        "count": 5,
+        "min": 68197.755,
+        "max": 72284.078,
+        "mean": 70322.065,
+        "p50": 70719.917,
+        "p95": 72284.078,
+        "stdev_population": 1577.834,
+        "unit": "ms"
+      },
+      "vp_size_bytes": {
+        "count": 5,
+        "min": 2272,
+        "max": 2272,
+        "mean": 2272,
+        "p50": 2272,
+        "p95": 2272,
+        "stdev_population": 0,
+        "unit": "bytes"
       },
       "mean_share_percent": {
-        "verification": 0.914,
+        "preparation": 0,
+        "verification": 2.336,
         "opa": 0.002,
-        "provider": 99.084
+        "provider": 97.661
       }
     }
   },
   "by_operation": {
     "create_branch": {
       "count": 5,
-      "verification_mean_ms": 566.326,
-      "provider_mean_ms": 298.39,
-      "total_mean_ms": 869.498,
-      "total_p50_ms": 880.605,
-      "total_p95_ms": 1100.435
+      "metrics": {
+        "prepare_ms": {
+          "count": 5,
+          "min": 0.854,
+          "max": 1.119,
+          "mean": 1.049,
+          "p50": 1.105,
+          "p95": 1.119,
+          "stdev_population": 0.101,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 5,
+          "min": 982.202,
+          "max": 1127.309,
+          "mean": 1087.239,
+          "p50": 1112.141,
+          "p95": 1127.309,
+          "stdev_population": 53.814,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 5,
+          "min": 4.277,
+          "max": 5.976,
+          "mean": 5.113,
+          "p50": 5.226,
+          "p95": 5.976,
+          "stdev_population": 0.561,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 5,
+          "min": 239.381,
+          "max": 343.961,
+          "mean": 262.981,
+          "p50": 243.593,
+          "p95": 343.961,
+          "stdev_population": 40.606,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 5,
+          "min": 1331.059,
+          "max": 1381.401,
+          "mean": 1355.436,
+          "p50": 1356.495,
+          "p95": 1381.401,
+          "stdev_population": 17.763,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 5,
+          "min": 1436,
+          "max": 1436,
+          "mean": 1436,
+          "p50": 1436,
+          "p95": 1436,
+          "stdev_population": 0,
+          "unit": "bytes"
+        }
+      }
     },
     "create_file": {
       "count": 5,
-      "verification_mean_ms": 629.5,
-      "provider_mean_ms": 274.971,
-      "total_mean_ms": 906.007,
-      "total_p50_ms": 946.581,
-      "total_p95_ms": 1131.635
+      "metrics": {
+        "prepare_ms": {
+          "count": 5,
+          "min": 0.107,
+          "max": 0.167,
+          "mean": 0.125,
+          "p50": 0.113,
+          "p95": 0.167,
+          "stdev_population": 0.022,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 5,
+          "min": 1492.721,
+          "max": 1690.808,
+          "mean": 1635.979,
+          "p50": 1668.571,
+          "p95": 1690.808,
+          "stdev_population": 72.546,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 5,
+          "min": 1.213,
+          "max": 1.567,
+          "mean": 1.466,
+          "p50": 1.524,
+          "p95": 1.567,
+          "stdev_population": 0.129,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 5,
+          "min": 260.549,
+          "max": 413.975,
+          "mean": 295.169,
+          "p50": 267.255,
+          "p95": 413.975,
+          "stdev_population": 59.462,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 5,
+          "min": 1907.917,
+          "max": 1958.238,
+          "mean": 1932.623,
+          "p50": 1937.358,
+          "p95": 1958.238,
+          "stdev_population": 18.081,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 5,
+          "min": 2332,
+          "max": 2332,
+          "mean": 2332,
+          "p50": 2332,
+          "p95": 2332,
+          "stdev_population": 0,
+          "unit": "bytes"
+        }
+      }
     },
     "create_pull_request": {
       "count": 5,
-      "verification_mean_ms": 554.861,
-      "provider_mean_ms": 274.603,
-      "total_mean_ms": 831.827,
-      "total_p50_ms": 880.873,
-      "total_p95_ms": 929.231
+      "metrics": {
+        "prepare_ms": {
+          "count": 5,
+          "min": 0.11,
+          "max": 0.142,
+          "mean": 0.126,
+          "p50": 0.121,
+          "p95": 0.142,
+          "stdev_population": 0.012,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 5,
+          "min": 980.357,
+          "max": 1089.268,
+          "mean": 1061.446,
+          "p50": 1080.824,
+          "p95": 1089.268,
+          "stdev_population": 40.872,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 5,
+          "min": 1.82,
+          "max": 2.723,
+          "mean": 2.241,
+          "p50": 2.176,
+          "p95": 2.723,
+          "stdev_population": 0.294,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 5,
+          "min": 289.074,
+          "max": 913.762,
+          "mean": 417.909,
+          "p50": 294.612,
+          "p95": 913.762,
+          "stdev_population": 247.952,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 5,
+          "min": 1364.657,
+          "max": 1895.96,
+          "mean": 1481.618,
+          "p50": 1380.92,
+          "p95": 1895.96,
+          "stdev_population": 207.351,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 5,
+          "min": 1444,
+          "max": 1444,
+          "mean": 1444,
+          "p50": 1444,
+          "p95": 1444,
+          "stdev_population": 0,
+          "unit": "bytes"
+        }
+      }
     },
     "read_file": {
       "count": 70,
-      "verification_mean_ms": 626.845,
-      "provider_mean_ms": 41.241,
-      "total_mean_ms": 669.795,
-      "total_p50_ms": 699.718,
-      "total_p95_ms": 760.63
-    },
-    "update_file": {
-      "count": 50,
-      "verification_mean_ms": 630.708,
-      "provider_mean_ms": 269.823,
-      "total_mean_ms": 902.111,
-      "total_p50_ms": 967.802,
-      "total_p95_ms": 1015.648
+      "metrics": {
+        "prepare_ms": {
+          "count": 70,
+          "min": 0.089,
+          "max": 0.396,
+          "mean": 0.149,
+          "p50": 0.119,
+          "p95": 0.312,
+          "stdev_population": 0.07,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 70,
+          "min": 1469.329,
+          "max": 1731.503,
+          "mean": 1639.915,
+          "p50": 1671.767,
+          "p95": 1704.448,
+          "stdev_population": 79.124,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 70,
+          "min": 1.269,
+          "max": 4.527,
+          "mean": 1.726,
+          "p50": 1.598,
+          "p95": 2.471,
+          "stdev_population": 0.457,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 70,
+          "min": 15.955,
+          "max": 509.434,
+          "mean": 53.028,
+          "p50": 21.177,
+          "p95": 266.285,
+          "stdev_population": 91.129,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 70,
+          "min": 1487.895,
+          "max": 2000.633,
+          "mean": 1694.686,
+          "p50": 1697.795,
+          "p95": 1780.633,
+          "stdev_population": 79.456,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 70,
+          "min": 2322,
+          "max": 2343,
+          "mean": 2333,
+          "p50": 2334,
+          "p95": 2343,
+          "stdev_population": 6.059,
+          "unit": "bytes"
+        }
+      }
     },
     "run_tests": {
       "count": 5,
-      "verification_mean_ms": 632.237,
-      "provider_mean_ms": 68537.09,
-      "total_mean_ms": 69170.777,
-      "total_p50_ms": 71839.782,
-      "total_p95_ms": 74381.204
+      "metrics": {
+        "prepare_ms": {
+          "count": 5,
+          "min": 0.17,
+          "max": 0.221,
+          "mean": 0.19,
+          "p50": 0.173,
+          "p95": 0.221,
+          "stdev_population": 0.023,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 5,
+          "min": 1524.078,
+          "max": 1693.533,
+          "mean": 1642.933,
+          "p50": 1667.339,
+          "p95": 1693.533,
+          "stdev_population": 60.6,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 5,
+          "min": 1.49,
+          "max": 2.017,
+          "mean": 1.644,
+          "p50": 1.587,
+          "p95": 2.017,
+          "stdev_population": 0.19,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 5,
+          "min": 66672.075,
+          "max": 70588.992,
+          "mean": 68677.471,
+          "p50": 69045.338,
+          "p95": 70588.992,
+          "stdev_population": 1534.713,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 5,
+          "min": 68197.755,
+          "max": 72284.078,
+          "mean": 70322.065,
+          "p50": 70719.917,
+          "p95": 72284.078,
+          "stdev_population": 1577.834,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 5,
+          "min": 2272,
+          "max": 2272,
+          "mean": 2272,
+          "p50": 2272,
+          "p95": 2272,
+          "stdev_population": 0,
+          "unit": "bytes"
+        }
+      }
+    },
+    "update_file": {
+      "count": 50,
+      "metrics": {
+        "prepare_ms": {
+          "count": 50,
+          "min": 0.095,
+          "max": 0.37,
+          "mean": 0.165,
+          "p50": 0.144,
+          "p95": 0.316,
+          "stdev_population": 0.064,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 50,
+          "min": 1473.645,
+          "max": 1714.024,
+          "mean": 1641.348,
+          "p50": 1676.323,
+          "p95": 1706.009,
+          "stdev_population": 77.515,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 50,
+          "min": 1.301,
+          "max": 2.52,
+          "mean": 1.561,
+          "p50": 1.517,
+          "p95": 1.858,
+          "stdev_population": 0.228,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 50,
+          "min": 223.584,
+          "max": 518.305,
+          "mean": 292.867,
+          "p50": 284.708,
+          "p95": 357.55,
+          "stdev_population": 49.125,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 50,
+          "min": 1705.848,
+          "max": 2017.353,
+          "mean": 1935.794,
+          "p50": 1964.851,
+          "p95": 2007.98,
+          "stdev_population": 80.334,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 50,
+          "min": 2327,
+          "max": 2346,
+          "mean": 2335.9,
+          "p50": 2335,
+          "p95": 2346,
+          "stdev_population": 5.907,
+          "unit": "bytes"
+        }
+      }
     }
   },
-  "data_quality": {
-    "clean_campaign_only": true,
-    "excluded_exploratory_run_id": "37438980717",
-    "exclusion_reasons": [
-      "one replica failed before experiment execution because foundryup download returned HTTP 500",
-      "one replica exposed a flaky Playwright locator that matched list-page ACTIVE badges before detail navigation stabilized"
-    ],
-    "stabilization_commit": "f457f6f194497f9567f67ae72cdb465085c65ca5",
-    "regression_run_after_stabilization": "37439708773",
-    "regression_conclusion": "success",
-    "security_run_after_stabilization": "37439708739",
-    "security_conclusion": "success",
-    "reproducibility_run_after_stabilization": "37439708780",
-    "reproducibility_conclusion": "success"
+  "by_role": {
+    "backend": {
+      "count": 50,
+      "metrics": {
+        "prepare_ms": {
+          "count": 50,
+          "min": 0.119,
+          "max": 0.396,
+          "mean": 0.207,
+          "p50": 0.182,
+          "p95": 0.37,
+          "stdev_population": 0.073,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 50,
+          "min": 1469.329,
+          "max": 1717.36,
+          "mean": 1641.239,
+          "p50": 1676.362,
+          "p95": 1706.009,
+          "stdev_population": 78.914,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 50,
+          "min": 1.314,
+          "max": 4.527,
+          "mean": 1.846,
+          "p50": 1.672,
+          "p95": 2.52,
+          "stdev_population": 0.524,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 50,
+          "min": 15.955,
+          "max": 307.281,
+          "mean": 133.254,
+          "p50": 21.233,
+          "p95": 296.078,
+          "stdev_population": 129.75,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 50,
+          "min": 1487.895,
+          "max": 2011.77,
+          "mean": 1776.362,
+          "p50": 1716.047,
+          "p95": 1983.281,
+          "stdev_population": 146.535,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 50,
+          "min": 2334,
+          "max": 2343,
+          "mean": 2337.8,
+          "p50": 2338,
+          "p95": 2343,
+          "stdev_population": 2.676,
+          "unit": "bytes"
+        }
+      }
+    },
+    "frontend": {
+      "count": 35,
+      "metrics": {
+        "prepare_ms": {
+          "count": 35,
+          "min": 0.089,
+          "max": 0.229,
+          "mean": 0.126,
+          "p50": 0.11,
+          "p95": 0.222,
+          "stdev_population": 0.038,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 35,
+          "min": 1473.645,
+          "max": 1731.503,
+          "mean": 1642.403,
+          "p50": 1674.905,
+          "p95": 1713.789,
+          "stdev_population": 79.008,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 35,
+          "min": 1.276,
+          "max": 1.858,
+          "mean": 1.503,
+          "p50": 1.487,
+          "p95": 1.824,
+          "stdev_population": 0.135,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 35,
+          "min": 20.23,
+          "max": 518.305,
+          "mean": 187.965,
+          "p50": 266.285,
+          "p95": 511.271,
+          "stdev_population": 161.304,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 35,
+          "min": 1610.963,
+          "max": 2017.353,
+          "mean": 1831.885,
+          "p50": 1757.582,
+          "p95": 2002.731,
+          "stdev_population": 136.713,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 35,
+          "min": 2324,
+          "max": 2346,
+          "mean": 2334.714,
+          "p50": 2335,
+          "p95": 2346,
+          "stdev_population": 7.362,
+          "unit": "bytes"
+        }
+      }
+    },
+    "orchestrator": {
+      "count": 10,
+      "metrics": {
+        "prepare_ms": {
+          "count": 10,
+          "min": 0.11,
+          "max": 1.119,
+          "mean": 0.587,
+          "p50": 0.142,
+          "p95": 1.119,
+          "stdev_population": 0.467,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 10,
+          "min": 980.357,
+          "max": 1127.309,
+          "mean": 1074.342,
+          "p50": 1083.561,
+          "p95": 1127.309,
+          "stdev_population": 49.493,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 10,
+          "min": 1.82,
+          "max": 5.976,
+          "mean": 3.677,
+          "p50": 2.723,
+          "p95": 5.976,
+          "stdev_population": 1.504,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 10,
+          "min": 239.381,
+          "max": 913.762,
+          "mean": 340.445,
+          "p50": 289.074,
+          "p95": 913.762,
+          "stdev_population": 193.817,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 10,
+          "min": 1331.059,
+          "max": 1895.96,
+          "mean": 1418.527,
+          "p50": 1366.452,
+          "p95": 1895.96,
+          "stdev_population": 160.111,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 10,
+          "min": 1436,
+          "max": 1444,
+          "mean": 1440,
+          "p50": 1436,
+          "p95": 1444,
+          "stdev_population": 4,
+          "unit": "bytes"
+        }
+      }
+    },
+    "test": {
+      "count": 45,
+      "metrics": {
+        "prepare_ms": {
+          "count": 45,
+          "min": 0.09,
+          "max": 0.221,
+          "mean": 0.122,
+          "p50": 0.112,
+          "p95": 0.175,
+          "stdev_population": 0.032,
+          "unit": "ms"
+        },
+        "verification_ms": {
+          "count": 45,
+          "min": 1474.918,
+          "max": 1704.066,
+          "mean": 1638,
+          "p50": 1668.571,
+          "p95": 1693.533,
+          "stdev_population": 75.02,
+          "unit": "ms"
+        },
+        "opa_ms": {
+          "count": 45,
+          "min": 1.213,
+          "max": 2.017,
+          "mean": 1.544,
+          "p50": 1.524,
+          "p95": 1.829,
+          "stdev_population": 0.143,
+          "unit": "ms"
+        },
+        "provider_ms": {
+          "count": 45,
+          "min": 19.969,
+          "max": 70588.992,
+          "mean": 7777.267,
+          "p50": 260.549,
+          "p95": 69045.338,
+          "stdev_population": 21537.9,
+          "unit": "ms"
+        },
+        "total_ms": {
+          "count": 45,
+          "min": 1510.174,
+          "max": 72284.078,
+          "mean": 9416.824,
+          "p50": 1847.191,
+          "p95": 70719.917,
+          "stdev_population": 21540.069,
+          "unit": "ms"
+        },
+        "vp_size_bytes": {
+          "count": 45,
+          "min": 2272,
+          "max": 2335,
+          "mean": 2322.667,
+          "p50": 2328,
+          "p95": 2335,
+          "stdev_population": 18.276,
+          "unit": "bytes"
+        }
+      }
+    }
+  },
+  "validation": {
+    "full_regression_run_id": "37448047612",
+    "security_run_id": "37448047677",
+    "reproducibility_run_id": "37448047526",
+    "conclusions": {
+      "full_regression": "success",
+      "security": "success",
+      "reproducibility": "success",
+      "measurement_campaign": "success"
+    }
+  },
+  "hardening": {
+    "status_list_authentication": "EdDSA-signed JWT verified through did:ethr before EVM anchor/bit acceptance",
+    "solidity_regression": "forge test --root blockchain",
+    "poc_dependency_install": "committed package-lock.json + npm ci",
+    "gitea_main_protection": "direct push and force-push disabled; one approval required",
+    "protected_application_baseline_sha": "405748b1e77992b6bd8630a3ab6f990658d32f6b"
+  },
+  "historical_pre_hardening_reference": {
+    "workflow_run_id": "37439708880",
+    "framework_commit_sha": "f457f6f194497f9567f67ae72cdb465085c65ca5",
+    "status": "superseded-for-final-thesis-results",
+    "gitea_verification_mean_ms": 623.467,
+    "gitea_total_mean_ms": 777.984,
+    "note": "Retained only to quantify the cost of adding authenticated Status List JWT verification."
   }
 }

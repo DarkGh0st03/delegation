@@ -83,15 +83,36 @@ Measurement/reproducibility bundles must not include full signed VPs, bearer cre
 
 Researcher-owned acceptance tests remain outside specialized Agent write authority and are mounted read-only into the Controlled Runner.
 
-## Validated Phase 12A reference
+## Final validated reference
 
-GitHub Actions run `37439708773` is the final pre-hardening full regression reference on framework commit `f457f6f194497f9567f67ae72cdb465085c65ca5`; it successfully produced the measurement evidence bundle while the complete regression suite and Phase 10B positive E2E remained green.
+Final executable-code checkpoint:
 
+`cbadb5440db408d4047d4eb870a9fb231362414a`
 
-## Reference repeated campaign
+Final full regression:
 
-The clean five-replica reference campaign is GitHub Actions run `37439708880`, framework SHA `f457f6f194497f9567f67ae72cdb465085c65ca5`.
+- run `37448047612` — success;
+- Phase 12A artifact `11405535262`;
+- artifact SHA-256 `e03cdd0b391a3a1064dcd83527ec9669475c36d58e7f12f720e04560a828dc73`.
 
-All five replicas passed the complete positive E2E, producing 140 authorization samples. The aggregate artifact is `phase12c-aggregate-evidence` (artifact `11401146619`, SHA-256 `67d30cb54e052fad320b9155599558391004fe6072a7ca290908af232c09d150`).
+Final security suite:
 
-See `docs/MEASUREMENT_RESULTS.md` for the interpretation and `poc/experiments/phase12c-reference-summary.json` for the compact machine-readable reference values.
+- run `37448047677` — success.
+
+Final reproducibility contract:
+
+- run `37448047526` — success;
+- artifact `11403313725`;
+- artifact SHA-256 `dd9f6db184cdf96eb01f3d93a5dfb87076009289c04dbc6d51651ef16db17235`.
+
+Final five-replica measurement campaign:
+
+- run `37448047642` — success;
+- 5/5 positive E2E replicas;
+- 140 authorization samples;
+- aggregate artifact `11405060742`;
+- aggregate SHA-256 `94aebc164f66b7087f55b3b749d40bdabcfe70f89b909e10b6e5793ca746fe96`.
+
+The earlier run `37439708880` remains only as a pre-hardening comparison. It is not the final thesis measurement reference because the integrated Adapter did not yet perform authenticated Status List JWT verification.
+
+See `docs/MEASUREMENT_RESULTS.md` and `poc/experiments/phase12c-reference-summary.json`.

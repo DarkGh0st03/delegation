@@ -6,13 +6,20 @@
     "baseline_sha": "405748b1e77992b6bd8630a3ab6f990658d32f6b"
   },
   "validated_evidence": {
-    "positive_e2e_run_id": "37439708773",
-    "positive_e2e_commit_sha": "f457f6f194497f9567f67ae72cdb465085c65ca5",
+    "positive_e2e_run_id": "37448047612",
+    "positive_e2e_commit_sha": "cbadb5440db408d4047d4eb870a9fb231362414a",
     "measurement_artifact_name": "phase12a-measurement-evidence",
+    "measurement_artifact_id": "11405535262",
+    "measurement_artifact_sha256": "e03cdd0b391a3a1064dcd83527ec9669475c36d58e7f12f720e04560a828dc73",
     "measurement_schema": "phase12a-measurement-evidence/v1",
-    "security_run_id": "37439708739",
-    "reference_campaign_run_id": "37439708880",
-    "reference_campaign_commit_sha": "f457f6f194497f9567f67ae72cdb465085c65ca5"
+    "security_run_id": "37448047677",
+    "reproducibility_run_id": "37448047526",
+    "reproducibility_artifact_id": "11403313725",
+    "reproducibility_artifact_sha256": "dd9f6db184cdf96eb01f3d93a5dfb87076009289c04dbc6d51651ef16db17235",
+    "reference_campaign_run_id": "37448047642",
+    "reference_campaign_commit_sha": "cbadb5440db408d4047d4eb870a9fb231362414a",
+    "reference_campaign_artifact_id": "11405060742",
+    "reference_campaign_artifact_sha256": "94aebc164f66b7087f55b3b749d40bdabcfe70f89b909e10b6e5793ca746fe96"
   },
   "runtime": {
     "ci_os": "ubuntu-24.04",
@@ -45,7 +52,10 @@
     "researcher_acceptance_required": "pass",
     "exact_sha_gate": true,
     "automatic_merge": false,
-    "researcher_acceptance_agent_writable": false
+    "researcher_acceptance_agent_writable": false,
+    "status_list_authentication": "eddsa-jwt-via-did:ethr",
+    "gitea_main_branch_protection": true,
+    "solidity_regression_in_ci": true
   },
   "dependency_resolution": {
     "poc_top_level_versions_are_exact": true,
