@@ -17,7 +17,7 @@ use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryT
 use delegation::delegation::trust::registry::trust_publisher_trait::{
     TrustPublisher, TrustPublisherRef,
 };
-use delegation::delegation::trust::registry::trust_resolver_trait::TrustResolverRef;
+use delegation::delegation::trust::resolver::trust_resolver_trait::TrustResolverRef;
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
 use serde::{Deserialize, Serialize};
