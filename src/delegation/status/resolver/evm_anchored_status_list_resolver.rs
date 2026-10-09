@@ -50,13 +50,7 @@ impl EvmAnchoredStatusListResolver {
 }
 
 impl StatusListResolver for EvmAnchoredStatusListResolver {
-    fn is_status_set(&self, _entry: &BitstringStatusListEntry) -> Result<bool, String> {
-        Err(String::from(
-            "EvmAnchoredStatusListResolver requires the credential issuer; use issuer-aware resolution",
-        ))
-    }
-
-    fn is_status_set_for_issuer(
+    fn is_status_set(
         &self,
         issuer_id: &str,
         entry: &BitstringStatusListEntry,
@@ -92,7 +86,7 @@ impl StatusListResolver for EvmAnchoredStatusListResolver {
         // subsequently parsed and used for the status-bit decision.
         let artifact = self
             .provider
-            .get_status_list_credential_for_issuer(issuer_id, entry.status_list_credential())?;
+            .get_status_list_credential(issuer_id, entry.status_list_credential())?;
 
         let observed_hash = keccak256(&artifact.commitment_bytes);
         if observed_hash != anchor.current_document_hash {
@@ -220,13 +214,17 @@ mod tests {
     fn accepts_exact_current_anchored_document() -> Result<(), String> {
         let raw = document(false)?;
         let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
-        provider.insert(String::from(STATUS_LIST_URL), raw.clone());
+        provider.insert(
+            String::from(ISSUER),
+            String::from(STATUS_LIST_URL),
+            raw.clone(),
+        );
 
         let chain = Rc::new(MockStatusListReader::new());
         chain.set_anchor(ISSUER, STATUS_LIST_URL, &raw, 1);
 
         let resolver = EvmAnchoredStatusListResolver::new(provider, chain);
-        assert!(!resolver.is_status_set_for_issuer(ISSUER, &entry())?);
+        assert!(!resolver.is_status_set(ISSUER, &entry())?);
         Ok(())
     }
 
@@ -235,13 +233,17 @@ mod tests {
         let original = document(false)?;
         let changed = document(true)?;
         let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
-        provider.insert(String::from(STATUS_LIST_URL), changed);
+        provider.insert(
+            String::from(ISSUER),
+            String::from(STATUS_LIST_URL),
+            changed,
+        );
 
         let chain = Rc::new(MockStatusListReader::new());
         chain.set_anchor(ISSUER, STATUS_LIST_URL, &original, 1);
 
         let resolver = EvmAnchoredStatusListResolver::new(provider, chain);
-        assert!(resolver.is_status_set_for_issuer(ISSUER, &entry()).is_err());
+        assert!(resolver.is_status_set(ISSUER, &entry()).is_err());
         Ok(())
     }
 
@@ -251,18 +253,26 @@ mod tests {
         let revoked = document(true)?;
 
         let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
-        provider.insert(String::from(STATUS_LIST_URL), active.clone());
+        provider.insert(
+            String::from(ISSUER),
+            String::from(STATUS_LIST_URL),
+            active.clone(),
+        );
 
         let chain = Rc::new(MockStatusListReader::new());
         chain.set_anchor(ISSUER, STATUS_LIST_URL, &active, 1);
 
         let resolver = EvmAnchoredStatusListResolver::new(provider.clone(), chain.clone());
-        assert!(!resolver.is_status_set_for_issuer(ISSUER, &entry())?);
+        assert!(!resolver.is_status_set(ISSUER, &entry())?);
 
-        provider.insert(String::from(STATUS_LIST_URL), revoked.clone());
+        provider.insert(
+            String::from(ISSUER),
+            String::from(STATUS_LIST_URL),
+            revoked.clone(),
+        );
         chain.set_anchor(ISSUER, STATUS_LIST_URL, &revoked, 2);
 
-        assert!(resolver.is_status_set_for_issuer(ISSUER, &entry())?);
+        assert!(resolver.is_status_set(ISSUER, &entry())?);
         Ok(())
     }
 }
