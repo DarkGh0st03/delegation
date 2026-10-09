@@ -2,7 +2,7 @@ use crate::auth::CallerRecord;
 use crate::config::AdapterConfig;
 use crate::crypto::{
     CreatePresentationRequest, CryptoRuntime, IssueChildRequest, IssueRootRequest,
-    VerifyPresentationRequest,
+    UpdateCredentialStatusRequest, VerifyPresentationRequest,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -106,6 +106,19 @@ fn handle_request(mut request: Request, config: &AdapterConfig, crypto: &mut Cry
             };
             match crypto.issue_child(&caller, &config.callers, body) {
                 Ok(credential) => respond_json(request, StatusCode(201), &credential),
+                Err(error) => respond_error(request, StatusCode(400), &error),
+            }
+        }
+        (Method::Post, "/v1/credentials/status") => {
+            let body = match read_json::<UpdateCredentialStatusRequest>(&mut request) {
+                Ok(body) => body,
+                Err(error) => {
+                    respond_error(request, StatusCode(400), &error);
+                    return;
+                }
+            };
+            match crypto.update_credential_status(&caller, body) {
+                Ok(status) => respond_json(request, StatusCode(200), &status),
                 Err(error) => respond_error(request, StatusCode(400), &error),
             }
         }
