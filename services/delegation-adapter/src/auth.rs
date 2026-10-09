@@ -17,6 +17,7 @@ pub enum CallerRole {
 pub enum CallerCapability {
     IssueRoot,
     IssueChild,
+    ManageStatus,
     CreatePresentation,
     VerifyPresentation,
 }
