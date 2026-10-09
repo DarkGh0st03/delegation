@@ -471,6 +471,34 @@ mod tests {
     }
 
     #[test]
+    fn unbound_issuer_cannot_issue_credentials() -> Result<(), String> {
+        let issuer = DelegationIssuer::<Bn254>::new(String::from(
+            "https://vc.example/delegators/unbound",
+        ))?;
+
+        let result = issuer.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/unbound"),
+            test_status(999),
+            String::from("2026-01-01T00:00:00Z"),
+            String::from("https://vc.example/delegators/d1"),
+            Duration::new(3600, 0),
+            vec![permission(Operation::ReadFile)],
+            None,
+        );
+
+        match result {
+            Ok(_) => Err(String::from(
+                "Unbound issuer unexpectedly issued a credential",
+            )),
+            Err(error) => {
+                assert!(error.contains("no bound accumulator material version"));
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
     fn issue_vc() -> Result<(), String> {
         type Curve = Bn254;
         let trust_registry: TrustPublisherRef<Curve> =
