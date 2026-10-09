@@ -472,9 +472,8 @@ mod tests {
 
     #[test]
     fn unbound_issuer_cannot_issue_credentials() -> Result<(), String> {
-        let issuer = DelegationIssuer::<Bn254>::new(String::from(
-            "https://vc.example/delegators/unbound",
-        ))?;
+        let issuer =
+            DelegationIssuer::<Bn254>::new(String::from("https://vc.example/delegators/unbound"))?;
 
         let result = issuer.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
