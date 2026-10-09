@@ -54,7 +54,7 @@ sol! {
             view
             returns (
                 uint8 purpose,
-                bytes32 currentDocumentHash,
+                bytes32 currentArtifactHash,
                 uint64 currentVersion,
                 uint64 updatedAt,
                 bool exists
@@ -232,7 +232,7 @@ impl EvmRegistryReader {
             .block_on(async { contract.getStatusList(issuer, list_id).call().await })
             .map(|result| StatusListAnchor {
                 purpose: result.purpose,
-                current_document_hash: result.currentDocumentHash,
+                current_artifact_hash: result.currentArtifactHash,
                 current_version: result.currentVersion,
                 updated_at: result.updatedAt,
                 exists: result.exists,
