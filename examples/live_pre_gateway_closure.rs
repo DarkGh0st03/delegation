@@ -23,7 +23,7 @@ use delegation::delegation::trust::material::did_ethr_verification_key_provider:
 use delegation::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
 use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
 use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
-use delegation::delegation::trust::registry::trust_publisher_trait::TrustPublisherRef;
+use delegation::delegation::trust::registry::trust_publisher_trait::TrustPublisher;
 use delegation::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
 use delegation::delegation::trust::resolver::trust_resolver_trait::{
     TrustResolver, TrustResolverRef,
@@ -354,11 +354,33 @@ fn main() -> Result<(), String> {
     let issuer_registry = Address::from_str(&issuer_registry_address)
         .map_err(|err| format!("Invalid ISSUER_REGISTRY_ADDRESS [{err}]"))?;
 
-    // Issuance side: generate the real accumulator and Ed25519 keys used by this run.
+    // Issuance side: generate local cryptographic material first, then publish the
+    // public material explicitly and bind the assigned version to each issuer.
     let issuance_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
-    let issuance_registry_ref: TrustPublisherRef<Curve> = issuance_registry.clone();
-    let root = DelegationIssuer::<Curve>::new(root_id.clone(), issuance_registry_ref.clone())?;
-    let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), issuance_registry_ref)?;
+
+    let mut root = DelegationIssuer::<Curve>::new(root_id.clone())?;
+    issuance_registry.register_identity(root_id.clone())?;
+    let root_material_version = issuance_registry.publish_accumulator_data(
+        root_id.clone(),
+        root.accumulator_public_data(),
+    )?;
+    issuance_registry.publish_verification_key(
+        root_id.clone(),
+        root.public_verification_key().clone(),
+    )?;
+    root.bind_accumulator_material_version(root_material_version)?;
+
+    let mut holder = DelegationIssuer::<Curve>::new(holder_id.clone())?;
+    issuance_registry.register_identity(holder_id.clone())?;
+    let holder_material_version = issuance_registry.publish_accumulator_data(
+        holder_id.clone(),
+        holder.accumulator_public_data(),
+    )?;
+    issuance_registry.publish_verification_key(
+        holder_id.clone(),
+        holder.public_verification_key().clone(),
+    )?;
+    holder.bind_accumulator_material_version(holder_material_version)?;
 
     let status_entry = BitstringStatusListEntry::revocation(
         None,
