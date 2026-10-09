@@ -99,14 +99,14 @@ impl AccumulatorMaterialProvider<Curve> for IssuanceAccumulatorProvider {
 
 #[derive(Default)]
 struct IssuerAwareStatusProvider {
-    documents: RefCell<HashMap<(String, String), String>>,
+    artifacts: RefCell<HashMap<(String, String), String>>,
 }
 
 impl IssuerAwareStatusProvider {
-    fn insert(&self, issuer_id: String, url: String, document: String) {
-        self.documents
+    fn insert(&self, issuer_id: String, url: String, artifact: String) {
+        self.artifacts
             .borrow_mut()
-            .insert((issuer_id, url), document);
+            .insert((issuer_id, url), artifact);
     }
 }
 
