@@ -2,13 +2,13 @@ use crate::delegation::credentials::generic::credential_trait::Credential;
 use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
+use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisherRef;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::time::Duration;
 
 pub trait Issuer<E: Pairing, C: Credential> {
-    fn new(id: String, trust_registry: TrustRegistryRef<E>) -> Result<Self, String>
+    fn new(id: String, trust_registry: TrustPublisherRef<E>) -> Result<Self, String>
     where
         Self: Sized;
 
