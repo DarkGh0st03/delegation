@@ -38,8 +38,12 @@ function status(value: unknown): "pass" | "fail" | "skipped" | undefined {
 /** A new budget for every A2A task. The model cannot control this boundary. */
 class BoundedModel extends BaseLlm {
   turns = 0;
-  constructor(readonly delegate: BaseLlm, readonly limit: number) {
+  readonly delegate: BaseLlm;
+  readonly limit: number;
+  constructor(delegate: BaseLlm, limit: number) {
     super({model: delegate.model});
+    this.delegate = delegate;
+    this.limit = limit;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
       throw new Error("ADK maxModelTurns must be an integer between 1 and 100");
     }

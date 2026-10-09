@@ -25,9 +25,14 @@ const PATHS = {
 
 class OneToolModel extends BaseLlm {
   readonly requests: LlmRequest[] = [];
-  constructor(readonly toolName: string, readonly args: Record<string, unknown>,
-    readonly repeat = false) {
+  readonly toolName: string;
+  readonly args: Record<string, unknown>;
+  readonly repeat: boolean;
+  constructor(toolName: string, args: Record<string, unknown>, repeat = false) {
     super({model: "phase3-adk-scripted-model"});
+    this.toolName = toolName;
+    this.args = args;
+    this.repeat = repeat;
   }
   override async *generateContentAsync(request: LlmRequest): AsyncGenerator<LlmResponse, void> {
     this.requests.push(request);
