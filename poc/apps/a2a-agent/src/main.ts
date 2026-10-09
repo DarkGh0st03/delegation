@@ -38,12 +38,21 @@ function required(name: string): string {
   return value;
 }
 function turnsFromEnvironment(): number {
-  if (process.env.ADK_MAX_MODEL_TURNS === undefined) return 8;
+  if (process.env.ADK_MAX_MODEL_TURNS === undefined) return 40;
   const count = Number(process.env.ADK_MAX_MODEL_TURNS);
   if (!Number.isSafeInteger(count) || count < 1 || count > 100) {
     throw new Error("ADK_MAX_MODEL_TURNS must be a positive integer up to 100");
   }
   return count;
+}
+function gatewayTimeoutForRole(role: SpecializedAgentRole): number {
+  const fallback = role === "test" ? 900000 : 30000;
+  const key = role === "test" ? "TEST_RUNNER_TIMEOUT_MS" : "ADK_GATEWAY_TIMEOUT_MS";
+  const value = process.env[key] === undefined ? fallback : Number(process.env[key]);
+  if (!Number.isSafeInteger(value) || value < 1000 || value > 900000) {
+    throw new Error(key + " must be a timeout from 1000 to 900000 milliseconds");
+  }
+  return value;
 }
 const roleToken = {
   backend: "ADAPTER_CALLER_BACKEND",
@@ -56,7 +65,8 @@ const adk = engine === "adk"
       gatewayBaseUrl: required("GATEWAY_URL"),
       adapterBaseUrl: required("DELEGATION_ADAPTER_URL"),
       adapterToken: required(roleToken),
-      maxModelTurns: turnsFromEnvironment()
+      maxModelTurns: turnsFromEnvironment(),
+      gatewayTimeoutMs: gatewayTimeoutForRole(role)
     }
   : undefined;
 

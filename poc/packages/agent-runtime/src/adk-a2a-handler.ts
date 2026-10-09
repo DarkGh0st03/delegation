@@ -21,6 +21,7 @@ export interface AdkA2ATaskHandlerConfig {
   adapterBaseUrl: string;
   adapterToken: string;
   maxModelTurns?: number;
+  gatewayTimeoutMs?: number;
   fetchFn?: FetchLike;
 }
 
@@ -101,6 +102,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       agentRole: context.role,
       taskId: context.task_id,
       evidenceHandler,
+      ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
     const agent = createAdkSpecializedAgent({

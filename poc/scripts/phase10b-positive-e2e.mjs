@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+
 import { writeFile } from "node:fs/promises";
 import {
   DelegationEvidenceHandler,
+  BaseLlm,
+  OpenAIAdkModel,
   DeterministicA2AOrchestrator,
   GatewayControlledToolClient,
   createSpecializedAgentController,
@@ -16,6 +19,11 @@ import {
   SoftwareEngineerAuthorityBootstrap
 } from "@thesis/orchestrator-runtime";
 
+// The original frozen Phase 10B path remains the default.
+const engine = process.env.PHASE10B_AGENT_ENGINE ?? "legacy";
+if (!["legacy","adk-scripted","adk-openai"].includes(engine)) {
+  throw new Error("Unknown PHASE10B_AGENT_ENGINE");
+}
 const gateway = process.env.GATEWAY_SMOKE_URL ?? "http://127.0.0.1:8080";
 const adapter = process.env.DELEGATION_ADAPTER_URL ?? "http://127.0.0.1:8090";
 const gitea = process.env.GITEA_SMOKE_BASE_URL;
@@ -311,6 +319,65 @@ function taskHandler(role, token) {
   };
 }
 
+
+/**
+ * Deterministic planning for a real ADK integration smoke:
+ * every tool call is executed via ADK Runner -> Gateway -> Rust -> OPA,
+ * including real Gitea mutations and the actual Controlled Test Runner.
+ * No LLM inference is claimed. A single function call per turn avoids
+ * racing Gitea feature-branch commits.
+ */
+class Phase5ScriptedAdkModel extends BaseLlm {
+  constructor(role) {
+    super({model:"phase5-scripted-adk-"+role});
+    this.role=role;
+    this.turn=0;
+    const plan=PLANS[role];
+    this.operations=[
+      ...plan.reads.map(path=>({name:"read_file",args:{branch:"feature/account-suspension",path}})),
+      ...plan.writes.map(([name,path])=>({name,args:{
+        branch:"feature/account-suspension",path,content:FEATURE_FILES[path]
+      }})),
+      ...(plan.runTests?[{name:"run_tests",args:{
+        branch:"feature/account-suspension",profile:"poc-default"
+      }}]:[])
+    ];
+  }
+  async *generateContentAsync(request) {
+    for (const content of request.contents??[]) {
+      for (const part of content.parts??[]) {
+        if (part.functionResponse) {
+          assert.equal(part.functionResponse.response?.ok,true,
+            "A denied Gateway call must fail the scripted ADK run");
+        }
+      }
+    }
+    const next=this.operations[this.turn];
+    this.turn+=1;
+    if(next){
+      yield {modelVersion:this.model,content:{role:"model",parts:[{
+        functionCall:{id:"phase5-"+this.role+"-"+this.turn,
+          name:next.name,args:next.args}
+      }]}};
+    }else{
+      yield {modelVersion:this.model,content:{role:"model",parts:[{
+        text:"Completed controlled Account Suspension implementation through ADK"
+      }]}};
+    }
+  }
+  async connect(){throw new Error("Live streaming disabled for scripted ADK E2E");}
+}
+function specializedServerConfig(role,port,token){
+  if(engine==="legacy")return {role,port,taskHandler:taskHandler(role,token)};
+  const model=engine==="adk-openai"
+    ?new OpenAIAdkModel({apiKey:process.env.OPENAI_API_KEY})
+    :new Phase5ScriptedAdkModel(role);
+  const gatewayTimeoutMs=role==="test"
+    ?Number(process.env.TEST_RUNNER_TIMEOUT_MS??"900000"):30000;
+  return {role,port,adk:{model,gatewayBaseUrl:gateway,adapterBaseUrl:adapter,
+    adapterToken:token,gatewayTimeoutMs,maxModelTurns:40}};
+}
+
 const adapterHealth = await waitForHealth(adapter + "/health", "Delegation Adapter");
 assert.equal(adapterHealth.trust_profile, "evm");
 const gatewayHealth = await waitForHealth(gateway + "/health", "Gateway");
@@ -346,21 +413,15 @@ const protectedGateway = new OrchestratorProtectedGatewayClient({
   rootCredentialId
 });
 
-const backendServer = await startSpecializedAgentServer({
-  role: "backend",
-  port: 43451,
-  taskHandler: taskHandler("backend", tokens.backend)
-});
-const frontendServer = await startSpecializedAgentServer({
-  role: "frontend",
-  port: 43452,
-  taskHandler: taskHandler("frontend", tokens.frontend)
-});
-const testServer = await startSpecializedAgentServer({
-  role: "test",
-  port: 43453,
-  taskHandler: taskHandler("test", tokens.test)
-});
+const backendServer = await startSpecializedAgentServer(
+  specializedServerConfig("backend",43451,tokens.backend)
+);
+const frontendServer = await startSpecializedAgentServer(
+  specializedServerConfig("frontend",43452,tokens.frontend)
+);
+const testServer = await startSpecializedAgentServer(
+  specializedServerConfig("test",43453,tokens.test)
+);
 
 try {
   const coordinator = new AccountSuspensionSequentialCoordinator({
@@ -405,15 +466,14 @@ try {
   assert.equal(result.pull_request.revision, testedRevision);
   assert.equal(result.workflow.pull_request?.head_revision, testedRevision);
 
-  for (const artifact of [
-    backendArtifact,
-    frontendArtifact,
-    testArtifact
-  ]) {
-    assert.match(
-      artifact.model_id ?? "",
-      /^gpt-5\.6-sol-phase10b-scripted-/u
-    );
+  for (const artifact of [backendArtifact,frontendArtifact,testArtifact]) {
+    if(engine==="legacy"){
+      assert.match(artifact.model_id??"",/^gpt-5[.]6-sol-phase10b-scripted-/u);
+    }else if(engine==="adk-scripted"){
+      assert.match(artifact.model_id??"",/^phase5-scripted-adk-/u);
+    }else {
+      assert.ok(typeof artifact.model_id==="string"&&artifact.model_id.length>0);
+    }
   }
 
   const providerPr = await giteaGet(
@@ -451,7 +511,8 @@ try {
   assert.equal(testServer.executor.executionCount, 1);
 
   const resultPayload = {
-    result: "phase10b-positive-e2e-pass",
+    result: engine==="legacy"?"phase10b-positive-e2e-pass":"phase5-adk-e2e-pass",
+    execution_engine: engine,
     trust_profile: adapterHealth.trust_profile,
     workflow_state: result.workflow.state,
     completed_roles: result.workflow.completed_roles,

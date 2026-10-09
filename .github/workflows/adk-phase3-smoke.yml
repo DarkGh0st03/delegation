@@ -1,19 +1,18 @@
 name: ADK Phase 3 A2A Integration
 
 on:
-  push:
-    branches: [refactor/adk-integration]
-    paths:
-      - 'poc/packages/agent-runtime/**'
-      - 'poc/package-lock.json'
-      - 'docs/PHASE_ADK_3_A2A.md'
-      - '.github/workflows/adk-phase3-smoke.yml'
   pull_request:
     paths:
       - 'poc/packages/agent-runtime/**'
       - 'poc/package-lock.json'
       - '.github/workflows/adk-phase3-smoke.yml'
   workflow_dispatch:
+
+# ADK Phase 4 already runs all Phase 2/3 tests on feature pushes.
+# Keep these standalone workflows for PR validation and on-demand checks.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
