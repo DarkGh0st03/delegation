@@ -13,8 +13,11 @@ use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAn
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::model::status_list_credential_artifact::StatusListCredentialArtifact;
 use delegation::delegation::status::model::status_purpose::StatusPurpose;
+use delegation::delegation::status::mutation::bitstring_status_list_mutator::BitstringStatusListMutator;
+use delegation::delegation::status::parser::bitstring_status_list_parser::BitstringStatusListParser;
 use delegation::delegation::status::provider::jwt_status_list_provider::{
     JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
+    verify_status_list_credential_jwt,
 };
 use delegation::delegation::status::provider::status_list_credential_provider_trait::{
     StatusListCredentialProvider, StatusListCredentialProviderRef,
@@ -79,6 +82,12 @@ sol! {
             uint8 purpose,
             bytes32 artifactHash
         ) external;
+
+        function updateStatusList(
+            address issuer,
+            bytes32 listId,
+            bytes32 artifactHash
+        ) external returns (uint64 version);
     }
 }
 
@@ -209,48 +218,79 @@ impl EvmAdapterProfile {
         issuer_id: &str,
         entry: &BitstringStatusListEntry,
         signing_jwk: &Jwk,
+        verification_jwk: &Jwk,
     ) -> Result<(), String> {
         let (purpose_code, purpose_name) = status_purpose(entry.status_purpose())?;
-        let document = status_list_document(issuer_id, entry, purpose_name)?;
-        let signed_status = sign_status_list_credential_jwt(&document, signing_jwk)?;
-        let commitment = EvmAnchoredStatusListResolver::artifact_commitment(&signed_status);
         let existing = self
             .chain_reader
             .status_list_anchor(issuer_id, entry.status_list_credential())?;
 
         if existing.exists {
-            if existing.purpose != purpose_code || existing.current_artifact_hash != commitment {
+            if existing.purpose != purpose_code || existing.current_version == 0 {
                 return Err(format!(
-                    "Existing EVM Status List anchor for {} and issuer {} does not match the Adapter active signed artifact",
+                    "Existing EVM Status List anchor for {} and issuer {} has incompatible purpose/version",
                     entry.status_list_credential(),
                     issuer_id
                 ));
             }
-        } else {
-            let issuer_address = did_address(issuer_id)?;
-            let list_id = EvmRegistryReader::status_list_id(entry.status_list_credential());
-            self.runtime.block_on(register_status_list(
-                &self.config.rpc_url,
-                &self.config.issuer_registry_address,
-                self.config.private_key_for(issuer_role)?,
-                issuer_address,
-                list_id,
-                purpose_code,
-                commitment,
-            ))?;
 
-            let anchored = self
-                .chain_reader
-                .status_list_anchor(issuer_id, entry.status_list_credential())?;
-            if !anchored.exists
-                || anchored.purpose != purpose_code
-                || anchored.current_artifact_hash != commitment
-                || anchored.current_version == 0
-            {
+            let current_artifact = self
+                .status_source
+                .get_status_list_credential(issuer_id, entry.status_list_credential())?;
+            let observed_hash =
+                EvmAnchoredStatusListResolver::artifact_commitment(&current_artifact.document);
+            if observed_hash != existing.current_artifact_hash {
                 return Err(format!(
-                    "EVM Status List anchor did not become visible for issuer {issuer_id}"
+                    "Current Status List artifact for {} and issuer {} is stale relative to on-chain version {}",
+                    entry.status_list_credential(),
+                    issuer_id,
+                    existing.current_version
                 ));
             }
+
+            let current_document = verify_status_list_credential_jwt(
+                &current_artifact.document,
+                verification_jwk,
+                issuer_id,
+            )?;
+            if BitstringStatusListParser::read_status(entry, &current_document)? {
+                return Err(format!(
+                    "Status List entry {}:{} is already set",
+                    entry.status_list_credential(),
+                    entry.status_list_index()
+                ));
+            }
+
+            return Ok(());
+        }
+
+        let document = status_list_document(issuer_id, entry, purpose_name)?;
+        let signed_status = sign_status_list_credential_jwt(&document, signing_jwk)?;
+        let commitment = EvmAnchoredStatusListResolver::artifact_commitment(&signed_status);
+        let issuer_address = did_address(issuer_id)?;
+        let list_id = EvmRegistryReader::status_list_id(entry.status_list_credential());
+
+        self.runtime.block_on(register_status_list(
+            &self.config.rpc_url,
+            &self.config.issuer_registry_address,
+            self.config.private_key_for(issuer_role)?,
+            issuer_address,
+            list_id,
+            purpose_code,
+            commitment,
+        ))?;
+
+        let anchored = self
+            .chain_reader
+            .status_list_anchor(issuer_id, entry.status_list_credential())?;
+        if !anchored.exists
+            || anchored.purpose != purpose_code
+            || anchored.current_artifact_hash != commitment
+            || anchored.current_version != 1
+        {
+            return Err(format!(
+                "EVM Status List anchor did not become visible for issuer {issuer_id}"
+            ));
         }
 
         self.status_source.insert(
@@ -259,6 +299,99 @@ impl EvmAdapterProfile {
             signed_status,
         );
         Ok(())
+    }
+
+    pub fn update_status(
+        &self,
+        issuer_role: CallerRole,
+        issuer_id: &str,
+        entry: &BitstringStatusListEntry,
+        signing_jwk: &Jwk,
+        verification_jwk: &Jwk,
+        status_set: bool,
+    ) -> Result<u64, String> {
+        let (purpose_code, _) = status_purpose(entry.status_purpose())?;
+        let anchor = self
+            .chain_reader
+            .status_list_anchor(issuer_id, entry.status_list_credential())?;
+
+        if !anchor.exists {
+            return Err(format!(
+                "Status List {} is not anchored on-chain for issuer {issuer_id}",
+                entry.status_list_credential()
+            ));
+        }
+        if anchor.purpose != purpose_code {
+            return Err(format!(
+                "On-chain Status List purpose {} does not match requested purpose {}",
+                anchor.purpose,
+                entry.status_purpose()
+            ));
+        }
+        if anchor.current_version == 0 {
+            return Err(String::from("On-chain Status List version cannot be zero"));
+        }
+
+        let current_artifact = self
+            .status_source
+            .get_status_list_credential(issuer_id, entry.status_list_credential())?;
+        let observed_hash =
+            EvmAnchoredStatusListResolver::artifact_commitment(&current_artifact.document);
+        if observed_hash != anchor.current_artifact_hash {
+            return Err(format!(
+                "Refusing to mutate stale Status List artifact for issuer {issuer_id}, list {}: on-chain version {}",
+                entry.status_list_credential(),
+                anchor.current_version
+            ));
+        }
+
+        let current_document = verify_status_list_credential_jwt(
+            &current_artifact.document,
+            verification_jwk,
+            issuer_id,
+        )?;
+        let updated_document =
+            BitstringStatusListMutator::set_status(&current_document, entry, status_set)?;
+        let updated_artifact =
+            sign_status_list_credential_jwt(&updated_document, signing_jwk)?;
+        let updated_hash =
+            EvmAnchoredStatusListResolver::artifact_commitment(&updated_artifact);
+        let expected_version = anchor
+            .current_version
+            .checked_add(1)
+            .ok_or_else(|| String::from("Status List version overflow"))?;
+
+        let issuer_address = did_address(issuer_id)?;
+        let list_id = EvmRegistryReader::status_list_id(entry.status_list_credential());
+        self.runtime.block_on(update_status_list(
+            &self.config.rpc_url,
+            &self.config.issuer_registry_address,
+            self.config.private_key_for(issuer_role)?,
+            issuer_address,
+            list_id,
+            updated_hash,
+        ))?;
+
+        let updated_anchor = self
+            .chain_reader
+            .status_list_anchor(issuer_id, entry.status_list_credential())?;
+        if !updated_anchor.exists
+            || updated_anchor.purpose != purpose_code
+            || updated_anchor.current_version != expected_version
+            || updated_anchor.current_artifact_hash != updated_hash
+        {
+            return Err(format!(
+                "Updated EVM Status List anchor for issuer {issuer_id} does not match the newly signed artifact"
+            ));
+        }
+
+        self.status_source.insert(
+            issuer_id.to_string(),
+            entry.status_list_credential().to_string(),
+            updated_artifact,
+        );
+
+        Ok(expected_version)
     }
 
     fn bootstrap_identities(
@@ -565,6 +698,37 @@ async fn publish_accumulator(
         .get_receipt()
         .await
         .map_err(|err| format!("Could not confirm accumulator commitment [{err}]"))?;
+    Ok(())
+}
+
+async fn update_status_list(
+    rpc_url: &str,
+    issuer_registry: &str,
+    private_key: &str,
+    issuer: Address,
+    list_id: B256,
+    artifact_hash: B256,
+) -> Result<(), String> {
+    let signer: PrivateKeySigner = private_key
+        .parse()
+        .map_err(|err| format!("Invalid issuer private key [{err}]"))?;
+    let provider = ProviderBuilder::new()
+        .wallet(signer)
+        .connect(rpc_url)
+        .await
+        .map_err(|err| format!("Could not connect issuer EVM provider [{err}]"))?;
+    let address = Address::from_str(issuer_registry)
+        .map_err(|err| format!("Invalid IssuerRegistry address [{err}]"))?;
+    let registry = IssuerRegistryWriterContract::new(address, &provider);
+
+    registry
+        .updateStatusList(issuer, list_id, artifact_hash)
+        .send()
+        .await
+        .map_err(|err| format!("Could not update Status List anchor [{err}]"))?
+        .get_receipt()
+        .await
+        .map_err(|err| format!("Could not confirm Status List anchor update [{err}]"))?;
     Ok(())
 }
 
