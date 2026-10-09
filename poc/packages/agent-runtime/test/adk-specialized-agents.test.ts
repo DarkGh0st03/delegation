@@ -132,3 +132,28 @@ test("Phase 2: invalid input is rejected before any Gateway invocation", async (
   assert.equal(calls,0);
   assert.equal(model.requests.length,2);
 });
+
+test("Phase 2: Test ADK agent can invoke controlled run_tests and receives exact-SHA outcome", async () => {
+  const {calls,model} = await exercise("test","run_tests",{
+    branch:BRANCH,profile:"poc-default"
+  },async()=>({
+    runner_profile:"poc-default",
+    tested_commit_sha:"0123456789abcdef0123456789abcdef01234567",
+    project_tests:{status:"pass"},
+    researcher_acceptance:{status:"pass"}
+  }));
+  assert.deepEqual(calls,[{name:"run_tests",args:{branch:BRANCH,profile:"poc-default"}}]);
+  const second=JSON.stringify(model.requests[1]?.contents);
+  assert.match(second,/tested_commit_sha/u);
+  assert.match(second,/researcher_acceptance/u);
+  assert.doesNotMatch(second,/NEVER_EXPOSE_DELEGATION_EVIDENCE/u);
+});
+
+test("Phase 2: Test ADK agent can request create_file only through the Gateway", async () => {
+  const {calls}=await exercise("test","create_file",{
+    branch:BRANCH,path:"tests/e2e/account-suspension.spec.ts",
+    content:"test('account suspension', () => {});"
+  },async()=>({commit_sha:"abcdef0123456789abcdef0123456789abcdef01",provider:"gitea"}));
+  assert.equal(calls.length,1);
+  assert.equal(calls[0]?.name,"create_file");
+});

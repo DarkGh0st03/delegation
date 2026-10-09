@@ -1,0 +1,38 @@
+name: ADK Phase 2 Specialized Agents
+
+on:
+  push:
+    branches: [refactor/adk-integration]
+    paths:
+      - 'poc/packages/agent-runtime/**'
+      - 'poc/package-lock.json'
+      - '.github/workflows/adk-phase2-smoke.yml'
+  pull_request:
+    paths:
+      - 'poc/packages/agent-runtime/**'
+      - 'poc/package-lock.json'
+      - '.github/workflows/adk-phase2-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  specialized-adk-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install frozen PoC workspaces
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Confirm ADK and existing A2A resolutions
+        run: npm --prefix poc ls @google/adk @a2a-js/sdk --all
+      - name: Verify the specialized ADK agents and preserved legacy runtime
+        run: npm --prefix poc run agent-runtime:test
+      - name: Verify immutable role templates and Orchestrator regressions
+        run: npm --prefix poc run orchestrator-runtime:test
