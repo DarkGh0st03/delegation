@@ -10,15 +10,11 @@ use josekit::jwk::Jwk;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-/// Verifier-side TrustRegistry backed by the EVM trust contracts.
+/// Verifier-side trust resolver backed by the EVM trust contracts.
 ///
 /// The blockchain remains the source of truth for lifecycle, trust-anchor state,
 /// and accumulator commitments. Complete accumulator material and DID verification
 /// keys stay off-chain and are supplied by `PublicMaterialProvider`.
-///
-/// Write methods intentionally fail: issuer-side EVM publication is a separate
-/// concern and must use signed blockchain transactions rather than mutating local
-/// verifier state.
 pub struct EvmBackedTrustRegistry<E: Pairing> {
     chain: Rc<dyn TrustChainReader>,
     public_material: PublicMaterialProviderRef<E>,
