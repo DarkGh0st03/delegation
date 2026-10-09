@@ -83,25 +83,32 @@ struct AdapterStatusResolver {
 }
 
 impl AdapterStatusResolver {
-    fn key(entry: &BitstringStatusListEntry) -> String {
+    fn key(issuer_id: &str, entry: &BitstringStatusListEntry) -> String {
         format!(
-            "{}|{}|{}",
+            "{}|{}|{}|{}",
+            issuer_id,
             entry.status_list_credential(),
             entry.status_purpose(),
             entry.status_list_index()
         )
     }
 
-    fn register_active(&self, entry: &BitstringStatusListEntry) {
-        self.values.borrow_mut().insert(Self::key(entry), false);
+    fn register_active(&self, issuer_id: &str, entry: &BitstringStatusListEntry) {
+        self.values
+            .borrow_mut()
+            .insert(Self::key(issuer_id, entry), false);
     }
 }
 
 impl StatusListResolver for AdapterStatusResolver {
-    fn is_status_set(&self, entry: &BitstringStatusListEntry) -> Result<bool, String> {
+    fn is_status_set(
+        &self,
+        issuer_id: &str,
+        entry: &BitstringStatusListEntry,
+    ) -> Result<bool, String> {
         self.values
             .borrow()
-            .get(&Self::key(entry))
+            .get(&Self::key(issuer_id, entry))
             .copied()
             .ok_or_else(|| {
                 format!(
@@ -234,7 +241,7 @@ impl CryptoRuntime {
         self.status_resolver
             .as_ref()
             .ok_or_else(|| String::from("Adapter status resolver is not initialized"))?
-            .register_active(entry);
+            .register_active(callers.identity_for_role(issuer_role)?, entry);
         Ok(())
     }
 
