@@ -178,7 +178,7 @@ The final audit added authenticated JWT Status Lists to the EVM Adapter path, di
 There are now two distinct checkpoints and they must not be conflated:
 
 1. **Historical measured baseline** — executable-code checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a`. The published Phase 12 regression, security, reproducibility and five-replica measurement evidence belongs to this checkpoint.
-2. **Current refactored candidate** — branch `refactor/core-cleanup`. This branch contains the post-measurement architecture cleanup and Status List lifecycle work. It must complete a fresh final regression before merge to `main`, and the historical latency/security measurements must not be attributed to it unless a new campaign is executed.
+2. **Refactored code line** — developed on branch `refactor/core-cleanup`. This code contains the post-measurement architecture cleanup and Status List lifecycle work. It completed a fresh full PoC regression successfully on run `37928199842`, with dedicated core validation `37928496609` and reproducibility validation `37928532313`. Historical latency/security measurements must not be attributed to this refactored code unless a new measurement campaign is executed.
 
 The original thesis PoC implementation roadmap remains complete through **Phase 12 — reproducibility + measurements** for the historical measured baseline.
 
@@ -209,4 +209,4 @@ See:
 - `docs/REPRODUCIBILITY.md` for the frozen runtime and measurement protocol;
 - `poc/experiments/reproducibility-manifest.json` for the machine-readable environment contract.
 
-The historical reference measurement campaign is frozen and remains valid evidence for `cbadb544...`. The refactored candidate is a later code evolution and is being revalidated separately before promotion to `main`.
+The historical reference measurement campaign is frozen and remains valid evidence for `cbadb544...`. The refactored code is a later code evolution and completed its pre-promotion regression successfully. The dedicated Phase 11 Security Experiments workflow has not been rerun as new refactored evidence yet, so the historical Phase 11 campaign must remain attributed to the measured baseline until a fresh run is recorded.
