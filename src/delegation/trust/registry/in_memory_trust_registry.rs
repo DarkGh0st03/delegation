@@ -1,7 +1,7 @@
 use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::trust::model::identity_status::IdentityStatus;
 use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisher;
-use crate::delegation::trust::registry::trust_resolver_trait::TrustResolver;
+use crate::delegation::trust::resolver::trust_resolver_trait::TrustResolver;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::cell::RefCell;
