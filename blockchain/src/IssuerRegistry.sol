@@ -13,7 +13,7 @@ interface IEnterpriseTrustRegistryView {
 /// @notice Anchors issuer public material without storing delegation credentials.
 /// @dev Accumulator material is versioned historically because credentials must
 /// keep verifying against the exact public material used at issuance.
-/// Status Lists expose only the current anchored document hash because
+/// Status Lists expose only the current anchored artifact hash because
 /// revocation/suspension checks must use the latest list state.
 contract IssuerRegistry {
     enum StatusPurpose {
@@ -30,7 +30,7 @@ contract IssuerRegistry {
 
     struct StatusListAnchor {
         StatusPurpose purpose;
-        bytes32 currentDocumentHash;
+        bytes32 currentArtifactHash;
         uint64 currentVersion;
         uint64 updatedAt;
         bool exists;
@@ -58,7 +58,7 @@ contract IssuerRegistry {
     error InvalidStatusPurpose();
     error StatusListAlreadyRegistered(address issuer, bytes32 listId);
     error StatusListNotRegistered(address issuer, bytes32 listId);
-    error DocumentHashUnchanged(address issuer, bytes32 listId);
+    error ArtifactHashUnchanged(address issuer, bytes32 listId);
 
     event AccumulatorMaterialPublished(
         address indexed issuer,
@@ -71,14 +71,14 @@ contract IssuerRegistry {
         bytes32 indexed listId,
         StatusPurpose purpose,
         uint64 version,
-        bytes32 documentHash
+        bytes32 artifactHash
     );
 
     event StatusListUpdated(
         address indexed issuer,
         bytes32 indexed listId,
         uint64 version,
-        bytes32 documentHash
+        bytes32 artifactHash
     );
 
     modifier onlyActiveIssuerController(address issuer) {
@@ -147,11 +147,11 @@ contract IssuerRegistry {
         address issuer,
         bytes32 listId,
         StatusPurpose purpose,
-        bytes32 documentHash
+        bytes32 artifactHash
     ) external onlyActiveIssuerController(issuer) {
         if (listId == bytes32(0)) revert InvalidStatusListId();
         if (purpose == StatusPurpose.None) revert InvalidStatusPurpose();
-        if (documentHash == bytes32(0)) revert ZeroHash();
+        if (artifactHash == bytes32(0)) revert ZeroHash();
 
         StatusListAnchor storage anchor = statusLists[issuer][listId];
         if (anchor.exists) {
@@ -159,7 +159,7 @@ contract IssuerRegistry {
         }
 
         anchor.purpose = purpose;
-        anchor.currentDocumentHash = documentHash;
+        anchor.currentArtifactHash = artifactHash;
         anchor.currentVersion = 1;
         anchor.updatedAt = uint64(block.timestamp);
         anchor.exists = true;
@@ -169,31 +169,31 @@ contract IssuerRegistry {
             listId,
             purpose,
             1,
-            documentHash
+            artifactHash
         );
     }
 
     function updateStatusList(
         address issuer,
         bytes32 listId,
-        bytes32 documentHash
+        bytes32 artifactHash
     ) external onlyActiveIssuerController(issuer) returns (uint64 version) {
-        if (documentHash == bytes32(0)) revert ZeroHash();
+        if (artifactHash == bytes32(0)) revert ZeroHash();
 
         StatusListAnchor storage anchor = statusLists[issuer][listId];
         if (!anchor.exists) {
             revert StatusListNotRegistered(issuer, listId);
         }
-        if (anchor.currentDocumentHash == documentHash) {
-            revert DocumentHashUnchanged(issuer, listId);
+        if (anchor.currentArtifactHash == artifactHash) {
+            revert ArtifactHashUnchanged(issuer, listId);
         }
 
         version = anchor.currentVersion + 1;
         anchor.currentVersion = version;
-        anchor.currentDocumentHash = documentHash;
+        anchor.currentArtifactHash = artifactHash;
         anchor.updatedAt = uint64(block.timestamp);
 
-        emit StatusListUpdated(issuer, listId, version, documentHash);
+        emit StatusListUpdated(issuer, listId, version, artifactHash);
     }
 
     function getStatusList(
