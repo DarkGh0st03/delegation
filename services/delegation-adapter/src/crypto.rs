@@ -143,9 +143,10 @@ impl CryptoRuntime {
 
     fn initialize_issuers(
         callers: &CallerRegistry,
-        trust_ref: TrustPublisherRef<Curve>,
+        trust_publisher: TrustPublisherRef<Curve>,
     ) -> Result<HashMap<CallerRole, DelegationIssuer<Curve>>, String> {
         let mut issuers = HashMap::new();
+
         for role in [
             CallerRole::Engineer,
             CallerRole::Orchestrator,
@@ -154,9 +155,22 @@ impl CryptoRuntime {
             CallerRole::Test,
         ] {
             let identity = callers.identity_for_role(role)?.to_string();
-            let issuer = DelegationIssuer::<Curve>::new(identity, trust_ref.clone())?;
+            let mut issuer = DelegationIssuer::<Curve>::new(identity.clone())?;
+
+            trust_publisher.register_identity(identity.clone())?;
+            let material_version = trust_publisher.publish_accumulator_data(
+                identity.clone(),
+                issuer.accumulator_public_data(),
+            )?;
+            trust_publisher.publish_verification_key(
+                identity,
+                issuer.public_verification_key().clone(),
+            )?;
+            issuer.bind_accumulator_material_version(material_version)?;
+
             issuers.insert(role, issuer);
         }
+
         Ok(issuers)
     }
 
