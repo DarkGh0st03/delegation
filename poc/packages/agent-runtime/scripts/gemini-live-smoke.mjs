@@ -10,6 +10,18 @@ if(!/^gemini-[a-z0-9.-]+$/u.test(modelName))throw new Error("Invalid Gemini mode
 const branch="feature/account-suspension";
 const path="apps/backend/src/users/user.service.ts";
 let reads=0,turns=0,errorOccurred=false;
+const failureCategories=new Set();
+const safeErrorCodes=new Set();
+function safeCategory(value){
+  const v=String(value??"").toLowerCase();
+  if(/429|quota|rate.limit|resource.exhausted/.test(v))return "quota_or_rate_limit";
+  if(/401|api.key.invalid|unauthenticated|authentication/.test(v))return "invalid_api_key";
+  if(/403|permission.denied|not authorized/.test(v))return "access_denied";
+  if(/404|not.found|not available|unsupported model/.test(v))return "model_unavailable";
+  if(/400|invalid.argument|invalid_request|function|schema/.test(v))return "invalid_request_or_tool_schema";
+  if(/500|503|unavailable|internal/.test(v))return "provider_unavailable";
+  return "unclassified_provider_error";
+}
 const tool=new FunctionTool({
   name:"read_file",
   description:"Read one harmless synthetic TypeScript fixture stored in memory.",
@@ -52,11 +64,18 @@ for await(const event of runner.runAsync({
     text:"Use the only available controlled read_file tool once to inspect the synthetic fixture."
   }]}
 })){
-  if(event.errorCode||event.errorMessage)errorOccurred=true;
+  if(event.errorCode||event.errorMessage){
+    errorOccurred=true;
+    const v=String(event.errorCode??"")+" "+String(event.errorMessage??"");
+    failureCategories.add(safeCategory(v));
+    const code=String(event.errorCode??"");
+    if(/^[A-Z0-9_]{1,48}$/u.test(code))safeErrorCodes.add(code);
+  }
 }
 if(errorOccurred||model.exceeded||reads!==1){
   console.error(JSON.stringify({result:"gemini-smoke-failed",turns,reads,
-    category:errorOccurred?"provider_or_model_error":"tool_contract_not_met"}));
+    categories:[...failureCategories],codes:[...safeErrorCodes],
+    reason:errorOccurred?"provider_or_model_error":"tool_contract_not_met"}));
   process.exitCode=1;
 }else{
   console.log(JSON.stringify({result:"gemini-adk-live-readonly-pass",

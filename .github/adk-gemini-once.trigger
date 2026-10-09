@@ -1,1 +1,1 @@
-Run exactly one read-only Gemini API check with the existing GitHub secret. No project or repository files are modified by the tool.
+Second and final Gemini Free Tier probe: classify API/ADK error codes safely. No repository access and no paid billing linked.
