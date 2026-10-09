@@ -19,17 +19,19 @@ use delegation::delegation::status::provider::status_list_credential_provider_tr
 };
 use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
 use delegation::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
-use delegation::delegation::trust::evm::evm_reader_traits::{EvmStatusListReader, EvmTrustReader};
+use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
+use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
 use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
 use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
-use delegation::delegation::trust::material::public_material_provider_traits::{
-    AccumulatorMaterialProvider, AccumulatorMaterialProviderRef, VerificationKeyProviderRef,
+use delegation::delegation::trust::material::accumulator_material_provider::{
+    AccumulatorMaterialProvider, AccumulatorMaterialProviderRef,
 };
+use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
 use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
 use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
-use delegation::delegation::trust::registry::trust_registry_trait::{
-    TrustRegistry, TrustRegistryRef,
+use delegation::delegation::trust::registry::trust_resolver_trait::{
+    TrustResolver, TrustResolverRef,
 };
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
@@ -189,8 +191,8 @@ impl EvmAdapterProfile {
             accumulator_provider,
             verification_keys.clone(),
         ));
-        let trust_reader: Rc<dyn EvmTrustReader> = profile.chain_reader.clone();
-        let trust_registry: TrustRegistryRef<Curve> =
+        let trust_reader: Rc<dyn TrustChainReader> = profile.chain_reader.clone();
+        let trust_registry: TrustResolverRef<Curve> =
             Rc::new(EvmBackedTrustRegistry::new(trust_reader, public_material));
 
         let raw_status_provider: StatusListCredentialProviderRef = profile.status_source.clone();
@@ -199,7 +201,7 @@ impl EvmAdapterProfile {
                 raw_status_provider,
                 verification_keys,
             ));
-        let status_reader: Rc<dyn EvmStatusListReader> = profile.chain_reader.clone();
+        let status_reader: Rc<dyn StatusListAnchorReader> = profile.chain_reader.clone();
         let status_resolver: StatusListResolverRef = Rc::new(EvmAnchoredStatusListResolver::new(
             status_provider,
             status_reader,
