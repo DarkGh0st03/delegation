@@ -89,7 +89,7 @@ The transport used to obtain the large off-chain accumulator payload is intentio
 - The final PoC status artifact is a compact EdDSA JWT containing the Bitstring Status List Credential payload.
 - The JWT signature is verified with the issuer's current Ed25519 assertion key resolved from `did:ethr`.
 - The embedded Status List issuer must equal the expected delegation issuer.
-- `currentDocumentHash = keccak256(exact compact JWT bytes)`.
+- `currentArtifactHash = keccak256(exact compact JWT bytes)`.
 - Only after signature verification and on-chain hash matching is the bitstring parsed.
 - Updating the current Status List from bit 0 to bit 1 invalidates the same already-issued Delegation Credential without modifying it.
 
@@ -112,7 +112,7 @@ It performs:
 7. Status List version 1 hash anchoring;
 8. successful verification of the VP;
 9. creation of Status List version 2 with the same credential's bit set;
-10. on-chain current-hash update;
+10. on-chain current-artifact-hash update;
 11. re-verification of the exact same VP;
 12. rejection because the credential is now revoked.
 
