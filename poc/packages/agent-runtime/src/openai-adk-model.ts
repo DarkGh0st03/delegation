@@ -32,8 +32,13 @@ function parameters(value: unknown): Dict {
   if (Array.isArray(schema.enum)) converted.enum = schema.enum;
   for (const key of ["minLength","maxLength","minimum","maximum","minItems","maxItems"]) {
     if (schema[key] !== undefined) {
-      if (typeof schema[key] !== "number") throw new Error("Invalid ADK schema " + key);
-      converted[key] = schema[key];
+      // ADK v2.2.1's Zod converter encodes these GenAI numeric limits as strings.
+      const raw = schema[key];
+      const value = typeof raw === "string" && /^\\d+$/u.test(raw) ? Number(raw) : raw;
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        throw new Error("Invalid ADK schema " + key);
+      }
+      converted[key] = value;
     }
   }
   if (type === "object") {
