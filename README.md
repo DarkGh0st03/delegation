@@ -14,10 +14,12 @@ The active `src/` tree intentionally contains only the baseline implementation n
 - request-bound presentation verification through holder, audience, challenge, and required-permission checks;
 - structured verification results that can be consumed by the future Cloud Access Gateway / OPA layer;
 - cryptographic accumulator management and verification;
-- the original in-memory trust simulator for deterministic issuer-side tests;
+- explicit local in-memory stores for deterministic tests/local profiles, separated from production-facing trust/status abstractions;
 - a live Anvil-backed trust layer using did:ethr/ERC-1056, EnterpriseTrustRegistry and IssuerRegistry;
-- blockchain-anchored accumulator-material versioning and Bitstring Status List revocation;
-- fresh DID-resolved Ed25519 verification keys and authenticated Status List JWTs.
+- split verifier-side trust resolution and issuer-side trust publication contracts;
+- blockchain-anchored accumulator-material versioning and Bitstring Status List revocation/suspension lifecycle;
+- fresh DID-resolved Ed25519 verification keys and authenticated Status List JWTs;
+- exact parent/child permission matching for delegation attenuation; hierarchical resource-scope attenuation is intentionally not part of the current protocol.
 
 The repository has been simplified before starting the thesis-specific modifications so that the core execution path is easier to study.
 
@@ -58,43 +60,55 @@ src/
     │   ├── delegation_issuer.rs
     │   ├── issuer_trait.rs
     │   └── mod.rs
+    ├── local/
+    │   ├── in_memory_public_material_store.rs
+    │   ├── in_memory_status_list_store.rs
+    │   ├── in_memory_trust_store.rs
+    │   └── mod.rs
     ├── status/
+    │   ├── evm/
+    │   │   ├── status_list_anchor_reader.rs
+    │   │   └── mod.rs
     │   ├── model/
     │   │   ├── bitstring_status_list_entry.rs
     │   │   ├── status_list_credential_artifact.rs
     │   │   ├── status_purpose.rs
     │   │   └── mod.rs
+    │   ├── mutation/
+    │   │   ├── bitstring_status_list_mutator.rs
+    │   │   └── mod.rs
+    │   ├── parser/
+    │   │   ├── bitstring_status_list_parser.rs
+    │   │   └── mod.rs
     │   ├── provider/
-    │   │   ├── in_memory_status_list_provider.rs
     │   │   ├── jwt_status_list_provider.rs
     │   │   ├── status_list_credential_provider_trait.rs
     │   │   └── mod.rs
     │   ├── resolver/
-    │   │   ├── bitstring_status_list_resolver.rs
     │   │   ├── evm_anchored_status_list_resolver.rs
-    │   │   ├── in_memory_status_list_resolver.rs
+    │   │   ├── provider_status_list_resolver.rs
     │   │   ├── status_list_resolver_trait.rs
     │   │   └── mod.rs
     │   └── mod.rs
     ├── trust/
     │   ├── evm/
-    │   │   ├── evm_reader_traits.rs
     │   │   ├── evm_registry_reader.rs
+    │   │   ├── trust_chain_reader.rs
     │   │   └── mod.rs
     │   ├── material/
-    │   │   ├── composite_public_material_provider.rs
+    │   │   ├── accumulator_material_provider.rs
     │   │   ├── did_ethr_verification_key_provider.rs
-    │   │   ├── in_memory_public_material_provider.rs
-    │   │   ├── in_memory_verification_key_provider.rs
-    │   │   ├── public_material_provider_traits.rs
+    │   │   ├── verification_key_provider.rs
     │   │   └── mod.rs
     │   ├── model/
     │   │   ├── identity_status.rs
     │   │   └── mod.rs
     │   ├── registry/
-    │   │   ├── evm_backed_trust_registry.rs
-    │   │   ├── in_memory_trust_registry.rs
-    │   │   ├── trust_registry_trait.rs
+    │   │   ├── trust_publisher_trait.rs
+    │   │   └── mod.rs
+    │   ├── resolver/
+    │   │   ├── evm_trust_resolver.rs
+    │   │   ├── trust_resolver_trait.rs
     │   │   └── mod.rs
     │   └── mod.rs
     ├── verification/
@@ -161,7 +175,12 @@ The final audit added authenticated JWT Status Lists to the EVM Adapter path, di
 
 ## Current checkpoint
 
-The thesis PoC implementation roadmap is complete through **Phase 12 — reproducibility + measurements**.
+There are now two distinct checkpoints and they must not be conflated:
+
+1. **Historical measured baseline** — executable-code checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a`. The published Phase 12 regression, security, reproducibility and five-replica measurement evidence belongs to this checkpoint.
+2. **Current refactored candidate** — branch `refactor/core-cleanup`. This branch contains the post-measurement architecture cleanup and Status List lifecycle work. It must complete a fresh final regression before merge to `main`, and the historical latency/security measurements must not be attributed to it unless a new campaign is executed.
+
+The original thesis PoC implementation roadmap remains complete through **Phase 12 — reproducibility + measurements** for the historical measured baseline.
 
 Validated end state includes:
 
@@ -190,4 +209,4 @@ See:
 - `docs/REPRODUCIBILITY.md` for the frozen runtime and measurement protocol;
 - `poc/experiments/reproducibility-manifest.json` for the machine-readable environment contract.
 
-The implementation and reference measurement campaign are frozen. The next work is statistical interpretation, threats-to-validity discussion and thesis writing.
+The historical reference measurement campaign is frozen and remains valid evidence for `cbadb544...`. The refactored candidate is a later code evolution and is being revalidated separately before promotion to `main`.
