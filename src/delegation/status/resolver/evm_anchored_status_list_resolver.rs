@@ -103,10 +103,18 @@ mod tests {
     use super::*;
     use crate::delegation::local::in_memory_status_list_store::InMemoryStatusListStore;
     use crate::delegation::status::evm::status_list_anchor_reader::StatusListAnchor;
+    use crate::delegation::status::provider::jwt_status_list_provider::{
+        JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
+    };
+    use crate::delegation::trust::material::verification_key_provider::VerificationKeyProvider;
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use ed25519_dalek::SigningKey;
     use flate2::Compression;
     use flate2::write::GzEncoder;
+    use josekit::jwk::Jwk;
     use multibase::Base;
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::io::Write;
@@ -116,6 +124,54 @@ mod tests {
 
     struct MockStatusListReader {
         anchors: RefCell<HashMap<(String, String), StatusListAnchor>>,
+    }
+
+    #[derive(Default)]
+    struct TestVerificationKeyProvider {
+        keys: RefCell<HashMap<String, Jwk>>,
+    }
+
+    impl TestVerificationKeyProvider {
+        fn insert(&self, identity_id: String, key: Jwk) {
+            self.keys.borrow_mut().insert(identity_id, key);
+        }
+    }
+
+    impl VerificationKeyProvider for TestVerificationKeyProvider {
+        fn get_verification_key(&self, identity_id: &str) -> Result<Jwk, String> {
+            self.keys
+                .borrow()
+                .get(identity_id)
+                .cloned()
+                .ok_or_else(|| format!("No verification key available for identity {identity_id}"))
+        }
+    }
+
+    fn signing_keys(seed: u8) -> Result<(Jwk, Jwk), String> {
+        let signing = SigningKey::from_bytes(&[seed; 32]);
+        let x = URL_SAFE_NO_PAD.encode(signing.verifying_key().to_bytes());
+        let d = URL_SAFE_NO_PAD.encode(signing.to_bytes());
+
+        let mut private = Jwk::new("OKP");
+        private
+            .set_parameter("crv", Some(Value::String(String::from("Ed25519"))))
+            .map_err(|err| err.to_string())?;
+        private
+            .set_parameter("x", Some(Value::String(x.clone())))
+            .map_err(|err| err.to_string())?;
+        private
+            .set_parameter("d", Some(Value::String(d)))
+            .map_err(|err| err.to_string())?;
+
+        let mut public = Jwk::new("OKP");
+        public
+            .set_parameter("crv", Some(Value::String(String::from("Ed25519"))))
+            .map_err(|err| err.to_string())?;
+        public
+            .set_parameter("x", Some(Value::String(x)))
+            .map_err(|err| err.to_string())?;
+
+        Ok((private, public))
     }
 
     impl MockStatusListReader {
@@ -266,4 +322,44 @@ mod tests {
         assert!(resolver.is_status_set(ISSUER, &entry())?);
         Ok(())
     }
+
+    #[test]
+    fn rejects_stale_signed_jwt_and_accepts_current_signed_jwt() -> Result<(), String> {
+        let (private, public) = signing_keys(21)?;
+        let active_token = sign_status_list_credential_jwt(&document(false)?, &private)?;
+        let revoked_token = sign_status_list_credential_jwt(&document(true)?, &private)?;
+
+        let source = Rc::new(InMemoryStatusListStore::new());
+        source.insert(
+            String::from(ISSUER),
+            String::from(STATUS_LIST_URL),
+            active_token,
+        );
+
+        let verification_keys = Rc::new(TestVerificationKeyProvider::default());
+        verification_keys.insert(String::from(ISSUER), public);
+        let authenticated = Rc::new(JwtAuthenticatedStatusListCredentialProvider::new(
+            source.clone(),
+            verification_keys,
+        ));
+
+        let chain = Rc::new(MockStatusListReader::new());
+        chain.set_anchor(ISSUER, STATUS_LIST_URL, &revoked_token, 2);
+
+        let resolver = EvmAnchoredStatusListResolver::new(authenticated, chain);
+
+        let stale_error = resolver
+            .is_status_set(ISSUER, &entry())
+            .expect_err("stale but validly signed JWT must not satisfy current anchor");
+        assert!(stale_error.contains("commitment mismatch"));
+
+        source.insert(
+            String::from(ISSUER),
+            String::from(STATUS_LIST_URL),
+            revoked_token,
+        );
+        assert!(resolver.is_status_set(ISSUER, &entry())?);
+        Ok(())
+    }
+
 }
