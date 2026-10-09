@@ -1,6 +1,12 @@
-name: ADK OpenAI Live Probe (Manual Only)
+name: ADK OpenAI Live Probe
 
 on:
+  # One-time branch-only activation; remove this trigger immediately after
+  # collecting the result. Only the dedicated marker file can trigger a run.
+  push:
+    branches: [refactor/adk-integration]
+    paths:
+      - '.github/adk-live-probe.trigger'
   workflow_dispatch:
     inputs:
       model:
@@ -12,7 +18,8 @@ on:
 permissions:
   contents: read
 
-# Never trigger billable inference on push or PR.
+# Paid provider use is enabled only by the one-time marker on this branch,
+# or an explicitly requested manual dispatch after workflow reaches main.
 concurrency:
   group: adk-live-probe-${{ github.ref }}
   cancel-in-progress: false
@@ -23,7 +30,7 @@ jobs:
     timeout-minutes: 8
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_MODEL: ${{ inputs.model }}
+      OPENAI_MODEL: ${{ github.event_name == 'push' && 'gpt-4o-mini' || inputs.model }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
