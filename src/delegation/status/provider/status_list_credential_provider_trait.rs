@@ -1,27 +1,14 @@
 use crate::delegation::status::model::status_list_credential_artifact::StatusListCredentialArtifact;
 use std::rc::Rc;
 
-/// Supplies a BitstringStatusListCredential for a stable status-list identifier.
+/// Supplies the current Status List artifact for a specific issuer and stable
+/// status-list identifier.
 pub trait StatusListCredentialProvider {
-    fn get_status_list_credential(&self, url: &str) -> Result<String, String>;
-
-    /// Issuer-aware retrieval/authentication hook.
-    ///
-    /// Plain providers default to treating the JSON document itself as the
-    /// committed artifact. Authenticated providers can instead verify an envelope
-    /// (for example a signed JWT) and return its decoded document while preserving
-    /// the exact envelope bytes for blockchain commitment checks.
-    fn get_status_list_credential_for_issuer(
+    fn get_status_list_credential(
         &self,
-        _issuer_id: &str,
+        issuer_id: &str,
         url: &str,
-    ) -> Result<StatusListCredentialArtifact, String> {
-        let document = self.get_status_list_credential(url)?;
-        Ok(StatusListCredentialArtifact {
-            commitment_bytes: document.as_bytes().to_vec(),
-            document,
-        })
-    }
+    ) -> Result<StatusListCredentialArtifact, String>;
 }
 
 pub type StatusListCredentialProviderRef = Rc<dyn StatusListCredentialProvider>;
