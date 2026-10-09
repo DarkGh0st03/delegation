@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import OpenAI from "openai";
 import { BaseLlm, FunctionTool, InMemorySessionService, LlmAgent, Runner } from "@google/adk";
 import { z } from "zod";
 import { OpenAIAdkModel } from "../src/index.ts";
@@ -49,7 +50,8 @@ class Budgeted extends BaseLlm {
   async connect(){throw new Error("Live ADK streaming is not permitted");}
 }
 const model = new Budgeted(new OpenAIAdkModel({
-  apiKey,model:modelName,maxOutputTokens:1536,
+  client:new OpenAI({apiKey,maxRetries:0,timeout:15000}),
+  model:modelName,maxOutputTokens:1536,
   allowedToolNames:["read_file"]
 }));
 const agent = new LlmAgent({
@@ -71,14 +73,35 @@ const sessionService=new InMemorySessionService();
 const runner=new Runner({agent,appName,sessionService});
 await sessionService.createSession({appName,userId,sessionId});
 let failures=0;
+const errors = new Set();
+function errorCategory(message) {
+  const value = String(message ?? "").toLowerCase();
+  if (/insufficient_quota|quota|billing|credits|payment/.test(value)) return "quota_or_billing";
+  if (/rate.limit|429|too many requests/.test(value)) return "rate_limited";
+  if (/invalid_api_key|incorrect api key|401|authentication|unauthorized/.test(value)) return "api_key_authentication";
+  if (/model_not_found|model.*not found|model.*does not exist|404|access to model/.test(value)) return "model_unavailable";
+  if (/400|invalid_request|unsupported parameter|schema/.test(value)) return "invalid_model_request";
+  if (/403|permission|forbidden/.test(value)) return "provider_permission";
+  if (/timeout|econn|network|socket/.test(value)) return "network_or_timeout";
+  return "unknown_provider_or_adk_error";
+}
 for await(const event of runner.runAsync({
   userId,sessionId,newMessage:{role:"user",parts:[{
     text:"Read the fixed fixture with the controlled read_file tool exactly once."
   }]}
 })){
-  if(event.errorCode||event.errorMessage)failures++;
+  if(event.errorCode||event.errorMessage){
+    failures++;
+    errors.add(errorCategory(String(event.errorCode??"")+" "+String(event.errorMessage??"")));
+  }
 }
-assert.equal(failures,0,"ADK reported a provider/model error");
+if (failures > 0) {
+  // Codes only, never credentials or unsanitized provider responses.
+  process.stderr.write("ADK_LIVE_DIAGNOSTIC="+JSON.stringify({
+    categories:[...errors],provider_turns:model.turns,controlled_fixture_reads:calls
+  })+"\\n");
+  throw new Error("ADK live model/provider failure; see sanitized categories above");
+}
 assert.equal(model.exceeded,false,"Model exceeded budget");
 assert.equal(calls,1,"Provider failed to invoke the single allowed read_file tool");
 process.stdout.write(JSON.stringify({
