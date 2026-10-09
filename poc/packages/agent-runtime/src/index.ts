@@ -15,4 +15,5 @@ export * from "./task-context.ts";
 export * from "./adk-specialized-agents.ts";
 export * from "./adk-a2a-handler.ts";
 export * from "./openai-adk-model.ts";
+export * from "./gemini-adk-model.ts";
 export { BaseLlm } from "@google/adk";

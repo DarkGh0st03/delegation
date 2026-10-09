@@ -5,6 +5,7 @@ import {
   DelegationEvidenceHandler,
   BaseLlm,
   OpenAIAdkModel,
+  createGeminiAdkModel,
   DeterministicA2AOrchestrator,
   GatewayControlledToolClient,
   createSpecializedAgentController,
@@ -22,11 +23,11 @@ import {
 
 // The original frozen Phase 10B path remains the default.
 const engine = process.env.PHASE10B_AGENT_ENGINE ?? "legacy";
-if (!["legacy","adk-scripted","adk-openai"].includes(engine)) {
+if (!["legacy","adk-scripted","adk-openai","adk-gemini"].includes(engine)) {
   throw new Error("Unknown PHASE10B_AGENT_ENGINE");
 }
 const orchestratorEngine = process.env.PHASE10B_ORCHESTRATOR_ENGINE ?? "legacy";
-if (!["legacy","adk-scripted","adk-openai"].includes(orchestratorEngine)) {
+if (!["legacy","adk-scripted","adk-openai","adk-gemini"].includes(orchestratorEngine)) {
   throw new Error("Unknown PHASE10B_ORCHESTRATOR_ENGINE");
 }
 const gateway = process.env.GATEWAY_SMOKE_URL ?? "http://127.0.0.1:8080";
@@ -376,7 +377,12 @@ function specializedServerConfig(role,port,token){
   if(engine==="legacy")return {role,port,taskHandler:taskHandler(role,token)};
   const model=engine==="adk-openai"
     ?new OpenAIAdkModel({apiKey:process.env.OPENAI_API_KEY})
-    :new Phase5ScriptedAdkModel(role);
+    :engine==="adk-gemini"
+      ?createGeminiAdkModel({
+          apiKey:process.env.GEMINI_API_KEY,
+          model:process.env.GEMINI_MODEL??"gemini-3.8-flash"
+        })
+      :new Phase5ScriptedAdkModel(role);
   const gatewayTimeoutMs=role==="test"
     ?Number(process.env.TEST_RUNNER_TIMEOUT_MS??"900000"):30000;
   return {role,port,adk:{model,gatewayBaseUrl:gateway,adapterBaseUrl:adapter,
@@ -477,7 +483,12 @@ try {
         apiKey: process.env.OPENAI_API_KEY,
         allowedToolNames: ["run_account_suspension_workflow"]
       })
-    : new Phase6OrchestratorModel();
+    : orchestratorEngine === "adk-gemini"
+      ? createGeminiAdkModel({
+          apiKey: process.env.GEMINI_API_KEY,
+          model: process.env.GEMINI_MODEL ?? "gemini-3.8-flash"
+        })
+      : new Phase6OrchestratorModel();
   const result = orchestratorEngine === "legacy"
     ? await coordinator.run()
     : await new AdkAccountSuspensionOrchestrator({

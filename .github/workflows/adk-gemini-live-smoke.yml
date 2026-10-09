@@ -1,11 +1,6 @@
 name: ADK Gemini Native Live Smoke
 
 on:
-  # One-time Free Tier activation on the feature branch, removed after test.
-  push:
-    branches: [refactor/adk-integration]
-    paths:
-      - '.github/adk-gemini-once.trigger'
   workflow_dispatch:
     inputs:
       model:

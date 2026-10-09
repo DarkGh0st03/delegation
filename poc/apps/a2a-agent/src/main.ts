@@ -1,5 +1,6 @@
 import {
   OpenAIAdkModel,
+  createGeminiAdkModel,
   SPECIALIZED_AGENT_ROLES,
   startSpecializedAgentServer,
   type SpecializedAgentRole
@@ -59,9 +60,18 @@ const roleToken = {
   frontend: "ADAPTER_CALLER_FRONTEND",
   test: "ADAPTER_CALLER_TEST"
 }[role];
+const provider = process.env.ADK_MODEL_PROVIDER ?? "openai";
+if (engine === "adk" && provider !== "openai" && provider !== "gemini") {
+  throw new Error("ADK_MODEL_PROVIDER must be openai or gemini");
+}
 const adk = engine === "adk"
   ? {
-      model: new OpenAIAdkModel({ apiKey: required("OPENAI_API_KEY") }),
+      model: provider === "gemini"
+        ? createGeminiAdkModel({
+            apiKey: required("GEMINI_API_KEY"),
+            model: process.env.GEMINI_MODEL ?? "gemini-3.8-flash"
+          })
+        : new OpenAIAdkModel({ apiKey: required("OPENAI_API_KEY") }),
       gatewayBaseUrl: required("GATEWAY_URL"),
       adapterBaseUrl: required("DELEGATION_ADAPTER_URL"),
       adapterToken: required(roleToken),
