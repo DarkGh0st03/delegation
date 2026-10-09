@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import {
   DelegationEvidenceHandler,
   BaseLlm,
@@ -22,11 +23,23 @@ import {
 } from "@thesis/orchestrator-runtime";
 
 // The original frozen Phase 10B path remains the default.
-const engine = process.env.PHASE10B_AGENT_ENGINE ?? "legacy";
+// One user-authorized Free Tier experiment on the protected feature branch.
+ // The unique marker is removed immediately after its single CI run; future
+ // pushes continue to use the immutable scripted regression configuration.
+const liveGeminiOnce = process.env.GITHUB_ACTIONS === "true" &&
+  existsSync(".github/adk-gemini-e2e-once.trigger") &&
+  process.env.PHASE10B_AGENT_ENGINE === "adk-scripted" &&
+  process.env.PHASE10B_ORCHESTRATOR_ENGINE === "adk-scripted";
+if (liveGeminiOnce && !process.env.GEMINI_API_KEY?.trim()) {
+  throw new Error("Missing Gemini Free Tier repository secret");
+}
+const engine = liveGeminiOnce ? "adk-gemini" :
+  (process.env.PHASE10B_AGENT_ENGINE ?? "legacy");
 if (!["legacy","adk-scripted","adk-openai","adk-gemini"].includes(engine)) {
   throw new Error("Unknown PHASE10B_AGENT_ENGINE");
 }
-const orchestratorEngine = process.env.PHASE10B_ORCHESTRATOR_ENGINE ?? "legacy";
+const orchestratorEngine = liveGeminiOnce ? "adk-gemini" :
+  (process.env.PHASE10B_ORCHESTRATOR_ENGINE ?? "legacy");
 if (!["legacy","adk-scripted","adk-openai","adk-gemini"].includes(orchestratorEngine)) {
   throw new Error("Unknown PHASE10B_ORCHESTRATOR_ENGINE");
 }
@@ -385,8 +398,13 @@ function specializedServerConfig(role,port,token){
       :new Phase5ScriptedAdkModel(role);
   const gatewayTimeoutMs=role==="test"
     ?Number(process.env.TEST_RUNNER_TIMEOUT_MS??"900000"):30000;
+  // Free Tier bounded inference; original scripted baseline stays at 40.
+  const maxModelTurns=engine==="adk-gemini"
+    ?Number(process.env.PHASE10B_GEMINI_MAX_MODEL_TURNS??"24"):40;
+  if(!Number.isSafeInteger(maxModelTurns)||maxModelTurns<1||maxModelTurns>40)
+    throw new Error("Gemini model turn budget must be from 1 to 40");
   return {role,port,adk:{model,gatewayBaseUrl:gateway,adapterBaseUrl:adapter,
-    adapterToken:token,gatewayTimeoutMs,maxModelTurns:40}};
+    adapterToken:token,gatewayTimeoutMs,maxModelTurns}};
 }
 
 
