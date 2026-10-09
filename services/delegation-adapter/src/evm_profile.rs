@@ -25,12 +25,11 @@ use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
 use delegation::delegation::trust::material::accumulator_material_provider::{
     AccumulatorMaterialProvider, AccumulatorMaterialProviderRef,
 };
-use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
 use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
-use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
 use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
-use delegation::delegation::trust::registry::trust_resolver_trait::{
+use delegation::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
+use delegation::delegation::trust::resolver::trust_resolver_trait::{
     TrustResolver, TrustResolverRef,
 };
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
@@ -187,13 +186,12 @@ impl EvmAdapterProfile {
             verification_keys.get_verification_key(callers.identity_for_role(role)?)?;
         }
 
-        let public_material = Rc::new(CompositePublicMaterialProvider::<Curve>::new(
+        let trust_reader: Rc<dyn TrustChainReader> = profile.chain_reader.clone();
+        let trust_resolver: TrustResolverRef<Curve> = Rc::new(EvmTrustResolver::new(
+            trust_reader,
             accumulator_provider,
             verification_keys.clone(),
         ));
-        let trust_reader: Rc<dyn TrustChainReader> = profile.chain_reader.clone();
-        let trust_registry: TrustResolverRef<Curve> =
-            Rc::new(EvmBackedTrustRegistry::new(trust_reader, public_material));
 
         let raw_status_provider: StatusListCredentialProviderRef = profile.status_source.clone();
         let status_provider: StatusListCredentialProviderRef =
@@ -207,7 +205,7 @@ impl EvmAdapterProfile {
             status_reader,
         ));
 
-        let verifier = DelegationVerifier::<Curve>::new(trust_registry, status_resolver)?;
+        let verifier = DelegationVerifier::<Curve>::new(trust_resolver, status_resolver)?;
         Ok((profile, verifier))
     }
 
@@ -322,7 +320,7 @@ impl EvmAdapterProfile {
 
             let material = issuance_registry.get_accumulator_data_at_version(&identity, 1)?;
             let commitment =
-                EvmBackedTrustRegistry::<Curve>::accumulator_material_commitment(&material)?;
+                EvmTrustResolver::<Curve>::accumulator_material_commitment(&material)?;
             let current_version = self
                 .chain_reader
                 .latest_accumulator_material_version(&identity)?;
