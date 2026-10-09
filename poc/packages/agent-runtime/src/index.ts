@@ -14,3 +14,4 @@ export * from "./server.ts";
 export * from "./task-context.ts";
 export * from "./adk-specialized-agents.ts";
 export * from "./adk-a2a-handler.ts";
+export * from "./openai-adk-model.ts";

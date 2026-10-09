@@ -1,4 +1,5 @@
 import {
+  OpenAIAdkModel,
   SPECIALIZED_AGENT_ROLES,
   startSpecializedAgentServer,
   type SpecializedAgentRole
@@ -27,16 +28,50 @@ function portFromEnvironment(value: string | undefined): number {
 const role = roleFromEnvironment(process.env.AGENT_ROLE);
 const port = portFromEnvironment(process.env.AGENT_PORT);
 
+const engine = process.env.AGENT_RUNTIME_ENGINE ?? "deterministic";
+if (engine !== "deterministic" && engine !== "adk") {
+  throw new Error("AGENT_RUNTIME_ENGINE must be deterministic or adk");
+}
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value?.trim()) throw new Error(name + " is required when AGENT_RUNTIME_ENGINE=adk");
+  return value;
+}
+function turnsFromEnvironment(): number {
+  if (process.env.ADK_MAX_MODEL_TURNS === undefined) return 8;
+  const count = Number(process.env.ADK_MAX_MODEL_TURNS);
+  if (!Number.isSafeInteger(count) || count < 1 || count > 100) {
+    throw new Error("ADK_MAX_MODEL_TURNS must be a positive integer up to 100");
+  }
+  return count;
+}
+const roleToken = {
+  backend: "ADAPTER_CALLER_BACKEND",
+  frontend: "ADAPTER_CALLER_FRONTEND",
+  test: "ADAPTER_CALLER_TEST"
+}[role];
+const adk = engine === "adk"
+  ? {
+      model: new OpenAIAdkModel({ apiKey: required("OPENAI_API_KEY") }),
+      gatewayBaseUrl: required("GATEWAY_URL"),
+      adapterBaseUrl: required("DELEGATION_ADAPTER_URL"),
+      adapterToken: required(roleToken),
+      maxModelTurns: turnsFromEnvironment()
+    }
+  : undefined;
+
 const runtime = await startSpecializedAgentServer({
   role,
   port,
-  host: process.env.AGENT_BIND_HOST ?? "127.0.0.1"
+  host: process.env.AGENT_BIND_HOST ?? "127.0.0.1",
+  ...(adk ? { adk } : {})
 });
 
 process.stdout.write(
   JSON.stringify({
     event: "a2a_agent_started",
     role,
+    engine,
     base_url: runtime.baseUrl,
     agent_card: `${runtime.baseUrl}/.well-known/agent-card.json`
   }) + "\n"
