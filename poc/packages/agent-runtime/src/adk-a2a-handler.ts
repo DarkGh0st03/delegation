@@ -38,6 +38,7 @@ function status(value: unknown): "pass" | "fail" | "skipped" | undefined {
 /** A new budget for every A2A task. The model cannot control this boundary. */
 class BoundedModel extends BaseLlm {
   turns = 0;
+  budgetExceeded = false;
   readonly delegate: BaseLlm;
   readonly limit: number;
   constructor(delegate: BaseLlm, limit: number) {
@@ -50,7 +51,10 @@ class BoundedModel extends BaseLlm {
   }
   override async *generateContentAsync(request: LlmRequest, stream?: boolean, signal?: AbortSignal):
     AsyncGenerator<LlmResponse, void> {
-    if (this.turns >= this.limit) throw new Error("ADK model turn budget exhausted");
+    if (this.turns >= this.limit) {
+      this.budgetExceeded = true;
+      throw new Error("ADK model turn budget exhausted");
+    }
     this.turns += 1;
     yield* this.delegate.generateContentAsync(request, stream, signal);
   }
@@ -106,11 +110,17 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     });
     // Never serialize context.delegation_evidence into ADK Runner input/session.
     const visible = modelVisibleTaskContext(context);
-    for await (const _event of runner.runAsync({
+    let modelError = false;
+    for await (const event of runner.runAsync({
       userId, sessionId: context.task_id,
       newMessage: {role: "user", parts: [{text: JSON.stringify({task:visible})}]}
     })) {
-      // Deliberately do not trust LLM output for repository audit fields.
+      // ADK may convert model errors to event payloads rather than throwing.
+      // Ignore model prose, but do not ignore failed model invocations.
+      if (event.errorCode || event.errorMessage) modelError = true;
+    }
+    if (model.budgetExceeded || modelError) {
+      throw new Error("ADK model execution failed or exceeded its turn budget");
     }
 
     const filesModified = new Set<string>();
