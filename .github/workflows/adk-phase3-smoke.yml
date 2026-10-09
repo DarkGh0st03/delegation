@@ -1,0 +1,36 @@
+name: ADK Phase 3 A2A Integration
+
+on:
+  push:
+    branches: [refactor/adk-integration]
+    paths:
+      - 'poc/packages/agent-runtime/**'
+      - 'poc/package-lock.json'
+      - 'docs/PHASE_ADK_3_A2A.md'
+      - '.github/workflows/adk-phase3-smoke.yml'
+  pull_request:
+    paths:
+      - 'poc/packages/agent-runtime/**'
+      - 'poc/package-lock.json'
+      - '.github/workflows/adk-phase3-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  adk-a2a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: ADK A2A integration and controlled tool tests
+        run: npm --prefix poc run agent-runtime:test
+      - name: Orchestrator/A2A contractual regression
+        run: npm --prefix poc run orchestrator-runtime:test
