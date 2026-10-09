@@ -1,0 +1,22 @@
+{
+  "name": "@thesis/adk-spike",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": "22.15.0",
+    "npm": "10.9.2"
+  },
+  "scripts": {
+    "smoke": "node --experimental-strip-types --test ./test/*.test.ts",
+    "web": "adk web",
+    "run": "adk run agent.ts"
+  },
+  "dependencies": {
+    "@google/adk": "2.2.1"
+  },
+  "devDependencies": {
+    "@google/adk-devtools": "2.2.0"
+  }
+}
