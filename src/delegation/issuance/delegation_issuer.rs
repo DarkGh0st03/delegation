@@ -9,7 +9,7 @@ use crate::delegation::credentials::generic::verifiable_credential::VerifiableCr
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::issuance::issuer_trait::Issuer;
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
+use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisherRef;
 use ark_ec::pairing::Pairing;
 use ark_std::rand::prelude::StdRng;
 use ark_std::rand::{RngCore, SeedableRng};
@@ -38,7 +38,7 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
     ///
     /// # Returns
     /// A result containing either the instance of DelegationIssuer or an error as a string in case of failure.
-    fn new(id: String, trust_registry: TrustRegistryRef<E>) -> Result<Self, String> {
+    fn new(id: String, trust_registry: TrustPublisherRef<E>) -> Result<Self, String> {
         trust_registry.register_identity(id.clone())?;
 
         let mut rng: StdRng = StdRng::from_entropy();
@@ -416,7 +416,7 @@ mod tests {
     use crate::delegation::authorization::operation::Operation;
     use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
-    use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
+    use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisherRef;
     use ark_bn254::Bn254;
     use std::rc::Rc;
 
@@ -440,7 +440,7 @@ mod tests {
     #[test]
     fn issue_vc() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
+        let trust_registry: TrustPublisherRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let id = String::from("https://vc.example/delegators/d0");
@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn issue_vp() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
+        let trust_registry: TrustPublisherRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let id = String::from("https://vc.example/delegators/d0");
@@ -631,7 +631,7 @@ mod tests {
     #[test]
     fn rejects_subdelegation_with_foreign_credential() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
+        let trust_registry: TrustPublisherRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
@@ -673,7 +673,7 @@ mod tests {
     #[test]
     fn child_expiration_is_capped_by_immediate_parent() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
+        let trust_registry: TrustPublisherRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
@@ -717,7 +717,7 @@ mod tests {
     #[test]
     fn propagates_parent_status_into_hierarchy() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
+        let trust_registry: TrustPublisherRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
