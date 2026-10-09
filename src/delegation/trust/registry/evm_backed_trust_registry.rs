@@ -1,8 +1,8 @@
 use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
-use crate::delegation::trust::evm::evm_reader_traits::EvmTrustReader;
-use crate::delegation::trust::material::public_material_provider_traits::PublicMaterialProviderRef;
+use crate::delegation::trust::evm::trust_chain_reader::TrustChainReader;
+use crate::delegation::trust::material::public_material_provider::PublicMaterialProviderRef;
 use crate::delegation::trust::model::identity_status::IdentityStatus;
-use crate::delegation::trust::registry::trust_registry_trait::TrustRegistry;
+use crate::delegation::trust::registry::trust_resolver_trait::TrustResolver;
 use alloy::primitives::{B256, keccak256};
 use ark_ec::pairing::Pairing;
 use ark_serialize::CanonicalSerialize;
@@ -20,14 +20,14 @@ use std::rc::Rc;
 /// concern and must use signed blockchain transactions rather than mutating local
 /// verifier state.
 pub struct EvmBackedTrustRegistry<E: Pairing> {
-    chain: Rc<dyn EvmTrustReader>,
+    chain: Rc<dyn TrustChainReader>,
     public_material: PublicMaterialProviderRef<E>,
     _curve: PhantomData<E>,
 }
 
 impl<E: Pairing> EvmBackedTrustRegistry<E> {
     pub fn new(
-        chain: Rc<dyn EvmTrustReader>,
+        chain: Rc<dyn TrustChainReader>,
         public_material: PublicMaterialProviderRef<E>,
     ) -> Self {
         Self {
@@ -46,44 +46,15 @@ impl<E: Pairing> EvmBackedTrustRegistry<E> {
         Ok(keccak256(bytes))
     }
 
-    fn read_only_error(operation: &str) -> String {
-        format!(
-            "EvmBackedTrustRegistry is verifier-side/read-only; {operation} requires an issuer/governance transaction path"
-        )
-    }
 }
 
-impl<E: Pairing> TrustRegistry<E> for EvmBackedTrustRegistry<E> {
-    fn register_identity(&self, _identity_id: String) -> Result<(), String> {
-        Err(Self::read_only_error("register_identity"))
-    }
-
+impl<E: Pairing> TrustResolver<E> for EvmBackedTrustRegistry<E> {
     fn get_identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String> {
         self.chain.identity_status(identity_id)
     }
 
-    fn set_identity_status(
-        &self,
-        _identity_id: &str,
-        _status: IdentityStatus,
-    ) -> Result<(), String> {
-        Err(Self::read_only_error("set_identity_status"))
-    }
-
-    fn set_trust_anchor(&self, _identity_id: &str, _trusted: bool) -> Result<(), String> {
-        Err(Self::read_only_error("set_trust_anchor"))
-    }
-
     fn is_trust_anchor(&self, identity_id: &str) -> Result<bool, String> {
         self.chain.is_trust_anchor(identity_id)
-    }
-
-    fn publish_accumulator_data(
-        &self,
-        _identity_id: String,
-        _data: AccumulatorPublicData<E>,
-    ) -> Result<u64, String> {
-        Err(Self::read_only_error("publish_accumulator_data"))
     }
 
     fn get_accumulator_data(&self, identity_id: &str) -> Result<AccumulatorPublicData<E>, String> {
@@ -133,14 +104,6 @@ impl<E: Pairing> TrustRegistry<E> for EvmBackedTrustRegistry<E> {
         Ok(material)
     }
 
-    fn publish_verification_key(
-        &self,
-        _identity_id: String,
-        _verification_key: Jwk,
-    ) -> Result<(), String> {
-        Err(Self::read_only_error("publish_verification_key"))
-    }
-
     fn get_verification_key(&self, identity_id: &str) -> Result<Jwk, String> {
         self.ensure_identity_active(identity_id)?;
         self.public_material.get_verification_key(identity_id)
@@ -159,14 +122,14 @@ mod tests {
     use std::collections::HashMap;
     use vb_accumulator::prelude::{Keypair, SetupParams};
 
-    struct MockEvmTrustReader {
+    struct MockTrustChainReader {
         statuses: RefCell<HashMap<String, IdentityStatus>>,
         anchors: RefCell<HashMap<String, bool>>,
         latest_versions: RefCell<HashMap<String, u64>>,
         materials: RefCell<HashMap<(String, u64), AccumulatorMaterialAnchor>>,
     }
 
-    impl MockEvmTrustReader {
+    impl MockTrustChainReader {
         fn new() -> Self {
             Self {
                 statuses: RefCell::new(HashMap::new()),
@@ -177,7 +140,7 @@ mod tests {
         }
     }
 
-    impl EvmTrustReader for MockEvmTrustReader {
+    impl TrustChainReader for MockTrustChainReader {
         fn identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String> {
             self.statuses
                 .borrow()
@@ -238,7 +201,7 @@ mod tests {
         let commitment =
             EvmBackedTrustRegistry::<Bn254>::accumulator_material_commitment(&material)?;
 
-        let chain = Rc::new(MockEvmTrustReader::new());
+        let chain = Rc::new(MockTrustChainReader::new());
         chain
             .statuses
             .borrow_mut()
@@ -269,7 +232,7 @@ mod tests {
         let identity = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
         let version = 1;
 
-        let chain = Rc::new(MockEvmTrustReader::new());
+        let chain = Rc::new(MockTrustChainReader::new());
         chain
             .statuses
             .borrow_mut()
@@ -299,7 +262,7 @@ mod tests {
     fn lifecycle_and_trust_anchor_come_from_chain() -> Result<(), String> {
         let identity = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
 
-        let chain = Rc::new(MockEvmTrustReader::new());
+        let chain = Rc::new(MockTrustChainReader::new());
         chain
             .statuses
             .borrow_mut()
@@ -319,7 +282,7 @@ mod tests {
     fn suspended_identity_cannot_resolve_verification_material() -> Result<(), String> {
         let identity = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
 
-        let chain = Rc::new(MockEvmTrustReader::new());
+        let chain = Rc::new(MockTrustChainReader::new());
         chain
             .statuses
             .borrow_mut()
@@ -335,7 +298,7 @@ mod tests {
 
     #[test]
     fn verifier_side_registry_rejects_write_operations() {
-        let chain = Rc::new(MockEvmTrustReader::new());
+        let chain = Rc::new(MockTrustChainReader::new());
         let provider = Rc::new(InMemoryPublicMaterialProvider::<Bn254>::new());
         let registry = EvmBackedTrustRegistry::new(chain, provider);
 
