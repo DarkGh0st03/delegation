@@ -62,13 +62,13 @@ sol! {
             address issuer,
             bytes32 listId,
             uint8 purpose,
-            bytes32 documentHash
+            bytes32 artifactHash
         ) external;
 
         function updateStatusList(
             address issuer,
             bytes32 listId,
-            bytes32 documentHash
+            bytes32 artifactHash
         ) external returns (uint64 version);
     }
 }
@@ -509,7 +509,7 @@ fn main() -> Result<(), String> {
         ))?;
         println!("statusListRegistrationTx={tx}");
     } else if existing_status.current_version == 1
-        && existing_status.current_document_hash == active_status_hash
+        && existing_status.current_artifact_hash == active_status_hash
     {
         println!("statusListRegistrationTx=SKIPPED_ALREADY_MATCHING");
     } else {
@@ -591,7 +591,7 @@ fn main() -> Result<(), String> {
     );
 
     let updated = chain_reader.status_list_anchor(&root_id, STATUS_LIST_URL)?;
-    if updated.current_version != 2 || updated.current_document_hash != revoked_status_hash {
+    if updated.current_version != 2 || updated.current_artifact_hash != revoked_status_hash {
         return Err(String::from(
             "Updated on-chain Status List does not match signed revoked artifact",
         ));
