@@ -1,15 +1,15 @@
 use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProvider;
-use crate::delegation::trust::material::public_material_provider::PublicMaterialProvider;
 use crate::delegation::trust::material::verification_key_provider::VerificationKeyProvider;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-/// Deterministic local provider used by tests and as the off-chain accumulator
-/// source in the PoC. Verification keys can now be supplied independently through
-/// `CompositePublicMaterialProvider`.
+/// Deterministic local provider used by tests and local PoC support.
+///
+/// It implements the two narrow material contracts directly: accumulator
+/// material lookup and verification-key lookup.
 pub struct InMemoryPublicMaterialProvider<E: Pairing> {
     accumulator_data: RefCell<HashMap<(String, u64), AccumulatorPublicData<E>>>,
     verification_keys: RefCell<HashMap<String, Jwk>>,
@@ -93,19 +93,5 @@ impl<E: Pairing> VerificationKeyProvider for InMemoryPublicMaterialProvider<E> {
             .ok_or_else(|| {
                 format!("No off-chain verification key available for identity {identity_id}")
             })
-    }
-}
-
-impl<E: Pairing> PublicMaterialProvider<E> for InMemoryPublicMaterialProvider<E> {
-    fn get_accumulator_data_at_version(
-        &self,
-        identity_id: &str,
-        version: u64,
-    ) -> Result<AccumulatorPublicData<E>, String> {
-        AccumulatorMaterialProvider::get_accumulator_data_at_version(self, identity_id, version)
-    }
-
-    fn get_verification_key(&self, identity_id: &str) -> Result<Jwk, String> {
-        VerificationKeyProvider::get_verification_key(self, identity_id)
     }
 }
