@@ -111,13 +111,7 @@ impl IssuerAwareStatusProvider {
 }
 
 impl StatusListCredentialProvider for IssuerAwareStatusProvider {
-    fn get_status_list_credential(&self, _url: &str) -> Result<String, String> {
-        Err(String::from(
-            "EVM Adapter status retrieval requires the expected credential issuer",
-        ))
-    }
-
-    fn get_status_list_credential_for_issuer(
+    fn get_status_list_credential(
         &self,
         issuer_id: &str,
         url: &str,
