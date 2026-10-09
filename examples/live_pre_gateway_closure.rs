@@ -9,18 +9,18 @@ use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
+use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
 use delegation::delegation::status::provider::jwt_status_list_provider::{
     JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
 };
 use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
-use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
-use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
 use delegation::delegation::trust::evm::evm_resolver_reader::EvmRegistryReader;
+use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
+use delegation::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
 use delegation::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
-use delegation::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
 use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
 use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
 use delegation::delegation::trust::registry::trust_publisher_trait::TrustPublisherRef;

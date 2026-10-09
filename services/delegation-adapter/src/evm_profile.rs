@@ -319,8 +319,7 @@ impl EvmAdapterProfile {
             )?;
 
             let material = issuance_registry.get_accumulator_data_at_version(&identity, 1)?;
-            let commitment =
-                EvmTrustResolver::<Curve>::accumulator_material_commitment(&material)?;
+            let commitment = EvmTrustResolver::<Curve>::accumulator_material_commitment(&material)?;
             let current_version = self
                 .chain_reader
                 .latest_accumulator_material_version(&identity)?;

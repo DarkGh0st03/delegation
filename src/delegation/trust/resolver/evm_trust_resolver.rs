@@ -115,8 +115,8 @@ mod tests {
     use crate::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
     use crate::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
     use ark_bn254::Bn254;
-    use ark_std::rand::prelude::StdRng;
     use ark_std::rand::SeedableRng;
+    use ark_std::rand::prelude::StdRng;
     use std::cell::RefCell;
     use std::collections::HashMap;
     use vb_accumulator::prelude::{Keypair, SetupParams};
