@@ -112,7 +112,7 @@ mod tests {
     use super::*;
     use crate::delegation::trust::evm::trust_chain_reader::AccumulatorMaterialAnchor;
     use crate::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
-    use crate::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
+    use crate::delegation::local::in_memory_public_material_store::InMemoryPublicMaterialStore;
     use crate::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
     use ark_bn254::Bn254;
     use ark_std::rand::SeedableRng;
@@ -193,7 +193,7 @@ mod tests {
     }
 
     fn providers(
-        provider: Rc<InMemoryPublicMaterialProvider<Bn254>>,
+        provider: Rc<InMemoryPublicMaterialStore<Bn254>>,
     ) -> (
         AccumulatorMaterialProviderRef<Bn254>,
         VerificationKeyProviderRef,
@@ -226,7 +226,7 @@ mod tests {
             },
         );
 
-        let provider = Rc::new(InMemoryPublicMaterialProvider::<Bn254>::new());
+        let provider = Rc::new(InMemoryPublicMaterialStore::<Bn254>::new());
         provider.insert_accumulator_data(identity.clone(), version, material)?;
         let (accumulator_material, verification_keys) = providers(provider);
 
@@ -254,7 +254,7 @@ mod tests {
             },
         );
 
-        let provider = Rc::new(InMemoryPublicMaterialProvider::<Bn254>::new());
+        let provider = Rc::new(InMemoryPublicMaterialStore::<Bn254>::new());
         provider.insert_accumulator_data(identity.clone(), version, accumulator_data())?;
         let (accumulator_material, verification_keys) = providers(provider);
 
@@ -278,7 +278,7 @@ mod tests {
             .insert(identity.clone(), IdentityStatus::Active);
         chain.anchors.borrow_mut().insert(identity.clone(), true);
 
-        let provider = Rc::new(InMemoryPublicMaterialProvider::<Bn254>::new());
+        let provider = Rc::new(InMemoryPublicMaterialStore::<Bn254>::new());
         provider.insert_verification_key(identity.clone(), verification_key()?)?;
         let (accumulator_material, verification_keys) = providers(provider);
 
@@ -298,7 +298,7 @@ mod tests {
             .borrow_mut()
             .insert(identity.clone(), IdentityStatus::Suspended);
 
-        let provider = Rc::new(InMemoryPublicMaterialProvider::<Bn254>::new());
+        let provider = Rc::new(InMemoryPublicMaterialStore::<Bn254>::new());
         provider.insert_verification_key(identity.clone(), verification_key()?)?;
         let (accumulator_material, verification_keys) = providers(provider);
 
