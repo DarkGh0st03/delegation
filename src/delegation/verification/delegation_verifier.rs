@@ -9,7 +9,7 @@ use crate::delegation::credentials::generic::verifiable_presentation::Verifiable
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::status::model::status_purpose::StatusPurpose;
 use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
-use crate::delegation::trust::registry::trust_registry_trait::TrustRegistryRef;
+use crate::delegation::trust::registry::trust_resolver_trait::TrustResolverRef;
 use crate::delegation::verification::timing::verify_timings;
 use crate::delegation::verification::verifier_trait::Verifier;
 use ark_ec::pairing::Pairing;
@@ -17,7 +17,7 @@ use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub struct DelegationVerifier<E: Pairing> {
-    trust_registry: TrustRegistryRef<E>,
+    trust_registry: TrustResolverRef<E>,
     status_list_resolver: StatusListResolverRef,
 }
 
@@ -31,7 +31,7 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
     /// # Returns
     /// A result containing either the instance of DelegationVerifier or an error as a string in case of failure.
     fn new(
-        trust_registry: TrustRegistryRef<E>,
+        trust_registry: TrustResolverRef<E>,
         status_list_resolver: StatusListResolverRef,
     ) -> Result<Self, String>
     where
@@ -275,15 +275,18 @@ mod tests {
     use crate::delegation::issuance::issuer_trait::Issuer;
     use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
-    use crate::delegation::trust::evm::evm_reader_traits::{
-        AccumulatorMaterialAnchor, EvmTrustReader,
+    use crate::delegation::trust::evm::trust_chain_reader::{
+        AccumulatorMaterialAnchor, TrustChainReader,
     };
     use crate::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
     use crate::delegation::trust::model::identity_status::IdentityStatus;
     use crate::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
     use crate::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
-    use crate::delegation::trust::registry::trust_registry_trait::{
-        TrustRegistry, TrustRegistryRef,
+    use crate::delegation::trust::registry::trust_publisher_trait::{
+        TrustPublisher, TrustPublisherRef,
+    };
+    use crate::delegation::trust::registry::trust_resolver_trait::{
+        TrustResolver, TrustResolverRef,
     };
     use alloy::primitives::B256;
     use ark_bn254::Bn254;
@@ -362,14 +365,14 @@ mod tests {
         .expect("test permission must be valid")
     }
 
-    struct VerifierMockEvmTrustReader {
+    struct VerifierMockTrustChainReader {
         statuses: RefCell<HashMap<String, IdentityStatus>>,
         trust_anchors: RefCell<HashMap<String, bool>>,
         latest_versions: RefCell<HashMap<String, u64>>,
         accumulator_anchors: RefCell<HashMap<(String, u64), AccumulatorMaterialAnchor>>,
     }
 
-    impl VerifierMockEvmTrustReader {
+    impl VerifierMockTrustChainReader {
         fn new() -> Self {
             Self {
                 statuses: RefCell::new(HashMap::new()),
@@ -406,7 +409,7 @@ mod tests {
         }
     }
 
-    impl EvmTrustReader for VerifierMockEvmTrustReader {
+    impl TrustChainReader for VerifierMockTrustChainReader {
         fn identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String> {
             self.statuses
                 .borrow()
@@ -449,7 +452,7 @@ mod tests {
         // Issuance remains local in this checkpoint. We then move only the public
         // verification material behind the same off-chain/EVM split used in deployment.
         let source_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
-        let source_registry_ref: TrustRegistryRef<Curve> = source_registry.clone();
+        let source_registry_ref: TrustPublisherRef<Curve> = source_registry.clone();
 
         let root_id = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
         let holder_id = String::from("did:ethr:0x7a69:0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
@@ -491,13 +494,13 @@ mod tests {
             source_registry.get_verification_key(&holder_id)?,
         )?;
 
-        let chain = Rc::new(VerifierMockEvmTrustReader::new());
+        let chain = Rc::new(VerifierMockTrustChainReader::new());
         chain.set_active(&root_id);
         chain.set_active(&holder_id);
         chain.set_trust_anchor(&root_id, true);
         chain.set_accumulator_anchor(&root_id, material_version, root_commitment);
 
-        let evm_registry: TrustRegistryRef<Curve> =
+        let evm_registry: TrustResolverRef<Curve> =
             Rc::new(EvmBackedTrustRegistry::<Curve>::new(chain, public_material));
         let status_resolver = resolver_for_vc(&vc)?;
         let verifier = DelegationVerifier::new(evm_registry, status_resolver)?;
@@ -525,8 +528,7 @@ mod tests {
     #[test]
     fn verify_vp() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
@@ -658,8 +660,7 @@ mod tests {
     #[test]
     fn rejects_wrong_audience() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
@@ -707,8 +708,7 @@ mod tests {
     #[test]
     fn rejects_wrong_challenge() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
@@ -756,8 +756,7 @@ mod tests {
     #[test]
     fn rejects_permission_not_disclosed() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
@@ -808,8 +807,7 @@ mod tests {
     #[test]
     fn rejects_presenter_that_is_not_delegatee() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
@@ -860,8 +858,7 @@ mod tests {
     #[test]
     fn rejects_tampered_credential_status() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
@@ -921,8 +918,7 @@ mod tests {
     #[test]
     fn rejects_revoked_current_credential() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
@@ -974,8 +970,7 @@ mod tests {
     #[test]
     fn rejects_revoked_ancestor_credential() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
@@ -1044,8 +1039,7 @@ mod tests {
     #[test]
     fn rejects_untrusted_root_identity() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
@@ -1091,8 +1085,7 @@ mod tests {
     #[test]
     fn rejects_suspended_presenter_identity() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
@@ -1141,8 +1134,7 @@ mod tests {
     #[test]
     fn rejects_revoked_issuer_identity_in_chain() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustRegistryRef<Curve> =
-            Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
         let root = DelegationIssuer::<Curve>::new(
             String::from("https://vc.example/delegators/d0"),
