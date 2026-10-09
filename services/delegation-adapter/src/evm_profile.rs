@@ -27,7 +27,7 @@ use delegation::delegation::trust::material::accumulator_material_provider::{
 };
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
 use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
-use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
 use delegation::delegation::trust::resolver::trust_resolver_trait::{
     TrustResolver, TrustResolverRef,
@@ -83,7 +83,7 @@ sol! {
 }
 
 struct IssuanceAccumulatorProvider {
-    registry: Rc<InMemoryTrustRegistry<Curve>>,
+    store: Rc<InMemoryTrustStore<Curve>>,
 }
 
 impl AccumulatorMaterialProvider<Curve> for IssuanceAccumulatorProvider {
@@ -92,7 +92,7 @@ impl AccumulatorMaterialProvider<Curve> for IssuanceAccumulatorProvider {
         identity_id: &str,
         version: u64,
     ) -> Result<AccumulatorPublicData<Curve>, String> {
-        self.registry
+        self.store
             .get_accumulator_data_at_version(identity_id, version)
     }
 }
@@ -143,7 +143,7 @@ impl EvmAdapterProfile {
     pub fn initialize(
         config: &EvmAdapterConfig,
         callers: &CallerRegistry,
-        issuance_registry: Rc<InMemoryTrustRegistry<Curve>>,
+        issuance_store: Rc<InMemoryTrustStore<Curve>>,
         issuers: &HashMap<CallerRole, DelegationIssuer<Curve>>,
     ) -> Result<(Self, DelegationVerifier<Curve>), String> {
         let runtime =
@@ -162,11 +162,11 @@ impl EvmAdapterProfile {
             status_source: Rc::new(IssuerAwareStatusProvider::default()),
         };
 
-        profile.bootstrap_identities(callers, issuance_registry.clone(), issuers)?;
+        profile.bootstrap_identities(callers, issuance_store.clone(), issuers)?;
 
         let accumulator_provider: AccumulatorMaterialProviderRef<Curve> =
             Rc::new(IssuanceAccumulatorProvider {
-                registry: issuance_registry,
+                store: issuance_store,
             });
         let did_keys = Rc::new(DidEthrVerificationKeyProvider::new(
             &config.did_resolver_script,
@@ -264,7 +264,7 @@ impl EvmAdapterProfile {
     fn bootstrap_identities(
         &self,
         callers: &CallerRegistry,
-        issuance_registry: Rc<InMemoryTrustRegistry<Curve>>,
+        issuance_store: Rc<InMemoryTrustStore<Curve>>,
         issuers: &HashMap<CallerRole, DelegationIssuer<Curve>>,
     ) -> Result<(), String> {
         let identities = MANAGED_ROLES
@@ -312,7 +312,7 @@ impl EvmAdapterProfile {
                 issuer.holder_jwk(),
             )?;
 
-            let material = issuance_registry.get_accumulator_data_at_version(&identity, 1)?;
+            let material = issuance_store.get_accumulator_data_at_version(&identity, 1)?;
             let commitment = EvmTrustResolver::<Curve>::accumulator_material_commitment(&material)?;
             let current_version = self
                 .chain_reader
