@@ -1,10 +1,6 @@
-name: ADK OpenAI Live Probe
+name: ADK OpenAI Live Probe (Manual Only)
 
 on:
-  push:
-    branches: [refactor/adk-integration]
-    paths:
-      - '.github/adk-live-probe.trigger'
   workflow_dispatch:
     inputs:
       model:
@@ -16,7 +12,7 @@ on:
 permissions:
   contents: read
 
-# One-time guarded diagnostic trigger; remove after result.
+# Never trigger billable inference on push or PR.
 concurrency:
   group: adk-live-probe-${{ github.ref }}
   cancel-in-progress: false
@@ -27,7 +23,7 @@ jobs:
     timeout-minutes: 8
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_MODEL: ${{ github.event_name == 'push' && 'gpt-4o-mini' || inputs.model }}
+      OPENAI_MODEL: ${{ inputs.model }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
