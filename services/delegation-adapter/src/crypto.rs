@@ -656,8 +656,17 @@ mod tests {
     }
 
     fn status(index: u64) -> BitstringStatusListEntry {
-        BitstringStatusListEntry::revocation(None, index.to_string(), String::from(STATUS_LIST))
-            .unwrap()
+        status_with_purpose(index, StatusPurpose::Revocation)
+    }
+
+    fn status_with_purpose(index: u64, purpose: StatusPurpose) -> BitstringStatusListEntry {
+        BitstringStatusListEntry::new(
+            None,
+            purpose,
+            index.to_string(),
+            String::from(STATUS_LIST),
+        )
+        .unwrap()
     }
 
     fn issue_root(
@@ -916,4 +925,175 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn revocation_invalidates_the_same_previously_valid_presentation() -> Result<(), String> {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry)?;
+
+        let engineer = registry.record_for_role(CallerRole::Engineer)?;
+        runtime.issue_root(
+            engineer,
+            &registry,
+            IssueRootRequest {
+                credential_id: String::from("urn:credential:revocable-root"),
+                delegatee: CallerRole::Orchestrator,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 3600,
+                credential_status: status(8),
+                permissions: vec![permission(Operation::ReadFile)],
+            },
+        )?;
+
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator)?;
+        let presentation = runtime.create_presentation(
+            orchestrator,
+            CreatePresentationRequest {
+                credential_id: String::from("urn:credential:revocable-root"),
+                disclosed_permissions: vec![permission(Operation::ReadFile)],
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-revocation-lifecycle"),
+            },
+        )?;
+
+        let gateway = registry.record_for_role(CallerRole::Gateway)?;
+        runtime.verify_presentation(
+            gateway,
+            &registry,
+            VerifyPresentationRequest {
+                presenter: CallerRole::Orchestrator,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-revocation-lifecycle"),
+                required_permission: permission(Operation::ReadFile),
+                signed_vp: presentation.signed_vp.clone(),
+            },
+        )?;
+
+        let update = runtime.update_credential_status(
+            engineer,
+            UpdateCredentialStatusRequest {
+                credential_id: String::from("urn:credential:revocable-root"),
+                status_set: true,
+            },
+        )?;
+        assert!(update.status_set);
+        assert_eq!(update.status_purpose, "revocation");
+
+        let rejection = runtime
+            .verify_presentation(
+                gateway,
+                &registry,
+                VerifyPresentationRequest {
+                    presenter: CallerRole::Orchestrator,
+                    audience: String::from("cloud-access-gateway"),
+                    challenge: String::from("challenge-revocation-lifecycle"),
+                    required_permission: permission(Operation::ReadFile),
+                    signed_vp: presentation.signed_vp,
+                },
+            )
+            .expect_err("revoked credential must reject the same presentation");
+        assert!(rejection.contains("revoked"));
+
+        let clear_error = runtime
+            .update_credential_status(
+                engineer,
+                UpdateCredentialStatusRequest {
+                    credential_id: String::from("urn:credential:revocable-root"),
+                    status_set: false,
+                },
+            )
+            .expect_err("revocation must be terminal");
+        assert!(clear_error.contains("terminal"));
+        Ok(())
+    }
+
+    #[test]
+    fn suspension_can_be_set_and_cleared() -> Result<(), String> {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry)?;
+
+        let engineer = registry.record_for_role(CallerRole::Engineer)?;
+        runtime.issue_root(
+            engineer,
+            &registry,
+            IssueRootRequest {
+                credential_id: String::from("urn:credential:suspendable-root"),
+                delegatee: CallerRole::Orchestrator,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 3600,
+                credential_status: status_with_purpose(9, StatusPurpose::Suspension),
+                permissions: vec![permission(Operation::ReadFile)],
+            },
+        )?;
+
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator)?;
+        let presentation = runtime.create_presentation(
+            orchestrator,
+            CreatePresentationRequest {
+                credential_id: String::from("urn:credential:suspendable-root"),
+                disclosed_permissions: vec![permission(Operation::ReadFile)],
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-suspension-lifecycle"),
+            },
+        )?;
+
+        let gateway = registry.record_for_role(CallerRole::Gateway)?;
+        runtime.verify_presentation(
+            gateway,
+            &registry,
+            VerifyPresentationRequest {
+                presenter: CallerRole::Orchestrator,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-suspension-lifecycle"),
+                required_permission: permission(Operation::ReadFile),
+                signed_vp: presentation.signed_vp.clone(),
+            },
+        )?;
+
+        runtime.update_credential_status(
+            engineer,
+            UpdateCredentialStatusRequest {
+                credential_id: String::from("urn:credential:suspendable-root"),
+                status_set: true,
+            },
+        )?;
+
+        let rejection = runtime
+            .verify_presentation(
+                gateway,
+                &registry,
+                VerifyPresentationRequest {
+                    presenter: CallerRole::Orchestrator,
+                    audience: String::from("cloud-access-gateway"),
+                    challenge: String::from("challenge-suspension-lifecycle"),
+                    required_permission: permission(Operation::ReadFile),
+                    signed_vp: presentation.signed_vp.clone(),
+                },
+            )
+            .expect_err("suspended credential must be rejected");
+        assert!(rejection.contains("suspended"));
+
+        runtime.update_credential_status(
+            engineer,
+            UpdateCredentialStatusRequest {
+                credential_id: String::from("urn:credential:suspendable-root"),
+                status_set: false,
+            },
+        )?;
+
+        runtime.verify_presentation(
+            gateway,
+            &registry,
+            VerifyPresentationRequest {
+                presenter: CallerRole::Orchestrator,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-suspension-lifecycle"),
+                required_permission: permission(Operation::ReadFile),
+                signed_vp: presentation.signed_vp,
+            },
+        )?;
+
+        Ok(())
+    }
+
 }
