@@ -35,7 +35,7 @@ impl StatusListResolver for ProviderStatusListResolver {
 mod tests {
     use super::*;
     use crate::delegation::status::model::status_purpose::StatusPurpose;
-    use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
+    use crate::delegation::local::in_memory_status_list_store::InMemoryStatusListStore;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use multibase::Base;
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn fetches_artifact_then_delegates_parsing() -> Result<(), String> {
-        let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
+        let provider = Rc::new(InMemoryStatusListStore::new());
         provider.insert(
             String::from(ISSUER),
             String::from(STATUS_LIST_URL),
