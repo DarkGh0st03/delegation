@@ -108,6 +108,7 @@ test("Phase 4 executes an actual ADK Runner tool cycle through injected OpenAI R
   const runner=new Runner({agent,appName,sessionService});
   await sessionService.createSession({appName,userId,sessionId});
   const output:string[]=[];
+  const failures:string[]=[];
   for await (const event of runner.runAsync({
     userId,sessionId,
     newMessage:{role:"user",parts:[{text:JSON.stringify({
@@ -119,8 +120,9 @@ test("Phase 4 executes an actual ADK Runner tool cycle through injected OpenAI R
     for(const part of event.content?.parts??[]){
       if(typeof part.text==="string") output.push(part.text);
     }
+    if (event.errorCode || event.errorMessage) failures.push(String(event.errorCode)+": "+String(event.errorMessage));
   }
-  assert.equal(turn,2);
+  assert.equal(turn,2,JSON.stringify(failures));
   assert.deepEqual(calls,[{name:"read_file",args:{branch:BRANCH,path:PATH}}]);
   assert.ok(output.includes("Read completed; no write requested."));
   const serialized=JSON.stringify(providerRequests);
