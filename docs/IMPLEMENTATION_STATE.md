@@ -1,6 +1,6 @@
 # Implementation State
 
-Last updated: 2026-10-06
+Last updated: 2026-10-09
 
 This file is the primary continuation checkpoint for the thesis PoC. A future implementation session should read it before proposing architectural changes.
 
@@ -28,6 +28,33 @@ Completed checkpoints:
 - **Phase 12 — reproducibility + measurements: COMPLETE**
 
 Implementation roadmap: **COMPLETE through Phase 12**
+
+## Post-measurement refactor candidate
+
+The Phase 12 evidence below belongs to the historical measured executable-code checkpoint:
+
+`cbadb5440db408d4047d4eb870a9fb231362414a`
+
+The current post-measurement code evolution is being developed on:
+
+`refactor/core-cleanup`
+
+This branch is a **refactored candidate**, not the code that produced the Phase 12 latency/security/reproducibility evidence. Its changes include:
+
+- fail-closed `parallel_verification` error propagation;
+- split `TrustResolver` / `TrustPublisher` contracts;
+- verifier-side `EvmTrustResolver`;
+- narrow accumulator-material and verification-key providers;
+- `DelegationIssuer` decoupled from trust publication;
+- single issuer-aware Status List provider/resolver APIs;
+- separate Bitstring Status List parsing and mutation;
+- explicit local in-memory stores under `src/delegation/local/`;
+- `currentArtifactHash` naming for exact signed Status List artifact commitments;
+- runtime revocation/suspension Status List lifecycle.
+
+Permission delegation semantics remain **exact-match** between parent and child permissions. Hierarchical resource-scope attenuation is intentionally not part of this refactored candidate.
+
+Before this branch is promoted to `main`, it must complete a fresh full regression. Historical Phase 12 measurements remain valid for `cbadb544...` but must not be presented as measurements of the refactored candidate unless a new measurement campaign is executed.
 
 ## Source-of-truth repositories
 
@@ -766,9 +793,9 @@ Full results: `docs/MEASUREMENT_RESULTS.md`.
 Machine-readable summary: `poc/experiments/phase12c-reference-summary.json`.
 
 
-### Final hardening checkpoint
+### Historical final hardening checkpoint — measured baseline
 
-**COMPLETE and promoted to `main`.**
+**COMPLETE and promoted to `main` for the Phase 12 measured baseline.**
 
 Final executable-code checkpoint:
 
@@ -792,7 +819,7 @@ Final validation on `main`:
 
 The protected application remained frozen at `405748b1e77992b6bd8630a3ab6f990658d32f6b`.
 
-This checkpoint is the frozen implementation baseline for thesis analysis. Later documentation-only commits do not change the validated executable-code checkpoint.
+This checkpoint remains the frozen **historical measured baseline** for thesis analysis. The later `refactor/core-cleanup` branch is a separate code evolution and does not inherit these measurement results automatically.
 
 ## Validation commands
 
@@ -814,9 +841,9 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — thesis analysis and reporting
+## Next action — refactor regression, then thesis analysis/reporting
 
-The implementation roadmap is complete through Phase 12.
+The historical implementation roadmap is complete through Phase 12. The current refactored candidate must first pass its final regression and be promoted to `main` before it is treated as the new code baseline.
 
 Next research/reporting work:
 
