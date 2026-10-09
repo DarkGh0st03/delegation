@@ -1,6 +1,8 @@
 use crate::delegation::accumulator::accumulator_utils::AccumulatorUtils;
 use ark_ec::pairing::Pairing;
+#[cfg(feature = "parallel_verification")]
 use std::thread;
+#[cfg(feature = "parallel_verification")]
 use std::thread::JoinHandle;
 use vb_accumulator::prelude::{
     Accumulator, MembershipWitness, PositiveAccumulator, PublicKey, SetupParams,
@@ -107,12 +109,8 @@ impl<E: Pairing> AccumulatorVerifier<E> {
             ));
         }
 
-        #[cfg(feature = "parallel_verification")]
-        let parrallel = true;
         #[cfg(not(feature = "parallel_verification"))]
-        let parallel = false;
-
-        if !parallel {
+        {
             for (witness, element) in witnesses.iter().zip(elements.iter()) {
                 AccumulatorVerifier::verify_witness(
                     &self.accumulator_value,
@@ -122,7 +120,27 @@ impl<E: Pairing> AccumulatorVerifier<E> {
                     &self.params,
                 )?;
             }
-        } else {
+
+            Ok(())
+        }
+
+        #[cfg(feature = "parallel_verification")]
+        {
+            // Thread creation has more overhead than value for an empty or single-item batch.
+            if witnesses.len() <= 1 {
+                for (witness, element) in witnesses.iter().zip(elements.iter()) {
+                    AccumulatorVerifier::verify_witness(
+                        &self.accumulator_value,
+                        witness,
+                        element,
+                        &self.public_key,
+                        &self.params,
+                    )?;
+                }
+
+                return Ok(());
+            }
+
             let mut threads: Vec<JoinHandle<Result<(), String>>> = vec![];
 
             for (witness, element) in witnesses.iter().zip(elements.iter()) {
@@ -133,30 +151,93 @@ impl<E: Pairing> AccumulatorVerifier<E> {
                 let params = self.params.clone();
 
                 let thread = thread::spawn(move || {
-                    match AccumulatorVerifier::verify_witness(
+                    AccumulatorVerifier::verify_witness(
                         &accumulator_value,
                         &witness,
                         &element,
                         &public_key,
                         &params,
-                    ) {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(e),
-                    }
+                    )
                 });
                 threads.push(thread);
             }
 
             for thread in threads {
                 match thread.join() {
-                    Ok(_) => {}
+                    Ok(Ok(())) => {}
+                    Ok(Err(err)) => return Err(err),
                     Err(_) => {
                         return Err(String::from("Thread verifying witness panicked"));
                     }
                 }
             }
-        }
 
+            Ok(())
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::delegation::accumulator::accumulator_manager::AccumulatorManager;
+    use ark_bn254::Bn254;
+    use ark_std::rand::prelude::StdRng;
+    use ark_std::rand::SeedableRng;
+    use vb_accumulator::prelude::{Keypair, SetupParams};
+
+    fn verifier_fixture(
+        elements: &[String],
+    ) -> Result<(AccumulatorVerifier<Bn254>, Vec<String>), String> {
+        let mut rng = StdRng::from_entropy();
+        let params = SetupParams::<Bn254>::generate_using_rng(&mut rng);
+        let keypair = Keypair::<Bn254>::generate_using_rng(&mut rng, &params);
+        let mut manager = AccumulatorManager::<Bn254>::new(&keypair.secret_key, &params);
+
+        let scalars = elements
+            .iter()
+            .map(AccumulatorUtils::<Bn254>::convert_string_to_scalar)
+            .collect::<Vec<_>>();
+
+        manager.add_elements(scalars.clone())?;
+        let witnesses = manager.compute_witnesses(&scalars)?;
+        let accumulator_value = manager.clone_accumulator()?;
+        let verifier =
+            AccumulatorVerifier::new(accumulator_value, keypair.public_key.clone(), params)?;
+
+        Ok((verifier, witnesses))
+    }
+
+    #[test]
+    fn verifies_valid_batch() -> Result<(), String> {
+        let elements = vec![
+            String::from("permission:read"),
+            String::from("permission:write"),
+        ];
+        let (verifier, witnesses) = verifier_fixture(&elements)?;
+
+        verifier.verify_accumulator_witnesses(&witnesses, &elements)
+    }
+
+    #[test]
+    fn rejects_invalid_witness_element_pair_in_batch() -> Result<(), String> {
+        let issued_elements = vec![
+            String::from("permission:read"),
+            String::from("permission:write"),
+        ];
+        let (verifier, witnesses) = verifier_fixture(&issued_elements)?;
+
+        let presented_elements = vec![
+            issued_elements[0].clone(),
+            String::from("permission:admin"),
+        ];
+
+        assert!(
+            verifier
+                .verify_accumulator_witnesses(&witnesses, &presented_elements)
+                .is_err()
+        );
         Ok(())
     }
 }
