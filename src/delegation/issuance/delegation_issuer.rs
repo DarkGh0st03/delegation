@@ -458,6 +458,20 @@ mod tests {
         .expect("test permission must be valid")
     }
 
+    fn prepared_issuer(
+        id: String,
+        trust_publisher: &TrustPublisherRef<Bn254>,
+    ) -> Result<DelegationIssuer<Bn254>, String> {
+        let mut issuer = DelegationIssuer::<Bn254>::new(id.clone())?;
+        trust_publisher.register_identity(id.clone())?;
+        let version = trust_publisher
+            .publish_accumulator_data(id.clone(), issuer.accumulator_public_data())?;
+        trust_publisher
+            .publish_verification_key(id, issuer.public_verification_key().clone())?;
+        issuer.bind_accumulator_material_version(version)?;
+        Ok(issuer)
+    }
+
     #[test]
     fn issue_vc() -> Result<(), String> {
         type Curve = Bn254;
@@ -466,7 +480,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
-        let issuer: DelegationIssuer<Curve> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Curve> = prepared_issuer(id, &trust_registry)?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1337");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -490,7 +504,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d1");
         let previous_vc = Some(vc);
-        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, &trust_registry)?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1338");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -513,7 +527,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d2");
         let previous_vc = Some(vc);
-        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, &trust_registry)?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -536,7 +550,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d3");
         let previous_vc = Some(vc);
-        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, &trust_registry)?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1340");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -568,7 +582,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
-        let issuer: DelegationIssuer<Curve> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Curve> = prepared_issuer(id, &trust_registry)?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1337");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -592,7 +606,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d1");
         let previous_vc = Some(vc);
-        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, &trust_registry)?;
         let credential_id = String::from("http://delegation.example/credentials/1338");
         let delegatee_id = String::from("https://vc.example/delegators/d2");
         let permissions: Vec<Permission> = vec![
@@ -612,7 +626,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d2");
         let previous_vc = Some(vc);
-        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, &trust_registry)?;
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let delegatee_id = String::from("https://vc.example/delegators/d3");
         let permissions: Vec<Permission> = vec![
@@ -630,9 +644,9 @@ mod tests {
             previous_vc,
         )?;
 
-        let holder = DelegationIssuer::<Bn254>::new(
+        let holder = prepared_issuer(
             String::from("https://vc.example/delegators/d3"),
-            trust_registry.clone(),
+            &trust_registry,
         )?;
 
         let disclosed_permissions: Vec<Permission> = vec![permission(Operation::WriteFile)];
@@ -655,9 +669,9 @@ mod tests {
         let trust_registry: TrustPublisherRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
+        let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
+            &trust_registry,
         )?;
 
         let foreign_vc = root.issue_delegation_verifiable_credential(
@@ -671,9 +685,9 @@ mod tests {
             None,
         )?;
 
-        let attacker = DelegationIssuer::<Curve>::new(
+        let attacker = prepared_issuer(
             String::from("https://vc.example/delegators/d2"),
-            trust_registry.clone(),
+            &trust_registry,
         )?;
 
         let result = attacker.issue_delegation_verifiable_credential(
@@ -697,9 +711,9 @@ mod tests {
         let trust_registry: TrustPublisherRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
+        let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
+            &trust_registry,
         )?;
 
         let parent_vc = root.issue_delegation_verifiable_credential(
@@ -715,9 +729,9 @@ mod tests {
 
         let parent_exp = parent_vc.credential().exp().clone();
 
-        let child_issuer = DelegationIssuer::<Curve>::new(
+        let child_issuer = prepared_issuer(
             String::from("https://vc.example/delegators/d1"),
-            trust_registry.clone(),
+            &trust_registry,
         )?;
 
         let child_vc = child_issuer.issue_delegation_verifiable_credential(
@@ -741,9 +755,9 @@ mod tests {
         let trust_registry: TrustPublisherRef<Curve> =
             Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
+        let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
+            &trust_registry,
         )?;
 
         let parent_status = test_status(800);
@@ -759,9 +773,9 @@ mod tests {
         )?;
         let parent_credential_id = parent_vc.id().clone();
 
-        let child_issuer = DelegationIssuer::<Curve>::new(
+        let child_issuer = prepared_issuer(
             String::from("https://vc.example/delegators/d1"),
-            trust_registry.clone(),
+            &trust_registry,
         )?;
         let child_vc = child_issuer.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
