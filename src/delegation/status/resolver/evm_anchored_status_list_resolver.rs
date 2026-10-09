@@ -361,5 +361,4 @@ mod tests {
         assert!(resolver.is_status_set(ISSUER, &entry())?);
         Ok(())
     }
-
 }

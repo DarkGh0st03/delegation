@@ -85,9 +85,8 @@ pub fn verify_status_list_credential_jwt(
     })?;
 
     let claims = payload.claims_set().clone();
-    let embedded_issuer = issuer_from_claims(&claims).ok_or_else(|| {
-        String::from("Authenticated Status List Credential has no issuer claim")
-    })?;
+    let embedded_issuer = issuer_from_claims(&claims)
+        .ok_or_else(|| String::from("Authenticated Status List Credential has no issuer claim"))?;
 
     if embedded_issuer != expected_issuer {
         return Err(format!(

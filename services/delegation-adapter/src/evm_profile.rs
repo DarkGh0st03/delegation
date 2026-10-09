@@ -352,10 +352,8 @@ impl EvmAdapterProfile {
         )?;
         let updated_document =
             BitstringStatusListMutator::set_status(&current_document, entry, status_set)?;
-        let updated_artifact =
-            sign_status_list_credential_jwt(&updated_document, signing_jwk)?;
-        let updated_hash =
-            EvmAnchoredStatusListResolver::artifact_commitment(&updated_artifact);
+        let updated_artifact = sign_status_list_credential_jwt(&updated_document, signing_jwk)?;
+        let updated_hash = EvmAnchoredStatusListResolver::artifact_commitment(&updated_artifact);
         let expected_version = anchor
             .current_version
             .checked_add(1)

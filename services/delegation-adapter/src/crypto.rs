@@ -408,7 +408,6 @@ impl CryptoRuntime {
         Ok(credential)
     }
 
-
     pub fn update_credential_status(
         &mut self,
         caller: &CallerRecord,
@@ -431,10 +430,12 @@ impl CryptoRuntime {
             ));
         }
 
-        let entry = credential
-            .credential_status()
-            .cloned()
-            .ok_or_else(|| format!("Credential {} has no credentialStatus", request.credential_id))?;
+        let entry = credential.credential_status().cloned().ok_or_else(|| {
+            format!(
+                "Credential {} has no credentialStatus",
+                request.credential_id
+            )
+        })?;
 
         match entry.status_purpose() {
             StatusPurpose::Message => {
@@ -598,10 +599,7 @@ mod tests {
                 CallerRole::Engineer,
                 String::from("engineer-token"),
                 String::from("did:thesis:engineer"),
-                vec![
-                    CallerCapability::IssueRoot,
-                    CallerCapability::ManageStatus,
-                ],
+                vec![CallerCapability::IssueRoot, CallerCapability::ManageStatus],
             )
             .unwrap(),
             CallerRecord::new(
@@ -660,13 +658,8 @@ mod tests {
     }
 
     fn status_with_purpose(index: u64, purpose: StatusPurpose) -> BitstringStatusListEntry {
-        BitstringStatusListEntry::new(
-            None,
-            purpose,
-            index.to_string(),
-            String::from(STATUS_LIST),
-        )
-        .unwrap()
+        BitstringStatusListEntry::new(None, purpose, index.to_string(), String::from(STATUS_LIST))
+            .unwrap()
     }
 
     fn issue_root(
@@ -1095,5 +1088,4 @@ mod tests {
 
         Ok(())
     }
-
 }

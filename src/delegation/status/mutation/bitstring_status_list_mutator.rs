@@ -135,13 +135,8 @@ mod tests {
     const URL: &str = "https://status.example/lists/mutation-1";
 
     fn entry(purpose: StatusPurpose) -> BitstringStatusListEntry {
-        BitstringStatusListEntry::new(
-            None,
-            purpose,
-            String::from("42"),
-            String::from(URL),
-        )
-        .expect("test status entry must be valid")
+        BitstringStatusListEntry::new(None, purpose, String::from("42"), String::from(URL))
+            .expect("test status entry must be valid")
     }
 
     fn document(purpose: &str, status_set: bool) -> Result<String, String> {
@@ -177,11 +172,8 @@ mod tests {
     #[test]
     fn sets_revocation_bit() -> Result<(), String> {
         let entry = entry(StatusPurpose::Revocation);
-        let updated = BitstringStatusListMutator::set_status(
-            &document("revocation", false)?,
-            &entry,
-            true,
-        )?;
+        let updated =
+            BitstringStatusListMutator::set_status(&document("revocation", false)?, &entry, true)?;
         assert!(BitstringStatusListParser::read_status(&entry, &updated)?);
         Ok(())
     }
@@ -189,11 +181,8 @@ mod tests {
     #[test]
     fn clears_suspension_bit() -> Result<(), String> {
         let entry = entry(StatusPurpose::Suspension);
-        let updated = BitstringStatusListMutator::set_status(
-            &document("suspension", true)?,
-            &entry,
-            false,
-        )?;
+        let updated =
+            BitstringStatusListMutator::set_status(&document("suspension", true)?, &entry, false)?;
         assert!(!BitstringStatusListParser::read_status(&entry, &updated)?);
         Ok(())
     }
@@ -202,12 +191,8 @@ mod tests {
     fn rejects_noop_mutation() -> Result<(), String> {
         let entry = entry(StatusPurpose::Revocation);
         assert!(
-            BitstringStatusListMutator::set_status(
-                &document("revocation", false)?,
-                &entry,
-                false,
-            )
-            .is_err()
+            BitstringStatusListMutator::set_status(&document("revocation", false)?, &entry, false,)
+                .is_err()
         );
         Ok(())
     }
