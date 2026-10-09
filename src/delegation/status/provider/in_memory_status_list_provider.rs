@@ -49,3 +49,36 @@ impl StatusListCredentialProvider for InMemoryStatusListCredentialProvider {
         })
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn isolates_status_artifacts_by_issuer_and_url() -> Result<(), String> {
+        let provider = InMemoryStatusListCredentialProvider::new();
+        let url = String::from("https://status.example/lists/shared");
+        let issuer_a = String::from("did:example:issuer-a");
+        let issuer_b = String::from("did:example:issuer-b");
+
+        provider.insert(
+            issuer_a.clone(),
+            url.clone(),
+            String::from("artifact-a"),
+        );
+        provider.insert(
+            issuer_b.clone(),
+            url.clone(),
+            String::from("artifact-b"),
+        );
+
+        let artifact_a = provider.get_status_list_credential(&issuer_a, &url)?;
+        let artifact_b = provider.get_status_list_credential(&issuer_b, &url)?;
+
+        assert_eq!(artifact_a.document, "artifact-a");
+        assert_eq!(artifact_b.document, "artifact-b");
+        assert_ne!(artifact_a.commitment_bytes, artifact_b.commitment_bytes);
+        Ok(())
+    }
+}
