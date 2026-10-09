@@ -233,11 +233,7 @@ mod tests {
         let original = document(false)?;
         let changed = document(true)?;
         let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
-        provider.insert(
-            String::from(ISSUER),
-            String::from(STATUS_LIST_URL),
-            changed,
-        );
+        provider.insert(String::from(ISSUER), String::from(STATUS_LIST_URL), changed);
 
         let chain = Rc::new(MockStatusListReader::new());
         chain.set_anchor(ISSUER, STATUS_LIST_URL, &original, 1);

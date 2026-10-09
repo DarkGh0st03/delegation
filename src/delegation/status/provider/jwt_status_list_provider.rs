@@ -73,9 +73,7 @@ impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvid
         issuer_id: &str,
         url: &str,
     ) -> Result<StatusListCredentialArtifact, String> {
-        let source_artifact = self
-            .source
-            .get_status_list_credential(issuer_id, url)?;
+        let source_artifact = self.source.get_status_list_credential(issuer_id, url)?;
         let compact_jwt = source_artifact.document;
         let verification_key = self.verification_keys.get_verification_key(issuer_id)?;
         let verifier = EdDSA
@@ -224,11 +222,7 @@ mod tests {
         keys.insert(String::from(ISSUER), wrong_public);
 
         let provider = JwtAuthenticatedStatusListCredentialProvider::new(source, keys);
-        assert!(
-            provider
-                .get_status_list_credential(ISSUER, URL)
-                .is_err()
-        );
+        assert!(provider.get_status_list_credential(ISSUER, URL).is_err());
         Ok(())
     }
 }

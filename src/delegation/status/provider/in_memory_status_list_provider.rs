@@ -38,9 +38,7 @@ impl StatusListCredentialProvider for InMemoryStatusListCredentialProvider {
             .get(&(issuer_id.to_string(), url.to_string()))
             .cloned()
             .ok_or_else(|| {
-                format!(
-                    "Status list credential {url} is not available for issuer {issuer_id}"
-                )
+                format!("Status list credential {url} is not available for issuer {issuer_id}")
             })?;
 
         Ok(StatusListCredentialArtifact {
@@ -49,7 +47,6 @@ impl StatusListCredentialProvider for InMemoryStatusListCredentialProvider {
         })
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -62,16 +59,8 @@ mod tests {
         let issuer_a = String::from("did:example:issuer-a");
         let issuer_b = String::from("did:example:issuer-b");
 
-        provider.insert(
-            issuer_a.clone(),
-            url.clone(),
-            String::from("artifact-a"),
-        );
-        provider.insert(
-            issuer_b.clone(),
-            url.clone(),
-            String::from("artifact-b"),
-        );
+        provider.insert(issuer_a.clone(), url.clone(), String::from("artifact-a"));
+        provider.insert(issuer_b.clone(), url.clone(), String::from("artifact-b"));
 
         let artifact_a = provider.get_status_list_credential(&issuer_a, &url)?;
         let artifact_b = provider.get_status_list_credential(&issuer_b, &url)?;

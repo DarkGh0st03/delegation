@@ -238,11 +238,7 @@ mod tests {
 
     fn resolver_with_document(document: String) -> BitstringStatusListResolver {
         let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
-        provider.insert(
-            ISSUER.to_string(),
-            STATUS_LIST_URL.to_string(),
-            document,
-        );
+        provider.insert(ISSUER.to_string(), STATUS_LIST_URL.to_string(), document);
         BitstringStatusListResolver::new(provider)
     }
 
