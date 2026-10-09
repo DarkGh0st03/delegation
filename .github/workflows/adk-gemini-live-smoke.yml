@@ -1,0 +1,47 @@
+name: ADK Gemini Native Live Smoke
+
+on:
+  # One-time Free Tier activation on the feature branch, removed after test.
+  push:
+    branches: [refactor/adk-integration]
+    paths:
+      - '.github/adk-gemini-once.trigger'
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Gemini model available to your Gemini API project'
+        type: string
+        required: true
+        default: gemini-3.8-flash
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adk-gemini-live-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  readonly-gemini-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+      GEMINI_MODEL: ${{ github.event_name == 'push' && 'gemini-3.8-flash' || inputs.model }}
+      GOOGLE_GENAI_USE_VERTEXAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Ensure user-named Gemini secret is present
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo 'Missing GitHub secret Delegation_Thesis_Gemini.' >&2
+            exit 1
+          fi
+      - run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Gemini ADK one-shot synthetic read-only tool
+        run: node --experimental-strip-types poc/packages/agent-runtime/scripts/gemini-live-smoke.mjs
