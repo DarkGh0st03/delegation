@@ -53,3 +53,25 @@ On normal branch pushes, the protected Phase 5 E2E still runs
   https://github.com/DarkGh0st03/delegation/actions/runs/37965635556
 - First real full E2E failed safely:
   https://github.com/DarkGh0st03/delegation/actions/runs/37969470115
+
+## Verified Backend-only live outcome
+
+- Run: https://github.com/DarkGh0st03/delegation/actions/runs/37971388496
+- Result: **FAIL / incomplete**, not an E2E or coding success.
+- Before real-provider execution the agent-runtime diagnostic unit tests
+  and deterministic Orchestrator regression checks both passed.
+- ADK logged **10** outgoing Gemini Developer API requests over approximately
+  five minutes; the experiment did not return a final confirmed Backend
+  Artifact or Git revision.
+- The error occurred at the A2A HTTP client boundary:
+  Node/Undici `UND_ERR_HEADERS_TIMEOUT` (`HeadersTimeoutError`),
+  while the client awaited a synchronous `sendMessage` response.
+- No specific Gemini quota exhaustion, provider billing error, or
+  model incapacity can be inferred from that transport timeout.
+- A2A waiting time was a hidden experimental constraint. A robust next
+  iteration should poll an asynchronous A2A task or use an explicitly
+  bounded, transport-supported timeout; it should also measure LLM
+  latency and tool-call count separately from delegation latency.
+- The one-time Backend marker is removed after this run: subsequent
+  GitHub pushes return to scripted ADK mode by default. Do not trigger
+  further live requests until the transport-wait issue is addressed.

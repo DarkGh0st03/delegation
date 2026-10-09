@@ -136,7 +136,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         model_turns: model.turns,
         successful_tools: events.filter(e => e.payload.ok).length,
         rejected_tools: events.filter(e => !e.payload.ok).length
-      }) + "\\n");
+      }) + "\n");
     };
     try {
       for await (const event of runner.runAsync({
