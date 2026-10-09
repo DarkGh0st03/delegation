@@ -1,7 +1,7 @@
 use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
-use crate::delegation::trust::material::public_material_provider_traits::{
-    AccumulatorMaterialProviderRef, PublicMaterialProvider, VerificationKeyProviderRef,
-};
+use crate::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
+use crate::delegation::trust::material::public_material_provider::PublicMaterialProvider;
+use crate::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 
