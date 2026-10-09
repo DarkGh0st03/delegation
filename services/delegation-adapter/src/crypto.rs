@@ -11,6 +11,7 @@ use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
 use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+use delegation::delegation::status::model::status_purpose::StatusPurpose;
 use delegation::delegation::status::resolver::status_list_resolver_trait::{
     StatusListResolver, StatusListResolverRef,
 };
@@ -72,6 +73,22 @@ pub struct VerifyPresentationRequest {
     pub signed_vp: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateCredentialStatusRequest {
+    pub credential_id: String,
+    pub status_set: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CredentialStatusUpdateResponse {
+    pub credential_id: String,
+    pub status_purpose: String,
+    pub status_set: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<u64>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct SignedPresentationResponse {
     pub signed_vp: String,
@@ -97,6 +114,36 @@ impl AdapterStatusResolver {
         self.values
             .borrow_mut()
             .insert(Self::key(issuer_id, entry), false);
+    }
+
+    fn set_status(
+        &self,
+        issuer_id: &str,
+        entry: &BitstringStatusListEntry,
+        status_set: bool,
+    ) -> Result<(), String> {
+        let key = Self::key(issuer_id, entry);
+        let mut values = self.values.borrow_mut();
+        let current = values.get_mut(&key).ok_or_else(|| {
+            format!(
+                "Status entry {}:{} ({}) is not registered in the Adapter runtime",
+                entry.status_list_credential(),
+                entry.status_list_index(),
+                entry.status_purpose()
+            )
+        })?;
+
+        if *current == status_set {
+            return Err(format!(
+                "Status entry {}:{} is already {}",
+                entry.status_list_credential(),
+                entry.status_list_index(),
+                if status_set { "set" } else { "clear" }
+            ));
+        }
+
+        *current = status_set;
+        Ok(())
     }
 }
 
@@ -235,6 +282,7 @@ impl CryptoRuntime {
                 callers.identity_for_role(issuer_role)?,
                 entry,
                 issuer.holder_jwk(),
+                issuer.public_verification_key(),
             );
         }
 
@@ -360,6 +408,79 @@ impl CryptoRuntime {
         Ok(credential)
     }
 
+
+    pub fn update_credential_status(
+        &mut self,
+        caller: &CallerRecord,
+        request: UpdateCredentialStatusRequest,
+    ) -> Result<CredentialStatusUpdateResponse, String> {
+        require_capability(caller, CallerCapability::ManageStatus)?;
+
+        let credential = self
+            .credentials
+            .get(&request.credential_id)
+            .cloned()
+            .ok_or_else(|| format!("Credential {} is not available", request.credential_id))?;
+
+        if credential.issuer() != caller.identity_id() {
+            return Err(format!(
+                "Caller {:?} cannot manage status for credential {} issued by {}",
+                caller.role(),
+                request.credential_id,
+                credential.issuer()
+            ));
+        }
+
+        let entry = credential
+            .credential_status()
+            .cloned()
+            .ok_or_else(|| format!("Credential {} has no credentialStatus", request.credential_id))?;
+
+        match entry.status_purpose() {
+            StatusPurpose::Message => {
+                return Err(String::from(
+                    "Message status purpose cannot be managed as revocation/suspension",
+                ));
+            }
+            StatusPurpose::Revocation if !request.status_set => {
+                return Err(format!(
+                    "Credential {} is revocation-controlled; revocation is terminal and cannot be cleared",
+                    request.credential_id
+                ));
+            }
+            StatusPurpose::Revocation | StatusPurpose::Suspension => {}
+        }
+
+        let version = if let Some(profile) = &self.evm_profile {
+            let issuer = self
+                .issuers
+                .get(&caller.role())
+                .ok_or_else(|| format!("Missing Adapter issuer for {:?}", caller.role()))?;
+
+            Some(profile.update_status(
+                caller.role(),
+                caller.identity_id(),
+                &entry,
+                issuer.holder_jwk(),
+                issuer.public_verification_key(),
+                request.status_set,
+            )?)
+        } else {
+            self.status_resolver
+                .as_ref()
+                .ok_or_else(|| String::from("Adapter status resolver is not initialized"))?
+                .set_status(caller.identity_id(), &entry, request.status_set)?;
+            None
+        };
+
+        Ok(CredentialStatusUpdateResponse {
+            credential_id: request.credential_id,
+            status_purpose: entry.status_purpose().as_str().to_string(),
+            status_set: request.status_set,
+            version,
+        })
+    }
+
     pub fn create_presentation(
         &self,
         caller: &CallerRecord,
@@ -477,7 +598,10 @@ mod tests {
                 CallerRole::Engineer,
                 String::from("engineer-token"),
                 String::from("did:thesis:engineer"),
-                vec![CallerCapability::IssueRoot],
+                vec![
+                    CallerCapability::IssueRoot,
+                    CallerCapability::ManageStatus,
+                ],
             )
             .unwrap(),
             CallerRecord::new(
@@ -486,6 +610,7 @@ mod tests {
                 String::from("did:thesis:orchestrator"),
                 vec![
                     CallerCapability::IssueChild,
+                    CallerCapability::ManageStatus,
                     CallerCapability::CreatePresentation,
                 ],
             )
