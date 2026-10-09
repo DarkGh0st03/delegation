@@ -68,20 +68,14 @@ impl JwtAuthenticatedStatusListCredentialProvider {
 }
 
 impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvider {
-    fn get_status_list_credential(&self, _url: &str) -> Result<String, String> {
-        Err(String::from(
-            "JWT-authenticated Status List retrieval requires the expected issuer",
-        ))
-    }
-
-    fn get_status_list_credential_for_issuer(
+    fn get_status_list_credential(
         &self,
         issuer_id: &str,
         url: &str,
     ) -> Result<StatusListCredentialArtifact, String> {
         let source_artifact = self
             .source
-            .get_status_list_credential_for_issuer(issuer_id, url)?;
+            .get_status_list_credential(issuer_id, url)?;
         let compact_jwt = source_artifact.document;
         let verification_key = self.verification_keys.get_verification_key(issuer_id)?;
         let verifier = EdDSA
@@ -202,13 +196,13 @@ mod tests {
         let token = sign_status_list_credential_jwt(&document(), &private)?;
 
         let source = Rc::new(InMemoryStatusListCredentialProvider::new());
-        source.insert(String::from(URL), token.clone());
+        source.insert(String::from(ISSUER), String::from(URL), token.clone());
 
         let keys = Rc::new(TestVerificationKeyProvider::default());
         keys.insert(String::from(ISSUER), public);
 
         let provider = JwtAuthenticatedStatusListCredentialProvider::new(source, keys);
-        let artifact = provider.get_status_list_credential_for_issuer(ISSUER, URL)?;
+        let artifact = provider.get_status_list_credential(ISSUER, URL)?;
 
         assert_eq!(artifact.commitment_bytes, token.as_bytes());
         let value: Value =
@@ -224,7 +218,7 @@ mod tests {
         let token = sign_status_list_credential_jwt(&document(), &private)?;
 
         let source = Rc::new(InMemoryStatusListCredentialProvider::new());
-        source.insert(String::from(URL), token);
+        source.insert(String::from(ISSUER), String::from(URL), token);
 
         let keys = Rc::new(TestVerificationKeyProvider::default());
         keys.insert(String::from(ISSUER), wrong_public);
@@ -232,7 +226,7 @@ mod tests {
         let provider = JwtAuthenticatedStatusListCredentialProvider::new(source, keys);
         assert!(
             provider
-                .get_status_list_credential_for_issuer(ISSUER, URL)
+                .get_status_list_credential(ISSUER, URL)
                 .is_err()
         );
         Ok(())
