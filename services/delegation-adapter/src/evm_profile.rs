@@ -77,7 +77,7 @@ sol! {
             address issuer,
             bytes32 listId,
             uint8 purpose,
-            bytes32 documentHash
+            bytes32 artifactHash
         ) external;
     }
 }
@@ -219,7 +219,7 @@ impl EvmAdapterProfile {
             .status_list_anchor(issuer_id, entry.status_list_credential())?;
 
         if existing.exists {
-            if existing.purpose != purpose_code || existing.current_document_hash != commitment {
+            if existing.purpose != purpose_code || existing.current_artifact_hash != commitment {
                 return Err(format!(
                     "Existing EVM Status List anchor for {} and issuer {} does not match the Adapter active document",
                     entry.status_list_credential(),
@@ -244,7 +244,7 @@ impl EvmAdapterProfile {
                 .status_list_anchor(issuer_id, entry.status_list_credential())?;
             if !anchored.exists
                 || anchored.purpose != purpose_code
-                || anchored.current_document_hash != commitment
+                || anchored.current_artifact_hash != commitment
                 || anchored.current_version == 0
             {
                 return Err(format!(
