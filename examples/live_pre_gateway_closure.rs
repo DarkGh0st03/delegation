@@ -546,7 +546,11 @@ fn main() -> Result<(), String> {
     ));
 
     let raw_status_provider = Rc::new(InMemoryStatusListCredentialProvider::new());
-    raw_status_provider.insert(String::from(STATUS_LIST_URL), active_status_jwt);
+    raw_status_provider.insert(
+        root_id.clone(),
+        String::from(STATUS_LIST_URL),
+        active_status_jwt,
+    );
 
     let authenticated_status_provider = Rc::new(JwtAuthenticatedStatusListCredentialProvider::new(
         raw_status_provider.clone(),
@@ -580,7 +584,11 @@ fn main() -> Result<(), String> {
         status_list_id,
         revoked_status_hash,
     ))?;
-    raw_status_provider.insert(String::from(STATUS_LIST_URL), revoked_status_jwt);
+    raw_status_provider.insert(
+        root_id.clone(),
+        String::from(STATUS_LIST_URL),
+        revoked_status_jwt,
+    );
 
     let updated = chain_reader.status_list_anchor(&root_id, STATUS_LIST_URL)?;
     if updated.current_version != 2 || updated.current_document_hash != revoked_status_hash {
