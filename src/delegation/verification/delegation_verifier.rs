@@ -283,9 +283,7 @@ mod tests {
     use crate::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
     use crate::delegation::trust::model::identity_status::IdentityStatus;
     use crate::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
-    use crate::delegation::trust::registry::trust_publisher_trait::{
-        TrustPublisher, TrustPublisherRef,
-    };
+    use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisher;
     use crate::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
     use crate::delegation::trust::resolver::trust_resolver_trait::{
         TrustResolver, TrustResolverRef,
