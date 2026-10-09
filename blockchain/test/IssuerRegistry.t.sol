@@ -19,13 +19,13 @@ contract IssuerActor {
         address issuer,
         bytes32 listId,
         IssuerRegistry.StatusPurpose purpose,
-        bytes32 documentHash
+        bytes32 artifactHash
     ) external {
         registry.registerStatusList(
             issuer,
             listId,
             purpose,
-            documentHash
+            artifactHash
         );
     }
 
@@ -33,9 +33,9 @@ contract IssuerActor {
         IssuerRegistry registry,
         address issuer,
         bytes32 listId,
-        bytes32 documentHash
+        bytes32 artifactHash
     ) external returns (uint64) {
-        return registry.updateStatusList(issuer, listId, documentHash);
+        return registry.updateStatusList(issuer, listId, artifactHash);
     }
 
     function changeDidOwner(
@@ -75,8 +75,8 @@ contract IssuerRegistryTest {
     bytes32 private constant MATERIAL_V1 = keccak256("material-v1");
     bytes32 private constant MATERIAL_V2 = keccak256("material-v2");
     bytes32 private constant LIST_ID = keccak256("status-list-1");
-    bytes32 private constant LIST_HASH_V1 = keccak256("status-list-document-v1");
-    bytes32 private constant LIST_HASH_V2 = keccak256("status-list-document-v2");
+    bytes32 private constant LIST_ARTIFACT_HASH_V1 = keccak256("status-list-artifact-v1");
+    bytes32 private constant LIST_ARTIFACT_HASH_V2 = keccak256("status-list-artifact-v2");
 
     function setUp() public {
         didRegistry = new EthereumDIDRegistry();
@@ -185,14 +185,14 @@ contract IssuerRegistryTest {
             address(issuer),
             LIST_ID,
             IssuerRegistry.StatusPurpose.Revocation,
-            LIST_HASH_V1
+            LIST_ARTIFACT_HASH_V1
         );
 
         uint64 version = issuer.updateStatusList(
             issuerRegistry,
             address(issuer),
             LIST_ID,
-            LIST_HASH_V2
+            LIST_ARTIFACT_HASH_V2
         );
 
         require(version == 2, "status list version not advanced");
@@ -207,8 +207,8 @@ contract IssuerRegistryTest {
         );
         require(anchor.currentVersion == 2, "wrong current version");
         require(
-            anchor.currentDocumentHash == LIST_HASH_V2,
-            "wrong current document"
+            anchor.currentArtifactHash == LIST_ARTIFACT_HASH_V2,
+            "wrong current artifact"
         );
     }
 
@@ -220,7 +220,7 @@ contract IssuerRegistryTest {
             address(issuer),
             LIST_ID,
             IssuerRegistry.StatusPurpose.Suspension,
-            LIST_HASH_V1
+            LIST_ARTIFACT_HASH_V1
         );
 
         try issuer.registerStatusList(
@@ -228,7 +228,7 @@ contract IssuerRegistryTest {
             address(issuer),
             LIST_ID,
             IssuerRegistry.StatusPurpose.Suspension,
-            LIST_HASH_V1
+            LIST_ARTIFACT_HASH_V1
         ) {
             revert("duplicate status list registration succeeded");
         } catch {}
@@ -237,9 +237,9 @@ contract IssuerRegistryTest {
             issuerRegistry,
             address(issuer),
             LIST_ID,
-            LIST_HASH_V1
+            LIST_ARTIFACT_HASH_V1
         ) {
-            revert("unchanged status document created a new version");
+            revert("unchanged status artifact created a new version");
         } catch {}
     }
 
@@ -251,7 +251,7 @@ contract IssuerRegistryTest {
             address(issuer),
             LIST_ID,
             IssuerRegistry.StatusPurpose.Revocation,
-            LIST_HASH_V1
+            LIST_ARTIFACT_HASH_V1
         );
 
         trustRegistry.suspendIdentity(address(issuer));
@@ -260,7 +260,7 @@ contract IssuerRegistryTest {
             issuerRegistry,
             address(issuer),
             LIST_ID,
-            LIST_HASH_V2
+            LIST_ARTIFACT_HASH_V2
         ) {
             revert("suspended issuer updated status list");
         } catch {}
