@@ -11,7 +11,7 @@ use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
 use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-use delegation::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
+use delegation::delegation::local::in_memory_status_list_store::InMemoryStatusListStore;
 use delegation::delegation::status::provider::jwt_status_list_provider::{
     JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
 };
@@ -20,9 +20,9 @@ use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
 use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
 use delegation::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
-use delegation::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
+use delegation::delegation::local::in_memory_public_material_store::InMemoryPublicMaterialStore;
 use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
-use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::trust::registry::trust_publisher_trait::TrustPublisher;
 use delegation::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
 use delegation::delegation::trust::resolver::trust_resolver_trait::{
@@ -356,21 +356,21 @@ fn main() -> Result<(), String> {
 
     // Issuance side: generate local cryptographic material first, then publish the
     // public material explicitly and bind the assigned version to each issuer.
-    let issuance_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+    let issuance_store = Rc::new(InMemoryTrustStore::<Curve>::new());
 
     let mut root = DelegationIssuer::<Curve>::new(root_id.clone())?;
-    issuance_registry.register_identity(root_id.clone())?;
-    let root_material_version = issuance_registry
+    issuance_store.register_identity(root_id.clone())?;
+    let root_material_version = issuance_store
         .publish_accumulator_data(root_id.clone(), root.accumulator_public_data())?;
-    issuance_registry
+    issuance_store
         .publish_verification_key(root_id.clone(), root.public_verification_key().clone())?;
     root.bind_accumulator_material_version(root_material_version)?;
 
     let mut holder = DelegationIssuer::<Curve>::new(holder_id.clone())?;
-    issuance_registry.register_identity(holder_id.clone())?;
-    let holder_material_version = issuance_registry
+    issuance_store.register_identity(holder_id.clone())?;
+    let holder_material_version = issuance_store
         .publish_accumulator_data(holder_id.clone(), holder.accumulator_public_data())?;
-    issuance_registry
+    issuance_store
         .publish_verification_key(holder_id.clone(), holder.public_verification_key().clone())?;
     holder.bind_accumulator_material_version(holder_material_version)?;
 
@@ -399,7 +399,7 @@ fn main() -> Result<(), String> {
     }
 
     let root_material =
-        issuance_registry.get_accumulator_data_at_version(&root_id, material_version)?;
+        issuance_store.get_accumulator_data_at_version(&root_id, material_version)?;
     let root_commitment =
         EvmTrustResolver::<Curve>::accumulator_material_commitment(&root_material)?;
 
@@ -521,7 +521,7 @@ fn main() -> Result<(), String> {
 
     // Verifier side: accumulator payload remains off-chain, but its version/hash is
     // EVM-anchored. Ed25519 keys are no longer injected: they are resolved from did:ethr.
-    let accumulator_source = Rc::new(InMemoryPublicMaterialProvider::<Curve>::new());
+    let accumulator_source = Rc::new(InMemoryPublicMaterialStore::<Curve>::new());
     accumulator_source.insert_accumulator_data(root_id.clone(), material_version, root_material)?;
     let accumulator_provider: AccumulatorMaterialProviderRef<Curve> = accumulator_source;
 
@@ -545,7 +545,7 @@ fn main() -> Result<(), String> {
         verification_key_provider.clone(),
     ));
 
-    let raw_status_provider = Rc::new(InMemoryStatusListCredentialProvider::new());
+    let raw_status_provider = Rc::new(InMemoryStatusListStore::new());
     raw_status_provider.insert(
         root_id.clone(),
         String::from(STATUS_LIST_URL),
