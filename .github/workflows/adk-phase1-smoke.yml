@@ -1,0 +1,35 @@
+name: ADK Phase 1 Smoke
+
+on:
+  push:
+    branches:
+      - refactor/adk-integration
+    paths:
+      - 'poc/adk-spike/**'
+      - '.github/workflows/adk-phase1-smoke.yml'
+  pull_request:
+    paths:
+      - 'poc/adk-spike/**'
+      - '.github/workflows/adk-phase1-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/adk-spike/package-lock.json
+      - name: Install pinned ADK dependencies
+        run: npm --prefix poc/adk-spike ci --ignore-scripts --no-audit --no-fund
+      - name: Verify resolved versions
+        run: npm --prefix poc/adk-spike ls --depth=0
+      - name: Run ADK agent and Runner smoke (no LLM key)
+        run: npm --prefix poc/adk-spike run smoke
