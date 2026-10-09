@@ -9,11 +9,11 @@ use delegation::delegation::credentials::delegation::delegation_credential::Dele
 use delegation::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
+use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::resolver::status_list_resolver_trait::{
     StatusListResolver, StatusListResolverRef,
 };
-use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::trust::registry::trust_publisher_trait::{
     TrustPublisher, TrustPublisherRef,
 };

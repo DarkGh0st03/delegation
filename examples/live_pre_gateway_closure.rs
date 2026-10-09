@@ -9,9 +9,11 @@ use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
+use delegation::delegation::local::in_memory_public_material_store::InMemoryPublicMaterialStore;
+use delegation::delegation::local::in_memory_status_list_store::InMemoryStatusListStore;
+use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-use delegation::delegation::local::in_memory_status_list_store::InMemoryStatusListStore;
 use delegation::delegation::status::provider::jwt_status_list_provider::{
     JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
 };
@@ -20,9 +22,7 @@ use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
 use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
 use delegation::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
-use delegation::delegation::local::in_memory_public_material_store::InMemoryPublicMaterialStore;
 use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
-use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::trust::registry::trust_publisher_trait::TrustPublisher;
 use delegation::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
 use delegation::delegation::trust::resolver::trust_resolver_trait::{
@@ -360,8 +360,8 @@ fn main() -> Result<(), String> {
 
     let mut root = DelegationIssuer::<Curve>::new(root_id.clone())?;
     issuance_store.register_identity(root_id.clone())?;
-    let root_material_version = issuance_store
-        .publish_accumulator_data(root_id.clone(), root.accumulator_public_data())?;
+    let root_material_version =
+        issuance_store.publish_accumulator_data(root_id.clone(), root.accumulator_public_data())?;
     issuance_store
         .publish_verification_key(root_id.clone(), root.public_verification_key().clone())?;
     root.bind_accumulator_material_version(root_material_version)?;

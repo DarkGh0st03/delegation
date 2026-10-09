@@ -110,9 +110,9 @@ impl<E: Pairing> TrustResolver<E> for EvmTrustResolver<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::delegation::local::in_memory_public_material_store::InMemoryPublicMaterialStore;
     use crate::delegation::trust::evm::trust_chain_reader::AccumulatorMaterialAnchor;
     use crate::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
-    use crate::delegation::local::in_memory_public_material_store::InMemoryPublicMaterialStore;
     use crate::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
     use ark_bn254::Bn254;
     use ark_std::rand::SeedableRng;

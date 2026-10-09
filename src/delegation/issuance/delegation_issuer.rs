@@ -434,8 +434,8 @@ impl<E: Pairing> DelegationIssuer<E> {
 mod tests {
     use super::*;
     use crate::delegation::authorization::operation::Operation;
-    use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::local::in_memory_trust_store::InMemoryTrustStore;
+    use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisherRef;
     use ark_bn254::Bn254;
     use std::rc::Rc;
@@ -500,8 +500,7 @@ mod tests {
     #[test]
     fn issue_vc() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustPublisherRef<Curve> =
-            Rc::new(InMemoryTrustStore::<Curve>::new());
+        let trust_registry: TrustPublisherRef<Curve> = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
@@ -602,8 +601,7 @@ mod tests {
     #[test]
     fn issue_vp() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustPublisherRef<Curve> =
-            Rc::new(InMemoryTrustStore::<Curve>::new());
+        let trust_registry: TrustPublisherRef<Curve> = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
@@ -691,8 +689,7 @@ mod tests {
     #[test]
     fn rejects_subdelegation_with_foreign_credential() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustPublisherRef<Curve> =
-            Rc::new(InMemoryTrustStore::<Curve>::new());
+        let trust_registry: TrustPublisherRef<Curve> = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -733,8 +730,7 @@ mod tests {
     #[test]
     fn child_expiration_is_capped_by_immediate_parent() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustPublisherRef<Curve> =
-            Rc::new(InMemoryTrustStore::<Curve>::new());
+        let trust_registry: TrustPublisherRef<Curve> = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -777,8 +773,7 @@ mod tests {
     #[test]
     fn propagates_parent_status_into_hierarchy() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry: TrustPublisherRef<Curve> =
-            Rc::new(InMemoryTrustStore::<Curve>::new());
+        let trust_registry: TrustPublisherRef<Curve> = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),

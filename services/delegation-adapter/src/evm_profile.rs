@@ -8,6 +8,7 @@ use ark_bn254::Bn254;
 use delegation::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
+use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::model::status_list_credential_artifact::StatusListCredentialArtifact;
@@ -27,7 +28,6 @@ use delegation::delegation::trust::material::accumulator_material_provider::{
 };
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
 use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
-use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
 use delegation::delegation::trust::resolver::trust_resolver_trait::{
     TrustResolver, TrustResolverRef,

@@ -106,8 +106,8 @@ impl StatusListResolver for EvmAnchoredStatusListResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::status::evm::status_list_anchor_reader::StatusListAnchor;
     use crate::delegation::local::in_memory_status_list_store::InMemoryStatusListStore;
+    use crate::delegation::status::evm::status_list_anchor_reader::StatusListAnchor;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use multibase::Base;

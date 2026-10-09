@@ -34,8 +34,8 @@ impl StatusListResolver for ProviderStatusListResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::status::model::status_purpose::StatusPurpose;
     use crate::delegation::local::in_memory_status_list_store::InMemoryStatusListStore;
+    use crate::delegation::status::model::status_purpose::StatusPurpose;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use multibase::Base;

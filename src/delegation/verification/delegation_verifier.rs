@@ -273,16 +273,16 @@ mod tests {
     use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
     use crate::delegation::issuance::delegation_issuer::DelegationIssuer;
     use crate::delegation::issuance::issuer_trait::Issuer;
+    use crate::delegation::local::in_memory_public_material_store::InMemoryPublicMaterialStore;
+    use crate::delegation::local::in_memory_trust_store::InMemoryTrustStore;
     use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
     use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
     use crate::delegation::trust::evm::trust_chain_reader::{
         AccumulatorMaterialAnchor, TrustChainReader,
     };
     use crate::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
-    use crate::delegation::local::in_memory_public_material_store::InMemoryPublicMaterialStore;
     use crate::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
     use crate::delegation::trust::model::identity_status::IdentityStatus;
-    use crate::delegation::local::in_memory_trust_store::InMemoryTrustStore;
     use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisher;
     use crate::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
     use crate::delegation::trust::resolver::trust_resolver_trait::{
