@@ -15,18 +15,18 @@ use delegation::delegation::status::provider::jwt_status_list_provider::{
     JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
 };
 use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
-use delegation::delegation::trust::evm::evm_reader_traits::{EvmStatusListReader, EvmTrustReader};
-use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
-use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
+use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
+use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
+use delegation::delegation::trust::evm::evm_resolver_reader::EvmRegistryReader;
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
 use delegation::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
-use delegation::delegation::trust::material::public_material_provider_traits::{
-    AccumulatorMaterialProviderRef, VerificationKeyProviderRef,
-};
-use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
+use delegation::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
+use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
 use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
-use delegation::delegation::trust::registry::trust_registry_trait::{
-    TrustRegistry, TrustRegistryRef,
+use delegation::delegation::trust::registry::trust_publisher_trait::TrustPublisherRef;
+use delegation::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
+use delegation::delegation::trust::resolver::trust_resolver_trait::{
+    TrustResolver, TrustResolverRef,
 };
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
@@ -356,7 +356,7 @@ fn main() -> Result<(), String> {
 
     // Issuance side: generate the real accumulator and Ed25519 keys used by this run.
     let issuance_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
-    let issuance_registry_ref: TrustRegistryRef<Curve> = issuance_registry.clone();
+    let issuance_registry_ref: TrustPublisherRef<Curve> = issuance_registry.clone();
     let root = DelegationIssuer::<Curve>::new(root_id.clone(), issuance_registry_ref.clone())?;
     let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), issuance_registry_ref)?;
 
@@ -387,7 +387,7 @@ fn main() -> Result<(), String> {
     let root_material =
         issuance_registry.get_accumulator_data_at_version(&root_id, material_version)?;
     let root_commitment =
-        EvmBackedTrustRegistry::<Curve>::accumulator_material_commitment(&root_material)?;
+        EvmTrustResolver::<Curve>::accumulator_material_commitment(&root_material)?;
 
     let signed_vp = holder.issue_delegation_verifiable_presentation(
         vc,
@@ -524,13 +524,12 @@ fn main() -> Result<(), String> {
     verification_key_provider.get_verification_key(&holder_id)?;
     println!("didResolution=OK");
 
-    let public_material = Rc::new(CompositePublicMaterialProvider::<Curve>::new(
+    let trust_reader: Rc<dyn TrustChainReader> = chain_reader.clone();
+    let evm_resolver: TrustResolverRef<Curve> = Rc::new(EvmTrustResolver::new(
+        trust_reader,
         accumulator_provider,
         verification_key_provider.clone(),
     ));
-    let trust_reader: Rc<dyn EvmTrustReader> = chain_reader.clone();
-    let evm_registry: TrustRegistryRef<Curve> =
-        Rc::new(EvmBackedTrustRegistry::new(trust_reader, public_material));
 
     let raw_status_provider = Rc::new(InMemoryStatusListCredentialProvider::new());
     raw_status_provider.insert(String::from(STATUS_LIST_URL), active_status_jwt);
@@ -539,13 +538,13 @@ fn main() -> Result<(), String> {
         raw_status_provider.clone(),
         verification_key_provider,
     ));
-    let status_reader: Rc<dyn EvmStatusListReader> = chain_reader.clone();
+    let status_reader: Rc<dyn StatusListAnchorReader> = chain_reader.clone();
     let status_resolver = Rc::new(EvmAnchoredStatusListResolver::new(
         authenticated_status_provider,
         status_reader,
     ));
 
-    let verifier = DelegationVerifier::<Curve>::new(evm_registry, status_resolver)?;
+    let verifier = DelegationVerifier::<Curve>::new(evm_resolver, status_resolver)?;
     let context = AuthorizationContext::new(
         holder_id.clone(),
         String::from("cloud-access-gateway"),
