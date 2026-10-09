@@ -177,7 +177,6 @@ impl<E: Pairing> AccumulatorVerifier<E> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
