@@ -41,7 +41,6 @@ impl<E: Pairing> EvmBackedTrustRegistry<E> {
             .map_err(|err| format!("Could not serialize accumulator public material [{err}]"))?;
         Ok(keccak256(bytes))
     }
-
 }
 
 impl<E: Pairing> TrustResolver<E> for EvmBackedTrustRegistry<E> {

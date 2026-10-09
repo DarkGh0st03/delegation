@@ -8,6 +8,7 @@ use ark_bn254::Bn254;
 use delegation::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
+use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use delegation::delegation::status::model::status_list_credential_artifact::StatusListCredentialArtifact;
 use delegation::delegation::status::model::status_purpose::StatusPurpose;
@@ -19,14 +20,13 @@ use delegation::delegation::status::provider::status_list_credential_provider_tr
 };
 use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
 use delegation::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
-use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
-use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
 use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
-use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
-use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
+use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
 use delegation::delegation::trust::material::accumulator_material_provider::{
     AccumulatorMaterialProvider, AccumulatorMaterialProviderRef,
 };
+use delegation::delegation::trust::material::composite_public_material_provider::CompositePublicMaterialProvider;
+use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
 use delegation::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
 use delegation::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
 use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
