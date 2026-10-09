@@ -135,11 +135,15 @@ impl BitstringStatusListResolver {
 }
 
 impl StatusListResolver for BitstringStatusListResolver {
-    fn is_status_set(&self, entry: &BitstringStatusListEntry) -> Result<bool, String> {
-        let raw_credential = self
+    fn is_status_set(
+        &self,
+        issuer_id: &str,
+        entry: &BitstringStatusListEntry,
+    ) -> Result<bool, String> {
+        let artifact = self
             .provider
-            .get_status_list_credential(entry.status_list_credential())?;
-        Self::is_status_set_in_document(entry, &raw_credential)
+            .get_status_list_credential(issuer_id, entry.status_list_credential())?;
+        Self::is_status_set_in_document(entry, &artifact.document)
     }
 }
 
@@ -190,6 +194,7 @@ mod tests {
     use std::io::Write;
     use std::rc::Rc;
 
+    const ISSUER: &str = "did:example:status-authority";
     const STATUS_LIST_URL: &str = "https://status.example/lists/revocation-1";
 
     fn entry(index: &str, purpose: StatusPurpose) -> BitstringStatusListEntry {
@@ -219,7 +224,7 @@ mod tests {
             "@context": ["https://www.w3.org/ns/credentials/v2"],
             "id": STATUS_LIST_URL,
             "type": ["VerifiableCredential", "BitstringStatusListCredential"],
-            "issuer": "did:example:status-authority",
+            "issuer": ISSUER,
             "validFrom": "2026-01-01T00:00:00Z",
             "credentialSubject": {
                 "id": format!("{STATUS_LIST_URL}#list"),
@@ -233,7 +238,11 @@ mod tests {
 
     fn resolver_with_document(document: String) -> BitstringStatusListResolver {
         let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
-        provider.insert(STATUS_LIST_URL.to_string(), document);
+        provider.insert(
+            ISSUER.to_string(),
+            STATUS_LIST_URL.to_string(),
+            document,
+        );
         BitstringStatusListResolver::new(provider)
     }
 
@@ -248,9 +257,9 @@ mod tests {
             encode_bitstring(&bitstring)?,
         ));
 
-        assert!(resolver.is_status_set(&entry("0", StatusPurpose::Revocation))?);
-        assert!(!resolver.is_status_set(&entry("1", StatusPurpose::Revocation))?);
-        assert!(resolver.is_status_set(&entry("9", StatusPurpose::Revocation))?);
+        assert!(resolver.is_status_set(ISSUER, &entry("0", StatusPurpose::Revocation))?);
+        assert!(!resolver.is_status_set(ISSUER, &entry("1", StatusPurpose::Revocation))?);
+        assert!(resolver.is_status_set(ISSUER, &entry("9", StatusPurpose::Revocation))?);
         Ok(())
     }
 
@@ -262,7 +271,7 @@ mod tests {
             encode_bitstring(&bitstring)?,
         ));
 
-        assert!(!resolver.is_status_set(&entry("42", StatusPurpose::Suspension))?);
+        assert!(!resolver.is_status_set(ISSUER, &entry("42", StatusPurpose::Suspension))?);
         Ok(())
     }
 
@@ -276,7 +285,7 @@ mod tests {
 
         assert!(
             resolver
-                .is_status_set(&entry("42", StatusPurpose::Revocation))
+                .is_status_set(ISSUER, &entry("42", StatusPurpose::Revocation))
                 .is_err()
         );
         Ok(())
@@ -292,7 +301,7 @@ mod tests {
 
         assert!(
             resolver
-                .is_status_set(&entry("0", StatusPurpose::Revocation))
+                .is_status_set(ISSUER, &entry("0", StatusPurpose::Revocation))
                 .is_err()
         );
         Ok(())
