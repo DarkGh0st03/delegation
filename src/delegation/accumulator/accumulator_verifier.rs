@@ -182,8 +182,8 @@ mod tests {
     use super::*;
     use crate::delegation::accumulator::accumulator_manager::AccumulatorManager;
     use ark_bn254::Bn254;
-    use ark_std::rand::prelude::StdRng;
     use ark_std::rand::SeedableRng;
+    use ark_std::rand::prelude::StdRng;
     use vb_accumulator::prelude::{Keypair, SetupParams};
 
     fn verifier_fixture(
@@ -227,10 +227,7 @@ mod tests {
         ];
         let (verifier, witnesses) = verifier_fixture(&issued_elements)?;
 
-        let presented_elements = vec![
-            issued_elements[0].clone(),
-            String::from("permission:admin"),
-        ];
+        let presented_elements = vec![issued_elements[0].clone(), String::from("permission:admin")];
 
         assert!(
             verifier
