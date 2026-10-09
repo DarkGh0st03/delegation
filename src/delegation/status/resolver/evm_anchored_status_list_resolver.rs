@@ -14,7 +14,7 @@ use std::rc::Rc;
 /// such as the compact JWT used by the final PoC profile.
 ///
 /// Commitment convention:
-/// `currentDocumentHash = keccak256(exact fetched artifact bytes)`.
+/// `currentArtifactHash = keccak256(exact fetched artifact bytes)`.
 /// No JSON reserialization or normalization is performed before hashing.
 pub struct EvmAnchoredStatusListResolver {
     provider: StatusListCredentialProviderRef,
@@ -31,11 +31,6 @@ impl EvmAnchoredStatusListResolver {
 
     pub fn artifact_commitment(raw_artifact: &str) -> B256 {
         keccak256(raw_artifact.as_bytes())
-    }
-
-    /// Backwards-compatible name retained for JSON-document tests.
-    pub fn document_commitment(raw_credential: &str) -> B256 {
-        Self::artifact_commitment(raw_credential)
     }
 
     fn expected_chain_purpose(purpose: &StatusPurpose) -> Result<u8, String> {
@@ -89,12 +84,12 @@ impl StatusListResolver for EvmAnchoredStatusListResolver {
             .get_status_list_credential(issuer_id, entry.status_list_credential())?;
 
         let observed_hash = keccak256(&artifact.commitment_bytes);
-        if observed_hash != anchor.current_document_hash {
+        if observed_hash != anchor.current_artifact_hash {
             return Err(format!(
                 "Status List commitment mismatch for issuer {issuer_id}, list {} version {}: on-chain {}, observed {}",
                 entry.status_list_credential(),
                 anchor.current_version,
-                anchor.current_document_hash,
+                anchor.current_artifact_hash,
                 observed_hash
             ));
         }
@@ -130,13 +125,13 @@ mod tests {
             }
         }
 
-        fn set_anchor(&self, issuer: &str, url: &str, document: &str, version: u64) {
+        fn set_anchor(&self, issuer: &str, url: &str, artifact: &str, version: u64) {
             self.anchors.borrow_mut().insert(
                 (issuer.to_string(), url.to_string()),
                 StatusListAnchor {
                     purpose: 1,
-                    current_document_hash: EvmAnchoredStatusListResolver::document_commitment(
-                        document,
+                    current_artifact_hash: EvmAnchoredStatusListResolver::artifact_commitment(
+                        artifact,
                     ),
                     current_version: version,
                     updated_at: version,
@@ -159,7 +154,7 @@ mod tests {
                 .cloned()
                 .unwrap_or(StatusListAnchor {
                     purpose: 0,
-                    current_document_hash: B256::ZERO,
+                    current_artifact_hash: B256::ZERO,
                     current_version: 0,
                     updated_at: 0,
                     exists: false,
@@ -211,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_exact_current_anchored_document() -> Result<(), String> {
+    fn accepts_exact_current_anchored_artifact() -> Result<(), String> {
         let raw = document(false)?;
         let provider = Rc::new(InMemoryStatusListStore::new());
         provider.insert(
@@ -229,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_document_that_no_longer_matches_current_anchor() -> Result<(), String> {
+    fn rejects_stale_artifact_that_no_longer_matches_current_anchor() -> Result<(), String> {
         let original = document(false)?;
         let changed = document(true)?;
         let provider = Rc::new(InMemoryStatusListStore::new());
