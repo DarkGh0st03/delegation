@@ -1,0 +1,358 @@
+use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
+use crate::delegation::trust::model::identity_status::IdentityStatus;
+use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisher;
+use crate::delegation::trust::resolver::trust_resolver_trait::TrustResolver;
+use ark_ec::pairing::Pairing;
+use josekit::jwk::Jwk;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
+
+struct IdentityTrustRecord<E: Pairing> {
+    status: IdentityStatus,
+    trust_anchor: bool,
+    accumulator_data: BTreeMap<u64, AccumulatorPublicData<E>>,
+    latest_accumulator_version: u64,
+    verification_key: Option<Jwk>,
+}
+
+impl<E: Pairing> IdentityTrustRecord<E> {
+    fn new() -> Self {
+        Self {
+            status: IdentityStatus::Active,
+            trust_anchor: false,
+            accumulator_data: BTreeMap::new(),
+            latest_accumulator_version: 0,
+            verification_key: None,
+        }
+    }
+}
+
+/// Explicit in-memory trust store for local profiles and deterministic tests.
+///
+/// This is not an alternative production registry. It exists to support local
+/// issuance/unit tests and, in the EVM PoC profile, to retain the complete
+/// off-chain accumulator material whose commitment is anchored on-chain.
+pub struct InMemoryTrustStore<E: Pairing> {
+    identities: RefCell<HashMap<String, IdentityTrustRecord<E>>>,
+}
+
+impl<E: Pairing> InMemoryTrustStore<E> {
+    pub fn new() -> Self {
+        Self {
+            identities: RefCell::new(HashMap::new()),
+        }
+    }
+
+    fn ensure_record_active(
+        identity_id: &str,
+        record: &IdentityTrustRecord<E>,
+    ) -> Result<(), String> {
+        match record.status {
+            IdentityStatus::Active => Ok(()),
+            status => Err(format!("Identity {identity_id} is {status}")),
+        }
+    }
+}
+
+impl<E: Pairing> Default for InMemoryTrustStore<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<E: Pairing> TrustPublisher<E> for InMemoryTrustStore<E> {
+    fn register_identity(&self, identity_id: String) -> Result<(), String> {
+        if identity_id.trim().is_empty() {
+            return Err(String::from("Identity id cannot be empty"));
+        }
+
+        self.identities
+            .borrow_mut()
+            .entry(identity_id)
+            .or_insert_with(IdentityTrustRecord::new);
+        Ok(())
+    }
+
+    fn set_identity_status(&self, identity_id: &str, status: IdentityStatus) -> Result<(), String> {
+        let mut identities = self.identities.borrow_mut();
+        let record = identities
+            .get_mut(identity_id)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
+
+        if record.status == IdentityStatus::Revoked && status != IdentityStatus::Revoked {
+            return Err(format!(
+                "Identity {identity_id} is revoked and cannot transition to {status}"
+            ));
+        }
+
+        record.status = status;
+        Ok(())
+    }
+
+    fn set_trust_anchor(&self, identity_id: &str, trusted: bool) -> Result<(), String> {
+        let mut identities = self.identities.borrow_mut();
+        let record = identities
+            .get_mut(identity_id)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
+
+        if trusted {
+            Self::ensure_record_active(identity_id, record)?;
+        }
+
+        record.trust_anchor = trusted;
+        Ok(())
+    }
+
+    fn publish_accumulator_data(
+        &self,
+        identity_id: String,
+        data: AccumulatorPublicData<E>,
+    ) -> Result<u64, String> {
+        let mut identities = self.identities.borrow_mut();
+        let record = identities
+            .get_mut(&identity_id)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
+        Self::ensure_record_active(&identity_id, record)?;
+
+        let version = record
+            .latest_accumulator_version
+            .checked_add(1)
+            .ok_or_else(|| {
+                format!("Accumulator material version overflow for identity {identity_id}")
+            })?;
+
+        record.accumulator_data.insert(version, data);
+        record.latest_accumulator_version = version;
+        Ok(version)
+    }
+
+    fn publish_verification_key(
+        &self,
+        identity_id: String,
+        verification_key: Jwk,
+    ) -> Result<(), String> {
+        let mut identities = self.identities.borrow_mut();
+        let record = identities
+            .get_mut(&identity_id)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
+        Self::ensure_record_active(&identity_id, record)?;
+        record.verification_key = Some(verification_key);
+        Ok(())
+    }
+}
+
+impl<E: Pairing> TrustResolver<E> for InMemoryTrustStore<E> {
+    fn get_identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String> {
+        self.identities
+            .borrow()
+            .get(identity_id)
+            .map(|record| record.status)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))
+    }
+
+    fn is_trust_anchor(&self, identity_id: &str) -> Result<bool, String> {
+        self.identities
+            .borrow()
+            .get(identity_id)
+            .map(|record| record.trust_anchor)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))
+    }
+
+    fn get_accumulator_data(&self, identity_id: &str) -> Result<AccumulatorPublicData<E>, String> {
+        let identities = self.identities.borrow();
+        let record = identities
+            .get(identity_id)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
+        Self::ensure_record_active(identity_id, record)?;
+
+        if record.latest_accumulator_version == 0 {
+            return Err(format!(
+                "No accumulator public data registered for identity {identity_id}"
+            ));
+        }
+
+        record
+            .accumulator_data
+            .get(&record.latest_accumulator_version)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "Accumulator public data version {} is missing for identity {identity_id}",
+                    record.latest_accumulator_version
+                )
+            })
+    }
+
+    fn get_accumulator_data_at_version(
+        &self,
+        identity_id: &str,
+        version: u64,
+    ) -> Result<AccumulatorPublicData<E>, String> {
+        if version == 0 {
+            return Err(String::from(
+                "Accumulator material version must be greater than zero",
+            ));
+        }
+
+        let identities = self.identities.borrow();
+        let record = identities
+            .get(identity_id)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
+        Self::ensure_record_active(identity_id, record)?;
+
+        record
+            .accumulator_data
+            .get(&version)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "No accumulator public data version {version} registered for identity {identity_id}"
+                )
+            })
+    }
+
+    fn get_verification_key(&self, identity_id: &str) -> Result<Jwk, String> {
+        let identities = self.identities.borrow();
+        let record = identities
+            .get(identity_id)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
+        Self::ensure_record_active(identity_id, record)?;
+
+        record
+            .verification_key
+            .clone()
+            .ok_or_else(|| format!("No verification key registered for identity {identity_id}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_bn254::Bn254;
+    use ark_std::rand::SeedableRng;
+    use ark_std::rand::prelude::StdRng;
+    use vb_accumulator::prelude::{Keypair, SetupParams};
+
+    fn verification_key() -> Result<Jwk, String> {
+        let mut jwk = Jwk::new("OKP");
+        jwk.set_parameter(
+            "crv",
+            Some(serde_json::Value::String(String::from("Ed25519"))),
+        )
+        .map_err(|err| err.to_string())?;
+        Ok(jwk)
+    }
+
+    #[test]
+    fn stores_and_resolves_public_trust_material() -> Result<(), String> {
+        type Curve = Bn254;
+        let store = InMemoryTrustStore::<Curve>::new();
+        let identity = String::from("did:example:issuer");
+        store.register_identity(identity.clone())?;
+
+        let mut rng = StdRng::from_entropy();
+        let params = SetupParams::<Curve>::generate_using_rng(&mut rng);
+        let keypair = Keypair::<Curve>::generate_using_rng(&mut rng, &params);
+        store.publish_accumulator_data(
+            identity.clone(),
+            AccumulatorPublicData::new(keypair.public_key.clone(), params),
+        )?;
+        store.publish_verification_key(identity.clone(), verification_key()?)?;
+
+        store.get_accumulator_data(&identity)?;
+        store.get_verification_key(&identity)?;
+        Ok(())
+    }
+
+    #[test]
+    fn accumulator_material_versions_are_preserved() -> Result<(), String> {
+        type Curve = Bn254;
+        let store = InMemoryTrustStore::<Curve>::new();
+        let identity = String::from("did:example:versioned-issuer");
+        store.register_identity(identity.clone())?;
+
+        let mut rng = StdRng::from_entropy();
+
+        let params_v1 = SetupParams::<Curve>::generate_using_rng(&mut rng);
+        let keypair_v1 = Keypair::<Curve>::generate_using_rng(&mut rng, &params_v1);
+        let version_1 = store.publish_accumulator_data(
+            identity.clone(),
+            AccumulatorPublicData::new(keypair_v1.public_key.clone(), params_v1),
+        )?;
+
+        let params_v2 = SetupParams::<Curve>::generate_using_rng(&mut rng);
+        let keypair_v2 = Keypair::<Curve>::generate_using_rng(&mut rng, &params_v2);
+        let version_2 = store.publish_accumulator_data(
+            identity.clone(),
+            AccumulatorPublicData::new(keypair_v2.public_key.clone(), params_v2),
+        )?;
+
+        assert_eq!(version_1, 1);
+        assert_eq!(version_2, 2);
+        store.get_accumulator_data_at_version(&identity, 1)?;
+        store.get_accumulator_data_at_version(&identity, 2)?;
+        assert!(store.get_accumulator_data_at_version(&identity, 3).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn registered_identity_is_active_but_not_automatically_trusted() -> Result<(), String> {
+        let store = InMemoryTrustStore::<Bn254>::new();
+        let identity = String::from("did:example:registered");
+        store.register_identity(identity.clone())?;
+
+        assert_eq!(
+            store.get_identity_status(&identity)?,
+            IdentityStatus::Active
+        );
+        assert!(!store.is_trust_anchor(&identity)?);
+
+        store.set_trust_anchor(&identity, true)?;
+        assert!(store.is_trust_anchor(&identity)?);
+        Ok(())
+    }
+
+    #[test]
+    fn suspension_blocks_material_and_can_be_reactivated() -> Result<(), String> {
+        let store = InMemoryTrustStore::<Bn254>::new();
+        let identity = String::from("did:example:suspended");
+        store.register_identity(identity.clone())?;
+        store.publish_verification_key(identity.clone(), verification_key()?)?;
+
+        store.set_identity_status(&identity, IdentityStatus::Suspended)?;
+        assert!(store.get_verification_key(&identity).is_err());
+
+        store.set_identity_status(&identity, IdentityStatus::Active)?;
+        store.get_verification_key(&identity)?;
+        Ok(())
+    }
+
+    #[test]
+    fn revocation_is_terminal() -> Result<(), String> {
+        let store = InMemoryTrustStore::<Bn254>::new();
+        let identity = String::from("did:example:revoked");
+        store.register_identity(identity.clone())?;
+
+        store.set_identity_status(&identity, IdentityStatus::Revoked)?;
+        assert_eq!(
+            store.get_identity_status(&identity)?,
+            IdentityStatus::Revoked
+        );
+        assert!(
+            store
+                .set_identity_status(&identity, IdentityStatus::Active)
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn unknown_identity_fails_closed() {
+        let store = InMemoryTrustStore::<Bn254>::new();
+
+        assert!(store.get_identity_status("did:example:missing").is_err());
+        assert!(store.get_accumulator_data("did:example:missing").is_err());
+        assert!(store.get_verification_key("did:example:missing").is_err());
+        assert!(store.is_trust_anchor("did:example:missing").is_err());
+    }
+}
