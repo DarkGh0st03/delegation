@@ -9,7 +9,6 @@ use crate::delegation::credentials::generic::verifiable_credential::VerifiableCr
 use crate::delegation::credentials::generic::verifiable_presentation::VerifiablePresentation;
 use crate::delegation::issuance::issuer_trait::Issuer;
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisherRef;
 use ark_ec::pairing::Pairing;
 use ark_std::rand::prelude::StdRng;
 use ark_std::rand::{RngCore, SeedableRng};
@@ -25,81 +24,56 @@ pub struct DelegationIssuer<E: Pairing> {
     id: String,
     params: SetupParams<E>,
     acc_keypair: Keypair<E>,
-    accumulator_material_version: u64,
-    signature_jwk: Jwk,
+    accumulator_material_version: Option<u64>,
+    verification_jwk: Jwk,
+    signing_jwk: Jwk,
 }
 
 impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
-    /// Creates a new DelegationIssuer structure. The VC issuer of our proposed protocol.
+    /// Creates a new DelegationIssuer and generates its local cryptographic material.
     ///
-    /// # Arguments
-    /// * `id` - the issuer's unique id.
-    /// * `trust_registry` - shared registry used to publish the issuer's public verification material.
-    ///
-    /// # Returns
-    /// A result containing either the instance of DelegationIssuer or an error as a string in case of failure.
-    fn new(id: String, trust_registry: TrustPublisherRef<E>) -> Result<Self, String> {
-        trust_registry.register_identity(id.clone())?;
+    /// Trust registration and publication are intentionally performed by the
+    /// surrounding orchestration layer. Before issuing Delegation Credentials,
+    /// the caller must publish the public accumulator material and bind the
+    /// assigned material version with `bind_accumulator_material_version`.
+    fn new(id: String) -> Result<Self, String> {
+        if id.trim().is_empty() {
+            return Err(String::from("Issuer id cannot be empty"));
+        }
 
         let mut rng: StdRng = StdRng::from_entropy();
         let params = SetupParams::<E>::generate_using_rng(&mut rng);
         let acc_keypair = Keypair::<E>::generate_using_rng(&mut rng, &params);
 
-        let entry = AccumulatorPublicData::new(acc_keypair.public_key.clone(), params.clone());
-        let accumulator_material_version =
-            trust_registry.publish_accumulator_data(id.clone(), entry)?;
-
         let mut sk: SecretKey = [0u8; 32];
-        // let signing_algorithm = String::from("EdDSA");
-
-        // =====================================================
-        // Ed25519 SIGNATURE - Public and Private Key generation
-        // =====================================================
         rng.fill_bytes(&mut sk);
         let signing_key = SigningKey::from_bytes(&sk);
         let public_key_bytes = signing_key.verifying_key().to_bytes();
         let private_key_bytes = signing_key.to_bytes();
 
-        let mut signature_jwk = Jwk::new("OKP");
-        match signature_jwk.set_parameter("crv", Some(Value::String(String::from("Ed25519")))) {
-            Ok(()) => {}
-            Err(e) => {
-                return Err(format!(
-                    "Failed to set parameter crv for signing key [{}]",
-                    e
-                ));
-            }
-        };
-        match signature_jwk
+        let mut verification_jwk = Jwk::new("OKP");
+        verification_jwk
+            .set_parameter("crv", Some(Value::String(String::from("Ed25519"))))
+            .map_err(|err| format!("Failed to set parameter crv for signing key [{err}]"))?;
+        verification_jwk
             .set_parameter("x", Some(Value::String(Base64Url.encode(public_key_bytes))))
-        {
-            Ok(()) => {}
-            Err(e) => {
-                return Err(format!("Failed to set parameter x for signing key [{}]", e));
-            }
-        };
+            .map_err(|err| format!("Failed to set parameter x for signing key [{err}]"))?;
 
-        // Publish only the public verification key. The private parameter is kept locally.
-        let public_signature_jwk = signature_jwk.clone();
-        trust_registry.publish_verification_key(id.clone(), public_signature_jwk)?;
-
-        // Add the private parameter d to the jwk to enable the signing operation.
-        match signature_jwk.set_parameter(
-            "d",
-            Some(Value::String(Base64Url.encode(private_key_bytes))),
-        ) {
-            Ok(()) => {}
-            Err(e) => {
-                return Err(format!("Failed to set parameter d for signing key [{}]", e));
-            }
-        };
+        let mut signing_jwk = verification_jwk.clone();
+        signing_jwk
+            .set_parameter(
+                "d",
+                Some(Value::String(Base64Url.encode(private_key_bytes))),
+            )
+            .map_err(|err| format!("Failed to set parameter d for signing key [{err}]"))?;
 
         Ok(DelegationIssuer {
             id,
             params,
             acc_keypair,
-            accumulator_material_version,
-            signature_jwk,
+            accumulator_material_version: None,
+            verification_jwk,
+            signing_jwk,
         })
     }
 
@@ -204,6 +178,13 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
             ));
         }
 
+        let accumulator_material_version = self.accumulator_material_version.ok_or_else(|| {
+            format!(
+                "Issuer {} has no bound accumulator material version; publish its public material before issuing credentials",
+                self.id
+            )
+        })?;
+
         // Convert each metadata into a scalar
 
         let metadata_vector: Vec<String> = vec![
@@ -211,7 +192,7 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
             delegatee_id.clone(),
             iat.clone(),
             exp.clone(),
-            self.accumulator_material_version.to_string(),
+            accumulator_material_version.to_string(),
             credential_status.canonical_value(),
         ];
         let metadata_string: String =
@@ -241,7 +222,7 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                     accumulator_value,
                     iat,
                     exp,
-                    self.accumulator_material_version,
+                    accumulator_material_version,
                     permissions,
                     metadata_witness,
                     permission_witnesses,
@@ -345,7 +326,7 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                     accumulator_value,
                     iat,
                     exp,
-                    self.accumulator_material_version,
+                    accumulator_material_version,
                     permissions,
                     metadata_witness,
                     permission_witnesses,
@@ -371,7 +352,7 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
     }
 
     fn holder_jwk(&self) -> &Jwk {
-        &self.signature_jwk
+        &self.signing_jwk
     }
 
     /// Given a VerifiableCredential and an array of permissions to disclose, issues a VerifiablePresentation.
@@ -406,9 +387,49 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                 challenge,
             )?;
 
-        vp.to_signed_jwt(&self.signature_jwk)
+        vp.to_signed_jwt(&self.signing_jwk)
     }
 }
+
+impl<E: Pairing> DelegationIssuer<E> {
+    /// Returns the complete public accumulator material that must be published
+    /// before this issuer can issue Delegation Credentials.
+    pub fn accumulator_public_data(&self) -> AccumulatorPublicData<E> {
+        AccumulatorPublicData::new(self.acc_keypair.public_key.clone(), self.params.clone())
+    }
+
+    /// Returns the public Ed25519 verification key. Private signing material is
+    /// never exposed through this method.
+    pub fn public_verification_key(&self) -> &Jwk {
+        &self.verification_jwk
+    }
+
+    /// Binds the immutable public-material version assigned by the publication layer.
+    pub fn bind_accumulator_material_version(&mut self, version: u64) -> Result<(), String> {
+        if version == 0 {
+            return Err(String::from(
+                "Accumulator material version must be greater than zero",
+            ));
+        }
+
+        match self.accumulator_material_version {
+            Some(current) if current != version => Err(format!(
+                "Issuer {} is already bound to accumulator material version {current}",
+                self.id
+            )),
+            Some(_) => Ok(()),
+            None => {
+                self.accumulator_material_version = Some(version);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn accumulator_material_version(&self) -> Option<u64> {
+        self.accumulator_material_version
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
