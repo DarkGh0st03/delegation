@@ -16,7 +16,7 @@ use delegation::delegation::status::provider::jwt_status_list_provider::{
     JwtAuthenticatedStatusListCredentialProvider, sign_status_list_credential_jwt,
 };
 use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
-use delegation::delegation::trust::evm::evm_resolver_reader::EvmRegistryReader;
+use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
 use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
 use delegation::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
 use delegation::delegation::trust::material::did_ethr_verification_key_provider::DidEthrVerificationKeyProvider;
