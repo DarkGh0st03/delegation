@@ -6,6 +6,9 @@ on:
       - refactor/core-cleanup
     paths:
       - .github/workflows/refactor-phase4-rustfmt.yml
+      - src/**/*.rs
+      - examples/**/*.rs
+      - services/delegation-adapter/src/**/*.rs
 
 permissions:
   contents: read
