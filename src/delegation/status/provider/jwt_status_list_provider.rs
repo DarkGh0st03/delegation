@@ -111,7 +111,7 @@ impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvid
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
+    use crate::delegation::local::in_memory_status_list_store::InMemoryStatusListStore;
     use crate::delegation::trust::material::verification_key_provider::VerificationKeyProvider;
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -193,7 +193,7 @@ mod tests {
         let (private, public) = keys(7)?;
         let token = sign_status_list_credential_jwt(&document(), &private)?;
 
-        let source = Rc::new(InMemoryStatusListCredentialProvider::new());
+        let source = Rc::new(InMemoryStatusListStore::new());
         source.insert(String::from(ISSUER), String::from(URL), token.clone());
 
         let keys = Rc::new(TestVerificationKeyProvider::default());
@@ -215,7 +215,7 @@ mod tests {
         let (_, wrong_public) = keys(9)?;
         let token = sign_status_list_credential_jwt(&document(), &private)?;
 
-        let source = Rc::new(InMemoryStatusListCredentialProvider::new());
+        let source = Rc::new(InMemoryStatusListStore::new());
         source.insert(String::from(ISSUER), String::from(URL), token);
 
         let keys = Rc::new(TestVerificationKeyProvider::default());
