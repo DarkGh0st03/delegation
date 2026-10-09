@@ -279,10 +279,10 @@ mod tests {
         AccumulatorMaterialAnchor, TrustChainReader,
     };
     use crate::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
-    use crate::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
+    use crate::delegation::local::in_memory_public_material_store::InMemoryPublicMaterialStore;
     use crate::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
     use crate::delegation::trust::model::identity_status::IdentityStatus;
-    use crate::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
+    use crate::delegation::local::in_memory_trust_store::InMemoryTrustStore;
     use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisher;
     use crate::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
     use crate::delegation::trust::resolver::trust_resolver_trait::{
@@ -371,7 +371,7 @@ mod tests {
 
     fn prepared_issuer(
         id: String,
-        trust_registry: Rc<InMemoryTrustRegistry<Bn254>>,
+        trust_registry: Rc<InMemoryTrustStore<Bn254>>,
     ) -> Result<DelegationIssuer<Bn254>, String> {
         let mut issuer = DelegationIssuer::<Bn254>::new(id.clone())?;
         trust_registry.register_identity(id.clone())?;
@@ -468,7 +468,7 @@ mod tests {
 
         // Issuance remains local in this checkpoint. We then move only the public
         // verification material behind the same off-chain/EVM split used in deployment.
-        let source_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let source_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
         let root_id = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
         let holder_id = String::from("did:ethr:0x7a69:0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
 
@@ -498,7 +498,7 @@ mod tests {
             String::from("challenge-evm-backed"),
         )?;
 
-        let public_material = Rc::new(InMemoryPublicMaterialProvider::<Curve>::new());
+        let public_material = Rc::new(InMemoryPublicMaterialStore::<Curve>::new());
         public_material.insert_accumulator_data(
             root_id.clone(),
             material_version,
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn verify_vp() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
@@ -679,7 +679,7 @@ mod tests {
     #[test]
     fn rejects_wrong_audience() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -727,7 +727,7 @@ mod tests {
     #[test]
     fn rejects_wrong_challenge() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -775,7 +775,7 @@ mod tests {
     #[test]
     fn rejects_permission_not_disclosed() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -826,7 +826,7 @@ mod tests {
     #[test]
     fn rejects_presenter_that_is_not_delegatee() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -877,7 +877,7 @@ mod tests {
     #[test]
     fn rejects_tampered_credential_status() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -937,7 +937,7 @@ mod tests {
     #[test]
     fn rejects_revoked_current_credential() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -989,7 +989,7 @@ mod tests {
     #[test]
     fn rejects_revoked_ancestor_credential() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -1058,7 +1058,7 @@ mod tests {
     #[test]
     fn rejects_untrusted_root_identity() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -1104,7 +1104,7 @@ mod tests {
     #[test]
     fn rejects_suspended_presenter_identity() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
@@ -1153,7 +1153,7 @@ mod tests {
     #[test]
     fn rejects_revoked_issuer_identity_in_chain() -> Result<(), String> {
         type Curve = Bn254;
-        let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
         let root = prepared_issuer(
             String::from("https://vc.example/delegators/d0"),
