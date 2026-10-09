@@ -33,7 +33,10 @@ const SCHEMAS = {
   }).strict()
 } as const satisfies Record<SpecializedToolName, z.ZodObject<z.ZodRawShape>>;
 
+export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: Record<string, unknown>; payload: {ok: true; result: unknown} | ReturnType<typeof controlledToolErrorPayload> }; 
+
 export interface AdkSpecializedAgentConfig {
+  onToolOutcome?: (outcome: AdkControlledToolOutcome) => void;
   role: SpecializedAgentRole;
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
@@ -74,14 +77,20 @@ export function createAdkSpecializedAgent(
             name,
             arguments: JSON.stringify(args)
           });
-          return { ok: true, result };
+          const payload = { ok: true as const, result };
+          config.onToolOutcome?.({ name, arguments: args as Record<string, unknown>, payload });
+          return payload;
         } catch (error) {
           // Return a controlled result to the model. Denials cannot bypass Gateway.
           if (error instanceof ControlledToolError) {
-            return controlledToolErrorPayload(error);
+            const payload = controlledToolErrorPayload(error);
+            config.onToolOutcome?.({ name, arguments: args as Record<string, unknown>, payload });
+            return payload;
           }
           // Fail closed on unexpected errors without leaking raw provider responses.
-          return { ok: false, error: { kind: "provider_unavailable", message: "Controlled tool failed" } };
+          const payload = controlledToolErrorPayload(new ControlledToolError("tool_unavailable", "Controlled tool failed"));
+          config.onToolOutcome?.({ name, arguments: args as Record<string, unknown>, payload });
+          return payload;
         }
       }
     });
