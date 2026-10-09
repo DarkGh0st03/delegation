@@ -27,7 +27,10 @@ impl<E: Pairing> IdentityTrustRecord<E> {
     }
 }
 
-/// In-memory TrustRegistry used by local tests and the PoC before the EVM adapter.
+/// In-memory trust implementation used by local tests and the non-EVM PoC profile.
+///
+/// It implements both the read-side `TrustResolver` and write-side
+/// `TrustPublisher` contracts.
 pub struct InMemoryTrustRegistry<E: Pairing> {
     identities: RefCell<HashMap<String, IdentityTrustRecord<E>>>,
 }
