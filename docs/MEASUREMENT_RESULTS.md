@@ -1,6 +1,8 @@
 # Phase 12C Final Reference Measurement Results
 
-This document records the **final hardened** repeated measurement campaign for the thesis PoC.
+This document records the **final hardened historical** repeated measurement campaign for the thesis PoC.
+
+> **Measurement scope.** Every value in this document was measured on framework checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a`. The later `refactor/core-cleanup` code is not represented by these latency distributions or sample counts. The dataset remains valid historical evidence, but new performance claims for the refactored code require a new campaign.
 
 ## Final dataset
 
