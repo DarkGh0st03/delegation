@@ -17,7 +17,7 @@ use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub struct DelegationVerifier<E: Pairing> {
-    trust_registry: TrustResolverRef<E>,
+    trust_resolver: TrustResolverRef<E>,
     status_list_resolver: StatusListResolverRef,
 }
 
@@ -25,20 +25,20 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
     /// Creates an instance of an DelegationVerifier structure (a verifier as proposed by our protocol).
     ///
     /// # Arguments
-    /// * `trust_registry` - shared registry used to resolve public verification material.
+    /// * `trust_resolver` - resolver used to obtain trusted public verification material.
     /// * `status_list_resolver` - resolver used to obtain the current status bit for every credential in the chain.
     ///
     /// # Returns
     /// A result containing either the instance of DelegationVerifier or an error as a string in case of failure.
     fn new(
-        trust_registry: TrustResolverRef<E>,
+        trust_resolver: TrustResolverRef<E>,
         status_list_resolver: StatusListResolverRef,
     ) -> Result<Self, String>
     where
         Self: Sized,
     {
         Ok(DelegationVerifier {
-            trust_registry,
+            trust_resolver,
             status_list_resolver,
         })
     }
@@ -57,7 +57,7 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
         signed_jwt: String,
     ) -> Result<VerifiedDelegation, String> {
         let presenter_id = context.presenter_id();
-        let ecc_pk = self.trust_registry.get_verification_key(presenter_id)?;
+        let ecc_pk = self.trust_resolver.get_verification_key(presenter_id)?;
 
         let vp: VerifiablePresentation<DelegationCredential> =
             VerifiablePresentation::<DelegationCredential>::from_signed_jwt(signed_jwt, &ecc_pk)?;
@@ -155,7 +155,7 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
             .first()
             .map(|delegator| delegator.id())
             .unwrap_or(vp.issuer());
-        self.trust_registry.ensure_trust_anchor(root_issuer)?;
+        self.trust_resolver.ensure_trust_anchor(root_issuer)?;
 
         let expiration = match u128::from_str(dc.exp()) {
             Ok(expiration) => expiration,
