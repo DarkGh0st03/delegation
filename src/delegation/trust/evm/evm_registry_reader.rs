@@ -1,5 +1,8 @@
-use crate::delegation::trust::evm::evm_reader_traits::{
-    AccumulatorMaterialAnchor, EvmStatusListReader, EvmTrustReader, StatusListAnchor,
+use crate::delegation::status::evm::status_list_anchor_reader::{
+    StatusListAnchor, StatusListAnchorReader,
+};
+use crate::delegation::trust::evm::trust_chain_reader::{
+    AccumulatorMaterialAnchor, TrustChainReader,
 };
 use crate::delegation::trust::model::identity_status::IdentityStatus;
 use alloy::primitives::{Address, B256, keccak256};
@@ -248,7 +251,7 @@ impl EvmRegistryReader {
     }
 }
 
-impl EvmTrustReader for EvmRegistryReader {
+impl TrustChainReader for EvmRegistryReader {
     fn identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String> {
         EvmRegistryReader::identity_status(self, identity_id)
     }
@@ -270,7 +273,7 @@ impl EvmTrustReader for EvmRegistryReader {
     }
 }
 
-impl EvmStatusListReader for EvmRegistryReader {
+impl StatusListAnchorReader for EvmRegistryReader {
     fn status_list_anchor(
         &self,
         issuer_id: &str,
