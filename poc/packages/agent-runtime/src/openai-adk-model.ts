@@ -3,7 +3,10 @@ import { BaseLlm, type BaseLlmConnection, type LlmRequest, type LlmResponse } fr
 import { DEFAULT_OPENAI_MODEL } from "./llm-client.ts";
 
 type Dict = Record<string, unknown>;
-const TOOLS = new Set(["read_file", "update_file", "create_file", "run_tests"]);
+// Only these two explicitly-scoped capabilities may reach the provider.
+const SPECIALIZED_TOOLS = ["read_file","update_file","create_file","run_tests"] as const;
+const ORCHESTRATOR_TOOL = "run_account_suspension_workflow";
+const KNOWN_TOOLS = new Set<string>([...SPECIALIZED_TOOLS,ORCHESTRATOR_TOOL]);
 function object(value: unknown, name: string): Dict {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(name + " must be an object");
@@ -38,7 +41,9 @@ function parameters(value: unknown): Dict {
       if (typeof value !== "number" || !Number.isFinite(value)) {
         throw new Error("Invalid ADK schema " + key);
       }
-      converted[key] = value;
+      // The provider's strict function-schema dialect intentionally excludes
+      // these numeric validation keywords. ADK's Zod FunctionTool checks them
+      // locally before any privileged Gateway operation.
     }
   }
   if (type === "object") {
@@ -69,6 +74,8 @@ export interface OpenAIAdkModelOptions {
   apiKey?: string;
   maxOutputTokens?: number;
   client?: Pick<OpenAI, "responses">;
+  /** Explicit allowlist; default restricts the bridge to specialized-agent tools. */
+  allowedToolNames?: readonly string[];
 }
 /**
  * ADK BaseLlm implementation for the existing OpenAI Responses API.
@@ -78,8 +85,16 @@ export interface OpenAIAdkModelOptions {
 export class OpenAIAdkModel extends BaseLlm {
   readonly #client: Pick<OpenAI, "responses">;
   readonly #maxOutputTokens: number;
+  readonly #allowedToolNames: ReadonlySet<string>;
   constructor(config: OpenAIAdkModelOptions = {}) {
     super({model:string(config.model ?? process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL,"OpenAI model")});
+    const names = config.allowedToolNames ?? SPECIALIZED_TOOLS;
+    if (names.length === 0 || names.some(n => !KNOWN_TOOLS.has(n)) ||
+      new Set(names).size !== names.length ||
+      (names.includes(ORCHESTRATOR_TOOL) && names.length !== 1)) {
+      throw new Error("Invalid OpenAI ADK tool allowlist");
+    }
+    this.#allowedToolNames = new Set(names);
     this.#maxOutputTokens = config.maxOutputTokens ?? 4096;
     if (!Number.isSafeInteger(this.#maxOutputTokens) || this.#maxOutputTokens < 1) {
       throw new Error("maxOutputTokens must be a positive integer");
@@ -116,7 +131,7 @@ export class OpenAIAdkModel extends BaseLlm {
       for (const raw of tool.functionDeclarations) {
         const declared = object(raw,"ADK function");
         const name = string(declared.name,"ADK function name");
-        if (!TOOLS.has(name) || definitions.has(name)) throw new Error("Forbidden or duplicate ADK tool " + name);
+        if (!this.#allowedToolNames.has(name) || definitions.has(name)) throw new Error("Forbidden or duplicate ADK tool " + name);
         definitions.add(name);
         tools.push({type:"function",name,description:typeof declared.description==="string"?declared.description:"",
           strict:true,parameters:parameters(declared.parameters)});

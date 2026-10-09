@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { OpenAIAdkModel } from "@thesis/agent-runtime";
 import { BaseLlm, type BaseLlmConnection, type LlmRequest, type LlmResponse } from "@google/adk";
 import {
   AdkAccountSuspensionOrchestrator,
@@ -99,4 +100,41 @@ test("Phase 6 never executes workflow for a model-supplied wrong workflow id",as
     model,workflow:{run:async()=>{called=true;return completed;}}
   }).run(),/did not finish/u);
   assert.equal(called,false);
+});
+
+test("Phase 7 OpenAI Responses adapter executes ADK Orchestrator exactly once",async()=>{
+  const requests:Record<string,unknown>[]=[];
+  let turn=0;
+  const client={responses:{create:async(req:Record<string,unknown>)=>{
+    requests.push(req);
+    turn++;
+    const tools=req.tools as Array<Record<string,unknown>>;
+    assert.deepEqual(tools.map(t=>t.name),["run_account_suspension_workflow"]);
+    if(turn===1) return {
+      status:"completed",model:"mock-effective-orchestrator-model",output:[{
+        type:"function_call",name:"run_account_suspension_workflow",
+        call_id:"orchestrator-call-1",arguments:'{"workflow":"account_suspension"}'
+      }]
+    };
+    return {status:"completed",model:"mock-effective-orchestrator-model",output:[{
+      type:"message",content:[{type:"output_text",text:"Authorized workflow completed."}]
+    }]};
+  }}};
+  const model=new OpenAIAdkModel({
+    client:client as never,
+    model:"mock-orchestrator-model",
+    allowedToolNames:["run_account_suspension_workflow"]
+  });
+  let workflows=0;
+  const result=await new AdkAccountSuspensionOrchestrator({
+    model,workflow:{run:async()=>{workflows++;return completed;}}
+  }).run();
+  assert.equal(result,completed);
+  assert.equal(workflows,1);
+  assert.equal(turn,2);
+  const visible=JSON.stringify(requests);
+  assert.equal(visible.includes(HIDDEN),false);
+  assert.equal(visible.includes("delegation_evidence"),false);
+  assert.equal(visible.includes("merge_pull_request"),false);
+  assert.equal(visible.includes("update_file"),false);
 });

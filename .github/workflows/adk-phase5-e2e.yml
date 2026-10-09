@@ -14,6 +14,11 @@ on:
         type: choice
         default: adk-scripted
         options: [adk-scripted, adk-openai]
+      model:
+        description: 'Model enabled for your OpenAI API key; leave baseline for scripted runs'
+        type: string
+        required: true
+        default: gpt-5.6-sol
 
 # Do not spawn multiple 40-minute infrastructure tests for overlapping commits.
 concurrency:
@@ -59,7 +64,8 @@ jobs:
       ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase10b:orchestrator-root
       PHASE10B_RESULT_FILE: /tmp/phase5-adk-result.json
       PHASE10B_AGENT_ENGINE: ${{ github.event_name == 'workflow_dispatch' && inputs.engine || 'adk-scripted' }}
-      PHASE10B_ORCHESTRATOR_ENGINE: adk-scripted
+      PHASE10B_ORCHESTRATOR_ENGINE: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-openai' && 'adk-openai' || 'adk-scripted' }}
+      OPENAI_MODEL: ${{ inputs.model || 'gpt-5.6-sol' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -176,6 +182,13 @@ jobs:
           npm --prefix poc run gateway:start > /tmp/phase10b-gateway.log 2>&1 &
           echo $! > /tmp/phase10b-gateway.pid
 
+      - name: Require explicit OpenAI API secret for paid live runs
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-openai' }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo 'OPENAI_API_KEY repository secret is missing; no live provider call will be attempted.' >&2
+            exit 1
+          fi
       - name: Run protected ADK Account Suspension E2E
         run: |
           set -a

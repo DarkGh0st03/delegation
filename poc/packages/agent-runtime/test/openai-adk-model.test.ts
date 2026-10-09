@@ -167,3 +167,101 @@ test("Phase 4 rejects invalid provider arguments and non-completed responses",as
 test("Phase 4 fails fast when OpenAI is enabled without a provider API key",()=>{
   assert.throws(()=>new OpenAIAdkModel({apiKey:""}),/OPENAI_API_KEY/u);
 });
+
+test("Phase 7 OpenAI tool bridge restricts Orchestrator mode to a single explicit workflow tool",async()=>{
+  assert.throws(()=>new OpenAIAdkModel({
+    client:{responses:{create:async()=>{throw new Error("No call expected");}}} as never,
+    allowedToolNames:["run_account_suspension_workflow","update_file"]
+  }),/Invalid OpenAI ADK tool allowlist/u);
+  assert.throws(()=>new OpenAIAdkModel({
+    client:{responses:{create:async()=>{throw new Error("No call expected");}}} as never,
+    allowedToolNames:["shell_exec"]
+  }),/Invalid OpenAI ADK tool allowlist/u);
+  let calls=0;
+  const client={responses:{create:async(req:Record<string,unknown>)=>{
+    calls++;
+    const tools=req.tools as Array<Record<string,unknown>>;
+    assert.deepEqual(tools.map(t=>t.name),["run_account_suspension_workflow"]);
+    const params=tools[0]?.parameters as Record<string,unknown>;
+    assert.equal(params.additionalProperties,false);
+    if(calls===1)return {
+      status:"completed",model:"gpt-provider-effective",output:[{
+        type:"function_call",call_id:"call-orchestrator",name:"run_account_suspension_workflow",
+        arguments:'{"workflow":"account_suspension"}'
+      }]
+    };
+    const input=req.input as Array<Record<string,unknown>>;
+    assert.ok(input.some(item=>item.type==="function_call_output" &&
+      item.call_id==="call-orchestrator"));
+    return {
+      status:"completed",model:"gpt-provider-effective",output:[{
+        type:"message",content:[{type:"output_text",text:"Workflow completed."}]
+      }]
+    };
+  }}};
+  const model=new OpenAIAdkModel({
+    client:client as never,model:"gpt-provider-test",
+    allowedToolNames:["run_account_suspension_workflow"]
+  });
+  const tool={
+    name:"run_account_suspension_workflow",
+    description:"Execute the fixed authorized workflow.",
+    parameters:{
+      type:"OBJECT",properties:{workflow:{type:"STRING",enum:["account_suspension"]}},
+      required:["workflow"],additionalProperties:false
+    }
+  };
+  const config={systemInstruction:"Invoke the fixed workflow only.",tools:[{functionDeclarations:[tool]}]};
+  const part={role:"user",parts:[{text:"Perform Account Suspension."}]};
+  const first=await Array.fromAsync(model.generateContentAsync({contents:[part],config} as LlmRequest));
+  const fc=first[0]?.content?.parts?.[0]?.functionCall;
+  assert.equal(fc?.name,"run_account_suspension_workflow");
+  assert.equal(fc?.id,"call-orchestrator");
+  const second=await Array.fromAsync(model.generateContentAsync({
+    contents:[
+      part,
+      {role:"model",parts:[{functionCall:fc}]},
+      {role:"user",parts:[{functionResponse:{
+        id:fc?.id,name:fc?.name,
+        response:{ok:true,workflow_state:"pr_created"}
+      }}]}
+    ],config
+  } as LlmRequest));
+  assert.equal(second[0]?.content?.parts?.[0]?.text,"Workflow completed.");
+  assert.equal(calls,2);
+  await assert.rejects(async()=>{
+    for await(const _ of model.generateContentAsync({
+      contents:[part],config:{tools:[{functionDeclarations:[{
+        ...tool,name:"update_file"
+      }]}]}
+    } as LlmRequest)){}
+  },/Forbidden or duplicate ADK tool/u);
+});
+
+test("Phase 7 strict provider schemas defer numeric constraints to Zod runtime validation",async()=>{
+  let captured:Record<string,unknown>|undefined;
+  const model=new OpenAIAdkModel({model:"phase7-mock-model",client:{responses:{
+    create:async(req:Record<string,unknown>)=>{
+      captured=req;
+      return {model:"phase7-mock-model",status:"completed",output:[{
+        type:"message",content:[{type:"output_text",text:"ok"}]
+      }]};
+    }
+  }} as never});
+  await Array.fromAsync(model.generateContentAsync({
+    contents:[{role:"user",parts:[{text:"Read a file."}]}],
+    config:{tools:[{functionDeclarations:[{
+      name:"read_file",description:"Read",
+      parameters:{type:"OBJECT",properties:{
+        branch:{type:"STRING",enum:["feature/account-suspension"]},
+        path:{type:"STRING",minLength:"1"}
+      },required:["branch","path"],additionalProperties:false}
+    }]}]}
+  } as LlmRequest));
+  const tools=captured?.tools as Array<Record<string,unknown>>;
+  const schema=tools[0]?.parameters as Record<string,unknown>;
+  const path=(schema.properties as Record<string,Record<string,unknown>>).path;
+  assert.equal(path.minLength,undefined);
+  assert.equal(path.type,"string");
+  assert.equal(schema.additionalProperties,false);
+});

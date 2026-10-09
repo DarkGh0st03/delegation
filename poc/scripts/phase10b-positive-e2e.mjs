@@ -26,7 +26,7 @@ if (!["legacy","adk-scripted","adk-openai"].includes(engine)) {
   throw new Error("Unknown PHASE10B_AGENT_ENGINE");
 }
 const orchestratorEngine = process.env.PHASE10B_ORCHESTRATOR_ENGINE ?? "legacy";
-if (!["legacy","adk-scripted"].includes(orchestratorEngine)) {
+if (!["legacy","adk-scripted","adk-openai"].includes(orchestratorEngine)) {
   throw new Error("Unknown PHASE10B_ORCHESTRATOR_ENGINE");
 }
 const gateway = process.env.GATEWAY_SMOKE_URL ?? "http://127.0.0.1:8080";
@@ -470,13 +470,21 @@ try {
     childValiditySeconds: 3600
   });
 
-  const result = orchestratorEngine === "adk-scripted"
-    ? await new AdkAccountSuspensionOrchestrator({
-        model: new Phase6OrchestratorModel(),
+  // The real provider is never activated by default. Only explicit
+  // workflow_dispatch with a configured key may enable it.
+  const orchestratorModel = orchestratorEngine === "adk-openai"
+    ? new OpenAIAdkModel({
+        apiKey: process.env.OPENAI_API_KEY,
+        allowedToolNames: ["run_account_suspension_workflow"]
+      })
+    : new Phase6OrchestratorModel();
+  const result = orchestratorEngine === "legacy"
+    ? await coordinator.run()
+    : await new AdkAccountSuspensionOrchestrator({
+        model: orchestratorModel,
         workflow: coordinator,
         maxModelTurns: 4
-      }).run()
-    : await coordinator.run();
+      }).run();
   assert.equal(result.workflow.state, "pr_created");
   assert.deepEqual(result.workflow.completed_roles, [
     "backend",
