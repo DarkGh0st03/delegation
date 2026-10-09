@@ -2,7 +2,7 @@ use crate::delegation::status::evm::status_list_anchor_reader::StatusListAnchorR
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::status::model::status_purpose::StatusPurpose;
 use crate::delegation::status::provider::status_list_credential_provider_trait::StatusListCredentialProviderRef;
-use crate::delegation::status::resolver::bitstring_status_list_resolver::BitstringStatusListResolver;
+use crate::delegation::status::parser::bitstring_status_list_parser::BitstringStatusListParser;
 use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
 use alloy::primitives::{B256, keccak256};
 use std::rc::Rc;
@@ -99,7 +99,7 @@ impl StatusListResolver for EvmAnchoredStatusListResolver {
             ));
         }
 
-        BitstringStatusListResolver::is_status_set_in_document(entry, &artifact.document)
+        BitstringStatusListParser::read_status(entry, &artifact.document)
     }
 }
 
