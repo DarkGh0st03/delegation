@@ -360,26 +360,18 @@ fn main() -> Result<(), String> {
 
     let mut root = DelegationIssuer::<Curve>::new(root_id.clone())?;
     issuance_registry.register_identity(root_id.clone())?;
-    let root_material_version = issuance_registry.publish_accumulator_data(
-        root_id.clone(),
-        root.accumulator_public_data(),
-    )?;
-    issuance_registry.publish_verification_key(
-        root_id.clone(),
-        root.public_verification_key().clone(),
-    )?;
+    let root_material_version = issuance_registry
+        .publish_accumulator_data(root_id.clone(), root.accumulator_public_data())?;
+    issuance_registry
+        .publish_verification_key(root_id.clone(), root.public_verification_key().clone())?;
     root.bind_accumulator_material_version(root_material_version)?;
 
     let mut holder = DelegationIssuer::<Curve>::new(holder_id.clone())?;
     issuance_registry.register_identity(holder_id.clone())?;
-    let holder_material_version = issuance_registry.publish_accumulator_data(
-        holder_id.clone(),
-        holder.accumulator_public_data(),
-    )?;
-    issuance_registry.publish_verification_key(
-        holder_id.clone(),
-        holder.public_verification_key().clone(),
-    )?;
+    let holder_material_version = issuance_registry
+        .publish_accumulator_data(holder_id.clone(), holder.accumulator_public_data())?;
+    issuance_registry
+        .publish_verification_key(holder_id.clone(), holder.public_verification_key().clone())?;
     holder.bind_accumulator_material_version(holder_material_version)?;
 
     let status_entry = BitstringStatusListEntry::revocation(

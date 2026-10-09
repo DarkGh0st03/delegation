@@ -158,14 +158,10 @@ impl CryptoRuntime {
             let mut issuer = DelegationIssuer::<Curve>::new(identity.clone())?;
 
             trust_publisher.register_identity(identity.clone())?;
-            let material_version = trust_publisher.publish_accumulator_data(
-                identity.clone(),
-                issuer.accumulator_public_data(),
-            )?;
-            trust_publisher.publish_verification_key(
-                identity,
-                issuer.public_verification_key().clone(),
-            )?;
+            let material_version = trust_publisher
+                .publish_accumulator_data(identity.clone(), issuer.accumulator_public_data())?;
+            trust_publisher
+                .publish_verification_key(identity, issuer.public_verification_key().clone())?;
             issuer.bind_accumulator_material_version(material_version)?;
 
             issuers.insert(role, issuer);

@@ -430,7 +430,6 @@ impl<E: Pairing> DelegationIssuer<E> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -466,8 +465,7 @@ mod tests {
         trust_publisher.register_identity(id.clone())?;
         let version = trust_publisher
             .publish_accumulator_data(id.clone(), issuer.accumulator_public_data())?;
-        trust_publisher
-            .publish_verification_key(id, issuer.public_verification_key().clone())?;
+        trust_publisher.publish_verification_key(id, issuer.public_verification_key().clone())?;
         issuer.bind_accumulator_material_version(version)?;
         Ok(issuer)
     }
