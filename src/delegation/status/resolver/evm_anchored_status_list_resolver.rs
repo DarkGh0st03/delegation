@@ -3,7 +3,7 @@ use crate::delegation::status::model::status_purpose::StatusPurpose;
 use crate::delegation::status::provider::status_list_credential_provider_trait::StatusListCredentialProviderRef;
 use crate::delegation::status::resolver::bitstring_status_list_resolver::BitstringStatusListResolver;
 use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolver;
-use crate::delegation::trust::evm::evm_reader_traits::EvmStatusListReader;
+use crate::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
 use alloy::primitives::{B256, keccak256};
 use std::rc::Rc;
 
@@ -18,13 +18,13 @@ use std::rc::Rc;
 /// No JSON reserialization or normalization is performed before hashing.
 pub struct EvmAnchoredStatusListResolver {
     provider: StatusListCredentialProviderRef,
-    chain: Rc<dyn EvmStatusListReader>,
+    chain: Rc<dyn StatusListAnchorReader>,
 }
 
 impl EvmAnchoredStatusListResolver {
     pub fn new(
         provider: StatusListCredentialProviderRef,
-        chain: Rc<dyn EvmStatusListReader>,
+        chain: Rc<dyn StatusListAnchorReader>,
     ) -> Self {
         Self { provider, chain }
     }
@@ -113,7 +113,7 @@ impl StatusListResolver for EvmAnchoredStatusListResolver {
 mod tests {
     use super::*;
     use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
-    use crate::delegation::trust::evm::evm_reader_traits::StatusListAnchor;
+    use crate::delegation::status::evm::status_list_anchor_reader::StatusListAnchor;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use multibase::Base;
@@ -152,7 +152,7 @@ mod tests {
         }
     }
 
-    impl EvmStatusListReader for MockStatusListReader {
+    impl StatusListAnchorReader for MockStatusListReader {
         fn status_list_anchor(
             &self,
             issuer_id: &str,
