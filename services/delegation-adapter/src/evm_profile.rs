@@ -116,8 +116,8 @@ impl StatusListCredentialProvider for IssuerAwareStatusProvider {
         issuer_id: &str,
         url: &str,
     ) -> Result<StatusListCredentialArtifact, String> {
-        let document = self
-            .documents
+        let artifact = self
+            .artifacts
             .borrow()
             .get(&(issuer_id.to_string(), url.to_string()))
             .cloned()
@@ -126,8 +126,8 @@ impl StatusListCredentialProvider for IssuerAwareStatusProvider {
             })?;
 
         Ok(StatusListCredentialArtifact {
-            commitment_bytes: document.as_bytes().to_vec(),
-            document,
+            commitment_bytes: artifact.as_bytes().to_vec(),
+            document: artifact,
         })
     }
 }
@@ -221,7 +221,7 @@ impl EvmAdapterProfile {
         if existing.exists {
             if existing.purpose != purpose_code || existing.current_artifact_hash != commitment {
                 return Err(format!(
-                    "Existing EVM Status List anchor for {} and issuer {} does not match the Adapter active document",
+                    "Existing EVM Status List anchor for {} and issuer {} does not match the Adapter active signed artifact",
                     entry.status_list_credential(),
                     issuer_id
                 ));
