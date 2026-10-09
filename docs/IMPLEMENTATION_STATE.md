@@ -54,7 +54,7 @@ This branch is a **refactored candidate**, not the code that produced the Phase 
 
 Permission delegation semantics remain **exact-match** between parent and child permissions. Hierarchical resource-scope attenuation is intentionally not part of this refactored candidate.
 
-Before this branch is promoted to `main`, it must complete a fresh full regression. Historical Phase 12 measurements remain valid for `cbadb544...` but must not be presented as measurements of the refactored candidate unless a new measurement campaign is executed.
+The refactored code completed its fresh full PoC regression successfully on run `37928199842`, with dedicated core validation `37928496609` and reproducibility validation `37928532313`. Historical Phase 12 measurements remain valid for `cbadb544...` but must not be presented as measurements of the refactored code unless a new measurement campaign is executed. The dedicated Phase 11 Security Experiments workflow has not yet been rerun as refactored evidence; until that run is recorded, the historical Phase 11 campaign remains tied to the measured baseline.
 
 ## Source-of-truth repositories
 
@@ -841,9 +841,9 @@ bash blockchain/scripts/run-pre-gateway-local.sh
 
 `0A baseline -> 0B workspace -> 1 infra -> 2 Adapter -> 3 Gateway core -> 4 OPA -> 5 Gitea -> 6 Runner + acceptance -> 7 A2A deterministic -> 8 LLM Agents -> 9 Orchestrator + child DC -> 10 positive E2E -> 11 security/negative -> 12 reproducibility + measurements`
 
-## Next action — refactor regression, then thesis analysis/reporting
+## Next action — promotion to main, then thesis analysis/reporting
 
-The historical implementation roadmap is complete through Phase 12. The current refactored candidate must first pass its final regression and be promoted to `main` before it is treated as the new code baseline.
+The historical implementation roadmap is complete through Phase 12. The refactored code has passed its final regression and is ready for promotion to `main`. Once promoted, it becomes the current code baseline; the frozen Phase 12 measurement evidence remains attached to `cbadb544...` until a new measurement campaign is executed.
 
 Next research/reporting work:
 
