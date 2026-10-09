@@ -14,9 +14,10 @@ use delegation::delegation::status::resolver::status_list_resolver_trait::{
     StatusListResolver, StatusListResolverRef,
 };
 use delegation::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
-use delegation::delegation::trust::registry::trust_registry_trait::{
-    TrustRegistry, TrustRegistryRef,
+use delegation::delegation::trust::registry::trust_publisher_trait::{
+    TrustPublisher, TrustPublisherRef,
 };
+use delegation::delegation::trust::registry::trust_resolver_trait::TrustResolverRef;
 use delegation::delegation::verification::delegation_verifier::DelegationVerifier;
 use delegation::delegation::verification::verifier_trait::Verifier;
 use serde::{Deserialize, Serialize};
@@ -142,7 +143,7 @@ impl CryptoRuntime {
 
     fn initialize_issuers(
         callers: &CallerRegistry,
-        trust_ref: TrustRegistryRef<Curve>,
+        trust_ref: TrustPublisherRef<Curve>,
     ) -> Result<HashMap<CallerRole, DelegationIssuer<Curve>>, String> {
         let mut issuers = HashMap::new();
         for role in [
@@ -161,14 +162,15 @@ impl CryptoRuntime {
 
     fn new_in_memory(callers: &CallerRegistry) -> Result<Self, String> {
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
-        let trust_ref: TrustRegistryRef<Curve> = trust_registry.clone();
-        let issuers = Self::initialize_issuers(callers, trust_ref.clone())?;
+        let trust_publisher: TrustPublisherRef<Curve> = trust_registry.clone();
+        let issuers = Self::initialize_issuers(callers, trust_publisher)?;
 
         trust_registry.set_trust_anchor(callers.identity_for_role(CallerRole::Engineer)?, true)?;
 
         let status_resolver = Rc::new(AdapterStatusResolver::default());
         let status_ref: StatusListResolverRef = status_resolver.clone();
-        let verifier = DelegationVerifier::<Curve>::new(trust_ref, status_ref)?;
+        let trust_resolver: TrustResolverRef<Curve> = trust_registry.clone();
+        let verifier = DelegationVerifier::<Curve>::new(trust_resolver, status_ref)?;
 
         Ok(Self {
             _trust_registry: trust_registry,
@@ -182,8 +184,8 @@ impl CryptoRuntime {
 
     fn new_evm(callers: &CallerRegistry, config: &EvmAdapterConfig) -> Result<Self, String> {
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
-        let trust_ref: TrustRegistryRef<Curve> = trust_registry.clone();
-        let issuers = Self::initialize_issuers(callers, trust_ref)?;
+        let trust_publisher: TrustPublisherRef<Curve> = trust_registry.clone();
+        let issuers = Self::initialize_issuers(callers, trust_publisher)?;
 
         trust_registry.set_trust_anchor(callers.identity_for_role(CallerRole::Engineer)?, true)?;
 
