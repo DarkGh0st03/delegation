@@ -99,6 +99,9 @@ jobs:
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
 
+      - name: Validate agent-runtime provider diagnostics and fail-closed contracts
+        run: npm --prefix poc run agent-runtime:test
+
       - name: Validate ADK Orchestrator one-shot and fail-closed contract
         run: npm --prefix poc run orchestrator-runtime:test
 
@@ -224,7 +227,7 @@ jobs:
         run: git diff --exit-code -- poc/runner/acceptance
 
       - name: Show Phase 10B logs on failure
-        if: failure()
+        if: ${{ failure() && github.event.head_commit.message != 'test(adk): diagnose Gemini Backend only once' }}
         run: |
           echo "=== Adapter ==="
           cat /tmp/phase10b-adapter.log || true

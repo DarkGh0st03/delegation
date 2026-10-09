@@ -26,8 +26,12 @@ import {
 // One user-authorized Free Tier experiment on the protected feature branch.
  // The unique marker is removed immediately after its single CI run; future
  // pushes continue to use the immutable scripted regression configuration.
+// A one-shot backend-only probe is intentionally separate from the complete
+// multi-role workflow, and is never used for baseline measurements.
+const backendProbeOnce=process.env.GITHUB_ACTIONS==="true" &&
+  existsSync(".github/adk-gemini-backend-once.trigger");
 const liveGeminiOnce = process.env.GITHUB_ACTIONS === "true" &&
-  existsSync(".github/adk-gemini-e2e-once.trigger") &&
+  (existsSync(".github/adk-gemini-e2e-once.trigger") || backendProbeOnce) &&
   process.env.PHASE10B_AGENT_ENGINE === "adk-scripted" &&
   process.env.PHASE10B_ORCHESTRATOR_ENGINE === "adk-scripted";
 if (liveGeminiOnce && !process.env.GEMINI_API_KEY?.trim()) {
@@ -474,6 +478,69 @@ const testServer = await startSpecializedAgentServer(
 );
 
 try {
+  if (backendProbeOnce && liveGeminiOnce) {
+    // Real protected branch, one delegated Backend A2A task. No Frontend,
+    // Test or PR; never claim a full E2E pass from this role-level probe.
+    const branch = await protectedGateway.createFeatureBranch(
+      "account-suspension-create-branch"
+    );
+    const roleRunner = new DelegatedA2ARoleRunner({
+      authorityIssuer: new DeterministicOrchestratorAuthorityIssuer({
+        adapterBaseUrl: adapter,
+        bearerToken: tokens.orchestrator
+      }),
+      a2a: new DeterministicA2AOrchestrator()
+    });
+    const task = await roleRunner.issueAndRun({
+      role: "backend",
+      parent_credential_id: rootCredentialId,
+      credential_id: "urn:thesis:dc:account-suspension:backend",
+      valid_from: new Date().toISOString(),
+      validity_seconds: 3600,
+      credential_status: {
+        type:"BitstringStatusListEntry",
+        statusPurpose:"revocation",
+        statusListIndex:"9601",
+        statusListCredential:"https://status.example/lists/phase10b-positive-e2e"
+      },
+      agent_base_url: backendServer.baseUrl,
+      subtask:{
+        subtask_id:"account-suspension-backend",
+        instruction:"Implement the backend Account Suspension lifecycle and shared status contract.",
+        branch:"feature/account-suspension",
+        relevant_paths:[
+          "packages/shared/src/account-status.ts",
+          "apps/backend/src/users/user.service.ts",
+          "apps/backend/src/users/user.controller.ts",
+          "apps/backend/src/users/user.routes.ts"
+        ]
+      },
+      expected_revision: branch.revision
+    });
+    if (!task.artifact.revision || task.artifact.revision===branch.revision ||
+        !task.artifact.files_modified.length) {
+      throw new Error("Gemini Backend did not produce a Gateway-confirmed revision");
+    }
+    const mainBranch=await giteaGet(
+      "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+"/branches/main"
+    );
+    assert.equal(mainBranch.commit?.id,expectedMainRevision);
+    assert.equal(frontendServer.executor.executionCount,0);
+    assert.equal(testServer.executor.executionCount,0);
+    process.stdout.write(JSON.stringify({
+      result:"gemini-backend-isolated-pass",
+      execution_engine:engine,
+      trust_profile:adapterHealth.trust_profile,
+      role:"backend",
+      confirmed_modified_files:task.artifact.files_modified.length,
+      model_id:task.artifact.model_id,
+      model_turns:task.artifact.model_iterations,
+      main_unchanged:true,
+      test_gate:"not_executed",
+      pull_request_created:false,
+      automatic_merge:false
+    })+"\\n");
+  } else {
   const coordinator = new AccountSuspensionSequentialCoordinator({
     gateway: protectedGateway,
     roleRunner: new DelegatedA2ARoleRunner({
@@ -609,6 +676,7 @@ try {
       encoding: "utf8",
       mode: 0o600
     });
+  }
   }
 } finally {
   await testServer.close().catch(() => undefined);

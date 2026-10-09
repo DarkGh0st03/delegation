@@ -12,6 +12,7 @@ import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome } from "./adk-specialized-agents.ts";
 import type { DeterministicTaskHandler } from "./executor.ts";
+import { classifyAdkFailure, type AdkFailureCategory } from "./adk-failure-categories.ts";
 
 type FetchLike = typeof fetch;
 
@@ -41,6 +42,7 @@ class BoundedModel extends BaseLlm {
   turns = 0;
   budgetExceeded = false;
   effectiveModelVersion: string | null = null;
+  providerErrorCategory: AdkFailureCategory | null = null;
   readonly delegate: BaseLlm;
   readonly limit: number;
   constructor(delegate: BaseLlm, limit: number) {
@@ -58,11 +60,16 @@ class BoundedModel extends BaseLlm {
       throw new Error("ADK model turn budget exhausted");
     }
     this.turns += 1;
-    for await (const response of this.delegate.generateContentAsync(request, stream, signal)) {
-      if (typeof response.modelVersion === "string" && response.modelVersion.trim()) {
-        this.effectiveModelVersion = response.modelVersion;
+    try {
+      for await (const response of this.delegate.generateContentAsync(request, stream, signal)) {
+        if (typeof response.modelVersion === "string" && response.modelVersion.trim()) {
+          this.effectiveModelVersion = response.modelVersion;
+        }
+        yield response;
       }
-      yield response;
+    } catch (error) {
+      this.providerErrorCategory = classifyAdkFailure(error);
+      throw error;
     }
   }
   override connect(_request: LlmRequest): Promise<BaseLlmConnection> {
@@ -118,17 +125,42 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     });
     // Never serialize context.delegation_evidence into ADK Runner input/session.
     const visible = modelVisibleTaskContext(context);
-    let modelError = false;
-    for await (const event of runner.runAsync({
-      userId, sessionId: context.task_id,
-      newMessage: {role: "user", parts: [{text: JSON.stringify({task:visible})}]}
-    })) {
-      // ADK may convert model errors to event payloads rather than throwing.
-      // Ignore model prose, but do not ignore failed model invocations.
-      if (event.errorCode || event.errorMessage) modelError = true;
+    let eventErrorCategory: AdkFailureCategory | null = null;
+    const reportFailure = (category: AdkFailureCategory): void => {
+      // Static labels/counters only. Never log raw error messages, file paths,
+      // untrusted LLM text, DC/VP material, task metadata or Gateway tokens.
+      process.stderr.write(JSON.stringify({
+        event: "adk_safe_diagnostic",
+        role: context.role,
+        category,
+        model_turns: model.turns,
+        successful_tools: events.filter(e => e.payload.ok).length,
+        rejected_tools: events.filter(e => !e.payload.ok).length
+      }) + "\\n");
+    };
+    try {
+      for await (const event of runner.runAsync({
+        userId, sessionId: context.task_id,
+        newMessage: {role: "user", parts: [{text: JSON.stringify({task:visible})}]}
+      })) {
+        // ADK can return an error event instead of throwing.
+        if (event.errorCode || event.errorMessage) {
+          eventErrorCategory = classifyAdkFailure({
+            code: event.errorCode, message: event.errorMessage
+          }, "adk_event_error");
+        }
+      }
+    } catch (error) {
+      const category = model.budgetExceeded ? "model_turn_budget" :
+        model.providerErrorCategory ?? classifyAdkFailure(error);
+      reportFailure(category);
+      throw new Error("ADK protected model failure: " + category);
     }
-    if (model.budgetExceeded || modelError) {
-      throw new Error("ADK model execution failed or exceeded its turn budget");
+    if (model.budgetExceeded || model.providerErrorCategory || eventErrorCategory) {
+      const category = model.budgetExceeded ? "model_turn_budget" :
+        model.providerErrorCategory ?? eventErrorCategory ?? "adk_event_error";
+      reportFailure(category);
+      throw new Error("ADK protected model failure: " + category);
     }
 
     const filesModified = new Set<string>();
