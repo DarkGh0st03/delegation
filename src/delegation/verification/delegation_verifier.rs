@@ -367,6 +367,24 @@ mod tests {
         .expect("test permission must be valid")
     }
 
+    fn prepared_issuer(
+        id: String,
+        trust_registry: Rc<InMemoryTrustRegistry<Bn254>>,
+    ) -> Result<DelegationIssuer<Bn254>, String> {
+        let mut issuer = DelegationIssuer::<Bn254>::new(id.clone())?;
+        trust_registry.register_identity(id.clone())?;
+        let version = trust_registry.publish_accumulator_data(
+            id.clone(),
+            issuer.accumulator_public_data(),
+        )?;
+        trust_registry.publish_verification_key(
+            id,
+            issuer.public_verification_key().clone(),
+        )?;
+        issuer.bind_accumulator_material_version(version)?;
+        Ok(issuer)
+    }
+
     struct VerifierMockTrustChainReader {
         statuses: RefCell<HashMap<String, IdentityStatus>>,
         trust_anchors: RefCell<HashMap<String, bool>>,
@@ -454,12 +472,10 @@ mod tests {
         // Issuance remains local in this checkpoint. We then move only the public
         // verification material behind the same off-chain/EVM split used in deployment.
         let source_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
-        let source_registry_ref: TrustPublisherRef<Curve> = source_registry.clone();
-
         let root_id = String::from("did:ethr:0x7a69:0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
         let holder_id = String::from("did:ethr:0x7a69:0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC");
 
-        let root = DelegationIssuer::<Curve>::new(root_id.clone(), source_registry_ref.clone())?;
+        let root = prepared_issuer(root_id.clone(), source_registry.clone())?;
         let vc = root.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("http://delegation.example/credentials/evm-backed"),
@@ -477,7 +493,7 @@ mod tests {
         let root_commitment =
             EvmTrustResolver::<Curve>::accumulator_material_commitment(&root_material)?;
 
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), source_registry_ref)?;
+        let holder = prepared_issuer(holder_id.clone(), source_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc.clone(),
             vec![permission(Operation::ReadFile)],
@@ -539,7 +555,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d0");
         let previous_vc = None;
-        let issuer: DelegationIssuer<Curve> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Curve> = prepared_issuer(id, trust_registry.clone())?;
         trust_registry.set_trust_anchor(issuer.holder_id(), true)?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1337");
@@ -566,7 +582,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d1");
         let previous_vc = Some(vc);
-        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, trust_registry.clone())?;
         let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
         let credential_id = String::from("http://delegation.example/credentials/1338");
         let valid_from = String::from("2026-01-01T00:00:00Z");
@@ -591,7 +607,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d2");
         let previous_vc = Some(vc);
-        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, trust_registry.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1339");
         let delegatee_id = String::from("https://vc.example/delegators/d3");
         let permissions: Vec<Permission> = vec![
@@ -613,7 +629,7 @@ mod tests {
 
         let id = String::from("https://vc.example/delegators/d3");
         let previous_vc = Some(vc);
-        let issuer: DelegationIssuer<Bn254> = DelegationIssuer::new(id, trust_registry.clone())?;
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, trust_registry.clone())?;
         let credential_id = String::from("http://delegation.example/credentials/1340");
         let delegatee_id = String::from("https://vc.example/delegators/d4");
         let permissions: Vec<Permission> = vec![permission(Operation::ReadFile)];
@@ -633,7 +649,7 @@ mod tests {
         let status_resolver = resolver_for_vc(&vc)?;
         let id = delegatee_id.clone();
         let issuer: DelegationIssuer<Bn254> =
-            DelegationIssuer::new(id.clone(), trust_registry.clone())?;
+            prepared_issuer(id.clone(), trust_registry.clone())?;
 
         let disclosed_permissions: Vec<Permission> = vec![permission(Operation::ReadFile)];
         let audience = String::from("cloud-access-gateway");
@@ -669,10 +685,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
         trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -688,7 +701,7 @@ mod tests {
         )?;
 
         let status_resolver = resolver_for_vc(&vc)?;
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
             vec![permission(Operation::ReadFile)],
@@ -717,10 +730,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
         trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -736,7 +746,7 @@ mod tests {
         )?;
 
         let status_resolver = resolver_for_vc(&vc)?;
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
             vec![permission(Operation::ReadFile)],
@@ -765,10 +775,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
         trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -787,7 +794,7 @@ mod tests {
         )?;
 
         let status_resolver = resolver_for_vc(&vc)?;
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
             vec![permission(Operation::ReadFile)],
@@ -816,10 +823,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
         trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let vc = root.issue_delegation_verifiable_credential(
@@ -835,7 +839,7 @@ mod tests {
 
         let status_resolver = resolver_for_vc(&vc)?;
         let attacker_id = String::from("https://vc.example/delegators/d2");
-        let attacker = DelegationIssuer::<Curve>::new(attacker_id.clone(), trust_registry.clone())?;
+        let attacker = prepared_issuer(attacker_id.clone(), trust_registry.clone())?;
 
         let vp = VerifiablePresentation::from_verifiable_credential(
             vc,
@@ -867,10 +871,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
         trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -898,7 +899,7 @@ mod tests {
             vc.credential().clone(),
         );
 
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             tampered_vc,
             vec![permission(Operation::ReadFile)],
@@ -927,10 +928,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
         trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -951,7 +949,7 @@ mod tests {
             .ok_or_else(|| String::from("Credential has no credentialStatus"))?;
         status_resolver.set_status(current_status, true);
 
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
             vec![permission(Operation::ReadFile)],
@@ -979,10 +977,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
         trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let parent_vc = root.issue_delegation_verifiable_credential(
@@ -996,10 +991,7 @@ mod tests {
             None,
         )?;
 
-        let child_issuer = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d1"),
-            trust_registry.clone(),
-        )?;
+        let child_issuer = prepared_issuer(String::from("https://vc.example/delegators/d1"), trust_registry.clone())?;
         let holder_id = String::from("https://vc.example/delegators/d2");
         let child_vc = child_issuer.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
@@ -1020,7 +1012,7 @@ mod tests {
             .ok_or_else(|| String::from("Expected ancestor in delegation hierarchy"))?;
         status_resolver.set_status(ancestor.credential_status(), true);
 
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             child_vc,
             vec![permission(Operation::ReadFile)],
@@ -1048,10 +1040,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
         let vc = root.issue_delegation_verifiable_credential(
@@ -1066,7 +1055,7 @@ mod tests {
         )?;
 
         let status_resolver = resolver_for_vc(&vc)?;
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
             vec![permission(Operation::ReadFile)],
@@ -1094,10 +1083,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
         trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let holder_id = String::from("https://vc.example/delegators/d1");
@@ -1113,7 +1099,7 @@ mod tests {
         )?;
 
         let status_resolver = resolver_for_vc(&vc)?;
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             vc,
             vec![permission(Operation::ReadFile)],
@@ -1143,10 +1129,7 @@ mod tests {
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustRegistry::<Curve>::new());
 
-        let root = DelegationIssuer::<Curve>::new(
-            String::from("https://vc.example/delegators/d0"),
-            trust_registry.clone(),
-        )?;
+        let root = prepared_issuer(String::from("https://vc.example/delegators/d0"), trust_registry.clone())?;
         trust_registry.set_trust_anchor(root.holder_id(), true)?;
 
         let intermediate_id = String::from("https://vc.example/delegators/d1");
@@ -1162,7 +1145,7 @@ mod tests {
         )?;
 
         let intermediate =
-            DelegationIssuer::<Curve>::new(intermediate_id.clone(), trust_registry.clone())?;
+            prepared_issuer(intermediate_id.clone(), trust_registry.clone())?;
         let holder_id = String::from("https://vc.example/delegators/d2");
         let child_vc = intermediate.issue_delegation_verifiable_credential(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
@@ -1176,7 +1159,7 @@ mod tests {
         )?;
 
         let status_resolver = resolver_for_vc(&child_vc)?;
-        let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), trust_registry.clone())?;
+        let holder = prepared_issuer(holder_id.clone(), trust_registry.clone())?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
             child_vc,
             vec![permission(Operation::ReadFile)],
