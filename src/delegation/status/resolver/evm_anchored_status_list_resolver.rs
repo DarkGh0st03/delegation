@@ -107,7 +107,7 @@ impl StatusListResolver for EvmAnchoredStatusListResolver {
 mod tests {
     use super::*;
     use crate::delegation::status::evm::status_list_anchor_reader::StatusListAnchor;
-    use crate::delegation::status::provider::in_memory_status_list_provider::InMemoryStatusListCredentialProvider;
+    use crate::delegation::local::in_memory_status_list_store::InMemoryStatusListStore;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use multibase::Base;
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn accepts_exact_current_anchored_document() -> Result<(), String> {
         let raw = document(false)?;
-        let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
+        let provider = Rc::new(InMemoryStatusListStore::new());
         provider.insert(
             String::from(ISSUER),
             String::from(STATUS_LIST_URL),
@@ -232,7 +232,7 @@ mod tests {
     fn rejects_document_that_no_longer_matches_current_anchor() -> Result<(), String> {
         let original = document(false)?;
         let changed = document(true)?;
-        let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
+        let provider = Rc::new(InMemoryStatusListStore::new());
         provider.insert(String::from(ISSUER), String::from(STATUS_LIST_URL), changed);
 
         let chain = Rc::new(MockStatusListReader::new());
@@ -248,7 +248,7 @@ mod tests {
         let active = document(false)?;
         let revoked = document(true)?;
 
-        let provider = Rc::new(InMemoryStatusListCredentialProvider::new());
+        let provider = Rc::new(InMemoryStatusListStore::new());
         provider.insert(
             String::from(ISSUER),
             String::from(STATUS_LIST_URL),
