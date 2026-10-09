@@ -113,7 +113,7 @@ impl<E: Pairing> TrustResolver<E> for EvmBackedTrustRegistry<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::delegation::trust::evm::evm_reader_traits::AccumulatorMaterialAnchor;
+    use crate::delegation::trust::evm::trust_chain_reader::AccumulatorMaterialAnchor;
     use crate::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
     use ark_bn254::Bn254;
     use ark_std::rand::SeedableRng;
