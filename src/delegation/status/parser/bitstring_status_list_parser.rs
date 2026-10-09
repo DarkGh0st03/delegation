@@ -55,12 +55,9 @@ impl BitstringStatusListParser {
         Ok(bitstring[byte_index] & mask != 0)
     }
 
-    pub fn read_status(
-        entry: &BitstringStatusListEntry,
-        document: &str,
-    ) -> Result<bool, String> {
-        let credential: BitstringStatusListCredentialDocument =
-            serde_json::from_str(document).map_err(|err| {
+    pub fn read_status(entry: &BitstringStatusListEntry, document: &str) -> Result<bool, String> {
+        let credential: BitstringStatusListCredentialDocument = serde_json::from_str(document)
+            .map_err(|err| {
                 format!(
                     "Could not parse BitstringStatusListCredential {} [{err}]",
                     entry.status_list_credential()
@@ -220,10 +217,7 @@ mod tests {
         bitstring[0] |= 0b1000_0000;
         bitstring[1] |= 0b0100_0000;
 
-        let document = status_list_credential(
-            json!("revocation"),
-            encode_bitstring(&bitstring)?,
-        );
+        let document = status_list_credential(json!("revocation"), encode_bitstring(&bitstring)?);
 
         assert!(BitstringStatusListParser::read_status(
             &entry("0", StatusPurpose::Revocation),
@@ -258,10 +252,7 @@ mod tests {
     #[test]
     fn rejects_status_purpose_mismatch() -> Result<(), String> {
         let bitstring = vec![0u8; 16 * 1024];
-        let document = status_list_credential(
-            json!("suspension"),
-            encode_bitstring(&bitstring)?,
-        );
+        let document = status_list_credential(json!("suspension"), encode_bitstring(&bitstring)?);
 
         assert!(
             BitstringStatusListParser::read_status(
@@ -276,10 +267,7 @@ mod tests {
     #[test]
     fn rejects_status_list_below_minimum_length() -> Result<(), String> {
         let bitstring = vec![0u8; 1];
-        let document = status_list_credential(
-            json!("revocation"),
-            encode_bitstring(&bitstring)?,
-        );
+        let document = status_list_credential(json!("revocation"), encode_bitstring(&bitstring)?);
 
         assert!(
             BitstringStatusListParser::read_status(
