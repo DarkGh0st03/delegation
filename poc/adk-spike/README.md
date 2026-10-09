@@ -22,9 +22,11 @@ npm ci --prefix poc/adk-spike
 npm --prefix poc/adk-spike run smoke
 ```
 
-These checks construct an actual `LlmAgent` and an in-memory ADK `Runner`
-and session. They do **not** make model calls, require keys, read repositories
-or invoke privileged tools. They do not claim to validate a live LLM turn.
+These checks construct an actual `LlmAgent`, create an in-memory ADK `Runner`
+and session, and execute a full Runner turn through a deterministic `BaseLlm`
+stub. They do **not** call a remote model, require keys, read repositories
+or invoke privileged tools. A live provider call and the interactive web UI
+must still be checked separately when an authorized local API key is available.
 
 ## Optional manual interactive smoke
 

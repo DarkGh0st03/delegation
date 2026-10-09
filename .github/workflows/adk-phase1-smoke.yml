@@ -31,5 +31,7 @@ jobs:
         run: npm --prefix poc/adk-spike ci --ignore-scripts --no-audit --no-fund
       - name: Verify resolved versions
         run: npm --prefix poc/adk-spike ls --depth=0
+      - name: Confirm ADK development CLI is available
+        run: npm --prefix poc/adk-spike exec -- adk --help
       - name: Run ADK agent and Runner smoke (no LLM key)
         run: npm --prefix poc/adk-spike run smoke
