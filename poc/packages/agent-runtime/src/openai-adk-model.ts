@@ -34,7 +34,7 @@ function parameters(value: unknown): Dict {
     if (schema[key] !== undefined) {
       // ADK v2.2.1's Zod converter encodes these GenAI numeric limits as strings.
       const raw = schema[key];
-      const value = typeof raw === "string" && /^\\d+$/u.test(raw) ? Number(raw) : raw;
+      const value = typeof raw === "string" && raw.trim().length > 0 ? Number(raw) : raw;
       if (typeof value !== "number" || !Number.isFinite(value)) {
         throw new Error("Invalid ADK schema " + key);
       }
