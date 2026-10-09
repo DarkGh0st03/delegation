@@ -1,4 +1,4 @@
-name: Temporary Refactor Rustfmt
+name: Temporary Phase 1 Validation
 
 on:
   push:
@@ -9,32 +9,26 @@ on:
       - src/delegation/accumulator/accumulator_verifier.rs
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  rustfmt:
-    if: github.actor != 'github-actions[bot]'
+  validate-parallel-verification:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: refactor/core-cleanup
 
       - uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt
 
-      - name: Format Rust
-        run: cargo fmt
+      - name: Rust formatting
+        run: cargo fmt --check
 
-      - name: Commit formatting if needed
-        run: |
-          if git diff --quiet; then
-            echo "No formatting changes needed."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/delegation/accumulator/accumulator_verifier.rs
-          git commit -m "style: apply rustfmt to accumulator verifier"
-          git push origin HEAD:refactor/core-cleanup
+      - name: Default Rust tests
+        run: cargo test
+
+      - name: Parallel verification tests
+        run: cargo test --features parallel_verification
+
+      - name: All feature tests
+        run: cargo test --all-features
