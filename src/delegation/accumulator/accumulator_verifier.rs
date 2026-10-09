@@ -92,7 +92,6 @@ impl<E: Pairing> AccumulatorVerifier<E> {
     /// # Arguments
     /// * `witnesses` - vector containing the witnesses for each of the elements to be verified, in the same order.
     /// * `elements` - vector containing the elements to be verified.
-    /// * `parallel` - since batch verification does not exist in this scope, whether to use threads to parallelize the computation of verification.
     ///
     /// # Returns
     /// A result containing an error as a string in case of failure.
