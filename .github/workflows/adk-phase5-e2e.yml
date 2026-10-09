@@ -59,6 +59,7 @@ jobs:
       ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase10b:orchestrator-root
       PHASE10B_RESULT_FILE: /tmp/phase5-adk-result.json
       PHASE10B_AGENT_ENGINE: ${{ github.event_name == 'workflow_dispatch' && inputs.engine || 'adk-scripted' }}
+      PHASE10B_ORCHESTRATOR_ENGINE: adk-scripted
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -84,6 +85,9 @@ jobs:
         run: |
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+
+      - name: Validate ADK Orchestrator one-shot and fail-closed contract
+        run: npm --prefix poc run orchestrator-runtime:test
 
       - name: Generate local Phase 10B environment
         run: node poc/scripts/init-local-env.mjs --force

@@ -13,6 +13,7 @@ import {
 } from "@thesis/agent-runtime";
 import {
   AccountSuspensionSequentialCoordinator,
+  AdkAccountSuspensionOrchestrator,
   DelegatedA2ARoleRunner,
   DeterministicOrchestratorAuthorityIssuer,
   OrchestratorProtectedGatewayClient,
@@ -23,6 +24,10 @@ import {
 const engine = process.env.PHASE10B_AGENT_ENGINE ?? "legacy";
 if (!["legacy","adk-scripted","adk-openai"].includes(engine)) {
   throw new Error("Unknown PHASE10B_AGENT_ENGINE");
+}
+const orchestratorEngine = process.env.PHASE10B_ORCHESTRATOR_ENGINE ?? "legacy";
+if (!["legacy","adk-scripted"].includes(orchestratorEngine)) {
+  throw new Error("Unknown PHASE10B_ORCHESTRATOR_ENGINE");
 }
 const gateway = process.env.GATEWAY_SMOKE_URL ?? "http://127.0.0.1:8080";
 const adapter = process.env.DELEGATION_ADAPTER_URL ?? "http://127.0.0.1:8090";
@@ -378,6 +383,27 @@ function specializedServerConfig(role,port,token){
     adapterToken:token,gatewayTimeoutMs,maxModelTurns:40}};
 }
 
+
+// The ADK Orchestrator owns this tool-calling turn. The tool has no authority
+// parameters; the deterministic coordinator owns every DC, role and PR gate.
+class Phase6OrchestratorModel extends BaseLlm {
+  constructor() { super({model:"phase6-orchestrator-scripted"}); this.turn=0; }
+  async *generateContentAsync(_request) {
+    this.turn+=1;
+    if (this.turn===1) {
+      yield {modelVersion:this.model,content:{role:"model",parts:[{
+        functionCall:{id:"phase6-one-shot",name:"run_account_suspension_workflow",
+          args:{workflow:"account_suspension"}}
+      }]}};
+    } else {
+      yield {modelVersion:this.model,content:{role:"model",parts:[{
+        text:"The protected workflow result was returned by the coordinator."
+      }]}};
+    }
+  }
+  async connect() { throw new Error("Live connections disabled for Phase 6 CI"); }
+}
+
 const adapterHealth = await waitForHealth(adapter + "/health", "Delegation Adapter");
 assert.equal(adapterHealth.trust_profile, "evm");
 const gatewayHealth = await waitForHealth(gateway + "/health", "Gateway");
@@ -444,7 +470,13 @@ try {
     childValiditySeconds: 3600
   });
 
-  const result = await coordinator.run();
+  const result = orchestratorEngine === "adk-scripted"
+    ? await new AdkAccountSuspensionOrchestrator({
+        model: new Phase6OrchestratorModel(),
+        workflow: coordinator,
+        maxModelTurns: 4
+      }).run()
+    : await coordinator.run();
   assert.equal(result.workflow.state, "pr_created");
   assert.deepEqual(result.workflow.completed_roles, [
     "backend",
@@ -513,6 +545,7 @@ try {
   const resultPayload = {
     result: engine==="legacy"?"phase10b-positive-e2e-pass":"phase5-adk-e2e-pass",
     execution_engine: engine,
+    orchestrator_engine: orchestratorEngine,
     trust_profile: adapterHealth.trust_profile,
     workflow_state: result.workflow.state,
     completed_roles: result.workflow.completed_roles,

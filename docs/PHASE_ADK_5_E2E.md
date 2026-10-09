@@ -54,3 +54,22 @@ the actual acceptance run fail after the shorter ordinary file-tool timeout.
 
 Do not merge to `main` until the relevant full regression, negative
 authorization tests and ADK E2E have passed and results are frozen.
+
+## Phase 6 — ADK Orchestrator checkpoint
+
+The new `AdkAccountSuspensionOrchestrator` runs through a real Google ADK
+`LlmAgent` / `Runner` with a single, strict, one-shot
+`run_account_suspension_workflow` `FunctionTool`. The tool calls the frozen
+`AccountSuspensionSequentialCoordinator` in-process; only its sanitized
+PR checkpoint metadata returns to the ADK session. ADK can request this fixed
+workflow but **cannot** select its child permissions, skip a role, mutate root
+credentials or merge a PR. The result returned to the caller is taken from
+the deterministic coordinator, never model-generated prose. Repeated tool calls,
+missing tool invocations, model errors and unsuccessful Test/PR gates fail closed.
+
+The Phase 5 infrastructure CI now runs both specialized agents and the
+Orchestrator with ADK-scripted models, exercising their combined path to a real
+Gitea PR and independent tests while keeping Phase 10B's original defaults.
+This validates ADK wiring, not live LLM reasoning. `adk-openai` for specialized
+agents remains available as a separate manually triggered experiment, and a
+production OpenAI Orchestrator bootstrap is future work.
