@@ -10,7 +10,7 @@ The active contracts are:
 
 - `src/vendor/EthereumDIDRegistry.sol` — ERC-1056 / `did:ethr` identity control and DID updates.
 - `src/EnterpriseTrustRegistry.sol` — enterprise enrollment, `Active / Suspended / Revoked` lifecycle, trust anchors, and sponsor provenance.
-- `src/IssuerRegistry.sol` — historical accumulator-material commitments and current Bitstring Status List anchors.
+- `src/IssuerRegistry.sol` — historical accumulator-material commitments and current Bitstring Status List artifact anchors.
 
 The blockchain is the source of truth for trust state and commitments. Delegation Credentials, Verifiable Presentations, permissions, hierarchy, witnesses, complete accumulator public material, and Status List bodies remain off-chain.
 
