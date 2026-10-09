@@ -37,11 +37,11 @@ class OneToolModel extends BaseLlm {
   override async *generateContentAsync(request: LlmRequest): AsyncGenerator<LlmResponse, void> {
     this.requests.push(request);
     if (this.requests.length === 1 || this.repeat) {
-      yield {content: {role: "model", parts: [{
+      yield {modelVersion:"phase3-adk-scripted-effective",content: {role: "model", parts: [{
         functionCall: {id:"phase3_call_" + this.requests.length, name:this.toolName, args:this.args}
       }]}};
     } else {
-      yield {content: {role:"model",parts:[{text:"Done via ADK and Gateway."}]}};
+      yield {modelVersion:"phase3-adk-scripted-effective",content: {role:"model",parts:[{text:"Done via ADK and Gateway."}]}};
     }
   }
   override connect(_request: LlmRequest): Promise<BaseLlmConnection> {
@@ -140,7 +140,7 @@ for (const role of ["backend","frontend","test"] as const) {
       assert.equal(part.value.role,role);
       assert.equal(part.value.revision,SHA);
       assert.equal(part.value.commit_sha,SHA);
-      assert.equal(part.value.model_id,"phase3-adk-scripted-model");
+      assert.equal(part.value.model_id,"phase3-adk-scripted-effective");
       assert.equal(part.value.model_iterations,2);
       assert.deepEqual(part.value.errors,[]);
       if(role==="test"){

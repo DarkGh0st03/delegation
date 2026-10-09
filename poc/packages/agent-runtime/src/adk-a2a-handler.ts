@@ -39,6 +39,7 @@ function status(value: unknown): "pass" | "fail" | "skipped" | undefined {
 class BoundedModel extends BaseLlm {
   turns = 0;
   budgetExceeded = false;
+  effectiveModelVersion: string | null = null;
   readonly delegate: BaseLlm;
   readonly limit: number;
   constructor(delegate: BaseLlm, limit: number) {
@@ -56,7 +57,12 @@ class BoundedModel extends BaseLlm {
       throw new Error("ADK model turn budget exhausted");
     }
     this.turns += 1;
-    yield* this.delegate.generateContentAsync(request, stream, signal);
+    for await (const response of this.delegate.generateContentAsync(request, stream, signal)) {
+      if (typeof response.modelVersion === "string" && response.modelVersion.trim()) {
+        this.effectiveModelVersion = response.modelVersion;
+      }
+      yield response;
+    }
   }
   override connect(_request: LlmRequest): Promise<BaseLlmConnection> {
     return Promise.reject(new Error("Live model connections are not enabled for protected A2A tasks"));
@@ -186,7 +192,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       files_created: [...filesCreated],
       branch: context.subtask.branch,
       revision, commit_sha: revision, test_outcome: testOutcome, errors: [],
-      model_id: model.model, model_iterations: model.turns,
+      model_id: model.effectiveModelVersion ?? model.model, model_iterations: model.turns,
       ...(testedCommitSha ? {tested_commit_sha: testedCommitSha} : {}),
       ...(runnerProfile ? {runner_profile: runnerProfile} : {}),
       ...(projectTests ? {project_tests: projectTests} : {}),
