@@ -1,6 +1,7 @@
 use crate::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use crate::delegation::trust::model::identity_status::IdentityStatus;
-use crate::delegation::trust::registry::trust_registry_trait::TrustRegistry;
+use crate::delegation::trust::registry::trust_publisher_trait::TrustPublisher;
+use crate::delegation::trust::registry::trust_resolver_trait::TrustResolver;
 use ark_ec::pairing::Pairing;
 use josekit::jwk::Jwk;
 use std::cell::RefCell;
@@ -55,7 +56,7 @@ impl<E: Pairing> Default for InMemoryTrustRegistry<E> {
     }
 }
 
-impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
+impl<E: Pairing> TrustPublisher<E> for InMemoryTrustRegistry<E> {
     fn register_identity(&self, identity_id: String) -> Result<(), String> {
         if identity_id.trim().is_empty() {
             return Err(String::from("Identity id cannot be empty"));
@@ -66,14 +67,6 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
             .entry(identity_id)
             .or_insert_with(IdentityTrustRecord::new);
         Ok(())
-    }
-
-    fn get_identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String> {
-        self.identities
-            .borrow()
-            .get(identity_id)
-            .map(|record| record.status)
-            .ok_or_else(|| format!("Identity {identity_id} is not registered"))
     }
 
     fn set_identity_status(&self, identity_id: &str, status: IdentityStatus) -> Result<(), String> {
@@ -106,14 +99,6 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
         Ok(())
     }
 
-    fn is_trust_anchor(&self, identity_id: &str) -> Result<bool, String> {
-        self.identities
-            .borrow()
-            .get(identity_id)
-            .map(|record| record.trust_anchor)
-            .ok_or_else(|| format!("Identity {identity_id} is not registered"))
-    }
-
     fn publish_accumulator_data(
         &self,
         identity_id: String,
@@ -135,6 +120,38 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
         record.accumulator_data.insert(version, data);
         record.latest_accumulator_version = version;
         Ok(version)
+    }
+
+    fn publish_verification_key(
+        &self,
+        identity_id: String,
+        verification_key: Jwk,
+    ) -> Result<(), String> {
+        let mut identities = self.identities.borrow_mut();
+        let record = identities
+            .get_mut(&identity_id)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
+        Self::ensure_record_active(&identity_id, record)?;
+        record.verification_key = Some(verification_key);
+        Ok(())
+    }
+}
+
+impl<E: Pairing> TrustResolver<E> for InMemoryTrustRegistry<E> {
+    fn get_identity_status(&self, identity_id: &str) -> Result<IdentityStatus, String> {
+        self.identities
+            .borrow()
+            .get(identity_id)
+            .map(|record| record.status)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))
+    }
+
+    fn is_trust_anchor(&self, identity_id: &str) -> Result<bool, String> {
+        self.identities
+            .borrow()
+            .get(identity_id)
+            .map(|record| record.trust_anchor)
+            .ok_or_else(|| format!("Identity {identity_id} is not registered"))
     }
 
     fn get_accumulator_data(&self, identity_id: &str) -> Result<AccumulatorPublicData<E>, String> {
@@ -188,20 +205,6 @@ impl<E: Pairing> TrustRegistry<E> for InMemoryTrustRegistry<E> {
                     "No accumulator public data version {version} registered for identity {identity_id}"
                 )
             })
-    }
-
-    fn publish_verification_key(
-        &self,
-        identity_id: String,
-        verification_key: Jwk,
-    ) -> Result<(), String> {
-        let mut identities = self.identities.borrow_mut();
-        let record = identities
-            .get_mut(&identity_id)
-            .ok_or_else(|| format!("Identity {identity_id} is not registered"))?;
-        Self::ensure_record_active(&identity_id, record)?;
-        record.verification_key = Some(verification_key);
-        Ok(())
     }
 
     fn get_verification_key(&self, identity_id: &str) -> Result<Jwk, String> {
