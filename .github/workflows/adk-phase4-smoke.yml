@@ -1,0 +1,40 @@
+name: ADK Phase 4 OpenAI Bridge
+
+on:
+  push:
+    branches: [refactor/adk-integration]
+    paths:
+      - 'poc/packages/agent-runtime/**'
+      - 'poc/apps/a2a-agent/**'
+      - 'poc/package-lock.json'
+      - 'docs/PHASE_ADK_4_OPENAI.md'
+      - '.github/workflows/adk-phase4-smoke.yml'
+  pull_request:
+    paths:
+      - 'poc/packages/agent-runtime/**'
+      - 'poc/apps/a2a-agent/**'
+      - 'poc/package-lock.json'
+      - '.github/workflows/adk-phase4-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  openai-adk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Validate native ADK plus OpenAI function cycles
+        run: npm --prefix poc run agent-runtime:test
+      - name: Verify A2A engine startup rejects missing secrets
+        run: node --experimental-strip-types --test poc/apps/a2a-agent/test/bootstrap.test.ts
+      - name: Preserve orchestrator regression
+        run: npm --prefix poc run orchestrator-runtime:test
