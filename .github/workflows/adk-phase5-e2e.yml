@@ -227,7 +227,7 @@ jobs:
         run: git diff --exit-code -- poc/runner/acceptance
 
       - name: Show Phase 10B logs on failure
-        if: ${{ failure() && github.event.head_commit.message != 'test(adk): diagnose Gemini Backend only once' }}
+        if: ${{ failure() && !contains(github.event.head_commit.message, 'diagnose Gemini Backend') }}
         run: |
           echo "=== Adapter ==="
           cat /tmp/phase10b-adapter.log || true
