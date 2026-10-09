@@ -118,7 +118,10 @@ impl AdapterConfig {
                 CallerRole::Engineer,
                 required("ADAPTER_CALLER_ENGINEER")?,
                 engineer_id,
-                vec![CallerCapability::IssueRoot],
+                vec![
+                    CallerCapability::IssueRoot,
+                    CallerCapability::ManageStatus,
+                ],
             )?,
             CallerRecord::new(
                 CallerRole::Orchestrator,
@@ -126,6 +129,7 @@ impl AdapterConfig {
                 orchestrator_id,
                 vec![
                     CallerCapability::IssueChild,
+                    CallerCapability::ManageStatus,
                     CallerCapability::CreatePresentation,
                 ],
             )?,
