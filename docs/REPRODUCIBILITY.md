@@ -2,6 +2,10 @@
 
 This document freezes the environment and evidence contract used for the final thesis PoC experiments.
 
+> **Scope of the evidence.** The run IDs, artifact hashes, summary statistics and machine-readable manifest in this document describe the historical measured executable-code checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a`. The later `refactor/core-cleanup` branch is a separate post-measurement code evolution. Its regression status must be established independently, and these historical measurements must not be attributed to that refactored code unless a new measurement campaign is executed.
+
+The file `poc/experiments/reproducibility-manifest.json` is intentionally retained as the contract for the historical measured campaign; it is not silently rewritten to describe the refactored candidate.
+
 ## Reproduce a specific experimental run
 
 A measurement bundle records the framework commit SHA and workflow run ID that produced it. To reproduce that run, check out the recorded framework SHA rather than the moving `main` branch.
@@ -83,7 +87,7 @@ Measurement/reproducibility bundles must not include full signed VPs, bearer cre
 
 Researcher-owned acceptance tests remain outside specialized Agent write authority and are mounted read-only into the Controlled Runner.
 
-## Final validated reference
+## Historical final validated reference
 
 Final executable-code checkpoint:
 
