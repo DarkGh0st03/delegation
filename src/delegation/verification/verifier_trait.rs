@@ -6,7 +6,7 @@ use ark_ec::pairing::Pairing;
 
 pub trait Verifier<E: Pairing> {
     fn new(
-        trust_registry: TrustResolverRef<E>,
+        trust_resolver: TrustResolverRef<E>,
         status_list_resolver: StatusListResolverRef,
     ) -> Result<Self, String>
     where
