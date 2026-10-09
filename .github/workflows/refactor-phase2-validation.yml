@@ -1,0 +1,38 @@
+name: Temporary Phase 2 Validation
+
+on:
+  push:
+    branches:
+      - refactor/core-cleanup
+
+permissions:
+  contents: read
+
+jobs:
+  validate-contract-split:
+    if: github.actor == 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt
+
+      - name: Core formatting
+        run: cargo fmt --check
+
+      - name: Core tests
+        run: cargo test
+
+      - name: Parallel verification feature tests
+        run: cargo test --features parallel_verification
+
+      - name: All feature tests
+        run: cargo test --all-features
+
+      - name: Adapter formatting
+        run: cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check
+
+      - name: Adapter tests
+        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml
