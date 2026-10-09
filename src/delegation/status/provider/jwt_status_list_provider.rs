@@ -54,17 +54,49 @@ impl JwtAuthenticatedStatusListCredentialProvider {
             verification_keys,
         }
     }
+}
 
-    fn issuer_from_claims(claims: &serde_json::Map<String, Value>) -> Option<String> {
-        match claims.get("issuer") {
-            Some(Value::String(issuer)) => Some(issuer.clone()),
-            Some(Value::Object(object)) => object
-                .get("id")
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned),
-            _ => None,
-        }
+fn issuer_from_claims(claims: &serde_json::Map<String, Value>) -> Option<String> {
+    match claims.get("issuer") {
+        Some(Value::String(issuer)) => Some(issuer.clone()),
+        Some(Value::Object(object)) => object
+            .get("id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        _ => None,
     }
+}
+
+/// Authenticates a compact Status List Credential JWT and returns its decoded
+/// W3C Credential JSON payload.
+pub fn verify_status_list_credential_jwt(
+    compact_jwt: &str,
+    verification_key: &Jwk,
+    expected_issuer: &str,
+) -> Result<String, String> {
+    let verifier = EdDSA
+        .verifier_from_jwk(verification_key)
+        .map_err(|err| format!("Could not create Status List EdDSA verifier [{err}]"))?;
+
+    let (payload, _) = jwt::decode_with_verifier(compact_jwt, &verifier).map_err(|err| {
+        format!(
+            "Status List Credential JWT signature verification failed for issuer {expected_issuer} [{err}]"
+        )
+    })?;
+
+    let claims = payload.claims_set().clone();
+    let embedded_issuer = issuer_from_claims(&claims).ok_or_else(|| {
+        String::from("Authenticated Status List Credential has no issuer claim")
+    })?;
+
+    if embedded_issuer != expected_issuer {
+        return Err(format!(
+            "Authenticated Status List issuer {embedded_issuer} does not match expected issuer {expected_issuer}"
+        ));
+    }
+
+    serde_json::to_string(&Value::Object(claims))
+        .map_err(|err| format!("Could not serialize authenticated Status List payload [{err}]"))
 }
 
 impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvider {
@@ -74,32 +106,12 @@ impl StatusListCredentialProvider for JwtAuthenticatedStatusListCredentialProvid
         url: &str,
     ) -> Result<StatusListCredentialArtifact, String> {
         let source_artifact = self.source.get_status_list_credential(issuer_id, url)?;
-        let compact_jwt = source_artifact.document;
         let verification_key = self.verification_keys.get_verification_key(issuer_id)?;
-        let verifier = EdDSA
-            .verifier_from_jwk(&verification_key)
-            .map_err(|err| format!("Could not create Status List EdDSA verifier [{err}]"))?;
-
-        let (payload, _) = jwt::decode_with_verifier(&compact_jwt, &verifier).map_err(|err| {
-            format!(
-                "Status List Credential JWT signature verification failed for issuer {issuer_id} [{err}]"
-            )
-        })?;
-
-        let claims = payload.claims_set().clone();
-        let embedded_issuer = Self::issuer_from_claims(&claims).ok_or_else(|| {
-            String::from("Authenticated Status List Credential has no issuer claim")
-        })?;
-
-        if embedded_issuer != issuer_id {
-            return Err(format!(
-                "Authenticated Status List issuer {embedded_issuer} does not match expected issuer {issuer_id}"
-            ));
-        }
-
-        let document = serde_json::to_string(&Value::Object(claims)).map_err(|err| {
-            format!("Could not serialize authenticated Status List payload [{err}]")
-        })?;
+        let document = verify_status_list_credential_jwt(
+            &source_artifact.document,
+            &verification_key,
+            issuer_id,
+        )?;
 
         Ok(StatusListCredentialArtifact {
             document,
