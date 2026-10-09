@@ -9,7 +9,7 @@ use crate::delegation::credentials::generic::verifiable_presentation::Verifiable
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use crate::delegation::status::model::status_purpose::StatusPurpose;
 use crate::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
-use crate::delegation::trust::registry::trust_resolver_trait::TrustResolverRef;
+use crate::delegation::trust::resolver::trust_resolver_trait::TrustResolverRef;
 use crate::delegation::verification::timing::verify_timings;
 use crate::delegation::verification::verifier_trait::Verifier;
 use ark_ec::pairing::Pairing;
@@ -278,14 +278,16 @@ mod tests {
     use crate::delegation::trust::evm::trust_chain_reader::{
         AccumulatorMaterialAnchor, TrustChainReader,
     };
+    use crate::delegation::trust::material::accumulator_material_provider::AccumulatorMaterialProviderRef;
     use crate::delegation::trust::material::in_memory_public_material_provider::InMemoryPublicMaterialProvider;
+    use crate::delegation::trust::material::verification_key_provider::VerificationKeyProviderRef;
     use crate::delegation::trust::model::identity_status::IdentityStatus;
-    use crate::delegation::trust::registry::evm_backed_trust_registry::EvmBackedTrustRegistry;
+    use crate::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
     use crate::delegation::trust::registry::in_memory_trust_registry::InMemoryTrustRegistry;
     use crate::delegation::trust::registry::trust_publisher_trait::{
         TrustPublisher, TrustPublisherRef,
     };
-    use crate::delegation::trust::registry::trust_resolver_trait::{
+    use crate::delegation::trust::resolver::trust_resolver_trait::{
         TrustResolver, TrustResolverRef,
     };
     use alloy::primitives::B256;
@@ -446,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_vp_with_evm_backed_trust_registry() -> Result<(), String> {
+    fn verify_vp_with_evm_trust_resolver() -> Result<(), String> {
         type Curve = Bn254;
 
         // Issuance remains local in this checkpoint. We then move only the public
@@ -473,7 +475,7 @@ mod tests {
         let root_material =
             source_registry.get_accumulator_data_at_version(&root_id, material_version)?;
         let root_commitment =
-            EvmBackedTrustRegistry::<Curve>::accumulator_material_commitment(&root_material)?;
+            EvmTrustResolver::<Curve>::accumulator_material_commitment(&root_material)?;
 
         let holder = DelegationIssuer::<Curve>::new(holder_id.clone(), source_registry_ref)?;
         let signed_vp = holder.issue_delegation_verifiable_presentation(
@@ -493,6 +495,8 @@ mod tests {
             holder_id.clone(),
             source_registry.get_verification_key(&holder_id)?,
         )?;
+        let accumulator_material: AccumulatorMaterialProviderRef<Curve> = public_material.clone();
+        let verification_keys: VerificationKeyProviderRef = public_material;
 
         let chain = Rc::new(VerifierMockTrustChainReader::new());
         chain.set_active(&root_id);
@@ -500,10 +504,13 @@ mod tests {
         chain.set_trust_anchor(&root_id, true);
         chain.set_accumulator_anchor(&root_id, material_version, root_commitment);
 
-        let evm_registry: TrustResolverRef<Curve> =
-            Rc::new(EvmBackedTrustRegistry::<Curve>::new(chain, public_material));
+        let evm_resolver: TrustResolverRef<Curve> = Rc::new(EvmTrustResolver::<Curve>::new(
+            chain,
+            accumulator_material,
+            verification_keys,
+        ));
         let status_resolver = resolver_for_vc(&vc)?;
-        let verifier = DelegationVerifier::new(evm_registry, status_resolver)?;
+        let verifier = DelegationVerifier::new(evm_resolver, status_resolver)?;
 
         let context = AuthorizationContext::new(
             holder_id.clone(),
