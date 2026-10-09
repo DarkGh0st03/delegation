@@ -1,0 +1,45 @@
+name: Temporary Phase 7 Rustfmt
+
+on:
+  push:
+    branches:
+      - refactor/core-cleanup
+    paths:
+      - .github/workflows/refactor-phase7-rustfmt.yml
+      - src/**/*.rs
+      - examples/**/*.rs
+      - services/delegation-adapter/src/**/*.rs
+
+permissions:
+  contents: write
+
+jobs:
+  rustfmt:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/core-cleanup
+
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt
+
+      - name: Format Rust
+        run: |
+          cargo fmt
+          cargo fmt --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Commit formatting if needed
+        run: |
+          if git diff --quiet; then
+            echo "No formatting changes needed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git add '*.rs' 'src/**/*.rs' 'examples/**/*.rs' 'services/**/*.rs' || true
+          git commit -m "style: apply rustfmt after phase 7 refactor"
+          git push origin HEAD:refactor/core-cleanup
