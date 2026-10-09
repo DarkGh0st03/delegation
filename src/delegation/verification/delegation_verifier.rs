@@ -244,7 +244,7 @@ impl<E: Pairing> DelegationVerifier<E> {
             StatusPurpose::Revocation => {
                 if self
                     .status_list_resolver
-                    .is_status_set_for_issuer(issuer, credential_status)?
+                    .is_status_set(issuer, credential_status)?
                 {
                     Err(format!("Credential {credential_id} is revoked"))
                 } else {
@@ -254,7 +254,7 @@ impl<E: Pairing> DelegationVerifier<E> {
             StatusPurpose::Suspension => {
                 if self
                     .status_list_resolver
-                    .is_status_set_for_issuer(issuer, credential_status)?
+                    .is_status_set(issuer, credential_status)?
                 {
                     Err(format!("Credential {credential_id} is suspended"))
                 } else {
@@ -324,7 +324,11 @@ mod tests {
     }
 
     impl StatusListResolver for TestStatusListResolver {
-        fn is_status_set(&self, entry: &BitstringStatusListEntry) -> Result<bool, String> {
+        fn is_status_set(
+            &self,
+            _issuer_id: &str,
+            entry: &BitstringStatusListEntry,
+        ) -> Result<bool, String> {
             self.values
                 .borrow()
                 .get(&Self::key(entry))
