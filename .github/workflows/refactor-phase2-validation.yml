@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  diagnose-contract-split:
+  validate-contract-split:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,12 +21,29 @@ jobs:
       - name: Core formatting
         run: cargo fmt --check
 
-      - name: Compile core tests and capture diagnostics
-        run: cargo test --no-run 2>&1 | tee core-test.log
+      - name: Core tests
+        run: cargo test 2>&1 | tee core-test.log
 
-      - name: Upload compiler diagnostics
+      - name: Parallel verification feature tests
+        run: cargo test --features parallel_verification 2>&1 | tee parallel-test.log
+
+      - name: All feature tests
+        run: cargo test --all-features 2>&1 | tee all-features-test.log
+
+      - name: Adapter formatting
+        run: cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check
+
+      - name: Adapter tests
+        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml 2>&1 | tee adapter-test.log
+
+      - name: Upload validation diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phase2-core-test-log
-          path: core-test.log
+          name: phase2-validation-logs
+          path: |
+            core-test.log
+            parallel-test.log
+            all-features-test.log
+            adapter-test.log
+          if-no-files-found: ignore
