@@ -60,3 +60,21 @@ It prevents multi-minute stalls and provides enough non-sensitive data
 to decide if prompt context, tool-use planning, provider performance or
 model selection should change. Comparing pre-ADK scripted measurements
 directly to real inference times would be methodologically invalid.
+
+## CI validation (10 October 2026)
+
+Code commit: `5641f14eee070c8822cd9d779e6cfbaa0dd80eeb`
+
+- ADK runtime regression:
+  https://github.com/DarkGh0st03/delegation/actions/runs/38036620854
+  **SUCCESS** — 52/52 Agent Runtime tests; the model-call timeout,
+  private progress counters and safe prompt rules are among those tests.
+- Protected EVM + Gateway + OPA + Rust + Gitea full scripted ADK:
+  https://github.com/DarkGh0st03/delegation/actions/runs/38036620847
+  **SUCCESS** — `pr_created`, Backend/Frontend/Test completed,
+  project tests `pass`, researcher acceptance `pass`,
+  `main_unchanged:true`, `automatic_merge:false`.
+- No real Gemini request was issued by these CI regressions. Native ADK
+  provider performance and correct real-LLM implementation remain
+  open questions; the next step is one specifically authorized,
+  bounded Backend-only live run.
