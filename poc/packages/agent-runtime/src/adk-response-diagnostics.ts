@@ -16,6 +16,8 @@ export type SafeAdkResponseShape = {
 /**
  * No text, reasoning traces, function names, file paths or tool arguments.
  * Unknown untrusted provider labels are never copied into the logs.
+ * MAX_TOKENS diagnoses exhaustion of one inference's output allowance;
+ * it is not equivalent to exceeding the task's separate model-turn limit.
  */
 export function safeAdkResponseShape(response: LlmResponse): SafeAdkResponseShape {
   const raw: unknown = response.finishReason;
