@@ -205,7 +205,7 @@ export class DeterministicA2AOrchestrator {
       polls++;
       // Every getTask request has its own short timeout; it does NOT share
       // the original long-running sendMessage HTTP connection.
-      const requestMs = Math.max(1, Math.min(15_000, this.#deadlineMs - (performance.now() - start)));
+      const requestMs = Math.max(1, Math.floor(Math.min(15_000, this.#deadlineMs - (performance.now() - start))));
       task = await client.getTask({id: result.id, historyLength: 0}, {
         signal: AbortSignal.timeout(requestMs)
       });

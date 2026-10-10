@@ -255,4 +255,6 @@ jobs:
           kill "$(cat /tmp/phase10b-runner.pid)" 2>/dev/null || true
           kill "$(cat /tmp/phase10b-adapter.pid)" 2>/dev/null || true
           docker ps -aq --filter 'name=delegation-runner-' | xargs -r docker rm -f
-          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
+          if [[ -f poc/infra/.env ]]; then
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down -v
+          fi
