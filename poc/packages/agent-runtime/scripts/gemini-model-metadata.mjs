@@ -13,7 +13,7 @@ const GOOGLE_ERROR_STATUSES = new Set([
   "OUT_OF_RANGE", "UNIMPLEMENTED", "INTERNAL", "UNAVAILABLE",
   "DATA_LOSS", "UNAUTHENTICATED"
 ]);
-function safeGoogleError(body, httpStatus) {
+export function safeGoogleError(body, httpStatus) {
   const error = body && typeof body === "object" && !Array.isArray(body)
     ? body.error : null;
   const e = error && typeof error === "object" && !Array.isArray(error)
@@ -25,7 +25,7 @@ function safeGoogleError(body, httpStatus) {
     ? e.code : null;
   return {google_error_status:status, google_error_code:code};
 }
-const NO_GOOGLE_ERROR = Object.freeze({
+export const NO_GOOGLE_ERROR = Object.freeze({
   google_error_status:null, google_error_code:null
 });
 

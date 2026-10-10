@@ -1,6 +1,7 @@
 import {resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {inspectAdkFailure} from "../src/adk-failure-categories.ts";
+import {safeGoogleError, NO_GOOGLE_ERROR} from "./gemini-model-metadata.mjs";
 
 /**
  * One Gemini Developer API request, WITHOUT ADK, A2A, Gateway, repository or
@@ -56,13 +57,21 @@ export async function runGeminiApiHealthSmoke({
         inspected.error_type === "type_error" && inspected.http_status === null
           ? "network_exception" : inspected.classification_source,
       error_type:inspected.error_type,
+      ...NO_GOOGLE_ERROR,
       duration_ms:elapsed(),
       requests:1
     };
   }
   const diagnostic = inspectAdkFailure({status:response.status});
   if (!response.ok) {
-    // Do not read or log provider error payload, response headers, or request.
+    // Inspect only allowlisted Google RPC error.status and numeric error.code.
+    // Never log raw messages, response details, headers, or other provider data.
+    let safeError = NO_GOOGLE_ERROR;
+    try {
+      safeError = safeGoogleError(await response.json(), diagnostic.http_status);
+    } catch {
+      // Non-JSON responses remain safely classified by numeric HTTP status.
+    }
     return {
       result:"gemini-api-health-fail",
       model,
@@ -70,6 +79,7 @@ export async function runGeminiApiHealthSmoke({
       category:diagnostic.category,
       classification_source:diagnostic.classification_source,
       error_type:"http_response",
+      ...safeError,
       duration_ms:elapsed(),
       requests:1
     };
@@ -85,6 +95,7 @@ export async function runGeminiApiHealthSmoke({
       category:"invalid_response",
       classification_source:"response_validation",
       error_type:"http_response",
+      ...NO_GOOGLE_ERROR,
       duration_ms:elapsed(),
       requests:1
     };
@@ -101,6 +112,7 @@ export async function runGeminiApiHealthSmoke({
       category:"invalid_response",
       classification_source:"response_validation",
       error_type:"http_response",
+      ...NO_GOOGLE_ERROR,
       duration_ms:elapsed(),
       requests:1
     };
@@ -112,6 +124,7 @@ export async function runGeminiApiHealthSmoke({
     category:null,
     classification_source:"http_status",
     error_type:"http_response",
+    ...NO_GOOGLE_ERROR,
     duration_ms:elapsed(),
     requests:1
   };

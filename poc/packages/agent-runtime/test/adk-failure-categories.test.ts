@@ -131,3 +131,87 @@ test("Gemini API health smoke rejects invalid 200 payload and unsafe configurati
   await assert.rejects(()=>runGeminiApiHealthSmoke({apiKey:"hi",model:"bad-model"}),/Invalid Gemini/u);
   await assert.rejects(()=>runGeminiApiHealthSmoke({apiKey:"hi",timeoutMs:20_001}),/timeout/u);
 });
+
+
+test("Gemini generateContent captures allowlisted provider UNAVAILABLE status on HTTP 503",async()=>{
+  let calls=0;
+  const response=new Response(JSON.stringify({error:{
+    code:503,status:"UNAVAILABLE",message:"SENSITIVE_GOOGLE_PROVIDER_MESSAGE",
+    details:[{reason:"SENSITIVE_REASON",metadata:{evidence:"PRIVATE_DELEGATION_EVIDENCE"}}]
+  }}),{status:503,headers:{"content-type":"application/json"}});
+  const result=await runGeminiApiHealthSmoke({
+    apiKey:"NEVER_PRINT_GEMINI_KEY",
+    fetchFn:async(_url, options)=>{
+      calls++;
+      assert.equal(options.method,"POST");
+      return response;
+    }
+  });
+  assert.equal(calls,1);
+  assert.equal(result.requests,1);
+  assert.equal(result.result,"gemini-api-health-fail");
+  assert.equal(result.http_status,503);
+  assert.equal(result.category,"api_service_unavailable");
+  assert.equal(result.classification_source,"http_status");
+  assert.equal(result.google_error_status,"UNAVAILABLE");
+  assert.equal(result.google_error_code,503);
+  for(const sensitive of ["NEVER_PRINT_GEMINI_KEY",
+    "SENSITIVE_GOOGLE_PROVIDER_MESSAGE","SENSITIVE_REASON",
+    "PRIVATE_DELEGATION_EVIDENCE"])
+    assert.equal(JSON.stringify(result).includes(sensitive),false);
+});
+
+test("Gemini generateContent distinguishes allowlisted INVALID_ARGUMENT from unsupported string",async()=>{
+  const valid=await runGeminiApiHealthSmoke({apiKey:"TOP_SECRET",
+    fetchFn:async()=>new Response(JSON.stringify({error:{
+      code:400,status:"INVALID_ARGUMENT",message:"NEVER_LOG_ME"
+    }}),{status:400})
+  });
+  assert.equal(valid.http_status,400);
+  assert.equal(valid.google_error_status,"INVALID_ARGUMENT");
+  assert.equal(valid.google_error_code,400);
+  assert.equal(JSON.stringify(valid).includes("NEVER_LOG_ME"),false);
+
+  const unsafe=await runGeminiApiHealthSmoke({apiKey:"TOP_SECRET",
+    fetchFn:async()=>new Response(JSON.stringify({error:{
+      code:503,status:"INJECTED_INTERNAL_UNTRUSTED",message:"NEVER_LOG_ME",
+      details:[{private:"DO_NOT_LOG"}]
+    }}),{status:400})
+  });
+  assert.equal(unsafe.http_status,400);
+  assert.equal(unsafe.google_error_status,null);
+  assert.equal(unsafe.google_error_code,null);
+  assert.equal(JSON.stringify(unsafe).includes("DO_NOT_LOG"),false);
+  assert.equal(JSON.stringify(unsafe).includes("INJECTED_INTERNAL_UNTRUSTED"),false);
+  assert.equal(JSON.stringify(unsafe).includes("TOP_SECRET"),false);
+});
+
+test("Gemini generateContent retains numeric HTTP status if error body is malformed",async()=>{
+  let calls=0;
+  const result=await runGeminiApiHealthSmoke({apiKey:"PRIVATE",
+    fetchFn:async()=>{
+      calls++;
+      return new Response("SENSITIVE_RAW_PROVIDER_ERROR",{
+        status:503,headers:{"content-type":"text/plain"}
+      });
+    }
+  });
+  assert.equal(calls,1);
+  assert.equal(result.http_status,503);
+  assert.equal(result.google_error_status,null);
+  assert.equal(result.google_error_code,null);
+  assert.equal(JSON.stringify(result).includes("SENSITIVE_RAW_PROVIDER_ERROR"),false);
+  assert.equal(JSON.stringify(result).includes("PRIVATE"),false);
+});
+
+test("Gemini generateContent has null provider fields for successful synthetic response",async()=>{
+  const result=await runGeminiApiHealthSmoke({apiKey:"SECRET",
+    fetchFn:async()=>new Response(JSON.stringify({
+      candidates:[{content:{parts:[{text:"READY"}]}}]
+    }),{status:200,headers:{"content-type":"application/json"}})
+  });
+  assert.equal(result.result,"gemini-api-health-pass");
+  assert.equal(result.google_error_status,null);
+  assert.equal(result.google_error_code,null);
+  assert.equal(JSON.stringify(result).includes("SECRET"),false);
+});
