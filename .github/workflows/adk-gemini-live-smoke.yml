@@ -1,0 +1,55 @@
+name: ADK Gemini Native Live Smoke
+
+# Live requests are ALWAYS explicit. Ordinary branch pushes run no Gemini API call.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'First check API availability; optionally test ADK tool calling'
+        type: choice
+        required: true
+        default: api-health
+        options: [api-health, adk-function]
+      model:
+        description: 'Gemini model available to your Gemini Developer API project'
+        type: string
+        required: true
+        default: gemini-3.8-flash
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adk-gemini-live-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  readonly-gemini-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+      GEMINI_MODEL: ${{ inputs.model }}
+      GOOGLE_GENAI_USE_VERTEXAI: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Ensure user-named Gemini Free Tier secret is present
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo 'Missing GitHub secret Delegation_Thesis_Gemini.' >&2
+            exit 1
+          fi
+      - name: Gemini API health (one synthetic request, no ADK or infrastructure)
+        if: ${{ inputs.mode == 'api-health' }}
+        run: node --experimental-strip-types poc/packages/agent-runtime/scripts/gemini-api-health-smoke.mjs
+      - name: Install ADK dependencies for isolated function calling
+        if: ${{ inputs.mode == 'adk-function' }}
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Gemini ADK synthetic read-only tool (separate, explicit mode)
+        if: ${{ inputs.mode == 'adk-function' }}
+        run: node --experimental-strip-types poc/packages/agent-runtime/scripts/gemini-live-smoke.mjs
