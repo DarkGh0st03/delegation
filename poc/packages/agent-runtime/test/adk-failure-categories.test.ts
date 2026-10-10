@@ -215,3 +215,137 @@ test("Gemini generateContent has null provider fields for successful synthetic r
   assert.equal(result.google_error_code,null);
   assert.equal(JSON.stringify(result).includes("SECRET"),false);
 });
+
+
+test("Gemini HTTP 200 MAX_TOKENS without text reports only bounded metadata",async()=>{
+  let requests=0;
+  const result=await runGeminiApiHealthSmoke({
+    apiKey:"TEST_KEY_PRIVATE",
+    fetchFn:async()=>{
+      requests++;
+      return new Response(JSON.stringify({
+        candidates:[{finishReason:"MAX_TOKENS",content:{parts:[]},
+          safetyRatings:[{category:"PRIVATE_SAFETY_CATEGORY"}]}],
+        usageMetadata:{promptTokenCount:11,candidatesTokenCount:0,
+          totalTokenCount:27,thoughtsTokenCount:16,
+          promptTokensDetails:[{modality:"SECRET_MODALITY"}]},
+        promptFeedback:{blockReasonMessage:"SECRET_PROVIDER_FEEDBACK"}
+      }),{status:200});
+    }
+  });
+  assert.equal(requests,1);
+  assert.equal(result.result,"gemini-api-health-fail");
+  assert.equal(result.http_status,200);
+  assert.equal(result.category,"invalid_response");
+  assert.deepEqual(result.generation_diagnostic,{
+    candidate_count:1,part_count:0,text_part_count:0,has_text:false,
+    finish_reason:"MAX_TOKENS",prompt_token_count:11,
+    candidate_token_count:0,total_token_count:27,thoughts_token_count:16
+  });
+  for(const value of ["TEST_KEY_PRIVATE","PRIVATE_SAFETY_CATEGORY",
+    "SECRET_MODALITY","SECRET_PROVIDER_FEEDBACK"])
+    assert.equal(JSON.stringify(result).includes(value),false);
+});
+
+test("Gemini HTTP 200 non-READY text yields has_text true without exposing content",async()=>{
+  const result=await runGeminiApiHealthSmoke({
+    apiKey:"HIDDEN_KEY",
+    fetchFn:async()=>new Response(JSON.stringify({
+      candidates:[{finishReason:"STOP",content:{
+        parts:[{text:"THIS_TEXT_MUST_NOT_BE_LOGGED"}]
+      }}],
+      usageMetadata:{promptTokenCount:12,candidatesTokenCount:7,
+        totalTokenCount:19,thoughtsTokenCount:0},
+      modelVersion:"HIDDEN_MODEL_VERSION"
+    }),{status:200})
+  });
+  assert.equal(result.http_status,200);
+  assert.equal(result.result,"gemini-api-health-fail");
+  assert.equal(result.generation_diagnostic.has_text,true);
+  assert.equal(result.generation_diagnostic.text_part_count,1);
+  assert.equal(result.generation_diagnostic.part_count,1);
+  assert.equal(result.generation_diagnostic.finish_reason,"STOP");
+  assert.equal(result.generation_diagnostic.candidate_token_count,7);
+  assert.equal(result.generation_diagnostic.thoughts_token_count,0);
+  for(const secret of ["HIDDEN_KEY","THIS_TEXT_MUST_NOT_BE_LOGGED","HIDDEN_MODEL_VERSION"])
+    assert.equal(JSON.stringify(result).includes(secret),false);
+});
+
+test("Gemini HTTP 200 READY captures only first candidate and safe token counts",async()=>{
+  const result=await runGeminiApiHealthSmoke({
+    apiKey:"SECRET",
+    fetchFn:async()=>new Response(JSON.stringify({
+      candidates:[
+        {finishReason:"STOP",content:{parts:[{text:"REA"},{text:"DY"}]}},
+        {finishReason:"OTHER",content:{parts:[{text:"SENSITIVE_SECOND_CANDIDATE"}]}}
+      ],
+      usageMetadata:{promptTokenCount:8,candidatesTokenCount:2,
+        totalTokenCount:10,thoughtsTokenCount:0,
+        cachedContentTokenCount:12345}
+    }),{status:200})
+  });
+  assert.equal(result.result,"gemini-api-health-pass");
+  assert.equal(result.generation_diagnostic.candidate_count,2);
+  assert.equal(result.generation_diagnostic.part_count,2);
+  assert.equal(result.generation_diagnostic.text_part_count,2);
+  assert.equal(result.generation_diagnostic.has_text,true);
+  assert.equal(result.generation_diagnostic.finish_reason,"STOP");
+  assert.equal(result.generation_diagnostic.prompt_token_count,8);
+  assert.equal(result.generation_diagnostic.total_token_count,10);
+  assert.equal(JSON.stringify(result).includes("SENSITIVE_SECOND_CANDIDATE"),false);
+  assert.equal(JSON.stringify(result).includes("cachedContentTokenCount"),false);
+});
+
+test("Gemini generation metrics reject unknown reasons, untrusted text and invalid tokens",async()=>{
+  const result=await runGeminiApiHealthSmoke({
+    apiKey:"SECRET",
+    fetchFn:async()=>new Response(JSON.stringify({
+      candidates:[{finishReason:"PRIVATE_UNTRUSTED_REASON",content:{
+        parts:[{text:"PRIVATE_REPLY_DO_NOT_PRINT",functionCall:{name:"PRIVATE_TOOL"}}]
+      }}],
+      usageMetadata:{promptTokenCount:-1,candidatesTokenCount:"123",
+        totalTokenCount:1.5,thoughtsTokenCount:Number.MAX_SAFE_INTEGER+1}
+    }),{status:200})
+  });
+  assert.equal(result.result,"gemini-api-health-fail");
+  assert.equal(result.generation_diagnostic.finish_reason,null);
+  assert.equal(result.generation_diagnostic.has_text,true);
+  assert.equal(result.generation_diagnostic.prompt_token_count,null);
+  assert.equal(result.generation_diagnostic.candidate_token_count,null);
+  assert.equal(result.generation_diagnostic.total_token_count,null);
+  assert.equal(result.generation_diagnostic.thoughts_token_count,null);
+  for(const value of ["PRIVATE_UNTRUSTED_REASON","PRIVATE_REPLY_DO_NOT_PRINT","PRIVATE_TOOL"])
+    assert.equal(JSON.stringify(result).includes(value),false);
+});
+
+test("Malformed or absent Gemini response metadata uses null rather than guessed values",async()=>{
+  const absent=await runGeminiApiHealthSmoke({
+    apiKey:"SECRET",fetchFn:async()=>new Response(JSON.stringify({
+      candidateCount:"NOT_REAL",usageMetadata:{promptTokenCount:"4"}
+    }),{status:200})
+  });
+  assert.equal(absent.result,"gemini-api-health-fail");
+  assert.equal(absent.generation_diagnostic.candidate_count,null);
+  assert.equal(absent.generation_diagnostic.part_count,null);
+  assert.equal(absent.generation_diagnostic.text_part_count,null);
+  assert.equal(absent.generation_diagnostic.has_text,false);
+  assert.equal(absent.generation_diagnostic.finish_reason,null);
+  assert.equal(absent.generation_diagnostic.prompt_token_count,null);
+
+  const malformed=await runGeminiApiHealthSmoke({
+    apiKey:"SECRET",
+    fetchFn:async()=>new Response("DO_NOT_PRINT_INVALID_JSON",{status:200})
+  });
+  assert.equal(malformed.result,"gemini-api-health-fail");
+  assert.equal(malformed.generation_diagnostic,null);
+  assert.equal(JSON.stringify(malformed).includes("DO_NOT_PRINT_INVALID_JSON"),false);
+
+  const failed=await runGeminiApiHealthSmoke({
+    apiKey:"SECRET",fetchFn:async()=>new Response(JSON.stringify({
+      error:{status:"UNAVAILABLE",code:503,message:"DONT_LOG_ERROR"}
+    }),{status:503})
+  });
+  assert.equal(failed.generation_diagnostic,null);
+  assert.equal(failed.google_error_status,"UNAVAILABLE");
+  assert.equal(JSON.stringify(failed).includes("DONT_LOG_ERROR"),false);
+});

@@ -4,6 +4,45 @@ import {inspectAdkFailure} from "../src/adk-failure-categories.ts";
 import {safeGoogleError, NO_GOOGLE_ERROR} from "./gemini-model-metadata.mjs";
 
 /**
+ * Output-only, fixed-shape diagnostics for synthetic generateContent results.
+ * No provider text, unknown reason, freeform metadata or credentials escape.
+ */
+const ALLOWED_FINISH_REASONS = new Set([
+  "FINISH_REASON_UNSPECIFIED", "STOP", "MAX_TOKENS", "SAFETY",
+  "RECITATION", "LANGUAGE", "OTHER", "BLOCKLIST",
+  "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL",
+  "IMAGE_SAFETY", "UNEXPECTED_TOOL_CALL", "TOO_MANY_TOOL_CALLS"
+]);
+function safeTokenCount(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+function safeGenerationResponse(body) {
+  const candidates = Array.isArray(body?.candidates) ? body.candidates : null;
+  const first = candidates?.[0];
+  const parts = Array.isArray(first?.content?.parts) ? first.content.parts : null;
+  const texts = parts?.filter(x => typeof x?.text === "string")
+    .map(x => x.text) ?? [];
+  const reply = texts.join("").trim();
+  const reason = first?.finishReason;
+  const usage = body?.usageMetadata;
+  return {
+    exact_ready: reply === "READY",
+    diagnostic: {
+      candidate_count: candidates?.length ?? null,
+      part_count: parts?.length ?? null,
+      text_part_count: parts ? texts.length : null,
+      has_text: reply.length > 0,
+      finish_reason: typeof reason === "string" &&
+        ALLOWED_FINISH_REASONS.has(reason) ? reason : null,
+      prompt_token_count: safeTokenCount(usage?.promptTokenCount),
+      candidate_token_count: safeTokenCount(usage?.candidatesTokenCount),
+      total_token_count: safeTokenCount(usage?.totalTokenCount),
+      thoughts_token_count: safeTokenCount(usage?.thoughtsTokenCount)
+    }
+  };
+}
+
+/**
  * One Gemini Developer API request, WITHOUT ADK, A2A, Gateway, repository or
  * tools. Synthetic prompt only. Neither provider bodies nor errors are logged.
  * No retries, no Vertex AI, no paid-provider fallback.
@@ -58,6 +97,7 @@ export async function runGeminiApiHealthSmoke({
           ? "network_exception" : inspected.classification_source,
       error_type:inspected.error_type,
       ...NO_GOOGLE_ERROR,
+      generation_diagnostic:null,
       duration_ms:elapsed(),
       requests:1
     };
@@ -80,6 +120,7 @@ export async function runGeminiApiHealthSmoke({
       classification_source:diagnostic.classification_source,
       error_type:"http_response",
       ...safeError,
+      generation_diagnostic:null,
       duration_ms:elapsed(),
       requests:1
     };
@@ -96,15 +137,14 @@ export async function runGeminiApiHealthSmoke({
       classification_source:"response_validation",
       error_type:"http_response",
       ...NO_GOOGLE_ERROR,
+      generation_diagnostic:null,
       duration_ms:elapsed(),
       requests:1
     };
   }
-  const parts = data?.candidates?.[0]?.content?.parts;
-  const answer = Array.isArray(parts)
-    ? parts.filter(p=>typeof p?.text==="string").map(p=>p.text).join("").trim() : "";
-  // A success requires an actual response, not merely HTTP 200.
-  if (answer !== "READY") {
+  // Validate READY privately; expose only fixed-shape, content-free metrics.
+  const generation = safeGenerationResponse(data);
+  if (!generation.exact_ready) {
     return {
       result:"gemini-api-health-fail",
       model,
@@ -113,6 +153,7 @@ export async function runGeminiApiHealthSmoke({
       classification_source:"response_validation",
       error_type:"http_response",
       ...NO_GOOGLE_ERROR,
+      generation_diagnostic:generation.diagnostic,
       duration_ms:elapsed(),
       requests:1
     };
@@ -125,6 +166,7 @@ export async function runGeminiApiHealthSmoke({
     classification_source:"http_status",
     error_type:"http_response",
     ...NO_GOOGLE_ERROR,
+    generation_diagnostic:generation.diagnostic,
     duration_ms:elapsed(),
     requests:1
   };
