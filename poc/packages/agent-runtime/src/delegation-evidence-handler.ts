@@ -20,6 +20,7 @@ export interface DelegationEvidenceHandlerConfig {
   evidence: DelegationEvidence;
   timeoutMs?: number;
   fetchFn?: FetchLike;
+  signal?: AbortSignal;
 }
 
 export class DelegationEvidenceHandler {
@@ -28,6 +29,7 @@ export class DelegationEvidenceHandler {
   readonly #evidence: DelegationEvidence;
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
+  readonly #signal?: AbortSignal;
 
   constructor(config: DelegationEvidenceHandlerConfig) {
     if (config.adapterBaseUrl.trim().length === 0) {
@@ -45,6 +47,7 @@ export class DelegationEvidenceHandler {
     this.#evidence = structuredClone(config.evidence);
     this.#timeoutMs = config.timeoutMs ?? 5_000;
     this.#fetch = config.fetchFn ?? fetch;
+    this.#signal = config.signal;
   }
 
   get credentialId(): string {
@@ -58,6 +61,7 @@ export class DelegationEvidenceHandler {
   async createPresentation(
     prepared: PreparedGatewayAuthorization
   ): Promise<string> {
+    this.#signal?.throwIfAborted();
     let response: Response;
     try {
       response = await this.#fetch(`${this.#adapterBaseUrl}/v1/presentations`, {
@@ -72,7 +76,9 @@ export class DelegationEvidenceHandler {
           audience: prepared.audience,
           challenge: prepared.challenge
         }),
-        signal: AbortSignal.timeout(this.#timeoutMs)
+        signal: this.#signal
+            ? AbortSignal.any([this.#signal, AbortSignal.timeout(this.#timeoutMs)])
+            : AbortSignal.timeout(this.#timeoutMs)
       });
     } catch (error) {
       throw new ControlledToolError(
@@ -81,6 +87,7 @@ export class DelegationEvidenceHandler {
       );
     }
 
+    this.#signal?.throwIfAborted();
     const raw = await response.text();
     let body: unknown = {};
     if (raw.length > 0) {

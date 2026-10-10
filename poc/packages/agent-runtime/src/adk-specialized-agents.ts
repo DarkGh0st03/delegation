@@ -37,6 +37,7 @@ export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: R
 
 export interface AdkSpecializedAgentConfig {
   onToolOutcome?: (outcome: AdkControlledToolOutcome) => void;
+  signal?: AbortSignal;
   role: SpecializedAgentRole;
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
@@ -71,13 +72,18 @@ export function createAdkSpecializedAgent(
       description: definition.description,
       parameters: SCHEMAS[name],
       execute: async (args) => {
+        const started = performance.now();
+        let success = false;
         try {
+          config.signal?.throwIfAborted();
           const result = await registry.execute({
             call_id: "adk-controlled-tool",
             name,
             arguments: JSON.stringify(args)
           });
+          config.signal?.throwIfAborted();
           const payload = { ok: true as const, result };
+          success = true;
           config.onToolOutcome?.({ name, arguments: args as Record<string, unknown>, payload });
           return payload;
         } catch (error) {
@@ -91,6 +97,13 @@ export function createAdkSpecializedAgent(
           const payload = controlledToolErrorPayload(new ControlledToolError("tool_unavailable", "Controlled tool failed"));
           config.onToolOutcome?.({ name, arguments: args as Record<string, unknown>, payload });
           return payload;
+        } finally {
+          // Fixed tool identifier, status and latency only: never log arguments,
+          // file content, prompts, status-list tokens, DC or signed VP.
+          process.stdout.write(JSON.stringify({
+            event: "adk_tool_timing", role: config.role, tool: name,
+            success, duration_ms: Math.round(performance.now() - started)
+          }) + "\n");
         }
       }
     });

@@ -5,8 +5,7 @@ import {
   type AgentCard
 } from "@a2a-js/sdk";
 import {
-  DefaultRequestHandler,
-  InMemoryTaskStore
+  DefaultRequestHandler
 } from "@a2a-js/sdk/server";
 import {
   UserBuilder,
@@ -14,6 +13,7 @@ import {
   restHandler
 } from "@a2a-js/sdk/server/express";
 import { createSpecializedAgentCard } from "./cards.ts";
+import { PrivateEvidenceTaskStore } from "./private-task-store.ts";
 import {
   DeterministicSpecializedAgentExecutor,
   type DeterministicArtifactPayloadBuilder,
@@ -59,7 +59,7 @@ export async function startSpecializedAgentServer(
   );
   const requestHandler = new DefaultRequestHandler(
     card,
-    new InMemoryTaskStore(),
+    new PrivateEvidenceTaskStore(),
     executor
   );
 

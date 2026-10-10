@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import {
   Role,
+  TaskState,
   type AgentCard,
   type Task
 } from "@a2a-js/sdk";
@@ -65,10 +67,43 @@ export interface ProtectedA2ATaskResult {
   task: Task;
 }
 
+export interface A2APollingOptions {
+  /** Deadline for the entire role task (not a target latency). */
+  deadlineMs?: number;
+  initialIntervalMs?: number;
+  maxIntervalMs?: number;
+}
+const FINISHED = new Set<TaskState>([
+  TaskState.TASK_STATE_COMPLETED,
+  TaskState.TASK_STATE_FAILED,
+  TaskState.TASK_STATE_CANCELED,
+  TaskState.TASK_STATE_REJECTED
+]);
+function positiveSafe(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(name + " must be positive");
+  return value;
+}
+function safeA2AMetric(phase: string, durationMs: number, polls: number): void {
+  process.stdout.write(JSON.stringify({
+    event: "a2a_timing", phase,
+    duration_ms: Math.round(durationMs),
+    polls
+  }) + "\n");
+}
+
 export class DeterministicA2AOrchestrator {
   readonly #factory: ClientFactory;
+  readonly #deadlineMs: number;
+  readonly #initialIntervalMs: number;
+  readonly #maxIntervalMs: number;
 
-  constructor() {
+  constructor(options: A2APollingOptions = {}) {
+    this.#deadlineMs = positiveSafe(options.deadlineMs ?? 12 * 60_000, "A2A deadline");
+    this.#initialIntervalMs = positiveSafe(options.initialIntervalMs ?? 500, "A2A poll interval");
+    this.#maxIntervalMs = positiveSafe(options.maxIntervalMs ?? 3000, "A2A max poll interval");
+    if (this.#maxIntervalMs < this.#initialIntervalMs) {
+      throw new Error("A2A max poll interval must not be smaller than initial");
+    }
     this.#factory = new ClientFactory(
       ClientFactoryOptions.createFrom(ClientFactoryOptions.default, {
         preferredTransports: ["HTTP+JSON"]
@@ -83,6 +118,7 @@ export class DeterministicA2AOrchestrator {
     const card = await client.getAgentCard();
     assertDelegatedAuthorizationSupport(card);
 
+    const start = performance.now();
     const result = await client.sendMessage(
       {
         tenant: "",
@@ -112,7 +148,7 @@ export class DeterministicA2AOrchestrator {
           acceptedOutputModes: ["application/json"],
           taskPushNotificationConfig: undefined,
           historyLength: 0,
-          returnImmediately: false
+          returnImmediately: true
         },
         metadata: {
           workflow: "account-suspension"
@@ -131,9 +167,49 @@ export class DeterministicA2AOrchestrator {
       );
     }
 
-    return {
-      card,
-      task: result
-    };
+    // The first HTTP request closes immediately; only the opaque task ID is
+    // reused. Delegation Evidence never appears in getTask/cancelTask payloads.
+    if (!result.id) throw new Error("A2A did not return a task id");
+    let task: Task = result;
+    let polls = 0;
+    let interval = this.#initialIntervalMs;
+    while (true) {
+      const state = task.status?.state;
+      if (state !== undefined && FINISHED.has(state)) {
+        safeA2AMetric("terminal", performance.now() - start, polls);
+        if (state !== TaskState.TASK_STATE_COMPLETED) {
+          throw new Error("Protected A2A task ended without completion");
+        }
+        return {card,task: {...task, history: []}};
+      }
+      // INPUT_REQUIRED and AUTH_REQUIRED cannot be fulfilled by this fixed
+      // delegated workflow; fail instead of waiting indefinitely.
+      if (state === TaskState.TASK_STATE_INPUT_REQUIRED ||
+          state === TaskState.TASK_STATE_AUTH_REQUIRED) {
+        throw new Error("Protected A2A task requires unsupported interaction");
+      }
+      const elapsed = performance.now() - start;
+      if (elapsed >= this.#deadlineMs) {
+        try {
+          await client.cancelTask({id: result.id}, {
+            signal: AbortSignal.timeout(5000)
+          });
+        } catch {
+          // Cancellation is best effort; the timeout remains a hard failure.
+        }
+        safeA2AMetric("deadline", performance.now() - start, polls);
+        throw new Error("Protected A2A task deadline exceeded");
+      }
+      const remaining = this.#deadlineMs - elapsed;
+      await sleep(Math.min(interval, remaining));
+      polls++;
+      // Every getTask request has its own short timeout; it does NOT share
+      // the original long-running sendMessage HTTP connection.
+      const requestMs = Math.max(1, Math.min(15_000, this.#deadlineMs - (performance.now() - start)));
+      task = await client.getTask({id: result.id, historyLength: 0}, {
+        signal: AbortSignal.timeout(requestMs)
+      });
+      interval = Math.min(this.#maxIntervalMs, Math.ceil(interval * 1.5));
+    }
   }
 }

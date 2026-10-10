@@ -22,6 +22,7 @@ export interface GatewayControlledToolClientConfig {
   evidenceHandler: DelegationEvidenceHandler;
   timeoutMs?: number;
   fetchFn?: FetchLike;
+  signal?: AbortSignal;
 }
 
 function errorMessage(body: unknown, fallback: string): string {
@@ -65,6 +66,7 @@ export class GatewayControlledToolClient {
   readonly #evidenceHandler: DelegationEvidenceHandler;
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
+  readonly #signal?: AbortSignal;
 
   constructor(config: GatewayControlledToolClientConfig) {
     if (config.gatewayBaseUrl.trim().length === 0) {
@@ -80,12 +82,14 @@ export class GatewayControlledToolClient {
     this.#evidenceHandler = config.evidenceHandler;
     this.#timeoutMs = config.timeoutMs ?? 10_000;
     this.#fetch = config.fetchFn ?? fetch;
+    this.#signal = config.signal;
   }
 
   async invoke(
     tool: SpecializedToolName,
     args: Record<string, unknown>
   ): Promise<unknown> {
+    this.#signal?.throwIfAborted();
     let prepareResponse: Response;
     try {
       prepareResponse = await this.#fetch(
@@ -99,7 +103,9 @@ export class GatewayControlledToolClient {
             tool,
             arguments: args
           }),
-          signal: AbortSignal.timeout(this.#timeoutMs)
+          signal: this.#signal
+            ? AbortSignal.any([this.#signal, AbortSignal.timeout(this.#timeoutMs)])
+            : AbortSignal.timeout(this.#timeoutMs)
         }
       );
     } catch (error) {
@@ -138,7 +144,9 @@ export class GatewayControlledToolClient {
       );
     }
 
+    this.#signal?.throwIfAborted();
     const signedVp = await this.#evidenceHandler.createPresentation(prepared);
+    this.#signal?.throwIfAborted();
 
     let executeResponse: Response;
     try {
@@ -151,7 +159,9 @@ export class GatewayControlledToolClient {
             request_id: prepared.request_id,
             signed_vp: signedVp
           }),
-          signal: AbortSignal.timeout(this.#timeoutMs)
+          signal: this.#signal
+            ? AbortSignal.any([this.#signal, AbortSignal.timeout(this.#timeoutMs)])
+            : AbortSignal.timeout(this.#timeoutMs)
         }
       );
     } catch (error) {
@@ -161,6 +171,7 @@ export class GatewayControlledToolClient {
       );
     }
 
+    this.#signal?.throwIfAborted();
     const executeBody = await parseJson(executeResponse, "Gateway execute");
     if (!executeResponse.ok) {
       throw new ControlledToolError(
