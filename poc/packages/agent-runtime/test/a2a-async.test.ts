@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {setTimeout as sleep} from "node:timers/promises";
-import {TaskState} from "@a2a-js/sdk";
-import {ClientFactory,ClientFactoryOptions} from "@a2a-js/sdk/client";
+import {Role,TaskState} from "@a2a-js/sdk";
+import {ClientFactory,ClientFactoryOptions,ServiceParameters,withA2AExtensions} from "@a2a-js/sdk/client";
 import {buildDeterministicArtifactPayload} from "../src/artifact-builder.ts";
+import {DELEGATED_AUTHORIZATION_EXTENSION_URI} from "../src/contracts.ts";
 import {DeterministicA2AOrchestrator} from "../src/orchestrator.ts";
 import {startSpecializedAgentServer} from "../src/server.ts";
 
@@ -97,4 +98,43 @@ test("A2A polling config rejects invalid deadline/intervals before network acces
   assert.throws(()=>new DeterministicA2AOrchestrator({
     initialIntervalMs:200,maxIntervalMs:20
   }),/not be smaller/u);
+});
+
+test("protected initial A2A sendMessage cannot return delegation metadata even when history is requested",async()=>{
+  const server=await startSpecializedAgentServer({
+    role:"backend",host:"127.0.0.1",port:43594
+  });
+  try{
+    const client=await clientFor(server.baseUrl);
+    const task=request(server.baseUrl);
+    const reply=await client.sendMessage({
+      tenant:"",
+      message:{
+        messageId:crypto.randomUUID(),contextId:"",taskId:"",
+        role:Role.ROLE_USER,
+        parts:[{content:{$case:"data",value:task.subtask},metadata:undefined,
+          filename:"",mediaType:"application/json"}],
+        metadata:{delegation_evidence:task.delegation_evidence},
+        extensions:[DELEGATED_AUTHORIZATION_EXTENSION_URI],
+        referenceTaskIds:[]
+      },
+      configuration:{
+        returnImmediately:true,
+        historyLength:100,
+        acceptedOutputModes:["application/json"],
+        taskPushNotificationConfig:undefined
+      },
+      metadata:{workflow:"account-suspension"}
+    },{serviceParameters:ServiceParameters.create(
+      withA2AExtensions(DELEGATED_AUTHORIZATION_EXTENSION_URI)
+    )});
+    assert.equal("id" in reply,true);
+    assert.equal(JSON.stringify(reply).includes(EVIDENCE),false);
+    if("id" in reply){
+      assert.deepEqual(reply.history,[]);
+      const later=await client.getTask({id:reply.id,historyLength:100});
+      assert.deepEqual(later.history,[]);
+      assert.equal(JSON.stringify(later).includes(EVIDENCE),false);
+    }
+  }finally{await server.close();}
 });

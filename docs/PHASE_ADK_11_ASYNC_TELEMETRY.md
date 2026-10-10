@@ -31,7 +31,12 @@ The SDK's ResultManager implicitly inserts the inbound A2A Message in
 Task.history. That Message has DC evidence in metadata. The dedicated
 PrivateEvidenceTaskStore strips all persistent history and status
 messages so subsequent getTask/listTasks cannot disclose bearer
-materials. The initial client also requests historyLength zero.
+materials. The initial client also requests historyLength zero. A second,
+public-response boundary (PrivateEvidenceRequestHandler) enforces zero
+history on the initial sendMessage response regardless of a caller's
+historyLength preference, and also on getTask. Streaming/resubscription
+is explicitly disabled, consistently with the Agent Card. This prevents
+external clients from asking for the original authority-bearing Message.
 The raw inbound Message is used transiently by the protocol, while
 the DC needed by the agent remains in the private task-context store.
 
@@ -59,3 +64,12 @@ Next actual Gemini checkpoint: **one** Backend-only attempt after
 deterministic regressions, followed by performance diagnostics.
 Do not increase turn limits, enable cloud billing, implement MCP
 or automate a merge to address this transport issue.
+
+## Deterministic result (10 October 2026)
+- Native ADK regression: https://github.com/DarkGh0st03/delegation/actions/runs/38034952658 — SUCCESS.
+- Protected EVM full scripted ADK:
+  https://github.com/DarkGh0st03/delegation/actions/runs/38034952655 — SUCCESS.
+- State `pr_created`, three roles completed, project tests PASS,
+  researcher acceptance PASS, main unchanged, no auto-merge.
+- All above use scripted model turns; these results do NOT constitute
+  a successful real Gemini Account Suspension implementation.

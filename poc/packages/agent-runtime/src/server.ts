@@ -4,9 +4,7 @@ import {
   AGENT_CARD_PATH,
   type AgentCard
 } from "@a2a-js/sdk";
-import {
-  DefaultRequestHandler
-} from "@a2a-js/sdk/server";
+
 import {
   UserBuilder,
   agentCardHandler,
@@ -14,6 +12,7 @@ import {
 } from "@a2a-js/sdk/server/express";
 import { createSpecializedAgentCard } from "./cards.ts";
 import { PrivateEvidenceTaskStore } from "./private-task-store.ts";
+import { PrivateEvidenceRequestHandler } from "./private-request-handler.ts";
 import {
   DeterministicSpecializedAgentExecutor,
   type DeterministicArtifactPayloadBuilder,
@@ -57,7 +56,7 @@ export async function startSpecializedAgentServer(
     options.artifactBuilder,
     taskHandler
   );
-  const requestHandler = new DefaultRequestHandler(
+  const requestHandler = new PrivateEvidenceRequestHandler(
     card,
     new PrivateEvidenceTaskStore(),
     executor
