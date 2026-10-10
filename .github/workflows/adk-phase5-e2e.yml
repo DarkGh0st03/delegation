@@ -79,6 +79,8 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
       GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-3.8-flash' }}
       PHASE10B_GEMINI_MAX_MODEL_TURNS: "16"
+      # Diagnostic numbers only; never logs prompts or tool schemas.
+      ADK_SAFE_REQUEST_SHAPE_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' && 'true' || 'false' }}
       ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"

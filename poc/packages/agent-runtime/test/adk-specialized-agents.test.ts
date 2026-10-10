@@ -9,6 +9,7 @@ import {
   type LlmRequest,
   type LlmResponse
 } from "@google/adk";
+import {safeAdkRequestShape} from "../src/adk-request-shape.ts";
 import {
   ControlledToolError,
   createAdkSpecializedAgent,
@@ -156,4 +157,20 @@ test("Phase 2: Test ADK agent can request create_file only through the Gateway",
   },async()=>({commit_sha:"abcdef0123456789abcdef0123456789abcdef01",provider:"gitea"}));
   assert.equal(calls.length,1);
   assert.equal(calls[0]?.name,"create_file");
+});
+
+test("Backend's real ADK first-turn request has two declared tools and no output cap",async()=>{
+  const {model}=await exercise("backend","read_file",{
+    branch:BRANCH,path:PATHS.backend
+  },async()=>({content:"fixture"}));
+  assert.equal(model.requests.length,2);
+  const shape=safeAdkRequestShape(model.requests[0]!);
+  assert.ok(shape.content_messages!==null && shape.content_messages>0);
+  assert.ok(shape.content_text_chars!==null && shape.content_text_chars>0);
+  assert.ok(shape.system_instruction_text_chars!==null &&
+    shape.system_instruction_text_chars>100);
+  assert.equal(shape.function_declarations,2);
+  assert.equal(shape.max_output_tokens,null);
+  assert.equal(shape.temperature,null);
+  assert.equal(JSON.stringify(shape).includes("NEVER_EXPOSE_DELEGATION_EVIDENCE"),false);
 });

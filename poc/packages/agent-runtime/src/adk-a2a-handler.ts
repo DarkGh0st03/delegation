@@ -14,6 +14,7 @@ import { createAdkSpecializedAgent, type AdkControlledToolOutcome } from "./adk-
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
 import { AdkToolProgress } from "./adk-tool-progress.ts";
+import { safeAdkRequestShape } from "./adk-request-shape.ts";
 
 type FetchLike = typeof fetch;
 
@@ -73,6 +74,15 @@ class BoundedModel extends BaseLlm {
       throw new Error("ADK model turn budget exhausted");
     }
     this.turns += 1;
+    // Optional, content-free comparison with the successful Gemini ADK smoke.
+    // Never log provider payloads, system prompts, tool schema or evidence.
+    // Explicitly disabled for routine scripted and production runs.
+    if (process.env.ADK_SAFE_REQUEST_SHAPE_DIAGNOSTICS === "true") {
+      process.stdout.write(JSON.stringify({
+        event:"adk_request_shape",turn:this.turns,
+        ...safeAdkRequestShape(request)
+      }) + "\n");
+    }
     const started = performance.now();
     // A single stalled Gemini API request must not occupy the entire A2A
     // deadline. The native ADK Gemini model forwards this AbortSignal into
