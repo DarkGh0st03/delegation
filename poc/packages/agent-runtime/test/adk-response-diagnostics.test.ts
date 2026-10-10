@@ -26,7 +26,7 @@ test("safe response diagnostic preserves expected finish labels and redacts othe
   assert.equal(safeAdkResponseShape({finishReason:"MALFORMED_FUNCTION_CALL"} as LlmResponse).finish_reason,
     "MALFORMED_FUNCTION_CALL");
   assert.equal(safeAdkResponseShape({} as LlmResponse).finish_reason,null);
-  const injected="SECRET_TOKEN_12345\n{"steal":true}";
+  const injected='SECRET_TOKEN_12345\\n{"steal":true}';
   assert.equal(safeAdkResponseShape({
     finishReason:injected
   } as unknown as LlmResponse).finish_reason,"UNKNOWN");
