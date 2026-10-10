@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 
 import { writeFile } from "node:fs/promises";
+import {
+  BACKEND_LIVE_PROBE_PATH,
+  BACKEND_LIVE_PROBE_INSTRUCTION,
+  BACKEND_LIVE_PROBE_MAX_TURNS,
+  BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,
+  BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,
+  verifyBackendLiveProbe
+} from "../packages/agent-runtime/src/adk-backend-live-probe.ts";
 import { existsSync } from "node:fs";
 import {
   DelegationEvidenceHandler,
@@ -403,17 +411,26 @@ function specializedServerConfig(role,port,token){
   const gatewayTimeoutMs=role==="test"
     ?Number(process.env.TEST_RUNNER_TIMEOUT_MS??"900000"):30000;
   // Free Tier bounded inference; original scripted baseline stays at 40.
-  const maxModelTurns=engine==="adk-gemini"
-    ?Number(process.env.PHASE10B_GEMINI_MAX_MODEL_TURNS??"24"):40;
+  const maxModelTurns=backendProbeOnce && engine==="adk-gemini" && role==="backend"
+    ? BACKEND_LIVE_PROBE_MAX_TURNS
+    :engine==="adk-gemini"
+      ?Number(process.env.PHASE10B_GEMINI_MAX_MODEL_TURNS??"24"):40;
   if(!Number.isSafeInteger(maxModelTurns)||maxModelTurns<1||maxModelTurns>40)
     throw new Error("Gemini model turn budget must be from 1 to 40");
   // Match the previously successful isolated Gemini ADK function-calling probe.
   // Only the explicitly selected live Gemini Backend receives this configuration.
   // Scripted regressions and the other agent roles retain their original defaults.
   const geminiBackendGeneration=engine==="adk-gemini" && role==="backend"
-    ? {generateContentConfig:{maxOutputTokens:1024,temperature:0}} : {};
+    ? {generateContentConfig:{
+        maxOutputTokens:backendProbeOnce
+          ?BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS:1024,
+        temperature:0
+      }} : {};
+  const manualBackendTimeout=backendProbeOnce&&engine==="adk-gemini"&&role==="backend"
+    ?{maxModelCallMs:BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS}:{};
   return {role,port,adk:{model,gatewayBaseUrl:gateway,adapterBaseUrl:adapter,
-    adapterToken:token,gatewayTimeoutMs,maxModelTurns,...geminiBackendGeneration}};
+    adapterToken:token,gatewayTimeoutMs,maxModelTurns,
+    ...geminiBackendGeneration,...manualBackendTimeout}};
 }
 
 
@@ -511,14 +528,9 @@ try {
       agent_base_url: backendServer.baseUrl,
       subtask:{
         subtask_id:"account-suspension-backend",
-        instruction:"Implement the backend Account Suspension lifecycle and shared status contract.",
+        instruction:BACKEND_LIVE_PROBE_INSTRUCTION,
         branch:"feature/account-suspension",
-        relevant_paths:[
-          "packages/shared/src/account-status.ts",
-          "apps/backend/src/users/user.service.ts",
-          "apps/backend/src/users/user.controller.ts",
-          "apps/backend/src/users/user.routes.ts"
-        ]
+        relevant_paths:[BACKEND_LIVE_PROBE_PATH]
       },
       expected_revision: branch.revision
     });
@@ -526,6 +538,31 @@ try {
         !task.artifact.files_modified.length) {
       throw new Error("Gemini Backend did not produce a Gateway-confirmed revision");
     }
+    // Additional independent verification of the real, temporary Gitea branch.
+    // This is an audit READ after the delegated write; it is not used to
+    // perform an agent operation or bypass the Gateway authority boundary.
+    const featureBranch=await giteaGet(
+      "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+
+      "/branches/"+encodeURIComponent("feature/account-suspension")
+    );
+    const committedFile=await giteaGet(
+      "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+
+      "/contents/"+BACKEND_LIVE_PROBE_PATH+
+      "?ref="+encodeURIComponent("feature/account-suspension")
+    );
+    if (committedFile.encoding!=="base64" ||
+        typeof committedFile.content!=="string") {
+      throw new Error("Gitea did not expose verified Backend file content");
+    }
+    verifyBackendLiveProbe({
+      initialRevision:branch.revision,
+      reportedRevision:task.artifact.revision,
+      repositoryRevision:featureBranch.commit?.id,
+      filesModified:task.artifact.files_modified,
+      repositorySource:Buffer.from(
+        committedFile.content.replace(/\\s/gu,""),"base64"
+      ).toString("utf8")
+    });
     const mainBranch=await giteaGet(
       "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+"/branches/main"
     );
