@@ -1,0 +1,40 @@
+name: Gemini Model Metadata One-Shot
+
+# Narrow, explicitly authorized diagnostic: only the unique trigger may start.
+# No provider generation, no ADK, no EVM/Rust/Gateway/OPA/Gitea.
+on:
+  push:
+    branches: [refactor/adk-integration]
+    paths:
+      - '.github/gemini-model-metadata-once.trigger'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gemini-model-metadata-once-\${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  list-and-get:
+    # Deleting the consumed marker must NOT make additional API calls.
+    if: \${{ contains(github.event.head_commit.message, 'Gemini model metadata one-shot') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GEMINI_API_KEY: \${{ secrets.Delegation_Thesis_Gemini }}
+      GEMINI_MODEL: gemini-3.8-flash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+      - name: Verify marker and Free Tier secret are present
+        run: |
+          test -f .github/gemini-model-metadata-once.trigger
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo 'Gemini secret missing' >&2
+            exit 1
+          fi
+      - name: Metadata-only Gemini models.list and models.get
+        run: node --experimental-strip-types poc/packages/agent-runtime/scripts/gemini-model-metadata.mjs
