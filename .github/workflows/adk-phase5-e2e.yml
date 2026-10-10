@@ -79,7 +79,7 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
       GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-3.8-flash' }}
       PHASE10B_GEMINI_MAX_MODEL_TURNS: "16"
-      # Live Backend mode overrides the above with the strict 8-turn probe
+      # Live Backend uses the original complete four-file task and 16-turn
       # budget in adk-backend-live-probe.ts. Never retry failed inference.
       # Diagnostic numbers only; never logs prompts or tool schemas.
       ADK_SAFE_REQUEST_SHAPE_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' && 'true' || 'false' }}

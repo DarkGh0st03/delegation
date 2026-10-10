@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { writeFile } from "node:fs/promises";
 import {
-  BACKEND_LIVE_PROBE_PATH,
+  BACKEND_LIVE_PROBE_PATHS,
   BACKEND_LIVE_PROBE_INSTRUCTION,
   BACKEND_LIVE_PROBE_MAX_TURNS,
   BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,
@@ -530,7 +530,7 @@ try {
         subtask_id:"account-suspension-backend",
         instruction:BACKEND_LIVE_PROBE_INSTRUCTION,
         branch:"feature/account-suspension",
-        relevant_paths:[BACKEND_LIVE_PROBE_PATH]
+        relevant_paths:[...BACKEND_LIVE_PROBE_PATHS]
       },
       expected_revision: branch.revision
     });
@@ -545,23 +545,28 @@ try {
       "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+
       "/branches/"+encodeURIComponent("feature/account-suspension")
     );
-    const committedFile=await giteaGet(
-      "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+
-      "/contents/"+BACKEND_LIVE_PROBE_PATH+
-      "?ref="+encodeURIComponent("feature/account-suspension")
-    );
-    if (committedFile.encoding!=="base64" ||
-        typeof committedFile.content!=="string") {
-      throw new Error("Gitea did not expose verified Backend file content");
+    const verifiedFilePaths=[];
+    for(const path of BACKEND_LIVE_PROBE_PATHS){
+      // Audit-only reads on the temporary Gitea instance, after the real
+      // Gateway-authorized writes. Never feed these file contents to the LLM
+      // or use this channel to perform agent operations.
+      const committedFile=await giteaGet(
+        "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+
+        "/contents/"+path+"?ref="+encodeURIComponent("feature/account-suspension")
+      );
+      if(committedFile.encoding!=="base64" ||
+          typeof committedFile.content!=="string" ||
+          Buffer.from(committedFile.content.replace(/\\s/gu,""),"base64").length===0){
+        throw new Error("Gitea did not expose a verified Backend file");
+      }
+      verifiedFilePaths.push(path);
     }
     verifyBackendLiveProbe({
       initialRevision:branch.revision,
       reportedRevision:task.artifact.revision,
       repositoryRevision:featureBranch.commit?.id,
       filesModified:task.artifact.files_modified,
-      repositorySource:Buffer.from(
-        committedFile.content.replace(/\\s/gu,""),"base64"
-      ).toString("utf8")
+      verifiedFilePaths
     });
     const mainBranch=await giteaGet(
       "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+"/branches/main"

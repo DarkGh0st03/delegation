@@ -52,9 +52,9 @@ class BoundedModel extends BaseLlm {
   readonly limit: number;
   readonly maxModelCallMs: number;
   readonly #signal?: AbortSignal;
-  readonly #onTiming: (duration: number, input: number | null, output: number | null, turn: number) => void;
+  readonly #onTiming: (duration: number, input: number | null, output: number | null, thinking: number | null, turn: number) => void;
   constructor(delegate: BaseLlm, limit: number, maxModelCallMs: number, signal: AbortSignal | undefined,
-    onTiming: (duration: number, input: number | null, output: number | null, turn: number) => void) {
+    onTiming: (duration: number, input: number | null, output: number | null, thinking: number | null, turn: number) => void) {
     super({model: delegate.model});
     this.delegate = delegate;
     this.limit = limit;
@@ -95,6 +95,7 @@ class BoundedModel extends BaseLlm {
     const combinedSignal = AbortSignal.any(signals);
     let promptTokens: number | null = null;
     let outputTokens: number | null = null;
+    let thinkingTokens: number | null = null;
     try {
       for await (const response of this.delegate.generateContentAsync(
         request, stream, combinedSignal
@@ -107,6 +108,11 @@ class BoundedModel extends BaseLlm {
           promptTokens = usage.promptTokenCount;
         if (typeof usage?.candidatesTokenCount === "number" && Number.isFinite(usage.candidatesTokenCount))
           outputTokens = usage.candidatesTokenCount;
+        // Gemini charges generated reasoning/thought tokens at output rates.
+        // Only numeric counters are logged, never the content of any thought.
+        const maybeThoughts = (usage as {thoughtsTokenCount?: unknown} | undefined)?.thoughtsTokenCount;
+        if (typeof maybeThoughts === "number" && Number.isFinite(maybeThoughts))
+          thinkingTokens = maybeThoughts;
         yield response;
       }
     } catch (error) {
@@ -119,7 +125,7 @@ class BoundedModel extends BaseLlm {
       throw error;
     } finally {
       this.#onTiming(Math.round(performance.now() - started),
-        promptTokens, outputTokens, this.turns);
+        promptTokens, outputTokens, thinkingTokens, this.turns);
     }
   }
   override connect(_request: LlmRequest): Promise<BaseLlmConnection> {
@@ -160,10 +166,13 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   return async (context: AgentTaskContext, signal?: AbortSignal): Promise<AgentArtifactPayload> => {
     const taskStart = performance.now();
     const model = new BoundedModel(config.model, turnLimit, maxModelCallMs, signal,
-      (durationMs, inputTokens, outputTokens, turn) => {
+      (durationMs, inputTokens, outputTokens, thinkingTokens, turn) => {
         process.stdout.write(JSON.stringify({
           event:"adk_llm_timing",role:context.role,turn,
-          duration_ms:durationMs,input_tokens:inputTokens,output_tokens:outputTokens
+          duration_ms:durationMs,input_tokens:inputTokens,
+          output_tokens:outputTokens,thinking_tokens:thinkingTokens,
+          estimated_billable_output_tokens:outputTokens===null
+            ?null:outputTokens+(thinkingTokens??0)
         }) + "\n");
       });
     const events: AdkControlledToolOutcome[] = [];
