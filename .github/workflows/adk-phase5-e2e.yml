@@ -9,6 +9,7 @@ on:
       - 'poc/scripts/phase10b-positive-e2e.mjs'
       - 'poc/packages/agent-runtime/src/**'
       - 'poc/packages/agent-runtime/test/a2a-async.test.ts'
+      - 'poc/packages/agent-runtime/test/adk-failure-categories.test.ts'
   workflow_dispatch:
     inputs:
       engine:
