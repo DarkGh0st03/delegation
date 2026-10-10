@@ -11,11 +11,11 @@ on:
   workflow_dispatch:
     inputs:
       engine:
-        description: 'Scripted ADK (default), OpenAI or Gemini (live: manual only)'
+        description: 'Scripted ADK (default), Gemini Backend-only, or full live multi-agent workflow'
         required: true
         type: choice
         default: adk-scripted
-        options: [adk-scripted, adk-openai, adk-gemini]
+        options: [adk-scripted, adk-gemini-backend, adk-openai, adk-gemini]
       model:
         description: 'Model enabled for your OpenAI API key; leave baseline for scripted runs'
         type: string
@@ -70,7 +70,7 @@ jobs:
       EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
       ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase10b:orchestrator-root
       PHASE10B_RESULT_FILE: /tmp/phase5-adk-result.json
-      PHASE10B_AGENT_ENGINE: ${{ github.event_name == 'workflow_dispatch' && inputs.engine || 'adk-scripted' }}
+      PHASE10B_AGENT_ENGINE: ${{ github.event_name == 'workflow_dispatch' && inputs.engine != 'adk-gemini-backend' && inputs.engine || 'adk-scripted' }}
       PHASE10B_ORCHESTRATOR_ENGINE: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini' && 'adk-gemini' || github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-openai' && 'adk-openai' || 'adk-scripted' }}
       OPENAI_MODEL: ${{ inputs.model || 'gpt-5.6-sol' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -203,7 +203,7 @@ jobs:
             exit 1
           fi
       - name: Require the existing Gemini secret for manual Gemini runs
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.engine == 'adk-gemini' || inputs.engine == 'adk-gemini-backend') }}
         run: |
           if [ -z "$GEMINI_API_KEY" ]; then
             echo 'GitHub repository secret Delegation_Thesis_Gemini is missing.' >&2
@@ -216,6 +216,14 @@ jobs:
             echo 'Missing repository secret Delegation_Thesis_Gemini.' >&2
             exit 1
           fi
+      # This ephemeral marker is generated only after an explicit manual dispatch.
+      # Do NOT commit the marker: ordinary pushes must remain fully scripted.
+      # The existing script recognizes this marker and runs one delegated
+      # Backend Gemini task (no Frontend/Test, no PR, no paid fallback).
+      - name: Select isolated Gemini Backend probe (manual only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
+        run: touch .github/adk-gemini-backend-once.trigger
+
       - name: Run protected ADK Account Suspension E2E
         run: |
           set -a
