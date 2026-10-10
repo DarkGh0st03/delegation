@@ -172,7 +172,18 @@ export class DeterministicA2AOrchestrator {
     if (!result.id) throw new Error("A2A did not return a task id");
     let task: Task = result;
     let polls = 0;
+    let consecutiveFailures = 0;
     let interval = this.#initialIntervalMs;
+    const cancelRemote = async (): Promise<void> => {
+      try {
+        await client.cancelTask({id: result.id}, {
+          signal: AbortSignal.timeout(5000)
+        });
+      } catch {
+        // A raced completion or temporarily unavailable server is not
+        // evidence that the cancelled task successfully completed.
+      }
+    };
     while (true) {
       const state = task.status?.state;
       if (state !== undefined && FINISHED.has(state)) {
@@ -190,13 +201,7 @@ export class DeterministicA2AOrchestrator {
       }
       const elapsed = performance.now() - start;
       if (elapsed >= this.#deadlineMs) {
-        try {
-          await client.cancelTask({id: result.id}, {
-            signal: AbortSignal.timeout(5000)
-          });
-        } catch {
-          // Cancellation is best effort; the timeout remains a hard failure.
-        }
+        await cancelRemote();
         safeA2AMetric("deadline", performance.now() - start, polls);
         throw new Error("Protected A2A task deadline exceeded");
       }
@@ -206,9 +211,26 @@ export class DeterministicA2AOrchestrator {
       // Every getTask request has its own short timeout; it does NOT share
       // the original long-running sendMessage HTTP connection.
       const requestMs = Math.max(1, Math.floor(Math.min(15_000, this.#deadlineMs - (performance.now() - start))));
-      task = await client.getTask({id: result.id, historyLength: 0}, {
-        signal: AbortSignal.timeout(requestMs)
-      });
+      try {
+        task = await client.getTask({id: result.id, historyLength: 0}, {
+          signal: AbortSignal.timeout(requestMs)
+        });
+        consecutiveFailures = 0;
+      } catch {
+        // A poll timeout at the overall deadline is a DEADLINE failure,
+        // not an unhandled HTTP AbortError. Transient polling failures get
+        // at most two retries, with no retransmission of delegated evidence.
+        if (performance.now() - start >= this.#deadlineMs) {
+          await cancelRemote();
+          safeA2AMetric("deadline", performance.now() - start, polls);
+          throw new Error("Protected A2A task deadline exceeded");
+        }
+        consecutiveFailures++;
+        if (consecutiveFailures >= 3) {
+          await cancelRemote();
+          throw new Error("Protected A2A polling transport failed");
+        }
+      }
       interval = Math.min(this.#maxIntervalMs, Math.ceil(interval * 1.5));
     }
   }
