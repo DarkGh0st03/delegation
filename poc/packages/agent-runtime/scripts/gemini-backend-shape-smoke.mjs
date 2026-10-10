@@ -1,4 +1,4 @@
-import { BaseLlm, InMemorySessionService, Runner } from "@google/adk";
+import { BaseLlm, InMemorySessionService, Runner, LlmAgent } from "@google/adk";
 import { createAdkSpecializedAgent } from "../src/adk-specialized-agents.ts";
 import { ControlledToolError } from "../src/controlled-errors.ts";
 import { SPECIALIZED_AGENT_PROFILES } from "../src/specialized-agents.ts";
@@ -10,6 +10,12 @@ import { pathToFileURL } from "node:url";
 const BRANCH="feature/account-suspension";
 const READ_PATH="apps/backend/src/users/user.service.ts";
 const GENERATION={maxOutputTokens:1024,temperature:0};
+export const BACKEND_SHAPE_CASES=Object.freeze(["A","B","C"]);
+const SHORT_INSTRUCTION=
+  "Call read_file exactly once, with branch=feature/account-suspension "+
+  "and path=apps/backend/src/users/user.service.ts. When done reply READY.";
+const SHORT_MESSAGE=
+  "Use the controlled read_file tool once to inspect the synthetic fixture.";
 const TARGETS=[
   "packages/shared/src/account-status.ts",
   READ_PATH,
@@ -61,9 +67,13 @@ class OneProviderTurn extends BaseLlm {
 
 /** In-memory fixture ONLY. This never performs an HTTP request or file write. */
 export async function runBackendShapeSmoke({
-  model,timeoutMs=60000,onRequestShape=()=>{}
+  model,timeoutMs=60000,onRequestShape=()=>{},probeCase="C"
 }={}){
   if(!model)throw new Error("A configured model is required");
+  // A and B share the same short prompt. B and C share Backend tool schemas.
+  if(!BACKEND_SHAPE_CASES.includes(probeCase)){
+    throw new Error("Invalid Backend comparison case; expected A, B or C");
+  }
   const boundary={
     successfulReads:0,
     attemptedWrites:0,
@@ -90,12 +100,26 @@ export async function runBackendShapeSmoke({
   };
   const bounded=new OneProviderTurn(model,{timeoutMs,onRequestShape});
   const outcomes=[];
-  const {agent}=createAdkSpecializedAgent({
+  const {agent:realBackendAgent}=createAdkSpecializedAgent({
     role:"backend",
     model:bounded,
     gatewayClient:boundary,
     generateContentConfig:GENERATION,
     onToolOutcome:event=>outcomes.push({name:event.name,ok:event.payload.ok})
+  });
+  // Tool schemas and execution policy always come from the real Backend factory.
+  // Case C exactly retains the existing isolated production-shaped ADK agent.
+  const agent=probeCase==="C" ? realBackendAgent : new LlmAgent({
+    name:realBackendAgent.name,
+    description:realBackendAgent.description,
+    model:bounded,
+    instruction:SHORT_INSTRUCTION,
+    tools:probeCase==="A"
+      ? realBackendAgent.tools.filter(tool=>tool.name==="read_file")
+      : realBackendAgent.tools,
+    generateContentConfig:GENERATION,
+    disallowTransferToParent:true,
+    disallowTransferToPeers:true
   });
   const appName="backend_shape_isolated",userId="synthetic",sessionId="one-shot";
   const service=new InMemorySessionService();
@@ -105,20 +129,20 @@ export async function runBackendShapeSmoke({
   try {
     for await(const event of runner.runAsync({
       userId,sessionId,newMessage:{role:"user",parts:[{
-        text:JSON.stringify({task:{
+        text:probeCase==="C" ? JSON.stringify({task:{
           task_id:"account-suspension-backend",role:"backend",
           subtask:{
             subtask_id:"account-suspension-backend",
             instruction:"Implement the backend Account Suspension lifecycle and shared status contract.",
             branch:BRANCH,relevant_paths:TARGETS
           }
-        }})
+        }}) : SHORT_MESSAGE
       }]}
     })){
       if(event.errorCode||event.errorMessage)eventError=true;
     }
   }catch{
-    return {result:"gemini-backend-shape-failed",
+    return {result:"gemini-backend-shape-failed",probe_case:probeCase,
       reason:"provider_or_sdk_failure",
       diagnostic:bounded.diagnostic??{
         category:"sdk_model_exception",http_status:null,
@@ -133,7 +157,7 @@ export async function runBackendShapeSmoke({
   // ADK may consume a provider exception and terminate the Runner normally.
   // Always preserve the sanitized status rather than misclassifying as no-tool.
   if(bounded.diagnostic||eventError){
-    return {result:"gemini-backend-shape-failed",
+    return {result:"gemini-backend-shape-failed",probe_case:probeCase,
       reason:"provider_or_sdk_failure",
       diagnostic:bounded.diagnostic??{
         category:"adk_event_error",http_status:null,
@@ -149,6 +173,7 @@ export async function runBackendShapeSmoke({
     boundary.successfulReads===1&&boundary.attemptedWrites===0&&
     outcomes.length===1&&outcomes[0].name==="read_file"&&outcomes[0].ok;
   return {result:pass?"gemini-backend-shape-pass":"gemini-backend-shape-incomplete",
+    probe_case:probeCase,
     reason:pass?null:"first_response_tool_contract_not_met",
     provider_turns:bounded.providerTurns,
     model_turns:bounded.totalTurns,
@@ -162,9 +187,12 @@ if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href){
   if(!apiKey?.trim())throw new Error("Missing Gemini API key for manual Backend probe");
   const modelName=process.env.GEMINI_MODEL??"gemini-3.8-flash";
   const model=createGeminiAdkModel({apiKey,model:modelName});
+  // One manually selected case per invocation; no chained provider probes.
+  const probeCase=process.env.GEMINI_BACKEND_CASE??"C";
   const output=await runBackendShapeSmoke({
-    model,
+    model,probeCase,
     onRequestShape:shape=>process.stdout.write(JSON.stringify({
+      case_id:probeCase,
       event:"gemini_backend_shape",...shape
     })+"\n")
   });

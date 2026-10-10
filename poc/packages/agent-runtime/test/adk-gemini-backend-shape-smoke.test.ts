@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {BaseLlm} from "@google/adk";
-import {runBackendShapeSmoke} from "../scripts/gemini-backend-shape-smoke.mjs";
+import {runBackendShapeSmoke,BACKEND_SHAPE_CASES} from "../scripts/gemini-backend-shape-smoke.mjs";
 
 const BRANCH="feature/account-suspension";
 const READ_PATH="apps/backend/src/users/user.service.ts";
@@ -83,4 +83,83 @@ test("Backend shape probe refuses no-tool prose as an incomplete functional test
   assert.equal(result.provider_turns,1);
   assert.equal(result.synthetic_reads,0);
   assert.equal(model.turns,1);
+});
+
+test("A/B/C: fixed Gemini model settings, one provider request, and no repository",async()=>{
+  const traces={};
+  for(const probeCase of BACKEND_SHAPE_CASES){
+    const model=new SyntheticModel("read");
+    const shapes=[];
+    const output=await runBackendShapeSmoke({
+      model,probeCase,onRequestShape:shape=>shapes.push(shape)
+    });
+    assert.equal(output.result,"gemini-backend-shape-pass");
+    assert.equal(output.probe_case,probeCase);
+    assert.equal(output.provider_turns,1);
+    assert.equal(output.model_turns,2);
+    assert.equal(output.synthetic_reads,1);
+    assert.equal(output.rejected_writes,0);
+    assert.equal(output.actual_repository_access,false);
+    assert.equal(model.turns,1);
+    assert.equal(shapes.length,1);
+    assert.equal(shapes[0].max_output_tokens,1024);
+    assert.equal(shapes[0].temperature,0);
+    traces[probeCase]={request:model.requests[0],shape:shapes[0]};
+  }
+  const toolNames=probeCase=>traces[probeCase].request.config.tools
+    .flatMap(group=>group.functionDeclarations??[]).map(tool=>tool.name);
+  assert.deepEqual(toolNames("A"),["read_file"]);
+  assert.deepEqual(toolNames("B"),["read_file","update_file"]);
+  assert.deepEqual(toolNames("C"),["read_file","update_file"]);
+  // A -> B varies ONLY the number of declared tools (same text and instructions).
+  assert.equal(traces.A.shape.content_text_chars,traces.B.shape.content_text_chars);
+  assert.equal(traces.A.shape.system_instruction_text_chars,
+    traces.B.shape.system_instruction_text_chars);
+  assert.equal(JSON.stringify(traces.A.request.contents),
+    JSON.stringify(traces.B.request.contents));
+  assert.equal(JSON.stringify(traces.A.request.config.systemInstruction),
+    JSON.stringify(traces.B.request.config.systemInstruction));
+  // B -> C uses identical Backend tool declarations and parameters.
+  const declarations=label=>traces[label].request.config.tools
+    .flatMap(group=>group.functionDeclarations??[]);
+  assert.equal(JSON.stringify(declarations("B")),JSON.stringify(declarations("C")));
+  assert.ok(traces.C.shape.content_text_chars>traces.B.shape.content_text_chars);
+  assert.ok(traces.C.shape.system_instruction_text_chars>
+    traces.B.shape.system_instruction_text_chars);
+});
+
+test("A/B/C: a single simulated 503 is sanitized without provider retry",async()=>{
+  for(const probeCase of BACKEND_SHAPE_CASES){
+    const model=new SyntheticModel("503");
+    const output=await runBackendShapeSmoke({model,probeCase});
+    assert.equal(output.result,"gemini-backend-shape-failed");
+    assert.equal(output.probe_case,probeCase);
+    assert.equal(output.diagnostic.category,"api_service_unavailable");
+    assert.equal(output.diagnostic.http_status,503);
+    assert.equal(output.provider_turns,1);
+    assert.equal(model.turns,1);
+    assert.equal(output.actual_repository_access,false);
+    assert.equal(output.synthetic_reads,0);
+    assert.equal(JSON.stringify(output).includes("NEVER echo"),false);
+  }
+});
+
+test("B/C: declared update_file is still blocked by the in-memory boundary",async()=>{
+  for(const probeCase of ["B","C"]){
+    const output=await runBackendShapeSmoke({
+      model:new SyntheticModel("write"),probeCase
+    });
+    assert.equal(output.probe_case,probeCase);
+    assert.equal(output.result,"gemini-backend-shape-incomplete");
+    assert.equal(output.provider_turns,1);
+    assert.equal(output.synthetic_reads,0);
+    assert.equal(output.rejected_writes,1);
+    assert.equal(output.actual_repository_access,false);
+  }
+});
+
+test("Unsupported case fails closed before any model or provider request",async()=>{
+  const model=new SyntheticModel("read");
+  await assert.rejects(()=>runBackendShapeSmoke({model,probeCase:"ALL"}),/Invalid Backend comparison case/u);
+  assert.equal(model.turns,0);
 });
