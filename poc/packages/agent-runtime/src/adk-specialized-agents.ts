@@ -46,6 +46,8 @@ export interface AdkSpecializedAgentConfig {
   onToolOutcome?: (outcome: AdkControlledToolOutcome) => void;
   signal?: AbortSignal;
   generateContentConfig?: AdkGenerationConfig;
+  /** Model-facing hints only for the explicit live Backend probe; never security authority. */
+  scopeModelPaths?: boolean;
   role: SpecializedAgentRole;
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
@@ -71,14 +73,29 @@ export function createAdkSpecializedAgent(
 ): AdkSpecializedAgent {
   const profile = SPECIALIZED_AGENT_PROFILES[config.role];
   if (!profile) throw new Error("Unknown specialized agent role");
+  if (config.scopeModelPaths && config.role !== "backend") {
+    throw new Error("Model path scoping is enabled only for the live Backend role");
+  }
+  // The model sees exactly the role's known paths. These enums are navigation
+  // hints; the authoritative decision remains with the Gateway/Verifier/OPA.
+  const readablePaths = [...new Set([...profile.writable_paths, ...profile.read_only_paths])];
+  const modelPathEnum = (paths: readonly string[]) => {
+    if (paths.length === 0) throw new Error("Scoped model tool needs nonempty paths");
+    return z.enum(paths as [string, ...string[]]);
+  };
 
   const registry = new ControlledToolRegistry(config.gatewayClient, profile.tools);
   const tools = registry.modelTools.map((definition) => {
     const name = definition.name as SpecializedToolName;
+    const parameters = config.scopeModelPaths && name === "read_file"
+      ? SCHEMAS.read_file.extend({path: modelPathEnum(readablePaths)})
+      : config.scopeModelPaths && name === "update_file"
+        ? SCHEMAS.update_file.extend({path: modelPathEnum(profile.writable_paths)})
+        : SCHEMAS[name];
     return new FunctionTool({
       name,
       description: definition.description,
-      parameters: SCHEMAS[name],
+      parameters,
       execute: async (args) => {
         const started = performance.now();
         let success = false;

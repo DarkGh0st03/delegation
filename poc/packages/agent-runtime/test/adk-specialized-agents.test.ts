@@ -50,7 +50,8 @@ class ScriptedAdkLlm extends BaseLlm {
 
 async function exercise(role: SpecializedAgentRole, tool: string, args: Record<string, unknown>,
   invoke: (name: string, args: Record<string, unknown>) => Promise<unknown>,
-  generateContentConfig?: {maxOutputTokens: number; temperature: number}) {
+  generateContentConfig?: {maxOutputTokens: number; temperature: number},
+  scopeModelPaths = false) {
   const model = new ScriptedAdkLlm(tool, args);
   const calls: Array<{name:string; args:Record<string,unknown>}> = [];
   const gatewayClient = {
@@ -63,7 +64,8 @@ async function exercise(role: SpecializedAgentRole, tool: string, args: Record<s
   };
   const built = createAdkSpecializedAgent({
     role, model, gatewayClient: gatewayClient as never,
-    ...(generateContentConfig ? {generateContentConfig} : {})
+    ...(generateContentConfig ? {generateContentConfig} : {}),
+    ...(scopeModelPaths ? {scopeModelPaths: true} : {})
   });
   const sessionService = new InMemorySessionService();
   const appName = "thesis_phase2_adk_" + role;
@@ -205,6 +207,32 @@ test("Extended live Backend output allowance propagates without changing Gateway
     assert.equal(shape.temperature,0);
     assert.equal(shape.function_declarations,2);
   }
+});
+
+test("Live Backend model path declarations limit candidate reads and writes without bypassing Gateway",async()=>{
+  const {model,built,calls}=await exercise("backend","read_file",{
+    branch:BRANCH,path:PATHS.backend
+  },async()=>({content:"synthetic authorized file"}),
+    {maxOutputTokens:16384,temperature:0},true);
+  assert.deepEqual(built.agent.tools.map(tool=>tool.name),["read_file","update_file"]);
+  assert.equal(calls.length,1);
+  const declared=(model.requests[0]?.config?.tools??[])
+    .flatMap(tool=>tool.functionDeclarations??[]);
+  assert.equal(declared.length,2);
+  const readSchema=JSON.stringify(declared.find(tool=>tool.name==="read_file"));
+  const writeSchema=JSON.stringify(declared.find(tool=>tool.name==="update_file"));
+  assert.match(readSchema,/"enum"/u);
+  assert.match(writeSchema,/"enum"/u);
+  const profile=SPECIALIZED_AGENT_PROFILES.backend;
+  for(const path of profile.writable_paths) {
+    assert.ok(readSchema.includes(path));
+    assert.ok(writeSchema.includes(path));
+  }
+  for(const path of profile.read_only_paths) {
+    assert.ok(readSchema.includes(path));
+    assert.ok(!writeSchema.includes(path));
+  }
+  assert.ok(!readSchema.includes("security/src/security-config.ts"));
 });
 
 test("Unconfigured Frontend and Test agent requests preserve provider defaults",async()=>{

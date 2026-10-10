@@ -27,6 +27,7 @@ export interface AdkA2ATaskHandlerConfig {
   maxModelTurns?: number;
   maxModelCallMs?: number;
   generateContentConfig?: AdkGenerationConfig;
+  scopeModelPaths?: boolean;
   gatewayTimeoutMs?: number;
   fetchFn?: FetchLike;
 }
@@ -206,6 +207,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const agent = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
       ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
+      ...(config.scopeModelPaths ? {scopeModelPaths: true} : {}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     }).agent;
     const appName = "account_suspension_adk_" + context.role;

@@ -427,7 +427,7 @@ function specializedServerConfig(role,port,token){
         temperature:0
       }} : {};
   const manualBackendTimeout=backendProbeOnce&&engine==="adk-gemini"&&role==="backend"
-    ?{maxModelCallMs:BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS}:{};
+    ?{maxModelCallMs:BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,scopeModelPaths:true}:{};
   return {role,port,adk:{model,gatewayBaseUrl:gateway,adapterBaseUrl:adapter,
     adapterToken:token,gatewayTimeoutMs,maxModelTurns,
     ...geminiBackendGeneration,...manualBackendTimeout}};

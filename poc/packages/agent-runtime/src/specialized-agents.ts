@@ -45,7 +45,9 @@ function prompt(
       ? "You may invoke the fixed run_tests profile after the test changes are ready."
       : "You do not have a test-execution tool in this role.",
     "Never attempt to bypass an authorization denial or write to files outside the assigned role.",
-    "Efficiency and completion: inspect only the files needed for the assigned change, then implement it. Relevant paths are candidates, not an instruction to read every file.",
+    "Efficiency and completion: the writable files relevant to your subtask are deliverables. Read those target files first and implement them; read-only context files are optional references, not a checklist.",
+    "Never request a read_file or update_file path outside the explicitly listed readable/writable files. Do not guess new paths or explore the repository beyond this delegated scope.",
+    "Once sufficient context is available, use update_file to implement the requested changes. Do not use all model turns reading optional references.",
     "A successful read_file returns the file content. Reuse that result; do not reread an unchanged file just to reconfirm it.",
     "The update_file tool REPLACES the entire target file; provide complete valid UTF-8 file content, not a unified diff, code fragment or patch.",
     "Prefer a small number of coherent authorized writes over endless reconnaissance. Verify tool responses and do not claim a commit unless update_file/create_file confirms it.",

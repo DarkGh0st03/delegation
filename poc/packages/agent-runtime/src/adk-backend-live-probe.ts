@@ -13,7 +13,7 @@ export const BACKEND_LIVE_PROBE_PATHS = [
 
 export const BACKEND_LIVE_PROBE_MAX_TURNS = 16 as const;
 export const BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS = 16384 as const;
-export const BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS = 60_000 as const;
+export const BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS = 120_000 as const;
 
 export const BACKEND_LIVE_PROBE_INSTRUCTION =
   "Implement the backend Account Suspension lifecycle and shared status contract.";

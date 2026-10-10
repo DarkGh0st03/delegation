@@ -31,7 +31,7 @@ test("Live Backend task restores the complete original four-file Account Suspens
   ]);
   assert.equal(BACKEND_LIVE_PROBE_MAX_TURNS,16);
   assert.equal(BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,16384);
-  assert.equal(BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,60000);
+  assert.equal(BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,120000);
 });
 
 test("Complete Backend writes must be confirmed by an exact new Gitea revision",()=>{
