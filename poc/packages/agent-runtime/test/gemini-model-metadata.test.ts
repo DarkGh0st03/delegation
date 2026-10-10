@@ -40,6 +40,8 @@ test("metadata probe makes exactly two authorized GETs, never generation",async(
   assert.equal(result.get.input_token_limit,1048576);
   assert.equal(result.get.output_token_limit,65536);
   assert.equal(result.requests,2);
+  assert.equal(result.list.google_error_status,null);
+  assert.equal(result.get.google_error_code,null);
   assert.equal(JSON.stringify(result).includes(key),false);
 });
 
@@ -113,4 +115,67 @@ test("metadata probe rejects invalid model/timeout before requesting",async()=>{
   await assert.rejects(()=>inspectGeminiModelMetadata({apiKey:""}),/key/u);
   await assert.rejects(()=>inspectGeminiModelMetadata({apiKey:"S",model:"hello"}),/model/u);
   await assert.rejects(()=>inspectGeminiModelMetadata({apiKey:"S",timeoutMs:25000}),/timeout/u);
+});
+
+
+test("metadata probe extracts allowlisted Google RPC statuses without raw provider data",async()=>{
+  let calls=0;
+  const result=await inspectGeminiModelMetadata({
+    apiKey:"SECRET_SHOULD_NEVER_BE_LOGGED",
+    fetchFn:async()=>{
+      calls++;
+      const status=calls===1?"INVALID_ARGUMENT":"FAILED_PRECONDITION";
+      return json({error:{
+        code:400,status,
+        message:"NEVER_LOG_PRIVATE_ERROR_MESSAGE",
+        details:[{reason:"NEVER_LOG_REASON",metadata:{credential:"NEVER_LOG_EVIDENCE"}}]
+      }},400);
+    }
+  });
+  assert.equal(calls,2);
+  assert.equal(result.list.http_status,400);
+  assert.equal(result.get.http_status,400);
+  assert.equal(result.list.google_error_status,"INVALID_ARGUMENT");
+  assert.equal(result.get.google_error_status,"FAILED_PRECONDITION");
+  assert.equal(result.list.google_error_code,400);
+  assert.equal(result.get.google_error_code,400);
+  for(const secret of ["SECRET_SHOULD_NEVER_BE_LOGGED",
+    "NEVER_LOG_PRIVATE_ERROR_MESSAGE","NEVER_LOG_REASON","NEVER_LOG_EVIDENCE"]){
+    assert.equal(JSON.stringify(result).includes(secret),false);
+  }
+});
+
+test("metadata probe rejects unknown/untrusted status strings and mismatched codes",async()=>{
+  let calls=0;
+  const result=await inspectGeminiModelMetadata({
+    apiKey:"SECRET",
+    fetchFn:async()=>{
+      calls++;
+      if(calls===1) return json({error:{
+        status:"PRIVATE_PLAINTEXT_REASON",code:503,
+        message:"MY_PROVIDER_SECRET"
+      }},400);
+      return json({error:{status:{malicious:"PRIVATE"},code:"400"}},400);
+    }
+  });
+  assert.equal(calls,2);
+  assert.equal(result.list.google_error_status,null);
+  assert.equal(result.list.google_error_code,null);
+  assert.equal(result.get.google_error_status,null);
+  assert.equal(result.get.google_error_code,null);
+  assert.equal(JSON.stringify(result).includes("PRIVATE"),false);
+});
+
+test("non-JSON error payload is discarded and HTTP status remains observable",async()=>{
+  const result=await inspectGeminiModelMetadata({
+    apiKey:"SECRET",
+    fetchFn:async()=>new Response("NEVER_LOG_RAW_PROVIDER_BODY",{
+      status:400,headers:{"content-type":"text/plain"}
+    })
+  });
+  assert.equal(result.list.http_status,400);
+  assert.equal(result.get.http_status,400);
+  assert.equal(result.list.google_error_status,null);
+  assert.equal(result.get.google_error_code,null);
+  assert.equal(JSON.stringify(result).includes("NEVER_LOG_RAW_PROVIDER_BODY"),false);
 });

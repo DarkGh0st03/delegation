@@ -3,6 +3,33 @@ import {pathToFileURL} from "node:url";
 import {inspectAdkFailure} from "../src/adk-failure-categories.ts";
 
 /**
+ * Allowlisted Google RPC error statuses. Untrusted error.message, details,
+ * reason, metadata, and unknown status strings NEVER enter logs or results.
+ */
+const GOOGLE_ERROR_STATUSES = new Set([
+  "CANCELLED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED",
+  "NOT_FOUND", "ALREADY_EXISTS", "PERMISSION_DENIED",
+  "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION", "ABORTED",
+  "OUT_OF_RANGE", "UNIMPLEMENTED", "INTERNAL", "UNAVAILABLE",
+  "DATA_LOSS", "UNAUTHENTICATED"
+]);
+function safeGoogleError(body, httpStatus) {
+  const error = body && typeof body === "object" && !Array.isArray(body)
+    ? body.error : null;
+  const e = error && typeof error === "object" && !Array.isArray(error)
+    ? error : null;
+  const status = e && typeof e.status === "string" &&
+    GOOGLE_ERROR_STATUSES.has(e.status) ? e.status : null;
+  const code = e && typeof e.code === "number" && Number.isInteger(e.code) &&
+    e.code >= 100 && e.code <= 599 && e.code === httpStatus
+    ? e.code : null;
+  return {google_error_status:status, google_error_code:code};
+}
+const NO_GOOGLE_ERROR = Object.freeze({
+  google_error_status:null, google_error_code:null
+});
+
+/**
  * Diagnostic-only metadata requests for the existing Gemini Developer API key.
  * Exactly two GET requests: models.list and models.get. No content generation,
  * no retries, no ADK or delegated-authorization infrastructure.
@@ -36,20 +63,31 @@ export async function inspectGeminiModelMetadata({
       });
       const diagnostic = inspectAdkFailure({status:response.status});
       if (!response.ok) {
-        // Do NOT inspect or print Google error body.
+        // Inspect ONLY the structured error.status/error.code; discard the
+        // entire provider response before producing the safe telemetry.
+        // Never copy message, details, reason, headers, or raw JSON to logs.
+        let safeError = NO_GOOGLE_ERROR;
+        try {
+          const body = await response.json();
+          safeError = safeGoogleError(body, diagnostic.http_status);
+        } catch {
+          // Malformed/non-JSON error bodies must not leak into telemetry.
+        }
         return {http_status:diagnostic.http_status,
           category:diagnostic.category,
+          ...safeError,
           duration_ms:Math.round(performance.now()-started),
           data:null};
       }
       try {
         const data = await response.json();
         return {http_status:diagnostic.http_status,
-          category:null, duration_ms:Math.round(performance.now()-started),
+          category:null, ...NO_GOOGLE_ERROR,
+          duration_ms:Math.round(performance.now()-started),
           data};
       } catch {
         return {http_status:diagnostic.http_status,
-          category:"invalid_response",
+          category:"invalid_response", ...NO_GOOGLE_ERROR,
           duration_ms:Math.round(performance.now()-started),
           data:null};
       }
@@ -59,6 +97,7 @@ export async function inspectGeminiModelMetadata({
         category:timeout.aborted ? "api_inference_timeout" :
           d.error_type === "type_error" && d.http_status === null
             ? "api_network_failure" : d.category,
+        ...NO_GOOGLE_ERROR,
         duration_ms:Math.round(performance.now()-started),
         data:null};
     }
@@ -81,6 +120,8 @@ export async function inspectGeminiModelMetadata({
     list:{
       http_status:list.http_status,
       category:list.category,
+      google_error_status:list.google_error_status,
+      google_error_code:list.google_error_code,
       duration_ms:list.duration_ms,
       valid_payload:list.data !== null && listModels !== null,
       count:listModels?.length ?? null,
@@ -91,6 +132,8 @@ export async function inspectGeminiModelMetadata({
     get:{
       http_status:get.http_status,
       category:get.category,
+      google_error_status:get.google_error_status,
+      google_error_code:get.google_error_code,
       duration_ms:get.duration_ms,
       valid_payload:getModel !== null && typeof getModel.name === "string",
       target_matches:getModel !== null && typeof getModel.name === "string"
