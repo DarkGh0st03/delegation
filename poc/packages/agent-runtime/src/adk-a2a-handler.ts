@@ -12,7 +12,7 @@ import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome } from "./adk-specialized-agents.ts";
 import type { DeterministicTaskHandler } from "./executor.ts";
-import { classifyAdkFailure, type AdkFailureCategory } from "./adk-failure-categories.ts";
+import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
 import { AdkToolProgress } from "./adk-tool-progress.ts";
 
 type FetchLike = typeof fetch;
@@ -45,6 +45,7 @@ class BoundedModel extends BaseLlm {
   budgetExceeded = false;
   effectiveModelVersion: string | null = null;
   providerErrorCategory: AdkFailureCategory | null = null;
+  providerErrorDiagnostic: AdkSafeFailureDiagnostic | null = null;
   readonly delegate: BaseLlm;
   readonly limit: number;
   readonly maxModelCallMs: number;
@@ -98,8 +99,12 @@ class BoundedModel extends BaseLlm {
         yield response;
       }
     } catch (error) {
-      this.providerErrorCategory = callTimeout.aborted
-        ? "api_inference_timeout" : classifyAdkFailure(error);
+      const diagnostic = inspectAdkFailure(error);
+      this.providerErrorDiagnostic = callTimeout.aborted
+        ? {...diagnostic, category:"api_inference_timeout", http_status:null,
+            classification_source:"runtime_timeout"}
+        : diagnostic;
+      this.providerErrorCategory = this.providerErrorDiagnostic.category;
       throw error;
     } finally {
       this.#onTiming(Math.round(performance.now() - started),
@@ -174,13 +179,19 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // Never serialize context.delegation_evidence into ADK Runner input/session.
     const visible = modelVisibleTaskContext(context);
     let eventErrorCategory: AdkFailureCategory | null = null;
-    const reportFailure = (category: AdkFailureCategory): void => {
+    let eventErrorDiagnostic: AdkSafeFailureDiagnostic | null = null;
+    const reportFailure = (category: AdkFailureCategory, diagnostic: AdkSafeFailureDiagnostic | null): void => {
       // Static labels/counters only. Never log raw error messages, file paths,
       // untrusted LLM text, DC/VP material, task metadata or Gateway tokens.
       process.stderr.write(JSON.stringify({
         event: "adk_safe_diagnostic",
         role: context.role,
         category,
+        // Numeric HTTP status is present ONLY if supplied as a structured
+        // provider field. Textual "503" never becomes http_status=503.
+        http_status: diagnostic?.http_status ?? null,
+        classification_source: diagnostic?.classification_source ?? "fallback",
+        error_type: diagnostic?.error_type ?? "other",
         model_turns: model.turns,
         successful_tools: events.filter(e => e.payload.ok).length,
         rejected_tools: events.filter(e => !e.payload.ok).length,
@@ -196,21 +207,24 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       })) {
         // ADK can return an error event instead of throwing.
         if (event.errorCode || event.errorMessage) {
-          eventErrorCategory = classifyAdkFailure({
+          eventErrorDiagnostic = inspectAdkFailure({
             code: event.errorCode, message: event.errorMessage
           }, "adk_event_error");
+          eventErrorCategory = eventErrorDiagnostic.category;
         }
       }
     } catch (error) {
+      const diagnostic = model.providerErrorDiagnostic ?? inspectAdkFailure(error);
       const category = model.budgetExceeded ? "model_turn_budget" :
-        model.providerErrorCategory ?? classifyAdkFailure(error);
-      reportFailure(category);
+        model.providerErrorCategory ?? diagnostic.category;
+      reportFailure(category, model.budgetExceeded ? null : diagnostic);
       throw new Error("ADK protected model failure: " + category);
     }
     if (model.budgetExceeded || model.providerErrorCategory || eventErrorCategory) {
       const category = model.budgetExceeded ? "model_turn_budget" :
         model.providerErrorCategory ?? eventErrorCategory ?? "adk_event_error";
-      reportFailure(category);
+      reportFailure(category, model.budgetExceeded ? null :
+        model.providerErrorDiagnostic ?? eventErrorDiagnostic);
       throw new Error("ADK protected model failure: " + category);
     }
 
