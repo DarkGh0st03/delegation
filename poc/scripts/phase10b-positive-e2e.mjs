@@ -424,7 +424,12 @@ function specializedServerConfig(role,port,token){
     ? {generateContentConfig:{
         maxOutputTokens:backendProbeOnce
           ?BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS:1024,
-        temperature:0
+        temperature:0,
+        // Gemini 3.8 Flash defaults to medium thinking. Limit reasoning
+        // for the explicit Backend probe so complete update_file arguments
+        // can be generated inside the 16K output window.
+        ...(backendProbeOnce
+          ? {thinkingConfig:{thinkingLevel:"LOW"}} : {})
       }} : {};
   const manualBackendTimeout=backendProbeOnce&&engine==="adk-gemini"&&role==="backend"
     ?{maxModelCallMs:BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,scopeModelPaths:true}:{};

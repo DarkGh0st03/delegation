@@ -16,6 +16,7 @@ import {
   SPECIALIZED_AGENT_PROFILES,
   type SpecializedAgentRole
 } from "../src/index.ts";
+import type {AdkGenerationConfig} from "../src/adk-specialized-agents.ts";
 
 const BRANCH = "feature/account-suspension";
 const PATHS: Record<SpecializedAgentRole, string> = {
@@ -50,7 +51,7 @@ class ScriptedAdkLlm extends BaseLlm {
 
 async function exercise(role: SpecializedAgentRole, tool: string, args: Record<string, unknown>,
   invoke: (name: string, args: Record<string, unknown>) => Promise<unknown>,
-  generateContentConfig?: {maxOutputTokens: number; temperature: number},
+  generateContentConfig?: AdkGenerationConfig,
   scopeModelPaths = false) {
   const model = new ScriptedAdkLlm(tool, args);
   const calls: Array<{name:string; args:Record<string,unknown>}> = [];
@@ -206,6 +207,18 @@ test("Extended live Backend output allowance propagates without changing Gateway
     assert.equal(shape.max_output_tokens,16384);
     assert.equal(shape.temperature,0);
     assert.equal(shape.function_declarations,2);
+  }
+});
+
+test("Explicit Gemini LOW thinking config is forwarded to each native ADK model call",async()=>{
+  const {model}=await exercise("backend","read_file",{
+    branch:BRANCH,path:PATHS.backend
+  },async()=>({content:"synthetic authorized file"}),
+    {maxOutputTokens:16384,temperature:0,thinkingConfig:{thinkingLevel:"LOW" as never}});
+  assert.equal(model.requests.length,2);
+  for(const request of model.requests) {
+    assert.equal(safeAdkRequestShape(request).thinking_level,"LOW");
+    assert.equal(request.config?.thinkingConfig?.thinkingLevel,"LOW");
   }
 });
 

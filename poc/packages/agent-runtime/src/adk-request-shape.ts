@@ -35,6 +35,7 @@ export interface AdkSafeRequestShape {
   declaration_json_chars: number | null;
   max_output_tokens: number | null;
   temperature: number | null;
+  thinking_level: "LOW" | "MEDIUM" | "HIGH" | "MINIMAL" | null;
 }
 export function safeAdkRequestShape(request: LlmRequest): AdkSafeRequestShape {
   const source = record(request);
@@ -73,6 +74,10 @@ export function safeAdkRequestShape(request: LlmRequest): AdkSafeRequestShape {
   }
   const maxOutput = config?.maxOutputTokens;
   const temperature = config?.temperature;
+  const rawThinking = record(config?.thinkingConfig)?.thinkingLevel;
+  // Whitelist static enum identifiers; never echo arbitrary provider data.
+  const thinkingLevel = rawThinking === "LOW" || rawThinking === "MEDIUM" ||
+    rawThinking === "HIGH" || rawThinking === "MINIMAL" ? rawThinking : null;
   return {
     content_messages: contents ? safeCount(contents.length) : null,
     content_text_parts: contents ? safeCount(contentTextParts) : null,
@@ -84,6 +89,7 @@ export function safeAdkRequestShape(request: LlmRequest): AdkSafeRequestShape {
     max_output_tokens: typeof maxOutput === "number" && Number.isSafeInteger(maxOutput)
       && maxOutput > 0 ? maxOutput : null,
     temperature: typeof temperature === "number" && Number.isFinite(temperature)
-      && temperature >= 0 && temperature <= 2 ? temperature : null
+      && temperature >= 0 && temperature <= 2 ? temperature : null,
+    thinking_level: thinkingLevel
   };
 }

@@ -1,4 +1,4 @@
-import { FunctionTool, LlmAgent, type BaseLlm } from "@google/adk";
+import { FunctionTool, LlmAgent, type BaseLlm, type LlmAgentConfig } from "@google/adk";
 import { z } from "zod";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import {
@@ -37,10 +37,11 @@ const SCHEMAS = {
 export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: Record<string, unknown>; payload: {ok: true; result: unknown} | ReturnType<typeof controlledToolErrorPayload> }; 
 
 /** Optional model generation parameters. Absent for every scripted baseline. */
-export interface AdkGenerationConfig {
+/** Native ADK configuration. Keep output/temperature mandatory for our live probe. */
+export type AdkGenerationConfig = NonNullable<LlmAgentConfig["generateContentConfig"]> & {
   maxOutputTokens: number;
   temperature: number;
-}
+};
 
 export interface AdkSpecializedAgentConfig {
   onToolOutcome?: (outcome: AdkControlledToolOutcome) => void;

@@ -34,6 +34,7 @@ test("ADK request shape counts only safe metrics and never leaks secrets",()=>{
   assert.ok(shape.declaration_json_chars!==null && shape.declaration_json_chars>0);
   assert.equal(shape.max_output_tokens,1024);
   assert.equal(shape.temperature,0);
+  assert.equal(shape.thinking_level,null);
   for(const sensitive of [
     secret,"SECRET","DO_NOT_LOG","SECRET_SCHEMA_DO_NOT_PRINT",
     "read_file","update_file","path"
@@ -44,7 +45,7 @@ test("ADK request shape counts only safe metrics and never leaks secrets",()=>{
     "content_messages","content_text_parts","content_text_chars",
     "system_instruction_text_chars","declared_tool_groups",
     "function_declarations","declaration_json_chars",
-    "max_output_tokens","temperature"
+    "max_output_tokens","temperature","thinking_level"
   ].sort());
 });
 
@@ -54,7 +55,7 @@ test("ADK request shape handles absent, unusual, and unsafe metadata without tex
     content_messages:null,content_text_parts:null,content_text_chars:null,
     system_instruction_text_chars:null,declared_tool_groups:null,
     function_declarations:null,declaration_json_chars:null,
-    max_output_tokens:null,temperature:null
+    max_output_tokens:null,temperature:null,thinking_level:null
   });
   const malformed=safeAdkRequestShape({
     contents:[null,{parts:[null,{text:{private:"DO_NOT_PRINT"}}]}],
@@ -71,6 +72,20 @@ test("ADK request shape handles absent, unusual, and unsafe metadata without tex
   assert.equal(malformed.function_declarations,1);
   assert.equal(malformed.max_output_tokens,null);
   assert.equal(malformed.temperature,null);
+  assert.equal(malformed.thinking_level,null);
   assert.equal(JSON.stringify(malformed).includes("PRIVATE_USER_PROMPT"),false);
   assert.equal(JSON.stringify(malformed).includes("HIDDEN"),false);
+});
+
+test("ADK request shape whitelists Gemini thinking level without leaking values",()=>{
+  const allowed=safeAdkRequestShape({
+    config:{thinkingConfig:{thinkingLevel:"LOW"},maxOutputTokens:16384,temperature:0}
+  } as unknown as LlmRequest);
+  assert.equal(allowed.thinking_level,"LOW");
+  assert.equal(allowed.max_output_tokens,16384);
+  const untrusted=safeAdkRequestShape({
+    config:{thinkingConfig:{thinkingLevel:"PRIVATE_REASONING_NEVER_LOG"}}
+  } as unknown as LlmRequest);
+  assert.equal(untrusted.thinking_level,null);
+  assert.ok(!JSON.stringify(untrusted).includes("PRIVATE_REASONING_NEVER_LOG"));
 });
