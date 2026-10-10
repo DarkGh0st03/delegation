@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {setTimeout as sleep} from "node:timers/promises";
 import {classifyAdkFailure, inspectAdkFailure} from "../src/adk-failure-categories.ts";
 import {runGeminiApiHealthSmoke} from "../scripts/gemini-api-health-smoke.mjs";
 
@@ -104,9 +105,12 @@ test("Gemini API health smoke separates network errors and local timeouts",async
   assert.equal(JSON.stringify(network).includes("SENSITIVE"),false);
   const timeout=await runGeminiApiHealthSmoke({
     apiKey:"SENSITIVE",timeoutMs:15,
-    fetchFn:async(_url,{signal})=>new Promise((_resolve,reject)=>{
-      signal.addEventListener("abort",()=>reject(new Error("SENSITIVE TIMEOUT")),{once:true});
-    })
+    // An actual referenced timer keeps the event loop alive; the AbortSignal
+    // timeout itself is unref'd in Node, so an unresolved Promise alone does not.
+    fetchFn:async(_url,{signal})=>{
+      await sleep(100,undefined,{signal});
+      throw new Error("SENSITIVE SHOULD NEVER FINISH");
+    }
   });
   assert.equal(timeout.category,"api_inference_timeout");
   assert.equal(timeout.classification_source,"runtime_timeout");
