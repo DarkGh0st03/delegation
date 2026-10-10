@@ -25,7 +25,7 @@ function assertNoCredential(bytes, secrets) {
 }
 export async function captureBackendEvidence({
   baseUrl, owner, repository, readToken, outputDir, expectedBaselineSha,
-  fetchFn = fetch, runId = null, protectedValues = []
+  fetchFn = fetch, runId = null, protectedValues = [], captureMode = null
 }) {
   if (!baseUrl || !owner || !repository || !readToken || !outputDir || !SHA.test(expectedBaselineSha)) {
     throw new Error("Missing or malformed read-only evidence configuration");
@@ -35,10 +35,11 @@ export async function captureBackendEvidence({
   await mkdir(root, {recursive:true,mode:0o700});
   const manifest = {
     schema_version:1, source:"temporary_gitea_read_only_audit",
+    capture_mode:captureMode||"unspecified",
     github_run_id:runId, expected_baseline_sha:expectedBaselineSha,
     main_sha:null, feature_sha:null, feature_branch:BRANCH,
     capture_status:"unavailable", inspected_paths:PATHS,
-    changed_paths:[], files:[], semantic_validation:"not_executed"
+    changed_paths:[], files:[], semantic_validation:"see_audit-result.json"
   };
   const base = baseUrl.replace(/\/+$/u,"") + "/api/v1/repos/" +
     encodeURIComponent(owner) + "/" + encodeURIComponent(repository);
@@ -147,6 +148,7 @@ if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url))
     outputDir:process.env.GEMINI_EVIDENCE_DIR||"/tmp/gemini-backend-evidence",
     expectedBaselineSha:process.env.EXPECTED_GITEA_REVISION,
     runId:process.env.GITHUB_RUN_ID||null,
+    captureMode:process.env.GEMINI_EVIDENCE_MODE||null,
     protectedValues:[
       process.env.GEMINI_API_KEY,process.env.OPENAI_API_KEY,
       process.env.GITEA_GATEWAY_TOKEN,process.env.ADAPTER_CALLER_BACKEND

@@ -101,7 +101,7 @@ docker_audit() {
     --mount "type=bind,source=$APP,target=/workspace" \
     --workdir /workspace "$IMAGE" "$@"
 }
-if docker_audit npm run typecheck >"$OUT/typecheck.log" 2>&1; then
+if docker_audit sh -c "npm run typecheck -w @iam/shared && npm run typecheck -w @iam/backend" >"$OUT/typecheck.log" 2>&1; then
   TYPECHECK="pass"
 else
   TYPECHECK="fail"

@@ -250,11 +250,12 @@ jobs:
       # Run after both success and failure, before Gitea volume cleanup.
       # Use ONLY the already-provisioned read-only Runner token: never let
       # evidence capture submit an agent/Gateway operation or modify Gitea.
-      - name: Capture Gemini-written Backend files and immutable Gitea diff
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
+      - name: Capture read-only Backend source and immutable diff
+        if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend')) }}
         continue-on-error: true
         env:
           GEMINI_EVIDENCE_DIR: /tmp/gemini-backend-evidence
+          GEMINI_EVIDENCE_MODE: ${{ github.event_name == 'push' && 'scripted_regression' || 'real_gemini_backend' }}
         run: |
           test -f poc/infra/runtime/runner.env
           set -a
@@ -262,18 +263,18 @@ jobs:
           set +a
           node --experimental-strip-types poc/scripts/capture-gemini-backend-evidence.mjs
 
-      - name: Independently typecheck and test Gemini-generated Backend
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
+      - name: Independently typecheck and test Backend source
+        if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend')) }}
         continue-on-error: true
         env:
           GEMINI_EVIDENCE_DIR: /tmp/gemini-backend-evidence
         run: bash poc/scripts/audit-gemini-backend-evidence.sh
 
-      - name: Upload Gemini Backend source, diff, SHA and quality report
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
+      - name: Upload Backend source, diff, SHA and quality report
+        if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend')) }}
         uses: actions/upload-artifact@v4
         with:
-          name: gemini-backend-evidence-${{ github.run_id }}
+          name: backend-evidence-${{ github.event_name }}-${{ github.run_id }}
           path: /tmp/gemini-backend-evidence/
           if-no-files-found: warn
           retention-days: 14
@@ -281,7 +282,7 @@ jobs:
       # Green manual E2E now additionally means the independent Backend audit
       # was successful. The artifact is uploaded even when this check fails.
       - name: Enforce independent Backend code correctness
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
+        if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend')) }}
         run: |
           node -e '
             const fs = require("node:fs");
