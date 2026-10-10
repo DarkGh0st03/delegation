@@ -130,6 +130,21 @@ export async function runBackendShapeSmoke({
       rejected_writes:boundary.attemptedWrites,
       actual_repository_access:false};
   }
+  // ADK may consume a provider exception and terminate the Runner normally.
+  // Always preserve the sanitized status rather than misclassifying as no-tool.
+  if(bounded.diagnostic||eventError){
+    return {result:"gemini-backend-shape-failed",
+      reason:"provider_or_sdk_failure",
+      diagnostic:bounded.diagnostic??{
+        category:"adk_event_error",http_status:null,
+        classification_source:"fallback",error_type:"other"
+      },
+      provider_turns:bounded.providerTurns,
+      model_turns:bounded.totalTurns,
+      synthetic_reads:boundary.successfulReads,
+      rejected_writes:boundary.attemptedWrites,
+      actual_repository_access:false};
+  }
   const pass=!eventError&&bounded.providerTurns===1&&
     boundary.successfulReads===1&&boundary.attemptedWrites===0&&
     outcomes.length===1&&outcomes[0].name==="read_file"&&outcomes[0].ok;
