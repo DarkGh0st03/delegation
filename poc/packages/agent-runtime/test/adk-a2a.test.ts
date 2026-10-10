@@ -7,6 +7,7 @@ import {
   type LlmResponse
 } from "@google/adk";
 import { TaskState } from "@a2a-js/sdk";
+import {safeAdkRequestShape} from "../src/adk-request-shape.ts";
 import {
   DELEGATED_AUTHORIZATION_EXTENSION_URI,
   DeterministicA2AOrchestrator,
@@ -90,11 +91,13 @@ function fakeBoundary(role: SpecializedAgentRole, deny = false) {
   return {requests,fetchFn,counts:()=>({prepareCalls,executeCalls})};
 }
 
-async function send(role: SpecializedAgentRole, model: BaseLlm, fetchFn: typeof fetch, port: number) {
+async function send(role: SpecializedAgentRole, model: BaseLlm, fetchFn: typeof fetch,
+  port: number, generateContentConfig?: {maxOutputTokens:number;temperature:number}) {
   const server=await startSpecializedAgentServer({
     role,host:"127.0.0.1",port,
     adk:{model,fetchFn,gatewayBaseUrl:"http://gateway.local",
-      adapterBaseUrl:"http://adapter.local",adapterToken:"phase3-service-token"}
+      adapterBaseUrl:"http://adapter.local",adapterToken:"phase3-service-token",
+      ...(generateContentConfig ? {generateContentConfig} : {})}
   });
   const orchestrator=new DeterministicA2AOrchestrator();
   const evidence={credential:SECRET,credential_id:"urn:phase3:child:"+role,presenter_id:"did:thesis:"+role+"-agent"};
@@ -196,4 +199,22 @@ test("Phase 3 per-task model budget fails closed before a successful Artifact",a
     assert.equal(completed,false);
     assert.equal(model.requests.length,1);
   }finally{await server.close();}
+});
+
+test("Phase 3 explicit backend generation cap survives the real protected A2A/ADK boundary",async()=>{
+  const boundary=fakeBoundary("backend");
+  const model=new OneToolModel("update_file",{
+    branch:BRANCH,path:PATHS.backend,content:"export const status = 'SUSPENDED';"
+  });
+  const {response}=await send("backend",model,boundary.fetchFn as typeof fetch,
+    43376,{maxOutputTokens:1024,temperature:0});
+  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.equal(model.requests.length,2);
+  for (const request of model.requests) {
+    const diagnostic=safeAdkRequestShape(request);
+    assert.equal(diagnostic.max_output_tokens,1024);
+    assert.equal(diagnostic.temperature,0);
+    assert.equal(diagnostic.function_declarations,2);
+  }
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
 });

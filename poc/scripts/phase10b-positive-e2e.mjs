@@ -407,8 +407,13 @@ function specializedServerConfig(role,port,token){
     ?Number(process.env.PHASE10B_GEMINI_MAX_MODEL_TURNS??"24"):40;
   if(!Number.isSafeInteger(maxModelTurns)||maxModelTurns<1||maxModelTurns>40)
     throw new Error("Gemini model turn budget must be from 1 to 40");
+  // Match the previously successful isolated Gemini ADK function-calling probe.
+  // Only the explicitly selected live Gemini Backend receives this configuration.
+  // Scripted regressions and the other agent roles retain their original defaults.
+  const geminiBackendGeneration=engine==="adk-gemini" && role==="backend"
+    ? {generateContentConfig:{maxOutputTokens:1024,temperature:0}} : {};
   return {role,port,adk:{model,gatewayBaseUrl:gateway,adapterBaseUrl:adapter,
-    adapterToken:token,gatewayTimeoutMs,maxModelTurns}};
+    adapterToken:token,gatewayTimeoutMs,maxModelTurns,...geminiBackendGeneration}};
 }
 
 

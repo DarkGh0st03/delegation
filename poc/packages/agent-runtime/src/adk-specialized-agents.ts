@@ -35,9 +35,16 @@ const SCHEMAS = {
 
 export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: Record<string, unknown>; payload: {ok: true; result: unknown} | ReturnType<typeof controlledToolErrorPayload> }; 
 
+/** Optional model generation parameters. Absent for every scripted baseline. */
+export interface AdkGenerationConfig {
+  maxOutputTokens: number;
+  temperature: number;
+}
+
 export interface AdkSpecializedAgentConfig {
   onToolOutcome?: (outcome: AdkControlledToolOutcome) => void;
   signal?: AbortSignal;
+  generateContentConfig?: AdkGenerationConfig;
   role: SpecializedAgentRole;
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
@@ -115,6 +122,9 @@ export function createAdkSpecializedAgent(
     model: config.model,
     instruction: profile.system_prompt,
     tools,
+    // Opt in only for the explicitly configured live Gemini Backend.
+    ...(config.generateContentConfig
+      ? {generateContentConfig: config.generateContentConfig} : {}),
     disallowTransferToParent: true,
     disallowTransferToPeers: true
   });

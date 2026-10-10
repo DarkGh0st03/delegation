@@ -10,7 +10,7 @@ import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
-import { createAdkSpecializedAgent, type AdkControlledToolOutcome } from "./adk-specialized-agents.ts";
+import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGenerationConfig } from "./adk-specialized-agents.ts";
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
 import { AdkToolProgress } from "./adk-tool-progress.ts";
@@ -25,6 +25,7 @@ export interface AdkA2ATaskHandlerConfig {
   adapterToken: string;
   maxModelTurns?: number;
   maxModelCallMs?: number;
+  generateContentConfig?: AdkGenerationConfig;
   gatewayTimeoutMs?: number;
   fetchFn?: FetchLike;
 }
@@ -148,6 +149,14 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     throw new Error("ADK maxModelCallMs must be 1000..120000 milliseconds");
   }
 
+  if (config.generateContentConfig) {
+    const {maxOutputTokens, temperature} = config.generateContentConfig;
+    if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 4096
+        || !Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
+      throw new Error("Invalid explicit ADK generation configuration");
+    }
+  }
+
   return async (context: AgentTaskContext, signal?: AbortSignal): Promise<AgentArtifactPayload> => {
     const taskStart = performance.now();
     const model = new BoundedModel(config.model, turnLimit, maxModelCallMs, signal,
@@ -177,6 +186,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     });
     const agent = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
+      ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     }).agent;
     const appName = "account_suspension_adk_" + context.role;

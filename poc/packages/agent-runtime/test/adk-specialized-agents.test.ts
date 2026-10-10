@@ -49,7 +49,8 @@ class ScriptedAdkLlm extends BaseLlm {
 }
 
 async function exercise(role: SpecializedAgentRole, tool: string, args: Record<string, unknown>,
-  invoke: (name: string, args: Record<string, unknown>) => Promise<unknown>) {
+  invoke: (name: string, args: Record<string, unknown>) => Promise<unknown>,
+  generateContentConfig?: {maxOutputTokens: number; temperature: number}) {
   const model = new ScriptedAdkLlm(tool, args);
   const calls: Array<{name:string; args:Record<string,unknown>}> = [];
   const gatewayClient = {
@@ -61,7 +62,8 @@ async function exercise(role: SpecializedAgentRole, tool: string, args: Record<s
     }
   };
   const built = createAdkSpecializedAgent({
-    role, model, gatewayClient: gatewayClient as never
+    role, model, gatewayClient: gatewayClient as never,
+    ...(generateContentConfig ? {generateContentConfig} : {})
   });
   const sessionService = new InMemorySessionService();
   const appName = "thesis_phase2_adk_" + role;
@@ -159,7 +161,7 @@ test("Phase 2: Test ADK agent can request create_file only through the Gateway",
   assert.equal(calls[0]?.name,"create_file");
 });
 
-test("Backend's real ADK first-turn request has two declared tools and no output cap",async()=>{
+test("Unconfigured Backend ADK first-turn request has two declared tools and no output cap",async()=>{
   const {model}=await exercise("backend","read_file",{
     branch:BRANCH,path:PATHS.backend
   },async()=>({content:"fixture"}));
@@ -173,4 +175,31 @@ test("Backend's real ADK first-turn request has two declared tools and no output
   assert.equal(shape.max_output_tokens,null);
   assert.equal(shape.temperature,null);
   assert.equal(JSON.stringify(shape).includes("NEVER_EXPOSE_DELEGATION_EVIDENCE"),false);
+});
+
+test("Explicit Gemini Backend generation settings are forwarded to each ADK turn",async()=>{
+  const {model,built}=await exercise("backend","read_file",{
+    branch:BRANCH,path:PATHS.backend
+  },async()=>({content:"synthetic backend file"}),
+    {maxOutputTokens:1024,temperature:0});
+  assert.equal(model.requests.length,2);
+  assert.deepEqual(built.agent.tools.map(tool=>tool.name),["read_file","update_file"]);
+  for (const request of model.requests) {
+    const shape=safeAdkRequestShape(request);
+    assert.equal(shape.max_output_tokens,1024);
+    assert.equal(shape.temperature,0);
+    assert.equal(shape.function_declarations,2);
+  }
+});
+
+test("Unconfigured Frontend and Test agent requests preserve provider defaults",async()=>{
+  for (const role of ["frontend","test"] as const) {
+    const {model}=await exercise(role,"read_file",{
+      branch:BRANCH,path:PATHS[role]
+    },async()=>({content:"synthetic role file"}));
+    assert.equal(model.requests.length,2);
+    const shape=safeAdkRequestShape(model.requests[0]!);
+    assert.equal(shape.max_output_tokens,null);
+    assert.equal(shape.temperature,null);
+  }
 });

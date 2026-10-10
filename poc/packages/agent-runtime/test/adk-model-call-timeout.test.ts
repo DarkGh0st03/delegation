@@ -60,3 +60,23 @@ test("ADK model call timeout rejects unsafe configuration without network traffi
     ...valid,maxModelCallMs:120001
   }),/1000..120000/u);
 });
+
+test("ADK generation configuration rejects unsafe values before any network traffic",()=>{
+  const base={
+    model:new SlowApiModel(),adapterBaseUrl:"http://adapter.invalid",
+    gatewayBaseUrl:"http://gateway.invalid",adapterToken:"TEST_ONLY"
+  };
+  for(const generateContentConfig of [
+    {maxOutputTokens:0,temperature:0},
+    {maxOutputTokens:4097,temperature:0},
+    {maxOutputTokens:1024,temperature:-1},
+    {maxOutputTokens:1024,temperature:Infinity}
+  ]){
+    assert.throws(()=>createAdkA2ATaskHandler({
+      ...base,generateContentConfig
+    }),/Invalid explicit ADK generation configuration/u);
+  }
+  assert.doesNotThrow(()=>createAdkA2ATaskHandler({
+    ...base,generateContentConfig:{maxOutputTokens:1024,temperature:0}
+  }));
+});
