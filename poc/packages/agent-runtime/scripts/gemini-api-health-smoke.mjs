@@ -77,7 +77,7 @@ export async function runGeminiApiHealthSmoke({
         },
         body: JSON.stringify({
           contents: [{role:"user",parts:[{text:"Reply with exactly READY."}]}],
-          generationConfig: {temperature:0,maxOutputTokens:16}
+          generationConfig: {temperature:0,maxOutputTokens:256}
         }),
         signal: timeout
       }

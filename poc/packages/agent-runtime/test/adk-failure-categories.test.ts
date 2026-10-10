@@ -66,7 +66,10 @@ test("Gemini API-only synthetic smoke performs exactly one request and never ret
       assert.equal(options.method,"POST");
       assert.equal(options.headers["x-goog-api-key"],secret);
       assert.equal(typeof options.signal?.aborted,"boolean");
-      assert.equal(JSON.parse(options.body).contents[0].parts[0].text,"Reply with exactly READY.");
+      const requestBody=JSON.parse(options.body);
+      assert.equal(requestBody.contents[0].parts[0].text,"Reply with exactly READY.");
+      // Leave sufficient room for Gemini reasoning AND the visible READY text.
+      assert.deepEqual(requestBody.generationConfig,{temperature:0,maxOutputTokens:256});
       return {ok:true,status:200,json:async()=>({
         candidates:[{content:{parts:[{text:"READY"}]}}]
       })};
