@@ -192,6 +192,21 @@ test("Explicit Gemini Backend generation settings are forwarded to each ADK turn
   }
 });
 
+test("Extended live Backend output allowance propagates without changing Gateway tools",async()=>{
+  const {model,built}=await exercise("backend","read_file",{
+    branch:BRANCH,path:PATHS.backend
+  },async()=>({content:"synthetic authorized file"}),
+    {maxOutputTokens:16384,temperature:0});
+  assert.deepEqual(built.agent.tools.map(tool=>tool.name),["read_file","update_file"]);
+  assert.equal(model.requests.length,2);
+  for (const request of model.requests) {
+    const shape=safeAdkRequestShape(request);
+    assert.equal(shape.max_output_tokens,16384);
+    assert.equal(shape.temperature,0);
+    assert.equal(shape.function_declarations,2);
+  }
+});
+
 test("Unconfigured Frontend and Test agent requests preserve provider defaults",async()=>{
   for (const role of ["frontend","test"] as const) {
     const {model}=await exercise(role,"read_file",{

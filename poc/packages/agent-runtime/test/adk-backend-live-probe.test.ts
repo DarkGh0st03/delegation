@@ -30,7 +30,7 @@ test("Live Backend task restores the complete original four-file Account Suspens
     "apps/backend/src/users/user.routes.ts"
   ]);
   assert.equal(BACKEND_LIVE_PROBE_MAX_TURNS,16);
-  assert.equal(BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,4096);
+  assert.equal(BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,16384);
   assert.equal(BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,60000);
 });
 

@@ -12,7 +12,7 @@ export const BACKEND_LIVE_PROBE_PATHS = [
 ] as const;
 
 export const BACKEND_LIVE_PROBE_MAX_TURNS = 16 as const;
-export const BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS = 4096 as const;
+export const BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS = 16384 as const;
 export const BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS = 60_000 as const;
 
 export const BACKEND_LIVE_PROBE_INSTRUCTION =

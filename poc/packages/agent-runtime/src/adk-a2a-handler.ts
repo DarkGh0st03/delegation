@@ -15,6 +15,7 @@ import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
 import { AdkToolProgress } from "./adk-tool-progress.ts";
 import { safeAdkRequestShape } from "./adk-request-shape.ts";
+import {safeAdkResponseShape, type SafeAdkResponseShape} from "./adk-response-diagnostics.ts";
 
 type FetchLike = typeof fetch;
 
@@ -52,9 +53,9 @@ class BoundedModel extends BaseLlm {
   readonly limit: number;
   readonly maxModelCallMs: number;
   readonly #signal?: AbortSignal;
-  readonly #onTiming: (duration: number, input: number | null, output: number | null, thinking: number | null, turn: number) => void;
+  readonly #onTiming: (duration: number, input: number | null, output: number | null, thinking: number | null, turn: number, response: SafeAdkResponseShape) => void;
   constructor(delegate: BaseLlm, limit: number, maxModelCallMs: number, signal: AbortSignal | undefined,
-    onTiming: (duration: number, input: number | null, output: number | null, thinking: number | null, turn: number) => void) {
+    onTiming: (duration: number, input: number | null, output: number | null, thinking: number | null, turn: number, response: SafeAdkResponseShape) => void) {
     super({model: delegate.model});
     this.delegate = delegate;
     this.limit = limit;
@@ -96,6 +97,9 @@ class BoundedModel extends BaseLlm {
     let promptTokens: number | null = null;
     let outputTokens: number | null = null;
     let thinkingTokens: number | null = null;
+    let finishReason: string | null = null;
+    let functionCallParts = 0;
+    let textParts = 0;
     try {
       for await (const response of this.delegate.generateContentAsync(
         request, stream, combinedSignal
@@ -103,6 +107,10 @@ class BoundedModel extends BaseLlm {
         if (typeof response.modelVersion === "string" && response.modelVersion.trim()) {
           this.effectiveModelVersion = response.modelVersion;
         }
+        const responseShape = safeAdkResponseShape(response);
+        if (responseShape.finish_reason !== null) finishReason = responseShape.finish_reason;
+        functionCallParts += responseShape.function_call_parts;
+        textParts += responseShape.text_parts;
         const usage = response.usageMetadata;
         if (typeof usage?.promptTokenCount === "number" && Number.isFinite(usage.promptTokenCount))
           promptTokens = usage.promptTokenCount;
@@ -125,7 +133,8 @@ class BoundedModel extends BaseLlm {
       throw error;
     } finally {
       this.#onTiming(Math.round(performance.now() - started),
-        promptTokens, outputTokens, thinkingTokens, this.turns);
+        promptTokens, outputTokens, thinkingTokens, this.turns,
+        {finish_reason:finishReason,function_call_parts:functionCallParts,text_parts:textParts});
     }
   }
   override connect(_request: LlmRequest): Promise<BaseLlmConnection> {
@@ -157,7 +166,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
 
   if (config.generateContentConfig) {
     const {maxOutputTokens, temperature} = config.generateContentConfig;
-    if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 4096
+    if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 16384
         || !Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
       throw new Error("Invalid explicit ADK generation configuration");
     }
@@ -166,11 +175,12 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   return async (context: AgentTaskContext, signal?: AbortSignal): Promise<AgentArtifactPayload> => {
     const taskStart = performance.now();
     const model = new BoundedModel(config.model, turnLimit, maxModelCallMs, signal,
-      (durationMs, inputTokens, outputTokens, thinkingTokens, turn) => {
+      (durationMs, inputTokens, outputTokens, thinkingTokens, turn, responseShape) => {
         process.stdout.write(JSON.stringify({
           event:"adk_llm_timing",role:context.role,turn,
           duration_ms:durationMs,input_tokens:inputTokens,
           output_tokens:outputTokens,thinking_tokens:thinkingTokens,
+          ...responseShape,
           estimated_billable_output_tokens:outputTokens===null
             ?null:outputTokens+(thinkingTokens??0)
         }) + "\n");
@@ -305,6 +315,16 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     }
     // Not an acceptable completed A2A task if any controlled tool failed.
     // This also prevents LLM prose from papering over denial or a malformed SHA.
+    if (errors.length > 0 || revision === null) {
+      // No model text, file names or raw tool errors; only static categories
+      // and safe aggregate counts. Fail closed exactly as before.
+      process.stderr.write(JSON.stringify({
+        event:"adk_task_outcome",role:context.role,
+        category:errors.length > 0 ? "controlled_tool_failures" : "no_confirmed_revision",
+        model_turns:model.turns,
+        ...progress.snapshot()
+      }) + "\n");
+    }
     if (errors.length > 0) throw new Error("ADK controlled task failed: " + [...new Set(errors)].join(", "));
     if (revision === null) throw new Error("ADK task produced no confirmed repository revision");
 

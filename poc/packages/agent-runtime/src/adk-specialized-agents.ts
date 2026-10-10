@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import {
   ControlledToolError,
-  controlledToolErrorPayload
+  controlledToolErrorPayload,
+  type ControlledToolErrorKind
 } from "./controlled-errors.ts";
 import type { GatewayControlledToolClient, SpecializedToolName } from "./gateway-tool-client.ts";
 import { SPECIALIZED_AGENT_PROFILES, type SpecializedAgentProfile } from "./specialized-agents.ts";
@@ -81,6 +82,7 @@ export function createAdkSpecializedAgent(
       execute: async (args) => {
         const started = performance.now();
         let success = false;
+        let errorKind: ControlledToolErrorKind | null = null;
         try {
           config.signal?.throwIfAborted();
           const result = await registry.execute({
@@ -96,11 +98,13 @@ export function createAdkSpecializedAgent(
         } catch (error) {
           // Return a controlled result to the model. Denials cannot bypass Gateway.
           if (error instanceof ControlledToolError) {
+            errorKind = error.kind;
             const payload = controlledToolErrorPayload(error);
             config.onToolOutcome?.({ name, arguments: args as Record<string, unknown>, payload });
             return payload;
           }
           // Fail closed on unexpected errors without leaking raw provider responses.
+          errorKind = "tool_unavailable";
           const payload = controlledToolErrorPayload(new ControlledToolError("tool_unavailable", "Controlled tool failed"));
           config.onToolOutcome?.({ name, arguments: args as Record<string, unknown>, payload });
           return payload;
@@ -109,7 +113,8 @@ export function createAdkSpecializedAgent(
           // file content, prompts, status-list tokens, DC or signed VP.
           process.stdout.write(JSON.stringify({
             event: "adk_tool_timing", role: config.role, tool: name,
-            success, duration_ms: Math.round(performance.now() - started)
+            success, error_kind:errorKind,
+            duration_ms: Math.round(performance.now() - started)
           }) + "\n");
         }
       }
