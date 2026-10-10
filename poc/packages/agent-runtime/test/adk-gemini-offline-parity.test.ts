@@ -77,11 +77,15 @@ function propsOf(schema:Record<string,unknown>):Record<string,unknown>{
   assert.ok(props && typeof props==="object" && !Array.isArray(props));
   return props as Record<string,unknown>;
 }
-function assertStrictRequiredSchema(schema:Record<string,unknown>,expected:string[]){
+function assertRequiredSchema(schema:Record<string,unknown>,expected:string[]){
   const props=propsOf(schema);
   assert.deepEqual(Object.keys(props).sort(),expected.slice().sort());
   assert.deepEqual((schema.required as string[] | undefined)?.slice().sort(),expected.slice().sort());
-  assert.equal(schema.additionalProperties,false,"ADK must preserve Zod strict() in provider declaration");
+  // @google/adk 2.2.1 emits only the declared parameters and required keys;
+  // additionalProperties may be omitted even though Zod .strict() is enforced
+  // locally by FunctionTool.runAsync. No provider schema may explicitly allow it.
+  assert.ok(schema.additionalProperties===undefined || schema.additionalProperties===false,
+    "Provider schema must not explicitly authorize unknown arguments");
 }
 test("OFFLINE: Gemini function smoke vs real Backend share ADK request parameters, differ only in declared scope",async()=>{
   const smokeModel=new FirstTurnCapture();
@@ -131,9 +135,9 @@ test("OFFLINE: Gemini function smoke vs real Backend share ADK request parameter
   assert.ok(backendShape.content_text_chars!==null &&
     smokeShape.content_text_chars!==null &&
     backendShape.content_text_chars>smokeShape.content_text_chars);
-  assertStrictRequiredSchema(schemaOf(declarations(smoke)[0]!),["branch","path"]);
-  assertStrictRequiredSchema(schemaOf(declarations(backend)[0]!),["branch","path"]);
-  assertStrictRequiredSchema(schemaOf(declarations(backend)[1]!),["branch","path","content"]);
+  assertRequiredSchema(schemaOf(declarations(smoke)[0]!),["branch","path"]);
+  assertRequiredSchema(schemaOf(declarations(backend)[0]!),["branch","path"]);
+  assertRequiredSchema(schemaOf(declarations(backend)[1]!),["branch","path","content"]);
   for(const decl of declarations(backend)){
     assert.ok(!/merge|security|test_runner/u.test(decl.name??""),
       "Backend must publish no merge or privileged tools");
@@ -142,7 +146,7 @@ test("OFFLINE: Gemini function smoke vs real Backend share ADK request parameter
   assert.equal(backendGatewayExecutions,0);
 });
 
-test("OFFLINE: Backend update_file declaration has bounded argument names and Zod strict enforcement",()=>{
+test("OFFLINE: Backend update_file declaration exposes only the required argument names",()=>{
   const backendModel=new FirstTurnCapture();
   const {agent}=createAdkSpecializedAgent({
     role:"backend",
@@ -153,6 +157,6 @@ test("OFFLINE: Backend update_file declaration has bounded argument names and Zo
   assert.deepEqual(agent.tools.map(t=>t.name),["read_file","update_file"]);
   const declarationsFromAdk=agent.tools.map(t=>t._getDeclaration());
   assert.deepEqual(declarationsFromAdk.map(d=>d.name),["read_file","update_file"]);
-  assertStrictRequiredSchema(schemaOf(declarationsFromAdk[0]!),["branch","path"]);
-  assertStrictRequiredSchema(schemaOf(declarationsFromAdk[1]!),["branch","path","content"]);
+  assertRequiredSchema(schemaOf(declarationsFromAdk[0]!),["branch","path"]);
+  assertRequiredSchema(schemaOf(declarationsFromAdk[1]!),["branch","path","content"]);
 });
