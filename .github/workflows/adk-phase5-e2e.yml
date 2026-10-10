@@ -7,6 +7,10 @@ on:
       - '.github/workflows/adk-phase5-e2e.yml'
       - '.github/adk-gemini-backend-once.trigger'
       - 'poc/scripts/phase10b-positive-e2e.mjs'
+      - 'poc/scripts/capture-gemini-backend-evidence.mjs'
+      - 'poc/scripts/test/capture-gemini-backend-evidence.test.mjs'
+      - 'poc/scripts/audit-gemini-backend-evidence.sh'
+      - 'poc/scripts/review-tests/backend-generated-audit.test.ts'
       - 'poc/packages/agent-runtime/src/**'
       - 'poc/packages/agent-runtime/test/a2a-async.test.ts'
       - 'poc/packages/agent-runtime/test/adk-failure-categories.test.ts'
@@ -107,6 +111,9 @@ jobs:
         run: |
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+
+      - name: Validate read-only Backend evidence capture offline
+        run: node --experimental-strip-types --test poc/scripts/test/capture-gemini-backend-evidence.test.mjs
 
       - name: Validate agent-runtime provider diagnostics and fail-closed contracts
         run: npm --prefix poc run agent-runtime:test
@@ -239,6 +246,54 @@ jobs:
           set +a
           export GITEA_SMOKE_BASE_URL="$GITEA_HOST_BASE_URL"
           node --experimental-strip-types poc/scripts/phase10b-positive-e2e.mjs
+
+      # Run after both success and failure, before Gitea volume cleanup.
+      # Use ONLY the already-provisioned read-only Runner token: never let
+      # evidence capture submit an agent/Gateway operation or modify Gitea.
+      - name: Capture Gemini-written Backend files and immutable Gitea diff
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
+        continue-on-error: true
+        env:
+          GEMINI_EVIDENCE_DIR: /tmp/gemini-backend-evidence
+        run: |
+          test -f poc/infra/runtime/runner.env
+          set -a
+          source poc/infra/runtime/runner.env
+          set +a
+          node --experimental-strip-types poc/scripts/capture-gemini-backend-evidence.mjs
+
+      - name: Independently typecheck and test Gemini-generated Backend
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
+        continue-on-error: true
+        env:
+          GEMINI_EVIDENCE_DIR: /tmp/gemini-backend-evidence
+        run: bash poc/scripts/audit-gemini-backend-evidence.sh
+
+      - name: Upload Gemini Backend source, diff, SHA and quality report
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-backend-evidence-${{ github.run_id }}
+          path: /tmp/gemini-backend-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Green manual E2E now additionally means the independent Backend audit
+      # was successful. The artifact is uploaded even when this check fails.
+      - name: Enforce independent Backend code correctness
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const root = "/tmp/gemini-backend-evidence/";
+            if (!fs.existsSync(root+"manifest.json") || !fs.existsSync(root+"audit-result.json"))
+              throw new Error("No complete Backend evidence and quality report");
+            const m = JSON.parse(fs.readFileSync(root+"manifest.json","utf8"));
+            const a = JSON.parse(fs.readFileSync(root+"audit-result.json","utf8"));
+            if (m.capture_status !== "complete" || a.independent_backend_audit !== "pass")
+              throw new Error("Backend source requires review: check the uploaded evidence artifact");
+            console.log("Generated Backend has four confirmed changed files and passed independent tests");
+          '
 
       - name: Verify Runner execution containers were destroyed
         run: |
