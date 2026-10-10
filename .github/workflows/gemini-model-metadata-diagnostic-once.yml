@@ -1,0 +1,38 @@
+name: Gemini Model Metadata Diagnostic One-Shot
+
+# Never trigger for ordinary pushes or test code changes.
+on:
+  push:
+    branches: [refactor/adk-integration]
+    paths:
+      - '.github/gemini-model-metadata-diagnostic-once.trigger'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gemini-model-metadata-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata-only:
+    if: ${{ contains(github.event.head_commit.message, 'Gemini metadata diagnostic one-shot') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+      GEMINI_MODEL: gemini-3.8-flash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+      - name: Require authorized marker and existing Free Tier secret
+        run: |
+          test -f .github/gemini-model-metadata-diagnostic-once.trigger
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo 'Existing Gemini API secret missing' >&2
+            exit 1
+          fi
+      - name: Read only models.list and models.get structured status
+        run: node --experimental-strip-types poc/packages/agent-runtime/scripts/gemini-model-metadata.mjs
