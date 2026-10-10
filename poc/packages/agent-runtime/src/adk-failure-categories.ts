@@ -11,6 +11,7 @@ export type AdkFailureCategory =
   | "api_model_not_found"
   | "api_invalid_request"
   | "api_service_unavailable"
+  | "api_inference_timeout"
   | "api_network_failure"
   | "tool_schema_or_validation"
   | "sdk_model_exception"

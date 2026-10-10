@@ -13,6 +13,7 @@ import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome } from "./adk-specialized-agents.ts";
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { classifyAdkFailure, type AdkFailureCategory } from "./adk-failure-categories.ts";
+import { AdkToolProgress } from "./adk-tool-progress.ts";
 
 type FetchLike = typeof fetch;
 
@@ -22,6 +23,7 @@ export interface AdkA2ATaskHandlerConfig {
   adapterBaseUrl: string;
   adapterToken: string;
   maxModelTurns?: number;
+  maxModelCallMs?: number;
   gatewayTimeoutMs?: number;
   fetchFn?: FetchLike;
 }
@@ -45,17 +47,22 @@ class BoundedModel extends BaseLlm {
   providerErrorCategory: AdkFailureCategory | null = null;
   readonly delegate: BaseLlm;
   readonly limit: number;
+  readonly maxModelCallMs: number;
   readonly #signal?: AbortSignal;
   readonly #onTiming: (duration: number, input: number | null, output: number | null, turn: number) => void;
-  constructor(delegate: BaseLlm, limit: number, signal: AbortSignal | undefined,
+  constructor(delegate: BaseLlm, limit: number, maxModelCallMs: number, signal: AbortSignal | undefined,
     onTiming: (duration: number, input: number | null, output: number | null, turn: number) => void) {
     super({model: delegate.model});
     this.delegate = delegate;
     this.limit = limit;
+    this.maxModelCallMs = maxModelCallMs;
     this.#signal = signal;
     this.#onTiming = onTiming;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
       throw new Error("ADK maxModelTurns must be an integer between 1 and 100");
+    }
+    if (!Number.isSafeInteger(maxModelCallMs) || maxModelCallMs < 1000 || maxModelCallMs > 120_000) {
+      throw new Error("ADK maxModelCallMs must be 1000..120000 milliseconds");
     }
   }
   override async *generateContentAsync(request: LlmRequest, stream?: boolean, signal?: AbortSignal):
@@ -66,11 +73,19 @@ class BoundedModel extends BaseLlm {
     }
     this.turns += 1;
     const started = performance.now();
+    // A single stalled Gemini API request must not occupy the entire A2A
+    // deadline. The native ADK Gemini model forwards this AbortSignal into
+    // Google's generateContent request; no provider retry or paid fallback.
+    const callTimeout = AbortSignal.timeout(this.maxModelCallMs);
+    const signals = [callTimeout, this.#signal, signal].filter(
+      (candidate): candidate is AbortSignal => candidate !== undefined
+    );
+    const combinedSignal = AbortSignal.any(signals);
     let promptTokens: number | null = null;
     let outputTokens: number | null = null;
     try {
       for await (const response of this.delegate.generateContentAsync(
-        request, stream, this.#signal ?? signal
+        request, stream, combinedSignal
       )) {
         if (typeof response.modelVersion === "string" && response.modelVersion.trim()) {
           this.effectiveModelVersion = response.modelVersion;
@@ -83,7 +98,8 @@ class BoundedModel extends BaseLlm {
         yield response;
       }
     } catch (error) {
-      this.providerErrorCategory = classifyAdkFailure(error);
+      this.providerErrorCategory = callTimeout.aborted
+        ? "api_inference_timeout" : classifyAdkFailure(error);
       throw error;
     } finally {
       this.#onTiming(Math.round(performance.now() - started),
@@ -109,13 +125,17 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
   }
   const turnLimit = config.maxModelTurns ?? 8;
+  const maxModelCallMs = config.maxModelCallMs ?? 60_000;
   if (!Number.isSafeInteger(turnLimit) || turnLimit < 1 || turnLimit > 100) {
     throw new Error("ADK maxModelTurns must be an integer between 1 and 100");
+  }
+  if (!Number.isSafeInteger(maxModelCallMs) || maxModelCallMs < 1000 || maxModelCallMs > 120_000) {
+    throw new Error("ADK maxModelCallMs must be 1000..120000 milliseconds");
   }
 
   return async (context: AgentTaskContext, signal?: AbortSignal): Promise<AgentArtifactPayload> => {
     const taskStart = performance.now();
-    const model = new BoundedModel(config.model, turnLimit, signal,
+    const model = new BoundedModel(config.model, turnLimit, maxModelCallMs, signal,
       (durationMs, inputTokens, outputTokens, turn) => {
         process.stdout.write(JSON.stringify({
           event:"adk_llm_timing",role:context.role,turn,
@@ -123,6 +143,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         }) + "\n");
       });
     const events: AdkControlledToolOutcome[] = [];
+    const progress = new AdkToolProgress();
     const evidenceHandler = new DelegationEvidenceHandler({
       adapterBaseUrl: config.adapterBaseUrl,
       adapterToken: config.adapterToken,
@@ -141,7 +162,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     });
     const agent = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
-      onToolOutcome: event => { events.push(event); }
+      onToolOutcome: event => { events.push(event); progress.observe(event); }
     }).agent;
     const appName = "account_suspension_adk_" + context.role;
     const userId = "delegated_a2a";
@@ -163,7 +184,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         model_turns: model.turns,
         successful_tools: events.filter(e => e.payload.ok).length,
         rejected_tools: events.filter(e => !e.payload.ok).length,
-        duration_ms: Math.round(performance.now() - taskStart)
+        duration_ms: Math.round(performance.now() - taskStart),
+        ...progress.snapshot()
       }) + "\n");
     };
     try {
@@ -252,7 +274,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       event:"adk_role_timing",role:context.role,
       duration_ms:Math.round(performance.now() - taskStart),
       model_turns:model.turns,
-      successful_tools:events.filter(e=>e.payload.ok).length
+      successful_tools:events.filter(e=>e.payload.ok).length,
+      ...progress.snapshot()
     }) + "\n");
     return {
       role: context.role,

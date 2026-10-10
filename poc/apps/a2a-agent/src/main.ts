@@ -46,6 +46,14 @@ function turnsFromEnvironment(): number {
   }
   return count;
 }
+function modelCallTimeoutFromEnvironment(): number {
+  const value = process.env.ADK_MODEL_CALL_TIMEOUT_MS === undefined
+    ? 60_000 : Number(process.env.ADK_MODEL_CALL_TIMEOUT_MS);
+  if (!Number.isSafeInteger(value) || value < 1000 || value > 120_000) {
+    throw new Error("ADK_MODEL_CALL_TIMEOUT_MS must be 1000..120000");
+  }
+  return value;
+}
 function gatewayTimeoutForRole(role: SpecializedAgentRole): number {
   const fallback = role === "test" ? 900000 : 30000;
   const key = role === "test" ? "TEST_RUNNER_TIMEOUT_MS" : "ADK_GATEWAY_TIMEOUT_MS";
@@ -76,6 +84,7 @@ const adk = engine === "adk"
       adapterBaseUrl: required("DELEGATION_ADAPTER_URL"),
       adapterToken: required(roleToken),
       maxModelTurns: turnsFromEnvironment(),
+      maxModelCallMs: modelCallTimeoutFromEnvironment(),
       gatewayTimeoutMs: gatewayTimeoutForRole(role)
     }
   : undefined;

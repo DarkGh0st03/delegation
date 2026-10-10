@@ -44,7 +44,12 @@ function prompt(
     canRunTests
       ? "You may invoke the fixed run_tests profile after the test changes are ready."
       : "You do not have a test-execution tool in this role.",
-    "Never attempt to bypass an authorization denial or write to files outside the assigned role."
+    "Never attempt to bypass an authorization denial or write to files outside the assigned role.",
+    "Efficiency and completion: inspect only the files needed for the assigned change, then implement it. Relevant paths are candidates, not an instruction to read every file.",
+    "A successful read_file returns the file content. Reuse that result; do not reread an unchanged file just to reconfirm it.",
+    "The update_file tool REPLACES the entire target file; provide complete valid UTF-8 file content, not a unified diff, code fragment or patch.",
+    "Prefer a small number of coherent authorized writes over endless reconnaissance. Verify tool responses and do not claim a commit unless update_file/create_file confirms it.",
+    "If you cannot implement the task safely within your assigned paths, stop and report the limitation rather than guessing, bypassing permissions or fabricating success."
   ];
 
   return sections.join("\n");
