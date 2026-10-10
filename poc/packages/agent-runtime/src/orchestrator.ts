@@ -83,10 +83,13 @@ function positiveSafe(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(name + " must be positive");
   return value;
 }
-function safeA2AMetric(phase: string, durationMs: number, polls: number): void {
+function safeA2AMetric(phase: string, elapsedMs: number, polls: number,
+  submitMs: number, pollingHttpMs: number): void {
   process.stdout.write(JSON.stringify({
     event: "a2a_timing", phase,
-    duration_ms: Math.round(durationMs),
+    wall_ms: Math.round(elapsedMs),
+    submit_http_ms: Math.round(submitMs),
+    polling_http_ms: Math.round(pollingHttpMs),
     polls
   }) + "\n");
 }
@@ -170,6 +173,8 @@ export class DeterministicA2AOrchestrator {
     // The first HTTP request closes immediately; only the opaque task ID is
     // reused. Delegation Evidence never appears in getTask/cancelTask payloads.
     if (!result.id) throw new Error("A2A did not return a task id");
+    const submitMs = performance.now() - start;
+    let pollingHttpMs = 0;
     let task: Task = result;
     let polls = 0;
     let consecutiveFailures = 0;
@@ -187,7 +192,7 @@ export class DeterministicA2AOrchestrator {
     while (true) {
       const state = task.status?.state;
       if (state !== undefined && FINISHED.has(state)) {
-        safeA2AMetric("terminal", performance.now() - start, polls);
+        safeA2AMetric("terminal", performance.now() - start, polls, submitMs, pollingHttpMs);
         if (state !== TaskState.TASK_STATE_COMPLETED) {
           throw new Error("Protected A2A task ended without completion");
         }
@@ -202,7 +207,7 @@ export class DeterministicA2AOrchestrator {
       const elapsed = performance.now() - start;
       if (elapsed >= this.#deadlineMs) {
         await cancelRemote();
-        safeA2AMetric("deadline", performance.now() - start, polls);
+        safeA2AMetric("deadline", performance.now() - start, polls, submitMs, pollingHttpMs);
         throw new Error("Protected A2A task deadline exceeded");
       }
       const remaining = this.#deadlineMs - elapsed;
@@ -211,6 +216,7 @@ export class DeterministicA2AOrchestrator {
       // Every getTask request has its own short timeout; it does NOT share
       // the original long-running sendMessage HTTP connection.
       const requestMs = Math.max(1, Math.floor(Math.min(15_000, this.#deadlineMs - (performance.now() - start))));
+      const pollHttpStart = performance.now();
       try {
         task = await client.getTask({id: result.id, historyLength: 0}, {
           signal: AbortSignal.timeout(requestMs)
@@ -222,7 +228,7 @@ export class DeterministicA2AOrchestrator {
         // at most two retries, with no retransmission of delegated evidence.
         if (performance.now() - start >= this.#deadlineMs) {
           await cancelRemote();
-          safeA2AMetric("deadline", performance.now() - start, polls);
+          safeA2AMetric("deadline", performance.now() - start, polls, submitMs, pollingHttpMs);
           throw new Error("Protected A2A task deadline exceeded");
         }
         consecutiveFailures++;
@@ -230,6 +236,8 @@ export class DeterministicA2AOrchestrator {
           await cancelRemote();
           throw new Error("Protected A2A polling transport failed");
         }
+      } finally {
+        pollingHttpMs += performance.now() - pollHttpStart;
       }
       interval = Math.min(this.#maxIntervalMs, Math.ceil(interval * 1.5));
     }

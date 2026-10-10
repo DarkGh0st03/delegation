@@ -44,7 +44,7 @@ the DC needed by the agent remains in the private task-context store.
 The ADK wrapper emits `adk_llm_timing` with role, turn, call latency and
 provider token counts when available; `adk_tool_timing` with tool
 name/status/latency; `adk_role_timing` with role total; and
-`a2a_timing` with transport total and poll count. Diagnostics contain
+`a2a_timing` with overall wall time, HTTP submission time, cumulative polling HTTP time and poll count. Wall time includes waiting for remote work and MUST NOT be called pure network overhead. Diagnostics contain
 no file content, prompts, authority evidence, signing keys or API
 credentials. Existing Gateway Phase 12C historical metrics remain
 separate from these NEW measurements.

@@ -76,6 +76,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
       GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-3.8-flash' }}
+      PHASE10B_GEMINI_MAX_MODEL_TURNS: "16"
       ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"
@@ -208,6 +209,13 @@ jobs:
             echo 'GitHub repository secret Delegation_Thesis_Gemini is missing.' >&2
             exit 1
           fi
+      - name: Require Free Tier Gemini secret for the one-time Backend probe
+        if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, 'Gemini Backend live one-shot') }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo 'Missing repository secret Delegation_Thesis_Gemini.' >&2
+            exit 1
+          fi
       - name: Run protected ADK Account Suspension E2E
         run: |
           set -a
@@ -229,7 +237,7 @@ jobs:
         run: git diff --exit-code -- poc/runner/acceptance
 
       - name: Show Phase 10B logs on failure
-        if: ${{ failure() && !contains(github.event.head_commit.message, 'diagnose Gemini Backend') }}
+        if: ${{ failure() && github.event_name == 'push' && !contains(github.event.head_commit.message, 'Gemini Backend') }}
         run: |
           echo "=== Adapter ==="
           cat /tmp/phase10b-adapter.log || true
