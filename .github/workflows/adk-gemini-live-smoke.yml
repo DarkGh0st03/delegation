@@ -5,11 +5,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'First check API availability; optionally test ADK tool calling'
+        description: 'Manual health, ADK fixture, or isolated two-tool Backend shape'
         type: choice
         required: true
         default: api-health
-        options: [api-health, adk-function]
+        options: [api-health, adk-function, backend-shape]
       model:
         description: 'Gemini model available to your Gemini Developer API project'
         type: string
@@ -48,8 +48,13 @@ jobs:
         if: ${{ inputs.mode == 'api-health' }}
         run: node --experimental-strip-types poc/packages/agent-runtime/scripts/gemini-api-health-smoke.mjs
       - name: Install ADK dependencies for isolated function calling
-        if: ${{ inputs.mode == 'adk-function' }}
+        if: ${{ inputs.mode == 'adk-function' || inputs.mode == 'backend-shape' }}
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
       - name: Gemini ADK synthetic read-only tool (separate, explicit mode)
         if: ${{ inputs.mode == 'adk-function' }}
         run: node --experimental-strip-types poc/packages/agent-runtime/scripts/gemini-live-smoke.mjs
+      # Backend-shaped live inference is a DIFFERENT explicit dispatch mode.
+      # One provider request max; in-memory fixture, no infrastructure or writes.
+      - name: Gemini ADK Backend-shaped isolated single-turn probe
+        if: ${{ inputs.mode == 'backend-shape' }}
+        run: node --experimental-strip-types poc/packages/agent-runtime/scripts/gemini-backend-shape-smoke.mjs
