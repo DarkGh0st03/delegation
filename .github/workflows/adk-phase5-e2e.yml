@@ -1,0 +1,33 @@
+name: ADK Phase 5 - Protected E2E
+
+# Manual discovery stub: real execution is defined on refactor/adk-integration.
+on:
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: 'Select adk-gemini-backend on refactor/adk-integration'
+        required: true
+        type: choice
+        default: adk-scripted
+        options: [adk-scripted, adk-gemini-backend, adk-openai, adk-gemini]
+      model:
+        description: 'Only used for an explicitly selected OpenAI run'
+        type: string
+        default: gpt-5.6-sol
+      gemini_model:
+        description: 'Gemini Developer API model'
+        type: string
+        default: gemini-3.8-flash
+
+permissions:
+  contents: read
+
+jobs:
+  default-branch-placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require execution from refactor/adk-integration
+        run: |
+          echo 'Choose refactor/adk-integration in Run workflow.'
+          echo 'No live provider call is implemented on main.'
+          exit 1
