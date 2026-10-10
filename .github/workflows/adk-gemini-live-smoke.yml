@@ -2,12 +2,6 @@ name: ADK Gemini Native Live Smoke
 
 # Live requests are ALWAYS explicit. Ordinary branch pushes run no Gemini API call.
 on:
-  # Only this explicit, short-lived marker can start a live API call via push.
-  # Workflow source edits and normal branch pushes cannot trigger this job.
-  push:
-    branches: [refactor/adk-integration]
-    paths:
-      - '.github/gemini-api-health-once.trigger'
   workflow_dispatch:
     inputs:
       mode:
@@ -35,7 +29,7 @@ jobs:
     timeout-minutes: 6
     env:
       GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
-      GEMINI_MODEL: ${{ github.event_name == 'push' && 'gemini-3.8-flash' || inputs.model }}
+      GEMINI_MODEL: ${{ inputs.model }}
       GOOGLE_GENAI_USE_VERTEXAI: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -50,11 +44,8 @@ jobs:
             echo 'Missing GitHub secret Delegation_Thesis_Gemini.' >&2
             exit 1
           fi
-      - name: Verify one-shot marker on authorized push
-        if: ${{ github.event_name == 'push' }}
-        run: test -f .github/gemini-api-health-once.trigger
       - name: Gemini API health (one synthetic request, no ADK or infrastructure)
-        if: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, 'Gemini API health one-shot')) || (github.event_name == 'workflow_dispatch' && inputs.mode == 'api-health') }}
+        if: ${{ inputs.mode == 'api-health' }}
         run: node --experimental-strip-types poc/packages/agent-runtime/scripts/gemini-api-health-smoke.mjs
       - name: Install ADK dependencies for isolated function calling
         if: ${{ inputs.mode == 'adk-function' }}
