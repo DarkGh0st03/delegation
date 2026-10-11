@@ -17,6 +17,7 @@ on:
       - 'poc/scripts/audit-gemini-backend-evidence.sh'
       - 'poc/scripts/review-tests/backend-generated-audit.test.ts'
       - 'poc/packages/agent-runtime/src/**'
+      - 'poc/packages/agent-runtime/test/adk-model-call-timeout.test.ts'
       - 'poc/packages/agent-runtime/test/a2a-async.test.ts'
       - 'poc/packages/agent-runtime/test/adk-failure-categories.test.ts'
   workflow_dispatch:
