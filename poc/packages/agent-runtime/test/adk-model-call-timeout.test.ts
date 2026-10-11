@@ -68,7 +68,7 @@ test("ADK generation configuration rejects unsafe values before any network traf
   };
   for(const generateContentConfig of [
     {maxOutputTokens:0,temperature:0},
-    {maxOutputTokens:16385,temperature:0},
+    {maxOutputTokens:32001,temperature:0},
     {maxOutputTokens:1024,temperature:-1},
     {maxOutputTokens:1024,temperature:Infinity}
   ]){
@@ -81,5 +81,8 @@ test("ADK generation configuration rejects unsafe values before any network traf
   }));
   assert.doesNotThrow(()=>createAdkA2ATaskHandler({
     ...base,generateContentConfig:{maxOutputTokens:16384,temperature:0}
+  }));
+  assert.doesNotThrow(()=>createAdkA2ATaskHandler({
+    ...base,generateContentConfig:{maxOutputTokens:32000,temperature:0}
   }));
 });
