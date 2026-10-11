@@ -46,7 +46,8 @@ function prompt(
       : "You do not have a test-execution tool in this role.",
     ...(roleLabel === "Frontend Development Agent" ? [
       "Frontend-specific efficiency: start with the three writable application files and the shared account-status contract. Read additional optional context only when necessary; make one coherent implementation pass instead of extensive speculative investigation.",
-      "Frontend correctness requirement: while an account suspend/reactivate HTTP request is in flight, prevent repeated submission. Track pending state, keep the corresponding action button disabled until success or failure, and restore its enabled state in all outcomes. Preserve status-based button switching and show useful errors. Do not hardcode server responses."
+      "Frontend correctness requirement: while an account suspend/reactivate HTTP request is in flight, prevent repeated submission. Track pending state, keep the corresponding action button disabled until success or failure, and restore its enabled state in all outcomes. Preserve status-based button switching and show useful errors. Do not hardcode server responses.",
+      "Frontend accessibility requirement: preserve a stable accessible button name matching Suspend user or Reactivate user while the corresponding HTTP action is pending, even if the visible text becomes Suspending... or Reactivating... . Use a stable aria-label when needed; the same button must remain discoverable and disabled until the response finishes. Do not weaken tests or replace real requests with mocked success."
     ] : []),
     "Never attempt to bypass an authorization denial or write to files outside the assigned role.",
     "Efficiency and completion: the writable files relevant to your subtask are deliverables. Read those target files first and implement them; read-only context files are optional references, not a checklist.",
