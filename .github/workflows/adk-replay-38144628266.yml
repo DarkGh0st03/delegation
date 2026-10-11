@@ -31,7 +31,7 @@ jobs:
 
       - name: Download immutable evidence from failed Gemini run
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/replay-evidence"
           gh run download 38144628266 \
@@ -55,7 +55,7 @@ jobs:
         with:
           name: gemini-38144628266-offline-replay-diagnostics
           path: |
-            \${{ runner.temp }}/replay-logs/
+            ${{ runner.temp }}/replay-logs/
           retention-days: 14
           if-no-files-found: warn
 
