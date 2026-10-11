@@ -10,7 +10,7 @@ import {
   verifyBackendLiveProbe
 } from "../packages/agent-runtime/src/adk-backend-live-probe.ts";
 import { existsSync } from "node:fs";
-import {resolveRoleGeminiConfiguration} from "./gemini-thinking-policy.mjs";
+import {resolveRoleGeminiConfiguration, resolveGeminiOutputLimit} from "./gemini-thinking-policy.mjs";
 import {
   DelegationEvidenceHandler,
   BaseLlm,
@@ -425,14 +425,14 @@ function specializedServerConfig(role,port,token){
   const liveRole = manualLiveRoles.has(role);
   const useGemini = liveRole || engine==="adk-gemini";
   // Manual full-role workflow uses a single configurable Gemini model/effort
-  // for Backend, Frontend and Test (default 3.6 Flash / MINIMAL).
+  // for Backend, Frontend and Test (default 3.8 Flash / LOW).
   // Standalone role probes preserve their 3.8 Flash / LOW defaults.
   const geminiRoleConfig=useGemini?resolveRoleGeminiConfiguration({
     role,roleMode:manualLiveRoleConfig,
     geminiModel:process.env.GEMINI_MODEL??"gemini-3.8-flash",
     geminiThinking:process.env.PHASE10B_GEMINI_THINKING_LEVEL??"LOW",
-    fullModel:process.env.PHASE10B_FULL_GEMINI_MODEL??"gemini-3.6-flash",
-    fullThinking:process.env.PHASE10B_FULL_GEMINI_THINKING_LEVEL??"MINIMAL"
+    fullModel:process.env.PHASE10B_FULL_GEMINI_MODEL??"gemini-3.8-flash",
+    fullThinking:process.env.PHASE10B_FULL_GEMINI_THINKING_LEVEL??"LOW"
   }):null;
   const model=engine==="adk-openai"
     ?new OpenAIAdkModel({apiKey:process.env.OPENAI_API_KEY})
@@ -452,13 +452,16 @@ function specializedServerConfig(role,port,token){
   if(!Number.isSafeInteger(maxModelTurns)||maxModelTurns<1||maxModelTurns>40)
     throw new Error("Gemini model turn budget must be from 1 to 40");
   // Scripted regressions retain their original defaults. Real Gemini roles
-  // use the validated role-specific effort and a 16,384-token output cap,
-  // including thought tokens. Full-mode MINIMAL is deliberate and opt-in.
+  // use a validated role-specific effort. The opt-in complete workflow
+  // permits up to 32,000 output tokens including thought tokens; isolated
+  // trials retain the original 16,384 cap, without changing policy scopes.
   const geminiGeneration=useGemini
     ? {generateContentConfig:{
         // Do not blindly cap this at 4K-8K: a full update_file replacement
         // needs output headroom, and the provider includes thought tokens.
-        maxOutputTokens:BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,
+        maxOutputTokens:resolveGeminiOutputLimit(
+          manualLiveRoleConfig, BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS
+        ),
         temperature:0,
         ...geminiRoleConfig.thinkingConfig
       }} : {};

@@ -167,7 +167,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
 
   if (config.generateContentConfig) {
     const {maxOutputTokens, temperature} = config.generateContentConfig;
-    if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 16384
+    if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 32000
         || !Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
       throw new Error("Invalid explicit ADK generation configuration");
     }

@@ -44,15 +44,15 @@ on:
         default: LOW
         options: [LOW, MINIMAL]
       full_gemini_model:
-        description: 'All 3 agents in adk-gemini-full; 3.6 Flash MINIMAL trial (fallback: 3.8 Flash LOW)'
+        description: 'All 3 real agents in adk-gemini-full (default 3.8 Flash LOW, max 32000 output tokens)'
         type: string
         required: true
-        default: gemini-3.6-flash
+        default: gemini-3.8-flash
       full_gemini_thinking_level:
-        description: 'All 3 agents in adk-gemini-full: MINIMAL for 3.6 Flash, LOW for 3.8 Flash'
+        description: 'All 3 agents in adk-gemini-full: LOW for Gemini 3.8 Flash'
         type: choice
         required: true
-        default: MINIMAL
+        default: LOW
         options: [MINIMAL, LOW]
 
 # Do not spawn multiple 40-minute infrastructure tests for overlapping commits.
@@ -106,8 +106,8 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
       GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-3.8-flash' }}
       PHASE10B_GEMINI_THINKING_LEVEL: ${{ inputs.gemini_thinking_level || 'LOW' }}
-      PHASE10B_FULL_GEMINI_MODEL: ${{ inputs.full_gemini_model || 'gemini-3.6-flash' }}
-      PHASE10B_FULL_GEMINI_THINKING_LEVEL: ${{ inputs.full_gemini_thinking_level || 'MINIMAL' }}
+      PHASE10B_FULL_GEMINI_MODEL: ${{ inputs.full_gemini_model || 'gemini-3.8-flash' }}
+      PHASE10B_FULL_GEMINI_THINKING_LEVEL: ${{ inputs.full_gemini_thinking_level || 'LOW' }}
       PHASE10B_GEMINI_MAX_MODEL_TURNS: "16"
       # Live Backend uses the original complete four-file task and 16-turn
       # budget in adk-backend-live-probe.ts. Never retry failed inference.
@@ -382,7 +382,7 @@ jobs:
           for (const role of roles) {
             const model = String(result.model_ids?.[role] || "").toLowerCase();
             const expected = mode==="all"
-              ? String(process.env.PHASE10B_FULL_GEMINI_MODEL || "gemini-3.6-flash").toLowerCase()
+              ? String(process.env.PHASE10B_FULL_GEMINI_MODEL || "gemini-3.8-flash").toLowerCase()
               : String(process.env.GEMINI_MODEL || "gemini-3.8-flash").toLowerCase();
             if (real.includes(role) ? model!==expected : !model.includes("scripted"))
               throw new Error("Role model identity does not match selected live/scripted mode: "+role);

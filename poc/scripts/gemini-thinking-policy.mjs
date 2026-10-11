@@ -20,17 +20,17 @@ export function resolveGeminiThinkingConfig(model,requested="LOW") {
 
 /**
  * Manual adk-gemini-full uses one explicitly selected model/effort for ALL
- * specialized roles. Default: Gemini 3.6 Flash + MINIMAL. This keeps the
+ * specialized roles. Default: Gemini 3.8 Flash + LOW. This keeps the
  * previous standalone Backend/Frontend/Test probes on their own validated
  * Gemini 3.8 Flash + LOW defaults.
  *
- * The full-mode override is configurable for a later 3.8 Flash + LOW
- * fallback without changing any security profiles or code generation limits.
+ * The full-mode override remains configurable for model/effort comparisons.
+ * Model/tool authorization boundaries are unchanged.
  */
 export function resolveRoleGeminiConfiguration({
   role, roleMode="", geminiModel="gemini-3.8-flash",
-  geminiThinking="LOW", fullModel="gemini-3.6-flash",
-  fullThinking="MINIMAL"
+  geminiThinking="LOW", fullModel="gemini-3.8-flash",
+  fullThinking="LOW"
 }) {
   if(!["backend","frontend","test"].includes(role))
     throw new Error("Unsupported specialized Agent role");
@@ -41,4 +41,14 @@ export function resolveRoleGeminiConfiguration({
     model, thinkingLevel:thinking,
     ...resolveGeminiThinkingConfig(model,thinking)
   };
+}
+
+/** Exact per-inference output ceiling, including Gemini thought tokens.
+ * Only the opt-in full-role run uses 32,000. Historical one-role probes
+ * preserve their validated 16,384-token ceiling.
+ */
+export function resolveGeminiOutputLimit(roleMode, isolatedLimit=16384) {
+  if (!Number.isSafeInteger(isolatedLimit) || isolatedLimit < 1 || isolatedLimit > 32000)
+    throw new Error("Invalid isolated Gemini output limit");
+  return roleMode === "all" ? 32000 : isolatedLimit;
 }

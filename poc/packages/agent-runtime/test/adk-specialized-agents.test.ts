@@ -306,3 +306,22 @@ test("Live Test Agent exposes scoped create_file and does not inherit applicatio
   assert.ok(readable.includes("apps/backend/src/users/user.service.ts"));
   assert.equal(safeAdkRequestShape(model.requests[0]!).thinking_level,"LOW");
 });
+
+test("32,000-token Gemini 3.8 LOW budget reaches each role's native ADK requests",async()=>{
+  for(const role of ["backend","frontend","test"] as const){
+    const {model,built,calls}=await exercise(role,"read_file",{
+      branch:BRANCH,path:PATHS[role]
+    },async()=>({content:"synthetic permitted source"}),
+    {maxOutputTokens:32000,temperature:0,
+      thinkingConfig:{thinkingLevel:"LOW" as never}},true);
+    assert.ok(built.agent.tools.length>0);
+    assert.equal(calls.length,1);
+    assert.equal(model.requests.length,2);
+    for(const request of model.requests) {
+      const shape=safeAdkRequestShape(request);
+      assert.equal(shape.max_output_tokens,32000);
+      assert.equal(shape.thinking_level,"LOW");
+      assert.equal(shape.temperature,0);
+    }
+  }
+});
