@@ -10,7 +10,7 @@ import {
   verifyBackendLiveProbe
 } from "../packages/agent-runtime/src/adk-backend-live-probe.ts";
 import { existsSync } from "node:fs";
-import {resolveGeminiThinkingConfig} from "./gemini-thinking-policy.mjs";
+import {resolveRoleGeminiConfiguration} from "./gemini-thinking-policy.mjs";
 import {
   DelegationEvidenceHandler,
   BaseLlm,
@@ -424,19 +424,21 @@ function specializedServerConfig(role,port,token){
   if(engine==="legacy")return {role,port,taskHandler:taskHandler(role,token)};
   const liveRole = manualLiveRoles.has(role);
   const useGemini = liveRole || engine==="adk-gemini";
-  const geminiModelName=process.env.GEMINI_MODEL??"gemini-3.8-flash";
-  // Validate the requested effort BEFORE contacting the paid model.
-  // 3.8 Flash supports LOW but not MINIMAL; MINIMAL is opt-in for compatible models.
-  const thinkingConfig=useGemini
-    ?resolveGeminiThinkingConfig(
-        geminiModelName,process.env.PHASE10B_GEMINI_THINKING_LEVEL??"LOW"
-      ):{};
+  // Full-role live workflow selects model/effort independently for Frontend.
+  // Standalone role probes preserve the existing 3.8 Flash / LOW defaults.
+  const geminiRoleConfig=useGemini?resolveRoleGeminiConfiguration({
+    role,roleMode:manualLiveRoleConfig,
+    geminiModel:process.env.GEMINI_MODEL??"gemini-3.8-flash",
+    geminiThinking:process.env.PHASE10B_GEMINI_THINKING_LEVEL??"LOW",
+    frontendModel:process.env.PHASE10B_FRONTEND_GEMINI_MODEL??"gemini-3.6-flash",
+    frontendThinking:process.env.PHASE10B_FRONTEND_GEMINI_THINKING_LEVEL??"MINIMAL"
+  }):null;
   const model=engine==="adk-openai"
     ?new OpenAIAdkModel({apiKey:process.env.OPENAI_API_KEY})
     :useGemini
       ?createGeminiAdkModel({
           apiKey:process.env.GEMINI_API_KEY,
-          model:geminiModelName
+          model:geminiRoleConfig.model
         })
       :new Phase5ScriptedAdkModel(role);
   const gatewayTimeoutMs=role==="test"
@@ -459,7 +461,7 @@ function specializedServerConfig(role,port,token){
         // needs output headroom, and the provider includes thought tokens.
         maxOutputTokens:BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,
         temperature:0,
-        ...thinkingConfig
+        ...geminiRoleConfig.thinkingConfig
       }} : {};
   const liveRoleLimits=useGemini
     ?{maxModelCallMs:BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,scopeModelPaths:true}:{};

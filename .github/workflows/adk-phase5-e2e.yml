@@ -38,11 +38,22 @@ on:
         required: true
         default: gemini-3.8-flash
       gemini_thinking_level:
-        description: 'LOW for 3.8 Flash; MINIMAL only with compatible models such as gemini-3.6-flash'
+        description: 'Default for real Backend and Test roles: 3.8 Flash uses LOW'
         type: choice
         required: true
         default: LOW
         options: [LOW, MINIMAL]
+      frontend_gemini_model:
+        description: 'Frontend override in adk-gemini-full (other engines ignore it)'
+        type: string
+        required: true
+        default: gemini-3.6-flash
+      frontend_gemini_thinking_level:
+        description: 'Frontend override in adk-gemini-full: 3.6 Flash supports MINIMAL'
+        type: choice
+        required: true
+        default: MINIMAL
+        options: [MINIMAL, LOW]
 
 # Do not spawn multiple 40-minute infrastructure tests for overlapping commits.
 concurrency:
@@ -95,6 +106,8 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
       GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-3.8-flash' }}
       PHASE10B_GEMINI_THINKING_LEVEL: ${{ inputs.gemini_thinking_level || 'LOW' }}
+      PHASE10B_FRONTEND_GEMINI_MODEL: ${{ inputs.frontend_gemini_model || 'gemini-3.6-flash' }}
+      PHASE10B_FRONTEND_GEMINI_THINKING_LEVEL: ${{ inputs.frontend_gemini_thinking_level || 'MINIMAL' }}
       PHASE10B_GEMINI_MAX_MODEL_TURNS: "16"
       # Live Backend uses the original complete four-file task and 16-turn
       # budget in adk-backend-live-probe.ts. Never retry failed inference.
