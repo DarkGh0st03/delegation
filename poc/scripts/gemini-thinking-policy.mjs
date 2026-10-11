@@ -19,20 +19,24 @@ export function resolveGeminiThinkingConfig(model,requested="LOW") {
 }
 
 /**
- * Every full workflow uses the verified 3.8 Flash + LOW for Backend and Test,
- * with an independent, explicit Frontend economy configuration.
- * Standalone role probes remain on the general Gemini selection.
+ * Manual adk-gemini-full uses one explicitly selected model/effort for ALL
+ * specialized roles. Default: Gemini 3.6 Flash + MINIMAL. This keeps the
+ * previous standalone Backend/Frontend/Test probes on their own validated
+ * Gemini 3.8 Flash + LOW defaults.
+ *
+ * The full-mode override is configurable for a later 3.8 Flash + LOW
+ * fallback without changing any security profiles or code generation limits.
  */
 export function resolveRoleGeminiConfiguration({
   role, roleMode="", geminiModel="gemini-3.8-flash",
-  geminiThinking="LOW", frontendModel="gemini-3.6-flash",
-  frontendThinking="MINIMAL"
+  geminiThinking="LOW", fullModel="gemini-3.6-flash",
+  fullThinking="MINIMAL"
 }) {
   if(!["backend","frontend","test"].includes(role))
     throw new Error("Unsupported specialized Agent role");
-  const useFrontendEconomy = roleMode==="all" && role==="frontend";
-  const model=useFrontendEconomy?frontendModel:geminiModel;
-  const thinking=useFrontendEconomy?frontendThinking:geminiThinking;
+  const useFullModel = roleMode==="all";
+  const model=useFullModel?fullModel:geminiModel;
+  const thinking=useFullModel?fullThinking:geminiThinking;
   return {
     model, thinkingLevel:thinking,
     ...resolveGeminiThinkingConfig(model,thinking)

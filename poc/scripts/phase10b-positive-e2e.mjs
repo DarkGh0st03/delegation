@@ -424,14 +424,15 @@ function specializedServerConfig(role,port,token){
   if(engine==="legacy")return {role,port,taskHandler:taskHandler(role,token)};
   const liveRole = manualLiveRoles.has(role);
   const useGemini = liveRole || engine==="adk-gemini";
-  // Full-role live workflow selects model/effort independently for Frontend.
-  // Standalone role probes preserve the existing 3.8 Flash / LOW defaults.
+  // Manual full-role workflow uses a single configurable Gemini model/effort
+  // for Backend, Frontend and Test (default 3.6 Flash / MINIMAL).
+  // Standalone role probes preserve their 3.8 Flash / LOW defaults.
   const geminiRoleConfig=useGemini?resolveRoleGeminiConfiguration({
     role,roleMode:manualLiveRoleConfig,
     geminiModel:process.env.GEMINI_MODEL??"gemini-3.8-flash",
     geminiThinking:process.env.PHASE10B_GEMINI_THINKING_LEVEL??"LOW",
-    frontendModel:process.env.PHASE10B_FRONTEND_GEMINI_MODEL??"gemini-3.6-flash",
-    frontendThinking:process.env.PHASE10B_FRONTEND_GEMINI_THINKING_LEVEL??"MINIMAL"
+    fullModel:process.env.PHASE10B_FULL_GEMINI_MODEL??"gemini-3.6-flash",
+    fullThinking:process.env.PHASE10B_FULL_GEMINI_THINKING_LEVEL??"MINIMAL"
   }):null;
   const model=engine==="adk-openai"
     ?new OpenAIAdkModel({apiKey:process.env.OPENAI_API_KEY})
@@ -450,11 +451,9 @@ function specializedServerConfig(role,port,token){
     :useGemini ? Number(process.env.PHASE10B_GEMINI_MAX_MODEL_TURNS??"24") : 40;
   if(!Number.isSafeInteger(maxModelTurns)||maxModelTurns<1||maxModelTurns>40)
     throw new Error("Gemini model turn budget must be from 1 to 40");
-  // Match the previously successful isolated Gemini ADK function-calling probe.
-  // Only the explicitly selected live Gemini Backend receives this configuration.
-  // Scripted regressions and the other agent roles retain their original defaults.
-  // Each paid Gemini role gets bounded LOW thinking and an output budget
-  // large enough for complete file replacements; no scripted response changes.
+  // Scripted regressions retain their original defaults. Real Gemini roles
+  // use the validated role-specific effort and a 16,384-token output cap,
+  // including thought tokens. Full-mode MINIMAL is deliberate and opt-in.
   const geminiGeneration=useGemini
     ? {generateContentConfig:{
         // Do not blindly cap this at 4K-8K: a full update_file replacement
