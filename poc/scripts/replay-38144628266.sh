@@ -5,11 +5,14 @@ EVIDENCE="$(realpath "$1")"
 TARGET="$(realpath "$2")"
 LOGS="$(realpath "$3")"
 ACCEPTANCE="$(realpath "$4")"
+MODE="${5:-original}"
 mkdir -p "$LOGS"
 
-python3 - "$EVIDENCE" "$TARGET" "$LOGS" <<'PY'
+python3 - "$EVIDENCE" "$TARGET" "$LOGS" "$MODE" <<'PY'
 import json,hashlib,pathlib,subprocess,sys
-e,t,l=map(pathlib.Path,sys.argv[1:])
+e,t,l=map(pathlib.Path,sys.argv[1:4])
+mode=sys.argv[4]
+assert mode in ("original","candidate")
 m=json.loads((e/"manifest.json").read_text())
 baseline="405748b1e77992b6bd8630a3ab6f990658d32f6b"
 feature="e99536f5ef170981a8d6bbddef42cde9ba5e37c0"
@@ -46,11 +49,19 @@ for f in m["files"]:
         assert old==(e/"baseline"/p).read_bytes(),p
     dst.parent.mkdir(parents=True,exist_ok=True)
     dst.write_bytes(new)
+if mode=="candidate":
+    # DIAGNOSTIC ONLY: never overwrite original evidence or attribute this patch to Gemini.
+    p=t/"apps/frontend/src/pages/UserDetailPage.tsx"
+    original=p.read_text()
+    needle='className="action-button btn-reactivate"'
+    assert original.count(needle)==1
+    p.write_text(original.replace(needle,needle+'\n              aria-label="Reactivate user"'))
 (l/"provenance.json").write_text(json.dumps({
 "source_run":38144628266,"baseline_sha":baseline,"feature_sha":feature,
 "verified_generated_files":11,"mode":"offline_no_LLM",
-"docker_image":"node:22.15.0-bookworm"},indent=2)+"\n")
-print("Original Git baseline and 11 generated blob SHA hashes verified.")
+"docker_image":"node:22.15.0-bookworm",
+"variant":mode,"manual_diagnostic_patch":("aria-label stable on reactivate button" if mode=="candidate" else None)},indent=2)+"\n")
+print("Original Git baseline and 11 generated blob SHA hashes verified; replay mode:",mode)
 PY
 
 NAME="thesis-replay-$RANDOM-$RANDOM"
