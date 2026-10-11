@@ -1,0 +1,79 @@
+name: ADK Artifact Replay 38144628266 (No LLM)
+
+on:
+  push:
+    branches: [refactor/adk-integration]
+    paths:
+      - '.github/workflows/adk-replay-38144628266.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay:
+    name: Reproduce original AI-generated code without Gemini
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout framework at diagnostic script revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout exact original IAM baseline
+        uses: actions/checkout@v4
+        with:
+          repository: DarkGh0st03/iam-console-poc
+          ref: 405748b1e77992b6bd8630a3ab6f990658d32f6b
+          path: target/iam-console-poc
+          persist-credentials: false
+
+      - name: Download immutable evidence from failed Gemini run
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/replay-evidence"
+          gh run download 38144628266 \
+            --repo DarkGh0st03/delegation \
+            --name multiagent-evidence-workflow_dispatch-38144628266 \
+            --dir "$RUNNER_TEMP/replay-evidence"
+          ls "$RUNNER_TEMP/replay-evidence"
+
+      - name: Verify original blobs and execute exact Controlled Runner test phases
+        run: |
+          mkdir -p "$RUNNER_TEMP/replay-logs"
+          bash poc/scripts/replay-38144628266.sh \
+            "$RUNNER_TEMP/replay-evidence" \
+            "$GITHUB_WORKSPACE/target/iam-console-poc" \
+            "$RUNNER_TEMP/replay-logs" \
+            "$GITHUB_WORKSPACE/poc/runner/acceptance"
+
+      - name: Preserve complete per-phase stdout stderr and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-38144628266-offline-replay-diagnostics
+          path: |
+            \${{ runner.temp }}/replay-logs/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Enforce replay verdict without changing original code
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+          f=pathlib.Path(os.environ["RUNNER_TEMP"])/"replay-logs/replay-verdict.json"
+          if not f.exists():
+              print("Replay did not reach a result; inspect setup and logs.")
+              sys.exit(1)
+          d=json.loads(f.read_text())
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("## Exact Gemini artifact replay (no LLM)\n\n")
+              out.write("| Phase | Verdict |\n|---|---|\n")
+              for item in d["phases"]:
+                  out.write("| %s | %s |\n"%(item["phase"],item["status"]))
+              out.write("\nSource run: 38144628266; original generated code unchanged.\n")
+          sys.exit(0 if d["result"]=="pass" else 1)
+          PY
