@@ -52,6 +52,27 @@ if (!["legacy","adk-scripted","adk-openai","adk-gemini"].includes(engine)) {
 }
 const orchestratorEngine = liveGeminiOnce ? "adk-gemini" :
   (process.env.PHASE10B_ORCHESTRATOR_ENGINE ?? "legacy");
+// Manual, deliberately hybrid regression modes: only named roles use Gemini.
+// The default push, existing Backend probe and scripted baseline are unchanged.
+const manualLiveRoleConfig = process.env.PHASE10B_REAL_GEMINI_ROLES ?? "";
+const manualRoleOptions = {
+  "": [],
+  frontend: ["frontend"],
+  test: ["test"],
+  all: ["backend", "frontend", "test"]
+};
+if (!Object.hasOwn(manualRoleOptions, manualLiveRoleConfig)) {
+  throw new Error("Unsupported PHASE10B_REAL_GEMINI_ROLES");
+}
+const manualLiveRoles = new Set(manualRoleOptions[manualLiveRoleConfig]);
+if (manualLiveRoles.size > 0 && (
+  process.env.GITHUB_ACTIONS !== "true" ||
+  backendProbeOnce || liveGeminiOnce ||
+  engine !== "adk-scripted" || orchestratorEngine !== "adk-scripted" ||
+  !process.env.GEMINI_API_KEY?.trim()
+)) {
+  throw new Error("Live specialized roles require explicit manual Gemini mode and scripted Orchestrator");
+}
 if (!["legacy","adk-scripted","adk-openai","adk-gemini"].includes(orchestratorEngine)) {
   throw new Error("Unknown PHASE10B_ORCHESTRATOR_ENGINE");
 }
@@ -400,9 +421,11 @@ class Phase5ScriptedAdkModel extends BaseLlm {
 }
 function specializedServerConfig(role,port,token){
   if(engine==="legacy")return {role,port,taskHandler:taskHandler(role,token)};
+  const liveRole = manualLiveRoles.has(role);
+  const useGemini = liveRole || engine==="adk-gemini";
   const model=engine==="adk-openai"
     ?new OpenAIAdkModel({apiKey:process.env.OPENAI_API_KEY})
-    :engine==="adk-gemini"
+    :useGemini
       ?createGeminiAdkModel({
           apiKey:process.env.GEMINI_API_KEY,
           model:process.env.GEMINI_MODEL??"gemini-3.8-flash"
@@ -411,31 +434,28 @@ function specializedServerConfig(role,port,token){
   const gatewayTimeoutMs=role==="test"
     ?Number(process.env.TEST_RUNNER_TIMEOUT_MS??"900000"):30000;
   // Free Tier bounded inference; original scripted baseline stays at 40.
-  const maxModelTurns=backendProbeOnce && engine==="adk-gemini" && role==="backend"
+  const maxModelTurns=backendProbeOnce && useGemini && role==="backend"
     ? BACKEND_LIVE_PROBE_MAX_TURNS
-    :engine==="adk-gemini"
-      ?Number(process.env.PHASE10B_GEMINI_MAX_MODEL_TURNS??"24"):40;
+    :liveRole ? (role==="test" ? 24 : 16)
+    :useGemini ? Number(process.env.PHASE10B_GEMINI_MAX_MODEL_TURNS??"24") : 40;
   if(!Number.isSafeInteger(maxModelTurns)||maxModelTurns<1||maxModelTurns>40)
     throw new Error("Gemini model turn budget must be from 1 to 40");
   // Match the previously successful isolated Gemini ADK function-calling probe.
   // Only the explicitly selected live Gemini Backend receives this configuration.
   // Scripted regressions and the other agent roles retain their original defaults.
-  const geminiBackendGeneration=engine==="adk-gemini" && role==="backend"
+  // Each paid Gemini role gets bounded LOW thinking and an output budget
+  // large enough for complete file replacements; no scripted response changes.
+  const geminiGeneration=useGemini
     ? {generateContentConfig:{
-        maxOutputTokens:backendProbeOnce
-          ?BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS:1024,
+        maxOutputTokens:BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,
         temperature:0,
-        // Gemini 3.8 Flash defaults to medium thinking. Limit reasoning
-        // for the explicit Backend probe so complete update_file arguments
-        // can be generated inside the 16K output window.
-        ...(backendProbeOnce
-          ? {thinkingConfig:{thinkingLevel:"LOW"}} : {})
+        thinkingConfig:{thinkingLevel:"LOW"}
       }} : {};
-  const manualBackendTimeout=backendProbeOnce&&engine==="adk-gemini"&&role==="backend"
+  const liveRoleLimits=useGemini
     ?{maxModelCallMs:BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,scopeModelPaths:true}:{};
   return {role,port,adk:{model,gatewayBaseUrl:gateway,adapterBaseUrl:adapter,
     adapterToken:token,gatewayTimeoutMs,maxModelTurns,
-    ...geminiBackendGeneration,...manualBackendTimeout}};
+    ...geminiGeneration,...liveRoleLimits}};
 }
 
 
@@ -657,7 +677,7 @@ try {
   for (const artifact of [backendArtifact,frontendArtifact,testArtifact]) {
     if(engine==="legacy"){
       assert.match(artifact.model_id??"",/^gpt-5[.]6-sol-phase10b-scripted-/u);
-    }else if(engine==="adk-scripted"){
+    }else if(engine==="adk-scripted" && !manualLiveRoles.has(artifact.role)){
       assert.match(artifact.model_id??"",/^phase5-scripted-adk-/u);
     }else {
       assert.ok(typeof artifact.model_id==="string"&&artifact.model_id.length>0);
@@ -714,6 +734,7 @@ try {
     pull_request_number: result.pull_request.pull_request_number,
     main_unchanged: true,
     automatic_merge: false,
+    real_gemini_roles:[...manualLiveRoles],
     model_ids: {
       backend: backendArtifact.model_id,
       frontend: frontendArtifact.model_id,

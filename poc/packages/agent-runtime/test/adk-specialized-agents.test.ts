@@ -259,3 +259,50 @@ test("Unconfigured Frontend and Test agent requests preserve provider defaults",
     assert.equal(shape.temperature,null);
   }
 });
+
+
+test("Live Frontend scoped ADK declarations expose only its delegated read/write paths",async()=>{
+  const {built,model,calls}=await exercise("frontend","read_file",{
+    branch:BRANCH,path:PATHS.frontend
+  },async()=>({content:"synthetic Frontend file"}),
+    {maxOutputTokens:16384,temperature:0,thinkingConfig:{thinkingLevel:"LOW" as never}},true);
+  assert.deepEqual(built.agent.tools.map(t=>t.name),["read_file","update_file"]);
+  assert.equal(calls.length,1);
+  const declarations=(model.requests[0]?.config?.tools??[])
+    .flatMap(t=>t.functionDeclarations??[]);
+  const readable=JSON.stringify(declarations.find(t=>t.name==="read_file"));
+  const writable=JSON.stringify(declarations.find(t=>t.name==="update_file"));
+  const profile=SPECIALIZED_AGENT_PROFILES.frontend;
+  for(const p of profile.writable_paths) {
+    assert.ok(readable.includes(p));
+    assert.ok(writable.includes(p));
+  }
+  for(const p of profile.read_only_paths) {
+    assert.ok(readable.includes(p));
+    assert.ok(!writable.includes(p));
+  }
+  assert.ok(!writable.includes(PATHS.backend));
+  assert.equal(safeAdkRequestShape(model.requests[0]!).thinking_level,"LOW");
+});
+
+test("Live Test Agent exposes scoped create_file and does not inherit application writes",async()=>{
+  const path="tests/e2e/account-suspension.spec.ts";
+  const {built,model,calls}=await exercise("test","create_file",{
+    branch:BRANCH,path,content:"import { test } from '@playwright/test';"
+  },async()=>({provider:"gitea",created:true}),
+    {maxOutputTokens:16384,temperature:0,thinkingConfig:{thinkingLevel:"LOW" as never}},true);
+  assert.deepEqual(built.agent.tools.map(t=>t.name),
+    ["read_file","update_file","create_file","run_tests"]);
+  assert.equal(calls.length,1);
+  const declarations=(model.requests[0]?.config?.tools??[])
+    .flatMap(t=>t.functionDeclarations??[]);
+  const creatable=JSON.stringify(declarations.find(t=>t.name==="create_file"));
+  const writable=JSON.stringify(declarations.find(t=>t.name==="update_file"));
+  const readable=JSON.stringify(declarations.find(t=>t.name==="read_file"));
+  assert.ok(creatable.includes(path));
+  assert.ok(!creatable.includes("apps/backend/src/users/user.service.ts"));
+  assert.ok(writable.includes("tests/backend/user.service.test.ts"));
+  assert.ok(!writable.includes("apps/backend/src/users/user.service.ts"));
+  assert.ok(readable.includes("apps/backend/src/users/user.service.ts"));
+  assert.equal(safeAdkRequestShape(model.requests[0]!).thinking_level,"LOW");
+});

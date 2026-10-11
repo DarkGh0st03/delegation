@@ -42,7 +42,7 @@ function prompt(
     ...(readOnly.length === 0 ? ["- none"] : readOnly.map((path) => `- ${path}`)),
     "",
     canRunTests
-      ? "You may invoke the fixed run_tests profile after the test changes are ready."
+      ? "Create and update substantive tests for the actual implemented feature, including the authorized E2E spec. When your test changes are committed, invoke run_tests once using branch feature/account-suspension and profile poc-default. If the test gate fails, report failure rather than inventing a passing result."
       : "You do not have a test-execution tool in this role.",
     "Never attempt to bypass an authorization denial or write to files outside the assigned role.",
     "Efficiency and completion: the writable files relevant to your subtask are deliverables. Read those target files first and implement them; read-only context files are optional references, not a checklist.",

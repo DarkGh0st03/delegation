@@ -9,6 +9,8 @@ on:
       - 'poc/scripts/phase10b-positive-e2e.mjs'
       - 'poc/scripts/capture-gemini-backend-evidence.mjs'
       - 'poc/scripts/test/capture-gemini-backend-evidence.test.mjs'
+      - 'poc/scripts/capture-gemini-multi-agent-evidence.mjs'
+      - 'poc/scripts/test/capture-gemini-multi-agent-evidence.test.mjs'
       - 'poc/scripts/audit-gemini-backend-evidence.sh'
       - 'poc/scripts/review-tests/backend-generated-audit.test.ts'
       - 'poc/packages/agent-runtime/src/**'
@@ -17,11 +19,11 @@ on:
   workflow_dispatch:
     inputs:
       engine:
-        description: 'Scripted ADK (default), Gemini Backend-only, or full live multi-agent workflow'
+        description: 'Scripted (default), bounded live Gemini role, or legacy live modes; real calls may incur API charges'
         required: true
         type: choice
         default: adk-scripted
-        options: [adk-scripted, adk-gemini-backend, adk-openai, adk-gemini]
+        options: [adk-scripted, adk-gemini-backend, adk-gemini-frontend, adk-gemini-test, adk-gemini-full, adk-openai, adk-gemini]
       model:
         description: 'Model enabled for your OpenAI API key; leave baseline for scripted runs'
         type: string
@@ -76,7 +78,8 @@ jobs:
       EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
       ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase10b:orchestrator-root
       PHASE10B_RESULT_FILE: /tmp/phase5-adk-result.json
-      PHASE10B_AGENT_ENGINE: ${{ github.event_name == 'workflow_dispatch' && inputs.engine != 'adk-gemini-backend' && inputs.engine || 'adk-scripted' }}
+      PHASE10B_AGENT_ENGINE: ${{ github.event_name == 'workflow_dispatch' && (inputs.engine == 'adk-openai' || inputs.engine == 'adk-gemini') && inputs.engine || 'adk-scripted' }}
+      PHASE10B_REAL_GEMINI_ROLES: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-frontend' && 'frontend' || github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-test' && 'test' || github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-full' && 'all' || '' }}
       PHASE10B_ORCHESTRATOR_ENGINE: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini' && 'adk-gemini' || github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-openai' && 'adk-openai' || 'adk-scripted' }}
       OPENAI_MODEL: ${{ inputs.model || 'gpt-5.6-sol' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -86,7 +89,7 @@ jobs:
       # Live Backend uses the original complete four-file task and 16-turn
       # budget in adk-backend-live-probe.ts. Never retry failed inference.
       # Diagnostic numbers only; never logs prompts or tool schemas.
-      ADK_SAFE_REQUEST_SHAPE_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' && 'true' || 'false' }}
+      ADK_SAFE_REQUEST_SHAPE_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && startsWith(inputs.engine, 'adk-gemini-') && 'true' || 'false' }}
       ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"
@@ -114,6 +117,9 @@ jobs:
 
       - name: Validate read-only Backend evidence capture offline
         run: node --experimental-strip-types --test poc/scripts/test/capture-gemini-backend-evidence.test.mjs
+
+      - name: Validate read-only multi-agent evidence capture offline
+        run: node --experimental-strip-types --test poc/scripts/test/capture-gemini-multi-agent-evidence.test.mjs
 
       - name: Validate agent-runtime provider diagnostics and fail-closed contracts
         run: npm --prefix poc run agent-runtime:test
@@ -216,7 +222,7 @@ jobs:
             exit 1
           fi
       - name: Require the existing Gemini secret for manual Gemini runs
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.engine == 'adk-gemini' || inputs.engine == 'adk-gemini-backend') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && startsWith(inputs.engine, 'adk-gemini') }}
         run: |
           if [ -z "$GEMINI_API_KEY" ]; then
             echo 'GitHub repository secret Delegation_Thesis_Gemini is missing.' >&2
@@ -295,6 +301,65 @@ jobs:
               throw new Error("Backend source requires review: check the uploaded evidence artifact");
             console.log("Generated Backend has four confirmed changed files and passed independent tests");
           '
+
+      # No additional model calls: this reads a pinned Gitea branch snapshot
+      # before the ephemeral instance is destroyed.
+      - name: Capture Backend Frontend Test source and diff
+        if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.engine == 'adk-gemini-frontend' || inputs.engine == 'adk-gemini-test' || inputs.engine == 'adk-gemini-full'))) }}
+        continue-on-error: true
+        env:
+          MULTI_AGENT_EVIDENCE_DIR: /tmp/multi-agent-evidence
+        run: |
+          test -f poc/infra/runtime/runner.env
+          set -a
+          source poc/infra/runtime/runner.env
+          set +a
+          node --experimental-strip-types poc/scripts/capture-gemini-multi-agent-evidence.mjs
+
+      - name: Preserve full A2A workflow verdict
+        if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.engine == 'adk-gemini-frontend' || inputs.engine == 'adk-gemini-test' || inputs.engine == 'adk-gemini-full'))) }}
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/multi-agent-evidence
+          if [[ -f "$PHASE10B_RESULT_FILE" ]]; then
+            cp "$PHASE10B_RESULT_FILE" /tmp/multi-agent-evidence/workflow-result.json
+          else
+            echo "No final workflow result (see agent and Gateway logs)." > /tmp/multi-agent-evidence/workflow-incomplete.txt
+          fi
+
+      - name: Upload complete multi-agent Gitea evidence
+        if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.engine == 'adk-gemini-frontend' || inputs.engine == 'adk-gemini-test' || inputs.engine == 'adk-gemini-full'))) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: multiagent-evidence-${{ github.event_name }}-${{ github.run_id }}
+          path: /tmp/multi-agent-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Enforce multi-agent code and workflow result
+        if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.engine == 'adk-gemini-frontend' || inputs.engine == 'adk-gemini-test' || inputs.engine == 'adk-gemini-full'))) }}
+        run: |
+          node - <<'NODE'
+          const fs = require("node:fs");
+          const root = "/tmp/multi-agent-evidence/";
+          if (!fs.existsSync(root+"manifest.json") || !fs.existsSync(root+"workflow-result.json"))
+            throw new Error("Multi-agent source and workflow verdict are incomplete; inspect the uploaded artifact");
+          const manifest = JSON.parse(fs.readFileSync(root+"manifest.json","utf8"));
+          const result = JSON.parse(fs.readFileSync(root+"workflow-result.json","utf8"));
+          if (manifest.capture_status !== "complete" || result.workflow_state !== "pr_created" ||
+              result.project_tests !== "pass" || result.researcher_acceptance !== "pass" ||
+              result.main_unchanged !== true || result.automatic_merge !== false)
+            throw new Error("Multi-agent code capture or protected test/PR workflow did not pass");
+          const roles = ["backend","frontend","test"];
+          const mode = process.env.PHASE10B_REAL_GEMINI_ROLES || "";
+          const real = mode==="all" ? roles : ["frontend","test"].includes(mode) ? [mode] : [];
+          for (const role of roles) {
+            const model = String(result.model_ids?.[role] || "").toLowerCase();
+            if (real.includes(role) ? !model.includes("gemini") : !model.includes("scripted"))
+              throw new Error("Role model identity does not match selected live/scripted mode: "+role);
+          }
+          console.log("Multi-agent source preserved; authorized Runner, acceptance tests and PR passed");
+          NODE
 
       - name: Verify Runner execution containers were destroyed
         run: |
