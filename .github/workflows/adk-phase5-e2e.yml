@@ -7,6 +7,9 @@ on:
       - '.github/workflows/adk-phase5-e2e.yml'
       - '.github/adk-gemini-backend-once.trigger'
       - 'poc/scripts/phase10b-positive-e2e.mjs'
+      - 'poc/scripts/gemini-thinking-policy.mjs'
+      - 'poc/scripts/test/gemini-thinking-policy.test.mjs'
+      - 'poc/runner/acceptance/account-suspension.spec.ts'
       - 'poc/scripts/capture-gemini-backend-evidence.mjs'
       - 'poc/scripts/test/capture-gemini-backend-evidence.test.mjs'
       - 'poc/scripts/capture-gemini-multi-agent-evidence.mjs'
@@ -34,6 +37,12 @@ on:
         type: string
         required: true
         default: gemini-3.8-flash
+      gemini_thinking_level:
+        description: 'LOW for 3.8 Flash; MINIMAL only with compatible models such as gemini-3.6-flash'
+        type: choice
+        required: true
+        default: LOW
+        options: [LOW, MINIMAL]
 
 # Do not spawn multiple 40-minute infrastructure tests for overlapping commits.
 concurrency:
@@ -85,6 +94,7 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
       GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-3.8-flash' }}
+      PHASE10B_GEMINI_THINKING_LEVEL: ${{ inputs.gemini_thinking_level || 'LOW' }}
       PHASE10B_GEMINI_MAX_MODEL_TURNS: "16"
       # Live Backend uses the original complete four-file task and 16-turn
       # budget in adk-backend-live-probe.ts. Never retry failed inference.
@@ -114,6 +124,9 @@ jobs:
         run: |
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+
+      - name: Validate model-specific Gemini thinking choices without paid calls
+        run: node --experimental-strip-types --test poc/scripts/test/gemini-thinking-policy.test.mjs
 
       - name: Validate read-only Backend evidence capture offline
         run: node --experimental-strip-types --test poc/scripts/test/capture-gemini-backend-evidence.test.mjs

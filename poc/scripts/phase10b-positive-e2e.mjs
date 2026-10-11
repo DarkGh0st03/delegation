@@ -10,6 +10,7 @@ import {
   verifyBackendLiveProbe
 } from "../packages/agent-runtime/src/adk-backend-live-probe.ts";
 import { existsSync } from "node:fs";
+import {resolveGeminiThinkingConfig} from "./gemini-thinking-policy.mjs";
 import {
   DelegationEvidenceHandler,
   BaseLlm,
@@ -423,12 +424,19 @@ function specializedServerConfig(role,port,token){
   if(engine==="legacy")return {role,port,taskHandler:taskHandler(role,token)};
   const liveRole = manualLiveRoles.has(role);
   const useGemini = liveRole || engine==="adk-gemini";
+  const geminiModelName=process.env.GEMINI_MODEL??"gemini-3.8-flash";
+  // Validate the requested effort BEFORE contacting the paid model.
+  // 3.8 Flash supports LOW but not MINIMAL; MINIMAL is opt-in for compatible models.
+  const thinkingConfig=useGemini
+    ?resolveGeminiThinkingConfig(
+        geminiModelName,process.env.PHASE10B_GEMINI_THINKING_LEVEL??"LOW"
+      ):{};
   const model=engine==="adk-openai"
     ?new OpenAIAdkModel({apiKey:process.env.OPENAI_API_KEY})
     :useGemini
       ?createGeminiAdkModel({
           apiKey:process.env.GEMINI_API_KEY,
-          model:process.env.GEMINI_MODEL??"gemini-3.8-flash"
+          model:geminiModelName
         })
       :new Phase5ScriptedAdkModel(role);
   const gatewayTimeoutMs=role==="test"
@@ -447,9 +455,11 @@ function specializedServerConfig(role,port,token){
   // large enough for complete file replacements; no scripted response changes.
   const geminiGeneration=useGemini
     ? {generateContentConfig:{
+        // Do not blindly cap this at 4K-8K: a full update_file replacement
+        // needs output headroom, and the provider includes thought tokens.
         maxOutputTokens:BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,
         temperature:0,
-        thinkingConfig:{thinkingLevel:"LOW"}
+        ...thinkingConfig
       }} : {};
   const liveRoleLimits=useGemini
     ?{maxModelCallMs:BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,scopeModelPaths:true}:{};

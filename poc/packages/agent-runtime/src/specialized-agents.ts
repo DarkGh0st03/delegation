@@ -44,6 +44,10 @@ function prompt(
     canRunTests
       ? "Create and update substantive tests for the actual implemented feature, including the authorized E2E spec. When your test changes are committed, invoke run_tests once using branch feature/account-suspension and profile poc-default. If the test gate fails, report failure rather than inventing a passing result."
       : "You do not have a test-execution tool in this role.",
+    ...(roleLabel === "Frontend Development Agent" ? [
+      "Frontend-specific efficiency: start with the three writable application files and the shared account-status contract. Read additional optional context only when necessary; make one coherent implementation pass instead of extensive speculative investigation.",
+      "Frontend correctness requirement: while an account suspend/reactivate HTTP request is in flight, prevent repeated submission. Track pending state, keep the corresponding action button disabled until success or failure, and restore its enabled state in all outcomes. Preserve status-based button switching and show useful errors. Do not hardcode server responses."
+    ] : []),
     "Never attempt to bypass an authorization denial or write to files outside the assigned role.",
     "Efficiency and completion: the writable files relevant to your subtask are deliverables. Read those target files first and implement them; read-only context files are optional references, not a checklist.",
     "Never request a read_file or update_file path outside the explicitly listed readable/writable files. Do not guess new paths or explore the repository beyond this delegated scope.",
