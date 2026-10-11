@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {resolveGeminiThinkingConfig, resolveRoleGeminiConfiguration, resolveGeminiOutputLimit} from "../gemini-thinking-policy.mjs";
+import {resolveGeminiThinkingConfig, resolveRoleGeminiConfiguration, resolveGeminiOutputLimit, buildGeminiGenerationConfig} from "../gemini-thinking-policy.mjs";
 
 test("Existing Gemini 3.8 Flash keeps validated LOW by default",()=>{
   assert.deepEqual(resolveGeminiThinkingConfig("gemini-3.8-flash"),{
@@ -60,4 +60,41 @@ test("Complete real workflow uses 32000 output tokens, isolated probes stay at 1
   assert.equal(resolveGeminiOutputLimit("all",16384),32000);
   assert.throws(()=>resolveGeminiOutputLimit("all",0),/Invalid/);
   assert.throws(()=>resolveGeminiOutputLimit("backend",32001),/Invalid/);
+});
+
+test("Actual ADK generation config nests 3.8 LOW thinking for all real roles",()=>{
+  for(const role of ["backend","frontend","test"]){
+    const selected=resolveRoleGeminiConfiguration({role,roleMode:"all"});
+    const config=buildGeminiGenerationConfig("all",selected);
+    assert.deepEqual(config,{
+      maxOutputTokens:32000, temperature:0,
+      thinkingConfig:{thinkingLevel:"LOW"}
+    });
+    assert.equal(Object.hasOwn(config,"thinkingLevel"),false,
+      "ADK silently ignores incorrectly flattened thinkingLevel");
+  }
+});
+test("Isolated role output and nested thinking stay consistent",()=>{
+  for(const role of ["backend","frontend","test"]){
+    const selected=resolveRoleGeminiConfiguration({role,roleMode:role});
+    assert.deepEqual(buildGeminiGenerationConfig(role,selected),{
+      maxOutputTokens:16384,temperature:0,thinkingConfig:{thinkingLevel:"LOW"}
+    });
+  }
+});
+test("Gemini 3.6 MINIMAL is also nested correctly and invalid role metadata is rejected",()=>{
+  const selected=resolveRoleGeminiConfiguration({
+    role:"frontend",roleMode:"all",fullModel:"gemini-3.6-flash",
+    fullThinking:"MINIMAL"
+  });
+  assert.deepEqual(buildGeminiGenerationConfig("all",selected),{
+    maxOutputTokens:32000,temperature:0,thinkingConfig:{thinkingLevel:"MINIMAL"}
+  });
+  assert.throws(()=>buildGeminiGenerationConfig("all",null),/Invalid/);
+  assert.throws(()=>buildGeminiGenerationConfig("all",{
+    model:"gemini-3.8-flash",thinkingLevel:"LOW",thinkingConfig:{thinkingLevel:"MINIMAL"}
+  }),/Invalid/);
+  assert.throws(()=>buildGeminiGenerationConfig("all",{
+    model:"gemini-3.8-flash",thinkingLevel:"MINIMAL",thinkingConfig:{thinkingLevel:"MINIMAL"}
+  }),/unsupported/);
 });

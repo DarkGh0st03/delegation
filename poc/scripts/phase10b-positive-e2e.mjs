@@ -10,7 +10,7 @@ import {
   verifyBackendLiveProbe
 } from "../packages/agent-runtime/src/adk-backend-live-probe.ts";
 import { existsSync } from "node:fs";
-import {resolveRoleGeminiConfiguration, resolveGeminiOutputLimit} from "./gemini-thinking-policy.mjs";
+import {resolveRoleGeminiConfiguration, buildGeminiGenerationConfig} from "./gemini-thinking-policy.mjs";
 import {
   DelegationEvidenceHandler,
   BaseLlm,
@@ -456,15 +456,9 @@ function specializedServerConfig(role,port,token){
   // permits up to 32,000 output tokens including thought tokens; isolated
   // trials retain the original 16,384 cap, without changing policy scopes.
   const geminiGeneration=useGemini
-    ? {generateContentConfig:{
-        // Do not blindly cap this at 4K-8K: a full update_file replacement
-        // needs output headroom, and the provider includes thought tokens.
-        maxOutputTokens:resolveGeminiOutputLimit(
-          manualLiveRoleConfig, BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS
-        ),
-        temperature:0,
-        ...geminiRoleConfig.thinkingConfig
-      }} : {};
+    ? {generateContentConfig:buildGeminiGenerationConfig(
+        manualLiveRoleConfig, geminiRoleConfig, BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS
+      )} : {};
   const liveRoleLimits=useGemini
     ?{maxModelCallMs:BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,scopeModelPaths:true}:{};
   return {role,port,adk:{model,gatewayBaseUrl:gateway,adapterBaseUrl:adapter,

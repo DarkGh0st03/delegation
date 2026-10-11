@@ -52,3 +52,26 @@ export function resolveGeminiOutputLimit(roleMode, isolatedLimit=16384) {
     throw new Error("Invalid isolated Gemini output limit");
   return roleMode === "all" ? 32000 : isolatedLimit;
 }
+
+/**
+ * Build the exact ADK LlmAgent.generateContentConfig object.
+ * thinkingConfig must be NESTED: a top-level thinkingLevel property is ignored
+ * by Google ADK and silently falls back to the provider's default thinking.
+ * This function is used by the actual Phase 10B runner and covered offline.
+ */
+export function buildGeminiGenerationConfig(roleMode, roleConfig, isolatedLimit=16384) {
+  if (!roleConfig || typeof roleConfig !== "object" ||
+      !roleConfig.thinkingConfig ||
+      roleConfig.thinkingConfig.thinkingLevel !== roleConfig.thinkingLevel) {
+    throw new Error("Invalid role thinking configuration");
+  }
+  // Revalidate the selected model/effort instead of trusting caller fields.
+  const validated = resolveGeminiThinkingConfig(
+    roleConfig.model, roleConfig.thinkingLevel
+  );
+  return {
+    maxOutputTokens: resolveGeminiOutputLimit(roleMode, isolatedLimit),
+    temperature: 0,
+    thinkingConfig: validated.thinkingConfig
+  };
+}
