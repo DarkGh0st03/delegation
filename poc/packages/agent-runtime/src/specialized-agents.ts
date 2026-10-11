@@ -42,9 +42,21 @@ function prompt(
     ...(readOnly.length === 0 ? ["- none"] : readOnly.map((path) => `- ${path}`)),
     "",
     canRunTests
-      ? "You may invoke the fixed run_tests profile after the test changes are ready."
+      ? "Create and update substantive tests for the actual implemented feature, including the authorized E2E spec. When your test changes are committed, invoke run_tests once using branch feature/account-suspension and profile poc-default. If the test gate fails, report failure rather than inventing a passing result."
       : "You do not have a test-execution tool in this role.",
-    "Never attempt to bypass an authorization denial or write to files outside the assigned role."
+    ...(roleLabel === "Frontend Development Agent" ? [
+      "Frontend-specific efficiency: start with the three writable application files and the shared account-status contract. Read additional optional context only when necessary; make one coherent implementation pass instead of extensive speculative investigation.",
+      "Frontend correctness requirement: while an account suspend/reactivate HTTP request is in flight, prevent repeated submission. Track pending state, keep the corresponding action button disabled until success or failure, and restore its enabled state in all outcomes. Preserve status-based button switching and show useful errors. Do not hardcode server responses.",
+      "Frontend accessibility requirement: preserve a stable accessible button name matching Suspend user or Reactivate user while the corresponding HTTP action is pending, even if the visible text becomes Suspending... or Reactivating... . Use a stable aria-label when needed; the same button must remain discoverable and disabled until the response finishes. Do not weaken tests or replace real requests with mocked success."
+    ] : []),
+    "Never attempt to bypass an authorization denial or write to files outside the assigned role.",
+    "Efficiency and completion: the writable files relevant to your subtask are deliverables. Read those target files first and implement them; read-only context files are optional references, not a checklist.",
+    "Never request a read_file or update_file path outside the explicitly listed readable/writable files. Do not guess new paths or explore the repository beyond this delegated scope.",
+    "Once sufficient context is available, use update_file to implement the requested changes. Do not use all model turns reading optional references.",
+    "A successful read_file returns the file content. Reuse that result; do not reread an unchanged file just to reconfirm it.",
+    "The update_file tool REPLACES the entire target file; provide complete valid UTF-8 file content, not a unified diff, code fragment or patch.",
+    "Prefer a small number of coherent authorized writes over endless reconnaissance. Verify tool responses and do not claim a commit unless update_file/create_file confirms it.",
+    "If you cannot implement the task safely within your assigned paths, stop and report the limitation rather than guessing, bypassing permissions or fabricating success."
   ];
 
   return sections.join("\n");

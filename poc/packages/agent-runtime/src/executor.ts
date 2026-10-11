@@ -85,7 +85,8 @@ export type DeterministicArtifactPayloadBuilder = (
 ) => AgentArtifactPayload;
 
 export type DeterministicTaskHandler = (
-  context: AgentTaskContext
+  context: AgentTaskContext,
+  signal?: AbortSignal
 ) => AgentArtifactPayload | Promise<AgentArtifactPayload>;
 
 export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
@@ -94,6 +95,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
   readonly #artifactBuilder: DeterministicArtifactPayloadBuilder;
   readonly #taskHandler?: DeterministicTaskHandler;
   #executionCount = 0;
+  readonly #running = new Map<string, AbortController>();
 
   constructor(
     role: SpecializedAgentRole,
@@ -147,8 +149,12 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
     };
     this.#contexts.save(taskContext);
     this.#executionCount += 1;
+    const controller = new AbortController();
+    this.#running.set(taskContext.task_id, controller);
 
-    const taskSnapshot: Task = requestContext.task ?? {
+    // Never publish the authority-bearing incoming Message in A2A history.
+    // The original DC lives exclusively in the private task-context store.
+    const taskSnapshot: Task = {
       id: requestContext.taskId,
       contextId: requestContext.contextId,
       status: {
@@ -157,7 +163,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
         message: undefined
       },
       artifacts: [],
-      history: [message],
+      history: [],
       metadata: {
         agent_role: this.#role
       }
@@ -178,56 +184,78 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
     };
     eventBus.publish(AgentEvent.statusUpdate(working));
 
-    const artifactPayload =
-      this.#taskHandler === undefined
-        ? this.#artifactBuilder(this.#role, taskInput)
-        : await this.#taskHandler(structuredClone(taskContext));
+    try {
+      const artifactPayload =
+        this.#taskHandler === undefined
+          ? this.#artifactBuilder(this.#role, taskInput)
+          : await this.#taskHandler(structuredClone(taskContext), controller.signal);
 
-    const artifact: Artifact = {
-      artifactId: crypto.randomUUID(),
-      name: `${this.#role}-deterministic-result`,
-      description:
-        "Phase 7 deterministic result. Delegation Evidence is intentionally excluded.",
-      parts: [
-        {
-          content: {
-            $case: "data",
-            value: artifactPayload
-          },
-          metadata: undefined,
-          filename: "",
-          mediaType: "application/json"
+      // Cancellation is terminal even if a slow LLM returns a late result.
+      if (controller.signal.aborted) return;
+
+      const artifact: Artifact = {
+        artifactId: crypto.randomUUID(),
+        name: `${this.#role}-deterministic-result`,
+        description:
+          "Phase 7 deterministic result. Delegation Evidence is intentionally excluded.",
+        parts: [
+          {
+            content: {
+              $case: "data",
+              value: artifactPayload
+            },
+            metadata: undefined,
+            filename: "",
+            mediaType: "application/json"
+          }
+        ],
+        metadata: {
+          agent_role: this.#role
+        },
+        extensions: []
+      };
+
+      const artifactUpdate: TaskArtifactUpdateEvent = {
+        taskId: requestContext.taskId,
+        contextId: requestContext.contextId,
+        artifact,
+        append: false,
+        lastChunk: true,
+        metadata: undefined
+      };
+      eventBus.publish(AgentEvent.artifactUpdate(artifactUpdate));
+
+      const completed: TaskStatusUpdateEvent = {
+        taskId: requestContext.taskId,
+        contextId: requestContext.contextId,
+        status: {
+          state: TaskState.TASK_STATE_COMPLETED,
+          timestamp: new Date().toISOString(),
+          message: undefined
+        },
+        metadata: {
+          agent_role: this.#role
         }
-      ],
-      metadata: {
-        agent_role: this.#role
-      },
-      extensions: []
-    };
-
-    const artifactUpdate: TaskArtifactUpdateEvent = {
-      taskId: requestContext.taskId,
-      contextId: requestContext.contextId,
-      artifact,
-      append: false,
-      lastChunk: true,
-      metadata: undefined
-    };
-    eventBus.publish(AgentEvent.artifactUpdate(artifactUpdate));
-
-    const completed: TaskStatusUpdateEvent = {
-      taskId: requestContext.taskId,
-      contextId: requestContext.contextId,
-      status: {
-        state: TaskState.TASK_STATE_COMPLETED,
-        timestamp: new Date().toISOString(),
-        message: undefined
-      },
-      metadata: {
-        agent_role: this.#role
+      };
+      eventBus.publish(AgentEvent.statusUpdate(completed));
+    } catch {
+      if (!controller.signal.aborted) {
+        // The SDK also synthesizes FAILED on thrown errors, but its default
+        // fallback may echo raw error text. Publish a fixed safe failure here.
+        eventBus.publish(AgentEvent.statusUpdate({
+          taskId: taskContext.task_id,
+          contextId: taskContext.context_id,
+          status: {
+            state: TaskState.TASK_STATE_FAILED,
+            timestamp: new Date().toISOString(),
+            message: undefined
+          },
+          metadata: {agent_role: this.#role}
+        }));
       }
-    };
-    eventBus.publish(AgentEvent.statusUpdate(completed));
+    } finally {
+      this.#running.delete(taskContext.task_id);
+    }
   }
 
   async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {
@@ -236,6 +264,9 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
       throw new Error(`Unknown task ${taskId}`);
     }
 
+    const controller = this.#running.get(taskId);
+    if (!controller) throw new Error("A2A task is no longer running");
+    controller.abort();
     eventBus.publish(
       AgentEvent.statusUpdate({
         taskId,

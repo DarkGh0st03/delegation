@@ -1,9 +1,16 @@
 name: PoC Baseline Validation
 
+# Heavy complete baseline: only on main pushes, pull requests, or explicit dispatch.
+# Feature-branch iteration uses lighter smoke checks instead.
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

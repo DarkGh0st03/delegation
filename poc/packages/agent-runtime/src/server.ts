@@ -4,22 +4,22 @@ import {
   AGENT_CARD_PATH,
   type AgentCard
 } from "@a2a-js/sdk";
-import {
-  DefaultRequestHandler,
-  InMemoryTaskStore
-} from "@a2a-js/sdk/server";
+
 import {
   UserBuilder,
   agentCardHandler,
   restHandler
 } from "@a2a-js/sdk/server/express";
 import { createSpecializedAgentCard } from "./cards.ts";
+import { PrivateEvidenceTaskStore } from "./private-task-store.ts";
+import { PrivateEvidenceRequestHandler } from "./private-request-handler.ts";
 import {
   DeterministicSpecializedAgentExecutor,
   type DeterministicArtifactPayloadBuilder,
   type DeterministicTaskHandler
 } from "./executor.ts";
 import type { SpecializedAgentRole } from "./contracts.ts";
+import { createAdkA2ATaskHandler, type AdkA2ATaskHandlerConfig } from "./adk-a2a-handler.ts";
 
 export interface SpecializedAgentServerOptions {
   role: SpecializedAgentRole;
@@ -28,6 +28,7 @@ export interface SpecializedAgentServerOptions {
   delegatedAuthorization?: boolean;
   artifactBuilder?: DeterministicArtifactPayloadBuilder;
   taskHandler?: DeterministicTaskHandler;
+  adk?: AdkA2ATaskHandlerConfig;
 }
 
 export interface SpecializedAgentServer {
@@ -47,15 +48,17 @@ export async function startSpecializedAgentServer(
   const card = createSpecializedAgentCard(options.role, baseUrl, {
     delegatedAuthorization: options.delegatedAuthorization
   });
+  if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
+  const taskHandler = options.adk ? createAdkA2ATaskHandler(options.adk) : options.taskHandler;
   const executor = new DeterministicSpecializedAgentExecutor(
     options.role,
     undefined,
     options.artifactBuilder,
-    options.taskHandler
+    taskHandler
   );
-  const requestHandler = new DefaultRequestHandler(
+  const requestHandler = new PrivateEvidenceRequestHandler(
     card,
-    new InMemoryTaskStore(),
+    new PrivateEvidenceTaskStore(),
     executor
   );
 

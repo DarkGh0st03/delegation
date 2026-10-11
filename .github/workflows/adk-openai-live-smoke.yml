@@ -1,0 +1,46 @@
+name: ADK OpenAI Live Probe (Manual Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'OpenAI API model enabled for your API key; original PoC default shown'
+        type: string
+        required: true
+        default: gpt-5.6-sol
+
+permissions:
+  contents: read
+
+# Never trigger billable inference on push or PR.
+concurrency:
+  group: adk-live-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  read-only-model-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ inputs.model }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Refuse to run unless live provider access was explicitly configured
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo 'Repository secret OPENAI_API_KEY has not been configured.' >&2
+            exit 1
+          fi
+          if [ -z "$OPENAI_MODEL" ]; then
+            echo 'The selected OpenAI API model cannot be blank.' >&2
+            exit 1
+          fi
+      - run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Execute bounded ADK Runner with a real provider and in-memory read-only fixture
+        run: npm --prefix poc run -w @thesis/agent-runtime adk:openai:smoke

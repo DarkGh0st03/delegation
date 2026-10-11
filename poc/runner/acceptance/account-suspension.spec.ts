@@ -103,3 +103,41 @@ test("researcher acceptance: UI exposes the action matching account state", asyn
   await expect(page.getByText("ACTIVE", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /suspend/i })).toBeVisible();
 });
+
+
+test("researcher acceptance: suspend and reactivate actions cannot be double-submitted while pending", async ({
+  page,
+  request
+}) => {
+  await ensureActive(request);
+  await page.goto("/");
+  await page.getByText("Alice Romano").click();
+  await expect(page.getByRole("heading", { name: "Alice Romano" })).toBeVisible();
+
+  for (const operation of ["suspend", "reactivate"] as const) {
+    let requests = 0;
+    let releaseResponse: () => void = () => {};
+    const heldResponse = new Promise<void>((resolve) => { releaseResponse = resolve; });
+    const pattern = "**/api/users/" + USER_ID + "/" + operation;
+    await page.route(pattern, async (route) => {
+      requests += 1;
+      await heldResponse;
+      await route.continue();
+    });
+
+    const action = page.getByRole("button", { name: new RegExp(operation, "i") });
+    try {
+      await expect(action).toBeVisible();
+      await action.click();
+      await expect.poll(() => requests).toBe(1);
+      // Hold the HTTP response: a fast local server must not hide double-click bugs.
+      await expect(action).toBeDisabled();
+    } finally {
+      releaseResponse();
+    }
+    const nextOperation = operation === "suspend" ? "reactivate" : "suspend";
+    await expect(page.getByRole("button", { name: new RegExp(nextOperation, "i") })).toBeVisible();
+    expect(requests).toBe(1);
+    await page.unroute(pattern);
+  }
+});

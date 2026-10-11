@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
+
 import { writeFile } from "node:fs/promises";
 import {
+  BACKEND_LIVE_PROBE_PATHS,
+  BACKEND_LIVE_PROBE_INSTRUCTION,
+  BACKEND_LIVE_PROBE_MAX_TURNS,
+  BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS,
+  BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,
+  verifyBackendLiveProbe
+} from "../packages/agent-runtime/src/adk-backend-live-probe.ts";
+import { existsSync } from "node:fs";
+import {resolveRoleGeminiConfiguration, buildGeminiGenerationConfig} from "./gemini-thinking-policy.mjs";
+import {
   DelegationEvidenceHandler,
+  BaseLlm,
+  OpenAIAdkModel,
+  createGeminiAdkModel,
   DeterministicA2AOrchestrator,
   GatewayControlledToolClient,
   createSpecializedAgentController,
@@ -10,12 +24,59 @@ import {
 } from "@thesis/agent-runtime";
 import {
   AccountSuspensionSequentialCoordinator,
+  AdkAccountSuspensionOrchestrator,
   DelegatedA2ARoleRunner,
   DeterministicOrchestratorAuthorityIssuer,
   OrchestratorProtectedGatewayClient,
   SoftwareEngineerAuthorityBootstrap
 } from "@thesis/orchestrator-runtime";
 
+// The original frozen Phase 10B path remains the default.
+// One user-authorized Free Tier experiment on the protected feature branch.
+ // The unique marker is removed immediately after its single CI run; future
+ // pushes continue to use the immutable scripted regression configuration.
+// A one-shot backend-only probe is intentionally separate from the complete
+// multi-role workflow, and is never used for baseline measurements.
+const backendProbeOnce=process.env.GITHUB_ACTIONS==="true" &&
+  existsSync(".github/adk-gemini-backend-once.trigger");
+const liveGeminiOnce = process.env.GITHUB_ACTIONS === "true" &&
+  (existsSync(".github/adk-gemini-e2e-once.trigger") || backendProbeOnce) &&
+  process.env.PHASE10B_AGENT_ENGINE === "adk-scripted" &&
+  process.env.PHASE10B_ORCHESTRATOR_ENGINE === "adk-scripted";
+if (liveGeminiOnce && !process.env.GEMINI_API_KEY?.trim()) {
+  throw new Error("Missing Gemini Free Tier repository secret");
+}
+const engine = liveGeminiOnce ? "adk-gemini" :
+  (process.env.PHASE10B_AGENT_ENGINE ?? "legacy");
+if (!["legacy","adk-scripted","adk-openai","adk-gemini"].includes(engine)) {
+  throw new Error("Unknown PHASE10B_AGENT_ENGINE");
+}
+const orchestratorEngine = liveGeminiOnce ? "adk-gemini" :
+  (process.env.PHASE10B_ORCHESTRATOR_ENGINE ?? "legacy");
+// Manual, deliberately hybrid regression modes: only named roles use Gemini.
+// The default push, existing Backend probe and scripted baseline are unchanged.
+const manualLiveRoleConfig = process.env.PHASE10B_REAL_GEMINI_ROLES ?? "";
+const manualRoleOptions = {
+  "": [],
+  frontend: ["frontend"],
+  test: ["test"],
+  all: ["backend", "frontend", "test"]
+};
+if (!Object.hasOwn(manualRoleOptions, manualLiveRoleConfig)) {
+  throw new Error("Unsupported PHASE10B_REAL_GEMINI_ROLES");
+}
+const manualLiveRoles = new Set(manualRoleOptions[manualLiveRoleConfig]);
+if (manualLiveRoles.size > 0 && (
+  process.env.GITHUB_ACTIONS !== "true" ||
+  backendProbeOnce || liveGeminiOnce ||
+  engine !== "adk-scripted" || orchestratorEngine !== "adk-scripted" ||
+  !process.env.GEMINI_API_KEY?.trim()
+)) {
+  throw new Error("Live specialized roles require explicit manual Gemini mode and scripted Orchestrator");
+}
+if (!["legacy","adk-scripted","adk-openai","adk-gemini"].includes(orchestratorEngine)) {
+  throw new Error("Unknown PHASE10B_ORCHESTRATOR_ENGINE");
+}
 const gateway = process.env.GATEWAY_SMOKE_URL ?? "http://127.0.0.1:8080";
 const adapter = process.env.DELEGATION_ADAPTER_URL ?? "http://127.0.0.1:8090";
 const gitea = process.env.GITEA_SMOKE_BASE_URL;
@@ -311,6 +372,121 @@ function taskHandler(role, token) {
   };
 }
 
+
+/**
+ * Deterministic planning for a real ADK integration smoke:
+ * every tool call is executed via ADK Runner -> Gateway -> Rust -> OPA,
+ * including real Gitea mutations and the actual Controlled Test Runner.
+ * No LLM inference is claimed. A single function call per turn avoids
+ * racing Gitea feature-branch commits.
+ */
+class Phase5ScriptedAdkModel extends BaseLlm {
+  constructor(role) {
+    super({model:"phase5-scripted-adk-"+role});
+    this.role=role;
+    this.turn=0;
+    const plan=PLANS[role];
+    this.operations=[
+      ...plan.reads.map(path=>({name:"read_file",args:{branch:"feature/account-suspension",path}})),
+      ...plan.writes.map(([name,path])=>({name,args:{
+        branch:"feature/account-suspension",path,content:FEATURE_FILES[path]
+      }})),
+      ...(plan.runTests?[{name:"run_tests",args:{
+        branch:"feature/account-suspension",profile:"poc-default"
+      }}]:[])
+    ];
+  }
+  async *generateContentAsync(request) {
+    for (const content of request.contents??[]) {
+      for (const part of content.parts??[]) {
+        if (part.functionResponse) {
+          assert.equal(part.functionResponse.response?.ok,true,
+            "A denied Gateway call must fail the scripted ADK run");
+        }
+      }
+    }
+    const next=this.operations[this.turn];
+    this.turn+=1;
+    if(next){
+      yield {modelVersion:this.model,content:{role:"model",parts:[{
+        functionCall:{id:"phase5-"+this.role+"-"+this.turn,
+          name:next.name,args:next.args}
+      }]}};
+    }else{
+      yield {modelVersion:this.model,content:{role:"model",parts:[{
+        text:"Completed controlled Account Suspension implementation through ADK"
+      }]}};
+    }
+  }
+  async connect(){throw new Error("Live streaming disabled for scripted ADK E2E");}
+}
+function specializedServerConfig(role,port,token){
+  if(engine==="legacy")return {role,port,taskHandler:taskHandler(role,token)};
+  const liveRole = manualLiveRoles.has(role);
+  const useGemini = liveRole || engine==="adk-gemini";
+  // Manual full-role workflow uses a single configurable Gemini model/effort
+  // for Backend, Frontend and Test (default 3.8 Flash / LOW).
+  // Standalone role probes preserve their 3.8 Flash / LOW defaults.
+  const geminiRoleConfig=useGemini?resolveRoleGeminiConfiguration({
+    role,roleMode:manualLiveRoleConfig,
+    geminiModel:process.env.GEMINI_MODEL??"gemini-3.8-flash",
+    geminiThinking:process.env.PHASE10B_GEMINI_THINKING_LEVEL??"LOW",
+    fullModel:process.env.PHASE10B_FULL_GEMINI_MODEL??"gemini-3.8-flash",
+    fullThinking:process.env.PHASE10B_FULL_GEMINI_THINKING_LEVEL??"LOW"
+  }):null;
+  const model=engine==="adk-openai"
+    ?new OpenAIAdkModel({apiKey:process.env.OPENAI_API_KEY})
+    :useGemini
+      ?createGeminiAdkModel({
+          apiKey:process.env.GEMINI_API_KEY,
+          model:geminiRoleConfig.model
+        })
+      :new Phase5ScriptedAdkModel(role);
+  const gatewayTimeoutMs=role==="test"
+    ?Number(process.env.TEST_RUNNER_TIMEOUT_MS??"900000"):30000;
+  // Free Tier bounded inference; original scripted baseline stays at 40.
+  const maxModelTurns=backendProbeOnce && useGemini && role==="backend"
+    ? BACKEND_LIVE_PROBE_MAX_TURNS
+    :liveRole ? (role==="test" ? 24 : 16)
+    :useGemini ? Number(process.env.PHASE10B_GEMINI_MAX_MODEL_TURNS??"24") : 40;
+  if(!Number.isSafeInteger(maxModelTurns)||maxModelTurns<1||maxModelTurns>40)
+    throw new Error("Gemini model turn budget must be from 1 to 40");
+  // Scripted regressions retain their original defaults. Real Gemini roles
+  // use a validated role-specific effort. The opt-in complete workflow
+  // permits up to 32,000 output tokens including thought tokens; isolated
+  // trials retain the original 16,384 cap, without changing policy scopes.
+  const geminiGeneration=useGemini
+    ? {generateContentConfig:buildGeminiGenerationConfig(
+        manualLiveRoleConfig, geminiRoleConfig, BACKEND_LIVE_PROBE_MAX_OUTPUT_TOKENS
+      )} : {};
+  const liveRoleLimits=useGemini
+    ?{maxModelCallMs:BACKEND_LIVE_PROBE_CALL_TIMEOUT_MS,scopeModelPaths:true}:{};
+  return {role,port,adk:{model,gatewayBaseUrl:gateway,adapterBaseUrl:adapter,
+    adapterToken:token,gatewayTimeoutMs,maxModelTurns,
+    ...geminiGeneration,...liveRoleLimits}};
+}
+
+
+// The ADK Orchestrator owns this tool-calling turn. The tool has no authority
+// parameters; the deterministic coordinator owns every DC, role and PR gate.
+class Phase6OrchestratorModel extends BaseLlm {
+  constructor() { super({model:"phase6-orchestrator-scripted"}); this.turn=0; }
+  async *generateContentAsync(_request) {
+    this.turn+=1;
+    if (this.turn===1) {
+      yield {modelVersion:this.model,content:{role:"model",parts:[{
+        functionCall:{id:"phase6-one-shot",name:"run_account_suspension_workflow",
+          args:{workflow:"account_suspension"}}
+      }]}};
+    } else {
+      yield {modelVersion:this.model,content:{role:"model",parts:[{
+        text:"The protected workflow result was returned by the coordinator."
+      }]}};
+    }
+  }
+  async connect() { throw new Error("Live connections disabled for Phase 6 CI"); }
+}
+
 const adapterHealth = await waitForHealth(adapter + "/health", "Delegation Adapter");
 assert.equal(adapterHealth.trust_profile, "evm");
 const gatewayHealth = await waitForHealth(gateway + "/health", "Gateway");
@@ -346,23 +522,105 @@ const protectedGateway = new OrchestratorProtectedGatewayClient({
   rootCredentialId
 });
 
-const backendServer = await startSpecializedAgentServer({
-  role: "backend",
-  port: 43451,
-  taskHandler: taskHandler("backend", tokens.backend)
-});
-const frontendServer = await startSpecializedAgentServer({
-  role: "frontend",
-  port: 43452,
-  taskHandler: taskHandler("frontend", tokens.frontend)
-});
-const testServer = await startSpecializedAgentServer({
-  role: "test",
-  port: 43453,
-  taskHandler: taskHandler("test", tokens.test)
-});
+const backendServer = await startSpecializedAgentServer(
+  specializedServerConfig("backend",43451,tokens.backend)
+);
+const frontendServer = await startSpecializedAgentServer(
+  specializedServerConfig("frontend",43452,tokens.frontend)
+);
+const testServer = await startSpecializedAgentServer(
+  specializedServerConfig("test",43453,tokens.test)
+);
 
 try {
+  if (backendProbeOnce && liveGeminiOnce) {
+    // Real protected branch, one delegated Backend A2A task. No Frontend,
+    // Test or PR; never claim a full E2E pass from this role-level probe.
+    const branch = await protectedGateway.createFeatureBranch(
+      "account-suspension-create-branch"
+    );
+    const roleRunner = new DelegatedA2ARoleRunner({
+      authorityIssuer: new DeterministicOrchestratorAuthorityIssuer({
+        adapterBaseUrl: adapter,
+        bearerToken: tokens.orchestrator
+      }),
+      a2a: new DeterministicA2AOrchestrator()
+    });
+    const task = await roleRunner.issueAndRun({
+      role: "backend",
+      parent_credential_id: rootCredentialId,
+      credential_id: "urn:thesis:dc:account-suspension:backend",
+      valid_from: new Date().toISOString(),
+      validity_seconds: 3600,
+      credential_status: {
+        type:"BitstringStatusListEntry",
+        statusPurpose:"revocation",
+        statusListIndex:"9601",
+        statusListCredential:"https://status.example/lists/phase10b-positive-e2e"
+      },
+      agent_base_url: backendServer.baseUrl,
+      subtask:{
+        subtask_id:"account-suspension-backend",
+        instruction:BACKEND_LIVE_PROBE_INSTRUCTION,
+        branch:"feature/account-suspension",
+        relevant_paths:[...BACKEND_LIVE_PROBE_PATHS]
+      },
+      expected_revision: branch.revision
+    });
+    if (!task.artifact.revision || task.artifact.revision===branch.revision ||
+        !task.artifact.files_modified.length) {
+      throw new Error("Gemini Backend did not produce a Gateway-confirmed revision");
+    }
+    // Additional independent verification of the real, temporary Gitea branch.
+    // This is an audit READ after the delegated write; it is not used to
+    // perform an agent operation or bypass the Gateway authority boundary.
+    const featureBranch=await giteaGet(
+      "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+
+      "/branches/"+encodeURIComponent("feature/account-suspension")
+    );
+    const verifiedFilePaths=[];
+    for(const path of BACKEND_LIVE_PROBE_PATHS){
+      // Audit-only reads on the temporary Gitea instance, after the real
+      // Gateway-authorized writes. Never feed these file contents to the LLM
+      // or use this channel to perform agent operations.
+      const committedFile=await giteaGet(
+        "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+
+        "/contents/"+path+"?ref="+encodeURIComponent("feature/account-suspension")
+      );
+      if(committedFile.encoding!=="base64" ||
+          typeof committedFile.content!=="string" ||
+          Buffer.from(committedFile.content.replace(/\\s/gu,""),"base64").length===0){
+        throw new Error("Gitea did not expose a verified Backend file");
+      }
+      verifiedFilePaths.push(path);
+    }
+    verifyBackendLiveProbe({
+      initialRevision:branch.revision,
+      reportedRevision:task.artifact.revision,
+      repositoryRevision:featureBranch.commit?.id,
+      filesModified:task.artifact.files_modified,
+      verifiedFilePaths
+    });
+    const mainBranch=await giteaGet(
+      "/api/v1/repos/"+giteaOwner+"/"+giteaRepository+"/branches/main"
+    );
+    assert.equal(mainBranch.commit?.id,expectedMainRevision);
+    assert.equal(frontendServer.executor.executionCount,0);
+    assert.equal(testServer.executor.executionCount,0);
+    process.stdout.write(JSON.stringify({
+      result:"gemini-backend-isolated-pass",
+      execution_engine:engine,
+      trust_profile:adapterHealth.trust_profile,
+      role:"backend",
+      confirmed_modified_files:task.artifact.files_modified.length,
+      model_id:task.artifact.model_id,
+      model_turns:task.artifact.model_iterations,
+      main_unchanged:true,
+      test_gate:"not_executed",
+      pull_request_created:false,
+      automatic_merge:false
+    })+"\\n");
+  } else {
   const coordinator = new AccountSuspensionSequentialCoordinator({
     gateway: protectedGateway,
     roleRunner: new DelegatedA2ARoleRunner({
@@ -383,7 +641,26 @@ try {
     childValiditySeconds: 3600
   });
 
-  const result = await coordinator.run();
+  // The real provider is never activated by default. Only explicit
+  // workflow_dispatch with a configured key may enable it.
+  const orchestratorModel = orchestratorEngine === "adk-openai"
+    ? new OpenAIAdkModel({
+        apiKey: process.env.OPENAI_API_KEY,
+        allowedToolNames: ["run_account_suspension_workflow"]
+      })
+    : orchestratorEngine === "adk-gemini"
+      ? createGeminiAdkModel({
+          apiKey: process.env.GEMINI_API_KEY,
+          model: process.env.GEMINI_MODEL ?? "gemini-3.8-flash"
+        })
+      : new Phase6OrchestratorModel();
+  const result = orchestratorEngine === "legacy"
+    ? await coordinator.run()
+    : await new AdkAccountSuspensionOrchestrator({
+        model: orchestratorModel,
+        workflow: coordinator,
+        maxModelTurns: 4
+      }).run();
   assert.equal(result.workflow.state, "pr_created");
   assert.deepEqual(result.workflow.completed_roles, [
     "backend",
@@ -405,15 +682,14 @@ try {
   assert.equal(result.pull_request.revision, testedRevision);
   assert.equal(result.workflow.pull_request?.head_revision, testedRevision);
 
-  for (const artifact of [
-    backendArtifact,
-    frontendArtifact,
-    testArtifact
-  ]) {
-    assert.match(
-      artifact.model_id ?? "",
-      /^gpt-5\.6-sol-phase10b-scripted-/u
-    );
+  for (const artifact of [backendArtifact,frontendArtifact,testArtifact]) {
+    if(engine==="legacy"){
+      assert.match(artifact.model_id??"",/^gpt-5[.]6-sol-phase10b-scripted-/u);
+    }else if(engine==="adk-scripted" && !manualLiveRoles.has(artifact.role)){
+      assert.match(artifact.model_id??"",/^phase5-scripted-adk-/u);
+    }else {
+      assert.ok(typeof artifact.model_id==="string"&&artifact.model_id.length>0);
+    }
   }
 
   const providerPr = await giteaGet(
@@ -451,7 +727,9 @@ try {
   assert.equal(testServer.executor.executionCount, 1);
 
   const resultPayload = {
-    result: "phase10b-positive-e2e-pass",
+    result: engine==="legacy"?"phase10b-positive-e2e-pass":"phase5-adk-e2e-pass",
+    execution_engine: engine,
+    orchestrator_engine: orchestratorEngine,
     trust_profile: adapterHealth.trust_profile,
     workflow_state: result.workflow.state,
     completed_roles: result.workflow.completed_roles,
@@ -464,6 +742,7 @@ try {
     pull_request_number: result.pull_request.pull_request_number,
     main_unchanged: true,
     automatic_merge: false,
+    real_gemini_roles:[...manualLiveRoles],
     model_ids: {
       backend: backendArtifact.model_id,
       frontend: frontendArtifact.model_id,
@@ -478,6 +757,7 @@ try {
       encoding: "utf8",
       mode: 0o600
     });
+  }
   }
 } finally {
   await testServer.close().catch(() => undefined);
