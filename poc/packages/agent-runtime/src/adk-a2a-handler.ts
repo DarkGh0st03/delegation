@@ -35,6 +35,8 @@ export interface AdkA2ATaskHandlerConfig {
   mcpSharedUrl?: string;
   /** Explicitly opt update_file into MCP; read_file remains the default. */
   mcpUpdateFile?: boolean;
+  /** Test Agent only: opt-in to MCP create_file for the one allowed E2E path. */
+  mcpCreateFile?: boolean;
   fetchFn?: FetchLike;
 }
 
@@ -162,6 +164,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   if (config.mcpUpdateFile && !config.mcpSharedUrl) {
     throw new Error("Shared MCP update_file requires MCP to be configured");
   }
+  if (config.mcpCreateFile && !config.mcpSharedUrl) {
+    throw new Error("Shared MCP create_file requires MCP to be configured");
+  }
   if (Boolean(config.mcpSharedUrl) !== Boolean(config.mcpTaskRegistry)) {
     throw new Error("Shared MCP requires both a task registry and shared URL");
   }
@@ -219,10 +224,12 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // Register only the ACTIVE A2A task. The registry retains this task-scoped
     // Gateway client and its private evidence; MCP never receives them.
     config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal,
-      {allowUpdateFile: config.mcpUpdateFile === true});
+      {allowUpdateFile: config.mcpUpdateFile === true,
+       allowCreateFile: config.mcpCreateFile === true && context.role==="test"});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
       ...(config.mcpUpdateFile ? {mcpUpdateFile:true} : {}),
+      ...(config.mcpCreateFile ? {mcpCreateFile:true} : {}),
       ...(config.mcpSharedUrl && config.mcpTaskRegistry ? {mcpReadFile:{
         endpoint:config.mcpSharedUrl,
         bearerForRequest: () => config.mcpTaskRegistry!.bearerFor(context.task_id)

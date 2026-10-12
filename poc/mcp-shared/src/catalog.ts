@@ -63,3 +63,29 @@ export function parseUpdateFileArgs(raw:unknown):UpdateFileArgs {
   const file=parseReadFileArgs({branch:obj.branch,path:obj.path});
   return {...file,content:obj.content};
 }
+
+/**
+ * Only the Test Agent may create the one declared E2E fixture.
+ * Task-scoped role checks and real delegated authorization remain mandatory.
+ */
+export const MCP_CREATABLE_E2E_PATH="tests/e2e/account-suspension.spec.ts" as const;
+export const MAX_MCP_CREATE_BYTES=MAX_MCP_UPDATE_BYTES;
+export const MCP_CREATE_FILE=Object.freeze({
+  name:"create_file",operation:"create_file",resourceType:"repository_file",
+  description:"Create the delegated Account Suspension E2E test file on the controlled feature branch.",
+  inputSchema:{
+    type:"object",additionalProperties:false,
+    properties:{
+      branch:{type:"string",const:"feature/account-suspension"},
+      path:{type:"string",const:MCP_CREATABLE_E2E_PATH},
+      content:{type:"string"}
+    },
+    required:["branch","path","content"]
+  }
+} as const);
+export interface CreateFileArgs extends UpdateFileArgs {path:typeof MCP_CREATABLE_E2E_PATH}
+export function parseCreateFileArgs(raw:unknown):CreateFileArgs{
+  const args=parseUpdateFileArgs(raw);
+  if(args.path!==MCP_CREATABLE_E2E_PATH)throw new Error("invalid_tool_arguments");
+  return {...args,path:MCP_CREATABLE_E2E_PATH};
+}

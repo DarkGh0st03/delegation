@@ -53,6 +53,9 @@ export async function startSpecializedAgentServer(
     delegatedAuthorization: options.delegatedAuthorization
   });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
+  if (options.adk?.mcpCreateFile && options.role!=="test") {
+    throw new Error("Only Test Agent may enable shared MCP create_file");
+  }
   if (options.mcpTaskSigning && !options.adk) {
     throw new Error("Private MCP task worker requires a configured ADK runtime");
   }

@@ -4,7 +4,7 @@ import {StreamableHTTPServerTransport} from "@modelcontextprotocol/sdk/server/st
 import {z} from "zod";
 import {bearerToken, verifyTaskToken, type VerificationKeys} from "./task-token.ts";
 import {TaskRouter} from "./task-router.ts";
-import {MCP_READ_FILE,MCP_UPDATE_FILE,MAX_MCP_UPDATE_BYTES} from "./catalog.ts";
+import {MCP_READ_FILE,MCP_UPDATE_FILE,MCP_CREATE_FILE,MCP_CREATABLE_E2E_PATH,MAX_MCP_UPDATE_BYTES,MAX_MCP_CREATE_BYTES} from "./catalog.ts";
 
 export interface SharedMcpConfig {verificationKeys:VerificationKeys; router:TaskRouter}
 function reply(res:ServerResponse,status:number,body:unknown) {
@@ -15,7 +15,7 @@ function reply(res:ServerResponse,status:number,body:unknown) {
 export function createSharedMcpHttpServer(config:SharedMcpConfig) {
   return createServer(async(req,res)=>{
     if (req.method==="GET" && req.url==="/health") {
-      reply(res,200,{status:"ok",service:"thesis-shared-mcp",tool_count:2}); return;
+      reply(res,200,{status:"ok",service:"thesis-shared-mcp",tool_count:3}); return;
     }
     if (req.url!=="/mcp") {reply(res,404,{error:"not_found"});return;}
     // MCP Streamable HTTP requires protecting local listeners from
@@ -31,7 +31,7 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
       claims=verifyTaskToken(token,config.verificationKeys);
     } catch {reply(res,401,{error:"unauthorized"});return;}
     // Strictly cap incoming JSON before handing it to the MCP transport.
-    // Read and bounded update_file; never accept unbounded source uploads.
+    // Bounded write/create source uploads; never accept unbounded source code.
     const MAX_BODY=128*1024;
     const chunks:Buffer[]=[];
     let total=0;
@@ -95,6 +95,32 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
         ].includes(candidate)?candidate:"tool_unavailable";
         const payload={ok:false,error:{kind}};
         return {isError:true,content:[{type:"text" as const,text:JSON.stringify(payload)}],
+          structuredContent:payload};
+      }
+    });
+    mcp.registerTool(MCP_CREATE_FILE.name,{
+      description:MCP_CREATE_FILE.description,
+      inputSchema:{
+        branch:z.literal("feature/account-suspension"),
+        path:z.literal(MCP_CREATABLE_E2E_PATH),
+        content:z.string().max(MAX_MCP_CREATE_BYTES)
+      }
+    },async args=>{
+      try{
+        const result=await config.router.createFile(claims,token,args);
+        const payload={ok:true,result};
+        return {content:[{type:"text" as const,text:JSON.stringify(payload)}],structuredContent:payload};
+      }catch(e){
+        const candidate=e instanceof Error?e.message:"tool_unavailable";
+        const kind=[
+          "invalid_tool_arguments","task_worker_unavailable",
+          "task_worker_rejected","task_worker_invalid_result",
+          "authorization_denied","invalid_tool_call","inactive_task",
+          "unauthorized","tool_unavailable","tests_failed"
+        ].includes(candidate)?candidate:"tool_unavailable";
+        const payload={ok:false,error:{kind}};
+        return {isError:true,
+          content:[{type:"text" as const,text:JSON.stringify(payload)}],
           structuredContent:payload};
       }
     });
