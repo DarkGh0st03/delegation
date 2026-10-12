@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --experimental-strip-types --test ./test/*.test.ts",
-    "start": "node --experimental-strip-types ./src/main.ts"
+    "start": "node --experimental-strip-types ./src/main.ts",
+    "security-ci:run": "node --experimental-strip-types ./scripts/trusted-security-ci.mjs"
   }
 }
