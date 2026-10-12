@@ -41,7 +41,9 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
         const candidate=e instanceof Error?e.message:"tool_unavailable";
         const kind=[
           "invalid_tool_arguments","task_worker_unavailable",
-          "task_worker_rejected","task_worker_invalid_result"
+          "task_worker_rejected","task_worker_invalid_result",
+          "authorization_denied","invalid_tool_call","inactive_task",
+          "unauthorized","tool_unavailable","tests_failed"
         ].includes(candidate)?candidate:"tool_unavailable";
         const payload={ok:false,error:{kind}};
         return {isError:true,content:[{type:"text" as const,text:JSON.stringify(payload)}],

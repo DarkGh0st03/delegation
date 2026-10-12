@@ -31,7 +31,6 @@ export class TaskRouter {
         signal:AbortSignal.timeout(10000)
       });
     } catch { throw new Error("task_worker_unavailable"); }
-    if (!response.ok) throw new Error("task_worker_rejected");
     if (Number(response.headers.get("content-length"))>2_000_000) throw new Error("task_worker_invalid_result");
     let parsed: unknown;
     try {
@@ -39,6 +38,15 @@ export class TaskRouter {
       if (body.length>2_000_000) throw new Error("oversized");
       parsed=JSON.parse(body);
     } catch { throw new Error("task_worker_invalid_result"); }
+    if (!response.ok) {
+      const candidate = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as {error?:{kind?:unknown}}).error?.kind : undefined;
+      const safe = ["authorization_denied", "invalid_tool_call", "inactive_task",
+                    "unauthorized", "tool_unavailable", "tests_failed"];
+      // Errors are fixed-category only. Never forward a worker's raw error text.
+      throw new Error(typeof candidate === "string" && safe.includes(candidate)
+        ? candidate : "task_worker_rejected");
+    }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
         (parsed as Record<string,unknown>).ok !== true || !("result" in parsed)) {
       throw new Error("task_worker_invalid_result");

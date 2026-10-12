@@ -32,3 +32,20 @@ test("worker rejects -> MCP never returns success",async()=>{
     branch:"feature/account-suspension",path:"a.ts"
   }),/task_worker_rejected/);
 });
+
+test("worker authorization denial stays a safe MCP error category",async()=>{
+  const router=new TaskRouter(workers,async()=>new Response(
+    JSON.stringify({ok:false,error:{kind:"authorization_denied",message:"should-not-leak"}}),
+    {status:403,headers:{"content-type":"application/json"}}));
+  await assert.rejects(router.readFile(claims,"token",{
+    branch:"feature/account-suspension",path:"a.ts"
+  }),/^Error: authorization_denied$/);
+});
+test("worker errors never forward arbitrary body text",async()=>{
+  const router=new TaskRouter(workers,async()=>new Response(
+    JSON.stringify({ok:false,error:{kind:"untrusted_detail",message:"secret"}}),
+    {status:403,headers:{"content-type":"application/json"}}));
+  await assert.rejects(router.readFile(claims,"token",{
+    branch:"feature/account-suspension",path:"a.ts"
+  }),/^Error: task_worker_rejected$/);
+});
