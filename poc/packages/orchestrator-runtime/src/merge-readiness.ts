@@ -73,7 +73,7 @@ function validActor(v:TrustedGiteaActor):boolean{
 function actorMatches(value:unknown,actor:TrustedGiteaActor,requireHuman:boolean):boolean{
   const got=obj(value);
   return got?.id===actor.id && got.login===actor.login &&
-    (!requireHuman || got.is_bot!==true);
+    (!requireHuman || (got.is_bot!==true && got.type!=="Bot"));
 }
 function safeSha(value:unknown):value is string{
   return typeof value==="string"&&SHA.test(value);
@@ -213,7 +213,7 @@ export class GiteaMergeReadinessVerifier{
       .sort((a,b)=>Number(b.id)-Number(a.id));
     const newestStatus=matching[0];
     if(!newestStatus||!id(newestStatus.id)||
-       newestStatus.state!=="success"||
+       newestStatus.status!=="success"||
        !actorMatches(newestStatus.creator,this.#pipeline,false)||
        (newestStatus.sha!==undefined&&newestStatus.sha!==head)){
       deny("security_pipeline_missing");
