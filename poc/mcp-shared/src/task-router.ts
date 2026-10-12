@@ -42,7 +42,7 @@ export class TaskRouter {
         body:JSON.stringify({tool,arguments:args}),
         redirect:"error",
         // The controlled Runner may take minutes. Other MCP operations remain at 10s.
-        signal:AbortSignal.timeout(tool==="run_tests"?960_000:10_000)
+        signal:AbortSignal.timeout(tool==="run_tests"?990_000:10_000)
       });
     } catch { throw new Error("task_worker_unavailable"); }
     if (Number(response.headers.get("content-length"))>2_000_000) throw new Error("task_worker_invalid_result");

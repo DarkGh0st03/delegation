@@ -360,9 +360,8 @@ trusted Test Agent worker requires a signed, ACTIVE task **and**
 Gateway performs DC/VP verification and OPA evaluation and invokes the
 existing Controlled Test Runner pinned to the current Gitea commit.
 
-The network router uses a maximum 16-minute upstream timeout only for this
-tool (ordinary MCP calls retain the existing 10-second timeout). A
-non-passing project test gate or researcher acceptance gate is mapped to
+The network router uses a maximum 16.5-minute upstream timeout only for this
+tool (ordinary MCP calls retain the existing 10-second timeout). The Test Agent Gateway wrapper uses a separate 16-minute execute timeout for\nthe controlled Runner; normal Gateway operations preserve their original limit. A\nnon-passing project test gate or researcher acceptance gate is mapped to
 `tests_failed`, never an authorized success. Both mandatory PASS gates,
 matching 40-character tested Git SHA and controlled Runner metadata are
 required before ADK can count a successful test execution.

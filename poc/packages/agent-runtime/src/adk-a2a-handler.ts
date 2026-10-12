@@ -224,6 +224,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       evidenceHandler,
       ...(signal ? {signal} : {}),
       ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),
+      ...(config.mcpRunTests ? {runnerExecuteTimeoutMs: 960_000} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
     // Register only the ACTIVE A2A task. The registry retains this task-scoped
