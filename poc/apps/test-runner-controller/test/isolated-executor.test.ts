@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolve } from "node:path";
 import {
   IsolatedDockerRunnerExecutor,
   runnerFixedPhaseCommands,
@@ -55,6 +56,8 @@ test("Phase 6B Playwright phase boots the controlled app services before E2E", (
 });
 
 test("Phase 6C mounts researcher acceptance read-only and reports a separate verdict", async () => {
+  // Use a host-native absolute path so the test is valid on both Windows and Linux.
+  const acceptanceDir = resolve("researcher-owned", "acceptance");
   const calls: Array<{ command: string; args: string[] }> = [];
   let fetchCount = 0;
 
@@ -62,7 +65,7 @@ test("Phase 6C mounts researcher acceptance read-only and reports a separate ver
     {
       ...config,
       acceptance_enabled: true,
-      acceptance_dir: "/researcher-owned/acceptance"
+      acceptance_dir: acceptanceDir
     },
     {
       fetch_fn: async () => {
@@ -97,7 +100,7 @@ test("Phase 6C mounts researcher acceptance read-only and reports a separate ver
   assert.notEqual(mountIndex, -1);
   assert.equal(
     create.args[mountIndex + 1],
-    "type=bind,src=/researcher-owned/acceptance,dst=/workspace/.researcher-acceptance,readonly"
+    `type=bind,src=${acceptanceDir},dst=/workspace/.researcher-acceptance,readonly`
   );
 
   const acceptance = calls.find(
