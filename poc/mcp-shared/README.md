@@ -371,3 +371,45 @@ An isolated synthetic Runner test covers the MCP and native ADK calls; the
 actual Docker Controlled Runner and the full A2A multi-agent pipeline
 are **not yet validated through MCP**. Real long-running SDK behavior and
 timeouts still need end-to-end verification.
+
+## Real Docker Controlled Test Runner behind ADK + shared MCP (negative gate)
+
+The opt-in smoke below launches a **second disposable Gitea Docker container**
+and a separate local Controller, Gateway and Test Agent MCP worker. The
+persistent thesis Gitea and already running Gateway are never selected.
+
+It creates a minimal **deliberately failing** repository on the temporary
+feature branch: a `package.json` without a lockfile. Thus the unchanged
+Controlled Runner must fetch its exact Git SHA, extract it, create and start
+an isolated Node Docker container, execute the *fixed* `npm ci` phase
+(which fails quickly), skip later phases, and return a structured FAIL.
+The ADK Test Agent must receive only `tests_failed` (not a false PASS).
+This validates the *negative* real-Runner path; it does NOT demonstrate
+the successful Playwright/researcher acceptance pipeline.
+
+The script checks the returned Runner commit SHA against the isolated
+Gitea feature branch, confirms neither `feature` nor `main` moved,
+then destroys temporary logs and Gitea after use. Rust Adapter and OPA
+must be running on local loopback. Credentials and model output are sanitized.
+No Gemini calls or Gitea writes outside the disposable container.
+
+**Important disk safeguard:** the `node:22.15.0-bookworm` Runner image must
+already be cached locally. The script does *not* download it. To inspect:
+
+```bash
+docker image inspect node:22.15.0-bookworm --format '{{.Id}}'
+```
+
+Run only on a machine with Docker Desktop, sufficient temporary disk space,
+the Node Runner image locally cached, Rust Adapter and OPA healthy:
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+npm --prefix poc/packages/agent-runtime run adk:mcp:isolated-real-runner-smoke
+```
+
+Expected top-level event: `adk_mcp_isolated_real_runner_smoke` with
+`status:"PASS"`, **expected_controlled_outcome:"tests_failed"**.
