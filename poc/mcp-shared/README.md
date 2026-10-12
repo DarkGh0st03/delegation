@@ -256,3 +256,44 @@ Synthetic regression:
 **Important:** These tests use mock Gateway tool clients for writes and do
 not modify Gitea. A separate isolated real-Gitea write test and A2A
 integration must pass before activating MCP writes in the normal workflow.
+
+## Opt-in REAL update_file integration against isolated Gitea
+
+The previous native ADK write tests are simulated. This optional script performs
+one real delegated MCP write with the unchanged Rust Adapter/Verifier and OPA
+policy, but against a **disposable Gitea Docker container**, NOT the persistent
+`delegation-poc-gitea` instance.
+
+Prerequisites: Docker Desktop, running OPA on localhost:8181, running Rust
+Adapter on localhost:8090, and env loaded from `poc/infra/.env`. The normal
+Gateway can remain running in `gitea-readonly` mode.
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+npm --prefix poc/packages/agent-runtime run adk:mcp:isolated-write-smoke
+```
+
+It starts temporary Gitea with **no bind mounts or named volumes** and a
+random loopback-only port, creates a private fixture repository with the
+same identifier as the fixed OPA policy, and launches a separate ephemeral
+write-enabled Gateway on another random loopback port. The existing Gateway,
+Gitea and Git branches are never selected by this script.
+
+After creating fresh root and Backend child Delegation Credentials in the
+existing *development* Adapter, native Google ADK invokes shared MCP
+`update_file`. Real Gateway/Verifier/OPA authorize one write. A second
+out-of-scope write must be denied. The script checks the actual isolated
+Gitea branch and file content, exact returned commit SHA, unchanged isolated
+main, and no private authority in model requests.
+
+The disposable Gitea is stopped and removed on completion; no real repository
+changes survive. Docker may need temporary disk space for a second Gitea
+container. **Do not run against production credentials or Adapter**.
+No Gemini/OpenAI requests. A successful result prints
+`"event":"adk_mcp_isolated_real_write_smoke","status":"PASS"`.
+
+**Coverage boundary:** this validates a real write through the MCP tool, but
+not yet multi-agent A2A write completion or approval-gated merges.

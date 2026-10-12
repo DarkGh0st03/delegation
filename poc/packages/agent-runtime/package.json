@@ -7,7 +7,8 @@
     "test": "node --experimental-strip-types --test ./test/*.test.ts",
     "adk:openai:smoke": "node --experimental-strip-types ./scripts/openai-live-smoke.mjs",
     "adk:mcp:real-smoke": "node --experimental-strip-types ./scripts/adk-real-mcp-smoke.mjs",
-    "a2a:mcp:real-read-smoke": "node --experimental-strip-types ./scripts/a2a-real-mcp-read-smoke.mjs"
+    "a2a:mcp:real-read-smoke": "node --experimental-strip-types ./scripts/a2a-real-mcp-read-smoke.mjs",
+    "adk:mcp:isolated-write-smoke": "node --experimental-strip-types ./scripts/adk-isolated-mcp-write-smoke.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "1.3.0",
