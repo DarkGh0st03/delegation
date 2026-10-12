@@ -7,6 +7,7 @@
     "test": "node --experimental-strip-types --test ./test/*.test.ts",
     "start": "node --experimental-strip-types ./src/main.ts",
     "security-ci:run": "node --experimental-strip-types ./scripts/trusted-security-ci.mjs",
-    "security-ci:isolated-negative-smoke": "node --experimental-strip-types ./scripts/isolated-trusted-security-ci-smoke.mjs"
+    "security-ci:isolated-negative-smoke": "node --experimental-strip-types ./scripts/isolated-trusted-security-ci-smoke.mjs",
+    "security-ci:isolated-positive-smoke": "node --experimental-strip-types ./scripts/isolated-trusted-security-ci-positive-smoke.mjs"
   }
 }
