@@ -537,6 +537,15 @@ async function main(){
       if(!(error instanceof MergeReadinessDenied))throw error;
       denial=error.reason;
     }
+    // Even a perfectly formed PR number is not transferable to a
+    // different Git revision: prove the real PR rejects stale SHA.
+    await assert.rejects(
+      ()=>verifier.verify({pullRequestNumber:pr.number,
+        expectedHeadSha:fixture.mainSha}),
+      error=>error instanceof MergeReadinessDenied&&
+        error.reason==="pr_revision_mismatch",
+      "Live Gitea merge readiness accepted stale revision"
+    );
     assert.notEqual(denial,null,
       "Unsafe: fake Runner PASS and no real approval/CI made merge gate READY");
     assert.ok([
@@ -580,6 +589,7 @@ async function main(){
         "production_coordinator_positive_gate",
         "pr_open_no_reviews_no_merge",
         "live_read_only_merge_readiness_denied",
+        "live_stale_pr_sha_denied",
         "no_trusted_security_pipeline_status",
         "exact_branch_sha","main_unchanged",
         "no_model_credential_leak","disposable_gitea_only"]
