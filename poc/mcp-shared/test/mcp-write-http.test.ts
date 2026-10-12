@@ -73,7 +73,7 @@ test("ONE shared MCP update_file routes only permitted active task writes to pri
     const c=await clientFor(sharedUrl,registry.bearerFor("write-task"));
     clients.push(c);
     assert.deepEqual((await c.listTools()).tools.map(x=>x.name),
-      ["read_file","update_file","create_file"]);
+      ["read_file","update_file","create_file","run_tests"]);
     const wrote=await c.callTool({name:"update_file",arguments:allowed});
     assert.notEqual(wrote.isError,true);
     assert.equal((wrote.structuredContent as {result?:{commit_sha?:string};error?:{kind?:string}})?.result?.commit_sha,confirmed.commit_sha);

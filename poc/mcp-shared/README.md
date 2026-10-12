@@ -348,3 +348,27 @@ On exit the temporary container is stopped/removed, and the existing
 Gitea and Git branches remain untouched. The script has **no Gemini
 calls**, but it creates ephemeral DCs in the local development Adapter.
 It is not yet an A2A multi-agent workflow or `run_tests` MCP integration.
+
+## Experimental MCP run_tests — Test Agent only
+
+The shared stateless Streamable HTTP server now advertises `run_tests` as
+the **fourth** specialized tool. Its argument schema allows only
+`branch:"feature/account-suspension"` and `profile:"poc-default"`.
+It never executes arbitrary commands or accepts shell arguments. The
+trusted Test Agent worker requires a signed, ACTIVE task **and**
+`mcpRunTests:true`; Backend and Frontend are always denied. The real
+Gateway performs DC/VP verification and OPA evaluation and invokes the
+existing Controlled Test Runner pinned to the current Gitea commit.
+
+The network router uses a maximum 16-minute upstream timeout only for this
+tool (ordinary MCP calls retain the existing 10-second timeout). A
+non-passing project test gate or researcher acceptance gate is mapped to
+`tests_failed`, never an authorized success. Both mandatory PASS gates,
+matching 40-character tested Git SHA and controlled Runner metadata are
+required before ADK can count a successful test execution.
+
+With the flag absent, the legacy `run_tests` FunctionTool is unchanged.
+An isolated synthetic Runner test covers the MCP and native ADK calls; the
+actual Docker Controlled Runner and the full A2A multi-agent pipeline
+are **not yet validated through MCP**. Real long-running SDK behavior and
+timeouts still need end-to-end verification.

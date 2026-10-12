@@ -66,7 +66,7 @@ test("native MCP Streamable HTTP tools/list and tools/call reuse one shared serv
       await client.connect(transport);
       clients.push(client);
       const list=await client.listTools();
-      assert.deepEqual(list.tools.map(t=>t.name),["read_file","update_file","create_file"]);
+      assert.deepEqual(list.tools.map(t=>t.name),["read_file","update_file","create_file","run_tests"]);
       const result=await client.callTool({
         name:"read_file",arguments:{
           branch:"feature/account-suspension",

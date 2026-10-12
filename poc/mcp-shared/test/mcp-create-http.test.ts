@@ -70,7 +70,7 @@ test("shared MCP create_file requires active Test task, explicit opt-in and exac
     const c=await makeClient(base,registry.bearerFor("test-create"));
     clients.push(c);
     assert.deepEqual((await c.listTools()).tools.map(t=>t.name),
-      ["read_file","update_file","create_file"]);
+      ["read_file","update_file","create_file","run_tests"]);
     const success=await c.callTool({name:"create_file",arguments:args});
     assert.notEqual(success.isError,true);
     assert.deepEqual((success.structuredContent as {result:unknown}).result,confirmed);
