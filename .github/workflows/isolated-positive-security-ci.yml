@@ -1,0 +1,63 @@
+name: Isolated Real Positive Security CI (No AI Billing)
+
+# Dedicated disposable integration verification of the trusted Docker Runner
+# and independent researcher acceptance. No Gemini/OpenAI keys are present.
+# Runs only for this feature branch and relevant files, or when explicitly
+# dispatched. Never touches persistent local Gitea.
+on:
+  push:
+    branches: [feat/shared-mcp-spike]
+    paths:
+      - '.github/workflows/isolated-positive-security-ci.yml'
+      - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
+      - 'poc/apps/test-runner-controller/fixtures/account-suspension-reference.mjs'
+      - 'poc/apps/test-runner-controller/src/**'
+      - 'poc/runner/acceptance/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: isolated-positive-security-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-positive-exact-sha:
+    name: Disposable Gitea + Real Docker Runner + Researcher Acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout trusted thesis framework without write credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install exact Node runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+
+      - name: Install local PoC dependencies
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+
+      - name: Preload disposable service and Runner Docker images
+        run: |
+          docker pull docker.gitea.com/gitea:28.0.0
+          docker pull node:22.15.0-bookworm
+
+      - name: Run real positive acceptance with no external model
+        env:
+          GITEA_ADMIN_USER: isolated_admin
+          GITEA_ADMIN_PASSWORD: local-ci-fixture-only-${{ github.run_id }}-${{ github.run_attempt }}
+          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+        run: npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
+
+      - name: Report any temporary containers after failure
+        if: failure()
+        run: |
+          docker ps -a --filter 'name=delegation-ci-positive-' --format '{{.Names}} {{.Status}}'
+          docker ps -a --filter 'name=delegation-runner-' --format '{{.Names}} {{.Status}}'
