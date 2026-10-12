@@ -66,9 +66,10 @@ function validActor(v:TrustedGiteaActor):boolean{
   return Boolean(v&&id(v.id)&&typeof v.login==="string"&&
     /^[a-zA-Z0-9_.-]{1,128}$/u.test(v.login));
 }
-function actorMatches(value:unknown,actor:TrustedGiteaActor):boolean{
+function actorMatches(value:unknown,actor:TrustedGiteaActor,requireHuman:boolean):boolean{
   const got=obj(value);
-  return got?.id===actor.id && got.login===actor.login && got.is_bot!==true;
+  return got?.id===actor.id && got.login===actor.login &&
+    (!requireHuman || got.is_bot!==true);
 }
 function safeSha(value:unknown):value is string{
   return typeof value==="string"&&SHA.test(value);
@@ -182,7 +183,7 @@ export class GiteaMergeReadinessVerifier{
     const reviews=await this.#collection("/pulls/"+prNumber+"/reviews");
     // Use the newest review from the explicitly configured human account.
     // Old APPROVED reviews cannot override a later REQUEST_CHANGES/DISMISSED.
-    const humanReviews=reviews.filter(r=>actorMatches(r.user,this.#human))
+    const humanReviews=reviews.filter(r=>actorMatches(r.user,this.#human,true))
       .sort((a,b)=>Number(b.id)-Number(a.id));
     const latestReview=humanReviews[0];
     if(!latestReview||!id(latestReview.id)||
@@ -201,7 +202,7 @@ export class GiteaMergeReadinessVerifier{
     const newestStatus=matching[0];
     if(!newestStatus||!id(newestStatus.id)||
        newestStatus.state!=="success"||
-       !actorMatches(newestStatus.creator,this.#pipeline)||
+       !actorMatches(newestStatus.creator,this.#pipeline,false)||
        (newestStatus.sha!==undefined&&newestStatus.sha!==head)){
       deny("security_pipeline_missing");
     }
