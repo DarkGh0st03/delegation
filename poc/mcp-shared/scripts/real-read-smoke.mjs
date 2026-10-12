@@ -166,7 +166,7 @@ async function main(){
     const sharedUrl=await listen(sharedServer);
     const c=await makeClient(sharedUrl,registry.bearerFor(taskId));
     clients.push(c);
-    assert.deepEqual((await c.listTools()).tools.map(t=>t.name),["read_file"]);
+    assert.deepEqual((await c.listTools()).tools.map(t=>t.name),["read_file","update_file"]);
     const first=readResult(await c.callTool({name:"read_file",arguments:args}),"valid read");
 
     // DC does not authorize a different resource. Tool availability is irrelevant.

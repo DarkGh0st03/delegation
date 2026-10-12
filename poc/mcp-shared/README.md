@@ -231,3 +231,28 @@ This is a fail-closed invariant, not a smoke failure.
 No external model calls or Gitea writes are made. This is not yet a successful
 write-enabled multi-agent A2A workflow; MCP write operations and merge approval
 need their own isolated authorization tests before integration.
+
+## Experimental MCP update_file (write tool NOT enabled by default in ADK)
+
+The shared Streamable HTTP service now advertises `update_file` alongside
+`read_file`. The trusted private worker accepts this operation only for an
+ACTIVE, role-bound task with an allowed writable path; the Gateway and real
+Delegation Credential/Verifier/OPA still make the authoritative authorization
+decision. Complete source replacement has a 60 KiB UTF-8 cap, including a
+128 KiB JSON request cap at both MCP and the private worker.
+
+**Safe staged rollout:** `read_file` remains the only MCP tool in Google ADK
+unless the ADK handler is explicitly configured with `mcpUpdateFile:true`
+**and** `mcpSharedUrl` plus matching private worker signing keys. Legacy
+`update_file` FunctionTools remain unchanged when this flag is absent.
+Existing read-only Gateway mode also continues to forbid actual writes.
+
+Synthetic regression:
+- `npm --prefix poc/mcp-shared test`: MCP SDK HTTP write allow/deny, inactive
+  task rejection, Backend role-specific path control and schema validation.
+- `npm --prefix poc run agent-runtime:test`: native ADK `MCPToolset` write
+  routing and rejection of unconfirmed/malformed Gitea revisions.
+
+**Important:** These tests use mock Gateway tool clients for writes and do
+not modify Gitea. A separate isolated real-Gitea write test and A2A
+integration must pass before activating MCP writes in the normal workflow.
