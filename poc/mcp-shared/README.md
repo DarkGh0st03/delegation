@@ -312,9 +312,10 @@ Without the flag, Test Agent's existing `create_file` FunctionTool is
 unchanged. Backend/Frontend cannot enable this tool. The MCP result adapter
 only accepts an exact Gitea-confirmed create commit and blob SHA.
 
-Only synthetic create_file regressions are included so far. Do not infer that
-real isolated Gitea or complete protected A2A write/create was validated.
-`run_tests` remains a FunctionTool until a separate explicit integration.
+Synthetic create_file regressions have passed. An opt-in isolated real-Gitea
+create smoke is available below but must be run before claiming that specific
+integration is validated. Complete protected A2A write/create is not yet
+validated. `run_tests` remains a FunctionTool pending separate integration.
 
 ## Opt-in real create_file smoke on isolated Gitea (no Gemini)
 
