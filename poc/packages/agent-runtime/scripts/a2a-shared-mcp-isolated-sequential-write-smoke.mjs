@@ -277,6 +277,8 @@ async function main(){
   assert.equal((await api(adapter,"/health",{label:"Rust Adapter health"})).status,"ok");
   const op=await fetch(opa+"/health",{signal:AbortSignal.timeout(4000)});
   assert.equal(op.status,200,"Real OPA is not running");
+  // Avoid unexpected image downloads and disk pressure during the smoke.
+  docker(["image","inspect",image],"check cached disposable Gitea image");
   docker(["run","--rm","--detach","--name",container,
     "--publish","127.0.0.1::3000/tcp",
     "--env","USER_UID=1000","--env","USER_GID=1000",
@@ -474,11 +476,11 @@ async function main(){
     })+"\n");
   }finally{
     try{
-      for(const role of [...roles].reverse())
-        await agents[role]?.close().catch(()=>undefined);
-      await stop(sharedServer);
-      await stop(gatewayServer);
-      await stop(runnerServer);
+      // Do not skip socket cleanup just because one server close fails.
+      await Promise.allSettled([
+        ...[...roles].reverse().map(role=>agents[role]?.close()),
+        stop(sharedServer),stop(gatewayServer),stop(runnerServer)
+      ]);
     }finally{
       if(started){stopDocker();started=false;}
     }
