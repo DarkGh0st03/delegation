@@ -9,7 +9,6 @@
  */
 import assert from "node:assert/strict";
 import {generateKeyPairSync, randomBytes} from "node:crypto";
-import type {AddressInfo} from "node:net";
 import express from "express";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
