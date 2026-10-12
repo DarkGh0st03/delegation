@@ -560,3 +560,45 @@ and `coordinator_result:"PR_CREATED_PENDING_HUMAN_APPROVAL"`.
 
 This is NOT validation of real researcher acceptance or a revision-bound
 human merge approval security pipeline; those require separate tests.
+
+## Revision-bound human approval + trusted security status (read-only gate)
+
+`GiteaMergeReadinessVerifier` is a **read-only** prerequisite for a future
+Orchestrator merge workflow. It does **not** implement or authorize a merge,
+create a review, or post a status. It checks all of the following against
+Gitea's current repository state:
+
+- Exact target PR number, controlled same-repo feature -> main branch,
+  PR still open/unmerged/mergeable, exact expected HEAD SHA, and current
+  base SHA.
+- Enforced main protection (no direct/force push, required approvals,
+  stale-approval dismissal, outdated-branch blocking and no admin override).
+- Latest review from a specifically configured HUMAN Gitea account
+  (immutable numeric ID **and** login) must be `APPROVED` on exact HEAD SHA.
+  A prior approval invalidated by a later review is not sufficient.
+- Newest Gitea commit status for fixed context
+  `thesis/security-pipeline` must be `success`, created by a distinct,
+  specifically configured trusted CI account. Earlier green statuses do
+  not override a later pending/failing status. Both identities are validated
+  from the fetched Gitea records, never model arguments.
+- The PR head/base is rechecked before returning a readiness observation.
+  The eventual merge endpoint MUST recheck all evidence atomically where
+  possible and enforce an exact-SHA precondition (TOCTOU protection).
+
+If any required evidence is missing or malformed, it fails closed. In
+particular, the **simulated PASS** of the preceding isolated PR smoke
+provides NO trusted CI status and NO human approval and therefore must
+NOT be treated as merge permission.
+
+This module is preliminary. **There is not yet a live security CI pipeline
+publishing this context, no approved human review in the disposable smoke,
+and no Orchestrator merge operation.** A reviewer username/ID is only as
+human-trustworthy as the Gitea organization identity policy that manages it.
+Future pipeline work must actually run trusted acceptance and security checks
+on the exact SHA before its CI account may publish a success status.
+
+Offline tests (no Gemini, no Gitea mutations):
+
+```bash
+npm --prefix poc run test -w @thesis/orchestrator-runtime
+```
