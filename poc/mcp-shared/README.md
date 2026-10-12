@@ -448,3 +448,40 @@ Expected success event:
 **Scope:** this is NOT the full Backend→Frontend→Test write/create/run_tests
 flow, and does not produce a PR or merge. It is a separate no-write gate before
 testing the stateful multi-agent pipeline against isolated Gitea.
+
+## Stateful three-role A2A smoke with genuine isolated Gitea writes
+
+This separate *opt-in* smoke exercises genuine Backend and Frontend
+`read_file` + `update_file` operations, then Test Agent `create_file`,
+followed by a deliberately failing `run_tests` gate, all over the **same
+shared MCP server** using independent real protected A2A servers.
+
+A SECOND disposable Gitea is used, with NO persistent volumes or host bind
+mounts. The real Gateway runs only on a random loopback port with real local
+Rust Adapter and OPA; the existing read-only Gateway and persistent Gitea
+remain unchanged. The two application-file updates and one E2E file creation
+produce three distinct Gitea feature-branch commit SHAs. The isolated
+`main` branch stays protected.
+
+**The Controlled Test Runner here is an authenticated HTTP STUB** that
+intentionally reports FAIL, with the exact real final Gitea SHA. It is NOT
+an actual Docker test run, and researcher acceptance is NOT a pass.
+The separate `adk:mcp:isolated-real-runner-smoke` already exercised real
+Docker failure handling. The Test Agent must terminate FAILED with no
+Artifact; there must be no Pull Request and no merge.
+
+Prerequisites: Docker Desktop, live local Rust Adapter and OPA, dev .env.
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+npm --prefix poc/packages/agent-runtime run a2a:mcp:isolated-sequential-write-smoke
+```
+
+A successful smoke event is
+`a2a_shared_mcp_isolated_sequential_write_smoke` with `status:"PASS"`.
+This does NOT exercise the production SequentialCoordinator itself, the
+positive test/acceptance gate, PR creation or human-approved merge. Those
+need separate validation.
