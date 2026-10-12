@@ -524,3 +524,39 @@ Expected success event:
 This only validates the **negative Coordinator gate**. A full
 passing researcher acceptance, PR creation and explicit human-approved
 merge remain separate work.
+
+## Positive production Coordinator gate with real isolated PR (stubbed PASS only)
+
+This optional integration covers the OTHER side of the coordinator's gate.
+Three native ADK A2A Agents use ONE shared MCP to commit real controlled
+Backend, Frontend and Test files to a **disposable Gitea**. The real
+`AccountSuspensionSequentialCoordinator`, root/child DC issuance,
+Gateway+Rust+OPA, and `OrchestratorProtectedGatewayClient` are exercised.
+
+**Crucial limitation:** the internal, Gateway-authenticated Controlled Runner
+HTTP endpoint returns a deliberately **FAKE PASS** with matching real feature
+Git SHA, `project_tests:pass`, and `researcher_acceptance:pass`.
+NO actual tests or researcher-owned acceptance execute in this smoke.
+This is only a control-flow integration test, not proof of real test quality.
+
+Given the simulated PASS the Coordinator must create exactly ONE real,
+OPEN Gitea pull request on the disposable repo through protected Gateway
+authorization. It must NOT merge or issue approvals. The script checks
+that the PR head matches the tested SHA, has no human reviews, remains
+`merged:false`, and that `main` is unchanged. Both the PR and entire
+repository are automatically destroyed when the temporary Gitea exits.
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+npm --prefix poc/packages/agent-runtime run a2a:mcp:production-pr-open-smoke
+```
+
+Expected smoke event: `a2a_production_coordinator_mcp_isolated_pr_open`
+with `status:"PASS"`, `runner:"controlled_http_stub_simulated_pass_only"`
+and `coordinator_result:"PR_CREATED_PENDING_HUMAN_APPROVAL"`.
+
+This is NOT validation of real researcher acceptance or a revision-bound
+human merge approval security pipeline; those require separate tests.
