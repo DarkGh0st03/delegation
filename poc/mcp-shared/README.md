@@ -315,3 +315,35 @@ only accepts an exact Gitea-confirmed create commit and blob SHA.
 Only synthetic create_file regressions are included so far. Do not infer that
 real isolated Gitea or complete protected A2A write/create was validated.
 `run_tests` remains a FunctionTool until a separate explicit integration.
+
+## Opt-in real create_file smoke on isolated Gitea (no Gemini)
+
+Prerequisites: Docker Desktop; local running Rust Adapter on 127.0.0.1:8090
+and OPA on 127.0.0.1:8181. The persistent Gitea and read-only Gateway are
+**not used** by this test.
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+npm --prefix poc/packages/agent-runtime run adk:mcp:isolated-create-smoke
+```
+
+This script launches a SECOND, disposable Gitea Docker container with no
+named volumes or bind mounts and a random loopback port. On an isolated
+feature branch, the test target `tests/e2e/account-suspension.spec.ts` is
+initially absent. A dedicated ephemeral Gateway is configured in real Gitea
+mode with the existing local Rust/OPA infrastructure; fresh root and
+**Test Agent child** Delegation Credentials allow only that create operation.
+
+A scripted `@google/adk` Test Agent calls `create_file` via the ONE
+shared MCP Streamable HTTP service and its active private worker. The
+Gitea commit SHA and file bytes are then verified directly through Gitea;
+a second identical create must be rejected, and the isolated `main`
+revision must remain unchanged.
+
+On exit the temporary container is stopped/removed, and the existing
+Gitea and Git branches remain untouched. The script has **no Gemini
+calls**, but it creates ephemeral DCs in the local development Adapter.
+It is not yet an A2A multi-agent workflow or `run_tests` MCP integration.
