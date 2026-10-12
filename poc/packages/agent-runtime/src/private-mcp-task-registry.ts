@@ -16,6 +16,7 @@ interface ActiveTask {
   bearer: string;
   claims: Readonly<TaskClaims>;
   signal?: AbortSignal;
+  allowUpdateFile: boolean;
   onAbort?: () => void;
 }
 
@@ -44,13 +45,15 @@ export class PrivateMcpTaskRegistry {
   begin(
     taskId: string,
     client: Pick<GatewayControlledToolClient, "invoke">,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options: {allowUpdateFile?: boolean} = {}
   ): void {
     if (this.#active.has(taskId)) throw new Error("Duplicate active MCP task");
     if (signal?.aborted) throw new PrivateMcpTaskError("inactive_task");
     const bearer = issueTaskToken(this.#signingKey, this.#role, taskId);
     const claims = verifyTaskToken(bearer, { [this.#role]: this.#verificationKey });
-    const task: ActiveTask = {client, bearer, claims, signal};
+    const task: ActiveTask = {client, bearer, claims, signal,
+      allowUpdateFile: options.allowUpdateFile === true};
     if (signal) {
       task.onAbort = () => this.end(taskId);
       signal.addEventListener("abort", task.onAbort, {once:true});
@@ -105,7 +108,8 @@ export class PrivateMcpTaskRegistry {
         : parseUpdateFileArgs(payload.arguments);
     } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
     if (payload.tool === "update_file" &&
-        !SPECIALIZED_AGENT_PROFILES[this.#role].writable_paths.includes(args.path)) {
+        (!task.allowUpdateFile ||
+         !SPECIALIZED_AGENT_PROFILES[this.#role].writable_paths.includes(args.path))) {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
 

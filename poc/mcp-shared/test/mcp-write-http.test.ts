@@ -57,7 +57,7 @@ test("ONE shared MCP update_file routes only permitted active task writes to pri
       );
       return confirmed;
     }
-  });
+  },undefined,{allowUpdateFile:true});
   const app=express();
   attachPrivateMcpWorker(app,registry);
   const worker=app.listen(0,"127.0.0.1");

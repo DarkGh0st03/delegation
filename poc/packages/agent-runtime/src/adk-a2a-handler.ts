@@ -218,7 +218,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     });
     // Register only the ACTIVE A2A task. The registry retains this task-scoped
     // Gateway client and its private evidence; MCP never receives them.
-    config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal);
+    config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal,
+      {allowUpdateFile: config.mcpUpdateFile === true});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
       ...(config.mcpUpdateFile ? {mcpUpdateFile:true} : {}),
