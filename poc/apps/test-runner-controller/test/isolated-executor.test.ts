@@ -150,8 +150,17 @@ test("isolated executor pins branch head to the exact requested SHA and destroys
   assert.equal(result.phases.at(-1)?.status, "skipped");
 
   const dockerExecCalls = calls.filter(
-    (call) => call.command === "docker" && call.args[0] === "exec"
+    (call) => call.command === "docker" &&
+      call.args[0] === "exec" && call.args[2] === "bash"
   );
+  assert.equal(calls.some((call) => call.command === "tar"), false,
+    "Archive extraction must not depend on host tar");
+  const extract = calls.find((call) =>
+    call.command === "docker" && call.args[0] === "exec" &&
+    call.args[2] === "tar");
+  assert.ok(extract, "Runner must extract archive inside its Linux container");
+  assert.deepEqual(extract.args.slice(2, 6),
+    ["tar", "-xzf", "/workspace/.runner-source.tar.gz", "-C"]);
   assert.deepEqual(
     dockerExecCalls.map((call) => call.args.at(-1)),
     runnerFixedPhaseCommands.map((entry) => entry.command)
@@ -209,7 +218,7 @@ test("fixed pipeline stops after a failing phase and marks later phases skipped"
       return new Response(Buffer.from("fake-tar-gz"), { status: 200 });
     },
     command_runner: async (command, args) => {
-      if (command === "docker" && args[0] === "exec") {
+      if (command === "docker" && args[0] === "exec" && args[2] === "bash") {
         execCount += 1;
         if (execCount === 2) {
           return {
@@ -236,4 +245,30 @@ test("fixed pipeline stops after a failing phase and marks later phases skipped"
   assert.equal(result.phases[1].status, "fail");
   assert.equal(result.phases[2].status, "skipped");
   assert.equal(execCount, 2);
+});
+
+test("Runner fails closed on Linux-container archive extraction error and cleans Docker",async()=>{
+  const calls:Array<{command:string;args:string[]}>= [];
+  let fetchCount=0;
+  const executor=new IsolatedDockerRunnerExecutor(config,{
+    fetch_fn:async()=>{
+      fetchCount++;
+      if(fetchCount===1)return new Response(JSON.stringify({
+        commit:{id:request.commit_sha}
+      }),{status:200,headers:{"content-type":"application/json"}});
+      return new Response(Buffer.from("invalid archive"),{status:200});
+    },
+    command_runner:async(command,args)=>{
+      calls.push({command,args});
+      const failed=command==="docker" && args[0]==="exec" && args[2]==="tar";
+      return {exit_code:failed?2:0,stdout:"",stderr:failed?"UNTRUSTED ARCHIVE DETAILS":"",timed_out:false};
+    }
+  });
+  await assert.rejects(()=>executor.run(request),
+    /Could not materialize exact repository archive: container tar exit 2/u);
+  assert.ok(calls.some(call=>call.command==="docker"&&call.args[0]==="rm"&&call.args[1]==="-f"),
+    "Isolated Runner container must be cleaned after extraction failure");
+  assert.equal(calls.some(call=>call.command==="tar"),false);
+  assert.equal(calls.some(call=>call.command==="docker"&&call.args[0]==="exec"&&call.args[2]==="bash"),
+    false,"Never start project tests after untrusted archive extraction failure");
 });
