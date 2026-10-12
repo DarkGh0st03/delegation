@@ -124,3 +124,12 @@ test("rejects incomplete provider lists instead of guessing success",async()=>{
   const over=Array.from({length:1000},(_,i)=>({...reviews[0],id:i+1}));
   await denied({"/pulls/3/reviews":over.slice(0,50)},"malformed_provider_data");
 });
+
+test("trusted CI service actor may be a designated bot; human reviewer may not",async()=>{
+  const good=harness({
+    ["/commits/"+a+"/statuses"]:[{...statuses[0],creator:{...ci,is_bot:true}}]
+  });
+  assert.equal((await good.make().verify({pullRequestNumber:3,expectedHeadSha:a})).ready,true);
+  await denied({"/pulls/3/reviews":[{...reviews[0],user:{...owner,is_bot:true}}]},
+    "human_approval_missing");
+});
