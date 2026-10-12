@@ -33,6 +33,30 @@ const publisherPassword=randomBytes(24).toString("hex");
 const repo="/api/v1/repos/thesis/iam-console-poc";
 const branch="feature/account-suspension";
 let giteaStarted=false;
+/**
+ * Use a referenced timer, not only AbortSignal.timeout (which can use an
+ * unref'ed timer on Node 22). A truly unresolved Promise then fails with
+ * a bounded, named diagnostic instead of exiting with top-level-await 13.
+ * Labels are hard-coded, never derived from URLs, tokens or response bodies.
+ */
+async function stage(label,action,timeoutMs=30000){
+  process.stderr.write("[trusted-ci-smoke] start "+label+"\n");
+  let timer;
+  try{
+    const result=await Promise.race([
+      Promise.resolve().then(action),
+      new Promise((_,reject)=>{
+        timer=setTimeout(()=>reject(new Error(
+          "Timed out waiting for isolated CI stage: "+label
+        )),timeoutMs);
+      })
+    ]);
+    process.stderr.write("[trusted-ci-smoke] ok "+label+"\n");
+    return result;
+  }finally{
+    if(timer!==undefined)clearTimeout(timer);
+  }
+}
 function docker(args,label){
   try{return execFileSync("docker",args,{
     encoding:"utf8",timeout:120000,stdio:["ignore","pipe","pipe"]
@@ -53,23 +77,44 @@ for(const signal of ["SIGINT","SIGTERM"]){
 function basic(u,p){return "Basic "+Buffer.from(u+":"+p).toString("base64");}
 async function api(base,path,options={}){
   const {method="GET",body,authorization,expect=[200,201],label="Gitea request"}=options;
-  const response=await fetch(base+path,{
-    method,redirect:"error",signal:AbortSignal.timeout(15000),
-    headers:{
-      accept:"application/json",
-      ...(authorization?{authorization}:{}),
-      ...(body===undefined?{}:{"content-type":"application/json"})
-    },
-    ...(body===undefined?{}:{body:JSON.stringify(body)})
-  });
-  if(!expect.includes(response.status))throw Error(label+" HTTP "+response.status);
-  return response.status===204?{}:response.json();
+  // Stage covers both network response and JSON body materialization.
+  return await stage("gitea_api_"+label,async()=>{
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),16000);
+    try{
+      const response=await fetch(base+path,{
+        method,redirect:"error",signal:controller.signal,
+        headers:{
+          accept:"application/json",
+          ...(authorization?{authorization}:{}),
+          ...(body===undefined?{}:{"content-type":"application/json"})
+        },
+        ...(body===undefined?{}:{body:JSON.stringify(body)})
+      });
+      if(!expect.includes(response.status)){
+        throw Error(label+" HTTP "+response.status);
+      }
+      return response.status===204?{}:await response.json();
+    }finally{
+      clearTimeout(timer);
+    }
+  },20000);
 }
 async function waitForGitea(base){
   for(let n=0;n<180;n++){
-    try{const r=await fetch(base+"/api/healthz",{
-      signal:AbortSignal.timeout(1200)
-    });if(r.ok)return;}catch{}
+    try{
+      const healthy=await stage("gitea_health_request",async()=>{
+        const controller=new AbortController();
+        const timer=setTimeout(()=>controller.abort(),1500);
+        try{
+          const r=await fetch(base+"/api/healthz",{
+            signal:controller.signal
+          });
+          return r.ok;
+        }finally{clearTimeout(timer);}
+      },2500);
+      if(healthy)return;
+    }catch{}
     await sleep(500);
   }
   throw Error("Disposable Gitea did not become healthy");
@@ -157,7 +202,7 @@ async function main(){
   const acceptanceDir=fileURLToPath(new URL(
     "../../../runner/acceptance/",import.meta.url
   ));
-  const folder=await stat(acceptanceDir);
+  const folder=await stage("acceptance_directory",()=>stat(acceptanceDir),10000);
   assert.ok(folder.isDirectory());
   // Never pull multi-GB images; fail early when not already available.
   docker(["image","inspect",image],"cached Gitea image");
@@ -181,9 +226,10 @@ async function main(){
     const port=/127\.0\.0\.1:(\d+)/u.exec(mapped)?.[1];
     if(!port)throw Error("Gitea is not loopback-only");
     const base="http://127.0.0.1:"+port;
-    await waitForGitea(base);
-    const fixture=await seed(base);
-    logs=await mkdtemp(join(tmpdir(),"thesis-ci-smoke-logs-"));
+    await stage("disposable_gitea_ready",()=>waitForGitea(base),125000);
+    const fixture=await stage("disposable_gitea_bootstrap",()=>seed(base),180000);
+    logs=await stage("create_private_log_dir",
+      ()=>mkdtemp(join(tmpdir(),"thesis-ci-smoke-logs-")),10000);
     const realRunner=new IsolatedDockerRunnerExecutor({
       gitea_base_url:base,gitea_owner:"thesis",
       gitea_repository:"iam-console-poc",
@@ -198,11 +244,11 @@ async function main(){
       trustedStatusActor:fixture.actor,
       runner:realRunner
     });
-    const outcome=await ci.run({
+    const outcome=await stage("real_docker_runner_and_ci_status",()=>ci.run({
       request_id:"disposable-ci-"+randomUUID(),
       repository:"gitea://gitea.local/thesis/iam-console-poc",
       branch,commit_sha:fixture.featureSha,profile:"poc-default"
-    });
+    }),360000);
     assert.equal(outcome.status,"failure",
       "Real negative Docker Runner was incorrectly marked success");
     assert.equal(outcome.tested_commit_sha,fixture.featureSha);
@@ -242,8 +288,22 @@ async function main(){
       disposable_gitea_only:true
     })+"\n");
   }finally{
-    if(logs)await rm(logs,{recursive:true,force:true});
-    if(giteaStarted){stopDocker();giteaStarted=false;}
+    // Do not leave a disposable container running if temp-log cleanup stalls.
+    try{
+      if(logs){
+        await stage("remove_private_log_dir",
+          ()=>rm(logs,{recursive:true,force:true}),20000);
+      }
+    }finally{
+      if(giteaStarted){stopDocker();giteaStarted=false;}
+    }
   }
 }
-await main();
+try{
+  await stage("complete_disposable_security_ci_smoke",main,450000);
+}catch(error){
+  // Never print Gitea response bodies, credentials or command arguments.
+  const message=error instanceof Error?error.message:"Unknown isolated CI error";
+  process.stderr.write("[trusted-ci-smoke] ERROR "+message+"\n");
+  process.exitCode=1;
+}
