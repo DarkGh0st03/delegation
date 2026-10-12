@@ -196,3 +196,38 @@ It prints only safe labels and a public test revision.
 **Scope:** this tests a real ADK tool cycle against real infrastructure, NOT
 the external A2A transport, actual Gemini reasoning, write tools, or end-to-end
 multi-agent task/merge completion. Those need dedicated follow-on tests.
+
+## Protected A2A + native ADK + real MCP read-only regression
+
+To exercise an actual protected A2A HTTP+JSON task in addition to the
+standalone ADK Runner smoke, keep the local Gitea, OPA, Rust Adapter and
+read-only Gateway running and run:
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+export GATEWAY_SMOKE_URL=http://127.0.0.1:8080
+export ADAPTER_SMOKE_URL=http://127.0.0.1:8090
+export EXPECTED_GITEA_REVISION=ff8032c6fa5def272f1fd222ea47a7746d2d5328
+npm --prefix poc/packages/agent-runtime run a2a:mcp:real-read-smoke
+```
+
+This starts ONE shared MCP HTTP server and one **real Backend A2A endpoint**.
+The A2A client discovers the Agent Card, submits two protected tasks with
+privately transported Delegation Evidence and polls terminal Task status.
+A locally scripted Google ADK Runner requests: (1) a real delegated Gitea
+file read, (2) a forbidden, out-of-scope read. Gateway/Rust/OPA enforce both.
+The test validates model-visible results, terminal Task privacy, and that
+a completed task no longer authorizes MCP tool calls.
+
+**Expected behavior:** both read-only A2A tasks finish FAILED **on purpose**,
+with zero Artifacts, even though the first `read_file` succeeds, because the
+protected Agent contract requires a Gateway-confirmed Git commit revision to
+publish a completed Artifact. A read-only tool cannot produce that revision.
+This is a fail-closed invariant, not a smoke failure.
+
+No external model calls or Gitea writes are made. This is not yet a successful
+write-enabled multi-agent A2A workflow; MCP write operations and merge approval
+need their own isolated authorization tests before integration.
