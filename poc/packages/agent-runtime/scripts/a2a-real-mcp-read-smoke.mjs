@@ -248,26 +248,18 @@ async function main(){
     // The completed A2A task must have been deregistered from its worker.
     // A newly signed token for that OLD task is not an active authorization.
     const expiredTaskToken=issueTaskToken(backend.privateKey,"backend",firstTaskId);
-    const stale=await fetch(sharedUrl+"/mcp",{
+    const stale=await fetch(agent.baseUrl+"/internal/mcp-tool-call",{
       method:"POST",
       headers:{
         authorization:"Bearer "+expiredTaskToken,
-        "content-type":"application/json",
-        accept:"application/json, text/event-stream"
+        "content-type":"application/json"
       },
-      body:JSON.stringify({
-        jsonrpc:"2.0",id:777,method:"tools/call",
-        params:{name:"read_file",arguments:permitted}
-      }),
+      body:JSON.stringify({tool:"read_file",arguments:permitted}),
       signal:AbortSignal.timeout(5000)
     });
-    assert.ok(stale.status<500,"Stale A2A task caused a server-side failure");
-    const staleText=await stale.text();
-    assert.ok(
-      stale.status===401||stale.status===403||
-      staleText.includes("inactive_task")||staleText.includes("unauthorized"),
-      "An ended A2A task was still authorized"
-    );
+    assert.equal(stale.status,403,"An ended A2A task was still active at its private worker");
+    const staleResult=await stale.json();
+    assert.equal(staleResult?.error?.kind,"inactive_task");
 
     model.startTask(forbidden);
     const deniedCount=model.requests.length;
