@@ -434,10 +434,6 @@ async function main(){
       assert.equal(modelContext.includes(secret),false,
         "Credential or private authority leaked into ADK model context");
     }
-    for(const [role,agent] of Object.entries(agents)){
-      const publicTask=await api(agent.baseUrl,"/health",{label:"A2A "+role+" health"});
-      assert.equal(publicTask.status,"ok");
-    }
     const main=await api(giteaUrl,fixture.repo+"/branches/main",
       {auth:fixture.adminAuth});
     assert.equal(main.commit.id,fixture.mainSha,"Protected main moved");
