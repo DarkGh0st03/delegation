@@ -17,7 +17,7 @@ const protection={
   dismiss_stale_approvals:true,block_on_outdated_branch:true
 };
 const reviews=[{id:7,state:"APPROVED",commit_id:a,user:owner}];
-const statuses=[{id:8,state:"success",context:"thesis/security-pipeline",
+const statuses=[{id:8,status:"success",context:"thesis/security-pipeline",
   creator:ci,sha:a}];
 function harness(patches:Record<string,unknown>={}){
   const data:Record<string,unknown>={
@@ -79,6 +79,8 @@ test("never accept no review, wrong human, stale approval or later rejection",as
     "human_approval_missing");
   await denied({[key]:[{...reviews[0],user:{...owner,is_bot:true}}]},
     "human_approval_missing");
+  await denied({[key]:[{...reviews[0],user:{...owner,type:"Bot"}}]},
+    "human_approval_missing");
 });
 test("no CI attestation, fake actor, latest pending and stale SHA all deny",async()=>{
   const key="/commits/"+a+"/statuses";
@@ -86,7 +88,7 @@ test("no CI attestation, fake actor, latest pending and stale SHA all deny",asyn
   await denied({[key]:[{...statuses[0],creator:{id:999,login:ci.login}}]},
     "security_pipeline_missing");
   await denied({[key]:[{...statuses[0],sha:c}]},"security_pipeline_missing");
-  await denied({[key]:[statuses[0],{...statuses[0],id:9,state:"pending"}]},
+  await denied({[key]:[statuses[0],{...statuses[0],id:9,status:"pending"}]},
     "security_pipeline_missing");
   await denied({[key]:[statuses[0],{...statuses[0],id:10,creator:owner}]},
     "security_pipeline_missing");
