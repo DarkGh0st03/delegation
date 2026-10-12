@@ -101,7 +101,7 @@ async function json(base,endpoint,options={}){
   return response.status===204?{}:response.json();
 }
 async function untilHealthy(base){
-  for(let attempt=0;attempt<120;attempt++){
+  for(let attempt=0;attempt<180;attempt++){
     try {
       const response=await fetch(base+"/api/healthz",{
         signal:AbortSignal.timeout(1200)
@@ -398,14 +398,18 @@ async function main(){
         "credentials_not_model_visible","temporary_repository_isolated"]
     })+"\n");
   }finally{
-    await built?.mcpToolset?.close();
-    active?.end(taskId);
-    await close(sharedServer);
-    await close(agentServer);
-    await close(gatewayServer);
-    if(containerStarted) {
-      stopDocker();
-      containerStarted=false;
+    try{
+      await built?.mcpToolset?.close();
+      active?.end(taskId);
+      await close(sharedServer);
+      await close(agentServer);
+      await close(gatewayServer);
+    }finally{
+      // Isolated Docker must stop even when cleanup of an MCP session fails.
+      if(containerStarted) {
+        stopDocker();
+        containerStarted=false;
+      }
     }
   }
 }
