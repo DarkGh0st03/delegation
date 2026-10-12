@@ -89,11 +89,24 @@ const adk = engine === "adk"
     }
   : undefined;
 
+// MCP is opt-in. All existing workflows remain on local FunctionTools by default.
+const sharedMcpUrl = process.env.ADK_MCP_SHARED_URL?.trim();
+if (sharedMcpUrl && engine !== "adk") {
+  throw new Error("ADK_MCP_SHARED_URL requires AGENT_RUNTIME_ENGINE=adk");
+}
+function pemSecret(name: string): string {
+  return required(name).replaceAll("\\n", "\n");
+}
+const mcpTaskSigning = sharedMcpUrl
+  ? {signingPrivateKeyPem:pemSecret("MCP_TASK_SIGNING_PRIVATE_KEY"),
+     signingPublicKeyPem:pemSecret("MCP_TASK_SIGNING_PUBLIC_KEY")}
+  : undefined;
 const runtime = await startSpecializedAgentServer({
   role,
   port,
   host: process.env.AGENT_BIND_HOST ?? "127.0.0.1",
-  ...(adk ? { adk } : {})
+  ...(adk ? { adk: {...adk, ...(sharedMcpUrl ? {mcpSharedUrl:sharedMcpUrl} : {})} } : {}),
+  ...(mcpTaskSigning ? {mcpTaskSigning} : {})
 });
 
 process.stdout.write(

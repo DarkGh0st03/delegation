@@ -1,4 +1,5 @@
-import { FunctionTool, LlmAgent, type BaseLlm, type LlmAgentConfig } from "@google/adk";
+import { FunctionTool, LlmAgent, MCPToolset, type BaseLlm, type LlmAgentConfig, type StreamableHTTPConnectionParams } from "@google/adk";
+import { normalizeMcpReadFileOutcome } from "./mcp-read-result.ts";
 import { z } from "zod";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import {
@@ -52,12 +53,18 @@ export interface AdkSpecializedAgentConfig {
   role: SpecializedAgentRole;
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
+  /** Only for the shared-MCP read_file spike. Credentials never enter model args. */
+  mcpReadFile?: {
+    endpoint: string;
+    bearerForRequest: () => string;
+  };
 }
 
 export interface AdkSpecializedAgent {
   profile: SpecializedAgentProfile;
   registry: ControlledToolRegistry;
   agent: LlmAgent;
+  mcpToolset?: MCPToolset;
 }
 
 /**
@@ -84,7 +91,10 @@ export function createAdkSpecializedAgent(
   };
 
   const registry = new ControlledToolRegistry(config.gatewayClient, profile.tools);
-  const tools = registry.modelTools.map((definition) => {
+  const tools = registry.modelTools
+    // MCP handles read_file only. All write/test FunctionTools stay unchanged.
+    .filter(definition => !config.mcpReadFile || definition.name !== "read_file")
+    .map((definition) => {
     const name = definition.name as SpecializedToolName;
     const parameters = config.scopeModelPaths && name === "read_file"
       ? SCHEMAS.read_file.extend({path: modelPathEnum(readablePaths)})
@@ -139,17 +149,54 @@ export function createAdkSpecializedAgent(
     });
   });
 
+  let mcpToolset: MCPToolset | undefined;
+  if (config.mcpReadFile) {
+    const endpoint = new URL(config.mcpReadFile.endpoint);
+    if (endpoint.pathname !== "/mcp" || endpoint.search || endpoint.hash ||
+        endpoint.username || endpoint.password ||
+        !(endpoint.protocol === "https:" ||
+          (endpoint.protocol === "http:" &&
+           ["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname)))) {
+      throw new Error("Shared MCP endpoint must be HTTPS or local-loopback HTTP /mcp");
+    }
+    // A fresh signed task bearer is fetched on EACH HTTP request.
+    // It is not stored in ADK session or visible to Gemini.
+    const authorizedFetch: typeof fetch = async (input, init) => {
+      const requestedUrl = new URL(
+        typeof input === "string" || input instanceof URL ? String(input) : input.url
+      );
+      if (requestedUrl.href !== endpoint.href) throw new Error("Unexpected shared MCP endpoint");
+      const headers = new Headers(init?.headers);
+      headers.set("authorization", "Bearer " + config.mcpReadFile!.bearerForRequest());
+      return fetch(input, {...init, headers, redirect: "error"});
+    };
+    const params: StreamableHTTPConnectionParams = {
+      type: "StreamableHTTPConnectionParams",
+      url: endpoint.toString(),
+      transportOptions: { fetch: authorizedFetch }
+    };
+    mcpToolset = new MCPToolset(params, ["read_file"]);
+  }
+
   const agent = new LlmAgent({
     name: `account_suspension_${config.role}`,
     description: profile.skill,
     model: config.model,
     instruction: profile.system_prompt,
-    tools,
+    tools: mcpToolset ? [...tools, mcpToolset] : tools,
+    // Observe only the MCP read_file; existing FunctionTools already emit outcomes.
+    ...(mcpToolset ? {afterToolCallback: ({tool, args, response}) => {
+      if (tool.name === "read_file") {
+        const payload = normalizeMcpReadFileOutcome(response, args);
+        config.onToolOutcome?.({name: "read_file", arguments: args, payload});
+      }
+      return undefined;
+    }} : {}),
     // Opt in only for the explicitly configured live Gemini Backend.
     ...(config.generateContentConfig
       ? {generateContentConfig: config.generateContentConfig} : {}),
     disallowTransferToParent: true,
     disallowTransferToPeers: true
   });
-  return { profile, registry, agent };
+  return { profile, registry, agent, ...(mcpToolset ? {mcpToolset} : {}) };
 }

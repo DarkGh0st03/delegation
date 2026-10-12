@@ -32,6 +32,7 @@ export interface AdkA2ATaskHandlerConfig {
   gatewayTimeoutMs?: number;
   /** Optional shared-MCP spike: trusted Agent worker task registry. */
   mcpTaskRegistry?: PrivateMcpTaskRegistry;
+  mcpSharedUrl?: string;
   fetchFn?: FetchLike;
 }
 
@@ -156,6 +157,9 @@ class BoundedModel extends BaseLlm {
  */
 export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): DeterministicTaskHandler {
   // Reject bad configuration at server startup, before accepting any requests.
+  if (Boolean(config.mcpSharedUrl) !== Boolean(config.mcpTaskRegistry)) {
+    throw new Error("Shared MCP requires both a task registry and shared URL");
+  }
   if (!config.adapterToken?.trim() || !config.adapterBaseUrl?.trim() || !config.gatewayBaseUrl?.trim()) {
     throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
   }
@@ -210,12 +214,17 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // Register only the ACTIVE A2A task. The registry retains this task-scoped
     // Gateway client and its private evidence; MCP never receives them.
     config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal);
-    const agent = createAdkSpecializedAgent({
+    const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
+      ...(config.mcpSharedUrl && config.mcpTaskRegistry ? {mcpReadFile:{
+        endpoint:config.mcpSharedUrl,
+        bearerForRequest: () => config.mcpTaskRegistry!.bearerFor(context.task_id)
+      }} : {}),
       ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
       ...(config.scopeModelPaths ? {scopeModelPaths: true} : {}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
-    }).agent;
+    });
+    const {agent, mcpToolset} = configured;
     const appName = "account_suspension_adk_" + context.role;
     const userId = "delegated_a2a";
     const sessionService = new InMemorySessionService();
@@ -266,6 +275,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         model.providerErrorCategory ?? diagnostic.category;
       reportFailure(category, model.budgetExceeded ? null : diagnostic);
       throw new Error("ADK protected model failure: " + category);
+    } finally {
+      // ADK holds MCP sessions; release them on success, denial or model failure.
+      await mcpToolset?.close();
     }
     if (model.budgetExceeded || model.providerErrorCategory || eventErrorCategory) {
       const category = model.budgetExceeded ? "model_turn_budget" :
