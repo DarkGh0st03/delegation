@@ -43,6 +43,16 @@ for(const [key,value] of Object.entries(required)){
 }
 const adapterUrl=process.env.ADAPTER_SMOKE_URL??"http://127.0.0.1:8090";
 const opaUrl=process.env.OPA_URL??"http://127.0.0.1:8181";
+// The script issues fresh DCs: prevent accidental use against a remote Adapter.
+for(const [label,address] of [["Adapter",adapterUrl],["OPA",opaUrl]]){
+  const parsed=new URL(address);
+  if(parsed.protocol!=="http:"||
+     !["localhost","127.0.0.1","[::1]"].includes(parsed.hostname)||
+     parsed.username||parsed.password||parsed.search||parsed.hash||
+     (parsed.pathname!=="/"&&parsed.pathname!=="")){
+    throw new Error(label+" must use a local-loopback development URL");
+  }
+}
 const image=process.env.GITEA_IMAGE??"docker.gitea.com/gitea:28.0.0";
 const suffix=randomBytes(5).toString("hex");
 const containerName="delegation-mcp-write-"+suffix;
