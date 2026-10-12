@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --experimental-strip-types ./src/main.ts"
+    "start": "node --experimental-strip-types ./src/main.ts",
+    "test": "node --experimental-strip-types --test ./test/*.test.ts"
   },
   "dependencies": {
     "@thesis/agent-runtime": "0.1.0"

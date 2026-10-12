@@ -5,6 +5,7 @@ import {
   startSpecializedAgentServer,
   type SpecializedAgentRole
 } from "@thesis/agent-runtime";
+import {resolveMcpToolFlags} from "./mcp-tool-flags.ts";
 
 function roleFromEnvironment(value: string | undefined): SpecializedAgentRole {
   if (
@@ -101,11 +102,13 @@ const mcpTaskSigning = sharedMcpUrl
   ? {signingPrivateKeyPem:pemSecret("MCP_TASK_SIGNING_PRIVATE_KEY"),
      signingPublicKeyPem:pemSecret("MCP_TASK_SIGNING_PUBLIC_KEY")}
   : undefined;
+const mcpToolFlags=resolveMcpToolFlags(process.env,role,engine,sharedMcpUrl);
 const runtime = await startSpecializedAgentServer({
   role,
   port,
   host: process.env.AGENT_BIND_HOST ?? "127.0.0.1",
-  ...(adk ? { adk: {...adk, ...(sharedMcpUrl ? {mcpSharedUrl:sharedMcpUrl} : {})} } : {}),
+  ...(adk ? { adk: {...adk, ...(sharedMcpUrl ? {mcpSharedUrl:sharedMcpUrl} : {}),
+    ...mcpToolFlags} } : {}),
   ...(mcpTaskSigning ? {mcpTaskSigning} : {})
 });
 
