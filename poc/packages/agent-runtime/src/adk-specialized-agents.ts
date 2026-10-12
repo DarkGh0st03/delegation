@@ -1,5 +1,6 @@
 import { FunctionTool, LlmAgent, MCPToolset, type BaseLlm, type LlmAgentConfig, type StreamableHTTPConnectionParams } from "@google/adk";
 import { normalizeMcpReadFileOutcome } from "./mcp-read-result.ts";
+import { normalizeMcpUpdateFileOutcome } from "./mcp-write-result.ts";
 import { createTaskBearerFetch } from "./mcp-task-fetch.ts";
 import { z } from "zod";
 import type { SpecializedAgentRole } from "./contracts.ts";
@@ -54,11 +55,13 @@ export interface AdkSpecializedAgentConfig {
   role: SpecializedAgentRole;
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
-  /** Only for the shared-MCP read_file spike. Credentials never enter model args. */
+  /** Shared MCP read_file opt-in. Credentials never enter model args. */
   mcpReadFile?: {
     endpoint: string;
     bearerForRequest: () => string;
   };
+  /** Independent opt-in: route update_file through the same shared MCP toolset. */
+  mcpUpdateFile?: boolean;
 }
 
 export interface AdkSpecializedAgent {
@@ -80,6 +83,9 @@ export interface AdkSpecializedAgent {
 export function createAdkSpecializedAgent(
   config: AdkSpecializedAgentConfig
 ): AdkSpecializedAgent {
+  if(config.mcpUpdateFile && !config.mcpReadFile){
+    throw new Error("MCP update_file requires a configured shared MCP endpoint");
+  }
   const profile = SPECIALIZED_AGENT_PROFILES[config.role];
   if (!profile) throw new Error("Unknown specialized agent role");
   // Path-scoped tool declarations are safe for every specialized role.
@@ -93,8 +99,11 @@ export function createAdkSpecializedAgent(
 
   const registry = new ControlledToolRegistry(config.gatewayClient, profile.tools);
   const tools = registry.modelTools
-    // MCP handles read_file only. All write/test FunctionTools stay unchanged.
-    .filter(definition => !config.mcpReadFile || definition.name !== "read_file")
+    // Default remains read_file-only: enabling the write tool is explicit.
+    .filter(definition => !config.mcpReadFile || (
+      definition.name !== "read_file" &&
+      !(config.mcpUpdateFile && definition.name === "update_file")
+    ))
     .map((definition) => {
     const name = definition.name as SpecializedToolName;
     const parameters = config.scopeModelPaths && name === "read_file"
@@ -161,7 +170,7 @@ export function createAdkSpecializedAgent(
       url: config.mcpReadFile.endpoint,
       transportOptions: { fetch: authorizedFetch }
     };
-    mcpToolset = new MCPToolset(params, ["read_file"]);
+    mcpToolset = new MCPToolset(params, config.mcpUpdateFile ? ["read_file","update_file"] : ["read_file"]);
   }
 
   const agent = new LlmAgent({
@@ -175,6 +184,9 @@ export function createAdkSpecializedAgent(
       if (tool.name === "read_file") {
         const payload = normalizeMcpReadFileOutcome(response, args);
         config.onToolOutcome?.({name: "read_file", arguments: args, payload});
+      }else if(tool.name === "update_file" && config.mcpUpdateFile){
+        const payload = normalizeMcpUpdateFileOutcome(response, args);
+        config.onToolOutcome?.({name:"update_file",arguments:args,payload});
       }
       return undefined;
     }} : {}),

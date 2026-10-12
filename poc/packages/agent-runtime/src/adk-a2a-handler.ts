@@ -33,6 +33,8 @@ export interface AdkA2ATaskHandlerConfig {
   /** Optional shared-MCP spike: trusted Agent worker task registry. */
   mcpTaskRegistry?: PrivateMcpTaskRegistry;
   mcpSharedUrl?: string;
+  /** Explicitly opt update_file into MCP; read_file remains the default. */
+  mcpUpdateFile?: boolean;
   fetchFn?: FetchLike;
 }
 
@@ -157,6 +159,9 @@ class BoundedModel extends BaseLlm {
  */
 export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): DeterministicTaskHandler {
   // Reject bad configuration at server startup, before accepting any requests.
+  if (config.mcpUpdateFile && !config.mcpSharedUrl) {
+    throw new Error("Shared MCP update_file requires MCP to be configured");
+  }
   if (Boolean(config.mcpSharedUrl) !== Boolean(config.mcpTaskRegistry)) {
     throw new Error("Shared MCP requires both a task registry and shared URL");
   }
@@ -216,6 +221,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal);
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
+      ...(config.mcpUpdateFile ? {mcpUpdateFile:true} : {}),
       ...(config.mcpSharedUrl && config.mcpTaskRegistry ? {mcpReadFile:{
         endpoint:config.mcpSharedUrl,
         bearerForRequest: () => config.mcpTaskRegistry!.bearerFor(context.task_id)

@@ -1,5 +1,6 @@
 import { issueTaskToken, verifyTaskToken, bearerToken, type AgentRole, type TaskClaims } from "../../../mcp-shared/src/task-token.ts";
-import { parseReadFileArgs } from "../../../mcp-shared/src/catalog.ts";
+import { parseReadFileArgs, parseUpdateFileArgs } from "../../../mcp-shared/src/catalog.ts";
+import { SPECIALIZED_AGENT_PROFILES } from "./specialized-agents.ts";
 import type { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 
 export class PrivateMcpTaskError extends Error {
@@ -94,14 +95,21 @@ export class PrivateMcpTaskRegistry {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     const payload = request as Record<string,unknown>;
-    if (Object.keys(payload).sort().join(",") !== "arguments,tool" || payload.tool !== "read_file") {
+    if (Object.keys(payload).sort().join(",") !== "arguments,tool" || (payload.tool !== "read_file" && payload.tool !== "update_file")) {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     let args;
-    try { args = parseReadFileArgs(payload.arguments); }
-    catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
+    try {
+      args = payload.tool === "read_file"
+        ? parseReadFileArgs(payload.arguments)
+        : parseUpdateFileArgs(payload.arguments);
+    } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
+    if (payload.tool === "update_file" &&
+        !SPECIALIZED_AGENT_PROFILES[this.#role].writable_paths.includes(args.path)) {
+      throw new PrivateMcpTaskError("invalid_tool_call");
+    }
 
-    const result = await task.client.invoke("read_file", args);
+    const result = await task.client.invoke(payload.tool, args);
     // If cancellation raced with the network call, never advertise success.
     if (task.signal?.aborted || this.#active.get(claims.task_id) !== task) {
       throw new PrivateMcpTaskError("inactive_task");

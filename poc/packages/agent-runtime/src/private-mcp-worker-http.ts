@@ -5,7 +5,7 @@ import {PrivateMcpTaskError,PrivateMcpTaskRegistry} from "./private-mcp-task-reg
 
 /** The only bridge from the shared MCP service into private per-A2A-task state. */
 export function attachPrivateMcpWorker(app:Express,registry:PrivateMcpTaskRegistry):void {
-  app.post("/internal/mcp-tool-call",express.json({limit:"16kb",strict:true}),async(req,res)=>{
+  app.post("/internal/mcp-tool-call",express.json({limit:"128kb",strict:true}),async(req,res)=>{
     res.setHeader("cache-control","no-store");
     try {
       const result=await registry.invoke(req.header("authorization"),req.body);

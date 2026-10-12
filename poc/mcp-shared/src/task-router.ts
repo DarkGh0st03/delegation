@@ -1,5 +1,5 @@
 import type {AgentRole, TaskClaims} from "./task-token.ts";
-import {parseReadFileArgs} from "./catalog.ts";
+import {parseReadFileArgs,parseUpdateFileArgs} from "./catalog.ts";
 export type WorkerEndpoints = Readonly<Record<AgentRole,{baseUrl:string}>>;
 /**
  * MCP keeps only public keys and routes to an Agent's trusted private worker.
@@ -19,14 +19,20 @@ export class TaskRouter {
     this.#workers=workers; this.#fetch=fetchFn;
   }
   async readFile(claims: Readonly<TaskClaims>, taskToken: string, raw: unknown): Promise<unknown> {
-    const args=parseReadFileArgs(raw);
+    return this.#invoke(claims,taskToken,"read_file",parseReadFileArgs(raw));
+  }
+  async updateFile(claims: Readonly<TaskClaims>, taskToken: string, raw: unknown): Promise<unknown> {
+    return this.#invoke(claims,taskToken,"update_file",parseUpdateFileArgs(raw));
+  }
+  async #invoke(claims: Readonly<TaskClaims>, taskToken: string,
+    tool: "read_file"|"update_file", args: Record<string,unknown>): Promise<unknown> {
     const url=new URL("/internal/mcp-tool-call", this.#workers[claims.role].baseUrl);
     let response: Response;
     try {
       response=await this.#fetch(url,{
         method:"POST",
         headers:{authorization:"Bearer "+taskToken,"content-type":"application/json"},
-        body:JSON.stringify({tool:"read_file",arguments:args}),
+        body:JSON.stringify({tool,arguments:args}),
         redirect:"error",
         signal:AbortSignal.timeout(10000)
       });
