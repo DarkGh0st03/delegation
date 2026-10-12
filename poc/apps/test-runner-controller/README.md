@@ -91,3 +91,36 @@ First run the offline tests:
 
 The real positive acceptance case, external event trigger, and a protected
 exact-SHA merge endpoint remain separate milestones.
+
+## Isolated real Docker security CI negative smoke (safe default)
+
+Before configuring the privileged CI CLI against a persistent Gitea, run
+`security-ci:isolated-negative-smoke`. It creates a **temporary, volume-free
+Gitea Docker container**, private org and repo, a separate read-only Runner
+identity and an isolated trusted CI status publisher identity. It does not
+touch the persistent Gitea container, active branches, GitHub, MCP or Rust.
+
+It constructs the real `IsolatedDockerRunnerExecutor` with the immutable
+researcher acceptance suite **enabled**, requests the exact feature SHA,
+and intentionally fails `npm ci` because the fixture lacks a lockfile.
+The actual Gitea commit must receive precisely `pending` and `failure`
+statuses from the isolated trusted CI account under
+`thesis/security-pipeline`. It asserts there are zero success statuses,
+zero PRs, zero merges, and untouched main/feature SHAs. Both temporary
+containers and their logs are removed afterwards.
+
+With Docker Desktop running and cached Gitea + Node images:
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+npm --prefix poc run security-ci:isolated-negative-smoke -w @thesis/test-runner-controller
+```
+
+Success must include
+`"event":"trusted_security_ci_real_docker_negative_smoke"`,
+`"status":"PASS"` and `"gitea_statuses":["pending","failure"]`.
+This is intentionally NOT a green acceptance test, and cannot approve or
+merge any PR.
