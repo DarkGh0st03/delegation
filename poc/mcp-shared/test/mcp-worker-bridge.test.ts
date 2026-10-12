@@ -113,7 +113,7 @@ test("shared MCP -> private active task -> Gateway prepare -> Adapter VP -> Gate
   try {
     const backendClient=await makeClient(sharedUrl,registry.bearerFor("task-A"));
     clients.push(backendClient);
-    assert.deepEqual((await backendClient.listTools()).tools.map(t=>t.name),["read_file","update_file"]);
+    assert.deepEqual((await backendClient.listTools()).tools.map(t=>t.name),["read_file","update_file","create_file"]);
     const result=await backendClient.callTool({name:"read_file",arguments:{branch,path}});
     assert.notEqual(result.isError,true);
     const output=result.structuredContent as {ok:boolean;result:{content:string}};

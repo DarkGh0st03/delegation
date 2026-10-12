@@ -234,7 +234,7 @@ need their own isolated authorization tests before integration.
 
 ## Experimental MCP update_file (write tool NOT enabled by default in ADK)
 
-The shared Streamable HTTP service now advertises `update_file` alongside
+The shared Streamable HTTP service now advertises `update_file` and `create_file` alongside
 `read_file`. The trusted private worker accepts this operation only for an
 ACTIVE, role-bound task with an allowed writable path; the Gateway and real
 Delegation Credential/Verifier/OPA still make the authoritative authorization
@@ -297,3 +297,21 @@ No Gemini/OpenAI requests. A successful result prints
 
 **Coverage boundary:** this validates a real write through the MCP tool, but
 not yet multi-agent A2A write completion or approval-gated merges.
+
+## Experimental create_file — Test Agent only
+
+`create_file` is advertised on the SAME shared MCP endpoint. It only accepts
+the exact path `tests/e2e/account-suspension.spec.ts`, and a maximum source
+size of 60 KiB UTF-8. The private task registry rejects all create requests by
+default. Activation requires the Test Agent A2A/ADK configuration
+`mcpCreateFile:true`, a matching active task registry and shared MCP endpoint.
+The private worker checks the task role and its precise creatable path before
+calling the unchanged Gateway; DC/VP/OPA/Gitea remain authoritative.
+
+Without the flag, Test Agent's existing `create_file` FunctionTool is
+unchanged. Backend/Frontend cannot enable this tool. The MCP result adapter
+only accepts an exact Gitea-confirmed create commit and blob SHA.
+
+Only synthetic create_file regressions are included so far. Do not infer that
+real isolated Gitea or complete protected A2A write/create was validated.
+`run_tests` remains a FunctionTool until a separate explicit integration.
