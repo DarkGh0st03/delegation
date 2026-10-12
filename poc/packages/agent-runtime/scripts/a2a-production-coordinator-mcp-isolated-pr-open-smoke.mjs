@@ -27,7 +27,8 @@ import {
   DelegatedA2ARoleRunner,
   DeterministicOrchestratorAuthorityIssuer,
   OrchestratorProtectedGatewayClient,
-  SoftwareEngineerAuthorityBootstrap
+  SoftwareEngineerAuthorityBootstrap,
+  GiteaMergeReadinessVerifier,MergeReadinessDenied
 } from "../../orchestrator-runtime/src/index.ts";
 import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
 import {createGatewayHttpServer} from "../../../apps/gateway/src/http.ts";
@@ -182,6 +183,23 @@ async function bootstrapGitea(url){
   }
   const adminAuth=basic(tokens.adminUser,tokens.adminPassword);
   const gatewayAuth=basic(tokens.gatewayUser,tokens.gatewayPassword);
+  // Synthetic identities are CREATED ONLY in the disposable Gitea.
+  // No synthetic account is permitted to approve or post CI statuses.
+  const readonlyName="auditor-"+id;
+  const reviewerName="reviewer-"+id;
+  const ciName="security-ci-"+id;
+  const auditorPassword=randomBytes(24).toString("hex");
+  for(const [username,password,email] of [
+    [readonlyName,auditorPassword,"audit"],
+    [reviewerName,randomBytes(24).toString("hex"),"review"],
+    [ciName,randomBytes(24).toString("hex"),"security"]
+  ]){
+    docker(["exec","--user","1000:1000",container,
+      "gitea","admin","user","create",
+      "--username",username,"--password",password,
+      "--email",email+"-"+id+"@localhost.invalid",
+      "--must-change-password=false"],"create isolated readiness identity");
+  }
   await api(url,"/api/v1/orgs",{method:"POST",auth:adminAuth,
     label:"create private org",body:{username:"thesis",visibility:"private"}});
   await api(url,"/api/v1/orgs/thesis/repos",{
@@ -227,13 +245,45 @@ async function bootstrapGitea(url){
   });
   assert.ok(typeof token.sha1==="string"&&token.sha1.length>=20);
   await api(url,repo,{auth:"token "+token.sha1});
+
+  // A separate READ-ONLY repository account queries approval/CI evidence.
+  await api(url,repo+"/collaborators/"+encodeURIComponent(readonlyName),{
+    method:"PUT",auth:adminAuth,expected:[204],
+    body:{permission:"read"},label:"grant disposable auditor read-only"
+  });
+  const readCredential=await api(url,"/api/v1/users/"+
+    encodeURIComponent(readonlyName)+"/tokens",{
+      method:"POST",auth:basic(readonlyName,auditorPassword),
+      label:"create read-only verifier token",body:{
+        name:"pr-merge-readiness-"+id,scopes:["read:repository","read:user"]
+      }
+    });
+  assert.ok(typeof readCredential.sha1==="string"&&readCredential.sha1.length>=20);
+  const seenRepo=await api(url,repo,{
+    auth:"token "+readCredential.sha1,label:"check read-only auditor access"
+  });
+  assert.equal(seenRepo.full_name,"thesis/iam-console-poc");
+  const reviewer=await api(url,"/api/v1/users/"+encodeURIComponent(reviewerName),{
+    auth:adminAuth,label:"resolve synthetic reviewer identity"
+  });
+  const security=await api(url,"/api/v1/users/"+encodeURIComponent(ciName),{
+    auth:adminAuth,label:"resolve synthetic CI identity"
+  });
+  for(const [actor,name] of [[reviewer,reviewerName],[security,ciName]]){
+    assert.equal(actor.login,name);
+    assert.ok(Number.isSafeInteger(actor.id)&&actor.id>0);
+  }
   // The production Coordinator must create this branch, not fixture setup.
   const absentBranch=await fetch(url+repo+
     "/branches/feature%2Faccount-suspension",{
       headers:{authorization:adminAuth},signal:AbortSignal.timeout(8000)
     });
   assert.equal(absentBranch.status,404,"Production feature branch exists before Coordinator");
-  return {adminAuth,token:token.sha1,mainSha:frozenMainSha,repo};
+  return {adminAuth,token:token.sha1,mainSha:frozenMainSha,repo,
+    mergeReadToken:readCredential.sha1,
+    mergeReviewer:{id:reviewer.id,login:reviewer.login},
+    mergeCI:{id:security.id,login:security.login}
+  };
 }
 async function main(){
   assert.equal((await api(adapter,"/health",{label:"Rust Adapter health"})).status,"ok");
@@ -468,6 +518,43 @@ async function main(){
       "Smoke must not submit a review or forge a human approval");
     assert.equal(coordinated.workflow.pull_request?.number,pr.number);
     assert.equal(coordinated.workflow.pull_request?.head_revision,testedCommit);
+
+    // First LIVE Gitea read-only merge gate test: no review or CI status
+    // has been created. A simulated Runner PASS must never authorize merge.
+    // Distinct synthetic reviewer/CI accounts exist only to demonstrate
+    // that an ID cannot be invented or supplied by an LLM.
+    const verifier=new GiteaMergeReadinessVerifier({
+      giteaBaseUrl:giteaUrl,
+      readToken:fixture.mergeReadToken,
+      humanReviewer:fixture.mergeReviewer,
+      securityPipelineActor:fixture.mergeCI
+    });
+    let denial=null;
+    try{
+      await verifier.verify({pullRequestNumber:pr.number,
+        expectedHeadSha:testedCommit});
+    }catch(error){
+      if(!(error instanceof MergeReadinessDenied))throw error;
+      denial=error.reason;
+    }
+    assert.notEqual(denial,null,
+      "Unsafe: fake Runner PASS and no real approval/CI made merge gate READY");
+    assert.ok([
+      "human_approval_missing",
+      "pr_not_mergeable",
+      "branch_protection_insufficient"
+    ].includes(denial),
+      "Unexpected live Gitea readiness denial: "+denial);
+    // Independently verify the absence of CI status, even if Gitea reports
+    // non-mergeability before the verifier reaches its CI evidence check.
+    const statusUrl=fixture.repo+"/commits/"+testedCommit+"/statuses";
+    const statuses=await api(giteaUrl,statusUrl,{
+      auth:"token "+fixture.mergeReadToken,
+      label:"verify no trusted security pipeline status"
+    });
+    assert.ok(Array.isArray(statuses)&&
+      statuses.every(item=>item.context!=="thesis/security-pipeline"),
+      "Test fixture unexpectedly contains a security-pipeline attestation");
     process.stdout.write(JSON.stringify({
       event:"a2a_production_coordinator_mcp_isolated_pr_open",
       status:"PASS",model:"scripted_offline",
@@ -483,12 +570,18 @@ async function main(){
       coordinator_result:"PR_CREATED_PENDING_HUMAN_APPROVAL",
       pull_request_number:coordinated.pull_request.pull_request_number,
       attempted_pr_calls:prCalls,merge_calls:0,
+      merge_readiness:"DENIED",
+      merge_readiness_denial:denial,
+      security_pipeline_context_present:false,
       tests:["real_gateway_branch_and_pr_creation",
         "production_root_and_role_child_delegation",
         "backend_real_a2a_mcp_update","frontend_real_a2a_mcp_update",
         "test_real_mcp_create","fake_runner_result_explicitly_labeled",
         "production_coordinator_positive_gate",
-        "pr_open_no_reviews_no_merge","exact_branch_sha","main_unchanged",
+        "pr_open_no_reviews_no_merge",
+        "live_read_only_merge_readiness_denied",
+        "no_trusted_security_pipeline_status",
+        "exact_branch_sha","main_unchanged",
         "no_model_credential_leak","disposable_gitea_only"]
     })+"\n");
   }finally{

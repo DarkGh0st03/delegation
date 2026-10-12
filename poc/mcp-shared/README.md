@@ -602,3 +602,23 @@ Offline tests (no Gemini, no Gitea mutations):
 ```bash
 npm --prefix poc run test -w @thesis/orchestrator-runtime
 ```
+
+## Live Gitea merge-readiness negative check (isolated PR)
+
+The existing `a2a:mcp:production-pr-open-smoke` now additionally queries
+the temporary real Gitea PR through `GiteaMergeReadinessVerifier`.
+It creates three separate synthetic accounts **inside that disposable
+Gitea only**: a read-only auditor, a placeholder reviewer and a placeholder
+CI identity. No actor creates a human review or publishes a CI status.
+
+A fake Runner PASS is never sufficient to pass this independent gate.
+The test requires `merge_readiness:"DENIED"` and confirms the absence of
+a real `thesis/security-pipeline` status. The precise early rejection reason
+from live Gitea is surfaced as `merge_readiness_denial` (e.g.
+`human_approval_missing`, `pr_not_mergeable`, or
+`branch_protection_insufficient`). The pipeline and human approval
+remain genuinely absent: the synthetic actors are NOT evidence.
+
+This is a negative integration exercise with real protected branch state;
+the positive ready path still requires actual independently trusted
+human/CI identities and a genuine security pipeline on an exact Git SHA.
