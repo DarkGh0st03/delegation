@@ -485,3 +485,42 @@ A successful smoke event is
 This does NOT exercise the production SequentialCoordinator itself, the
 positive test/acceptance gate, PR creation or human-approved merge. Those
 need separate validation.
+
+## Production SequentialCoordinator integration with shared MCP (fail-closed)
+
+This opt-in test runs the **actual** `AccountSuspensionSequentialCoordinator`
+with `SoftwareEngineerAuthorityBootstrap`,
+`OrchestratorProtectedGatewayClient`,
+`DeterministicOrchestratorAuthorityIssuer`,
+`DelegatedA2ARoleRunner`, and `DeterministicA2AOrchestrator`.
+The role runner is wrapped only to assign unique development DC IDs
+and verify Gitea commits after each successful role. These are the
+production coordination and authority classes, not a handwritten
+substitute for the workflow.
+
+The Coordinator creates `feature/account-suspension` itself through
+real Gateway / Rust / OPA against a **SECOND disposable Gitea**.
+Backend and Frontend then update files over A2A -> native ADK -> ONE
+shared MCP -> real Gateway, and Test creates its E2E file.
+The **authenticated HTTP Runner is a deliberately FAILING stub**, so
+the real Test Agent must not produce a successful Artifact and
+the Coordinator must abort **before** any PR. Isolated `main` must stay
+unchanged. The Gateway instance and Gitea used for earlier PoC tests
+are never selected; no PR/merge operation is sent.
+
+Run with local Rust Adapter, OPA and Docker Desktop active; no Gemini,
+no real Runner Docker job, no persistent repository writes:
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+npm --prefix poc/packages/agent-runtime run a2a:mcp:production-coordinator-smoke
+```
+
+Expected success event:
+`a2a_production_coordinator_mcp_isolated_fail_closed` with `status:"PASS"`.
+This only validates the **negative Coordinator gate**. A full
+passing researcher acceptance, PR creation and explicit human-approved
+merge remain separate work.

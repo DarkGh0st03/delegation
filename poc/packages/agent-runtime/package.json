@@ -12,7 +12,8 @@
     "adk:mcp:isolated-create-smoke": "node --experimental-strip-types ./scripts/adk-isolated-mcp-create-smoke.mjs",
     "adk:mcp:isolated-real-runner-smoke": "node --experimental-strip-types ./scripts/adk-isolated-mcp-real-runner-smoke.mjs",
     "a2a:mcp:three-role-read-smoke": "node --experimental-strip-types ./scripts/a2a-three-roles-shared-mcp-read-smoke.mjs",
-    "a2a:mcp:isolated-sequential-write-smoke": "node --experimental-strip-types ./scripts/a2a-shared-mcp-isolated-sequential-write-smoke.mjs"
+    "a2a:mcp:isolated-sequential-write-smoke": "node --experimental-strip-types ./scripts/a2a-shared-mcp-isolated-sequential-write-smoke.mjs",
+    "a2a:mcp:production-coordinator-smoke": "node --experimental-strip-types ./scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "1.3.0",
