@@ -1,5 +1,6 @@
 import { FunctionTool, LlmAgent, MCPToolset, type BaseLlm, type LlmAgentConfig, type StreamableHTTPConnectionParams } from "@google/adk";
 import { normalizeMcpReadFileOutcome } from "./mcp-read-result.ts";
+import { createTaskBearerFetch } from "./mcp-task-fetch.ts";
 import { z } from "zod";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import {
@@ -151,28 +152,13 @@ export function createAdkSpecializedAgent(
 
   let mcpToolset: MCPToolset | undefined;
   if (config.mcpReadFile) {
-    const endpoint = new URL(config.mcpReadFile.endpoint);
-    if (endpoint.pathname !== "/mcp" || endpoint.search || endpoint.hash ||
-        endpoint.username || endpoint.password ||
-        !(endpoint.protocol === "https:" ||
-          (endpoint.protocol === "http:" &&
-           ["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname)))) {
-      throw new Error("Shared MCP endpoint must be HTTPS or local-loopback HTTP /mcp");
-    }
-    // A fresh signed task bearer is fetched on EACH HTTP request.
-    // It is not stored in ADK session or visible to Gemini.
-    const authorizedFetch: typeof fetch = async (input, init) => {
-      const requestedUrl = new URL(
-        typeof input === "string" || input instanceof URL ? String(input) : input.url
-      );
-      if (requestedUrl.href !== endpoint.href) throw new Error("Unexpected shared MCP endpoint");
-      const headers = new Headers(init?.headers);
-      headers.set("authorization", "Bearer " + config.mcpReadFile!.bearerForRequest());
-      return fetch(input, {...init, headers, redirect: "error"});
-    };
+    // The bearer rotates per HTTP call. No token is stored in Gemini state.
+    const authorizedFetch = createTaskBearerFetch(
+      config.mcpReadFile.endpoint, config.mcpReadFile.bearerForRequest
+    );
     const params: StreamableHTTPConnectionParams = {
       type: "StreamableHTTPConnectionParams",
-      url: endpoint.toString(),
+      url: config.mcpReadFile.endpoint,
       transportOptions: { fetch: authorizedFetch }
     };
     mcpToolset = new MCPToolset(params, ["read_file"]);

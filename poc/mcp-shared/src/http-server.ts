@@ -18,6 +18,11 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
       reply(res,200,{status:"ok",service:"thesis-shared-mcp",tool_count:1}); return;
     }
     if (req.url!=="/mcp") {reply(res,404,{error:"not_found"});return;}
+    // MCP Streamable HTTP requires protecting local listeners from
+    // cross-origin browser/DNS-rebinding requests.
+    if (req.headers.origin !== undefined) {
+      reply(res,403,{error:"origin_not_allowed"});return;
+    }
     if (req.method!=="POST") {reply(res,405,{error:"method_not_allowed"});return;}
     let token: string;
     let claims;
@@ -25,6 +30,23 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
       token=bearerToken(req.headers.authorization);
       claims=verifyTaskToken(token,config.verificationKeys);
     } catch {reply(res,401,{error:"unauthorized"});return;}
+    // Strictly cap incoming JSON before handing it to the MCP transport.
+    // The current spike only implements read_file (no large file uploads).
+    const MAX_BODY=128*1024;
+    const chunks:Buffer[]=[];
+    let total=0;
+    let parsedBody:unknown;
+    try {
+      for await (const part of req) {
+        const bytes=Buffer.isBuffer(part)?part:Buffer.from(part);
+        total+=bytes.length;
+        if (total>MAX_BODY) throw new Error("body_too_large");
+        chunks.push(bytes);
+      }
+      parsedBody=JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      reply(res,400,{error:"invalid_or_oversized_mcp_json"});return;
+    }
     const mcp=new McpServer({name:"thesis-shared-mcp",version:"0.1.0"});
     mcp.registerTool(MCP_READ_FILE.name,{
       description:MCP_READ_FILE.description,
@@ -55,7 +77,7 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
     });
     try {
       await mcp.connect(transport);
-      await transport.handleRequest(req,res);
+      await transport.handleRequest(req,res,parsedBody);
     } catch {
       if (!res.headersSent) reply(res,500,{error:"mcp_transport_error"});
     } finally {
