@@ -73,7 +73,7 @@ test("native MCP Streamable HTTP tools/list and tools/call reuse one shared serv
           path:"apps/backend/src/users/user.model.ts"
         }
       });
-      assert.equal(result.isError,undefined);
+      assert.notEqual(result.isError,true);
       const sc=result.structuredContent as {ok:boolean;result:{content:string}};
       assert.equal(sc.ok,true);
       assert.equal(sc.result.content,"code");
