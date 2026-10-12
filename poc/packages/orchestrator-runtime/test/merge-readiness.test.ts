@@ -29,13 +29,13 @@ function harness(patches:Record<string,unknown>={}){
     ["/commits/"+a+"/statuses"]:statuses,
     ...patches
   };
-  const calls:Array<{url:string;method:string}>= [];
+  const calls:Array<{url:string;method:string;authorization:string}>= [];
   const fetchFn:typeof fetch=async(input,init)=>{
     const u=new URL(String(input));
     const path=u.pathname.replace("/api/v1/repos/thesis/iam-console-poc","");
-    const cleaned=path.endsWith("/reviews")||path.endsWith("/statuses")
-      ?path:path;
-    calls.push({url:String(input),method:init?.method??"GET"});
+    const cleaned=path;
+    calls.push({url:String(input),method:init?.method??"GET",
+      authorization:new Headers(init?.headers).get("authorization")??""});
     const v=data[cleaned];
     return new Response(JSON.stringify(v??{error:"not_found"}),{
       status:v===undefined?404:200,
@@ -45,6 +45,7 @@ function harness(patches:Record<string,unknown>={}){
   const make=()=>new GiteaMergeReadinessVerifier({
     giteaBaseUrl:"http://127.0.0.1:3030",
     readToken:"read-only-fixture-token",
+    branchProtectionReadToken:"separate-protection-inspector-token",
     humanReviewer:owner,securityPipelineActor:ci,fetchFn
   });
   return {make,calls};
@@ -132,4 +133,19 @@ test("trusted CI service actor may be a designated bot; human reviewer may not",
   assert.equal((await good.make().verify({pullRequestNumber:3,expectedHeadSha:a})).ready,true);
   await denied({"/pulls/3/reviews":[{...reviews[0],user:{...owner,is_bot:true}}]},
     "human_approval_missing");
+});
+
+test("only protected branch settings use a separate read-scoped inspection identity",async()=>{
+  const {make,calls}=harness();
+  await make().verify({pullRequestNumber:3,expectedHeadSha:a});
+  assert.equal(calls.length,7);
+  assert.deepEqual(calls.filter(call=>
+    call.authorization==="token separate-protection-inspector-token"
+  ).map(call=>new URL(call.url).pathname),[
+    "/api/v1/repos/thesis/iam-console-poc/branch_protections/main"
+  ]);
+  assert.ok(calls.filter(call=>
+    !call.url.endsWith("/branch_protections/main")
+  ).every(call=>call.authorization==="token read-only-fixture-token"));
+  assert.ok(calls.every(call=>call.method==="GET"));
 });

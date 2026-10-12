@@ -259,6 +259,25 @@ async function bootstrapGitea(url){
       }
     });
   assert.ok(typeof readCredential.sha1==="string"&&readCredential.sha1.length>=20);
+  // Gitea's rule-inspection endpoint can require an administrator account,
+  // even while branch contents and PRs are visible to repo readers.
+  // Obtain a SECOND read:repository-only PAT, restricted in code to exactly
+  // one GET /branch_protections/main endpoint (no write/merge APIs).
+  const protectionCredential=await api(url,"/api/v1/users/"+
+    encodeURIComponent(tokens.adminUser)+"/tokens",{
+    method:"POST",auth:adminAuth,label:"create read-scoped rule inspection token",
+    body:{name:"merge-rule-read-"+id,scopes:["read:repository","read:user"]}
+  });
+  assert.ok(typeof protectionCredential.sha1==="string"&&
+    protectionCredential.sha1.length>=20);
+  const observedRule=await api(url,repo+"/branch_protections/main",{
+    auth:"token "+protectionCredential.sha1,
+    label:"verify read-scoped branch protection inspection"
+  });
+  assert.equal(observedRule.branch_name,"main");
+  assert.equal(observedRule.enable_push,false);
+  assert.equal(observedRule.enable_force_push,false);
+  assert.ok(observedRule.required_approvals>=1);
   const seenRepo=await api(url,repo,{
     auth:"token "+readCredential.sha1,label:"check read-only auditor access"
   });
@@ -281,6 +300,7 @@ async function bootstrapGitea(url){
   assert.equal(absentBranch.status,404,"Production feature branch exists before Coordinator");
   return {adminAuth,token:token.sha1,mainSha:frozenMainSha,repo,
     mergeReadToken:readCredential.sha1,
+    mergeProtectionReadToken:protectionCredential.sha1,
     mergeReviewer:{id:reviewer.id,login:reviewer.login},
     mergeCI:{id:security.id,login:security.login}
   };
@@ -526,6 +546,7 @@ async function main(){
     const verifier=new GiteaMergeReadinessVerifier({
       giteaBaseUrl:giteaUrl,
       readToken:fixture.mergeReadToken,
+      branchProtectionReadToken:fixture.mergeProtectionReadToken,
       humanReviewer:fixture.mergeReviewer,
       securityPipelineActor:fixture.mergeCI
     });
@@ -550,8 +571,7 @@ async function main(){
       "Unsafe: fake Runner PASS and no real approval/CI made merge gate READY");
     assert.ok([
       "human_approval_missing",
-      "pr_not_mergeable",
-      "branch_protection_insufficient"
+      "pr_not_mergeable"
     ].includes(denial),
       "Unexpected live Gitea readiness denial: "+denial);
     // Independently verify the absence of CI status, even if Gitea reports

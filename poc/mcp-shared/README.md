@@ -622,3 +622,20 @@ remain genuinely absent: the synthetic actors are NOT evidence.
 This is a negative integration exercise with real protected branch state;
 the positive ready path still requires actual independently trusted
 human/CI identities and a genuine security pipeline on an exact Git SHA.
+
+## Privileged branch protection visibility on Gitea
+
+Some Gitea installations permit repository read-only collaborators to inspect
+PRs, reviews and statuses but restrict
+`GET /repos/{owner}/{repo}/branch_protections/main` to repository admins.
+The verifier can therefore accept a separate `branchProtectionReadToken`.
+The ordinary `readToken` remains read-only and is used for every other
+endpoint; the rule-inspection token is selected **only** for that exact GET.
+
+In the disposable PR smoke, the rule-inspection PAT belongs to the
+temporary admin but is scoped to `read:repository` and `read:user`.
+The source code never uses it for review, status publication or merge.
+The real deployment must supply this trusted token from secure operator
+configuration (never from an ADK model or user-controlled task metadata).
+If rule inspection is unavailable, the verifier STILL fails closed; it does
+not skip the protection check. No real human approval or CI success is added.

@@ -39,6 +39,10 @@ export interface MergeReadinessConfig{
   giteaBaseUrl:string;
   /** Read-only repository credential. No PR merge/approval/status permission. */
   readToken:string;
+  /** A separate read-scoped token from a repository admin is required by
+   * Gitea deployments that restrict branch-protection inspection.
+   * It is NEVER used to approve, publish CI statuses, or merge. */
+  branchProtectionReadToken?:string;
   humanReviewer:TrustedGiteaActor;
   /** Must be a separate trusted CI security pipeline service account. */
   securityPipelineActor:TrustedGiteaActor;
@@ -81,6 +85,7 @@ function deny(code:MergeReadinessReason):never{
 export class GiteaMergeReadinessVerifier{
   readonly #base:string;
   readonly #token:string;
+  readonly #protectionReadToken:string;
   readonly #human:TrustedGiteaActor;
   readonly #pipeline:TrustedGiteaActor;
   readonly #timeoutMs:number;
@@ -105,6 +110,7 @@ export class GiteaMergeReadinessVerifier{
     }
     this.#base=url.origin;
     this.#token=config.readToken;
+    this.#protectionReadToken=config.branchProtectionReadToken??config.readToken;
     this.#human=config.humanReviewer;
     this.#pipeline=config.securityPipelineActor;
     this.#timeoutMs=timeout;
@@ -116,7 +122,13 @@ export class GiteaMergeReadinessVerifier{
     try{
       response=await this.#fetch(this.#base+"/api/v1/repos/"+REPO+path,{
         method:"GET",
-        headers:{authorization:"token "+this.#token,accept:"application/json"},
+        // Keep the privileged-scope identity isolated to a single fixed
+        // read-only inspection endpoint; all other evidence uses a distinct
+        // low-privilege repository-reader token.
+        headers:{authorization:"token "+(
+          path==="/branch_protections/main"
+            ? this.#protectionReadToken : this.#token
+        ),accept:"application/json"},
         redirect:"error",
         signal:AbortSignal.timeout(this.#timeoutMs)
       });
