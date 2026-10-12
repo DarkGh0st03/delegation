@@ -20,6 +20,8 @@ import {
 } from "./executor.ts";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import { createAdkA2ATaskHandler, type AdkA2ATaskHandlerConfig } from "./adk-a2a-handler.ts";
+import { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
+import { attachPrivateMcpWorker } from "./private-mcp-worker-http.ts";
 
 export interface SpecializedAgentServerOptions {
   role: SpecializedAgentRole;
@@ -29,6 +31,8 @@ export interface SpecializedAgentServerOptions {
   artifactBuilder?: DeterministicArtifactPayloadBuilder;
   taskHandler?: DeterministicTaskHandler;
   adk?: AdkA2ATaskHandlerConfig;
+  /** Opt-in only; the default A2A baseline stays unchanged. */
+  mcpTaskSigning?: { signingPrivateKeyPem: string; signingPublicKeyPem: string };
 }
 
 export interface SpecializedAgentServer {
@@ -49,7 +53,21 @@ export async function startSpecializedAgentServer(
     delegatedAuthorization: options.delegatedAuthorization
   });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
-  const taskHandler = options.adk ? createAdkA2ATaskHandler(options.adk) : options.taskHandler;
+  if (options.mcpTaskSigning && !options.adk) {
+    throw new Error("Private MCP task worker requires a configured ADK runtime");
+  }
+  const mcpTaskRegistry = options.mcpTaskSigning
+    ? new PrivateMcpTaskRegistry({role:options.role, ...options.mcpTaskSigning})
+    : undefined;
+  const adkHandler = options.adk
+    ? createAdkA2ATaskHandler({...options.adk, ...(mcpTaskRegistry ? {mcpTaskRegistry} : {})})
+    : undefined;
+  const taskHandler: DeterministicTaskHandler | undefined = adkHandler
+    ? async (context,signal) => {
+        try { return await adkHandler(context,signal); }
+        finally { mcpTaskRegistry?.end(context.task_id); }
+      }
+    : options.taskHandler;
   const executor = new DeterministicSpecializedAgentExecutor(
     options.role,
     undefined,
@@ -63,6 +81,7 @@ export async function startSpecializedAgentServer(
   );
 
   const app = express();
+  if (mcpTaskRegistry) attachPrivateMcpWorker(app,mcpTaskRegistry);
   app.use(
     `/${AGENT_CARD_PATH}`,
     agentCardHandler({ agentCardProvider: requestHandler })

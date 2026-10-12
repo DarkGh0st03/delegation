@@ -10,6 +10,7 @@ import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
+import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGenerationConfig } from "./adk-specialized-agents.ts";
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
@@ -29,6 +30,8 @@ export interface AdkA2ATaskHandlerConfig {
   generateContentConfig?: AdkGenerationConfig;
   scopeModelPaths?: boolean;
   gatewayTimeoutMs?: number;
+  /** Optional shared-MCP spike: trusted Agent worker task registry. */
+  mcpTaskRegistry?: PrivateMcpTaskRegistry;
   fetchFn?: FetchLike;
 }
 
@@ -204,6 +207,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
+    // Register only the ACTIVE A2A task. The registry retains this task-scoped
+    // Gateway client and its private evidence; MCP never receives them.
+    config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal);
     const agent = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
       ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
