@@ -141,3 +141,39 @@ configured endpoint or across redirects. The model sees only
   role/task permissions, no Gemini spending first.
 - A read-only `read_file` spike CANNOT produce the commit SHA required by
   the normal A2A success artifact; full A2A E2E needs a later write tool.
+
+
+## Real authorization smoke (no Gemini)
+
+Run the existing Phase 5A infrastructure, fixture and Adapter/Gateway services
+exactly as in the baseline \`phase5a-smoke\` GitHub Actions job, including
+\`GATEWAY_PROVIDER_MODE=gitea\`. The read fixture must exist at
+\`feature/account-suspension\` with the frozen SHA.
+
+The smoke runs **real MCP HTTP**, the **private Agent worker**, **Gateway
+prepare/execute**, the **Rust Adapter/Verifier**, **OPA** and **Gitea**, not
+fake Gateway/Adapter responses:
+
+\`\`\`bash
+# From the repository root; load the same private dev credentials as Phase 5A.
+set -a
+source poc/infra/.env
+source poc/infra/runtime/gateway.env
+set +a
+export GATEWAY_SMOKE_URL=http://127.0.0.1:8080
+export ADAPTER_SMOKE_URL=http://127.0.0.1:8090
+npm --prefix poc/mcp-shared run smoke:real
+\`\`\`
+
+This command does **not** bootstrap Docker/Gitea/OPA/Adapter/Gateway itself.
+Start those services first using the existing Phase 5A instructions/job. The
+script issues temporary root and child DCs using developer fixture credentials;
+never run it against a production Adapter or repository.
+
+Assertions: authorized \`read_file\`; denied out-of-scope file; denied
+cross-task and cross-role; denied completed task; unchanged Gitea file and
+exact original Git revision. Output contains only fixed labels, count-free
+test categories and the public test revision; no DC, token, VP or file content.
+
+The script does **not** establish full A2A/Gemini integration or validate
+the LLM's tool selection. Those are separate gates.
