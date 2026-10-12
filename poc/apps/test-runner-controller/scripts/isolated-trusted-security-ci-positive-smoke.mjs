@@ -59,7 +59,7 @@ function git(args,{cwd,auth,timeout=180000,label="Git step"}={}){
     // arguments, remote URLs, repository config, diagnostic output or files.
     env.GIT_CONFIG_COUNT="1";
     env.GIT_CONFIG_KEY_0="http.extraheader";
-    env.GIT_CONFIG_VALUE_0="Authorization: Basic "+auth;
+    env.GIT_CONFIG_VALUE_0="Authorization: "+auth;
   }
   try{
     return execFileSync("git",args,{cwd,env,encoding:"utf8",timeout,
