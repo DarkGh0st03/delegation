@@ -35,7 +35,7 @@ The standalone `poc/mcp-shared` package remains outside the existing `poc` npm w
 - The worker checks the token signature, exact active task id and current jti.
   It then uses that task's EXISTING `GatewayControlledToolClient`, which owns
   its own `DelegationEvidenceHandler`. Task cancellation/finish deregisters it.
-- The only supported tool in this spike is `read_file`. The Gateway (not MCP)
+- The shared catalog currently supports `read_file` and experimental `update_file`; ADK writes are explicitly opt-in. The Gateway (not MCP)
   computes the authoritative ResourceUri and Operation.
 - Cross-role or cross-task token selection is not an LLM-controlled argument.
 

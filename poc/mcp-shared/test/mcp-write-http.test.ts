@@ -86,6 +86,13 @@ test("ONE shared MCP update_file routes only permitted active task writes to pri
     assert.equal(localScope.isError,true);
     assert.equal((localScope.structuredContent as {result?:{commit_sha?:string};error?:{kind?:string}})?.error?.kind,"invalid_tool_call");
     assert.equal(calls.length,2,"Wrong-role writable path reached trusted Gateway client");
+    const frontendCaller=await clientFor(sharedUrl,
+      issueTaskToken(f.private,"frontend","write-task"));
+    clients.push(frontendCaller);
+    assert.equal((await frontendCaller.callTool({
+      name:"update_file",arguments:allowed
+    })).isError,true);
+    assert.equal(calls.length,2,"Cross-role update reached trusted Gateway client");
     const inactive=await clientFor(sharedUrl,issueTaskToken(b.private,"backend","other-task"));
     clients.push(inactive);
     assert.equal((await inactive.callTool({name:"update_file",arguments:allowed})).isError,true);

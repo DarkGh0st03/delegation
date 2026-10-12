@@ -1,5 +1,5 @@
 import type {AgentRole, TaskClaims} from "./task-token.ts";
-import {parseReadFileArgs,parseUpdateFileArgs} from "./catalog.ts";
+import {parseReadFileArgs,parseUpdateFileArgs,type ReadFileArgs,type UpdateFileArgs} from "./catalog.ts";
 export type WorkerEndpoints = Readonly<Record<AgentRole,{baseUrl:string}>>;
 /**
  * MCP keeps only public keys and routes to an Agent's trusted private worker.
@@ -25,7 +25,7 @@ export class TaskRouter {
     return this.#invoke(claims,taskToken,"update_file",parseUpdateFileArgs(raw));
   }
   async #invoke(claims: Readonly<TaskClaims>, taskToken: string,
-    tool: "read_file"|"update_file", args: Record<string,unknown>): Promise<unknown> {
+    tool: "read_file"|"update_file", args: ReadFileArgs|UpdateFileArgs): Promise<unknown> {
     const url=new URL("/internal/mcp-tool-call", this.#workers[claims.role].baseUrl);
     let response: Response;
     try {
