@@ -3,10 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": {"node": ">=22.15.0"},
+  "engines": {
+    "node": ">=22.15.0"
+  },
   "scripts": {
     "start": "node --experimental-strip-types src/main.ts",
-    "test": "node --experimental-strip-types --test test/*.test.ts"
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "smoke:real": "node --experimental-strip-types scripts/real-read-smoke.mjs"
   },
-  "dependencies": {"@modelcontextprotocol/sdk": "1.26.0", "zod": "4.2.1"}
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "zod": "4.2.1"
+  }
 }
