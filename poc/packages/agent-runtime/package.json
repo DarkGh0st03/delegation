@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node --experimental-strip-types --test ./test/*.test.ts",
-    "adk:openai:smoke": "node --experimental-strip-types ./scripts/openai-live-smoke.mjs"
+    "adk:openai:smoke": "node --experimental-strip-types ./scripts/openai-live-smoke.mjs",
+    "adk:mcp:real-smoke": "node --experimental-strip-types ./scripts/adk-real-mcp-smoke.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "1.3.0",

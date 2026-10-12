@@ -1,14 +1,8 @@
 # One shared MCP server — experimental spike
 
-Status: **native ADK MCPToolset read_file wiring implemented, not E2E validated**.
-The Agent uses MCP for `read_file` only if explicitly opted in, while all
-other tools continue through the existing FunctionTool path. The
-`MCPToolset → MCP → worker → Gateway → Rust → OPA` path has NOT yet been
-executed with live dependencies, and MCP is not yet approved for the full PoC.
+Status: **read_file experimental spike validated in separate real-infrastructure and native-ADK tests**. An opt-in combined ADK → MCP → Gateway → Rust → OPA → Gitea read-only smoke is also provided; run it before claiming combined E2E success. All other tools continue through existing FunctionTools. Full write-enabled A2A integration remains out of scope.
 
-The standalone `poc/mcp-shared` package is deliberately outside existing
-`poc` npm workspaces for this spike: the frozen `poc/package-lock.json` and
-baseline CI are unchanged.
+The standalone `poc/mcp-shared` package remains outside the existing `poc` npm workspaces. The ADK agent-runtime workspace now pins MCP SDK 1.26.0 in its npm dependencies and committed lockfile; the shared package has its own committed lockfile.
 
 ## Architecture
 
@@ -62,9 +56,7 @@ The private Agent worker must be enabled using the matching keypair in trusted
 runtime configuration. The runtime's private signing key is never given to MCP.
 The worker listens on the Agent's existing private network endpoint.
 
-**Current limitation:** the runtime has the task token available internally,
-but ADK `MCPToolset` has not yet been wired to consume it. A successful
-`/health` response does not demonstrate functional MCP authorization.
+**Native Google ADK MCPToolset is wired to the task bearer.** A successful `/health` response alone still does not demonstrate functional MCP authorization; run the integration tests below.
 
 ## Security limitations (deliberate / not yet solved)
 
@@ -80,8 +72,7 @@ but ADK `MCPToolset` has not yet been wired to consume it. A successful
 4. read_file-only cannot complete a full positive A2A task, which currently
    requires a confirmed repository revision. Test MCP read separately before
    the full write/Artifact integration.
-5. Real MCP SDK and ADK transport integration, cross-task HTTP tests, provider
-   smoke and security regression remain mandatory before any GO decision.
+5. Native ADK/MCP integration, cross-task HTTP tests and real Gateway/Adapter/Gitea read-only smoke have passed locally; combined ADK + real-infrastructure smoke remains a separate opt-in gate. Writes, production deployment and full A2A validation need further tests.
 
 No modifications to core Rust, OPA, Gateway, Orchestrator templates or main.
 
@@ -90,8 +81,7 @@ No modifications to core Rust, OPA, Gateway, Orchestrator templates or main.
 
 Use **Google ADK 2.2.1** and the compatible **MCP SDK 1.26.x**, not MCP SDK v2.
 The pinned ADK package declares `@modelcontextprotocol/sdk ^1.26.0` as an
-optional peer dependency. The original `poc/package-lock.json` does not
-contain this SDK; installing it only inside `poc/mcp-shared` is NOT enough
+optional peer dependency. Installing the SDK only inside `poc/mcp-shared` is NOT enough
 because ADK resolves its own dependencies from the root npm workspace.
 
 On a connected development machine, generate a VALID npm lock update:
@@ -108,8 +98,7 @@ npm test
 **Commit both updated `poc/packages/agent-runtime/package.json` and
 `poc/package-lock.json` together** after verifying `npm ci`. Do not edit
 the lockfile manually or merge this spike with a broken reproducibility check.
-The isolated shared server package does not yet have a committed lockfile
-either; generate and commit its lockfile when finalizing the spike.
+The isolated shared server package now has a committed lockfile.
 
 For each agent configured with `AGENT_RUNTIME_ENGINE=adk`, opt in with:
 
@@ -134,9 +123,7 @@ configured endpoint or across redirects. The model sees only
 ## Test gates before integrating more tools
 
 - `node --experimental-strip-types --test poc/packages/agent-runtime/test/mcp-task-fetch.test.ts poc/packages/agent-runtime/test/mcp-read-result.test.ts` from repository root tests the pure transport and result handling.
-- The shared package integration test (added on this branch) exercises
-  `tools/list` and `tools/call` over real Streamable HTTP SDK client/server,
-  but cannot run without `npm install`.
+- The shared package integration tests exercise `tools/list` and `tools/call` over real Streamable HTTP SDK client/server; the native ADK tests verify the MCPToolset Runner path.
 - Repeat with the real Gitea/Adapter/Verifier/OPA stack, positive and negative
   role/task permissions, no Gemini spending first.
 - A read-only `read_file` spike CANNOT produce the commit SHA required by
@@ -146,9 +133,9 @@ configured endpoint or across redirects. The model sees only
 ## Real authorization smoke (no Gemini)
 
 Run the existing Phase 5A infrastructure, fixture and Adapter/Gateway services
-exactly as in the baseline \`phase5a-smoke\` GitHub Actions job, including
-\`GATEWAY_PROVIDER_MODE=gitea\`. The read fixture must exist at
-\`feature/account-suspension\` with the frozen SHA.
+as in the baseline \`phase5a-smoke\` GitHub Actions job, including
+\`GATEWAY_PROVIDER_MODE=gitea-readonly\`. The read fixture must exist at
+\`feature/account-suspension\`. If that branch has advanced, set \`EXPECTED_GITEA_REVISION\` to its verified current SHA; never reset the branch just to run a read-only smoke.
 
 The smoke runs **real MCP HTTP**, the **private Agent worker**, **Gateway
 prepare/execute**, the **Rust Adapter/Verifier**, **OPA** and **Gitea**, not
@@ -177,3 +164,35 @@ test categories and the public test revision; no DC, token, VP or file content.
 
 The script does **not** establish full A2A/Gemini integration or validate
 the LLM's tool selection. Those are separate gates.
+
+## Combined native ADK + real infrastructure smoke (no Gemini)
+
+After `npm --prefix poc run agent-runtime:test` (115 passing tests as of this
+spike) and `npm --prefix poc/mcp-shared test`, run the combined smoke with
+the SAME locally running read-only Gateway, Rust Adapter, OPA and Gitea.
+Do not run against production: the script creates fresh fixture DCs in the
+Adapter, reads an existing Gitea file, and never writes to Gitea.
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+export GATEWAY_SMOKE_URL=http://127.0.0.1:8080
+export ADAPTER_SMOKE_URL=http://127.0.0.1:8090
+# Use the CURRENT feature/account-suspension branch SHA, verified beforehand.
+export EXPECTED_GITEA_REVISION=ff8032c6fa5def272f1fd222ea47a7746d2d5328
+npm --prefix poc/packages/agent-runtime run adk:mcp:real-smoke
+```
+
+The scripted `@google/adk` Runner first requests a delegated `read_file`,
+then an out-of-scope `read_file` (denied by real authorization), then the
+original permitted read again. All three calls must traverse ONE shared MCP
+listener and the private task worker. The script checks Gitea content/revision,
+the authoritative ADK after-tool outcomes, and that private DC IDs, Adapter
+caller tokens and the MCP bearer never enter the model request context.
+It prints only safe labels and a public test revision.
+
+**Scope:** this tests a real ADK tool cycle against real infrastructure, NOT
+the external A2A transport, actual Gemini reasoning, write tools, or end-to-end
+multi-agent task/merge completion. Those need dedicated follow-on tests.
