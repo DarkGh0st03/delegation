@@ -413,3 +413,38 @@ npm --prefix poc/packages/agent-runtime run adk:mcp:isolated-real-runner-smoke
 
 Expected top-level event: `adk_mcp_isolated_real_runner_smoke` with
 `status:"PASS"`, **expected_controlled_outcome:"tests_failed"**.
+
+## Three real A2A role servers, ONE shared MCP, real read-only infrastructure
+
+This opt-in smoke extends the validated Backend-only A2A read smoke to
+**Backend, Frontend and Test** running as three separate native Google ADK
+A2A HTTP+JSON servers. Every role gets its own private task registry and
+Ed25519 key; all three share ONE external Streamable HTTP MCP listener.
+Use the already running **read-only** Gateway, Adapter, OPA and Gitea,
+preserving the existing feature branch and protected main unchanged.
+
+```bash
+cd ~/Documents/GitHub/delegation
+set -a
+source poc/infra/.env
+set +a
+export GATEWAY_SMOKE_URL=http://127.0.0.1:8080
+export ADAPTER_SMOKE_URL=http://127.0.0.1:8090
+export EXPECTED_GITEA_REVISION=ff8032c6fa5def272f1fd222ea47a7746d2d5328
+npm --prefix poc/packages/agent-runtime run a2a:mcp:three-role-read-smoke
+```
+
+The script creates fresh local development DCs for exactly three individual
+`read_file` permissions; each role is given only its own selected path.
+Six real protected A2A tasks run (per role: an authorized read then a
+foreign/out-of-scope read), which **must all terminate FAILED without an
+Artifact** because there is deliberately no write or confirmed commit.
+This tests role/task isolation, policy denials, inactive task tokens and
+private evidence not entering ADK model requests or public A2A Task state.
+
+Expected success event:
+`a2a_three_roles_shared_mcp_real_read_smoke` with `status:"PASS"`.
+
+**Scope:** this is NOT the full Backend→Frontend→Test write/create/run_tests
+flow, and does not produce a PR or merge. It is a separate no-write gate before
+testing the stateful multi-agent pipeline against isolated Gitea.

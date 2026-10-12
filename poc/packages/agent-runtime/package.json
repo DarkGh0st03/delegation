@@ -10,7 +10,8 @@
     "a2a:mcp:real-read-smoke": "node --experimental-strip-types ./scripts/a2a-real-mcp-read-smoke.mjs",
     "adk:mcp:isolated-write-smoke": "node --experimental-strip-types ./scripts/adk-isolated-mcp-write-smoke.mjs",
     "adk:mcp:isolated-create-smoke": "node --experimental-strip-types ./scripts/adk-isolated-mcp-create-smoke.mjs",
-    "adk:mcp:isolated-real-runner-smoke": "node --experimental-strip-types ./scripts/adk-isolated-mcp-real-runner-smoke.mjs"
+    "adk:mcp:isolated-real-runner-smoke": "node --experimental-strip-types ./scripts/adk-isolated-mcp-real-runner-smoke.mjs",
+    "a2a:mcp:three-role-read-smoke": "node --experimental-strip-types ./scripts/a2a-three-roles-shared-mcp-read-smoke.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "1.3.0",
