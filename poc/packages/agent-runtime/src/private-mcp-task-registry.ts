@@ -1,5 +1,5 @@
 import { issueTaskToken, verifyTaskToken, bearerToken, type AgentRole, type TaskClaims } from "../../../mcp-shared/src/task-token.ts";
-import { parseReadFileArgs, parseUpdateFileArgs, parseCreateFileArgs } from "../../../mcp-shared/src/catalog.ts";
+import { parseReadFileArgs, parseUpdateFileArgs, parseCreateFileArgs, parseRunTestsArgs } from "../../../mcp-shared/src/catalog.ts";
 import { SPECIALIZED_AGENT_PROFILES } from "./specialized-agents.ts";
 import type { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 
@@ -18,6 +18,7 @@ interface ActiveTask {
   signal?: AbortSignal;
   allowUpdateFile: boolean;
   allowCreateFile: boolean;
+  allowRunTests: boolean;
   onAbort?: () => void;
 }
 
@@ -47,7 +48,7 @@ export class PrivateMcpTaskRegistry {
     taskId: string,
     client: Pick<GatewayControlledToolClient, "invoke">,
     signal?: AbortSignal,
-    options: {allowUpdateFile?: boolean;allowCreateFile?: boolean} = {}
+    options: {allowUpdateFile?: boolean;allowCreateFile?: boolean;allowRunTests?: boolean} = {}
   ): void {
     if (this.#active.has(taskId)) throw new Error("Duplicate active MCP task");
     if (signal?.aborted) throw new PrivateMcpTaskError("inactive_task");
@@ -55,7 +56,8 @@ export class PrivateMcpTaskRegistry {
     const claims = verifyTaskToken(bearer, { [this.#role]: this.#verificationKey });
     const task: ActiveTask = {client, bearer, claims, signal,
       allowUpdateFile: options.allowUpdateFile === true,
-      allowCreateFile: this.#role==="test" && options.allowCreateFile===true};
+      allowCreateFile: this.#role==="test" && options.allowCreateFile===true,
+      allowRunTests: this.#role==="test" && options.allowRunTests===true};
     if (signal) {
       task.onAbort = () => this.end(taskId);
       signal.addEventListener("abort", task.onAbort, {once:true});
@@ -100,7 +102,7 @@ export class PrivateMcpTaskRegistry {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     const payload = request as Record<string,unknown>;
-    if (Object.keys(payload).sort().join(",") !== "arguments,tool" || (payload.tool !== "read_file" && payload.tool !== "update_file" && payload.tool !== "create_file")) {
+    if (Object.keys(payload).sort().join(",") !== "arguments,tool" || (payload.tool !== "read_file" && payload.tool !== "update_file" && payload.tool !== "create_file" && payload.tool !== "run_tests")) {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     let args;
@@ -109,7 +111,9 @@ export class PrivateMcpTaskRegistry {
         ? parseReadFileArgs(payload.arguments)
         : payload.tool === "update_file"
           ? parseUpdateFileArgs(payload.arguments)
-          : parseCreateFileArgs(payload.arguments);
+          : payload.tool === "create_file"
+            ? parseCreateFileArgs(payload.arguments)
+            : parseRunTestsArgs(payload.arguments);
     } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
     if (payload.tool === "update_file" &&
         (!task.allowUpdateFile ||
@@ -120,6 +124,11 @@ export class PrivateMcpTaskRegistry {
     if (payload.tool === "create_file" &&
         (!task.allowCreateFile || this.#role!=="test" ||
          !SPECIALIZED_AGENT_PROFILES.test.creatable_paths.includes(args.path))) {
+      throw new PrivateMcpTaskError("invalid_tool_call");
+    }
+    if(payload.tool === "run_tests" &&
+       (!task.allowRunTests || this.#role!=="test" ||
+        !SPECIALIZED_AGENT_PROFILES.test.can_run_tests)){
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     const result = await task.client.invoke(payload.tool, args);

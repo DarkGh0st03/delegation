@@ -1,5 +1,5 @@
 import type {AgentRole, TaskClaims} from "./task-token.ts";
-import {parseReadFileArgs,parseUpdateFileArgs,parseCreateFileArgs,type ReadFileArgs,type UpdateFileArgs,type CreateFileArgs} from "./catalog.ts";
+import {parseReadFileArgs,parseUpdateFileArgs,parseCreateFileArgs,parseRunTestsArgs,type ReadFileArgs,type UpdateFileArgs,type CreateFileArgs,type RunTestsArgs} from "./catalog.ts";
 export type WorkerEndpoints = Readonly<Record<AgentRole,{baseUrl:string}>>;
 /**
  * MCP keeps only public keys and routes to an Agent's trusted private worker.
@@ -27,9 +27,12 @@ export class TaskRouter {
   async createFile(claims: Readonly<TaskClaims>, taskToken: string, raw: unknown): Promise<unknown> {
     return this.#invoke(claims,taskToken,"create_file",parseCreateFileArgs(raw));
   }
+  async runTests(claims: Readonly<TaskClaims>, taskToken: string, raw:unknown):Promise<unknown>{
+    return this.#invoke(claims,taskToken,"run_tests",parseRunTestsArgs(raw));
+  }
   async #invoke(claims: Readonly<TaskClaims>, taskToken: string,
-    tool: "read_file"|"update_file"|"create_file",
-    args: ReadFileArgs|UpdateFileArgs|CreateFileArgs): Promise<unknown> {
+    tool: "read_file"|"update_file"|"create_file"|"run_tests",
+    args: ReadFileArgs|UpdateFileArgs|CreateFileArgs|RunTestsArgs): Promise<unknown> {
     const url=new URL("/internal/mcp-tool-call", this.#workers[claims.role].baseUrl);
     let response: Response;
     try {
@@ -38,7 +41,8 @@ export class TaskRouter {
         headers:{authorization:"Bearer "+taskToken,"content-type":"application/json"},
         body:JSON.stringify({tool,arguments:args}),
         redirect:"error",
-        signal:AbortSignal.timeout(10000)
+        // The controlled Runner may take minutes. Other MCP operations remain at 10s.
+        signal:AbortSignal.timeout(tool==="run_tests"?960_000:10_000)
       });
     } catch { throw new Error("task_worker_unavailable"); }
     if (Number(response.headers.get("content-length"))>2_000_000) throw new Error("task_worker_invalid_result");

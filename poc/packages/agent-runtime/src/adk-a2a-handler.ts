@@ -37,6 +37,8 @@ export interface AdkA2ATaskHandlerConfig {
   mcpUpdateFile?: boolean;
   /** Test Agent only: opt-in to MCP create_file for the one allowed E2E path. */
   mcpCreateFile?: boolean;
+  /** Test Agent only: route controlled run_tests via the shared MCP server. */
+  mcpRunTests?: boolean;
   fetchFn?: FetchLike;
 }
 
@@ -167,6 +169,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   if (config.mcpCreateFile && !config.mcpSharedUrl) {
     throw new Error("Shared MCP create_file requires MCP to be configured");
   }
+  if (config.mcpRunTests && !config.mcpSharedUrl) {
+    throw new Error("Shared MCP run_tests requires MCP to be configured");
+  }
   if (Boolean(config.mcpSharedUrl) !== Boolean(config.mcpTaskRegistry)) {
     throw new Error("Shared MCP requires both a task registry and shared URL");
   }
@@ -225,11 +230,13 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // Gateway client and its private evidence; MCP never receives them.
     config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal,
       {allowUpdateFile: config.mcpUpdateFile === true,
-       allowCreateFile: config.mcpCreateFile === true && context.role==="test"});
+       allowCreateFile: config.mcpCreateFile === true && context.role==="test",
+       allowRunTests: config.mcpRunTests === true && context.role==="test"});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
       ...(config.mcpUpdateFile ? {mcpUpdateFile:true} : {}),
       ...(config.mcpCreateFile ? {mcpCreateFile:true} : {}),
+      ...(config.mcpRunTests ? {mcpRunTests:true} : {}),
       ...(config.mcpSharedUrl && config.mcpTaskRegistry ? {mcpReadFile:{
         endpoint:config.mcpSharedUrl,
         bearerForRequest: () => config.mcpTaskRegistry!.bearerFor(context.task_id)

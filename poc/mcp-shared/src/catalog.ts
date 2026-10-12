@@ -89,3 +89,38 @@ export function parseCreateFileArgs(raw:unknown):CreateFileArgs{
   if(args.path!==MCP_CREATABLE_E2E_PATH)throw new Error("invalid_tool_arguments");
   return {...args,path:MCP_CREATABLE_E2E_PATH};
 }
+
+/**
+ * Controlled test execution is not a shell command.
+ * The Runner profile and branch are fixed by the Gateway contract.
+ */
+export const MCP_RUN_TESTS=Object.freeze({
+  name:"run_tests",
+  operation:"run_tests",
+  resourceType:"repository_branch",
+  description:"Execute the predefined controlled test profile for the delegated feature branch.",
+  inputSchema:{
+    type:"object",additionalProperties:false,
+    properties:{
+      branch:{type:"string",const:"feature/account-suspension"},
+      profile:{type:"string",const:"poc-default"}
+    },
+    required:["branch","profile"]
+  }
+} as const);
+export interface RunTestsArgs{
+  branch:"feature/account-suspension";
+  profile:"poc-default";
+}
+export function parseRunTestsArgs(raw:unknown):RunTestsArgs{
+  if(!raw||typeof raw!=="object"||Array.isArray(raw)){
+    throw new Error("invalid_tool_arguments");
+  }
+  const args=raw as Record<string,unknown>;
+  if(Object.keys(args).sort().join(",")!=="branch,profile"||
+     args.branch!=="feature/account-suspension"||
+     args.profile!=="poc-default"){
+    throw new Error("invalid_tool_arguments");
+  }
+  return {branch:"feature/account-suspension",profile:"poc-default"};
+}

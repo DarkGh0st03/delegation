@@ -56,6 +56,9 @@ export async function startSpecializedAgentServer(
   if (options.adk?.mcpCreateFile && options.role!=="test") {
     throw new Error("Only Test Agent may enable shared MCP create_file");
   }
+  if (options.adk?.mcpRunTests && options.role!=="test") {
+    throw new Error("Only Test Agent may enable shared MCP run_tests");
+  }
   if (options.mcpTaskSigning && !options.adk) {
     throw new Error("Private MCP task worker requires a configured ADK runtime");
   }

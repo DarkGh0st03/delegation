@@ -2,6 +2,7 @@ import { FunctionTool, LlmAgent, MCPToolset, type BaseLlm, type LlmAgentConfig, 
 import { normalizeMcpReadFileOutcome } from "./mcp-read-result.ts";
 import { normalizeMcpUpdateFileOutcome } from "./mcp-write-result.ts";
 import { normalizeMcpCreateFileOutcome } from "./mcp-create-result.ts";
+import { normalizeMcpRunTestsOutcome } from "./mcp-run-tests-result.ts";
 import { createTaskBearerFetch } from "./mcp-task-fetch.ts";
 import { z } from "zod";
 import type { SpecializedAgentRole } from "./contracts.ts";
@@ -65,6 +66,8 @@ export interface AdkSpecializedAgentConfig {
   mcpUpdateFile?: boolean;
   /** Independent opt-in: Test Agent may create its E2E test via shared MCP. */
   mcpCreateFile?: boolean;
+  /** Test Agent only; use the same MCP server for the controlled Runner. */
+  mcpRunTests?: boolean;
 }
 
 export interface AdkSpecializedAgent {
@@ -92,6 +95,9 @@ export function createAdkSpecializedAgent(
   if(config.mcpCreateFile && (!config.mcpReadFile || config.role!=="test")){
     throw new Error("MCP create_file requires shared MCP and Test Agent role");
   }
+  if(config.mcpRunTests && (!config.mcpReadFile || config.role!=="test")){
+    throw new Error("MCP run_tests requires shared MCP and Test Agent role");
+  }
   const profile = SPECIALIZED_AGENT_PROFILES[config.role];
   if (!profile) throw new Error("Unknown specialized agent role");
   // Path-scoped tool declarations are safe for every specialized role.
@@ -109,7 +115,8 @@ export function createAdkSpecializedAgent(
     .filter(definition => !config.mcpReadFile || (
       definition.name !== "read_file" &&
       !(config.mcpUpdateFile && definition.name === "update_file") &&
-      !(config.mcpCreateFile && definition.name === "create_file")
+      !(config.mcpCreateFile && definition.name === "create_file") &&
+      !(config.mcpRunTests && definition.name === "run_tests")
     ))
     .map((definition) => {
     const name = definition.name as SpecializedToolName;
@@ -180,7 +187,8 @@ export function createAdkSpecializedAgent(
     mcpToolset = new MCPToolset(params, [
       "read_file",
       ...(config.mcpUpdateFile ? ["update_file"] : []),
-      ...(config.mcpCreateFile ? ["create_file"] : [])
+      ...(config.mcpCreateFile ? ["create_file"] : []),
+      ...(config.mcpRunTests ? ["run_tests"] : [])
     ]);
   }
 
@@ -201,6 +209,9 @@ export function createAdkSpecializedAgent(
       }else if(tool.name === "create_file" && config.mcpCreateFile){
         const payload = normalizeMcpCreateFileOutcome(response, args);
         config.onToolOutcome?.({name:"create_file",arguments:args,payload});
+      }else if(tool.name === "run_tests" && config.mcpRunTests){
+        const payload = normalizeMcpRunTestsOutcome(response, args);
+        config.onToolOutcome?.({name:"run_tests",arguments:args,payload});
       }
       return undefined;
     }} : {}),
