@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
 import {randomBytes,randomUUID} from "node:crypto";
-import {mkdir,mkdtemp,rm,stat,writeFile} from "node:fs/promises";
+import {mkdir,mkdtemp,readFile,rm,stat,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,dirname} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -363,7 +363,7 @@ async function main(){
       gitea_base_url:base,gitea_owner:"thesis",
       gitea_repository:"iam-console-poc",
       gitea_token:creds.readToken,
-      docker_image:nodeImage,phase_timeout_ms:600000,
+      docker_image:nodeImage,phase_timeout_ms:300000,
       log_dir:logs,acceptance_enabled:true,
       acceptance_dir:acceptanceDir
     });
@@ -382,9 +382,35 @@ async function main(){
             project_tests:result.project_tests?.status,
             researcher_acceptance:result.researcher_acceptance?.status,
             phases:result.phases.map(p=>({
-              phase:p.phase,status:p.status
+              phase:p.phase,status:p.status,errors:p.errors
             }))
           })+"\n");
+          // Only a bounded, scrubbed diagnostic excerpt from the pinned
+          // reference fixture; no full logs, repo content or auth headers.
+          if(result.status!=="pass"){
+            const id=/^runner-log:\/\/([a-f0-9-]{36})$/u
+              .exec(String(result.log_reference??""))?.[1];
+            if(id){
+              const full=await readFile(join(logs,id+".log"),"utf8");
+              const section=full.split("=== dependency_install ===")[1]??"";
+              const excerpt=section.split(/\r?\n/u)
+                .filter(line=>line.trim().length>0)
+                .slice(-26).map(line=>{
+                  let safe=line.replace(/[\x00-\x1f\x7f]/gu," ")
+                    .slice(0,230)
+                    .replace(/https?:\/\/[^\s"'<>]+/giu,"[remote-url]")
+                    .replace(/(?:Basic|Bearer|token)\s+[A-Za-z0-9+/_=.-]+/giu,
+                      "[REDACTED]");
+                  for(const secret of [adminPassword,readerPass,publisherPass]){
+                    if(secret)safe=safe.split(secret).join("[REDACTED]");
+                  }
+                  return safe;
+                });
+              process.stderr.write("[trusted-positive-ci] dependency_diagnostic "+
+                JSON.stringify({line_count:section.split(/\r?\n/u).length,
+                  tail:excerpt})+"\n");
+            }
+          }
           return result;
         }
       }
