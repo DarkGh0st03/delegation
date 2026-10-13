@@ -41,6 +41,7 @@ import {createGatewayHttpServer} from "../../../apps/gateway/src/http.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";
 import {IsolatedDockerRunnerExecutor} from "../../../apps/test-runner-controller/src/isolated-executor.ts";
 import {TrustedGiteaSecurityCi,SECURITY_STATUS_CONTEXT} from "../../../apps/test-runner-controller/src/trusted-security-ci.ts";
+import {TrustedGiteaMergeExecutor} from "../../orchestrator-runtime/src/trusted-merge.ts";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES as reference} from "../../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
 import {createSharedMcpHttpServer} from "../../../mcp-shared/src/http-server.ts";
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
@@ -106,6 +107,10 @@ const container="delegation-mcp-pr-positive-"+id;
 const image=process.env.GITEA_IMAGE??"docker.gitea.com/gitea:28.0.0";
 const privateMarker="A2A_MCP_PRIVATE_"+randomBytes(10).toString("hex");
 const runnerToken=randomBytes(32).toString("hex");
+// Disabled by default. This flag authorizes a synthetic REVIEW + MERGE
+// only in the unmounted, disposable Gitea container created below.
+// It never represents authentic human approval or production authorization.
+const simulatedPositiveMerge=process.env.DISPOSABLE_SIMULATED_MERGE_TEST==="1";
 const nodeImage=process.env.TEST_RUNNER_DOCKER_IMAGE??"node:22.15.0-bookworm";
 let realRunnerResult=null;
 let started=false;
@@ -243,12 +248,16 @@ async function bootstrapGitea(url){
   const readonlyName="auditor-"+id;
   const reviewerName="reviewer-"+id;
   const ciName="security-ci-"+id;
+  const mergeName="merge-operator-"+id;
   const auditorPassword=randomBytes(24).toString("hex");
   const ciPassword=randomBytes(24).toString("hex");
+  const reviewerPassword=randomBytes(24).toString("hex");
+  const mergePassword=randomBytes(24).toString("hex");
   for(const [username,password,email] of [
     [readonlyName,auditorPassword,"audit"],
-    [reviewerName,randomBytes(24).toString("hex"),"review"],
-    [ciName,ciPassword,"security"]
+    [reviewerName,reviewerPassword,"review"],
+    [ciName,ciPassword,"security"],
+    ...(simulatedPositiveMerge?[[mergeName,mergePassword,"merge"]]:[])
   ]){
     docker(["exec","--user","1000:1000",container,
       "gitea","admin","user","create",
@@ -362,6 +371,43 @@ async function bootstrapGitea(url){
     assert.equal(actor.login,name);
     assert.ok(Number.isSafeInteger(actor.id)&&actor.id>0);
   }
+  let positiveMergeFixture=null;
+  if(simulatedPositiveMerge){
+    // Synthetic reviewer is NOT a substitute for real human action.
+    // This actor only exists in this fresh, automatically removed Gitea.
+    for(const name of [reviewerName,mergeName]){
+      await api(url,repo+"/collaborators/"+encodeURIComponent(name),{
+        method:"PUT",auth:adminAuth,expected:[204],
+        body:{permission:"write"},
+        label:"grant isolated simulated merge fixture collaborator"
+      });
+    }
+    const reviewToken=await api(url,"/api/v1/users/"+
+      encodeURIComponent(reviewerName)+"/tokens",{
+        method:"POST",auth:basic(reviewerName,reviewerPassword),
+        label:"create isolated synthetic-review token",
+        body:{name:"temporary-review-"+id,
+          scopes:["write:repository","read:user"]}
+      });
+    const mergeToken=await api(url,"/api/v1/users/"+
+      encodeURIComponent(mergeName)+"/tokens",{
+        method:"POST",auth:basic(mergeName,mergePassword),
+        label:"create separate isolated merge-operator token",
+        body:{name:"temporary-merge-"+id,
+          scopes:["write:repository","read:user"]}
+      });
+    const mergeActor=await api(url,"/api/v1/user",{
+      auth:"token "+mergeToken.sha1,
+      label:"resolve independent test merge operator"
+    });
+    assert.equal(mergeActor.login,mergeName);
+    assert.equal(mergeActor.is_admin,false);
+    positiveMergeFixture={
+      reviewToken:reviewToken.sha1,
+      mergeToken:mergeToken.sha1,
+      mergeActor:{id:mergeActor.id,login:mergeActor.login}
+    };
+  }
   // The production Coordinator must create this branch, not fixture setup.
   const absentBranch=await fetch(url+repo+
     "/branches/feature%2Faccount-suspension",{
@@ -373,7 +419,8 @@ async function bootstrapGitea(url){
     mergeProtectionReadToken:protectionCredential.sha1,
     mergeReviewer:{id:reviewer.id,login:reviewer.login},
     mergeCI:{id:security.id,login:security.login},
-    ciStatusToken:ciCredential.sha1
+    ciStatusToken:ciCredential.sha1,
+    positiveMergeFixture
   };
 }
 async function main(){
@@ -715,6 +762,78 @@ async function main(){
     assert.equal(afterPr.merged,false);
     assert.equal(afterPr.state,"open");
     assert.equal(afterPr.head?.sha,testedCommit);
+    let positiveMerge=null;
+    if(simulatedPositiveMerge){
+      const fixtureIdentity=fixture.positiveMergeFixture;
+      assert.ok(fixtureIdentity,"Positive merge fixture missing isolated identity");
+      // This is deliberately a SIMULATED review, on an ephemeral repo only.
+      // Production review must come from a real human acting in Gitea.
+      const submitted=await api(giteaUrl,fixture.repo+
+        "/pulls/"+pr.number+"/reviews",{
+        method:"POST",auth:"token "+fixtureIdentity.reviewToken,
+        label:"temporary simulated human-review API fixture",
+        body:{event:"APPROVED",commit_id:testedCommit,
+          body:"SYNTHETIC REVIEW -- DISPOSABLE CI TEST ONLY"}
+      });
+      assert.equal(submitted.state,"APPROVED");
+      assert.equal(submitted.commit_id,testedCommit);
+      assert.equal(submitted.user?.id,fixture.mergeReviewer.id);
+      assert.equal(submitted.user?.login,fixture.mergeReviewer.login);
+      const guarded=new TrustedGiteaMergeExecutor({
+        giteaBaseUrl:giteaUrl,
+        readToken:fixture.mergeReadToken,
+        branchProtectionReadToken:fixture.mergeProtectionReadToken,
+        humanReviewer:fixture.mergeReviewer,
+        securityPipelineActor:fixture.mergeCI,
+        mergeToken:fixtureIdentity.mergeToken,
+        mergeActor:fixtureIdentity.mergeActor
+      });
+      // Gitea computes mergeability asynchronously on some versions.
+      // We only wait for this positive fixture to become ready; all other
+      // errors remain fail closed and do not lead to a merge attempt.
+      let ready=false;
+      for(let attempt=0;attempt<25;attempt++){
+        try{
+          const observed=await verifier.verify({
+            pullRequestNumber:pr.number,expectedHeadSha:testedCommit
+          });
+          assert.equal(observed.ready,true);
+          ready=true;
+          break;
+        }catch(error){
+          if(!(error instanceof MergeReadinessDenied)||
+            error.reason!=="pr_not_mergeable")throw error;
+          await delay(400);
+        }
+      }
+      assert.equal(ready,true,
+        "Simulated review and CI did not establish protected merge readiness");
+      positiveMerge=await guarded.execute({
+        pullRequestNumber:pr.number,expectedHeadSha:testedCommit
+      });
+      assert.equal(positiveMerge.merged,true);
+      assert.equal(positiveMerge.head_sha,testedCommit);
+      assert.equal(positiveMerge.previous_main_sha,baselineSha);
+      assert.notEqual(positiveMerge.merged_main_sha,baselineSha);
+      const finalPr=await api(giteaUrl,fixture.repo+"/pulls/"+pr.number,{
+        auth:fixture.adminAuth,label:"verify isolated merged PR"
+      });
+      assert.equal(finalPr.state,"closed");
+      assert.equal(finalPr.merged,true);
+      assert.equal(finalPr.head?.sha,testedCommit);
+      const mainAfter=await api(giteaUrl,fixture.repo+"/branches/main",{
+        auth:fixture.adminAuth,label:"verify isolated main merge commit"
+      });
+      assert.equal(mainAfter.commit.id,positiveMerge.merged_main_sha);
+      assert.equal(positiveMerge.merge_actor_id,fixtureIdentity.mergeActor.id);
+      const serializedModelContext=JSON.stringify(
+        roles.flatMap(role=>models[role].requests));
+      for(const t of [fixtureIdentity.reviewToken,fixtureIdentity.mergeToken,
+        fixture.ciStatusToken]){
+        assert.ok(!serializedModelContext.includes(t),
+          "Privileged review/CI/merge token leaked to agent model context");
+      }
+    }
     process.stdout.write(JSON.stringify({
       event:"a2a_production_coordinator_mcp_real_positive_acceptance",
       status:"PASS",model:"scripted_offline_11_reference_files",
@@ -729,14 +848,16 @@ async function main(){
       runner:"real_docker_six_phases_and_independent_acceptance",
       coordinator_result:"PR_CREATED_PENDING_HUMAN_APPROVAL",
       pull_request_number:coordinated.pull_request.pull_request_number,
-      attempted_pr_calls:prCalls,merge_calls:0,
+      attempted_pr_calls:prCalls,merge_calls:positiveMerge?1:0,
       merge_readiness:"DENIED",
       merge_readiness_denial:denial,
       security_pipeline_context_present:true,
       trusted_security_ci:"pending_then_success_by_separate_actor",
       trusted_status_id:ciOutcome.gitea_status_id,
       independent_real_runner:true,
-      approval_created:false,
+      approval_created:simulatedPositiveMerge,
+      simulated_review_fixture_only:simulatedPositiveMerge,
+      merge_outcome:positiveMerge?"MERGED_ONLY_IN_DISPOSABLE_GITEA":"NOT_MERGED",
       tests:["real_gateway_branch_and_pr_creation",
         "production_root_and_role_child_delegation",
         "backend_real_a2a_mcp_update","frontend_real_a2a_mcp_update",
