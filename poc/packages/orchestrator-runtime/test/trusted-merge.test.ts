@@ -106,7 +106,7 @@ test("isolated fixture with valid review, CI, protected branch merges only exact
   assert.equal(write.path,api+"/pulls/3/merge");
   assert.equal(write.auth,"token merge-only-token");
   assert.deepEqual(write.body,{
-    Do:"merge",head_commit_id:head,force_merge:false,
+    do:"merge",head_commit_id:head,force_merge:false,
     merge_when_checks_succeed:false,delete_branch_after_merge:false
   });
   assert.ok(x.seen.filter(x=>x.method==="GET"&&
