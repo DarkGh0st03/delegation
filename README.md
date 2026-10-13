@@ -175,10 +175,14 @@ The final audit added authenticated JWT Status Lists to the EVM Adapter path, di
 
 ## Current checkpoint
 
-There are now two distinct checkpoints and they must not be conflated:
+The thesis has three distinct checkpoints and they must not be conflated:
 
 1. **Historical measured baseline** — executable-code checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a`. The published Phase 12 regression, security, reproducibility and five-replica measurement evidence belongs to this checkpoint.
 2. **Refactored code line** — developed on branch `refactor/core-cleanup`. This code contains the post-measurement architecture cleanup and Status List lifecycle work. It completed a fresh full PoC regression successfully on run `37928199842`, with dedicated core validation `37928496609` and reproducibility validation `37928532313`. Historical latency/security measurements must not be attributed to this refactored code unless a new measurement campaign is executed.
+
+3. **Current ADK/A2A/shared MCP development** — `feat/shared-mcp-spike`, still separate from `main`. The Orchestrator coordinates three protected Google ADK roles via A2A and one shared Streamable HTTP MCP service, preserving the Rust Delegation Adapter, Gateway/OPA, exact-SHA Docker Runner, trusted CI and human-review merge gate. Free **scripted-model** E2E with real Gitea/Docker acceptance is verified. The new **real-Gemini** full E2E has been prepared but **has not been run**; historical benchmarks cannot be attributed to it.
+
+**Current workflow guide:** [ADK / A2A / Shared MCP GitHub Actions](docs/ADK_MCP_ACTIONS_CATALOG.md). The canonical live-model workflow is manual and explicitly billable; historical standalone provider probes are archived. Detailed procedures: [Gemini manual test](docs/gemini-shared-mcp-final-run.md) and [human-controlled merge](docs/human-approved-gitea-merge.md).
 
 The original thesis PoC implementation roadmap remains complete through **Phase 12 — reproducibility + measurements** for the historical measured baseline.
 
