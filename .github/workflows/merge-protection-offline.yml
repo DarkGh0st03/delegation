@@ -124,7 +124,7 @@ jobs:
             ".github/workflows/adk-openai-live-smoke.yml"
           ]){
             const archived=fs.readFileSync(historical,"utf8");
-            assert.match(archived,/^name: \[ARCHIVED\]/m);
+            assert.match(archived,/^name: "ARCHIVED - /m);
             assert.match(archived,/^    if: \$\{\{ false \}\}/m);
             assert.doesNotMatch(archived,/^  push:/m);
           }
