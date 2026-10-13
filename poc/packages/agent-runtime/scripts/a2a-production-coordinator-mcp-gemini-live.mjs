@@ -50,6 +50,10 @@ import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
 const roles=["backend","frontend","test"];
 if(process.env.GITHUB_ACTIONS!=="true"||
    process.env.GITHUB_EVENT_NAME!=="workflow_dispatch"||
+   process.env.GITHUB_RUN_ATTEMPT!=="1"||
+   process.env.GITHUB_REPOSITORY!=="DarkGh0st03/delegation"||
+   !["refs/heads/feat/shared-mcp-spike","refs/heads/main"]
+     .includes(process.env.GITHUB_REF)||
    process.env.THESIS_PAID_GEMINI_CONFIRM!=="I AUTHORIZE GEMINI API CHARGES"){
   throw Error("Live Gemini requires explicitly authorized manual GitHub dispatch");
 }
