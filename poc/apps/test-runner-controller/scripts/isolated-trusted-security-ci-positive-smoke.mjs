@@ -145,8 +145,8 @@ async function api(base,path,{authorization,method="GET",body,
             ],{encoding:"utf8",timeout:10000,
               stdio:["ignore","pipe","pipe"]});
             const logIssues=serverLogs.split(/\r?\n/u)
-              .filter(line=>/\[E\]|\[F\]|ERROR|panic|failed/iu.test(line))
-              .slice(-8).map(line=>{
+              .filter(line=>/\[E\]|\[F\]|ERROR|panic|failed|\/source\/(?:routers|services|models|modules)\//iu.test(line))
+              .slice(-32).map(line=>{
                 let safe=line.replace(/[\x00-\x1f\x7f]/gu," ").slice(0,300)
                   .replace(/https?:\/\/[^\s"'<>]+/giu,"[remote-url]")
                   .replace(/(?:Basic|Bearer|token)\s+[A-Za-z0-9+/_=.-]+/giu,
