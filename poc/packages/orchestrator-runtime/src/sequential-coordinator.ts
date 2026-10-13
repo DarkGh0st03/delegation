@@ -49,11 +49,29 @@ export interface AccountSuspensionSequentialRunResult {
 
 const ROLE_ORDER = ["backend", "frontend", "test"] as const;
 
+/**
+ * Functional, cross-role acceptance contract; NOT generated source code.
+ * Keeping one shared API vocabulary prevents independent agent roles from
+ * implementing incompatible endpoints such as /unsuspend vs /reactivate.
+ * Delegation Credentials and path permissions remain completely unchanged.
+ */
+export const ACCOUNT_SUSPENSION_INTERFACE_CONTRACT = [
+  "Account states must be ACTIVE and SUSPENDED.",
+  "The administrator suspends an account with POST /api/users/:id/suspend",
+  "and reactivates it with POST /api/users/:id/reactivate.",
+  "Both endpoints return the updated UserDetails after success,",
+  "preserve profile fields, enforce existing administrator authorization,",
+  "and reject repeated transitions with HTTP 409.",
+  "The UI must show accessible actions named Suspend account when ACTIVE",
+  "and Reactivate account when SUSPENDED; disable each action while pending."
+].join(" ");
+
 export const ACCOUNT_SUSPENSION_TASK_PLAN = Object.freeze({
   backend: Object.freeze({
     subtask_id: "account-suspension-backend",
     instruction:
-      "Implement the backend Account Suspension lifecycle and shared status contract.",
+      "Implement the backend Account Suspension lifecycle and shared status contract. " +
+      ACCOUNT_SUSPENSION_INTERFACE_CONTRACT,
     relevant_paths: Object.freeze([
       "packages/shared/src/account-status.ts",
       "apps/backend/src/users/user.service.ts",
@@ -64,7 +82,9 @@ export const ACCOUNT_SUSPENSION_TASK_PLAN = Object.freeze({
   frontend: Object.freeze({
     subtask_id: "account-suspension-frontend",
     instruction:
-      "Integrate Account Suspension into the administrative user interface after the Backend task completes.",
+      "Integrate Account Suspension into the administrative user interface after the Backend task completes. " +
+      "Use the existing shared UserDetails contract and the SAME API routes implemented by Backend. " +
+      ACCOUNT_SUSPENSION_INTERFACE_CONTRACT,
     relevant_paths: Object.freeze([
       "packages/shared/src/account-status.ts",
       "packages/shared/src/user-contracts.ts",
@@ -76,7 +96,10 @@ export const ACCOUNT_SUSPENSION_TASK_PLAN = Object.freeze({
   test: Object.freeze({
     subtask_id: "account-suspension-test",
     instruction:
-      "Validate Account Suspension and invoke the controlled exact-SHA test gate after Backend and Frontend complete.",
+      "Validate Account Suspension and invoke the controlled exact-SHA test gate after Backend and Frontend complete. " +
+      "Write tests for the shared API and UI interface contract, including 409 duplicate transitions. " +
+      "If the controlled Runner reports any failure, do not claim success or fabricate acceptance. " +
+      ACCOUNT_SUSPENSION_INTERFACE_CONTRACT,
     relevant_paths: Object.freeze([
       "tests/backend/user.service.test.ts",
       "tests/backend/user.routes.test.ts",
