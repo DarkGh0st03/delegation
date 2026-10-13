@@ -76,8 +76,8 @@ class BoundedModel extends BaseLlm {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
       throw new Error("ADK maxModelTurns must be an integer between 1 and 100");
     }
-    if (!Number.isSafeInteger(maxModelCallMs) || maxModelCallMs < 1000 || maxModelCallMs > 120_000) {
-      throw new Error("ADK maxModelCallMs must be 1000..120000 milliseconds");
+    if (!Number.isSafeInteger(maxModelCallMs) || maxModelCallMs < 1000 || maxModelCallMs > 360_000) {
+      throw new Error("ADK maxModelCallMs must be 1000..360000 milliseconds");
     }
   }
   override async *generateContentAsync(request: LlmRequest, stream?: boolean, signal?: AbortSignal):
@@ -98,8 +98,9 @@ class BoundedModel extends BaseLlm {
     }
     const started = performance.now();
     // A single stalled Gemini API request must not occupy the entire A2A
-    // deadline. The native ADK Gemini model forwards this AbortSignal into
-    // Google's generateContent request; no provider retry or paid fallback.
+    // deadline. Complex code-generation responses may exceed two minutes,
+    // so callers can choose up to six minutes per turn while retaining
+    // AbortSignal cancellation; no provider retry or paid fallback.
     const callTimeout = AbortSignal.timeout(this.maxModelCallMs);
     const signals = [callTimeout, this.#signal, signal].filter(
       (candidate): candidate is AbortSignal => candidate !== undefined
@@ -183,8 +184,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   if (!Number.isSafeInteger(turnLimit) || turnLimit < 1 || turnLimit > 100) {
     throw new Error("ADK maxModelTurns must be an integer between 1 and 100");
   }
-  if (!Number.isSafeInteger(maxModelCallMs) || maxModelCallMs < 1000 || maxModelCallMs > 120_000) {
-    throw new Error("ADK maxModelCallMs must be 1000..120000 milliseconds");
+  if (!Number.isSafeInteger(maxModelCallMs) || maxModelCallMs < 1000 || maxModelCallMs > 360_000) {
+    throw new Error("ADK maxModelCallMs must be 1000..360000 milliseconds");
   }
 
   if (config.generateContentConfig) {
