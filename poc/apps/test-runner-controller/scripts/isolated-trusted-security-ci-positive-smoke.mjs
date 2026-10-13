@@ -254,9 +254,25 @@ async function pushReferenceApp(base,workTree,admin){
   git(["push",isolatedUrl,"HEAD:refs/heads/main"],{
     cwd:workTree,auth:admin,label:"push immutable main to isolated Gitea"
   });
-  const repoAfterPush=await api(base,repository,{
+  let repoAfterPush=await api(base,repository,{
     authorization:admin,label:"inspect_repo_after_push"
   });
+  if(repoAfterPush.empty){
+    // Git receive-hooks can update Gitea's repository metadata after the
+    // HTTP push returns. A branches lookup while is_empty=true panics on
+    // this disposable Gitea version. Wait for actual metadata convergence,
+    // but never fabricate a successful branch/commit verification.
+    await stage("wait_post_receive_repository_state",async()=>{
+      for(let attempt=0;attempt<40;attempt++){
+        await sleep(500);
+        repoAfterPush=await api(base,repository,{
+          authorization:admin,label:"inspect_post_receive_state"
+        });
+        if(repoAfterPush.empty===false)return;
+      }
+      throw Error("Gitea still marks pushed repository empty after 20 seconds");
+    },30000);
+  }
   process.stderr.write("[trusted-positive-ci] repo_after_push "+
     JSON.stringify({empty:repoAfterPush.empty,
       default_branch:repoAfterPush.default_branch})+"\n");
