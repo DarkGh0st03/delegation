@@ -1,12 +1,12 @@
 # Thesis ADK / A2A / Shared MCP — GitHub Actions map
 
-This document distinguishes the current **unmerged development line** from the older measured and experimental baselines. The head of `feat/shared-mcp-spike` changes as fixes land; use GitHub's actual branch SHA and completed Actions runs, not a frozen snapshot, before promoting anything.
+The ADK/A2A/shared-MCP integration is merged into **main**. The verified architecture checkpoint is `c7af6ca0a6b0254e3b9966e7631325ab1e540be5` (13 October 2026). See [CURRENT_CHECKPOINT.md](CURRENT_CHECKPOINT.md) for exact evidence; always inspect the actual ref and completed checks before a new run.
 
 ## Current actions
 
 | Workflow | Trigger | Role and evidence | Charges Gemini API? |
 | --- | --- | --- | --- |
-| `merge-protection-offline.yml` | Automatic push to feature branch; optional manual | Fast unit regressions, protected merge checks, validates billing guards, checks archival workflows are disabled | **No** |
+| `merge-protection-offline.yml` | Automatic scoped push to feature/main and pull request; optional manual | Fast unit regressions, protected merge checks, validates billing guards, checks archival workflows are disabled | **No** |
 | `shared-mcp-production-coordinator.yml` | Automatic push to feature/main on relevant code | Scripted ADK Backend/Frontend/Test, A2A, one shared MCP, real Rust/OPA/Gateway and disposable Gitea, deliberately stubbed Controlled Runner | **No** |
 | `shared-mcp-real-positive-e2e.yml` | Automatic push to feature/main on relevant code | Scripted ADK output, **real Docker Runner** including independent acceptance, separate trusted Security CI, exact-SHA PR; without review the merge is denied | **No** |
 | `isolated-positive-security-ci.yml` | As configured by the workflow | Independent disposable Gitea real Docker positive Security CI, real acceptance, trusted status | **No** |
@@ -20,7 +20,8 @@ The automatically triggered paths are deliberately scoped: editing the **billabl
 
 - `adk-phase5-e2e.yml`: an old `refactor/adk-integration` workflow retained as a **scripted-only historical regression**. Legacy billable provider modes and the former one-shot push marker are disabled, and no provider keys are handed to this workflow.
 - `adk-gemini-live-smoke.yml` and `adk-openai-live-smoke.yml`: **ARCHIVED**, with their only jobs disabled. Their pre-retirement behavior and evidence remain in Git history.
-- `adk-phase1-smoke.yml` through `adk-phase4-smoke.yml`, replay/measurement, security and reproducibility workflows: historical evidence and original PoC testing; not proof of new live-Gemini shared-MCP acceptance.
+- `adk-phase1-smoke.yml` through `adk-phase4-smoke.yml` and replay/measurement workflows retain earlier integration and original PoC coverage. Their results do not prove live-Gemini shared-MCP acceptance.
+- `phase11-security.yml` still provides current functional security regression. `phase12-reproducibility.yml` now validates the separate current ADK/MCP contract on pull requests and main; the original measured manifest remains unchanged.
 
 Do not remove or rewrite the old measured-baseline results to appear to describe the newer ADK + MCP implementation.
 
@@ -38,4 +39,4 @@ Do not remove or rewrite the old measured-baseline results to appear to describe
 - `docs/gemini-shared-mcp-final-run.md`: billing, model selection, preflight, evidence and review.
 - `docs/human-approved-gitea-merge.md`: privileged manual merge controls and deployment prerequisites.
 - `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs`: authoritative offline E2E with actual Docker acceptance.
-- `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`: billable real Gemini integration, **not yet executed**.
+- `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`: billable real Gemini integration; attempt `38363401514` failed before any write. The 300-second timeout correction still requires a successful manual live run.

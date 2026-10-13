@@ -1,6 +1,8 @@
-# One shared MCP server — experimental spike
+# One shared MCP server — integrated ADK/A2A path
 
-Status: **read_file experimental spike validated in separate real-infrastructure and native-ADK tests**. An opt-in combined ADK → MCP → Gateway → Rust → OPA → Gitea read-only smoke is also provided; run it before claiming combined E2E success. All other tools continue through existing FunctionTools. Full write-enabled A2A integration remains out of scope.
+Status at 13 October 2026: **integrated into `main`**, with `read_file`, `update_file`, `create_file` and `run_tests` used by the canonical three-role ADK/A2A scripts according to role/task authority. Scripted full E2E with real Docker acceptance and separate trusted CI passed at `c7af6ca...` in run `38365626204`. The first paid Gemini attempt failed on Backend inference timeout; live success remains pending after the timeout correction. See [current checkpoint](../../docs/CURRENT_CHECKPOINT.md).
+
+The sections below preserve the incremental development stages and their opt-in smoke commands. Statements about a read-only spike, tools remaining FunctionTools, or full A2A integration being out of scope describe those **historical stages**, not the current canonical coordinator path.
 
 The standalone `poc/mcp-shared` package remains outside the existing `poc` npm workspaces. The ADK agent-runtime workspace now pins MCP SDK 1.26.0 in its npm dependencies and committed lockfile; the shared package has its own committed lockfile.
 

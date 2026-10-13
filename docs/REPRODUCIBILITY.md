@@ -1,10 +1,18 @@
 # Reproducibility and Measurement Protocol
 
-This document freezes the environment and evidence contract used for the final thesis PoC experiments.
+This document distinguishes the frozen measured PoC campaign from the current ADK/A2A/shared-MCP dependency and runtime contract.
 
 > **Scope of the evidence.** The run IDs, artifact hashes, summary statistics and machine-readable manifest in this document describe the historical measured executable-code checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a`. The later `refactor/core-cleanup` branch is a separate post-measurement code evolution. Its regression status must be established independently, and these historical measurements must not be attributed to that refactored code unless a new measurement campaign is executed.
 
 The file `poc/experiments/reproducibility-manifest.json` is intentionally retained as the contract for the historical measured campaign; it is not silently rewritten to describe the refactored candidate.
+
+## Current ADK/A2A/shared-MCP contract
+
+`poc/experiments/adk-mcp-reproducibility-manifest.json` is the default contract for the current checkout. It records the reference architecture SHA and hashes of `Cargo.lock`, `blockchain/did-client/package-lock.json`, `poc/package-lock.json` and `poc/mcp-shared/package-lock.json`. The separate legacy `poc/adk-spike` workspace is not part of the canonical path. The checker also verifies that the historical measured manifest is unchanged.
+
+This contract is **not** evidence of a successful Gemini run or a new performance campaign. It contains no copied historical run/artifact results. Reports identify the actual checked-out Git commit, label their contract scope, and leave the measurement schema null for the current contract. A lightweight local check validates files; only `PHASE12_VERIFY_RUNTIME=1` additionally certifies the installed runtime versions.
+
+The historical manifest remains byte-for-byte unchanged. To reproduce historical results, check out the recorded historical framework revision and follow its instructions. Applying its dependency hash to today's checkout correctly fails.
 
 ## Reproduce a specific experimental run
 
@@ -18,7 +26,7 @@ The protected application always starts from:
 
 The positive experiment creates `feature/account-suspension` from that exact baseline. `main` is not mutated and merge remains human-only.
 
-## Frozen runtime contract
+## Historical frozen runtime contract
 
 The machine-readable source of truth is:
 
@@ -44,7 +52,7 @@ The hosted GitHub runner image build is recorded as evidence but is not treated 
 
 `Cargo.lock`, `blockchain/did-client/package-lock.json`, and `poc/package-lock.json` are committed.
 
-The PoC npm lockfile is the exact dependency tree captured from the validated reference regression and is now part of the repository. CI installs that tree with `npm ci`; the reproducibility contract checks its SHA-256 so transitive dependency drift fails closed. Historical evidence bundles still preserve the lockfile used by their original run.
+Each checkout has its own committed dependency tree. CI installs the current PoC tree with `npm ci`; the current contract checks all four active lockfile hashes even when no optional lock environment variable is set. Historical evidence bundles retain their original lockfile and manifest. Dependency updates must explicitly update the current contract and pass regression; never replace the historical hashes to make a current run pass.
 
 ## Validation
 
@@ -54,7 +62,7 @@ Run the lightweight reproducibility check with:
 npm --prefix poc run experiment:repro-check
 ```
 
-The dedicated GitHub Actions workflow additionally installs the exact Rust and Foundry versions, installs the committed PoC npm tree with `npm ci`, validates the runtime and lockfile hash, and uploads a `phase12b-reproducibility-evidence` artifact.
+The dedicated GitHub Actions workflow runs automatically on pull requests and main pushes, tests rejection of dependency/historical-manifest drift, and additionally installs the exact Rust and Foundry versions, installs the committed PoC npm tree with `npm ci`, validates the runtime and lockfile hashes, and uploads both manifests and the checked lockfiles in a `phase12b-reproducibility-evidence` artifact.
 
 The main `PoC Baseline Validation` workflow also supports `workflow_dispatch`, allowing an explicit rerun of the complete positive E2E against the frozen protected baseline.
 

@@ -2,16 +2,40 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+// npm --prefix poc runs scripts from poc; resolve contracts from the repository.
+process.chdir(fileURLToPath(new URL("../../", import.meta.url)));
 
 const manifestPath =
-  process.env.PHASE12_MANIFEST ?? "poc/experiments/reproducibility-manifest.json";
+  process.env.PHASE12_MANIFEST ?? "poc/experiments/adk-mcp-reproducibility-manifest.json";
 const reportPath = process.env.PHASE12_REPORT_FILE;
 
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-assert.equal(
-  manifest.schema_version,
-  "phase12b-reproducibility-manifest/v1"
-);
+const currentContract = manifest.schema_version === "adk-mcp-reproducibility-manifest/v1";
+assert.ok(currentContract || manifest.schema_version === "phase12b-reproducibility-manifest/v1",
+  "Unsupported reproducibility manifest schema");
+
+const verifiedLocks = {};
+if (currentContract) {
+  assert.equal(manifest.historical_reference.manifest,
+    "poc/experiments/reproducibility-manifest.json");
+  assert.equal(createHash("sha256").update(await readFile(
+    manifest.historical_reference.manifest)).digest("hex"),
+    manifest.historical_reference.sha256, "Historical measured manifest changed");
+  const locks = manifest.dependency_resolution.lockfiles;
+  const requiredLocks = ["Cargo.lock", "blockchain/did-client/package-lock.json",
+    "poc/package-lock.json", "poc/mcp-shared/package-lock.json"];
+  assert.deepEqual(Object.keys(locks).sort(), [...requiredLocks].sort(),
+    "Current contract must cover every active dependency lockfile");
+  for (const path of requiredLocks) {
+    const hash = createHash("sha256").update(await readFile(path)).digest("hex");
+    assert.equal(hash, locks[path], "Committed lockfile hash drifted: " + path);
+    verifiedLocks[path] = hash;
+  }
+  assert.equal(locks["poc/package-lock.json"],
+    manifest.dependency_resolution.poc_lock_sha256);
+}
 
 const lockContract = manifest.dependency_resolution;
 assert.equal(lockContract.poc_lock_committed, true);
@@ -135,7 +159,7 @@ if (process.env.PHASE12_VERIFY_RUNTIME === "1") {
 }
 
 let resolvedLock = null;
-const lockPath = process.env.PHASE12_RESOLVED_LOCK;
+const lockPath = process.env.PHASE12_RESOLVED_LOCK ?? lockContract.poc_lockfile;
 if (lockPath) {
   const raw = await readFile(lockPath);
   const lock = JSON.parse(raw.toString("utf8"));
@@ -157,7 +181,10 @@ if (lockPath) {
 }
 
 const report = {
-  schema_version: "phase12b-reproducibility-report/v1",
+  schema_version: currentContract ? "adk-mcp-reproducibility-report/v1" : "phase12b-reproducibility-report/v1",
+  contract_scope: currentContract ? "current-adk-a2a-shared-mcp" : "historical-measured-baseline",
+  framework_commit_sha: command("git", ["rev-parse", "HEAD"]),
+  verified_lockfiles: verifiedLocks,
   manifest: manifestPath,
   manifest_contract_valid: true,
   runtime_verified: process.env.PHASE12_VERIFY_RUNTIME === "1",
@@ -165,7 +192,7 @@ const report = {
   resolved_poc_lock: resolvedLock,
   protected_application_baseline:
     manifest.protected_application.baseline_sha,
-  measurement_schema: manifest.validated_evidence.measurement_schema
+  measurement_schema: manifest.validated_evidence?.measurement_schema ?? null
 };
 
 if (reportPath) {
