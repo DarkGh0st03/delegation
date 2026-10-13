@@ -6,7 +6,7 @@ This file is the primary continuation checkpoint for the thesis PoC. A future im
 
 ## Current integration checkpoint
 
-ADK/A2A/shared MCP is merged into `main` at `c7af6ca...`. Current baseline (22 jobs), Phase 11 security and scripted real-Docker acceptance are green. The first shared-MCP Gemini attempt failed during Backend inference; the 300-second correction awaits live validation. See [CURRENT_CHECKPOINT.md](CURRENT_CHECKPOINT.md) for evidence and remaining work, and [REPRODUCIBILITY.md](REPRODUCIBILITY.md) for the separate current and historical contracts.
+ADK/A2A/shared MCP is merged into `main`. The successful **real-Gemini** three-role checkpoint is GitHub Actions [run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436), framework SHA `9012c8c4e7a9244cb931bcdef411cc5f443f0c08` (13 October 2026). All 11 generated files, API contract preflight, real Docker acceptance, independent researcher acceptance and trusted Security CI passed; the temporary Gitea PR correctly remained unmerged for lack of human approval. The earlier failed live run and scripted milestones remain historically distinct. See [live evidence](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md), [CURRENT_CHECKPOINT.md](CURRENT_CHECKPOINT.md), and [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 The numbered implementation phases below document the original PoC and its measured baseline. Their COMPLETE status does not establish completion of live Gemini acceptance or a new ADK/MCP measurement campaign.
 

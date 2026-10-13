@@ -14,7 +14,7 @@ There is no automatic trigger from `push`, `pull_request`, CI success or an agen
 
 ## Deployment prerequisites (NOT configured automatically)
 
-**Do not enable the manual merge in production until an administrator has reviewed the new workflow and granted access to the target Gitea instance.** The workflow is currently being developed on `feat/shared-mcp-spike`. GitHub's manual workflow picker requires the file on the repository's **default branch**; developing on this feature branch does not make it available for ordinary manual dispatch.
+**Do not enable the manual merge in production until an administrator has reviewed the new workflow and granted access to the target Gitea instance.** The workflow file is present on the default GitHub branch. Availability in the Actions UI does **not** configure the required protected environment, authentic reviewer, production Gitea tokens or deployment controls. The successful real-Gemini test [run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) used only **disposable Gitea**, created no genuine review and performed no persistent merge.
 
 After code review, configure in GitHub repository settings:
 
