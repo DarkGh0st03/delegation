@@ -46,6 +46,7 @@ jobs:
       OPA_URL: http://127.0.0.1:8181
       GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
       ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"
       ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR: "0x0000000000000000000000000000000000000000000000000000000000000002"
       ADAPTER_EVM_PRIVATE_KEY_BACKEND: "0x0000000000000000000000000000000000000000000000000000000000000003"
@@ -136,6 +137,11 @@ jobs:
 
       - name: Start real Rust Delegation Adapter
         run: |
+          # Same ephemeral caller secrets must reach both Adapter and agents.
+          set -a
+          source poc/infra/.env
+          source poc/infra/runtime/trust.env
+          set +a
           cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/shared-mcp-adapter.log 2>&1 &
           for i in {1..90}; do
             if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then
