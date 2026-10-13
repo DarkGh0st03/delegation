@@ -1,0 +1,67 @@
+{
+  "schema_version": "adk-mcp-reproducibility-manifest/v1",
+  "protected_application": {
+    "repository": "DarkGh0st03/iam-console-poc",
+    "baseline_branch": "baseline-before-account-suspension",
+    "baseline_sha": "405748b1e77992b6bd8630a3ab6f990658d32f6b"
+  },
+  "runtime": {
+    "ci_os": "ubuntu-24.04",
+    "node": "22.15.0",
+    "npm": "10.9.2",
+    "rust": "1.99.0",
+    "solidity": "0.8.24",
+    "foundry": "v1.8.4",
+    "a2a_sdk": "1.3.0"
+  },
+  "infrastructure": {
+    "gitea_image": "docker.gitea.com/gitea:28.0.0",
+    "opa_image": "openpolicyagent/opa:1.21.1",
+    "foundry_image": "ghcr.io/foundry-rs/foundry:v1.8.4",
+    "runner_image": "node:22.15.0-bookworm",
+    "anvil_chain_id": 31337,
+    "repository_uri": "gitea://gitea.local/thesis/iam-console-poc",
+    "feature_branch": "feature/account-suspension",
+    "runner_profile": "poc-default"
+  },
+  "experiment_contract": {
+    "agent_order": [
+      "backend",
+      "frontend",
+      "test"
+    ],
+    "trust_profile": "evm",
+    "project_tests_required": "pass",
+    "researcher_acceptance_required": "pass",
+    "exact_sha_gate": true,
+    "automatic_merge": false,
+    "researcher_acceptance_agent_writable": false,
+    "status_list_authentication": "eddsa-jwt-via-did:ethr",
+    "gitea_main_branch_protection": true,
+    "solidity_regression_in_ci": true
+  },
+  "dependency_resolution": {
+    "poc_top_level_versions_are_exact": true,
+    "poc_lock_committed": true,
+    "poc_lockfile": "poc/package-lock.json",
+    "poc_lock_sha256": "397bfcdc74fc71dbd7981b06cca5acfce76cd8ff926d3f7c24f1227c04b8c6db",
+    "rust_cargo_lock_committed": true,
+    "did_client_lock_committed": true,
+    "lockfiles": {
+      "Cargo.lock": "7fcfcbf0d818a7f43bb45e20c80e12d2d2efc7d5afa069f13bf4b37ade71712a",
+      "blockchain/did-client/package-lock.json": "8dbeebadd6e31e2583a2b318e6180b894259a8a6d81bbdd74dbd44a6dc32905e",
+      "poc/package-lock.json": "397bfcdc74fc71dbd7981b06cca5acfce76cd8ff926d3f7c24f1227c04b8c6db",
+      "poc/mcp-shared/package-lock.json": "1402b3a881f804c907287134fc1f90ca6724cbc865b868ea49e45c5cf4711a7f"
+    }
+  },
+  "checkpoint": {
+    "architecture": "google-adk-a2a-shared-mcp",
+    "reference_framework_sha": "c7af6ca0a6b0254e3b9966e7631325ab1e540be5",
+    "scope": "Dependency and runtime contract; not a measurement campaign or proof of live-model success."
+  },
+  "historical_reference": {
+    "manifest": "poc/experiments/reproducibility-manifest.json",
+    "sha256": "c4fe6a0f0cfbd71b0e4b9d764d8c2d3fdab1c36c5536b95a81de96d9cc3551bb",
+    "framework_sha": "cbadb5440db408d4047d4eb870a9fb231362414a"
+  }
+}

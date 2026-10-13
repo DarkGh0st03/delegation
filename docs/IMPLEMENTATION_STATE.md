@@ -1,10 +1,16 @@
 # Implementation State
 
-Last updated: 2026-10-09
+Last updated: 2026-10-13
 
 This file is the primary continuation checkpoint for the thesis PoC. A future implementation session should read it before proposing architectural changes.
 
-## Current milestone
+## Current integration checkpoint
+
+ADK/A2A/shared MCP is merged into `main` at `c7af6ca...`. Current baseline (22 jobs), Phase 11 security and scripted real-Docker acceptance are green. The first shared-MCP Gemini attempt failed during Backend inference; the 300-second correction awaits live validation. See [CURRENT_CHECKPOINT.md](CURRENT_CHECKPOINT.md) for evidence and remaining work, and [REPRODUCIBILITY.md](REPRODUCIBILITY.md) for the separate current and historical contracts.
+
+The numbered implementation phases below document the original PoC and its measured baseline. Their COMPLETE status does not establish completion of live Gemini acceptance or a new ADK/MCP measurement campaign.
+
+## Historical measured milestone
 
 **Phase 12 — reproducibility + measurements: COMPLETE**
 
@@ -29,17 +35,17 @@ Completed checkpoints:
 
 Implementation roadmap: **COMPLETE through Phase 12**
 
-## Post-measurement refactor candidate
+## Post-measurement refactor history
 
 The Phase 12 evidence below belongs to the historical measured executable-code checkpoint:
 
 `cbadb5440db408d4047d4eb870a9fb231362414a`
 
-The current post-measurement code evolution is being developed on:
+The post-measurement cleanup was developed on:
 
 `refactor/core-cleanup`
 
-This branch is a **refactored candidate**, not the code that produced the Phase 12 latency/security/reproducibility evidence. Its changes include:
+This refactor was subsequently merged into `main`; it is not the code that produced the original Phase 12 measurements. Its changes include:
 
 - fail-closed `parallel_verification` error propagation;
 - split `TrustResolver` / `TrustPublisher` contracts;
@@ -54,7 +60,7 @@ This branch is a **refactored candidate**, not the code that produced the Phase 
 
 Permission delegation semantics remain **exact-match** between parent and child permissions. Hierarchical resource-scope attenuation is intentionally not part of this refactored candidate.
 
-The refactored code completed its fresh full PoC regression successfully on run `37928199842`, with dedicated core validation `37928496609` and reproducibility validation `37928532313`. Historical Phase 12 measurements remain valid for `cbadb544...` but must not be presented as measurements of the refactored code unless a new measurement campaign is executed. The dedicated Phase 11 Security Experiments workflow has not yet been rerun as refactored evidence; until that run is recorded, the historical Phase 11 campaign remains tied to the measured baseline.
+The refactored code completed its fresh full PoC regression successfully on run `37928199842`, with dedicated core validation `37928496609` and reproducibility validation `37928532313`. Historical Phase 12 measurements remain valid for `cbadb544...` but must not be presented as measurements of the refactored code unless a new measurement campaign is executed. The current Phase 11 Security Experiments run `38365626239` passed on `c7af6ca...`. The older campaign remains tied to its original measured baseline.
 
 ## Source-of-truth repositories
 

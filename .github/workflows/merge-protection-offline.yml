@@ -3,7 +3,24 @@ name: Protected Merge Offline Security Regression
 
 on:
   push:
-    branches: [feat/shared-mcp-spike]
+    branches: [feat/shared-mcp-spike, main]
+    paths:
+      - '.github/workflows/merge-protection-offline.yml'
+      - '.github/workflows/human-approved-gitea-merge.yml'
+      - 'poc/packages/orchestrator-runtime/src/trusted-merge.ts'
+      - 'poc/packages/orchestrator-runtime/src/merge-readiness.ts'
+      - 'poc/packages/orchestrator-runtime/src/manual-merge-intent.ts'
+      - 'poc/packages/orchestrator-runtime/scripts/human-merge.mjs'
+      - 'poc/packages/orchestrator-runtime/test/trusted-merge.test.ts'
+      - 'poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts'
+      - 'poc/scripts/phase10b-positive-e2e.mjs'
+      - '.github/workflows/gemini-paid-shared-mcp-final.yml'
+      - '.github/workflows/adk-phase5-e2e.yml'
+      - '.github/workflows/adk-gemini-live-smoke.yml'
+      - '.github/workflows/adk-openai-live-smoke.yml'
+      - 'poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs'
+      - 'poc/scripts/gemini-thinking-policy.mjs'
+  pull_request:
     paths:
       - '.github/workflows/merge-protection-offline.yml'
       - '.github/workflows/human-approved-gitea-merge.yml'

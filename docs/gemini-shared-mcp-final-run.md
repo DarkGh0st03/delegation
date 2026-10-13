@@ -2,7 +2,7 @@
 
 ## Purpose and current readiness
 
-This run is the **only billed Gemini test** intended for manual launch by the thesis owner. It is a separate action from all free scripted smoke tests and from an actual privileged human-authorized merge. It has **not been executed** in the development phase documented here: only offline safety checks and deterministic end-to-end tests have been run.
+This run is the **only billed Gemini test** intended for manual launch by the thesis owner. It is a separate action from all free scripted smoke tests and from an actual privileged human-authorized merge. The first execution, [run 38363401514](https://github.com/DarkGh0st03/delegation/actions/runs/38363401514) on `a59819e...`, failed in the Backend at the third model call (120-second inference timeout), after eight successful reads and no writes. Commit `c7af6ca...` includes the correction to 300 seconds per call for each role. **Successful live acceptance remains pending**; do not treat the scripted evidence as a live-model result.
 
 Workflow: `.github/workflows/gemini-paid-shared-mcp-final.yml`  
 Program: `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`
@@ -21,7 +21,7 @@ These scripted results do **not** establish that real Gemini will generate corre
 
 ## What the live model must accomplish
 
-Backend must update the four delegated shared/backend paths, Frontend must update the three delegated frontend paths, and Test must update three existing test files, create the permitted Playwright E2E spec, and call `run_tests`. Each agent receives the role's established ADK system prompt, path-scoped tools and bounded delegation; no precomputed reference source is fed to the model. After the Test Agent runs all six project stages and independent acceptance, an isolated trusted CI service reruns the full Docker-based check and posts status `pending → success` for the exact Gitea feature HEAD.
+Backend must update the four delegated shared/backend paths, Frontend must update the three delegated frontend paths, and Test must update three existing test files, create the permitted Playwright E2E spec, and call `run_tests`. Each agent receives the role's established ADK system prompt, path-scoped tools and bounded delegation; no precomputed reference source is fed to the model. After the Test Agent runs all six project stages and independent acceptance, the coordinator opens the PR. Then an isolated trusted CI service reruns the full Docker-based check and posts status `pending → success` for the exact Gitea feature HEAD. Trusted CI and human review are merge requirements, not prerequisites for opening that PR.
 
 Passing produces an open PR in **temporary job-local Gitea only**. No genuine human review or merge is performed. The Gitea instance and its repositories are destroyed during teardown.
 
@@ -35,12 +35,12 @@ I AUTHORIZE GEMINI API CHARGES
 
 The application separately requires `GITHUB_ACTIONS=true`, `GITHUB_EVENT_NAME=workflow_dispatch`, `GITHUB_RUN_ATTEMPT=1`, GitHub repository `DarkGh0st03/delegation`, an allowed feature/main branch and the same confirmation. A rerun is rejected, as are unconfirmed or automatic jobs. The Gemini API key is provided **only to the live inference step**, not to Rust/bootstrap/unit-test steps. The full run uses Gemini Developer API explicitly, without a billable OpenAI fallback. Inference is capped by bounded turns and per-call timeout, but **no fixed maximum charge can be guaranteed** because model token consumption varies. There are no automated retries of the paid job.
 
-Currently staged defaults: `gemini-3.8-flash`, thinking `LOW`, `maxOutputTokens=32000` per model inference and `maxModelTurns=40` per specialized role. Confirm API access, quota and the correct available model name independently before dispatch.
+Currently staged defaults: `gemini-3.8-flash`, thinking `LOW`, `maxOutputTokens=32000` per model inference and `maxModelTurns=40` per specialized role and `maxModelCallMs=300000` per inference. Confirm API access, quota and the correct available model name independently before dispatch.
 
 ## Preflight and first manual invocation
 
 1. Confirm that the latest **free** `Protected Merge Offline Security Regression` and scripted shared-MCP real-Docker regressions are green.
-2. Review the feature branch and promote the reviewed workflow and program to the GitHub **default branch** when approved. GitHub's ordinary workflow-dispatch UI does not present a newly authored workflow that exists solely on a feature branch. This document does not authorize any automatic merge of `feat/shared-mcp-spike`.
+2. The workflow and timeout correction are already on the GitHub default branch, `main`. Select the reviewed current `main` revision after its free checks pass and record the exact SHA before dispatch. No additional feature-branch promotion is required for the checkpoint documented here.
 3. Verify the GitHub repository secret `Delegation_Thesis_Gemini` is present without displaying its contents. Ensure the model ID is accepted by the API and sufficient quota is available.
 4. **Only the thesis owner**, when ready to incur charges, manually selects *Actions → Gemini Paid - Shared MCP Full E2E (Manual Only) → Run workflow*, chooses the appropriate reviewed ref/model, and types the exact billing confirmation. Do not manually dispatch all the free regression workflows.
 5. Wait for the run. Review the final JSON status, exact revisions, real Docker phases, acceptance, trusted CI and open PR checks. Do not mark partial or failed runs PASS.

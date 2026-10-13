@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -29,6 +30,9 @@ jobs:
       - name: Install committed PoC npm dependency tree
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 
+      - name: Test reproducibility drift detection
+        run: node --test poc/scripts/test/phase12b-reproducibility.test.mjs
+
       - name: Validate reproducibility contract and runtime
         env:
           PHASE12_VERIFY_RUNTIME: "1"
@@ -44,6 +48,10 @@ jobs:
             /tmp/phase12b-reproducibility-report.json
             poc/package-lock.json
             poc/experiments/reproducibility-manifest.json
+            poc/experiments/adk-mcp-reproducibility-manifest.json
+            Cargo.lock
+            blockchain/did-client/package-lock.json
+            poc/mcp-shared/package-lock.json
             docs/REPRODUCIBILITY.md
           if-no-files-found: error
           retention-days: 30
