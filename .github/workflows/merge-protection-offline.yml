@@ -65,6 +65,27 @@ jobs:
             exit 1
           fi
           echo "PASS: automatic shared-MCP paid inference refused"
+      - name: Verify manual Gemini fails before inference when API key is absent
+        shell: bash
+        env:
+          GITHUB_ACTIONS: "true"
+          GITHUB_EVENT_NAME: workflow_dispatch
+          GITHUB_RUN_ATTEMPT: "1"
+          GITHUB_REPOSITORY: DarkGh0st03/delegation
+          GITHUB_REF: refs/heads/feat/shared-mcp-spike
+          THESIS_PAID_GEMINI_CONFIRM: "I AUTHORIZE GEMINI API CHARGES"
+        run: |
+          unset GEMINI_API_KEY
+          if node --experimental-strip-types poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs > /tmp/paid-no-key.log 2>&1; then
+            echo "ERROR: manual Gemini run proceeded without credential"
+            exit 1
+          fi
+          if ! grep -q 'Missing Gemini API key for manual run' /tmp/paid-no-key.log; then
+            echo "ERROR: expected missing-key preflight was not reached"
+            exit 1
+          fi
+          echo "PASS: manual paid run requires an explicit API credential"
+
       - name: Assert manual paid workflow has no automatic trigger
         shell: bash
         run: |
@@ -75,6 +96,10 @@ jobs:
           assert.ok(match,"Manual Gemini workflow trigger block missing");
           assert.match(match[1],/^  workflow_dispatch:/m);
           assert.doesNotMatch(match[1],/^  (push|schedule|pull_request|workflow_run|workflow_call):/m);
+          const source=fs.readFileSync("poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs","utf8");
+          assert.doesNotMatch(source,/ACCOUNT_SUSPENSION_REFERENCE_FILES|FixedRoleModel/);
+          assert.match(source,/createGeminiAdkModel/);
+          assert.match(source,/createSharedMcpHttpServer/);
           assert.match(text,/github\.run_attempt == 1/);
           assert.match(text,/inputs\.authorization == 'I AUTHORIZE GEMINI API CHARGES'/);
           console.log("PASS: paid workflow is manual-only with explicit billing intent");
