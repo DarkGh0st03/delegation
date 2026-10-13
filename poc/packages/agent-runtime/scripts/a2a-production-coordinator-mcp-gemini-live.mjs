@@ -64,8 +64,13 @@ const geminiThinking=process.env.THESIS_GEMINI_THINKING??"LOW";
 const perRole=Object.fromEntries(roles.map(role=>[role,
   resolveRoleGeminiConfiguration({role,roleMode:"all",
     fullModel:geminiModel,fullThinking:geminiThinking})]));
-const generation=Object.fromEntries(roles.map(role=>[role,
-  buildGeminiGenerationConfig("all",perRole[role])]));
+// Gemini 3.8 deprecates sampling parameters. Preserve the explicit output
+// cap and nested thinking configuration without sending temperature.
+const generation=Object.fromEntries(roles.map(role=>{
+  const config=buildGeminiGenerationConfig("all",perRole[role]);
+  return [role,{maxOutputTokens:config.maxOutputTokens,
+    thinkingConfig:config.thinkingConfig}];
+}));
 
 const branch="feature/account-suspension";
 const baselineSha="405748b1e77992b6bd8630a3ab6f990658d32f6b";
