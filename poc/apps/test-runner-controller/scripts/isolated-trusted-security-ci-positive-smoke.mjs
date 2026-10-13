@@ -144,9 +144,11 @@ async function api(base,path,{authorization,method="GET",body,
               "logs","--tail","120",container
             ],{encoding:"utf8",timeout:10000,
               stdio:["ignore","pipe","pipe"]});
-            const logIssues=serverLogs.split(/\r?\n/u)
-              .filter(line=>/\[E\]|\[F\]|ERROR|panic|failed|\/source\/(?:routers|services|models|modules)\//iu.test(line))
-              .slice(-32).map(line=>{
+            const allLogs=serverLogs.split(/\r?\n/u);
+            const panicAt=allLogs.findIndex(line=>/PANIC:|panic recovered/iu.test(line));
+            const relevant=panicAt>=0?allLogs.slice(panicAt,panicAt+65):allLogs.slice(-30);
+            const logIssues=relevant.filter(line=>line.trim().length>0)
+              .map(line=>{
                 let safe=line.replace(/[\x00-\x1f\x7f]/gu," ").slice(0,300)
                   .replace(/https?:\/\/[^\s"'<>]+/giu,"[remote-url]")
                   .replace(/(?:Basic|Bearer|token)\s+[A-Za-z0-9+/_=.-]+/giu,
@@ -252,6 +254,12 @@ async function pushReferenceApp(base,workTree,admin){
   git(["push",isolatedUrl,"HEAD:refs/heads/main"],{
     cwd:workTree,auth:admin,label:"push immutable main to isolated Gitea"
   });
+  const repoAfterPush=await api(base,repository,{
+    authorization:admin,label:"inspect_repo_after_push"
+  });
+  process.stderr.write("[trusted-positive-ci] repo_after_push "+
+    JSON.stringify({empty:repoAfterPush.empty,
+      default_branch:repoAfterPush.default_branch})+"\n");
   const main=await api(base,repository+"/branches/main",{
     authorization:admin,label:"verify_isolated_main"
   });
