@@ -13,6 +13,7 @@ on:
       - 'poc/packages/orchestrator-runtime/scripts/human-merge.mjs'
       - 'poc/packages/orchestrator-runtime/test/trusted-merge.test.ts'
       - 'poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts'
+      - 'poc/scripts/phase10b-positive-e2e.mjs'
   workflow_dispatch:
 
 permissions:
@@ -41,6 +42,25 @@ jobs:
         run: npm --prefix poc run orchestrator-runtime:test
       - name: Check human CLI syntax
         run: node --check poc/packages/orchestrator-runtime/scripts/human-merge.mjs
+      - name: Check legacy paid E2E entrypoint syntax
+        run: node --check poc/scripts/phase10b-positive-e2e.mjs
+      - name: Assert live-provider inference rejects automatic pushes
+        shell: bash
+        env:
+          GITHUB_ACTIONS: "true"
+          GITHUB_EVENT_NAME: "push"
+          PHASE10B_AGENT_ENGINE: "adk-gemini"
+          PHASE10B_ORCHESTRATOR_ENGINE: "adk-scripted"
+        run: |
+          if node --experimental-strip-types poc/scripts/phase10b-positive-e2e.mjs > /tmp/manual-paid-gate-check.log 2>&1; then
+            echo "ERROR: live agent mode accepted a non-manual push"
+            exit 1
+          fi
+          if ! grep -q 'Live model API calls require an explicit manual GitHub dispatch' /tmp/manual-paid-gate-check.log; then
+            echo "ERROR: paid-mode guard did not cause the rejection"
+            exit 1
+          fi
+          echo "Paid inference requires manual dispatch -- automatic push rejected"
       - name: Prove CLI denies accidental untrusted local execution
         shell: bash
         env:
