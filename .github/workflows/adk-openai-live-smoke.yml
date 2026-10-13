@@ -1,4 +1,6 @@
-name: ADK OpenAI Live Probe (Manual Only)
+# ARCHIVED historical provider smoke. No longer runnable or billable.
+# The only intended live full-system test is gemini-paid-shared-mcp-final.yml.
+name: [ARCHIVED] ADK OpenAI Live Probe (Manual Only)
 
 on:
   workflow_dispatch:
@@ -19,6 +21,8 @@ concurrency:
 
 jobs:
   read-only-model-probe:
+    # Archival jobs are deliberately disabled even after manual dispatch.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
