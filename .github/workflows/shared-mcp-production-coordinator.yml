@@ -6,18 +6,23 @@ name: Shared MCP Production Coordinator Smoke (Scripted, No AI Billing)
 # This workflow never gets a Gemini/OpenAI key and never touches user's Gitea.
 on:
   push:
-    branches: [feat/shared-mcp-spike]
+    branches: [feat/shared-mcp-spike, main]
     paths:
       - '.github/workflows/shared-mcp-production-coordinator.yml'
-      - 'poc/packages/agent-runtime/**'
-      - 'poc/packages/orchestrator-runtime/**'
+      - 'poc/packages/agent-runtime/src/**'
+      - 'poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs'
+      - 'poc/packages/orchestrator-runtime/src/**'
+      - 'poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs'
       - 'poc/mcp-shared/**'
       - 'poc/apps/gateway/**'
-      - 'poc/apps/test-runner-controller/**'
+      - 'poc/apps/test-runner-controller/src/**'
+      - 'poc/apps/test-runner-controller/fixtures/**'
       - 'services/delegation-adapter/**'
       - 'poc/infra/**'
       - 'poc/scripts/init-local-env.mjs'
       - 'poc/scripts/bootstrap-trust.sh'
+      - 'poc/package-lock.json'
+      - 'blockchain/did-client/package-lock.json'
   workflow_dispatch:
 
 permissions:
