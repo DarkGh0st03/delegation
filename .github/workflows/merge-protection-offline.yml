@@ -14,6 +14,9 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-merge.test.ts'
       - 'poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts'
       - 'poc/scripts/phase10b-positive-e2e.mjs'
+      - '.github/workflows/gemini-paid-shared-mcp-final.yml'
+      - 'poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs'
+      - 'poc/scripts/gemini-thinking-policy.mjs'
   workflow_dispatch:
 
 permissions:
@@ -44,6 +47,38 @@ jobs:
         run: node --check poc/packages/orchestrator-runtime/scripts/human-merge.mjs
       - name: Check legacy paid E2E entrypoint syntax
         run: node --check poc/scripts/phase10b-positive-e2e.mjs
+      - name: Check new paid shared-MCP entrypoint syntax
+        run: node --check poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs
+      - name: Assert live shared-MCP Gemini rejects automatic push
+        shell: bash
+        env:
+          GITHUB_ACTIONS: "true"
+          GITHUB_EVENT_NAME: "push"
+          THESIS_PAID_GEMINI_CONFIRM: "I AUTHORIZE GEMINI API CHARGES"
+        run: |
+          if node --experimental-strip-types poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs > /tmp/shared-mcp-gemini-guard.log 2>&1; then
+            echo "ERROR: billed shared-MCP entrypoint accepted an automatic push"
+            exit 1
+          fi
+          if ! grep -q 'Live Gemini requires explicitly authorized manual GitHub dispatch' /tmp/shared-mcp-gemini-guard.log; then
+            echo "ERROR: unexpected paid shared-MCP guard failure"
+            exit 1
+          fi
+          echo "PASS: automatic shared-MCP paid inference refused"
+      - name: Assert manual paid workflow has no automatic trigger
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs=require("node:fs"),assert=require("node:assert/strict");
+          const text=fs.readFileSync(".github/workflows/gemini-paid-shared-mcp-final.yml","utf8");
+          const match=/^on:\s*\n([\s\S]*?)^permissions:/m.exec(text);
+          assert.ok(match,"Manual Gemini workflow trigger block missing");
+          assert.match(match[1],/^  workflow_dispatch:/m);
+          assert.doesNotMatch(match[1],/^  (push|schedule|pull_request|workflow_run|workflow_call):/m);
+          assert.match(text,/github\.run_attempt == 1/);
+          assert.match(text,/inputs\.authorization == 'I AUTHORIZE GEMINI API CHARGES'/);
+          console.log("PASS: paid workflow is manual-only with explicit billing intent");
+          NODE
       - name: Assert live-provider inference rejects automatic pushes
         shell: bash
         env:
