@@ -189,8 +189,12 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
 
   if (config.generateContentConfig) {
     const {maxOutputTokens, temperature} = config.generateContentConfig;
+    // Gemini 3.8 no longer needs legacy sampling parameters. If omitted,
+    // validate only the explicit output ceiling and thinking configuration.
+    const validTemperature=temperature===undefined ||
+      (Number.isFinite(temperature)&&temperature>=0&&temperature<=2);
     if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 32000
-        || !Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
+        || !validTemperature) {
       throw new Error("Invalid explicit ADK generation configuration");
     }
   }
