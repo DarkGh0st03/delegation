@@ -37,12 +37,17 @@ import {
  // pushes continue to use the immutable scripted regression configuration.
 // A one-shot backend-only probe is intentionally separate from the complete
 // multi-role workflow, and is never used for baseline measurements.
-const backendProbeOnce=process.env.GITHUB_ACTIONS==="true" &&
+// No model API may be invoked by a push (including a push of an old
+// .github/*.trigger marker) or by a local scripted regression. Only a human
+// GitHub Actions workflow_dispatch may opt in to a live provider.
+const manuallyDispatched=process.env.GITHUB_ACTIONS==="true" &&
+  process.env.GITHUB_EVENT_NAME==="workflow_dispatch";
+const backendProbeOnce=manuallyDispatched &&
   existsSync(".github/adk-gemini-backend-once.trigger");
-const liveGeminiOnce = process.env.GITHUB_ACTIONS === "true" &&
+const liveGeminiOnce=manuallyDispatched &&
   (existsSync(".github/adk-gemini-e2e-once.trigger") || backendProbeOnce) &&
-  process.env.PHASE10B_AGENT_ENGINE === "adk-scripted" &&
-  process.env.PHASE10B_ORCHESTRATOR_ENGINE === "adk-scripted";
+  process.env.PHASE10B_AGENT_ENGINE==="adk-scripted" &&
+  process.env.PHASE10B_ORCHESTRATOR_ENGINE==="adk-scripted";
 if (liveGeminiOnce && !process.env.GEMINI_API_KEY?.trim()) {
   throw new Error("Missing Gemini Free Tier repository secret");
 }
@@ -66,8 +71,17 @@ if (!Object.hasOwn(manualRoleOptions, manualLiveRoleConfig)) {
   throw new Error("Unsupported PHASE10B_REAL_GEMINI_ROLES");
 }
 const manualLiveRoles = new Set(manualRoleOptions[manualLiveRoleConfig]);
+// Defense in depth: workflow YAML must gate secrets, and the application
+// itself must reject any attempt to call a paid provider from a push.
+if(!manuallyDispatched && (
+  ["adk-openai","adk-gemini"].includes(engine) ||
+  ["adk-openai","adk-gemini"].includes(orchestratorEngine) ||
+  manualLiveRoles.size>0
+)){
+  throw new Error("Live model API calls require an explicit manual GitHub dispatch");
+}
 if (manualLiveRoles.size > 0 && (
-  process.env.GITHUB_ACTIONS !== "true" ||
+  !manuallyDispatched ||
   backendProbeOnce || liveGeminiOnce ||
   engine !== "adk-scripted" || orchestratorEngine !== "adk-scripted" ||
   !process.env.GEMINI_API_KEY?.trim()
