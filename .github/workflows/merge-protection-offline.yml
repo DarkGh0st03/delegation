@@ -76,12 +76,20 @@ jobs:
           THESIS_PAID_GEMINI_CONFIRM: "I AUTHORIZE GEMINI API CHARGES"
         run: |
           unset GEMINI_API_KEY
-          if node --experimental-strip-types poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs > /tmp/paid-no-key.log 2>&1; then
+          # env -i prevents inherited GitHub event metadata from a push job
+          # from overriding this synthetic, zero-credential dispatch test.
+          if env -i PATH="$PATH" HOME="$HOME" \
+              GITHUB_ACTIONS=true GITHUB_EVENT_NAME=workflow_dispatch \
+              GITHUB_RUN_ATTEMPT=1 GITHUB_REPOSITORY=DarkGh0st03/delegation \
+              GITHUB_REF=refs/heads/feat/shared-mcp-spike \
+              THESIS_PAID_GEMINI_CONFIRM="I AUTHORIZE GEMINI API CHARGES" \
+              node --experimental-strip-types poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs > /tmp/paid-no-key.log 2>&1; then
             echo "ERROR: manual Gemini run proceeded without credential"
             exit 1
           fi
           if ! grep -q 'Missing Gemini API key for manual run' /tmp/paid-no-key.log; then
             echo "ERROR: expected missing-key preflight was not reached"
+            grep -m1 'Error:' /tmp/paid-no-key.log | cut -c1-170 || true
             exit 1
           fi
           echo "PASS: manual paid run requires an explicit API credential"
