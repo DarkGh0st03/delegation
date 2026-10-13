@@ -3,6 +3,8 @@ import test from "node:test";
 import type { SpecializedAgentRole } from "@thesis/agent-runtime";
 import {
   AccountSuspensionSequentialCoordinator,
+  ACCOUNT_SUSPENSION_INTERFACE_CONTRACT,
+  ACCOUNT_SUSPENSION_TASK_PLAN,
   type SequentialGatewayPort,
   type SequentialRoleRunnerPort
 } from "../src/index.ts";
@@ -205,4 +207,27 @@ test("sequential coordinator never creates a PR when the Test gate fails", async
     /Controlled Runner gate failed/u
   );
   assert.equal(pullRequestCalls, 0);
+});
+
+test("Backend Frontend Test share one deterministic suspension/reactivation API contract", () => {
+  const requiredRoutes=[
+    "/api/users/:id/suspend",
+    "/api/users/:id/reactivate",
+    "HTTP 409",
+    "ACTIVE",
+    "SUSPENDED",
+    "Suspend account",
+    "Reactivate account"
+  ];
+  for(const fragment of requiredRoutes){
+    assert.ok(ACCOUNT_SUSPENSION_INTERFACE_CONTRACT.includes(fragment),
+      "Shared contract missing "+fragment);
+  }
+  for(const role of ["backend","frontend","test"] as const){
+    const task=ACCOUNT_SUSPENSION_TASK_PLAN[role];
+    assert.ok(task.instruction.includes(ACCOUNT_SUSPENSION_INTERFACE_CONTRACT),
+      role+" has a diverging API contract");
+  }
+  assert.match(ACCOUNT_SUSPENSION_TASK_PLAN.test.instruction,
+    /do not claim success or fabricate acceptance/u);
 });
