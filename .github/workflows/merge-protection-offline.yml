@@ -1,0 +1,53 @@
+# Fast, zero-AI-cost checks. Not a real merge, not a billable inference.
+name: Protected Merge Offline Security Regression
+
+on:
+  push:
+    branches: [feat/shared-mcp-spike]
+    paths:
+      - '.github/workflows/merge-protection-offline.yml'
+      - '.github/workflows/human-approved-gitea-merge.yml'
+      - 'poc/packages/orchestrator-runtime/src/trusted-merge.ts'
+      - 'poc/packages/orchestrator-runtime/src/merge-readiness.ts'
+      - 'poc/packages/orchestrator-runtime/src/manual-merge-intent.ts'
+      - 'poc/packages/orchestrator-runtime/scripts/human-merge.mjs'
+      - 'poc/packages/orchestrator-runtime/test/trusted-merge.test.ts'
+      - 'poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: protected-merge-offline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-manual-merge-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install PoC dependencies without lifecycle scripts
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Run full orchestrator readiness and protected-merge unit suite
+        run: npm --prefix poc run orchestrator-runtime:test
+      - name: Check human CLI syntax
+        run: node --check poc/packages/orchestrator-runtime/scripts/human-merge.mjs
+      - name: Prove CLI denies accidental untrusted local execution
+        shell: bash
+        env:
+          GITHUB_ACTIONS: "false"
+        run: |
+          if node --experimental-strip-types poc/packages/orchestrator-runtime/scripts/human-merge.mjs --execute; then
+            echo "ERROR: manual-only merge script executed outside trusted dispatch"
+            exit 1
+          fi
+          echo "Expected fail-closed denial confirmed"
