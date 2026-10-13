@@ -653,7 +653,7 @@ async function main(){
             event:"account_suspension_interface_preflight",
             status:evidence.interface_preflight.status,
             failures:preflight.failures
-          })+"\\n");
+          })+"\n");
           assert.ok(preflight.ok,
             "Generated Backend and Frontend violate shared contract: "+
             preflight.failures.join(", "));
