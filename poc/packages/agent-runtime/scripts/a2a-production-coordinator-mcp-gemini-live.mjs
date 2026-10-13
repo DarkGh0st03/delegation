@@ -17,7 +17,7 @@
  */
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
-import {mkdtemp,mkdir,rm,stat,writeFile} from "node:fs/promises";
+import {mkdtemp,mkdir,readFile,readdir,rm,stat,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,dirname} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -459,6 +459,7 @@ async function main(){
   started=true;
   const agents={},models={};
   let gatewayServer,runnerServer,sharedServer,runnerLogs;
+  let evidenceGiteaUrl=null,evidenceFixture=null;
   try{
     const portInfo=docker(["port",container,"3000/tcp"],
       "inspect isolated Gitea loopback port");
@@ -467,6 +468,8 @@ async function main(){
     const giteaUrl="http://127.0.0.1:"+match[1];
     await waitGitea(giteaUrl);
     const fixture=await bootstrapGitea(giteaUrl);
+    evidenceGiteaUrl=giteaUrl;
+    evidenceFixture=fixture;
     const runnerRequests=[];
     runnerLogs=await mkdtemp(join(tmpdir(),"shared-mcp-positive-runner-"));
     const executor=new IsolatedDockerRunnerExecutor({
@@ -838,6 +841,80 @@ async function main(){
         stop(sharedServer),stop(gatewayServer),stop(runnerServer)
       ]);
     }finally{
+      // Failure diagnostics are collected BEFORE removing the disposable
+      // Gitea and Runner logs. Only explicitly scoped project files are
+      // archived; prompts, DC/VP values and credentials are never captured.
+      if(evidence.completion_status!=="PASS"){
+        const secrets=[geminiKey,rootId,runnerToken,
+          evidenceFixture?.token,evidenceFixture?.mergeReadToken,
+          evidenceFixture?.ciStatusToken,
+          ...Object.values(tokens),...roles.map(r=>pairs[r].privateKey)]
+          .filter(v=>typeof v==="string"&&v.length>=8);
+        const clean=value=>{
+          let out=value;
+          for(const secret of secrets)out=out.split(secret).join("[REDACTED]");
+          return out;
+        };
+        if(evidenceGiteaUrl&&evidenceFixture){
+          try{
+            const feature=await api(evidenceGiteaUrl,
+              evidenceFixture.repo+"/branches/feature%2Faccount-suspension",{
+                auth:evidenceFixture.adminAuth,
+                label:"read disposable failed revision for evidence"
+              });
+            const sha=feature.commit.id;
+            if(/^[a-f0-9]{40}$/u.test(sha)){
+              evidence.failure_revision_sha=sha;
+              evidence.partial_file_paths=[];
+              for(const path of filesByRole.test){
+                try{
+                  const file=await api(evidenceGiteaUrl,
+                    evidenceFixture.repo+"/contents/"+path+
+                    "?ref="+encodeURIComponent(sha),{
+                      auth:evidenceFixture.adminAuth,
+                      label:"read scoped partial Test Agent file"
+                    });
+                  if(file.path!==path||file.type!=="file")continue;
+                  const source=Buffer.from(file.content,"base64").toString("utf8");
+                  if(source.length>100000||secrets.some(x=>source.includes(x))){
+                    evidence.partial_files_skipped_due_to_safety=true;
+                    continue;
+                  }
+                  const destination=join(evidenceDir,"partial-files",path);
+                  await mkdir(dirname(destination),{recursive:true});
+                  await writeFile(destination,source,{mode:0o600});
+                  evidence.partial_file_paths.push(path);
+                }catch{
+                  // The task may have failed before creating this file.
+                }
+              }
+            }
+          }catch{
+            evidence.partial_revision_unavailable=true;
+          }
+        }
+        if(runnerLogs){
+          try{
+            evidence.runner_log_files=[];
+            for(const entry of (await readdir(runnerLogs)).sort().slice(0,4)){
+              if(!/^[a-zA-Z0-9_-]{1,96}\.log$/u.test(entry))continue;
+              const raw=await readFile(join(runnerLogs,entry));
+              if(raw.length>1000000){
+                evidence.runner_log_truncated=true;
+              }
+              const safe=clean(raw.subarray(0,Math.min(raw.length,1000000))
+                .toString("utf8"));
+              const target=join(evidenceDir,"runner-logs",entry);
+              await mkdir(dirname(target),{recursive:true});
+              await writeFile(target,safe,{mode:0o600});
+              evidence.runner_log_files.push(entry);
+            }
+          }catch{
+            evidence.runner_log_unavailable=true;
+          }
+        }
+        await saveManifest().catch(()=>undefined);
+      }
       if(runnerLogs)await rm(runnerLogs,{recursive:true,force:true});
       if(started){stopDocker();started=false;}
     }
