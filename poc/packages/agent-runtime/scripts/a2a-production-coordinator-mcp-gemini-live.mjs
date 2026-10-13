@@ -35,7 +35,8 @@ import {
   DeterministicOrchestratorAuthorityIssuer,
   OrchestratorProtectedGatewayClient,
   SoftwareEngineerAuthorityBootstrap,
-  GiteaMergeReadinessVerifier,MergeReadinessDenied
+  GiteaMergeReadinessVerifier,MergeReadinessDenied,
+  checkAccountSuspensionPreflight
 } from "../../orchestrator-runtime/src/index.ts";
 import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
 import {createGatewayHttpServer} from "../../../apps/gateway/src/http.ts";
@@ -624,7 +625,39 @@ async function main(){
         evidence.completed_roles.push({role,revision:a.revision,
           file_paths:[...filesByRole[role]]});
         await saveManifest();
-        if(role==="frontend")assert.notEqual(a.revision,committed.backend);
+        if(role==="frontend"){
+          assert.notEqual(a.revision,committed.backend);
+          // Deterministic read-only early check from the disposable repo.
+          // The Test Agent cannot repair Frontend/Backend source; catch known
+          // cross-role route or accessible-label drift before billing it.
+          const readScoped=async path=>{
+            const file=await api(giteaUrl,fixture.repo+"/contents/"+path+
+              "?ref="+encodeURIComponent(a.revision),{
+                auth:fixture.adminAuth,label:"preflight scoped "+path
+              });
+            assert.equal(file.path,path,"Preflight scope mismatch");
+            assert.equal(file.type,"file");
+            return Buffer.from(file.content,"base64").toString("utf8");
+          };
+          const preflight=checkAccountSuspensionPreflight({
+            backendRoutes:await readScoped("apps/backend/src/users/user.routes.ts"),
+            frontendApi:await readScoped("apps/frontend/src/api/users-api.ts"),
+            frontendPage:await readScoped("apps/frontend/src/pages/UserDetailPage.tsx")
+          });
+          evidence.interface_preflight={
+            status:preflight.ok?"PASS":"FAIL",
+            failures:preflight.failures
+          };
+          await saveManifest();
+          process.stderr.write(JSON.stringify({
+            event:"account_suspension_interface_preflight",
+            status:evidence.interface_preflight.status,
+            failures:preflight.failures
+          })+"\n");
+          assert.ok(preflight.ok,
+            "Generated Backend and Frontend violate shared contract: "+
+            preflight.failures.join(", "));
+        }
         if(role==="test"){
           assert.equal(a.test_outcome,"pass");
           assert.equal(a.project_tests,"pass");
