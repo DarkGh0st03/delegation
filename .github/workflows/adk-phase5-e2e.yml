@@ -31,33 +31,6 @@ on:
         type: choice
         default: adk-scripted
         options: [adk-scripted]
-      model:
-        description: 'Model enabled for your OpenAI API key; leave baseline for scripted runs'
-        type: string
-        required: true
-        default: gpt-5.6-sol
-      gemini_model:
-        description: 'Gemini Developer API model; may consume paid credits for manual live runs'
-        type: string
-        required: true
-        default: gemini-3.8-flash
-      gemini_thinking_level:
-        description: 'Standalone Gemini agent runs: 3.8 Flash uses LOW'
-        type: choice
-        required: true
-        default: LOW
-        options: [LOW, MINIMAL]
-      full_gemini_model:
-        description: 'All 3 real agents in adk-gemini-full (default 3.8 Flash LOW, max 32000 output tokens)'
-        type: string
-        required: true
-        default: gemini-3.8-flash
-      full_gemini_thinking_level:
-        description: 'All 3 agents in adk-gemini-full: LOW for Gemini 3.8 Flash'
-        type: choice
-        required: true
-        default: LOW
-        options: [MINIMAL, LOW]
 
 # Do not spawn multiple 40-minute infrastructure tests for overlapping commits.
 concurrency:
@@ -105,14 +78,15 @@ jobs:
       PHASE10B_AGENT_ENGINE: adk-scripted
       PHASE10B_REAL_GEMINI_ROLES: ''
       PHASE10B_ORCHESTRATOR_ENGINE: adk-scripted
-      OPENAI_MODEL: ${{ inputs.model || 'gpt-5.6-sol' }}
+      OPENAI_MODEL: archived-scripted-only
       # No API credentials are passed into historical scripted regressions.
       OPENAI_API_KEY: ''
       GEMINI_API_KEY: ''
-      GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-3.8-flash' }}
-      PHASE10B_GEMINI_THINKING_LEVEL: ${{ inputs.gemini_thinking_level || 'LOW' }}
-      PHASE10B_FULL_GEMINI_MODEL: ${{ inputs.full_gemini_model || 'gemini-3.8-flash' }}
-      PHASE10B_FULL_GEMINI_THINKING_LEVEL: ${{ inputs.full_gemini_thinking_level || 'LOW' }}
+      # Unused archival metadata; never transmitted to a provider.
+      GEMINI_MODEL: archived-scripted-only
+      PHASE10B_GEMINI_THINKING_LEVEL: LOW
+      PHASE10B_FULL_GEMINI_MODEL: archived-scripted-only
+      PHASE10B_FULL_GEMINI_THINKING_LEVEL: LOW
       PHASE10B_GEMINI_MAX_MODEL_TURNS: "16"
       # Live Backend uses the original complete four-file task and 16-turn
       # budget in adk-backend-live-probe.ts. Never retry failed inference.
