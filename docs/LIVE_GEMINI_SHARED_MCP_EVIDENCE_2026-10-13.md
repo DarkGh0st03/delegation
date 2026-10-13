@@ -58,3 +58,7 @@ Historical Phase 12 performance measurements remain exclusively pinned to `cbadb
 **Next work:** archive the ZIP, review generated code and limitations, and update the thesis evaluation. Do not repeat paid Gemini runs automatically; another billable test needs the thesis owner's explicit decision.
 
 See [CURRENT_CHECKPOINT.md](CURRENT_CHECKPOINT.md), [manual experiment procedure](gemini-shared-mcp-final-run.md), and [human merge boundary](human-approved-gitea-merge.md).
+
+## Independent source review
+
+An 11-file source-level correctness and security assessment is recorded in [GENERATED_CODE_SECURITY_REVIEW_2026-10-13.md](GENERATED_CODE_SECURITY_REVIEW_2026-10-13.md). It distinguishes baseline demo limitations from new robustness gaps and confirms why this successful research run is not production approval.
