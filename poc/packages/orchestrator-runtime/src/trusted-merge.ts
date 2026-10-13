@@ -174,7 +174,7 @@ export class TrustedGiteaMergeExecutor {
         headers:{authorization:"token "+this.#mergeToken,
           accept:"application/json","content-type":"application/json"},
         body:JSON.stringify({
-          Do:"merge",head_commit_id:final.head_sha,force_merge:false,
+          do:"merge",head_commit_id:final.head_sha,force_merge:false,
           merge_when_checks_succeed:false,delete_branch_after_merge:false
         }),
         signal:AbortSignal.timeout(this.#timeout)
