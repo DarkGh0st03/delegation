@@ -1,6 +1,6 @@
 # ARCHIVED historical provider smoke. No longer runnable or billable.
 # The only intended live full-system test is gemini-paid-shared-mcp-final.yml.
-name: [ARCHIVED] ADK Gemini Native Live Smoke
+name: "ARCHIVED - ADK Gemini Native Live Smoke"
 
 # Live requests are ALWAYS explicit. Ordinary branch pushes run no Gemini API call.
 on:
