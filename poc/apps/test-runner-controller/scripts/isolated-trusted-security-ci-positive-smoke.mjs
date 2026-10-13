@@ -212,7 +212,9 @@ async function bootstrap(base){
 
 async function pushReferenceApp(base,workTree,admin){
   await stage("clone_immutable_public_baseline",()=>git([
-    "clone","--depth","1","--single-branch",
+    // Gitea rejects pushing a shallow clone to an empty repository.
+    // Download full history while pinning/verifying the exact baseline HEAD.
+    "clone","--single-branch",
     "--branch","baseline-before-account-suspension",
     baselineSource,workTree
   ],{label:"clone public baseline"}),200000);
