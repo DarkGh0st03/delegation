@@ -9,7 +9,8 @@
  * REAL Docker Runner executes six project phases and independent acceptance.
  * 11 pinned reference files are written by protected ADK/A2A/MCP role tools.
  * Scripted model only: this does NOT prove generative Gemini correctness.
- * Open PR, but NEVER merge, forge human review or trusted security CI status.
+ * Trusted CI status is published ONLY by a separate, privileged harness
+ * after independent real Docker execution; no human review or merge is faked.
  *
  * Uses a scripted offline BaseLlm and only a temporary Gitea with no volumes,
  * host bind mounts or persistent repo access. PR creation only; NO merge.
@@ -39,6 +40,7 @@ import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
 import {createGatewayHttpServer} from "../../../apps/gateway/src/http.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";
 import {IsolatedDockerRunnerExecutor} from "../../../apps/test-runner-controller/src/isolated-executor.ts";
+import {TrustedGiteaSecurityCi,SECURITY_STATUS_CONTEXT} from "../../../apps/test-runner-controller/src/trusted-security-ci.ts";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES as reference} from "../../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
 import {createSharedMcpHttpServer} from "../../../mcp-shared/src/http-server.ts";
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
@@ -236,15 +238,17 @@ async function bootstrapGitea(url){
   const adminAuth=basic(tokens.adminUser,tokens.adminPassword);
   const gatewayAuth=basic(tokens.gatewayUser,tokens.gatewayPassword);
   // Synthetic identities are CREATED ONLY in the disposable Gitea.
-  // No synthetic account is permitted to approve or post CI statuses.
+  // Only the isolated CI service may publish real CI statuses; no account
+  // may forge a human review or carry out a merge in this test.
   const readonlyName="auditor-"+id;
   const reviewerName="reviewer-"+id;
   const ciName="security-ci-"+id;
   const auditorPassword=randomBytes(24).toString("hex");
+  const ciPassword=randomBytes(24).toString("hex");
   for(const [username,password,email] of [
     [readonlyName,auditorPassword,"audit"],
     [reviewerName,randomBytes(24).toString("hex"),"review"],
-    [ciName,randomBytes(24).toString("hex"),"security"]
+    [ciName,ciPassword,"security"]
   ]){
     docker(["exec","--user","1000:1000",container,
       "gitea","admin","user","create",
@@ -305,6 +309,26 @@ async function bootstrapGitea(url){
       }
     });
   assert.ok(typeof readCredential.sha1==="string"&&readCredential.sha1.length>=20);
+  // CI runs in the trusted harness, not the Agent/Gateway process. It has
+  // independent write:repository authority for exact-SHA status publication;
+  // the model only sees the ordinary Test Runner verdict, never this token.
+  await api(url,repo+"/collaborators/"+encodeURIComponent(ciName),{
+    method:"PUT",auth:adminAuth,expected:[204],
+    body:{permission:"write"},label:"grant disposable independent CI publisher"
+  });
+  const ciCredential=await api(url,"/api/v1/users/"+
+    encodeURIComponent(ciName)+"/tokens",{
+      method:"POST",auth:basic(ciName,ciPassword),
+      label:"create independent disposable trusted CI token",
+      body:{name:"trusted-security-ci-"+id,
+        scopes:["write:repository","read:user"]}
+    });
+  assert.ok(typeof ciCredential.sha1==="string"&&ciCredential.sha1.length>=20);
+  const checkedCiActor=await api(url,"/api/v1/user",{
+    auth:"token "+ciCredential.sha1,
+    label:"verify independent status publisher identity"
+  });
+  assert.equal(checkedCiActor.login,ciName);
   // Gitea's rule-inspection endpoint can require an administrator account,
   // even while branch contents and PRs are visible to repo readers.
   // Obtain a SECOND read:repository-only PAT, restricted in code to exactly
@@ -348,7 +372,8 @@ async function bootstrapGitea(url){
     mergeReadToken:readCredential.sha1,
     mergeProtectionReadToken:protectionCredential.sha1,
     mergeReviewer:{id:reviewer.id,login:reviewer.login},
-    mergeCI:{id:security.id,login:security.login}
+    mergeCI:{id:security.id,login:security.login},
+    ciStatusToken:ciCredential.sha1
   };
 }
 async function main(){
@@ -604,9 +629,49 @@ async function main(){
     assert.equal(coordinated.workflow.pull_request?.number,pr.number);
     assert.equal(coordinated.workflow.pull_request?.head_revision,testedCommit);
 
-    // Real Runner PASS does not replace trusted Security CI or human approval.
-    // Distinct synthetic reviewer/CI accounts exist only to demonstrate
-    // that an ID cannot be invented or supplied by an LLM.
+    // The Test Agent's real Docker PASS alone is insufficient to attest
+    // security CI. Prove that no Agent/Gateway posted a trusted CI status.
+    const statusUrl=fixture.repo+"/commits/"+testedCommit+"/statuses";
+    const beforeCi=await api(giteaUrl,statusUrl,{
+      auth:"token "+fixture.mergeReadToken,
+      label:"verify agents cannot forge trusted CI evidence"
+    });
+    assert.ok(Array.isArray(beforeCi)&&
+      beforeCi.every(item=>item.context!==SECURITY_STATUS_CONTEXT),
+      "Agent or Gateway published privileged CI status");
+    // A separate trusted service validates the same exact SHA *again* using
+    // an independent real Docker Runner, and publishes pending -> success.
+    // Neither the test model nor its delegated credentials have this token.
+    const independentCi=new TrustedGiteaSecurityCi({
+      giteaBaseUrl:giteaUrl,
+      giteaReadToken:fixture.mergeReadToken,
+      giteaStatusToken:fixture.ciStatusToken,
+      trustedStatusActor:fixture.mergeCI,
+      runner:{run:request=>executor.run(request)}
+    });
+    const ciOutcome=await independentCi.run({
+      request_id:"independent-trusted-ci-"+randomUUID(),
+      repository:"gitea://gitea.local/thesis/iam-console-poc",
+      branch,commit_sha:testedCommit,profile:"poc-default"
+    });
+    assert.equal(ciOutcome.status,"success");
+    assert.equal(ciOutcome.tested_commit_sha,testedCommit);
+    assert.equal(ciOutcome.context,SECURITY_STATUS_CONTEXT);
+    const ciStatuses=await api(giteaUrl,statusUrl,{
+      auth:"token "+fixture.mergeReadToken,
+      label:"read exact-SHA independent security status attestation"
+    });
+    const trusted=ciStatuses.filter(s=>s.context===SECURITY_STATUS_CONTEXT);
+    assert.equal(trusted.length,2,"Expected pending and success only");
+    assert.ok(trusted.some(s=>s.status==="pending"));
+    assert.ok(trusted.some(s=>s.status==="success"&&
+      s.creator?.id===fixture.mergeCI.id&&
+      s.creator?.login===fixture.mergeCI.login&&
+      s.id===ciOutcome.gitea_status_id));
+    assert.ok(!trusted.some(s=>s.status==="failure"||s.status==="error"));
+    // Even a real trusted Security CI success cannot authorize a merge
+    // without an authentic human approval bound to this same revision.
+    // The isolated synthetic reviewer is never used to submit a review.
     const verifier=new GiteaMergeReadinessVerifier({
       giteaBaseUrl:giteaUrl,
       readToken:fixture.mergeReadToken,
@@ -638,16 +703,18 @@ async function main(){
       "pr_not_mergeable"
     ].includes(denial),
       "Unexpected live Gitea readiness denial: "+denial);
-    // Independently verify the absence of CI status, even if Gitea reports
-    // non-mergeability before the verifier reaches its CI evidence check.
-    const statusUrl=fixture.repo+"/commits/"+testedCommit+"/statuses";
-    const statuses=await api(giteaUrl,statusUrl,{
-      auth:"token "+fixture.mergeReadToken,
-      label:"verify no trusted security pipeline status"
+    // Re-check the live PR is still open after trusted CI publication,
+    // with neither an approval nor an unauthorized merge.
+    const afterReviews=await api(giteaUrl,fixture.repo+
+      "/pulls/"+pr.number+"/reviews",{auth:fixture.adminAuth,
+      label:"verify CI did not fabricate a human review"});
+    assert.deepEqual(afterReviews,[]);
+    const afterPr=await api(giteaUrl,fixture.repo+"/pulls/"+pr.number,{
+      auth:fixture.adminAuth,label:"verify CI left PR open"
     });
-    assert.ok(Array.isArray(statuses)&&
-      statuses.every(item=>item.context!=="thesis/security-pipeline"),
-      "Test fixture unexpectedly contains a security-pipeline attestation");
+    assert.equal(afterPr.merged,false);
+    assert.equal(afterPr.state,"open");
+    assert.equal(afterPr.head?.sha,testedCommit);
     process.stdout.write(JSON.stringify({
       event:"a2a_production_coordinator_mcp_real_positive_acceptance",
       status:"PASS",model:"scripted_offline_11_reference_files",
@@ -665,7 +732,11 @@ async function main(){
       attempted_pr_calls:prCalls,merge_calls:0,
       merge_readiness:"DENIED",
       merge_readiness_denial:denial,
-      security_pipeline_context_present:false,
+      security_pipeline_context_present:true,
+      trusted_security_ci:"pending_then_success_by_separate_actor",
+      trusted_status_id:ciOutcome.gitea_status_id,
+      independent_real_runner:true,
+      approval_created:false,
       tests:["real_gateway_branch_and_pr_creation",
         "production_root_and_role_child_delegation",
         "backend_real_a2a_mcp_update","frontend_real_a2a_mcp_update",
@@ -675,7 +746,10 @@ async function main(){
         "pr_open_no_reviews_no_merge",
         "live_read_only_merge_readiness_denied",
         "live_stale_pr_sha_denied",
-        "no_trusted_security_pipeline_status",
+        "no_agent_forged_trusted_ci_status",
+        "trusted_independent_real_docker_ci_pass",
+        "exact_sha_pending_then_success_status_by_ci_actor",
+        "trusted_ci_does_not_create_human_approval",
         "exact_branch_sha","main_unchanged",
         "no_model_credential_leak","disposable_gitea_only"]
     })+"\n");
