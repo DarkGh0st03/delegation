@@ -5,10 +5,11 @@
 # Requires activation on GitHub default branch before workflow_dispatch appears.
 name: Gemini Paid - Shared MCP Full E2E (Manual Only)
 
-# Free, isolated regression for the EXISTING three-ADK-role, A2A, single
-# Streamable HTTP MCP, Rust/OPA/Gateway and Gitea PR path. The test's
-# Controlled Runner is a declared stub; this is NOT the real acceptance test.
-# This workflow never gets a Gemini/OpenAI key and never touches user's Gitea.
+# Actual Gemini agents (not scripted output) use the EXISTING A2A,
+# shared Streamable HTTP MCP, Rust/OPA/Gateway, real Docker Runner,
+# independent researcher acceptance and separate trusted Security CI.
+# Only an ephemeral job-local Gitea is used. PR stays open without review/merge.
+# This costs Gemini Developer API credits when and only when manually dispatched.
 on:
   workflow_dispatch:
     inputs:
