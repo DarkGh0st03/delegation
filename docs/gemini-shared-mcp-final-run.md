@@ -1,15 +1,17 @@
 # Manual Gemini full E2E — three ADK roles through one shared MCP (13 October 2026)
 
-## Purpose and current readiness
+## Purpose and verified result
 
-This run is the **only billed Gemini test** intended for manual launch by the thesis owner. It is a separate action from all free scripted smoke tests and from an actual privileged human-authorized merge. The first execution, [run 38363401514](https://github.com/DarkGh0st03/delegation/actions/runs/38363401514) on `a59819e...`, failed in the Backend at the third model call (120-second inference timeout), after eight successful reads and no writes. Commit `c7af6ca...` includes the correction to 300 seconds per call for each role. **Successful live acceptance remains pending**; do not treat the scripted evidence as a live-model result.
+**LIVE GEMINI E2E PASSED** on [run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436), source SHA `9012c8c4e7a9244cb931bcdef411cc5f443f0c08`, 13 October 2026. All three native Google ADK Gemini roles completed the 11-file Account Suspension task, real Docker tests, independent researcher acceptance and trusted Security CI. The disposable Gitea PR was created but correctly blocked without human approval. [Exact evidence and downloadable artifact metadata](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md).
+
+The initial [run 38363401514](https://github.com/DarkGh0st03/delegation/actions/runs/38363401514) had failed during Backend inference; it is superseded as the **current outcome**, not erased from experiment history. Do not automatically rerun this paid experiment: its success is already established and further billing requires renewed owner authorization.
 
 Workflow: `.github/workflows/gemini-paid-shared-mcp-final.yml`  
 Program: `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`
 
 The program reuses the established **AccountSuspensionSequentialCoordinator**, DelegatedA2ARoleRunner, real A2A endpoints for Backend/Frontend/Test, one shared Streamable HTTP MCP endpoint, real Rust Delegation Adapter, Gateway and OPA policies, the immutable IAM Console baseline, disposable loopback-only Gitea, real Docker Runner and independent researcher acceptance, then an independent second Docker-backed trusted CI status publication. The three models are live Gemini; the Orchestrator is intentionally deterministic and does not need an additional billed model.
 
-### Existing free evidence (not a prediction of live success)
+### Independent free evidence (distinct from the successful live run)
 
 - Isolated real Docker positive Security CI: passed.
 - Three ADK roles with scripted output, shared MCP, real Gitea/Gateway/Rust/OPA: passed.
@@ -17,7 +19,7 @@ The program reuses the established **AccountSuspensionSequentialCoordinator**, D
 - Trusted independent CI publishes pending then success on the exact commit: passed.
 - Without human approval, merge readiness denies. A separate test with **synthetic** approval permits a protected merge only inside disposable Gitea: passed.
 
-These scripted results do **not** establish that real Gemini will generate correct code. The live workflow may fail or run up model usage charges. A passing result is required before describing the generative path as validated.
+These scripted results alone did **not** establish that real Gemini would generate correct code. The later successful live run established the bounded generative path for this single task. It remains non-production evidence, and additional paid experiments are not routine regressions.
 
 ## What the live model must accomplish
 
@@ -37,7 +39,7 @@ The application separately requires `GITHUB_ACTIONS=true`, `GITHUB_EVENT_NAME=wo
 
 Currently staged defaults: `gemini-3.8-flash`, thinking `LOW`, `maxOutputTokens=32000` per model inference and `maxModelTurns=40` per specialized role and `maxModelCallMs=300000` per inference. Confirm API access, quota and the correct available model name independently before dispatch.
 
-## Preflight and first manual invocation
+## Historical manual invocation procedure (do not routinely repeat)
 
 1. Confirm that the latest **free** `Protected Merge Offline Security Regression` and scripted shared-MCP real-Docker regressions are green.
 2. The workflow and timeout correction are already on the GitHub default branch, `main`. Select the reviewed current `main` revision after its free checks pass and record the exact SHA before dispatch. No additional feature-branch promotion is required for the checkpoint documented here.

@@ -1,6 +1,6 @@
 # Thesis ADK / A2A / Shared MCP — GitHub Actions map
 
-The ADK/A2A/shared-MCP integration is merged into **main**. The verified architecture checkpoint is `c7af6ca0a6b0254e3b9966e7631325ab1e540be5` (13 October 2026). See [CURRENT_CHECKPOINT.md](CURRENT_CHECKPOINT.md) for exact evidence; always inspect the actual ref and completed checks before a new run.
+The ADK/A2A/shared-MCP integration is merged into **main**. Scripted architecture checkpoint: `c7af6ca0a6b0254e3b9966e7631325ab1e540be5`. Verified live Gemini checkpoint: `9012c8c4e7a9244cb931bcdef411cc5f443f0c08`, [successful paid run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) (13 October 2026). See [live evidence](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md); paid workflow must not be rerun automatically.
 
 ## Current actions
 
@@ -32,11 +32,11 @@ Do not remove or rewrite the old measured-baseline results to appear to describe
 3. **No automatic paid inference.** The final Gemini workflow contains only `workflow_dispatch`, requires the full confirmation text, rejects job retries and delivers `GEMINI_API_KEY` only to the live inference step.
 4. **No unattended human approval or persistent merge.** The simulated-review workflow is isolated and labeled as such. The actual merge workflow additionally requires an authenticated Gitea reviewer and a separately configured GitHub protected environment.
 5. **No model key or credential in an Actions artifact.** The paid job stores only the generated source files after scanning for known secrets and a bounded evidence manifest. A failed run may leave incomplete evidence.
-6. **No claim that the real-model run succeeded until it has been manually dispatched and its artifacts and independent acceptance reviewed.**
+6. **Live-model success has exact provenance, not universal scope.** Run `38379922436` passed; this does not certify production code, genuine human merge approval or new latency measurements.
 
 ## References
 
 - `docs/gemini-shared-mcp-final-run.md`: billing, model selection, preflight, evidence and review.
 - `docs/human-approved-gitea-merge.md`: privileged manual merge controls and deployment prerequisites.
 - `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs`: authoritative offline E2E with actual Docker acceptance.
-- `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`: billable real Gemini integration; attempt `38363401514` failed before any write. The 300-second timeout correction still requires a successful manual live run.
+- `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`: billable real Gemini integration; initial attempt `38363401514` failed before any write; run `38379922436` completed successfully after contract/preflight corrections.
