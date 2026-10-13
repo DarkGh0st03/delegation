@@ -546,7 +546,10 @@ async function main(){
         },
         adk:{model,gatewayBaseUrl:gatewayUrl,adapterBaseUrl:adapter,
           adapterToken:tokens[role],maxModelTurns:40,
-          maxModelCallMs:120000,generateContentConfig:generation[role],
+          // Five-minute per-call ceiling for large source generation,
+          // below the 20-minute protected A2A task deadline.
+          // Timeout remains fail-closed; no paid retry is automatic.
+          maxModelCallMs:300000,generateContentConfig:generation[role],
           scopeModelPaths:true,mcpSharedUrl:sharedUrl,
           ...(role!=="test"?{mcpUpdateFile:true}:
             {mcpUpdateFile:true,mcpCreateFile:true,mcpRunTests:true})}

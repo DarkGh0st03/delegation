@@ -55,10 +55,15 @@ test("ADK model call timeout rejects unsafe configuration without network traffi
   };
   assert.throws(()=>createAdkA2ATaskHandler({
     ...valid,maxModelCallMs:0
-  }),/1000..120000/u);
+  }),/1000..360000/u);
   assert.throws(()=>createAdkA2ATaskHandler({
-    ...valid,maxModelCallMs:120001
-  }),/1000..120000/u);
+    ...valid,maxModelCallMs:360001
+  }),/1000..360000/u);
+  // Long code-generation inference may need five minutes; the provider
+  // AbortSignal still bounds each call and no paid retries are permitted.
+  assert.doesNotThrow(()=>createAdkA2ATaskHandler({
+    ...valid,maxModelCallMs:300000
+  }));
 });
 
 test("ADK generation configuration rejects unsafe values before any network traffic",()=>{
