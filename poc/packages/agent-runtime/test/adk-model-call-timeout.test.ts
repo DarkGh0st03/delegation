@@ -85,4 +85,10 @@ test("ADK generation configuration rejects unsafe values before any network traf
   assert.doesNotThrow(()=>createAdkA2ATaskHandler({
     ...base,generateContentConfig:{maxOutputTokens:32000,temperature:0}
   }));
+  // New Gemini 3.8 manual workflow omits deprecated sampling parameters.
+  assert.doesNotThrow(()=>createAdkA2ATaskHandler({
+    ...base,generateContentConfig:{
+      maxOutputTokens:32000,thinkingConfig:{thinkingLevel:"LOW"}
+    }
+  }));
 });
