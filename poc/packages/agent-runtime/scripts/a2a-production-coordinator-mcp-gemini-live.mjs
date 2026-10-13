@@ -17,9 +17,9 @@
  */
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
-import {mkdtemp,rm,stat,readFile} from "node:fs/promises";
+import {mkdtemp,mkdir,rm,stat,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {join,dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 import {generateKeyPairSync,randomBytes,randomUUID} from "node:crypto";
 import {createServer as createNetServer} from "node:net";
@@ -79,6 +79,19 @@ const filesByRole={
     "tests/frontend/UserDetailPage.test.tsx",
     "tests/e2e/account-suspension.spec.ts"]
 };
+const evidenceDir="/tmp/shared-mcp-gemini-evidence";
+const evidence={
+  mode:"real_gemini_shared_mcp",model:geminiModel,
+  thinking_level:geminiThinking,output_token_limit:32000,
+  baseline_sha:baselineSha,
+  completed_roles:[],
+  completion_status:"INCOMPLETE"
+};
+async function saveManifest(){
+  await mkdir(evidenceDir,{recursive:true});
+  await writeFile(join(evidenceDir,"manifest.json"),
+    JSON.stringify(evidence,null,2)+"\n",{mode:0o600});
+}
 const expectedPaths=Object.values(filesByRole).flat();
 assert.equal(expectedPaths.length,11);
 assert.equal(new Set(expectedPaths).size,11);
@@ -583,7 +596,19 @@ async function main(){
             "?ref="+encodeURIComponent(a.revision),{auth:fixture.adminAuth});
           assert.equal(file.path,path,"Unexpected role path");
           assert.equal(file.type,"file");
+          const generated=Buffer.from(file.content,"base64").toString("utf8");
+          const forbidden=[geminiKey,rootId,runnerToken,fixture.token,
+            ...Object.values(tokens),...roles.map(r=>pairs[r].privateKey)]
+            .filter(x=>typeof x==="string"&&x.length>=8);
+          assert.ok(!forbidden.some(secret=>generated.includes(secret)),
+            "Sensitive content detected in generated source; evidence blocked");
+          const dest=join(evidenceDir,"files",path);
+          await mkdir(dirname(dest),{recursive:true});
+          await writeFile(dest,generated,{mode:0o600});
         }
+        evidence.completed_roles.push({role,revision:a.revision,
+          file_paths:[...filesByRole[role]]});
+        await saveManifest();
         if(role==="frontend")assert.notEqual(a.revision,committed.backend);
         if(role==="test"){
           assert.equal(a.test_outcome,"pass");
@@ -744,6 +769,14 @@ async function main(){
     assert.equal(afterPr.state,"open");
     assert.equal(afterPr.head?.sha,testedCommit);
     // Live Gemini NEVER produces synthetic human review or merge.
+    evidence.completion_status="PASS";
+    evidence.final_sha=testedCommit;
+    evidence.pull_request_number=pr.number;
+    evidence.merge_performed=false;
+    evidence.project_tests="pass";
+    evidence.researcher_acceptance="pass";
+    evidence.trusted_security_ci="success";
+    await saveManifest();
     process.stdout.write(JSON.stringify({
       event:"a2a_shared_mcp_gemini_live_full_roles",
       status:"PASS",model:geminiModel,thinking_level:geminiThinking,
@@ -798,4 +831,10 @@ async function main(){
     }
   }
 }
-await main();
+try{
+  await main();
+}catch(error){
+  evidence.completion_status="FAILED_OR_INCOMPLETE";
+  await saveManifest().catch(()=>undefined);
+  throw error;
+}
