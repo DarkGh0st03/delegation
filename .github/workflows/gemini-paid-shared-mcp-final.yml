@@ -191,6 +191,15 @@ jobs:
           test -n "$GEMINI_API_KEY" || { echo 'Missing configured Gemini API key; no billed requests made' >&2; exit 1; }
           node --experimental-strip-types poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs
 
+      - name: Preserve generated files and independent test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-shared-mcp-evidence-${{ github.run_id }}
+          path: /tmp/shared-mcp-gemini-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Teardown hosted-runner-only services
         if: always()
         run: |
