@@ -136,6 +136,31 @@ async function api(base,path,{authorization,method="GET",body,
         ...(body===undefined?{}:{body:JSON.stringify(body)})
       });
       if(!expected.includes(response.status)){
+        // Diagnose disposable-server failures without dumping API bodies,
+        // repository contents, credentials, tokens or HTTP request headers.
+        if(response.status>=500 && containerStarted){
+          try{
+            const serverLogs=execFileSync("docker",[
+              "logs","--tail","120",container
+            ],{encoding:"utf8",timeout:10000,
+              stdio:["ignore","pipe","pipe"]});
+            const logIssues=serverLogs.split(/\r?\n/u)
+              .filter(line=>/\[E\]|\[F\]|ERROR|panic|failed/iu.test(line))
+              .slice(-8).map(line=>{
+                let safe=line.replace(/[\x00-\x1f\x7f]/gu," ").slice(0,300)
+                  .replace(/https?:\/\/[^\s"'<>]+/giu,"[remote-url]")
+                  .replace(/(?:Basic|Bearer|token)\s+[A-Za-z0-9+/_=.-]+/giu,
+                    "[REDACTED]");
+                for(const secret of [adminPassword,readerPass,publisherPass]){
+                  if(secret)safe=safe.split(secret).join("[REDACTED]");
+                }
+                return safe;
+              });
+            process.stderr.write("[trusted-positive-ci] isolated_server_errors "+
+              JSON.stringify({step:label,status:response.status,
+                lines:logIssues})+"\n");
+          }catch{/* Best-effort server diagnostics only. */}
+        }
         throw Error("Isolated Gitea "+label+" HTTP "+response.status);
       }
       return response.status===204?{}:response.json();
