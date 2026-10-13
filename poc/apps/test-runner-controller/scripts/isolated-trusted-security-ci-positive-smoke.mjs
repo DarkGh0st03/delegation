@@ -64,7 +64,31 @@ function git(args,{cwd,auth,timeout=180000,label="Git step"}={}){
   try{
     return execFileSync("git",args,{cwd,env,encoding:"utf8",timeout,
       stdio:["ignore","pipe","pipe"]}).trim();
-  }catch{throw Error(label+" failed");}
+  }catch(error){
+    // Git stderr was previously discarded, hiding the actual remote push
+    // failure. Log only a bounded, sanitized excerpt for disposable CI.
+    // Never enable GIT_TRACE_CURL: it can expose Authorization headers.
+    const sensitive=[adminPassword,readerPass,publisherPass,
+      basic(adminUser,adminPassword)];
+    const safeLines=String(error?.stderr??"").split(/\r?\n/u)
+      .filter(line=>/^(?:fatal:|error:|remote:|warning:)/iu.test(line.trim()))
+      .slice(-8)
+      .map(line=>{
+        let safe=line.replace(/[\x00-\x1f\x7f]/gu," ").slice(0,500)
+          .replace(/https?:\/\/[^\s"'<>]+/giu,"[remote-url]")
+          .replace(/Authorization\s*:\s*[^\s]+(?:\s+[^\s]+)?/giu,
+            "Authorization: [REDACTED]")
+          .replace(/Basic\s+[A-Za-z0-9+/=]+/gu,"Basic [REDACTED]");
+        for(const secret of sensitive){
+          if(secret)safe=safe.split(secret).join("[REDACTED]");
+        }
+        return safe;
+      });
+    process.stderr.write("[trusted-positive-ci] git_diagnostic "+
+      JSON.stringify({step:label,exit_code:error?.status??null,
+        stderr_lines:safeLines})+"\n");
+    throw Error(label+" failed");
+  }
 }
 function stopDocker(){
   try{
