@@ -222,7 +222,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     await this.#verifyExactBranchHead(request);
 
     const runRoot = await mkdtemp(join(tmpdir(), "delegation-runner-"));
-    const workspace = join(runRoot, "workspace");
     const archivePath = join(runRoot, "source.tar.gz");
     const containerName = `delegation-runner-${randomUUID()}`;
     const logId = randomUUID();
@@ -233,25 +232,12 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     let failed = false;
 
     try {
-      await mkdir(workspace, { recursive: true });
       await this.#downloadArchive(request, archivePath);
 
-      const extract = await this.#runCommand(
-        "tar",
-        [
-          "-xzf",
-          archivePath,
-          "-C",
-          workspace,
-          "--strip-components=1",
-          "--no-same-owner"
-        ],
-        { timeout_ms: this.#config.phase_timeout_ms }
-      );
-      if (extract.exit_code !== 0 || extract.timed_out) {
-        throw new Error("Could not materialize exact repository archive");
-      }
-
+      // Extract inside the already constrained Linux Runner container.
+      // Host-side tar may be GNU tar, bsdtar, or Windows/Git Bash tar and
+      // may interpret drive-letter paths differently. This also ensures the
+      // archive is unpacked in the same filesystem used for execution.
       const dockerCreateArgs = [
         "create",
         "--name",
@@ -290,15 +276,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       }
       containerCreated = true;
 
-      const copy = await this.#runCommand(
-        "docker",
-        ["cp", `${resolve(workspace)}/.`, `${containerName}:/workspace`],
-        { timeout_ms: this.#config.phase_timeout_ms }
-      );
-      if (copy.exit_code !== 0 || copy.timed_out) {
-        throw new Error("Could not copy exact repository snapshot into Runner container");
-      }
-
       const start = await this.#runCommand(
         "docker",
         ["start", containerName],
@@ -306,6 +283,40 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       );
       if (start.exit_code !== 0 || start.timed_out) {
         throw new Error("Could not start isolated Runner container");
+      }
+
+      // Docker CLI on Windows handles host drive-letter paths natively. No
+      // archive extraction command ever runs on the host computer.
+      const containerArchive = "/workspace/.runner-source.tar.gz";
+      const copy = await this.#runCommand(
+        "docker",
+        ["cp", archivePath, `${containerName}:${containerArchive}`],
+        { timeout_ms: this.#config.phase_timeout_ms }
+      );
+      if (copy.exit_code !== 0 || copy.timed_out) {
+        throw new Error("Could not copy exact repository archive into Runner container");
+      }
+
+      const extract = await this.#runCommand(
+        "docker",
+        ["exec", containerName, "tar", "-xzf", containerArchive,
+          "-C", "/workspace", "--strip-components=1", "--no-same-owner"],
+        { timeout_ms: this.#config.phase_timeout_ms }
+      );
+      if (extract.exit_code !== 0 || extract.timed_out) {
+        // Do not echo untrusted stderr (archive member names and file data
+        // can be attacker controlled). Only expose the safe exit category.
+        throw new Error(extract.timed_out
+          ? "Could not materialize exact repository archive: container extraction timeout"
+          : "Could not materialize exact repository archive: container tar exit " + extract.exit_code);
+      }
+      const removeArchive = await this.#runCommand(
+        "docker",
+        ["exec", containerName, "rm", "-f", containerArchive],
+        { timeout_ms: this.#config.phase_timeout_ms }
+      );
+      if (removeArchive.exit_code !== 0 || removeArchive.timed_out) {
+        throw new Error("Could not remove Runner archive from execution container");
       }
 
       for (const fixed of FIXED_PHASES) {

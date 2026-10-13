@@ -1,0 +1,178 @@
+name: Shared MCP Real Docker Acceptance E2E (Scripted, No AI Billing)
+
+# Free regression with *scripted ADK model*, real MCP/Rust/OPA/Gitea,
+# real isolated Docker Runner + independent researcher acceptance and CI.
+# This is NOT live Gemini and receives no Gemini/OpenAI API key.
+# Jobs run automatically when relevant architecture code changes.
+on:
+  push:
+    branches: [feat/shared-mcp-spike, main]
+    paths:
+      - '.github/workflows/shared-mcp-real-positive-e2e.yml'
+      - 'poc/packages/agent-runtime/src/**'
+      - 'poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs'
+      - 'poc/packages/orchestrator-runtime/src/**'
+      - 'poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs'
+      - 'poc/mcp-shared/**'
+      - 'poc/apps/gateway/**'
+      - 'poc/apps/test-runner-controller/src/**'
+      - 'poc/apps/test-runner-controller/fixtures/**'
+      - 'services/delegation-adapter/**'
+      - 'poc/infra/**'
+      - 'poc/scripts/init-local-env.mjs'
+      - 'poc/scripts/bootstrap-trust.sh'
+      - 'poc/package-lock.json'
+      - 'blockchain/did-client/package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shared-mcp-real-positive-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-coordinator:
+    name: Three ADK roles + one MCP + real Docker acceptance + open PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_CALLER_ENGINEER: engineer-scripted-ci-fixture
+      ADAPTER_CALLER_GATEWAY: gateway-scripted-ci-fixture
+      ADAPTER_CALLER_ORCHESTRATOR: orchestrator-scripted-ci-fixture
+      ADAPTER_CALLER_BACKEND: backend-scripted-ci-fixture
+      ADAPTER_CALLER_FRONTEND: frontend-scripted-ci-fixture
+      ADAPTER_CALLER_TEST: test-scripted-ci-fixture
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      ADAPTER_SMOKE_URL: http://127.0.0.1:8090
+      OPA_URL: http://127.0.0.1:8181
+      GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+      ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"
+      ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR: "0x0000000000000000000000000000000000000000000000000000000000000002"
+      ADAPTER_EVM_PRIVATE_KEY_BACKEND: "0x0000000000000000000000000000000000000000000000000000000000000003"
+      ADAPTER_EVM_PRIVATE_KEY_FRONTEND: "0x0000000000000000000000000000000000000000000000000000000000000004"
+      ADAPTER_EVM_PRIVATE_KEY_TEST: "0x0000000000000000000000000000000000000000000000000000000000000005"
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.99
+        uses: dtolnay/rust-toolchain@1.99.0
+
+      - name: Install Node 22.15
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+
+      - name: Install offline PoC dependencies
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+
+      - name: Check generated real positive script syntax
+        run: node --check poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs
+
+      - name: Run MCP, A2A and coordinator unit regressions
+        run: |
+          npm --prefix poc run agent-runtime:test
+          npm --prefix poc run orchestrator-runtime:test
+
+      - name: Verify exact 11-file Account Suspension delegation scopes
+        run: node --experimental-strip-types poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs
+
+      - name: Generate job-local development fixtures
+        run: node poc/scripts/init-local-env.mjs --force
+
+      - name: Start ephemeral dependency services in hosted runner
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d gitea opa anvil
+          docker pull docker.gitea.com/gitea:28.0.0
+          docker pull node:22.15.0-bookworm
+          for i in {1..100}; do
+            if curl -fsS http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1 &&
+               cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          exit 1
+
+      - name: Bootstrap only GitHub runner's disposable Gitea
+        run: bash poc/scripts/bootstrap-gitea.sh
+
+      - name: Deploy local EVM trust contracts
+        run: |
+          RPC_URL=http://127.0.0.1:8545 \
+          CHAIN_ID=31337 \
+          ANVIL_DEPLOYER_PRIVATE_KEY="$ANVIL_DEPLOYER_PRIVATE_KEY" \
+            bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for name in RPC_URL CHAIN_ID DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$name=${!name}" >> "$GITHUB_ENV"
+          done
+
+      - name: Prepare deterministic development DID identities
+        run: |
+          chain_hex="$(printf '0x%x' "$CHAIN_ID")"
+          configure_identity() {
+            role="$1"
+            private_key="$2"
+            address="$(cast wallet address --private-key "$private_key")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+            echo "ADAPTER_ID_${role}=did:ethr:${chain_hex}:${address}" >> "$GITHUB_ENV"
+          }
+          configure_identity ENGINEER "$ADAPTER_EVM_PRIVATE_KEY_ENGINEER"
+          configure_identity ORCHESTRATOR "$ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR"
+          configure_identity BACKEND "$ADAPTER_EVM_PRIVATE_KEY_BACKEND"
+          configure_identity FRONTEND "$ADAPTER_EVM_PRIVATE_KEY_FRONTEND"
+          configure_identity TEST "$ADAPTER_EVM_PRIVATE_KEY_TEST"
+
+      - name: Build real Rust Delegation Adapter
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+
+      - name: Start real Rust Delegation Adapter
+        run: |
+          # Same ephemeral caller secrets must reach both Adapter and agents.
+          set -a
+          source poc/infra/.env
+          source poc/infra/runtime/trust.env
+          set +a
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/shared-mcp-adapter.log 2>&1 &
+          for i in {1..90}; do
+            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          tail -n 35 /tmp/shared-mcp-adapter.log
+          exit 1
+
+      - name: Verify exact protected ADK/A2A/MCP -> Docker/acceptance -> PR
+        run: |
+          set -a
+          source poc/infra/.env
+          source poc/infra/runtime/trust.env
+          set +a
+          node --experimental-strip-types poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs
+
+      - name: Teardown hosted-runner-only services
+        if: always()
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true

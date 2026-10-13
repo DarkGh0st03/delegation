@@ -21,6 +21,8 @@ export interface GatewayControlledToolClientConfig {
   taskId: string;
   evidenceHandler: DelegationEvidenceHandler;
   timeoutMs?: number;
+  /** Long execute timeout only for the controlled run_tests tool. */
+  runnerExecuteTimeoutMs?: number;
   fetchFn?: FetchLike;
   signal?: AbortSignal;
 }
@@ -65,6 +67,7 @@ export class GatewayControlledToolClient {
   readonly #taskId: string;
   readonly #evidenceHandler: DelegationEvidenceHandler;
   readonly #timeoutMs: number;
+  readonly #runnerExecuteTimeoutMs: number;
   readonly #fetch: FetchLike;
   readonly #signal?: AbortSignal;
 
@@ -81,6 +84,11 @@ export class GatewayControlledToolClient {
     this.#taskId = config.taskId;
     this.#evidenceHandler = config.evidenceHandler;
     this.#timeoutMs = config.timeoutMs ?? 10_000;
+    this.#runnerExecuteTimeoutMs = config.runnerExecuteTimeoutMs ?? this.#timeoutMs;
+    if(!Number.isSafeInteger(this.#runnerExecuteTimeoutMs) ||
+       this.#runnerExecuteTimeoutMs<1 || this.#runnerExecuteTimeoutMs>960_000){
+      throw new Error("Controlled Runner timeout must be between 1 and 960000 ms");
+    }
     this.#fetch = config.fetchFn ?? fetch;
     this.#signal = config.signal;
   }
@@ -160,8 +168,10 @@ export class GatewayControlledToolClient {
             signed_vp: signedVp
           }),
           signal: this.#signal
-            ? AbortSignal.any([this.#signal, AbortSignal.timeout(this.#timeoutMs)])
-            : AbortSignal.timeout(this.#timeoutMs)
+            ? AbortSignal.any([this.#signal, AbortSignal.timeout(
+                tool==="run_tests" ? this.#runnerExecuteTimeoutMs : this.#timeoutMs)])
+            : AbortSignal.timeout(
+                tool==="run_tests" ? this.#runnerExecuteTimeoutMs : this.#timeoutMs)
         }
       );
     } catch (error) {

@@ -1,4 +1,9 @@
-import { FunctionTool, LlmAgent, type BaseLlm, type LlmAgentConfig } from "@google/adk";
+import { FunctionTool, LlmAgent, MCPToolset, type BaseLlm, type LlmAgentConfig, type StreamableHTTPConnectionParams } from "@google/adk";
+import { normalizeMcpReadFileOutcome } from "./mcp-read-result.ts";
+import { normalizeMcpUpdateFileOutcome } from "./mcp-write-result.ts";
+import { normalizeMcpCreateFileOutcome } from "./mcp-create-result.ts";
+import { normalizeMcpRunTestsOutcome } from "./mcp-run-tests-result.ts";
+import { createTaskBearerFetch } from "./mcp-task-fetch.ts";
 import { z } from "zod";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import {
@@ -37,10 +42,11 @@ const SCHEMAS = {
 export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: Record<string, unknown>; payload: {ok: true; result: unknown} | ReturnType<typeof controlledToolErrorPayload> }; 
 
 /** Optional model generation parameters. Absent for every scripted baseline. */
-/** Native ADK configuration. Keep output/temperature mandatory for our live probe. */
+/** ADK config: output limit is required, but modern Gemini 3.x
+ * may omit deprecated sampling parameters such as temperature. */
 export type AdkGenerationConfig = NonNullable<LlmAgentConfig["generateContentConfig"]> & {
   maxOutputTokens: number;
-  temperature: number;
+  temperature?: number;
 };
 
 export interface AdkSpecializedAgentConfig {
@@ -52,12 +58,24 @@ export interface AdkSpecializedAgentConfig {
   role: SpecializedAgentRole;
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
+  /** Shared MCP read_file opt-in. Credentials never enter model args. */
+  mcpReadFile?: {
+    endpoint: string;
+    bearerForRequest: () => string;
+  };
+  /** Independent opt-in: route update_file through the same shared MCP toolset. */
+  mcpUpdateFile?: boolean;
+  /** Independent opt-in: Test Agent may create its E2E test via shared MCP. */
+  mcpCreateFile?: boolean;
+  /** Test Agent only; use the same MCP server for the controlled Runner. */
+  mcpRunTests?: boolean;
 }
 
 export interface AdkSpecializedAgent {
   profile: SpecializedAgentProfile;
   registry: ControlledToolRegistry;
   agent: LlmAgent;
+  mcpToolset?: MCPToolset;
 }
 
 /**
@@ -72,6 +90,15 @@ export interface AdkSpecializedAgent {
 export function createAdkSpecializedAgent(
   config: AdkSpecializedAgentConfig
 ): AdkSpecializedAgent {
+  if(config.mcpUpdateFile && !config.mcpReadFile){
+    throw new Error("MCP update_file requires a configured shared MCP endpoint");
+  }
+  if(config.mcpCreateFile && (!config.mcpReadFile || config.role!=="test")){
+    throw new Error("MCP create_file requires shared MCP and Test Agent role");
+  }
+  if(config.mcpRunTests && (!config.mcpReadFile || config.role!=="test")){
+    throw new Error("MCP run_tests requires shared MCP and Test Agent role");
+  }
   const profile = SPECIALIZED_AGENT_PROFILES[config.role];
   if (!profile) throw new Error("Unknown specialized agent role");
   // Path-scoped tool declarations are safe for every specialized role.
@@ -84,7 +111,15 @@ export function createAdkSpecializedAgent(
   };
 
   const registry = new ControlledToolRegistry(config.gatewayClient, profile.tools);
-  const tools = registry.modelTools.map((definition) => {
+  const tools = registry.modelTools
+    // Default remains read_file-only: enabling the write tool is explicit.
+    .filter(definition => !config.mcpReadFile || (
+      definition.name !== "read_file" &&
+      !(config.mcpUpdateFile && definition.name === "update_file") &&
+      !(config.mcpCreateFile && definition.name === "create_file") &&
+      !(config.mcpRunTests && definition.name === "run_tests")
+    ))
+    .map((definition) => {
     const name = definition.name as SpecializedToolName;
     const parameters = config.scopeModelPaths && name === "read_file"
       ? SCHEMAS.read_file.extend({path: modelPathEnum(readablePaths)})
@@ -139,17 +174,53 @@ export function createAdkSpecializedAgent(
     });
   });
 
+  let mcpToolset: MCPToolset | undefined;
+  if (config.mcpReadFile) {
+    // The bearer rotates per HTTP call. No token is stored in Gemini state.
+    const authorizedFetch = createTaskBearerFetch(
+      config.mcpReadFile.endpoint, config.mcpReadFile.bearerForRequest
+    );
+    const params: StreamableHTTPConnectionParams = {
+      type: "StreamableHTTPConnectionParams",
+      url: config.mcpReadFile.endpoint,
+      transportOptions: { fetch: authorizedFetch }
+    };
+    mcpToolset = new MCPToolset(params, [
+      "read_file",
+      ...(config.mcpUpdateFile ? ["update_file"] : []),
+      ...(config.mcpCreateFile ? ["create_file"] : []),
+      ...(config.mcpRunTests ? ["run_tests"] : [])
+    ]);
+  }
+
   const agent = new LlmAgent({
     name: `account_suspension_${config.role}`,
     description: profile.skill,
     model: config.model,
     instruction: profile.system_prompt,
-    tools,
+    tools: mcpToolset ? [...tools, mcpToolset] : tools,
+    // Observe only the MCP read_file; existing FunctionTools already emit outcomes.
+    ...(mcpToolset ? {afterToolCallback: ({tool, args, response}) => {
+      if (tool.name === "read_file") {
+        const payload = normalizeMcpReadFileOutcome(response, args);
+        config.onToolOutcome?.({name: "read_file", arguments: args, payload});
+      }else if(tool.name === "update_file" && config.mcpUpdateFile){
+        const payload = normalizeMcpUpdateFileOutcome(response, args);
+        config.onToolOutcome?.({name:"update_file",arguments:args,payload});
+      }else if(tool.name === "create_file" && config.mcpCreateFile){
+        const payload = normalizeMcpCreateFileOutcome(response, args);
+        config.onToolOutcome?.({name:"create_file",arguments:args,payload});
+      }else if(tool.name === "run_tests" && config.mcpRunTests){
+        const payload = normalizeMcpRunTestsOutcome(response, args);
+        config.onToolOutcome?.({name:"run_tests",arguments:args,payload});
+      }
+      return undefined;
+    }} : {}),
     // Opt in only for the explicitly configured live Gemini Backend.
     ...(config.generateContentConfig
       ? {generateContentConfig: config.generateContentConfig} : {}),
     disallowTransferToParent: true,
     disallowTransferToPeers: true
   });
-  return { profile, registry, agent };
+  return { profile, registry, agent, ...(mcpToolset ? {mcpToolset} : {}) };
 }

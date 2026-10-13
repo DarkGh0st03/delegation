@@ -10,6 +10,7 @@ import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
+import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGenerationConfig } from "./adk-specialized-agents.ts";
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
@@ -29,6 +30,15 @@ export interface AdkA2ATaskHandlerConfig {
   generateContentConfig?: AdkGenerationConfig;
   scopeModelPaths?: boolean;
   gatewayTimeoutMs?: number;
+  /** Optional shared-MCP spike: trusted Agent worker task registry. */
+  mcpTaskRegistry?: PrivateMcpTaskRegistry;
+  mcpSharedUrl?: string;
+  /** Explicitly opt update_file into MCP; read_file remains the default. */
+  mcpUpdateFile?: boolean;
+  /** Test Agent only: opt-in to MCP create_file for the one allowed E2E path. */
+  mcpCreateFile?: boolean;
+  /** Test Agent only: route controlled run_tests via the shared MCP server. */
+  mcpRunTests?: boolean;
   fetchFn?: FetchLike;
 }
 
@@ -153,6 +163,18 @@ class BoundedModel extends BaseLlm {
  */
 export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): DeterministicTaskHandler {
   // Reject bad configuration at server startup, before accepting any requests.
+  if (config.mcpUpdateFile && !config.mcpSharedUrl) {
+    throw new Error("Shared MCP update_file requires MCP to be configured");
+  }
+  if (config.mcpCreateFile && !config.mcpSharedUrl) {
+    throw new Error("Shared MCP create_file requires MCP to be configured");
+  }
+  if (config.mcpRunTests && !config.mcpSharedUrl) {
+    throw new Error("Shared MCP run_tests requires MCP to be configured");
+  }
+  if (Boolean(config.mcpSharedUrl) !== Boolean(config.mcpTaskRegistry)) {
+    throw new Error("Shared MCP requires both a task registry and shared URL");
+  }
   if (!config.adapterToken?.trim() || !config.adapterBaseUrl?.trim() || !config.gatewayBaseUrl?.trim()) {
     throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
   }
@@ -167,8 +189,12 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
 
   if (config.generateContentConfig) {
     const {maxOutputTokens, temperature} = config.generateContentConfig;
+    // Gemini 3.8 no longer needs legacy sampling parameters. If omitted,
+    // validate only the explicit output ceiling and thinking configuration.
+    const validTemperature=temperature===undefined ||
+      (Number.isFinite(temperature)&&temperature>=0&&temperature<=2);
     if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 32000
-        || !Number.isFinite(temperature) || temperature < 0 || temperature > 2) {
+        || !validTemperature) {
       throw new Error("Invalid explicit ADK generation configuration");
     }
   }
@@ -202,14 +228,29 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       evidenceHandler,
       ...(signal ? {signal} : {}),
       ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),
+      ...(config.mcpRunTests ? {runnerExecuteTimeoutMs: 960_000} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
-    const agent = createAdkSpecializedAgent({
+    // Register only the ACTIVE A2A task. The registry retains this task-scoped
+    // Gateway client and its private evidence; MCP never receives them.
+    config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal,
+      {allowUpdateFile: config.mcpUpdateFile === true,
+       allowCreateFile: config.mcpCreateFile === true && context.role==="test",
+       allowRunTests: config.mcpRunTests === true && context.role==="test"});
+    const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
+      ...(config.mcpUpdateFile ? {mcpUpdateFile:true} : {}),
+      ...(config.mcpCreateFile ? {mcpCreateFile:true} : {}),
+      ...(config.mcpRunTests ? {mcpRunTests:true} : {}),
+      ...(config.mcpSharedUrl && config.mcpTaskRegistry ? {mcpReadFile:{
+        endpoint:config.mcpSharedUrl,
+        bearerForRequest: () => config.mcpTaskRegistry!.bearerFor(context.task_id)
+      }} : {}),
       ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
       ...(config.scopeModelPaths ? {scopeModelPaths: true} : {}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
-    }).agent;
+    });
+    const {agent, mcpToolset} = configured;
     const appName = "account_suspension_adk_" + context.role;
     const userId = "delegated_a2a";
     const sessionService = new InMemorySessionService();
@@ -260,6 +301,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         model.providerErrorCategory ?? diagnostic.category;
       reportFailure(category, model.budgetExceeded ? null : diagnostic);
       throw new Error("ADK protected model failure: " + category);
+    } finally {
+      // ADK holds MCP sessions; release them on success, denial or model failure.
+      await mcpToolset?.close();
     }
     if (model.budgetExceeded || model.providerErrorCategory || eventErrorCategory) {
       const category = model.budgetExceeded ? "model_turn_budget" :

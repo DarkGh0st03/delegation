@@ -1,0 +1,69 @@
+# HUMAN-AUTHORIZED ACTION ONLY. This is not a CI test and never runs on push.
+# Promote/review this file on the protected default branch before use.
+# The GitHub "protected-gitea-merge" environment MUST have required reviewers
+# and secrets restricted to that environment; there are no default secrets.
+#
+# A human also must approve the exact Gitea PR head. This workflow never
+# creates a review, grants delegated permissions, or uses any model keys.
+name: Human-Authorized Protected Gitea Merge
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Gitea PR number (thesis/iam-console-poc)'
+        type: string
+        required: true
+      expected_head_sha:
+        description: 'Exact 40-character lowercase feature head SHA'
+        type: string
+        required: true
+      confirmation:
+        description: 'Type MERGE PR #<number> AT <sha> exactly'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: human-protected-gitea-iam-console-main
+  cancel-in-progress: false
+
+jobs:
+  protected-merge:
+    # GitHub's dispatch actor is not enough on its own: enforce the
+    # configured operator and disallow re-runs by another identity.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && vars.THESIS_MERGE_GITHUB_OPERATOR != '' && github.actor == vars.THESIS_MERGE_GITHUB_OPERATOR && github.triggering_actor == github.actor }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment:
+      name: protected-gitea-merge
+    env:
+      THESIS_MERGE_GITHUB_OPERATOR: ${{ vars.THESIS_MERGE_GITHUB_OPERATOR }}
+      MANUAL_MERGE_PR: ${{ inputs.pr_number }}
+      MANUAL_MERGE_SHA: ${{ inputs.expected_head_sha }}
+      MANUAL_MERGE_CONFIRM: ${{ inputs.confirmation }}
+      THESIS_MERGE_GITEA_URL: ${{ secrets.THESIS_MERGE_GITEA_URL }}
+      THESIS_MERGE_READ_TOKEN: ${{ secrets.THESIS_MERGE_READ_TOKEN }}
+      THESIS_MERGE_PROTECTION_READ_TOKEN: ${{ secrets.THESIS_MERGE_PROTECTION_READ_TOKEN }}
+      THESIS_MERGE_WRITE_TOKEN: ${{ secrets.THESIS_MERGE_WRITE_TOKEN }}
+      THESIS_MERGE_REVIEWER_ID: ${{ secrets.THESIS_MERGE_REVIEWER_ID }}
+      THESIS_MERGE_REVIEWER_LOGIN: ${{ secrets.THESIS_MERGE_REVIEWER_LOGIN }}
+      THESIS_MERGE_CI_ID: ${{ secrets.THESIS_MERGE_CI_ID }}
+      THESIS_MERGE_CI_LOGIN: ${{ secrets.THESIS_MERGE_CI_LOGIN }}
+      THESIS_MERGE_OPERATOR_ID: ${{ secrets.THESIS_MERGE_OPERATOR_ID }}
+      THESIS_MERGE_OPERATOR_LOGIN: ${{ secrets.THESIS_MERGE_OPERATOR_LOGIN }}
+    steps:
+      - name: Checkout protected main without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Use pinned Node.js version
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+
+      - name: Validate explicit human intent and perform protected Gitea merge
+        run: node --experimental-strip-types poc/packages/orchestrator-runtime/scripts/human-merge.mjs --execute
