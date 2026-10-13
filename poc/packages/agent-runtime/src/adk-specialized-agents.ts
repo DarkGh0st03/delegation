@@ -42,10 +42,11 @@ const SCHEMAS = {
 export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: Record<string, unknown>; payload: {ok: true; result: unknown} | ReturnType<typeof controlledToolErrorPayload> }; 
 
 /** Optional model generation parameters. Absent for every scripted baseline. */
-/** Native ADK configuration. Keep output/temperature mandatory for our live probe. */
+/** ADK config: output limit is required, but modern Gemini 3.x
+ * may omit deprecated sampling parameters such as temperature. */
 export type AdkGenerationConfig = NonNullable<LlmAgentConfig["generateContentConfig"]> & {
   maxOutputTokens: number;
-  temperature: number;
+  temperature?: number;
 };
 
 export interface AdkSpecializedAgentConfig {
