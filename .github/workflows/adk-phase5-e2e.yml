@@ -1,11 +1,14 @@
-name: ADK Phase 5 - Protected E2E
+# HISTORICAL SCRIPTED BASELINE ONLY.
+# Real Gemini/OpenAI modes were retired here in favor of:
+#   .github/workflows/gemini-paid-shared-mcp-final.yml
+# This archival phase-5 regression never receives billable API keys.
+name: ADK Phase 5 - Historical Scripted E2E (No AI Billing)
 
 on:
   push:
     branches: [refactor/adk-integration]
     paths:
       - '.github/workflows/adk-phase5-e2e.yml'
-      - '.github/adk-gemini-backend-once.trigger'
       - 'poc/scripts/phase10b-positive-e2e.mjs'
       - 'poc/scripts/gemini-thinking-policy.mjs'
       - 'poc/scripts/test/gemini-thinking-policy.test.mjs'
@@ -23,11 +26,11 @@ on:
   workflow_dispatch:
     inputs:
       engine:
-        description: 'Scripted (default), bounded live Gemini role, or legacy live modes; real calls may incur API charges'
+        description: 'Legacy Phase 5 regression is scripted only; live providers retired'
         required: true
         type: choice
         default: adk-scripted
-        options: [adk-scripted, adk-gemini-backend, adk-gemini-frontend, adk-gemini-test, adk-gemini-full, adk-openai, adk-gemini]
+        options: [adk-scripted]
       model:
         description: 'Model enabled for your OpenAI API key; leave baseline for scripted runs'
         type: string
@@ -99,12 +102,13 @@ jobs:
       EXPECTED_GITEA_REVISION: 405748b1e77992b6bd8630a3ab6f990658d32f6b
       ORCHESTRATOR_ROOT_CREDENTIAL_ID: urn:phase10b:orchestrator-root
       PHASE10B_RESULT_FILE: /tmp/phase5-adk-result.json
-      PHASE10B_AGENT_ENGINE: ${{ github.event_name == 'workflow_dispatch' && (inputs.engine == 'adk-openai' || inputs.engine == 'adk-gemini') && inputs.engine || 'adk-scripted' }}
-      PHASE10B_REAL_GEMINI_ROLES: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-frontend' && 'frontend' || github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-test' && 'test' || github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-full' && 'all' || '' }}
-      PHASE10B_ORCHESTRATOR_ENGINE: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini' && 'adk-gemini' || github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-openai' && 'adk-openai' || 'adk-scripted' }}
+      PHASE10B_AGENT_ENGINE: adk-scripted
+      PHASE10B_REAL_GEMINI_ROLES: ''
+      PHASE10B_ORCHESTRATOR_ENGINE: adk-scripted
       OPENAI_MODEL: ${{ inputs.model || 'gpt-5.6-sol' }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+      # No API credentials are passed into historical scripted regressions.
+      OPENAI_API_KEY: ''
+      GEMINI_API_KEY: ''
       GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-3.8-flash' }}
       PHASE10B_GEMINI_THINKING_LEVEL: ${{ inputs.gemini_thinking_level || 'LOW' }}
       PHASE10B_FULL_GEMINI_MODEL: ${{ inputs.full_gemini_model || 'gemini-3.8-flash' }}
@@ -113,7 +117,7 @@ jobs:
       # Live Backend uses the original complete four-file task and 16-turn
       # budget in adk-backend-live-probe.ts. Never retry failed inference.
       # Diagnostic numbers only; never logs prompts or tool schemas.
-      ADK_SAFE_REQUEST_SHAPE_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && startsWith(inputs.engine, 'adk-gemini-') && 'true' || 'false' }}
+      ADK_SAFE_REQUEST_SHAPE_DIAGNOSTICS: 'false'
       ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"
@@ -241,37 +245,8 @@ jobs:
           npm --prefix poc run gateway:start > /tmp/phase10b-gateway.log 2>&1 &
           echo $! > /tmp/phase10b-gateway.pid
 
-      - name: Require explicit OpenAI API secret for paid live runs
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-openai' }}
-        run: |
-          if [ -z "$OPENAI_API_KEY" ]; then
-            echo 'OPENAI_API_KEY repository secret is missing; no live provider call will be attempted.' >&2
-            exit 1
-          fi
-      - name: Require the existing Gemini secret for manual Gemini runs
-        if: ${{ github.event_name == 'workflow_dispatch' && startsWith(inputs.engine, 'adk-gemini') }}
-        run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo 'GitHub repository secret Delegation_Thesis_Gemini is missing.' >&2
-            exit 1
-          fi
-      - name: Require Free Tier Gemini secret for the one-time Backend probe
-        if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, 'Gemini Backend live one-shot') }}
-        run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo 'Missing repository secret Delegation_Thesis_Gemini.' >&2
-            exit 1
-          fi
-      # This ephemeral marker is generated only after an explicit manual dispatch.
-      # Do NOT commit the marker: ordinary pushes must remain fully scripted.
-      # The existing script recognizes this marker and runs one delegated
-      # Manual, bounded real Backend Gemini task. It may consume paid Gemini
-      # API credits. No automatic retries, Frontend/Test, PR, or model fallback.
-      # The actual task must read and update Gitea through Gateway/OPA/DC.
-      - name: Select isolated Gemini Backend probe (manual only)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.engine == 'adk-gemini-backend' }}
-        run: touch .github/adk-gemini-backend-once.trigger
-
+      # Paid live provider and one-shot marker steps were intentionally retired.
+      # The previous implementations remain visible in Git history.
       - name: Run protected ADK Account Suspension E2E
         run: |
           set -a
