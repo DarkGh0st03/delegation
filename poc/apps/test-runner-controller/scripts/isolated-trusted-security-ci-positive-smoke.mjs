@@ -71,8 +71,8 @@ function git(args,{cwd,auth,timeout=180000,label="Git step"}={}){
     const sensitive=[adminPassword,readerPass,publisherPass,
       basic(adminUser,adminPassword)];
     const safeLines=String(error?.stderr??"").split(/\r?\n/u)
-      .filter(line=>/^(?:fatal:|error:|remote:|warning:)/iu.test(line.trim()))
-      .slice(-8)
+      .filter(line=>line.trim().length>0)
+      .slice(-18)
       .map(line=>{
         let safe=line.replace(/[\x00-\x1f\x7f]/gu," ").slice(0,500)
           .replace(/https?:\/\/[^\s"'<>]+/giu,"[remote-url]")
