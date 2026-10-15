@@ -10,7 +10,7 @@ La PR conserva il runtime finale, ma la rimozione di vecchi job e script aveva e
 
 Sono stati esaminati ricorsivamente i 343 file tracciati della PR, 9 manifest npm, 4 lockfile verificati dal contratto attuale, 10 workflow, 23 Markdown inclusi tutti i 12 README, Rust/Adapter/Solidity/DID, entrypoint, test, risorse e script. Il grafo conservativo originale contiene 833 riferimenti; non risultano import relativi o risorse letterali mancanti. I 25 link Markdown locali originali hanno destinazioni esistenti. Sono stati verificati anche i consumer precedenti delle 62 eliminazioni della PR.
 
-L'[inventario per file](audit/pr10-file-decisions.csv) riporta classificazione, decisione, motivo e prova. Copre tutte le 62 eliminazioni della PR e i candidati residui. Le classi sono: **necessario**, **obsoleto**, **storico ma ancora utilizzato**, **da verificare**. La sola assenza di un import non autorizza a cancellare un test indipendente, un API pubblico o un'utility di ricerca.
+L'[inventario per file](audit/pr10-file-decisions.csv) contiene 111 decisioni con classificazione, motivo e prova. Copre tutte le 62 eliminazioni della PR, le due ulteriori eliminazioni e i candidati residui. Le classi sono: **necessario**, **obsoleto**, **storico ma ancora utilizzato**, **da verificare**. La sola assenza di un import non autorizza a cancellare un test indipendente, un API pubblico o un'utility di ricerca.
 
 ## Percorso finale e natura delle prove
 
@@ -97,7 +97,17 @@ Verifiche locali sul branch di correzione:
 
 Le suite Node sono state eseguite senza chiavi provider e con un preload che blocca la rete esterna; nessun tentativo esterno registrato. Gli errori iniziali di provenienza dell'archivio senza `.git` erano stati diagnosticati e ripetuti con metadati autentici del commit; non sono errori del repository.
 
-La prova Docker locale originale aveva raggiunto le 11 scritture reali, ma il download del browser era stato bloccato dalla rete cloud. Questo tentativo **non è un PASS E2E**; i fallimenti infrastrutturali non sono stati trasformati in successi. I nuovi assert integrati richiedono un'esecuzione completa dell'E2E corretto in CI o in un ambiente che consenta i download ufficiali. Gli esiti della nuova PR vanno verificati sul suo SHA, separatamente dalla run verde di `da769d09`.
+La prova Docker locale originale aveva raggiunto le 11 scritture reali, ma il download del browser era stato bloccato dalla rete cloud. Questo tentativo **non è un PASS E2E**; i fallimenti infrastrutturali non sono stati trasformati in successi.
+
+Le correzioni sono state poi eseguite integralmente su GitHub Actions, sul commit `d9a9b5e5a15d6ab686db5d06c8647becae261b95` della PR [#11](https://github.com/DarkGh0st03/delegation/pull/11):
+
+| Workflow sul commit delle correzioni | Esito |
+|---|---|
+| [PoC Baseline Validation — 38734779201](https://github.com/DarkGh0st03/delegation/actions/runs/38734779201) | **PASS** |
+| [Phase 12 Reproducibility Contract — 38734779222](https://github.com/DarkGh0st03/delegation/actions/runs/38734779222) | **PASS** |
+| [Shared MCP Real Docker Acceptance E2E gratuito — 38734779266](https://github.com/DarkGh0st03/delegation/actions/runs/38734779266) | **PASS**, incluso lo step protetto finale e il caricamento dell'artifact `current-poc-free-e2e-results` |
+
+Quest'ultima esecuzione copre i sei casi di autorità con due probe ciascuno, i tre conflitti provider, Backend → Frontend → Test con scritture reali Gitea, Runner e acceptance positivi, baseline con sei fasi progetto PASS e acceptance realmente FAIL, Security CI indipendente PASS sul candidato e merge ancora bloccato senza review umana. Sono tre esecuzioni Docker reali. Nessuna inference a pagamento è necessaria o avviata. Il risultato è distinto dal PASS precedente di `da769d09`; le modifiche successive al commit qui verificato riguardano soltanto il presente rapporto e una classificazione CSV.
 
 La guardia import usa il parser Node senza linking/evaluation: controlla import/export runtime relativi statici, compresi i nuovi file non ignorati. Non pretende di verificare import dinamici, type-only eliminati, risorse runtime, API GitHub o tutti i comandi shell/YAML: restano oggetto dei test e del presente audit. Non introduce nuove dipendenze o modifiche ai lockfile.
 
