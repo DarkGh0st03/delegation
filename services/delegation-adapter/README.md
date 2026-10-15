@@ -1,6 +1,6 @@
 # Rust Delegation Adapter
 
-The Delegation Adapter is the internal Rust service that exposes the existing delegated-authorization framework to the future TypeScript Gateway and Agent runtime.
+The Delegation Adapter is the internal Rust service that exposes the existing delegated-authorization framework to the current trusted TypeScript Gateway and private Agent runtimes.
 
 ## Phase 2 boundary
 

@@ -1,38 +1,21 @@
-# Deterministic A2A Agent
+# Optional standalone A2A agent launcher
 
-Phase 7 launcher for the Backend, Frontend and Test Agent services.
+`src/main.ts` is an independent CLI that can start a single `backend`, `frontend` or `test` agent via `@thesis/agent-runtime`, with Express Agent Card, `/a2a/rest`, and (if configured) the private MCP Worker endpoint.
 
-The same process is configured with `AGENT_ROLE=backend|frontend|test` and a
-dedicated `AGENT_PORT`. It exposes:
+This is **not** the entrypoint used in the successful live three-role experiment: the canonical program starts its three A2A servers in-process using `startSpecializedAgentServer`:
+`poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`.
 
-- `/.well-known/agent-card.json`;
-- A2A HTTP+JSON v1.0 under `/a2a/rest`.
+## Optional standalone configuration
 
-The service uses the shared `@thesis/agent-runtime`. Phase 7 is deliberately
-non-LLM: it validates discovery, extension negotiation, Message -> Task ->
-Artifact semantics and internal Delegation Evidence handling before Phase 8
-adds model-driven reasoning.
+- `AGENT_ROLE=backend|frontend|test`, `AGENT_PORT`.
+- `AGENT_RUNTIME_ENGINE=adk` and `ADK_MODEL_PROVIDER=gemini` with the provider credential for real Gemini.
+- Trusted `GATEWAY_URL`, `DELEGATION_ADAPTER_URL` and caller token.
+- Optional shared MCP: `ADK_MCP_SHARED_URL`, trusted `MCP_TASK_SIGNING_PRIVATE_KEY` / `MCP_TASK_SIGNING_PUBLIC_KEY`, plus per-tool opt-ins as validated by `src/mcp-tool-flags.ts`.
 
-## Explicit shared MCP tool opt-ins
+If MCP is not configured, this standalone launcher may use local ADK FunctionTools depending on its settings; **do not confuse that with the current canonical shared-MCP experiment**.
 
-The ADK launcher only turns on shared MCP when
-`ADK_MCP_SHARED_URL` and task signing keys are supplied. With no tool flags
-set, **only `read_file` uses MCP**, preserving existing FunctionTools for
-other operations. The following environment variables are strict
-`true`/`false` values (default: false), independent of one another:
+```bash
+npm --prefix poc run test -w @thesis/a2a-agent
+```
 
-- `ADK_MCP_UPDATE_FILE=true` — Backend, Frontend or Test with their existing
-  separate role- and task-bound write permissions (Gateway/OPA still decide).
-- `ADK_MCP_CREATE_FILE=true` — **Test Agent only**, exact allowed E2E file.
-- `ADK_MCP_RUN_TESTS=true` — **Test Agent only**, predefined Runner profile.
-
-Any flag enabled without `AGENT_RUNTIME_ENGINE=adk` or shared MCP URL fails
-startup. Enabling create/test for Backend or Frontend fails startup. Other
-values (e.g. `1` or `yes`) also fail startup rather than silently altering
-the authorization boundary. The shared MCP listener remains one server for
-all roles; individual Agent workers retain private task registries.
-
-Offline regressions: `npm --prefix poc run test -w @thesis/a2a-agent`.
-**Note:** the real positive researcher acceptance cannot pass until the
-Account Suspension feature is fully implemented in the isolated test branch.
-The existing real Runner negative smoke validates failure propagation only.
+Never copy private DC, Gitea credentials or Task signing keys into the model-visible request.

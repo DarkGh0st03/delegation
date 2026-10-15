@@ -23,6 +23,12 @@ on:
       - 'poc/scripts/bootstrap-trust.sh'
       - 'poc/package-lock.json'
       - 'blockchain/did-client/package-lock.json'
+  pull_request:
+    paths:
+      - '.github/workflows/shared-mcp-real-positive-e2e.yml'
+      - 'poc/**'
+      - 'services/delegation-adapter/**'
+      - 'blockchain/**'
   workflow_dispatch:
 
 permissions:
