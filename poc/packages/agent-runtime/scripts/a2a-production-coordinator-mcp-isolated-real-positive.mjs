@@ -45,6 +45,8 @@ import {TrustedGiteaMergeExecutor} from "../../orchestrator-runtime/src/trusted-
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES as reference} from "../../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
 import {createSharedMcpHttpServer} from "../../../mcp-shared/src/http-server.ts";
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
+import {assertCurrentAuthorityBoundaries} from "./assert-current-authority-boundaries.mjs";
+import {runResearcherAcceptanceNegative} from "./assert-researcher-acceptance-negative.mjs";
 
 const roles=["backend","frontend","test"];
 const branch="feature/account-suspension";
@@ -618,6 +620,16 @@ async function main(){
     assert.deepEqual(completed,["backend","frontend","test"],
       "Production Coordinator violated the role order");
 
+    const authorityBoundaries=await assertCurrentAuthorityBoundaries({
+      gatewayBaseUrl:gatewayUrl,adapterBaseUrl:adapter,tokens,
+      rootCredentialId:rootId,delegatedTasks:coordinated.delegated_tasks,
+      giteaBaseUrl:giteaUrl,giteaRepo:fixture.repo,
+      giteaAuthorization:fixture.adminAuth,branch,runId:id,
+      runnerRequestCount:()=>runnerRequests.length
+    });
+    process.stderr.write(JSON.stringify({event:"current_authority_boundaries",
+      status:"PASS",...authorityBoundaries})+"\n");
+
     const feature=await api(giteaUrl,fixture.repo+
       "/branches/feature%2Faccount-suspension",{auth:fixture.adminAuth});
     const testedCommit=feature.commit.id;
@@ -641,6 +653,12 @@ async function main(){
     assert.equal(realRunnerResult?.researcher_acceptance?.status,"pass");
     assert.equal(realRunnerResult?.phases?.length,7);
     assert.ok(realRunnerResult.phases.every(p=>p.status==="pass"));
+    const acceptanceNegative=await runResearcherAcceptanceNegative({
+      giteaBaseUrl:giteaUrl,giteaWriteToken:fixture.token,
+      giteaReadToken:fixture.mergeReadToken,dockerImage:nodeImage,
+      logDir:runnerLogs,acceptanceDir,baselineSha,candidateBranch:branch
+    });
+    process.stderr.write(JSON.stringify(acceptanceNegative)+"\n");
     assert.equal(agents.backend.executor.executionCount,1);
     assert.equal(agents.frontend.executor.executionCount,1);
     assert.equal(agents.test.executor.executionCount,1);
@@ -841,6 +859,8 @@ async function main(){
       actual_coordinator:"AccountSuspensionSequentialCoordinator",
       actual_authority_bootstrap:true,
       actual_role_runner:"DelegatedA2ARoleRunner",
+      authority_boundaries:authorityBoundaries,
+      researcher_acceptance_negative:acceptanceNegative,
       completed_roles:completed,
       backend_revision:committed.backend,
       frontend_revision:committed.frontend,
@@ -860,9 +880,11 @@ async function main(){
       merge_outcome:positiveMerge?"MERGED_ONLY_IN_DISPOSABLE_GITEA":"NOT_MERGED",
       tests:["real_gateway_branch_and_pr_creation",
         "production_root_and_role_child_delegation",
+        "six_real_role_authority_denials_and_unrelated_proof_rejections",
         "backend_real_a2a_mcp_update","frontend_real_a2a_mcp_update",
         "test_real_mcp_create","all_11_files_written_by_role_scoped_mcp_tools",
         "real_docker_all_project_phases_and_acceptance_pass",
+        "baseline_project_pass_independent_researcher_acceptance_fail",
         "production_coordinator_positive_gate",
         "pr_open_no_reviews_no_merge",
         "live_read_only_merge_readiness_denied",

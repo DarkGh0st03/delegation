@@ -10,14 +10,18 @@ Trusted TypeScript and Rust services start separately in the E2E scripts; the fu
 
 ## Local infrastructure scripts
 
+Run from the repository root. Initialization preserves an existing local `.env`:
+
 ```bash
-node poc/scripts/init-local-env.mjs --force
+node poc/scripts/init-local-env.mjs
 bash poc/scripts/phase1-up.sh
 bash poc/scripts/phase1-check.sh
 bash poc/scripts/phase1-down.sh
 ```
 
 `poc/scripts/bootstrap-gitea.sh` creates local repository fixture/service credentials; `poc/scripts/bootstrap-trust.sh` deploys the local EVM contracts. Job-local secrets and runtime configuration are in ignored `poc/infra/.env` and `poc/infra/runtime/`.
+
+Use the initializer's `--force` option only for deliberate local credential regeneration: it overwrites `.env` with new random Gitea passwords and service tokens. It does not update accounts already stored in existing Gitea volumes, so routine reinitialization with that option can leave configuration and service credentials inconsistent.
 
 **Warning:** `phase1-down.sh --volumes` removes persistent local Docker volumes; never use it as a routine cleanup step. The default local dev keys belong exclusively to Anvil testing and must not be reused externally.
 

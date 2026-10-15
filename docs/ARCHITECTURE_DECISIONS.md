@@ -2,6 +2,8 @@
 
 These decisions are frozen unless an implementation blocker requires a documented change.
 
+The current execution path uses a deterministic TypeScript Orchestrator and three Google ADK/Gemini roles through A2A and one shared MCP server. References to implementation phases below explain the development order; they do not describe unfinished integration. See the [current implementation map](IMPLEMENTATION_STATE.md).
+
 ## ADR-001 — Keep the PoC integration in the delegation repository
 
 **Status:** Accepted
@@ -14,7 +16,7 @@ Integration code lives under `poc/`; the Rust bridge lives under `services/deleg
 
 **Status:** Accepted
 
-Implementation proceeds bottom-up. Authorization, policy and protected provider boundaries are implemented before A2A and GPT-backed reasoning.
+The implementation was built bottom-up: authorization, policy and protected provider boundaries preceded A2A and model-backed reasoning. The final specialized roles use Google ADK/Gemini; the Orchestrator itself does not require a model.
 
 ## ADR-003 — TypeScript/Node.js for Gateway and Agents; Rust for delegated authorization
 
@@ -34,7 +36,7 @@ Execution order:
 
 `tool request -> Gateway derivation -> VP verification -> OPA -> provider/runner`
 
-OPA is integrated while the Gateway still uses a mock executor. Gitea is connected only afterwards. OPA or verifier failure is fail-closed.
+Historically, OPA was integrated against a mock Gateway executor before connecting Gitea. The current path authorizes real Gitea and controlled Docker Runner operations. OPA or verifier failure is fail-closed.
 
 ## ADR-005 — Adapter callers are bound to server-side identities
 
@@ -76,9 +78,9 @@ No LLM-controlled arbitrary shell is exposed.
 
 **Status:** Accepted
 
-The Orchestrator LLM may reason about which specialized role should execute a subtask. It does not invent child permissions.
+The final Account Suspension Orchestrator deterministically runs Backend → Frontend → Test. Each specialized ADK/Gemini role reasons about its assigned task, but cannot invent child permissions or choose the workflow order.
 
-The runtime maps a selected role to deterministic templates `DC_Backend`, `DC_Frontend` and `DC_Test`.
+The runtime maps each role to deterministic templates `DC_Backend`, `DC_Frontend` and `DC_Test`. Earlier plans for model-selected task decomposition are historical; they are not the final coordinator behavior.
 
 ## ADR-009 — Final merge remains human
 
@@ -111,7 +113,7 @@ Sensitive credential or presentation payloads are not recorded in full.
 
 **Status:** Accepted
 
-Phase 7 uses the official `@a2a-js/sdk` package, pinned to `1.3.0`, with the
+Introduced in Phase 7, the active A2A runtime uses the official `@a2a-js/sdk` package, pinned to `1.3.0`, with the
 A2A Protocol v1.0 HTTP+JSON binding.
 
 The delegated-authorization extension URI is frozen as:
