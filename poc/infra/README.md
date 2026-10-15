@@ -6,7 +6,9 @@
 - **OPA:** independent contextual `allow/deny` decision engine.
 - **Anvil:** local EVM for DID identities, trust registries and status anchors.
 
-Trusted TypeScript and Rust services start separately in the E2E scripts; the full paid workflow additionally uses an **isolated disposable Gitea instance** for the role-generated branch and PR. Do not confuse that disposable environment with persistent local Gitea.
+Trusted TypeScript and Rust services start separately in the E2E scripts. The paid Gemini E2E and three related isolated coordinator workflows start **only OPA and Anvil from Docker Compose**, pre-pull the Gitea image, then create **one volume-free disposable Gitea** inside their E2E scripts. The role-generated branch, commits and PR exist only in that single disposable instance. They do not bootstrap the Compose Gitea.
+
+The Compose `gitea` service and `poc/scripts/bootstrap-gitea.sh` remain available for **local development and other independent regressions** that genuinely operate on that infrastructure instance. They are not part of the paid Gemini execution path.
 
 ## Local infrastructure scripts
 

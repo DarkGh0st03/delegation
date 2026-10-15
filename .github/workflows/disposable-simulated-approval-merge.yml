@@ -99,14 +99,13 @@ jobs:
       - name: Generate job-local development fixtures
         run: node poc/scripts/init-local-env.mjs --force
 
-      - name: Start ephemeral dependency services in hosted runner
+      - name: Start OPA and Anvil; pull disposable Gitea image
         run: |
-          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d gitea opa anvil
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d opa anvil
           docker pull docker.gitea.com/gitea:28.0.0
           docker pull node:22.15.0-bookworm
           for i in {1..100}; do
-            if curl -fsS http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 &&
-               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1 &&
+            if curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1 &&
                cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
               exit 0
             fi
@@ -114,8 +113,6 @@ jobs:
           done
           exit 1
 
-      - name: Bootstrap only GitHub runner's disposable Gitea
-        run: bash poc/scripts/bootstrap-gitea.sh
 
       - name: Deploy local EVM trust contracts
         run: |
