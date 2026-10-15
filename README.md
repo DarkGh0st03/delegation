@@ -1,6 +1,6 @@
 # Delegation — current thesis PoC
 
-This repository implements secure delegated authorization for a bounded software-engineering multi-agent workflow. The successful **13 October 2026** experiment used three Google ADK/Gemini agents (Backend, Frontend, Test) to implement Account Suspension on an IAM Console baseline.
+This repository implements secure delegated authorization for a bounded software-engineering multi-agent workflow. The latest successful **15 October 2026** live experiment used three Google ADK/Gemini agents (Backend, Frontend, Test) to implement Account Suspension on an IAM Console baseline. It validated the framework after the single-disposable-Gitea workflow correction; the earlier 13 October success is retained as historical evidence.
 
 ## How the current system works
 
@@ -35,7 +35,9 @@ The billable workflow **must never be launched automatically**.
 
 ## Verified experimental checkpoint
 
-[GitHub run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436), framework SHA `9012c8c4e7a9244cb931bcdef411cc5f443f0c08`, generated 11 application files; the six Docker project phases, independent researcher acceptance and separately trusted exact-SHA CI passed. The pull request existed in **disposable Gitea** only, and remained unmerged (`human_approval_missing`). This is a bounded successful PoC, not a production certification.
+**Latest authoritative tested framework commit:** [`02c3395b9111a63ccc9f441ea2c91c81865d6673`](https://github.com/DarkGh0st03/delegation/commit/02c3395b9111a63ccc9f441ea2c91c81865d6673); **manual paid run #5:** [38761963415](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415), **15 October 2026, SUCCESS** (first attempt). Three real Gemini ADK/A2A roles wrote all 11 delegated files via a single shared MCP and one disposable Gitea. The six Docker project phases, independent researcher acceptance and separate trusted exact-SHA Security CI passed. The temporary Gitea PR stayed open; merge was blocked (`human_approval_missing`). This result verifies the code at the **tested SHA**, not any later documentation-only commit or future checkout.
+
+The earlier successful [13 October run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) at `9012c8c4e7a9244cb931bcdef411cc5f443f0c08` remains a distinct historical experiment. Neither run is a production certification or a new latency measurement.
 
 ## Read these current documents
 
@@ -44,8 +46,9 @@ The billable workflow **must never be launched automatically**.
 - [Current checkpoint](docs/CURRENT_CHECKPOINT.md)
 - [Implementation map](docs/IMPLEMENTATION_STATE.md)
 - [Current GitHub Actions](docs/ADK_MCP_ACTIONS_CATALOG.md)
-- [Real Gemini run evidence](docs/LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md)
-- [Independent code review](docs/GENERATED_CODE_SECURITY_REVIEW_2026-10-13.md)
+- [Latest real Gemini run evidence — 15 October 2026](docs/LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-15.md)
+- [Earlier real Gemini run evidence — 13 October 2026](docs/LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md)
+- [Independent code review of the **13 October** generated output only](docs/GENERATED_CODE_SECURITY_REVIEW_2026-10-13.md)
 - [Reproducibility and pinned historical comparisons](docs/REPRODUCIBILITY.md)
 - [Human-approval boundary](docs/human-approved-gitea-merge.md)
 
