@@ -1,10 +1,12 @@
-# Manual Gemini full E2E — three ADK roles through one shared MCP (13 October 2026)
+# Manual Gemini full E2E — three ADK roles through one shared MCP (updated 15 October 2026)
 
 ## Purpose and verified result
 
-**LIVE GEMINI E2E PASSED** on [run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436), source SHA `9012c8c4e7a9244cb931bcdef411cc5f443f0c08`, 13 October 2026. All three native Google ADK Gemini roles completed the 11-file Account Suspension task, real Docker tests, independent researcher acceptance and trusted Security CI. The disposable Gitea PR was created but correctly blocked without human approval. [Exact evidence and downloadable artifact metadata](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md).
+**LATEST LIVE GEMINI E2E PASSED** on [run #5 / 38761963415](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415), exact source SHA `02c3395b9111a63ccc9f441ea2c91c81865d6673`, 15 October 2026 (first attempt). The single-disposable-Gitea correction is included at this tested framework SHA. Three native Google ADK Gemini roles completed 11 delegated Account Suspension files, six real Docker phases, independent researcher acceptance and trusted exact-SHA Security CI. The disposable Gitea PR was created but correctly blocked without human approval. [Exact latest run metadata and GitHub artifact digest](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-15.md).
 
-The initial [run 38363401514](https://github.com/DarkGh0st03/delegation/actions/runs/38363401514) had failed during Backend inference; it is superseded as the **current outcome**, not erased from experiment history. Do not automatically rerun this paid experiment: its success is already established and further billing requires renewed owner authorization.
+The earlier 13 October [successful run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436), framework SHA `9012c8c4e7a9244cb931bcdef411cc5f443f0c08`, remains a distinct historical result with [original artifact evidence](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md); its separate generated-code security review must not be applied automatically to the 15 October generated files.
+
+The initial [run 38363401514](https://github.com/DarkGh0st03/delegation/actions/runs/38363401514) had failed during Backend inference; it is superseded by the later successful runs, not erased from experiment history. Do not automatically rerun this paid experiment: its success is already established and further billing requires renewed owner authorization.
 
 Workflow: `.github/workflows/gemini-paid-shared-mcp-final.yml`  
 Program: `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`

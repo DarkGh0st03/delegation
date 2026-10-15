@@ -1,8 +1,8 @@
-# Current integration checkpoint — 13 October 2026
+# Current integration checkpoint — 15 October 2026
 
 ## Scope and architecture
 
-Reference scripted architecture commit: `c7af6ca0a6b0254e3b9966e7631325ab1e540be5`. Verified full live Gemini framework commit: `9012c8c4e7a9244cb931bcdef411cc5f443f0c08` on `main`.
+Reference scripted architecture commit (historical): `c7af6ca0a6b0254e3b9966e7631325ab1e540be5`. **Latest fully tested live Gemini framework commit:** `02c3395b9111a63ccc9f441ea2c91c81865d6673` on `main` — [manual paid run #5, 15 October 2026](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415), SUCCESS. The 13 October reference `9012c8c4e7a9244cb931bcdef411cc5f443f0c08` remains historical.
 
 The contribution is the integration of delegated authorization with interoperable agent execution. The cryptographic delegation foundation is reused; the experiment is a bounded software-engineering workflow, not a general autonomous developer.
 
@@ -10,7 +10,7 @@ The canonical coordinator is deterministic TypeScript: Backend → Frontend → 
 
 The Test role runs the exact-SHA Docker pipeline and researcher-owned acceptance. The coordinator then opens a PR. A separate trusted CI actor reruns the Docker pipeline and publishes status for that exact SHA. The final readiness check denies merge without a genuine human review. The canonical live test never creates a review or merges; its Gitea instance is disposable.
 
-## Verified evidence at the reference commit
+## Earlier free regression evidence (13 October reference)
 
 | Workflow | Run | Result and scope |
 | --- | --- | --- |
@@ -22,13 +22,21 @@ The Test role runs the exact-SHA Docker pipeline and researcher-owned acceptance
 
 The real-Docker scripted run completed the 11-file scope (Backend 4, Frontend 3, Test 3 updates + 1 creation), six project phases and researcher acceptance. Trusted CI published pending then success under a separate identity; no approval was created and the merge was denied with `human_approval_missing`. Gitea main remained unchanged.
 
-## Live Gemini result — PASS (13 October 2026)
+## Earlier live Gemini result — PASS (13 October 2026)
 
 [Manual paid run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) on `main` at `9012c8c4e7a9244cb931bcdef411cc5f443f0c08` completed successfully. Backend, Frontend and Test were real Gemini roles under Google ADK/A2A, using one shared MCP service and Gateway/Rust/OPA. All 11 files, interface preflight, six Docker acceptance phases, researcher acceptance and independent trusted Security CI passed. The separate CI identity posted exact feature SHA `pending → success`.
 
 The coordinator opened PR #1 only in temporary Gitea at feature SHA `3306f08aa57ebfe9635842e61b3a3c2a768e1ee7`. No reviewer was impersonated, and no merge took place. Readiness correctly denied `human_approval_missing`. This result establishes the bounded live-generative E2E path, not production security certification or a measured performance campaign.
 
 [Detailed, artifact-hashed evidence](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md) includes the original ZIP checksum and expiry (27 October 2026). The earlier [failed live run 38363401514](https://github.com/DarkGh0st03/delegation/actions/runs/38363401514) remains part of experiment history, and cannot override the later successful run.
+
+## Latest live Gemini result — PASS (15 October 2026)
+
+[Manual paid run #5, ID 38761963415](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415) completed **SUCCESS** on its first attempt against exact framework SHA `02c3395b9111a63ccc9f441ea2c91c81865d6673` (`main`). This is the authoritative **latest tested framework revision**, following PR #12's removal of redundant Docker Compose Gitea startup. The paid workflow uses only the separately managed disposable Gitea; OPA and Anvil still start via Compose. The fact that newer documentation commits may exist does **not** retest their SHAs.
+
+Real `gemini-3.8-flash` with thinking `LOW`, three ADK roles and 29 completed inferences generated the bounded 11-file Account Suspension change (Backend 4, Frontend 3, Test 4). The interface preflight, six actual Docker project phases, researcher-owned acceptance and second independently run trusted Security CI all passed. The exact-SHA trusted status moved `pending → success`. A feature PR was created only in ephemeral Gitea; no approval was forged, no merge occurred and readiness denied `human_approval_missing`; temporary `main` was unchanged.
+
+The original run artifact `gemini-shared-mcp-evidence-38761963415` has ID `11985464719` and GitHub-reported ZIP digest `sha256:5d188f51a7590f9b55883ba6641abfbefd91dc72a0e664a9571c7eca0b1516a7`; expiry is **29 October 2026 at 15:44:27 UTC**. These are verified GitHub API and job-log fields; the ZIP contents were not independently downloaded or security-reviewed in this checkpoint update. See [15 October run evidence](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-15.md). Keep the [13 October experiment](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md) and its [code review](GENERATED_CODE_SECURITY_REVIEW_2026-10-13.md) as history rather than applying that review to the new generated code.
 
 ## Reproducibility separation
 
@@ -53,8 +61,8 @@ This is a configuration proposal, **not a claim that protection has been enabled
 
 ## Remaining sequence
 
-1. Preserve the original run artifact independently before its advertised 27 October 2026 expiration; retain checksum and SHA mapping.
-2. Complete a structured quality/security review of the generated 11 files before any optional *separately reviewed* persistent import.
+1. Preserve the latest 15 October artifact before its advertised 29 October 2026 expiry and, separately, the historical 13 October artifact before 27 October; retain each ZIP checksum and its framework/feature SHA mapping.
+2. Perform a structured quality/security review of the **15 October** generated 11 files before any optional *separately reviewed* persistent import; the 13 October code review does not cover this new output.
 3. Update thesis results with explicit evidence separation: historical measured baseline, scripted shared-MCP validations, and genuine live-Gemini result.
 4. Review GitHub branch protection and any persistent Gitea reviewer/environment/CI setup as separate administrative deployment work. A passing disposable run does not configure these.
 5. Any further paid model experiment requires a new explicit decision by the thesis owner. Routine free CI remains automatic.
