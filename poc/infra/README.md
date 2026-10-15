@@ -6,9 +6,13 @@
 - **OPA:** independent contextual `allow/deny` decision engine.
 - **Anvil:** local EVM for DID identities, trust registries and status anchors.
 
-Trusted TypeScript and Rust services start separately in the E2E scripts. The paid Gemini E2E and three related isolated coordinator workflows start **only OPA and Anvil from Docker Compose**, pre-pull the Gitea image, then create **one volume-free disposable Gitea** inside their E2E scripts. The role-generated branch, commits and PR exist only in that single disposable instance. They do not bootstrap the Compose Gitea.
+Trusted TypeScript and Rust services start separately from Docker Compose. **The paid Gemini E2E and the three scripted coordinator E2E workflows start Gitea, OPA and Anvil together through Docker Compose.** The application scripts no longer start a second Gitea with `docker run`.
 
-The Compose `gitea` service and `poc/scripts/bootstrap-gitea.sh` remain available for **local development and other independent regressions** that genuinely operate on that infrastructure instance. They are not part of the paid Gemini execution path.
+The hosted GitHub runner must start with a new, empty `delegation-poc-gitea-data` volume; CI fails closed if that volume already exists. Compose creates the infrastructure. The E2E scripts only configure the IAM Console repository, verify its pinned baseline, create scoped service accounts/tokens and protect `main`. They do **not** invoke `bootstrap-gitea.sh`: that script is reserved for local development and uses another initialization path.
+
+The E2E scripts verify that Gitea belongs to the expected Compose project, is running, and binds HTTP port 3000 on loopback. The workflow finally runs `docker compose down --volumes`, even after failures, and GitHub discards the entire VM after the job. Local `phase1-up.sh` and `phase1-down.sh` still preserve their Gitea volume unless the user explicitly requests removal. Do not point an E2E fixture at an existing local development repository; CI requires a clean volume and the runtime requires `GITEA_E2E_COMPOSE_READY=1`.
+
+The changes in this branch do not inherit the 15 October paid validation: the last paid-tested framework commit remains `02c3395b9111a63ccc9f441ea2c91c81865d6673` until the owner explicitly authorizes another run.
 
 ## Local infrastructure scripts
 

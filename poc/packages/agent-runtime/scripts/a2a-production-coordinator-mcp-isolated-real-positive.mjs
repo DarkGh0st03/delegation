@@ -12,10 +12,11 @@
  * Trusted CI status is published ONLY by a separate, privileged harness
  * after independent real Docker execution; no human review or merge is faked.
  *
- * Uses a scripted offline BaseLlm and only a temporary Gitea with no volumes,
- * host bind mounts or persistent repo access. PR creation only; NO merge.
+ * Uses a scripted offline BaseLlm and the Compose-managed Gitea on a dedicated GitHub-hosted
+ * runner; the job removes the Gitea data volume at teardown. PR creation only; NO merge.
  */
 import assert from "node:assert/strict";
+import {assertPreparedComposeGitea,GITEA_COMPOSE_CONTAINER as container,GITEA_COMPOSE_URL as giteaUrl} from "./compose-gitea.mjs";
 import {execFileSync} from "node:child_process";
 import {mkdtemp,rm,stat,readFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
@@ -105,17 +106,14 @@ for(const [label,u] of [["Adapter",adapter],["OPA",opa]]){
   }
 }
 const id=randomBytes(6).toString("hex");
-const container="delegation-mcp-pr-positive-"+id;
-const image=process.env.GITEA_IMAGE??"docker.gitea.com/gitea:28.0.0";
 const privateMarker="A2A_MCP_PRIVATE_"+randomBytes(10).toString("hex");
 const runnerToken=randomBytes(32).toString("hex");
 // Disabled by default. This flag authorizes a synthetic REVIEW + MERGE
-// only in the unmounted, disposable Gitea container created below.
+// only in the Compose-managed Gitea fixture provided by GitHub Actions.
 // It never represents authentic human approval or production authorization.
 const simulatedPositiveMerge=process.env.DISPOSABLE_SIMULATED_MERGE_TEST==="1";
 const nodeImage=process.env.TEST_RUNNER_DOCKER_IMAGE??"node:22.15.0-bookworm";
 let realRunnerResult=null;
-let started=false;
 function docker(args,label){
   try{return execFileSync("docker",args,{encoding:"utf8",
     timeout:120000,stdio:["ignore","pipe","pipe"]}).trim();}
@@ -156,14 +154,6 @@ async function seedPinnedMain(url,admin){
     assert.equal(main.commit.id,baselineSha);
   }finally{await rm(dir,{recursive:true,force:true});}
 }
-function stopDocker(){
-  try{execFileSync("docker",["stop","--time","5",container],{
-    timeout:30000,stdio:"ignore"});}catch{/* already removed */}
-}
-for(const sig of ["SIGINT","SIGTERM"])process.once(sig,()=>{
-  if(started)stopDocker();
-  process.exitCode=130;
-});
 async function api(base,uri,{method="GET",body,auth,expected=[200,201],label=uri}={}){
   const headers={accept:"application/json"};
   if(body!==undefined)headers["content-type"]="application/json";
@@ -433,28 +423,10 @@ async function main(){
     "../../../runner/acceptance/",import.meta.url));
   assert.ok((await stat(acceptanceDir)).isDirectory());
   docker(["image","inspect",nodeImage],"check cached Node Runner image");
-  docker(["image","inspect",image],"check cached disposable Gitea image");
-  docker(["run","--rm","--detach","--name",container,
-    "--publish","127.0.0.1::3000/tcp",
-    "--env","USER_UID=1000","--env","USER_GID=1000",
-    "--env","GITEA__database__DB_TYPE=sqlite3",
-    "--env","GITEA__database__PATH=/data/gitea/gitea.db",
-    "--env","GITEA__server__DOMAIN=localhost",
-    "--env","GITEA__server__ROOT_URL=http://localhost:3000/",
-    "--env","GITEA__server__DISABLE_SSH=true",
-    "--env","GITEA__service__DISABLE_REGISTRATION=true",
-    "--env","GITEA__security__INSTALL_LOCK=true",
-    "--env","GITEA__actions__ENABLED=false",image],
-    "launch volume-free isolated Gitea");
-  started=true;
+  assertPreparedComposeGitea();
   const agents={},models={};
   let gatewayServer,runnerServer,sharedServer,runnerLogs;
   try{
-    const portInfo=docker(["port",container,"3000/tcp"],
-      "inspect isolated Gitea loopback port");
-    const match=/127\.0\.0\.1:(\d+)/u.exec(portInfo);
-    if(!match)throw Error("Gitea port is not loopback-only");
-    const giteaUrl="http://127.0.0.1:"+match[1];
     await waitGitea(giteaUrl);
     const fixture=await bootstrapGitea(giteaUrl);
     const runnerRequests=[];
@@ -905,7 +877,7 @@ async function main(){
       ]);
     }finally{
       if(runnerLogs)await rm(runnerLogs,{recursive:true,force:true});
-      if(started){stopDocker();started=false;}
+      
     }
   }
 }

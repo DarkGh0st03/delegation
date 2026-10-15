@@ -10,10 +10,11 @@
  * Expected: actual Coordinator creates a real OPEN PR on isolated Gitea.
  * NEVER merge; no real researcher acceptance is claimed.
  *
- * Uses a scripted offline BaseLlm and only a temporary Gitea with no volumes,
- * host bind mounts or persistent repo access. PR creation only; NO merge.
+ * Uses a scripted offline BaseLlm and the Compose-managed Gitea on a dedicated GitHub-hosted
+ * runner; the job removes the Gitea data volume at teardown. PR creation only; NO merge.
  */
 import assert from "node:assert/strict";
+import {assertPreparedComposeGitea,GITEA_COMPOSE_CONTAINER as container,GITEA_COMPOSE_URL as giteaUrl} from "./compose-gitea.mjs";
 import {execFileSync} from "node:child_process";
 import {generateKeyPairSync,randomBytes,randomUUID} from "node:crypto";
 import {createServer as createNetServer} from "node:net";
@@ -85,24 +86,13 @@ for(const [label,u] of [["Adapter",adapter],["OPA",opa]]){
   }
 }
 const id=randomBytes(6).toString("hex");
-const container="delegation-mcp-pr-positive-"+id;
-const image=process.env.GITEA_IMAGE??"docker.gitea.com/gitea:28.0.0";
 const privateMarker="A2A_MCP_PRIVATE_"+randomBytes(10).toString("hex");
 const runnerToken=randomBytes(32).toString("hex");
-let started=false;
 function docker(args,label){
   try{return execFileSync("docker",args,{encoding:"utf8",
     timeout:120000,stdio:["ignore","pipe","pipe"]}).trim();}
   catch{throw Error("Disposable Docker operation failed: "+label);}
 }
-function stopDocker(){
-  try{execFileSync("docker",["stop","--time","5",container],{
-    timeout:30000,stdio:"ignore"});}catch{/* already removed */}
-}
-for(const sig of ["SIGINT","SIGTERM"])process.once(sig,()=>{
-  if(started)stopDocker();
-  process.exitCode=130;
-});
 async function api(base,uri,{method="GET",body,auth,expected=[200,201],label=uri}={}){
   const headers={accept:"application/json"};
   if(body!==undefined)headers["content-type"]="application/json";
@@ -310,28 +300,10 @@ async function main(){
   const op=await fetch(opa+"/health",{signal:AbortSignal.timeout(4000)});
   assert.equal(op.status,200,"Real OPA is not running");
   // Avoid unexpected image downloads and disk pressure during the smoke.
-  docker(["image","inspect",image],"check cached disposable Gitea image");
-  docker(["run","--rm","--detach","--name",container,
-    "--publish","127.0.0.1::3000/tcp",
-    "--env","USER_UID=1000","--env","USER_GID=1000",
-    "--env","GITEA__database__DB_TYPE=sqlite3",
-    "--env","GITEA__database__PATH=/data/gitea/gitea.db",
-    "--env","GITEA__server__DOMAIN=localhost",
-    "--env","GITEA__server__ROOT_URL=http://localhost:3000/",
-    "--env","GITEA__server__DISABLE_SSH=true",
-    "--env","GITEA__service__DISABLE_REGISTRATION=true",
-    "--env","GITEA__security__INSTALL_LOCK=true",
-    "--env","GITEA__actions__ENABLED=false",image],
-    "launch volume-free isolated Gitea");
-  started=true;
+  assertPreparedComposeGitea();
   const agents={},models={};
   let gatewayServer,runnerServer,sharedServer;
   try{
-    const portInfo=docker(["port",container,"3000/tcp"],
-      "inspect isolated Gitea loopback port");
-    const match=/127\.0\.0\.1:(\d+)/u.exec(portInfo);
-    if(!match)throw Error("Gitea port is not loopback-only");
-    const giteaUrl="http://127.0.0.1:"+match[1];
     await waitGitea(giteaUrl);
     const fixture=await bootstrapGitea(giteaUrl);
     const runnerRequests=[];
@@ -622,7 +594,7 @@ async function main(){
         stop(sharedServer),stop(gatewayServer),stop(runnerServer)
       ]);
     }finally{
-      if(started){stopDocker();started=false;}
+      
     }
   }
 }

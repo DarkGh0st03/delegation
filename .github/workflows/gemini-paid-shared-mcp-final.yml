@@ -8,7 +8,7 @@ name: Gemini Paid - Shared MCP Full E2E (Manual Only)
 # Actual Gemini agents (not scripted output) use the EXISTING A2A,
 # shared Streamable HTTP MCP, Rust/OPA/Gateway, real Docker Runner,
 # independent researcher acceptance and separate trusted Security CI.
-# Only an ephemeral job-local Gitea is used. PR stays open without review/merge.
+# Only job-local Compose Gitea is used; its volume is removed on teardown. PR stays open without review/merge.
 # This costs Gemini Developer API credits when and only when manually dispatched.
 on:
   workflow_dispatch:
@@ -58,6 +58,7 @@ jobs:
       ADAPTER_SMOKE_URL: http://127.0.0.1:8090
       OPA_URL: http://127.0.0.1:8181
       GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+      GITEA_E2E_COMPOSE_READY: "1"
       ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"
@@ -113,13 +114,18 @@ jobs:
       - name: Generate job-local development fixtures
         run: node poc/scripts/init-local-env.mjs --force
 
-      - name: Start OPA and Anvil; pull disposable Gitea image
+      - name: Start fresh Compose Gitea, OPA and Anvil
         run: |
-          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d opa anvil
-          docker pull docker.gitea.com/gitea:28.0.0
+          # Reject existing data instead of mutating a local or stale repository.
+          if docker volume inspect delegation-poc-gitea-data >/dev/null 2>&1; then
+            echo "Existing Gitea data volume: refusing E2E bootstrap" >&2
+            exit 1
+          fi
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d gitea opa anvil
           docker pull node:22.15.0-bookworm
           for i in {1..100}; do
-            if curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1 &&
+            if curl -fsS http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1 &&
                cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
               exit 0
             fi
@@ -200,4 +206,4 @@ jobs:
       - name: Teardown hosted-runner-only services
         if: always()
         run: |
-          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down --volumes || true
