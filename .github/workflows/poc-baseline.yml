@@ -36,18 +36,21 @@ jobs:
       - name: Rust core, adapter and EVM contract regressions
         run: |
           cargo fmt --check
-          cargo test --locked
+          cargo test --locked --all-features
           cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check
           cargo test --manifest-path services/delegation-adapter/Cargo.toml
           forge test --root blockchain
       - name: Node integration, MCP and security contracts
         run: |
           npm --prefix poc run check:scaffold
+          npm --prefix poc run check:imports
           npm --prefix poc run gateway:test
           npm --prefix poc run agent-runtime:test
           npm --prefix poc run orchestrator-runtime:test
           npm --prefix poc run test -w @thesis/test-runner-controller
+          npm --prefix poc run test -w @thesis/a2a-agent
           npm --prefix poc/mcp-shared test
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/*.test.mjs
           node --experimental-strip-types poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs
       - name: OPA policy regression
         run: bash poc/scripts/phase4a-policy-test.sh

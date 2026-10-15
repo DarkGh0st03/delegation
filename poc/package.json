@@ -14,6 +14,7 @@
   ],
   "scripts": {
     "check:scaffold": "node ./scripts/check-scaffold.mjs",
+    "check:imports": "node --experimental-vm-modules ./scripts/check-local-imports.mjs",
     "infra:init": "node ./scripts/init-local-env.mjs",
     "infra:up": "bash ./scripts/phase1-up.sh",
     "infra:check": "bash ./scripts/phase1-check.sh",

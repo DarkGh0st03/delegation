@@ -39,6 +39,7 @@ The billable workflow **must never be launched automatically**.
 
 ## Read these current documents
 
+- [PR #10 technical audit and file decisions](docs/PR10_TECHNICAL_AUDIT.md)
 - [Architecture decisions](docs/ARCHITECTURE_DECISIONS.md)
 - [Current checkpoint](docs/CURRENT_CHECKPOINT.md)
 - [Implementation map](docs/IMPLEMENTATION_STATE.md)

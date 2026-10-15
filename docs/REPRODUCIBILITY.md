@@ -8,9 +8,11 @@ The file `poc/experiments/reproducibility-manifest.json` is intentionally retain
 
 ## Current ADK/A2A/shared-MCP contract
 
-`poc/experiments/adk-mcp-reproducibility-manifest.json` is the default contract for the current checkout. It records the reference architecture SHA and hashes of `Cargo.lock`, `blockchain/did-client/package-lock.json`, `poc/package-lock.json` and `poc/mcp-shared/package-lock.json`. The separate legacy `poc/adk-spike` workspace is not part of the canonical path. The checker also verifies that the historical measured manifest is unchanged.
+`poc/experiments/adk-mcp-reproducibility-manifest.json` is the default contract for the current checkout. It records the reference architecture SHA and hashes of `Cargo.lock`, `blockchain/did-client/package-lock.json`, `poc/package-lock.json` and `poc/mcp-shared/package-lock.json`. The legacy `poc/adk-spike` workspace has been removed from the working tree and remains available in Git history. The checker also verifies that the historical measured manifest is unchanged.
 
 This contract is **not** evidence of a successful Gemini run or a new performance campaign. It contains no copied historical run/artifact results. Reports identify the actual checked-out Git commit, label their contract scope, and leave the measurement schema null for the current contract. A lightweight local check validates files; only `PHASE12_VERIFY_RUNTIME=1` additionally certifies the installed runtime versions.
+
+The checker validates dependency hashes and selected configuration values. Fields such as `experiment_contract` describe the intended security boundary; their presence in the manifest does not dynamically verify the agent order, acceptance isolation, exact-SHA behavior or human gate. Those properties require the corresponding regression suites and Docker E2E.
 
 The historical manifest remains byte-for-byte unchanged. To reproduce historical results, check out the recorded historical framework revision and follow its instructions. Applying its dependency hash to today's checkout correctly fails.
 
@@ -50,9 +52,11 @@ The hosted GitHub runner image build is recorded as evidence but is not treated 
 
 ## Dependency resolution
 
-`Cargo.lock`, `blockchain/did-client/package-lock.json`, and `poc/package-lock.json` are committed.
+The four committed lockfiles checked by the current contract are `Cargo.lock`, `blockchain/did-client/package-lock.json`, `poc/package-lock.json` and `poc/mcp-shared/package-lock.json`.
 
 Each checkout has its own committed dependency tree. CI installs the current PoC tree with `npm ci`; the current contract checks all four active lockfile hashes even when no optional lock environment variable is set. Historical evidence bundles retain their original lockfile and manifest. Dependency updates must explicitly update the current contract and pass regression; never replace the historical hashes to make a current run pass.
+
+**Remaining limitation:** `services/delegation-adapter/Cargo.toml` is a separate Cargo package with no committed Adapter lockfile. Its dependency resolution is not fully pinned by the root `Cargo.lock` or by this four-lockfile contract. A successful root `cargo test --locked` therefore does not establish a frozen Adapter dependency tree; resolving that gap requires a separate reviewed lockfile/workspace change.
 
 ## Validation
 
@@ -64,13 +68,17 @@ npm --prefix poc run experiment:repro-check
 
 The dedicated GitHub Actions workflow runs automatically on pull requests and main pushes, tests rejection of dependency/historical-manifest drift, and additionally installs the exact Rust and Foundry versions, installs the committed PoC npm tree with `npm ci`, validates the runtime and lockfile hashes, and uploads both manifests and the checked lockfiles in a `phase12b-reproducibility-evidence` artifact.
 
-The main `PoC Baseline Validation` workflow also supports `workflow_dispatch`, allowing an explicit rerun of the complete positive E2E against the frozen protected baseline.
+The [Current Delegation PoC Validation workflow](../.github/workflows/poc-baseline.yml) runs the core, Adapter, contract, Node and OPA regressions without model API calls. It does not run the complete three-role Docker E2E. The separate [Shared MCP Real Docker Acceptance E2E workflow](../.github/workflows/shared-mcp-real-positive-e2e.yml) exercises Backend → Frontend → Test with scripted ADK output, real Gitea, Docker Runner, researcher acceptance and independent trusted Security CI against the frozen protected baseline. Both support `workflow_dispatch`; routine regressions also run automatically according to their configured triggers and path filters.
+
+These checks do not authorize a paid model call. The successful real-Gemini reference remains run `38379922436` at framework SHA `9012c8c4e7a9244cb931bcdef411cc5f443f0c08`, documented in the [live evidence](LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md); another Gemini/OpenAI API call requires new explicit owner authorization.
 
 ## Measurement evidence
 
 The positive E2E emits Gateway JSON-line audit events. Phase 12A converts those events plus the experiment result into:
 
 `phase12a-measurement-evidence/v1`
+
+The measurement campaign workflow that produced the historical results below has been removed from current CI and remains available at its recorded Git revision. The retained Phase 12A builder is still read by the current reproducibility checker and its test fixtures. The Phase 12C aggregator expects the historical five-replica, 28-authorizations-per-replica dataset; it is not a measurement of the later Gemini run.
 
 The bundle contains:
 
