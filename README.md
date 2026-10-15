@@ -1,217 +1,68 @@
-# Delegation — thesis working baseline
+# Delegation — current thesis PoC
 
-This repository is the working codebase for the master's thesis project based on the original Delegation Credential implementation.
+This repository implements secure delegated authorization for a bounded software-engineering multi-agent workflow. The successful **13 October 2026** experiment used three Google ADK/Gemini agents (Backend, Frontend, Test) to implement Account Suspension on an IAM Console baseline.
 
-## Current purpose
+## How the current system works
 
-The active `src/` tree intentionally contains only the baseline implementation needed to understand and adapt the proposed Delegation Credential:
+**Software Engineer → deterministic Orchestrator → A2A Tasks → three ADK/Gemini agents → one shared MCP tool interface → task-scoped private Worker → Cloud Access Gateway → Rust delegated-authority verification + OPA decision → Gitea / controlled Docker Runner**.
 
-- structured resource/operation permissions for the thesis authorization domain;
-  Resources are validated as absolute URIs, while operations are selected from an explicit software-engineering vocabulary;
-- generic credential / VC / VP structures;
-- the thesis Delegation Credential model and delegation-chain representation;
-- explicit issuance and verification modules built around `DelegationIssuer` and `DelegationVerifier`;
-- request-bound presentation verification through holder, audience, challenge, and required-permission checks;
-- structured verification results that can be consumed by the future Cloud Access Gateway / OPA layer;
-- cryptographic accumulator management and verification;
-- explicit local in-memory stores for deterministic tests/local profiles, separated from production-facing trust/status abstractions;
-- a live Anvil-backed trust layer using did:ethr/ERC-1056, EnterpriseTrustRegistry and IssuerRegistry;
-- split verifier-side trust resolution and issuer-side trust publication contracts;
-- blockchain-anchored accumulator-material versioning and Bitstring Status List revocation/suspension lifecycle;
-- fresh DID-resolved Ed25519 verification keys and authenticated Status List JWTs;
-- exact parent/child permission matching for delegation attenuation; hierarchical resource-scope attenuation is intentionally not part of the current protocol.
+- The Orchestrator creates the feature branch and PR through the Gateway **directly**, not through agent MCP tools.
+- Rust issues/verifies Delegation Credentials and signed Verifiable Presentations; Ethereum/Anvil provides DID/trust/status sources.
+- Gemini decides which allowed tools to request, but never receives Gitea secrets, the private credential, or signing keys.
+- The Docker Runner fetches an exact SHA; a separate trusted Security CI reruns the tests. Human approval is required before merge.
 
-The repository has been simplified before starting the thesis-specific modifications so that the core execution path is easier to study.
+## Where the current implementation lives
 
-## Active source tree
+| Path | Responsibility |
+| --- | --- |
+| `src/delegation/` | Rust VC/DC/VP, accumulators, issuance, trust and revocation |
+| `services/delegation-adapter/` | HTTP interface to the Rust core |
+| `blockchain/` | DID/Anvil/EVM registries and trust anchors |
+| `poc/packages/orchestrator-runtime/` | Deterministic workflow, child authority and PR gate |
+| `poc/packages/agent-runtime/` | A2A server, ADK/Gemini, private evidence and Task Worker |
+| `poc/mcp-shared/` | Shared tools, task JWT verification, TaskRouter |
+| `poc/apps/gateway/` | Permission canonicalization, prepare/execute, Rust/OPA/provider clients |
+| `poc/apps/test-runner-controller/` | Exact-SHA Docker runner and trusted Security CI |
+| `poc/opa/` | Rego policy |
+| `poc/runner/acceptance/` | Researcher-owned tests outside model-editable repository |
+| `poc/infra/` | Local Gitea, OPA, Anvil bootstrap |
 
-The active Rust tree is organized by architectural responsibility so that traits, models, concrete providers, and concrete resolvers can be identified directly from the directory structure.
+**Main live entrypoint:** `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`  
+**Manual paid workflow:** `.github/workflows/gemini-paid-shared-mcp-final.yml`  
+**Offline E2E regression:** `.github/workflows/shared-mcp-real-positive-e2e.yml`.
 
-```text
-src/
-├── lib.rs
-└── delegation/
-    ├── accumulator/
-    │   ├── accumulator_manager.rs
-    │   ├── accumulator_public_data.rs
-    │   ├── accumulator_utils.rs
-    │   ├── accumulator_verifier.rs
-    │   └── mod.rs
-    ├── authorization/
-    │   ├── authorization_context.rs
-    │   ├── operation.rs
-    │   ├── permission.rs
-    │   ├── resource_uri.rs
-    │   ├── verified_delegation.rs
-    │   └── mod.rs
-    ├── credentials/
-    │   ├── delegation/
-    │   │   ├── delegation_chain_entry.rs
-    │   │   ├── delegation_credential.rs
-    │   │   ├── delegation_evidence_trait.rs
-    │   │   └── mod.rs
-    │   ├── generic/
-    │   │   ├── credential_trait.rs
-    │   │   ├── verifiable_credential.rs
-    │   │   ├── verifiable_presentation.rs
-    │   │   └── mod.rs
-    │   └── mod.rs
-    ├── issuance/
-    │   ├── delegation_issuer.rs
-    │   ├── issuer_trait.rs
-    │   └── mod.rs
-    ├── local/
-    │   ├── in_memory_public_material_store.rs
-    │   ├── in_memory_status_list_store.rs
-    │   ├── in_memory_trust_store.rs
-    │   └── mod.rs
-    ├── status/
-    │   ├── evm/
-    │   │   ├── status_list_anchor_reader.rs
-    │   │   └── mod.rs
-    │   ├── model/
-    │   │   ├── bitstring_status_list_entry.rs
-    │   │   ├── status_list_credential_artifact.rs
-    │   │   ├── status_purpose.rs
-    │   │   └── mod.rs
-    │   ├── mutation/
-    │   │   ├── bitstring_status_list_mutator.rs
-    │   │   └── mod.rs
-    │   ├── parser/
-    │   │   ├── bitstring_status_list_parser.rs
-    │   │   └── mod.rs
-    │   ├── provider/
-    │   │   ├── jwt_status_list_provider.rs
-    │   │   ├── status_list_credential_provider_trait.rs
-    │   │   └── mod.rs
-    │   ├── resolver/
-    │   │   ├── evm_anchored_status_list_resolver.rs
-    │   │   ├── provider_status_list_resolver.rs
-    │   │   ├── status_list_resolver_trait.rs
-    │   │   └── mod.rs
-    │   └── mod.rs
-    ├── trust/
-    │   ├── evm/
-    │   │   ├── evm_registry_reader.rs
-    │   │   ├── trust_chain_reader.rs
-    │   │   └── mod.rs
-    │   ├── material/
-    │   │   ├── accumulator_material_provider.rs
-    │   │   ├── did_ethr_verification_key_provider.rs
-    │   │   ├── verification_key_provider.rs
-    │   │   └── mod.rs
-    │   ├── model/
-    │   │   ├── identity_status.rs
-    │   │   └── mod.rs
-    │   ├── registry/
-    │   │   ├── trust_publisher_trait.rs
-    │   │   └── mod.rs
-    │   ├── resolver/
-    │   │   ├── evm_trust_resolver.rs
-    │   │   ├── trust_resolver_trait.rs
-    │   │   └── mod.rs
-    │   └── mod.rs
-    ├── verification/
-    │   ├── delegation_verifier.rs
-    │   ├── timing.rs
-    │   ├── verifier_trait.rs
-    │   └── mod.rs
-    └── mod.rs
-```
+The billable workflow **must never be launched automatically**.
 
-The former `ours/`, `entities/`, and global `traits/` organization has been removed from the active code. Traits now live beside the domain they define, while concrete implementations are grouped by responsibility.
+## Verified experimental checkpoint
 
-## Temporary reference material
+[GitHub run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436), framework SHA `9012c8c4e7a9244cb931bcdef411cc5f443f0c08`, generated 11 application files; the six Docker project phases, independent researcher acceptance and separately trusted exact-SHA CI passed. The pull request existed in **disposable Gitea** only, and remained unmerged (`human_approval_missing`). This is a bounded successful PoC, not a production certification.
 
-Code that is not part of the thesis baseline but may be useful later has been moved to:
+## Read these current documents
 
-```text
-reference_temporary/
-```
+- [PR #10 technical audit and file decisions](docs/PR10_TECHNICAL_AUDIT.md)
+- [Architecture decisions](docs/ARCHITECTURE_DECISIONS.md)
+- [Current checkpoint](docs/CURRENT_CHECKPOINT.md)
+- [Implementation map](docs/IMPLEMENTATION_STATE.md)
+- [Current GitHub Actions](docs/ADK_MCP_ACTIONS_CATALOG.md)
+- [Real Gemini run evidence](docs/LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md)
+- [Independent code review](docs/GENERATED_CODE_SECURITY_REVIEW_2026-10-13.md)
+- [Reproducibility and pinned historical comparisons](docs/REPRODUCIBILITY.md)
+- [Human-approval boundary](docs/human-approved-gitea-merge.md)
 
-This includes the original benchmark machinery, alternative PJV / SD-JWT implementations, efficient variants and auxiliary code used by those variants. It is kept only as reference and is not part of the active Rust module tree.
+The older ADK/OpenAI experiments, obsolete numbered-phase integration scripts and stage-by-stage diaries have been removed from the working tree, **not erased from Git history**. Historical latency measurements remain valid only at `cbadb5440db408d4047d4eb870a9fb231362414a`, not for the latest Gemini build.
 
-Generated CSV benchmark outputs, plots and plotting notebooks from the original paper were removed from the working branch because they are not required for implementation. The untouched original state is preserved in the Git branch:
-
-```text
-original-backup-before-thesis-cleanup
-```
-
-## Thesis PoC integration workspace
-
-The implementation phase now adds a separate integration workspace without changing the existing Rust core boundary:
-
-```text
-services/
-└── delegation-adapter/   # Rust bridge implemented in Phase 2
-
-poc/
-├── apps/                 # Gateway and Agent services
-├── packages/             # shared TypeScript runtime/contracts
-├── opa/                  # contextual workflow policy
-├── runner/               # controlled execution + researcher acceptance
-├── infra/                # local Gitea/OPA/Anvil topology
-└── scripts/
-
-docs/
-├── IMPLEMENTATION_STATE.md
-└── ARCHITECTURE_DECISIONS.md
-```
-
-The PoC is implemented bottom-up: authorization boundary first, protected provider second, then A2A, and only afterwards LLM-backed Agents.
-
-Read `docs/IMPLEMENTATION_STATE.md` before continuing the implementation.
-
-For the scaffold sanity check:
+## Offline unit checks
 
 ```bash
+npm --prefix poc ci --ignore-scripts --no-audit --no-fund
 npm --prefix poc run check:scaffold
+npm --prefix poc run gateway:test
+npm --prefix poc run agent-runtime:test
+npm --prefix poc run orchestrator-runtime:test
+npm --prefix poc run test -w @thesis/test-runner-controller
+npm --prefix poc/mcp-shared ci --ignore-scripts --no-audit --no-fund
+npm --prefix poc/mcp-shared test
+cargo test --locked
+cargo test --manifest-path services/delegation-adapter/Cargo.toml
+forge test --root blockchain
 ```
-
-
-### Final hardening
-
-The final audit added authenticated JWT Status Lists to the EVM Adapter path, direct Solidity regression testing, a committed PoC npm lockfile with `npm ci`, and Gitea `main` branch protection. The hardening was validated on an isolated branch and then promoted to `main`.
-
-## Current checkpoint
-
-The thesis has three distinct checkpoints and they must not be conflated:
-
-1. **Historical measured baseline** — executable-code checkpoint `cbadb5440db408d4047d4eb870a9fb231362414a`. The published Phase 12 regression, security, reproducibility and five-replica measurement evidence belongs to this checkpoint.
-2. **Refactored code line** — developed on branch `refactor/core-cleanup`. This code contains the post-measurement architecture cleanup and Status List lifecycle work. It completed a fresh full PoC regression successfully on run `37928199842`, with dedicated core validation `37928496609` and reproducibility validation `37928532313`. Historical latency/security measurements must not be attributed to this refactored code unless a new measurement campaign is executed.
-
-3. **Current ADK/A2A/shared MCP integration on `main`** — real Gemini validated at framework SHA `9012c8c4e7a9244cb931bcdef411cc5f443f0c08` on [run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) (13 October 2026). Three genuine Gemini/Google ADK roles executed through protected A2A and one shared MCP server; Rust/Gateway/OPA enforced scoped authority. Eleven source files, static API preflight, six actual Docker acceptance stages, independent researcher acceptance and separate trusted exact-SHA Security CI passed. The Gitea PR was disposable, with **no human review or merge**. This does not claim production readiness or new measured-baseline latency results. [Evidence details](docs/LIVE_GEMINI_SHARED_MCP_EVIDENCE_2026-10-13.md).
-
-**Current workflow guide:** [ADK / A2A / Shared MCP GitHub Actions](docs/ADK_MCP_ACTIONS_CATALOG.md). The canonical live-model workflow is manual and explicitly billable; historical standalone provider probes are archived. Detailed procedures: [Gemini manual test](docs/gemini-shared-mcp-final-run.md) and [human-controlled merge](docs/human-approved-gitea-merge.md).
-
-The original thesis PoC implementation roadmap remains complete through **Phase 12 — reproducibility + measurements** for the historical measured baseline.
-
-Validated end state includes:
-
-- EVM-backed delegated-authorization verification;
-- Gateway + OPA + protected Gitea execution;
-- deterministic Backend -> Frontend -> Test delegation;
-- real exact-SHA Controlled Runner;
-- researcher-owned acceptance gating;
-- positive Account Suspension E2E;
-- Phase 11 security/negative experiments;
-- structured measurement evidence and a machine-checked reproducibility contract.
-
-Final pinned full-regression run: `37448047612` — success.
-
-Dedicated reproducibility run: `37448047526` — success.
-
-Final security run: `37448047677` — success.
-
-Final five-replica measurement campaign: `37448047642` — success (5/5 replicas, 140 authorization samples).
-
-Frozen executable-code checkpoint: `cbadb5440db408d4047d4eb870a9fb231362414a`.
-
-See:
-
-- `docs/IMPLEMENTATION_STATE.md` for the complete checkpoint history;
-- `docs/REPRODUCIBILITY.md` for the frozen runtime and measurement protocol;
-- `poc/experiments/reproducibility-manifest.json` for the unchanged historical measured contract;
-- `poc/experiments/adk-mcp-reproducibility-manifest.json` for current dependency/runtime validation without claiming a new measurement campaign.
-
-The historical reference measurement campaign remains frozen at `cbadb544...`. Current Phase 11 security regression passed in run `38365626239` on `c7af6ca...`; this is fresh functional security evidence, not a new latency measurement campaign. See [the current checkpoint](docs/CURRENT_CHECKPOINT.md) for exact run links, remaining work and the distinction between GitHub branch protection and protected Gitea fixtures.

@@ -20,14 +20,15 @@ The active Rust path is:
 
 ```text
 DelegationVerifier
-  -> EvmBackedTrustRegistry
+  -> EvmTrustResolver
        -> EvmRegistryReader
             -> EthereumDIDRegistry
             -> EnterpriseTrustRegistry
             -> IssuerRegistry
-       -> CompositePublicMaterialProvider
+       -> AccumulatorMaterialProvider
             -> off-chain AccumulatorPublicData
-            -> did:ethr verification key resolution
+       -> VerificationKeyProvider
+            -> DidEthrVerificationKeyProvider / did:ethr
 
 DelegationVerifier
   -> EvmAnchoredStatusListResolver
@@ -48,9 +49,9 @@ It demonstrates DID-key resolution, EVM-backed trust, accumulator-material commi
 
 Some components still use in-memory storage because they represent off-chain sources in the local PoC rather than legacy trust decisions:
 
-- `InMemoryTrustRegistry` is used on the issuance side of the final local example to create the Rust issuer material before its public commitment/key data are published to the EVM/DID layer.
-- `InMemoryPublicMaterialProvider` supplies the complete accumulator public material off-chain; `EvmBackedTrustRegistry` accepts it only when its hash matches the on-chain commitment.
-- `InMemoryStatusListCredentialProvider` supplies the current signed Status List artifact off-chain; `EvmAnchoredStatusListResolver` authenticates it and checks its exact commitment against the current on-chain anchor.
+- `InMemoryTrustStore` is used on the issuance side of the final local example to create the Rust issuer material before its public commitment/key data are published to the EVM/DID layer.
+- `InMemoryPublicMaterialStore` supplies the complete accumulator public material off-chain; `EvmTrustResolver` accepts it only when its hash matches the on-chain commitment.
+- `InMemoryStatusListStore` supplies the raw signed Status List artifact off-chain. `JwtAuthenticatedStatusListCredentialProvider` authenticates the JWT using DID-resolved keys, and `EvmAnchoredStatusListResolver` checks its exact commitment against the current on-chain anchor.
 
 The old fully in-memory status resolver and dedicated in-memory verification-key provider have been removed from the production module tree.
 
@@ -60,7 +61,7 @@ Install the Node dependencies once:
 
 ```bash
 cd blockchain/did-client
-npm install
+npm ci --ignore-scripts --no-audit --no-fund
 cd ../..
 ```
 
@@ -79,9 +80,9 @@ forge test
 cd ..
 ```
 
-## Complete local validation
+## Trust-layer local validation
 
-The easiest path is the one-command launcher:
+This is the retained pre-Gateway trust-layer regression, including live Anvil/DID/status verification. The [root README](../README.md) describes the complete current ADK/A2A/shared-MCP workflow. After installing the DID client dependencies above, use the one-command launcher:
 
 ```bash
 bash blockchain/scripts/run-pre-gateway-local.sh

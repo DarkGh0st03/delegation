@@ -1,9 +1,17 @@
-# Orchestrator application
+# Orchestrator bootstrap utility
 
-Phase 9A adds the Software Engineer bootstrap entrypoint for the thesis PoC.
+This application provides an **optional trusted Software Engineer → Orchestrator root-credential bootstrap command**. It is not the canonical three-agent Coordinator itself.
 
-`npm --prefix poc run orchestrator:bootstrap` authenticates to the Delegation Adapter as the Engineer caller and issues exactly one root Delegation Credential to the Orchestrator.
+`src/bootstrap-engineer.ts` calls the Rust Delegation Adapter as the trusted Engineer identity, requests a root Delegation Credential with `ENGINEER_TO_ORCHESTRATOR_ROOT_AUTHORITY`, and prints a sanitized issuance summary.
 
-The CLI accepts no permission list. Root authority is loaded only from the frozen `ENGINEER_TO_ORCHESTRATOR_ROOT_AUTHORITY` template in `@thesis/orchestrator-runtime`.
+```bash
+npm --prefix poc run orchestrator:bootstrap
+```
 
-Phase 9B will extend this application with deterministic A2A workflow coordination. No merge operation is exposed.
+Required environment: `DELEGATION_ADAPTER_URL`, `ADAPTER_CALLER_ENGINEER`; optional root-credential ID/validity/status configuration appears in the source.
+
+## Current execution path
+
+The **actual** Account Suspension sequential workflow is implemented in `poc/packages/orchestrator-runtime/src/sequential-coordinator.ts`, started by `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`. It sends A2A tasks to Backend → Frontend → Test and uses the Gateway directly for branch and PR operations. It never performs automatic merge.
+
+A green offline scripted test is not a paid live Gemini inference.

@@ -1,28 +1,15 @@
-# Thesis PoC integration workspace
+# Active ADK/A2A/shared-MCP thesis workspace
 
-This directory contains the TypeScript/Node.js integration layer for the thesis PoC. The Rust delegated-authorization core remains in the repository root and will later be exposed through `services/delegation-adapter/`.
+This is the current TypeScript/Node integration layer. The [root README](../README.md) is the main architecture map.
 
-Planned structure:
+- `packages/orchestrator-runtime/`: deterministic Coordinator, DC permissions and human gate.
+- `packages/agent-runtime/`: A2A/Google ADK/Gemini server, private credential evidence and MCP Worker.
+- `mcp-shared/`: one shared MCP server, catalogue and TaskRouter.
+- `apps/gateway/`: permission canonicalization, Rust verification, OPA and controlled provider operations.
+- `apps/test-runner-controller/`: exact-SHA Docker execution and independent CI.
+- `infra/`, `opa/`, `runner/acceptance/`: local dependencies, policy and researcher-owned acceptance.
+- `scripts/`: initialization, current security-negative experiments and pinned reproducibility.
 
-```text
-poc/
-├── apps/
-├── packages/
-├── opa/
-├── runner/
-│   └── acceptance/
-├── infra/
-│   ├── gitea/
-│   └── env/
-└── scripts/
-```
+Canonical live entrypoint: `packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`. It **requires a new manual billing decision**. Regular regressions are offline and do not call Gemini APIs.
 
-Phase 0B only scaffolds the workspace and continuity documents. No Agent, Gateway, OPA, Gitea, Runner, or Adapter business logic is implemented yet.
-
-Implementation order: infrastructure -> Rust Adapter -> Gateway -> OPA -> Gitea -> Controlled Test Runner -> deterministic A2A -> LLM Agents -> Orchestrator -> positive E2E -> negative/security validation -> reproducibility and measurements.
-
-Run the scaffold sanity check with:
-
-```bash
-npm --prefix poc run check:scaffold
-```
+For a quick workspace check: `npm --prefix poc run check:scaffold`.
