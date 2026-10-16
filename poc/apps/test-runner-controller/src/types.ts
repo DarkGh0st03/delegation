@@ -49,7 +49,7 @@ export interface RunnerRunResult {
 }
 
 export interface RunnerExecutor {
-  run(request: RunnerRunRequest): Promise<RunnerRunResult>;
+  run(request: RunnerRunRequest, signal?: AbortSignal): Promise<RunnerRunResult>;
 }
 
 export interface RunnerContractConfig {
