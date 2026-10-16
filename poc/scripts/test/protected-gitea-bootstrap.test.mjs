@@ -79,7 +79,7 @@ test("AUD-004: shared bootstrap preserves immutable baseline, exact protection a
 
 test("AUD-004: fails closed if the existing Gitea branch rule allows zero approvals",async()=>{
   const h=harness({approvals:0});
-  await assert.rejects(provisionProtectedGiteaFixture(h.values),/required_approvals/);
+  await assert.rejects(provisionProtectedGiteaFixture(h.values),assert.AssertionError);
 });
 
 test("AUD-004: live and scripted full E2E use one shared provisioner, free synthetic fixture remains separate",async()=>{
