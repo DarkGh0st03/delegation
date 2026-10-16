@@ -41,7 +41,7 @@ compose up -d gitea opa anvil
 
 bash "$ROOT_DIR/poc/scripts/bootstrap-gitea.sh"
 
-echo "Deploying local trust contracts with the pinned host Foundry toolchain..."
+echo "Preparing and verifying local trust contracts with the pinned host Foundry toolchain..."
 RPC_URL="http://127.0.0.1:${ANVIL_HOST_PORT:-8545}" \
 CHAIN_ID="${ANVIL_CHAIN_ID:-31337}" \
 ANVIL_DEPLOYER_PRIVATE_KEY="${ANVIL_DEPLOYER_PRIVATE_KEY}" \
