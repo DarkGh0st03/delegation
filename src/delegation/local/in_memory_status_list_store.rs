@@ -53,15 +53,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn same_issuer_different_urls_are_distinct_and_missing_keys_fail_closed() -> Result<(), String> {
+    fn same_issuer_different_urls_are_distinct_and_missing_keys_fail_closed() -> Result<(), String>
+    {
         let store = InMemoryStatusListStore::new();
         let issuer = String::from("did:ethr:0x7a69:0x1234");
         let other_issuer = String::from("did:ethr:0x7a69:0xabcd");
         let revocation = String::from("https://status.example/revocation");
         let suspension = String::from("https://status.example/suspension");
 
-        store.insert(issuer.clone(), revocation.clone(), String::from("signed-jwt-1"));
-        store.insert(issuer.clone(), suspension.clone(), String::from("signed-jwt-2"));
+        store.insert(
+            issuer.clone(),
+            revocation.clone(),
+            String::from("signed-jwt-1"),
+        );
+        store.insert(
+            issuer.clone(),
+            suspension.clone(),
+            String::from("signed-jwt-2"),
+        );
 
         let revocation_artifact = store.get_status_list_credential(&issuer, &revocation)?;
         let suspension_artifact = store.get_status_list_credential(&issuer, &suspension)?;
@@ -70,8 +79,16 @@ mod tests {
         assert_eq!(suspension_artifact.document, "signed-jwt-2");
         assert_eq!(suspension_artifact.commitment_bytes, b"signed-jwt-2");
 
-        assert!(store.get_status_list_credential(&other_issuer, &revocation).is_err());
-        assert!(store.get_status_list_credential(&issuer, "https://status.example/absent").is_err());
+        assert!(
+            store
+                .get_status_list_credential(&other_issuer, &revocation)
+                .is_err()
+        );
+        assert!(
+            store
+                .get_status_list_credential(&issuer, "https://status.example/absent")
+                .is_err()
+        );
         Ok(())
     }
 
