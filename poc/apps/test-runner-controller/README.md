@@ -13,7 +13,7 @@ The Runner receives only a structured, authenticated operation from the Gateway:
 5. Application build.
 6. Playwright end-to-end tests.
 
-It separately runs researcher-owned acceptance from `poc/runner/acceptance/`, outside the agent-editable repository. **Both** the application test pipeline and independent acceptance must pass.
+When researcher acceptance is enabled (as it is in the canonical full E2E), it separately runs researcher-owned acceptance from `poc/runner/acceptance/`, outside the agent-editable repository. **Both** the application test pipeline and independent acceptance must pass for a positive full-E2E verdict. The standalone Runner has a configurable acceptance flag; disabling it does not constitute a valid full-E2E acceptance result.
 
 ## Independent trusted CI
 
@@ -27,6 +27,6 @@ The coordinator creates a PR only after the Test Agent's checks. The merge gate 
 npm --prefix poc run test -w @thesis/test-runner-controller
 ```
 
-The automated *scripted* real-Docker E2E is `.github/workflows/shared-mcp-real-positive-e2e.yml`; the one verified *real-Gemini* end-to-end run is [38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436). Neither test proves production-grade security or performs a genuine human merge.
+The automated *scripted* real-Docker E2E is `.github/workflows/shared-mcp-real-positive-e2e.yml`. Historical paid real-Gemini evidence includes [13 October run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) and [15 October run 38761963415](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415) at `02c3395b9111a63ccc9f441ea2c91c81865d6673`. These runs do not validate subsequent commits and neither proves production-grade security or performs a genuine human merge.
 
 The privileged `security-ci:run` CLI must not run against persistent Gitea without reviewed service identities and configuration.

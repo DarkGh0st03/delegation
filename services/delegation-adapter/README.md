@@ -42,7 +42,7 @@ The existing Rust framework remains responsible for non-escalation, temporal cap
 
 ## Current trust backend
 
-The Adapter supports two explicit trust profiles. The in-memory profile is deterministic local/test support. The EVM profile resolves live enterprise trust and accumulator commitments from the chain, resolves Ed25519 verification keys through `did:ethr`, authenticates signed Status List JWTs, and checks their exact artifact commitments against the current on-chain anchor.
+The Adapter supports two explicit trust profiles. The default in-memory profile is deterministic local/test support; the canonical full E2E selects EVM explicitly with `ADAPTER_TRUST_PROFILE=evm`. The EVM profile resolves live enterprise trust and accumulator commitments from the chain, resolves Ed25519 verification keys through `did:ethr`, authenticates signed Status List JWTs, and checks their exact artifact commitments against the current on-chain anchor.
 
 Status List lifecycle is implemented in both profiles. The EVM profile preserves the separation between off-chain artifact contents and on-chain current-state commitment/version.
 
@@ -62,11 +62,11 @@ Identity IDs can be overridden with `ADAPTER_ID_*`.
 Run tests:
 
 ```bash
-cargo test --manifest-path services/delegation-adapter/Cargo.toml
+cargo test --manifest-path services/delegation-adapter/Cargo.toml --locked
 ```
 
 Run service:
 
 ```bash
-cargo run --manifest-path services/delegation-adapter/Cargo.toml
+cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked
 ```
