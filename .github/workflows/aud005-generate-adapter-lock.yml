@@ -1,0 +1,29 @@
+# Temporary free CI helper; removed after publishing the generated lock.
+name: AUD005 Generate Adapter Lock (temporary, no billing)
+on:
+  push:
+    branches: [fix/aud005-adapter-locked-build]
+    paths:
+      - '.github/workflows/aud005-generate-adapter-lock.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  adapter-lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - name: Generate lock from actual Cargo dependency resolution (no AI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile --manifest-path services/delegation-adapter/Cargo.toml
+          test -s services/delegation-adapter/Cargo.lock
+          echo "ADAPTER_LOCKFILE_BEGIN_BASE64"
+          base64 -w0 services/delegation-adapter/Cargo.lock | fold -w 1000
+          echo "ADAPTER_LOCKFILE_END_BASE64"
+          sha256sum services/delegation-adapter/Cargo.lock
