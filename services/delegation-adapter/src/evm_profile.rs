@@ -435,7 +435,10 @@ impl EvmAdapterProfile {
                     .chain_reader
                     .latest_accumulator_material_version(&identity)?;
                 let existing = if version == 1 {
-                    Some(self.chain_reader.accumulator_material_anchor(&identity, 1)?)
+                    Some(
+                        self.chain_reader
+                            .accumulator_material_anchor(&identity, 1)?,
+                    )
                 } else {
                     None
                 };
