@@ -44,7 +44,6 @@ import {createGatewayHttpServer} from "../../../apps/gateway/src/http.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";
 import {IsolatedDockerRunnerExecutor} from "../../../apps/test-runner-controller/src/isolated-executor.ts";
 import {TrustedGiteaSecurityCi,SECURITY_STATUS_CONTEXT} from "../../../apps/test-runner-controller/src/trusted-security-ci.ts";
-import {TrustedGiteaMergeExecutor} from "../../orchestrator-runtime/src/trusted-merge.ts";
 
 import {createSharedMcpHttpServer} from "../../../mcp-shared/src/http-server.ts";
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
@@ -139,7 +138,6 @@ const runnerToken=randomBytes(32).toString("hex");
 if(process.env.DISPOSABLE_SIMULATED_MERGE_TEST==="1"){
   throw Error("Live Gemini cannot create a synthetic approval or merge");
 }
-const simulatedPositiveMerge=false;
 const nodeImage=process.env.TEST_RUNNER_DOCKER_IMAGE??"node:22.15.0-bookworm";
 let realRunnerResult=null;
 function docker(args,label){
@@ -251,16 +249,13 @@ async function bootstrapGitea(url){
   const readonlyName="auditor-"+id;
   const reviewerName="reviewer-"+id;
   const ciName="security-ci-"+id;
-  const mergeName="merge-operator-"+id;
   const auditorPassword=randomBytes(24).toString("hex");
   const ciPassword=randomBytes(24).toString("hex");
   const reviewerPassword=randomBytes(24).toString("hex");
-  const mergePassword=randomBytes(24).toString("hex");
   for(const [username,password,email] of [
     [readonlyName,auditorPassword,"audit"],
     [reviewerName,reviewerPassword,"review"],
-    [ciName,ciPassword,"security"],
-    ...(simulatedPositiveMerge?[[mergeName,mergePassword,"merge"]]:[])
+    [ciName,ciPassword,"security"]
   ]){
     docker(["exec","--user","1000:1000",container,
       "gitea","admin","user","create",
@@ -374,43 +369,6 @@ async function bootstrapGitea(url){
     assert.equal(actor.login,name);
     assert.ok(Number.isSafeInteger(actor.id)&&actor.id>0);
   }
-  let positiveMergeFixture=null;
-  if(simulatedPositiveMerge){
-    // Synthetic reviewer is NOT a substitute for real human action.
-    // This actor only exists in this fresh, automatically removed Gitea.
-    for(const name of [reviewerName,mergeName]){
-      await api(url,repo+"/collaborators/"+encodeURIComponent(name),{
-        method:"PUT",auth:adminAuth,expected:[204],
-        body:{permission:"write"},
-        label:"grant isolated simulated merge fixture collaborator"
-      });
-    }
-    const reviewToken=await api(url,"/api/v1/users/"+
-      encodeURIComponent(reviewerName)+"/tokens",{
-        method:"POST",auth:basic(reviewerName,reviewerPassword),
-        label:"create isolated synthetic-review token",
-        body:{name:"temporary-review-"+id,
-          scopes:["write:repository","read:user"]}
-      });
-    const mergeToken=await api(url,"/api/v1/users/"+
-      encodeURIComponent(mergeName)+"/tokens",{
-        method:"POST",auth:basic(mergeName,mergePassword),
-        label:"create separate isolated merge-operator token",
-        body:{name:"temporary-merge-"+id,
-          scopes:["write:repository","read:user"]}
-      });
-    const mergeActor=await api(url,"/api/v1/user",{
-      auth:"token "+mergeToken.sha1,
-      label:"resolve independent test merge operator"
-    });
-    assert.equal(mergeActor.login,mergeName);
-    assert.equal(mergeActor.is_admin,false);
-    positiveMergeFixture={
-      reviewToken:reviewToken.sha1,
-      mergeToken:mergeToken.sha1,
-      mergeActor:{id:mergeActor.id,login:mergeActor.login}
-    };
-  }
   // The production Coordinator must create this branch, not fixture setup.
   const absentBranch=await fetch(url+repo+
     "/branches/feature%2Faccount-suspension",{
@@ -422,8 +380,7 @@ async function bootstrapGitea(url){
     mergeProtectionReadToken:protectionCredential.sha1,
     mergeReviewer:{id:reviewer.id,login:reviewer.login},
     mergeCI:{id:security.id,login:security.login},
-    ciStatusToken:ciCredential.sha1,
-    positiveMergeFixture
+    ciStatusToken:ciCredential.sha1
   };
 }
 async function main(){
