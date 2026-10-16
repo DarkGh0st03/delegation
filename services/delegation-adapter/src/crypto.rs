@@ -169,7 +169,6 @@ impl StatusListResolver for AdapterStatusResolver {
 }
 
 pub struct CryptoRuntime {
-    _local_trust_store: Rc<InMemoryTrustStore<Curve>>,
     status_resolver: Option<Rc<AdapterStatusResolver>>,
     evm_profile: Option<EvmAdapterProfile>,
     issuers: HashMap<CallerRole, DelegationIssuer<Curve>>,
@@ -237,7 +236,6 @@ impl CryptoRuntime {
         let verifier = DelegationVerifier::<Curve>::new(trust_resolver, status_ref)?;
 
         Ok(Self {
-            _local_trust_store: trust_store,
             status_resolver: Some(status_resolver),
             evm_profile: None,
             issuers,
@@ -257,7 +255,6 @@ impl CryptoRuntime {
             EvmAdapterProfile::initialize(config, callers, trust_store.clone(), &issuers)?;
 
         Ok(Self {
-            _local_trust_store: trust_store,
             status_resolver: None,
             evm_profile: Some(evm_profile),
             issuers,
