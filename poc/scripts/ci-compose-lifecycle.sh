@@ -31,12 +31,10 @@ case "${1:-}" in
       echo "Pre-existing Gitea volume; refusing bootstrap" >&2
       exit 1
     fi
-    for network in delegation-poc-infra delegation-poc-agent; do
-      if docker network inspect "$network" >/dev/null 2>&1; then
-        echo "Pre-existing network $network; refusing bootstrap" >&2
-        exit 1
-      fi
-    done
+    if docker network inspect delegation-poc-infra >/dev/null 2>&1; then
+      echo "Pre-existing network delegation-poc-infra; refusing bootstrap" >&2
+      exit 1
+    fi
     # Claim cleanup before invoking Compose: partial startup is also cleaned.
     mkdir -- "$MARKER"
     "${COMPOSE[@]}" up -d gitea opa anvil

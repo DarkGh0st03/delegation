@@ -78,9 +78,6 @@ services:
 networks:
   infra:
     name: delegation-poc-infra
-  agent:
-    name: delegation-poc-agent
-    internal: true
 
 volumes:
   gitea-data:

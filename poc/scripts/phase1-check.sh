@@ -78,7 +78,7 @@ for address in "$DID_REGISTRY_ADDRESS" "$ENTERPRISE_TRUST_REGISTRY_ADDRESS" "$IS
   fi
 done
 
-echo "Checking network separation declaration..."
+echo "Checking active infrastructure attachment..."
 compose_json="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --format json)"
 printf '%s' "$compose_json" | node -e '
 let s="";
@@ -90,18 +90,8 @@ process.stdin.on("data",d=>s+=d).on("end",()=>{
 });
 '
 
-if ! awk '
-  /^  agent:/ { in_agent=1; next }
-  in_agent && /^  [^ ]/ { in_agent=0 }
-  in_agent && /internal:[[:space:]]*true/ { found=1 }
-  END { exit(found ? 0 : 1) }
-' "$COMPOSE_FILE"; then
-  echo "Agent network must be declared internal in docker-compose.yml" >&2
-  exit 1
-fi
-
 echo "PHASE1_CHECK=PASS"
 echo "giteaBaselineSha=$observed_sha"
 echo "anvilChainId=$observed_chain_id"
 echo "trustContracts=DEPLOYED"
-echo "providerNetworkBoundary=DECLARED"
+echo "providerNetworkBoundary=INFRA_ONLY_HOST_AGENTS_NOT_ISOLATED"

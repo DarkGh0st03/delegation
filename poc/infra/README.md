@@ -36,3 +36,5 @@ Use the initializer's `--force` option only for deliberate local credential rege
 **Warning:** `phase1-down.sh --volumes` removes persistent local Docker volumes; never use it as a routine cleanup step. The default local dev keys belong exclusively to Anvil testing and must not be reused externally.
 
 The real Gemini experiment is **manual and paid**; do not trigger it as part of local infrastructure setup.
+
+**Network boundary:** Compose currently attaches Gitea, OPA and Anvil to the `infra` network only. Backend, Frontend and Test Agents run as host-side processes in the PoC, not as services on a separate Docker agent network. The prior unused `agent` network declaration was not a sandbox or a security boundary; authorization is instead enforced by the task-bound shared MCP worker, Gateway, Rust verifier and OPA. `phase1-check.sh` verifies the actual Gitea network attachment rather than an inert network declaration.
