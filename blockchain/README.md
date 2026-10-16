@@ -34,10 +34,10 @@ DelegationVerifier
   -> EvmAnchoredStatusListResolver
        -> IssuerRegistry current Status List anchor
        -> authenticated off-chain Status List JWT
-       -> BitstringStatusListResolver
+       -> Bitstring Status List payload parsing and status-bit validation
 ```
 
-The final integration example is:
+The retained standalone trust-layer integration example is:
 
 ```text
 examples/live_pre_gateway_closure.rs

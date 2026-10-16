@@ -19,7 +19,7 @@ A denied/expired/replayed request or unavailable verifier/policy fails closed. P
 - Orchestrator directly via Gateway: `create_branch`, `create_pull_request`.
 - Automated writes to `main` and model-controlled merges are not supported.
 
-The final live reference is [run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436). The Gateway is **not** an MCP server and does not replace the Rust Delegation Adapter.
+The Gateway is **not** an MCP server and does not replace the Rust Delegation Adapter. Historical real-Gemini evidence includes [13 October run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) and the later [15 October run 38761963415](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415) at framework SHA `02c3395b9111a63ccc9f441ea2c91c81865d6673`. Neither run attests the subsequently audited `main` commits.
 
 ## Start / verify
 
@@ -28,4 +28,4 @@ npm --prefix poc run gateway:test
 npm --prefix poc run gateway:start
 ```
 
-The start command requires trusted Adapter, OPA and Gitea/Runner configuration. See `src/config.ts` for supported environment variables and `src/runtime.ts` for runtime wiring.
+`src/config.ts` defaults to `mock` provider mode for standalone use. A real Gitea provider requires explicit `GATEWAY_PROVIDER_MODE` and trusted Adapter, OPA and Gitea credentials; the Runner is configured for controlled `run_tests`. See `src/config.ts` for supported environment variables and `src/runtime.ts` for runtime wiring.
