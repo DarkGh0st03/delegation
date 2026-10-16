@@ -11,6 +11,19 @@ export PATH="$HOME/.foundry/bin:$PATH"
 export RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
 export CHAIN_ID="${CHAIN_ID:-31337}"
 
+# The launcher owns a LOCAL Anvil node; --port must agree with RPC_URL.
+if [[ "$RPC_URL" =~ ^http://(127[.]0[.]0[.]1|localhost):([0-9]{1,5})/?$ ]]; then
+  ANVIL_HOST="${BASH_REMATCH[1]}"
+  ANVIL_PORT="${BASH_REMATCH[2]}"
+  if (( 10#$ANVIL_PORT < 1 || 10#$ANVIL_PORT > 65535 )); then
+    echo "RPC_URL contains an invalid local Anvil port" >&2
+    exit 1
+  fi
+else
+  echo "RPC_URL must be http://127.0.0.1:<port> or http://localhost:<port> for this local launcher" >&2
+  exit 1
+fi
+
 # Standard deterministic Anvil mnemonic and accounts.
 # These keys are public development keys and MUST NEVER be reused outside this local PoC.
 ANVIL_MNEMONIC="test test test test test test test test test test test junk"
@@ -25,6 +38,19 @@ for command_name in anvil forge cast cargo node npm; do
     exit 1
   fi
 done
+
+# The governance account is an explicit contract constructor argument.
+# A custom governance key must never be silently replaced with the deployer.
+governance_from_key="$(cast wallet address --private-key "$GOVERNANCE_PRIVATE_KEY")"
+if [[ ! "$governance_from_key" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
+  echo "Invalid local governance account derived from GOVERNANCE_PRIVATE_KEY" >&2
+  exit 1
+fi
+if [[ -n "${GOVERNANCE_ADDRESS:-}" && "${GOVERNANCE_ADDRESS,,}" != "${governance_from_key,,}" ]]; then
+  echo "GOVERNANCE_ADDRESS does not match GOVERNANCE_PRIVATE_KEY" >&2
+  exit 1
+fi
+export GOVERNANCE_ADDRESS="$governance_from_key"
 
 if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; then
   echo "A JSON-RPC node is already responding at $RPC_URL." >&2
@@ -54,7 +80,7 @@ echo "Press Ctrl+C here when you want to stop Anvil."
 echo "============================================================"
 echo
 
-anvil --chain-id "$CHAIN_ID" --mnemonic "$ANVIL_MNEMONIC"
+anvil --host "$ANVIL_HOST" --port "$ANVIL_PORT" --chain-id "$CHAIN_ID" --mnemonic "$ANVIL_MNEMONIC"
 EOF
 
   mintty -t "Delegation Anvil - chain $CHAIN_ID" /usr/bin/bash "$ANVIL_LAUNCHER" >/dev/null 2>&1 &
@@ -62,6 +88,7 @@ EOF
 else
   ANVIL_LOG="$ROOT_DIR/.git/pre-gateway-anvil.log"
   nohup anvil \
+    --host "$ANVIL_HOST" --port "$ANVIL_PORT" \
     --chain-id "$CHAIN_ID" \
     --mnemonic "$ANVIL_MNEMONIC" \
     >"$ANVIL_LOG" 2>&1 &
@@ -123,7 +150,6 @@ export DID_REGISTRY_ADDRESS="$(extract_address DID_REGISTRY_ADDRESS)"
 export ENTERPRISE_TRUST_REGISTRY_ADDRESS="$(extract_address ENTERPRISE_TRUST_REGISTRY_ADDRESS)"
 export ISSUER_REGISTRY_ADDRESS="$(extract_address ISSUER_REGISTRY_ADDRESS)"
 
-export GOVERNANCE_ADDRESS="$(cast wallet address --private-key "$GOVERNANCE_PRIVATE_KEY")"
 ROOT_ADDRESS="$(cast wallet address --private-key "$ROOT_PRIVATE_KEY")"
 HOLDER_ADDRESS="$(cast wallet address --private-key "$HOLDER_PRIVATE_KEY")"
 CHAIN_HEX="$(printf '0x%x' "$CHAIN_ID")"
