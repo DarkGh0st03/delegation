@@ -25,7 +25,8 @@ if (currentContract) {
     manifest.historical_reference.sha256, "Historical measured manifest changed");
   const locks = manifest.dependency_resolution.lockfiles;
   const requiredLocks = ["Cargo.lock", "blockchain/did-client/package-lock.json",
-    "poc/package-lock.json", "poc/mcp-shared/package-lock.json"];
+    "poc/package-lock.json", "poc/mcp-shared/package-lock.json",
+    "services/delegation-adapter/Cargo.lock"];
   assert.deepEqual(Object.keys(locks).sort(), [...requiredLocks].sort(),
     "Current contract must cover every active dependency lockfile");
   for (const path of requiredLocks) {

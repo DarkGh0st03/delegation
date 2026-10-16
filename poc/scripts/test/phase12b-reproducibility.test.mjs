@@ -41,7 +41,7 @@ test("current contract works from npm's poc directory and reports its own scope"
   const report = JSON.parse(result.stdout);
   assert.equal(report.contract_scope, "current-adk-a2a-shared-mcp");
   assert.equal(report.measurement_schema, null);
-  assert.equal(Object.keys(report.verified_lockfiles).length, 4);
+  assert.equal(Object.keys(report.verified_lockfiles).length, 5);
   assert.match(report.framework_commit_sha, /^[0-9a-f]{40}$/u);
 });
 for (const path of Object.keys(manifest.dependency_resolution.lockfiles)) {
