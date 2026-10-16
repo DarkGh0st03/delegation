@@ -185,13 +185,6 @@ export class AccountSuspensionSequentialCoordinator {
 
       for (const role of ROLE_ORDER) {
         const plan = ACCOUNT_SUSPENSION_TASK_PLAN[role];
-        const currentRevision = workflow.currentRevision;
-        if (currentRevision === null) {
-          throw new Error(
-            `Workflow has no branch revision before ${role} delegation`
-          );
-        }
-
         const taskResult = await this.#roleRunner.issueAndRun({
           role,
           parent_credential_id: this.#rootCredentialId,
@@ -210,8 +203,7 @@ export class AccountSuspensionSequentialCoordinator {
             instruction: plan.instruction,
             branch: "feature/account-suspension",
             relevant_paths: [...plan.relevant_paths]
-          },
-          expected_revision: currentRevision
+          }
         });
 
         delegatedTasks[role] = taskResult;
