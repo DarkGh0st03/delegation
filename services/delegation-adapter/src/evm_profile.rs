@@ -8,10 +8,10 @@ use ark_bn254::Bn254;
 use delegation::delegation::accumulator::accumulator_public_data::AccumulatorPublicData;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
+use delegation::delegation::local::InMemoryStatusListStore;
 use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-use delegation::delegation::status::model::status_list_credential_artifact::StatusListCredentialArtifact;
 use delegation::delegation::status::model::status_purpose::StatusPurpose;
 use delegation::delegation::status::mutation::bitstring_status_list_mutator::BitstringStatusListMutator;
 use delegation::delegation::status::parser::bitstring_status_list_parser::BitstringStatusListParser;
@@ -44,7 +44,6 @@ use flate2::write::GzEncoder;
 use josekit::jwk::Jwk;
 use multibase::Base;
 use serde::Serialize;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
 use std::process::Command;
@@ -108,46 +107,11 @@ impl AccumulatorMaterialProvider<Curve> for IssuanceAccumulatorProvider {
     }
 }
 
-#[derive(Default)]
-struct IssuerAwareStatusProvider {
-    artifacts: RefCell<HashMap<(String, String), String>>,
-}
-
-impl IssuerAwareStatusProvider {
-    fn insert(&self, issuer_id: String, url: String, artifact: String) {
-        self.artifacts
-            .borrow_mut()
-            .insert((issuer_id, url), artifact);
-    }
-}
-
-impl StatusListCredentialProvider for IssuerAwareStatusProvider {
-    fn get_status_list_credential(
-        &self,
-        issuer_id: &str,
-        url: &str,
-    ) -> Result<StatusListCredentialArtifact, String> {
-        let artifact = self
-            .artifacts
-            .borrow()
-            .get(&(issuer_id.to_string(), url.to_string()))
-            .cloned()
-            .ok_or_else(|| {
-                format!("Status List Credential {url} is not available for issuer {issuer_id}")
-            })?;
-
-        Ok(StatusListCredentialArtifact {
-            commitment_bytes: artifact.as_bytes().to_vec(),
-            document: artifact,
-        })
-    }
-}
-
 pub struct EvmAdapterProfile {
     config: EvmAdapterConfig,
     runtime: Runtime,
     chain_reader: Rc<EvmRegistryReader>,
-    status_source: Rc<IssuerAwareStatusProvider>,
+    status_source: Rc<InMemoryStatusListStore>,
 }
 
 impl EvmAdapterProfile {
@@ -170,7 +134,7 @@ impl EvmAdapterProfile {
                 &config.issuer_registry_address,
                 config.chain_id,
             )?),
-            status_source: Rc::new(IssuerAwareStatusProvider::default()),
+            status_source: Rc::new(InMemoryStatusListStore::new()),
         };
 
         profile.bootstrap_identities(callers, issuance_store.clone(), issuers)?;
