@@ -52,11 +52,11 @@ The hosted GitHub runner image build is recorded as evidence but is not treated 
 
 ## Dependency resolution
 
-The four committed lockfiles checked by the current contract are `Cargo.lock`, `blockchain/did-client/package-lock.json`, `poc/package-lock.json` and `poc/mcp-shared/package-lock.json`.
+The five committed lockfiles checked by the current contract are `Cargo.lock`, `services/delegation-adapter/Cargo.lock`, `blockchain/did-client/package-lock.json`, `poc/package-lock.json` and `poc/mcp-shared/package-lock.json`.
 
-Each checkout has its own committed dependency tree. CI installs the current PoC tree with `npm ci`; the current contract checks all four active lockfile hashes even when no optional lock environment variable is set. Historical evidence bundles retain their original lockfile and manifest. Dependency updates must explicitly update the current contract and pass regression; never replace the historical hashes to make a current run pass.
+Each checkout has its own committed dependency tree. CI installs the current PoC tree with `npm ci`; the current contract checks all five active lockfile hashes even when no optional lock environment variable is set. Historical evidence bundles retain their original lockfile and manifest. Dependency updates must explicitly update the current contract and pass regression; never replace the historical hashes to make a current run pass.
 
-**Remaining limitation:** `services/delegation-adapter/Cargo.toml` is a separate Cargo package with no committed Adapter lockfile. Its dependency resolution is not fully pinned by the root `Cargo.lock` or by this four-lockfile contract. A successful root `cargo test --locked` therefore does not establish a frozen Adapter dependency tree; resolving that gap requires a separate reviewed lockfile/workspace change.
+**Adapter lock:** `services/delegation-adapter/Cargo.lock` was resolved using Rust 1.99.0 on an isolated Ubuntu GitHub Actions runner with `cargo generate-lockfile --manifest-path services/delegation-adapter/Cargo.toml`. It is now committed and hash-checked separately from the Core lock. The Adapter remains a separate package (not a Cargo workspace member). Supported CI Adapter builds and tests use `--locked`; the new frozen dependency graph is a new checkpoint, not evidence retroactively transferred to older Gemini runs.
 
 ## Validation
 

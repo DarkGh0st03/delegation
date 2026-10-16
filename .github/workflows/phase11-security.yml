@@ -128,11 +128,11 @@ jobs:
           configure_identity TEST "$ADAPTER_EVM_PRIVATE_KEY_TEST"
 
       - name: Build Delegation Adapter
-        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
 
       - name: Start EVM-backed Delegation Adapter
         run: |
-          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/phase11a-adapter.log 2>&1 &
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/phase11a-adapter.log 2>&1 &
           echo $! > /tmp/phase11a-adapter.pid
 
       - name: Start Gateway without Runner
