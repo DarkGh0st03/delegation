@@ -25,7 +25,9 @@ use delegation::delegation::status::provider::status_list_credential_provider_tr
 use delegation::delegation::status::resolver::evm_anchored_status_list_resolver::EvmAnchoredStatusListResolver;
 use delegation::delegation::status::resolver::status_list_resolver_trait::StatusListResolverRef;
 use delegation::delegation::trust::evm::evm_registry_reader::EvmRegistryReader;
-use delegation::delegation::trust::evm::trust_chain_reader::TrustChainReader;
+use delegation::delegation::trust::evm::trust_chain_reader::{
+    AccumulatorMaterialAnchor, TrustChainReader,
+};
 use delegation::delegation::trust::material::accumulator_material_provider::{
     AccumulatorMaterialProvider, AccumulatorMaterialProviderRef,
 };
@@ -417,9 +419,37 @@ impl EvmAdapterProfile {
             })
             .collect::<Result<Vec<_>, String>>()?;
 
-        let addresses = identities
+        // AUD-002: resolve every role's immutable accumulator compatibility BEFORE
+        // enrolling enterprise identities or publishing any DID verification key.
+        // A failed restart against an incompatible chain must not mutate it.
+        let planned = identities
+            .into_iter()
+            .map(|(role, identity, address)| {
+                let _issuer = issuers
+                    .get(&role)
+                    .ok_or_else(|| format!("Missing Adapter issuer for {role:?}"))?;
+                let material = issuance_store.get_accumulator_data_at_version(&identity, 1)?;
+                let commitment =
+                    EvmTrustResolver::<Curve>::accumulator_material_commitment(&material)?;
+                let version = self
+                    .chain_reader
+                    .latest_accumulator_material_version(&identity)?;
+                let existing = if version == 1 {
+                    Some(
+                        self.chain_reader
+                            .accumulator_material_anchor(&identity, 1)?,
+                    )
+                } else {
+                    None
+                };
+                check_bootstrap_anchor(&identity, commitment, version, existing.as_ref())?;
+                Ok((role, identity, address, commitment, version))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+
+        let addresses = planned
             .iter()
-            .map(|(_, _, address)| *address)
+            .map(|(_, _, address, _, _)| *address)
             .collect::<Vec<_>>();
         let engineer = did_address(callers.identity_for_role(CallerRole::Engineer)?)?;
 
@@ -431,7 +461,7 @@ impl EvmAdapterProfile {
             engineer,
         ))?;
 
-        for (role, identity, address) in identities {
+        for (role, identity, address, commitment, version) in planned {
             let issuer = issuers
                 .get(&role)
                 .ok_or_else(|| format!("Missing Adapter issuer for {role:?}"))?;
@@ -443,35 +473,14 @@ impl EvmAdapterProfile {
                 issuer.holder_jwk(),
             )?;
 
-            let material = issuance_store.get_accumulator_data_at_version(&identity, 1)?;
-            let commitment = EvmTrustResolver::<Curve>::accumulator_material_commitment(&material)?;
-            let current_version = self
-                .chain_reader
-                .latest_accumulator_material_version(&identity)?;
-
-            match current_version {
-                0 => self.runtime.block_on(publish_accumulator(
+            if version == 0 {
+                self.runtime.block_on(publish_accumulator(
                     &self.config.rpc_url,
                     &self.config.issuer_registry_address,
                     self.config.private_key_for(role)?,
                     address,
                     commitment,
-                ))?,
-                1 => {
-                    let existing = self
-                        .chain_reader
-                        .accumulator_material_anchor(&identity, 1)?;
-                    if !existing.exists || existing.material_hash != commitment {
-                        return Err(format!(
-                            "Existing accumulator anchor for {identity} does not match this Adapter runtime"
-                        ));
-                    }
-                }
-                version => {
-                    return Err(format!(
-                        "Identity {identity} already has accumulator version {version}; the EVM Adapter profile requires a fresh or matching chain"
-                    ));
-                }
+                ))?;
             }
 
             let anchored = self
@@ -491,6 +500,30 @@ impl EvmAdapterProfile {
             ));
         }
         Ok(())
+    }
+}
+
+/// Pure preflight gate for existing on-chain accumulator state. Called for
+/// *every* managed role before any bootstrap transaction or DID publication.
+fn check_bootstrap_anchor(
+    identity: &str,
+    commitment: B256,
+    version: u64,
+    existing: Option<&AccumulatorMaterialAnchor>,
+) -> Result<(), String> {
+    match version {
+        0 => Ok(()),
+        1 => {
+            if existing.is_none_or(|anchor| !anchor.exists || anchor.material_hash != commitment) {
+                return Err(format!(
+                    "Existing accumulator anchor for {identity} does not match this Adapter runtime"
+                ));
+            }
+            Ok(())
+        }
+        version => Err(format!(
+            "Identity {identity} already has accumulator version {version}; the EVM Adapter profile requires a fresh or matching chain"
+        )),
     }
 }
 
@@ -760,4 +793,48 @@ async fn register_status_list(
         .await
         .map_err(|err| format!("Could not confirm Status List anchor [{err}]"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod bootstrap_preflight_tests {
+    use super::*;
+
+    #[test]
+    fn empty_chain_is_compatible_without_existing_anchor() {
+        assert!(check_bootstrap_anchor("did:ethr:test", B256::ZERO, 0, None).is_ok());
+    }
+
+    #[test]
+    fn matching_existing_anchor_can_be_reused() {
+        let commitment = B256::from([0x2a; 32]);
+        let anchor = AccumulatorMaterialAnchor {
+            material_hash: commitment,
+            published_at: 1,
+            exists: true,
+        };
+        assert!(check_bootstrap_anchor("did:ethr:test", commitment, 1, Some(&anchor)).is_ok());
+    }
+
+    #[test]
+    fn mismatch_or_missing_anchor_fails_before_any_writer_runs() {
+        let commitment = B256::from([0x2a; 32]);
+        let stale = AccumulatorMaterialAnchor {
+            material_hash: B256::ZERO,
+            published_at: 1,
+            exists: true,
+        };
+        let absent = AccumulatorMaterialAnchor {
+            material_hash: commitment,
+            published_at: 0,
+            exists: false,
+        };
+        for anchor in [Some(&stale), Some(&absent), None] {
+            assert!(check_bootstrap_anchor("did:ethr:test", commitment, 1, anchor).is_err());
+        }
+    }
+
+    #[test]
+    fn unexpected_anchor_versions_are_rejected() {
+        assert!(check_bootstrap_anchor("did:ethr:test", B256::ZERO, 2, None).is_err());
+    }
 }

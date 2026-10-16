@@ -163,6 +163,42 @@ jobs:
           tail -n 35 /tmp/shared-mcp-adapter.log
           exit 1
 
+      - name: Regression - refuse second Adapter startup without EVM writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source poc/infra/.env
+          source poc/infra/runtime/trust.env
+          set +a
+          # Reusing the same chain with a new in-memory accumulator must fail
+          # before publishing DID keys; only public DID addresses are read.
+          declare -A nonce_before
+          for role in ENGINEER ORCHESTRATOR BACKEND FRONTEND TEST; do
+            identity_var="ADAPTER_ID_${role}"
+            public_did="${!identity_var}"
+            address="${public_did##*:}"
+            nonce_before["$address"]="$(cast nonce "$address" --rpc-url "$RPC_URL")"
+          done
+
+          if ADAPTER_BIND_ADDR=127.0.0.1:8091 timeout 45s \
+              cargo run --manifest-path services/delegation-adapter/Cargo.toml \
+              > /tmp/shared-mcp-adapter-restart.log 2>&1; then
+            echo "Unexpected successful second Adapter startup" >&2
+            exit 1
+          fi
+          grep -Fq "Existing accumulator anchor" /tmp/shared-mcp-adapter-restart.log || {
+            echo "Adapter rejected restart for an unexpected reason" >&2
+            exit 1
+          }
+          for address in "${!nonce_before[@]}"; do
+            observed="$(cast nonce "$address" --rpc-url "$RPC_URL")"
+            if [[ "$observed" != "${nonce_before[$address]}" ]]; then
+              echo "An identity nonce changed despite rejected Adapter startup" >&2
+              exit 1
+            fi
+          done
+
       - name: Verify exact protected ADK/A2A/MCP -> Docker/acceptance -> PR
         run: |
           set -o pipefail
