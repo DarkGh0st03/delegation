@@ -275,3 +275,66 @@ test("Runner fails closed on Linux-container archive extraction error and cleans
   assert.equal(calls.some(call=>call.command==="docker"&&call.args[0]==="exec"&&call.args[2]==="bash"),
     false,"Never start project tests after untrusted archive extraction failure");
 });
+
+function archiveFixtureFetch() {
+  let calls = 0;
+  return async (): Promise<Response> => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response(JSON.stringify({ commit: { id: request.commit_sha } }), { status: 200 });
+    }
+    return new Response(Buffer.from("fake-tar-gz"), { status: 200 });
+  };
+}
+
+test("AUD-009: ambiguous Docker create failure still removes its unique container name", async () => {
+  const commands: string[] = [];
+  const executor = new IsolatedDockerRunnerExecutor(config, {
+    fetch_fn: archiveFixtureFetch(),
+    command_runner: async (command, args) => {
+      commands.push(command + " " + args.join(" "));
+      return { exit_code: args[0] === "create" ? 2 : 0, stdout: "", stderr: "", timed_out: false };
+    }
+  });
+  await assert.rejects(() => executor.run(request), /Could not create isolated Runner container/u);
+  assert.equal(commands.some(cmd => cmd.startsWith("docker rm -f delegation-runner-")), true);
+});
+
+test("AUD-009: a failed Docker remove invalidates even an otherwise passing run", async () => {
+  const executor = new IsolatedDockerRunnerExecutor(config, {
+    fetch_fn: archiveFixtureFetch(),
+    command_runner: async (_command, args) => ({
+      exit_code: args[0] === "rm" ? 9 : 0,
+      stdout: "",
+      stderr: args[0] === "rm" ? "daemon unavailable" : "",
+      timed_out: false
+    })
+  });
+  await assert.rejects(() => executor.run(request), /Runner Docker container cleanup failed/u);
+});
+
+test("AUD-009: no-such-container is safe after failed Docker create", async () => {
+  const executor = new IsolatedDockerRunnerExecutor(config, {
+    fetch_fn: archiveFixtureFetch(),
+    command_runner: async (_command, args) => ({
+      exit_code: args[0] === "create" ? 1 : args[0] === "rm" ? 1 : 0,
+      stdout: "",
+      stderr: args[0] === "rm" ? "Error response from daemon: No such container: removed" : "",
+      timed_out: false
+    })
+  });
+  await assert.rejects(() => executor.run(request), /Could not create isolated Runner container/u);
+});
+
+test("AUD-009: timed-out Docker create also triggers cleanup attempt", async () => {
+  let sawRm = false;
+  const executor = new IsolatedDockerRunnerExecutor(config, {
+    fetch_fn: archiveFixtureFetch(),
+    command_runner: async (_command, args) => {
+      if (args[0] === "rm") sawRm = true;
+      return { exit_code: 1, stdout: "", stderr: "", timed_out: args[0] === "create" };
+    }
+  });
+  await assert.rejects(() => executor.run(request), /Runner Docker container cleanup failed/u);
+  assert.equal(sawRm, true);
+});
