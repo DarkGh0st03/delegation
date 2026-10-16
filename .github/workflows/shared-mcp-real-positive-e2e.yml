@@ -182,7 +182,7 @@ jobs:
           done
 
           if ADAPTER_BIND_ADDR=127.0.0.1:8091 timeout 45s \
-              cargo run --manifest-path services/delegation-adapter/Cargo.toml \
+              cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked \
               > /tmp/shared-mcp-adapter-restart.log 2>&1; then
             echo "Unexpected successful second Adapter startup" >&2
             exit 1
