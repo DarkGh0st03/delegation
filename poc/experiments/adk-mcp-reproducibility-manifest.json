@@ -51,7 +51,7 @@
       "Cargo.lock": "7fcfcbf0d818a7f43bb45e20c80e12d2d2efc7d5afa069f13bf4b37ade71712a",
       "blockchain/did-client/package-lock.json": "8dbeebadd6e31e2583a2b318e6180b894259a8a6d81bbdd74dbd44a6dc32905e",
       "poc/package-lock.json": "397bfcdc74fc71dbd7981b06cca5acfce76cd8ff926d3f7c24f1227c04b8c6db",
-      "poc/mcp-shared/package-lock.json": "1402b3a881f804c907287134fc1f90ca6724cbc865b868ea49e45c5cf4711a7f",
+      "poc/mcp-shared/package-lock.json": "d2fac5cb6fb64b828dd91bc32fe228e12a48b1e2a2de59b3bcbafa252b9a5c58",
       "services/delegation-adapter/Cargo.lock": "9dff42b015c7ce4d1b051525c5d7ddf641fbe2475bab9f594f2e84f976c3dfde"
     }
   },
