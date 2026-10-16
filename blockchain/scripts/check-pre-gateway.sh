@@ -51,14 +51,12 @@ echo "==> Solidity tests"
 
 echo
 echo "==> DID resolver dependencies"
-if [[ ! -d blockchain/did-client/node_modules ]]; then
-  (
-    cd blockchain/did-client
-    npm install
-  )
-else
-  echo "node_modules already present; skipping npm install"
-fi
+# The lockfile is authoritative, including on repeated validations.
+# Directory existence does not certify dependency integrity.
+(
+  cd blockchain/did-client
+  npm ci --no-audit --no-fund
+)
 
 echo
 echo "==> Final live pre-Gateway integration"
