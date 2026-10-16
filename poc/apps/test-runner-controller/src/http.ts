@@ -84,10 +84,17 @@ export function createRunnerHttpServer(
       return;
     }
 
+    const controller=new AbortController();
+    const onPrematureClose=()=>{
+      if(!response.writableEnded)controller.abort();
+    };
+    response.once("close",onPrematureClose);
     try {
-      const result = await executor.run(normalized);
-      json(response, 200, result);
+      const result = await executor.run(normalized,controller.signal);
+      // A disconnected caller cannot receive a PASS; never write to a closed socket.
+      if(!response.destroyed)json(response, 200, result);
     } catch (error) {
+      if(response.destroyed)return;
       if (error instanceof RunnerExecutionUnavailableError) {
         json(response, 501, {
           error: "runner_execution_unavailable",
@@ -95,7 +102,6 @@ export function createRunnerHttpServer(
         });
         return;
       }
-
       process.stderr.write(
         `Controlled Test Runner execution failed: ${error instanceof Error ? error.message : String(error)}\n`
       );
@@ -103,6 +109,8 @@ export function createRunnerHttpServer(
         error: "runner_execution_failed",
         message: "Controlled Test Runner failed closed"
       });
+    } finally {
+      response.removeListener("close",onPrematureClose);
     }
   });
 }

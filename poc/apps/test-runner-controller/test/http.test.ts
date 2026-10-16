@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {request as httpRequest} from "node:http";
 import { createRunnerHttpServer } from "../src/http.ts";
 import type {
   RunnerExecutor,
@@ -129,5 +130,46 @@ test("Phase 6A default service validates the contract but does not execute jobs"
     assert.equal(response.status, 501);
     const body = await response.json();
     assert.equal(body.error, "runner_execution_unavailable");
+  });
+});
+
+test("AUD-010: disconnecting the authenticated Runner caller aborts in-flight work",async()=>{
+  let started!:()=>void,aborted!:()=>void;
+  const startedPromise=new Promise<void>(resolve=>{started=resolve;});
+  const abortedPromise=new Promise<void>(resolve=>{aborted=resolve;});
+  let runs=0;
+  const executor:RunnerExecutor={
+    run:async(_input,signal)=>{
+      runs++;
+      assert.ok(signal);
+      started();
+      await new Promise<void>((_resolve,reject)=>{
+        if(signal.aborted){aborted();reject(new Error("aborted"));return;}
+        signal.addEventListener("abort",()=>{
+          aborted();
+          reject(new Error("aborted"));
+        },{once:true});
+      });
+      throw new Error("Runner must not produce a result after cancellation");
+    }
+  };
+  await withServer(executor,async base=>{
+    const req=httpRequest(base+"/v1/runs",{
+      method:"POST",headers:{
+        authorization:"Bearer gateway-runner-secret",
+        "content-type":"application/json"
+      }
+    });
+    // The controlled premature disconnect is expected at the socket level.
+    req.on("error",()=>{});
+    req.end(JSON.stringify(validRequest));
+    await startedPromise;
+    req.destroy();
+    await Promise.race([
+      abortedPromise,
+      new Promise<never>((_r,reject)=>
+        setTimeout(()=>reject(new Error("Runner did not cancel disconnected task")),3000))
+    ]);
+    assert.equal(runs,1);
   });
 });
