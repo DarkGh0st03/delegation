@@ -294,7 +294,7 @@ export type ExecutionResult =
 export interface ExecutionPort {
   readonly provider: "mock" | "gitea";
   providerFor?(record: PreparedRequestRecord): "mock" | "gitea" | "runner";
-  execute(record: PreparedRequestRecord): Promise<ExecutionResult>;
+  execute(record: PreparedRequestRecord, signal?: AbortSignal): Promise<ExecutionResult>;
 }
 
 export interface ExecuteAuthorizationResponse {

@@ -52,7 +52,7 @@ export class GiteaExecutor implements ExecutionPort {
     return record.request.tool === "run_tests" ? "runner" : "gitea";
   }
 
-  async execute(record: PreparedRequestRecord): Promise<ExecutionResult> {
+  async execute(record: PreparedRequestRecord, signal?: AbortSignal): Promise<ExecutionResult> {
     if (record.request.tool === "read_file") {
       const snapshot = await this.#client.readTextFile(
         record.request.arguments.branch,
@@ -174,14 +174,16 @@ export class GiteaExecutor implements ExecutionPort {
         );
       }
 
+      signal?.throwIfAborted();
       const branchMetadata = await this.#client.getBranchMetadata(branch);
+      signal?.throwIfAborted();
       const run = await this.#runnerClient.run({
         request_id: record.request_id,
         repository: this.#runnerRepositoryUri,
         branch,
         commit_sha: branchMetadata.commit_sha,
         profile
-      });
+      },signal);
 
       const result: RunnerExecutionResult = {
         provider: "runner",

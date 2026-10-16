@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {request as rawRequest} from "node:http";
 import { createGatewayHttpServer } from "../src/http.ts";
 import { InMemoryAuditSink } from "../src/prepare.ts";
 import { GatewayRuntime } from "../src/runtime.ts";
@@ -111,5 +112,68 @@ test("HTTP prepare and execute expose verified and policy-allowed mock execution
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve()))
     );
+  }
+});
+
+
+test("AUD-010: Gateway disconnect reaches an authorized Runner execution",async()=>{
+  let onStarted!:()=>void,onCanceled!:()=>void;
+  const started=new Promise<void>(resolve=>{onStarted=resolve;});
+  const canceled=new Promise<void>(resolve=>{onCanceled=resolve;});
+  let calls=0;
+  const executor={
+    provider:"gitea" as const,
+    providerFor:()=> "runner" as const,
+    execute:async(_record:unknown,signal?:AbortSignal)=>{
+      calls++;
+      assert.ok(signal,"Gateway must supply its request cancellation signal");
+      onStarted();
+      await new Promise<void>((_resolve,reject)=>{
+        if(signal.aborted){onCanceled();reject(new Error("aborted"));return;}
+        signal.addEventListener("abort",()=>{
+          onCanceled();
+          reject(new Error("aborted"));
+        },{once:true});
+      });
+      throw new Error("Cancelled Runner must never return PASS");
+    }
+  };
+  const runtime=new GatewayRuntime(config,{
+    verifier:new Verifier(),
+    policy:new Policy(),
+    executor,
+    audit:new InMemoryAuditSink()
+  });
+  const server=createGatewayHttpServer(runtime);
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  try{
+    const address=server.address();
+    assert.ok(address && typeof address==="object");
+    const base="http://127.0.0.1:"+address.port;
+    const prepared=await fetch(base+"/v1/authorization/prepare",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        task_id:"task-cancel-runner",agent_role:"test",tool:"run_tests",
+        arguments:{branch:"feature/account-suspension",profile:"poc-default"}
+      })
+    });
+    assert.equal(prepared.status,201);
+    const body=await prepared.json();
+    const requestBody=JSON.stringify({request_id:body.request_id,signed_vp:"signed.jwt.value"});
+    const req=rawRequest(base+"/v1/authorization/execute",{
+      method:"POST",headers:{"content-type":"application/json",
+        "content-length":Buffer.byteLength(requestBody)}
+    });
+    req.on("error",()=>{});
+    req.end(requestBody);
+    await Promise.race([started,
+      new Promise<never>((_r,reject)=>setTimeout(()=>reject(new Error("Gateway executor did not start")),3000))]);
+    req.destroy();
+    await Promise.race([canceled,
+      new Promise<never>((_r,reject)=>setTimeout(()=>reject(new Error("Gateway did not cancel execution")),3000))]);
+    assert.equal(calls,1);
+  }finally{
+    await new Promise<void>((resolve,reject)=>
+      server.close(error=>error?reject(error):resolve()));
   }
 });
