@@ -22,7 +22,7 @@ is_address() { [[ "$1" =~ ^0x[0-9a-fA-F]{40}$ ]]; }
 
 has_code() {
   local code
-  code="$(cast code "$1" --rpc-url "$RPC_URL")" || return 1
+  code="$(cast code "$1" --rpc-url "$RPC_URL")" || { echo "Unable to read trust bytecode; refusing bootstrap" >&2; exit 1; }
   [[ -n "$code" && "$code" != "0x" ]]
 }
 
@@ -39,7 +39,7 @@ expect_link() {
   fi
 }
 
-observed_chain="$(cast chain-id --rpc-url "$RPC_URL" | tr -d '\\r\\n ')"
+observed_chain="$(cast chain-id --rpc-url "$RPC_URL" | tr -d '\r\n ')"
 if [[ "$observed_chain" != "$CHAIN_ID" ]]; then
   echo "Anvil chain ID mismatch: expected $CHAIN_ID, got $observed_chain" >&2
   exit 1

@@ -25,7 +25,7 @@ bash poc/scripts/phase1-check.sh
 bash poc/scripts/phase1-down.sh
 ```
 
-`poc/scripts/bootstrap-gitea.sh` creates local repository fixture/service credentials; `poc/scripts/bootstrap-trust.sh` deploys the local EVM contracts. Job-local secrets and runtime configuration are in ignored `poc/infra/.env` and `poc/infra/runtime/`.
+`poc/scripts/bootstrap-gitea.sh` creates local repository fixture/service credentials; `poc/scripts/bootstrap-trust.sh` deploys the local EVM contracts on a fresh Anvil chain or **reuses recorded contracts** only after checking chain ID, deployed bytecode, governance signer and contract wiring. On partial or incompatible state it fails closed instead of silently redeploying. After Anvil is reset to block 0, the saved addresses are safely replaced by a fresh deployment. Job-local secrets and runtime configuration are in ignored `poc/infra/.env` and `poc/infra/runtime/`.
 
 Use the initializer's `--force` option only for deliberate local credential regeneration: it overwrites `.env` with new random Gitea passwords and service tokens. It does not update accounts already stored in existing Gitea volumes, so routine reinitialization with that option can leave configuration and service credentials inconsistent.
 
