@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {readFile} from "node:fs/promises";
 import type {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {MCP_RUN_TESTS_TIMEOUT_MS,requestTimedMcpRunTests}
   from "../src/timed-mcp-run-tests.ts";
@@ -46,12 +45,4 @@ test("invalid timeout fails before any MCP tool call",async()=>{
   await assert.rejects(requestTimedMcpRunTests(fake,args,undefined,0));
   await assert.rejects(requestTimedMcpRunTests(fake,args,undefined,930_001));
   assert.equal(calls,0);
-});
-
-test("live Test Agent routes run_tests through explicit MCP timeout, not native 60s wrapper",async()=>{
-  const file=await readFile(new URL("../src/adk-specialized-agents.ts",import.meta.url),"utf8");
-  assert.match(file,/callTimedMcpRunTests\(/);
-  assert.match(file,/name:"run_tests"/);
-  assert.doesNotMatch(file,/\.\.\.\(config\.mcpRunTests \? \["run_tests"\] : \[\]\)/);
-  assert.match(file,/createTaskBearerFetch/);
 });

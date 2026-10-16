@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BaseLlm,
+  FunctionTool,
   InMemorySessionService,
   LlmAgent,
   Runner,
@@ -324,4 +325,23 @@ test("32,000-token Gemini 3.8 LOW budget reaches each role's native ADK requests
       assert.equal(shape.temperature,0);
     }
   }
+});
+
+test("MCP-enabled Test Agent exposes run_tests once as a controlled FunctionTool",()=>{
+  // Check the ADK tool registry, not source-file spelling/formatting.
+  // The separate timeout tests verify the MCP SDK request options.
+  const built=createAdkSpecializedAgent({
+    role:"test",
+    model:new ScriptedAdkLlm("run_tests",{branch:BRANCH,profile:"poc-default"}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    mcpReadFile:{
+      endpoint:"http://127.0.0.1:8097/mcp",
+      bearerForRequest:()=>"test-task-bearer"
+    },
+    mcpRunTests:true
+  });
+  assert.ok(built.mcpToolset);
+  const bounded= built.agent.tools.filter(tool=>tool.name==="run_tests");
+  assert.equal(bounded.length,1);
+  assert.ok(bounded[0] instanceof FunctionTool);
 });
