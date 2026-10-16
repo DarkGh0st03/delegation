@@ -31,6 +31,8 @@ bash poc/scripts/phase1-down.sh
 
 Use the initializer's `--force` option only for deliberate local credential regeneration: it overwrites `.env` with new random Gitea passwords and service tokens. It does not update accounts already stored in existing Gitea volumes, so routine reinitialization with that option can leave configuration and service credentials inconsistent.
 
+**Runner execution budget (AUD-010):** `TEST_RUNNER_PHASE_TIMEOUT_MS` limits each Docker phase, while `TEST_RUNNER_TOTAL_TIMEOUT_MS` (default and maximum `840000` ms) bounds the entire Runner job, including Gitea checks and all project/acceptance phases. It reserves at least 60 seconds below the Gateway's 900-second Runner request limit in the canonical setup; Docker cleanup is attempted outside the canceled work signal with a separate timeout capped at 30 seconds. The Runner API cancels active work when its direct HTTP client disconnects. An upstream Gateway HTTP disconnect is not yet propagated end-to-end and must not be treated as a validated cancellation guarantee.
+
 **Warning:** `phase1-down.sh --volumes` removes persistent local Docker volumes; never use it as a routine cleanup step. The default local dev keys belong exclusively to Anvil testing and must not be reused externally.
 
 The real Gemini experiment is **manual and paid**; do not trigger it as part of local infrastructure setup.

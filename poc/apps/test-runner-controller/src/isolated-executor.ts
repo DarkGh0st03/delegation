@@ -447,7 +447,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           const removal = await this.#runCommand(
             "docker",
             ["rm", "-f", containerName],
-            { timeout_ms: this.#config.phase_timeout_ms }
+            { timeout_ms: Math.min(this.#config.phase_timeout_ms, 30_000) }
           );
           // The name is unique to this request. A genuine "not found" after
           // an ambiguous create is also a confirmed clean outcome.
