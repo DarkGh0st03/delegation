@@ -19,13 +19,12 @@ for(const name of workflows){
   test(name+" uses a single fresh Compose-managed Gitea",async()=>{
     const workflow=await readFile(
       new URL("../../../.github/workflows/"+name,import.meta.url),"utf8");
-    assert.match(workflow,/docker compose[^\n]+up -d gitea opa anvil/);
-    assert.match(workflow,/docker volume inspect delegation-poc-gitea-data/);
+    assert.match(workflow,/bash poc\/scripts\/ci-compose-lifecycle\.sh start/);
     assert.match(workflow,/GITEA_E2E_COMPOSE_READY: "1"/);
     assert.match(workflow,/127\.0\.0\.1:3000\/api\/healthz/);
     assert.match(workflow,/127\.0\.0\.1:8181\/health/);
     assert.match(workflow,/cast chain-id --rpc-url http:\/\/127\.0\.0\.1:8545/);
-    assert.match(workflow,/docker compose[^\n]+down --volumes/);
+    assert.match(workflow,/bash poc\/scripts\/ci-compose-lifecycle\.sh cleanup/);
     assert.doesNotMatch(workflow,/docker pull docker\.gitea\.com\/gitea:/);
     assert.doesNotMatch(workflow,/bootstrap-gitea\.sh/);
   });
