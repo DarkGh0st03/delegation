@@ -164,7 +164,7 @@ jobs:
           configure_identity TEST "$ADAPTER_EVM_PRIVATE_KEY_TEST"
 
       - name: Build real Rust Delegation Adapter
-        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml
+        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
 
       - name: Start real Rust Delegation Adapter
         run: |
@@ -173,7 +173,7 @@ jobs:
           source poc/infra/.env
           source poc/infra/runtime/trust.env
           set +a
-          cargo run --manifest-path services/delegation-adapter/Cargo.toml > /tmp/shared-mcp-adapter.log 2>&1 &
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/shared-mcp-adapter.log 2>&1 &
           for i in {1..90}; do
             if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then
               exit 0
