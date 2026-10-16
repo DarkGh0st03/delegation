@@ -70,13 +70,23 @@ export function createGatewayHttpServer(runtime: GatewayRuntime): Server {
 
       if (method === "POST" && url === "/v1/authorization/execute") {
         const body = await readJson(request);
-        json(response, 200, await runtime.execute(body));
+        const controller=new AbortController();
+        const onPrematureClose=()=>{
+          if(!response.writableEnded)controller.abort();
+        };
+        response.once("close",onPrematureClose);
+        try {
+          const result=await runtime.execute(body,controller.signal);
+          if(!response.destroyed)json(response,200,result);
+        }finally{
+          response.removeListener("close",onPrematureClose);
+        }
         return;
       }
 
       json(response, 404, { error: "not_found", message: "Route not found" });
     } catch (error) {
-      errorResponse(response, error);
+      if(!response.destroyed)errorResponse(response,error);
     }
   });
 }

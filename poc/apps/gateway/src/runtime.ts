@@ -108,14 +108,15 @@ export class GatewayRuntime {
     });
   }
 
-  async execute(raw: unknown): Promise<ExecuteAuthorizationResponse> {
+  async execute(raw: unknown, signal?: AbortSignal): Promise<ExecuteAuthorizationResponse> {
     return executeAuthorization(raw, {
       store: this.#store,
       audit: this.#audit,
       verifier: this.#verifier,
       policy: this.#policy,
       repository: this.#config.prepare.repository,
-      executor: this.#executor
+      executor: this.#executor,
+      ...(signal ? {signal} : {})
     });
   }
 }

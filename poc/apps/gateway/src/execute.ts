@@ -92,6 +92,7 @@ export interface ExecuteDependencies {
   executor: ExecutionPort;
   nowMs?: () => number;
   durationNowMs?: () => number;
+  signal?: AbortSignal;
 }
 
 export async function executeAuthorization(
@@ -251,7 +252,8 @@ export async function executeAuthorization(
   const providerStarted = durationNow();
   let execution: ExecutionResult;
   try {
-    execution = await dependencies.executor.execute(record);
+    dependencies.signal?.throwIfAborted();
+    execution = await dependencies.executor.execute(record,dependencies.signal);
   } catch (error) {
     const providerMs = elapsed(providerStarted, durationNow);
     const common = {

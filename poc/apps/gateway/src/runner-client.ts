@@ -109,9 +109,10 @@ export class RunnerClient {
     this.#fetch = config.fetchFn ?? fetch;
   }
 
-  async run(request: RunnerClientRequest): Promise<RunnerClientResult> {
+  async run(request: RunnerClientRequest, signal?: AbortSignal): Promise<RunnerClientResult> {
     let response: Response;
     try {
+      signal?.throwIfAborted();
       response = await this.#fetch(`${this.#baseUrl}/v1/runs`, {
         method: "POST",
         headers: {
@@ -120,7 +121,9 @@ export class RunnerClient {
           accept: "application/json"
         },
         body: JSON.stringify(request),
-        signal: AbortSignal.timeout(this.#timeoutMs)
+        signal: signal
+          ? AbortSignal.any([signal,AbortSignal.timeout(this.#timeoutMs)])
+          : AbortSignal.timeout(this.#timeoutMs)
       });
     } catch (error) {
       throw new ProviderUnavailableError(
