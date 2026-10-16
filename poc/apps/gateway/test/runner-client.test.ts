@@ -99,3 +99,43 @@ test("RunnerClient maps Runner failures to provider unavailability", async () =>
     /Controlled Test Runner returned HTTP 503/u
   );
 });
+
+
+test("AUD-010: Gateway caller abort reaches outgoing authenticated Runner HTTP request",async()=>{
+  const aborter=new AbortController();
+  let requestStarted!:()=>void;
+  const started=new Promise<void>(resolve=>{requestStarted=resolve;});
+  let receivedSignal:AbortSignal|undefined;
+  const client=new RunnerClient({
+    baseUrl:"http://runner.internal:8095",
+    gatewayToken:"gateway-runner-secret",
+    fetchFn:async(_url,init)=>{
+      receivedSignal=init?.signal as AbortSignal|undefined;
+      assert.ok(receivedSignal);
+      assert.equal((init?.headers as Record<string,string>).authorization,
+        "Bearer gateway-runner-secret");
+      requestStarted();
+      return await new Promise<Response>((_resolve,reject)=>{
+        receivedSignal!.addEventListener("abort",()=>reject(new Error("runner request canceled")),{once:true});
+      });
+    }
+  });
+  const promise=client.run(request,aborter.signal);
+  await started;
+  aborter.abort();
+  await assert.rejects(promise,/Controlled Test Runner request failed/);
+  assert.equal(receivedSignal?.aborted,true);
+});
+
+test("AUD-010: already aborted Gateway signal prevents a Runner HTTP call",async()=>{
+  const aborter=new AbortController();
+  aborter.abort();
+  let calls=0;
+  const client=new RunnerClient({
+    baseUrl:"http://runner.internal:8095",
+    gatewayToken:"gateway-runner-secret",
+    fetchFn:async()=>{calls++;return new Response("{}");}
+  });
+  await assert.rejects(client.run(request,aborter.signal),/request failed/);
+  assert.equal(calls,0);
+});
