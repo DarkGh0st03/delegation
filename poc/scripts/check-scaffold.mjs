@@ -13,8 +13,6 @@ const required = [
   "poc/packages",
   "poc/opa",
   "poc/runner/acceptance",
-  "poc/infra/gitea",
-  "poc/infra/env",
   "poc/infra/docker-compose.yml",
   "poc/scripts/init-local-env.mjs",
   "poc/scripts/bootstrap-gitea.sh",
