@@ -228,7 +228,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     const logReference = `runner-log://${logId}`;
     const logs: string[] = [];
     const phases: RunnerPhaseResult[] = [];
-    let containerCreated = false;
+    let containerCreateAttempted = false;
     let failed = false;
 
     try {
@@ -266,6 +266,9 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       }
       dockerCreateArgs.push(this.#config.docker_image, "sleep", "infinity");
 
+      // A timed-out/ambiguous Docker CLI response may still leave this named
+      // container in the daemon. Attempt cleanup even when create fails.
+      containerCreateAttempted = true;
       const create = await this.#runCommand(
         "docker",
         dockerCreateArgs,
@@ -274,7 +277,6 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       if (create.exit_code !== 0 || create.timed_out) {
         throw new Error("Could not create isolated Runner container");
       }
-      containerCreated = true;
 
       const start = await this.#runCommand(
         "docker",
@@ -413,14 +415,31 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         log_reference: logReference
       };
     } finally {
-      if (containerCreated) {
-        await this.#runCommand(
-          "docker",
-          ["rm", "-f", containerName],
-          { timeout_ms: this.#config.phase_timeout_ms }
-        ).catch(() => undefined);
+      let cleanupFailure: Error | undefined;
+      if (containerCreateAttempted) {
+        try {
+          const removal = await this.#runCommand(
+            "docker",
+            ["rm", "-f", containerName],
+            { timeout_ms: this.#config.phase_timeout_ms }
+          );
+          // The name is unique to this request. A genuine "not found" after
+          // an ambiguous create is also a confirmed clean outcome.
+          const absent = !removal.timed_out &&
+            /no such (?:container|object)/iu.test(removal.stderr);
+          if (removal.timed_out || (removal.exit_code !== 0 && !absent)) {
+            cleanupFailure = new Error("Runner Docker container cleanup failed");
+          }
+        } catch {
+          cleanupFailure = new Error("Runner Docker container cleanup failed");
+        }
       }
-      await rm(runRoot, { recursive: true, force: true });
+      try {
+        await rm(runRoot, { recursive: true, force: true });
+      } catch {
+        cleanupFailure = new Error("Runner temporary workspace cleanup failed");
+      }
+      if (cleanupFailure) throw cleanupFailure;
     }
   }
 }
