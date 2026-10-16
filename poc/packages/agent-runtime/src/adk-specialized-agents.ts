@@ -4,6 +4,7 @@ import { normalizeMcpUpdateFileOutcome } from "./mcp-write-result.ts";
 import { normalizeMcpCreateFileOutcome } from "./mcp-create-result.ts";
 import { normalizeMcpRunTestsOutcome } from "./mcp-run-tests-result.ts";
 import { createTaskBearerFetch } from "./mcp-task-fetch.ts";
+import {callTimedMcpRunTests} from "./timed-mcp-run-tests.ts";
 import { z } from "zod";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import {
@@ -189,16 +190,60 @@ export function createAdkSpecializedAgent(
       "read_file",
       ...(config.mcpUpdateFile ? ["update_file"] : []),
       ...(config.mcpCreateFile ? ["create_file"] : []),
-      ...(config.mcpRunTests ? ["run_tests"] : [])
+      // run_tests is still routed through this MCP server, but uses an
+      // explicit bounded call timeout via the trusted SDK helper below.
     ]);
   }
+
+  const timedMcpRunTests = config.mcpRunTests && config.mcpReadFile
+    ? new FunctionTool({
+        name:"run_tests",
+        description: registry.modelTools.find(tool=>tool.name==="run_tests")?.description
+          ?? "Execute controlled project tests and independent researcher acceptance",
+        parameters:SCHEMAS.run_tests,
+        execute: async (args) => {
+          const started=performance.now();
+          const argumentsRecord=args as Record<string,unknown>;
+          let outcome:AdkControlledToolOutcome["payload"];
+          try {
+            const response=await callTimedMcpRunTests({
+              endpoint:config.mcpReadFile!.endpoint,
+              bearerForRequest:config.mcpReadFile!.bearerForRequest,
+              args:args as {branch:"feature/account-suspension";profile:"poc-default"},
+              ...(config.signal ? {signal:config.signal} : {})
+            });
+            outcome=normalizeMcpRunTestsOutcome(response,argumentsRecord);
+            return response;
+          }catch{
+            // Only a fixed classification reaches the LLM; never expose
+            // raw SDK errors, URLs, tokens or HTTP transport diagnostics.
+            outcome=controlledToolErrorPayload(new ControlledToolError(
+              "tool_unavailable","Controlled MCP run_tests transport unavailable"
+            ));
+            return {isError:true,structuredContent:outcome,
+              content:[{type:"text",text:"Controlled MCP run_tests unavailable"}]};
+          }finally{
+            if(outcome!==undefined){
+              config.onToolOutcome?.({name:"run_tests",arguments:argumentsRecord,payload:outcome});
+            }
+            process.stdout.write(JSON.stringify({
+              event:"adk_tool_timing",role:config.role,tool:"run_tests",
+              success:outcome?.ok===true,
+              error_kind:outcome?.ok===false?outcome.error.kind:null,
+              duration_ms:Math.round(performance.now()-started)
+            })+"\n");
+          }
+        }
+      })
+    : undefined;
 
   const agent = new LlmAgent({
     name: `account_suspension_${config.role}`,
     description: profile.skill,
     model: config.model,
     instruction: profile.system_prompt,
-    tools: mcpToolset ? [...tools, mcpToolset] : tools,
+    tools: [...tools, ...(mcpToolset ? [mcpToolset] : []),
+      ...(timedMcpRunTests ? [timedMcpRunTests] : [])],
     // Observe only the MCP read_file; existing FunctionTools already emit outcomes.
     ...(mcpToolset ? {afterToolCallback: ({tool, args, response}) => {
       if (tool.name === "read_file") {
@@ -210,9 +255,6 @@ export function createAdkSpecializedAgent(
       }else if(tool.name === "create_file" && config.mcpCreateFile){
         const payload = normalizeMcpCreateFileOutcome(response, args);
         config.onToolOutcome?.({name:"create_file",arguments:args,payload});
-      }else if(tool.name === "run_tests" && config.mcpRunTests){
-        const payload = normalizeMcpRunTestsOutcome(response, args);
-        config.onToolOutcome?.({name:"run_tests",arguments:args,payload});
       }
       return undefined;
     }} : {}),
