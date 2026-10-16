@@ -33,6 +33,9 @@ jobs:
       - name: Test reproducibility drift detection
         run: node --test poc/scripts/test/phase12b-reproducibility.test.mjs
 
+      - name: Verify Adapter frozen Cargo graph
+        run: cargo metadata --locked --manifest-path services/delegation-adapter/Cargo.toml --format-version 1 --no-deps > /dev/null
+
       - name: Validate reproducibility contract and runtime
         env:
           PHASE12_VERIFY_RUNTIME: "1"
@@ -50,6 +53,7 @@ jobs:
             poc/experiments/reproducibility-manifest.json
             poc/experiments/adk-mcp-reproducibility-manifest.json
             Cargo.lock
+            services/delegation-adapter/Cargo.lock
             blockchain/did-client/package-lock.json
             poc/mcp-shared/package-lock.json
             docs/REPRODUCIBILITY.md
