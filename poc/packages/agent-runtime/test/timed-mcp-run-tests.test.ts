@@ -41,8 +41,8 @@ test("long-running MCP request propagates task abort and rejects already aborted
 
 test("invalid timeout fails before any MCP tool call",async()=>{
   let calls=0;
-  const fake=({callTool:async()=>{calls++;return {content:[]};}}
-    as unknown as Pick<Client,"callTool">);
+  const handler=async()=>{calls++;return {content:[]};};
+  const fake={callTool:handler} as unknown as Pick<Client,"callTool">;
   await assert.rejects(requestTimedMcpRunTests(fake,args,undefined,0));
   await assert.rejects(requestTimedMcpRunTests(fake,args,undefined,930_001));
   assert.equal(calls,0);
