@@ -338,3 +338,84 @@ test("AUD-009: timed-out Docker create also triggers cleanup attempt", async () 
   await assert.rejects(() => executor.run(request), /Runner Docker container cleanup failed/u);
   assert.equal(sawRm, true);
 });
+
+
+test("AUD-010: total Runner budget cannot exceed Gateway reserve",()=>{
+  assert.throws(()=>new IsolatedDockerRunnerExecutor({
+    ...config,total_timeout_ms:840_001
+  }),/total timeout/);
+  assert.throws(()=>new IsolatedDockerRunnerExecutor({
+    ...config,total_timeout_ms:0
+  }),/total timeout/);
+  assert.doesNotThrow(()=>new IsolatedDockerRunnerExecutor({
+    ...config,total_timeout_ms:840_000
+  }));
+});
+
+test("AUD-010: caller abort during Docker work cancels run and still removes container",async()=>{
+  const controller=new AbortController();
+  const commands:Array<{args:string[];timeout:number;hasSignal:boolean}>=[];
+  const executor=new IsolatedDockerRunnerExecutor({
+    ...config,total_timeout_ms:10_000
+  },{
+    fetch_fn:archiveFixtureFetch(),
+    command_runner:async(_command,args,options)=>{
+      commands.push({args,timeout:options.timeout_ms,hasSignal:Boolean(options.signal)});
+      if(args[0]==="start")controller.abort(new Error("caller disconnected"));
+      return {exit_code:0,stdout:"",stderr:"",timed_out:false};
+    }
+  });
+  await assert.rejects(()=>executor.run(request,controller.signal),
+    /caller disconnected/);
+  assert.ok(commands.some(x=>x.args[0]==="create"));
+  assert.ok(commands.some(x=>x.args[0]==="start"));
+  const cleanup=commands.find(x=>x.args[0]==="rm"&&x.args[1]==="-f");
+  assert.ok(cleanup,"Even canceled work must remove its unique Docker container");
+  assert.equal(cleanup.hasSignal,false,"Cleanup must not inherit aborted caller signal");
+  assert.equal(cleanup.timeout,10_000,"Preserve smaller cleanup timeout");
+  assert.equal(commands.some(x=>x.args[0]==="cp"),false);
+  assert.ok(commands.filter(x=>x.args[0]!=="rm").every(x=>x.hasSignal));
+});
+
+test("AUD-010: total budget limits per-stage wait and keeps a short independent cleanup",async()=>{
+  const seen:Array<{args:string[];timeout:number;hasSignal:boolean}>=[];
+  const executor=new IsolatedDockerRunnerExecutor({
+    ...config,phase_timeout_ms:600_000,total_timeout_ms:900
+  },{
+    fetch_fn:archiveFixtureFetch(),
+    command_runner:async(_command,args,options)=>{
+      seen.push({args,timeout:options.timeout_ms,hasSignal:Boolean(options.signal)});
+      return {exit_code:0,stdout:"",stderr:"",timed_out:false};
+    }
+  });
+  const result=await executor.run(request);
+  assert.equal(result.status,"pass");
+  const commands=seen.filter(x=>x.args[0]!=="rm");
+  assert.ok(commands.length>=7);
+  assert.ok(commands.every(x=>x.timeout>0&&x.timeout<=900));
+  assert.ok(commands.every(x=>x.hasSignal));
+  const cleanup=seen.find(x=>x.args[0]==="rm");
+  assert.ok(cleanup);
+  assert.equal(cleanup.timeout,30_000);
+  assert.equal(cleanup.hasSignal,false);
+});
+
+test("AUD-010: expiration mid-pipeline cannot return PASS and cleanup runs",async()=>{
+  let sawCreate=false,sawCleanup=false;
+  const executor=new IsolatedDockerRunnerExecutor({
+    ...config,total_timeout_ms:80,phase_timeout_ms:600_000
+  },{
+    fetch_fn:archiveFixtureFetch(),
+    command_runner:async(_command,args)=>{
+      if(args[0]==="create"){
+        sawCreate=true;
+        await new Promise(resolve=>setTimeout(resolve,125));
+      }
+      if(args[0]==="rm")sawCleanup=true;
+      return {exit_code:0,stdout:"",stderr:"",timed_out:false};
+    }
+  });
+  await assert.rejects(()=>executor.run(request));
+  assert.equal(sawCreate,true);
+  assert.equal(sawCleanup,true);
+});

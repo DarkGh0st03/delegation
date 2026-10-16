@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import type {
   RunnerExecutor,
   RunnerPhaseName,
@@ -13,6 +14,8 @@ import type {
 
 const MAX_COMMAND_OUTPUT_BYTES = 2 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024;
+// Must finish before the canonical Gateway -> Runner 900s timeout.
+export const MAX_RUN_TOTAL_MS = 840_000;
 
 export interface IsolatedRunnerConfig {
   gitea_base_url: string;
@@ -21,6 +24,7 @@ export interface IsolatedRunnerConfig {
   gitea_token: string;
   docker_image: string;
   phase_timeout_ms: number;
+  total_timeout_ms?: number;
   log_dir: string;
   acceptance_enabled?: boolean;
   acceptance_dir?: string;
@@ -29,6 +33,7 @@ export interface IsolatedRunnerConfig {
 interface CommandOptions {
   cwd?: string;
   timeout_ms: number;
+  signal?: AbortSignal;
 }
 
 interface CommandResult {
@@ -109,15 +114,21 @@ async function defaultCommandRunner(
     child.stderr.on("data", (chunk: Buffer) => {
       stderr = cappedAppend(stderr, chunk);
     });
-    child.once("error", reject);
-
-    const timer = setTimeout(() => {
+    const killChild = () => {
       timedOut = true;
       child.kill("SIGKILL");
-    }, options.timeout_ms);
-
+    };
+    const timer = setTimeout(killChild, options.timeout_ms);
+    options.signal?.addEventListener("abort", killChild, {once:true});
+    if(options.signal?.aborted)killChild();
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", killChild);
+      reject(error);
+    });
     child.once("close", (code) => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", killChild);
       resolvePromise({
         exit_code: code ?? 1,
         stdout,
@@ -168,9 +179,13 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     this.#config = config;
     this.#fetch = dependencies.fetch_fn ?? fetch;
     this.#runCommand = dependencies.command_runner ?? defaultCommandRunner;
+    const total = config.total_timeout_ms ?? MAX_RUN_TOTAL_MS;
+    if(!Number.isSafeInteger(total)||total<1||total>MAX_RUN_TOTAL_MS){
+      throw new Error("Runner total timeout must be 1..840000 ms");
+    }
   }
 
-  async #verifyExactBranchHead(request: RunnerRunRequest): Promise<void> {
+  async #verifyExactBranchHead(request: RunnerRunRequest, signal: AbortSignal): Promise<void> {
     const branch = encodeURIComponent(request.branch);
     const url =
       `${this.#config.gitea_base_url}/api/v1/repos/` +
@@ -178,7 +193,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       `${encodeURIComponent(this.#config.gitea_repository)}/branches/${branch}`;
 
     const response = await this.#fetch(url, {
-      headers: authHeaders(this.#config.gitea_token)
+      headers: authHeaders(this.#config.gitea_token),signal
     });
     if (!response.ok) {
       throw new Error(`Could not resolve controlled branch (HTTP ${response.status})`);
@@ -192,7 +207,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     }
   }
 
-  async #downloadArchive(request: RunnerRunRequest, archivePath: string): Promise<void> {
+  async #downloadArchive(request: RunnerRunRequest, archivePath: string, signal: AbortSignal): Promise<void> {
     const url =
       `${this.#config.gitea_base_url}/api/v1/repos/` +
       `${encodeURIComponent(this.#config.gitea_owner)}/` +
@@ -200,7 +215,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       `${request.commit_sha}.tar.gz`;
 
     const response = await this.#fetch(url, {
-      headers: authHeaders(this.#config.gitea_token)
+      headers: authHeaders(this.#config.gitea_token),signal
     });
     if (!response.ok) {
       throw new Error(`Could not fetch exact repository archive (HTTP ${response.status})`);
@@ -218,8 +233,24 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     await writeFile(archivePath, bytes, { mode: 0o600 });
   }
 
-  async run(request: RunnerRunRequest): Promise<RunnerRunResult> {
-    await this.#verifyExactBranchHead(request);
+  async run(request: RunnerRunRequest, callerSignal?: AbortSignal): Promise<RunnerRunResult> {
+    const total=this.#config.total_timeout_ms ?? MAX_RUN_TOTAL_MS;
+    const deadlineAt=performance.now()+total;
+    const deadlineSignal=AbortSignal.timeout(total);
+    const signal=callerSignal?AbortSignal.any([callerSignal,deadlineSignal]):deadlineSignal;
+    signal.throwIfAborted();
+    await this.#verifyExactBranchHead(request,signal);
+    signal.throwIfAborted();
+
+    const executeCommand=(command:string,args:string[]):Promise<CommandResult>=>{
+      signal.throwIfAborted();
+      const remainingMs=Math.floor(deadlineAt-performance.now());
+      if(remainingMs<=0)throw new Error("Runner total execution budget expired");
+      return this.#runCommand(command,args,{
+        timeout_ms:Math.max(1,Math.min(this.#config.phase_timeout_ms,remainingMs)),
+        signal
+      });
+    };
 
     const runRoot = await mkdtemp(join(tmpdir(), "delegation-runner-"));
     const archivePath = join(runRoot, "source.tar.gz");
@@ -232,7 +263,8 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     let failed = false;
 
     try {
-      await this.#downloadArchive(request, archivePath);
+      signal.throwIfAborted();
+      await this.#downloadArchive(request, archivePath, signal);
 
       // Extract inside the already constrained Linux Runner container.
       // Host-side tar may be GNU tar, bsdtar, or Windows/Git Bash tar and
@@ -269,19 +301,17 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       // A timed-out/ambiguous Docker CLI response may still leave this named
       // container in the daemon. Attempt cleanup even when create fails.
       containerCreateAttempted = true;
-      const create = await this.#runCommand(
+      const create = await executeCommand(
         "docker",
-        dockerCreateArgs,
-        { timeout_ms: this.#config.phase_timeout_ms }
+        dockerCreateArgs
       );
       if (create.exit_code !== 0 || create.timed_out) {
         throw new Error("Could not create isolated Runner container");
       }
 
-      const start = await this.#runCommand(
+      const start = await executeCommand(
         "docker",
-        ["start", containerName],
-        { timeout_ms: this.#config.phase_timeout_ms }
+        ["start", containerName]
       );
       if (start.exit_code !== 0 || start.timed_out) {
         throw new Error("Could not start isolated Runner container");
@@ -290,20 +320,18 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
       // Docker CLI on Windows handles host drive-letter paths natively. No
       // archive extraction command ever runs on the host computer.
       const containerArchive = "/workspace/.runner-source.tar.gz";
-      const copy = await this.#runCommand(
+      const copy = await executeCommand(
         "docker",
-        ["cp", archivePath, `${containerName}:${containerArchive}`],
-        { timeout_ms: this.#config.phase_timeout_ms }
+        ["cp", archivePath, `${containerName}:${containerArchive}`]
       );
       if (copy.exit_code !== 0 || copy.timed_out) {
         throw new Error("Could not copy exact repository archive into Runner container");
       }
 
-      const extract = await this.#runCommand(
+      const extract = await executeCommand(
         "docker",
         ["exec", containerName, "tar", "-xzf", containerArchive,
-          "-C", "/workspace", "--strip-components=1", "--no-same-owner"],
-        { timeout_ms: this.#config.phase_timeout_ms }
+          "-C", "/workspace", "--strip-components=1", "--no-same-owner"]
       );
       if (extract.exit_code !== 0 || extract.timed_out) {
         // Do not echo untrusted stderr (archive member names and file data
@@ -312,10 +340,9 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           ? "Could not materialize exact repository archive: container extraction timeout"
           : "Could not materialize exact repository archive: container tar exit " + extract.exit_code);
       }
-      const removeArchive = await this.#runCommand(
+      const removeArchive = await executeCommand(
         "docker",
-        ["exec", containerName, "rm", "-f", containerArchive],
-        { timeout_ms: this.#config.phase_timeout_ms }
+        ["exec", containerName, "rm", "-f", containerArchive]
       );
       if (removeArchive.exit_code !== 0 || removeArchive.timed_out) {
         throw new Error("Could not remove Runner archive from execution container");
@@ -327,11 +354,10 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           continue;
         }
 
-        const result = await this.#runCommand(
+        const result = await executeCommand(
           "docker",
-          ["exec", containerName, "bash", "-lc", fixed.command],
-          { timeout_ms: this.#config.phase_timeout_ms }
-        );
+          ["exec", containerName, "bash", "-lc", fixed.command]
+      );
 
         logs.push(
           `=== ${fixed.phase} ===\n${result.stdout}\n${result.stderr}\n`
@@ -362,11 +388,10 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         status: "skipped"
       };
       if (this.#config.acceptance_enabled && !failed) {
-        const result = await this.#runCommand(
+        const result = await executeCommand(
           "docker",
-          ["exec", containerName, "bash", "-lc", RESEARCHER_ACCEPTANCE_COMMAND],
-          { timeout_ms: this.#config.phase_timeout_ms }
-        );
+          ["exec", containerName, "bash", "-lc", RESEARCHER_ACCEPTANCE_COMMAND]
+      );
 
         logs.push(
           `=== researcher_acceptance ===\n${result.stdout}\n${result.stderr}\n`
@@ -399,6 +424,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         { mode: 0o600 }
       );
 
+      signal.throwIfAborted();
       return {
         request_id: request.request_id,
         repository: request.repository,
@@ -421,7 +447,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           const removal = await this.#runCommand(
             "docker",
             ["rm", "-f", containerName],
-            { timeout_ms: this.#config.phase_timeout_ms }
+            { timeout_ms: Math.min(this.#config.phase_timeout_ms, 30_000) }
           );
           // The name is unique to this request. A genuine "not found" after
           // an ambiguous create is also a confirmed clean outcome.

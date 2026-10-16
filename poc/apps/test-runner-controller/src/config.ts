@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import type { RunnerContractConfig } from "./types.ts";
-import type { IsolatedRunnerConfig } from "./isolated-executor.ts";
+import { MAX_RUN_TOTAL_MS, type IsolatedRunnerConfig } from "./isolated-executor.ts";
 
 export interface RunnerServiceConfig {
   bind_host: string;
@@ -61,6 +61,10 @@ export function runnerConfigFromEnv(): RunnerServiceConfig {
       phase_timeout_ms: positiveInteger(
         process.env.TEST_RUNNER_PHASE_TIMEOUT_MS ?? "600000",
         "Runner phase timeout"
+      ),
+      total_timeout_ms: positiveInteger(
+        process.env.TEST_RUNNER_TOTAL_TIMEOUT_MS ?? String(MAX_RUN_TOTAL_MS),
+        "Runner total timeout"
       ),
       log_dir:
         process.env.TEST_RUNNER_LOG_DIR ?? "/tmp/delegation-runner-logs",
