@@ -204,7 +204,7 @@ export function createAdkSpecializedAgent(
         execute: async (args) => {
           const started=performance.now();
           const argumentsRecord=args as Record<string,unknown>;
-          let outcome:AdkControlledToolOutcome["payload"];
+          let outcome:AdkControlledToolOutcome["payload"] | undefined;
           try {
             const response=await callTimedMcpRunTests({
               endpoint:config.mcpReadFile!.endpoint,
