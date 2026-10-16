@@ -124,7 +124,6 @@ test("child authority is issued immediately before the protected Backend A2A tas
         "apps/backend/src/users/user.service.ts"
       ]
     },
-    expected_revision: revision
   });
 
   assert.deepEqual(events, ["issue", "send"]);
@@ -198,7 +197,6 @@ test("role runner accepts a newer Artifact revision produced by the delegated ta
       branch: "feature/account-suspension",
       relevant_paths: []
     },
-    expected_revision: revision
   });
 
   assert.equal(result.artifact.revision, "c".repeat(40));
@@ -251,8 +249,7 @@ test("role runner rejects a non-completed A2A Task before accepting its Artifact
           branch: "feature/account-suspension",
           relevant_paths: []
         },
-        expected_revision: revision
-      }),
+          }),
     /is not completed/u
   );
 });

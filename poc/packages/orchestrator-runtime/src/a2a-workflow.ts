@@ -40,7 +40,6 @@ export interface DelegatedA2ARoleTaskInput {
   credential_status: ChildIssuanceInput["credential_status"];
   agent_base_url: string;
   subtask: DeterministicSubtask;
-  expected_revision: string;
 }
 
 export interface DelegatedA2ARoleTaskResult {
@@ -52,20 +51,9 @@ export interface DelegatedA2ARoleTaskResult {
   artifact: ValidatedWorkflowArtifact;
 }
 
-const SHA_PATTERN = /^[0-9a-f]{40}$/u;
-
 function nonEmpty(value: string, label: string): string {
   if (value.trim().length === 0) {
     throw new Error(`${label} cannot be empty`);
-  }
-  return value;
-}
-
-function expectedRevision(value: string): string {
-  if (!SHA_PATTERN.test(value)) {
-    throw new Error(
-      "Expected branch revision must be a lowercase 40-character Git SHA"
-    );
   }
   return value;
 }
@@ -112,7 +100,6 @@ export class DelegatedA2ARoleRunner {
     nonEmpty(input.parent_credential_id, "Parent credential id");
     nonEmpty(input.credential_id, "Child credential id");
     nonEmpty(input.agent_base_url, "Agent base URL");
-    expectedRevision(input.expected_revision);
 
     const issued = await this.#authorityIssuer.issueSpecializedChild({
       parent_credential_id: input.parent_credential_id,
