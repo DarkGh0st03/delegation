@@ -267,8 +267,9 @@ mod w3c_envelope_tests {
         Ok(VerifiableCredential::new_with_status(
             vec![String::from("https://www.w3.org/ns/credentials/v2")],
             String::from("urn:uuid:00000000-0000-4000-8000-000000000001"),
-            status,
+            String::from("did:example:orchestrator"),
             String::from("2026-10-18T00:00:00Z"),
+            status,
             credential,
         ))
     }
@@ -303,7 +304,7 @@ mod w3c_envelope_tests {
                    "example-permission-witness");
         let parsed: VerifiablePresentation<DelegationCredential> =
             serde_json::from_value(value).map_err(|err| err.to_string())?;
-        assert_eq!(parsed.verifiable_credential()?.issuer(), "did:example:backend");
+        assert_eq!(parsed.verifiable_credential()?.issuer(), "did:example:orchestrator");
         Ok(())
     }
 
