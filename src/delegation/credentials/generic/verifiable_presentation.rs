@@ -241,7 +241,7 @@ mod w3c_envelope_tests {
     use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
     use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
     use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     fn sample_credential() -> Result<VerifiableCredential<DelegationCredential>, String> {
         let permission = Permission::new(
@@ -292,26 +292,34 @@ mod w3c_envelope_tests {
         let value = serde_json::to_value(&presentation).map_err(|err| err.to_string())?;
         assert_eq!(value["type"], json!(["VerifiablePresentation"]));
         assert_eq!(value["holder"], "did:example:backend");
-        assert_eq!(value["verifiableCredential"][0]["type"],
-                   json!(["VerifiableCredential", "DelegationCredential"]));
-        assert_eq!(value["verifiableCredential"][0]["credentialStatus"]["statusPurpose"],
-                   "revocation");
+        assert_eq!(
+            value["verifiableCredential"][0]["type"],
+            json!(["VerifiableCredential", "DelegationCredential"])
+        );
+        assert_eq!(
+            value["verifiableCredential"][0]["credentialStatus"]["statusPurpose"],
+            "revocation"
+        );
         assert!(value.get("credentialSubject").is_none());
         assert!(value.get("issuer").is_none());
         assert!(value.get("credentialStatus").is_none());
         assert!(value["verifiableCredential"][0]["credentialSubject"]["per"].is_array());
-        assert_eq!(value["verifiableCredential"][0]["credentialSubject"]["pw"][0],
-                   "example-permission-witness");
+        assert_eq!(
+            value["verifiableCredential"][0]["credentialSubject"]["pw"][0],
+            "example-permission-witness"
+        );
         let parsed: VerifiablePresentation<DelegationCredential> =
             serde_json::from_value(value).map_err(|err| err.to_string())?;
-        assert_eq!(parsed.verifiable_credential()?.issuer(), "did:example:orchestrator");
+        assert_eq!(
+            parsed.verifiable_credential()?.issuer(),
+            "did:example:orchestrator"
+        );
         Ok(())
     }
 
     #[test]
     fn malformed_or_ambiguous_presentations_fail_closed() -> Result<(), String> {
-        let base = serde_json::to_value(derived_presentation()?)
-            .map_err(|err| err.to_string())?;
+        let base = serde_json::to_value(derived_presentation()?).map_err(|err| err.to_string())?;
         let mut variants: Vec<Value> = Vec::new();
 
         let mut missing_vp_type = base.clone();
@@ -346,9 +354,8 @@ mod w3c_envelope_tests {
         variants.push(flattened_legacy);
 
         for (index, value) in variants.into_iter().enumerate() {
-            let decoded = serde_json::from_value::<VerifiablePresentation<DelegationCredential>>(
-                value,
-            );
+            let decoded =
+                serde_json::from_value::<VerifiablePresentation<DelegationCredential>>(value);
             match decoded {
                 Ok(vp) => assert!(
                     vp.verifiable_credential().is_err(),
