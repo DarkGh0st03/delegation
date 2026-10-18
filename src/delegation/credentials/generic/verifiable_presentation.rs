@@ -1,6 +1,5 @@
 use crate::delegation::credentials::generic::credential_trait::Credential;
 use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
-use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use josekit::jwk::Jwk;
 use josekit::jws::{EdDSA, JwsHeader};
 use josekit::jwt;
@@ -10,149 +9,99 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Display;
 
+/// W3C VC Data Model 2.0 presentation envelope for one or more VCs.
+/// The thesis authorization profile intentionally presents exactly ONE derived VC;
+/// issuance/verification reject ambiguous multi-credential submissions.
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VerifiablePresentation<C: Credential> {
     #[serde(rename = "@context")]
     context: Vec<String>,
     #[serde(rename = "type")]
-    credential_type: Vec<String>,
-    #[serde(rename = "id")]
-    id: String,
-    #[serde(rename = "issuer")]
-    issuer: String,
+    presentation_type: Vec<String>,
     #[serde(rename = "holder")]
     holder: String,
+    // Private thesis request-binding profile, not W3C core properties.
     #[serde(rename = "audience")]
     audience: String,
     #[serde(rename = "challenge")]
     challenge: String,
-    #[serde(rename = "validFrom")]
-    valid_from: String,
-    #[serde(rename = "credentialStatus", skip_serializing_if = "Option::is_none")]
-    credential_status: Option<BitstringStatusListEntry>,
-    #[serde(rename = "credentialSubject")]
-    credential: C,
+    #[serde(rename = "verifiableCredential")]
+    verifiable_credentials: Vec<VerifiableCredential<C>>,
 }
 
 impl<C: Credential> VerifiablePresentation<C> {
-    /// Creates a new VerifiablePresentation instance for a given Credential (C) type.
-    ///
-    /// # Arguments
-    /// * `context` - a vector of string containing the context of the VC.
-    /// * `id` - a string containing the VC's identifier.
-    /// * `issuer` - a string containing the VC issuer.
-    /// * `valid_from` - a string containing the validity of the VC.
-    /// * `credential` - the Credential containing claims.
-    ///
-    /// # Returns
-    /// An instance of VerifiablePresentation.
+    /// Wraps a real VC (rather than placing its credentialSubject directly in a VP).
     pub fn new(
         context: Vec<String>,
-        credential_type: Vec<String>,
-        id: String,
-        issuer: String,
         holder: String,
         audience: String,
         challenge: String,
-        valid_from: String,
-        credential: C,
+        credential: VerifiableCredential<C>,
     ) -> Self {
-        VerifiablePresentation {
+        Self {
             context,
-            credential_type,
-            id,
-            issuer,
+            presentation_type: vec![String::from("VerifiablePresentation")],
             holder,
             audience,
             challenge,
-            valid_from,
-            credential_status: None,
-            credential,
+            verifiable_credentials: vec![credential],
         }
     }
 
-    /// Creates a VerifiablePresentation while preserving an optional credentialStatus entry.
-    pub fn new_with_status(
-        context: Vec<String>,
-        credential_type: Vec<String>,
-        id: String,
-        issuer: String,
-        holder: String,
-        audience: String,
-        challenge: String,
-        valid_from: String,
-        credential_status: Option<BitstringStatusListEntry>,
-        credential: C,
-    ) -> Self {
-        VerifiablePresentation {
-            context,
-            credential_type,
-            id,
-            issuer,
-            holder,
-            audience,
-            challenge,
-            valid_from,
-            credential_status,
-            credential,
-        }
-    }
-
-    /// Getter function that returns the context vector.
-    pub fn context(&self) -> &Vec<String> {
-        &self.context
-    }
-    /// Getter function that returns the type of the VC.
-    pub fn credential_type(&self) -> &Vec<String> {
-        &self.credential_type
-    }
-    /// Getter function that returns the credential's id.
-    pub fn id(&self) -> &String {
-        &self.id
-    }
-    /// Getter function that returns the variable containing the issuer of the VC.
-    pub fn issuer(&self) -> &String {
-        &self.issuer
-    }
-    /// Getter function that returns the VP holder.
     pub fn holder(&self) -> &String {
         &self.holder
     }
-    /// Getter function that returns the request audience bound to this VP.
+
     pub fn audience(&self) -> &String {
         &self.audience
     }
-    /// Getter function that returns the request challenge bound to this VP.
+
     pub fn challenge(&self) -> &String {
         &self.challenge
     }
-    /// Getter function that returns the valid_from variable.
-    pub fn valid_from(&self) -> &String {
-        &self.valid_from
-    }
-    /// Getter function that returns the optional credential status entry.
-    pub fn credential_status(&self) -> Option<&BitstringStatusListEntry> {
-        self.credential_status.as_ref()
-    }
-    /// Getter function that returns the nested credential.
-    pub fn credential(&self) -> &C {
-        &self.credential
-    }
-    /// Getter function that returns a mutable reference of the nested credential (for Selective Disclosure)
-    pub fn mut_credential(&mut self) -> &mut C {
-        &mut self.credential
+
+    /// Fail closed on a malformed or ambiguous W3C presentation envelope.
+    /// The current authorization profile uses exactly one Delegation Credential.
+    pub fn verifiable_credential(&self) -> Result<&VerifiableCredential<C>, String> {
+        const BASE_CONTEXT: &str = "https://www.w3.org/ns/credentials/v2";
+        if self.context.first().map(String::as_str) != Some(BASE_CONTEXT)
+            || !self
+                .presentation_type
+                .iter()
+                .any(|kind| kind == "VerifiablePresentation")
+        {
+            return Err(String::from(
+                "Invalid W3C Verifiable Presentation context/type",
+            ));
+        }
+        if self.verifiable_credentials.len() != 1 {
+            return Err(String::from(
+                "Expected exactly one presented Verifiable Credential",
+            ));
+        }
+        let vc = &self.verifiable_credentials[0];
+        if vc.context().first().map(String::as_str) != Some(BASE_CONTEXT)
+            || !vc
+                .credential_type()
+                .iter()
+                .any(|kind| kind == "VerifiableCredential")
+            || !vc
+                .credential_type()
+                .iter()
+                .any(|kind| kind == vc.credential().credential_type())
+        {
+            return Err(String::from(
+                "Invalid W3C Verifiable Credential context/type",
+            ));
+        }
+        Ok(vc)
     }
 
-    /// Generates a VerifiablePresentation<C> from a VerifiableCredential<C>, while also applying Selective Disclosure.
-    ///
-    /// # Arguments
-    /// * `vc` - the instance of VerifiableCredential that will be used to create the VerifiablePresentation.
-    /// * `claims_to_keep` - claims to be kept according to the concrete Credential claim type.
-    ///
-    /// # Returns
-    /// A result containing either an instance of VerifiablePresentation or an error as a string in case of failure.
+    /// Derives a selectively disclosed Delegation Credential within a W3C VC
+    /// and wraps that VC in the presentation, preserving issuer/status/id metadata.
     pub fn from_verifiable_credential(
-        vc: VerifiableCredential<C>,
+        mut vc: VerifiableCredential<C>,
         claims_to_keep: Vec<C::Claim>,
         holder: String,
         audience: String,
@@ -174,28 +123,14 @@ impl<C: Credential> VerifiablePresentation<C> {
             ));
         }
 
-        let mut vc = VerifiablePresentation::new_with_status(
-            vc.context().clone(),
-            vc.credential_type().clone(),
-            vc.id().clone(),
-            vc.issuer().clone(),
-            holder,
-            audience,
-            challenge,
-            vc.valid_from().clone(),
-            vc.credential_status().cloned(),
-            vc.credential().clone(),
-        );
-
-        // Only keep the claims we want to disclose, remove the rest
-        let _removed_indices = vc.credential.retain_only(claims_to_keep)?;
-
-        // TODO: check for no removal using the result?
-
-        match vc.credential.is_empty() {
-            true => Err(String::from("VerifiablePresentation is empty")),
-            false => Ok(vc),
+        let _removed_indices = vc.credential_mut().retain_only(claims_to_keep)?;
+        if vc.credential().is_empty() {
+            return Err(String::from("VerifiablePresentation is empty"));
         }
+
+        let presentation = Self::new(vc.context().clone(), holder, audience, challenge, vc);
+        presentation.verifiable_credential()?;
+        Ok(presentation)
     }
 
     /// Generates a VerifiablePresentation<C> from a JWT (useful for verifiers).
@@ -227,13 +162,10 @@ impl<C: Credential> VerifiablePresentation<C> {
 
         let vp_map = Value::Object(payload.claims_set().clone());
 
-        match serde_json::from_value(vp_map) {
-            Ok(vp) => Ok(vp),
-            Err(err) => Err(format!(
-                "Could not deserialize VerifiablePresentation [{}]",
-                err.to_string()
-            )),
-        }
+        let vp: VerifiablePresentation<CC> = serde_json::from_value(vp_map)
+            .map_err(|err| format!("Could not deserialize VerifiablePresentation [{err}]"))?;
+        vp.verifiable_credential()?;
+        Ok(vp)
     }
 
     /// Generates a JWT from a VerifiablePresentation<C> (useful for issuers).
@@ -262,6 +194,7 @@ impl<C: Credential> VerifiablePresentation<C> {
 
         let mut header: JwsHeader = JwsHeader::new();
         header.set_algorithm("EdDSA");
+        header.set_token_type("vp+jwt");
 
         let payload: JwtPayload = match JwtPayload::from_map(map) {
             Ok(payload) => payload,
@@ -297,5 +230,140 @@ impl<C: Credential> Display for VerifiablePresentation<C> {
                 Err(std::fmt::Error)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod w3c_envelope_tests {
+    use super::VerifiablePresentation;
+    use crate::delegation::authorization::operation::Operation;
+    use crate::delegation::authorization::permission::Permission;
+    use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+    use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
+    use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+    use serde_json::{Value, json};
+
+    fn sample_credential() -> Result<VerifiableCredential<DelegationCredential>, String> {
+        let permission = Permission::new(
+            String::from("https://gitea.local/repos/project-a"),
+            Operation::ReadFile,
+        )?;
+        let credential = DelegationCredential::new(
+            String::from("did:example:backend"),
+            String::from("example-accumulator"),
+            String::from("0"),
+            String::from("999999999999999999999999999999"),
+            1,
+            vec![permission],
+            String::from("example-metadata-witness"),
+            vec![String::from("example-permission-witness")],
+            vec![],
+        )?;
+        let status = BitstringStatusListEntry::revocation(
+            None,
+            String::from("0"),
+            String::from("https://status.example/lists/1"),
+        )?;
+        Ok(VerifiableCredential::new_with_status(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("urn:uuid:00000000-0000-4000-8000-000000000001"),
+            String::from("did:example:orchestrator"),
+            String::from("2026-10-18T00:00:00Z"),
+            status,
+            credential,
+        ))
+    }
+
+    fn derived_presentation() -> Result<VerifiablePresentation<DelegationCredential>, String> {
+        let vc = sample_credential()?;
+        let disclosed = vc.credential().permissions().clone();
+        VerifiablePresentation::from_verifiable_credential(
+            vc,
+            disclosed,
+            String::from("did:example:backend"),
+            String::from("urn:thesis:gateway"),
+            String::from("unique-request-nonce"),
+        )
+    }
+
+    #[test]
+    fn presentation_serializes_the_vc_envelope_and_preserves_status() -> Result<(), String> {
+        let presentation = derived_presentation()?;
+        let value = serde_json::to_value(&presentation).map_err(|err| err.to_string())?;
+        assert_eq!(value["type"], json!(["VerifiablePresentation"]));
+        assert_eq!(value["holder"], "did:example:backend");
+        assert_eq!(
+            value["verifiableCredential"][0]["type"],
+            json!(["VerifiableCredential", "DelegationCredential"])
+        );
+        assert_eq!(
+            value["verifiableCredential"][0]["credentialStatus"]["statusPurpose"],
+            "revocation"
+        );
+        assert!(value.get("credentialSubject").is_none());
+        assert!(value.get("issuer").is_none());
+        assert!(value.get("credentialStatus").is_none());
+        assert!(value["verifiableCredential"][0]["credentialSubject"]["per"].is_array());
+        assert_eq!(
+            value["verifiableCredential"][0]["credentialSubject"]["pw"][0],
+            "example-permission-witness"
+        );
+        let parsed: VerifiablePresentation<DelegationCredential> =
+            serde_json::from_value(value).map_err(|err| err.to_string())?;
+        assert_eq!(
+            parsed.verifiable_credential()?.issuer(),
+            "did:example:orchestrator"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_or_ambiguous_presentations_fail_closed() -> Result<(), String> {
+        let base = serde_json::to_value(derived_presentation()?).map_err(|err| err.to_string())?;
+        let mut variants: Vec<Value> = Vec::new();
+
+        let mut missing_vp_type = base.clone();
+        missing_vp_type["type"] = json!(["DelegationCredential"]);
+        variants.push(missing_vp_type);
+
+        let mut missing_vc_type = base.clone();
+        missing_vc_type["verifiableCredential"][0]["type"] = json!(["DelegationCredential"]);
+        variants.push(missing_vc_type);
+
+        let mut wrong_custom_type = base.clone();
+        wrong_custom_type["verifiableCredential"][0]["type"] =
+            json!(["VerifiableCredential", "UnrelatedCredential"]);
+        variants.push(wrong_custom_type);
+
+        let mut no_vc = base.clone();
+        no_vc["verifiableCredential"] = json!([]);
+        variants.push(no_vc);
+
+        let mut two_vcs = base.clone();
+        let credential = base["verifiableCredential"][0].clone();
+        two_vcs["verifiableCredential"] = json!([credential.clone(), credential]);
+        variants.push(two_vcs);
+
+        let mut flattened_legacy = base.clone();
+        flattened_legacy
+            .as_object_mut()
+            .ok_or_else(|| String::from("Expected VP object"))?
+            .remove("verifiableCredential");
+        flattened_legacy["credentialSubject"] =
+            base["verifiableCredential"][0]["credentialSubject"].clone();
+        variants.push(flattened_legacy);
+
+        for (index, value) in variants.into_iter().enumerate() {
+            let decoded =
+                serde_json::from_value::<VerifiablePresentation<DelegationCredential>>(value);
+            match decoded {
+                Ok(vp) => assert!(
+                    vp.verifiable_credential().is_err(),
+                    "Malformed presentation {index} was accepted"
+                ),
+                Err(_) => {}
+            }
+        }
+        Ok(())
     }
 }

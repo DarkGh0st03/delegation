@@ -40,7 +40,10 @@ impl<C: Credential> VerifiableCredential<C> {
         valid_from: String,
         credential: C,
     ) -> VerifiableCredential<C> {
-        let credential_type = vec![credential.credential_type().to_string()];
+        let credential_type = vec![
+            String::from("VerifiableCredential"),
+            credential.credential_type().to_string(),
+        ];
         VerifiableCredential {
             context,
             credential_type,
@@ -61,7 +64,10 @@ impl<C: Credential> VerifiableCredential<C> {
         credential_status: BitstringStatusListEntry,
         credential: C,
     ) -> VerifiableCredential<C> {
-        let credential_type = vec![credential.credential_type().to_string()];
+        let credential_type = vec![
+            String::from("VerifiableCredential"),
+            credential.credential_type().to_string(),
+        ];
         VerifiableCredential {
             context,
             credential_type,
@@ -100,6 +106,11 @@ impl<C: Credential> VerifiableCredential<C> {
     /// Getter function that returns the nested credential.
     pub fn credential(&self) -> &C {
         &self.credential
+    }
+
+    /// Used to derive a selectively disclosed credential without changing its W3C envelope.
+    pub fn credential_mut(&mut self) -> &mut C {
+        &mut self.credential
     }
 }
 
