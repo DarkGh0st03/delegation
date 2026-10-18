@@ -86,6 +86,10 @@ impl<C: Credential> VerifiablePresentation<C> {
                 .credential_type()
                 .iter()
                 .any(|kind| kind == "VerifiableCredential")
+            || !vc
+                .credential_type()
+                .iter()
+                .any(|kind| kind == vc.credential().credential_type())
         {
             return Err(String::from(
                 "Invalid W3C Verifiable Credential context/type",
@@ -226,5 +230,132 @@ impl<C: Credential> Display for VerifiablePresentation<C> {
                 Err(std::fmt::Error)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod w3c_envelope_tests {
+    use super::VerifiablePresentation;
+    use crate::delegation::authorization::operation::Operation;
+    use crate::delegation::authorization::permission::Permission;
+    use crate::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+    use crate::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
+    use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+    use serde_json::{json, Value};
+
+    fn sample_credential() -> Result<VerifiableCredential<DelegationCredential>, String> {
+        let permission = Permission::new(
+            String::from("https://gitea.local/repos/project-a"),
+            Operation::ReadFile,
+        )?;
+        let credential = DelegationCredential::new(
+            String::from("did:example:backend"),
+            String::from("example-accumulator"),
+            String::from("0"),
+            String::from("999999999999999999999999999999"),
+            1,
+            vec![permission],
+            String::from("example-metadata-witness"),
+            vec![String::from("example-permission-witness")],
+            vec![],
+        )?;
+        let status = BitstringStatusListEntry::revocation(
+            None,
+            String::from("0"),
+            String::from("https://status.example/lists/1"),
+        )?;
+        Ok(VerifiableCredential::new_with_status(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("urn:uuid:00000000-0000-4000-8000-000000000001"),
+            status,
+            String::from("2026-10-18T00:00:00Z"),
+            credential,
+        ))
+    }
+
+    fn derived_presentation() -> Result<VerifiablePresentation<DelegationCredential>, String> {
+        let vc = sample_credential()?;
+        let disclosed = vc.credential().permissions().clone();
+        VerifiablePresentation::from_verifiable_credential(
+            vc,
+            disclosed,
+            String::from("did:example:backend"),
+            String::from("urn:thesis:gateway"),
+            String::from("unique-request-nonce"),
+        )
+    }
+
+    #[test]
+    fn presentation_serializes_the_vc_envelope_and_preserves_status() -> Result<(), String> {
+        let presentation = derived_presentation()?;
+        let value = serde_json::to_value(&presentation).map_err(|err| err.to_string())?;
+        assert_eq!(value["type"], json!(["VerifiablePresentation"]));
+        assert_eq!(value["holder"], "did:example:backend");
+        assert_eq!(value["verifiableCredential"][0]["type"],
+                   json!(["VerifiableCredential", "DelegationCredential"]));
+        assert_eq!(value["verifiableCredential"][0]["credentialStatus"]["statusPurpose"],
+                   "revocation");
+        assert!(value.get("credentialSubject").is_none());
+        assert!(value.get("issuer").is_none());
+        assert!(value.get("credentialStatus").is_none());
+        assert!(value["verifiableCredential"][0]["credentialSubject"]["per"].is_array());
+        assert_eq!(value["verifiableCredential"][0]["credentialSubject"]["pw"][0],
+                   "example-permission-witness");
+        let parsed: VerifiablePresentation<DelegationCredential> =
+            serde_json::from_value(value).map_err(|err| err.to_string())?;
+        assert_eq!(parsed.verifiable_credential()?.issuer(), "did:example:backend");
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_or_ambiguous_presentations_fail_closed() -> Result<(), String> {
+        let base = serde_json::to_value(derived_presentation()?)
+            .map_err(|err| err.to_string())?;
+        let mut variants: Vec<Value> = Vec::new();
+
+        let mut missing_vp_type = base.clone();
+        missing_vp_type["type"] = json!(["DelegationCredential"]);
+        variants.push(missing_vp_type);
+
+        let mut missing_vc_type = base.clone();
+        missing_vc_type["verifiableCredential"][0]["type"] = json!(["DelegationCredential"]);
+        variants.push(missing_vc_type);
+
+        let mut wrong_custom_type = base.clone();
+        wrong_custom_type["verifiableCredential"][0]["type"] =
+            json!(["VerifiableCredential", "UnrelatedCredential"]);
+        variants.push(wrong_custom_type);
+
+        let mut no_vc = base.clone();
+        no_vc["verifiableCredential"] = json!([]);
+        variants.push(no_vc);
+
+        let mut two_vcs = base.clone();
+        let credential = base["verifiableCredential"][0].clone();
+        two_vcs["verifiableCredential"] = json!([credential.clone(), credential]);
+        variants.push(two_vcs);
+
+        let mut flattened_legacy = base.clone();
+        flattened_legacy
+            .as_object_mut()
+            .ok_or_else(|| String::from("Expected VP object"))?
+            .remove("verifiableCredential");
+        flattened_legacy["credentialSubject"] =
+            base["verifiableCredential"][0]["credentialSubject"].clone();
+        variants.push(flattened_legacy);
+
+        for (index, value) in variants.into_iter().enumerate() {
+            let decoded = serde_json::from_value::<VerifiablePresentation<DelegationCredential>>(
+                value,
+            );
+            match decoded {
+                Ok(vp) => assert!(
+                    vp.verifiable_credential().is_err(),
+                    "Malformed presentation {index} was accepted"
+                ),
+                Err(_) => {}
+            }
+        }
+        Ok(())
     }
 }
