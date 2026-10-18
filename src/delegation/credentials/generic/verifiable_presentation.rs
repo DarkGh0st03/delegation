@@ -65,17 +65,31 @@ impl<C: Credential> VerifiablePresentation<C> {
     /// The current authorization profile uses exactly one Delegation Credential.
     pub fn verifiable_credential(&self) -> Result<&VerifiableCredential<C>, String> {
         const BASE_CONTEXT: &str = "https://www.w3.org/ns/credentials/v2";
-        if self.context.first().map(String::as_str) != Some(BASE_CONTEXT) ||
-            !self.presentation_type.iter().any(|kind| kind == "VerifiablePresentation") {
-            return Err(String::from("Invalid W3C Verifiable Presentation context/type"));
+        if self.context.first().map(String::as_str) != Some(BASE_CONTEXT)
+            || !self
+                .presentation_type
+                .iter()
+                .any(|kind| kind == "VerifiablePresentation")
+        {
+            return Err(String::from(
+                "Invalid W3C Verifiable Presentation context/type",
+            ));
         }
         if self.verifiable_credentials.len() != 1 {
-            return Err(String::from("Expected exactly one presented Verifiable Credential"));
+            return Err(String::from(
+                "Expected exactly one presented Verifiable Credential",
+            ));
         }
         let vc = &self.verifiable_credentials[0];
-        if vc.context().first().map(String::as_str) != Some(BASE_CONTEXT) ||
-            !vc.credential_type().iter().any(|kind| kind == "VerifiableCredential") {
-            return Err(String::from("Invalid W3C Verifiable Credential context/type"));
+        if vc.context().first().map(String::as_str) != Some(BASE_CONTEXT)
+            || !vc
+                .credential_type()
+                .iter()
+                .any(|kind| kind == "VerifiableCredential")
+        {
+            return Err(String::from(
+                "Invalid W3C Verifiable Credential context/type",
+            ));
         }
         Ok(vc)
     }
@@ -90,13 +104,19 @@ impl<C: Credential> VerifiablePresentation<C> {
         challenge: String,
     ) -> Result<Self, String> {
         if holder.trim().is_empty() {
-            return Err(String::from("VerifiablePresentation holder cannot be empty"));
+            return Err(String::from(
+                "VerifiablePresentation holder cannot be empty",
+            ));
         }
         if audience.trim().is_empty() {
-            return Err(String::from("VerifiablePresentation audience cannot be empty"));
+            return Err(String::from(
+                "VerifiablePresentation audience cannot be empty",
+            ));
         }
         if challenge.trim().is_empty() {
-            return Err(String::from("VerifiablePresentation challenge cannot be empty"));
+            return Err(String::from(
+                "VerifiablePresentation challenge cannot be empty",
+            ));
         }
 
         let _removed_indices = vc.credential_mut().retain_only(claims_to_keep)?;
@@ -104,9 +124,7 @@ impl<C: Credential> VerifiablePresentation<C> {
             return Err(String::from("VerifiablePresentation is empty"));
         }
 
-        let presentation = Self::new(
-            vc.context().clone(), holder, audience, challenge, vc,
-        );
+        let presentation = Self::new(vc.context().clone(), holder, audience, challenge, vc);
         presentation.verifiable_credential()?;
         Ok(presentation)
     }
