@@ -1,0 +1,37 @@
+name: Authorization Review UI - Mock
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/approval-ui-mock
+    paths:
+      - "poc/workflow-ui/**"
+      - ".github/workflows/workflow-ui-mock.yml"
+  pull_request:
+    paths:
+      - "poc/workflow-ui/**"
+      - ".github/workflows/workflow-ui-mock.yml"
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test mock UI
+        run: node --test poc/workflow-ui/tests/ui-contract.test.mjs
+      - name: Package offline frontend
+        run: |
+          mkdir -p /tmp/delegation-approval-ui
+          cp poc/workflow-ui/index.html poc/workflow-ui/styles.css poc/workflow-ui/app.js poc/workflow-ui/mock-plan.js /tmp/delegation-approval-ui/
+          cd /tmp && zip -q -r "$GITHUB_WORKSPACE/delegation-approval-ui-mock.zip" delegation-approval-ui
+      - name: Publish mock UI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: delegation-approval-ui-mock
+          path: delegation-approval-ui-mock.zip
+          retention-days: 14
