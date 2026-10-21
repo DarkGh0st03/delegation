@@ -212,5 +212,97 @@ test_decision_exposes_policy_version if {
 		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"},
 	)
 	result.allow == true
-	result.policy_version == "phase4a-v1"
+	result.policy_version == "phase6-ro-v1"
+}
+
+# Planning has read-only access to main only when the Orchestrator presents
+# the explicitly scoped Rust Operation and canonical Gitea resource.
+test_allow_orchestrator_repository_discovery if {
+	base := make_input("read_repository", repo_uri, {})
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	allow with input as planning
+}
+
+test_deny_backend_repository_discovery if {
+	not allow with input as make_input("read_repository", repo_uri, {})
+}
+
+test_deny_repository_discovery_on_wrong_resource if {
+	base := make_input("read_repository", feature_uri, {})
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	not allow with input as planning
+}
+
+test_allow_orchestrator_main_directory_root if {
+	base := make_input(
+		"list_directory",
+		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories",
+		{"branch": "main", "path": ""},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	allow with input as planning
+}
+
+test_allow_orchestrator_main_nested_directory if {
+	base := make_input(
+		"list_directory",
+		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories/apps/backend",
+		{"branch": "main", "path": "apps/backend"},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	allow with input as planning
+}
+
+test_deny_backend_main_directory if {
+	not allow with input as make_input(
+		"list_directory",
+		"gitea://gitea.local/thesis/iam-console-poc/branches/main/directories",
+		{"branch": "main", "path": ""},
+	)
+}
+
+test_allow_orchestrator_read_file_main if {
+	base := make_input(
+		"read_file",
+		main_file,
+		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	allow with input as planning
+}
+
+test_deny_backend_read_file_main if {
+	not allow with input as make_input(
+		"read_file",
+		main_file,
+		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
+	)
+}
+
+test_allow_feature_branch_directory if {
+	allow with input as make_input(
+		"list_directory",
+		sprintf("%s/directories/apps/backend", [feature_uri]),
+		{"branch": "feature/account-suspension", "path": "apps/backend"},
+	)
+}
+
+test_deny_directory_resource_on_unrelated_branch if {
+	base := make_input(
+		"list_directory",
+		sprintf("%s/directories", [feature_uri]),
+		{"branch": "main", "path": ""},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	not allow with input as planning
+}
+
+test_deny_orchestrator_write_on_main_even_with_valid_delegation if {
+	base := make_input(
+		"update_file",
+		main_file,
+		{"branch": "main", "path": "apps/backend/src/users/user.service.ts"},
+	)
+	planning := object.union(base, {"agent_role": "orchestrator"})
+	not allow with input as planning
 }
