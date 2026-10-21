@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   PLAN_SCHEMA_VERSION, validatePlan, planDigest, makeApproval,
-  assertApprovedExecution
+  assertApprovedExecution, assertApprovedPlanScope
 } from "../src/plan.mjs";
 
 const file = "gitea://gitea.local/thesis/iam-console-poc/branches/main/files/apps/backend/src/user.service.ts";
@@ -169,4 +169,28 @@ test("dependent task cannot execute until predecessor has completed", () => {
     /dependency not completed/
   );
   assert.equal(assertAction(p,a,authorized),true);
+});
+
+test("Engineer root issuance uses approved scope without pretending any tasks are complete",()=>{
+  const p=fixture();
+  const receipt=approval(p,["backend-p"]);
+  const selected=assertApprovedPlanScope(p,receipt,{
+    allowedOperations:operations,
+    expectedEngineerDid:"did:thesis:software-engineer"
+  });
+  assert.deepEqual(selected.map(x=>x.id),["backend-p"]);
+  // Runtime execution still requires the 'bootstrap' dependency to complete.
+  assert.throws(()=>assertApprovedExecution(p,receipt,authorized,{
+    allowedOperations:operations,completedTaskIds:[]
+  }),/task dependency not completed/);
+  for(const forged of [
+    {...receipt,approved_by:"did:thesis:attacker"},
+    {...receipt,approved_permission_ids:["missing-id"]},
+    {...receipt,plan_version:receipt.plan_version+1},
+    {...receipt,plan_digest:"0".repeat(64)},
+    {...receipt,approved_permission_ids:[]},
+    {...receipt,untrusted_permission:true}
+  ])assert.throws(()=>assertApprovedPlanScope(p,forged,{
+    allowedOperations:operations,expectedEngineerDid:"did:thesis:software-engineer"
+  }));
 });
