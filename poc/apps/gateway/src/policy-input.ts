@@ -55,6 +55,7 @@ export function buildPolicyInput(
     tool: record.request.tool,
     arguments: policyArguments(record),
     required_permission: record.required_permission,
+    ...(record.pinned_revision ? {pinned_revision:record.pinned_revision} : {}),
     repository: {
       authority: repository.authority,
       owner: repository.owner,
