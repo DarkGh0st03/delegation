@@ -1,0 +1,247 @@
+/**
+ * Separate-process approved-plan control over an owner-only Unix socket.
+ * Never mounted on public Gateway HTTP, Gemini, MCP or A2A.
+ * Signed Engineer approval and Rust/OPA provider enforcement remain mandatory.
+ */
+import {createServer,request as httpRequest,type Server} from "node:http";
+import {createHmac,createHash,randomBytes,timingSafeEqual} from "node:crypto";
+import {lstat,open,chmod,unlink} from "node:fs/promises";
+import {dirname,resolve} from "node:path";
+import {constants} from "node:fs";
+import type {AgentRole} from "./types.ts";
+import type {TrustedApprovedExecutionPlans} from "./approved-execution-plans.ts";
+
+const ROUTE="/v1/private-plan-control";
+const MAX_BODY=4096,MAX_NONCES=4096,MAX_AGE=30_000;
+const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+const SHA=/^[a-f0-9]{40}$/u;
+const MAC=/^[0-9a-f]{64}$/u;
+const NONCE=/^[A-Za-z0-9_-]{22}$/u;
+const ROLES=new Set(["orchestrator","backend","frontend","test"]);
+type Command=
+  |{action:"activate";session_id:string;base_revision:string}
+  |{action:"bind";session_id:string;plan_task_id:string;runtime_task_id:string;role:AgentRole}
+  |{action:"close";session_id:string};
+
+function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
+function exact(x:unknown,fields:string[]):boolean{
+  return x!==null&&typeof x==="object"&&!Array.isArray(x)&&
+    Object.keys(x).length===fields.length&&fields.every(k=>Object.hasOwn(x,k));
+}
+function validate(x:unknown):Command{
+  if(!x||typeof x!=="object"||Array.isArray(x))fail("invalid control body");
+  const o=x as Record<string,unknown>;
+  const sessionOk=typeof o.session_id==="string"&&ID.test(o.session_id);
+  if(!sessionOk)fail("invalid session ID");
+  if(o.action==="activate"&&exact(o,["action","session_id","base_revision"])&&
+     typeof o.base_revision==="string"&&SHA.test(o.base_revision))return o as Command;
+  if(o.action==="bind"&&exact(o,["action","session_id","plan_task_id","runtime_task_id","role"])&&
+     typeof o.plan_task_id==="string"&&ID.test(o.plan_task_id)&&
+     typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id)&&
+     typeof o.role==="string"&&ROLES.has(o.role))return o as Command;
+  if(o.action==="close"&&exact(o,["action","session_id"]))return o as Command;
+  return fail("unknown or malformed command");
+}
+function sign(secret:Buffer,timestamp:string,nonce:string,body:Buffer):string{
+  const digest=createHash("sha256").update(body).digest("hex");
+  return createHmac("sha256",secret)
+    .update(["delegation.plan.ipc.v1","POST",ROUTE,timestamp,nonce,digest].join("\n"))
+    .digest("hex");
+}
+function socketPath(path:string):string{
+  if(typeof path!=="string"||!path.startsWith("/")||path.length>95||
+     path.includes("\u0000"))fail("expected short absolute Unix socket path");
+  return resolve(path);
+}
+async function ownerDirectory(dir:string):Promise<void>{
+  const meta=await lstat(dir);
+  if(!meta.isDirectory()||meta.isSymbolicLink()||(meta.mode&0o077)!==0){
+    fail("socket and secret must have owner-only parent directories");
+  }
+}
+export async function loadTrustedPlanIpcSecret(file:string):Promise<Buffer>{
+  const path=resolve(file);
+  await ownerDirectory(dirname(path));
+  const fd=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+  let content:string;
+  try{
+    const meta=await fd.stat();
+    if(!meta.isFile()||(meta.mode&0o077)!==0||meta.size<64||meta.size>65){
+      fail("invalid owner-only IPC secret file");
+    }
+    content=await fd.readFile({encoding:"utf8"});
+  }finally{await fd.close();}
+  if(!/^[a-f0-9]{64}\n?$/u.test(content)){
+    fail("secret must be 32 random bytes encoded in lowercase hex");
+  }
+  return Buffer.from(content.trim(),"hex");
+}
+function response(res:import("node:http").ServerResponse,status:number,value:object){
+  res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});
+  res.end(JSON.stringify(value));
+}
+
+/** Uses the same registry instance as GatewayRuntime's prepare/execute. */
+export async function createTrustedPlanIpcServer(config:{
+  socketPath:string;secretFile:string;plans:TrustedApprovedExecutionPlans;
+}):Promise<{start():Promise<void>;close():Promise<void>;server:Server}>{
+  const path=socketPath(config.socketPath);
+  await ownerDirectory(dirname(path));
+  const secret=await loadTrustedPlanIpcSecret(config.secretFile);
+  const seen=new Map<string,number>();
+  const server=createServer(async(req,res)=>{
+    try{
+      if(req.method!=="POST"||req.url!==ROUTE){
+        response(res,404,{error:"not_found"});return;
+      }
+      const timestamp=req.headers["x-trusted-timestamp"];
+      const nonce=req.headers["x-trusted-nonce"];
+      const mac=req.headers["x-trusted-mac"];
+      if(typeof timestamp!=="string"||!/^\d{13}$/u.test(timestamp)||
+         Math.abs(Date.now()-Number(timestamp))>MAX_AGE||
+         typeof nonce!=="string"||!NONCE.test(nonce)||
+         typeof mac!=="string"||!MAC.test(mac)){
+        response(res,403,{error:"untrusted_caller"});return;
+      }
+      const parts:Buffer[]=[];
+      let size=0;
+      for await(const chunk of req){
+        const buffer=Buffer.from(chunk);size+=buffer.length;
+        if(size>MAX_BODY){
+          response(res,413,{error:"body_too_large"});return;
+        }
+        parts.push(buffer);
+      }
+      const body=Buffer.concat(parts);
+      if(!body.length){response(res,400,{error:"missing_body"});return;}
+      const expected=sign(secret,timestamp,nonce,body);
+      if(!timingSafeEqual(Buffer.from(mac,"hex"),Buffer.from(expected,"hex"))){
+        response(res,403,{error:"untrusted_caller"});return;
+      }
+      const now=Date.now();
+      for(const [n,expiry] of seen)if(expiry<=now)seen.delete(n);
+      if(seen.has(nonce)||seen.size>=MAX_NONCES){
+        response(res,409,{error:"replayed_command"});return;
+      }
+      seen.set(nonce,now+MAX_AGE);
+      const command=validate(JSON.parse(body.toString("utf8")));
+      if(command.action==="activate"){
+        const plan_digest=await config.plans.activate(
+          command.session_id,command.base_revision);
+        response(res,200,{ok:true,plan_digest});
+      }else if(command.action==="bind"){
+        config.plans.bindTask(command.session_id,command.plan_task_id,
+          command.runtime_task_id,command.role);
+        response(res,200,{ok:true});
+      }else{
+        config.plans.closeSession(command.session_id);
+        response(res,200,{ok:true});
+      }
+    }catch{
+      // Do not disclose DID, signer, status, plan or private path details.
+      if(!res.headersSent)response(res,403,{error:"trusted_control_denied"});
+    }
+  });
+  let started=false;
+  return {
+    server,
+    async start(){
+      if(started)fail("server already started");
+      await ownerDirectory(dirname(path));
+      try{
+        await lstat(path);
+        fail("control socket already exists; never replace another listener");
+      }catch(e){
+        if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;
+      }
+      await new Promise<void>((resolve,reject)=>{
+        const onError=(e:Error)=>{server.off("listening",onListen);reject(e);};
+        const onListen=()=>{server.off("error",onError);resolve();};
+        server.once("error",onError);server.once("listening",onListen);
+        server.listen(path);
+      });
+      try{await chmod(path,0o600);}
+      catch(e){server.close();throw e;}
+      started=true;
+    },
+    async close(){
+      if(!started)return;
+      await new Promise<void>((resolve,reject)=>{
+        server.close(error=>error?reject(error):resolve());
+        server.closeAllConnections();
+      });
+      started=false;
+      // Node unlinks bound Unix sockets; do not delete a replacement path.
+      try{
+        const meta=await lstat(path);
+        if(meta.isSocket())await unlink(path);
+      }catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
+    }
+  };
+}
+
+/** Trusted Coordinator client, intentionally inaccessible to ADK FunctionTools. */
+export class TrustedPlanIpcClient{
+  readonly #socket:string;
+  readonly #secret:Buffer;
+  private constructor(path:string,secret:Buffer){
+    this.#socket=path;this.#secret=secret;
+  }
+  static async connect(options:{socketPath:string;secretFile:string}){
+    return new TrustedPlanIpcClient(
+      socketPath(options.socketPath),
+      await loadTrustedPlanIpcSecret(options.secretFile)
+    );
+  }
+  async #send(value:Command):Promise<any>{
+    const body=Buffer.from(JSON.stringify(validate(value)));
+    const timestamp=String(Date.now()),nonce=randomBytes(16).toString("base64url");
+    const mac=sign(this.#secret,timestamp,nonce,body);
+    return new Promise((resolve,reject)=>{
+      const req=httpRequest({
+        socketPath:this.#socket,method:"POST",path:ROUTE,timeout:5000,
+        headers:{"content-type":"application/json","content-length":body.length,
+          "x-trusted-timestamp":timestamp,"x-trusted-nonce":nonce,
+          "x-trusted-mac":mac}
+      },res=>{
+        let text="",size=0;
+        res.on("data",chunk=>{
+          size+=chunk.length;
+          if(size>4096){req.destroy(Error("IPC oversized response"));return;}
+          text+=chunk.toString("utf8");
+        });
+        res.once("end",()=>{
+          if(res.statusCode!==200){reject(Error("Gateway trusted control denied"));return;}
+          try{
+            const result=JSON.parse(text);
+            if(result?.ok!==true)throw Error("invalid response");
+            resolve(result);
+          }catch{reject(Error("Gateway trusted control returned invalid response"));}
+        });
+      });
+      req.once("timeout",()=>req.destroy(Error("IPC timed out")));
+      req.once("error",reject);
+      req.end(body);
+    });
+  }
+  async activate(sessionId:string,baseRevision:string):Promise<string>{
+    const result=await this.#send({
+      action:"activate",session_id:sessionId,base_revision:baseRevision
+    });
+    if(typeof result.plan_digest!=="string"||
+       !/^[a-f0-9]{64}$/u.test(result.plan_digest)){
+      fail("Gateway returned invalid approved digest");
+    }
+    return result.plan_digest;
+  }
+  async bindTask(sessionId:string,planTaskId:string,runtimeTaskId:string,role:AgentRole){
+    await this.#send({action:"bind",session_id:sessionId,plan_task_id:planTaskId,
+      runtime_task_id:runtimeTaskId,role});
+  }
+  async closeSession(sessionId:string){
+    await this.#send({action:"close",session_id:sessionId});
+  }
+  async confirmTaskCompletion(_runtimeTaskId:string):Promise<void>{
+    fail("A2A Task completion is not trusted or available across processes yet");
+  }
+}
