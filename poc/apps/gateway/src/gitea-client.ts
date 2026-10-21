@@ -38,6 +38,24 @@ export interface GiteaFileSnapshot {
   encoding: "utf-8";
 }
 
+export interface GiteaRepositorySnapshot extends GiteaRepositoryMetadata {
+  revision: string;
+}
+
+export interface GiteaDirectoryEntry {
+  name: string;
+  path: string;
+  type: "file" | "dir";
+  size?: number;
+}
+
+export interface GiteaDirectorySnapshot {
+  branch: string;
+  path: string;
+  revision: string;
+  entries: GiteaDirectoryEntry[];
+}
+
 export interface GiteaCreatedBranch {
   name: string;
   base_branch: string;
@@ -193,6 +211,61 @@ export class GiteaClient {
       name: returnedName,
       commit_sha: requiredString(commit.id, "branch.commit.id")
     };
+  }
+
+  async readRepository(): Promise<GiteaRepositorySnapshot> {
+    const metadata = await this.getRepositoryMetadata();
+    const pinned = await this.getBranchMetadata(metadata.default_branch);
+    return {...metadata, revision: pinned.commit_sha};
+  }
+
+  async listDirectory(branch: string, path: string): Promise<GiteaDirectorySnapshot> {
+    // Only the configured Gitea repository is accessed. Pin the contents API
+    // call to the exact branch commit, never a mutable branch name.
+    const pinned = await this.getBranchMetadata(branch);
+    const suffix = path === ""
+      ? "/contents"
+      : `/contents/${encodePath(path)}`;
+    const raw = await this.#json(
+      this.#repoApi(suffix) + `?ref=${encodeURIComponent(pinned.commit_sha)}`
+    );
+    if (!Array.isArray(raw) || raw.length > 200) {
+      throw new ProviderUnavailableError(
+        "Gitea directory listing is malformed or exceeds the 200-entry limit"
+      );
+    }
+    const entries: GiteaDirectoryEntry[] = [];
+    const seen = new Set<string>();
+    for (const element of raw) {
+      const item = object(element, "Gitea directory entry");
+      const name = requiredString(item.name, "directory_entry.name");
+      const returnedPath = requiredString(item.path, "directory_entry.path");
+      const expectedPath = path === "" ? name : `${path}/${name}`;
+      if (name === "." || name === ".." ||
+          /[\\/\x00-\x1f\x7f]/u.test(name) ||
+          returnedPath !== expectedPath || seen.has(name)) {
+        throw new ProviderUnavailableError(
+          "Gitea returned an unexpected directory entry or path"
+        );
+      }
+      seen.add(name);
+      if (item.type !== "dir" && item.type !== "file") {
+        // Symlinks/submodules may need additional explicit controls; do not
+        // dereference or expose them as ordinary files or directories.
+        throw new ProviderUnavailableError("Gitea returned an unsupported entry type");
+      }
+      const entry: GiteaDirectoryEntry = {
+        name,
+        path: returnedPath,
+        type: item.type
+      };
+      if (item.type === "file") {
+        entry.size = requiredSafeInteger(item.size, "directory_entry.size");
+      }
+      entries.push(entry);
+    }
+    entries.sort((a,b)=>a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+    return {branch, path, revision:pinned.commit_sha, entries};
   }
 
   async createBranch(baseBranch: string, branch: string): Promise<GiteaCreatedBranch> {
