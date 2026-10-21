@@ -73,7 +73,9 @@ impl<E: Pairing> FilePublicArtifactStore<E> {
         let metadata = fs::symlink_metadata(root)
             .map_err(|err| format!("Public artifact directory unavailable [{err}]"))?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() {
-            return Err(String::from("Public artifact root must be a real directory"));
+            return Err(String::from(
+                "Public artifact root must be a real directory",
+            ));
         }
         let root = fs::canonicalize(root)
             .map_err(|err| format!("Cannot resolve public artifact root [{err}]"))?;
@@ -82,7 +84,9 @@ impl<E: Pairing> FilePublicArtifactStore<E> {
             let metadata = fs::symlink_metadata(&child)
                 .map_err(|err| format!("Public artifact directory unavailable [{err}]"))?;
             if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                return Err(String::from("Public artifact subdirectories must be real directories"));
+                return Err(String::from(
+                    "Public artifact subdirectories must be real directories",
+                ));
             }
         }
         Ok(Self {
@@ -299,7 +303,10 @@ mod tests {
     fn readonly_open_requires_existing_real_directories() -> Result<(), String> {
         let root = dir()?;
         let before = FilePublicArtifactStore::<Bn254>::open_read_only(&root);
-        assert!(before.is_err(), "missing subdirectories must not be created");
+        assert!(
+            before.is_err(),
+            "missing subdirectories must not be created"
+        );
         let writer = FilePublicArtifactStore::<Bn254>::new(&root)?;
         let reader = FilePublicArtifactStore::<Bn254>::open_read_only(&root)?;
         assert!(reader.get_accumulator_data_at_version("absent", 1).is_err());
