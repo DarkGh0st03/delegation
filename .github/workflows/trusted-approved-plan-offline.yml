@@ -1,0 +1,47 @@
+name: Trusted Approved Plan Enforcement (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "poc/apps/gateway/src/approved-execution-plans.ts"
+      - "poc/apps/gateway/src/prepare.ts"
+      - "poc/apps/gateway/src/execute.ts"
+      - "poc/apps/gateway/src/runtime.ts"
+      - "poc/apps/gateway/src/types.ts"
+      - "poc/apps/gateway/src/policy-input.ts"
+      - "poc/apps/gateway/test/approved-execution-plans.test.ts"
+      - ".github/workflows/trusted-approved-plan-offline.yml"
+  pull_request:
+    paths:
+      - "poc/apps/gateway/**"
+      - "poc/packages/plan-contracts/**"
+      - ".github/workflows/trusted-approved-plan-offline.yml"
+permissions:
+  contents: read
+jobs:
+  approved-plan-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install locked offline packages
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Check Rust Operation catalog
+        run: node poc/scripts/sync-rust-operation-catalog.mjs --check
+      - name: Run trusted plan-before-provider security tests
+        run: node --experimental-strip-types --test poc/apps/gateway/test/approved-execution-plans.test.ts
+      - name: Run every Gateway authorization regression
+        run: npm --prefix poc run gateway:test
+      - name: Check existing Engineer planning approvals
+        run: |
+          node --test poc/packages/plan-contracts/test/*.test.mjs
+          npm --prefix poc run orchestrator-runtime:test
