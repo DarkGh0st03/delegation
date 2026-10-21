@@ -20,3 +20,6 @@
 /services/**/target/
 /poc/infra/.env
 /poc/infra/runtime/
+
+# Compiled, platform-specific Core Rust Node API addon
+/poc/apps/gateway/src/native/*.node
