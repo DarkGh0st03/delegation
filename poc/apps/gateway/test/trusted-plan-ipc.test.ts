@@ -189,8 +189,23 @@ test("separate-process Coordinator activates signed plan only after revoke, bind
   assert.equal(prepared.status,201);
   const data=await prepared.json();
   assert.match(data.request_id,/^[A-Za-z0-9]/u);
-  // Fake agent claims do not become trusted completion across processes.
-  await assert.rejects(coordinator.confirmTask("a2a-branch-1"),/not trusted/);
+  const completion={
+    source:"trusted_orchestrator" as const,runtime_task_id:"a2a-branch-1",
+    role:"orchestrator" as const,state:"completed" as const
+  };
+  // HMAC-authenticated Coordinator alone is insufficient without Gateway I/O.
+  await assert.rejects(coordinator.confirmTask("a2a-branch-1",completion),/denied/);
+  await assert.rejects(coordinator.confirmTask("a2a-branch-1"),/observation/);
+  const executed=await post(e.publicUrl,"/v1/authorization/execute",{
+    request_id:data.request_id,signed_vp:"fixture-vp"
+  });
+  assert.equal(executed.status,200);
+  // Untrusted completion role or wrong Task ID still cannot unlock a DAG node.
+  await assert.rejects(coordinator.confirmTask("a2a-branch-1",{
+    ...completion,runtime_task_id:"other"
+  }),/denied/);
+  await coordinator.confirmTask("a2a-branch-1",completion);
+  await assert.rejects(coordinator.confirmTask("a2a-branch-1",completion),/denied/);
   await coordinator.closeExecution();
   assert.equal(e.trace.at(-1),"revoke:urn:ipc:work-root");
   assert.equal((await post(e.publicUrl,"/v1/authorization/prepare",call)).status,403);

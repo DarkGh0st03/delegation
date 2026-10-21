@@ -30,7 +30,21 @@ const runtime=new GatewayRuntime({
       hierarchy_depth:1,expiration:new Date(Date.now()+60000).toISOString()
     };
   }},
-  policy:{async evaluate(){return {allow:true,policy_version:"test-opa"};}}
+  policy:{async evaluate(){return {allow:true,policy_version:"test-opa"};}},
+  // Deterministic test substitute for REAL Gitea I/O. Production requires
+  // the actual provider executor to corroborate work against the repository.
+  executor:{
+    provider:"gitea",
+    async execute(record){
+      if(record.request.tool!=="create_branch")throw Error("Fixture only creates branches");
+      return {
+        provider:"gitea",performed:true,tool:"create_branch",
+        branch:record.request.arguments.branch,base_branch:"main",
+        revision:cfg.repositoryBaseSha||"a".repeat(40),
+        commit_sha:cfg.repositoryBaseSha||"a".repeat(40)
+      };
+    }
+  }
 });
 const server=createGatewayHttpServer(runtime);
 await control.start();

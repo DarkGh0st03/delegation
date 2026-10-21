@@ -7,6 +7,9 @@ on:
     paths:
       - "poc/apps/gateway/src/trusted-plan-ipc.ts"
       - "poc/apps/gateway/src/trusted-plan-deployment.ts"
+      - "poc/apps/gateway/src/trusted-task-observation.ts"
+      - "poc/apps/gateway/src/approved-execution-plans.ts"
+      - "poc/apps/gateway/test/trusted-task-observation.test.ts"
       - "poc/apps/gateway/src/main.ts"
       - "poc/apps/gateway/test/trusted-plan-ipc.test.ts"
       - "poc/apps/gateway/test/fixtures/trusted-plan-ipc-child.ts"
