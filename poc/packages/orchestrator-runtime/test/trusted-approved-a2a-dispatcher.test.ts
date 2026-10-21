@@ -193,6 +193,12 @@ test("signed plan selects arbitrary canonical feature branch and rejects unrelat
 });
 test("branch is never inferred from unapproved, multiple or invalid repository locations",async()=>{
  for(const workBranch of ["main","feature/../exploit","feature/invalid.lock","feature/double//slash"]){
+   if(workBranch.includes("..")){
+     // Earlier schema validation also rejects traversal; either boundary
+     // must fail before the dispatcher can install an executable plan.
+     assert.throws(()=>harness({workBranch}),/Plan contract: resource/);
+     continue;
+   }
    const h=harness({workBranch});
    await assert.rejects(TrustedApprovedA2ADispatcher.load(h.config as any),
      /Invalid approved feature branch/);
