@@ -75,8 +75,11 @@ jobs:
       - name: Generate disposable public test identities
         run: |
           local_key() { printf '0x%064x' "$1"; }
-          echo "ANVIL_DEPLOYER_PRIVATE_KEY=$(local_key 1)" >> "$GITHUB_ENV"
-          echo "GOVERNANCE_PRIVATE_KEY=$(local_key 1)" >> "$GITHUB_ENV"
+          deployer_key="$(local_key 1)"
+          deployer_address="$(cast wallet address --private-key "$deployer_key")"
+          cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$deployer_address" 0x56BC75E2D63100000 >/dev/null
+          echo "ANVIL_DEPLOYER_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          echo "GOVERNANCE_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
           for entry in ENGINEER:2 ORCHESTRATOR:3 BACKEND:4 FRONTEND:5 TEST:6; do
             role="${entry%%:*}"
             n="${entry##*:}"
