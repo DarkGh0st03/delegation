@@ -337,7 +337,7 @@ export async function executeAuthorization(
   // for a later, separately attested A2A Task completion.
   if (!record.pinned_revision) {
     dependencies.approvedPlans?.recordProviderSuccess(
-      record,execution.performed,verified.presenter_id
+      record,execution,verified.presenter_id
     );
   }
   const providerMs = elapsed(providerStarted, durationNow);

@@ -15,6 +15,8 @@ import { assertApprovedExecution, assertApprovedPlanScope, planDigest } from
 import { RUST_OPERATIONS } from "./operation-catalog.ts";
 import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord } from "./types.ts";
 import { GatewayError } from "./errors.ts";
+import type {ExecutionResult} from "./types.ts";
+import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import type { GatewayRepositoryConfig } from "./types.ts";
 
 const CATALOG = new Set<string>(RUST_OPERATIONS);
@@ -40,14 +42,24 @@ export interface AuthenticatedPlanStore {
  * No model-supplied "completed":true, A2A history or arbitrary caller
  * text is accepted as proof of a finished task.
  */
+export interface TrustedProviderEffect {
+  readonly request_id:string;
+  readonly tool:string;
+  readonly resource:string;
+  readonly execution:ExecutionResult;
+}
+export interface TrustedCompletionEvidence {
+  readonly session_id:string;
+  readonly plan_digest:string;
+  readonly plan_task_id:string;
+  readonly runtime_task_id:string;
+  readonly role:AgentRole;
+  readonly successful_gateway_request_ids:readonly string[];
+  readonly provider_effects:readonly TrustedProviderEffect[];
+  readonly observation?:TrustedCompletionObservation;
+}
 export interface TrustedTaskCompletionAttestor {
-  confirmCompleted(evidence: Readonly<{
-    session_id: string;
-    plan_digest: string;
-    plan_task_id: string;
-    runtime_task_id: string;
-    successful_gateway_request_ids: readonly string[];
-  }>): Promise<boolean>;
+  confirmCompleted(evidence:Readonly<TrustedCompletionEvidence>):Promise<boolean>;
 }
 
 interface RuntimeTaskBinding {
@@ -55,7 +67,7 @@ interface RuntimeTaskBinding {
   readonly planTaskId: string;
   readonly agent: AgentRole;
   readonly sessionId: string;
-  readonly successfulRequests: Set<string>;
+  readonly successfulRequests: Map<string,TrustedProviderEffect>;
   completed: boolean;
   completing: boolean;
 }
@@ -175,7 +187,7 @@ export class TrustedApprovedExecutionPlans {
     }
     this.#bindings.set(runtimeTaskId,{
       runtimeTaskId,planTaskId,agent:role,sessionId,
-      successfulRequests:new Set(),completed:false,completing:false
+      successfulRequests:new Map(),completed:false,completing:false
     });
   }
 
@@ -219,11 +231,19 @@ export class TrustedApprovedExecutionPlans {
 
   /** Gateway-confirmed provider results are tracked internally, not via A2A. */
   recordProviderSuccess(
-    record:PreparedRequestRecord,performed:boolean,verifiedPresenterId:string
+    record:PreparedRequestRecord,result:ExecutionResult,verifiedPresenterId:string
   ):void {
-    if(!performed) return; // mock providers do not prove real effects
+    if(!result.performed||result.provider==="mock")return;
     this.assertAuthorizedForExecution(record,verifiedPresenterId);
-    this.#bindings.get(record.task_id)?.successfulRequests.add(record.request_id);
+    if(result.tool!==record.request.tool)return;
+    // Failed Runner jobs cannot be evidence of a passing Test Task.
+    if(result.provider==="runner"&&result.status!=="pass")return;
+    this.#bindings.get(record.task_id)?.successfulRequests.set(record.request_id,
+      Object.freeze({
+        request_id:record.request_id,tool:record.request.tool,
+        resource:record.required_permission.resource,
+        execution:structuredClone(result)
+      }));
   }
 
   /**
@@ -231,7 +251,7 @@ export class TrustedApprovedExecutionPlans {
    * Requires observed Gateway provider effects and external attestation.
    * No "mark complete" public HTTP route or model-facing MCP tool exists.
    */
-  async confirmTaskCompletion(runtimeTaskId:string):Promise<void> {
+  async confirmTaskCompletion(runtimeTaskId:string,observation?:TrustedCompletionObservation):Promise<void> {
     const {session,binding}=this.#activeBinding(runtimeTaskId);
     if(binding.completed || binding.completing || !binding.successfulRequests.size) {
       denied("Cannot complete a task without confirmed provider effects");
@@ -243,7 +263,11 @@ export class TrustedApprovedExecutionPlans {
       confirmed=await this.#attestor.confirmCompleted(Object.freeze({
         session_id:session.sessionId,plan_digest:session.digest,
         plan_task_id:binding.planTaskId,runtime_task_id:runtimeTaskId,
-        successful_gateway_request_ids:Object.freeze([...binding.successfulRequests])
+        role:binding.agent,
+        successful_gateway_request_ids:Object.freeze([...binding.successfulRequests.keys()]),
+        provider_effects:Object.freeze(
+          [...binding.successfulRequests.values()].map(v=>structuredClone(v))),
+        ...(observation?{observation:structuredClone(observation)}:{})
       }));
     } catch {
       denied("Trusted task completion attestor failed closed");
