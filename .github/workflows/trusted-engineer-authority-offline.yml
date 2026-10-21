@@ -1,0 +1,42 @@
+name: Trusted Engineer Two-Root Authority (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "poc/packages/orchestrator-runtime/src/trusted-engineer-authority.ts"
+      - "poc/packages/orchestrator-runtime/src/authority-client.ts"
+      - "poc/packages/orchestrator-runtime/src/permission-templates.ts"
+      - "poc/packages/orchestrator-runtime/src/index.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts"
+      - "poc/packages/plan-contracts/**"
+      - ".github/workflows/trusted-engineer-authority-offline.yml"
+  pull_request:
+    paths:
+      - "poc/packages/orchestrator-runtime/**"
+      - "poc/packages/plan-contracts/**"
+      - ".github/workflows/trusted-engineer-authority-offline.yml"
+permissions:
+  contents: read
+jobs:
+  engineer-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install pinned offline packages
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Confirm Rust Operation catalog conformance
+        run: node poc/scripts/sync-rust-operation-catalog.mjs --check
+      - name: Check versioned approved-plan contracts
+        run: node --test poc/packages/plan-contracts/test/*.test.mjs
+      - name: Trusted Engineer approval and two-root regression
+        run: npm --prefix poc run orchestrator-runtime:test
