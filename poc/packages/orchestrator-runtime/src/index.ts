@@ -1,4 +1,5 @@
 export * from "./authority-client.ts";
+export * from "./trusted-engineer-authority.ts";
 export * from "./permission-templates.ts";
 export * from "./artifact-validation.ts";
 export * from "./workflow.ts";
