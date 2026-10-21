@@ -19,12 +19,6 @@ import {TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
-import {DelegatedA2ARoleRunner} from
-  "../../../packages/orchestrator-runtime/src/a2a-workflow.ts";
-import {DeterministicA2AOrchestrator} from
-  "../../../packages/agent-runtime/src/orchestrator.ts";
-import {startSpecializedAgentServer} from
-  "../../../packages/agent-runtime/src/server.ts";
 import {GatewayControlledToolClient} from
   "../../../packages/agent-runtime/src/gateway-tool-client.ts";
 import {createServer as createTcpServer} from "node:net";
@@ -302,7 +296,22 @@ test("wrong HMAC, reused nonce, and stale timestamp are rejected",async t=>{
 });
 
 
-test("signed DAG dispatches a real A2A SDK Task to a separate-process Gateway via trusted prebinding",async t=>{
+// The Gateway's no-dependency policy test deliberately does not install the
+// A2A SDK. The dedicated private IPC CI installs the pinned A2A SDK and
+// executes this opt-in integration test in full; absence is an explicit skip.
+const a2aSdkAvailable=(()=>{
+  try{import.meta.resolve("@a2a-js/sdk");return true;}
+  catch{return false;}
+})();
+test("signed DAG dispatches a real A2A SDK Task to a separate-process Gateway via trusted prebinding",
+  {skip:a2aSdkAvailable?false:"A2A SDK absent; full test runs in trusted IPC CI"},
+  async t=>{
+  const {DelegatedA2ARoleRunner}=await import(
+    "../../../packages/orchestrator-runtime/src/a2a-workflow.ts");
+  const {DeterministicA2AOrchestrator}=await import(
+    "../../../packages/agent-runtime/src/orchestrator.ts");
+  const {startSpecializedAgentServer}=await import(
+    "../../../packages/agent-runtime/src/server.ts");
   const e=await setup(t);
   const coordinator=new TrustedExecutionCoordinator({
     authority:e.authority,approvedGatewayPlans:e.client,credentials:e.credentials,
