@@ -6,7 +6,8 @@
  * a signed approval receipt into the protected directory. No methods here
  * accept a model payload, mutate a receipt or confer consent.
  */
-import {readFile,stat} from "node:fs/promises";
+import {lstat,open} from "node:fs/promises";
+import {constants} from "node:fs";
 import {join,resolve} from "node:path";
 import {verifyEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
@@ -55,12 +56,29 @@ export class SignedEngineerApprovalFileStore implements TrustedApprovalStore {
     if(typeof sessionId!=="string"||!SESSION.test(sessionId)) {
       throw new Error("Invalid approved Plan session identifier");
     }
-    const path=join(this.#directory,sessionId+".json");
-    const metadata=await stat(path);
-    if(!metadata.isFile()||metadata.size===0||metadata.size>MAX_BYTES) {
-      throw new Error("Invalid size or type of signed approval receipt");
+    // The protected directory is provisioned by an operator; neither the
+    // LLM nor the HTTP caller can supply its path. Reject shared or symlinked
+    // directories, rather than treating filesystem presence as authentication.
+    const directoryMeta=await lstat(this.#directory);
+    if(!directoryMeta.isDirectory() || directoryMeta.isSymbolicLink() ||
+       (directoryMeta.mode & 0o077)!==0) {
+      throw new Error("Approval directory must be a real owner-only directory");
     }
-    const data=await readFile(path,"utf8");
+    const path=join(this.#directory,sessionId+".json");
+    // O_NOFOLLOW prevents a link swap between metadata checks and opening
+    // the receipt. Read through the SAME file descriptor we verified.
+    const handle=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+    let data:string;
+    try {
+      const metadata=await handle.stat();
+      if(!metadata.isFile() || metadata.size===0 || metadata.size>MAX_BYTES ||
+         (metadata.mode & 0o077)!==0) {
+        throw new Error("Signed approval receipt must be an owner-only regular file");
+      }
+      data=await handle.readFile({encoding:"utf8"});
+    } finally {
+      await handle.close();
+    }
     if(Buffer.byteLength(data,"utf8")>MAX_BYTES){
       throw new Error("Signed approval receipt exceeds bound");
     }
