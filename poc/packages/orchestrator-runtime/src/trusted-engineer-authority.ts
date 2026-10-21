@@ -17,9 +17,9 @@ import {validatePrepareAuthorizationRequest} from "../../../apps/gateway/src/val
 import {assertApprovedExecution,validatePlan,planDigest}
   from "../../../packages/plan-contracts/src/plan.mjs";
 import type {
-  CredentialStatusInput, DelegatedPermission, IssuedDelegationCredential,
+  CredentialStatusInput, IssuedDelegationCredential,
 } from "./authority-client.ts";
-import {SoftwareEngineerAuthorityBootstrap} from "./authority-client.ts";
+import type {DelegatedPermission} from "./permission-templates.ts";
 
 export interface TrustedPlanningSnapshot {
   session_id:string;
