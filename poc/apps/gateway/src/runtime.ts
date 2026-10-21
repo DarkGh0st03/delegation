@@ -1,4 +1,9 @@
 import { AdapterVerifierClient } from "./adapter-client.ts";
+import {
+  InMemoryCompositeStore,
+  prepareCompositeAuthorization,
+  verifyCompositeAuthorization
+} from "./composite-authorization.ts";
 import type { GatewayRuntimeConfig } from "./config.ts";
 import { executeAuthorization } from "./execute.ts";
 import { GiteaClient } from "./gitea-client.ts";
@@ -73,6 +78,7 @@ function defaultExecutor(config: GatewayRuntimeConfig): ExecutionPort {
 export class GatewayRuntime {
   readonly #config: GatewayRuntimeConfig;
   readonly #store: InMemoryRequestStore;
+  readonly #compositeStore: InMemoryCompositeStore;
   readonly #audit: AuditSink;
   readonly #verifier: VerifierPort;
   readonly #policy: PolicyPort;
@@ -81,6 +87,7 @@ export class GatewayRuntime {
   constructor(config: GatewayRuntimeConfig, dependencies: GatewayRuntimeDependencies = {}) {
     this.#config = config;
     this.#store = dependencies.store ?? new InMemoryRequestStore();
+    this.#compositeStore = new InMemoryCompositeStore();
     this.#audit = dependencies.audit ?? new JsonLineAuditSink();
     this.#verifier =
       dependencies.verifier ??
@@ -105,6 +112,28 @@ export class GatewayRuntime {
     return prepareAuthorization(raw, this.#config.prepare, {
       store: this.#store,
       audit: this.#audit
+    });
+  }
+
+  /** Dry-run only: it never calls Gitea, Docker or the execution port. */
+  prepareComposite(raw: unknown) {
+    return prepareCompositeAuthorization(raw, {
+      store:this.#compositeStore,
+      audit:this.#audit,
+      verifier:this.#verifier,
+      policy:this.#policy,
+      config:this.#config.prepare
+    });
+  }
+
+  /** Returns a check result, never an executable capability or provider result. */
+  async verifyComposite(raw: unknown) {
+    return verifyCompositeAuthorization(raw, {
+      store:this.#compositeStore,
+      audit:this.#audit,
+      verifier:this.#verifier,
+      policy:this.#policy,
+      config:this.#config.prepare
     });
   }
 
