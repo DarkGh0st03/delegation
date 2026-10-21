@@ -12,7 +12,13 @@ const workers=Object.fromEntries(roles.map(r=>[r,{baseUrl:required("MCP_"+r.toUp
 const host=process.env.MCP_BIND_HOST??"127.0.0.1";
 const port=Number(process.env.MCP_BIND_PORT??"8097");
 if (!Number.isInteger(port)||port<1||port>65535) throw new Error("Invalid MCP port");
-const server=createSharedMcpHttpServer({verificationKeys,router:new TaskRouter(workers)});
+const toolProfile=process.env.MCP_TOOL_PROFILE??"legacy";
+if(toolProfile!=="legacy"&&toolProfile!=="crypto"){
+  throw new Error("MCP_TOOL_PROFILE must be legacy or crypto");
+}
+const server=createSharedMcpHttpServer({
+  verificationKeys,router:new TaskRouter(workers),profile:toolProfile
+});
 server.listen(port,host,()=>{
   process.stdout.write(JSON.stringify({event:"mcp_shared_started",host,port})+"\n");
 });
