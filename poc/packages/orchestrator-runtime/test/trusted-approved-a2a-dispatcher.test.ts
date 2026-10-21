@@ -59,7 +59,7 @@ function harness(options:{
     phase:"execution",
     async bindDispatchedTask(taskId:string,id:string,role:string){
       log.push("bind:"+taskId+":"+role+":"+id);
-      if(options.denyBinding)throw Error("Gateway denied binding");
+      if(options.denyBinding && taskId==="backend-task")throw Error("Gateway denied binding");
     },
     async confirmTask(id:string,observation:any){
       log.push("confirm:"+id+":"+observation.role);
