@@ -202,7 +202,7 @@ export class SoftwareEngineerAuthorityBootstrap {
       throw new Error("Root credential id required for revocation");
     }
     const response=await (this.#config.fetchFn??fetch)(
-      `${this.#config.adapterBaseUrl.replace(/\\/+$/u,"")}/v1/credentials/status`,
+      `${this.#config.adapterBaseUrl.replace(/\/+$/u,"")}/v1/credentials/status`,
       {
         method:"POST",
         headers:{
