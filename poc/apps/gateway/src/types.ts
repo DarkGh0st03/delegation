@@ -377,6 +377,7 @@ export interface PolicyInput {
   tool: ToolName;
   arguments: Record<string, unknown>;
   required_permission: Permission;
+  pinned_revision?: string;
   repository: GatewayRepositoryConfig;
   verified_delegation: {
     presenter_id: string;
