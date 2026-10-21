@@ -53,7 +53,7 @@ class ScriptedAdkLlm extends BaseLlm {
 async function exercise(role: SpecializedAgentRole, tool: string, args: Record<string, unknown>,
   invoke: (name: string, args: Record<string, unknown>) => Promise<unknown>,
   generateContentConfig?: AdkGenerationConfig,
-  scopeModelPaths = false) {
+  scopeModelPaths = false, trustedBranch?:string) {
   const model = new ScriptedAdkLlm(tool, args);
   const calls: Array<{name:string; args:Record<string,unknown>}> = [];
   const gatewayClient = {
@@ -67,7 +67,8 @@ async function exercise(role: SpecializedAgentRole, tool: string, args: Record<s
   const built = createAdkSpecializedAgent({
     role, model, gatewayClient: gatewayClient as never,
     ...(generateContentConfig ? {generateContentConfig} : {}),
-    ...(scopeModelPaths ? {scopeModelPaths: true} : {})
+    ...(scopeModelPaths ? {scopeModelPaths: true} : {}),
+    ...(trustedBranch?{trustedBranch}:{})
   });
   const sessionService = new InMemorySessionService();
   const appName = "thesis_phase2_adk_" + role;
@@ -80,7 +81,7 @@ async function exercise(role: SpecializedAgentRole, tool: string, args: Record<s
     userId,sessionId,
     newMessage: {role:"user",parts:[{text:JSON.stringify({
       task_id:"phase2-task",role,subtask:{
-        instruction:"Inspect permitted file",branch:BRANCH,
+        instruction:"Inspect permitted file",branch:trustedBranch??BRANCH,
         relevant_paths:[PATHS[role]]
       }
     })}]}
@@ -344,4 +345,25 @@ test("MCP-enabled Test Agent exposes run_tests once as a controlled FunctionTool
   const bounded= built.agent.tools.filter(tool=>tool.name==="run_tests");
   assert.equal(bounded.length,1);
   assert.ok(bounded[0] instanceof FunctionTool);
+});
+
+test("Engineer-approved branch is exposed as an exact ADK tool argument, not as authority",async()=>{
+  const b="feature/engineer-approved-42";
+  const {built,calls,model}=await exercise("backend","read_file",{
+    branch:b,path:PATHS.backend
+  },async()=>({content:"approved branch fixture"}),undefined,false,b);
+  assert.deepEqual(calls,[{name:"read_file",args:{branch:b,path:PATHS.backend}}]);
+  assert.equal(model.requests.length,2);
+  assert.match(built.profile.system_prompt,/feature\/engineer-approved-42/);
+  assert.doesNotMatch(built.profile.system_prompt,/feature\/account-suspension/);
+  const denied=await exercise("backend","read_file",{
+    branch:"feature/account-suspension",path:PATHS.backend
+  },async()=>({content:"must not be read"}),undefined,false,b);
+  assert.deepEqual(denied.calls,[]);
+  assert.throws(()=>createAdkSpecializedAgent({
+    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedBranch:b,
+    mcpReadFile:{endpoint:"http://127.0.0.1:9999",bearerForRequest:()=>"unused"}
+  }),/not yet supported by shared MCP/);
 });
