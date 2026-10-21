@@ -13,6 +13,7 @@ import {randomBytes} from "node:crypto";
 import {assertApprovedPlanScope,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
+import {validatePrivateApprovedBranch} from "../../../packages/agent-runtime/src/approved-branch.ts";
 import type {AuthenticatedPlanStore} from "../../../apps/gateway/src/approved-execution-plans.ts";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
 import type {DelegatedA2ARoleTaskInput,DelegatedA2ARoleTaskResult} from "./a2a-workflow.ts";
@@ -20,7 +21,6 @@ import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.
 
 const SHA=/^[a-f0-9]{40}$/u;
 const ROLES=new Set(["backend","frontend","test"]);
-const LEGACY_BRANCH="feature/account-suspension" as const;
 const OPERATIONS=new Set<string>(RUST_OPERATIONS);
 
 interface PlanTask{
@@ -34,6 +34,7 @@ interface ApprovedSnapshot{
   };
   approvedRows:{task_id:string;agent_id:string}[];
   digest:string;
+  approvedBranch:string;
 }
 type RootInput=Pick<DelegatedA2ARoleTaskInput,
   "parent_credential_id"|"credential_id"|"valid_from"|
@@ -89,11 +90,35 @@ export class TrustedApprovedA2ADispatcher {
        digest!==config.expectedPlanDigest){
       throw Error("Trusted dispatcher plan does not match activated Gateway digest/SHA");
     }
-    const snapshot:ApprovedSnapshot=structuredClone({plan,approvedRows:rows,digest});
+    // Derive the only permitted working branch from SIGNED resources.
+    // Arbitrary untrusted LLM-supplied branch strings are never consulted.
+    const root="gitea://"+plan.repository.authority+"/"+
+      plan.repository.owner+"/"+plan.repository.repository;
+    const branches=new Set<string>();
+    for(const item of plan.requested_permissions){
+      if(typeof item.resource!=="string")throw Error("Malformed approved resource");
+      if(item.resource===root)continue;
+      const prefix=root+"/branches/";
+      if(!item.resource.startsWith(prefix))throw Error("Unrelated approved repository resource");
+      const encoded=item.resource.slice(prefix.length).split("/")[0];
+      let decoded:string;
+      try{decoded=decodeURIComponent(encoded);}
+      catch{throw Error("Malformed approved branch URI");}
+      if(encodeURIComponent(decoded)!==encoded){
+        throw Error("Approved branch resource is not canonically encoded");
+      }
+      branches.add(validatePrivateApprovedBranch(decoded));
+    }
+    if(branches.size!==1)throw Error("Exactly one approved feature branch is required");
+    const approvedBranch=[...branches][0]!;
+    const snapshot:ApprovedSnapshot=structuredClone({
+      plan,approvedRows:rows,digest,approvedBranch
+    });
     return new TrustedApprovedA2ADispatcher(config,snapshot);
   }
 
   get completedTaskIds():readonly string[]{return [...this.#completed];}
+  get approvedBranch():string{return this.#snapshot.approvedBranch;}
 
   /** No speculative dispatch or concurrency in this incremental PoC. */
   async dispatch(planTaskId:string):Promise<DelegatedA2ARoleTaskResult>{
@@ -119,16 +144,16 @@ export class TrustedApprovedA2ADispatcher {
     if(typeof url!=="string"||!/^https?:\/\//u.test(url)){
       throw Error("Trusted Agent Card endpoint missing");
     }
-    // Stage 1 binds the existing fixed branch. Dynamic working branches are
-    // a separate roadmap step, never silently cast to feature/account-suspension.
-    const prefix="gitea://"+this.#snapshot.plan.repository.authority+"/"+
+    const repoRoot="gitea://"+this.#snapshot.plan.repository.authority+"/"+
       this.#snapshot.plan.repository.owner+"/"+
-      this.#snapshot.plan.repository.repository+"/branches/"+
-      encodeURIComponent(LEGACY_BRANCH)+"/files/";
+      this.#snapshot.plan.repository.repository;
+    const branchRoot=repoRoot+"/branches/"+
+      encodeURIComponent(this.#snapshot.approvedBranch);
+    const prefix=branchRoot+"/files/";
     const paths:string[]=[];
     for(const resource of task.resources){
-      if(resource.includes("/files/")){
-        if(!resource.startsWith(prefix))throw Error("Unsupported branch/file in approved Task");
+      if(resource===repoRoot||resource===branchRoot)continue;
+      if(resource.startsWith(prefix)){
         const encoded=resource.slice(prefix.length);
         let path:string;
         try{path=encoded.split("/").map(decodeURIComponent).join("/");}
@@ -138,6 +163,8 @@ export class TrustedApprovedA2ADispatcher {
           throw Error("Malformed approved Task file path");
         }
         paths.push(path);
+      }else{
+        throw Error("Task resource is outside approved working branch");
       }
     }
     if(paths.length>32)throw Error("Approved Task has too many relevant paths");
@@ -155,7 +182,7 @@ export class TrustedApprovedA2ADispatcher {
         subtask:{
           subtask_id:task.id,
           instruction:task.description,
-          branch:LEGACY_BRANCH,
+          branch:this.#snapshot.approvedBranch,
           relevant_paths:[...new Set(paths)]
         }
       });

@@ -22,6 +22,7 @@ import {
 } from "./contracts.ts";
 import { buildDeterministicArtifactPayload } from "./artifact-builder.ts";
 import { InMemoryAgentTaskContextStore } from "./task-context.ts";
+import {LEGACY_A2A_BRANCH,validatePrivateApprovedBranch} from "./approved-branch.ts";
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -73,8 +74,15 @@ function subtask(message: Message): DeterministicSubtask {
     throw new Error("Protected A2A message requires an application/json data part");
   }
   const raw = object(dataPart.content.value, "subtask");
-  if (raw.branch !== "feature/account-suspension") {
-    throw new Error("Phase 7 subtask must target feature/account-suspension");
+  // Backward compatible legacy endpoint. A different branch is allowed
+  // ONLY with a private, preallocated Gateway Task binding. This does not
+  // authenticate the caller; subsequent Gateway Rust/VP/OPA checks do.
+  const privateId=trustedGatewayTaskId(message);
+  const branch=privateId
+    ? validatePrivateApprovedBranch(raw.branch)
+    : raw.branch;
+  if(!privateId && branch!==LEGACY_A2A_BRANCH) {
+    throw new Error("Legacy unbound A2A task must use feature/account-suspension");
   }
   if (
     !Array.isArray(raw.relevant_paths) ||
@@ -86,7 +94,7 @@ function subtask(message: Message): DeterministicSubtask {
   return {
     subtask_id: string(raw.subtask_id, "subtask.subtask_id"),
     instruction: string(raw.instruction, "subtask.instruction"),
-    branch: "feature/account-suspension",
+    branch:branch as string,
     relevant_paths: raw.relevant_paths as string[]
   };
 }

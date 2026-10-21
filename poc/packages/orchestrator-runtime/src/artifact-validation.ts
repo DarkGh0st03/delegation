@@ -16,6 +16,8 @@ const VALID_TEST_OUTCOMES = new Set(["not_run", "pass", "fail"]);
 
 export interface WorkflowArtifactValidationOptions {
   requireTestPass?: boolean;
+  /** The approved Task branch comes from trusted pre-dispatch input. */
+  expectedBranch?: string;
 }
 
 export interface ValidatedWorkflowArtifact extends AgentArtifactPayload {
@@ -73,10 +75,9 @@ export function validateWorkflowArtifact(
     );
   }
 
-  if (raw.branch !== ACCOUNT_SUSPENSION_ARTIFACT_BRANCH) {
-    throw new Error(
-      `Artifact branch must be ${ACCOUNT_SUSPENSION_ARTIFACT_BRANCH}`
-    );
+  const expectedBranch=options.expectedBranch??ACCOUNT_SUSPENSION_ARTIFACT_BRANCH;
+  if(raw.branch!==expectedBranch){
+    throw new Error(`Artifact branch must be ${expectedBranch}`);
   }
 
   const revision = commitSha(raw.revision, "Artifact revision");
@@ -177,7 +178,7 @@ export function validateWorkflowArtifact(
       "Artifact files_modified"
     ),
     files_created: stringArray(raw.files_created, "Artifact files_created"),
-    branch: ACCOUNT_SUSPENSION_ARTIFACT_BRANCH,
+    branch: expectedBranch,
     revision,
     commit_sha: commitShaValue,
     test_outcome: testOutcome as AgentArtifactPayload["test_outcome"],

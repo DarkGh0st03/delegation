@@ -13,7 +13,7 @@ export interface DelegationEvidence {
 export interface DeterministicSubtask {
   subtask_id: string;
   instruction: string;
-  branch: "feature/account-suspension";
+  branch: string;
   relevant_paths: string[];
 }
 
@@ -32,7 +32,7 @@ export interface AgentArtifactPayload {
   summary: string;
   files_modified: string[];
   files_created: string[];
-  branch: "feature/account-suspension";
+  branch: string;
   revision: string | null;
   commit_sha: string | null;
   test_outcome: "not_run" | "pass" | "fail";

@@ -146,7 +146,8 @@ export class DelegatedA2ARoleRunner {
       artifactPayload(result.task),
       input.role,
       {
-        requireTestPass: input.role === "test"
+        requireTestPass: input.role === "test",
+        expectedBranch:input.subtask.branch
       }
     );
 
