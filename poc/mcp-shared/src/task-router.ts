@@ -1,3 +1,4 @@
+import {parseCreatePresentationArgs,type CreatePresentationArgs} from "./crypto-catalog.ts";
 import type {AgentRole, TaskClaims} from "./task-token.ts";
 import {parseReadFileArgs,parseUpdateFileArgs,parseCreateFileArgs,parseRunTestsArgs,type ReadFileArgs,type UpdateFileArgs,type CreateFileArgs,type RunTestsArgs} from "./catalog.ts";
 export type WorkerEndpoints = Readonly<Record<AgentRole,{baseUrl:string}>>;
@@ -30,10 +31,19 @@ export class TaskRouter {
   async runTests(claims: Readonly<TaskClaims>, taskToken: string, raw:unknown):Promise<unknown>{
     return this.#invoke(claims,taskToken,"run_tests",parseRunTestsArgs(raw));
   }
+  async createPresentation(
+    claims:Readonly<TaskClaims>,taskToken:string,raw:unknown
+  ):Promise<unknown>{
+    return this.#invoke(
+      claims,taskToken,"delegation_create_presentation",
+      parseCreatePresentationArgs(raw),"/internal/mcp-crypto-call"
+    );
+  }
   async #invoke(claims: Readonly<TaskClaims>, taskToken: string,
-    tool: "read_file"|"update_file"|"create_file"|"run_tests",
-    args: ReadFileArgs|UpdateFileArgs|CreateFileArgs|RunTestsArgs): Promise<unknown> {
-    const url=new URL("/internal/mcp-tool-call", this.#workers[claims.role].baseUrl);
+    tool: "read_file"|"update_file"|"create_file"|"run_tests"|"delegation_create_presentation",
+    args: ReadFileArgs|UpdateFileArgs|CreateFileArgs|RunTestsArgs|CreatePresentationArgs,
+    route="/internal/mcp-tool-call"): Promise<unknown> {
+    const url=new URL(route, this.#workers[claims.role].baseUrl);
     let response: Response;
     try {
       response=await this.#fetch(url,{
