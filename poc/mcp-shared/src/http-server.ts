@@ -1,3 +1,4 @@
+import {MCP_CREATE_PRESENTATION} from "./crypto-catalog.ts";
 import {createServer, type ServerResponse} from "node:http";
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {StreamableHTTPServerTransport} from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -6,7 +7,12 @@ import {bearerToken, verifyTaskToken, type VerificationKeys} from "./task-token.
 import {TaskRouter} from "./task-router.ts";
 import {MCP_READ_FILE,MCP_UPDATE_FILE,MCP_CREATE_FILE,MCP_RUN_TESTS,MCP_CREATABLE_E2E_PATH,MAX_MCP_UPDATE_BYTES,MAX_MCP_CREATE_BYTES} from "./catalog.ts";
 
-export interface SharedMcpConfig {verificationKeys:VerificationKeys; router:TaskRouter}
+export interface SharedMcpConfig {
+  verificationKeys:VerificationKeys;
+  router:TaskRouter;
+  /** Legacy is retained only until the paid baseline is safely migrated. */
+  profile?:"legacy"|"crypto";
+}
 function reply(res:ServerResponse,status:number,body:unknown) {
   res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});
   res.end(JSON.stringify(body));
@@ -15,7 +21,7 @@ function reply(res:ServerResponse,status:number,body:unknown) {
 export function createSharedMcpHttpServer(config:SharedMcpConfig) {
   return createServer(async(req,res)=>{
     if (req.method==="GET" && req.url==="/health") {
-      reply(res,200,{status:"ok",service:"thesis-shared-mcp",tool_count:4}); return;
+      reply(res,200,{status:"ok",service:"thesis-shared-mcp",tool_count:config.profile==="crypto"?1:4,profile:config.profile??"legacy"}); return;
     }
     if (req.url!=="/mcp") {reply(res,404,{error:"not_found"});return;}
     // MCP Streamable HTTP requires protecting local listeners from
@@ -48,6 +54,7 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
       reply(res,400,{error:"invalid_or_oversized_mcp_json"});return;
     }
     const mcp=new McpServer({name:"thesis-shared-mcp",version:"0.1.0"});
+    if(config.profile!=="crypto") {
     mcp.registerTool(MCP_READ_FILE.name,{
       description:MCP_READ_FILE.description,
       inputSchema:{
@@ -149,6 +156,37 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
           structuredContent:payload};
       }
     });
+    } else {
+      // Crypto-only surface: no general read/write/run_test tools.
+      // All signing material and the VP stay inside the private task worker.
+      mcp.registerTool(MCP_CREATE_PRESENTATION.name,{
+        description:MCP_CREATE_PRESENTATION.description,
+        inputSchema:{request_id:z.string().min(1).max(256)}
+      },async args=>{
+        try {
+          const result=await config.router.createPresentation(claims,token,args);
+          const payload={ok:true,result};
+          return {
+            content:[{type:"text" as const,text:JSON.stringify(payload)}],
+            structuredContent:payload
+          };
+        }catch(e){
+          const candidate=e instanceof Error?e.message:"tool_unavailable";
+          const kind=[
+            "invalid_tool_arguments","task_worker_unavailable",
+            "task_worker_rejected","task_worker_invalid_result",
+            "authorization_denied","invalid_tool_call","inactive_task",
+            "unauthorized","tool_unavailable"
+          ].includes(candidate)?candidate:"tool_unavailable";
+          const payload={ok:false,error:{kind}};
+          return {
+            isError:true,
+            content:[{type:"text" as const,text:JSON.stringify(payload)}],
+            structuredContent:payload
+          };
+        }
+      });
+    }
     const transport=new StreamableHTTPServerTransport({
       sessionIdGenerator:undefined,enableJsonResponse:true
     });
