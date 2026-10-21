@@ -89,10 +89,13 @@ tampered, stale or inconsistent artifacts must reject the VP.
 
 **Limitations:** this file-based store is an initial local/container
 sharing mechanism, not yet a production remote artifact service.
-The native Gateway addon is still absent and `core-rust` mode remains
-deliberately unavailable. Cross-process *artifact* access is now
-implemented and unit-tested, but a complete independent Gateway
-verification of a real EVM VP has **not** been validated.
+The native Gateway addon was subsequently implemented in Stage 8C
+(`services/delegation-core-node`). The real signed-VP/OPA/Anvil test
+[GitHub Actions #39576496255](https://github.com/DarkGh0st03/delegation/actions/runs/39576496255)
+passed, including denial of replay, wrong challenge and on-chain
+revocation; the provider was a non-mutating mock. The legacy
+`adapter` verifier remains the default until wider runtime
+compatibility is validated.
 The EVM issuer bootstrap still requires a fresh or matching chain; this
 change does not introduce persistent private issuer identities.
 An on-chain Status List update and its file replacement are not one
