@@ -89,8 +89,9 @@ impl Config {
     > {
         // Never auto-create files/directories in the verifier process.
         // The writer mounts a separate operator-provisioned volume.
-        let public_artifacts =
-            Rc::new(FilePublicArtifactStore::<Bn254>::open_read_only(&self.artifact_dir)?);
+        let public_artifacts = Rc::new(FilePublicArtifactStore::<Bn254>::open_read_only(
+            &self.artifact_dir,
+        )?);
         let chain = Rc::new(EvmRegistryReader::connect(
             &self.rpc_url,
             &self.did_registry,
@@ -108,12 +109,12 @@ impl Config {
     }
 }
 
-fn verify_real(
-    context_json: &str,
-    signed_vp: &str,
-) -> std::result::Result<String, String> {
-    if context_json.is_empty() || context_json.len() > MAX_CONTEXT_BYTES ||
-       signed_vp.is_empty() || signed_vp.len() > MAX_VP_BYTES {
+fn verify_real(context_json: &str, signed_vp: &str) -> std::result::Result<String, String> {
+    if context_json.is_empty()
+        || context_json.len() > MAX_CONTEXT_BYTES
+        || signed_vp.is_empty()
+        || signed_vp.len() > MAX_VP_BYTES
+    {
         return Err(String::from("Invalid verification input length"));
     }
     let context: AuthorizationContext = serde_json::from_str(context_json)
@@ -125,15 +126,21 @@ fn verify_real(
     let trust_chain: Rc<dyn TrustChainReader> = chain.clone();
     let accumulator: AccumulatorMaterialProviderRef<Bn254> = public_artifacts.clone();
     let keys: VerificationKeyProviderRef = did_keys.clone();
-    let trust: TrustResolverRef<Bn254> =
-        Rc::new(EvmTrustResolver::new(trust_chain, accumulator, keys.clone()));
+    let trust: TrustResolverRef<Bn254> = Rc::new(EvmTrustResolver::new(
+        trust_chain,
+        accumulator,
+        keys.clone(),
+    ));
 
     let source: StatusListCredentialProviderRef = public_artifacts;
-    let authenticated: StatusListCredentialProviderRef =
-        Rc::new(JwtAuthenticatedStatusListCredentialProvider::new(source, keys));
+    let authenticated: StatusListCredentialProviderRef = Rc::new(
+        JwtAuthenticatedStatusListCredentialProvider::new(source, keys),
+    );
     let status_chain: Rc<dyn StatusListAnchorReader> = chain;
-    let status: StatusListResolverRef =
-        Rc::new(EvmAnchoredStatusListResolver::new(authenticated, status_chain));
+    let status: StatusListResolverRef = Rc::new(EvmAnchoredStatusListResolver::new(
+        authenticated,
+        status_chain,
+    ));
 
     let verifier = DelegationVerifier::<Bn254>::new(trust, status)?;
     let verified = verifier.verify_verifiable_presentation(context, signed_vp.to_owned())?;
@@ -143,8 +150,7 @@ fn verify_real(
     let mut output = serde_json::to_value(&verified)
         .map_err(|_| String::from("Cannot serialize VerifiedDelegation"))?;
     output["expiration"] = serde_json::Value::String(verified.expiration().to_string());
-    serde_json::to_string(&output)
-        .map_err(|_| String::from("Cannot encode VerifiedDelegation"))
+    serde_json::to_string(&output).map_err(|_| String::from("Cannot encode VerifiedDelegation"))
 }
 
 pub struct VerifyTask {
@@ -157,8 +163,12 @@ impl Task for VerifyTask {
     type JsValue = String;
 
     fn compute(&mut self) -> Result<Self::Output> {
-        verify_real(&self.context_json, &self.signed_vp)
-            .map_err(|_| Error::new(Status::GenericFailure, "Core Rust verification rejected".to_owned()))
+        verify_real(&self.context_json, &self.signed_vp).map_err(|_| {
+            Error::new(
+                Status::GenericFailure,
+                "Core Rust verification rejected".to_owned(),
+            )
+        })
     }
 
     fn resolve(&mut self, _env: Env, value: Self::Output) -> Result<Self::JsValue> {
@@ -170,10 +180,18 @@ impl Task for VerifyTask {
 /// artifact access or expected chain ID is not available.
 #[napi(js_name = "assert_verification_ready")]
 pub fn assert_verification_ready() -> Result<()> {
-    let cfg = Config::read()
-        .map_err(|_| Error::new(Status::GenericFailure, "Core Rust verification config incomplete".to_owned()))?;
-    cfg.open_readers()
-        .map_err(|_| Error::new(Status::GenericFailure, "Core Rust public sources unavailable".to_owned()))?;
+    let cfg = Config::read().map_err(|_| {
+        Error::new(
+            Status::GenericFailure,
+            "Core Rust verification config incomplete".to_owned(),
+        )
+    })?;
+    cfg.open_readers().map_err(|_| {
+        Error::new(
+            Status::GenericFailure,
+            "Core Rust public sources unavailable".to_owned(),
+        )
+    })?;
     Ok(())
 }
 
