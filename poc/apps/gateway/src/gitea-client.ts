@@ -213,21 +213,34 @@ export class GiteaClient {
     };
   }
 
-  async readRepository(): Promise<GiteaRepositorySnapshot> {
+  async readRepository(pinnedRevision?: string): Promise<GiteaRepositorySnapshot> {
     const metadata = await this.getRepositoryMetadata();
+    if (pinnedRevision !== undefined) {
+      this.#validatePinnedRevision(pinnedRevision);
+      return {...metadata, revision:pinnedRevision};
+    }
     const pinned = await this.getBranchMetadata(metadata.default_branch);
     return {...metadata, revision: pinned.commit_sha};
   }
 
-  async listDirectory(branch: string, path: string): Promise<GiteaDirectorySnapshot> {
-    // Only the configured Gitea repository is accessed. Pin the contents API
-    // call to the exact branch commit, never a mutable branch name.
-    const pinned = await this.getBranchMetadata(branch);
+  #validatePinnedRevision(revision: string): void {
+    if (!/^[a-f0-9]{40}$/u.test(revision)) {
+      throw new ProviderUnavailableError("Pinned Gitea revision must be an exact 40-character SHA");
+    }
+  }
+
+  async listDirectory(
+    branch: string, path: string, pinnedRevision?: string
+  ): Promise<GiteaDirectorySnapshot> {
+    // A trusted Planning session supplies one immutable revision. In ordinary
+    // legacy execution, preserve existing per-operation branch pinning.
+    if (pinnedRevision !== undefined) this.#validatePinnedRevision(pinnedRevision);
+    const revision = pinnedRevision ?? (await this.getBranchMetadata(branch)).commit_sha;
     const suffix = path === ""
       ? "/contents"
       : `/contents/${encodePath(path)}`;
     const raw = await this.#json(
-      this.#repoApi(suffix) + `?ref=${encodeURIComponent(pinned.commit_sha)}`
+      this.#repoApi(suffix) + `?ref=${encodeURIComponent(revision)}`
     );
     if (!Array.isArray(raw) || raw.length > 200) {
       throw new ProviderUnavailableError(
@@ -265,7 +278,7 @@ export class GiteaClient {
       entries.push(entry);
     }
     entries.sort((a,b)=>a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-    return {branch, path, revision:pinned.commit_sha, entries};
+    return {branch, path, revision, entries};
   }
 
   async createBranch(baseBranch: string, branch: string): Promise<GiteaCreatedBranch> {
@@ -433,13 +446,16 @@ export class GiteaClient {
     };
   }
 
-  async readTextFile(branch: string, path: string): Promise<GiteaFileSnapshot> {
-    // Resolve the branch first and pin the content read to that exact commit SHA.
-    // This prevents a moving branch from changing the file between metadata and content reads.
-    const branchMetadata = await this.getBranchMetadata(branch);
+  async readTextFile(
+    branch: string, path: string, pinnedRevision?: string
+  ): Promise<GiteaFileSnapshot> {
+    // Planning reads use the exact trusted session SHA. Legacy calls resolve
+    // the branch per operation for backwards-compatible update-file preflights.
+    if (pinnedRevision !== undefined) this.#validatePinnedRevision(pinnedRevision);
+    const revision = pinnedRevision ?? (await this.getBranchMetadata(branch)).commit_sha;
     const url =
       this.#repoApi(`/contents/${encodePath(path)}`) +
-      `?ref=${encodeURIComponent(branchMetadata.commit_sha)}`;
+      `?ref=${encodeURIComponent(revision)}`;
     const body = object(await this.#json(url), "Gitea contents response");
 
     if (body.type !== "file") {
@@ -484,12 +500,12 @@ export class GiteaClient {
     return {
       path,
       branch,
-      revision: branchMetadata.commit_sha,
+      revision,
       blob_sha: requiredString(body.sha, "file.sha"),
       last_commit_sha:
         typeof body.last_commit_sha === "string" && body.last_commit_sha.length > 0
           ? body.last_commit_sha
-          : branchMetadata.commit_sha,
+          : revision,
       size,
       content,
       encoding: "utf-8"
