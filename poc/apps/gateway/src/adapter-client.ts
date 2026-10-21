@@ -4,6 +4,7 @@ import {
 } from "./errors.ts";
 import type {
   Permission,
+  MultipleVerificationRequest,
   VerificationRequest,
   VerifiedDelegation,
   VerifierPort
@@ -83,9 +84,20 @@ export class AdapterVerifierClient implements VerifierPort {
   }
 
   async verify(request: VerificationRequest): Promise<VerifiedDelegation> {
+    return this.#verifyAt("/v1/verify", request);
+  }
+
+  async verifyMultiple(request: MultipleVerificationRequest): Promise<VerifiedDelegation> {
+    return this.#verifyAt("/v1/verify-multiple", request);
+  }
+
+  async #verifyAt(
+    path: string,
+    request: VerificationRequest | MultipleVerificationRequest
+  ): Promise<VerifiedDelegation> {
     let response: Response;
     try {
-      response = await this.#fetch(`${this.#baseUrl}/v1/verify`, {
+      response = await this.#fetch(`${this.#baseUrl}${path}`, {
         method: "POST",
         headers: {
           authorization: `Bearer ${this.#gatewayToken}`,
