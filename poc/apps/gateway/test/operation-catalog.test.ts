@@ -61,7 +61,7 @@ test("every Rust operation is recognized, but unimplemented operations stay unav
   assert.equal(classifyGatewayOperation("totally_fake_operation"),"unknown");
   assert.equal(classifyGatewayOperation({tool:"read_file"}),"unknown");
   assert.equal(classifyGatewayOperation(null),"unknown");
-  assert.equal(TOOL_NAMES.length, 6, "do not accidentally activate new provider tools");
+  assert.equal(TOOL_NAMES.length, 8, "only the two approved read-only tools may be added");
   for (const tool of TOOL_NAMES) assert.ok(isRustOperation(tool));
 });
 
@@ -120,7 +120,7 @@ test("HTTP prepare distinguishes 400 unknown and 501 recognized/unavailable, wit
       ["totally_fake_operation",400,"unknown_operation"],
       ["merge_pull_request",501,"provider_operation_unavailable"],
       ["delete_file",501,"provider_operation_unavailable"],
-      ["list_directory",501,"provider_operation_unavailable"]
+      ["delete_branch",501,"provider_operation_unavailable"]
     ] as const) {
       const response=await fetch("http://127.0.0.1:"+address.port+"/v1/authorization/prepare",{
         method:"POST",
@@ -137,5 +137,30 @@ test("HTTP prepare distinguishes 400 unknown and 501 recognized/unavailable, wit
   } finally {
     await new Promise<void>((resolve,reject)=>
       server.close((error)=>(error ? reject(error) : resolve())));
+  }
+});
+
+test("read-only discovery tools are recognized, have strict schemas, and cannot invent authority", () => {
+  assert.equal(classifyGatewayOperation("read_repository"), "supported");
+  assert.equal(classifyGatewayOperation("list_directory"), "supported");
+  const repository = validatePrepareAuthorizationRequest({
+    task_id:"planning", agent_role:"orchestrator", tool:"read_repository", arguments:{}
+  });
+  assert.deepEqual(repository.request,{tool:"read_repository",arguments:{}});
+  const directory = validatePrepareAuthorizationRequest({
+    task_id:"planning", agent_role:"orchestrator", tool:"list_directory",
+    arguments:{branch:"main"}
+  });
+  assert.deepEqual(directory.request,{
+    tool:"list_directory",arguments:{branch:"main",path:""}
+  });
+  for (const args of [
+    {branch:"main",path:"../private"}, {branch:"main",path:"/etc/passwd"},
+    {branch:"main",path:"lib/../../private"}, {branch:"main",path:"lib//secret"},
+    {branch:"main",path:"lib",resource:"gitea://forged"}
+  ]) {
+    assert.throws(()=>validatePrepareAuthorizationRequest({
+      task_id:"planning",agent_role:"orchestrator",tool:"list_directory",arguments:args
+    }));
   }
 });
