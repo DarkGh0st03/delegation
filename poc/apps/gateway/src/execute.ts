@@ -11,6 +11,7 @@ import {
 } from "./errors.ts";
 import { buildPolicyInput } from "./policy-input.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
+import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
 import { InMemoryRequestStore } from "./prepare.ts";
 import type {
   AuditSink,
@@ -92,6 +93,7 @@ export interface ExecuteDependencies {
   repository: GatewayRepositoryConfig;
   executor: ExecutionPort;
   planningRevisions?: TrustedPlanningRevisions;
+  approvedPlans?: TrustedApprovedExecutionPlans;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -254,6 +256,32 @@ export async function executeAuthorization(
   // A pending challenge must not survive trusted Planning expiry/revocation.
   // Recheck after asynchronous cryptography/OPA, before any provider read.
   dependencies.planningRevisions?.assertActiveForExecution(record);
+  if (!record.pinned_revision) {
+    try {
+      dependencies.approvedPlans?.assertAuthorizedForExecution(record);
+    } catch {
+      dependencies.audit.emit({
+        event:"authorization_executed",
+        timestamp:new Date(nowMs).toISOString(),
+        request_id:record.request_id,task_id:record.task_id,
+        agent_role:record.agent_role,tool:record.request.tool,
+        resource_uri:record.required_permission.resource,
+        operation:record.required_permission.operation,
+        decision:"deny",reason:"approved_plan_denied",
+        verification_ms:verificationMs,opa_ms:opaMs,
+        policy_decision:"allow",policy_version:policyDecision.policy_version,
+        provider_ms:0,provider_result:"not_called",
+        total_ms:elapsed(totalStarted,durationNow),
+        vp_size_bytes:Buffer.byteLength(request.signed_vp,"utf8"),
+        chain_depth:verified.hierarchy_depth,
+        disclosed_permission_count:verified.permissions.length,
+        ...(record.approved_plan_digest ? {approved_plan_digest:record.approved_plan_digest} : {}),
+        provider
+      });
+      throw new GatewayError(403,"approved_plan_denied",
+        "Trusted approved plan rejected the operation before provider execution");
+    }
+  }
   const providerStarted = durationNow();
   let execution: ExecutionResult;
   try {
@@ -305,6 +333,11 @@ export async function executeAuthorization(
     throw new GatewayError(503, "provider_unavailable", "Protected provider failed");
   }
 
+  // Count only real Gateway-confirmed provider effects as trusted evidence
+  // for a later, separately attested A2A Task completion.
+  if (!record.pinned_revision) {
+    dependencies.approvedPlans?.recordProviderSuccess(record,execution.performed);
+  }
   const providerMs = elapsed(providerStarted, durationNow);
   const totalMs = elapsed(totalStarted, durationNow);
   const providerIdentifiers =
@@ -368,6 +401,7 @@ export async function executeAuthorization(
     chain_depth: verified.hierarchy_depth,
     disclosed_permission_count: verified.permissions.length,
     ...providerIdentifiers,
+    ...(record.approved_plan_digest ? {approved_plan_digest:record.approved_plan_digest} : {}),
     provider: execution.provider
   });
 
