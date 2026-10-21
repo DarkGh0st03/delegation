@@ -109,6 +109,61 @@ It does **not** by itself bind the request to a signed human-approved
 plan: that integration remains a separate requirement and is never
 delegated to prompts or ADK callbacks.
 
+## Stage 10A — One immutable Planning Git revision (trusted, opt-in)
+
+Before this change, \`read_file\` and \`list_directory\` each resolved
+\`main\` independently. Each individual read was pinned, but two
+successive requests could have read different commits when \`main\` moved.
+
+\`TrustedPlanningRevisions\` in \`src/planning-revisions.ts\` now establishes
+**one authenticated Gitea snapshot** (\`main\` with an exact 40-hex Git SHA)
+for each trusted Planning session/task identifier. It is supplied to
+\`GatewayRuntime\` through the **in-process**
+\`GatewayRuntimeDependencies.planningRevisions\` option. A trusted backend
+calls \`begin(taskId, ttlMs)\` once, where \`ttlMs\` is at most 900,000 ms.
+Neither the model nor a public Gateway HTTP endpoint can call
+\`begin\` or choose a revision.
+
+Every subsequent \`prepare\` for \`read_repository\`,
+\`list_directory(main)\` or \`read_file(main)\` in this session:
+
+- requires an active registered Orchestrator task; no unregistered Planning
+  read, non-main read, role mismatch or mutation is allowed in the session;
+- stores the SHA **only inside** \`PreparedRequestRecord.pinned_revision\`,
+  not in user-supplied tool arguments, avoiding permission injection;
+- includes the SHA in the trusted OPA input and audit data;
+- checks task validity **after** VP cryptographic verification and OPA
+  and **before** Gitea provider I/O; ending/expiring the session denies
+  already prepared challenges;
+- uses the **same** SHA as \`?ref=<sha>\` for every directory and file,
+  even if \`main\` moves to a new commit between calls.
+
+\`read_repository\` presents the original SHA rather than a moving-branch
+revision. Gitea's repository identity is verified when the session starts.
+The existing legacy per-request branch pinning remains unchanged when the
+new registry is not installed.
+
+The Engineer root authority contract accepts an optional trusted
+\`planningRevisions\` port. Before issuing the provisional read-only DC,
+it requires the fresh Gitea SHA to match the trusted Engineer snapshot
+and then stops the session before revoking the provisional root and
+issuing the independent operational root. A mismatch denies root
+issuance with no permissions granted.
+
+**Integration status:** the Gateway enforcement and trusted Engineer
+bridge are implemented with isolated tests, but the **distributed
+authentication/transport** from the separate Engineer backend process
+to the Gateway registry is not yet present. No public registration
+endpoint is exposed. The current PoC default retains the legacy mode
+until authenticated bootstrap, durable multi-replica session storage,
+runtime plan enforcement and real Gemini Planning are integrated.
+Do not describe this opt-in contract as a completed live Planning run.
+
+\`\`\`sh
+node --experimental-strip-types --test poc/apps/gateway/test/planning-revision-pinning.test.ts
+npm --prefix poc run gateway:test
+\`\`\`
+
 ## Stage 8C — Native Rust Core verifier (experimental, opt-in)
 
 A new `services/delegation-core-node` crate provides a compiled native
