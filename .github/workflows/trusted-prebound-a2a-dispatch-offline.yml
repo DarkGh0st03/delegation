@@ -1,0 +1,47 @@
+name: Trusted Prebound A2A Dispatch (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts"
+      - "poc/packages/orchestrator-runtime/src/a2a-workflow.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-a2a-observer.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts"
+      - "poc/packages/agent-runtime/src/contracts.ts"
+      - "poc/packages/agent-runtime/src/orchestrator.ts"
+      - "poc/packages/agent-runtime/src/executor.ts"
+      - "poc/packages/agent-runtime/src/adk-a2a-handler.ts"
+      - "poc/packages/agent-runtime/test/trusted-a2a-dispatch-id.test.ts"
+      - ".github/workflows/trusted-prebound-a2a-dispatch-offline.yml"
+  pull_request:
+    paths:
+      - "poc/packages/agent-runtime/**"
+      - "poc/packages/orchestrator-runtime/**"
+      - ".github/workflows/trusted-prebound-a2a-dispatch-offline.yml"
+permissions:
+  contents: read
+jobs:
+  trusted-a2a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install locked packages
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Test immutable DAG and binding before private A2A dispatch
+        run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts
+      - name: Test real SDK transports private binding without exposing it to model
+        run: node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-a2a-dispatch-id.test.ts
+      - name: Regress current agent and orchestrator runtime behavior
+        run: |
+          npm --prefix poc run orchestrator-runtime:test
+          npm --prefix poc run agent-runtime:test

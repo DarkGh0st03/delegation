@@ -240,3 +240,44 @@ report a matching passing SHA and mandatory pass statuses. The
 The existing deterministic Account Suspension orchestrator is not
 silently switched to this opt-in approved-plan path. Wiring of a fully
 dynamic DAG dispatcher and trusted A2A re-polling remains future work.
+
+## Trusted approved A2A dispatcher — opt-in stage
+
+`TrustedApprovedA2ADispatcher.load(...)` obtains a previously signed and
+authenticated plan from `AuthenticatedPlanStore`, checks Engineer DID,
+session, pinned Git SHA, operation catalog, granted permissions and exact
+activated plan digest. It does not derive authority from ADK tool calls or
+browser/LLM-supplied task descriptions. Its source of tasks, dependencies,
+agent roles and scope is the immutable approved plan.
+
+**Critical ordering:** a trusted Orchestrator generates a cryptographically
+random private Gateway `dispatch_<22-base64url>` ID, installs its
+Task/role binding over the existing HMAC Unix IPC *before* calling a protected
+Gateway operation or dispatching A2A, then supplies the ID privately in the
+A2A Message metadata. The server-assigned SDK A2A Task ID is separate:
+it is learned only after submission and must never be used as a retrospective
+approval. The Agent's private Gateway client uses the prebound ID while ADK
+still receives its normal reduced Task context without that ID or DC/VP.
+
+The dispatcher checks DAG dependencies before child DC issuance, sends only
+the approved Task description and file paths, and confirms completion only
+after `DelegatedA2ARoleRunner` accepts a completed A2A Task and validated
+artifact. The Gateway still rejects completion unless it has independently
+recorded matching authorized Gitea/Runner effects for that binding. On an
+uncertain dispatch/result failure, the Coordinator closes the active Gateway
+session and attempts to revoke the operational DC; the Task is not retried
+silently.
+
+Orchestrator-only tasks use `runOrchestratorTask(planTaskId, trustedCallback)`
+which binds *before* invoking the private Gateway client. Specialized tasks
+use `dispatch(planTaskId)`; child credentials and unique revocation status
+entries come from the trusted `authorityForTask` allocator, not the model.
+
+**Explicit limits:** this increment supports the existing frozen
+`feature/account-suspension` Agent contract only; it rejects incompatible
+branch/file permissions. The dispatcher is opt-in and not yet invoked from
+the legacy deterministic Account Suspension coordinator or the paid Gemini
+workflow. Parallel DAG execution, arbitrary branches, runtime restart
+recovery, cryptographic remote A2A task attestations and a fully autonomous
+AI planner remain future work. The new binding is an extra plan gate; Rust
+DC/VP/OPA remains the actual authorization enforcement.

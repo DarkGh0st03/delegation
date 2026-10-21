@@ -12,3 +12,4 @@ export * from "./account-suspension-preflight.ts";
 export * from "./adk-orchestrator.ts";
 export * from "./merge-readiness.ts";
 export * from "./trusted-a2a-observer.ts";
+export * from "./trusted-approved-a2a-dispatcher.ts";
