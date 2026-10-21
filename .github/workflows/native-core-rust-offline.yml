@@ -1,0 +1,49 @@
+name: Native Gateway to Core Rust (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "services/delegation-core-node/**"
+      - "src/delegation/**"
+      - "poc/apps/gateway/src/direct-core-*.ts"
+      - "poc/apps/gateway/native-test/**"
+      - ".github/workflows/native-core-rust-offline.yml"
+  pull_request:
+    paths:
+      - "services/delegation-core-node/**"
+      - "src/delegation/**"
+      - "poc/apps/gateway/src/direct-core-*.ts"
+      - "poc/apps/gateway/native-test/**"
+      - ".github/workflows/native-core-rust-offline.yml"
+permissions:
+  contents: read
+jobs:
+  native-node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+      - name: Rust format check for native addon and shared Core
+        run: |
+          cargo fmt --check
+          cargo fmt --manifest-path services/delegation-core-node/Cargo.toml --check
+      - name: Build real N-API Core Rust verifier
+        run: cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
+      - name: Install compiled addon at fixed trusted Gateway path
+        run: |
+          mkdir -p poc/apps/gateway/src/native
+          cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
+      - name: Load addon in Node and test negative EVM/VP boundaries
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/*.test.ts
+      - name: Gateway offline regression with native addon present
+        run: node --experimental-strip-types --test poc/apps/gateway/test/*.test.ts
