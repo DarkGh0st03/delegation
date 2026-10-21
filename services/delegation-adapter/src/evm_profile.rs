@@ -383,7 +383,11 @@ impl EvmAdapterProfile {
             updated_artifact.clone(),
         );
         if let Some(shared) = &self.public_artifacts {
-            shared.publish_status_jwt(issuer_id, entry.status_list_credential(), &updated_artifact)?;
+            shared.publish_status_jwt(
+                issuer_id,
+                entry.status_list_credential(),
+                &updated_artifact,
+            )?;
         }
 
         Ok(expected_version)
