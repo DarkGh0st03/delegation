@@ -1,0 +1,267 @@
+# Cumulative test gate on a single commit. NO Gemini/OpenAI API requests.
+# The optional live Gemini workflow is intentionally not called here.
+name: Cumulative Offline Refactoring Validation
+on:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - ".github/workflows/cumulative-refactoring-offline.yml"
+      - "src/**"
+      - "services/**"
+      - "poc/**"
+      - "blockchain/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cumulative-refactoring-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  all-node-and-policy:
+    name: Gateway + Plans + ADK/A2A + MCP + GUI + OPA
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install offline pinned dependencies (no model calls)
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix poc/mcp-shared ci --ignore-scripts --no-audit --no-fund
+      - name: Check scaffold, local imports and Rust operation catalog
+        run: |
+          npm --prefix poc run check:scaffold
+          npm --prefix poc run check:imports
+          node poc/scripts/sync-rust-operation-catalog.mjs --check
+      - name: Gateway / provider / composite authorization
+        run: npm --prefix poc run gateway:test
+      - name: Plan contract and Engineer approval
+        run: |
+          node --test poc/packages/plan-contracts/test/*.test.mjs
+          npm --prefix poc run orchestrator-runtime:test
+      - name: ADK/A2A agent and MCP (legacy plus crypto profile)
+        run: |
+          npm --prefix poc run agent-runtime:test
+          npm --prefix poc run test -w @thesis/a2a-agent
+          npm --prefix poc/mcp-shared test
+      - name: Runner, security and reproducibility contracts
+        run: |
+          npm --prefix poc run test -w @thesis/test-runner-controller
+          node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/*.test.mjs
+          node --experimental-strip-types poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs
+      - name: GUI mock + exact plan digest contract
+        run: |
+          node --test poc/workflow-ui/tests/ui-contract.test.mjs
+      - name: Real OPA policy and denied-main regression
+        run: bash poc/scripts/phase4a-policy-test.sh
+      - name: Static validate paid workflow syntax WITHOUT running it
+        run: node --check poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs
+
+  all-rust-and-solidity:
+    name: Core Rust + Adapter + native formatting + Solidity
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+      - name: Rust workspace formatting including native addon
+        run: |
+          cargo fmt --check
+          cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check
+          cargo fmt --manifest-path services/delegation-core-node/Cargo.toml --check
+      - name: All Core Rust features including multipermission and public materials
+        run: cargo test --locked --all-features
+      - name: Rust Adapter backwards compatibility and EVM profile
+        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml --locked
+      - name: Foundry smart contract tests
+        run: forge test --root blockchain
+
+  evm-real-credential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_CALLER_ENGINEER: local-native-engineer-ci
+      ADAPTER_CALLER_GATEWAY: local-native-gateway-ci
+      ADAPTER_CALLER_ORCHESTRATOR: local-native-orchestrator-ci
+      ADAPTER_CALLER_BACKEND: local-native-backend-ci
+      ADAPTER_CALLER_FRONTEND: local-native-frontend-ci
+      ADAPTER_CALLER_TEST: local-native-test-ci
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_VERIFIER_MODE: core-rust
+      GATEWAY_PROVIDER_MODE: mock
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: "2000"
+      RPC_URL: http://127.0.0.1:8545
+      CHAIN_ID: "31337"
+      ADAPTER_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_RPC_URL: http://127.0.0.1:8545
+      CORE_RUST_CHAIN_ID: "31337"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+      - name: Install pinned local Node and DID dependencies
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+          node poc/scripts/init-local-env.mjs --force
+      - name: Start only disposable Anvil and OPA
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
+          for i in {1..90}; do
+            if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
+          exit 1
+      - name: Generate disposable public test identities
+        run: |
+          local_key() { printf '0x%064x' "$1"; }
+          deployer_key="$(local_key 1)"
+          deployer_address="$(cast wallet address --private-key "$deployer_key")"
+          cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$deployer_address" 0x56BC75E2D63100000 >/dev/null
+          echo "ANVIL_DEPLOYER_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          echo "GOVERNANCE_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          for entry in ENGINEER:2 ORCHESTRATOR:3 BACKEND:4 FRONTEND:5 TEST:6; do
+            role="${entry%%:*}"
+            n="${entry##*:}"
+            key="$(local_key "$n")"
+            address="$(cast wallet address --private-key "$key")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+            echo "ADAPTER_EVM_PRIVATE_KEY_${role}=$key" >> "$GITHUB_ENV"
+            echo "ADAPTER_ID_${role}=did:ethr:0x7a69:${address}" >> "$GITHUB_ENV"
+          done
+      - name: Deploy public DID and EVM trust registries
+        run: |
+          bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for key in DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+          echo "CORE_RUST_DID_REGISTRY_ADDRESS=$DID_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
+      - name: Build signed-credential Adapter and native Core Rust addon
+        run: |
+          cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
+          cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
+          mkdir -p poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
+          cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
+      - name: Start Adapter with public-only shared verification artifacts
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
+          echo $! > /tmp/native-evm-adapter.pid
+          for i in {1..100}; do
+            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then exit 0; fi
+            sleep 0.5
+          done
+          cat /tmp/native-evm-adapter.log
+          exit 1
+      - name: Start Gateway using only the native Rust Core verifier
+        run: |
+          npm --prefix poc run gateway:start > /tmp/native-evm-gateway.log 2>&1 &
+          echo $! > /tmp/native-evm-gateway.pid
+          for i in {1..100}; do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then exit 0; fi
+            sleep 0.5
+          done
+          cat /tmp/native-evm-gateway.log
+          exit 1
+      - name: Verify actual signed VP, OPA, replay and EVM revocation
+        run: node poc/apps/gateway/native-test/native-real-evm-e2e.mjs
+      - name: Show trusted service diagnostics if verification fails
+        if: failure()
+        run: |
+          echo "=== Gateway ==="
+          tail -n 120 /tmp/native-evm-gateway.log || true
+          echo "=== Adapter ==="
+          tail -n 120 /tmp/native-evm-adapter.log || true
+          echo "=== Containers ==="
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps || true
+      - name: Stop disposable services without deleting unrelated volumes
+        if: always()
+        run: |
+          kill "$(cat /tmp/native-evm-gateway.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/native-evm-adapter.pid)" 2>/dev/null || true
+          if [[ -f poc/infra/.env ]]; then
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
+          fi
+
+  real-positive-exact-sha:
+    name: Disposable Gitea + Real Docker Runner + Researcher Acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout trusted thesis framework without write credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install exact Node runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+
+      - name: Install local PoC dependencies
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+
+      - name: Preload disposable service and Runner Docker images
+        run: |
+          docker pull docker.gitea.com/gitea:28.0.0
+          docker pull node:22.15.0-bookworm
+
+      - name: Run real positive acceptance with no external model
+        env:
+          GITEA_ADMIN_USER: isolated_admin
+          GITEA_ADMIN_PASSWORD: local-ci-fixture-only-${{ github.run_id }}-${{ github.run_attempt }}
+          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+        run: npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
+
+      - name: Report any temporary containers after failure
+        if: failure()
+        run: |
+          docker ps -a --filter 'name=delegation-ci-positive-' --format '{{.Names}} {{.Status}}'
+          docker ps -a --filter 'name=delegation-runner-' --format '{{.Names}} {{.Status}}'
