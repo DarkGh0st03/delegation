@@ -304,3 +304,39 @@ The standalone Gateway no-dependency suite explicitly skips only this
 A2A SDK integration subtest when the SDK is absent. The dedicated trusted
 IPC workflow installs pinned dependencies and runs it without skipping.
 This does not replace an E2E with disposable Gitea and Docker Runner.
+
+## Trusted Task-scoped child credentials — opt-in
+
+Use TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority(...) when
+running an approved DAG with actual credentials. This factory first checks
+the authenticated Engineer-signed plan, frozen digest and repository SHA.
+It then builds a TrustedApprovedPlanChildAuthorityIssuer from the
+**operational root actually issued and confirmed by
+TrustedExecutionCoordinator**, not from caller-provided permission arrays.
+
+For each authorized specialized Task, the issuer takes ONLY the rows selected
+by approved_permission_ids for that Task and role. It checks that every
+operation/resource pair belongs to the confirmed operational root, freezes
+the list, and sends exactly these permissions to the Rust Adapter
+POST /v1/credentials/child. The Rust core independently enforces
+parent-child attenuation. The issuer checks the returned credential ID and
+the exact ordered permissions and refuses a missing Task, different role,
+wrong parent, invalid status, excessive validity or a second issuance
+attempt after uncertain network results.
+
+The dispatcher still binds the approved role/Task to Gateway before
+allocating delegated child authority or sending any A2A message.
+The DelegatedA2ARoleRunner forwards an internal approved_task_id to
+the issuer; this is NEVER taken from an ADK/MCP tool argument. The Agent
+receives its resulting DC privately in A2A Delegation Evidence. The
+legacy DeterministicOrchestratorAuthorityIssuer with static IAM Console
+role templates remains unchanged for backward compatibility.
+
+The dedicated offline tests check exact Backend and Test grants, denied
+permission amplification, mismatched signed/root state, malformed Adapter
+responses, duplicate attempts and ordering through the real Role Runner.
+These tests mock the Adapter HTTP response; they do **not** claim to
+re-execute the whole new DAG with native Rust, real Gitea, Docker Runner
+and Gemini. Existing Rust Adapter subset tests independently validate
+cryptographic parent-child attenuation. The next full-system milestone is
+the integrated disposable-provider, offline E2E.
