@@ -12,7 +12,10 @@ use std::collections::HashSet;
 /// request with multiple requirements uses \`required_permissions\` instead.
 /// Both fields at once, empty sets and duplicate permissions fail closed.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(try_from = "AuthorizationContextWire", into = "AuthorizationContextWire")]
+#[serde(
+    try_from = "AuthorizationContextWire",
+    into = "AuthorizationContextWire"
+)]
 pub struct AuthorizationContext {
     presenter_id: String,
     audience: String,
@@ -177,7 +180,7 @@ impl AuthorizationContext {
 mod tests {
     use super::*;
     use crate::delegation::authorization::operation::Operation;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     fn permission(operation: Operation) -> Permission {
         Permission::new(
@@ -234,7 +237,10 @@ mod tests {
         let value = serde_json::to_value(&original).map_err(|err| err.to_string())?;
         assert_eq!(value["required_permission"]["operation"], "read_file");
         assert!(value.get("required_permissions").is_none());
-        assert_eq!(original.required_permission(), &permission(Operation::ReadFile));
+        assert_eq!(
+            original.required_permission(),
+            &permission(Operation::ReadFile)
+        );
         assert_eq!(original.required_permissions().len(), 1);
         let parsed: AuthorizationContext =
             serde_json::from_value(value).map_err(|err| err.to_string())?;
@@ -248,11 +254,17 @@ mod tests {
             String::from("agent-1"),
             String::from("cloud-access-gateway"),
             String::from("challenge-1"),
-            vec![permission(Operation::ReadFile), permission(Operation::UpdateFile)],
+            vec![
+                permission(Operation::ReadFile),
+                permission(Operation::UpdateFile),
+            ],
         )?;
         let value = serde_json::to_value(&context).map_err(|err| err.to_string())?;
         assert!(value.get("required_permission").is_none());
-        assert_eq!(value["required_permissions"].as_array().map(Vec::len), Some(2));
+        assert_eq!(
+            value["required_permissions"].as_array().map(Vec::len),
+            Some(2)
+        );
         let parsed: AuthorizationContext =
             serde_json::from_value(value).map_err(|err| err.to_string())?;
         assert_eq!(parsed, context);
@@ -270,15 +282,21 @@ mod tests {
             )
         };
         assert!(create(vec![]).is_err());
-        assert!(create(vec![
-            permission(Operation::ReadFile),
-            permission(Operation::ReadFile)
-        ]).is_err());
+        assert!(
+            create(vec![
+                permission(Operation::ReadFile),
+                permission(Operation::ReadFile)
+            ])
+            .is_err()
+        );
         let many: Vec<Permission> = (0..129)
-            .map(|n| Permission::new(
-                format!("https://gitea.local/repos/project-a/files/{n}"),
-                Operation::ReadFile
-            ).expect("valid URI"))
+            .map(|n| {
+                Permission::new(
+                    format!("https://gitea.local/repos/project-a/files/{n}"),
+                    Operation::ReadFile,
+                )
+                .expect("valid URI")
+            })
             .collect();
         assert!(create(many).is_err());
     }
