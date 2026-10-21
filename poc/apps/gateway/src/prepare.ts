@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { deriveRequiredPermission } from "./canonical.ts";
+import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
 import {
   assertNoCallerSuppliedAuthority,
   validatePrepareAuthorizationRequest
@@ -47,6 +48,7 @@ export interface PrepareDependencies {
   durationNowMs?: () => number;
   requestId?: () => string;
   challenge?: () => string;
+  planningRevisions?: TrustedPlanningRevisions;
 }
 
 function fingerprint(value: unknown): string {
@@ -68,6 +70,9 @@ export function prepareAuthorization(
   assertNoCallerSuppliedAuthority(raw);
   const normalized = validatePrepareAuthorizationRequest(raw);
   const permission = deriveRequiredPermission(config.repository, normalized.request);
+  const pinnedRevision = dependencies.planningRevisions?.authorizePrepare(
+    normalized.task_id, normalized.agent_role, normalized.request
+  );
 
   if (config.audience.trim().length === 0) {
     throw new Error("Gateway audience cannot be empty");
@@ -99,6 +104,7 @@ export function prepareAuthorization(
     audience: config.audience,
     challenge,
     request_fingerprint: requestFingerprint,
+    ...(pinnedRevision ? { pinned_revision:pinnedRevision } : {}),
     created_at_ms: nowMs,
     expires_at_ms: nowMs + config.request_ttl_ms,
     consumed: false
@@ -116,7 +122,8 @@ export function prepareAuthorization(
     tool: normalized.request.tool,
     resource_uri: permission.resource,
     operation: permission.operation,
-    prepare_ms: prepareMs
+    prepare_ms: prepareMs,
+    ...(pinnedRevision ? { pinned_revision:pinnedRevision } : {})
   });
 
   return {
