@@ -2,7 +2,7 @@ use crate::auth::CallerRecord;
 use crate::config::AdapterConfig;
 use crate::crypto::{
     CreatePresentationRequest, CryptoRuntime, IssueChildRequest, IssueRootRequest,
-    UpdateCredentialStatusRequest, VerifyPresentationRequest,
+    UpdateCredentialStatusRequest, VerifyMultiplePresentationRequest, VerifyPresentationRequest,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -144,6 +144,19 @@ fn handle_request(mut request: Request, config: &AdapterConfig, crypto: &mut Cry
                 }
             };
             match crypto.verify_presentation(&caller, &config.callers, body) {
+                Ok(verified) => respond_json(request, StatusCode(200), &verified),
+                Err(error) => respond_error(request, StatusCode(400), &error),
+            }
+        }
+        (Method::Post, "/v1/verify-multiple") => {
+            let body = match read_json::<VerifyMultiplePresentationRequest>(&mut request) {
+                Ok(body) => body,
+                Err(error) => {
+                    respond_error(request, StatusCode(400), &error);
+                    return;
+                }
+            };
+            match crypto.verify_multiple_presentation(&caller, &config.callers, body) {
                 Ok(verified) => respond_json(request, StatusCode(200), &verified),
                 Err(error) => respond_error(request, StatusCode(400), &error),
             }
