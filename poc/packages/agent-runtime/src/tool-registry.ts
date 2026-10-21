@@ -3,6 +3,7 @@ import type {
   ModelFunctionTool
 } from "./llm-client.ts";
 import { ControlledToolError } from "./controlled-errors.ts";
+import {LEGACY_A2A_BRANCH,validatePrivateApprovedBranch} from "./approved-branch.ts";
 import {
   GatewayControlledToolClient,
   SPECIALIZED_TOOL_NAMES,
@@ -103,11 +104,14 @@ function objectArguments(raw: string): Record<string, unknown> {
 export class ControlledToolRegistry {
   readonly #gateway: GatewayControlledToolClient;
   readonly #allowed: Set<SpecializedToolName>;
+  readonly #branch:string;
 
   constructor(
     gateway: GatewayControlledToolClient,
-    allowedTools: readonly SpecializedToolName[]
+    allowedTools: readonly SpecializedToolName[],
+    branch:string=LEGACY_A2A_BRANCH
   ) {
+    this.#branch=validatePrivateApprovedBranch(branch);
     if (allowedTools.length === 0) {
       throw new Error("Tool Registry requires at least one controlled tool");
     }
@@ -122,7 +126,11 @@ export class ControlledToolRegistry {
   }
 
   get modelTools(): ModelFunctionTool[] {
-    return [...this.#allowed].map((tool) => structuredClone(TOOL_DEFINITIONS[tool]));
+    return [...this.#allowed].map(tool=>{
+      const def=structuredClone(TOOL_DEFINITIONS[tool]);
+      (def.parameters.properties.branch as {enum:string[]}).enum=[this.#branch];
+      return def;
+    });
   }
 
   async execute(call: ModelFunctionCall): Promise<unknown> {
@@ -136,9 +144,11 @@ export class ControlledToolRegistry {
       );
     }
 
-    return this.#gateway.invoke(
-      call.name as SpecializedToolName,
-      objectArguments(call.arguments)
-    );
+    const args=objectArguments(call.arguments);
+    if(args.branch!==this.#branch){
+      throw new ControlledToolError("invalid_tool_call",
+        "Tool branch is different from the trusted A2A task branch");
+    }
+    return this.#gateway.invoke(call.name as SpecializedToolName,args);
   }
 }

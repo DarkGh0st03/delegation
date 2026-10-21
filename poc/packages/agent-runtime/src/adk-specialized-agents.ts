@@ -6,6 +6,7 @@ import { normalizeMcpRunTestsOutcome } from "./mcp-run-tests-result.ts";
 import { createTaskBearerFetch } from "./mcp-task-fetch.ts";
 import {callTimedMcpRunTests} from "./timed-mcp-run-tests.ts";
 import { z } from "zod";
+import {LEGACY_A2A_BRANCH,validatePrivateApprovedBranch} from "./approved-branch.ts";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import {
   ControlledToolError,
@@ -57,6 +58,8 @@ export interface AdkSpecializedAgentConfig {
   /** Model-facing enumerated path hints only; Gateway/OPA/DC remain authoritative. */
   scopeModelPaths?: boolean;
   role: SpecializedAgentRole;
+  /** Opt-in trusted feature branch, derived from prebound approved Task. */
+  trustedBranch?:string;
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
   /** Shared MCP read_file opt-in. Credentials never enter model args. */
@@ -100,8 +103,19 @@ export function createAdkSpecializedAgent(
   if(config.mcpRunTests && (!config.mcpReadFile || config.role!=="test")){
     throw new Error("MCP run_tests requires shared MCP and Test Agent role");
   }
-  const profile = SPECIALIZED_AGENT_PROFILES[config.role];
-  if (!profile) throw new Error("Unknown specialized agent role");
+  const baseline=SPECIALIZED_AGENT_PROFILES[config.role];
+  if(!baseline)throw new Error("Unknown specialized agent role");
+  const branch=validatePrivateApprovedBranch(config.trustedBranch??LEGACY_A2A_BRANCH);
+  if(config.mcpReadFile && branch!==LEGACY_A2A_BRANCH){
+    // The shared MCP catalog is intentionally still frozen to the legacy
+    // branch. Never silently send model calls that it would reject or
+    // weaken its server-side schema to support this incremental refactor.
+    throw new Error("Dynamic approved branch is not yet supported by shared MCP");
+  }
+  const profile:SpecializedAgentProfile={
+    ...baseline,
+    system_prompt:baseline.system_prompt.replaceAll(LEGACY_A2A_BRANCH,branch)
+  };
   // Path-scoped tool declarations are safe for every specialized role.
   // The model sees exactly the role's known paths. These enums are navigation
   // hints; the authoritative decision remains with the Gateway/Verifier/OPA.
@@ -111,7 +125,10 @@ export function createAdkSpecializedAgent(
     return z.enum(paths as [string, ...string[]]);
   };
 
-  const registry = new ControlledToolRegistry(config.gatewayClient, profile.tools);
+  const registry = new ControlledToolRegistry(config.gatewayClient, profile.tools,branch);
+  const schemaFor=(name:SpecializedToolName)=>SCHEMAS[name].extend({
+    branch:z.literal(branch)
+  });
   const tools = registry.modelTools
     // Default remains read_file-only: enabling the write tool is explicit.
     .filter(definition => !config.mcpReadFile || (
@@ -123,12 +140,12 @@ export function createAdkSpecializedAgent(
     .map((definition) => {
     const name = definition.name as SpecializedToolName;
     const parameters = config.scopeModelPaths && name === "read_file"
-      ? SCHEMAS.read_file.extend({path: modelPathEnum(readablePaths)})
+      ? schemaFor("read_file").extend({path: modelPathEnum(readablePaths)})
       : config.scopeModelPaths && name === "update_file"
-        ? SCHEMAS.update_file.extend({path: modelPathEnum(profile.writable_paths)})
+        ? schemaFor("update_file").extend({path: modelPathEnum(profile.writable_paths)})
         : config.scopeModelPaths && name === "create_file"
-          ? SCHEMAS.create_file.extend({path: modelPathEnum(profile.creatable_paths)})
-          : SCHEMAS[name];
+          ? schemaFor("create_file").extend({path: modelPathEnum(profile.creatable_paths)})
+          : schemaFor(name);
     return new FunctionTool({
       name,
       description: definition.description,
@@ -200,7 +217,7 @@ export function createAdkSpecializedAgent(
         name:"run_tests",
         description: registry.modelTools.find(tool=>tool.name==="run_tests")?.description
           ?? "Execute controlled project tests and independent researcher acceptance",
-        parameters:SCHEMAS.run_tests,
+        parameters:schemaFor("run_tests"),
         execute: async (args) => {
           const started=performance.now();
           const argumentsRecord=args as Record<string,unknown>;
