@@ -46,6 +46,60 @@ This endpoint performs verification **only**. The Gateway separately
 checks OPA for every proposed action and does not execute composite
 provider operations during this refactoring stage.
 
+## Stage 8B — Shared public verification artifacts (opt-in)
+
+The EVM Adapter can publish **public-only** verification artifacts into a
+directory accessible to an independently deployed Rust verifier. Enable it
+only with an **operator-controlled**, dedicated directory:
+
+```sh
+ADAPTER_TRUST_PROFILE=evm
+ADAPTER_PUBLIC_ARTIFACT_DIR=/var/lib/delegation/public-verification
+```
+
+Without `ADAPTER_PUBLIC_ARTIFACT_DIR`, the historical Adapter
+in-memory material providers remain unchanged. When enabled:
+
+- After confirming the on-chain accumulator commitment for each managed
+  issuer, the Adapter stores its public key and setup parameters using
+  canonical compressed Arkworks serialization, keyed by issuer and
+  immutable material version. Another Rust process can recover the same
+  bytes through `FilePublicArtifactStore<Bn254>`.
+- After registering/updating a Status List on-chain, the Adapter
+  publishes its exact signed compact JWT to an atomically replaced
+  shared file. Only original JWT bytes, **not** the decoded JSON, are
+  kept in this store so that the verifier can match the on-chain hash.
+- Directory names are derived from SHA-256 identifiers rather than
+  issuer/URL-controlled paths. Files are size-bounded; symlink file
+  targets and inconsistent immutable versions fail closed.
+- The Adapter may write to this directory. The future Gateway-native
+  Rust verifier should mount it **read-only**, together with
+  independent DID/EVM-read access. Never store issuance private keys,
+  caller bearer tokens, unsigned authority assertions or root DCs in
+  this directory.
+
+**Critical trust boundary:** a file is not an authorization decision.
+The independent verifier must continue to use
+`EvmTrustResolver` to validate identity status, trust anchors and
+exact public-material version/hash against `IssuerRegistry`, and
+`JwtAuthenticatedStatusListCredentialProvider` together with
+`EvmAnchoredStatusListResolver` to validate both the issuer's
+signature and the **current** on-chain Status List commitment. Missing,
+tampered, stale or inconsistent artifacts must reject the VP.
+
+**Limitations:** this file-based store is an initial local/container
+sharing mechanism, not yet a production remote artifact service.
+The native Gateway addon is still absent and `core-rust` mode remains
+deliberately unavailable. Cross-process *artifact* access is now
+implemented and unit-tested, but a complete independent Gateway
+verification of a real EVM VP has **not** been validated.
+The EVM issuer bootstrap still requires a fresh or matching chain; this
+change does not introduce persistent private issuer identities.
+An on-chain Status List update and its file replacement are not one
+distributed transaction. In the short interval between them,
+verification must deny stale artifacts instead of authorizing on
+an old status.
+
 ## Capability model
 
 - Engineer -> root Delegation Credential issuance + status management for credentials it issued
