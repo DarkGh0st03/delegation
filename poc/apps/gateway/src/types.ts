@@ -86,6 +86,8 @@ export interface PreparedRequestRecord {
   audience: string;
   challenge: string;
   request_fingerprint: string;
+  /** Trusted Gateway-only Planning pin, never accepted in caller tool args. */
+  pinned_revision?: string;
   created_at_ms: number;
   expires_at_ms: number;
   consumed: boolean;
@@ -113,6 +115,7 @@ export interface PrepareAuditEvent {
   resource_uri: string;
   operation: Operation;
   prepare_ms: number;
+  pinned_revision?: string;
 }
 
 export interface ExecuteAuditEvent {
@@ -136,6 +139,7 @@ export interface ExecuteAuditEvent {
   vp_size_bytes: number;
   chain_depth?: number;
   disclosed_permission_count?: number;
+  pinned_revision?: string;
   provider_revision?: string;
   provider_commit_sha?: string;
   provider_blob_sha?: string;
