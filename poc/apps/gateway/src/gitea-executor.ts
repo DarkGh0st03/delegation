@@ -53,6 +53,19 @@ export class GiteaExecutor implements ExecutionPort {
   }
 
   async execute(record: PreparedRequestRecord, signal?: AbortSignal): Promise<ExecutionResult> {
+    if (record.request.tool === "read_repository") {
+      const snapshot = await this.#client.readRepository();
+      return {provider:"gitea",performed:true,tool:"read_repository",...snapshot};
+    }
+
+    if (record.request.tool === "list_directory") {
+      const snapshot = await this.#client.listDirectory(
+        record.request.arguments.branch,
+        record.request.arguments.path
+      );
+      return {provider:"gitea",performed:true,tool:"list_directory",...snapshot};
+    }
+
     if (record.request.tool === "read_file") {
       const snapshot = await this.#client.readTextFile(
         record.request.arguments.branch,
