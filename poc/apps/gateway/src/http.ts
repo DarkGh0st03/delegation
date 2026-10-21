@@ -68,6 +68,20 @@ export function createGatewayHttpServer(runtime: GatewayRuntime): Server {
         return;
       }
 
+      // Authorization-only bundle: checks all DC/VP permissions and all OPA
+      // inputs before returning, but cannot execute a batch of provider effects.
+      if (method === "POST" && url === "/v1/authorization/prepare-composite") {
+        const body = await readJson(request);
+        json(response, 201, runtime.prepareComposite(body));
+        return;
+      }
+
+      if (method === "POST" && url === "/v1/authorization/verify-composite") {
+        const body = await readJson(request);
+        json(response, 200, await runtime.verifyComposite(body));
+        return;
+      }
+
       if (method === "POST" && url === "/v1/authorization/execute") {
         const body = await readJson(request);
         const controller=new AbortController();
