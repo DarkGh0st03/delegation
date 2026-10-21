@@ -14,7 +14,7 @@ import {
   canonicalRepositoryUri, canonicalFileUri, canonicalDirectoryUri, canonicalBranchUri
 } from "../../../apps/gateway/src/canonical.ts";
 import {validatePrepareAuthorizationRequest} from "../../../apps/gateway/src/validation.ts";
-import {assertApprovedExecution,validatePlan,planDigest}
+import {assertApprovedPlanScope,planDigest}
   from "../../../packages/plan-contracts/src/plan.mjs";
 import type {
   CredentialStatusInput, IssuedDelegationCredential,
@@ -274,27 +274,20 @@ export class TrustedEngineerAuthoritySession {
     if(trusted.authenticated_engineer_did!==this.#engineerDid)
       fail("approval belongs to another authenticated Engineer");
     const plan=trusted.plan as any, approval=trusted.approval as any;
-    validatePlan(plan,{allowedOperations:CATALOG});
-    if(plan.session_id!==this.#snapshot.session_id ||
+    if(plan?.session_id!==this.#snapshot.session_id ||
        !equality(plan.repository,this.#snapshot.repository) ||
        plan.base_revision!==this.#snapshot.base_revision) {
       fail("plan does not match trusted repository snapshot and base SHA");
     }
-    if(approval?.approved_by!==this.#engineerDid ||
-       !Array.isArray(approval?.approved_permission_ids) ||
-       !approval.approved_permission_ids.length)fail("missing authenticated approval scope");
+    const approvedRows=assertApprovedPlanScope(plan,approval,{
+      allowedOperations:CATALOG,expectedEngineerDid:this.#engineerDid
+    });
 
     const selected:DelegatedPermission[]=[];
     const seen=new Set<string>();
-    // Validate the decision's digest, version, assigned agent, and exact
-    // resources independently, without claiming any task is completed.
-    for(const approvedId of approval.approved_permission_ids) {
-      const row=plan.requested_permissions.find((x:any)=>x.id===approvedId);
-      if(!row)fail("approval references unknown permission");
-      assertApprovedExecution(plan,approval,{
-        task_id:row.task_id,agent_id:row.agent_id,
-        resource:row.resource,operation:row.operation
-      },{allowedOperations:CATALOG,completedTaskIds:plan.tasks.map((t:any)=>t.id)});
+    // This checks proposed/approved scope, NOT execution dependencies.
+    // Actual completedTaskIds must come later from the trusted A2A runtime.
+    for(const row of approvedRows) {
       const permission=canonicalApprovedPermission(row,this.#snapshot.repository);
       const key=JSON.stringify(permission);
       if(!seen.has(key))selected.push(permission);
