@@ -13,6 +13,7 @@ The service provides:
 - `POST /v1/credentials/status`;
 - `POST /v1/presentations`;
 - `POST /v1/verify`;
+- `POST /v1/verify-multiple` (Gateway-only composite verification);
 - distinct internal caller credentials;
 - deterministic caller -> role -> identity binding;
 - capability separation between Engineer, Orchestrator, specialized Agents and Gateway.
@@ -24,6 +25,26 @@ Authorization: Bearer <service-token>
 ```
 
 The signing/issuer identity is selected server-side from the authenticated caller. The request body never chooses the identity whose private signing material is used.
+
+## Stage 5: composite verification (no execution)
+
+The existing `POST /v1/verify` remains backward compatible with a
+single `required_permission`.
+
+The additional authenticated `POST /v1/verify-multiple` accepts
+`presenter`, `audience`, `challenge`, `required_permissions`
+(an array of 1–128 distinct permissions) and `signed_vp`. Only the
+Gateway caller with the VerifyPresentation capability may invoke it.
+
+The adapter constructs `AuthorizationContext::new_multiple` and passes
+the **whole** set to the Core Rust DelegationVerifier, which checks VP
+binding, disclosed permissions, accumulator witnesses, delegation-chain
+status and trust. If any permission is not verified the endpoint returns
+an error instead of a partial VerifiedDelegation result.
+
+This endpoint performs verification **only**. The Gateway separately
+checks OPA for every proposed action and does not execute composite
+provider operations during this refactoring stage.
 
 ## Capability model
 
