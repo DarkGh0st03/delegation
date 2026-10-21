@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bootstrap": "node --experimental-strip-types ./src/bootstrap-engineer.ts"
+    "bootstrap": "node --experimental-strip-types ./src/bootstrap-engineer.ts",
+    "engineer:approval-ui": "node --experimental-strip-types ./src/engineer-approval-server.mjs"
   },
   "dependencies": {
     "@thesis/orchestrator-runtime": "0.1.0"

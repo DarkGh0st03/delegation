@@ -28,3 +28,6 @@
   .permission-fields .field-label:nth-child(n+3){grid-column:auto}
   .permission-head .tag{margin-left:0}
 }
+
+/* Authenticated console panels must remain hidden until login succeeds. */
+[hidden]{display:none!important}

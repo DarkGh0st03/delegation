@@ -1,0 +1,39 @@
+name: Authenticated Engineer Approval (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "poc/apps/orchestrator/src/engineer-approval-server.mjs"
+      - "poc/apps/orchestrator/test/engineer-approval-server.test.mjs"
+      - "poc/workflow-ui/authenticated.html"
+      - "poc/workflow-ui/authenticated.js"
+      - ".github/workflows/engineer-approval-ui-offline.yml"
+  pull_request:
+    paths:
+      - "poc/apps/orchestrator/**"
+      - "poc/workflow-ui/**"
+      - ".github/workflows/engineer-approval-ui-offline.yml"
+permissions:
+  contents: read
+jobs:
+  engineer-auth-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+      - name: Install pinned dependencies offline for test runtime
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Run local Engineer login, CSRF, signed receipt and negative tests
+        run: node --experimental-strip-types --test poc/apps/orchestrator/test/engineer-approval-server.test.mjs
+      - name: Regress trusted approval and GUI mock contracts
+        run: |
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts
+          node --test poc/packages/plan-contracts/test/*.test.mjs
+          node --test poc/workflow-ui/tests/ui-contract.test.mjs

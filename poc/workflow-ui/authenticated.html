@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Delegation — Engineer authenticated approval</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header class="top"><div class="brand"><span class="logo">D</span>
+<span><strong>Delegation</strong><small>Authenticated Engineer Approval · local PoC</small></span></div>
+<span class="demo">LOCAL ONLY · APPROVAL FIRMATA</span></header>
+<main class="shell">
+<p class="eyebrow">SOFTWARE ENGINEER · APPROVAZIONE DI AUTORITÀ</p>
+<h1>Approva un piano trusted</h1>
+<p class="lead">L'identità e il piano sono verificati nel backend locale; il browser non fornisce credenziali delegate. La firma Ed25519 non avvia automaticamente l'esecuzione.</p>
+<section class="panel" id="login">
+<h2>Autenticazione Engineer</h2>
+<label>Password operatore <input id="password" type="password" autocomplete="current-password"></label>
+<button id="login-button" class="primary-button" type="button">Accedi</button>
+</section>
+<section class="panel" id="approval" hidden>
+<div class="title"><h2>Piano pronto per la revisione</h2><span id="identity" class="tag"></span></div>
+<p>Il piano proviene esclusivamente dallo storage trusted del backend.</p>
+<div class="stat"><span>Repository e revisione</span><code id="repository"></code></div>
+<div class="stat"><span>ID piano/versione</span><strong id="plan"></strong></div>
+<div class="stat"><span>Requisito</span><span id="requirement-view"></span></div>
+<div class="digest"><span>SHA-256 esatto del piano da approvare</span><code id="digest"></code></div>
+<h3>Task approvati nel piano</h3><div id="tasks"></div>
+<h3>Seleziona le permission consentite</h3><div id="permissions"></div>
+<label>Conferma digitando APPROVE seguito da spazio e SHA-256 completo
+<input id="confirmation" type="text" autocomplete="off" spellcheck="false">
+</label>
+<button id="approve-button" class="primary-button" type="button">Firma la decisione Ed25519</button>
+<button id="logout-button" class="secondary" type="button">Esci senza approvare</button>
+</section>
+<p id="status" role="status" aria-live="polite"></p>
+<p class="warning">PoC locale con sessione password: non è un login aziendale/IdP. La firma prova l'uso della chiave pinned e la conferma autenticata da questa sessione, non garantisce sicurezza contro un host compromesso. Nessuna DC viene emessa dalla GUI.</p>
+</main>
+<script src="/authenticated.js"></script>
+</body>
+</html>
