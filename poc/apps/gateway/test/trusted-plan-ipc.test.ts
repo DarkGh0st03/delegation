@@ -17,6 +17,17 @@ import {TrustedExecutionCoordinator} from
   "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
+import {TrustedApprovedA2ADispatcher} from
+  "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
+import {DelegatedA2ARoleRunner} from
+  "../../../packages/orchestrator-runtime/src/a2a-workflow.ts";
+import {DeterministicA2AOrchestrator} from
+  "../../../packages/agent-runtime/src/orchestrator.ts";
+import {startSpecializedAgentServer} from
+  "../../../packages/agent-runtime/src/server.ts";
+import {GatewayControlledToolClient} from
+  "../../../packages/agent-runtime/src/gateway-tool-client.ts";
+import {createServer as createTcpServer} from "node:net";
 
 const REPO={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const URI="gitea://gitea.local/thesis/iam-console-poc";
@@ -149,7 +160,7 @@ async function setup(t:import("node:test").TestContext){
     },
     credentials,approvals:store,authenticatedEngineerDid:DID
   });
-  return {p,trace,authority,credentials,client,publicUrl,socketPath,secret};
+  return {p,trace,authority,credentials,client,store,publicUrl,socketPath,secret};
 }
 async function post(base:string,path:string,data:unknown){
   return fetch(base+path,{
@@ -288,4 +299,103 @@ test("wrong HMAC, reused nonce, and stale timestamp are rejected",async t=>{
   assert.equal(await rawSocket(e.socketPath,body,{
     ...valid,"x-trusted-timestamp":String(Date.now()-120000)
   }),403);
+});
+
+
+test("signed DAG dispatches a real A2A SDK Task to a separate-process Gateway via trusted prebinding",async t=>{
+  const e=await setup(t);
+  const coordinator=new TrustedExecutionCoordinator({
+    authority:e.authority,approvedGatewayPlans:e.client,credentials:e.credentials,
+    sessionId:e.p.session_id,baseRevision:SHA
+  });
+  await coordinator.beginPlanning(root("urn:ipc:a2a-read-root","201"));
+  const operational=await coordinator.beginExecution(root("urn:ipc:a2a-work-root","202"));
+  assert.equal(operational.plan_digest,planDigest(e.p));
+
+  // Assign an ephemeral local port, never a public Agent endpoint.
+  const probe=createTcpServer();
+  await new Promise<void>(resolve=>probe.listen(0,"127.0.0.1",resolve));
+  const port=(probe.address() as import("node:net").AddressInfo).port;
+  await new Promise<void>(resolve=>probe.close(()=>resolve()));
+  let observedPrivateId:string|undefined;
+  const server=await startSpecializedAgentServer({
+    role:"backend",host:"127.0.0.1",port,delegatedAuthorization:true,
+    taskHandler:async context=>{
+      observedPrivateId=context.trusted_gateway_task_id;
+      // No Gemini/ADK inference. Scripted offline tool behavior still calls
+      // the REAL gateway process, with its frozen plan and evidence registry.
+      const client=new GatewayControlledToolClient({
+        gatewayBaseUrl:e.publicUrl,agentRole:"backend",
+        taskId:context.trusted_gateway_task_id??context.task_id,
+        evidenceHandler:{
+          async createPresentation(){return "fixture-vp";}
+        } as unknown as import("../../../packages/agent-runtime/src/delegation-evidence-handler.ts").DelegationEvidenceHandler
+      });
+      const value=await client.invoke("update_file",{
+        branch:context.subtask.branch,path:"apps/backend/user.ts",
+        content:"export const approved=true;"
+      }) as {commit_sha:string};
+      return {
+        role:"backend",summary:"Scripted successful Gateway tool execution",
+        branch:context.subtask.branch,
+        files_modified:["apps/backend/user.ts"],files_created:[],
+        revision:value.commit_sha,commit_sha:value.commit_sha,
+        test_outcome:"not_run",errors:[]
+      };
+    }
+  });
+  t.after(()=>server.close());
+  const roleRunner=new DelegatedA2ARoleRunner({
+    authorityIssuer:{
+      async issueSpecializedChild(input){
+        return {role:input.selection.role,credential:{
+          "@context":["https://www.w3.org/ns/credentials/v2"],
+          type:["VerifiableCredential","DelegationCredential"],
+          id:input.credential_id,issuer:"did:thesis:orchestrator",
+          validFrom:input.valid_from,
+          credentialSubject:{sub:"did:thesis:backend",per:[]}
+        }};
+      }
+    },
+    a2a:new DeterministicA2AOrchestrator({
+      deadlineMs:6000,initialIntervalMs:20,maxIntervalMs:110
+    })
+  });
+  const dispatcher=await TrustedApprovedA2ADispatcher.load({
+    approvals:e.store,coordinator,roleRunner,
+    sessionId:e.p.session_id,baseRevision:SHA,
+    expectedPlanDigest:operational.plan_digest,expectedEngineerDid:DID,
+    agentBaseUrls:{backend:server.baseUrl,frontend:"http://127.0.0.1:1",
+      test:"http://127.0.0.1:1"},
+    async authorityForTask(taskId,role){
+      assert.equal(taskId,"backend");
+      assert.equal(role,"backend");
+      return root("urn:ipc:a2a-backend-child","203") as any;
+    }
+  });
+  assert.equal(dispatcher.approvedBranch,"feature/approved");
+  await assert.rejects(dispatcher.dispatch("backend"),/dependencies not verified/);
+
+  await dispatcher.runOrchestratorTask("branch",async taskId=>{
+    const prepared=await post(e.publicUrl,"/v1/authorization/prepare",{
+      task_id:taskId,agent_role:"orchestrator",
+      tool:"create_branch",arguments:{base_branch:"main",branch:"feature/approved"}
+    });
+    assert.equal(prepared.status,201);
+    const body=await prepared.json();
+    const executed=await post(e.publicUrl,"/v1/authorization/execute",{
+      request_id:body.request_id,signed_vp:"fixture-vp"
+    });
+    assert.equal(executed.status,200);
+  });
+  const result=await dispatcher.dispatch("backend");
+  assert.equal(result.role,"backend");
+  assert.equal(result.artifact.branch,"feature/approved");
+  assert.equal(result.artifact.revision,SHA);
+  assert.match(observedPrivateId||"",/^dispatch_[A-Za-z0-9_-]{22}$/u);
+  assert.notEqual(result.task_id,observedPrivateId);
+  assert.deepEqual(dispatcher.completedTaskIds,["branch","backend"]);
+
+  await coordinator.closeExecution();
+  assert.equal(e.trace.at(-1),"revoke:urn:ipc:a2a-work-root");
 });
