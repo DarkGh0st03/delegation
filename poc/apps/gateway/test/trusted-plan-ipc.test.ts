@@ -65,6 +65,8 @@ async function setup(t:import("node:test").TestContext){
   const key=generateKeyPairSync("ed25519");
   const priv=key.privateKey.export({format:"pem",type:"pkcs8"}).toString();
   const pub=key.publicKey.export({format:"pem",type:"spki"}).toString();
+  const publicKeyFile=join(privateDir,"engineer-public.pem");
+  await writeFile(publicKeyFile,pub,{mode:0o600});
   const issuedAt=new Date(),expiry=new Date(issuedAt.getTime()+30*60*1000);
   const approval=makeApproval(p,{
     allowedOperations:OPERATIONS,decision_id:"decision-ipc-1",
@@ -85,7 +87,15 @@ async function setup(t:import("node:test").TestContext){
   const child=fork(fileURLToPath(new URL("./fixtures/trusted-plan-ipc-child.ts",
     import.meta.url)),[],{
     execArgv:["--experimental-strip-types"],
-    env:{...process.env,IPC_TEST_CONFIG:configFile},
+    env:{
+      ...process.env,IPC_TEST_CONFIG:configFile,
+      TRUSTED_PLAN_IPC_SOCKET:socketPath,
+      TRUSTED_PLAN_IPC_SECRET_FILE:secretFile,
+      TRUSTED_PLAN_APPROVAL_DIR:receipts,
+      TRUSTED_PLAN_ENGINEER_DID:DID,
+      TRUSTED_PLAN_KEY_ID:KEY_ID,
+      TRUSTED_PLAN_PUBLIC_KEY_FILE:publicKeyFile
+    },
     stdio:["ignore","pipe","pipe","ipc"]
   });
   let stderr="";
