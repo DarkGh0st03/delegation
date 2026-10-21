@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { deriveRequiredPermission } from "./canonical.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
+import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
 import {
   assertNoCallerSuppliedAuthority,
   validatePrepareAuthorizationRequest
@@ -49,6 +50,7 @@ export interface PrepareDependencies {
   requestId?: () => string;
   challenge?: () => string;
   planningRevisions?: TrustedPlanningRevisions;
+  approvedPlans?: TrustedApprovedExecutionPlans;
 }
 
 function fingerprint(value: unknown): string {
@@ -73,6 +75,14 @@ export function prepareAuthorization(
   const pinnedRevision = dependencies.planningRevisions?.authorizePrepare(
     normalized.task_id, normalized.agent_role, normalized.request
   );
+  // Phase-A Planning has a separate short-lived read-only DC and pinned SHA.
+  // Any operational Prepare requires an authenticated approved plan when
+  // the plan enforcement feature is installed.
+  const approvedBinding = !pinnedRevision
+    ? dependencies.approvedPlans?.authorizePrepare(
+        normalized.task_id,normalized.agent_role,permission
+      )
+    : undefined;
 
   if (config.audience.trim().length === 0) {
     throw new Error("Gateway audience cannot be empty");
@@ -105,6 +115,10 @@ export function prepareAuthorization(
     challenge,
     request_fingerprint: requestFingerprint,
     ...(pinnedRevision ? { pinned_revision:pinnedRevision } : {}),
+    ...(approvedBinding ? {
+      approved_plan_digest:approvedBinding.plan_digest,
+      approved_plan_task_id:approvedBinding.plan_task_id
+    } : {}),
     created_at_ms: nowMs,
     expires_at_ms: nowMs + config.request_ttl_ms,
     consumed: false
@@ -123,7 +137,8 @@ export function prepareAuthorization(
     resource_uri: permission.resource,
     operation: permission.operation,
     prepare_ms: prepareMs,
-    ...(pinnedRevision ? { pinned_revision:pinnedRevision } : {})
+    ...(pinnedRevision ? { pinned_revision:pinnedRevision } : {}),
+    ...(approvedBinding ? { approved_plan_digest:approvedBinding.plan_digest } : {})
   });
 
   return {
