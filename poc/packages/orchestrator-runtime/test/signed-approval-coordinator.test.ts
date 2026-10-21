@@ -271,7 +271,8 @@ test("actual signed file connects Engineer two-root handoff to Gateway plan enfo
   assert.throws(()=>runtime.prepare({
     task_id:"task-create-branch",agent_role:"orchestrator",
     tool:"create_branch",arguments:{base_branch:"main",branch:"feature/approved"}
-  }),/approved/);
+  }),(error:unknown)=>error!==null && typeof error==="object" &&
+      "code" in error && error.code==="approved_plan_denied");
 });
 
 test("if Gateway cannot activate a matching signed plan, independently issued operational DC is revoked",async(t)=>{
