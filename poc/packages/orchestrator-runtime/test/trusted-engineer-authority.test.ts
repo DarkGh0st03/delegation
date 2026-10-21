@@ -208,7 +208,14 @@ test("no main-branch mutation, foreign-repo or noncanonical scopes are approved"
   ]){
     const p=plan();p.tasks[1].resources=[badUri];
     p.requested_permissions[1].resource=badUri;
-    const {session,adapter}=fixture(trustedApproval(p));
+    let approved:TrustedApprovalRecord;
+    try {approved=trustedApproval(p);}catch(error){
+      // The existing plan contract may reject an invalid URI before it
+      // reaches the trusted authority session. That is also fail closed.
+      assert.match(String(error),/Plan contract/);
+      continue;
+    }
+    const {session,adapter}=fixture(approved);
     await session.startPlanning(root(PREP_ID,"100",600));
     await assert.rejects(()=>session.approveAndIssueOperationalRoot(root(OPER_ID,"101",3600)));
     assert.deepEqual(adapter.calls.map(x=>x.operation),["issue"]);
