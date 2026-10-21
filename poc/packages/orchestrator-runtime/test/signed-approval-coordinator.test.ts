@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync} from "node:crypto";
-import {mkdtemp,writeFile,readFile,rm} from "node:fs/promises";
+import {mkdtemp,writeFile,readFile,rm,chmod,symlink} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {signEngineerApproval} from "../../plan-contracts/src/signed-approval.mjs";
@@ -106,7 +106,7 @@ test("signed receipts: trusted key, correct plan digest, Engineer DID and expiry
   const {priv,pub}=fakeKeys();
   const approved=receipt(priv);
   const filename=join(temp,"session-signed-1.json");
-  await writeFile(filename,JSON.stringify(approved),"utf8");
+  await writeFile(filename,JSON.stringify(approved),{encoding:"utf8",mode:0o600});
   const config={directory:temp,engineerDid:ENGINEER,
     trustedKeys:{"engineer-signing-key-1":{
       engineer_did:ENGINEER,public_key_pem:pub
@@ -133,6 +133,24 @@ test("signed receipts: trusted key, correct plan digest, Engineer DID and expiry
     await assert.rejects(store.loadAuthenticatedApproval("session-signed-1"));
   }
   await writeFile(filename,JSON.stringify(approved));
+  await chmod(filename,0o644);
+  await assert.rejects(store.loadAuthenticatedApproval("session-signed-1"),
+    /owner-only regular file/);
+  await chmod(filename,0o600);
+
+  // Never traverse a symlink masquerading as the signed receipt.
+  await rm(filename);
+  await symlink(join(temp,"safe-receipt.json"),filename);
+  await writeFile(join(temp,"safe-receipt.json"),JSON.stringify(approved),{mode:0o600});
+  await assert.rejects(store.loadAuthenticatedApproval("session-signed-1"));
+  await rm(filename);
+  await writeFile(filename,JSON.stringify(approved),{mode:0o600});
+
+  await chmod(temp,0o755);
+  await assert.rejects(store.loadAuthenticatedApproval("session-signed-1"),
+    /owner-only directory/);
+  await chmod(temp,0o700);
+
   await assert.rejects(new SignedEngineerApprovalFileStore({
     ...config,nowMs:()=>Date.parse(EXPIRES)
   }).loadAuthenticatedApproval("session-signed-1"),/expired/);
@@ -148,7 +166,7 @@ test("actual signed file connects Engineer two-root handoff to Gateway plan enfo
   const temp=await mkdtemp(join(tmpdir(),"signed-approved-gateway-"));
   t.after(()=>rm(temp,{recursive:true,force:true}));
   const {priv,pub}=fakeKeys();
-  await writeFile(join(temp,"session-signed-1.json"),JSON.stringify(receipt(priv)));
+  await writeFile(join(temp,"session-signed-1.json"),JSON.stringify(receipt(priv)),{mode:0o600});
   const approvals=new SignedEngineerApprovalFileStore({
     directory:temp,engineerDid:ENGINEER,
     trustedKeys:{"engineer-signing-key-1":{
@@ -279,7 +297,7 @@ test("if Gateway cannot activate a matching signed plan, independently issued op
   const temp=await mkdtemp(join(tmpdir(),"signed-failed-handoff-"));
   t.after(()=>rm(temp,{recursive:true,force:true}));
   const {priv,pub}=fakeKeys();
-  await writeFile(join(temp,"session-signed-1.json"),JSON.stringify(receipt(priv)));
+  await writeFile(join(temp,"session-signed-1.json"),JSON.stringify(receipt(priv)),{mode:0o600});
   const approvals=new SignedEngineerApprovalFileStore({
     directory:temp,engineerDid:ENGINEER,
     trustedKeys:{"engineer-signing-key-1":{engineer_did:ENGINEER,public_key_pem:pub}},
