@@ -6,12 +6,16 @@ on:
       - refactor/post-prof-plan-contracts-20261021
     paths:
       - "poc/apps/gateway/**"
+      - "poc/opa/**"
+      - "poc/scripts/phase4a-policy-test.sh"
       - "poc/scripts/sync-rust-operation-catalog.mjs"
       - "src/delegation/authorization/operation.rs"
       - ".github/workflows/gateway-operation-catalog.yml"
   pull_request:
     paths:
       - "poc/apps/gateway/**"
+      - "poc/opa/**"
+      - "poc/scripts/phase4a-policy-test.sh"
       - "poc/scripts/sync-rust-operation-catalog.mjs"
       - "src/delegation/authorization/operation.rs"
       - ".github/workflows/gateway-operation-catalog.yml"
@@ -20,7 +24,7 @@ permissions:
 jobs:
   gateway-offline:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,3 +34,5 @@ jobs:
         run: node poc/scripts/sync-rust-operation-catalog.mjs --check
       - name: Test Gateway authorization, provider and operation contracts (offline)
         run: node --experimental-strip-types --test poc/apps/gateway/test/*.test.ts
+      - name: Verify actual OPA read-only policy and denial regressions
+        run: bash poc/scripts/phase4a-policy-test.sh
