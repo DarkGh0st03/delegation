@@ -6,6 +6,7 @@
  * The legacy Account Suspension coordinator is deliberately untouched.
  * This coordinator is NOT exposed to Gemini, MCP or public Gateway HTTP.
  */
+import type {TrustedCompletionObservation} from "../../../apps/gateway/src/trusted-task-observation.ts";
 import type {AgentRole} from "../../../apps/gateway/src/types.ts";
 import type {
   RootParameters,TrustedEngineerAuthoritySession
@@ -14,7 +15,7 @@ import type {
 export interface TrustedApprovedPlanControl {
   activate(sessionId:string,baseRevision:string):Promise<string>;
   bindTask(sessionId:string,planTaskId:string,runtimeTaskId:string,role:AgentRole):void|Promise<void>;
-  confirmTaskCompletion(runtimeTaskId:string):Promise<void>;
+  confirmTaskCompletion(runtimeTaskId:string,observation?:TrustedCompletionObservation):Promise<void>;
   closeSession(sessionId:string):void|Promise<void>;
 }
 
@@ -109,9 +110,9 @@ export class TrustedExecutionCoordinator {
   }
 
   /** The Gateway separately checks provider evidence and task attestation. */
-  async confirmTask(runtimeTaskId:string):Promise<void>{
+  async confirmTask(runtimeTaskId:string,observation?:TrustedCompletionObservation):Promise<void>{
     if(this.#phase!=="execution")throw new Error("Execution not active");
-    await this.#gateway.confirmTaskCompletion(runtimeTaskId);
+    await this.#gateway.confirmTaskCompletion(runtimeTaskId,observation);
   }
 
   /**

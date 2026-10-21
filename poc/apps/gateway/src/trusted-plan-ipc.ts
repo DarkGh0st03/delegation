@@ -9,6 +9,7 @@ import {lstat,open,chmod,unlink} from "node:fs/promises";
 import {dirname,resolve} from "node:path";
 import {constants} from "node:fs";
 import type {AgentRole} from "./types.ts";
+import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import type {TrustedApprovedExecutionPlans} from "./approved-execution-plans.ts";
 
 const ROUTE="/v1/private-plan-control";
@@ -21,7 +22,8 @@ const ROLES=new Set(["orchestrator","backend","frontend","test"]);
 type Command=
   |{action:"activate";session_id:string;base_revision:string}
   |{action:"bind";session_id:string;plan_task_id:string;runtime_task_id:string;role:AgentRole}
-  |{action:"close";session_id:string};
+  |{action:"close";session_id:string}
+  |{action:"complete";runtime_task_id:string;observation:TrustedCompletionObservation};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
 function exact(x:unknown,fields:string[]):boolean{
@@ -31,6 +33,10 @@ function exact(x:unknown,fields:string[]):boolean{
 function validate(x:unknown):Command{
   if(!x||typeof x!=="object"||Array.isArray(x))fail("invalid control body");
   const o=x as Record<string,unknown>;
+  if(o.action==="complete"&&exact(o,["action","runtime_task_id","observation"])&&
+     typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id)&&
+     o.observation!==null&&typeof o.observation==="object"&&
+     !Array.isArray(o.observation))return o as Command;
   const sessionOk=typeof o.session_id==="string"&&ID.test(o.session_id);
   if(!sessionOk)fail("invalid session ID");
   if(o.action==="activate"&&exact(o,["action","session_id","base_revision"])&&
@@ -132,6 +138,9 @@ export async function createTrustedPlanIpcServer(config:{
       }else if(command.action==="bind"){
         config.plans.bindTask(command.session_id,command.plan_task_id,
           command.runtime_task_id,command.role);
+        response(res,200,{ok:true});
+      }else if(command.action==="complete"){
+        await config.plans.confirmTaskCompletion(command.runtime_task_id,command.observation);
         response(res,200,{ok:true});
       }else{
         config.plans.closeSession(command.session_id);
@@ -241,7 +250,11 @@ export class TrustedPlanIpcClient{
   async closeSession(sessionId:string){
     await this.#send({action:"close",session_id:sessionId});
   }
-  async confirmTaskCompletion(_runtimeTaskId:string):Promise<void>{
-    fail("A2A Task completion is not trusted or available across processes yet");
+  async confirmTaskCompletion(runtimeTaskId:string,
+    observation?:TrustedCompletionObservation):Promise<void>{
+    if(!observation)fail("trusted task observation is required");
+    await this.#send({
+      action:"complete",runtime_task_id:runtimeTaskId,observation
+    });
   }
 }

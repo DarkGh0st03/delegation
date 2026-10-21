@@ -9,6 +9,7 @@ import {constants} from "node:fs";
 import {SignedEngineerApprovalFileStore} from
   "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
 import {TrustedApprovedExecutionPlans} from "./approved-execution-plans.ts";
+import {GatewayCorroboratedTaskAttestor} from "./trusted-task-observation.ts";
 import {createTrustedPlanIpcServer} from "./trusted-plan-ipc.ts";
 import type {GatewayRepositoryConfig} from "./types.ts";
 
@@ -50,8 +51,9 @@ export async function trustedPlanDeploymentFromEnv(repository:GatewayRepositoryC
   });
   const plans=new TrustedApprovedExecutionPlans({
     repository,engineerDid,approvals,
-    // Until provider/A2A/CI attestation exists, all completion is denied.
-    completionAttestor:{async confirmCompleted(){return false;}}
+    // Gateway independently corroborates private Coordinator observations
+    // using results retained from authorized provider I/O.
+    completionAttestor:new GatewayCorroboratedTaskAttestor()
   });
   const ipc=await createTrustedPlanIpcServer({
     socketPath:value("TRUSTED_PLAN_IPC_SOCKET"),
