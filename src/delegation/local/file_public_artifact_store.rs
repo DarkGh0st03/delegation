@@ -103,7 +103,7 @@ impl<E: Pairing> FilePublicArtifactStore<E> {
                 "Public verification artifact is unsafe or oversized",
             ));
         }
-        let mut f =
+        let f =
             File::open(path).map_err(|err| format!("Cannot read verification artifact [{err}]"))?;
         let mut data = Vec::new();
         f.take((limit + 1) as u64)
@@ -263,7 +263,7 @@ mod tests {
         let mut rng = StdRng::from_entropy();
         let params = SetupParams::<Bn254>::generate_using_rng(&mut rng);
         let keypair = Keypair::<Bn254>::generate_using_rng(&mut rng, &params);
-        AccumulatorPublicData::new(keypair.public_key, params)
+        AccumulatorPublicData::new(keypair.public_key.clone(), params)
     }
 
     #[test]
