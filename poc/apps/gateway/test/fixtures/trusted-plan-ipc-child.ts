@@ -3,27 +3,15 @@
  * Real signed-approval verification; mocked VP/OPA/provider ONLY.
  */
 import {readFile} from "node:fs/promises";
-import {SignedEngineerApprovalFileStore} from
-  "../../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
-import {TrustedApprovedExecutionPlans} from "../../src/approved-execution-plans.ts";
-import {createTrustedPlanIpcServer} from "../../src/trusted-plan-ipc.ts";
+import {trustedPlanDeploymentFromEnv} from "../../src/trusted-plan-deployment.ts";
 import {GatewayRuntime} from "../../src/runtime.ts";
 import {createGatewayHttpServer} from "../../src/http.ts";
 
 const cfg=JSON.parse(await readFile(process.env.IPC_TEST_CONFIG!,"utf8"));
-const approvals=new SignedEngineerApprovalFileStore({
-  directory:cfg.approvalDir,engineerDid:cfg.engineerDid,
-  trustedKeys:{[cfg.keyId]:{
-    engineer_did:cfg.engineerDid,public_key_pem:cfg.publicKey
-  }}
-});
-const plans=new TrustedApprovedExecutionPlans({
-  repository:cfg.repository,engineerDid:cfg.engineerDid,approvals,
-  completionAttestor:{async confirmCompleted(){return false;}}
-});
-const control=await createTrustedPlanIpcServer({
-  socketPath:cfg.socketPath,secretFile:cfg.secretFile,plans
-});
+// Exercise the SAME optional deployment bootstrap that main.ts uses.
+const deployed=await trustedPlanDeploymentFromEnv(cfg.repository);
+if(!deployed)throw Error("Trusted deployment was not enabled in test process");
+const {plans,ipc:control}=deployed;
 const runtime=new GatewayRuntime({
   bind_host:"127.0.0.1",bind_port:0,
   prepare:{
