@@ -73,6 +73,18 @@ pub struct VerifyPresentationRequest {
     pub signed_vp: String,
 }
 
+/// Separate multipermission verification API; the existing request JSON
+/// with `required_permission` remains fully backward compatible.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VerifyMultiplePresentationRequest {
+    pub presenter: CallerRole,
+    pub audience: String,
+    pub challenge: String,
+    pub required_permissions: Vec<Permission>,
+    pub signed_vp: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateCredentialStatusRequest {
@@ -543,6 +555,44 @@ impl CryptoRuntime {
             .verify_verifiable_presentation(context, request.signed_vp)
     }
 
+    /// Verify the entire requested permission set with one signed VP.
+    /// Nothing is authorized unless every requirement passes Rust Core checks.
+    pub fn verify_multiple_presentation(
+        &self,
+        caller: &CallerRecord,
+        callers: &CallerRegistry,
+        request: VerifyMultiplePresentationRequest,
+    ) -> Result<VerifiedDelegation, String> {
+        require_capability(caller, CallerCapability::VerifyPresentation)?;
+        if caller.role() != CallerRole::Gateway {
+            return Err(String::from(
+                "Only the Gateway caller may invoke presentation verification",
+            ));
+        }
+        if !matches!(
+            request.presenter,
+            CallerRole::Orchestrator
+                | CallerRole::Backend
+                | CallerRole::Frontend
+                | CallerRole::Test
+        ) {
+            return Err(String::from(
+                "Presenter must be an Orchestrator or specialized Agent role",
+            ));
+        }
+
+        let presenter_id = callers.identity_for_role(request.presenter)?.to_string();
+        let context = AuthorizationContext::new_multiple(
+            presenter_id,
+            request.audience,
+            request.challenge,
+            request.required_permissions,
+        )?;
+
+        self.verifier
+            .verify_verifiable_presentation(context, request.signed_vp)
+    }
+
     fn ensure_credential_id_available(&self, credential_id: &str) -> Result<(), String> {
         if self.credentials.contains_key(credential_id) {
             Err(format!("Credential id {credential_id} already exists"))
@@ -742,6 +792,86 @@ mod tests {
             verified.permissions(),
             &vec![permission(Operation::ReadFile)]
         );
+    }
+
+    #[test]
+    fn adapter_verifies_multiple_permissions_atomically() -> Result<(), String> {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry)?;
+        issue_root(&mut runtime, &registry);
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator)?;
+        runtime.issue_child(
+            orchestrator,
+            &registry,
+            IssueChildRequest {
+                parent_credential_id: String::from("urn:credential:root"),
+                credential_id: String::from("urn:credential:multi-backend"),
+                delegatee: CallerRole::Backend,
+                valid_from: String::from("2026-10-05T00:00:00Z"),
+                validity_seconds: 1800,
+                credential_status: status(30),
+                permissions: vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::UpdateFile),
+                ],
+            },
+        )?;
+        let backend = registry.record_for_role(CallerRole::Backend)?;
+        let gateway = registry.record_for_role(CallerRole::Gateway)?;
+        let presentation = runtime.create_presentation(
+            backend,
+            CreatePresentationRequest {
+                credential_id: String::from("urn:credential:multi-backend"),
+                disclosed_permissions: vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::UpdateFile),
+                ],
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-adapter-multi"),
+            },
+        )?;
+        let request = VerifyMultiplePresentationRequest {
+            presenter: CallerRole::Backend,
+            audience: String::from("cloud-access-gateway"),
+            challenge: String::from("challenge-adapter-multi"),
+            required_permissions: vec![
+                permission(Operation::ReadFile),
+                permission(Operation::UpdateFile),
+            ],
+            signed_vp: presentation.signed_vp.clone(),
+        };
+        let verified = runtime.verify_multiple_presentation(gateway, &registry, request)?;
+        assert_eq!(verified.permissions().len(), 2);
+
+        let missing = runtime.verify_multiple_presentation(
+            gateway,
+            &registry,
+            VerifyMultiplePresentationRequest {
+                presenter: CallerRole::Backend,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-adapter-multi"),
+                required_permissions: vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::CreateFile),
+                ],
+                signed_vp: presentation.signed_vp.clone(),
+            },
+        );
+        assert!(missing.is_err());
+
+        let empty = runtime.verify_multiple_presentation(
+            gateway,
+            &registry,
+            VerifyMultiplePresentationRequest {
+                presenter: CallerRole::Backend,
+                audience: String::from("cloud-access-gateway"),
+                challenge: String::from("challenge-adapter-multi"),
+                required_permissions: vec![],
+                signed_vp: presentation.signed_vp,
+            },
+        );
+        assert!(empty.is_err());
+        Ok(())
     }
 
     #[test]
