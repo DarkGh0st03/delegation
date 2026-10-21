@@ -62,6 +62,35 @@ impl<E: Pairing> FilePublicArtifactStore<E> {
         Ok(store)
     }
 
+    /// Open an existing operator-provisioned public artifact tree strictly
+    /// for reads. Do not create any directories or assume that the presence
+    /// of bytes proves their trustworthiness (the EVM resolvers check anchors).
+    pub fn open_read_only(root: impl AsRef<Path>) -> Result<Self, String> {
+        let root = root.as_ref();
+        if root.as_os_str().is_empty() {
+            return Err(String::from("Public artifact directory cannot be empty"));
+        }
+        let metadata = fs::symlink_metadata(root)
+            .map_err(|err| format!("Public artifact directory unavailable [{err}]"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(String::from("Public artifact root must be a real directory"));
+        }
+        let root = fs::canonicalize(root)
+            .map_err(|err| format!("Cannot resolve public artifact root [{err}]"))?;
+        for name in ["accumulators", "status-lists"] {
+            let child = root.join(name);
+            let metadata = fs::symlink_metadata(&child)
+                .map_err(|err| format!("Public artifact directory unavailable [{err}]"))?;
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(String::from("Public artifact subdirectories must be real directories"));
+            }
+        }
+        Ok(Self {
+            root,
+            _curve: PhantomData,
+        })
+    }
+
     fn key(parts: &[&str]) -> String {
         let mut hasher = Sha256::new();
         for part in parts {
@@ -264,6 +293,18 @@ mod tests {
         let params = SetupParams::<Bn254>::generate_using_rng(&mut rng);
         let keypair = Keypair::<Bn254>::generate_using_rng(&mut rng, &params);
         AccumulatorPublicData::new(keypair.public_key.clone(), params)
+    }
+
+    #[test]
+    fn readonly_open_requires_existing_real_directories() -> Result<(), String> {
+        let root = dir()?;
+        let before = FilePublicArtifactStore::<Bn254>::open_read_only(&root);
+        assert!(before.is_err(), "missing subdirectories must not be created");
+        let writer = FilePublicArtifactStore::<Bn254>::new(&root)?;
+        let reader = FilePublicArtifactStore::<Bn254>::open_read_only(&root)?;
+        assert!(reader.get_accumulator_data_at_version("absent", 1).is_err());
+        assert!(writer.get_status_list_credential("absent", "url").is_err());
+        fs::remove_dir_all(root).map_err(|err| err.to_string())
     }
 
     #[test]
