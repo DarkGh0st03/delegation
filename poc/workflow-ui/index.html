@@ -1,34 +1,71 @@
 <!doctype html>
 <html lang="it">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Delegation — Review</title><link rel="stylesheet" href="./styles.css"></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Delegation — Revisione del piano</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
 <body>
-<header class="top"><div class="brand"><span class="logo">D</span><span><strong>Delegation</strong><small>Software Engineer Console</small></span></div><span class="demo">DEMO · DATI SIMULATI</span></header>
+<header class="top">
+  <div class="brand"><span class="logo">D</span><span><strong>Delegation</strong><small>Software Engineer Console</small></span></div>
+  <span class="demo">DEMO · DATI SIMULATI</span>
+</header>
 <main class="shell">
-<p class="eyebrow">DELEGATED AUTHORIZATION / WORKFLOW REVIEW</p>
-<h1>Rivedi il piano. Controlla i permessi.</h1>
-<p class="lead">L'Orchestrator propone i Task e le risorse necessarie; il Software Engineer valuta ciò che autorizzare.</p>
-<div class="steps"><span>01 · Richiesta</span><span class="current">02 · Piano e delega</span><span>03 · Esecuzione</span></div>
-<div class="layout">
-<div class="primary">
-<section class="panel"><div class="title"><h2>Richiesta</h2><span class="tag">Repository fissa · GitHub Actions</span></div>
-<div class="row-fields"><label>Repository<input id="repo" readonly></label><label>Commit analizzato<input id="revision" readonly></label></div>
-<label>Requisito<textarea id="requirement" rows="3"></textarea></label>
-<button class="secondary" id="reset" type="button">Ripristina piano simulato</button>
-</section>
-<section class="panel"><div class="title"><h2>Task proposti</h2><span class="tag">Agent Card · simulazione</span></div><div id="tasks" class="tasks"></div></section>
-<section class="panel"><div class="title"><h2>Permessi richiesti</h2><span id="count" class="tag"></span></div>
-<p class="hint">Ogni riga rappresenta una permission (risorsa, operazione). Puoi modificarla, escluderla o aggiungerne una nuova.</p>
-<div id="permissions" class="permissions"></div><button id="add" class="secondary" type="button">+ Aggiungi permission</button>
-</section></div>
-<aside class="panel aside"><p class="eyebrow">REVISIONE UMANA</p><h2>Autorizzazione</h2><div id="status" role="status" class="status">Piano dimostrativo pronto.</div>
-<div class="stat"><span>Permission selezionate</span><strong id="selected">0</strong></div>
-<div class="stat"><span>Agenti candidati</span><strong id="agents">3</strong></div>
-<div class="stat"><span>Repository</span><strong>IAM Console</strong></div>
-<button class="primary-button" id="approve" type="button">Conferma selezione (mock)</button>
-<button class="secondary download" id="download" type="button" disabled>Esporta decisione JSON</button>
-<p class="warning">Nessuna credenziale viene emessa. Questa schermata non autorizza operazioni reali e non contatta Gitea, Gemini o il Gateway.</p>
-<div class="explain"><h3>Nella versione integrata</h3><p>Il backend trusted verificherà l'approvazione e utilizzerà il modulo Rust dell'Engineer per emettere la credenziale operativa.</p></div>
-</aside></div>
-<footer>Delegation Thesis PoC · Prototipo UI indipendente dalla CI operativa</footer>
-</main><script src="./mock-plan.js"></script><script src="./app.js"></script>
-</body></html>
+  <p class="eyebrow">DELEGATED AUTHORIZATION / APPROVED-PLAN REVIEW</p>
+  <h1>Rivedi il piano. Controlla i permessi.</h1>
+  <p class="lead">Il piano collega ogni Task all'agente, alle risorse e alle permission richieste. Le modifiche sostanziali creano una nuova versione, che richiederebbe una nuova approvazione autenticata.</p>
+  <div class="steps"><span>01 · Richiesta</span><span class="current">02 · Piano e delega</span><span>03 · Esecuzione</span></div>
+  <div class="layout">
+    <div class="primary">
+      <section class="panel">
+        <div class="title"><h2>Richiesta</h2><span class="tag">Repository fissa · GitHub Actions</span></div>
+        <div class="row-fields">
+          <label>Repository<input id="repo" readonly></label>
+          <label>Commit analizzato<input id="revision" readonly></label>
+        </div>
+        <label>Requisito<textarea id="requirement" rows="3"></textarea></label>
+        <button class="secondary" id="reset" type="button">Ripristina piano simulato</button>
+      </section>
+      <section class="panel">
+        <div class="title"><h2>Task e agenti assegnati</h2><span class="tag">Agent Card · simulazione</span></div>
+        <p class="hint">Un cambiamento dell'agente assegnato modifica il piano. Dopo una vera approvazione richiederebbe una nuova decisione del Software Engineer.</p>
+        <div id="tasks" class="tasks"></div>
+      </section>
+      <section class="panel">
+        <div class="title"><h2>Permission proposte</h2><span id="count" class="tag"></span></div>
+        <p class="hint">Ogni permission indica Task, agente, operazione e risorsa URI. Puoi includerla, escluderla, modificarla o aggiungerne una nuova. Questi controlli sono soltanto dimostrativi.</p>
+        <div id="permissions" class="permissions"></div>
+        <button id="add" class="secondary" type="button">+ Aggiungi permission</button>
+      </section>
+      <section class="panel">
+        <div class="title"><h2>Differenze dalla proposta iniziale</h2><span class="tag">Revisione mock</span></div>
+        <div id="changes" role="status" aria-live="polite"></div>
+      </section>
+    </div>
+    <aside class="panel aside">
+      <p class="eyebrow">REVISIONE UMANA · SIMULATA</p>
+      <h2>Versione del piano</h2>
+      <div class="stat"><span>ID piano</span><strong id="plan-id"></strong></div>
+      <div class="stat"><span>Sessione</span><strong id="session-id"></strong></div>
+      <div class="stat"><span>Schema</span><strong id="schema-version"></strong></div>
+      <div class="stat"><span>Versione</span><strong id="plan-version"></strong></div>
+      <div class="digest"><span>Impronta SHA-256 del piano</span><code id="plan-digest">Calcolo…</code></div>
+      <div id="status" role="status" aria-live="polite" class="status">Piano dimostrativo pronto.</div>
+      <div class="stat"><span>Permission selezionate</span><strong id="selected">0</strong></div>
+      <div class="stat"><span>Agenti candidati</span><strong id="agents">3</strong></div>
+      <button class="primary-button" id="approve" type="button">Conferma selezione (mock)</button>
+      <button class="secondary download" id="download" type="button" disabled>Esporta revisione JSON</button>
+      <p class="warning">Nessuna credenziale viene emessa. Questa schermata non autorizza operazioni reali e non contatta Gemini, Gitea o Gateway. Un digest non dimostra il consenso umano.</p>
+      <div class="explain"><h3>Nella versione integrata</h3>
+        <p>Un backend autenticato verificherà la versione, l'autorità dell'Engineer, gli agenti registrati e gli URI canonici, prima di emettere eventuali DC. L'esecuzione dovrà verificare sia il piano approvato sia DC/VP e OPA.</p>
+      </div>
+    </aside>
+  </div>
+  <footer>Delegation Thesis PoC · GUI mock indipendente dal runtime operativo</footer>
+</main>
+<script src="./mock-plan.js"></script>
+<script src="./review-model.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
