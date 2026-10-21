@@ -1,4 +1,5 @@
 import type { SpecializedAgentRole } from "./contracts.ts";
+import type { CryptoPresentationPort } from "./trusted-crypto-mcp-bridge.ts";
 import { ControlledToolError } from "./controlled-errors.ts";
 import {
   DelegationEvidenceHandler,
@@ -20,6 +21,8 @@ export interface GatewayControlledToolClientConfig {
   agentRole: SpecializedAgentRole;
   taskId: string;
   evidenceHandler: DelegationEvidenceHandler;
+  /** Opt-in trusted crypto MCP path, never exposed as a model tool. */
+  cryptoPresentation?: CryptoPresentationPort;
   timeoutMs?: number;
   /** Long execute timeout only for the controlled run_tests tool. */
   runnerExecuteTimeoutMs?: number;
@@ -66,6 +69,7 @@ export class GatewayControlledToolClient {
   readonly #agentRole: SpecializedAgentRole;
   readonly #taskId: string;
   readonly #evidenceHandler: DelegationEvidenceHandler;
+  readonly #cryptoPresentation?: CryptoPresentationPort;
   readonly #timeoutMs: number;
   readonly #runnerExecuteTimeoutMs: number;
   readonly #fetch: FetchLike;
@@ -83,6 +87,7 @@ export class GatewayControlledToolClient {
     this.#agentRole = config.agentRole;
     this.#taskId = config.taskId;
     this.#evidenceHandler = config.evidenceHandler;
+    this.#cryptoPresentation = config.cryptoPresentation;
     this.#timeoutMs = config.timeoutMs ?? 10_000;
     this.#runnerExecuteTimeoutMs = config.runnerExecuteTimeoutMs ?? this.#timeoutMs;
     if(!Number.isSafeInteger(this.#runnerExecuteTimeoutMs) ||
@@ -153,7 +158,11 @@ export class GatewayControlledToolClient {
     }
 
     this.#signal?.throwIfAborted();
-    const signedVp = await this.#evidenceHandler.createPresentation(prepared);
+    // Both paths keep the signed VP in trusted runtime memory; the MCP path
+    // returns only an opaque reference to its private worker before executing.
+    const signedVp = this.#cryptoPresentation
+      ? await this.#cryptoPresentation.createSignedPresentation(prepared)
+      : await this.#evidenceHandler.createPresentation(prepared);
     this.#signal?.throwIfAborted();
 
     let executeResponse: Response;
