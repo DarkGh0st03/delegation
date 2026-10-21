@@ -42,6 +42,9 @@ pub struct EvmAdapterConfig {
     pub identity_private_keys: HashMap<CallerRole, String>,
     pub did_resolver_script: String,
     pub did_publisher_script: String,
+    /// Optional shared public-only artifact directory, mounted read-only
+    /// into independently deployed verifiers. No signing keys are persisted.
+    pub public_artifact_dir: Option<String>,
 }
 
 impl EvmAdapterConfig {
@@ -83,6 +86,9 @@ impl EvmAdapterConfig {
                 .unwrap_or_else(|_| String::from("blockchain/did-client/resolve-did-json.mjs")),
             did_publisher_script: env::var("ADAPTER_DID_PUBLISHER_SCRIPT")
                 .unwrap_or_else(|_| String::from("blockchain/did-client/publish-ed25519.mjs")),
+            public_artifact_dir: env::var("ADAPTER_PUBLIC_ARTIFACT_DIR")
+                .ok()
+                .filter(|path| !path.trim().is_empty()),
         })
     }
 }
