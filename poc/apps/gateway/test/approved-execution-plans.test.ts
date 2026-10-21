@@ -57,7 +57,8 @@ function harness(options:{
   approvedIds?:string[];
   correctEngineer?:boolean;
   attestation?:boolean;
-  simulated?:boolean
+  simulated?:boolean;
+  wrongPresenter?:boolean
 }={}){
   const p=options.configuredPlan??plan();
   const a=approval(p,options.approvedIds);
@@ -115,7 +116,8 @@ function harness(options:{
     verifier:{async verify(request){
       verifiedCalls++;
       return {
-        presenter_id:"did:thesis:"+request.presenter,
+        presenter_id:options.wrongPresenter && request.presenter==="backend"
+          ? "did:thesis:attacker" : "did:thesis:"+request.presenter,
         issuer_id:did,credential_id:"urn:delegation:delegated",
         permissions:[request.required_permission],hierarchy_depth:1,
         expiration:"999999999999999"
@@ -316,4 +318,21 @@ test("runtime remains backward compatible when approved plan guard is not instal
   const result=await runtime.execute({request_id:p.request_id,signed_vp:"jwt"});
   assert.equal(result.execution.provider,"mock");
   assert.equal(executor.callCount,1);
+});
+
+test("valid VP/OPA permission cannot authorize the wrong DID for an approved agent",async()=>{
+  const h=harness({wrongPresenter:true});
+  await activated(h);
+  await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+  await h.gates.confirmTaskCompletion("a2a-bootstrap");
+  const p=h.runtime.prepare({
+    task_id:"a2a-backend",agent_role:"backend",
+    tool:"update_file",arguments:updateArgs
+  });
+  await assert.rejects(h.runtime.execute({
+    request_id:p.request_id,signed_vp:"signed"
+  }),(error:unknown)=>error instanceof GatewayError&&
+      error.code==="approved_plan_denied");
+  assert.equal(h.opaCalls,2);
+  assert.equal(h.providerCalls,1);
 });
