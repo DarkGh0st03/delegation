@@ -1,6 +1,8 @@
 import type { SpecializedAgentRole } from "@thesis/agent-runtime";
 
 export type TemplateOperation =
+  | "read_repository"
+  | "list_directory"
   | "read_file"
   | "update_file"
   | "create_file"
