@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: cumulative-refactoring-${{ github.ref }}
+  group: cumulative-refactoring-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 jobs:
   all-node-and-policy:
