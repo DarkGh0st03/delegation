@@ -18,8 +18,8 @@ const MAX_PLANNING_TTL_MS = 15 * 60 * 1000;
 
 interface Session {
   readonly taskId: string;
-  readonly baseRevision: string;
-  readonly expiresAtMs: number;
+  baseRevision: string;
+  expiresAtMs: number;
   active: boolean;
 }
 
