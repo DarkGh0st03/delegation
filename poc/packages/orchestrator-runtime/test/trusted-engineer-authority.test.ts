@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {makeApproval} from "../../../plan-contracts/src/plan.mjs";
+import {makeApproval} from "../../plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {
   TrustedEngineerAuthoritySession, preliminaryReadPermissions,
