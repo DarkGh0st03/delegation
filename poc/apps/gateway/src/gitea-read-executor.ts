@@ -17,7 +17,7 @@ export class GiteaReadOnlyExecutor implements ExecutionPort {
 
   async execute(record: PreparedRequestRecord): Promise<ExecutionResult> {
     if (record.request.tool === "read_repository") {
-      const snapshot = await this.#client.readRepository();
+      const snapshot = await this.#client.readRepository(record.pinned_revision);
       return {
         provider:"gitea", performed:true, tool:"read_repository", ...snapshot
       };
@@ -25,7 +25,8 @@ export class GiteaReadOnlyExecutor implements ExecutionPort {
     if (record.request.tool === "list_directory") {
       const snapshot = await this.#client.listDirectory(
         record.request.arguments.branch,
-        record.request.arguments.path
+        record.request.arguments.path,
+        record.pinned_revision
       );
       return {
         provider:"gitea", performed:true, tool:"list_directory", ...snapshot
