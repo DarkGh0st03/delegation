@@ -147,7 +147,7 @@ fn verify_real(
         .map_err(|_| String::from("Cannot encode VerifiedDelegation"))
 }
 
-struct VerifyTask {
+pub struct VerifyTask {
     context_json: String,
     signed_vp: String,
 }
