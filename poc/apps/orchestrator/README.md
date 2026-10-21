@@ -238,8 +238,9 @@ report a matching passing SHA and mandatory pass statuses. The
 `trusted-a2a-observer.test.ts` tests this adaptation.
 
 The existing deterministic Account Suspension orchestrator is not
-silently switched to this opt-in approved-plan path. Wiring of a fully
-dynamic DAG dispatcher and trusted A2A re-polling remains future work.
+silently switched to this opt-in approved-plan path. A separately
+approved DAG dispatcher is available and tested; adopting it as the
+normal execution path and adding durable A2A re-polling remain future work.
 
 ## Trusted approved A2A dispatcher — opt-in stage
 
@@ -273,11 +274,33 @@ which binds *before* invoking the private Gateway client. Specialized tasks
 use `dispatch(planTaskId)`; child credentials and unique revocation status
 entries come from the trusted `authorityForTask` allocator, not the model.
 
-**Explicit limits:** this increment supports the existing frozen
-`feature/account-suspension` Agent contract only; it rejects incompatible
-branch/file permissions. The dispatcher is opt-in and not yet invoked from
-the legacy deterministic Account Suspension coordinator or the paid Gemini
-workflow. Parallel DAG execution, arbitrary branches, runtime restart
-recovery, cryptographic remote A2A task attestations and a fully autonomous
-AI planner remain future work. The new binding is an extra plan gate; Rust
-DC/VP/OPA remains the actual authorization enforcement.
+**Approved branch support:** the signed plan must reference exactly one
+canonical `feature/...` branch, encoded consistently in its repository
+resources and approved permissions. The dispatcher derives that branch from
+the signed plan and rejects mismatched repository/branch scopes. When using
+direct ADK FunctionTools, the per-task tool schemas and reduced prompt are
+restricted to this branch; the server accepts a nonlegacy branch only with
+a private prebound Gateway dispatch ID. A2A artifacts are checked against
+the branch from the trusted dispatch.
+
+**Important limits:** shared MCP argument schemas remain explicitly
+frozen to `feature/account-suspension`; the dynamic-branch ADK path
+fails closed if shared MCP is enabled. The authorized *file catalog* remains
+the existing Account Suspension role profiles; this change does not grant
+arbitrary repository navigation or dynamic tool catalogs. The dispatcher
+is opt-in, not yet the normal paid-Gemini workflow. Parallel execution,
+arbitrary approved agent/file catalogs, runtime restart recovery,
+cryptographically authenticated remote A2A Task results and a fully dynamic
+planner remain future work. Rust DC/VP/OPA and the Gateway provider
+enforcement remain independent from DAG plan validation.
+
+**Offline integration:** `poc/apps/gateway/test/trusted-plan-ipc.test.ts`
+contains a separately started Gateway process, real HMAC Unix IPC,
+Engineer Ed25519 approval, and a real A2A SDK Task/server using a
+scripted role handler on `feature/approved`. It confirms provider effects
+against the immutable Task DAG. The test's root issuance, Rust/VP
+verification, policy decision and Gitea executor are **simulated**.
+The standalone Gateway no-dependency suite explicitly skips only this
+A2A SDK integration subtest when the SDK is absent. The dedicated trusted
+IPC workflow installs pinned dependencies and runs it without skipping.
+This does not replace an E2E with disposable Gitea and Docker Runner.

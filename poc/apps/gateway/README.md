@@ -383,12 +383,13 @@ with socketPath and secretFile and pass that client to
 TrustedExecutionCoordinator as approvedGatewayPlans. It must await
 bindDispatchedTask when using the remote client.
 
-Only three administrative commands exist: activate the frozen plan,
-bind one live Task to its approved agent and close the active session.
-The cross-process protocol deliberately **does not expose task completion**:
-the production deployment installs a deny-only placeholder attestor until
-independent A2A/provider evidence is available. A model's success message
-cannot satisfy a DAG dependency.
+The private management channel supports four commands: activate the frozen
+plan, bind a Task to its approved Agent, submit a trusted Coordinator
+completion **observation**, and close the session. A completion is never
+accepted from model prose alone. The Gateway's completion attestor
+requires matching provider effects already recorded after authorization;
+A2A Task status is only corroborating metadata, not a substitute for
+the provider result.
 
 This does not replace verified delegation or provider policy. Rust DC/VP,
 challenge, revocation and OPA remain enforced for each protected action.
@@ -450,3 +451,28 @@ CI attestations have not been connected yet.
 Tests: `poc/apps/gateway/test/trusted-task-observation.test.ts` and
 `trusted-plan-ipc.test.ts` (cross-process HMAC channel, reject fake
 completion, accept only corroborated branch and backend commit).
+
+
+### Offline A2A-to-Gateway integration boundary
+
+An additional test in `test/trusted-plan-ipc.test.ts` exercises the
+cross-process Gateway and its owner-only HMAC socket together with a
+**real A2A SDK client and Agent server**. It loads a valid Ed25519
+Engineer approval, activates the signed DAG, binds the branch Task
+before the Gateway operation, binds a Backend Task before A2A
+submission, and confirms an artifact on `feature/approved` only
+after the Gateway records the matching write effect. This isolates
+the A2A/plan binding without calling a paid language model.
+
+The A2A server uses a scripted handler; Gateway test fixtures still
+simulate root issuance/revocation, VP verification, OPA and Gitea
+provider responses. **Do not describe this test as a live Gitea/Runner
+E2E.** Existing separate Gitea/Runner suites exercise their genuine
+provider behavior but have not yet been fused into this entire new
+approved-plan flow.
+
+The standalone Gateway test command intentionally has no installed
+A2A SDK: only the SDK-specific integration subtest is marked skipped
+in that environment. The dedicated `trusted-plan-ipc-offline.yml`
+installs pinned Node dependencies and requires the complete integration
+subtest to pass.
