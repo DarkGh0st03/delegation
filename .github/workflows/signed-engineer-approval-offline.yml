@@ -1,0 +1,45 @@
+name: Signed Engineer Approval and Trusted Handoff (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "poc/packages/plan-contracts/src/signed-approval.mjs"
+      - "poc/packages/orchestrator-runtime/src/signed-approval-store.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-execution-coordinator.ts"
+      - "poc/packages/orchestrator-runtime/src/index.ts"
+      - "poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts"
+      - ".github/workflows/signed-engineer-approval-offline.yml"
+  pull_request:
+    paths:
+      - "poc/packages/plan-contracts/**"
+      - "poc/packages/orchestrator-runtime/**"
+      - ".github/workflows/signed-engineer-approval-offline.yml"
+permissions:
+  contents: read
+jobs:
+  signed-approval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install offline pinned packages
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Verify Operation catalog exactly matches Rust
+        run: node poc/scripts/sync-rust-operation-catalog.mjs --check
+      - name: Exercise Ed25519 approval signature and trusted two-root/Gateway handoff
+        run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts
+      - name: Regress all Engineer and plan contract tests
+        run: |
+          npm --prefix poc run orchestrator-runtime:test
+          node --test poc/packages/plan-contracts/test/*.test.mjs
+      - name: Regress Gateway policy and provider behavior
+        run: npm --prefix poc run gateway:test
