@@ -57,10 +57,16 @@ const authorized = {
   task_id:"backend-task", agent_id:"backend",
   resource:file, operation:"update_file"
 };
+const assertAction = (plan, decision, action) =>
+  assertApprovedExecution(plan, decision, action, {
+    allowedOperations: operations,
+    completedTaskIds: ["bootstrap"]
+  });
+
 test("versioned proposal binds agent, task and exact permission", () => {
   const p=fixture();
   assert.equal(validatePlan(p,{allowedOperations:operations}),p);
-  assert.equal(assertApprovedExecution(p,approval(p),authorized,{allowedOperations:operations}),true);
+  assert.equal(assertAction(p,approval(p),authorized,{allowedOperations:operations}),true);
   assert.match(planDigest(p),/^[a-f0-9]{64}$/);
 });
 test("canonical hash is insensitive to object-key insertion order", () => {
@@ -101,29 +107,29 @@ test("approval never silently adds or invents permissions", () => {
   assert.throws(()=>approval(p,["backend-p","new-permission"]),/outside plan/);
   const a=approval(p,["branch-p"]);
   assert.throws(
-    ()=>assertApprovedExecution(p,a,authorized,{allowedOperations:operations}),
+    ()=>assertAction(p,a,authorized,{allowedOperations:operations}),
     /not approved/
   );
 });
 test("an authorized operation cannot be reassigned to another agent or task", () => {
   const p=fixture(),a=approval(p);
   assert.throws(
-    ()=>assertApprovedExecution(p,a,{...authorized,agent_id:"orchestrator"},
+    ()=>assertAction(p,a,{...authorized,agent_id:"orchestrator"},
       {allowedOperations:operations}),/not assigned/
   );
   assert.throws(
-    ()=>assertApprovedExecution(p,a,{...authorized,task_id:"bootstrap"},
+    ()=>assertAction(p,a,{...authorized,task_id:"bootstrap"},
       {allowedOperations:operations}),/not assigned/
   );
 });
 test("an approved plan may not silently expand scope or operations", () => {
   const p=fixture(),a=approval(p);
   assert.throws(
-    ()=>assertApprovedExecution(p,a,{...authorized,operation:"read_file"},
+    ()=>assertAction(p,a,{...authorized,operation:"read_file"},
       {allowedOperations:operations}),/not approved/
   );
   assert.throws(
-    ()=>assertApprovedExecution(p,a,{...authorized,resource:repository},
+    ()=>assertAction(p,a,{...authorized,resource:repository},
       {allowedOperations:operations}),/not approved/
   );
 });
@@ -137,7 +143,7 @@ test("any changed plan/version/revision is rejected until reapproval", () => {
     const p=fixture(),a=approval(p);
     update(p);
     assert.throws(
-      ()=>assertApprovedExecution(p,a,authorized,{allowedOperations:operations}),
+      ()=>assertAction(p,a,authorized,{allowedOperations:operations}),
       /version or digest/
     );
   }
@@ -152,4 +158,15 @@ test("JSON Schema exists and retains key contract requirements", () => {
   }
   assert.ok(schema.$defs.permission.required.includes("task_id"));
   assert.ok(schema.$defs.permission.required.includes("agent_id"));
+});
+
+test("dependent task cannot execute until predecessor has completed", () => {
+  const p=fixture(),a=approval(p);
+  assert.throws(
+    ()=>assertApprovedExecution(p,a,authorized,{
+      allowedOperations:operations,completedTaskIds:[]
+    }),
+    /dependency not completed/
+  );
+  assert.equal(assertAction(p,a,authorized),true);
 });
