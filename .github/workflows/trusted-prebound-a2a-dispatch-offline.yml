@@ -7,6 +7,10 @@ on:
     paths:
       - "poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts"
       - "poc/packages/orchestrator-runtime/src/a2a-workflow.ts"
+      - "poc/packages/orchestrator-runtime/src/authority-client.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-execution-coordinator.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-approved-child-issuer.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-approved-child-issuer.test.ts"
       - "poc/packages/orchestrator-runtime/src/trusted-a2a-observer.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts"
       - "poc/packages/agent-runtime/src/contracts.ts"
@@ -41,6 +45,8 @@ jobs:
           cache-dependency-path: poc/package-lock.json
       - name: Install locked packages
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Verify scoped child DC permissions against signed plan and operational root
+        run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-approved-child-issuer.test.ts
       - name: Test immutable DAG and binding before private A2A dispatch
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts
       - name: Test real SDK transports private binding without exposing it to model
