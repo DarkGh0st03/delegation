@@ -346,3 +346,59 @@ npm --prefix poc run gateway:start
 ```
 
 `src/config.ts` defaults to `mock` provider mode for standalone use. A real Gitea provider requires explicit `GATEWAY_PROVIDER_MODE` and trusted Adapter, OPA and Gitea credentials; the Runner is configured for controlled `run_tests`. See `src/config.ts` for supported environment variables and `src/runtime.ts` for runtime wiring.
+
+
+## Trusted cross-process approved-plan control — opt-in
+
+The approved-plan registry can now run inside the actual Gateway process,
+while a trusted Coordinator activates and binds tasks over a separate
+**owner-only Unix domain socket**. No activation, completion or Task binding
+route is added to the normal public Gateway HTTP server.
+
+The socket is restricted to a pre-existing real directory with mode 0700
+and created with mode 0600. Every private command uses HMAC-SHA256 with a
+per-command timestamp and random nonce; stale, unauthenticated, replayed,
+oversized, and malformed requests fail closed. The shared secret must be
+32 random bytes encoded as 64 lowercase hex characters, stored in a 0600
+file under a 0700 directory. Do **not** store it in GitHub, the plan, ADK,
+A2A messages, or an MCP response. A pre-existing socket path causes
+startup failure; do not use /tmp directly.
+
+To enable the opt-in path in the normal Gateway entry point, provide all
+the following deployment variables:
+
+- TRUSTED_PLAN_IPC_SOCKET: absolute Unix socket path inside 0700 directory
+- TRUSTED_PLAN_IPC_SECRET_FILE: protected 0600 secret path
+- TRUSTED_PLAN_APPROVAL_DIR: protected Ed25519 receipt directory
+- TRUSTED_PLAN_ENGINEER_DID: expected trusted Engineer DID
+- TRUSTED_PLAN_KEY_ID: pinned authorized key identifier
+- TRUSTED_PLAN_PUBLIC_KEY_FILE: independently provisioned pinned public PEM
+
+Absent these variables, the legacy Gateway remains unchanged. A partial
+configuration stops startup. The Gateway uses SignedEngineerApprovalFileStore
+and rejects invalid approvals, repository mismatches, SHA mismatches, or
+plan/permission inconsistencies before activation. The Coordinator may
+create a TrustedPlanIpcClient by calling its asynchronous connect method
+with socketPath and secretFile and pass that client to
+TrustedExecutionCoordinator as approvedGatewayPlans. It must await
+bindDispatchedTask when using the remote client.
+
+Only three administrative commands exist: activate the frozen plan,
+bind one live Task to its approved agent and close the active session.
+The cross-process protocol deliberately **does not expose task completion**:
+the production deployment installs a deny-only placeholder attestor until
+independent A2A/provider evidence is available. A model's success message
+cannot satisfy a DAG dependency.
+
+This does not replace verified delegation or provider policy. Rust DC/VP,
+challenge, revocation and OPA remain enforced for each protected action.
+The separate-process CI test uses real Ed25519 approval receipts but
+simulated root issuance, VP verification, OPA and provider effects.
+Therefore it proves transport and coordination, **not** a final live
+Gemini full E2E, nor a production A2A completion attestor.
+
+Operational limitations: control state and nonce history are in memory,
+so process crashes and cross-process restarts require fail-closed
+reconciliation of the credentials and plan. This single-host trust boundary
+assumes a trusted OS account and private filesystem permissions; it is not
+a multi-host RPC protocol, nor a substitute for host-hardening or KMS.
