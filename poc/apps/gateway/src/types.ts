@@ -1,3 +1,5 @@
+import type { Operation as RustOperation } from "./operation-catalog.ts";
+
 export const AGENT_ROLES = ["orchestrator", "backend", "frontend", "test"] as const;
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
@@ -11,13 +13,8 @@ export const TOOL_NAMES = [
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
-export type Operation =
-  | "read_file"
-  | "update_file"
-  | "create_file"
-  | "create_branch"
-  | "create_pull_request"
-  | "run_tests";
+/** Catalog membership is not provider support or delegated authority. */
+export type Operation = RustOperation;
 
 export interface Permission {
   resource: string;
