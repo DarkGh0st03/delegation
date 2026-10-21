@@ -370,7 +370,10 @@ test("signed DAG dispatches a real A2A SDK Task to a separate-process Gateway vi
     async authorityForTask(taskId,role){
       assert.equal(taskId,"backend");
       assert.equal(role,"backend");
-      return root("urn:ipc:a2a-backend-child","203") as any;
+      return {
+        ...root("urn:ipc:a2a-backend-child","203"),
+        parent_credential_id:operational.credential_id
+      };
     }
   });
   assert.equal(dispatcher.approvedBranch,"feature/approved");
