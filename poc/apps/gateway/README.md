@@ -109,10 +109,71 @@ It does **not** by itself bind the request to a signed human-approved
 plan: that integration remains a separate requirement and is never
 delegated to prompts or ADK callbacks.
 
+## Stage 6 — Read-only repository exploration
+
+The Rust `Operation` catalog already includes `read_repository` and
+`list_directory`. The Gateway now implements both tools using the same
+`prepare → signed VP → Core Rust verification → OPA → Gitea` path as
+`read_file`. No separate unprotected browsing API has been introduced.
+
+### Tool arguments and canonical permissions
+
+| Tool | Arguments | Required permission |
+|---|---|---|
+| `read_repository` | `{}` | `read_repository` at `gitea://gitea.local/thesis/iam-console-poc` |
+| `list_directory` | `{"branch":"main","path":""}` for root; optional `path` for a nested directory | `list_directory` at `gitea://gitea.local/thesis/iam-console-poc/branches/main/directories[/path]` |
+| `read_file` | `{"branch":"main","path":"src/file.ts"}` | `read_file` at the canonical per-file URI |
+
+The normalizer rejects relative traversal (`..`), absolute paths and
+unexpected caller-supplied permission fields. Every tool call gets a
+dedicated one-time challenge, and its permission is derived by the
+Gateway, not by Gemini. The caller must possess a legitimate DC/VP
+whose disclosed permission matches the specific target URI and operation.
+
+### Planning permissions and provider boundaries
+
+OPA `phase6-ro-v1` permits the **Orchestrator** to read repository
+metadata, list directories and read files from `main` **only** when
+a separately verified credential grants those operations. The existing
+feature-branch tool policy remains active; **writes to `main` remain
+denied**, including requests by the Orchestrator.
+
+The Gitea client validates its configured repository identity, resolves
+the branch's current commit SHA, then performs directory/file reads
+against that **pinned commit**, avoiding moving-branch read races.
+Directory results contain only names, types, paths and optional file
+sizes (max 200 immediate children). Unsupported entry types and
+inconsistent returned paths fail closed. Neither directory traversal
+nor metadata reads invoke the Test Runner or Gitea mutation endpoints.
+
+The `gitea-readonly` mode now supports all three discovery tools and
+still rejects every mutation independently of OPA. The standard Gitea
+provider also supports these reads. The `mock` provider retains its
+existing no-side-effects behavior.
+
+### Scope still pending
+
+This stage **does not issue preliminary read-only DCs**, expose the
+discovery tools through the new cryptographic MCP service, implement
+the Gemini Planning loop, authenticate a human plan approval, or bind
+execution to an approved plan version. Those integrations follow in
+their assigned roadmap stages. No vector database or RAG index is used.
+
+Run the offline checks with:
+
+```sh
+npm --prefix poc run gateway:test
+bash poc/scripts/phase4a-policy-test.sh
+```
+
+The branch's Gateway CI runs both suites and the Rust catalog drift
+check without calling Gemini.
+
 ## Supported operations
 
 - Shared MCP agents: `read_file`, `update_file`, `create_file`, `run_tests` (according to their DC and OPA rights).
-- Orchestrator directly via Gateway: `create_branch`, `create_pull_request`.
+- Planning reads through Gateway: `read_repository`, `list_directory`, and explicitly delegated `read_file` access to `main`.
+- Orchestrator operational tools directly via Gateway: `create_branch`, `create_pull_request`.
 - Automated writes to `main` and model-controlled merges are not supported.
 
 The Gateway is **not** an MCP server and does not replace the Rust Delegation Adapter. Historical real-Gemini evidence includes [13 October run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) and the later [15 October run 38761963415](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415) at framework SHA `02c3395b9111a63ccc9f441ea2c91c81865d6673`. Neither run attests the subsequently audited `main` commits.
