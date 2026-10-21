@@ -1,0 +1,42 @@
+name: Cryptographic MCP Profile (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "poc/mcp-shared/**"
+      - "poc/packages/agent-runtime/src/private-mcp-task-registry.ts"
+      - "poc/packages/agent-runtime/src/private-mcp-worker-http.ts"
+      - "poc/packages/agent-runtime/src/adk-a2a-handler.ts"
+      - "poc/package-lock.json"
+      - ".github/workflows/crypto-mcp-offline.yml"
+  pull_request:
+    paths:
+      - "poc/mcp-shared/**"
+      - "poc/packages/agent-runtime/src/private-mcp-task-registry.ts"
+      - "poc/packages/agent-runtime/src/private-mcp-worker-http.ts"
+      - "poc/packages/agent-runtime/src/adk-a2a-handler.ts"
+      - "poc/package-lock.json"
+      - ".github/workflows/crypto-mcp-offline.yml"
+permissions:
+  contents: read
+jobs:
+  native-mcp-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install locked offline PoC dependencies
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Native MCP SDK crypto profile and legacy regressions
+        run: npm --prefix poc/mcp-shared test
+      - name: Protected ADK/A2A Agent regressions
+        run: npm --prefix poc run agent-runtime:test
