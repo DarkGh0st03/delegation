@@ -19,6 +19,8 @@ export interface DeterministicSubtask {
 
 export interface AgentTaskContext {
   task_id: string;
+  /** Opt-in private Gateway binding preallocated BEFORE A2A dispatch. */
+  trusted_gateway_task_id?: string;
   context_id: string;
   role: SpecializedAgentRole;
   subtask: DeterministicSubtask;

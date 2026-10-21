@@ -25,6 +25,7 @@ export interface ProtectedA2AClientPort {
     agent_base_url: string;
     subtask: DeterministicSubtask;
     delegation_evidence: DelegationEvidence;
+    trusted_gateway_task_id?: string;
   }): Promise<{
     card: { name: string };
     task: Task;
@@ -40,6 +41,8 @@ export interface DelegatedA2ARoleTaskInput {
   credential_status: ChildIssuanceInput["credential_status"];
   agent_base_url: string;
   subtask: DeterministicSubtask;
+  /** Trusted Coordinator's preallocated Gateway task ID, not A2A SDK ID. */
+  trusted_gateway_task_id?: string;
 }
 
 export interface DelegatedA2ARoleTaskResult {
@@ -127,10 +130,16 @@ export class DelegatedA2ARoleRunner {
       presenter_id: issued.credential.credentialSubject.sub
     };
 
+    if(input.trusted_gateway_task_id!==undefined&&
+       !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(input.trusted_gateway_task_id)){
+      throw new Error("Invalid trusted pre-dispatch Gateway Task ID");
+    }
     const result = await this.#a2a.sendProtectedTask({
       agent_base_url: input.agent_base_url,
       subtask: structuredClone(input.subtask),
-      delegation_evidence: delegationEvidence
+      delegation_evidence: delegationEvidence,
+      ...(input.trusted_gateway_task_id
+        ? {trusted_gateway_task_id:input.trusted_gateway_task_id}:{})
     });
 
     const artifact = validateWorkflowArtifact(

@@ -234,7 +234,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const gatewayClient = new GatewayControlledToolClient({
       gatewayBaseUrl: config.gatewayBaseUrl,
       agentRole: context.role,
-      taskId: context.task_id,
+      taskId: context.trusted_gateway_task_id??context.task_id,
       evidenceHandler,
       ...(cryptoPresentation ? {cryptoPresentation} : {}),
       ...(signal ? {signal} : {}),

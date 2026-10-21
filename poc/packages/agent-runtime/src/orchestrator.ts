@@ -60,6 +60,8 @@ export interface ProtectedA2ATaskRequest {
   agent_base_url: string;
   subtask: DeterministicSubtask;
   delegation_evidence: DelegationEvidence;
+  /** Opaque, trusted-prebound ID; never from Gemini or the A2A response. */
+  trusted_gateway_task_id?: string;
 }
 
 export interface ProtectedA2ATaskResult {
@@ -121,6 +123,10 @@ export class DeterministicA2AOrchestrator {
     const card = await client.getAgentCard();
     assertDelegatedAuthorizationSupport(card);
 
+    if(request.trusted_gateway_task_id!==undefined&&
+       !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(request.trusted_gateway_task_id)){
+      throw new Error("Invalid trusted Gateway dispatch binding");
+    }
     const start = performance.now();
     const result = await client.sendMessage(
       {
@@ -142,7 +148,9 @@ export class DeterministicA2AOrchestrator {
             }
           ],
           metadata: {
-            delegation_evidence: request.delegation_evidence
+            delegation_evidence: request.delegation_evidence,
+            ...(request.trusted_gateway_task_id
+              ? {trusted_gateway_task_id:request.trusted_gateway_task_id}:{})
           },
           extensions: [DELEGATED_AUTHORIZATION_EXTENSION_URI],
           referenceTaskIds: []

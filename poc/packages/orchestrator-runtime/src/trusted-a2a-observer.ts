@@ -12,17 +12,22 @@ import type {TrustedCompletionObservation} from
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 export function observedA2ACompletion(
-  result:DelegatedA2ARoleTaskResult
+  result:DelegatedA2ARoleTaskResult,
+  preboundGatewayTaskId?:string
 ):TrustedCompletionObservation{
   if(!result||!ID.test(result.task_id)||
      !["backend","frontend","test"].includes(result.role)||
      result.artifact?.role!==result.role){
     throw new Error("Trusted A2A observer requires validated Task, role and artifact");
   }
+  if(preboundGatewayTaskId!==undefined&&
+     !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(preboundGatewayTaskId)){
+    throw new Error("Invalid prebound Gateway Task ID");
+  }
   const a=result.artifact;
   return structuredClone({
     source:"trusted_a2a_poll",
-    runtime_task_id:result.task_id,
+    runtime_task_id:preboundGatewayTaskId??result.task_id,
     state:"completed",role:result.role,
     artifact:{
       branch:a.branch,revision:a.revision,commit_sha:a.commit_sha,

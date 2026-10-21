@@ -55,6 +55,18 @@ function delegationEvidence(message: Message): DelegationEvidence {
   };
 }
 
+function trustedGatewayTaskId(message:Message):string|undefined{
+  const metadata=object(message.metadata??{},"Message.metadata");
+  const id=metadata.trusted_gateway_task_id;
+  if(id===undefined)return undefined;
+  if(typeof id!=="string"||!/^dispatch_[A-Za-z0-9_-]{22}$/u.test(id)){
+    throw new Error("Invalid private Gateway dispatch binding");
+  }
+  // This ID is only a candidate: the Gateway still requires its separate
+  // approved plan binding, role, verified DC/VP and OPA authorization.
+  return id;
+}
+
 function subtask(message: Message): DeterministicSubtask {
   const dataPart = message.parts.find((part) => part.content?.$case === "data");
   if (dataPart?.content?.$case !== "data") {
@@ -135,6 +147,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
     const message = requestContext.userMessage;
     const evidence = delegationEvidence(message);
     const taskInput = subtask(message);
+    const trustedGatewayId=trustedGatewayTaskId(message);
 
     requestContext.context.addActivatedExtension(
       DELEGATED_AUTHORIZATION_EXTENSION_URI
@@ -142,6 +155,7 @@ export class DeterministicSpecializedAgentExecutor implements AgentExecutor {
 
     const taskContext: AgentTaskContext = {
       task_id: requestContext.taskId,
+      ...(trustedGatewayId?{trusted_gateway_task_id:trustedGatewayId}:{}),
       context_id: requestContext.contextId,
       role: this.#role,
       subtask: taskInput,
