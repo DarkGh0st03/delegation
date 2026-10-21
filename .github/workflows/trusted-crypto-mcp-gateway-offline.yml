@@ -1,0 +1,43 @@
+name: Trusted Crypto MCP Gateway Bridge (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts"
+      - "poc/packages/agent-runtime/src/gateway-tool-client.ts"
+      - "poc/packages/agent-runtime/src/adk-a2a-handler.ts"
+      - "poc/packages/agent-runtime/test/trusted-crypto-mcp-bridge.test.ts"
+      - "poc/apps/a2a-agent/src/main.ts"
+      - "poc/mcp-shared/src/**"
+      - "poc/packages/agent-runtime/src/private-mcp-*"
+      - ".github/workflows/trusted-crypto-mcp-gateway-offline.yml"
+  pull_request:
+    paths:
+      - "poc/packages/agent-runtime/**"
+      - "poc/mcp-shared/**"
+      - ".github/workflows/trusted-crypto-mcp-gateway-offline.yml"
+permissions:
+  contents: read
+jobs:
+  bridge-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install pinned offline packages (no paid model)
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Gateway preparation through SDK crypto profile, private VP, Gateway execution
+        run: node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-crypto-mcp-bridge.test.ts
+      - name: Verify task role, bearer and proof lifecycle security
+        run: npm --prefix poc/mcp-shared test
+      - name: Verify direct legacy path and protected ADK/A2A regressions
+        run: npm --prefix poc run agent-runtime:test
