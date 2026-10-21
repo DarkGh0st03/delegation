@@ -105,6 +105,12 @@ export class DelegatedA2ARoleRunner {
     nonEmpty(input.parent_credential_id, "Parent credential id");
     nonEmpty(input.credential_id, "Child credential id");
     nonEmpty(input.agent_base_url, "Agent base URL");
+    // Reject malformed private Task bindings BEFORE issuing a child DC.
+    // Credential issuance is a side effect and cannot be retried blindly.
+    if(input.trusted_gateway_task_id!==undefined&&
+       !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(input.trusted_gateway_task_id)){
+      throw new Error("Invalid trusted pre-dispatch Gateway Task ID");
+    }
 
     const issued = await this.#authorityIssuer.issueSpecializedChild({
       parent_credential_id: input.parent_credential_id,
@@ -133,10 +139,6 @@ export class DelegatedA2ARoleRunner {
       presenter_id: issued.credential.credentialSubject.sub
     };
 
-    if(input.trusted_gateway_task_id!==undefined&&
-       !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(input.trusted_gateway_task_id)){
-      throw new Error("Invalid trusted pre-dispatch Gateway Task ID");
-    }
     const result = await this.#a2a.sendProtectedTask({
       agent_base_url: input.agent_base_url,
       subtask: structuredClone(input.subtask),
