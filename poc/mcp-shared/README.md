@@ -41,10 +41,14 @@ It exposes the original four tools through the original worker path.
 Do **not** point those ADK clients at `MCP_TOOL_PROFILE=crypto` yet:
 the current ADK tool configuration still expects `read_file`,
 `update_file`, `create_file` and `run_tests`. The trusted Gateway
-prepare → crypto-MCP proof-ref → Gateway execute wiring, and the
-subsequent direct-Core Rust Gateway integration, remain future work.
-This change only validates the new secure cryptographic MCP surface,
-not a completed live-system cutover or paid Gemini E2E.
+prepare → crypto-MCP proof-ref → Gateway execute wiring is now implemented
+**as a separate opt-in path**, via
+`poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts`
+and `GatewayControlledToolClient.cryptoPresentation`. The native Core Rust
+Gateway mode has also been implemented and tested separately.
+This does NOT mean the new combined ADK/Gemini/approval E2E has been
+validated; keep the legacy default until the trusted execution-plan
+enforcement is integrated.
 
 The dedicated `Cryptographic MCP Profile (Offline)` workflow tests
 both profiles with the official MCP SDK and the existing protected
@@ -52,6 +56,34 @@ ADK/A2A agent unit suites. It uses **no paid AI calls**.
 
 
 One shared **Streamable HTTP MCP** server exposes four agent-facing operations: `read_file`, `update_file`, `create_file` and `run_tests`. Google ADK exposes `read_file`, `update_file` and `create_file` through `MCPToolset`. For `run_tests`, a dedicated ADK `FunctionTool` still calls this same shared MCP endpoint with the MCP SDK and an explicit bounded request timeout, rather than bypassing MCP. The Orchestrator's `create_branch` and `create_pull_request` are **direct Gateway calls**, not MCP tools.
+
+## Trusted Gateway crypto bridge — opt-in integration
+
+In this newer stage, a standalone **crypto-only** MCP listener may be
+configured via `ADK_MCP_CRYPTO_URL` on the A2A Agent launcher, using
+`MCP_TOOL_PROFILE=crypto` on that listener and the existing
+`MCP_TASK_SIGNING_PRIVATE_KEY`/`MCP_TASK_SIGNING_PUBLIC_KEY` in the
+Agent worker. The Agent keeps the `DelegationEvidenceHandler` and signed
+JWT VP private. The **trusted** `GatewayControlledToolClient` registers
+the real Gateway challenge, invokes `delegation_create_presentation` over
+the official MCP SDK, validates the `proof_ref` response, retrieves the
+VP one time from the private task registry and immediately supplies it to
+Gateway Execute. All proof metadata is absent from model-visible tool
+results; there is no public endpoint for `takeSignedPresentation`.
+
+`ADK_MCP_SHARED_URL` continues to mean the separate **legacy** MCP tool
+listener (if enabled). Do not set it to a crypto-only listener because the
+former exposes normal agent tools and the latter only publishes
+`delegation_create_presentation`. It is valid to enable
+`ADK_MCP_CRYPTO_URL` without enabling legacy MCP tool routing;
+the existing ADK FunctionTools continue to invoke Gateway clients, now
+using private crypto MCP for the VP creation.
+
+This is intentionally opt-in and has no paid model calls in the unit and
+Gateway/MCP SDK integration CI. The tests use a simulated signer, verifier
+and OPA response. They demonstrate the transport and proof custody but
+not yet the final full flow with Gemini, authenticated Engineer approval
+and per-effect approved-plan compliance.
 
 ## Actual secure path
 
