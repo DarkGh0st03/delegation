@@ -117,7 +117,15 @@ export class TrustedExecutionCoordinator {
       throw new Error("No operational session available to close");
     }
     this.#phase="closed";
-    this.#gateway.closeSession(this.#sessionId);
-    await this.#credentials.revokeRoot(this.#operationalId);
+    let gatewayClosed=false;
+    try {
+      this.#gateway.closeSession(this.#sessionId);
+      gatewayClosed=true;
+    } finally {
+      // An error in plan-session shutdown must NEVER skip revocation of
+      // the independently issued root credential.
+      await this.#credentials.revokeRoot(this.#operationalId);
+    }
+    if(!gatewayClosed)throw new Error("Gateway plan shutdown is not confirmed");
   }
 }
