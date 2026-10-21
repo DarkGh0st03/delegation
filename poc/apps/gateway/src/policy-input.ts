@@ -7,6 +7,13 @@ import type {
 
 function policyArguments(record: PreparedRequestRecord): Record<string, unknown> {
   switch (record.request.tool) {
+    case "read_repository":
+      return {};
+    case "list_directory":
+      return {
+        branch: record.request.arguments.branch,
+        path: record.request.arguments.path
+      };
     case "read_file":
       return {
         branch: record.request.arguments.branch,
