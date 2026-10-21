@@ -48,6 +48,67 @@ The dedicated `Gateway Rust Operation Catalog (Offline)` GitHub Actions
 workflow runs the synchronization check and existing Gateway unit tests
 without invoking Gemini.
 
+## Stage 5 — Atomic multipermission verification (authorization-only)
+
+Two additional **non-executing** Gateway routes are available for checking
+several distinct tool permissions before a proposed workflow is executed:
+
+- `POST /v1/authorization/prepare-composite`: send a common `task_id`,
+  `agent_role` and 2–12 `actions` (`tool` + `arguments` each).
+  The Gateway normalizes each action and derives its canonical permission;
+  client-selected permissions and duplicate permissions are rejected.
+  Returns `request_id`, `audience`, one-time `challenge`,
+  `required_permissions`, `expires_at`, and `authorization_only:true`.
+- The trusted caller obtains one signed VP disclosing **all** required
+  permissions, then calls `POST /v1/authorization/verify-composite` with
+  `request_id` and `signed_vp`. The Gateway calls the authenticated
+  Adapter endpoint `/v1/verify-multiple` and evaluates the existing OPA
+  policy for **each** normalized action before returning allow.
+
+One invalid, undisclosed, expired, or policy-denied permission means
+**the entire request is denied**. Challenge bindings are single-use,
+with replay and expiry protection. Audit events record pending/allowed/
+denied outcomes, always with `provider_result:"not_called"`.
+
+A successful result is a **verification observation**, not permission
+to execute later without a new trusted check. Neither of these routes
+invokes Gitea, Docker Runner or the existing `ExecutionPort`. The
+original `/v1/authorization/prepare` and `/execute` endpoints
+remain unchanged. We do not implement a multi-write batch or advertise
+atomic commits: independent Gitea writes cannot be rolled back
+automatically without a deliberate transaction/compensation design.
+
+Example (read and update same file require distinct permissions):
+
+```json
+{
+  "task_id": "backend-task",
+  "agent_role": "backend",
+  "actions": [
+    {
+      "tool": "read_file",
+      "arguments": {
+        "branch": "feature/demo",
+        "path": "apps/backend/src/app.ts"
+      }
+    },
+    {
+      "tool": "update_file",
+      "arguments": {
+        "branch": "feature/demo",
+        "path": "apps/backend/src/app.ts",
+        "content": "updated"
+      }
+    }
+  ]
+}
+```
+
+This is the incremental bridge toward a trusted plan-conformance gate.
+It does **not** by itself bind the request to a signed human-approved
+plan: that integration remains a separate requirement and is never
+delegated to prompts or ADK callbacks.
+
 ## Supported operations
 
 - Shared MCP agents: `read_file`, `update_file`, `create_file`, `run_tests` (according to their DC and OPA rights).
