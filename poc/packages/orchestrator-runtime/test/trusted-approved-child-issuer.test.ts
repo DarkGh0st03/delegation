@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedPlanChildAuthorityIssuer} from "../src/trusted-approved-child-issuer.ts";
+import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
 import {DelegatedA2ARoleRunner} from "../src/a2a-workflow.ts";
 import {TaskState} from "@a2a-js/sdk";
 
@@ -215,4 +216,84 @@ test("DelegatedA2A runner passes approved Task ID to child issuer before any A2A
      relevant_paths:[]}
  } as any),/Task\/role not authorized/);
  assert.equal(unauthorized.calls.length,0);
+});
+
+
+test("opt-in signed DAG factory binds before issuing exact child DC then running A2A",async()=>{
+ const e=fixture();
+ const order:string[]=[];
+ // This is a mock of the trusted Coordinator for ordering; signed plan/root
+ // are independently fetched and checked by both production-style factories.
+ const trustedCoordinator={
+   ...e.control,
+   async bindDispatchedTask(taskId:string,id:string,role:string){
+     order.push("bind:"+taskId+":"+role+":"+id);
+   },
+   async confirmTask(id:string,observation:{role:string}){
+     order.push("confirm:"+id+":"+observation.role);
+   },
+   async closeExecution(){this.phase="closed";order.push("close");}
+ };
+ const roleTask={id:"backend",role:"backend"};
+ const dispatcher=await TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority({
+   approvals:e.config.approvals as any,coordinator:trustedCoordinator as any,
+   sessionId:e.p.session_id,
+   expectedEngineerDid:DID,baseRevision:e.p.base_revision,
+   expectedPlanDigest:planDigest(e.p),
+   agentBaseUrls:{
+     backend:"http://127.0.0.1:8001",
+     frontend:"http://127.0.0.1:8002",
+     test:"http://127.0.0.1:8003"
+   },
+   adapter:{
+     adapterBaseUrl:e.config.adapterBaseUrl,
+     bearerToken:e.config.bearerToken,
+     fetchFn:async(url,options)=>{
+       order.push("adapter-issued");
+       return e.config.fetchFn(url,options);
+     }
+   },
+   async authorityForTask(taskId,role){
+     assert.deepEqual({id:taskId,role},roleTask);
+     return {
+       parent_credential_id:"urn:issued:operational-root",
+       credential_id:"urn:issued:task-backed-child",
+       valid_from:"2026-10-21T18:00:00Z",
+       validity_seconds:300,credential_status:status
+     };
+   },
+   a2a:{async sendProtectedTask(request){
+     order.push("a2a-sent");
+     assert.ok(request.trusted_gateway_task_id?.startsWith("dispatch_"));
+     assert.equal(request.subtask.branch,BRANCH);
+     const dc=JSON.parse(request.delegation_evidence.credential);
+     assert.deepEqual(dc.credentialSubject.per,[
+       {resource:FILE,operation:"update_file"},
+       {resource:FILE,operation:"read_file"}
+     ]);
+     return {card:{name:"Pinned Backend Agent"},task:{
+       id:"remote-a2a-1",
+       status:{state:TaskState.TASK_STATE_COMPLETED},
+       artifacts:[{parts:[{content:{$case:"data",value:{
+         role:"backend",summary:"Done",
+         files_modified:["apps/backend/user.ts"],
+         files_created:[],branch:BRANCH,
+         revision:"a".repeat(40),commit_sha:"a".repeat(40),
+         test_outcome:"not_run",errors:[]
+       }}}]}]
+     }} as any;
+   }}
+ });
+ await dispatcher.runOrchestratorTask("branch",async id=>{
+   order.push("orchestrator-effect:"+id);
+ });
+ const result=await dispatcher.dispatch("backend");
+ assert.equal(result.artifact.branch,BRANCH);
+ assert.deepEqual(dispatcher.completedTaskIds,["branch","backend"]);
+ assert.equal(e.calls.length,1);
+ assert.ok(order.findIndex(x=>x.startsWith("bind:backend:"))<
+   order.indexOf("adapter-issued"));
+ assert.ok(order.indexOf("adapter-issued")<order.indexOf("a2a-sent"));
+ assert.ok(order.indexOf("a2a-sent")<
+   order.findIndex(x=>x.startsWith("confirm:")&&x.endsWith(":backend")));
 });
