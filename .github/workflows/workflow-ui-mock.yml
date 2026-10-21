@@ -4,12 +4,15 @@ on:
   push:
     branches:
       - feat/approval-ui-mock
+      - refactor/post-prof-plan-contracts-20261021
     paths:
       - "poc/workflow-ui/**"
+      - "poc/packages/plan-contracts/**"
       - ".github/workflows/workflow-ui-mock.yml"
   pull_request:
     paths:
       - "poc/workflow-ui/**"
+      - "poc/packages/plan-contracts/**"
       - ".github/workflows/workflow-ui-mock.yml"
 permissions:
   contents: read
@@ -24,6 +27,8 @@ jobs:
           node-version: "22"
       - name: Test mock UI
         run: node --test poc/workflow-ui/tests/ui-contract.test.mjs
+      - name: Test versioned plan and approval bindings (offline)
+        run: node --test poc/packages/plan-contracts/test/plan.test.mjs
       - name: Package offline frontend
         run: |
           mkdir -p /tmp/delegation-approval-ui
