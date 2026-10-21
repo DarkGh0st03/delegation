@@ -1,0 +1,146 @@
+name: Native Core Rust EVM Full Verification (No AI Billing)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "services/delegation-core-node/**"
+      - "src/delegation/**"
+      - "services/delegation-adapter/**"
+      - "poc/apps/gateway/native-test/native-real-evm-e2e.mjs"
+      - ".github/workflows/native-core-rust-evm-e2e.yml"
+permissions:
+  contents: read
+jobs:
+  evm-real-credential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_CALLER_ENGINEER: local-native-engineer-ci
+      ADAPTER_CALLER_GATEWAY: local-native-gateway-ci
+      ADAPTER_CALLER_ORCHESTRATOR: local-native-orchestrator-ci
+      ADAPTER_CALLER_BACKEND: local-native-backend-ci
+      ADAPTER_CALLER_FRONTEND: local-native-frontend-ci
+      ADAPTER_CALLER_TEST: local-native-test-ci
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_VERIFIER_MODE: core-rust
+      GATEWAY_PROVIDER_MODE: mock
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: "2000"
+      RPC_URL: http://127.0.0.1:8545
+      CHAIN_ID: "31337"
+      ADAPTER_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_RPC_URL: http://127.0.0.1:8545
+      CORE_RUST_CHAIN_ID: "31337"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.4
+      - name: Install pinned local Node and DID dependencies
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+          node poc/scripts/init-local-env.mjs --force
+      - name: Start only disposable Anvil and OPA
+        run: |
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
+          for i in {1..90}; do
+            if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
+          exit 1
+      - name: Generate disposable public test identities
+        run: |
+          local_key() { printf '0x%064x' "$1"; }
+          echo "ANVIL_DEPLOYER_PRIVATE_KEY=$(local_key 1)" >> "$GITHUB_ENV"
+          echo "GOVERNANCE_PRIVATE_KEY=$(local_key 1)" >> "$GITHUB_ENV"
+          for entry in ENGINEER:2 ORCHESTRATOR:3 BACKEND:4 FRONTEND:5 TEST:6; do
+            role="${entry%%:*}"
+            n="${entry##*:}"
+            key="$(local_key "$n")"
+            address="$(cast wallet address --private-key "$key")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+            echo "ADAPTER_EVM_PRIVATE_KEY_${role}=$key" >> "$GITHUB_ENV"
+            echo "ADAPTER_ID_${role}=did:ethr:0x7a69:${address}" >> "$GITHUB_ENV"
+          done
+      - name: Deploy public DID and EVM trust registries
+        run: |
+          bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for key in DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+          echo "CORE_RUST_DID_REGISTRY_ADDRESS=$DID_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
+      - name: Build signed-credential Adapter and native Core Rust addon
+        run: |
+          cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
+          cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
+          mkdir -p poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
+          cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
+      - name: Start Adapter with public-only shared verification artifacts
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
+          echo $! > /tmp/native-evm-adapter.pid
+          for i in {1..100}; do
+            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then exit 0; fi
+            sleep 0.5
+          done
+          cat /tmp/native-evm-adapter.log
+          exit 1
+      - name: Start Gateway using only the native Rust Core verifier
+        run: |
+          npm --prefix poc run gateway:start > /tmp/native-evm-gateway.log 2>&1 &
+          echo $! > /tmp/native-evm-gateway.pid
+          for i in {1..100}; do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then exit 0; fi
+            sleep 0.5
+          done
+          cat /tmp/native-evm-gateway.log
+          exit 1
+      - name: Verify actual signed VP, OPA, replay and EVM revocation
+        run: node poc/apps/gateway/native-test/native-real-evm-e2e.mjs
+      - name: Show trusted service diagnostics if verification fails
+        if: failure()
+        run: |
+          echo "=== Gateway ==="
+          tail -n 120 /tmp/native-evm-gateway.log || true
+          echo "=== Adapter ==="
+          tail -n 120 /tmp/native-evm-adapter.log || true
+          echo "=== Containers ==="
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps || true
+      - name: Stop disposable services without deleting unrelated volumes
+        if: always()
+        run: |
+          kill "$(cat /tmp/native-evm-gateway.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/native-evm-adapter.pid)" 2>/dev/null || true
+          if [[ -f poc/infra/.env ]]; then
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
+          fi
