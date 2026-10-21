@@ -63,10 +63,15 @@ itself.
 `Native Gateway to Core Rust (Offline)` CI builds the real addon, loads it
 in Node, exercises malformed input and missing RPC/public sources,
 then re-runs Gateway regression tests with the native module present.
-The test suite does **not** yet demonstrate a successful signed VP
-against live Anvil and the separately started Gateway; that full
-credential-issuance-to-EVM-to-native-verification E2E remains required
-before switching the default mode. No Gemini paid calls are made.
+A separate disposable Anvil/OPA workflow
+[GitHub Actions #39576496255](https://github.com/DarkGh0st03/delegation/actions/runs/39576496255)
+now demonstrates a **successful real signed VP** against the native
+Gateway and current EVM evidence. It also denies wrong challenge,
+replay and a credential revoked after presentation creation.
+Only a `mock` provider was used, so this proves the cryptographic
+authorization and OPA path rather than a real Gitea/Runner workflow.
+The default mode remains `adapter` pending complete workflow
+integration and concurrency hardening. No Gemini paid calls are made.
 
 The Node-API worker pool prevents blocking the main JavaScript loop but
 uses blocking I/O inside Rust, and per-verification DID and EVM RPC calls
