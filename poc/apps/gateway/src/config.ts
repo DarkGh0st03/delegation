@@ -1,13 +1,15 @@
 import type { GatewayPrepareConfig } from "./types.ts";
 
 export type GatewayProviderMode = "mock" | "gitea-readonly" | "gitea";
+export type GatewayVerifierMode = "adapter" | "core-rust";
 
 export interface GatewayRuntimeConfig {
   bind_host: string;
   bind_port: number;
   prepare: GatewayPrepareConfig;
-  adapter_url: string;
-  adapter_gateway_token: string;
+  adapter_url?: string;
+  adapter_gateway_token?: string;
+  verifier_mode?: GatewayVerifierMode;
   opa_url: string;
   opa_timeout_ms: number;
   provider_mode: GatewayProviderMode;
@@ -17,6 +19,11 @@ export interface GatewayRuntimeConfig {
   runner_url?: string;
   runner_gateway_token?: string;
   runner_timeout_ms: number;
+}
+
+export function parseGatewayVerifierMode(value: string): GatewayVerifierMode {
+  if (value === "adapter" || value === "core-rust") return value;
+  throw new Error("GATEWAY_VERIFIER_MODE must be adapter or core-rust");
 }
 
 function required(name: string): string {
@@ -51,6 +58,7 @@ function providerMode(value: string): GatewayProviderMode {
 export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
   const bind = bindAddress(process.env.GATEWAY_BIND_ADDR ?? "0.0.0.0:8080");
   const mode = providerMode(process.env.GATEWAY_PROVIDER_MODE ?? "mock");
+  const verifierMode = parseGatewayVerifierMode(process.env.GATEWAY_VERIFIER_MODE ?? "adapter");
 
   return {
     bind_host: bind.host,
@@ -67,8 +75,13 @@ export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
         repository: process.env.GITEA_REPOSITORY ?? "iam-console-poc"
       }
     },
-    adapter_url: required("DELEGATION_ADAPTER_URL"),
-    adapter_gateway_token: required("ADAPTER_CALLER_GATEWAY"),
+    verifier_mode: verifierMode,
+    // Adapter mode remains the validated default. In core-rust mode the
+    // Gateway must never send signed VPs to the issuing Adapter.
+    ...(verifierMode==="adapter" ? {
+      adapter_url:required("DELEGATION_ADAPTER_URL"),
+      adapter_gateway_token:required("ADAPTER_CALLER_GATEWAY")
+    } : {}),
     opa_url: required("OPA_URL"),
     opa_timeout_ms: positiveInteger(
       process.env.OPA_TIMEOUT_MS ?? "2000",
