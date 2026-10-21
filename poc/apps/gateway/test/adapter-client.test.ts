@@ -73,3 +73,41 @@ test("Adapter 4xx is a verification rejection while 5xx is unavailable", async (
   });
   await assert.rejects(unavailable.verify(request), VerificationUnavailableError);
 });
+
+
+test("Adapter composite verification uses separate Gateway-only endpoint and exact permission list",async()=>{
+  let observedUrl="";
+  let observedBody:unknown;
+  const required_permissions=[
+    request.required_permission,
+    {...request.required_permission,operation:"update_file" as const}
+  ];
+  const client=new AdapterVerifierClient({
+    baseUrl:"http://adapter:8090",
+    gatewayToken:"gateway-secret",
+    fetchFn:(async(url:string|URL|Request,init?:RequestInit)=>{
+      observedUrl=String(url);
+      observedBody=JSON.parse(String(init?.body));
+      assert.equal(new Headers(init?.headers).get("authorization"),"Bearer gateway-secret");
+      return new Response(JSON.stringify({
+        presenter_id:"did:thesis:backend",
+        credential_id:"urn:credential:backend",
+        issuer_id:"did:thesis:orchestrator",
+        permissions:required_permissions,
+        hierarchy_depth:1,
+        expiration:"99999999999999"
+      }),{status:200,headers:{"content-type":"application/json"}});
+    }) as typeof fetch
+  });
+  const result=await client.verifyMultiple({
+    presenter:"backend",
+    audience:"cloud-access-gateway",
+    challenge:"challenge-multi",
+    signed_vp:"jwt.signed.payload",
+    required_permissions
+  });
+  assert.equal(observedUrl,"http://adapter:8090/v1/verify-multiple");
+  assert.deepEqual((observedBody as {required_permissions:unknown}).required_permissions,
+    required_permissions);
+  assert.equal(result.permissions.length,2);
+});
