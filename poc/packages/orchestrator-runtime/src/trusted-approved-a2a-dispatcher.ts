@@ -1,0 +1,205 @@
+/**
+ * Opt-in dispatcher for the immutable, Engineer-approved A2A Task DAG.
+ *
+ * The Gateway binding is installed BEFORE the delegated child credential
+ * is issued or any protected A2A message is sent. The Gateway uses a random
+ * dispatch ID, not the SDK-assigned A2A Task ID (which arrives too late).
+ *
+ * This trusted service consumes only a signed plan from a verified store.
+ * It is NOT an ADK tool and exposes no model-controlled role/permission/URL.
+ * The fixed Account Suspension dispatcher remains unchanged.
+ */
+import {randomBytes} from "node:crypto";
+import {assertApprovedPlanScope,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
+import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
+import type {AuthenticatedPlanStore} from "../../../apps/gateway/src/approved-execution-plans.ts";
+import type {SpecializedAgentRole} from "@thesis/agent-runtime";
+import type {DelegatedA2ARoleTaskInput,DelegatedA2ARoleTaskResult} from "./a2a-workflow.ts";
+import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
+
+const SHA=/^[a-f0-9]{40}$/u;
+const ROLES=new Set(["backend","frontend","test"]);
+const LEGACY_BRANCH="feature/account-suspension" as const;
+const OPERATIONS=new Set<string>(RUST_OPERATIONS);
+
+interface PlanTask{
+  id:string;agent_id:string;description:string;
+  depends_on:string[];resources:string[];
+}
+interface ApprovedSnapshot{
+  plan: {
+    session_id:string;repository:{authority:string;owner:string;repository:string};
+    base_revision:string;tasks:PlanTask[];
+  };
+  approvedRows:{task_id:string;agent_id:string}[];
+  digest:string;
+}
+type RootInput=Pick<DelegatedA2ARoleTaskInput,
+  "parent_credential_id"|"credential_id"|"valid_from"|
+  "validity_seconds"|"credential_status">;
+
+export interface TrustedApprovedA2ADispatcherConfig{
+  approvals:AuthenticatedPlanStore;
+  coordinator:Pick<TrustedExecutionCoordinator,
+    "phase"|"bindDispatchedTask"|"confirmTask"|"closeExecution">;
+  roleRunner: {issueAndRun(input:DelegatedA2ARoleTaskInput):Promise<DelegatedA2ARoleTaskResult>};
+  sessionId:string;
+  expectedPlanDigest:string;
+  baseRevision:string;
+  expectedEngineerDid:string;
+  /** Trusted, pinned Agent Card endpoints; never sourced from the model. */
+  agentBaseUrls:Readonly<Record<SpecializedAgentRole,string>>;
+  /** Trusted authority allocator: unique child status index per Task. */
+  authorityForTask(taskId:string,role:SpecializedAgentRole):Promise<RootInput>;
+}
+
+export class TrustedApprovedA2ADispatcher {
+  readonly #config:TrustedApprovedA2ADispatcherConfig;
+  readonly #snapshot:ApprovedSnapshot;
+  readonly #completed=new Set<string>();
+  readonly #started=new Set<string>();
+  #busy=false;
+  #terminal=false;
+
+  private constructor(config:TrustedApprovedA2ADispatcherConfig,
+    snapshot:ApprovedSnapshot){
+    this.#config=config;this.#snapshot=snapshot;
+  }
+
+  static async load(config:TrustedApprovedA2ADispatcherConfig){
+    if(!config.expectedEngineerDid?.startsWith("did:")||
+       !/^[a-f0-9]{64}$/u.test(config.expectedPlanDigest)||
+       !SHA.test(config.baseRevision)||
+       !config.sessionId)throw Error("Trusted dispatcher requires pinned session and approval");
+    if(config.coordinator.phase!=="execution"){
+      throw Error("Trusted dispatcher requires activated Execution");
+    }
+    const fetched=await config.approvals.loadAuthenticatedApproval(config.sessionId);
+    if(fetched.authenticated_engineer_did!==config.expectedEngineerDid){
+      throw Error("Trusted dispatcher Engineer identity mismatch");
+    }
+    const plan=fetched.plan as any;
+    const rows=assertApprovedPlanScope(plan,fetched.approval,{
+      allowedOperations:OPERATIONS,expectedEngineerDid:config.expectedEngineerDid
+    }) as ApprovedSnapshot["approvedRows"];
+    const digest=planDigest(plan);
+    if(plan.session_id!==config.sessionId||
+       plan.base_revision!==config.baseRevision||
+       digest!==config.expectedPlanDigest){
+      throw Error("Trusted dispatcher plan does not match activated Gateway digest/SHA");
+    }
+    const snapshot:ApprovedSnapshot=structuredClone({plan,approvedRows:rows,digest});
+    return new TrustedApprovedA2ADispatcher(config,snapshot);
+  }
+
+  get completedTaskIds():readonly string[]{return [...this.#completed];}
+
+  /** No speculative dispatch or concurrency in this incremental PoC. */
+  async dispatch(planTaskId:string):Promise<DelegatedA2ARoleTaskResult>{
+    if(this.#terminal||this.#busy||this.#config.coordinator.phase!=="execution"){
+      throw Error("Trusted A2A dispatcher is inactive or already running");
+    }
+    const task=this.#snapshot.plan.tasks.find(t=>t.id===planTaskId);
+    if(!task||!ROLES.has(task.agent_id)){
+      throw Error("Approved specialized A2A Task not found");
+    }
+    if(this.#started.has(task.id)){
+      throw Error("Approved A2A Task already dispatched; no replay");
+    }
+    if(task.depends_on.some(id=>!this.#completed.has(id))){
+      throw Error("Approved Task dependencies not verified");
+    }
+    if(!this.#snapshot.approvedRows.some(p=>
+      p.task_id===task.id&&p.agent_id===task.agent_id)){
+      throw Error("Approved Task has no granted permission");
+    }
+    const role=task.agent_id as SpecializedAgentRole;
+    const url=this.#config.agentBaseUrls[role];
+    if(typeof url!=="string"||!/^https?:\/\//u.test(url)){
+      throw Error("Trusted Agent Card endpoint missing");
+    }
+    // Stage 1 binds the existing fixed branch. Dynamic working branches are
+    // a separate roadmap step, never silently cast to feature/account-suspension.
+    const prefix="gitea://"+this.#snapshot.plan.repository.authority+"/"+
+      this.#snapshot.plan.repository.owner+"/"+
+      this.#snapshot.plan.repository.repository+"/branches/"+
+      encodeURIComponent(LEGACY_BRANCH)+"/files/";
+    const paths:string[]=[];
+    for(const resource of task.resources){
+      if(resource.includes("/files/")){
+        if(!resource.startsWith(prefix))throw Error("Unsupported branch/file in approved Task");
+        const encoded=resource.slice(prefix.length);
+        let path:string;
+        try{path=encoded.split("/").map(decodeURIComponent).join("/");}
+        catch{throw Error("Malformed approved Task file URI");}
+        if(!path||path.startsWith("/")||path.split("/").some(s=>
+          !s||s==="."||s===".."||s.includes("\\"))){
+          throw Error("Malformed approved Task file path");
+        }
+        paths.push(path);
+      }
+    }
+    if(paths.length>32)throw Error("Approved Task has too many relevant paths");
+    this.#busy=true;
+    const dispatchId="dispatch_"+randomBytes(16).toString("base64url");
+    // Once binding has been attempted, no retry may reuse the plan Task:
+    // a lost network reply can otherwise conceal an active A2A side effect.
+    this.#started.add(task.id);
+    try{
+      const authority=await this.#config.authorityForTask(task.id,role);
+      await this.#config.coordinator.bindDispatchedTask(task.id,dispatchId,role);
+      const result=await this.#config.roleRunner.issueAndRun({
+        ...authority,role,agent_base_url:url,
+        trusted_gateway_task_id:dispatchId,
+        subtask:{
+          subtask_id:task.id,
+          instruction:task.description,
+          branch:LEGACY_BRANCH,
+          relevant_paths:[...new Set(paths)]
+        }
+      });
+      if(result.role!==role||!result.task_id||
+         result.artifact?.role!==role){
+        throw Error("Protected A2A result does not match bound role/Task");
+      }
+      await this.#config.coordinator.confirmTask(
+        dispatchId,observedA2ACompletion(result,dispatchId));
+      this.#completed.add(task.id);
+      return result;
+    }catch(error){
+      this.#terminal=true;
+      // Fail closed on uncertain A2A dispatch: close Gateway and revoke the
+      // operational root. Never automatically resubmit to another Agent.
+      try{await this.#config.coordinator.closeExecution();}
+      catch{
+        throw new Error("Trusted dispatch failed; Gateway/credential reconciliation required",
+          {cause:error});
+      }
+      throw error;
+    }finally{this.#busy=false;}
+  }
+
+  /**
+   * Orchestrator-only tasks (e.g., create_branch) are executed separately
+   * through the trusted Gateway client, then confirmed by the Gateway.
+   */
+  async confirmOrchestratorTask(planTaskId:string,runtimeTaskId:string){
+    if(this.#terminal||this.#busy||this.#config.coordinator.phase!=="execution")
+      throw Error("Trusted dispatcher is inactive");
+    const task=this.#snapshot.plan.tasks.find(t=>t.id===planTaskId);
+    if(!task||task.agent_id!=="orchestrator"||
+       task.depends_on.some(id=>!this.#completed.has(id))||
+       this.#completed.has(task.id)){
+      throw Error("Unknown, repeated or dependency-blocked Orchestrator Task");
+    }
+    // The caller must have bound the Task BEFORE invoking the Gateway.
+    // The Gateway confirms provider effect against that binding.
+    await this.#config.coordinator.confirmTask(
+      runtimeTaskId,{
+        source:"trusted_orchestrator",runtime_task_id:runtimeTaskId,
+        role:"orchestrator",state:"completed"
+      });
+    this.#completed.add(task.id);
+  }
+}
