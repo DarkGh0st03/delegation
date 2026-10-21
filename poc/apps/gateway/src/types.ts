@@ -171,6 +171,16 @@ export interface VerificationRequest {
 
 export interface VerifierPort {
   verify(request: VerificationRequest): Promise<VerifiedDelegation>;
+  /** Optional during migration: absence must fail closed for composite requests. */
+  verifyMultiple?(request: MultipleVerificationRequest): Promise<VerifiedDelegation>;
+}
+
+export interface MultipleVerificationRequest {
+  presenter: AgentRole;
+  audience: string;
+  challenge: string;
+  required_permissions: Permission[];
+  signed_vp: string;
 }
 
 export interface MockExecutionResult {
