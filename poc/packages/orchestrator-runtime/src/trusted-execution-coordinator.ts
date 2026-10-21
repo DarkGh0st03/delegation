@@ -1,5 +1,5 @@
 /**
- * Single-process trusted handoff:
+ * Trusted handoff (in-process or authenticated private IPC):
  * Planning read-only DC -> signed Engineer approval -> confirmed DC revocation
  * -> independent operational root -> trusted Gateway plan activation.
  *
@@ -10,13 +10,19 @@ import type {AgentRole} from "../../../apps/gateway/src/types.ts";
 import type {
   RootParameters,TrustedEngineerAuthoritySession
 } from "./trusted-engineer-authority.ts";
-import type {TrustedApprovedExecutionPlans} from "../../../apps/gateway/src/approved-execution-plans.ts";
+/** Structural port permits a separate-process authenticated transport. */
+export interface TrustedApprovedPlanControl {
+  activate(sessionId:string,baseRevision:string):Promise<string>;
+  bindTask(sessionId:string,planTaskId:string,runtimeTaskId:string,role:AgentRole):void|Promise<void>;
+  confirmTaskCompletion(runtimeTaskId:string):Promise<void>;
+  closeSession(sessionId:string):void|Promise<void>;
+}
 
 type Phase="idle"|"planning"|"activating"|"execution"|"closed"|"failed_closed";
 
 export class TrustedExecutionCoordinator {
   readonly #authority:TrustedEngineerAuthoritySession;
-  readonly #gateway:TrustedApprovedExecutionPlans;
+  readonly #gateway:TrustedApprovedPlanControl;
   readonly #credentials:{revokeRoot(id:string):Promise<void>};
   readonly #sessionId:string;
   readonly #baseRevision:string;
@@ -25,7 +31,7 @@ export class TrustedExecutionCoordinator {
 
   constructor(config:{
     authority:TrustedEngineerAuthoritySession;
-    approvedGatewayPlans:TrustedApprovedExecutionPlans;
+    approvedGatewayPlans:TrustedApprovedPlanControl;
     credentials:{revokeRoot(id:string):Promise<void>};
     sessionId:string;
     baseRevision:string;
@@ -83,7 +89,7 @@ export class TrustedExecutionCoordinator {
       // When an operational credential exists but the plan was not installed,
       // revoke its status entry rather than leave a usable orphaned root.
       if(operationalId){
-        try{this.#gateway.closeSession(this.#sessionId);}catch{/** not activated */}
+        try{await this.#gateway.closeSession(this.#sessionId);}catch{/** not activated */}
         try{
           await this.#credentials.revokeRoot(operationalId);
         }catch{
@@ -97,9 +103,9 @@ export class TrustedExecutionCoordinator {
   }
 
   /** Called by a trusted A2A dispatch observer, not from agent claims. */
-  bindDispatchedTask(planTaskId:string,runtimeTaskId:string,role:AgentRole):void {
+  bindDispatchedTask(planTaskId:string,runtimeTaskId:string,role:AgentRole):void|Promise<void> {
     if(this.#phase!=="execution")throw new Error("Execution not active");
-    this.#gateway.bindTask(this.#sessionId,planTaskId,runtimeTaskId,role);
+    return this.#gateway.bindTask(this.#sessionId,planTaskId,runtimeTaskId,role);
   }
 
   /** The Gateway separately checks provider evidence and task attestation. */
@@ -119,7 +125,7 @@ export class TrustedExecutionCoordinator {
     this.#phase="closed";
     let gatewayClosed=false;
     try {
-      this.#gateway.closeSession(this.#sessionId);
+      await this.#gateway.closeSession(this.#sessionId);
       gatewayClosed=true;
     } finally {
       // An error in plan-session shutdown must NEVER skip revocation of
