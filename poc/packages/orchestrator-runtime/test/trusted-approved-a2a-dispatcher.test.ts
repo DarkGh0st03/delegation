@@ -116,18 +116,20 @@ test("DAG verifies predecessor and Gateway binding precedes child issue/A2A send
  await assert.rejects(dispatcher.dispatch("backend-task"),/dependencies/);
  assert.deepEqual(h.log,[]);
  // Trusted Orchestrator must have already bound/executed a Gateway create_branch.
- await dispatcher.confirmOrchestratorTask("branch","gateway-branch-task");
+ await dispatcher.runOrchestratorTask("branch",async (id)=>{h.log.push("provider:"+id);});
  const result=await dispatcher.dispatch("backend-task");
  assert.equal(result.role,"backend");
  assert.deepEqual(dispatcher.completedTaskIds,["branch","backend-task"]);
- assert.match(h.log[0],/confirm:gateway-branch-task:orchestrator/);
- assert.match(h.log[1],/allocate:backend-task/);
- assert.match(h.log[2],/^bind:backend-task:backend:dispatch_/);
- assert.match(h.log[3],/^run:backend-task:dispatch_/);
- assert.match(h.log[4],/^confirm:dispatch_.*:backend$/);
- const gatewayId=h.log[2].split(":").at(-1);
- assert.equal(h.log[3].split(":").at(-1),gatewayId);
- assert.equal(h.log[4].split(":")[1],gatewayId);
+ assert.match(h.log[0],/^bind:branch:orchestrator:dispatch_/);
+ assert.match(h.log[1],/^provider:dispatch_/);
+ assert.match(h.log[2],/^confirm:dispatch_.*:orchestrator$/);
+ assert.match(h.log[3],/allocate:backend-task/);
+ assert.match(h.log[4],/^bind:backend-task:backend:dispatch_/);
+ assert.match(h.log[5],/^run:backend-task:dispatch_/);
+ assert.match(h.log[6],/^confirm:dispatch_.*:backend$/);
+ const gatewayId=h.log[4].split(":").at(-1);
+ assert.equal(h.log[5].split(":").at(-1),gatewayId);
+ assert.equal(h.log[6].split(":")[1],gatewayId);
  await assert.rejects(dispatcher.dispatch("backend-task"),/already dispatched/);
  const front=await dispatcher.dispatch("frontend-task");
  assert.equal(front.role,"frontend");
@@ -136,7 +138,7 @@ test("DAG verifies predecessor and Gateway binding precedes child issue/A2A send
 test("failed Gateway binding never reaches the A2A network, and ends Execution",async()=>{
  const h=harness({denyBinding:true});
  const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
- await dispatcher.confirmOrchestratorTask("branch","gateway-branch-task");
+ await dispatcher.runOrchestratorTask("branch",async (id)=>{h.log.push("provider:"+id);});
  await assert.rejects(dispatcher.dispatch("backend-task"),/Gateway denied binding/);
  assert.ok(!h.log.some(x=>x.startsWith("run:")));
  assert.equal(h.log.at(-1),"close");
@@ -145,7 +147,7 @@ test("failed Gateway binding never reaches the A2A network, and ends Execution",
 test("unexpected A2A task role fails closed, cannot advance the approved DAG",async()=>{
  const h=harness({failResult:true});
  const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
- await dispatcher.confirmOrchestratorTask("branch","gateway-branch-task");
+ await dispatcher.runOrchestratorTask("branch",async (id)=>{h.log.push("provider:"+id);});
  await assert.rejects(dispatcher.dispatch("backend-task"),/does not match/);
  assert.deepEqual(dispatcher.completedTaskIds,["branch"]);
  assert.equal(h.log.at(-1),"close");
@@ -161,7 +163,7 @@ test("unsigned changes or mismatched Engineer/digest cannot install a dispatcher
 test("unapproved Task permissions and unassigned/missing Tasks fail before authority issuance",async()=>{
  const h=harness({removeApproval:true});
  const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
- await dispatcher.confirmOrchestratorTask("branch","gateway-branch-task");
+ await dispatcher.runOrchestratorTask("branch",async (id)=>{h.log.push("provider:"+id);});
  await assert.rejects(dispatcher.dispatch("backend-task"),/no granted permission/);
  await assert.rejects(dispatcher.dispatch("not-in-plan"),/not found/);
  assert.ok(!h.log.some(x=>x.startsWith("allocate:")));
