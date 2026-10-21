@@ -129,61 +129,33 @@ The new native crate README documents build steps and seven
 public artifact store was implemented in Stage 8B. This does **not**
 alter the default `adapter` mode or the permission/OPA policy model.
 
-**Validation boundary:** the new CI compiles and loads the real Rust
-addon and exercises fail-closed paths; the live signed-VP-on-Anvil
-positive E2E is still required before treating this as a validated
-replacement for the original Adapter verifier. Future work also
-includes request timeouts and concurrency hardening.
+**Verified in real local EVM integration:** the offline unit CI
+[Native Gateway to Core Rust #39575348140](https://github.com/DarkGh0st03/delegation/actions/runs/39575348140)
+built and loaded the native addon. The real Anvil test
+[Native Core Rust EVM #39576496255](https://github.com/DarkGh0st03/delegation/actions/runs/39576496255)
+issued a root DC in the EVM Adapter, created a signed VP, verified it
+**directly in the native Gateway** against current on-chain accumulator,
+DID and status evidence, received an OPA allow, and rejected replay,
+wrong challenge and later on-chain revocation.
 
-## Stage 8A — Direct Core Rust verification boundary (not yet activated)
+The provider was intentionally `mock`: the successful authorization
+did **not** mutate Gitea or run Docker. The default remains `adapter`
+until full workflow compatibility, plan-level enforcement, runtime
+timeouts and concurrency limits have been separately validated. A
+positive crypto E2E is not a full Gemini/A2A/approval E2E.
 
-The Gateway now has an explicit `GATEWAY_VERIFIER_MODE` selection:
+## Stage 8A — Historical TypeScript contract stage
 
-- `adapter` (default): existing **verified baseline**. Gateway sends VP
-  to authenticated Rust Delegation Adapter, which calls the Rust Core.
-  The Adapter URL and Gateway caller token are mandatory in this mode.
-- `core-rust` (future native): Gateway will call the Rust Core
-  `Verifier::verify_verifiable_presentation` **in-process**, via a fixed
-  native Node addon, without contacting the issuing Adapter. This mode
-  deliberately fails at startup until the trusted addon and required
-  independent verification-data providers are built. There is **no**
-  fallback from `core-rust` to the Adapter.
+Stage 8A introduced the explicit `adapter` (default) versus
+`core-rust` selection and the TypeScript `DirectCoreRustVerifier`
+boundary. That stage alone was only mock-binding tested and could not
+run the native mode. **Stages 8B and 8C completed the separate public
+artifact source, real native addon and real Anvil verification above.**
 
-The new `DirectCoreRustVerifier` is only the **typed boundary**: it
-serializes the original Rust `AuthorizationContext` (singleton
-`required_permission` or plural `required_permissions`), resolves
-presenter DIDs from trusted runtime configuration, rejects malformed
-and duplicate requirements, then requires consistent
-`VerifiedDelegation` output. Its TypeScript code does **not**
-validate cryptography, trust anchors or credential status.
-
-**Required before activating native mode:**
-
-1. Implement and compile the actual in-process Rust addon, directly
-   linked to the repository's `delegation` Core Rust crate. Its
-   `verify_verifiable_presentation(context_json, signed_vp)` API must
-   invoke `DelegationVerifier`, not a handwritten shortcut.
-2. Remove the current verifier's process-local dependency on issuer
-   `InMemoryTrustStore` accumulator material and
-   `InMemoryStatusListStore` status artifacts. Publish **public-only**
-   verification materials to authenticated durable/discoverable stores
-   and validate their anchor commitments/versions against the EVM
-   registry. Never copy private signing keys into the Gateway.
-3. Define verifier initialization, trust-anchor/resolver refresh,
-   revocation/suspension freshness, error handling and concurrency
-   for an independently deployed Gateway. The current Rust code
-   contains `Rc`-based resolver state, so a naive shared async addon
-   would require special consideration.
-4. Exercise native mode against signed VPs and real EVM/OPA/Status List
-   evidence, including status changes, missing material, wrong
-   presenter/audience/challenge, partial disclosure and replay. This
-   must occur **before** any release switches the default to native.
-
-The new offline unit tests use a **mock implementation of the native
-function** to verify Gateway contract, serialization, rejection and
-OPA ordering. They **do not** prove that the missing native addon
-performs real cryptographic verification. Production use of
-`core-rust` is blocked, not silently simulated.
+Both verification modes require correct Core Rust proof validation;
+neither bypasses Gateway authorization contexts or OPA. Selecting
+`core-rust` without its real addon, correct chain or existing public
+artifacts fails at startup rather than falling back to Adapter.
 
 ## Stage 6 — Read-only repository exploration
 
