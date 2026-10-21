@@ -1,0 +1,43 @@
+# All checks in this workflow are offline; no Gemini requests or secrets.
+name: Rust Multipermission Authorization (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "src/delegation/authorization/authorization_context.rs"
+      - "src/delegation/verification/delegation_verifier.rs"
+      - "services/delegation-adapter/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust-multipermission-offline.yml"
+  pull_request:
+    paths:
+      - "src/delegation/authorization/authorization_context.rs"
+      - "src/delegation/verification/delegation_verifier.rs"
+      - "services/delegation-adapter/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/rust-multipermission-offline.yml"
+permissions:
+  contents: read
+jobs:
+  rust-multipermission:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt
+      - name: Rust formatting
+        run: |
+          cargo fmt --check
+          cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check
+      - name: Core Rust regressions (all features)
+        run: cargo test --locked --all-features
+      - name: Existing Rust Adapter compatibility regressions
+        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml --locked
