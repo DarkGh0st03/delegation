@@ -8,6 +8,8 @@
  */
 import type {TrustedCompletionObservation} from "../../../apps/gateway/src/trusted-task-observation.ts";
 import type {AgentRole} from "../../../apps/gateway/src/types.ts";
+import type {DelegatedA2ARoleTaskResult} from "./a2a-workflow.ts";
+import {observedA2ACompletion,observedOrchestratorProviderCompletion} from "./trusted-a2a-observer.ts";
 import type {
   RootParameters,TrustedEngineerAuthoritySession
 } from "./trusted-engineer-authority.ts";
@@ -113,6 +115,21 @@ export class TrustedExecutionCoordinator {
   async confirmTask(runtimeTaskId:string,observation?:TrustedCompletionObservation):Promise<void>{
     if(this.#phase!=="execution")throw new Error("Execution not active");
     await this.#gateway.confirmTaskCompletion(runtimeTaskId,observation);
+  }
+
+  /**
+   * Only the trusted caller holding a validated ProtectedA2AClient result
+   * invokes this; the Gateway must corroborate its reported commit/Runner
+   * status before DAG dependencies can advance.
+   */
+  async confirmObservedA2AResult(result:DelegatedA2ARoleTaskResult):Promise<void>{
+    await this.confirmTask(result.task_id,observedA2ACompletion(result));
+  }
+
+  /** Orchestrator Tasks are corroborated using real Gateway provider I/O. */
+  async confirmObservedOrchestratorTask(runtimeTaskId:string):Promise<void>{
+    await this.confirmTask(
+      runtimeTaskId,observedOrchestratorProviderCompletion(runtimeTaskId));
   }
 
   /**
