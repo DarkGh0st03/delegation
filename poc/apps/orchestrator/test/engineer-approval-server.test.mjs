@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,writeFile,readFile,rm,chmod} from "node:fs/promises";
+import {request as httpRequest} from "node:http";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {scryptSync,randomBytes,generateKeyPairSync} from "node:crypto";
@@ -122,6 +123,15 @@ test("UI resources cannot read private signing keys and remain script-sanitized"
   assert.doesNotMatch(client,/privateKeyPem|scryptSync/u);
   // Unknown paths are auth-gated: anonymous callers cannot probe resource names.
   assert.equal((await fetch(e.root+"/../../private.pem")).status,401);
-  assert.equal((await fetch(e.root+"/api/plan",{headers:{Host:"evil.example"}})).status,403);
+  // Fetch intentionally normalizes Host; use raw node:http to test Host rejection.
+  const hostProbe=await new Promise((resolve,reject)=>{
+    const req=httpRequest(e.root+"/api/plan",{headers:{Host:"evil.example"}},res=>{
+      res.resume();
+      res.on("end",()=>resolve(res.statusCode));
+    });
+    req.on("error",reject);
+    req.end();
+  });
+  assert.equal(hostProbe,403);
   assert.equal((await e.post("/api/approve",{},null,null)).status,401);
 });
