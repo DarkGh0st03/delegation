@@ -43,6 +43,8 @@ export interface DelegatedA2ARoleTaskInput {
   subtask: DeterministicSubtask;
   /** Trusted Coordinator's preallocated Gateway task ID, not A2A SDK ID. */
   trusted_gateway_task_id?: string;
+  /** Trusted plan Task ID: used only by the scoped child issuer. */
+  approved_task_id?:string;
 }
 
 export interface DelegatedA2ARoleTaskResult {
@@ -110,7 +112,8 @@ export class DelegatedA2ARoleRunner {
       valid_from: input.valid_from,
       validity_seconds: input.validity_seconds,
       credential_status: input.credential_status,
-      selection: { role: input.role }
+      selection: { role: input.role },
+      ...(input.approved_task_id?{approved_task_id:input.approved_task_id}:{})
     });
 
     if (issued.role !== input.role) {

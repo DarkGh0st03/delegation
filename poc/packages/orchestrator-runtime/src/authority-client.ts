@@ -28,6 +28,8 @@ export interface ChildIssuanceInput {
   validity_seconds: number;
   credential_status: CredentialStatusInput;
   selection: unknown;
+  /** Trusted signed plan Task ID; ignored by the unchanged legacy issuer. */
+  approved_task_id?:string;
 }
 
 export interface IssuedDelegationCredential {

@@ -8,6 +8,7 @@
  */
 import type {TrustedCompletionObservation} from "../../../apps/gateway/src/trusted-task-observation.ts";
 import type {AgentRole} from "../../../apps/gateway/src/types.ts";
+import type {DelegatedPermission} from "./permission-templates.ts";
 import type {DelegatedA2ARoleTaskResult} from "./a2a-workflow.ts";
 import {observedA2ACompletion,observedOrchestratorProviderCompletion} from "./trusted-a2a-observer.ts";
 import type {
@@ -31,6 +32,8 @@ export class TrustedExecutionCoordinator {
   readonly #baseRevision:string;
   #phase:Phase="idle";
   #operationalId?:string;
+  #operationalPermissions?:readonly DelegatedPermission[];
+  #approvedDigest?:string;
 
   constructor(config:{
     authority:TrustedEngineerAuthoritySession;
@@ -51,6 +54,24 @@ export class TrustedExecutionCoordinator {
   }
 
   get phase():Phase{return this.#phase;}
+
+  /** Authority facts from the actual, verified operational root issuance.
+   * This is a trusted runtime interface, never an ADK or public HTTP API. */
+  trustedOperationalAuthority():{
+    credential_id:string;
+    plan_digest:string;
+    permissions:DelegatedPermission[];
+  }{
+    if(this.#phase!=="execution"||!this.#operationalId||
+       !this.#approvedDigest||!this.#operationalPermissions){
+      throw new Error("Verified operational root is not active");
+    }
+    return {
+      credential_id:this.#operationalId,
+      plan_digest:this.#approvedDigest,
+      permissions:this.#operationalPermissions.map(x=>({...x}))
+    };
+  }
 
   async beginPlanning(root:RootParameters){
     if(this.#phase!=="idle")throw new Error("Trusted Planning is not idle");
@@ -85,6 +106,8 @@ export class TrustedExecutionCoordinator {
         throw new Error("Gateway approved digest differs from operational authority");
       }
       this.#operationalId=issued.credential_id;
+      this.#operationalPermissions=issued.permissions.map(x=>Object.freeze({...x}));
+      this.#approvedDigest=issued.plan_digest;
       this.#phase="execution";
       return {credential_id:issued.credential_id,plan_digest:gatewayDigest};
     }catch(error){
@@ -141,6 +164,8 @@ export class TrustedExecutionCoordinator {
       throw new Error("No operational session available to close");
     }
     this.#phase="closed";
+    this.#operationalPermissions=undefined;
+    this.#approvedDigest=undefined;
     let gatewayClosed=false;
     try {
       await this.#gateway.closeSession(this.#sessionId);

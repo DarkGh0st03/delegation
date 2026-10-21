@@ -177,7 +177,7 @@ export class TrustedApprovedA2ADispatcher {
       const authority=await this.#config.authorityForTask(task.id,role);
       await this.#config.coordinator.bindDispatchedTask(task.id,dispatchId,role);
       const result=await this.#config.roleRunner.issueAndRun({
-        ...authority,role,agent_base_url:url,
+        ...authority,role,approved_task_id:task.id,agent_base_url:url,
         trusted_gateway_task_id:dispatchId,
         subtask:{
           subtask_id:task.id,
