@@ -49,6 +49,16 @@ export interface TrustedApprovalStore {
   loadAuthenticatedApproval(sessionId:string):Promise<TrustedApprovalRecord>;
 }
 
+/** Trusted bridge to the Gateway's in-process, revision-pinned Planning store.
+ * Never supply this bridge to a model, A2A task, or unauthenticated HTTP route.
+ */
+export interface TrustedPlanningRevisionPort {
+  begin(taskId:string,ttlMs:number):Promise<{
+    task_id:string;base_revision:string;expires_at:string
+  }>;
+  end(taskId:string):void;
+}
+
 export interface EngineerCredentialPort {
   issueScopedOrchestratorRoot(
     request:RootParameters & {permissions:readonly DelegatedPermission[]}
@@ -203,6 +213,7 @@ export class TrustedEngineerAuthoritySession {
   readonly #client:EngineerCredentialPort;
   readonly #store:TrustedApprovalStore;
   readonly #engineerDid:string;
+  readonly #planningRevisions?:TrustedPlanningRevisionPort;
   #state:State="not_started";
   #provisionalId?:string;
   #provisionalStatus?:CredentialStatusInput;
@@ -214,6 +225,7 @@ export class TrustedEngineerAuthoritySession {
     credentials:EngineerCredentialPort;
     approvals:TrustedApprovalStore;
     authenticatedEngineerDid:string;
+    planningRevisions?:TrustedPlanningRevisionPort;
   }) {
     if(typeof options.authenticatedEngineerDid!=="string" ||
        !options.authenticatedEngineerDid.startsWith("did:")) {
@@ -224,6 +236,7 @@ export class TrustedEngineerAuthoritySession {
     this.#client=options.credentials;
     this.#store=options.approvals;
     this.#engineerDid=options.authenticatedEngineerDid;
+    this.#planningRevisions=options.planningRevisions;
   }
 
   get phase():State {return this.#state;}
@@ -237,14 +250,36 @@ export class TrustedEngineerAuthoritySession {
     validateRoot(root,900);
     const permissions=preliminaryReadPermissions(this.#snapshot);
     this.#state="failed_closed"; // reserve before awaiting external network
-    const issued=await this.#client.issueScopedOrchestratorRoot({...root,permissions});
-    if(issued.id!==root.credential_id || !equality(issued.credentialSubject?.per,permissions)){
-      fail("Adapter returned inconsistent provisional root");
+    let registered=false;
+    try {
+      if(this.#planningRevisions) {
+        // The base SHA must be read by the trusted Gateway Gitea client.
+        // Neither Engineer input nor the LLM may silently replace it.
+        const pinned=await this.#planningRevisions.begin(
+          this.#snapshot.session_id,root.validity_seconds*1000
+        );
+        registered=true;
+        if(pinned.task_id!==this.#snapshot.session_id ||
+           pinned.base_revision!==this.#snapshot.base_revision ||
+           !SHA.test(pinned.base_revision) ||
+           !Number.isFinite(Date.parse(pinned.expires_at))) {
+          fail("trusted Gitea base revision differs from Engineer snapshot");
+        }
+      }
+      const issued=await this.#client.issueScopedOrchestratorRoot({...root,permissions});
+      if(issued.id!==root.credential_id || !equality(issued.credentialSubject?.per,permissions)){
+        fail("Adapter returned inconsistent provisional root");
+      }
+      this.#provisionalId=root.credential_id;
+      this.#provisionalStatus=structuredClone(root.credential_status);
+      this.#state="planning";
+      return {credential_id:issued.id,phase:"planning",permissions};
+    } catch(error) {
+      if(registered) {
+        try {this.#planningRevisions?.end(this.#snapshot.session_id);} catch {/* fail closed */}
+      }
+      throw error;
     }
-    this.#provisionalId=root.credential_id;
-    this.#provisionalStatus=structuredClone(root.credential_status);
-    this.#state="planning";
-    return {credential_id:issued.id,phase:"planning",permissions};
   }
 
   /**
@@ -297,6 +332,9 @@ export class TrustedEngineerAuthoritySession {
 
     this.#state="revocation_pending"; // reject concurrent issuance/approval
     try{
+      // Stop outstanding read challenges before attempting on-chain revocation.
+      // If the registry is unreachable or fails, NEVER issue operational DC.
+      this.#planningRevisions?.end(this.#snapshot.session_id);
       await this.#client.revokeRoot(this.#provisionalId);
     }catch{
       // Ambiguous failure means the old credential may still be active;
