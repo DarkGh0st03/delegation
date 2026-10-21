@@ -9,6 +9,7 @@ use delegation::delegation::accumulator::accumulator_public_data::AccumulatorPub
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
 use delegation::delegation::local::InMemoryStatusListStore;
+use delegation::delegation::local::file_public_artifact_store::FilePublicArtifactStore;
 use delegation::delegation::local::in_memory_trust_store::InMemoryTrustStore;
 use delegation::delegation::status::evm::status_list_anchor_reader::StatusListAnchorReader;
 use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
@@ -112,6 +113,7 @@ pub struct EvmAdapterProfile {
     runtime: Runtime,
     chain_reader: Rc<EvmRegistryReader>,
     status_source: Rc<InMemoryStatusListStore>,
+    public_artifacts: Option<Rc<FilePublicArtifactStore<Curve>>>,
 }
 
 impl EvmAdapterProfile {
@@ -124,7 +126,7 @@ impl EvmAdapterProfile {
         let runtime =
             Runtime::new().map_err(|err| format!("Could not create EVM writer runtime [{err}]"))?;
 
-        let profile = Self {
+        let mut profile = Self {
             config: config.clone(),
             runtime,
             chain_reader: Rc::new(EvmRegistryReader::connect(
@@ -135,14 +137,32 @@ impl EvmAdapterProfile {
                 config.chain_id,
             )?),
             status_source: Rc::new(InMemoryStatusListStore::new()),
+            public_artifacts: None,
         };
 
         profile.bootstrap_identities(callers, issuance_store.clone(), issuers)?;
 
+        // Only public accumulator bytes are exported, and ONLY after their
+        // EVM commitments were confirmed by bootstrap_identities. A separate
+        // reader can use this same directory without issuer or signing keys.
+        if let Some(root) = &config.public_artifact_dir {
+            let shared = Rc::new(FilePublicArtifactStore::<Curve>::new(root)?);
+            for role in MANAGED_ROLES {
+                let issuer_id = callers.identity_for_role(role)?;
+                let material = issuance_store.get_accumulator_data_at_version(issuer_id, 1)?;
+                shared.publish_accumulator(issuer_id, 1, &material)?;
+            }
+            profile.public_artifacts = Some(shared);
+        }
+
         let accumulator_provider: AccumulatorMaterialProviderRef<Curve> =
-            Rc::new(IssuanceAccumulatorProvider {
-                store: issuance_store,
-            });
+            if let Some(shared) = &profile.public_artifacts {
+                shared.clone()
+            } else {
+                Rc::new(IssuanceAccumulatorProvider {
+                    store: issuance_store,
+                })
+            };
         let did_keys = Rc::new(DidEthrVerificationKeyProvider::new(
             &config.did_resolver_script,
             &config.rpc_url,
@@ -162,7 +182,12 @@ impl EvmAdapterProfile {
             verification_keys.clone(),
         ));
 
-        let raw_status_provider: StatusListCredentialProviderRef = profile.status_source.clone();
+        let raw_status_provider: StatusListCredentialProviderRef =
+            if let Some(shared) = &profile.public_artifacts {
+                shared.clone()
+            } else {
+                profile.status_source.clone()
+            };
         let status_provider: StatusListCredentialProviderRef =
             Rc::new(JwtAuthenticatedStatusListCredentialProvider::new(
                 raw_status_provider,
@@ -262,8 +287,11 @@ impl EvmAdapterProfile {
         self.status_source.insert(
             issuer_id.to_string(),
             entry.status_list_credential().to_string(),
-            signed_status,
+            signed_status.clone(),
         );
+        if let Some(shared) = &self.public_artifacts {
+            shared.publish_status_jwt(issuer_id, entry.status_list_credential(), &signed_status)?;
+        }
         Ok(())
     }
 
@@ -352,8 +380,11 @@ impl EvmAdapterProfile {
         self.status_source.insert(
             issuer_id.to_string(),
             entry.status_list_credential().to_string(),
-            updated_artifact,
+            updated_artifact.clone(),
         );
+        if let Some(shared) = &self.public_artifacts {
+            shared.publish_status_jwt(issuer_id, entry.status_list_credential(), &updated_artifact)?;
+        }
 
         Ok(expected_version)
     }
