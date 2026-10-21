@@ -10,6 +10,7 @@ import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
+import {TrustedCryptoMcpBridge} from "./trusted-crypto-mcp-bridge.ts";
 import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGenerationConfig } from "./adk-specialized-agents.ts";
 import type { DeterministicTaskHandler } from "./executor.ts";
@@ -33,6 +34,8 @@ export interface AdkA2ATaskHandlerConfig {
   /** Optional shared-MCP spike: trusted Agent worker task registry. */
   mcpTaskRegistry?: PrivateMcpTaskRegistry;
   mcpSharedUrl?: string;
+  /** Separate crypto-only MCP service; never included in the ADK tool list. */
+  mcpCryptoUrl?: string;
   /** Explicitly opt update_file into MCP; read_file remains the default. */
   mcpUpdateFile?: boolean;
   /** Test Agent only: opt-in to MCP create_file for the one allowed E2E path. */
@@ -173,8 +176,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   if (config.mcpRunTests && !config.mcpSharedUrl) {
     throw new Error("Shared MCP run_tests requires MCP to be configured");
   }
-  if (Boolean(config.mcpSharedUrl) !== Boolean(config.mcpTaskRegistry)) {
-    throw new Error("Shared MCP requires both a task registry and shared URL");
+  if (Boolean(config.mcpSharedUrl || config.mcpCryptoUrl) !== Boolean(config.mcpTaskRegistry)) {
+    throw new Error("MCP service requires a private task registry");
   }
   if (!config.adapterToken?.trim() || !config.adapterBaseUrl?.trim() || !config.gatewayBaseUrl?.trim()) {
     throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
@@ -222,11 +225,18 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(signal ? {signal} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
+    const cryptoPresentation = config.mcpCryptoUrl && config.mcpTaskRegistry
+      ? new TrustedCryptoMcpBridge({
+          endpoint:config.mcpCryptoUrl,registry:config.mcpTaskRegistry,
+          taskId:context.task_id
+        })
+      : undefined;
     const gatewayClient = new GatewayControlledToolClient({
       gatewayBaseUrl: config.gatewayBaseUrl,
       agentRole: context.role,
       taskId: context.task_id,
       evidenceHandler,
+      ...(cryptoPresentation ? {cryptoPresentation} : {}),
       ...(signal ? {signal} : {}),
       ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),
       ...(config.mcpRunTests ? {runnerExecuteTimeoutMs: 960_000} : {}),
