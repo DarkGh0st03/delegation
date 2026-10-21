@@ -268,3 +268,64 @@ test("revocation network response is acknowledged before any root issuance",asyn
   await pending;
   assert.deepEqual(adapter.calls.map(x=>x.operation),["issue","revoke","issue"]);
 });
+
+
+test("trusted Gateway SHA must match Engineer snapshot BEFORE any provisional root is issued",async()=>{
+  const adapter=new Adapter();
+  const calls:string[]=[];
+  const session=new TrustedEngineerAuthoritySession({
+    snapshot:snapshot(),credentials:adapter,
+    approvals:{async loadAuthenticatedApproval(){return trustedApproval()}},
+    authenticatedEngineerDid:did,
+    planningRevisions:{
+      async begin(id,ttl){
+        calls.push("begin:"+id+":"+ttl);
+        return {task_id:id,base_revision:"b".repeat(40),
+          expires_at:new Date(Date.now()+ttl).toISOString()};
+      },
+      end(id){calls.push("end:"+id);}
+    }
+  });
+  await assert.rejects(()=>session.startPlanning(root(PREP_ID,"100",600)),
+    /trusted Gitea base revision differs/);
+  assert.equal(session.phase,"failed_closed");
+  assert.equal(adapter.calls.length,0);
+  assert.deepEqual(calls,["begin:session-s1:600000","end:session-s1"]);
+});
+
+test("trusted revision binding remains active until approval; it ends before revocation/issuance",async()=>{
+  const adapter=new Adapter();
+  const calls:string[]=[];
+  const oldIssue=adapter.issueScopedOrchestratorRoot.bind(adapter);
+  const oldRevoke=adapter.revokeRoot.bind(adapter);
+  adapter.issueScopedOrchestratorRoot=async(args)=>{
+    calls.push("issue:"+args.credential_id);
+    return oldIssue(args);
+  };
+  adapter.revokeRoot=async(id)=>{
+    calls.push("revoke:"+id);
+    return oldRevoke(id);
+  };
+  const session=new TrustedEngineerAuthoritySession({
+    snapshot:snapshot(),credentials:adapter,
+    approvals:{async loadAuthenticatedApproval(){return trustedApproval()}},
+    authenticatedEngineerDid:did,
+    planningRevisions:{
+      async begin(id,ttl){
+        calls.push("begin:"+id);
+        assert.equal(ttl,600000);
+        return {task_id:id,base_revision:"a".repeat(40),
+          expires_at:new Date(Date.now()+ttl).toISOString()};
+      },
+      end(id){calls.push("end:"+id);}
+    }
+  });
+  await session.startPlanning(root(PREP_ID,"100",600));
+  assert.equal(session.phase,"planning");
+  const approved=await session.approveAndIssueOperationalRoot(root(OPER_ID,"101",3600));
+  assert.equal(approved.phase,"operational");
+  assert.deepEqual(calls,[
+    "begin:session-s1","issue:"+PREP_ID,"end:session-s1",
+    "revoke:"+PREP_ID,"issue:"+OPER_ID
+  ]);
+});
