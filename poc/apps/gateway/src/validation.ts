@@ -1,6 +1,7 @@
+import { GatewayError } from "./errors.ts";
+import { classifyGatewayOperation } from "./operation-support.ts";
 import {
   AGENT_ROLES,
-  TOOL_NAMES,
   type AgentRole,
   type NormalizedToolRequest,
   type PrepareAuthorizationRequest,
@@ -104,8 +105,18 @@ function role(value: unknown): AgentRole {
 }
 
 function toolName(value: unknown): ToolName {
-  if (typeof value !== "string" || !(TOOL_NAMES as readonly string[]).includes(value)) {
-    throw new Error("tool is not supported");
+  const support = classifyGatewayOperation(value);
+  if (support === "unknown") {
+    throw new GatewayError(400, "unknown_operation", "Tool is not in the authoritative Rust Operation catalog");
+  }
+  if (support === "unavailable") {
+    // Do not accept a VP, mint a prepare token, or execute any provider here.
+    // Provider support is not implied by recognizing a Rust enum variant.
+    throw new GatewayError(
+      501,
+      "provider_operation_unavailable",
+      "Recognized operation has no implemented Gateway execution adapter"
+    );
   }
   return value as ToolName;
 }
