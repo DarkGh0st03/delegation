@@ -4,6 +4,8 @@ export const AGENT_ROLES = ["orchestrator", "backend", "frontend", "test"] as co
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
 export const TOOL_NAMES = [
+  "read_repository",
+  "list_directory",
   "read_file",
   "update_file",
   "create_file",
@@ -22,6 +24,14 @@ export interface Permission {
 }
 
 export type NormalizedToolRequest =
+  | {
+      tool: "read_repository";
+      arguments: Record<string, never>;
+    }
+  | {
+      tool: "list_directory";
+      arguments: { branch: string; path: string };
+    }
   | {
       tool: "read_file";
       arguments: { branch: string; path: string };
@@ -205,6 +215,33 @@ export interface MockExecutionResult {
   request_fingerprint: string;
 }
 
+export interface GiteaReadRepositoryExecutionResult {
+  provider: "gitea";
+  performed: true;
+  tool: "read_repository";
+  full_name: string;
+  default_branch: string;
+  revision: string;
+  object_format_name?: string;
+}
+
+export interface GiteaDirectoryEntry {
+  name: string;
+  path: string;
+  type: "file" | "dir";
+  size?: number;
+}
+
+export interface GiteaListDirectoryExecutionResult {
+  provider: "gitea";
+  performed: true;
+  tool: "list_directory";
+  branch: string;
+  path: string;
+  revision: string;
+  entries: GiteaDirectoryEntry[];
+}
+
 export interface GiteaReadFileExecutionResult {
   provider: "gitea";
   performed: true;
@@ -307,6 +344,8 @@ export interface RunnerExecutionResult {
 export type ExecutionResult =
   | MockExecutionResult
   | GiteaReadFileExecutionResult
+  | GiteaReadRepositoryExecutionResult
+  | GiteaListDirectoryExecutionResult
   | GiteaCreateBranchExecutionResult
   | GiteaCreateFileExecutionResult
   | GiteaUpdateFileExecutionResult
