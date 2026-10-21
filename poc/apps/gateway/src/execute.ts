@@ -10,6 +10,7 @@ import {
   VerificationUnavailableError
 } from "./errors.ts";
 import { buildPolicyInput } from "./policy-input.ts";
+import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
 import { InMemoryRequestStore } from "./prepare.ts";
 import type {
   AuditSink,
@@ -90,6 +91,7 @@ export interface ExecuteDependencies {
   policy: PolicyPort;
   repository: GatewayRepositoryConfig;
   executor: ExecutionPort;
+  planningRevisions?: TrustedPlanningRevisions;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -249,6 +251,9 @@ export async function executeAuthorization(
     throw new GatewayError(403, "policy_denied", "Workflow policy denied the operation");
   }
 
+  // A pending challenge must not survive trusted Planning expiry/revocation.
+  // Recheck after asynchronous cryptography/OPA, before any provider read.
+  dependencies.planningRevisions?.assertActiveForExecution(record);
   const providerStarted = durationNow();
   let execution: ExecutionResult;
   try {
