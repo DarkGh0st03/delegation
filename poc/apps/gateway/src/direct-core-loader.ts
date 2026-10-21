@@ -42,8 +42,17 @@ export function loadDirectCoreRustVerifier():DirectCoreRustVerifier {
   }
   if(native===null || typeof native!=="object" ||
      !("verify_verifiable_presentation" in native) ||
-     typeof (native as CoreRustBinding).verify_verifiable_presentation!=="function") {
+     !("assert_verification_ready" in native) ||
+     typeof (native as CoreRustBinding).verify_verifiable_presentation!=="function" ||
+     typeof (native as {assert_verification_ready?:unknown}).assert_verification_ready!=="function") {
     throw new Error("Native Rust Core addon does not expose the required verifier ABI");
+  }
+  // Mandatory real EVM chain-id / read-only artifact presence preflight.
+  // No fallback to the issuing Adapter, even if native verification is unavailable.
+  try {
+    (native as {assert_verification_ready:()=>void}).assert_verification_ready();
+  }catch{
+    throw new Error("Native Rust Core verification sources are not ready; refusing startup");
   }
   return new DirectCoreRustVerifier(
     native as CoreRustBinding,identitiesFromEnvironment()
