@@ -27,17 +27,26 @@ function fixturePlan(){
   return {
     schema_version:"1.0.0",plan_id:"plan-ipc-1",session_id:"session-ipc-1",
     version:1,repository:REPO,base_revision:SHA,
-    requirement:"Create one approved isolated feature branch",
+    requirement:"Create an isolated branch and update one authorized backend file",
     candidate_agents:[{
       agent_id:"backend",did:"did:thesis:backend",card_ref:"trusted:backend"
     }],
     tasks:[{
       id:"branch",agent_id:"orchestrator",title:"Create feature branch",
       description:"Create one approved branch",depends_on:[],resources:[URI]
+    },{
+      id:"backend",agent_id:"backend",title:"Update backend file",
+      description:"Make approved changes only after branch completion",
+      depends_on:["branch"],
+      resources:[URI+"/branches/feature%2Fapproved/files/apps/backend/user.ts"]
     }],
     requested_permissions:[{
       id:"permission-branch",task_id:"branch",agent_id:"orchestrator",
       resource:URI,operation:"create_branch",reason:"Prepare work branch"
+    },{
+      id:"permission-backend",task_id:"backend",agent_id:"backend",
+      resource:URI+"/branches/feature%2Fapproved/files/apps/backend/user.ts",
+      operation:"update_file",reason:"Implement approved change"
     }],
     assumptions:[],uncertainties:[]
   };
@@ -71,7 +80,7 @@ async function setup(t:import("node:test").TestContext){
   const approval=makeApproval(p,{
     allowedOperations:OPERATIONS,decision_id:"decision-ipc-1",
     approved_by:DID,approved_at:issuedAt.toISOString(),
-    approved_permission_ids:["permission-branch"]
+    approved_permission_ids:["permission-branch","permission-backend"]
   });
   const signed=signEngineerApproval({
     plan:p,approval,engineerDid:DID,keyId:KEY_ID,privateKeyPem:priv,
@@ -206,6 +215,37 @@ test("separate-process Coordinator activates signed plan only after revoke, bind
   }),/denied/);
   await coordinator.confirmTask("a2a-branch-1",completion);
   await assert.rejects(coordinator.confirmTask("a2a-branch-1",completion),/denied/);
+  const backendCall={
+    task_id:"a2a-backend-1",agent_role:"backend" as const,
+    tool:"update_file",arguments:{
+      branch:"feature/approved",path:"apps/backend/user.ts",content:"export const ok=true;"
+    }
+  };
+  await coordinator.bindDispatchedTask("backend","a2a-backend-1","backend");
+  const backendPrepare=await post(e.publicUrl,"/v1/authorization/prepare",backendCall);
+  assert.equal(backendPrepare.status,201);
+  const request=await backendPrepare.json();
+  const backendObs={
+    source:"trusted_a2a_poll" as const,runtime_task_id:"a2a-backend-1",
+    role:"backend" as const,state:"completed" as const,
+    artifact:{
+      branch:"feature/approved",revision:SHA,commit_sha:SHA,
+      files_modified:["apps/backend/user.ts"],files_created:[],
+      test_outcome:"not_run" as const
+    }
+  };
+  // Agent claims alone do not unlock the approved backend Task.
+  await assert.rejects(coordinator.confirmTask("a2a-backend-1",backendObs),/denied/);
+  const backendExecute=await post(e.publicUrl,"/v1/authorization/execute",{
+    request_id:request.request_id,signed_vp:"fixture-vp"
+  });
+  assert.equal(backendExecute.status,200);
+  await assert.rejects(coordinator.confirmTask("a2a-backend-1",{
+    ...backendObs,artifact:{
+      ...backendObs.artifact,revision:"c".repeat(40),commit_sha:"c".repeat(40)
+    }
+  }),/denied/);
+  await coordinator.confirmTask("a2a-backend-1",backendObs);
   await coordinator.closeExecution();
   assert.equal(e.trace.at(-1),"revoke:urn:ipc:work-root");
   assert.equal((await post(e.publicUrl,"/v1/authorization/prepare",call)).status,403);

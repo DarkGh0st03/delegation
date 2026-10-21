@@ -25,7 +25,7 @@ const runtime=new GatewayRuntime({
   approvedPlans:plans,
   verifier:{async verify(req){
     return {
-      presenter_id:"did:thesis:orchestrator",issuer_id:cfg.engineerDid,
+      presenter_id:"did:thesis:"+req.presenter,issuer_id:cfg.engineerDid,
       credential_id:"urn:operational-root",permissions:[req.required_permission],
       hierarchy_depth:1,expiration:new Date(Date.now()+60000).toISOString()
     };
@@ -36,13 +36,18 @@ const runtime=new GatewayRuntime({
   executor:{
     provider:"gitea",
     async execute(record){
-      if(record.request.tool!=="create_branch")throw Error("Fixture only creates branches");
-      return {
+      const request=record.request,sha=cfg.repositoryBaseSha||"a".repeat(40);
+      if(request.tool==="create_branch")return {
         provider:"gitea",performed:true,tool:"create_branch",
-        branch:record.request.arguments.branch,base_branch:"main",
-        revision:cfg.repositoryBaseSha||"a".repeat(40),
-        commit_sha:cfg.repositoryBaseSha||"a".repeat(40)
+        branch:request.arguments.branch,base_branch:"main",
+        revision:sha,commit_sha:sha
       };
+      if(request.tool==="update_file")return {
+        provider:"gitea",performed:true,tool:"update_file",
+        branch:request.arguments.branch,path:request.arguments.path,
+        revision:sha,commit_sha:sha,blob_sha:"b",precondition_blob_sha:"a"
+      };
+      throw Error("Fixture only creates a branch and edits a test file");
     }
   }
 });
