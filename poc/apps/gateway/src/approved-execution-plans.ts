@@ -191,7 +191,9 @@ export class TrustedApprovedExecutionPlans {
   }
 
   /** Re-evaluate AFTER VP and OPA, immediately BEFORE provider I/O. */
-  assertAuthorizedForExecution(record:PreparedRequestRecord):void {
+  assertAuthorizedForExecution(
+    record:PreparedRequestRecord, verifiedPresenterId?:string
+  ):void {
     if(!record.approved_plan_digest || !record.approved_plan_task_id) {
       denied("Prepared request has no trusted plan binding");
     }
@@ -201,13 +203,26 @@ export class TrustedApprovedExecutionPlans {
        record.approved_plan_digest!==session.digest) {
       denied("Prepared plan digest, task binding or role changed");
     }
+    // For specialized agents, the DID in the approved immutable agent
+    // registry must match the presenter whose VP the Rust Core verified.
+    // Orchestrator identity is resolved independently by the Rust role map.
+    if(binding.agent!=="orchestrator" && verifiedPresenterId!==undefined) {
+      const entry=session.plan.candidate_agents.find(
+        (a:any)=>a.agent_id===binding.agent
+      );
+      if(!entry || entry.did!==verifiedPresenterId) {
+        denied("Verified presenter DID differs from approved agent identity");
+      }
+    }
     this.#checkAction(session,binding,record.required_permission);
   }
 
   /** Gateway-confirmed provider results are tracked internally, not via A2A. */
-  recordProviderSuccess(record:PreparedRequestRecord, performed:boolean):void {
+  recordProviderSuccess(
+    record:PreparedRequestRecord,performed:boolean,verifiedPresenterId:string
+  ):void {
     if(!performed) return; // mock providers do not prove real effects
-    this.assertAuthorizedForExecution(record);
+    this.assertAuthorizedForExecution(record,verifiedPresenterId);
     this.#bindings.get(record.task_id)?.successfulRequests.add(record.request_id);
   }
 
