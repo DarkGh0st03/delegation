@@ -120,7 +120,8 @@ test("UI resources cannot read private signing keys and remain script-sanitized"
   const client=await (await fetch(e.root+"/authenticated.js")).text();
   assert.doesNotMatch(client,/innerHTML|eval\(/u);
   assert.doesNotMatch(client,/privateKeyPem|scryptSync/u);
-  assert.equal((await fetch(e.root+"/../../private.pem")).status,404);
+  // Unknown paths are auth-gated: anonymous callers cannot probe resource names.
+  assert.equal((await fetch(e.root+"/../../private.pem")).status,401);
   assert.equal((await fetch(e.root+"/api/plan",{headers:{Host:"evil.example"}})).status,403);
   assert.equal((await e.post("/api/approve",{},null,null)).status,401);
 });
