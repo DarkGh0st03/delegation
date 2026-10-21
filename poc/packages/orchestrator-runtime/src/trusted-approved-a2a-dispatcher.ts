@@ -187,7 +187,8 @@ export class TrustedApprovedA2ADispatcher {
         }
       });
       if(result.role!==role||!result.task_id||
-         result.artifact?.role!==role){
+         result.artifact?.role!==role||
+         result.artifact?.branch!==this.#snapshot.approvedBranch){
         throw Error("Protected A2A result does not match bound role/Task");
       }
       await this.#config.coordinator.confirmTask(

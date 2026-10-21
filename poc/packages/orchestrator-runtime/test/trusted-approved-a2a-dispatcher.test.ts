@@ -11,7 +11,10 @@ const did="did:thesis:engineer";
 const file=uri+"/branches/feature%2Faccount-suspension/files/apps/backend/user.ts";
 const frontendFile=uri+"/branches/feature%2Faccount-suspension/files/apps/frontend/page.tsx";
 const testsBranch=uri+"/branches/feature%2Faccount-suspension";
-function plan(){
+function plan(workingBranch=branch){
+ const fileUri=uri+"/branches/"+encodeURIComponent(workingBranch)+"/files/apps/backend/user.ts";
+ const frontendUri=uri+"/branches/"+encodeURIComponent(workingBranch)+"/files/apps/frontend/page.tsx";
+ const branchUri=uri+"/branches/"+encodeURIComponent(workingBranch);
  return {
   schema_version:"1.0.0",plan_id:"approved-dag",
   session_id:"signed-session",version:1,repository:repo,base_revision:sha,
@@ -24,31 +27,32 @@ function plan(){
       description:"Prepare approved branch",depends_on:[],resources:[uri]},
     {id:"backend-task",agent_id:"backend",title:"Change backend",
       description:"Implement approved backend user modification",
-      depends_on:["branch"],resources:[file]},
+      depends_on:["branch"],resources:[fileUri]},
     {id:"frontend-task",agent_id:"frontend",title:"Change frontend",
       description:"Implement approved frontend display",
-      depends_on:["backend-task"],resources:[frontendFile]},
+      depends_on:["backend-task"],resources:[frontendUri]},
     {id:"tests",agent_id:"test",title:"Test the changes",
       description:"Run approved controlled test",
-      depends_on:["frontend-task"],resources:[testsBranch]}
+      depends_on:["frontend-task"],resources:[branchUri]}
   ],
   requested_permissions:[
     {id:"branch-perm",task_id:"branch",agent_id:"orchestrator",resource:uri,
       operation:"create_branch",reason:"Prepare branch"},
-    {id:"backend-perm",task_id:"backend-task",agent_id:"backend",resource:file,
+    {id:"backend-perm",task_id:"backend-task",agent_id:"backend",resource:fileUri,
       operation:"update_file",reason:"Implementation"},
-    {id:"front-perm",task_id:"frontend-task",agent_id:"frontend",resource:frontendFile,
+    {id:"front-perm",task_id:"frontend-task",agent_id:"frontend",resource:frontendUri,
       operation:"update_file",reason:"UI change"},
-    {id:"test-perm",task_id:"tests",agent_id:"test",resource:testsBranch,
+    {id:"test-perm",task_id:"tests",agent_id:"test",resource:branchUri,
       operation:"run_tests",reason:"Verify work"}
   ],assumptions:[],uncertainties:[]
  };
 }
 function harness(options:{
   badDid?:boolean;badDigest?:boolean;denyBinding?:boolean;
-  failResult?:boolean;removeApproval?:boolean;
+  failResult?:boolean;removeApproval?:boolean;workBranch?:string;
+  invalidArtifactBranch?:boolean;
 }={}){
-  const p=plan();
+  const p=plan(options.workBranch);
   const ids=p.requested_permissions.map(x=>x.id);
   const approval=makeApproval(p,{allowedOperations:new Set(RUST_OPERATIONS),
     decision_id:"decision-dag",approved_by:did,approved_at:"2026-10-21T17:00:00Z",
@@ -73,7 +77,9 @@ function harness(options:{
         role:options.failResult?"test":input.role,
         task_id:"sdk-remote-"+input.subtask.subtask_id,
         artifact:{
-          role:input.role,branch,revision:sha,commit_sha:sha,
+          role:input.role,
+          branch:options.invalidArtifactBranch?"feature/unrelated":(options.workBranch??branch),
+          revision:sha,commit_sha:sha,
           files_modified:[],files_created:[],test_outcome:"not_run",
           summary:"Validated by A2A runner",errors:[]
         }
@@ -167,4 +173,49 @@ test("unapproved Task permissions and unassigned/missing Tasks fail before autho
  await assert.rejects(dispatcher.dispatch("backend-task"),/no granted permission/);
  await assert.rejects(dispatcher.dispatch("not-in-plan"),/not found/);
  assert.ok(!h.log.some(x=>x.startsWith("allocate:")));
+});
+
+
+test("signed plan selects arbitrary canonical feature branch and rejects unrelated A2A artifact",async()=>{
+ const working="feature/engineer-approved-42";
+ const h=harness({workBranch:working});
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ assert.equal(d.approvedBranch,working);
+ await d.runOrchestratorTask("branch",async id=>{h.log.push("provider:"+id);});
+ const task=await d.dispatch("backend-task");
+ assert.equal(task.artifact.branch,working);
+ assert.deepEqual(d.completedTaskIds,["branch","backend-task"]);
+ const f=harness({workBranch:working,invalidArtifactBranch:true});
+ const reject=await TrustedApprovedA2ADispatcher.load(f.config as any);
+ await reject.runOrchestratorTask("branch",async()=>{});
+ await assert.rejects(reject.dispatch("backend-task"),/does not match/);
+ assert.equal(f.log.at(-1),"close");
+});
+test("branch is never inferred from unapproved, multiple or invalid repository locations",async()=>{
+ for(const workBranch of ["main","feature/../exploit","feature/invalid.lock","feature/double//slash"]){
+   const h=harness({workBranch});
+   await assert.rejects(TrustedApprovedA2ADispatcher.load(h.config as any),
+     /Invalid approved feature branch/);
+   assert.deepEqual(h.log,[]);
+ }
+ const h=harness();
+ const original=h.config.approvals.loadAuthenticatedApproval;
+ h.config.approvals.loadAuthenticatedApproval=async()=>{
+   const fetched=await original();
+   const p=structuredClone(fetched.plan);
+   // The tampered plan contains incompatible branches; even when a malicious
+   // signer recomputes its digest, one Execution cannot span two branches.
+   p.requested_permissions[2]!.resource=
+     uri+"/branches/feature%2Fanother/files/apps/frontend/page.tsx";
+   p.tasks[2]!.resources=[p.requested_permissions[2]!.resource];
+   const approval=makeApproval(p,{allowedOperations:new Set(RUST_OPERATIONS),
+     decision_id:"evil-second-branch",approved_by:did,
+     approved_at:"2026-10-21T17:00:00Z",
+     approved_permission_ids:p.requested_permissions.map(x=>x.id)
+   });
+   return {...fetched,plan:p,approval};
+ };
+ h.config.expectedPlanDigest=planDigest((await h.config.approvals.loadAuthenticatedApproval()).plan);
+ await assert.rejects(TrustedApprovedA2ADispatcher.load(h.config as any),
+   /Exactly one approved feature branch/);
 });
