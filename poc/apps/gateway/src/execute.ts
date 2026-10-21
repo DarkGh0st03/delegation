@@ -258,7 +258,7 @@ export async function executeAuthorization(
   dependencies.planningRevisions?.assertActiveForExecution(record);
   if (!record.pinned_revision) {
     try {
-      dependencies.approvedPlans?.assertAuthorizedForExecution(record);
+      dependencies.approvedPlans?.assertAuthorizedForExecution(record,verified.presenter_id);
     } catch {
       dependencies.audit.emit({
         event:"authorization_executed",
@@ -336,7 +336,9 @@ export async function executeAuthorization(
   // Count only real Gateway-confirmed provider effects as trusted evidence
   // for a later, separately attested A2A Task completion.
   if (!record.pinned_revision) {
-    dependencies.approvedPlans?.recordProviderSuccess(record,execution.performed);
+    dependencies.approvedPlans?.recordProviderSuccess(
+      record,execution.performed,verified.presenter_id
+    );
   }
   const providerMs = elapsed(providerStarted, durationNow);
   const totalMs = elapsed(totalStarted, durationNow);
