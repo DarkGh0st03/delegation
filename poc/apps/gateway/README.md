@@ -109,6 +109,63 @@ It does **not** by itself bind the request to a signed human-approved
 plan: that integration remains a separate requirement and is never
 delegated to prompts or ADK callbacks.
 
+## Stage 11 — Trusted approved execution-plan enforcement (opt-in)
+
+The trusted Gateway now supports `TrustedApprovedExecutionPlans` via
+`GatewayRuntimeDependencies.approvedPlans`. Its store and completion
+attestor MUST be injected by an authenticated Engineer/coordinator
+backend. No activation, Task binding, approval update or completion route
+is exposed on public HTTP/MCP/A2A/ADK interfaces.
+
+- `activate(sessionId, expectedBaseRevision)` obtains an immutable
+  approved plan from a trusted approval store. It verifies Engineer DID,
+  plan version/digest, repository and pinned Gitea SHA, exact approved
+  permission IDs, Rust Operation catalog and implemented Gateway tools.
+  A plan digest proves integrity, NOT real human consent.
+- `bindTask` ties an opaque live A2A runtime Task ID to one approved plan
+  Task and exactly one Agent role. Caller-supplied `task_id` alone is never
+  enough to authorize an operation.
+- During `Prepare` the Gateway checks the derived resource/operation,
+  approved Task, role and genuine predecessor completions before
+  creating a one-shot challenge. Plan digest/Task ID are carried only in
+  the trusted request record, never model-selected tool arguments.
+- During `Execute` the Gateway verifies the VP through Rust, checks
+  OPA, **then rechecks** approval, bound Agent DID, digest, dependencies
+  and permitted operation before invoking Gitea or Docker Runner.
+  Plan denials emit `approved_plan_denied` with provider not called.
+- A trusted Task is complete only after a Gateway-observed **real**
+  provider effect (`performed=true`), followed by a positive independent
+  trusted completion attestation. Mock results, LLM statements and
+  untrusted A2A Task prose cannot mark a dependency complete.
+- `closeSession` prevents new Prepare and denies already prepared
+  operations at the final pre-provider check. A changed plan requires a
+  separate new authenticated session and approval.
+
+### Boundaries not yet completed
+
+This is an **opt-in in-process trust boundary**, not a completed live
+Planning → Approval → Execution rollout. The actual authenticated
+Engineer approval database, genuine human GUI consent, task completion
+attestor, multi-replica durable storage and production lifecycle
+serialization are not yet deployed. In particular, a provider call
+already in flight cannot be rolled back merely by closing the session.
+Operational root issuance/revocation remains an independent obligation.
+
+The existing `prepare-composite` endpoint verifies permissions only and
+does not execute provider effects. The historical baseline still uses
+Rust DC/VP + OPA when `approvedPlans` is absent. **Do not treat that
+legacy fallback as compliant with the new plan-enforced architecture.**
+Planning-read sessions with pinned Git SHA remain separately controlled.
+
+Repository-wide permissions such as `create_branch` and
+`create_pull_request` are scoped by exact repository URI and operation,
+not yet by full operation argument values (e.g. proposed branch name
+or target commit). Stronger argument-bound constraints and checked
+Git base/head SHAs are required for a fully generalized workflow.
+
+Offline tests: `poc/apps/gateway/test/approved-execution-plans.test.ts`;
+no Gemini paid runs are invoked.
+
 ## Stage 10A — One immutable Planning Git revision (trusted, opt-in)
 
 Before this change, \`read_file\` and \`list_directory\` each resolved
