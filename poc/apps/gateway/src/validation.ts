@@ -125,6 +125,23 @@ function normalizeArguments(tool: ToolName, raw: unknown): NormalizedToolRequest
   const args = object(raw, "arguments");
 
   switch (tool) {
+    case "read_repository": {
+      exactKeys(args, []);
+      return {tool, arguments: {}};
+    }
+    case "list_directory": {
+      exactKeys(args, ["branch"], ["path"]);
+      const path = args.path === undefined || args.path === ""
+        ? ""
+        : validateRepositoryPath(args.path);
+      return {
+        tool,
+        arguments: {
+          branch: validateBranchName(args.branch),
+          path
+        }
+      };
+    }
     case "read_file": {
       exactKeys(args, ["branch", "path"]);
       return {
