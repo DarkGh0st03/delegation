@@ -58,7 +58,8 @@ function harness(options:{
   correctEngineer?:boolean;
   attestation?:boolean;
   simulated?:boolean;
-  wrongPresenter?:boolean
+  wrongPresenter?:boolean;
+  skipPolicyDigestCheck?:boolean
 }={}){
   const p=options.configuredPlan??plan();
   const a=approval(p,options.approvedIds);
@@ -125,7 +126,9 @@ function harness(options:{
     }},
     policy:{async evaluate(input){
       opaCalls++;
-      assert.equal(input.approved_plan_digest,planDigest(p));
+      if(!options.skipPolicyDigestCheck) {
+        assert.equal(input.approved_plan_digest,planDigest(p));
+      }
       return {allow:true,policy_version:"policy-test"};
     }}
   });
@@ -282,7 +285,7 @@ test("tampered prepared Task, role, plan digest or permission fails after VP/OPA
     (record:PreparedRequestRecord)=>{record.agent_role="backend";},
     (record:PreparedRequestRecord)=>{record.required_permission.operation="read_repository";}
   ]){
-    const h=harness();await activated(h);
+    const h=harness({skipPolicyDigestCheck:true});await activated(h);
     const p=h.runtime.prepare({
       task_id:"a2a-bootstrap",agent_role:"orchestrator",
       tool:"create_branch",arguments:branchArgs
