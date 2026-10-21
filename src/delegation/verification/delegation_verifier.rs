@@ -744,8 +744,7 @@ mod tests {
             permission(Operation::ReadFile),
             permission(Operation::WriteFile),
         ];
-        let (verifier, signed_vp, holder_id) =
-            multipermission_fixture(expected.clone())?;
+        let (verifier, signed_vp, holder_id) = multipermission_fixture(expected.clone())?;
         let verified = verifier.verify_verifiable_presentation(
             multi_context(holder_id, expected.clone())?,
             signed_vp,
@@ -769,9 +768,11 @@ mod tests {
             signed_vp,
         );
         let message = match rejected {
-            Ok(_) => return Err(String::from(
-                "A partial VP must never grant an atomic multipermission authorization"
-            )),
+            Ok(_) => {
+                return Err(String::from(
+                    "A partial VP must never grant an atomic multipermission authorization",
+                ));
+            }
             Err(message) => message,
         };
         assert!(message.contains("write_file"));
@@ -793,9 +794,11 @@ mod tests {
             signed_vp,
         );
         let message = match rejected {
-            Ok(_) => return Err(String::from(
-                "An unsupported permission set must be denied atomically"
-            )),
+            Ok(_) => {
+                return Err(String::from(
+                    "An unsupported permission set must be denied atomically",
+                ));
+            }
             Err(message) => message,
         };
         assert!(message.contains("write_file"));
@@ -821,9 +824,11 @@ mod tests {
             signed_vp,
         );
         let message = match rejected {
-            Ok(_) => return Err(String::from(
-                "A permission on another resource must not be accepted"
-            )),
+            Ok(_) => {
+                return Err(String::from(
+                    "A permission on another resource must not be accepted",
+                ));
+            }
             Err(message) => message,
         };
         assert!(message.contains(&other_resource.to_string()));
@@ -836,15 +841,18 @@ mod tests {
             permission(Operation::ReadFile),
             permission(Operation::WriteFile),
         ];
-        let (verifier, signed_vp, holder_id) =
-            multipermission_fixture(requested.clone())?;
+        let (verifier, signed_vp, holder_id) = multipermission_fixture(requested.clone())?;
         let context = AuthorizationContext::new_multiple(
             holder_id,
             String::from("cloud-access-gateway"),
             String::from("incorrect-challenge"),
             requested,
         )?;
-        assert!(verifier.verify_verifiable_presentation(context, signed_vp).is_err());
+        assert!(
+            verifier
+                .verify_verifiable_presentation(context, signed_vp)
+                .is_err()
+        );
         Ok(())
     }
 
