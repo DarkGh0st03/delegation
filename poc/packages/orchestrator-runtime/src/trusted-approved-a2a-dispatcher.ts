@@ -181,25 +181,42 @@ export class TrustedApprovedA2ADispatcher {
   }
 
   /**
-   * Orchestrator-only tasks (e.g., create_branch) are executed separately
-   * through the trusted Gateway client, then confirmed by the Gateway.
+   * Prepare a trusted Orchestrator-only Task BEFORE the protected Gateway
+   * call (e.g. create_branch). Its callback runs under the private trusted
+   * root client, never ADK / Gemini. Gateway independently checks the effect.
    */
-  async confirmOrchestratorTask(planTaskId:string,runtimeTaskId:string){
+  async runOrchestratorTask(planTaskId:string,
+    invoke:(gatewayTaskId:string)=>Promise<unknown>):Promise<void>{
     if(this.#terminal||this.#busy||this.#config.coordinator.phase!=="execution")
       throw Error("Trusted dispatcher is inactive");
     const task=this.#snapshot.plan.tasks.find(t=>t.id===planTaskId);
     if(!task||task.agent_id!=="orchestrator"||
        task.depends_on.some(id=>!this.#completed.has(id))||
-       this.#completed.has(task.id)){
-      throw Error("Unknown, repeated or dependency-blocked Orchestrator Task");
+       this.#started.has(task.id)||
+       !this.#snapshot.approvedRows.some(p=>p.task_id===task.id&&
+         p.agent_id==="orchestrator")){
+      throw Error("Unknown, repeated, unapproved or dependency-blocked Orchestrator Task");
     }
-    // The caller must have bound the Task BEFORE invoking the Gateway.
-    // The Gateway confirms provider effect against that binding.
-    await this.#config.coordinator.confirmTask(
-      runtimeTaskId,{
-        source:"trusted_orchestrator",runtime_task_id:runtimeTaskId,
-        role:"orchestrator",state:"completed"
-      });
-    this.#completed.add(task.id);
+    this.#busy=true;
+    this.#started.add(task.id);
+    const dispatchId="dispatch_"+randomBytes(16).toString("base64url");
+    try{
+      await this.#config.coordinator.bindDispatchedTask(task.id,dispatchId,"orchestrator");
+      await invoke(dispatchId);
+      await this.#config.coordinator.confirmTask(
+        dispatchId,{
+          source:"trusted_orchestrator",runtime_task_id:dispatchId,
+          role:"orchestrator",state:"completed"
+        });
+      this.#completed.add(task.id);
+    }catch(error){
+      this.#terminal=true;
+      try{await this.#config.coordinator.closeExecution();}
+      catch{
+        throw new Error("Trusted Orchestrator Task failed; credential reconciliation required",
+          {cause:error});
+      }
+      throw error;
+    }finally{this.#busy=false;}
   }
 }
