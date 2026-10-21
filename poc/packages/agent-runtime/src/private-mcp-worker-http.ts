@@ -5,6 +5,28 @@ import {PrivateMcpTaskError,PrivateMcpTaskRegistry} from "./private-mcp-task-reg
 
 /** The only bridge from the shared MCP service into private per-A2A-task state. */
 export function attachPrivateMcpWorker(app:Express,registry:PrivateMcpTaskRegistry):void {
+  // The crypto profile never receives signing keys or signed VP bytes.
+  // It calls this authenticated private worker, which returns only proof_ref.
+  app.post("/internal/mcp-crypto-call",
+    express.json({limit:"4kb",strict:true}),async(req,res)=>{
+      res.setHeader("cache-control","no-store");
+      try{
+        const result=await registry.invokeCrypto(req.header("authorization"),req.body);
+        res.status(200).json({ok:true,result});
+      }catch(error){
+        if(error instanceof PrivateMcpTaskError){
+          const status=error.kind==="unauthorized"?401:
+            error.kind==="inactive_task"?403:400;
+          res.status(status).json({ok:false,error:{kind:error.kind}});
+        }else if(error instanceof ControlledToolError){
+          res.status(error.kind==="authorization_denied"?403:503)
+            .json({ok:false,error:{kind:error.kind}});
+        }else{
+          res.status(503).json({ok:false,error:{kind:"tool_unavailable"}});
+        }
+      }
+    }
+  );
   app.post("/internal/mcp-tool-call",express.json({limit:"128kb",strict:true}),async(req,res)=>{
     res.setHeader("cache-control","no-store");
     try {
