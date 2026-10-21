@@ -297,3 +297,20 @@ test("opt-in signed DAG factory binds before issuing exact child DC then running
  assert.ok(order.indexOf("a2a-sent")<
    order.findIndex(x=>x.startsWith("confirm:")&&x.endsWith(":backend")));
 });
+
+
+test("Test Agent receives only approved run_tests on the signed work branch",async()=>{
+ const e=fixture();
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer.create(e.config as any);
+ const issued=await issuer.issueSpecializedChild(child({
+   approved_task_id:"tests",selection:{role:"test"},
+   credential_id:"urn:issued:scoped-test-child"
+ }));
+ assert.equal(issued.role,"test");
+ assert.deepEqual(e.calls[0].body.permissions,[
+   {operation:"run_tests",resource:TEST}
+ ]);
+ assert.equal(e.calls[0].body.delegatee,"test");
+ assert.equal(issued.credential.id,"urn:issued:scoped-test-child");
+ assert.ok(!JSON.stringify(e.calls[0].body).includes("create_pull_request"));
+});
