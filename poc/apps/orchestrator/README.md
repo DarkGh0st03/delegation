@@ -83,3 +83,69 @@ npm --prefix poc run orchestrator-runtime:test
 
 These tests use **no Gemini calls, no paid APIs and no real GUI approval**.
 
+
+
+## Stage 12 — Signed Engineer approval and trusted handoff (opt-in)
+
+A new domain-separated, expiring Ed25519 Engineer receipt lives in
+`poc/packages/plan-contracts/src/signed-approval.mjs`. It signs the pinned
+plan SHA-256 digest, **all approved permission IDs**, the full approval
+decision, Engineer DID, signing-key ID and receipt timestamps. Its
+verifier rejects altered/expired records and unknown pinned keys.
+
+`SignedEngineerApprovalFileStore` loads the receipt from a protected
+directory and checks it with a trusted Engineer DID/public-key
+allowlist. It has no public write endpoint or model-visible method.
+Both the Engineer credential issuer and the Gateway-approved-plan
+registry consume this SAME authenticated record interface.
+
+Manual operator procedure (not an LLM/tool action):
+
+```sh
+ENGINEER_DID=did:your:engineer node --experimental-strip-types \
+  poc/apps/orchestrator/src/sign-engineer-approval.mjs \
+  /secure/input/plan.json /secure/input/approval.json \
+  /secure/approvals /secure/keys/engineer-ed25519.pem engineer-pinned-key-v1
+```
+
+The signer requires an interactive terminal, a mode-0600 private key,
+shows Engineer identity, exact repository/base SHA/plan digest,
+version and approved permission IDs, and requires the operator to
+type `APPROVE <plan_digest>`. The signed receipt is created once, with
+mode 0600, in the requested protected directory; neither the private
+key nor the signed VP is exposed to ADK, Gemini or MCP.
+
+**Cryptographic signing proves possession of the pinned key, NOT a
+production identity-provider login or real authenticated GUI click.**
+This is an explicit local signing ceremony, with genuine Ed25519
+signature verification, not a claim of completed GUI consent.
+A production Engineer identity/session and safe key management must
+still be integrated.
+
+`TrustedExecutionCoordinator` connects the existing read-only
+Engineer-root session to the opt-in Gateway approved-plan guard:
+
+1. Start the Gitea-SHA-pinned provisional read-only root.
+2. Retrieve the authenticated signed Engineer approval; confirm
+   revocation of the provisional root before independent operational
+   root issuance.
+3. Activate the SAME digest/SHA in the trusted Gateway plan registry,
+   or revoke the newly issued operational credential on failure.
+4. Bind actual A2A task IDs to plan tasks/agents; leave actual
+   provider authorization to Rust VC/VP + OPA + per-effect plan checks.
+   Completion requires trusted provider evidence and a separate
+   task-completion attestor.
+5. Close the operational session and revoke the operational root.
+
+The tests use **disposable locally generated keys**, a real signed
+on-disk receipt, simulated Rust/OPA/provider outcomes and a simulated
+task-completion attestor. No Gemini call or paid API is used.
+
+**Not yet deployed:** authenticated human GUI consent, a real
+cross-process authenticated Gateway/coordinator integration, durable
+multi-replica session/task state, real A2A completion evidence and
+full argument-bound branch/PR approvals. The historical Gemini
+workflow remains on its legacy, tested configuration.
+
+Offline test:
+`node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts`
