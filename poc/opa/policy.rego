@@ -4,7 +4,7 @@ import rego.v1
 
 default allow := false
 
-policy_version := "phase4a-v1"
+policy_version := "phase6-ro-v1"
 
 feature_branch := "feature/account-suspension"
 main_branch := "main"
@@ -45,6 +45,48 @@ bound_request_context if {
 file_operation_on_feature_branch if {
 	input.arguments.branch == feature_branch
 	startswith(input.required_permission.resource, sprintf("%s/files/", [feature_branch_uri]))
+}
+
+# Read-only discovery of a controlled repository: only the Orchestrator,
+# and only when a VP contains the exact read_repository permission.
+allow if {
+	bound_request_context
+	input.tool == "read_repository"
+	input.agent_role == "orchestrator"
+	input.required_permission.resource == repository_uri
+	count(object.keys(input.arguments)) == 0
+}
+
+# Planning before approval: read main, but never modify main.
+allow if {
+	bound_request_context
+	input.tool == "read_file"
+	input.agent_role == "orchestrator"
+	input.arguments.branch == main_branch
+	startswith(input.required_permission.resource, sprintf("%s/branches/main/files/", [repository_uri]))
+}
+
+directory_permission(prefix) if {
+	input.required_permission.resource == prefix
+}
+
+directory_permission(prefix) if {
+	startswith(input.required_permission.resource, sprintf("%s/", [prefix]))
+}
+
+allow if {
+	bound_request_context
+	input.tool == "list_directory"
+	input.agent_role == "orchestrator"
+	input.arguments.branch == main_branch
+	directory_permission(sprintf("%s/branches/main/directories", [repository_uri]))
+}
+
+allow if {
+	bound_request_context
+	input.tool == "list_directory"
+	input.arguments.branch == feature_branch
+	directory_permission(sprintf("%s/directories", [feature_branch_uri]))
 }
 
 allow if {
