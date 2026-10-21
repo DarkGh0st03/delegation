@@ -13,6 +13,7 @@ import { GiteaReadOnlyExecutor } from "./gitea-read-executor.ts";
 import { MockExecutor } from "./mock-executor.ts";
 import { OpaPolicyClient } from "./policy-client.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
+import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
 import { RunnerClient } from "./runner-client.ts";
 import {
   InMemoryAuditSink,
@@ -43,6 +44,8 @@ export interface GatewayRuntimeDependencies {
   executor?: ExecutionPort;
   /** Trusted in-process Planning coordinator supplies this optional guard. */
   planningRevisions?: TrustedPlanningRevisions;
+  /** Opt-in trusted Engineer-approved execution plan gate (no public mutation API). */
+  approvedPlans?: TrustedApprovedExecutionPlans;
 }
 
 function defaultExecutor(config: GatewayRuntimeConfig): ExecutionPort {
@@ -88,10 +91,12 @@ export class GatewayRuntime {
   readonly #policy: PolicyPort;
   readonly #executor: ExecutionPort;
   readonly #planningRevisions?: TrustedPlanningRevisions;
+  readonly #approvedPlans?: TrustedApprovedExecutionPlans;
 
   constructor(config: GatewayRuntimeConfig, dependencies: GatewayRuntimeDependencies = {}) {
     this.#config = config;
     this.#planningRevisions = dependencies.planningRevisions;
+    this.#approvedPlans = dependencies.approvedPlans;
     this.#store = dependencies.store ?? new InMemoryRequestStore();
     this.#compositeStore = new InMemoryCompositeStore();
     this.#audit = dependencies.audit ?? new JsonLineAuditSink();
@@ -128,7 +133,8 @@ export class GatewayRuntime {
     return prepareAuthorization(raw, this.#config.prepare, {
       store: this.#store,
       audit: this.#audit,
-      ...(this.#planningRevisions ? {planningRevisions:this.#planningRevisions} : {})
+      ...(this.#planningRevisions ? {planningRevisions:this.#planningRevisions} : {}),
+      ...(this.#approvedPlans ? {approvedPlans:this.#approvedPlans} : {})
     });
   }
 
@@ -163,6 +169,7 @@ export class GatewayRuntime {
       repository: this.#config.prepare.repository,
       executor: this.#executor,
       ...(this.#planningRevisions ? {planningRevisions:this.#planningRevisions} : {}),
+      ...(this.#approvedPlans ? {approvedPlans:this.#approvedPlans} : {}),
       ...(signal ? {signal} : {})
     });
   }
