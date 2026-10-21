@@ -68,35 +68,43 @@ impl<E: Pairing> FilePublicArtifactStore<E> {
             hasher.update((part.len() as u64).to_be_bytes());
             hasher.update(part.as_bytes());
         }
-        hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
+        hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
     }
 
     fn accumulator_path(&self, issuer: &str, version: u64) -> Result<PathBuf, String> {
         if issuer.trim().is_empty() || version == 0 {
             return Err(String::from("Invalid public accumulator issuer or version"));
         }
-        Ok(self.root.join("accumulators").join(format!(
-            "{}_v{version}.bin", Self::key(&[issuer])
-        )))
+        Ok(self
+            .root
+            .join("accumulators")
+            .join(format!("{}_v{version}.bin", Self::key(&[issuer]))))
     }
 
     fn status_path(&self, issuer: &str, url: &str) -> Result<PathBuf, String> {
         if issuer.trim().is_empty() || url.trim().is_empty() {
             return Err(String::from("Invalid Status List issuer or URL"));
         }
-        Ok(self.root.join("status-lists").join(format!(
-            "{}.jwt", Self::key(&[issuer, url])
-        )))
+        Ok(self
+            .root
+            .join("status-lists")
+            .join(format!("{}.jwt", Self::key(&[issuer, url]))))
     }
 
     fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
         let metadata = fs::symlink_metadata(path)
             .map_err(|err| format!("Public verification artifact unavailable [{err}]"))?;
         if !metadata.file_type().is_file() || metadata.len() > limit as u64 {
-            return Err(String::from("Public verification artifact is unsafe or oversized"));
+            return Err(String::from(
+                "Public verification artifact is unsafe or oversized",
+            ));
         }
-        let mut f = File::open(path)
-            .map_err(|err| format!("Cannot read verification artifact [{err}]"))?;
+        let mut f =
+            File::open(path).map_err(|err| format!("Cannot read verification artifact [{err}]"))?;
         let mut data = Vec::new();
         f.take((limit + 1) as u64)
             .read_to_end(&mut data)
@@ -117,7 +125,8 @@ impl<E: Pairing> FilePublicArtifactStore<E> {
     ) -> Result<(), String> {
         let path = self.accumulator_path(issuer, version)?;
         let mut bytes = Vec::new();
-        material.serialize_compressed(&mut bytes)
+        material
+            .serialize_compressed(&mut bytes)
             .map_err(|err| format!("Cannot encode accumulator public material [{err}]"))?;
         if bytes.is_empty() || bytes.len() > MAX_ACCUMULATOR_BYTES {
             return Err(String::from("Invalid public accumulator artifact size"));
@@ -151,18 +160,26 @@ impl<E: Pairing> FilePublicArtifactStore<E> {
         signed_jwt: &str,
     ) -> Result<(), String> {
         let path = self.status_path(issuer, url)?;
-        if signed_jwt.is_empty() || signed_jwt.len() > MAX_STATUS_BYTES ||
-            signed_jwt.split('.').count() != 3 ||
-            !signed_jwt.bytes().all(|b| b.is_ascii_alphanumeric() ||
-                b == b'-' || b == b'_' || b == b'.') {
-            return Err(String::from("Status List artifact must be a bounded compact JWT"));
+        if signed_jwt.is_empty()
+            || signed_jwt.len() > MAX_STATUS_BYTES
+            || signed_jwt.split('.').count() != 3
+            || !signed_jwt
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
+        {
+            return Err(String::from(
+                "Status List artifact must be a bounded compact JWT",
+            ));
         }
 
         let number = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let name = format!(".status-{}-{number}.tmp", std::process::id());
         let temp = path.with_file_name(name);
         let result = (|| -> Result<(), String> {
-            let mut file = OpenOptions::new().write(true).create_new(true).open(&temp)
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temp)
                 .map_err(|err| format!("Cannot stage Status List artifact [{err}]"))?;
             file.write_all(signed_jwt.as_bytes())
                 .and_then(|_| file.sync_all())
@@ -171,7 +188,9 @@ impl<E: Pairing> FilePublicArtifactStore<E> {
             // an unexpected path. The containing directory must be trusted.
             if let Ok(meta) = fs::symlink_metadata(&path) {
                 if !meta.is_file() || meta.file_type().is_symlink() {
-                    return Err(String::from("Invalid Status List destination artifact type"));
+                    return Err(String::from(
+                        "Invalid Status List destination artifact type",
+                    ));
                 }
             }
             fs::rename(&temp, &path)
@@ -199,7 +218,9 @@ impl<E: Pairing> AccumulatorMaterialProvider<E> for FilePublicArtifactStore<E> {
         let material = AccumulatorPublicData::<E>::deserialize_compressed(&mut bytes)
             .map_err(|err| format!("Cannot decode public accumulator artifact [{err}]"))?;
         if !bytes.is_empty() {
-            return Err(String::from("Public accumulator artifact has trailing bytes"));
+            return Err(String::from(
+                "Public accumulator artifact has trailing bytes",
+            ));
         }
         Ok(material)
     }
@@ -224,10 +245,10 @@ impl<E: Pairing> StatusListCredentialProvider for FilePublicArtifactStore<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
     use ark_bn254::Bn254;
     use ark_std::rand::{SeedableRng, prelude::StdRng};
     use vb_accumulator::prelude::{Keypair, SetupParams};
-    use crate::delegation::trust::resolver::evm_trust_resolver::EvmTrustResolver;
 
     fn dir() -> Result<PathBuf, String> {
         let path = std::env::temp_dir().join(format!(
@@ -246,7 +267,8 @@ mod tests {
     }
 
     #[test]
-    fn independent_reader_recovers_same_public_material_and_chain_commitment() -> Result<(), String> {
+    fn independent_reader_recovers_same_public_material_and_chain_commitment() -> Result<(), String>
+    {
         let dir = dir()?;
         let issuer = "did:ethr:0x7a69:0x1234";
         let producer = FilePublicArtifactStore::<Bn254>::new(&dir)?;
@@ -260,7 +282,11 @@ mod tests {
             commitment
         );
         assert!(reader.get_accumulator_data_at_version(issuer, 2).is_err());
-        assert!(reader.get_accumulator_data_at_version("different-issuer", 1).is_err());
+        assert!(
+            reader
+                .get_accumulator_data_at_version("different-issuer", 1)
+                .is_err()
+        );
         let changed = material();
         assert!(producer.publish_accumulator(issuer, 1, &changed).is_err());
         producer.publish_accumulator(issuer, 1, &expected)?;
@@ -277,7 +303,9 @@ mod tests {
         assert!(reader.get_status_list_credential(issuer, url).is_err());
         producer.publish_status_jwt(issuer, url, "header.payload.signature")?;
         assert_eq!(
-            reader.get_status_list_credential(issuer, url)?.commitment_bytes,
+            reader
+                .get_status_list_credential(issuer, url)?
+                .commitment_bytes,
             b"header.payload.signature"
         );
         producer.publish_status_jwt(issuer, url, "next.payload.signature")?;
@@ -285,7 +313,11 @@ mod tests {
             reader.get_status_list_credential(issuer, url)?.document,
             "next.payload.signature"
         );
-        assert!(reader.get_status_list_credential(issuer, "https://other/list").is_err());
+        assert!(
+            reader
+                .get_status_list_credential(issuer, "https://other/list")
+                .is_err()
+        );
         assert!(producer.publish_status_jwt(issuer, url, "not jwt").is_err());
         fs::remove_dir_all(dir).map_err(|err| err.to_string())
     }
