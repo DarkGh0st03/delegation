@@ -46,3 +46,23 @@ node --test poc/packages/plan-contracts/test/plan.test.mjs
 The module intentionally does not issue roots/child DCs, reach Gitea,
 call Gemini, expose secrets, or update any branch. It is independent of
 the draft VC/VP conformance PR.
+
+## Stage 9 — Plan approval verification for DC issuance
+
+The `assertApprovedPlanScope(plan, approval, {allowedOperations,
+expectedEngineerDid})` helper validates a trusted immutable approval
+record **without** supplying fabricated completed-task IDs. It checks
+the pinned plan digest/version, exact approved permission IDs,
+Engineer identity and plan-level agent/task/resource assignments.
+
+It does not attest who authenticated the Engineer. That is the
+responsibility of the trusted `TrustedApprovalStore` backend, not the
+LLM or the standalone hash function. The resulting permissions are
+subsequently filtered through the actual Gateway support set and
+canonical URI restrictions by the Engineer authority session.
+
+`assertApprovedExecution` remains independent: its
+`completedTaskIds` must be sourced from trusted task state once the
+execution phase is implemented. The root DC cannot replace that
+execution-time plan gate or Rust Core/OPA authorization.
+
