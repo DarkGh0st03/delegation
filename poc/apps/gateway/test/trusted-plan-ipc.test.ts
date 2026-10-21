@@ -194,6 +194,15 @@ test("separate-process Coordinator activates signed plan only after revoke, bind
   await assert.rejects(e.client.bindTask(e.p.session_id,"branch",
     "a2a-branch-1","backend"),/denied/);
   await coordinator.bindDispatchedTask("branch","a2a-branch-1","orchestrator");
+  await coordinator.bindDispatchedTask("backend","a2a-backend-1","backend");
+  const backendCall={
+    task_id:"a2a-backend-1",agent_role:"backend" as const,
+    tool:"update_file",arguments:{
+      branch:"feature/approved",path:"apps/backend/user.ts",content:"export const ok=true;"
+    }
+  };
+  // A valid delegated permission still cannot bypass DAG predecessor status.
+  assert.equal((await post(e.publicUrl,"/v1/authorization/prepare",backendCall)).status,403);
   const prepared=await post(e.publicUrl,"/v1/authorization/prepare",call);
   assert.equal(prepared.status,201);
   const data=await prepared.json();
@@ -215,13 +224,6 @@ test("separate-process Coordinator activates signed plan only after revoke, bind
   }),/denied/);
   await coordinator.confirmTask("a2a-branch-1",completion);
   await assert.rejects(coordinator.confirmTask("a2a-branch-1",completion),/denied/);
-  const backendCall={
-    task_id:"a2a-backend-1",agent_role:"backend" as const,
-    tool:"update_file",arguments:{
-      branch:"feature/approved",path:"apps/backend/user.ts",content:"export const ok=true;"
-    }
-  };
-  await coordinator.bindDispatchedTask("backend","a2a-backend-1","backend");
   const backendPrepare=await post(e.publicUrl,"/v1/authorization/prepare",backendCall);
   assert.equal(backendPrepare.status,201);
   const request=await backendPrepare.json();
