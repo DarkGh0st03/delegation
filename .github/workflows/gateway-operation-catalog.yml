@@ -1,0 +1,32 @@
+name: Gateway Rust Operation Catalog (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "poc/apps/gateway/**"
+      - "poc/scripts/sync-rust-operation-catalog.mjs"
+      - "src/delegation/authorization/operation.rs"
+      - ".github/workflows/gateway-operation-catalog.yml"
+  pull_request:
+    paths:
+      - "poc/apps/gateway/**"
+      - "poc/scripts/sync-rust-operation-catalog.mjs"
+      - "src/delegation/authorization/operation.rs"
+      - ".github/workflows/gateway-operation-catalog.yml"
+permissions:
+  contents: read
+jobs:
+  gateway-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+      - name: Check Rust Operation catalog matches generated Gateway TypeScript
+        run: node poc/scripts/sync-rust-operation-catalog.mjs --check
+      - name: Test Gateway authorization, provider and operation contracts (offline)
+        run: node --experimental-strip-types --test poc/apps/gateway/test/*.test.ts
