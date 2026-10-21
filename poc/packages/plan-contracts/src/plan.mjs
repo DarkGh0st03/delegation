@@ -197,6 +197,48 @@ export function makeApproval(plan, options) {
 }
 
 /**
+ * Validate the scope of an already-persisted approval for ROOT ISSUANCE.
+ *
+ * Unlike assertApprovedExecution, this DOES NOT pretend that any tasks have
+ * completed. Only an authenticated trusted backend may supply an approval.
+ * A plan hash is content integrity, never authentication or human consent.
+ */
+export function assertApprovedPlanScope(
+  plan, approval, { allowedOperations, expectedEngineerDid } = {}
+) {
+  validatePlan(plan, { allowedOperations });
+  object(approval, "approval", [
+    "schema_version", "decision_id", "plan_id", "session_id", "plan_version",
+    "plan_digest", "approved_permission_ids", "approved_by", "approved_at"
+  ]);
+  if (approval.schema_version !== PLAN_SCHEMA_VERSION ||
+      approval.plan_id !== plan.plan_id ||
+      approval.session_id !== plan.session_id ||
+      approval.plan_version !== plan.version ||
+      typeof approval.plan_digest !== "string" || !SHA64.test(approval.plan_digest) ||
+      !timingSafeEqual(Buffer.from(approval.plan_digest, "hex"),
+        Buffer.from(planDigest(plan), "hex"))) {
+    fail("approval version or digest does not match pinned plan");
+  }
+  identifier(approval.decision_id, "decision_id");
+  nonempty(approval.approved_by, "approved_by");
+  if(typeof expectedEngineerDid !== "string" || !expectedEngineerDid.startsWith("did:") ||
+     approval.approved_by !== expectedEngineerDid) {
+    fail("approval does not belong to authenticated Engineer");
+  }
+  if(typeof approval.approved_at !== "string" ||
+     !Number.isFinite(Date.parse(approval.approved_at)))fail("approval timestamp invalid");
+  stringList(approval.approved_permission_ids, "approved_permission_ids");
+  if(!approval.approved_permission_ids.length)fail("no approved permissions");
+  const requested=new Map(plan.requested_permissions.map(p=>[p.id,p]));
+  return approval.approved_permission_ids.map(id=>{
+    const item=requested.get(id);
+    if(!item)fail("approval contains unplanned permission: "+id);
+    return item;
+  });
+}
+
+/**
  * Plan compliance preflight, NOT credential verification. The actual trusted
  * path must check this against a stored approval AND still enforce DC/VP/OPA.
  */
