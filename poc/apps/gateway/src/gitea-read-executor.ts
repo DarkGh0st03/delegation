@@ -35,7 +35,8 @@ export class GiteaReadOnlyExecutor implements ExecutionPort {
     if (record.request.tool === "read_file") {
       const snapshot = await this.#client.readTextFile(
         record.request.arguments.branch,
-        record.request.arguments.path
+        record.request.arguments.path,
+        record.pinned_revision
       );
       return {
         provider:"gitea", performed:true, tool:"read_file", ...snapshot
