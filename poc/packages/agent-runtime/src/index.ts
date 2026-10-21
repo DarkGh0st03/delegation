@@ -2,6 +2,7 @@ export * from "./specialized-agents.ts";
 export * from "./tool-registry.ts";
 export * from "./llm-client.ts";
 export * from "./gateway-tool-client.ts";
+export * from "./trusted-crypto-mcp-bridge.ts";
 export * from "./delegation-evidence-handler.ts";
 export * from "./controlled-errors.ts";
 export * from "./agent-controller.ts";
