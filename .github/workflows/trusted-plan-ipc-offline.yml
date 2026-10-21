@@ -1,0 +1,44 @@
+name: Trusted Cross-Process Plan Control (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "poc/apps/gateway/src/trusted-plan-ipc.ts"
+      - "poc/apps/gateway/src/trusted-plan-deployment.ts"
+      - "poc/apps/gateway/src/main.ts"
+      - "poc/apps/gateway/test/trusted-plan-ipc.test.ts"
+      - "poc/apps/gateway/test/fixtures/trusted-plan-ipc-child.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-execution-coordinator.ts"
+      - ".github/workflows/trusted-plan-ipc-offline.yml"
+  pull_request:
+    paths:
+      - "poc/apps/gateway/**"
+      - "poc/packages/orchestrator-runtime/**"
+      - ".github/workflows/trusted-plan-ipc-offline.yml"
+permissions:
+  contents: read
+jobs:
+  trusted-private-socket:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install pinned offline packages
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Verify signed approval and separate-process Unix IPC
+        run: |
+          node --experimental-strip-types --test poc/apps/gateway/test/trusted-plan-ipc.test.ts
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts
+      - name: Regress all Gateway and Engineer runtime tests
+        run: |
+          npm --prefix poc run gateway:test
+          npm --prefix poc run orchestrator-runtime:test
