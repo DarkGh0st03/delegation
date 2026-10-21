@@ -10,6 +10,7 @@ on:
       - "poc/packages/orchestrator-runtime/src/trusted-execution-coordinator.ts"
       - "poc/packages/orchestrator-runtime/src/index.ts"
       - "poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts"
+      - "poc/apps/orchestrator/src/sign-engineer-approval.mjs"
       - ".github/workflows/signed-engineer-approval-offline.yml"
   pull_request:
     paths:
@@ -35,6 +36,8 @@ jobs:
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
       - name: Verify Operation catalog exactly matches Rust
         run: node poc/scripts/sync-rust-operation-catalog.mjs --check
+      - name: Check interactive signing command syntax
+        run: node --check poc/apps/orchestrator/src/sign-engineer-approval.mjs
       - name: Exercise Ed25519 approval signature and trusted two-root/Gateway handoff
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts
       - name: Regress all Engineer and plan contract tests
