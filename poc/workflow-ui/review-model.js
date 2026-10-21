@@ -186,9 +186,15 @@
     validateDemoPlan(state.plan, operationChoices);
     const ids = state.plan.requested_permissions.filter((p)=>state.included.has(p.id)).map((p)=>p.id);
     if (!ids.length) fail("Seleziona almeno una permission prima di confermare.");
+    const snapshot = clone(state.plan);
+    const selectedSnapshot = [...ids];
+    const planDigest = await digest(snapshot, cryptoProvider);
+    if (!equal(state.plan, snapshot) ||
+        !equal(state.plan.requested_permissions.filter((p)=>state.included.has(p.id)).map((p)=>p.id),
+          selectedSnapshot)) fail("Piano o selezione modificati durante la conferma. Riprova.");
     const review = {
       kind:"mock_authorization_review", simulated:true,
-      plan:clone(state.plan), plan_digest:await digest(state.plan, cryptoProvider),
+      plan:snapshot, plan_digest:planDigest,
       approved_permission_ids:ids,
       excluded_permission_ids:state.plan.requested_permissions.filter((p)=>!state.included.has(p.id)).map((p)=>p.id),
       changes_from_initial_proposal:differences(state),
