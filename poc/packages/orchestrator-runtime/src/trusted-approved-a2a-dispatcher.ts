@@ -16,7 +16,12 @@ import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
 import {validatePrivateApprovedBranch} from "../../../packages/agent-runtime/src/approved-branch.ts";
 import type {AuthenticatedPlanStore} from "../../../apps/gateway/src/approved-execution-plans.ts";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
-import type {DelegatedA2ARoleTaskInput,DelegatedA2ARoleTaskResult} from "./a2a-workflow.ts";
+import {
+  DelegatedA2ARoleRunner,
+  type DelegatedA2ARoleTaskInput,type DelegatedA2ARoleTaskResult,
+  type ProtectedA2AClientPort
+} from "./a2a-workflow.ts";
+import {TrustedApprovedPlanChildAuthorityIssuer} from "./trusted-approved-child-issuer.ts";
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 
 const SHA=/^[a-f0-9]{40}$/u;
@@ -66,6 +71,43 @@ export class TrustedApprovedA2ADispatcher {
   private constructor(config:TrustedApprovedA2ADispatcherConfig,
     snapshot:ApprovedSnapshot){
     this.#config=config;this.#snapshot=snapshot;
+  }
+
+  /**
+   * Production-style opt-in factory: the approved DAG dispatcher cannot
+   * silently inherit the legacy static-role child issuer.
+   *
+   * The same authenticated receipt and verified operational root constrain
+   * child issuance, and Rust independently enforces subset delegation.
+   */
+  static async loadWithScopedChildAuthority(
+    config:Omit<TrustedApprovedA2ADispatcherConfig,
+      "roleRunner"|"coordinator"> & {
+      coordinator:TrustedExecutionCoordinator;
+      a2a:ProtectedA2AClientPort;
+      adapter:{adapterBaseUrl:string;bearerToken:string;
+        fetchFn?:typeof fetch;timeoutMs?:number};
+    }
+  ){
+    const {a2a,adapter,...base}=config;
+    // Validate and freeze the signed plan BEFORE building privileged issuer.
+    const provisional=await this.load({
+      ...base,roleRunner:{
+        async issueAndRun():Promise<DelegatedA2ARoleTaskResult>{
+          throw Error("Scoped child issuer not yet initialized");
+        }
+      }
+    });
+    const authorityIssuer=await TrustedApprovedPlanChildAuthorityIssuer.create({
+      approvals:base.approvals,coordinator:base.coordinator,
+      sessionId:base.sessionId,engineerDid:base.expectedEngineerDid,
+      ...adapter
+    });
+    return new TrustedApprovedA2ADispatcher({
+      ...base,roleRunner:new DelegatedA2ARoleRunner({
+        authorityIssuer,a2a
+      })
+    },provisional.#snapshot);
   }
 
   static async load(config:TrustedApprovedA2ADispatcherConfig){
