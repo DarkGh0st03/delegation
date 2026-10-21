@@ -200,7 +200,9 @@ export function makeApproval(plan, options) {
  * Plan compliance preflight, NOT credential verification. The actual trusted
  * path must check this against a stored approval AND still enforce DC/VP/OPA.
  */
-export function assertApprovedExecution(plan, approval, action, { allowedOperations } = {}) {
+export function assertApprovedExecution(
+  plan, approval, action, { allowedOperations, completedTaskIds = [] } = {}
+) {
   validatePlan(plan, { allowedOperations });
   object(approval, "approval", [
     "schema_version", "decision_id", "plan_id", "session_id", "plan_version",
@@ -224,6 +226,14 @@ export function assertApprovedExecution(plan, approval, action, { allowedOperati
   const task = plan.tasks.find((t) => t.id === action.task_id);
   if (!task || task.agent_id !== action.agent_id) {
     fail("task is not assigned to requesting agent");
+  }
+  // Must be supplied by the trusted coordinator's persisted task state,
+  // not asserted by an A2A caller or by Gemini.
+  stringList(completedTaskIds, "completedTaskIds");
+  for (const dependency of task.depends_on) {
+    if (!completedTaskIds.includes(dependency)) {
+      fail("task dependency not completed: " + dependency);
+    }
   }
   const permitted = plan.requested_permissions.some((p) =>
     p.task_id === action.task_id && p.agent_id === action.agent_id &&
