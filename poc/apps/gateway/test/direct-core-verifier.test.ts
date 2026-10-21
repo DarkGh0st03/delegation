@@ -123,7 +123,7 @@ test("gateway direct-mode startup has no Adapter fallback or fake cryptographic 
   };
   assert.throws(
     ()=>new GatewayRuntime(cfg),
-    /native addon not built|does not expose the required verifier ABI/
+    /native addon not built|does not expose the required verifier ABI|sources are not ready/
   );
   // No accidental fallback to Adapter if verifier_mode is explicitly native.
 });
