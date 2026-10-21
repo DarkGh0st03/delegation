@@ -14,6 +14,9 @@ on:
       - "poc/apps/gateway/test/trusted-plan-ipc.test.ts"
       - "poc/apps/gateway/test/fixtures/trusted-plan-ipc-child.ts"
       - "poc/packages/orchestrator-runtime/src/trusted-execution-coordinator.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-a2a-observer.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-a2a-observer.test.ts"
+      - "poc/apps/gateway/src/execute.ts"
       - ".github/workflows/trusted-plan-ipc-offline.yml"
   pull_request:
     paths:

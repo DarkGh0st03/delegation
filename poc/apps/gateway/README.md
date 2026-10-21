@@ -402,3 +402,51 @@ so process crashes and cross-process restarts require fail-closed
 reconciliation of the credentials and plan. This single-host trust boundary
 assumes a trusted OS account and private filesystem permissions; it is not
 a multi-host RPC protocol, nor a substitute for host-hardening or KMS.
+
+
+## Gateway-corroborated A2A completion (trusted IPC)
+
+The opt-in private Unix-socket control now also accepts a `complete`
+command from an authenticated trusted Coordinator. Unlike a model-facing
+"Task finished" message, a successful completion requires **all** of:
+
+1. An active immutable, Engineer-signed execution plan and the exact A2A
+   Task binding to the approved role and DAG dependencies.
+2. A Coordinator observation with `state=completed`, exact runtime Task
+   ID, role and validated A2A artifact metadata (for Backend/Frontend/Test).
+3. **Provider effects recorded inside the Gateway** after delegated Rust
+   authorization, verified VP, OPA and provider execution. The client
+   cannot choose or inject those verified request IDs or results.
+4. Correlation of the artifact's claimed file paths and Git revision
+   against real Gateway Gitea write results. Test Agents additionally
+   need a passing Runner result for the same tested commit, profile,
+   project tests and researcher acceptance.
+5. No duplicate completion, no reopened sessions and no relaxation of
+   dependencies when evidence is absent or inconsistent.
+
+For an Orchestrator-only `create_branch` or PR Task, a separate
+`trusted_orchestrator` observation is allowed only when the Gateway
+itself confirmed the corresponding provider effect. The payload is
+never accepted as proof on its own.
+
+The trusted runtime may turn a
+`DelegatedA2ARoleRunner.issueAndRun(...)` result (already checked for
+A2A completed state and validated artifact) into an observation using
+`observedA2ACompletion(result)`, then call
+`TrustedExecutionCoordinator.confirmObservedA2AResult(result)`.
+The Coordinator sends the observation through the authenticated
+socket and the Gateway crosschecks its own effects.
+
+**Limitations:** this is an offline-tested single-host PoC binding an
+authenticated *Coordinator observation* to provider results. The Gateway
+does not independently poll a remote A2A server or verify a separate
+cryptographic signature on a remote task state. The Coordinator is part
+of the trusted computing base; an agent cannot call this socket or
+choose Gateway provider effects, but compromised trusted Coordinator or
+provider infrastructure remain outside this test's security guarantee.
+The full dynamically planned ADK/A2A orchestration and signed external
+CI attestations have not been connected yet.
+
+Tests: `poc/apps/gateway/test/trusted-task-observation.test.ts` and
+`trusted-plan-ipc.test.ts` (cross-process HMAC channel, reject fake
+completion, accept only corroborated branch and backend commit).

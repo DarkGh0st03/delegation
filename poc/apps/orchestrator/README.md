@@ -219,3 +219,24 @@ and deployment hardening. The single-process session store does not
 survive restarts. This GUI is separate from any model-exposed tool.
 
 Offline CI: \`.github/workflows/engineer-approval-ui-offline.yml\`.
+
+
+## Trusted A2A completion bridge
+
+The general planning/execution refactor now includes
+`TrustedExecutionCoordinator.confirmObservedA2AResult(result)` and
+`confirmObservedOrchestratorTask(runtimeTaskId)`. They send normalized
+metadata from the trusted `DelegatedA2ARoleRunner` result to the
+Gateway's private IPC command. They do not accept an ADK FunctionTool,
+LLM decision or public API request as an authenticated completion.
+
+The Gateway requires the exact approved runtime Task binding, correct
+DAG dependencies, and separately recorded provider writes/test results.
+For code agents, the artifact's paths and SHA must correspond to
+Gateway-observed Gitea writes. For tests, the Runner must independently
+report a matching passing SHA and mandatory pass statuses. The
+`trusted-a2a-observer.test.ts` tests this adaptation.
+
+The existing deterministic Account Suspension orchestrator is not
+silently switched to this opt-in approved-plan path. Wiring of a fully
+dynamic DAG dispatcher and trusted A2A re-polling remains future work.
