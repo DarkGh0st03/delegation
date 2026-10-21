@@ -29,6 +29,8 @@ jobs:
         run: node --test poc/workflow-ui/tests/ui-contract.test.mjs
       - name: Test versioned plan and approval bindings (offline)
         run: node --test poc/packages/plan-contracts/test/plan.test.mjs
+      - name: Test GUI selection to independently trusted approval (offline)
+        run: node --test poc/packages/plan-contracts/test/review-bridge.test.mjs
       - name: Package offline frontend
         run: |
           mkdir -p /tmp/delegation-approval-ui

@@ -55,7 +55,8 @@
       <div class="stat"><span>Permission selezionate</span><strong id="selected">0</strong></div>
       <div class="stat"><span>Agenti candidati</span><strong id="agents">3</strong></div>
       <button class="primary-button" id="approve" type="button">Conferma selezione (mock)</button>
-      <button class="secondary download" id="download" type="button" disabled>Esporta revisione JSON</button>
+      <button class="secondary download" id="download" type="button" disabled>Esporta selezione JSON (non firmata)</button>
+      <p class="hint">La selezione esportata può essere esaminata dal comando di firma trusted, ma soltanto contro un piano indipendente e identico. Modifiche ai Task richiedono prima una nuova validazione del backend. Questa GUI non firma e non autentica l'Engineer.</p>
       <p class="warning">Nessuna credenziale viene emessa. Questa schermata non autorizza operazioni reali e non contatta Gemini, Gitea o Gateway. Un digest non dimostra il consenso umano.</p>
       <div class="explain"><h3>Nella versione integrata</h3>
         <p>Un backend autenticato verificherà la versione, l'autorità dell'Engineer, gli agenti registrati e gli URI canonici, prima di emettere eventuali DC. L'esecuzione dovrà verificare sia il piano approvato sia DC/VP e OPA.</p>

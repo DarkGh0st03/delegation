@@ -71,3 +71,35 @@ proposta, ma le sue azioni restano mock. L'integrazione con il backend
 trusted e l'approvazione interattiva reale resta nella fase finale
 prevista dopo l'E2E in GitHub Actions. Il dimostratore IAM Console è una
 repository bersaglio separata da questa GUI.
+
+## Bridge GUI → firma Ed25519 (solo selezione, senza login GUI)
+
+Il pulsante **Esporta selezione JSON (non firmata)** produce un file
+`mock_authorization_review`, che resta non attendibile. Per provarne il
+collegamento al comando di firma esistente, l'operatore autorizzato può usare:
+
+```sh
+ENGINEER_DID=did:thesis:software-engineer \
+  node poc/apps/orchestrator/src/sign-engineer-approval.mjs \
+  --review /trusted/approved-plan.json /downloads/delegation-plan-review-mock.json \
+  /secure/approvals /secure/keys/engineer-ed25519.pem engineer-pinned-key-v1
+```
+
+**Importante:** `/trusted/approved-plan.json` deve essere ottenuto
+**indipendentemente** dal processo trusted (repository, SHA, versione e schema
+già validati), non copiato dall'export del browser. Il bridge verifica l'esatta
+corrispondenza del digest del piano, l'insieme di permission ID selezionati ed
+esclusi e nega piani modificati, permessi nuovi e versioni differenti.
+L'identità, il timestamp e l'ID della decisione sono generati dal comando,
+non dal browser. La chiave privata viene usata soltanto nel processo CLI e
+la firma richiede ancora la digitazione interattiva dell'intero SHA-256.
+
+Questo **non** autentica una sessione web, non sostituisce la verifica
+dell'authority dell'Engineer e non attiva autonomamente root DC o Gateway.
+I cambiamenti sostanziali fatti nella GUI mock non possono essere firmati
+in questa modalità finché il backend trusted non ha validato una nuova
+versione del piano. La futura GUI autenticata e il trasporto fra processi
+restano attività distinte.
+
+Test gratuiti:
+`node --test poc/packages/plan-contracts/test/review-bridge.test.mjs`

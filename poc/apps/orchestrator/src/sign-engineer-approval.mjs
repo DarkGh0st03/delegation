@@ -8,6 +8,12 @@
  *    <plan.json> <approval.json> <protected-output-directory> \
  *    <ed25519-private-pem-path> <pinned-key-id>
  *
+ * For an UNTRUSTED review exported by the offline GUI, use:
+ *    --review <trusted-plan.json> <mock-review.json>
+ *      <protected-output-directory> <ed25519-private-pem-path> <pinned-key-id>
+ * The trusted plan MUST come independently from the Engineer backend.
+ * The review may only select an exact subset of the trusted plan's permissions.
+ *
  * Never commit private keys or signed decisions to the repository.
  * A signed receipt proves possession of the configured Engineer signing
  * key, not the human's identity-provider login. Full authenticated GUI
@@ -21,9 +27,14 @@ import {assertApprovedPlanScope,planDigest} from
 import {signEngineerApproval,verifyEngineerApproval} from
   "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../../gateway/src/operation-catalog.ts";
-import {createPublicKey,createPrivateKey} from "node:crypto";
+import {createPublicKey,createPrivateKey,randomUUID} from "node:crypto";
+import {makeApprovalFromMockReview} from
+  "../../../packages/plan-contracts/src/review-bridge.mjs";
 
-const [planFile,approvalFile,outputDir,keyFile,keyId,...extra]=process.argv.slice(2);
+const args=process.argv.slice(2);
+const reviewMode=args[0]==="--review";
+const [planFile,approvalFile,outputDir,keyFile,keyId,...extra]=
+  reviewMode?args.slice(1):args;
 const did=process.env.ENGINEER_DID;
 if(extra.length||!planFile||!approvalFile||!outputDir||!keyFile||!keyId||
    !did?.startsWith("did:")||!process.stdin.isTTY||!process.stdout.isTTY) {
@@ -36,11 +47,17 @@ if(!meta.isFile()||(meta.mode&0o077)!==0) {
 if(!outputMeta.isDirectory()||(outputMeta.mode&0o077)!==0) {
   throw new Error("Protected approval output directory must be owner-only (0700)");
 }
-const [plan,approval,privateKeyPem]=await Promise.all([
+const [plan,submittedApproval,privateKeyPem]=await Promise.all([
   readFile(planFile,"utf8").then(JSON.parse),
   readFile(approvalFile,"utf8").then(JSON.parse),
   readFile(keyFile,"utf8")
 ]);
+const now=new Date();
+const approval=reviewMode?makeApprovalFromMockReview({
+  trustedPlan:plan,review:submittedApproval,engineerDid:did,
+  allowedOperations:new Set(RUST_OPERATIONS),
+  decisionId:"approval-"+randomUUID(),approvedAt:now.toISOString()
+}):submittedApproval;
 assertApprovedPlanScope(plan,approval,{
   expectedEngineerDid:did,allowedOperations:new Set(RUST_OPERATIONS)
 });
@@ -56,7 +73,9 @@ process.stdout.write(
   "Plan: "+plan.plan_id+" v"+plan.version+"\n"+
   "Plan SHA-256: "+digest+"\n"+
   "Approved permission IDs: "+approval.approved_permission_ids.join(", ")+"\n"+
-  "Signing key ID: "+keyId+"\n\n"
+  "Signing key ID: "+keyId+"\n"+
+  (reviewMode?"Source: GUI mock selection matched to independent trusted plan\n":"")+
+  "\n"
 );
 const terminal=createInterface({input:process.stdin,output:process.stdout});
 let entered;
@@ -64,7 +83,7 @@ try {
   entered=await terminal.question("To sign, type APPROVE "+digest+": ");
 }finally{terminal.close();}
 if(entered.trim()!=="APPROVE "+digest)throw new Error("Approval cancelled");
-const now=new Date(),expires=new Date(now.getTime()+30*60*1000);
+const expires=new Date(now.getTime()+30*60*1000);
 const receipt=signEngineerApproval({
   plan,approval,engineerDid:did,keyId,privateKeyPem,
   issuedAt:now.toISOString(),expiresAt:expires.toISOString()
