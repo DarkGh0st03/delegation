@@ -1,4 +1,5 @@
 import { AdapterVerifierClient } from "./adapter-client.ts";
+import {loadDirectCoreRustVerifier} from "./direct-core-loader.ts";
 import {
   InMemoryCompositeStore,
   prepareCompositeAuthorization,
@@ -89,12 +90,22 @@ export class GatewayRuntime {
     this.#store = dependencies.store ?? new InMemoryRequestStore();
     this.#compositeStore = new InMemoryCompositeStore();
     this.#audit = dependencies.audit ?? new JsonLineAuditSink();
-    this.#verifier =
-      dependencies.verifier ??
-      new AdapterVerifierClient({
+    if (dependencies.verifier) {
+      // Test-only or explicitly trusted embedded verifier injection.
+      this.#verifier = dependencies.verifier;
+    } else if (config.verifier_mode === "core-rust") {
+      // Fail at startup if native Core Rust and independent trust/status
+      // resolvers have not been deployed. NEVER fall back to Adapter.
+      this.#verifier = loadDirectCoreRustVerifier();
+    } else {
+      if (!config.adapter_url || !config.adapter_gateway_token) {
+        throw new Error("Adapter verifier mode requires URL and Gateway caller secret");
+      }
+      this.#verifier = new AdapterVerifierClient({
         baseUrl: config.adapter_url,
         gatewayToken: config.adapter_gateway_token
       });
+    }
     this.#policy =
       dependencies.policy ??
       new OpaPolicyClient({
