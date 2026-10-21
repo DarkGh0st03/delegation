@@ -13,6 +13,41 @@ This Node.js service is the **Policy Enforcement Point (PEP)** for protected ope
 
 A denied/expired/replayed request or unavailable verifier/policy fails closed. Protected provider credentials exist only in trusted service configuration.
 
+## Rust Operation catalog — refactoring stage 3
+
+The **authoritative catalog** is the Rust `Operation` enum in
+`src/delegation/authorization/operation.rs` (currently 31 operations).
+`src/operation-catalog.ts` is a **generated mirror**, not a separate
+permission model. Regenerate and check it with:
+
+```sh
+node poc/scripts/sync-rust-operation-catalog.mjs --write
+node poc/scripts/sync-rust-operation-catalog.mjs --check
+```
+
+The prepare endpoint has three explicitly distinct outcomes:
+
+- **400 `unknown_operation`**: the requested operation is absent from
+  the Rust enum.
+- **501 `provider_operation_unavailable`**: the operation exists in Rust,
+  but the current Gateway has no normalized tool schema/provider adapter.
+  This fails *before* creating any prepared request/challenge and does not
+  claim an authorization decision.
+- The six currently normalized operations proceed through the existing
+  prepare, VP verification, OPA and provider flow. They can still be
+  denied with 403 or return a provider-specific 501.
+
+Recognizing an enum variant **does not grant authority**. Catalog
+synchronization does not implement additional provider tools or permit
+`merge_pull_request`, deletes, or writes to `main`. The later roadmap
+will add multi-permission checks and local Rust verification in the Gateway
+independently. The historical Adapter-backed verification path remains
+unchanged during this increment.
+
+The dedicated `Gateway Rust Operation Catalog (Offline)` GitHub Actions
+workflow runs the synchronization check and existing Gateway unit tests
+without invoking Gemini.
+
 ## Supported operations
 
 - Shared MCP agents: `read_file`, `update_file`, `create_file`, `run_tests` (according to their DC and OPA rights).
