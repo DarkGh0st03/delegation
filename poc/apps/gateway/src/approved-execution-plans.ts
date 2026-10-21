@@ -234,6 +234,11 @@ export class TrustedApprovedExecutionPlans {
     record:PreparedRequestRecord,result:ExecutionResult,verifiedPresenterId:string
   ):void {
     if(!result.performed||result.provider==="mock")return;
+    // Read-only responses can contain full repository file content and
+    // are not independently sufficient to attest completed write/test work.
+    // Never retain them in the in-memory completion-evidence registry.
+    if(!["create_branch","create_pull_request","create_file",
+          "update_file","run_tests"].includes(record.request.tool))return;
     this.assertAuthorizedForExecution(record,verifiedPresenterId);
     if(result.tool!==record.request.tool)return;
     // Failed Runner jobs cannot be evidence of a passing Test Task.
