@@ -29,9 +29,12 @@ if(extra.length||!planFile||!approvalFile||!outputDir||!keyFile||!keyId||
    !did?.startsWith("did:")||!process.stdin.isTTY||!process.stdout.isTTY) {
   throw new Error("Interactive Engineer terminal, ENGINEER_DID and five explicit paths/IDs required");
 }
-const meta=await stat(keyFile);
+const [meta,outputMeta]=await Promise.all([stat(keyFile),stat(outputDir)]);
 if(!meta.isFile()||(meta.mode&0o077)!==0) {
   throw new Error("Engineer signing key must be a private, owner-only file (0600)");
+}
+if(!outputMeta.isDirectory()||(outputMeta.mode&0o077)!==0) {
+  throw new Error("Protected approval output directory must be owner-only (0700)");
 }
 const [plan,approval,privateKeyPem]=await Promise.all([
   readFile(planFile,"utf8").then(JSON.parse),
