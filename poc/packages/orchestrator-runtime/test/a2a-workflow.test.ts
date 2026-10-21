@@ -253,3 +253,34 @@ test("role runner rejects a non-completed A2A Task before accepting its Artifact
     /is not completed/u
   );
 });
+
+test("malformed prebound Gateway Task ID cannot mint a child DC",async()=>{
+  let issues=0;
+  let sends=0;
+  const runner=new DelegatedA2ARoleRunner({
+    authorityIssuer:{async issueSpecializedChild(){
+      issues++;
+      return {role:"backend",credential:credential("backend")};
+    }},
+    a2a:{async sendProtectedTask(){
+      sends++;
+      throw Error("Invalid test must never reach A2A");
+    }}
+  });
+  await assert.rejects(runner.issueAndRun({
+    role:"backend",parent_credential_id:"urn:trusted:operational-root",
+    credential_id:"urn:phase9b:backend",
+    valid_from:"2026-10-21T18:00:00Z",validity_seconds:300,
+    credential_status:{
+      type:"BitstringStatusListEntry",statusPurpose:"revocation",
+      statusListIndex:"7101",
+      statusListCredential:"https://status.example/preflight"
+    },
+    agent_base_url:"http://trusted-backend.local",
+    trusted_gateway_task_id:"unbound-user-supplied-task",
+    subtask:{subtask_id:"backend",instruction:"Approved code edit",
+      branch:"feature/account-suspension",relevant_paths:[]}
+  }),/Invalid trusted pre-dispatch Gateway Task ID/);
+  assert.equal(issues,0);
+  assert.equal(sends,0);
+});
