@@ -141,7 +141,22 @@ export interface ExecuteAuditEvent {
   provider: "mock" | "gitea" | "runner";
 }
 
-export type AuditEvent = PrepareAuditEvent | ExecuteAuditEvent;
+export interface CompositeAuthorizationAuditEvent {
+  event: "composite_authorization_prepared" | "composite_authorization_verified";
+  timestamp: string;
+  request_id: string;
+  task_id: string;
+  agent_role: AgentRole;
+  permission_count: number;
+  decision: "pending" | "allow" | "deny";
+  reason: string;
+  provider_result: "not_called";
+}
+
+export type AuditEvent =
+  | PrepareAuditEvent
+  | ExecuteAuditEvent
+  | CompositeAuthorizationAuditEvent;
 
 export interface AuditSink {
   emit(event: AuditEvent): void;
