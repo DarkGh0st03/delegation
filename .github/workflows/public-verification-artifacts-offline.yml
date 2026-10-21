@@ -1,0 +1,40 @@
+name: Shared Public Verification Artifacts (Offline)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+    paths:
+      - "src/delegation/local/file_public_artifact_store.rs"
+      - "src/delegation/local/mod.rs"
+      - "services/delegation-adapter/src/config.rs"
+      - "services/delegation-adapter/src/evm_profile.rs"
+      - ".github/workflows/public-verification-artifacts-offline.yml"
+  pull_request:
+    paths:
+      - "src/delegation/local/file_public_artifact_store.rs"
+      - "src/delegation/local/mod.rs"
+      - "services/delegation-adapter/src/config.rs"
+      - "services/delegation-adapter/src/evm_profile.rs"
+      - ".github/workflows/public-verification-artifacts-offline.yml"
+permissions:
+  contents: read
+jobs:
+  public-material-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+        with:
+          components: rustfmt
+      - name: Verify Rust formatting
+        run: |
+          cargo fmt --check
+          cargo fmt --manifest-path services/delegation-adapter/Cargo.toml --check
+      - name: Verify public material, accumulator and Status List tests
+        run: cargo test --locked --all-features
+      - name: Verify Adapter EVM and legacy regressions
+        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml --locked
