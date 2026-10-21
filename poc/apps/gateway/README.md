@@ -109,6 +109,32 @@ It does **not** by itself bind the request to a signed human-approved
 plan: that integration remains a separate requirement and is never
 delegated to prompts or ADK callbacks.
 
+## Stage 8C — Native Rust Core verifier (experimental, opt-in)
+
+A new `services/delegation-core-node` crate provides a compiled native
+**Node-API** addon (no TypeScript verification shortcuts). Its async
+worker task invokes the existing `DelegationVerifier<Bn254>`, with the
+standard `EvmTrustResolver`, `EvmAnchoredStatusListResolver`, the
+`FilePublicArtifactStore` mounted read-only, and a DID-ethr
+assertion key resolver. No issuer/governance signing keys are required.
+
+`GATEWAY_VERIFIER_MODE=core-rust` now requires an actual trusted addon
+at `poc/apps/gateway/src/native/delegation-core.node`; startup calls
+its `assert_verification_ready` entrypoint and refuses to accept
+traffic when required EVM trust sources are not available. If no addon
+is installed, startup still fails closed. No fallback to Adapter exists.
+
+The new native crate README documents build steps and seven
+`CORE_RUST_*` environment inputs. The optional directory-based
+public artifact store was implemented in Stage 8B. This does **not**
+alter the default `adapter` mode or the permission/OPA policy model.
+
+**Validation boundary:** the new CI compiles and loads the real Rust
+addon and exercises fail-closed paths; the live signed-VP-on-Anvil
+positive E2E is still required before treating this as a validated
+replacement for the original Adapter verifier. Future work also
+includes request timeouts and concurrency hardening.
+
 ## Stage 8A — Direct Core Rust verification boundary (not yet activated)
 
 The Gateway now has an explicit `GATEWAY_VERIFIER_MODE` selection:
