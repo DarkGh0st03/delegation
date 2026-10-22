@@ -1,0 +1,62 @@
+# NON-BILLABLE manual GitHub event validation, NOT signed Execution.
+# A green result validates only source/input shape. It does not verify a
+# live Coordinator, signed Engineer approval, Gitea SHA, or a Rust root.
+# No secrets or billable Gemini API calls are made by this workflow.
+name: Trusted Gemini Manual Dispatch Input Check (Offline)
+on:
+  workflow_dispatch:
+    inputs:
+      authorization:
+        description: "Exact future billable consent phrase; NO calls in this check"
+        type: string
+        required: true
+      model:
+        description: "Gemini Developer API model for a future separate execution"
+        type: string
+        required: true
+        default: "gemini-3.8-flash"
+      max_model_turns:
+        description: "Upper bound per role (1..32)"
+        type: string
+        required: true
+        default: "12"
+      max_output_tokens:
+        description: "Upper bound per model call (1..32000)"
+        type: string
+        required: true
+        default: "16000"
+      max_model_call_ms:
+        description: "Bounded model-call duration (1000..360000 ms)"
+        type: string
+        required: true
+        default: "120000"
+
+permissions:
+  contents: read
+concurrency:
+  group: trusted-gemini-manual-input-check
+  cancel-in-progress: false
+jobs:
+  input-validation-only:
+    name: Validate event only - never claim Engineer authorization
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install pinned offline dependencies only
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Check authenticated workflow_dispatch event only
+        run: node --experimental-strip-types poc/apps/orchestrator/src/validate-trusted-gemini-dispatch.mjs
+      - name: Explicit nonauthorization result
+        run: |
+          echo "Manual event INPUTS checked only."
+          echo "No active Planning/DC, signed Engineer receipt or Gitea SHA verified."
+          echo "No Gemini API secret injected and no billed inference requested."
+          echo "Execution requires an independently authenticated live trusted host."
