@@ -264,3 +264,25 @@ these HTTPS hosts on the default TLS port, refuses redirects, and preserves
 the independently selected audience; no GitHub bearer is forwarded to a
 generic URL. The endpoint continues to authenticate the signed token
 against token.actions.githubusercontent.com and the pinned run identity.
+
+
+## Full offline OIDC-to-Coordinator cross-boundary regression
+
+The trusted-planning-review-gate suite now exercises a complete local chain:
+a real RSA-signed mock issuer JWT is verified using the production GitHub OIDC
+validator with pinned immutable owner/repository IDs, audience and workflow
+SHA, independently corroborated against a simulated active GitHub Actions
+REST run, then passed through one-use replay and session-bound HMAC admission.
+A real active TrustedExecutionCoordinator, independently signed backend
+Planning checkpoint, Ed25519 Engineer receipt, and Gateway plan registry
+are required before the operational root and three local A2A listeners can
+activate. The test first rejects a wrong signed subject and unapproved handoff,
+then admits a new separately signed first-attempt manual run, approves the
+real plan and proves cleanup/revocation. No provider-model inference occurs.
+
+Only the earlier isolated push probe uses a token actually issued by GitHub.
+The combined integration test uses disposable mock issuer keys and a mocked
+GitHub REST response, so it is **not** evidence that a deployed private
+network runner-to-host connection exists. Its intake is local HTTP because
+mTLS is separately exercised with real sockets and certificates in the
+Engineer host suite; neither endpoint is publicly exposed.

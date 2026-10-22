@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {generateKeyPairSync} from "node:crypto";
-import {mkdtemp,rm,writeFile,chmod} from "node:fs/promises";
+import {generateKeyPairSync,sign as signJwt,randomBytes} from "node:crypto";
+import {mkdtemp,rm,writeFile,chmod,readdir} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {makeApproval,planDigest}
@@ -28,6 +28,10 @@ import {startAdmittedGithubReviewedGeminiHandoff}
   from "../src/trusted-admitted-github-handoff.ts";
 import {TrustedGithubAdmissionReceiptStore}
   from "../src/trusted-github-admission-store.ts";
+import {GithubOidcReplayFileStore}
+  from "../src/trusted-github-oidc-replay-store.ts";
+import {startTrustedGithubOidcIntakeServer}
+  from "../src/trusted-github-oidc-intake.ts";
 import {verifyGithubManualGeminiDispatch}
   from "../src/trusted-manual-github-dispatch.ts";
 import {TrustedEngineerAuthoritySession}
@@ -846,10 +850,12 @@ test("persisted manual host refuses wrong checkpoint SHA before operational issu
 });
 
 
-test("signed HMAC admission consumed by separate Engineer process still requires real Engineer signature",async()=>{
+test("verified signed GitHub OIDC reaches live Planning and requires independent Engineer signature",async()=>{
   const f=await fixture();
   const checkpointDir=await mkdtemp(join(tmpdir(),"engineer-checkpoint-admission-"));
   const consentDir=await mkdtemp(join(tmpdir(),"engineer-oidc-admission-"));
+  const replayDir=await mkdtemp(join(tmpdir(),"engineer-oidc-replay-"));
+  let oidcServer:Awaited<ReturnType<typeof startTrustedGithubOidcIntakeServer>>|undefined;
   try{
     const signing=generateKeyPairSync("ed25519");
     const now=new Date();
@@ -901,13 +907,92 @@ test("signed HMAC admission consumed by separate Engineer process still requires
       pinned:{repository:githubRepo,ref:githubRef,
         workflowPath:githubWorkflow,sourceSha:githubSha}
     });
-    await admissionStore.record({dispatch,job:{
-      kind:"github_actions_oidc_verified",
-      jti:"fixture-signed-job-id-not-real",
-      run_id:runId,workflow_sha:githubSha,
-      repository_id:"1374168963",repository_owner_id:"150908952",
-      audience:"urn:trusted-engineer"
-    }});
+    // Mock GitHub issuer signs real RS256 JWTs; the real verifier checks
+    // their signature, immutable subject, source pins and Actions REST run.
+    // Separate push CI verifies the live GitHub issuer; this is offline.
+    const rsa=generateKeyPairSync("rsa",{modulusLength:2048});
+    const publicJwk=rsa.publicKey.export({format:"jwk"}) as any;
+    const ownerId="150908952",repositoryId="1374168963";
+    const audience="urn:delegation:trusted-engineer-offline-e2e";
+    const expectedSubject="repo:DarkGh0st03@"+ownerId+
+      "/delegation@"+repositoryId+":ref:"+githubRef;
+    function jwtFor(id:string,changes:Record<string,unknown>={}){
+      const now=Math.floor(Date.now()/1000);
+      const claims={
+        iss:"https://token.actions.githubusercontent.com",aud:audience,
+        sub:expectedSubject,iat:now-20,nbf:now-10,exp:now+120,
+        jti:"offline-oidc-job-"+id+"-"+randomBytes(8).toString("hex"),
+        repository:githubRepo,repository_id:repositoryId,
+        repository_owner_id:ownerId,
+        ref:githubRef,ref_type:"branch",sha:githubSha,
+        workflow_sha:githubSha,
+        workflow_ref:githubRepo+"/"+githubWorkflow+"@"+githubRef,
+        event_name:"workflow_dispatch",run_id:id,run_attempt:"1",
+        ...changes
+      };
+      const header=Buffer.from(JSON.stringify({
+        alg:"RS256",typ:"JWT",kid:"offline-e2e-issuer-key"
+      })).toString("base64url");
+      const payload=Buffer.from(JSON.stringify(claims)).toString("base64url");
+      const data=header+"."+payload;
+      return data+"."+signJwt("RSA-SHA256",Buffer.from(data),
+        rsa.privateKey).toString("base64url");
+    }
+    oidcServer=await startTrustedGithubOidcIntakeServer({
+      pinned:{repository:githubRepo,ref:githubRef,
+        workflowPath:githubWorkflow,sourceSha:githubSha},
+      trust:{
+        expectedAudience:audience,expectedSubject,
+        expectedRepositoryId:repositoryId,expectedOwnerId:ownerId
+      },
+      githubApiToken:"test-only-read-token",
+      replayStore:new GithubOidcReplayFileStore(replayDir),
+      admissionStore,
+      oidcJwksFetchFn:(async()=>new Response(JSON.stringify({keys:[{
+        ...publicJwk,kid:"offline-e2e-issuer-key",use:"sig",alg:"RS256"
+      }]}),{status:200})) as typeof fetch,
+      githubApiFetchFn:(async(url)=>{
+        const id=String(url).split("/").at(-1);
+        return new Response(JSON.stringify({
+          id:Number(id),event:"workflow_dispatch",run_attempt:1,
+          status:"in_progress",head_sha:githubSha,
+          head_branch:githubRef.slice("refs/heads/".length),
+          path:githubWorkflow,
+          head_repository:{full_name:githubRepo},
+          created_at:new Date().toISOString()
+        }),{status:200});
+      }) as typeof fetch,port:0
+    });
+    const event={
+      repository:{full_name:githubRepo},ref:githubRef,
+      inputs:{
+        authorization:dispatch.authorization_input,
+        model:dispatch.model_name,
+        max_model_turns:String(dispatch.max_model_turns),
+        max_output_tokens:String(dispatch.max_output_tokens),
+        max_model_call_ms:String(dispatch.max_model_call_ms)
+      }
+    };
+    async function admitRun(id:string,alter:Record<string,unknown>={}){
+      const env={
+        GITHUB_ACTIONS:"true",GITHUB_EVENT_NAME:"workflow_dispatch",
+        GITHUB_RUN_ATTEMPT:"1",GITHUB_REPOSITORY:githubRepo,
+        GITHUB_REF:githubRef,
+        GITHUB_WORKFLOW_REF:githubRepo+"/"+githubWorkflow+"@"+githubRef,
+        GITHUB_SHA:githubSha,GITHUB_RUN_ID:id
+      };
+      return fetch(oidcServer!.endpoint,{
+        method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({env,event,oidcJwt:jwtFor(id,alter)})
+      });
+    }
+    assert.equal((await admitRun(runId,{sub:"repo:attacker/bogus"})).status,403);
+    assert.deepEqual(await readdir(consentDir),[]);
+    assert.deepEqual(await readdir(replayDir),[]);
+    const firstAdmission=await admitRun(runId);
+    assert.equal(firstAdmission.status,200);
+    assert.equal((await firstAdmission.json()).engineer_approval,"not_checked");
+    assert.equal((await readdir(replayDir)).length,1);
     const transports={
       backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
         adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend-token"},
@@ -941,19 +1026,11 @@ test("signed HMAC admission consumed by separate Engineer process still requires
       expectedRunId:runId,expectedSourceSha:githubSha,
       expectedSessionId:SNAPSHOT.session_id
     }),/already consumed/);
-    // A fresh, separately authenticated manual GitHub run may be admitted.
-    // These are fixture values, not a real GitHub identity assertion.
+    // A fresh, independently signed OIDC assertion for another manual run
+    // succeeds; the failed first admission must remain consumed.
     const nextRunId="39829995556";
-    await admissionStore.record({
-      dispatch:{...dispatch,run_id:nextRunId},
-      job:{
-        kind:"github_actions_oidc_verified",
-        jti:"different-fixture-signed-job-id",
-        run_id:nextRunId,workflow_sha:githubSha,
-        repository_id:"1374168963",repository_owner_id:"150908952",
-        audience:"urn:trusted-engineer"
-      }
-    });
+    assert.equal((await admitRun(nextRunId)).status,200);
+    assert.equal((await readdir(replayDir)).length,2);
     await f.sign(plan.plan,["permission-1","permission-3"]);
     const running=await startAdmittedGithubReviewedGeminiHandoff({
       ...input,pins:{...input.pins,runId:nextRunId}
@@ -975,7 +1052,9 @@ test("signed HMAC admission consumed by separate Engineer process still requires
     }),/already consumed/);
   }finally{
     await f.close();
+    if(oidcServer)await oidcServer.close();
     await rm(checkpointDir,{recursive:true,force:true});
     await rm(consentDir,{recursive:true,force:true});
+    await rm(replayDir,{recursive:true,force:true});
   }
 });
