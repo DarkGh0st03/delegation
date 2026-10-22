@@ -21,7 +21,7 @@ import {TrustedEngineerAuthoritySession}
   from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
   from "../src/trusted-execution-coordinator.ts";
-import {verifyManualGeminiExecutionReadiness}
+import {verifyManualGeminiExecutionReadiness,createReviewedGeminiAdkModel}
   from "../src/trusted-gemini-execution-readiness.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
@@ -325,5 +325,36 @@ test("Gemini manual opt-in does not bypass an altered Engineer-signed plan",asyn
     }),/signed Engineer plan differs from the staged proposal/);
     assert.equal(f.issued.length,1);
     assert.deepEqual(f.revoked,[]);
+  }finally{await f.close();}
+});
+
+
+test("manual Gemini factory constructs ADK model only after signing; no inference or root issuance",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const p=f.proposal();f.gate.stageTrustedProposal(p);
+    const options={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"not-a-real-api-key",
+      modelName:"gemini-3.8-flash",
+      maxModelTurns:8,
+      maxOutputTokens:16000,
+      trustedPhase:()=>f.coordinator.phase,
+      reviewGate:f.gate
+    };
+    await assert.rejects(createReviewedGeminiAdkModel(options));
+    await f.sign(p.plan,["permission-1","permission-3"]);
+    const {model,readiness}=await createReviewedGeminiAdkModel(options);
+    assert.equal(model.model,"gemini-3.8-flash");
+    assert.equal(readiness.plan_digest,p.digest);
+    assert.ok(!JSON.stringify(readiness).includes(options.geminiApiKey));
+    assert.equal(f.issued.length,1);
+    assert.deepEqual(f.revoked,[]);
+    await assert.rejects(createReviewedGeminiAdkModel({
+      ...options,githubRunAttempt:"2"
+    }),/first GitHub Actions attempt/);
   }finally{await f.close();}
 });

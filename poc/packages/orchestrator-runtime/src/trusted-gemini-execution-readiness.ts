@@ -12,6 +12,8 @@
  */
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
 import {TrustedPlanningReviewGate} from "./trusted-planning-review-gate.ts";
+import {createGeminiAdkModel}
+  from "../../agent-runtime/src/gemini-adk-model.ts";
 
 const CONFIRMATION="I AUTHORIZE GEMINI API CHARGES";
 const MODEL=/^gemini-[a-z0-9]+(?:[.-][a-z0-9]+)*$/u;
@@ -107,4 +109,26 @@ export async function verifyManualGeminiExecutionReadiness(
     authenticated_engineer_did:receipt.authenticated_engineer_did
   };
   return Object.freeze(result);
+}
+
+
+/**
+ * Instantiate, but NEVER invoke, the real Google ADK Gemini model only
+ * AFTER independent signature verification and manual API-charge consent.
+ * Construction alone performs no inference or credential issuance.
+ *
+ * The caller must separately enforce readiness.max_model_turns and
+ * readiness.max_output_tokens in its ADK task handler. The returned model
+ * is never added to the unapproved Planning/LLM tool registry.
+ */
+export async function createReviewedGeminiAdkModel(
+  input:ManualGeminiExecutionReadinessInput
+){
+  const readiness=await verifyManualGeminiExecutionReadiness(input);
+  // The secret remains confined to the trusted process and model constructor.
+  const model=createGeminiAdkModel({
+    apiKey:input.geminiApiKey!,
+    model:readiness.model_name
+  });
+  return {readiness,model};
 }
