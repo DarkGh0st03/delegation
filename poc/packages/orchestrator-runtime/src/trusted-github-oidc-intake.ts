@@ -16,6 +16,8 @@
  */
 import {createServer as createHttpServer,type IncomingMessage,type ServerResponse} from "node:http";
 import {createServer as createHttpsServer} from "node:https";
+import {timingSafeEqual} from "node:crypto";
+import type {TLSSocket} from "node:tls";
 import {GithubOidcReplayFileStore}
   from "./trusted-github-oidc-replay-store.ts";
 import {TrustedGithubAdmissionReceiptStore}
@@ -70,7 +72,9 @@ export interface TrustedGithubOidcIntakeConfig{
   oidcJwksFetchFn?:typeof fetch;
   port?:number;
   /** Optional mTLS on loopback; no network/public listener is added. */
-  tls?:Readonly<{key:string|Buffer;cert:string|Buffer;ca:string|Buffer}>;
+  tls?:Readonly<{key:string|Buffer;cert:string|Buffer;ca:string|Buffer;
+    /** Host-pinned SHA256 fingerprint of the ONE admitted runner leaf. */
+    expectedClientFingerprint256:string}>;
 }
 export interface TrustedGithubOidcIntakeServer{
   readonly baseUrl:string;
@@ -98,6 +102,9 @@ export async function startTrustedGithubOidcIntakeServer(
      (!validPem(config.tls.key)||!validPem(config.tls.cert)||
       !validPem(config.tls.ca)))
     throw Error("Trusted Github OIDC intake requires pinned mTLS key/cert/CA");
+  const fingerprint=/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/u;
+  if(config.tls&&!fingerprint.test(config.tls.expectedClientFingerprint256??""))
+    throw Error("Trusted Github OIDC intake requires pinned client certificate fingerprint");
   let active=false;
   const handler=async(req:IncomingMessage,res:ServerResponse)=>{
     const respond=(status:number,result:Record<string,unknown>)=>{
@@ -109,6 +116,20 @@ export async function startTrustedGithubOidcIntakeServer(
       });
       res.end(JSON.stringify(result));
     };
+    // A certificate signed by the same CA is NOT necessarily the trusted
+    // GitHub runner. The host must pin the exact leaf certificate as well.
+    // This check precedes JWT parsing, run queries and replay consumption.
+    if(config.tls){
+      const socket=req.socket as TLSSocket;
+      const presented=socket.getPeerCertificate()?.fingerprint256;
+      const expected=config.tls.expectedClientFingerprint256;
+      if(!socket.authorized||typeof presented!=="string"||
+         !fingerprint.test(presented)||!fingerprint.test(expected)||
+         !timingSafeEqual(Buffer.from(presented.replaceAll(":",""),"hex"),
+           Buffer.from(expected.replaceAll(":",""),"hex"))){
+        respond(403,{status:"denied"});return;
+      }
+    }
     // Serialize admission and replay consumption within this host. O_EXCL
     // in the file store independently serializes across separate processes.
     if(active){respond(429,{status:"denied"});return;}

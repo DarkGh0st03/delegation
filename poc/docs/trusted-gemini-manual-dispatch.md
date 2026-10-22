@@ -242,3 +242,15 @@ a separately authenticated private-network relay/overlay, protected
 certificates and an always-on live Planning/Engineer backend before any
 real manual run. NEVER configure this helper with public HTTP, add Gemini
 keys to GitHub Actions, or treat OIDC admission as permission to execute.
+
+
+### Exact mTLS client identity pin (security hardening)
+
+The HTTPS intake now requires a host-pinned fingerprint256 of the one
+authorized GitHub runner certificate in addition to CA validation. A
+different client certificate issued by the same trusted CA cannot
+authenticate as the pinned runner or consume its OIDC replay record.
+The test uses separate short-lived disposable CA, server, trusted client,
+and CA-signed rogue client identities. Never reuse test certificates for
+deployment. Rotating an authorized client leaf requires an explicit trusted
+host configuration change.

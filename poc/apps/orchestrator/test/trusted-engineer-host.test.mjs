@@ -196,21 +196,46 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
   // Disposable local-only certificate fixture. Deployment requires separate
   // server/client keys, a protected CA and a private route, never this cert.
   const {execFileSync}=await import("node:child_process");
-  const certPath=join(f.admissions,"mock-tls-cert.pem");
-  const keyPath=join(f.admissions,"mock-tls-key.pem");
-  execFileSync("openssl",[
-    "req","-x509","-newkey","rsa:2048","-nodes",
-    "-days","1","-subj","/CN=127.0.0.1",
-    "-addext","subjectAltName=IP:127.0.0.1",
-    "-addext","basicConstraints=critical,CA:TRUE",
-    "-addext","extendedKeyUsage=serverAuth,clientAuth",
-    "-keyout",keyPath,"-out",certPath
-  ],{stdio:"ignore"});
-  const cert=readFileSync(certPath,"utf8");
-  const keyPem=readFileSync(keyPath,"utf8");
-  const tls={ca:cert,cert,key:keyPem};
+  const {X509Certificate}=await import("node:crypto");
+  const {dirname}=await import("node:path");
+  // CA and three independent leaves. The untrusted client is CA-signed,
+  // proving that mTLS trust alone is insufficient without the leaf pin.
+  const tlsDir=join(dirname(f.admissions),"tls-fixtures");
+  await mkdir(tlsDir,{mode:0o700});
+  const cmd=(args)=>execFileSync("openssl",args,{stdio:"ignore",cwd:tlsDir});
+  cmd(["req","-x509","-newkey","rsa:2048","-nodes","-days","1",
+    "-subj","/CN=Thesis disposable CA","-addext",
+    "basicConstraints=critical,CA:TRUE","-keyout","ca.key",
+    "-out","ca.pem"]);
+  const {writeFileSync}=await import("node:fs");
+  const signed=(role,subject,usage,extra="")=>{
+    cmd(["req","-newkey","rsa:2048","-nodes","-subj",subject,
+      "-keyout",role+".key","-out",role+".csr"]);
+    writeFileSync(join(tlsDir,role+".ext"),
+      "basicConstraints=critical,CA:FALSE\n"+
+      "keyUsage=critical,digitalSignature,keyEncipherment\n"+
+      "extendedKeyUsage="+usage+"\n"+
+      extra,{mode:0o600});
+    cmd(["x509","-req","-days","1","-in",role+".csr",
+      "-CA","ca.pem","-CAkey","ca.key","-CAcreateserial",
+      "-out",role+".pem","-extfile",role+".ext"]);
+    return {
+      cert:readFileSync(join(tlsDir,role+".pem"),"utf8"),
+      key:readFileSync(join(tlsDir,role+".key"),"utf8")
+    };
+  };
+  const server=signed("server","/CN=127.0.0.1","serverAuth",
+    "subjectAltName=IP:127.0.0.1\n");
+  const client=signed("trusted","/CN=trusted-runner","clientAuth");
+  const rogue=signed("rogue","/CN=rogue-runner","clientAuth");
+  const ca=readFileSync(join(tlsDir,"ca.pem"),"utf8");
+  const expectedClientFingerprint256=
+    new X509Certificate(client.cert).fingerprint256;
+  const tls={ca,cert:client.cert,key:client.key};
+  const serverTls={ca,cert:server.cert,key:server.key,
+    expectedClientFingerprint256};
   const host=await startTrustedEngineerLocalHost({
-    ...f.config,oidc:{...f.config.oidc,tls}
+    ...f.config,oidc:{...f.config.oidc,tls:serverTls}
   });
   t.after(()=>host.close());
   assert.match(host.oidcAdmissionEndpoint,
@@ -235,6 +260,12 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
     ...submission,tls:{...tls,ca:"invalid-ca"}
   }),/admission denied/);
   assert.equal((await readdir(f.replays)).length,0);
+  // This cert is signed by the SAME CA but cannot impersonate the pinned
+  // client. TLS accepts it; the Engineer admission boundary must reject it.
+  await assert.rejects(submitTrustedGithubOidcFromRunner({
+    ...submission,tls:{ca,cert:rogue.cert,key:rogue.key}
+  }),/admission denied/);
+  assert.equal((await readdir(f.replays)).length,0);
   const result=await submitTrustedGithubOidcFromRunner(submission);
   assert.deepEqual(result,{
     status:"authenticated_only_not_engineer_approved",
@@ -245,7 +276,7 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
   await assert.rejects(submitTrustedGithubOidcFromRunner(submission),
     /admission denied/);
   assert.equal((await readdir(f.replays)).length,2);
-  assert.equal((await readdir(f.admissions)).length,3);
+  assert.equal((await readdir(f.admissions)).length,1);
   assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
   const record=await host.consumeAuthenticatedRun(runId);
   assert.equal(record.session_id,f.plan.session_id);
