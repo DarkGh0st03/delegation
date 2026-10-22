@@ -101,7 +101,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     if(tool==="read_repository"){
       if(response.default_branch!=="main"||
          response.full_name!==
-          this.#snapshot.repository.owner+"/"
+          this.#snapshot.repository.owner+"/"+
           this.#snapshot.repository.repository)fail();
     }else {
       const requested=request as Extract<NormalizedToolRequest,
