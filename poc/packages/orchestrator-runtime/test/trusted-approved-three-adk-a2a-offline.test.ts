@@ -10,12 +10,12 @@ import assert from "node:assert/strict";
 import {BaseLlm} from "@google/adk";
 import {createServer} from "node:net";
 import {randomBytes} from "node:crypto";
-import {makeApproval,planDigest} from "../../../plan-contracts/src/plan.mjs";
+import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
 import {DelegatedA2ARoleRunner} from "../src/a2a-workflow.ts";
-import {startSpecializedAgentServer} from "../../../agent-runtime/src/server.ts";
-import {DeterministicA2AOrchestrator} from "../../../agent-runtime/src/orchestrator.ts";
+import {startSpecializedAgentServer} from "../../agent-runtime/src/server.ts";
+import {DeterministicA2AOrchestrator} from "../../agent-runtime/src/orchestrator.ts";
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const ROOT="gitea://gitea.local/thesis/iam-console-poc";
