@@ -1,6 +1,7 @@
 /**
  * One offline real Google ADK + real A2A SDK execution for all three roles.
- * The trusted approved-DAG coordinator is real; the Adapter HTTP issuer,
+ * The signed Ed25519 Engineer receipt and approved-DAG coordinator are real.
+ * The Adapter HTTP issuer,
  * signed VP, Gateway/OPA replies and Git/Runner effects are deterministic
  * test fixtures. The separate native EVM integration checks those boundaries.
  * NO network LLM service, API key, actual Gitea or Docker is involved.
@@ -9,7 +10,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {BaseLlm} from "@google/adk";
 import {createServer} from "node:net";
-import {randomBytes} from "node:crypto";
+import {randomBytes,generateKeyPairSync} from "node:crypto";
+import {mkdtemp,rm,writeFile} from "node:fs/promises";
+import {join} from "node:path";
+import {tmpdir} from "node:os";
+import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
+import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
@@ -98,10 +104,24 @@ async function setup({wrongBackendPath=false}={}){
     approved_at:"2026-10-21T18:00:00Z",
     approved_permission_ids:approved.requested_permissions.map(p=>p.id)
   });
-  const store={async loadAuthenticatedApproval(){
-    // Mock authenticated store; real Ed25519 verification is separately tested.
-    return {plan:approved,approval:receipt,authenticated_engineer_did:did};
-  }};
+  const dir=await mkdtemp(join(tmpdir(),"signed-adk-three-role-"));
+  const {privateKey,publicKey}=generateKeyPairSync("ed25519");
+  const keyId="offline-three-role-ed25519";
+  const signed=signEngineerApproval({
+    plan:approved,approval:receipt,engineerDid:did,keyId,
+    privateKeyPem:privateKey.export({format:"pem",type:"pkcs8"}).toString(),
+    issuedAt:new Date().toISOString(),
+    expiresAt:new Date(Date.now()+20*60_000).toISOString()
+  });
+  await writeFile(join(dir,session+".json"),JSON.stringify(signed),{mode:0o600});
+  const store=new SignedEngineerApprovalFileStore({
+    directory:dir,engineerDid:did,
+    trustedKeys:{[keyId]:{engineer_did:did,
+      public_key_pem:publicKey.export({format:"pem",type:"spki"}).toString()}}
+  });
+  const authenticated=await store.loadAuthenticatedApproval(session);
+  assert.equal(planDigest(authenticated.plan),planDigest(approved));
+  assert.equal(authenticated.authenticated_engineer_did,did);
   const evidence=new Map();
   const bindings=new Map();
   const effects=new Map();
@@ -294,12 +314,14 @@ async function setup({wrongBackendPath=false}={}){
       },
       async close(){
         for(const server of servers.reverse())await server.close();
+        await rm(dir,{recursive:true,force:true});
       }
     };
   }catch(e){
     for(const server of servers.reverse()){
       try{await server.close();}catch{}
     }
+    await rm(dir,{recursive:true,force:true});
     throw e;
   }
 }
