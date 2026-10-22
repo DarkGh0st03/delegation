@@ -189,7 +189,7 @@ export async function runNativePositiveApprovedDag({
     assert.throws(()=>gateway.prepare({
       task_id:"after_closed",agent_role:"backend",tool:"update_file",
       arguments:{branch,path:file,content:"unapproved"}
-    }),/approved plan/i);
+    }),error=>error?.code==="approved_plan_denied");
     return {
       status:"pass",signed_dag_completed:true,
       completed_task_ids:result.completed_task_ids,
