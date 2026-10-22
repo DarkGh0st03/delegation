@@ -60,13 +60,15 @@ export interface VerifiedGithubOidcJob{
  * The JWKS URI is fixed, not accepted from the JWT header. Network errors
  * always fail closed; the trusted backend must use system TLS validation.
  */
-export async function verifyGithubOidcJobAssertion(input:{
+async function verifySignedGithubOidcEvent(input:{
   jwt:string;
   dispatch:ReviewedGithubDispatchRequest;
   pinned:PinnedGithubDispatch;
   trust:GithubOidcTrustPolicy;
   fetchFn?:typeof fetch;
   nowMs?:number;
+  /** Internal only: paid handoff MUST require manual dispatch. */
+  expectedEvent:"workflow_dispatch"|"push";
 }):Promise<Readonly<VerifiedGithubOidcJob>>{
   const {jwt,dispatch,pinned,trust}=input;
   if(typeof jwt!=="string"||jwt.length<100||
@@ -109,7 +111,7 @@ export async function verifyGithubOidcJobAssertion(input:{
      claims.workflow_sha!==dispatch.source_sha||
      claims.workflow_ref!==pinned.repository+"/"+
        pinned.workflowPath+"@"+pinned.ref||
-     claims.event_name!=="workflow_dispatch"||
+     claims.event_name!==input.expectedEvent||
      String(claims.run_id)!==dispatch.run_id||
      String(claims.run_attempt)!=="1"||
      !SHA.test(claims.sha??"")||
@@ -160,5 +162,59 @@ export async function verifyGithubOidcJobAssertion(input:{
     repository_id:trust.expectedRepositoryId,
     repository_owner_id:trust.expectedOwnerId,
     audience:trust.expectedAudience
+  });
+}
+
+
+/**
+ * STRICT paid authorization path. Deliberately not configurable by callers:
+ * only a first, explicitly approved workflow_dispatch is permitted.
+ */
+export function verifyGithubOidcJobAssertion(input:
+  Omit<Parameters<typeof verifySignedGithubOidcEvent>[0],"expectedEvent">
+):Promise<Readonly<VerifiedGithubOidcJob>>{
+  return verifySignedGithubOidcEvent({
+    ...input,expectedEvent:"workflow_dispatch"
+  });
+}
+
+export interface OfflineGithubOidcProof{
+  readonly kind:"offline_push_identity_only";
+  readonly run_id:string;
+  readonly workflow_sha:string;
+  readonly signature_verified:true;
+}
+
+/**
+ * Separate read-only diagnostic for a real GitHub push job. It intentionally
+ * returns a DIFFERENT, non-authorizing proof without any signed job jti.
+ *
+ * Even a valid push proof cannot satisfy verifyGithubOidcJobAssertion,
+ * verifyGithubManualGeminiDispatch or the Engineer signature check.
+ * Never pass this result to the operational/root/paid entrypoints.
+ */
+export async function verifyGithubOidcOfflinePushProbe(input:{
+  jwt:string;
+  pinned:PinnedGithubDispatch&{sourceSha:string};
+  expectedRunId:string;
+  trust:GithubOidcTrustPolicy;
+  fetchFn?:typeof fetch;
+  nowMs?:number;
+}):Promise<Readonly<OfflineGithubOidcProof>>{
+  if(!DECIMAL.test(input.expectedRunId)||!SHA.test(input.pinned.sourceSha))
+    fail("offline push probe requires pinned run and source revision");
+  const dispatch={
+    source_sha:input.pinned.sourceSha,
+    run_id:input.expectedRunId
+  } as ReviewedGithubDispatchRequest;
+  const checked=await verifySignedGithubOidcEvent({
+    jwt:input.jwt,dispatch,pinned:input.pinned,trust:input.trust,
+    fetchFn:input.fetchFn,nowMs:input.nowMs,expectedEvent:"push"
+  });
+  return Object.freeze({
+    kind:"offline_push_identity_only",
+    run_id:checked.run_id,
+    workflow_sha:checked.workflow_sha,
+    signature_verified:true
   });
 }
