@@ -24,10 +24,14 @@ function commitMessage(
   return `thesis-gateway: ${tool} ${path} [${requestId}]`;
 }
 
-function requireFeatureBranch(branch: string): void {
-  if (branch !== FEATURE_BRANCH) {
+function requireFeatureBranch(record:PreparedRequestRecord,branch:string):void{
+  // Legacy no-plan path is still strictly frozen. The opt-in path has a
+  // trusted immutable plan and a branch confirmed at Gateway Prepare/Execute.
+  const allowed=record.approved_plan_digest&&record.approved_work_branch
+    ? record.approved_work_branch:FEATURE_BRANCH;
+  if(branch!==allowed||branch==="main"||!branch.startsWith("feature/")){
     throw new ProviderOperationUnavailableError(
-      "Phase 5B.2 Gitea file mutations are restricted to feature/account-suspension"
+      "Gitea mutation is outside the verified approved working branch"
     );
   }
 }
@@ -85,11 +89,12 @@ export class GiteaExecutor implements ExecutionPort {
 
     if (record.request.tool === "create_branch") {
       const { base_branch, branch } = record.request.arguments;
-      if (base_branch !== MAIN_BRANCH || branch !== FEATURE_BRANCH) {
+      if (base_branch !== MAIN_BRANCH) {
         throw new ProviderOperationUnavailableError(
-          "Phase 5B.1 Gitea provider only creates feature/account-suspension from main"
+          "Gitea provider can create feature branches only from main"
         );
       }
+      requireFeatureBranch(record,branch);
 
       const created = await this.#client.createBranch(base_branch, branch);
       const result: GiteaCreateBranchExecutionResult = {
@@ -106,11 +111,12 @@ export class GiteaExecutor implements ExecutionPort {
 
     if (record.request.tool === "create_pull_request") {
       const { head_branch, base_branch, title, body } = record.request.arguments;
-      if (head_branch !== FEATURE_BRANCH || base_branch !== MAIN_BRANCH) {
+      if (base_branch !== MAIN_BRANCH) {
         throw new ProviderOperationUnavailableError(
-          "Phase 5B.3 Gitea provider only creates feature/account-suspension -> main pull requests"
+          "Gitea pull requests must target protected main"
         );
       }
+      requireFeatureBranch(record,head_branch);
 
       const created = await this.#client.createPullRequest(
         head_branch,
@@ -134,7 +140,7 @@ export class GiteaExecutor implements ExecutionPort {
 
     if (record.request.tool === "create_file") {
       const { branch, path, content } = record.request.arguments;
-      requireFeatureBranch(branch);
+      requireFeatureBranch(record,branch);
       const created = await this.#client.createFile(
         branch,
         path,
@@ -156,7 +162,7 @@ export class GiteaExecutor implements ExecutionPort {
 
     if (record.request.tool === "update_file") {
       const { branch, path, content } = record.request.arguments;
-      requireFeatureBranch(branch);
+      requireFeatureBranch(record,branch);
       const updated = await this.#client.updateFile(
         branch,
         path,
@@ -182,7 +188,7 @@ export class GiteaExecutor implements ExecutionPort {
 
     if (record.request.tool === "run_tests") {
       const { branch, profile } = record.request.arguments;
-      requireFeatureBranch(branch);
+      requireFeatureBranch(record,branch);
       if (!this.#runnerClient || !this.#runnerRepositoryUri) {
         throw new ProviderOperationUnavailableError(
           "Controlled Test Runner is not configured"

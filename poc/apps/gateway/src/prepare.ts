@@ -80,7 +80,7 @@ export function prepareAuthorization(
   // the plan enforcement feature is installed.
   const approvedBinding = !pinnedRevision
     ? dependencies.approvedPlans?.authorizePrepare(
-        normalized.task_id,normalized.agent_role,permission
+        normalized.task_id,normalized.agent_role,permission,normalized.request
       )
     : undefined;
 
@@ -117,7 +117,8 @@ export function prepareAuthorization(
     ...(pinnedRevision ? { pinned_revision:pinnedRevision } : {}),
     ...(approvedBinding ? {
       approved_plan_digest:approvedBinding.plan_digest,
-      approved_plan_task_id:approvedBinding.plan_task_id
+      approved_plan_task_id:approvedBinding.plan_task_id,
+      approved_work_branch:approvedBinding.work_branch
     } : {}),
     created_at_ms: nowMs,
     expires_at_ms: nowMs + config.request_ttl_ms,

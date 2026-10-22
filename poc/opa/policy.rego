@@ -4,12 +4,33 @@ import rego.v1
 
 default allow := false
 
-policy_version := "phase6-ro-v1"
+policy_version := "phase6-approved-branch-v2"
 
 feature_branch := "feature/account-suspension"
 main_branch := "main"
 repository_uri := "gitea://gitea.local/thesis/iam-console-poc"
 feature_branch_uri := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension"
+
+# A nonlegacy branch is possible only when Gateway has installed a signed
+# Engineer plan and passed its immutable digest AND trusted derived branch.
+# These are server-injected by Gateway, never accepted as tool arguments.
+effective_feature_branch := feature_branch if {
+  not input.approved_plan_digest
+  not input.approved_work_branch
+}
+effective_feature_branch := input.approved_work_branch if {
+  is_string(input.approved_plan_digest)
+  regex.match("^[a-f0-9]{64}$", input.approved_plan_digest)
+  is_string(input.approved_work_branch)
+  regex.match("^feature/[a-z0-9][a-z0-9./_-]*$", input.approved_work_branch)
+  not contains(input.approved_work_branch, "..")
+  not contains(input.approved_work_branch, "//")
+  not endswith(input.approved_work_branch, ".lock")
+  not endswith(input.approved_work_branch, ".")
+}
+effective_feature_uri := sprintf("%s/branches/%s",[
+  repository_uri,replace(effective_feature_branch,"/","%2F")
+])
 
 controlled_repository if {
 	input.repository.authority == "gitea.local"
@@ -43,8 +64,8 @@ bound_request_context if {
 }
 
 file_operation_on_feature_branch if {
-	input.arguments.branch == feature_branch
-	startswith(input.required_permission.resource, sprintf("%s/files/", [feature_branch_uri]))
+	input.arguments.branch == effective_feature_branch
+	startswith(input.required_permission.resource, sprintf("%s/files/", [effective_feature_uri]))
 }
 
 # Read-only discovery of a controlled repository: only the Orchestrator,
@@ -85,8 +106,8 @@ allow if {
 allow if {
 	bound_request_context
 	input.tool == "list_directory"
-	input.arguments.branch == feature_branch
-	directory_permission(sprintf("%s/directories", [feature_branch_uri]))
+	input.arguments.branch == effective_feature_branch
+	directory_permission(sprintf("%s/directories", [effective_feature_uri]))
 }
 
 allow if {
@@ -112,22 +133,22 @@ allow if {
 	input.tool == "create_branch"
 	input.required_permission.resource == repository_uri
 	input.arguments.base_branch == main_branch
-	input.arguments.branch == feature_branch
+	input.arguments.branch == effective_feature_branch
 }
 
 allow if {
 	bound_request_context
 	input.tool == "create_pull_request"
 	input.required_permission.resource == repository_uri
-	input.arguments.head_branch == feature_branch
+	input.arguments.head_branch == effective_feature_branch
 	input.arguments.base_branch == main_branch
 }
 
 allow if {
 	bound_request_context
 	input.tool == "run_tests"
-	input.required_permission.resource == feature_branch_uri
-	input.arguments.branch == feature_branch
+	input.required_permission.resource == effective_feature_uri
+	input.arguments.branch == effective_feature_branch
 	input.arguments.profile == "poc-default"
 }
 

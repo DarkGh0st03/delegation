@@ -91,6 +91,8 @@ export interface PreparedRequestRecord {
   /** Created solely by the trusted approval registry, never user JSON. */
   approved_plan_digest?: string;
   approved_plan_task_id?: string;
+  /** Trusted signed-plan-derived branch, never public caller input. */
+  approved_work_branch?: string;
   created_at_ms: number;
   expires_at_ms: number;
   consumed: boolean;
@@ -384,6 +386,7 @@ export interface PolicyInput {
   required_permission: Permission;
   pinned_revision?: string;
   approved_plan_digest?: string;
+  approved_work_branch?: string;
   repository: GatewayRepositoryConfig;
   verified_delegation: {
     presenter_id: string;

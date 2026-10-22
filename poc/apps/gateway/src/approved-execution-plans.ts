@@ -13,7 +13,9 @@
 import { assertApprovedExecution, assertApprovedPlanScope, planDigest } from
   "../../../packages/plan-contracts/src/plan.mjs";
 import { RUST_OPERATIONS } from "./operation-catalog.ts";
-import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord } from "./types.ts";
+import {approvedWorkBranch} from "../../../packages/plan-contracts/src/approved-work-branch.mjs";
+import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord,
+  type NormalizedToolRequest } from "./types.ts";
 import { GatewayError } from "./errors.ts";
 import type {ExecutionResult} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
@@ -78,6 +80,7 @@ interface ActivePlan {
   readonly plan: any;
   readonly approval: any;
   readonly approvedAt: string;
+  readonly workBranch:string;
   active: boolean;
   readonly completedPlanTasks: Set<string>;
 }
@@ -156,10 +159,12 @@ export class TrustedApprovedExecutionPlans {
          plan.tasks.some((t:any)=>!TASK_AGENT.has(t.agent_id))) {
         denied("Approved plan does not match trusted Gitea snapshot or provider capability");
       }
+      const workBranch=approvedWorkBranch(plan);
       const snapshot=structuredClone(plan), receipt=structuredClone(approval);
       const digest=planDigest(snapshot);
       this.#sessions.set(sessionId,{
         sessionId,digest,plan:snapshot,approval:receipt,approvedAt:receipt.approved_at,
+        workBranch,
         active:true,completedPlanTasks:new Set()
       });
       return digest;
@@ -192,14 +197,16 @@ export class TrustedApprovedExecutionPlans {
   }
 
   /** Called during Gateway Prepare, before a one-shot challenge is created. */
-  authorizePrepare(runtimeTaskId:string, role:AgentRole, required:Permission):
-    { plan_digest:string; plan_task_id:string } {
+  authorizePrepare(runtimeTaskId:string, role:AgentRole, required:Permission,
+    request?:NormalizedToolRequest):
+    { plan_digest:string; plan_task_id:string; work_branch:string } {
     const {session,binding}=this.#activeBinding(runtimeTaskId);
     if(binding.agent!==role || binding.completed) {
       denied("Runtime role or completed task is outside approved plan");
     }
-    this.#checkAction(session,binding,required);
-    return {plan_digest:session.digest,plan_task_id:binding.planTaskId};
+    this.#checkAction(session,binding,required,request);
+    return {plan_digest:session.digest,plan_task_id:binding.planTaskId,
+      work_branch:session.workBranch};
   }
 
   /** Re-evaluate AFTER VP and OPA, immediately BEFORE provider I/O. */
@@ -226,7 +233,10 @@ export class TrustedApprovedExecutionPlans {
         denied("Verified presenter DID differs from approved agent identity");
       }
     }
-    this.#checkAction(session,binding,record.required_permission);
+    if(record.approved_work_branch!==session.workBranch){
+      denied("Trusted plan working branch changed after Prepare");
+    }
+    this.#checkAction(session,binding,record.required_permission,record.request);
   }
 
   /** Gateway-confirmed provider results are tracked internally, not via A2A. */
@@ -318,7 +328,20 @@ export class TrustedApprovedExecutionPlans {
     }
   }
 
-  #checkAction(session:ActivePlan,binding:RuntimeTaskBinding,required:Permission):void {
+  #checkAction(session:ActivePlan,binding:RuntimeTaskBinding,required:Permission,
+    request?:NormalizedToolRequest):void {
+    if(!request)denied("Trusted operation body is required for plan branch enforcement");
+    // The branch comes from the signed plan, never from request metadata.
+    const branch=request.tool==="create_branch"?request.arguments.branch:
+      request.tool==="create_pull_request"?request.arguments.head_branch:
+      "branch" in request.arguments?request.arguments.branch:undefined;
+    if(branch!==undefined&&branch!==session.workBranch){
+      denied("Provider branch differs from immutable approved plan");
+    }
+    if((request.tool==="create_branch"||request.tool==="create_pull_request")&&
+       request.arguments.base_branch!=="main"){
+      denied("Approved work must originate from main; main cannot be mutated");
+    }
     try {
       assertApprovedExecution(session.plan,session.approval,{
         task_id:binding.planTaskId,
