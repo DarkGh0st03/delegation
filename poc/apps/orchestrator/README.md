@@ -563,3 +563,37 @@ Next: review boundary hardening, agent-generated code quality,
 task-to-task repository context under real ADK inference (with user
 authorization before paid Gemini), rollback/restart semantics, and
 explicit Engineering sign-off over the exact final plan.
+
+
+## Signed A2A Task file-tool minimization — 22 October 2026
+
+A prebound Engineer-approved A2A Task now supplies
+`subtask.relevant_paths` to the ADK tool factory. It intersects
+those file paths with the specialist's static role profile and
+advertises only matching `read_file`, `update_file`, and
+`create_file` paths in model-facing tool schemas and instructions.
+A Test Task with no relevant file resources exposes only `run_tests`.
+
+A model-selected path outside this narrow set is rejected **before**
+Gateway Prepare, even if the ADK SDK does not enforce its schema.
+Traversal, absolute, malformed and control-character paths are rejected;
+untrusted repository files and tool outputs are explicitly described
+to the model as data rather than instructions.
+
+This is a usability and defense-in-depth measure, not delegation
+authority: the trusted dispatcher derives path hints from approved
+permission rows, and independent signed-plan Gateway, Rust DC/VP, OPA
+and provider-effect checks remain the actual security boundaries.
+
+**Limitation:** the shared MCP toolset does not yet support equally
+narrow per-Task model declarations, so signed Task-specific MCP mode
+currently fails closed rather than advertising the broad legacy tool
+surface. Legacy MCP tests remain unchanged. Real model code generation
+will also need explicit `read_file` grants in the Engineer plan before
+the agent can inspect source files. No paid Gemini calls are included.
+
+The dedicated offline suite
+[Trusted Prebound A2A Dispatch #39750696187]
+(https://github.com/DarkGh0st03/delegation/actions/runs/39750696187)
+passed with the narrowed signed ADK behavior. The cumulative suites
+run independently.
