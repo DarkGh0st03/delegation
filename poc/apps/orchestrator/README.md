@@ -503,3 +503,63 @@ Gitea and real Docker in one unified run. The Engineer Ed25519
 signature is a test key; model output comes from scripted BaseLlm,
 not Gemini. A live user-approval UI/paid generative workflow remains
 outside the scope. No merge to source main occurred.
+
+
+## 22 October 2026 — first positive native three-agent + Gitea + Docker E2E
+
+**Code commit:** `478a987540a4c8b86e9640df5d4d94c5c41082c0`.
+**Validation:** [Cumulative Offline Refactoring Validation #39748475606]
+(https://github.com/DarkGh0st03/delegation/actions/runs/39748475606).
+**Result:** 4/4 CI jobs **SUCCESS on attempt 1**.
+The native `evm-real-credential` job now also runs the new opt-in
+`APPROVED_RUNNER_THREE_AGENT_DAG=1` provider scenario.
+
+The scenario extends the existing single-Test-only signed approval with
+a genuinely signed immutable three-specialist plan:
+`backend (update_file) -> frontend (update_file) -> verify (run_tests)`.
+The operational Engineer root grants exactly those three scopes on the
+disposable `feature/account-suspension` branch, and independent native
+Rust-issued child DCs bind Backend, Frontend and Test identities to
+their distinct approved Tasks. Each credential's signed VP is validated
+by **native Core Rust**, with **real OPA/Rego** policy checks before the
+actual provider call. The Backend and Frontend use **real Google ADK
+Runners and real A2A HTTP/SDK**. Their file edits are committed through
+Gateway and the real Gitea API: 2 confirmed updates, in DAG order, each
+with separately verified real Git HEAD and file content. The Test Task
+is only prepared after both edits have been provider-corroborated.
+
+The exact final Gitea revision (disposable):
+`bd4404d79989b5a0a82053fe1f242e511f05d54c`.
+The existing A2A Test role then uses its Rust-signed scoped child and
+native VP to execute the actual authenticated Runner HTTP service,
+on exactly that final revision. CI evidence:
+`real_backend_frontend_gitea_edits=2`,
+`native_rust_signed_child_and_vp=true`,
+`real_opa_signed_plan_policy=true`,
+`real_a2a_sdk_task_completed=true`,
+`exact_provider_sha_correlated=true`,
+`exact_project_phases=6`,
+`project_tests=pass`,
+`researcher_acceptance=pass`, status
+`pending -> success`, `merge_calls=0`,
+`persistent_gitea_modified=false`.
+
+**Limits that must not be overstated:** The agents are scripted
+`BaseLlm` instances; no Gemini / paid model inference occurred.
+The Task plan, reference implementation and two benign appended
+TypeScript comments were constructed by trusted test code, not generated
+by an autonomous language model. The feature branch was initially
+populated from the existing Account Suspension reference fixture;
+the three roles have now *acted through the real provider* but have
+not produced the whole application from a natural-language requirement.
+The Engineer signature uses an ephemeral test signing key rather than
+real production interactive consent or an externally verified login.
+The trusted control plane and provider are composed within the CI
+process; full multi-process fault recovery and restart reconciliation
+remain out of scope. The public GitHub `main` is unchanged. This
+single successful run is not a latency/reliability benchmark.
+
+Next: review boundary hardening, agent-generated code quality,
+task-to-task repository context under real ADK inference (with user
+authorization before paid Gemini), rollback/restart semantics, and
+explicit Engineering sign-off over the exact final plan.

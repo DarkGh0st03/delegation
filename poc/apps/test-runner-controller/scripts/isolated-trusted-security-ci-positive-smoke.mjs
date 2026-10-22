@@ -11,8 +11,9 @@
  * Actual TrustedGiteaSecurityCi publishes pending -> success on the exact
  * feature commit ONLY after both tests and acceptance genuinely pass.
  *
- * This is a deterministic reference-fixture CI test, NOT an A2A Agent test,
- * not an LLM-generated implementation, and not a human approval/merge test.
+ * This is a deterministic reference-fixture CI test with real ADK/A2A
+ * when opted in: NOT LLM-generated code or production human sign-off.
+ * The native three-agent profile appends harmless source comments only.
  */
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
