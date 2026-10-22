@@ -21,6 +21,8 @@ import {TrustedEngineerAuthoritySession}
   from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
   from "../src/trusted-execution-coordinator.ts";
+import {verifyManualGeminiExecutionReadiness}
+  from "../src/trusted-gemini-execution-readiness.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
 const ENGINEER="did:thesis:engineer";
@@ -245,6 +247,83 @@ test("untrusted signer and modified receipt cannot authorize an operational root
     await f.sign(p.plan,["permission-1","permission-3"],rogue);
     await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id),
       /invalid approval signature/);
+    assert.deepEqual(f.revoked,[]);
+  }finally{await f.close();}
+});
+
+
+test("manual Gemini readiness requires independent Ed25519 review and never creates authority",async()=>{
+  const f=await fixture();
+  try{
+    const base={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"ci-dummy-non-live-secret",
+      modelName:"gemini-3.8-flash",
+      maxModelTurns:12,
+      maxOutputTokens:16000,
+      trustedPhase:()=>f.coordinator.phase,
+      reviewGate:f.gate
+    };
+    await assert.rejects(verifyManualGeminiExecutionReadiness(base),
+      /active Coordinator/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await assert.rejects(verifyManualGeminiExecutionReadiness(base),
+      /no staged proposal/);
+    const draft=f.proposal();
+    f.gate.stageTrustedProposal(draft);
+    await assert.rejects(verifyManualGeminiExecutionReadiness(base));
+    assert.equal(f.issued.length,1);
+    assert.deepEqual(f.revoked,[]);
+    await f.sign(draft.plan,["permission-1","permission-3"]);
+    for(const patch of [
+      {githubEventName:"push"},{githubRunAttempt:"2"},
+      {authorizationInput:"I AUTHORIZE"},{geminiApiKey:""},
+      {modelName:"openai-gpt"},{modelName:"gemini-3.8-flash/other"},
+      {maxModelTurns:0},{maxModelTurns:33},
+      {maxOutputTokens:0},{maxOutputTokens:32001}
+    ]){
+      await assert.rejects(verifyManualGeminiExecutionReadiness({
+        ...base,...patch
+      }),/Trusted paid Gemini readiness/);
+    }
+    const ready=await verifyManualGeminiExecutionReadiness(base);
+    assert.equal(ready.plan_digest,draft.digest);
+    assert.equal(ready.base_revision,SHA);
+    assert.equal(ready.model_name,"gemini-3.8-flash");
+    assert.equal(ready.status,"signed_engineer_approved_manual_gemini_ready");
+    assert.deepEqual(ready.approved_permission_ids,
+      ["permission-1","permission-3"]);
+    assert.equal(ready.authenticated_engineer_did,ENGINEER);
+    assert.ok(Object.isFrozen(ready));
+    assert.ok(Object.isFrozen(ready.approved_permission_ids));
+    assert.ok(!JSON.stringify(ready).includes(base.geminiApiKey));
+    assert.deepEqual(f.revoked,[]);
+    assert.equal(f.issued.length,1); // Readiness is never operational issuance
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    await assert.rejects(verifyManualGeminiExecutionReadiness(base),
+      /active Coordinator/);
+  }finally{await f.close();}
+});
+
+test("Gemini manual opt-in does not bypass an altered Engineer-signed plan",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();f.gate.stageTrustedProposal(proposal);
+    const altered=structuredClone(proposal.plan);
+    altered.tasks[1].description="Substitute signed scope";
+    await f.sign(altered,["permission-1","permission-3"]);
+    await assert.rejects(verifyManualGeminiExecutionReadiness({
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"ci-fake-key",modelName:"gemini-3.8-flash",
+      maxModelTurns:8,maxOutputTokens:16000,
+      trustedPhase:()=>f.coordinator.phase,reviewGate:f.gate
+    }),/signed Engineer plan differs from the staged proposal/);
+    assert.equal(f.issued.length,1);
     assert.deepEqual(f.revoked,[]);
   }finally{await f.close();}
 });

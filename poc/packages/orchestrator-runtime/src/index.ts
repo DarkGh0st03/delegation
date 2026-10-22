@@ -17,3 +17,4 @@ export * from "./trusted-approved-child-issuer.ts";
 export * from "./trusted-adk-planner.ts";
 export * from "./trusted-planning-gateway-port.ts";
 export * from "./trusted-planning-review-gate.ts";
+export * from "./trusted-gemini-execution-readiness.ts";
