@@ -11,7 +11,18 @@
  * No external LLM, user approval, writes to main or persistent Gitea.
  */
 import assert from "node:assert/strict";
-import {randomBytes,randomInt} from "node:crypto";
+import {randomBytes,randomInt,generateKeyPairSync} from "node:crypto";
+import {mkdtemp,writeFile,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {makeApproval} from "../../../packages/plan-contracts/src/plan.mjs";
+import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
+import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
+import {SignedEngineerApprovalFileStore} from
+  "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
+import {TrustedPlanningReviewGate} from
+  "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
+import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts";
 import {BaseLlm} from "@google/adk";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
@@ -47,6 +58,9 @@ const disposableToken=process.env.PLANNING_DISPOSABLE_GITEA_READ_TOKEN;
 const disposableSha=process.env.PLANNING_DISPOSABLE_GITEA_MAIN_SHA;
 const realGitea=[disposableBase,disposableToken,disposableSha]
   .some(v=>v!==undefined);
+const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
+if(signedHandoff&&!realGitea)
+  throw Error("Native signed handoff requires verified disposable Gitea");
 if(realGitea&&[disposableBase,disposableToken,disposableSha]
   .some(v=>typeof v!=="string"||!v))
   throw Error("Disposable Planning Gitea requires URL, read token and immutable SHA");
@@ -152,14 +166,48 @@ const gitea=liveClient?{
 }:fixtureGitea;
 const revisions=new TrustedPlanningRevisions(gitea);
 const audit=new InMemoryAuditSink();
+// This offline-only fixture provisions an ephemeral Engineer signing key.
+// Production code must use a separately authenticated Engineer with a
+// protected signer; the Planner never receives or invokes the private key.
+const receiptDir=signedHandoff?
+  await mkdtemp(join(tmpdir(),"native-planning-engineer-review-")):undefined;
+const signer=signedHandoff?generateKeyPairSync("ed25519"):undefined;
+const keyId="isolated-native-review-key";
+const signerPublic=signer?.publicKey.export({
+  format:"pem",type:"spki"
+}).toString();
+const signerPrivate=signer?.privateKey.export({
+  format:"pem",type:"pkcs8"
+}).toString();
+const signedStore=receiptDir?new SignedEngineerApprovalFileStore({
+  directory:receiptDir,engineerDid,trustedKeys:{
+    [keyId]:{engineer_did:engineerDid,public_key_pem:signerPublic}
+  }
+}):undefined;
+let coordinator;
+const reviewGate=signedStore?new TrustedPlanningReviewGate({
+  snapshot,expectedWorkBranch:workBranch,
+  authenticatedEngineerDid:engineerDid,signedApprovals:signedStore,
+  planningIsActive:()=>coordinator?.phase==="planning"
+}):undefined;
+const approvedPlans=reviewGate?new TrustedApprovedExecutionPlans({
+  repository:repo,engineerDid,approvals:reviewGate,
+  completionAttestor:{async confirmCompleted(){
+    // This stage proves activation, NOT real signed A2A completion.
+    return false;
+  }}
+}):undefined;
 const config={bind_host:"127.0.0.1",bind_port:0,
   prepare:{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
   opa_url:opaUrl,opa_timeout_ms:15000,
   provider_mode:"mock",gitea_timeout_ms:15000};
 const runtime=new GatewayRuntime(config,{
   planningRevisions:revisions,audit,
+  ...(approvedPlans?{approvedPlans}:{}),
   verifier:loadDirectCoreRustVerifier(),
   policy:new OpaPolicyClient({baseUrl:opaUrl,timeoutMs:15000}),
+  // This read-only Gitea provider remains intentionally INCAPABLE of writes
+  // even after genuine operational authority is issued by Rust.
   executor:new GiteaReadOnlyExecutor(gitea)
 });
 const authorityClient=new SoftwareEngineerAuthorityBootstrap({
@@ -167,16 +215,16 @@ const authorityClient=new SoftwareEngineerAuthorityBootstrap({
 });
 const authority=new TrustedEngineerAuthoritySession({
   snapshot,credentials:authorityClient,
-  approvals:{async loadAuthenticatedApproval(){
+  approvals:reviewGate??{async loadAuthenticatedApproval(){
     throw Error("An unapproved Planning proposal must never activate Execution");
   }},
   authenticatedEngineerDid:engineerDid,
   planningRevisions:revisions
 });
-const coordinator=new TrustedExecutionCoordinator({
+coordinator=new TrustedExecutionCoordinator({
   authority,credentials:authorityClient,
   sessionId:session,baseRevision:baseSha,
-  approvedGatewayPlans:{
+  approvedGatewayPlans:approvedPlans??{
     async activate(){throw Error("Execution prohibited before Engineer approval");},
     bindTask(){throw Error("Execution prohibited");},
     async confirmTaskCompletion(){throw Error("Execution prohibited");},
@@ -285,8 +333,103 @@ try{
   assert.equal(jwtResponse.status,200);
   const signedBeforeRevoke=(await jwtResponse.json()).signed_vp;
   assert.ok(typeof signedBeforeRevoke==="string"&&signedBeforeRevoke.length>100);
-  await authorityClient.revokeRoot(rootId);
-  revoked=true;
+  let operationalRootId;
+  if(signedHandoff){
+    const packet=reviewGate.stageTrustedProposal(proposed);
+    assert.equal(packet.status,"awaiting_engineer_signature");
+    assert.equal(packet.plan_digest,proposed.digest);
+    assert.equal(packet.base_revision,baseSha);
+    assert.equal(packet.work_branch,workBranch);
+    // The isolated Engineer fixture explicitly signs only a SUBSET:
+    // create_branch and update_file, but NOT read_file. A model-proposed
+    // permission without Engineer consent must never appear in the new root.
+    const selected=["permission-1","permission-3"];
+    const now=new Date(),approvedAt=now.toISOString();
+    const approval=makeApproval(packet.plan,{
+      allowedOperations:new Set(RUST_OPERATIONS),
+      decision_id:"isolated-human-review-fixture",
+      approved_by:engineerDid,approved_at:approvedAt,
+      approved_permission_ids:selected
+    });
+    const receipt=signEngineerApproval({
+      plan:packet.plan,approval,engineerDid,keyId,
+      privateKeyPem:signerPrivate,issuedAt:approvedAt,
+      expiresAt:new Date(now.getTime()+600_000).toISOString()
+    });
+    await writeFile(join(receiptDir,session+".json"),
+      JSON.stringify(receipt),{mode:0o600});
+    const trustedReceipt=await reviewGate.loadAuthenticatedApproval(session);
+    assert.deepEqual(trustedReceipt.approval.approved_permission_ids,selected);
+    assert.equal(trustedReceipt.authenticated_engineer_did,engineerDid);
+    const opId="urn:native:operational-"+randomBytes(7).toString("hex");
+    const active=await coordinator.beginExecution({
+      credential_id:opId,
+      valid_from:new Date(Date.now()-1000).toISOString(),
+      validity_seconds:600,
+      credential_status:{
+        type:"BitstringStatusListEntry",
+        statusPurpose:"revocation",
+        statusListIndex:String(randomInt(61001,65000)),
+        statusListCredential:"https://status.example/lists/native-planning-read"
+      }
+    });
+    revoked=true; // Coordinator confirmed EVM revocation before activation
+    operationalRootId=active.credential_id;
+    assert.equal(active.plan_digest,packet.plan_digest);
+    assert.equal(coordinator.phase,"execution");
+    const operational=coordinator.trustedOperationalAuthority();
+    assert.equal(operational.credential_id,opId);
+    assert.deepEqual(operational.permissions.map(p=>p.operation),
+      ["create_branch","update_file"]);
+    const opaqueTask="dispatch_native_handoff_branch";
+    await coordinator.bindDispatchedTask("branch",opaqueTask,"orchestrator");
+    const countBefore=log.giteaReads;
+    await assert.rejects(async()=>runtime.prepare({
+      task_id:opaqueTask,agent_role:"orchestrator",
+      tool:"create_branch",arguments:{
+        base_branch:"main",branch:"feature/not-approved"
+      }
+    }),e=>e?.code==="approved_plan_denied");
+    await assert.rejects(async()=>runtime.prepare({
+      task_id:opaqueTask,agent_role:"orchestrator",
+      tool:"update_file",arguments:{
+        branch:"main",path:file,content:"malicious"
+      }
+    }));
+    // The EXACT approved operation reaches native Core Rust verification and
+    // OPA; a separate read-only provider then refuses any real branch write.
+    const branchPrepare=runtime.prepare({
+      task_id:opaqueTask,agent_role:"orchestrator",
+      tool:"create_branch",arguments:{
+        base_branch:"main",branch:workBranch
+      }
+    });
+    const branchJwt=await fetch(adapterUrl+"/v1/presentations",{
+      method:"POST",
+      headers:{authorization:"Bearer "+token,
+        "content-type":"application/json"},
+      body:JSON.stringify({
+        credential_id:opId,disclosed_permissions:[branchPrepare.required_permission],
+        audience:branchPrepare.audience,challenge:branchPrepare.challenge
+      })
+    });
+    assert.equal(branchJwt.status,200);
+    const branchVp=(await branchJwt.json()).signed_vp;
+    assert.ok(typeof branchVp==="string"&&branchVp.length>100);
+    await assert.rejects(runtime.execute({
+      request_id:branchPrepare.request_id,signed_vp:branchVp
+    }),e=>e?.code==="provider_operation_unavailable");
+    assert.equal(log.giteaReads,countBefore);
+    const blocked=audit.events.filter(e=>e.event==="authorization_executed"&&
+      e.request_id===branchPrepare.request_id);
+    assert.equal(blocked.length,1);
+    assert.equal(blocked[0].policy_decision,"allow");
+    assert.equal(blocked[0].provider_result,"error");
+    assert.equal(blocked[0].approved_plan_digest,packet.plan_digest);
+  }else{
+    await authorityClient.revokeRoot(rootId);
+    revoked=true;
+  }
   const before=log.giteaReads;
   await assert.rejects(
     runtime.execute({request_id:waiting.request_id,
@@ -298,9 +441,17 @@ try{
   // let any caller bypass status revocation or obtain new effective access.
   await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
   assert.equal(log.giteaReads,before);
-  revisions.end(session);
+  if(!signedHandoff)revisions.end(session);
   await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
   assert.equal(log.giteaReads,before);
+  if(signedHandoff){
+    await coordinator.closeExecution();
+    assert.equal(coordinator.phase,"closed");
+    await assert.rejects(async()=>runtime.prepare({
+      task_id:"dispatch_native_handoff_branch",agent_role:"orchestrator",
+      tool:"create_branch",arguments:{base_branch:"main",branch:workBranch}
+    }),e=>e?.code==="approved_plan_denied");
+  }
   if(liveClient){
     assert.equal((await liveClient.getBranchMetadata("main")).commit_sha,baseSha);
     assert.equal((await liveClient.getBranchMetadata("feature/account-suspension")).commit_sha,
@@ -318,9 +469,18 @@ try{
     real_gitea_main_unchanged:realGitea,
     independent_revocation_denial:true,
     source_reads:proposed.verified_source_reads,
-    approval_created:false,
+    approval_created:signedHandoff,
+    trusted_planning_review:signedHandoff,
+    signed_ed25519_fixture:signedHandoff,
+    native_operational_root_and_activation:signedHandoff,
+    operational_root_closed:signedHandoff,
+    real_provider_mutations:0,
     provider_writes:0
   }));
 }finally{
-  if(issued&&!revoked)await authorityClient.revokeRoot(rootId);
+  try{
+    if(issued&&!revoked)await authorityClient.revokeRoot(rootId);
+  }finally{
+    if(receiptDir)await rm(receiptDir,{recursive:true,force:true});
+  }
 }

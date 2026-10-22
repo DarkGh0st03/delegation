@@ -417,7 +417,8 @@ async function main(){
             OPA_URL:opaBaseUrl,
             PLANNING_DISPOSABLE_GITEA_URL:base,
             PLANNING_DISPOSABLE_GITEA_READ_TOKEN:creds.readToken,
-            PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha
+            PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha,
+            PLANNING_NATIVE_SIGNED_HANDOFF:"1"
           }
         });
         const result=output.split(/\r?\n/u).filter(Boolean)
@@ -428,11 +429,16 @@ async function main(){
         assert.equal(result?.real_gitea_main_unchanged,true);
         assert.equal(result?.native_rust_vp_verified,true);
         assert.equal(result?.independent_revocation_denial,true);
-        assert.equal(result?.approval_created,false);
+        assert.equal(result?.approval_created,true);
+        assert.equal(result?.signed_ed25519_fixture,true);
+        assert.equal(result?.native_operational_root_and_activation,true);
+        assert.equal(result?.operational_root_closed,true);
+        assert.equal(result?.real_provider_mutations,0);
         assert.equal(result?.provider_writes,0);
         process.stderr.write("[trusted-positive-ci] native_disposable_planning "+
           JSON.stringify({status:"PASS",real_gitea_sha:fixture.mainSha,
-            native_rust:true,live_opa:true,mutations:0})+"\n");
+            native_rust:true,live_opa:true,signed_handoff:true,
+            operational_root:true,mutations:0})+"\n");
       },190000);
     }
     logs=await mkdtemp(join(tmpdir(),"thesis-positive-runner-"));
