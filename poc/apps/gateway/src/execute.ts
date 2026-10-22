@@ -309,6 +309,9 @@ export async function executeAuthorization(
       vp_size_bytes: Buffer.byteLength(request.signed_vp, "utf8"),
       chain_depth: verified.hierarchy_depth,
       disclosed_permission_count: verified.permissions.length,
+      ...(record.pinned_revision ? {pinned_revision:record.pinned_revision} : {}),
+      ...(record.approved_plan_digest
+        ? {approved_plan_digest:record.approved_plan_digest} : {}),
       provider
     };
 
