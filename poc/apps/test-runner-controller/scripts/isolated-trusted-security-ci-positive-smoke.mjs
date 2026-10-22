@@ -439,11 +439,37 @@ async function main(){
         assert.equal(result?.child_dc_issued,0);
         assert.equal(result?.real_provider_mutations,0);
         assert.equal(result?.provider_writes,0);
+        const positiveOutput=execFileSync(process.execPath,[
+          "--experimental-strip-types",planningScript
+        ],{
+          cwd:process.cwd(),encoding:"utf8",timeout:180000,
+          env:{...process.env,
+            OPA_URL:opaBaseUrl,
+            PLANNING_DISPOSABLE_GITEA_URL:base,
+            PLANNING_DISPOSABLE_GITEA_READ_TOKEN:creds.readToken,
+            PLANNING_DISPOSABLE_GITEA_WRITE_TOKEN:creds.statusToken,
+            PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha,
+            PLANNING_NATIVE_SIGNED_HANDOFF:"1",
+            PLANNING_NATIVE_POSITIVE_DAG:"1"
+          }
+        });
+        const positive=positiveOutput.split(/\r?\n/u).filter(Boolean)
+          .map(line=>{try{return JSON.parse(line);}catch{return null;}})
+          .find(event=>event?.event==="native_preliminary_adk_planning");
+        assert.equal(positive?.status,"pass");
+        assert.equal(positive?.positive_dag?.signed_dag_completed,true);
+        assert.equal(positive?.positive_dag?.real_a2a_sdk,true);
+        assert.equal(positive?.positive_dag?.rust_evm_child,true);
+        assert.equal(positive?.positive_dag?.source_writes,1);
+        assert.equal(positive?.positive_dag?.main_unchanged,true);
+        assert.equal(positive?.positive_dag?.operational_root_revoked,true);
+        assert.equal(positive?.provider_writes,1);
         process.stderr.write("[trusted-positive-ci] native_disposable_planning "+
           JSON.stringify({status:"PASS",real_gitea_sha:fixture.mainSha,
             native_rust:true,live_opa:true,signed_handoff:true,
             operational_root:true,dispatcher_fail_closed:true,
-            a2a_before_branch:0,mutations:0})+"\n");
+            signed_dag_positive:true,backend_a2a_updates:1,
+            a2a_before_branch:0,main_mutations:0})+"\n");
       },190000);
     }
     logs=await mkdtemp(join(tmpdir(),"thesis-positive-runner-"));

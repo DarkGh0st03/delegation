@@ -25,6 +25,9 @@ import {TrustedPlanningReviewGate} from
 import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts";
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
+import {GatewayCorroboratedTaskAttestor} from
+  "../src/trusted-task-observation.ts";
+import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
 import {BaseLlm} from "@google/adk";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
@@ -61,6 +64,11 @@ const disposableSha=process.env.PLANNING_DISPOSABLE_GITEA_MAIN_SHA;
 const realGitea=[disposableBase,disposableToken,disposableSha]
   .some(v=>v!==undefined);
 const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
+const positiveDag=process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
+const writerToken=process.env.PLANNING_DISPOSABLE_GITEA_WRITE_TOKEN;
+if(positiveDag&&(!signedHandoff||!realGitea||!writerToken||
+   !process.env.ADAPTER_CALLER_BACKEND))
+  throw Error("Native positive DAG requires signed handoff and disposable writer");
 if(signedHandoff&&!realGitea)
   throw Error("Native signed handoff requires verified disposable Gitea");
 if(realGitea&&[disposableBase,disposableToken,disposableSha]
@@ -194,10 +202,12 @@ const reviewGate=signedStore?new TrustedPlanningReviewGate({
 }):undefined;
 const approvedPlans=reviewGate?new TrustedApprovedExecutionPlans({
   repository:repo,engineerDid,approvals:reviewGate,
-  completionAttestor:{async confirmCompleted(){
-    // This stage proves activation, NOT real signed A2A completion.
-    return false;
-  }}
+  completionAttestor:positiveDag?new GatewayCorroboratedTaskAttestor():{
+    async confirmCompleted(){
+      // Negative suite never accepts a remote completion claim.
+      return false;
+    }
+  }
 }):undefined;
 const config={bind_host:"127.0.0.1",bind_port:0,
   prepare:{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
@@ -345,7 +355,9 @@ try{
     // The isolated Engineer fixture explicitly signs only a SUBSET:
     // create_branch and update_file, but NOT read_file. A model-proposed
     // permission without Engineer consent must never appear in the new root.
-    const selected=["permission-1","permission-3"];
+    const selected=positiveDag
+      ?["permission-1","permission-2","permission-3"]
+      :["permission-1","permission-3"];
     const now=new Date(),approvedAt=now.toISOString();
     const approval=makeApproval(packet.plan,{
       allowedOperations:new Set(RUST_OPERATIONS),
@@ -382,7 +394,20 @@ try{
     const operational=coordinator.trustedOperationalAuthority();
     assert.equal(operational.credential_id,opId);
     assert.deepEqual(operational.permissions.map(p=>p.operation),
-      ["create_branch","update_file"]);
+      positiveDag?["create_branch","read_file","update_file"]:
+        ["create_branch","update_file"]);
+    if(positiveDag){
+      globalThis.__nativeDagPositive=await runNativePositiveApprovedDag({
+        coordinator,reviewGate,approvedPlans,
+        sessionId:session,planDigest:packet.plan_digest,baseSha,
+        operationalRootId,branch:workBranch,file,repo,
+        giteaBase:disposableBase,readerToken:disposableToken,
+        writerToken,opaUrl,engineerDid,
+        orchestratorToken:token,
+        backendToken:process.env.ADAPTER_CALLER_BACKEND
+      });
+      assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
+    }else{
     // Load the ACTUAL production-style approved DAG dispatcher from the
     // same signed review gate, operational root, and immutable base SHA.
     // A read-only provider cannot create a branch, so this stage deliberately
@@ -465,6 +490,7 @@ try{
     assert.equal(blocked[0].policy_decision,"allow");
     assert.equal(blocked[0].provider_result,"error");
     assert.equal(blocked[0].approved_plan_digest,packet.plan_digest);
+    }
   }else{
     await authorityClient.revokeRoot(rootId);
     revoked=true;
@@ -515,11 +541,12 @@ try{
     native_operational_root_and_activation:signedHandoff,
     operational_root_closed:signedHandoff,
     dispatcher_bound_signed_dag:signedHandoff,
-    dispatcher_stopped_before_a2a_on_provider_denial:signedHandoff,
-    a2a_tasks_dispatched:0,
-    child_dc_issued:0,
-    real_provider_mutations:0,
-    provider_writes:0
+    dispatcher_stopped_before_a2a_on_provider_denial:signedHandoff&&!positiveDag,
+    a2a_tasks_dispatched:positiveDag?1:0,
+    child_dc_issued:positiveDag?1:0,
+    real_provider_mutations:positiveDag?1:0,
+    provider_writes:positiveDag?1:0,
+    ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{})
   }));
 }finally{
   try{
