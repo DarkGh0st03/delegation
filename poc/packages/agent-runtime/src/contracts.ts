@@ -10,11 +10,18 @@ export interface DelegationEvidence {
   presenter_id: string;
 }
 
+/** Non-authoritative model visibility; derived ONLY from signed Task permission rows. */
+export interface ApprovedTaskFilePermission {
+  path: string;
+  operation: "read_file" | "update_file" | "create_file";
+}
 export interface DeterministicSubtask {
   subtask_id: string;
   instruction: string;
   branch: string;
   relevant_paths: string[];
+  /** Present only on trusted approved-plan A2A dispatch. */
+  approved_file_permissions?: ApprovedTaskFilePermission[];
 }
 
 export interface AgentTaskContext {

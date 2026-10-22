@@ -18,6 +18,7 @@ import {
   type AgentTaskContext,
   type DelegationEvidence,
   type DeterministicSubtask,
+  type ApprovedTaskFilePermission,
   type SpecializedAgentRole
 } from "./contracts.ts";
 import { buildDeterministicArtifactPayload } from "./artifact-builder.ts";
@@ -91,11 +92,41 @@ function subtask(message: Message): DeterministicSubtask {
     throw new Error("subtask.relevant_paths must be an array of strings");
   }
 
+  // This metadata is NOT a source of delegated authority. Gateway
+  // independently checks the actual Engineer-approved Task and signed VP.
+  // Reject malformed/forged additions before allocating any model runtime.
+  let approvedFilePermissions:ApprovedTaskFilePermission[]|undefined;
+  if(raw.approved_file_permissions!==undefined){
+    if(!privateId || !Array.isArray(raw.approved_file_permissions) ||
+       raw.approved_file_permissions.length>32){
+      throw new Error("File permission hints require trusted Gateway Task binding");
+    }
+    const keys=new Set<string>();
+    approvedFilePermissions=raw.approved_file_permissions.map(value=>{
+      const row=object(value,"approved_file_permissions entry");
+      if(Object.keys(row).sort().join(",")!=="operation,path" ||
+         !["read_file","update_file","create_file"].includes(String(row.operation))||
+         typeof row.path!=="string"||
+         !(raw.relevant_paths as string[]).includes(row.path)||
+         row.path.length===0 || row.path.length>240 ||
+         row.path.startsWith("/")||row.path.includes("\\")||
+         row.path.includes("//")||row.path.split("/").some(x=>
+           !x||x==="."||x==="..")){
+        throw new Error("Invalid private Task file permission hint");
+      }
+      const key=row.operation+"\0"+row.path;
+      if(keys.has(key))throw new Error("Duplicate Task file permission hint");
+      keys.add(key);
+      return {operation:row.operation,path:row.path} as ApprovedTaskFilePermission;
+    });
+  }
   return {
     subtask_id: string(raw.subtask_id, "subtask.subtask_id"),
     instruction: string(raw.instruction, "subtask.instruction"),
     branch:branch as string,
-    relevant_paths: raw.relevant_paths as string[]
+    relevant_paths: raw.relevant_paths as string[],
+    ...(approvedFilePermissions!==undefined
+       ? {approved_file_permissions:approvedFilePermissions}:{})
   };
 }
 

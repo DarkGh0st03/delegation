@@ -254,11 +254,14 @@ export class TrustedApprovedA2ADispatcher {
     // Only APPROVED permission resources reach the model/A2A context.
     // The candidate Task may describe more requested files than the
     // Engineer actually approved; never leak those into relevant_paths.
-    const approvedResources=this.#snapshot.approvedRows.filter(row=>
-      row.task_id===task.id&&row.agent_id===task.agent_id)
-      .map(row=>row.resource);
+    const approvedRows=this.#snapshot.approvedRows.filter(row=>
+      row.task_id===task.id&&row.agent_id===task.agent_id);
     const paths:string[]=[];
-    for(const resource of approvedResources){
+    const approvedFilePermissions:Array<{
+      operation:"read_file"|"update_file"|"create_file";path:string
+    }>=[];
+    for(const row of approvedRows){
+      const resource=row.resource;
       if(resource===repoRoot||resource===branchRoot)continue;
       if(resource.startsWith(prefix)){
         const encoded=resource.slice(prefix.length);
@@ -270,11 +273,20 @@ export class TrustedApprovedA2ADispatcher {
           throw Error("Malformed approved Task file path");
         }
         paths.push(path);
+        if(["read_file","update_file","create_file"].includes(row.operation)){
+          approvedFilePermissions.push({
+            operation:row.operation as "read_file"|"update_file"|"create_file",path
+          });
+        }else{
+          throw Error("Non-file permission is scoped to a file resource");
+        }
       }else{
         throw Error("Task resource is outside approved working branch");
       }
     }
-    if(paths.length>32)throw Error("Approved Task has too many relevant paths");
+    if(new Set(paths).size>32||approvedFilePermissions.length>32) {
+      throw Error("Approved Task has too many scoped file permissions");
+    }
     this.#busy=true;
     const dispatchId="dispatch_"+randomBytes(16).toString("base64url");
     // Once binding has been attempted, no retry may reuse the plan Task:
@@ -290,7 +302,10 @@ export class TrustedApprovedA2ADispatcher {
           subtask_id:task.id,
           instruction:task.description,
           branch:this.#snapshot.approvedBranch,
-          relevant_paths:[...new Set(paths)]
+          relevant_paths:[...new Set(paths)],
+          // Operation-specific, non-authoritative hints: reading a context
+          // file NEVER makes it writable in the ADK or MCP tool surface.
+          approved_file_permissions:approvedFilePermissions
         }
       });
       if(result.role!==role||!result.task_id||
