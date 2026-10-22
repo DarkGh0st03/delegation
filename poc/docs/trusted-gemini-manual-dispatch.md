@@ -214,3 +214,31 @@ authenticated private relay/tunnel or mTLS transport and its deployment
 must be designed and validated. Never open these loopback ports via a
 public reverse proxy, never forward an API key or Engineer signing key
 to a runner, and do not trigger the older paid workflow as a workaround.
+
+
+## Optional private mTLS runner transport (offline-tested, not deployed)
+
+The local Engineer host optionally accepts owner-configured mTLS material for
+its *OIDC admission listener only*. With mTLS configured, the intake uses
+HTTPS, requests a client certificate, rejects untrusted peers and binds to
+127.0.0.1. The password-protected Engineer approval UI remains separate
+and loopback HTTP. The OIDC JWT is still cryptographically verified against
+GitHub issuer keys and corroborated against an in-progress Actions run.
+The client certificate alone is NEVER the signed Engineer approval.
+
+trusted-github-oidc-submit.ts is a bounded runner-side helper. It obtains
+the short-lived GitHub job token from the official Actions issuer request
+endpoint with a host-pinned audience and submits the JWT and manual event
+in a single HTTPS request with client key/certificate and an independently
+supplied server trust CA. It refuses redirect-based token fetching, TLS
+verification bypass, response ambiguity and replay; it never returns or logs
+the JWT. The offline test uses disposable OpenSSL certs and a fake issuer
+to exercise a real HTTPS/mTLS socket and one-use HMAC receipt persistence.
+It cannot authorize models or issue DCs.
+
+No billable workflow is changed or dispatched. A GitHub-hosted runner cannot
+reach a local 127.0.0.1 socket by itself. The operator must still provision
+a separately authenticated private-network relay/overlay, protected
+certificates and an always-on live Planning/Engineer backend before any
+real manual run. NEVER configure this helper with public HTTP, add Gemini
+keys to GitHub Actions, or treat OIDC admission as permission to execute.

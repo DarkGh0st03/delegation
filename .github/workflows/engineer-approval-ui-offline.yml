@@ -8,6 +8,8 @@ on:
       - "poc/apps/orchestrator/src/engineer-approval-server.mjs"
       - "poc/apps/orchestrator/test/engineer-approval-server.test.mjs"
       - "poc/apps/orchestrator/src/trusted-engineer-host.mjs"
+      - "poc/packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts"
+      - "poc/packages/orchestrator-runtime/src/trusted-github-oidc-intake.ts"
       - "poc/apps/orchestrator/test/trusted-engineer-host.test.mjs"
       - "poc/workflow-ui/authenticated.html"
       - "poc/workflow-ui/authenticated.js"

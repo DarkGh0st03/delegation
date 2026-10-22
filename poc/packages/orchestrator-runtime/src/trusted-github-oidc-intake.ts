@@ -14,7 +14,8 @@
  * from the request body. A consumed OIDC token is one-shot even if a later
  * Engineer approval or model activation is rejected.
  */
-import {createServer,type Server} from "node:http";
+import {createServer as createHttpServer,type IncomingMessage,type ServerResponse} from "node:http";
+import {createServer as createHttpsServer} from "node:https";
 import {GithubOidcReplayFileStore}
   from "./trusted-github-oidc-replay-store.ts";
 import {TrustedGithubAdmissionReceiptStore}
@@ -68,6 +69,8 @@ export interface TrustedGithubOidcIntakeConfig{
   githubApiFetchFn?:typeof fetch;
   oidcJwksFetchFn?:typeof fetch;
   port?:number;
+  /** Optional mTLS on loopback; no network/public listener is added. */
+  tls?:Readonly<{key:string|Buffer;cert:string|Buffer;ca:string|Buffer}>;
 }
 export interface TrustedGithubOidcIntakeServer{
   readonly baseUrl:string;
@@ -87,8 +90,16 @@ export async function startTrustedGithubOidcIntakeServer(
      !Number.isSafeInteger(config.port??0)||
      (config.port??0)<0||(config.port??0)>65535)
     throw Error("Trusted Github OIDC intake host configuration missing");
+  const validPem=(value:unknown)=>
+    (typeof value==="string"||Buffer.isBuffer(value))&&
+    Buffer.byteLength(value as string|Buffer)>0&&
+    Buffer.byteLength(value as string|Buffer)<128*1024;
+  if(config.tls&&
+     (!validPem(config.tls.key)||!validPem(config.tls.cert)||
+      !validPem(config.tls.ca)))
+    throw Error("Trusted Github OIDC intake requires pinned mTLS key/cert/CA");
   let active=false;
-  const server:Server=createServer(async(req,res)=>{
+  const handler=async(req:IncomingMessage,res:ServerResponse)=>{
     const respond=(status:number,result:Record<string,unknown>)=>{
       if(res.writableEnded)return;
       res.writeHead(status,{
@@ -141,7 +152,15 @@ export async function startTrustedGithubOidcIntakeServer(
       // Uniform response prevents exposing identity, PII, JWT and host keys.
       respond(403,{status:"denied"});
     }finally{active=false;}
-  });
+  };
+  // mTLS is mandatory when TLS is configured; this listener never binds
+  // outside loopback. HTTP mode is retained only for existing local tests.
+  const server=config.tls
+    ?createHttpsServer({
+      ...config.tls,requestCert:true,rejectUnauthorized:true,
+      minVersion:"TLSv1.2"
+    },handler)
+    :createHttpServer(handler);
   server.requestTimeout=15000;
   server.headersTimeout=16000;
   try{
@@ -158,7 +177,7 @@ export async function startTrustedGithubOidcIntakeServer(
     server.close();
     throw Error("Unable to determine trusted loopback port");
   }
-  const baseUrl="http://127.0.0.1:"+address.port;
+  const baseUrl=(config.tls?"https":"http")+"://127.0.0.1:"+address.port;
   let closed=false;
   return Object.freeze({
     baseUrl,endpoint:baseUrl+PATH,

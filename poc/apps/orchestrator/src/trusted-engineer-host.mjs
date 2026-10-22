@@ -92,7 +92,7 @@ export async function startTrustedEngineerLocalHost(config){
       replayStore,admissionStore,
       githubApiFetchFn:oidc.githubApiFetchFn,
       oidcJwksFetchFn:oidc.oidcJwksFetchFn,
-      port:config.oidcPort??0
+      port:config.oidcPort??0,tls:oidc.tls
     });
   }catch(error){
     await shutdown(engineerServer);

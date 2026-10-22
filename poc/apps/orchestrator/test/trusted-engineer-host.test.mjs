@@ -189,3 +189,66 @@ test("host rejects insecure persistent directories and never starts unsafe ports
     ...f.config,oidc:{...f.config.oidc,hmacSecret:Buffer.from("bad")}
   }),/independently pinned/);
 });
+
+
+test("mTLS private submission authenticates runner transport plus OIDC but never Engineer approval",async t=>{
+  const f=await fixture(t);
+  // Disposable local-only certificate fixture. Deployment requires separate
+  // server/client keys, a protected CA and a private route, never this cert.
+  const {execFileSync}=await import("node:child_process");
+  const certPath=join(f.admissions,"mock-tls-cert.pem");
+  const keyPath=join(f.admissions,"mock-tls-key.pem");
+  execFileSync("openssl",[
+    "req","-x509","-newkey","rsa:2048","-nodes",
+    "-days","1","-subj","/CN=127.0.0.1",
+    "-addext","subjectAltName=IP:127.0.0.1",
+    "-addext","basicConstraints=critical,CA:TRUE",
+    "-addext","extendedKeyUsage=serverAuth,clientAuth",
+    "-keyout",keyPath,"-out",certPath
+  ],{stdio:"ignore"});
+  const cert=readFileSync(certPath,"utf8");
+  const keyPem=readFileSync(keyPath,"utf8");
+  const tls={ca:cert,cert,key:keyPem};
+  const host=await startTrustedEngineerLocalHost({
+    ...f.config,oidc:{...f.config.oidc,tls}
+  });
+  t.after(()=>host.close());
+  assert.match(host.oidcAdmissionEndpoint,
+    /^https:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/oidc-admission$/);
+  const {submitTrustedGithubOidcFromRunner}=await import(
+    "../../../packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts");
+  const submission={
+    tokenRequestUrl:"https://pipelines.actions.githubusercontent.com/oidc",
+    tokenRequestBearer:"offline-local-oidc-bearer",audience:aud,
+    intakeUrl:host.oidcAdmissionEndpoint,tls,env,event,
+    oidcFetchFn:(async(url,opts)=>{
+      assert.equal(url.searchParams.get("audience"),aud);
+      assert.equal(opts.headers.authorization,"Bearer offline-local-oidc-bearer");
+      return new Response(JSON.stringify({value:jwt()}),{status:200});
+    })
+  };
+  await assert.rejects(submitTrustedGithubOidcFromRunner({
+    ...submission,tokenRequestUrl:"https://attacker.example/token"
+  }),/admission denied/);
+  assert.equal((await readdir(f.replays)).length,0);
+  await assert.rejects(submitTrustedGithubOidcFromRunner({
+    ...submission,tls:{...tls,ca:"invalid-ca"}
+  }),/admission denied/);
+  assert.equal((await readdir(f.replays)).length,0);
+  const result=await submitTrustedGithubOidcFromRunner(submission);
+  assert.deepEqual(result,{
+    status:"authenticated_only_not_engineer_approved",
+    run_id:runId,source_sha:sha
+  });
+  assert.equal((await readdir(f.replays)).length,1);
+  // The second valid JWT is new, but the same workflow RUN is one-use.
+  await assert.rejects(submitTrustedGithubOidcFromRunner(submission),
+    /admission denied/);
+  assert.equal((await readdir(f.replays)).length,2);
+  assert.equal((await readdir(f.admissions)).length,3);
+  assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+  const record=await host.consumeAuthenticatedRun(runId);
+  assert.equal(record.session_id,f.plan.session_id);
+  assert.ok(!("approved_permission_ids" in record));
+  assert.ok(!("operational_root_id" in record));
+});
