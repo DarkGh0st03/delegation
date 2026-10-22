@@ -47,7 +47,8 @@ for(const [name,value] of Object.entries({
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const baseSha="a".repeat(40); // fixture SHA: NOT fetched from live Gitea
 const session="scoped-evm-session";
-const branch="feature/scoped-native-e2e";
+// The real OPA policy intentionally remains fixed to this legacy branch.
+const branch="feature/account-suspension";
 const file="apps/backend/src/users/user.service.ts";
 const uri="gitea://gitea.local/thesis/iam-console-poc/branches/"+
   encodeURIComponent(branch)+"/files/"+file;
@@ -60,7 +61,9 @@ const plan={
   tasks:[{
     id:"backend-task",agent_id:"backend",title:"Approved backend edit",
     description:"Update only the approved backend service",depends_on:[],
-    resources:[uri]
+    resources:[uri,
+      "gitea://gitea.local/thesis/iam-console-poc/branches/"+
+      encodeURIComponent(branch)+"/files/apps/backend/src/users/other.ts"]
   }],
   requested_permissions:[
     {id:"backend-approved",task_id:"backend-task",agent_id:"backend",
