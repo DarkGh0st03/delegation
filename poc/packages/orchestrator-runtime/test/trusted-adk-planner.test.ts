@@ -44,10 +44,12 @@ function draft(){
 }
 class Scripted extends BaseLlm {
   requests:LlmRequest[]=[];
-  constructor(readArgs:Record<string,unknown>, readonly output:unknown){
-    super({model:"offline-planner-script"});this.readArgs=readArgs;
-  }
   readonly readArgs:Record<string,unknown>;
+  readonly output:unknown;
+  constructor(readArgs:Record<string,unknown>,output:unknown){
+    super({model:"offline-planner-script"});
+    this.readArgs=readArgs;this.output=output;
+  }
   override async *generateContentAsync(r:LlmRequest):AsyncGenerator<LlmResponse,void>{
     this.requests.push(r);
     if(this.requests.length===1){
