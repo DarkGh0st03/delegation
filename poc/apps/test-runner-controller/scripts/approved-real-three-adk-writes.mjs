@@ -84,8 +84,18 @@ export async function applyApprovedRealAgentEdits({
       if(target.startsWith(adapterUrl+"/"))return fetch(url,request);
       const body=JSON.parse(String(request?.body));
       try{
-        if(target===gatewayUrl+"/v1/authorization/prepare")
+        if(target===gatewayUrl+"/v1/authorization/prepare"){
+          if(body.tool==="update_file"){
+            // Abort BEFORE prepare/execute/provider I/O when the scripted
+            // model has not observed its exact approved source and context.
+            const role=ROLES.find(x=>THREE_ROLE_FILES[x]===body.arguments?.path);
+            if(!role||!validatedReads.has(THREE_ROLE_FILES[role])||
+               !validatedReads.has(READ_ONLY_CONTEXT[role])){
+              throw Error("Functional edit requires both pinned reads before Gateway Prepare");
+            }
+          }
           return json(gateway.prepare(body),201);
+        }
         if(target===gatewayUrl+"/v1/authorization/execute"){
           const result=await gateway.execute(body);
           assert.equal(result.policy.allow,true);
