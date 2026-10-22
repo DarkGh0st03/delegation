@@ -47,13 +47,15 @@ Engineer-approved Gateway Test Task:
 3. Gateway Prepare binds the exact role, operation, branch and one-use
    challenge to the authorized Task. Attempts to substitute `main` or
    another feature branch are denied before executing a provider call.
-4. After the trusted CI publishes `pending`, Gateway Execute calls its
-   actual `GiteaExecutor`, which resolves the live feature HEAD from
+4. After the trusted CI publishes `pending`, the real A2A SDK sends
+   the Test Task to a loopback Agent. Its scripted handler invokes Gateway
+   Execute, which calls the actual `GiteaExecutor` to resolve the HEAD from
    disposable Gitea. Its `RunnerClient` connects to the real controlled
    Runner HTTP service, which invokes `IsolatedDockerRunnerExecutor`
    and independent researcher acceptance in isolated Docker.
-5. Gateway captures the genuine provider result, checked against the
-   request's SHA and the Engineer-approved Task. Its attestor validates
+5. The trusted A2A client validates the completed Agent artifact;
+   Gateway independently corroborates it with its own genuine provider
+   result, bound to the exact SHA and Engineer-approved Task. Its attestor validates
    the exact tested commit, fixed profile, project tests and researcher
    acceptance before marking the Task complete and closing the session.
    The existing trusted Security CI then verifies the same result and
