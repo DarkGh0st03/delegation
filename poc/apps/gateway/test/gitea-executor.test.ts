@@ -329,3 +329,84 @@ test("Gitea executor resolves the exact feature-branch SHA before invoking the C
     assert.equal(result.log_reference, "runner-log://fixed");
   }
 });
+
+
+test("real Gitea executor allows only the signed Gateway-approved feature branch",async()=>{
+ const desired="feature/engineer-approved-42";
+ const observed:string[]=[];
+ const client={
+   async createBranch(base:string,branch:string){
+     observed.push("branch:"+branch);return {
+       name:branch,base_branch:base,base_revision:"a".repeat(40),
+       commit_sha:"a".repeat(40)
+     };
+   },
+   async updateFile(branch:string,path:string,_content:string,_message:string){
+     observed.push("edit:"+branch+":"+path);return {
+       branch,path,revision:"b".repeat(40),commit_sha:"b".repeat(40),
+       blob_sha:"c".repeat(40),precondition_blob_sha:"d".repeat(40)
+     };
+   },
+   async getBranchMetadata(branch:string){
+     observed.push("sha:"+branch);
+     return {name:branch,commit_sha:"b".repeat(40)};
+   }
+ } as unknown as GiteaClient;
+ const calls:unknown[]=[];
+ const runner={
+   async run(request:unknown){
+     calls.push(request);
+     return {request_id:"req-fixed",branch:desired,tested_commit_sha:"b".repeat(40),
+       runner_profile:"poc-default",status:"pass",phases:[],
+       project_tests:{status:"pass",phases:[]},
+       researcher_acceptance:{phase:"researcher_acceptance",status:"pass"}};
+   }
+ } as unknown as RunnerClient;
+ const e=new GiteaExecutor(client,runner,"gitea://gitea.local/thesis/iam-console-poc");
+ function approved(request:NormalizedToolRequest){
+   return {...record(request),
+     approved_plan_digest:"a".repeat(64),approved_work_branch:desired
+   };
+ }
+ const create=await e.execute(approved({tool:"create_branch",arguments:{
+   base_branch:"main",branch:desired
+ }}));
+ assert.equal(create.provider,"gitea");
+ const edit=await e.execute(approved({tool:"update_file",arguments:{
+   branch:desired,path:"apps/backend/src/users/user.service.ts",content:"safe"
+ }}));
+ assert.equal(edit.provider,"gitea");
+ const tested=await e.execute(approved({tool:"run_tests",arguments:{
+   branch:desired,profile:"poc-default"
+ }}));
+ assert.equal(tested.provider,"runner");
+ assert.deepEqual(observed,[
+   "branch:"+desired,
+   "edit:"+desired+":apps/backend/src/users/user.service.ts",
+   "sha:"+desired
+ ]);
+ assert.equal(calls.length,1);
+ assert.equal((calls[0] as {commit_sha:string}).commit_sha,"b".repeat(40));
+ for(const invalid of ["main","feature/attacker"]){
+   await assert.rejects(e.execute(approved({tool:"create_branch",arguments:{
+     base_branch:"main",branch:invalid
+   }})),ProviderOperationUnavailableError);
+   await assert.rejects(e.execute(approved({tool:"update_file",arguments:{
+     branch:invalid,path:"apps/backend/src/users/user.service.ts",content:"no"
+   }})),ProviderOperationUnavailableError);
+   await assert.rejects(e.execute(approved({tool:"run_tests",arguments:{
+     branch:invalid,profile:"poc-default"
+   }})),ProviderOperationUnavailableError);
+ }
+ assert.equal(observed.length,3);
+});
+test("unbound legacy requests cannot choose another feature branch even with valid VP",async()=>{
+ let touched=false;
+ const e=new GiteaExecutor({async createBranch(){
+   touched=true;throw Error("unreachable");
+ }} as unknown as GiteaClient);
+ await assert.rejects(e.execute(record({tool:"create_branch",
+   arguments:{base_branch:"main",branch:"feature/engineer-approved-42"}
+ })),ProviderOperationUnavailableError);
+ assert.equal(touched,false);
+});
