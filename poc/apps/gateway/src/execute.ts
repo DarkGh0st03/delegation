@@ -403,6 +403,7 @@ export async function executeAuthorization(
     chain_depth: verified.hierarchy_depth,
     disclosed_permission_count: verified.permissions.length,
     ...providerIdentifiers,
+    ...(record.pinned_revision ? {pinned_revision:record.pinned_revision} : {}),
     ...(record.approved_plan_digest ? {approved_plan_digest:record.approved_plan_digest} : {}),
     provider: execution.provider
   });

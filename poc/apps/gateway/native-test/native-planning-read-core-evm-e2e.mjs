@@ -221,11 +221,34 @@ try{
     "signed_vp","delegation_evidence","credential_status"]){
     assert.ok(!visible.includes(secret),"Planner leaked private authority");
   }
+  // Obtain a second bounded challenge and JWT BEFORE revocation, so the
+  // post-revocation failure exercises the native Rust verifier directly,
+  // not merely the Adapter refusing to issue another JWT.
+  const waiting=runtime.prepare({task_id:session,agent_role:"orchestrator",
+    tool:"read_file",arguments:{branch:"main",path:file}});
+  const jwtResponse=await fetch(adapterUrl+"/v1/presentations",{
+    method:"POST",
+    headers:{authorization:"Bearer "+token,"content-type":"application/json"},
+    body:JSON.stringify({
+      credential_id:rootId,
+      disclosed_permissions:[waiting.required_permission],
+      audience:waiting.audience,challenge:waiting.challenge
+    })
+  });
+  assert.equal(jwtResponse.status,200);
+  const signedBeforeRevoke=(await jwtResponse.json()).signed_vp;
+  assert.ok(typeof signedBeforeRevoke==="string"&&signedBeforeRevoke.length>100);
   await authorityClient.revokeRoot(rootId);
   revoked=true;
   const before=log.giteaReads;
-  // Coordinator is still in Planning; the native verifier must independently
-  // reject this EVM-revoked credential even if the trusted port is retained.
+  await assert.rejects(
+    runtime.execute({request_id:waiting.request_id,
+      signed_vp:signedBeforeRevoke}),
+    (e)=>e?.code==="verification_rejected"
+  );
+  assert.equal(log.giteaReads,before);
+  // Coordinator is still in Planning; retaining its read port must not
+  // let any caller bypass status revocation or obtain new effective access.
   await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
   assert.equal(log.giteaReads,before);
   revisions.end(session);

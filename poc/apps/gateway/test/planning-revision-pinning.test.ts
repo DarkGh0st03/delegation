@@ -116,6 +116,8 @@ test("one trusted Gitea main SHA is reused for repository, directory and file af
   assert.equal(f.providerCalls,4);
   assert.ok(f.audit.events.filter(e=>e.event==="authorization_prepared")
     .every(e=>e.pinned_revision===A));
+  assert.ok(f.audit.events.filter(e=>e.event==="authorization_executed")
+    .every(e=>e.pinned_revision===A));
 });
 
 test("without registered trusted session, main Planning reads fail before preparing challenges",()=>{
