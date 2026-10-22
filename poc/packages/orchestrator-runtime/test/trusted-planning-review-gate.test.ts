@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {generateKeyPairSync} from "node:crypto";
-import {mkdtemp,rm,writeFile} from "node:fs/promises";
+import {mkdtemp,rm,writeFile,chmod} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {makeApproval,planDigest}
@@ -697,7 +697,10 @@ test("checkpoint file store verifies pinned backend signature and owner-only per
     await writeFile(file,JSON.stringify(modified),{mode:0o600});
     // Scope integrity is independently checked even before the signature.
     await assert.rejects(store.load(),/Signed Planning checkpoint:/);
-    await writeFile(file,JSON.stringify(ticket),{mode:0o644});
+    // writeFile({mode}) does NOT reset permissions on an existing inode.
+    // Deliberately chmod the fixture to prove the secure store rejects it.
+    await writeFile(file,JSON.stringify(ticket));
+    await chmod(file,0o644);
     await assert.rejects(store.load(),/owner-only/);
   }finally{await rm(directory,{recursive:true,force:true});}
 });
