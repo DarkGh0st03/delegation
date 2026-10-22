@@ -20,6 +20,8 @@ import {TrustedPlanningReviewGate}
 import {signTrustedPlanningCheckpoint,verifyTrustedPlanningCheckpoint,
   stageVerifiedPlanningCheckpoint}
   from "../src/trusted-planning-checkpoint.ts";
+import {SignedPlanningCheckpointFileStore}
+  from "../src/trusted-planning-checkpoint-store.ts";
 import {TrustedEngineerAuthoritySession}
   from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
@@ -654,4 +656,47 @@ test("portable manual handoff verifies separate Planning and Engineer signatures
     await f.coordinator.closeExecution();
     assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
   }finally{await f.close();}
+});
+
+
+test("checkpoint file store verifies pinned backend signature and owner-only persistence",async()=>{
+  const directory=await mkdtemp(join(tmpdir(),"trusted-planning-checkpoint-"));
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const ticket=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:{...compilePlanningProposal(sketch(),CFG),verified_source_reads:1},
+      keyId:"trusted-backend-1",
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    const store=new SignedPlanningCheckpointFileStore({
+      directory,
+      trust:{
+        trustedKeys:{"trusted-backend-1":{
+          public_key_pem:backend.publicKey.export({
+            format:"pem",type:"spki"
+          }).toString()
+        }},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,
+        expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const file=join(directory,SNAPSHOT.session_id+".json");
+    await writeFile(file,JSON.stringify(ticket),{mode:0o600});
+    const verified=await store.load();
+    assert.equal(verified.proposal.digest,ticket.proposal.digest);
+    const modified=structuredClone(ticket);
+    modified.proposal.plan.tasks[1].description="injected changed source";
+    await writeFile(file,JSON.stringify(modified),{mode:0o600});
+    await assert.rejects(store.load(),/invalid Planning backend Ed25519/);
+    await writeFile(file,JSON.stringify(ticket),{mode:0o644});
+    await assert.rejects(store.load(),/owner-only/);
+  }finally{await rm(directory,{recursive:true,force:true});}
 });
