@@ -53,6 +53,8 @@ jobs:
           npm --prefix poc run agent-runtime:test
           npm --prefix poc run test -w @thesis/a2a-agent
           npm --prefix poc/mcp-shared test
+      - name: Pinned offline functional source changes, source drift and lifecycle checks
+        run: node --test poc/apps/test-runner-controller/scripts/approved-functional-reference.test.mjs
       - name: Runner, security and reproducibility contracts
         run: |
           npm --prefix poc run test -w @thesis/test-runner-controller
