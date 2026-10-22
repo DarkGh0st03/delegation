@@ -51,9 +51,21 @@ function harness(options:{
   badDid?:boolean;badDigest?:boolean;denyBinding?:boolean;
   failResult?:boolean;removeApproval?:boolean;workBranch?:string;
   invalidArtifactBranch?:boolean;
+  unapprovedCandidate?:boolean;
 }={}){
   const p=plan(options.workBranch);
-  const ids=p.requested_permissions.map(x=>x.id);
+  if(options.unapprovedCandidate){
+    const extra=uri+"/branches/"+
+      encodeURIComponent(options.workBranch??branch)+
+      "/files/apps/backend/never-approved.ts";
+    p.tasks[1]!.resources.push(extra);
+    p.requested_permissions.push({
+      id:"backend-candidate",task_id:"backend-task",agent_id:"backend",
+      resource:extra,operation:"update_file",reason:"Proposed but not approved"
+    });
+  }
+  const ids=p.requested_permissions.map(x=>x.id)
+    .filter(id=>id!=="backend-candidate");
   const approval=makeApproval(p,{allowedOperations:new Set(RUST_OPERATIONS),
     decision_id:"decision-dag",approved_by:did,approved_at:"2026-10-21T17:00:00Z",
     approved_permission_ids:options.removeApproval?ids.filter(x=>x!=="backend-perm"):ids
@@ -73,6 +85,9 @@ function harness(options:{
   const runner={
     async issueAndRun(input:any){
       log.push("run:"+input.subtask.subtask_id+":"+input.trusted_gateway_task_id);
+      if(options.unapprovedCandidate){
+        log.push("paths:"+input.subtask.relevant_paths.join(","));
+      }
       return {
         role:options.failResult?"test":input.role,
         task_id:"sdk-remote-"+input.subtask.subtask_id,
@@ -268,4 +283,22 @@ test("executeApprovedDag never reaches Frontend or Test after failed Backend res
  assert.equal(h.coordinator.phase,"closed");
  assert.ok(!h.log.some(x=>x.includes("bind:frontend-task:")||
     x.includes("bind:tests:")));
+});
+
+test("full DAG preflight rejects partial permission approval before ANY provider effects",async()=>{
+ const h=harness({removeApproval:true});
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await assert.rejects(d.executeApprovedDag({
+   invokeOrchestratorTask:async()=>{throw Error("MUST NOT RUN");}
+ }),/without Engineer-granted permissions/);
+ assert.deepEqual(h.log,[]);
+ assert.equal(h.coordinator.phase,"execution");
+});
+test("A2A relevant_paths excludes requested-but-not-approved source files",async()=>{
+ const h=harness({unapprovedCandidate:true});
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await d.runOrchestratorTask("branch",async()=>{});
+ await d.dispatch("backend-task");
+ assert.ok(h.log.includes("paths:apps/backend/user.ts"));
+ assert.ok(!JSON.stringify(h.log).includes("never-approved.ts"));
 });
