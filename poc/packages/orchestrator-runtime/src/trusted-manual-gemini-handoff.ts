@@ -12,6 +12,10 @@
  * ApprovedA2ADispatcher and Gateway/Core Rust/OPA.
  */
 import {isDeepStrictEqual} from "node:util";
+import {assertApprovedPlanScope}
+  from "../../plan-contracts/src/plan.mjs";
+import {RUST_OPERATIONS}
+  from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 import {TrustedPlanningReviewGate}
   from "./trusted-planning-review-gate.ts";
@@ -102,6 +106,30 @@ export async function startPersistedReviewedGeminiHandoff(input:{
     activated=true;
     if(operational.plan_digest!==reviewed.readiness.plan_digest)
       fail("new operational root does not match signed Engineer grant");
+    // Do not merely compare plan digests: two distinct Engineer decisions
+    // can approve DIFFERENT subsets of the same signed Plan. Compare the
+    // exact independently issued operational root against the selection
+    // authenticated in the review store, in signed approval-ID order.
+    const signed=await input.reviewGate.loadAuthenticatedApproval(
+      root.session_id);
+    const approvedRows=assertApprovedPlanScope(
+      signed.plan,signed.approval,{
+        allowedOperations:new Set<string>(RUST_OPERATIONS),
+        expectedEngineerDid:reviewed.readiness.authenticated_engineer_did
+      }
+    ) as Array<{operation:string;resource:string}>;
+    const expectedPermissions:Array<{operation:string;resource:string}>=[];
+    const seen=new Set<string>();
+    for(const row of approvedRows){
+      const permission={resource:row.resource,operation:row.operation};
+      const key=JSON.stringify(permission);
+      if(!seen.has(key))expectedPermissions.push(permission);
+      seen.add(key);
+    }
+    if(!isDeepStrictEqual(
+      input.coordinator.trustedOperationalAuthority().permissions,
+      expectedPermissions))
+      fail("operational root does not match exact signed permission subset");
     const servers=await startReviewedGeminiA2AServers({
       coordinator:input.coordinator,reviewed,ports:input.ports
     });
