@@ -251,7 +251,7 @@ export class PrivateMcpTaskRegistry {
             : parseRunTestsArgs(payload.arguments);
     } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
     if(payload.tool!=="run_tests"&&task.allowedPaths!==undefined&&
-       !task.allowedPaths.has(args.path)){
+       !("path" in args && task.allowedPaths.has(args.path))){
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     if (payload.tool === "update_file" &&
