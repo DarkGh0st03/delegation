@@ -365,7 +365,7 @@ try{
     // permission without Engineer consent must never appear in the new root.
     const selected=positiveDag
       ?["permission-1","permission-2","permission-3","permission-4","permission-5"]
-      :["permission-1","permission-3"];
+      :["permission-1","permission-3","permission-5"];
     const now=new Date(),approvedAt=now.toISOString();
     const approval=makeApproval(packet.plan,{
       allowedOperations:new Set(RUST_OPERATIONS),
@@ -403,7 +403,7 @@ try{
     assert.equal(operational.credential_id,opId);
     assert.deepEqual(operational.permissions.map(p=>p.operation),
       positiveDag?["create_branch","read_file","update_file",
-        "read_file","update_file"]:["create_branch","update_file"]);
+        "read_file","update_file"]:["create_branch","update_file","update_file"]);
     if(positiveDag){
       globalThis.__nativeDagPositive=await runNativePositiveApprovedDag({
         coordinator,reviewGate,approvedPlans,
