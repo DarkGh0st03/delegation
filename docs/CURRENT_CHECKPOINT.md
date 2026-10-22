@@ -221,3 +221,27 @@ Evidence: [Trusted Prebound A2A Dispatch (Offline)
 succeeded with the signed three-role ADK/A2A tests and existing runtime
 regressions. The new DAG logic was not merged into `main`; no paid
 Gemini calls, PR merge or production user identity assertion occurred.
+
+
+### Additional signed DAG security preflight (22 October 2026)
+
+The `executeApprovedDag` driver now **preflights the complete Task
+permission coverage before performing even the first approved
+create_branch**. A partially approved graph cannot create branches
+or files before it discovers a later unapproved Task. This does not
+turn an unapproved permission into a granted capability.
+
+The dispatcher also derives `A2A subtask.relevant_paths` exclusively
+from the **Engineer-approved permission rows**, not from the entire
+candidate Task resources list. An unapproved proposed file path is
+neither forwarded as a path hint nor authorized by the child DC.
+The dedicated negative regressions cover both cases and all-three-
+agent ADK execution:
+[Trusted Prebound A2A Dispatch #39745367445]
+(https://github.com/DarkGh0st03/delegation/actions/runs/39745367445)
+**success**.
+
+These are additional orchestration/context minimization guarantees.
+They are independent of the underlying Rust Core VP check, OPA
+and trusted provider attestation, which must remain active in the
+eventual native multi-agent integration.
