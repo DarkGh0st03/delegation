@@ -21,7 +21,8 @@ import {TrustedEngineerAuthoritySession}
   from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
   from "../src/trusted-execution-coordinator.ts";
-import {verifyManualGeminiExecutionReadiness,createReviewedGeminiAdkModel}
+import {verifyManualGeminiExecutionReadiness,createReviewedGeminiAdkModel,
+  createReviewedGeminiA2ARoleRuntime}
   from "../src/trusted-gemini-execution-readiness.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
@@ -356,5 +357,64 @@ test("manual Gemini factory constructs ADK model only after signing; no inferenc
     await assert.rejects(createReviewedGeminiAdkModel({
       ...options,githubRunAttempt:"2"
     }),/first GitHub Actions attempt/);
+  }finally{await f.close();}
+});
+
+
+test("manual signed Gemini gate transfers identical bounded ADK settings to all three roles",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    const transports={
+      backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend-secret"},
+      frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend-secret"},
+      test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test-secret"}
+    };
+    const options={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"not-a-real-api-key",modelName:"gemini-3.8-flash",
+      maxModelTurns:12,maxOutputTokens:16000,
+      maxModelCallMs:120000,
+      trustedPhase:()=>f.coordinator.phase,
+      reviewGate:f.gate,transports
+    };
+    await assert.rejects(createReviewedGeminiA2ARoleRuntime(options));
+    assert.deepEqual(f.revoked,[]);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const runtime=await createReviewedGeminiA2ARoleRuntime(options);
+    assert.equal(runtime.readiness.plan_digest,proposal.digest);
+    assert.ok(Object.isFrozen(runtime.role_configs));
+    const roles=["backend","frontend","test"] as const;
+    assert.deepEqual(Object.keys(runtime.role_configs),[...roles]);
+    for(const role of roles){
+      const config=runtime.role_configs[role];
+      assert.equal(config.model.model,"gemini-3.8-flash");
+      assert.equal(config.maxModelTurns,12);
+      assert.equal(config.maxModelCallMs,120000);
+      assert.deepEqual(config.generateContentConfig,{maxOutputTokens:16000});
+      assert.equal(config.scopeModelPaths,true);
+      assert.equal(config.adapterToken,transports[role].adapterToken);
+    }
+    assert.notEqual(runtime.role_configs.backend.model,runtime.role_configs.test.model);
+    for(const patch of [
+      {maxModelCallMs:361000},
+      {maxModelCallMs:0},
+      {transports:{...transports,frontend:{...transports.frontend,
+        adapterToken:transports.backend.adapterToken}}},
+      {transports:{...transports,test:{...transports.test,
+        gatewayBaseUrl:"javascript:invalid"}}}
+    ]){
+      await assert.rejects(createReviewedGeminiA2ARoleRuntime({
+        ...options,...patch
+      }),/Trusted paid Gemini readiness/);
+    }
+    assert.equal(f.issued.length,1); // construction is not operational root
+    assert.deepEqual(f.revoked,[]);
   }finally{await f.close();}
 });

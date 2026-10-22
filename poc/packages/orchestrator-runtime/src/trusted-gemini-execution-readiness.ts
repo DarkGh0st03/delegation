@@ -14,6 +14,8 @@ import {planDigest} from "../../plan-contracts/src/plan.mjs";
 import {TrustedPlanningReviewGate} from "./trusted-planning-review-gate.ts";
 import {createGeminiAdkModel}
   from "../../agent-runtime/src/gemini-adk-model.ts";
+import type {AdkA2ATaskHandlerConfig}
+  from "../../agent-runtime/src/adk-a2a-handler.ts";
 
 const CONFIRMATION="I AUTHORIZE GEMINI API CHARGES";
 const MODEL=/^gemini-[a-z0-9]+(?:[.-][a-z0-9]+)*$/u;
@@ -131,4 +133,81 @@ export async function createReviewedGeminiAdkModel(
     model:readiness.model_name
   });
   return {readiness,model};
+}
+
+
+export type ReviewedGeminiAgentRole="backend"|"frontend"|"test";
+export interface TrustedGeminiAgentTransport{
+  gatewayBaseUrl:string;
+  adapterBaseUrl:string;
+  /** Private role-specific service token. Never forwarded to the LLM. */
+  adapterToken:string;
+}
+export interface ReviewedGeminiA2ARoleRuntime{
+  readonly readiness:Readonly<ManualGeminiExecutionReadiness>;
+  /** Pass ONLY to the trusted A2A server, not the model/session context. */
+  readonly role_configs:Readonly<Record<
+    ReviewedGeminiAgentRole,AdkA2ATaskHandlerConfig
+  >>;
+}
+const ROLES=["backend","frontend","test"] as const;
+
+/**
+ * Convert verified manual consent plus authentic Engineer approval into
+ * explicitly bounded ADK Agent server configurations. The limits come from
+ * the SAME preflight, not loose caller defaults. This never invokes a model,
+ * provisions a DC, starts A2A or approves a plan.
+ *
+ * Caller responsibilities: pass only trusted host transport settings;
+ * connect the resulting configs to the SAME signed Approved A2A Dispatcher;
+ * call Coordinator.beginExecution with the exact approved receipt; preserve
+ * Gateway/Core Rust/OPA enforcement for every requested operation.
+ */
+export async function createReviewedGeminiA2ARoleRuntime(input:
+  ManualGeminiExecutionReadinessInput&{
+    transports:Readonly<Record<ReviewedGeminiAgentRole,
+      TrustedGeminiAgentTransport>>;
+    maxModelCallMs:number;
+  }
+):Promise<ReviewedGeminiA2ARoleRuntime>{
+  const {readiness,model:backendModel}=
+    await createReviewedGeminiAdkModel(input);
+  if(!Number.isSafeInteger(input.maxModelCallMs)||
+     input.maxModelCallMs<1000||input.maxModelCallMs>360000)
+    reject("invalid bounded per-inference timeout");
+  const configs={} as Record<ReviewedGeminiAgentRole,
+    AdkA2ATaskHandlerConfig>;
+  const seenTokens=new Set<string>();
+  for(const role of ROLES){
+    const transport=input.transports?.[role];
+    if(!transport||typeof transport.gatewayBaseUrl!=="string"||
+       typeof transport.adapterBaseUrl!=="string"||
+       typeof transport.adapterToken!=="string"||
+       !/^https?:\/\/[^/\s]+(?:\/[^?\s#]*)?$/u.test(transport.gatewayBaseUrl)||
+       !/^https?:\/\/[^/\s]+(?:\/[^?\s#]*)?$/u.test(transport.adapterBaseUrl)||
+       !transport.adapterToken.trim()||seenTokens.has(transport.adapterToken))
+      reject("trusted per-role transport or unique service token is invalid");
+    seenTokens.add(transport.adapterToken);
+    configs[role]=Object.freeze({
+      model:role==="backend"?backendModel:createGeminiAdkModel({
+        apiKey:input.geminiApiKey!,
+        model:readiness.model_name
+      }),
+      gatewayBaseUrl:transport.gatewayBaseUrl,
+      adapterBaseUrl:transport.adapterBaseUrl,
+      adapterToken:transport.adapterToken,
+      maxModelTurns:readiness.max_model_turns,
+      maxModelCallMs:input.maxModelCallMs,
+      generateContentConfig:Object.freeze({
+        maxOutputTokens:readiness.max_output_tokens
+      }),
+      // File lists and operations are derived afresh from signed A2A task
+      // context by the handler, never from an LLM's role suggestion.
+      scopeModelPaths:true
+    });
+  }
+  return Object.freeze({
+    readiness,
+    role_configs:Object.freeze(configs)
+  });
 }
