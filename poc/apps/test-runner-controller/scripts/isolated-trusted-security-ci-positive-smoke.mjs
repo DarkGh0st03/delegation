@@ -438,6 +438,8 @@ async function main(){
     assert.equal(observedRunnerResult?.status,"pass");
     assert.equal(approvedSession.completed,true,
       "Gateway must attest the actual Runner result before CI marks success");
+    assert.match(approvedSession.observedA2ATaskId??"",/^[A-Za-z0-9_-]{8,}$/u,
+      "The positive Test Task must have an actual A2A SDK Task ID");
     assert.equal(observedRunnerResult?.tested_commit_sha,fixture.featureSha);
     assert.equal(observedRunnerResult?.project_tests?.status,"pass");
     assert.equal(observedRunnerResult?.researcher_acceptance?.status,"pass");
@@ -481,6 +483,7 @@ async function main(){
       real_docker_runner:true,
       engineer_approval_ed25519:true,
       gateway_signed_test_task_completed:true,
+      real_a2a_sdk_task_completed:true,
       runner_via_gateway_http:true,
       exact_provider_sha_correlated:true,
       approval_created:true,pr_created:false,merge_calls:0,
