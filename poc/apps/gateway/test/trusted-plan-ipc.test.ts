@@ -15,6 +15,8 @@ import {TrustedEngineerAuthoritySession} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from
   "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
+import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
+  from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from
@@ -469,4 +471,51 @@ test("legacy private plan-control cannot impersonate a Gateway lease policy",asy
     /Gateway-side operational lease/);
   await assert.rejects(e.client.renewLease(e.p.session_id,
     planDigest(e.p)),/no operational lease/);
+});
+
+
+test("new Engineer process reconciles orphaned root by terminal Gateway IPC tombstone and confirmed Rust revocation",async t=>{
+  const e=await setup(t);
+  const dir=await mkdtemp(join(tmpdir(),"operational-recovery-cross-process-"));
+  t.after(()=>rm(dir,{recursive:true,force:true}));
+  const credentialId="urn:ipc:possibly-issued-orphan";
+  const recorded=new TrustedOperationalRecoveryStore(dir);
+  // This operation occurs BEFORE any external issuance call. Imagine a
+  // SIGKILL immediately afterward: the original Coordinator is gone.
+  await recorded.recordIntent({
+    sessionId:e.p.session_id,baseRevision:SHA,credentialId
+  });
+  const fresh=new TrustedOperationalRecoveryStore(dir);
+  await assert.rejects(fresh.assertClean(),/orphaned root intent/);
+  let revokeAttempts=0;
+  const intermittent={
+    async revokeRoot(id:string){
+      assert.equal(id,credentialId);
+      revokeAttempts++;
+      if(revokeAttempts===1)throw Error("Adapter inaccessible");
+      await e.credentials.revokeRoot(id);
+    }
+  };
+  await assert.rejects(reconcileOrphanedOperationalRoots({
+    store:fresh,gateway:e.client,credentials:intermittent
+  }),/manual reconciliation required/);
+  await assert.rejects(fresh.assertClean(),/orphaned root intent/);
+  // The Gateway has a durable-for-process tombstone that prevents a delayed
+  // activation from the old trusted host before Rust revocation succeeds.
+  await assert.rejects(e.client.activate(e.p.session_id,SHA),/denied/);
+  assert.equal(await reconcileOrphanedOperationalRoots({
+    store:fresh,gateway:e.client,credentials:intermittent
+  }),1);
+  assert.equal(revokeAttempts,2);
+  assert.equal(e.trace.at(-1),"revoke:"+credentialId);
+  await fresh.assertClean();
+  assert.equal(await reconcileOrphanedOperationalRoots({
+    store:fresh,gateway:e.client,credentials:intermittent
+  }),0);
+  await assert.rejects(fresh.recordIntent({
+    sessionId:e.p.session_id,baseRevision:SHA,credentialId
+  }),/reconciled session cannot be reused/);
+  assert.equal((await post(e.publicUrl,"/v1/private-plan-control",{
+    action:"retire",session_id:e.p.session_id
+  })).status,404);
 });
