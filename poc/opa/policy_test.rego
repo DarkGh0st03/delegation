@@ -306,3 +306,60 @@ test_deny_orchestrator_write_on_main_even_with_valid_delegation if {
 	planning := object.union(base, {"agent_role": "orchestrator"})
 	not allow with input as planning
 }
+
+
+approved_feature_branch := "feature/engineer-approved-42"
+approved_file := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fengineer-approved-42/files/apps/backend/src/users/user.service.ts"
+approved_test_uri := "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fengineer-approved-42"
+trusted_approval := {"approved_plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "approved_work_branch": approved_feature_branch}
+
+test_allow_signed_dynamic_branch_file_update if {
+  base := make_input("update_file",approved_file,
+    {"branch":approved_feature_branch,"path":"apps/backend/src/users/user.service.ts"})
+  allow with input as object.union(base,trusted_approval)
+}
+test_allow_signed_dynamic_branch_creation if {
+  base := make_input("create_branch",repo_uri,
+    {"base_branch":"main","branch":approved_feature_branch})
+  allow with input as object.union(base,trusted_approval)
+}
+test_allow_signed_dynamic_branch_runner if {
+  base := make_input("run_tests",approved_test_uri,
+    {"branch":approved_feature_branch,"profile":"poc-default"})
+  allow with input as object.union(base,trusted_approval)
+}
+test_deny_unapproved_dynamic_branch_without_gateway_binding if {
+  base := make_input("update_file",approved_file,
+    {"branch":approved_feature_branch,"path":"apps/backend/src/users/user.service.ts"})
+  not allow with input as base
+}
+test_deny_spoofed_dynamic_branch_digest if {
+  base := make_input("update_file",approved_file,
+    {"branch":approved_feature_branch,"path":"apps/backend/src/users/user.service.ts"})
+  bad := object.union(base,{
+    "approved_plan_digest":"forged","approved_work_branch":approved_feature_branch
+  })
+  not allow with input as bad
+}
+test_deny_approved_branch_mismatch_on_main_and_other_feature if {
+  base := make_input("create_branch",repo_uri,
+    {"base_branch":"main","branch":"feature/attacker"})
+  not allow with input as object.union(base,trusted_approval)
+  from_main := make_input("update_file",main_file,{
+    "branch":"main","path":"apps/backend/src/users/user.service.ts"
+  })
+  not allow with input as object.union(from_main,trusted_approval)
+}
+test_deny_approved_branch_traversal_and_invalid_profile if {
+  base := make_input("create_branch",repo_uri,
+    {"base_branch":"main","branch":"feature/a..b"})
+  bad := object.union(base,{
+    "approved_plan_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "approved_work_branch":"feature/a..b"
+  })
+  not allow with input as bad
+  tests := make_input("run_tests",approved_test_uri,
+    {"branch":approved_feature_branch,"profile":"uncontrolled-shell"})
+  not allow with input as object.union(tests,trusted_approval)
+}
