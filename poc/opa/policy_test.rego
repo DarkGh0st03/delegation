@@ -212,7 +212,7 @@ test_decision_exposes_policy_version if {
 		{"branch": "feature/account-suspension", "path": "apps/backend/src/users/user.service.ts"},
 	)
 	result.allow == true
-	result.policy_version == "phase6-ro-v1"
+	result.policy_version == "phase6-approved-branch-v2"
 }
 
 # Planning has read-only access to main only when the Orchestrator presents
