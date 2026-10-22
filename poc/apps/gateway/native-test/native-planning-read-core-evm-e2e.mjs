@@ -126,7 +126,12 @@ const planSketch={
       permissions:[
         {operation:"read_file",path:frontendFile,reason:"Inspect existing page"},
         {operation:"update_file",path:frontendFile,reason:"Apply approved page edit"}
-      ]}
+      ]},
+    ...(positiveDag?[{id:"test",agent_id:"test",title:"Run pinned Docker acceptance",
+      description:"Verify final Frontend SHA through the real controlled Runner",
+      depends_on:["frontend"],
+      permissions:[{operation:"run_tests",path:null,
+        reason:"Execute tests and independent acceptance on approved branch"}]}]:[])
   ],assumptions:[],uncertainties:[]
 };
 class ScriptedReadPlanner extends BaseLlm{
@@ -313,7 +318,7 @@ try{
   assert.equal(proposed.verified_source_reads,1);
   assert.equal(proposed.plan.base_revision,baseSha);
   assert.equal(proposed.plan.repository.repository,"iam-console-poc");
-  assert.equal(proposed.plan.requested_permissions.length,5);
+  assert.equal(proposed.plan.requested_permissions.length,positiveDag?6:5);
   assert.equal(log.adapterPresentations,1);
   assert.equal(log.prepares,1);
   assert.equal(log.executions,1);
@@ -364,7 +369,7 @@ try{
     // create_branch and update_file, but NOT read_file. A model-proposed
     // permission without Engineer consent must never appear in the new root.
     const selected=positiveDag
-      ?["permission-1","permission-2","permission-3","permission-4","permission-5"]
+      ?["permission-1","permission-2","permission-3","permission-4","permission-5","permission-6"]
       :["permission-1","permission-3","permission-5"];
     const now=new Date(),approvedAt=now.toISOString();
     const approval=makeApproval(packet.plan,{
@@ -403,7 +408,8 @@ try{
     assert.equal(operational.credential_id,opId);
     assert.deepEqual(operational.permissions.map(p=>p.operation),
       positiveDag?["create_branch","read_file","update_file",
-        "read_file","update_file"]:["create_branch","update_file","update_file"]);
+        "read_file","update_file","run_tests"]:
+        ["create_branch","update_file","update_file"]);
     if(positiveDag){
       globalThis.__nativeDagPositive=await runNativePositiveApprovedDag({
         coordinator,reviewGate,approvedPlans,
@@ -414,11 +420,15 @@ try{
         writerToken,opaUrl,engineerDid,orchestratorToken:token,
         agentTokens:{
           backend:process.env.ADAPTER_CALLER_BACKEND,
-          frontend:process.env.ADAPTER_CALLER_FRONTEND
+          frontend:process.env.ADAPTER_CALLER_FRONTEND,
+          test:process.env.ADAPTER_CALLER_TEST
         }
       });
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
       assert.equal(globalThis.__nativeDagPositive.source_writes,2);
+      assert.equal(globalThis.__nativeDagPositive.test_runner_runs,1);
+      assert.equal(globalThis.__nativeDagPositive.tested_commit_sha,
+        globalThis.__nativeDagPositive.approved_branch_sha);
     }else{
     // Load the ACTUAL production-style approved DAG dispatcher from the
     // same signed review gate, operational root, and immutable base SHA.
@@ -554,8 +564,8 @@ try{
     operational_root_closed:signedHandoff,
     dispatcher_bound_signed_dag:signedHandoff,
     dispatcher_stopped_before_a2a_on_provider_denial:signedHandoff&&!positiveDag,
-    a2a_tasks_dispatched:positiveDag?2:0,
-    child_dc_issued:positiveDag?2:0,
+    a2a_tasks_dispatched:positiveDag?3:0,
+    child_dc_issued:positiveDag?3:0,
     real_provider_mutations:positiveDag?2:0,
     provider_writes:positiveDag?2:0,
     ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{})

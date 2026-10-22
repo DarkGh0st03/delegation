@@ -442,7 +442,8 @@ async function main(){
         const positiveOutput=execFileSync(process.execPath,[
           "--experimental-strip-types",planningScript
         ],{
-          cwd:process.cwd(),encoding:"utf8",timeout:180000,
+          cwd:process.cwd(),encoding:"utf8",timeout:980000,
+          maxBuffer:2*1024*1024,
           env:{...process.env,
             OPA_URL:opaBaseUrl,
             PLANNING_DISPOSABLE_GITEA_URL:base,
@@ -459,9 +460,14 @@ async function main(){
         assert.equal(positive?.status,"pass");
         assert.equal(positive?.positive_dag?.signed_dag_completed,true);
         assert.equal(positive?.positive_dag?.real_a2a_sdk,true);
-        assert.equal(positive?.positive_dag?.native_rust_child_credentials,2);
+        assert.equal(positive?.positive_dag?.native_rust_child_credentials,3);
         assert.deepEqual(positive?.positive_dag?.completed_task_ids,
-          ["branch","backend","frontend"]);
+          ["branch","backend","frontend","test"]);
+        assert.equal(positive?.positive_dag?.test_runner_runs,1);
+        assert.equal(positive?.positive_dag?.project_tests,"pass");
+        assert.equal(positive?.positive_dag?.researcher_acceptance,"pass");
+        assert.equal(positive?.positive_dag?.tested_commit_sha,
+          positive?.positive_dag?.approved_branch_sha);
         assert.equal(positive?.positive_dag?.source_writes,2);
         assert.equal(positive?.positive_dag?.main_unchanged,true);
         assert.equal(positive?.positive_dag?.operational_root_revoked,true);
@@ -471,8 +477,9 @@ async function main(){
             native_rust:true,live_opa:true,signed_handoff:true,
             operational_root:true,dispatcher_fail_closed:true,
             signed_dag_positive:true,backend_frontend_a2a_updates:2,
+            same_signed_dag_docker_acceptance:true,
             a2a_before_branch:0,main_mutations:0})+"\n");
-      },190000);
+      },1020000);
     }
     logs=await mkdtemp(join(tmpdir(),"thesis-positive-runner-"));
     const executor=new IsolatedDockerRunnerExecutor({

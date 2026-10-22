@@ -6,10 +6,19 @@
  */
 import assert from "node:assert/strict";
 import {randomBytes,randomInt} from "node:crypto";
+import {mkdtemp,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {fileURLToPath} from "node:url";
 import {createServer} from "node:net";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
 import {GiteaExecutor} from "../src/gitea-executor.ts";
+import {RunnerClient} from "../src/runner-client.ts";
+import {IsolatedDockerRunnerExecutor} from
+  "../../test-runner-controller/src/isolated-executor.ts";
+import {createRunnerHttpServer} from
+  "../../test-runner-controller/src/http.ts";
 import {OpaPolicyClient} from "../src/policy-client.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
 import {TrustedApprovedA2ADispatcher} from
@@ -21,6 +30,7 @@ import {DeterministicA2AOrchestrator} from
 
 const adapterUrl="http://127.0.0.1:8090";
 const ROLES=["backend","frontend"];
+const ALL_ROLES=[...ROLES,"test"];
 const MARKERS={
   backend:"\n// Trusted offline Backend: approved task-scoped edit.\n",
   frontend:"\n// Trusted offline Frontend: approved task-scoped edit.\n"
@@ -56,7 +66,7 @@ export async function runNativePositiveApprovedDag({
 }){
   assert.match(giteaBase,/^http:\/\/127\.0\.0\.1:\d+$/u);
   for(const v of [readerToken,writerToken,orchestratorToken,
-    ...ROLES.map(role=>agentTokens[role])])
+    ...ALL_ROLES.map(role=>agentTokens[role])])
     assert.ok(typeof v==="string"&&v.length>10);
   assert.equal(coordinator.phase,"execution");
   assert.deepEqual(Object.keys(files).sort(),[...ROLES].sort());
@@ -77,6 +87,29 @@ export async function runNativePositiveApprovedDag({
     originals[role]=source.content;
   }
   await assert.rejects(()=>reader.getBranchMetadata(branch));
+  const repoUri="gitea://"+repo.authority+"/"+repo.owner+"/"+repo.repository;
+  const runnerToken=randomBytes(32).toString("hex");
+  const runLogs=await mkdtemp(join(tmpdir(),"native-approved-dag-runner-"));
+  const executor=new IsolatedDockerRunnerExecutor({
+    gitea_base_url:giteaBase,gitea_owner:repo.owner,
+    gitea_repository:repo.repository,gitea_token:readerToken,
+    docker_image:process.env.TEST_RUNNER_DOCKER_IMAGE??"node:22.15.0-bookworm",
+    phase_timeout_ms:300000,total_timeout_ms:840000,
+    log_dir:runLogs,acceptance_enabled:true,
+    acceptance_dir:fileURLToPath(new URL("../../../runner/acceptance/",import.meta.url))
+  });
+  const runnerServer=createRunnerHttpServer({
+    bind_host:"127.0.0.1",bind_port:0,gateway_token:runnerToken,
+    contract:{repository:repoUri,branch}
+  },executor);
+  await new Promise((resolve,reject)=>{
+    runnerServer.once("error",reject);
+    runnerServer.listen(0,"127.0.0.1",resolve);
+  });
+  const runnerClient=new RunnerClient({
+    baseUrl:"http://127.0.0.1:"+runnerServer.address().port,
+    gatewayToken:runnerToken,timeoutMs:845000
+  });
   const gateway=new GatewayRuntime({
     bind_host:"127.0.0.1",bind_port:0,
     prepare:{audience:"cloud-access-gateway",request_ttl_ms:120000,
@@ -86,10 +119,11 @@ export async function runNativePositiveApprovedDag({
   },{
     approvedPlans,verifier:loadDirectCoreRustVerifier(),
     policy:new OpaPolicyClient({baseUrl:opaUrl,timeoutMs:15000}),
-    executor:new GiteaExecutor(writer)
+    executor:new GiteaExecutor(writer,runnerClient,repoUri)
   });
   const counts={backend:0,frontend:0},reads={backend:0,frontend:0},
     writes={backend:0,frontend:0};
+  let testCalls=0,runnerRuns=0,runnerOutcome=null,frontendCommit=null;
   const servers=[],urls={},childIds={};
   try{
     for(const role of ROLES){
@@ -141,6 +175,7 @@ export async function runNativePositiveApprovedDag({
           assert.equal(executed.execution.provider,"gitea");
           assert.equal(executed.execution.path,file);
           writes[role]++;
+          if(role==="frontend")frontendCommit=executed.execution.commit_sha;
           return {
             role,summary:"Trusted bounded real Gitea edit for "+role,
             files_modified:[file],files_created:[],branch,
@@ -152,18 +187,76 @@ export async function runNativePositiveApprovedDag({
       });
       servers.push(server);urls[role]=server.baseUrl;
     }
+    const testAgent=await startSpecializedAgentServer({
+      role:"test",host:"127.0.0.1",port:await freePort(),
+      delegatedAuthorization:true,capabilityProfile:"approved-plan",
+      taskHandler:async context=>{
+        testCalls++;
+        assert.equal(context.role,"test");
+        assert.equal(context.subtask.subtask_id,"test");
+        assert.equal(context.subtask.branch,branch);
+        assert.deepEqual(context.subtask.relevant_paths,[]);
+        assert.equal(context.delegation_evidence.presenter_id,
+          process.env.ADAPTER_ID_TEST);
+        assert.equal(context.delegation_evidence.credential_id,childIds.test);
+        assert.equal(counts.backend,1);
+        assert.equal(counts.frontend,1);
+        const pinned=await reader.getBranchMetadata(branch);
+        assert.equal(pinned.commit_sha,frontendCommit);
+        const prepared=gateway.prepare({
+          task_id:context.trusted_gateway_task_id,
+          agent_role:"test",tool:"run_tests",
+          arguments:{branch,profile:"poc-default"}
+        });
+        assert.equal(prepared.required_permission.resource,
+          repoUri+"/branches/"+encodeURIComponent(branch));
+        const signed=await signedVp(childIds.test,prepared,agentTokens.test);
+        const executed=await gateway.execute({
+          request_id:prepared.request_id,signed_vp:signed
+        });
+        const effect=executed.execution;
+        assert.equal(executed.verified_delegation.presenter_id,
+          process.env.ADAPTER_ID_TEST);
+        assert.equal(executed.policy.allow,true);
+        assert.equal(effect.provider,"runner");
+        assert.equal(effect.tool,"run_tests");
+        assert.equal(effect.status,"pass");
+        assert.equal(effect.tested_commit_sha,pinned.commit_sha);
+        assert.equal(effect.project_tests?.status,"pass");
+        assert.equal(effect.researcher_acceptance?.status,"pass");
+        assert.deepEqual(effect.phases.map(x=>x.phase),[
+          "dependency_install","typecheck","backend_tests","frontend_tests",
+          "build","playwright_e2e","researcher_acceptance"
+        ]);
+        assert.ok(effect.phases.every(x=>x.status==="pass"));
+        runnerRuns++;
+        runnerOutcome=effect;
+        return {
+          role:"test",summary:"Actual exact-SHA Docker and independent acceptance",
+          files_modified:[],files_created:[],branch,
+          revision:effect.tested_commit_sha,
+          commit_sha:effect.tested_commit_sha,
+          test_outcome:"pass",errors:[],
+          tested_commit_sha:effect.tested_commit_sha,
+          runner_profile:effect.runner_profile,
+          project_tests:effect.project_tests.status,
+          researcher_acceptance:effect.researcher_acceptance.status
+        };
+      }
+    });
+    servers.push(testAgent);urls.test=testAgent.baseUrl;
     const dispatcher=await TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority({
       approvals:reviewGate,coordinator,sessionId,
       expectedPlanDigest:planDigest,baseRevision:baseSha,
       expectedEngineerDid:engineerDid,
-      agentBaseUrls:{...urls,test:"http://127.0.0.1:1"},
+      agentBaseUrls:urls,
       a2a:new DeterministicA2AOrchestrator({
         deadlineMs:120000,initialIntervalMs:50,maxIntervalMs:200
       }),
       adapter:{adapterBaseUrl:adapterUrl,bearerToken:orchestratorToken,timeoutMs:30000},
       async authorityForTask(taskId,role){
         assert.equal(taskId,role);
-        assert.ok(ROLES.includes(role));
+        assert.ok(ALL_ROLES.includes(role));
         assert.equal(childIds[role],undefined);
         childIds[role]="urn:native:positive-"+role+"-"+
           randomBytes(8).toString("hex");
@@ -180,7 +273,7 @@ export async function runNativePositiveApprovedDag({
         };
       }
     });
-    for(const role of ROLES)await assert.rejects(
+    for(const role of ALL_ROLES)await assert.rejects(
       dispatcher.dispatch(role),/dependencies/);
     assert.deepEqual(counts,{backend:0,frontend:0});
     let previousSha=baseSha;
@@ -209,12 +302,20 @@ export async function runNativePositiveApprovedDag({
     });
     assert.equal(coordinator.phase,"closed");
     assert.equal(result.plan_digest,planDigest);
-    assert.deepEqual(result.completed_task_ids,["branch",...ROLES]);
-    assert.deepEqual(result.specialized_results.map(x=>x.role),ROLES);
+    assert.deepEqual(result.completed_task_ids,["branch",...ALL_ROLES]);
+    assert.deepEqual(result.specialized_results.map(x=>x.role),ALL_ROLES);
     assert.deepEqual(counts,{backend:1,frontend:1});
     assert.deepEqual(reads,{backend:1,frontend:1});
     assert.deepEqual(writes,{backend:1,frontend:1});
     assert.ok(childIds.backend!==childIds.frontend);
+    assert.ok(childIds.test!==childIds.frontend&&childIds.test!==childIds.backend);
+    assert.equal(testCalls,1);
+    assert.equal(runnerRuns,1);
+    assert.equal(runnerOutcome?.tested_commit_sha,frontendCommit);
+    assert.equal(runnerOutcome?.status,"pass");
+    assert.equal(result.specialized_results[2].artifact.test_outcome,"pass");
+    assert.equal(result.specialized_results[2].artifact.tested_commit_sha,
+      frontendCommit);
     for(let i=0;i<ROLES.length;i++){
       const role=ROLES[i];
       const outcome=result.specialized_results[i];
@@ -245,11 +346,20 @@ export async function runNativePositiveApprovedDag({
       completed_task_ids:result.completed_task_ids,
       real_a2a_sdk:true,native_rust_child_credentials:2,
       native_verifier:true,live_opa:true,real_gitea:true,
-      source_reads:2,source_writes:2,
+      source_reads:2,source_writes:2,test_runner_runs:runnerRuns,
+      test_runner_phases:runnerOutcome.phases.map(x=>x.phase),
+      project_tests:runnerOutcome.project_tests.status,
+      researcher_acceptance:runnerOutcome.researcher_acceptance.status,
+      tested_commit_sha:runnerOutcome.tested_commit_sha,
       main_unchanged:true,operational_root_revoked:true,
       approved_branch_sha:head.commit_sha
     };
   }finally{
-    for(const server of servers.reverse())await server.close();
+    try{
+      for(const server of servers.reverse())await server.close();
+    }finally{
+      await new Promise(resolve=>runnerServer.close(resolve));
+      await rm(runLogs,{recursive:true,force:true});
+    }
   }
 }
