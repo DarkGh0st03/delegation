@@ -261,7 +261,10 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
       ...(config.scopeModelPaths ? {scopeModelPaths: true} : {}),
       ...(context.trusted_gateway_task_id
-        ? {trustedBranch:context.subtask.branch}:{}) ,
+        ? {
+            trustedBranch:context.subtask.branch,
+            trustedTaskPaths:context.subtask.relevant_paths
+          }:{}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     });
     const {agent, mcpToolset} = configured;
