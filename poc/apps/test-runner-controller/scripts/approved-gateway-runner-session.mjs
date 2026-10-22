@@ -5,8 +5,9 @@
  * and the Gateway independently checks the exact tested SHA when accepting
  * a trusted Task-completion observation.
  *
- * This provider integration uses an injected VP verifier but REAL OPA;
- * native Rust VP/EVM is independently tested in the cumulative EVM job.
+ * Two explicit modes: fixture VP verifier with real OPA (default), or
+ * opt-in native EVM Adapter + Core Rust verifier + real OPA (EVM CI only).
+ * No verifier downgrade is permitted after native-mode selection.
  * The trusted signed plan and its Gateway enforcement are NOT stubbed.
  * No AI model is contacted; no authorization/merge endpoint is published.
  */
@@ -26,6 +27,15 @@ import {TrustedApprovedExecutionPlans} from
 import {GatewayCorroboratedTaskAttestor} from
   "../../gateway/src/trusted-task-observation.ts";
 import {GatewayRuntime} from "../../gateway/src/runtime.ts";
+import {loadDirectCoreRustVerifier} from "../../gateway/src/direct-core-loader.ts";
+import {SoftwareEngineerAuthorityBootstrap} from
+  "../../../packages/orchestrator-runtime/src/authority-client.ts";
+import {TrustedEngineerAuthoritySession} from
+  "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
+import {TrustedExecutionCoordinator} from
+  "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
+import {TrustedApprovedPlanChildAuthorityIssuer} from
+  "../../../packages/orchestrator-runtime/src/trusted-approved-child-issuer.ts";
 import {OpaPolicyClient} from "../../gateway/src/policy-client.ts";
 import {GiteaClient} from "../../gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../gateway/src/gitea-executor.ts";
@@ -41,8 +51,45 @@ import {startSpecializedAgentServer} from
   "../../../packages/agent-runtime/src/server.ts";
 
 const URI="gitea://gitea.local/thesis/iam-console-poc";
-const DID="did:thesis:engineer";
-const TEST_DID="did:thesis:test";
+// Opt-in only in the EVM CI job. The default standalone smoke remains
+// explicitly fixture-verifier mode and requires no Rust/chain environment.
+const native=process.env.APPROVED_RUNNER_NATIVE_EVM==="1";
+function nativeEnv(key){
+  const v=process.env[key];
+  if(!v||!v.trim())throw Error("Native positive E2E missing trusted "+key);
+  return v;
+}
+const DID=native?nativeEnv("ADAPTER_ID_ENGINEER"):"did:thesis:engineer";
+const TEST_DID=native?nativeEnv("ADAPTER_ID_TEST"):"did:thesis:test";
+const ADAPTER_BASE="http://127.0.0.1:8090";
+function nativeCredential(id,index,validity_seconds=1500){
+  return {credential_id:id,valid_from:new Date(Date.now()-1000).toISOString(),
+    validity_seconds,credential_status:{
+      type:"BitstringStatusListEntry",statusPurpose:"revocation",
+      statusListIndex:String(index),
+      statusListCredential:"https://status.example/lists/scoped-native-evm"
+    }
+  };
+}
+async function adapterPresentation(credentialId,required,prepared){
+  const response=await fetch(ADAPTER_BASE+"/v1/presentations",{
+    method:"POST",headers:{
+      authorization:"Bearer "+nativeEnv("ADAPTER_CALLER_TEST"),
+      "content-type":"application/json"
+    },
+    body:JSON.stringify({
+      credential_id:credentialId,disclosed_permissions:[required],
+      audience:prepared.audience,challenge:prepared.challenge
+    }),
+    signal:AbortSignal.timeout(30000)
+  });
+  if(!response.ok)throw Error("Rust Adapter refused signed Test VP");
+  const result=await response.json();
+  if(typeof result.signed_vp!=="string"||!result.signed_vp){
+    throw Error("Rust Adapter did not produce a signed VP");
+  }
+  return result.signed_vp;
+}
 const REPOSITORY={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const BRANCH="feature/account-suspension";
 const SHA=/^[a-f0-9]{40}$/u;
@@ -62,6 +109,7 @@ export async function beginApprovedRealRunnerSession({
   const privateRoot=await mkdtemp(join(tmpdir(),"delegation-approved-runner-"));
   let server;
   let registry;
+  let coordinator;
   try{
     const branchUri=URI+"/branches/"+encodeURIComponent(BRANCH);
     const plan={
@@ -100,9 +148,43 @@ export async function beginApprovedRealRunnerSession({
       repository:REPOSITORY,engineerDid:DID,approvals,
       completionAttestor:new GatewayCorroboratedTaskAttestor()
     });
-    assert.equal(await registry.activate(sessionId,mainSha),planDigest(plan));
+    // Either signed fixture authority or REAL Anvil/Rust authority.
+    // Native mode proves Planning revocation and independently issued
+    // operational root before the Gateway Task is bound.
+    let activeRootId="urn:fixture:operational-root";
+    const unique=randomBytes(7).toString("hex");
+    if(native){
+      const credentials=new SoftwareEngineerAuthorityBootstrap({
+        adapterBaseUrl:ADAPTER_BASE,
+        bearerToken:nativeEnv("ADAPTER_CALLER_ENGINEER"),
+        timeoutMs:30000
+      });
+      const trustedAuthority=new TrustedEngineerAuthoritySession({
+        snapshot:{session_id:sessionId,repository:REPOSITORY,
+          base_revision:mainSha,directories:[""],files:[]},
+        credentials,approvals,authenticatedEngineerDid:DID
+      });
+      coordinator=new TrustedExecutionCoordinator({
+        authority:trustedAuthority,approvedGatewayPlans:registry,
+        credentials,sessionId,baseRevision:mainSha
+      });
+      const planning=await coordinator.beginPlanning(
+        nativeCredential("urn:native:positive-plan-"+unique,18071,180));
+      assert.equal(planning.phase,"planning");
+      assert(planning.permissions.every(p=>
+        ["read_repository","list_directory","read_file"].includes(p.operation)));
+      const active=await coordinator.beginExecution(nativeCredential(
+        "urn:native:positive-operational-"+unique,18072,1500));
+      assert.equal(active.plan_digest,planDigest(plan));
+      assert.deepEqual(coordinator.trustedOperationalAuthority().permissions,
+        [{operation:"run_tests",resource:branchUri}]);
+      activeRootId=active.credential_id;
+    }else{
+      assert.equal(await registry.activate(sessionId,mainSha),planDigest(plan));
+    }
     const taskId="dispatch_"+randomBytes(16).toString("base64url");
-    registry.bindTask(sessionId,"verify",taskId,"test");
+    if(coordinator)await coordinator.bindDispatchedTask("verify",taskId,"test");
+    else registry.bindTask(sessionId,"verify",taskId,"test");
     const runnerToken=randomBytes(32).toString("hex");
     server=createRunnerHttpServer({
       bind_host:"127.0.0.1",bind_port:0,gateway_token:runnerToken,
@@ -130,15 +212,17 @@ export async function beginApprovedRealRunnerSession({
       provider_mode:"mock",gitea_timeout_ms:20_000
     },{
       approvedPlans:registry,executor:new GiteaExecutor(realGitea,runnerClient,URI),
-      verifier:{async verify(request){
-        assert.equal(request.presenter,"test");
-        return {
-          presenter_id:TEST_DID,issuer_id:"did:thesis:orchestrator",
-          credential_id:"urn:scoped:runner-fixture",
-          permissions:[request.required_permission],hierarchy_depth:1,
-          expiration:new Date(Date.now()+30*60*1000).toISOString()
-        };
-      }},
+      verifier:native?loadDirectCoreRustVerifier():{
+        async verify(request){
+          assert.equal(request.presenter,"test");
+          return {
+            presenter_id:TEST_DID,issuer_id:"did:thesis:orchestrator",
+            credential_id:"urn:scoped:runner-fixture",
+            permissions:[request.required_permission],hierarchy_depth:1,
+            expiration:new Date(Date.now()+30*60*1000).toISOString()
+          };
+        }
+      },
       // Real Rego evaluation in an isolated OPA Docker service.
       // The immutable plan digest/branch are injected by Gateway, NOT A2A.
       policy:new OpaPolicyClient({baseUrl:opaBaseUrl,timeoutMs:5000})
@@ -156,8 +240,18 @@ export async function beginApprovedRealRunnerSession({
       arguments:{branch:BRANCH,profile:"poc-default"}
     });
     assert.equal(prepared.required_permission.resource,branchUri);
+    const childId=native?"urn:native:positive-test-"+unique:
+      "urn:fixture:scoped-test-child";
+    const childInput=nativeCredential(childId,18073,1200);
+    const scopedIssuer=native?
+      await TrustedApprovedPlanChildAuthorityIssuer.create({
+        approvals,coordinator,sessionId,engineerDid:DID,
+        adapterBaseUrl:ADAPTER_BASE,
+        bearerToken:nativeEnv("ADAPTER_CALLER_ORCHESTRATOR"),
+        timeoutMs:30000
+      }):null;
     let used=false,completed=false,observedA2ATaskId=null,
-      observedPolicyVersion=null;
+      observedPolicyVersion=null,observedNativeVerifier=false;
     return {
       request:{request_id:prepared.request_id,repository:URI,
         branch:BRANCH,commit_sha:featureSha,profile:"poc-default"},
@@ -196,16 +290,24 @@ export async function beginApprovedRealRunnerSession({
               assert.equal(context.subtask.branch,BRANCH);
               assert.deepEqual(context.subtask.relevant_paths,[]);
               assert.equal(context.delegation_evidence.presenter_id,TEST_DID);
-              assert.equal(context.delegation_evidence.credential_id,
-                "urn:fixture:scoped-test-child");
+              assert.equal(context.delegation_evidence.credential_id,childId);
               const credential=JSON.parse(context.delegation_evidence.credential);
               assert.deepEqual(credential.credentialSubject.per,[{
                 operation:"run_tests",resource:branchUri
               }]);
+              const signedVp=native?await adapterPresentation(
+                childId,{operation:"run_tests",resource:branchUri},prepared
+              ):"offline-fixture-verifier";
               const authorized=await gateway.execute({
-                request_id:prepared.request_id,
-                signed_vp:"offline-fixture-verifier"
+                request_id:prepared.request_id,signed_vp:signedVp
               });
+              if(native){
+                assert.equal(authorized.verified_delegation.presenter_id,TEST_DID);
+                assert.equal(authorized.verified_delegation.credential_id,childId);
+                assert.deepEqual(authorized.verified_delegation.permissions,
+                  [{operation:"run_tests",resource:branchUri}]);
+                observedNativeVerifier=true;
+              }
               assert.equal(authorized.policy.allow,true);
               assert.equal(authorized.policy.policy_version,
                 "phase6-approved-branch-v2");
@@ -232,7 +334,7 @@ export async function beginApprovedRealRunnerSession({
             }
           });
           const roleRunner=new DelegatedA2ARoleRunner({
-            authorityIssuer:{
+            authorityIssuer:scopedIssuer??{
               async issueSpecializedChild(input){
                 assert.equal(input.parent_credential_id,
                   "urn:fixture:operational-root");
@@ -258,15 +360,8 @@ export async function beginApprovedRealRunnerSession({
           });
           const outcome=await roleRunner.issueAndRun({
             role:"test",
-            parent_credential_id:"urn:fixture:operational-root",
-            credential_id:"urn:fixture:scoped-test-child",
-            valid_from:new Date().toISOString(),
-            validity_seconds:600,
-            credential_status:{
-              type:"BitstringStatusListEntry",statusPurpose:"revocation",
-              statusListIndex:"7192",
-              statusListCredential:"https://status.example/offline-fixture"
-            },
+            ...childInput,
+            parent_credential_id:activeRootId,
             agent_base_url:a2aServer.baseUrl,
             trusted_gateway_task_id:taskId,
             approved_task_id:"verify",
@@ -288,7 +383,8 @@ export async function beginApprovedRealRunnerSession({
         if(!observedExecution)throw Error("No corroborated Runner provider effect");
         const result=observedExecution;
         completed=true;
-        registry.closeSession(sessionId);
+        if(coordinator)await coordinator.closeExecution();
+        else registry.closeSession(sessionId);
         // No second Docker execution is possible after trusted completion.
         assert.throws(()=>gateway.prepare({
           task_id:taskId,agent_role:"test",tool:"run_tests",
@@ -301,15 +397,24 @@ export async function beginApprovedRealRunnerSession({
       get completed(){return completed;},
       get observedA2ATaskId(){return observedA2ATaskId;},
       get observedPolicyVersion(){return observedPolicyVersion;},
+      get nativeCredentialVerified(){return observedNativeVerifier;},
       async close(){
-        if(!completed){try{registry.closeSession(sessionId);}catch{}}
+        if(!completed){
+          if(coordinator?.phase==="execution"){
+            // Never swallow uncertain revocation of a real operational root.
+            await coordinator.closeExecution();
+          }else{
+            try{registry.closeSession(sessionId);}catch{}
+          }
+        }
         if(server?.listening)await new Promise(resolve=>server.close(resolve));
         await rm(privateRoot,{recursive:true,force:true});
       }
     };
   }catch(error){
     if(server?.listening)await new Promise(resolve=>server.close(resolve));
-    if(registry){try{registry.closeSession(sessionId);}catch{}}
+    if(coordinator?.phase==="execution")await coordinator.closeExecution();
+    else if(registry){try{registry.closeSession(sessionId);}catch{}}
     await rm(privateRoot,{recursive:true,force:true});
     throw error;
   }
