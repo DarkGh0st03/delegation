@@ -22,7 +22,7 @@ import {TrustedEngineerAuthoritySession}
 import {TrustedExecutionCoordinator}
   from "../src/trusted-execution-coordinator.ts";
 import {verifyManualGeminiExecutionReadiness,createReviewedGeminiAdkModel,
-  createReviewedGeminiA2ARoleRuntime}
+  createReviewedGeminiA2ARoleRuntime,startReviewedGeminiA2AServers}
   from "../src/trusted-gemini-execution-readiness.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
@@ -416,5 +416,89 @@ test("manual signed Gemini gate transfers identical bounded ADK settings to all 
     }
     assert.equal(f.issued.length,1); // construction is not operational root
     assert.deepEqual(f.revoked,[]);
+  }finally{await f.close();}
+});
+
+
+test("trusted operational approval binds startup of three loopback ADK A2A servers without inference",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const input={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"fake-unused-secret",modelName:"gemini-3.8-flash",
+      maxModelTurns:6,maxOutputTokens:12000,maxModelCallMs:30000,
+      trustedPhase:()=>f.coordinator.phase,reviewGate:f.gate,
+      transports:{
+        backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend"},
+        frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend"},
+        test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test"}
+      }
+    };
+    const reviewed=await createReviewedGeminiA2ARoleRuntime(input);
+    const ports={backend:30181,frontend:30182,test:30183};
+    await assert.rejects(startReviewedGeminiA2AServers({
+      coordinator:f.coordinator,reviewed,ports
+    }),/operational root/);
+    assert.deepEqual(f.revoked,[]);
+    const active=await f.coordinator.beginExecution(root("urn:operational","102"));
+    assert.equal(active.plan_digest,reviewed.readiness.plan_digest);
+    await assert.rejects(startReviewedGeminiA2AServers({
+      coordinator:f.coordinator,reviewed:{...reviewed},ports
+    }),/authenticated minted Gemini runtime/);
+    assert.equal(f.coordinator.phase,"execution");
+    const running=await startReviewedGeminiA2AServers({
+      coordinator:f.coordinator,reviewed,ports
+    });
+    try{
+      assert.deepEqual(Object.keys(running.endpoints),
+        ["backend","frontend","test"]);
+      for(const role of ["backend","frontend","test"] as const){
+        assert.equal(running.servers[role].role,role);
+        assert.equal(running.endpoints[role],
+          "http://127.0.0.1:"+ports[role]);
+      }
+      assert.deepEqual(f.revoked,["urn:preliminary"]);
+      assert.equal(f.issued.length,2); // no new child/root DC at startup
+    }finally{await running.close();}
+    await f.coordinator.closeExecution();
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{await f.close();}
+});
+
+test("approved Gemini A2A server startup fails closed and revokes operational authority on invalid ports",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const reviewed=await createReviewedGeminiA2ARoleRuntime({
+      githubEventName:"workflow_dispatch",githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"not-real",modelName:"gemini-3.8-flash",
+      maxModelTurns:6,maxOutputTokens:12000,maxModelCallMs:30000,
+      trustedPhase:()=>f.coordinator.phase,reviewGate:f.gate,
+      transports:{
+        backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend"},
+        frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend"},
+        test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+          adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test"}
+      }
+    });
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    await assert.rejects(startReviewedGeminiA2AServers({
+      coordinator:f.coordinator,reviewed,
+      ports:{backend:30080,frontend:30080,test:30082}
+    }),/distinct, valid local A2A ports/);
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
   }finally{await f.close();}
 });

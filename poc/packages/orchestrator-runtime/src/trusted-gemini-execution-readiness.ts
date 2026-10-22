@@ -16,6 +16,11 @@ import {createGeminiAdkModel}
   from "../../agent-runtime/src/gemini-adk-model.ts";
 import type {AdkA2ATaskHandlerConfig}
   from "../../agent-runtime/src/adk-a2a-handler.ts";
+import {startSpecializedAgentServer,
+  type SpecializedAgentServer}
+  from "../../agent-runtime/src/server.ts";
+import {TrustedExecutionCoordinator}
+  from "./trusted-execution-coordinator.ts";
 
 const CONFIRMATION="I AUTHORIZE GEMINI API CHARGES";
 const MODEL=/^gemini-[a-z0-9]+(?:[.-][a-z0-9]+)*$/u;
@@ -151,6 +156,9 @@ export interface ReviewedGeminiA2ARoleRuntime{
   >>;
 }
 const ROLES=["backend","frontend","test"] as const;
+// Only a verified receipt can mint a role configuration in this host process.
+// A caller-supplied object with a copied digest is not a verified runtime.
+const mintedRoleRuntimes=new WeakSet<object>();
 
 /**
  * Convert verified manual consent plus authentic Engineer approval into
@@ -206,8 +214,85 @@ export async function createReviewedGeminiA2ARoleRuntime(input:
       scopeModelPaths:true
     });
   }
-  return Object.freeze({
+  const runtime=Object.freeze({
     readiness,
     role_configs:Object.freeze(configs)
   });
+  mintedRoleRuntimes.add(runtime);
+  return runtime;
+}
+
+
+export interface ReviewedGeminiA2AServers{
+  readonly servers:Readonly<Record<ReviewedGeminiAgentRole,
+    SpecializedAgentServer>>;
+  readonly endpoints:Readonly<Record<ReviewedGeminiAgentRole,string>>;
+  /** Closing servers is not approval or operational DC revocation. */
+  close():Promise<void>;
+}
+
+/**
+ * Connect the approved, already bounded Gemini role configurations to actual
+ * localhost A2A servers ONLY after the Coordinator has issued and activated
+ * the independently verified operational root on the Gateway.
+ *
+ * On any start/configuration failure after activation, fail closed by
+ * shutting down the already-started servers AND revoking operational authority.
+ * No inference is performed by merely starting the servers.
+ */
+export async function startReviewedGeminiA2AServers(input:{
+  coordinator:TrustedExecutionCoordinator;
+  reviewed:ReviewedGeminiA2ARoleRuntime;
+  ports:Readonly<Record<ReviewedGeminiAgentRole,number>>;
+}):Promise<ReviewedGeminiA2AServers>{
+  if(!(input.coordinator instanceof TrustedExecutionCoordinator))
+    reject("trusted operational Coordinator is required");
+  // Reject a fabricated or copied approval token without touching any model.
+  if(!mintedRoleRuntimes.has(input.reviewed))
+    reject("only an authenticated minted Gemini runtime can start A2A roles");
+  if(input.coordinator.phase!=="execution")
+    reject("operational root and Gateway plan must be active before A2A start");
+  const started:SpecializedAgentServer[]=[];
+  const servers={} as Record<ReviewedGeminiAgentRole,SpecializedAgentServer>;
+  try{
+    const root=input.coordinator.trustedOperationalAuthority();
+    if(root.plan_digest!==input.reviewed.readiness.plan_digest)
+      reject("operational plan digest differs from signed Engineer decision");
+    const ports=ROLES.map(role=>input.ports?.[role]);
+    if(ports.some(port=>!Number.isSafeInteger(port)||port<1024||port>65535)||
+       new Set(ports).size!==ROLES.length)
+      reject("distinct, valid local A2A ports are required");
+    for(const role of ROLES){
+      if(input.coordinator.phase!=="execution")
+        reject("operational execution phase changed during server startup");
+      const server=await startSpecializedAgentServer({
+        role,host:"127.0.0.1",port:input.ports[role],
+        delegatedAuthorization:true,capabilityProfile:"approved-plan",
+        adk:input.reviewed.role_configs[role]
+      });
+      started.push(server);
+      servers[role]=server;
+    }
+    const endpoints=Object.freeze(Object.fromEntries(
+      ROLES.map(role=>[role,servers[role].baseUrl])
+    ) as Record<ReviewedGeminiAgentRole,string>);
+    return Object.freeze({
+      servers:Object.freeze(servers),
+      endpoints,
+      close:async()=>{
+        for(const server of [...started].reverse())await server.close();
+      }
+    });
+  }catch(error){
+    for(const server of started.reverse()){
+      try{await server.close();}catch{/* best-effort A2A cleanup */}
+    }
+    if(input.coordinator.phase==="execution"){
+      try{await input.coordinator.closeExecution();}
+      catch{
+        throw new Error("Gemini A2A startup failed; operational root revocation needs operator reconciliation");
+      }
+    }
+    throw error;
+  }
 }
