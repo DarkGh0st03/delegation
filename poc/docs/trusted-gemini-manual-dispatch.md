@@ -45,3 +45,44 @@ Any persistent Engineer backend accepting dispatch data from outside the
 runner must authenticate its caller, for example through validated GitHub
 OIDC claims or a private authenticated IPC channel. REST corroboration
 alone is not authentication of the user's charge-consent string.
+
+
+## Authenticating runner-to-Engineer calls with GitHub OIDC
+
+The new trusted-github-oidc.ts validates a genuine **RS256** signed
+GitHub Actions JWT against the issuer's fixed public JWKS URL. The trusted
+backend independently configures a **unique audience**, an exact expected
+subject (the GitHub default subject may be legacy or ID-based), stable
+numeric repository and owner IDs, the exact workflow path/ref and source
+revision. JWT issuer, timestamps, jti, workflow SHA, event type, run ID and
+attempt must match; no JWT-provided URL or public key is trusted.
+
+The host should receive this short-lived token and the manual input payload
+in a single authenticated TLS/IPC request. GitHub OIDC authenticates the
+**workflow job**, not the Engineer and not the content of arbitrary manual
+workflow inputs. Signed Engineer approval remains a separate requirement.
+GitHub OIDC uses the trusted provider
+https://token.actions.githubusercontent.com and its fixed JWKS; no callback
+may supply a new issuer URL or audience.
+
+The receiving trusted host must have a persistent GithubOidcReplayFileStore
+directory, owned by its own account and mode 0700. Each verified jti is
+atomically marked consumed via an exclusive filesystem create (0600). A
+replayed or ambiguous job token is always denied, including after restart;
+a failed downstream attempt is not an authorization to retry.
+
+The host entry startGithubReviewedGeminiHandoff now requires, in order:
+strict event input bounds, cryptographic OIDC job authentication, independent
+fresh GitHub Actions REST run corroboration, atomic replay consumption, and
+the existing live preliminary-root/Planning checkpoint/Engineer signed
+approval verification. It cannot be called with only a JSON file or an API
+charge-consent phrase.
+
+**Deployment is not complete:** no authenticated always-on Engineer service
+or runner-to-host endpoint is deployed by this change. No GitHub OIDC token
+is sent anywhere and no actual Gemini inference happens in offline CI. A
+future authorized workflow will require job-level GitHub Actions permission
+id-token: write, a host-specific OIDC audience, an independently pinned source
+SHA, and a secure authenticated transport to the host. Do not add the paid
+Gemini API secret to the input-check-only workflow, or infer human approval
+from the JWT alone. The old paid workflow is still separate.

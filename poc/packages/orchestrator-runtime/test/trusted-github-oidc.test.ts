@@ -174,3 +174,62 @@ test("paid bridge rejects missing OIDC/replay identity before any trusted root",
     oidcReplayStore:null as any
   } as any),/persistent authenticated OIDC replay store required/);
 });
+
+
+test("host requires signed OIDC, corroborated run and consumes one-use token before checking real Planning",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"oidc-trusted-host-"));
+  try{
+    const j=jwt(claims());
+    const store=new GithubOidcReplayFileStore(dir);
+    let runs=0;
+    const ghRun=(async()=>{
+      runs++;
+      return new Response(JSON.stringify({
+        id:Number(RUN),event:"workflow_dispatch",run_attempt:1,
+        status:"in_progress",head_sha:SHA,
+        head_branch:REF.slice("refs/heads/".length),path:WORKFLOW,
+        head_repository:{full_name:REPO},
+        created_at:new Date().toISOString()
+      }),{status:200});
+    }) as typeof fetch;
+    const req={
+      env,event,pinned,geminiApiKey:"offline-not-a-real-key",
+      githubApiToken:"test-host-API-token",
+      githubApiFetchFn:ghRun,
+      oidcJwt:j,oidcTrust:trust,
+      oidcReplayStore:store,oidcJwksFetchFn:jwksFetch
+    } as any;
+    // Signed runner identity alone MUST NOT create a Planning session.
+    await assert.rejects(startGithubReviewedGeminiHandoff(req),
+      /real trusted Coordinator, checkpoint store and Engineer review/);
+    assert.equal(runs,1);
+    // Store is durable: the same signed job identity cannot retry approval,
+    // even if the trusted process was restarted.
+    await assert.rejects(startGithubReviewedGeminiHandoff({
+      ...req,oidcReplayStore:new GithubOidcReplayFileStore(dir)
+    }),/repeated job OIDC assertion rejected/);
+    const already=await readdir(dir);
+    assert.equal(already.length,1);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+test("rejected GitHub run metadata never consumes an otherwise valid OIDC token",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"oidc-invalid-run-"));
+  try{
+    const assertion=jwt(claims());
+    await assert.rejects(startGithubReviewedGeminiHandoff({
+      env,event,pinned,githubApiToken:"mock-github-read",
+      githubApiFetchFn:(async()=>new Response(JSON.stringify({
+        id:Number(RUN),event:"workflow_dispatch",run_attempt:2,
+        status:"in_progress",head_sha:SHA,
+        head_branch:REF.slice("refs/heads/".length),path:WORKFLOW,
+        head_repository:{full_name:REPO},
+        created_at:new Date().toISOString()
+      }),{status:200})) as typeof fetch,
+      oidcJwt:assertion,oidcTrust:trust,
+      oidcReplayStore:new GithubOidcReplayFileStore(dir),
+      oidcJwksFetchFn:jwksFetch,
+      geminiApiKey:"test-unused"
+    } as any),/GitHub API does not corroborate/);
+    assert.deepEqual(await readdir(dir),[]);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
