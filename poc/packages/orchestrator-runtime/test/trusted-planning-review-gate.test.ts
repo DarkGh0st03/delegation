@@ -124,7 +124,7 @@ test("signed Engineer review exactly binds Planner digest and approved subset to
     await assert.rejects(f.coordinator.beginExecution(root("urn:operational","102")),
       /prior Planning/);
     await f.coordinator.beginPlanning(root("urn:preliminary","101"));
-    await assert.rejects(f.coordinator.beginExecution(root("urn:operational","102")),
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id),
       /no exact staged Planning proposal/);
     assert.deepEqual(f.revoked,[]);
     const proposal=f.proposal();
@@ -149,6 +149,18 @@ test("signed Engineer review exactly binds Planner digest and approved subset to
       proposal.digest);
     await f.coordinator.closeExecution();
     assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{await f.close();}
+});
+
+test("without a persisted signed receipt, Execution fails closed before revocation",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    f.gate.stageTrustedProposal(f.proposal());
+    await assert.rejects(f.coordinator.beginExecution(root("urn:operational","102")));
+    assert.equal(f.coordinator.phase,"failed_closed");
+    assert.deepEqual(f.revoked,[]);
+    assert.equal(f.issued.length,1);
   }finally{await f.close();}
 });
 
