@@ -187,7 +187,7 @@ export async function beginApprovedRealRunnerSession({
         assert.throws(()=>gateway.prepare({
           task_id:taskId,agent_role:"test",tool:"run_tests",
           arguments:{branch:BRANCH,profile:"poc-default"}
-        }),/approved plan|completed task|inactive/i);
+        }),/active trusted plan|approved plan|completed task|inactive/i);
         // Return the ORIGINAL independently observed Docker result, adding
         // the bound CI request and repository identity; never forge phase PASS.
         return {...result,request_id:request.request_id,repository:URI};
