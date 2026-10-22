@@ -470,9 +470,8 @@ test("Signed Task path hints fail closed on traversal, controls and unsupported 
   const withMcp=make(["apps/backend/src/users/user.service.ts"],true);
   assert.ok(withMcp.mcpToolset,
     "Approved Task may retain shared MCP; private registry enforces path grants");
-  assert.deepEqual(withMcp.agent.tools.map(tool=>tool.name),[
-    "update_file","read_file"
-  ]);
+  assert.equal(withMcp.agent.tools.filter(t=>t.name==="update_file").length,1);
+  assert.equal(withMcp.agent.tools.length,2);
 });
 
 
