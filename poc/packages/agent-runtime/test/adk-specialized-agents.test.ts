@@ -546,3 +546,115 @@ test("Approved write alone does not imply read permission; unsupported grants ca
  assert.throws(()=>make([{operation:"read_file",path:target},
    {operation:"read_file",path:target}]),/Duplicate signed Task file operation/);
 });
+
+
+test("Signed Backend plan on an unrelated repository is scoped by exact permissions, not demo files",async()=>{
+  const branch="feature/invoice-review";
+  const target="services/billing/src/invoice.ts";
+  const context="packages/domain/src/money.ts";
+  const model=new ScriptedAdkLlm("read_file",{branch,path:context});
+  const calls:Array<{name:string;args:Record<string,unknown>}>=[];
+  const built=createAdkSpecializedAgent({
+    role:"backend",model,
+    gatewayClient:{invoke:async(name:string,args:Record<string,unknown>)=>{
+      calls.push({name,args});
+      return {provider:"gitea",content:"export const cents = 100;"};
+    }} as never,
+    trustedBranch:branch,
+    trustedTaskPaths:[target,context],
+    trustedFilePermissions:[
+      {operation:"read_file",path:target},
+      {operation:"update_file",path:target},
+      {operation:"read_file",path:context}
+    ]
+  });
+  assert.equal(built.agent.name,"delegated_backend");
+  assert.deepEqual(built.profile.writable_paths,[target]);
+  assert.deepEqual(built.profile.read_only_paths,[context]);
+  assert.deepEqual(built.agent.tools.map(x=>x.name),["read_file","update_file"]);
+  assert.ok(built.profile.system_prompt.includes(branch));
+  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension|account-suspension/u);
+  assert.ok(!built.profile.system_prompt.includes("apps/backend/src/users/user.service.ts"));
+  const service=new InMemorySessionService();
+  const runner=new Runner({agent:built.agent,appName:"other-repository",
+    sessionService:service});
+  await service.createSession({appName:"other-repository",userId:"u",sessionId:"s"});
+  for await(const _ of runner.runAsync({userId:"u",sessionId:"s",
+    newMessage:{role:"user",parts:[{text:"Inspect approved billing context"}]}
+  })){}
+  assert.deepEqual(calls,[{name:"read_file",args:{branch,path:context}}]);
+  const declarations=(model.requests[0]?.config?.tools??[])
+    .flatMap(x=>x.functionDeclarations??[]);
+  const read=JSON.stringify(declarations.find(x=>x.name==="read_file"));
+  const write=JSON.stringify(declarations.find(x=>x.name==="update_file"));
+  assert.ok(read.includes(target)&&read.includes(context));
+  assert.ok(write.includes(target)&&!write.includes(context));
+  assert.ok(!read.includes("apps/backend/src/users/user.controller.ts"));
+});
+
+test("Signed non-demo Frontend read grant never permits a write to its context",async()=>{
+  const branch="feature/invoice-review";
+  const context="web/src/api/billing-client.ts";
+  const target="web/src/views/InvoiceView.tsx";
+  let calls=0;
+  const model=new ScriptedAdkLlm("update_file",{
+    branch,path:context,content:"unapproved"
+  });
+  const built=createAdkSpecializedAgent({
+    role:"frontend",model,
+    gatewayClient:{invoke:async()=>{calls++;return {commit_sha:"a".repeat(40)};}} as never,
+    trustedBranch:branch,
+    trustedTaskPaths:[target,context],
+    trustedFilePermissions:[
+      {operation:"read_file",path:context},
+      {operation:"update_file",path:target}
+    ]
+  });
+  assert.deepEqual(built.profile.read_only_paths,[context]);
+  assert.deepEqual(built.profile.writable_paths,[target]);
+  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension/u);
+  const service=new InMemorySessionService();
+  const runner=new Runner({agent:built.agent,appName:"signed-frontend",
+    sessionService:service});
+  await service.createSession({appName:"signed-frontend",userId:"u",sessionId:"s"});
+  for await(const _ of runner.runAsync({userId:"u",sessionId:"s",
+    newMessage:{role:"user",parts:[{text:"Use only approved files"}]}
+  })){}
+  assert.equal(calls,0);
+});
+
+test("Signed Test Task may create a newly approved test path without expanding its tools",()=>{
+  const path="spec/invoices/invoice-flow.spec.ts";
+  const branch="feature/invoice-review";
+  const built=createAdkSpecializedAgent({
+    role:"test",model:new ScriptedAdkLlm("create_file",{
+      branch,path,content:"test('example', () => {});"
+    }),
+    gatewayClient:{invoke:async()=>({commit_sha:"a".repeat(40)})} as never,
+    trustedBranch:branch,
+    trustedTaskPaths:[path],
+    trustedFilePermissions:[{operation:"create_file",path}]
+  });
+  assert.deepEqual(built.agent.tools.map(x=>x.name),["create_file","run_tests"]);
+  assert.deepEqual(built.profile.creatable_paths,[path]);
+  assert.deepEqual(built.profile.read_only_paths,[]);
+  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension/u);
+  assert.equal(built.agent.name,"delegated_test");
+});
+
+test("Unsigned A2A path hints still cannot expand Account Suspension static role file list",()=>{
+  const foreign="services/billing/src/invoice.ts";
+  const built=createAdkSpecializedAgent({
+    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedTaskPaths:[foreign]
+  });
+  assert.deepEqual(built.agent.tools.map(x=>x.name),[]);
+  assert.deepEqual(built.profile.writable_paths,[]);
+  assert.ok(built.profile.system_prompt.includes("Account Suspension"));
+  assert.throws(()=>createAdkSpecializedAgent({
+    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedFilePermissions:[{operation:"read_file",path:foreign}]
+  }),/Invalid signed Task operation-specific file hints/);
+});
