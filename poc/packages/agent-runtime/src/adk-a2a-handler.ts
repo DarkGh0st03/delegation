@@ -248,6 +248,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       {allowUpdateFile: config.mcpUpdateFile === true,
        allowCreateFile: config.mcpCreateFile === true && context.role==="test",
        allowRunTests: config.mcpRunTests === true && context.role==="test",
+       ...(context.trusted_gateway_task_id
+         ? {allowedPaths:context.subtask.relevant_paths} : {}),
        evidenceHandler});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
