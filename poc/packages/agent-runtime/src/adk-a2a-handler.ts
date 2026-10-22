@@ -239,7 +239,12 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(cryptoPresentation ? {cryptoPresentation} : {}),
       ...(signal ? {signal} : {}),
       ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),
-      ...(config.mcpRunTests ? {runnerExecuteTimeoutMs: 960_000} : {}),
+      // A signed Test Task can invoke the real 7-phase Docker Runner through
+      // the regular ADK FunctionTool, not only through the legacy MCP path.
+      // This changes transport timeout only; it does not grant run_tests.
+      ...(config.mcpRunTests ||
+        (context.role==="test"&&context.trusted_gateway_task_id)
+        ? {runnerExecuteTimeoutMs: 960_000} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
     // Register only the ACTIVE A2A task. The registry retains this task-scoped
