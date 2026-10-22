@@ -216,6 +216,15 @@ export function createAdkSpecializedAgent(
         let errorKind: ControlledToolErrorKind | null = null;
         try {
           config.signal?.throwIfAborted();
+          if(scoped&&(name==="read_file"||name==="update_file"||
+              name==="create_file")){
+            const allowed=name==="read_file"?readablePaths:
+              name==="update_file"?writable:creatable;
+            if(!allowed.includes((args as Record<string,unknown>).path as string)){
+              throw new ControlledToolError("invalid_tool_call",
+                "Model file path is outside this approved Task's declared paths");
+            }
+          }
           const result = await registry.execute({
             call_id: "adk-controlled-tool",
             name,
