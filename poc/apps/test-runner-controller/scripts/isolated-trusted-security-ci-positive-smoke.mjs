@@ -417,6 +417,12 @@ async function main(){
         mainSha:fixture.mainSha,featureSha:fixture.featureSha,
         opaBaseUrl
       }),30000);
+    const approvedFeatureSha=approvedSession.request.commit_sha;
+    if(process.env.APPROVED_RUNNER_THREE_AGENT_DAG==="1"){
+      assert.equal(approvedSession.approvedBackendFrontendEdits,2,
+        "Two Rust-scoped ADK source updates must complete before running tests");
+      assert.notEqual(approvedFeatureSha,fixture.featureSha);
+    }
     let observedRunnerResult=null;
     const ci=new TrustedGiteaSecurityCi({
       giteaBaseUrl:base,giteaReadToken:creds.readToken,
@@ -468,7 +474,7 @@ async function main(){
     const exactRequest={
       request_id:approvedSession.request.request_id,
       repository:"gitea://gitea.local/thesis/iam-console-poc",
-      branch,commit_sha:fixture.featureSha,profile:"poc-default"
+      branch,commit_sha:approvedFeatureSha,profile:"poc-default"
     };
     const verdict=await stage("real_docker_project_and_researcher_acceptance",
       ()=>ci.run(exactRequest),2400000);
@@ -486,7 +492,7 @@ async function main(){
       "Gateway must attest the actual Runner result before CI marks success");
     assert.match(approvedSession.observedA2ATaskId??"",/^[A-Za-z0-9_-]{8,}$/u,
       "The positive Test Task must have an actual A2A SDK Task ID");
-    assert.equal(observedRunnerResult?.tested_commit_sha,fixture.featureSha);
+    assert.equal(observedRunnerResult?.tested_commit_sha,approvedFeatureSha);
     assert.equal(observedRunnerResult?.project_tests?.status,"pass");
     assert.equal(observedRunnerResult?.researcher_acceptance?.status,"pass");
     assert.deepEqual(observedRunnerResult?.phases.map(x=>x.phase),
@@ -499,7 +505,7 @@ async function main(){
       api(base,repository+"/branches/"+encodeURIComponent(branch),{
         authorization:creds.admin,label:"verify_exact_feature"
       }),
-      api(base,repository+"/commits/"+fixture.featureSha+
+      api(base,repository+"/commits/"+approvedFeatureSha+
         "/statuses?limit=50",{
         authorization:"token "+creds.readToken,
         label:"read_real_security_statuses"
@@ -509,7 +515,7 @@ async function main(){
       })
     ]);
     assert.equal(main.commit.id,fixture.mainSha);
-    assert.equal(feature.commit.id,fixture.featureSha);
+    assert.equal(feature.commit.id,approvedFeatureSha);
     assert.ok(Array.isArray(statuses));
     const own=statuses.filter(s=>s.context===SECURITY_STATUS_CONTEXT);
     assert.equal(own.length,2,"Expected exactly pending then success");
@@ -521,7 +527,7 @@ async function main(){
     process.stdout.write(JSON.stringify({
       event:"trusted_security_ci_real_docker_positive_acceptance",
       status:"PASS",source:"pinned_baseline_plus_phase10b_reference",
-      baseline_sha:baseline,tested_commit_sha:fixture.featureSha,
+      baseline_sha:baseline,tested_commit_sha:approvedFeatureSha,
       exact_project_phases:TRUSTED_PROJECT_PHASES.length,
       project_tests:"pass",researcher_acceptance:"pass",
       security_context:SECURITY_STATUS_CONTEXT,
@@ -535,6 +541,7 @@ async function main(){
         approvedSession.nativeCredentialVerified,
       runner_via_gateway_http:true,
       exact_provider_sha_correlated:true,
+      real_backend_frontend_gitea_edits:approvedSession.approvedBackendFrontendEdits,
       approval_created:true,pr_created:false,merge_calls:0,
       persistent_gitea_modified:false
     })+"\n");
