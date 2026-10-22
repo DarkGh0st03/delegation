@@ -22,8 +22,13 @@ import {signTrustedPlanningCheckpoint,verifyTrustedPlanningCheckpoint,
   from "../src/trusted-planning-checkpoint.ts";
 import {SignedPlanningCheckpointFileStore}
   from "../src/trusted-planning-checkpoint-store.ts";
-import {startPersistedReviewedGeminiHandoff}
+import {startPersistedReviewedGeminiHandoff,
+  startStoredGithubReviewedGeminiHandoff}
   from "../src/trusted-manual-gemini-handoff.ts";
+import {TrustedGithubAdmissionReceiptStore}
+  from "../src/trusted-github-admission-store.ts";
+import {verifyGithubManualGeminiDispatch}
+  from "../src/trusted-manual-github-dispatch.ts";
 import {TrustedEngineerAuthoritySession}
   from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
@@ -836,5 +841,116 @@ test("persisted manual host refuses wrong checkpoint SHA before operational issu
   }finally{
     await f.close();
     await rm(folder,{recursive:true,force:true});
+  }
+});
+
+
+test("signed HMAC admission consumed by separate Engineer process still requires real Engineer signature",async()=>{
+  const f=await fixture();
+  const checkpointDir=await mkdtemp(join(tmpdir(),"engineer-checkpoint-admission-"));
+  const consentDir=await mkdtemp(join(tmpdir(),"engineer-oidc-admission-"));
+  try{
+    const signing=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const plan=f.proposal();
+    const ticket=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal:plan,
+      keyId:"host-backend",
+      privateKeyPem:signing.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    await writeFile(join(checkpointDir,SNAPSHOT.session_id+".json"),
+      JSON.stringify(ticket),{mode:0o600});
+    const checkpointStore=new SignedPlanningCheckpointFileStore({
+      directory:checkpointDir,trust:{
+        trustedKeys:{"host-backend":{
+          public_key_pem:signing.publicKey.export({
+            format:"pem",type:"spki"
+          }).toString()
+        }},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const admissionStore=new TrustedGithubAdmissionReceiptStore({
+      directory:consentDir,hmacSecret:Buffer.alloc(32,99),
+      expectedSessionId:SNAPSHOT.session_id
+    });
+    const githubRepo="DarkGh0st03/delegation";
+    const githubRef="refs/heads/refactor/post-prof-plan-contracts-20261021";
+    const githubSha="f".repeat(40),runId="39829995555";
+    const githubWorkflow=".github/workflows/trusted-gemini-dispatch-preflight.yml";
+    const dispatch=verifyGithubManualGeminiDispatch({
+      env:{
+        GITHUB_ACTIONS:"true",GITHUB_EVENT_NAME:"workflow_dispatch",
+        GITHUB_RUN_ATTEMPT:"1",GITHUB_REPOSITORY:githubRepo,
+        GITHUB_REF:githubRef,
+        GITHUB_WORKFLOW_REF:githubRepo+"/"+githubWorkflow+"@"+githubRef,
+        GITHUB_SHA:githubSha,GITHUB_RUN_ID:runId
+      },
+      event:{
+        repository:{full_name:githubRepo},ref:githubRef,
+        inputs:{authorization:"I AUTHORIZE GEMINI API CHARGES",
+          model:"gemini-3.8-flash",max_model_turns:"8",
+          max_output_tokens:"8000",max_model_call_ms:"30000"}
+      },
+      pinned:{repository:githubRepo,ref:githubRef,
+        workflowPath:githubWorkflow,sourceSha:githubSha}
+    });
+    await admissionStore.record({dispatch,job:{
+      kind:"github_actions_oidc_verified",
+      jti:"fixture-signed-job-id-not-real",
+      run_id:runId,workflow_sha:githubSha,
+      repository_id:"1374168963",repository_owner_id:"150908952",
+      audience:"urn:trusted-engineer"
+    }});
+    const transports={
+      backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend-token"},
+      frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend-token"},
+      test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test-token"}
+    };
+    const input={
+      coordinator:f.coordinator,reviewGate:f.gate,checkpointStore,
+      admissionStore,
+      expectedRunId:runId,expectedGithubSha:githubSha,
+      expectedGithubRepository:githubRepo,expectedGithubRef:githubRef,
+      expectedEngineerSessionId:SNAPSHOT.session_id,
+      geminiApiKey:"dummy-never-billed",
+      transports,operationalRoot:root("urn:operational","102"),
+      ports:{backend:30781,frontend:30782,test:30783}
+    };
+    await assert.rejects(startStoredGithubReviewedGeminiHandoff(input),
+      /Active verified Planning root/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await assert.rejects(startStoredGithubReviewedGeminiHandoff({
+      ...input,expectedEngineerSessionId:"attacker-session"
+    }),/active Engineer Planning session/);
+    await f.sign(plan.plan,["permission-1","permission-3"]);
+    const running=await startStoredGithubReviewedGeminiHandoff(input);
+    try{
+      assert.equal(running.readiness.plan_digest,plan.digest);
+      assert.equal(running.readiness.max_model_turns,8);
+      assert.equal(running.readiness.max_output_tokens,8000);
+      assert.deepEqual(Object.keys(running.endpoints),
+        ["backend","frontend","test"]);
+      assert.equal(f.coordinator.phase,"execution");
+      assert.equal(f.issued.length,2);
+    }finally{await running.close();}
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    await assert.rejects(admissionStore.consume({
+      expectedRunId:runId,expectedSourceSha:githubSha,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
+  }finally{
+    await f.close();
+    await rm(checkpointDir,{recursive:true,force:true});
+    await rm(consentDir,{recursive:true,force:true});
   }
 });

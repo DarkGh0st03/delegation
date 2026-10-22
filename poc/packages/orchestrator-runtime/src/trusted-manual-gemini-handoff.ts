@@ -21,6 +21,8 @@ import {TrustedPlanningReviewGate}
   from "./trusted-planning-review-gate.ts";
 import {SignedPlanningCheckpointFileStore}
   from "./trusted-planning-checkpoint-store.ts";
+import {TrustedGithubAdmissionReceiptStore}
+  from "./trusted-github-admission-store.ts";
 import {preliminaryReadPermissions,
   type RootParameters}
   from "./trusted-engineer-authority.ts";
@@ -159,4 +161,68 @@ export async function startPersistedReviewedGeminiHandoff(input:{
     }
     throw error;
   }
+}
+
+
+/**
+ * Separate-process handoff of a one-use, HMAC-authenticated GitHub admission.
+ *
+ * The authenticated GitHub job's bounded consent is persisted by the OIDC
+ * intake. A trusted Engineer process consumes ONLY a host-pinned matching
+ * session/run/repository/ref/source record and then independently verifies
+ * the live Planning root, signed Planner checkpoint and Engineer approval.
+ *
+ * The admission receipt NEVER grants authority and carries no Gemini API
+ * secret, JWT, signing key or DC. Constructing/starting ADK servers below
+ * does NOT issue a billable model request; actual inference is still a
+ * separately controlled future step requiring explicit user approval.
+ */
+export async function startStoredGithubReviewedGeminiHandoff(input:
+  Omit<Parameters<typeof startPersistedReviewedGeminiHandoff>[0],
+    "manual"|"maxModelCallMs">&{
+    admissionStore:TrustedGithubAdmissionReceiptStore;
+    expectedRunId:string;
+    expectedGithubSha:string;
+    expectedGithubRepository:string;
+    expectedGithubRef:string;
+    expectedEngineerSessionId:string;
+    geminiApiKey:string|undefined;
+  }
+){
+  if(!(input.coordinator instanceof TrustedExecutionCoordinator)||
+     !(input.reviewGate instanceof TrustedPlanningReviewGate)||
+     !(input.checkpointStore instanceof SignedPlanningCheckpointFileStore)||
+     !(input.admissionStore instanceof TrustedGithubAdmissionReceiptStore)||
+     !input.geminiApiKey?.trim())
+    fail("live trusted Engineer host and private Gemini secret required");
+  // First fail without consuming the one-time consent if the live signed
+  // Planning root or its independently selected session is missing.
+  const active=input.coordinator.trustedPlanningAuthority();
+  if(active.session_id!==input.expectedEngineerSessionId)
+    fail("active Engineer Planning session does not match pinned session");
+  const checkpoint=await input.checkpointStore.load();
+  if(checkpoint.snapshot.session_id!==input.expectedEngineerSessionId)
+    fail("signed checkpoint differs from selected Engineer session");
+  const admitted=await input.admissionStore.consume({
+    expectedRunId:input.expectedRunId,
+    expectedSourceSha:input.expectedGithubSha,
+    expectedSessionId:input.expectedEngineerSessionId
+  });
+  if(admitted.source_repository!==input.expectedGithubRepository||
+     admitted.source_ref!==input.expectedGithubRef)
+    fail("authenticated Github admission differs from pinned source identity");
+  const {admissionStore,expectedRunId,expectedGithubSha,
+    expectedGithubRepository,expectedGithubRef,expectedEngineerSessionId,
+    geminiApiKey,...trusted}=input;
+  return startPersistedReviewedGeminiHandoff({
+    ...trusted,maxModelCallMs:admitted.max_model_call_ms,
+    manual:{
+      githubEventName:"workflow_dispatch",githubRunAttempt:"1",
+      authorizationInput:admitted.authorization_input,
+      geminiApiKey,
+      modelName:admitted.model_name,
+      maxModelTurns:admitted.max_model_turns,
+      maxOutputTokens:admitted.max_output_tokens
+    }
+  });
 }
