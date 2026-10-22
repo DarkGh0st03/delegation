@@ -26,7 +26,11 @@ test("real A2A transport retains a prebound Gateway ID privately, distinct from 
      subtask:{
        subtask_id:"approved-backend",instruction:"Modify only approved file",
        branch:"feature/engineer-approved-42" as const,
-       relevant_paths:["apps/backend/src/users/user.service.ts"]
+       relevant_paths:["apps/backend/src/users/user.service.ts"],
+       approved_file_permissions:[
+         {operation:"read_file" as const,path:"apps/backend/src/users/user.service.ts"},
+         {operation:"update_file" as const,path:"apps/backend/src/users/user.service.ts"}
+       ]
      },
      delegation_evidence:{
        credential:"PRIVATE_TEST_DELEGATION_CREDENTIAL",
@@ -39,6 +43,9 @@ test("real A2A transport retains a prebound Gateway ID privately, distinct from 
    assert.notEqual(response.task.id,ID);
    assert.equal(context.trusted_gateway_task_id,ID);
    assert.equal(context.subtask.branch,"feature/engineer-approved-42");
+   assert.deepEqual(context.subtask.approved_file_permissions,
+     request.subtask.approved_file_permissions);
+   assert.equal(JSON.stringify(response.task).includes("approved_file_permissions"),false);
    const modelVisible=modelVisibleTaskContext(context);
    assert.equal(Object.hasOwn(modelVisible,"trusted_gateway_task_id"),false);
    assert.equal(JSON.stringify(modelVisible).includes(ID),false);
