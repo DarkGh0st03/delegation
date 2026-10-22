@@ -165,3 +165,25 @@ secret and protected persistent filesystem; this does NOT deploy a remote
 Engineer backend or create an authenticated network connection between
 GitHub-hosted Actions and the localhost-only intake. The old paid
 workflow is still separate, with no approval shortcut and no Gemini call.
+
+
+## Consuming authenticated admission in the Engineer host
+
+The trusted-admitted-github-handoff.ts module introduces a separate, in-process
+continuation. consumePinnedGithubAdmission requires an independently configured
+session ID, GitHub run ID, exact source SHA, repository and ref. It consumes a
+short-lived HMAC-authenticated receipt exactly once and returns only bounded
+manual model settings: **not** an Engineer signature, operational DC or token.
+
+startAdmittedGithubReviewedGeminiHandoff first requires a live Planning
+Coordinator and trusted Engineer/checkpoint objects; it then consumes the
+admission and passes only its pinned model/turn/token/timeout limits and
+host-owned API secret to the original persisted signed-review handoff.
+Engineer Ed25519 approval, backend checkpoint verification, operational root
+issuance and Gateway/Rust/OPA checks remain independent and mandatory.
+
+This is a code-level in-process boundary, **not a deployed end-to-end runner**.
+The existing input-check-only GitHub workflow remains non-billable. There is
+still no publicly reachable Engineer service or permitted remote connection.
+Do not interpret an OIDC CI probe or stored admission as authorization for
+Gemini inference, and do not run the paid workflow without explicit consent.
