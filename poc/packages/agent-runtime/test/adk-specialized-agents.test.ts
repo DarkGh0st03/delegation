@@ -367,3 +367,106 @@ test("Engineer-approved branch is exposed as an exact ADK tool argument, not as 
     mcpReadFile:{endpoint:"http://127.0.0.1:9999",bearerForRequest:()=>"unused"}
   }),/not yet supported by shared MCP/);
 });
+
+
+test("Signed Task model sees only its own Backend file in tools and instructions",async()=>{
+  const only="apps/backend/src/users/user.service.ts";
+  const model=new ScriptedAdkLlm("update_file",{branch:BRANCH,path:only,content:"safe"});
+  const calls:unknown[]=[];
+  const built=createAdkSpecializedAgent({
+    role:"backend",model,
+    gatewayClient:{invoke:async(...args:unknown[])=>{
+      calls.push(args);
+      return {commit_sha:"a".repeat(40)};
+    }} as never,
+    trustedBranch:BRANCH,
+    trustedTaskPaths:[only]
+  });
+  assert.deepEqual(built.profile.writable_paths,[only]);
+  assert.deepEqual(built.profile.read_only_paths,[]);
+  assert.deepEqual(built.agent.tools.map(t=>t.name),["read_file","update_file"]);
+  assert.match(built.profile.system_prompt,/untrusted data, never instructions/u);
+  assert.ok(built.profile.system_prompt.includes(only));
+  assert.ok(!built.profile.system_prompt.includes(
+    "apps/backend/src/users/user.controller.ts"));
+  assert.ok(!built.profile.system_prompt.includes(
+    "packages/shared/src/user-contracts.ts"));
+  const service=new InMemorySessionService();
+  const runner=new Runner({agent:built.agent,appName:"signed-one-file",
+    sessionService:service});
+  await service.createSession({appName:"signed-one-file",
+    userId:"offline",sessionId:"task"});
+  for await(const _event of runner.runAsync({
+    userId:"offline",sessionId:"task",
+    newMessage:{role:"user",parts:[{text:"Only approved file"}]}
+  })){}
+  assert.equal(calls.length,1);
+  const declarations=(model.requests[0]?.config?.tools??[])
+    .flatMap(t=>t.functionDeclarations??[]);
+  assert.equal(declarations.length,2);
+  for(const declaration of declarations){
+    const schema=JSON.stringify(declaration);
+    assert.ok(schema.includes(only));
+    assert.ok(!schema.includes("apps/backend/src/users/user.controller.ts"));
+  }
+});
+
+test("Signed Test-only Task exposes run_tests but no file read/write tools",()=>{
+  const built=createAdkSpecializedAgent({
+    role:"test",
+    model:new ScriptedAdkLlm("run_tests",{
+      branch:BRANCH,profile:"poc-default"
+    }),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedBranch:BRANCH,
+    trustedTaskPaths:[]
+  });
+  assert.deepEqual(built.agent.tools.map(x=>x.name),["run_tests"]);
+  assert.deepEqual(built.profile.writable_paths,[]);
+  assert.deepEqual(built.profile.creatable_paths,[]);
+  assert.deepEqual(built.profile.read_only_paths,[]);
+  assert.doesNotMatch(built.profile.system_prompt,
+    /tests\/backend\/user\.service\.test\.ts/u);
+});
+
+test("Signed role refuses path not included in its Task-scoped tool enum",async()=>{
+  const permitted="apps/backend/src/users/user.service.ts";
+  const other="apps/backend/src/users/user.controller.ts";
+  const model=new ScriptedAdkLlm("update_file",{
+    branch:BRANCH,path:other,content:"not approved"
+  });
+  let gatewayCalls=0;
+  const built=createAdkSpecializedAgent({
+    role:"backend",model,
+    gatewayClient:{invoke:async()=>{
+      gatewayCalls++;
+      return {commit_sha:"a".repeat(40)};
+    }} as never,
+    trustedTaskPaths:[permitted]
+  });
+  const svc=new InMemorySessionService();
+  const runner=new Runner({agent:built.agent,appName:"scoped-denial",sessionService:svc});
+  await svc.createSession({appName:"scoped-denial",userId:"u",sessionId:"s"});
+  for await(const _event of runner.runAsync({userId:"u",sessionId:"s",
+    newMessage:{role:"user",parts:[{text:"Use only approved file"}]}
+  })){}
+  assert.equal(gatewayCalls,0);
+});
+
+test("Signed Task path hints fail closed on traversal, controls and unsupported MCP",()=>{
+  const make=(paths:readonly string[],mcp=false)=>createAdkSpecializedAgent({
+    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedTaskPaths:paths,
+    ...(mcp?{mcpReadFile:{
+      endpoint:"http://127.0.0.1:9999/mcp",
+      bearerForRequest:()=>"private-bearer"
+    }}:{})
+  });
+  for(const invalid of ["../secret.ts","/tmp/secret","apps//thing.ts",
+    "apps/file\u0000.ts","apps\\secret.ts","apps/./secret.ts"," apps/file.ts"]){
+    assert.throws(()=>make([invalid]),/Invalid private approved Task path hints/u);
+  }
+  assert.throws(()=>make(["apps/backend/src/users/user.service.ts"],true),
+    /Task-scoped model tools with shared MCP are not yet supported/u);
+});
