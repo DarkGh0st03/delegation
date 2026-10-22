@@ -41,6 +41,8 @@ import {GiteaClient} from "../../gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../gateway/src/gitea-executor.ts";
 import {RunnerClient} from "../../gateway/src/runner-client.ts";
 import {createRunnerHttpServer} from "../src/http.ts";
+import {applyApprovedRealAgentEdits,THREE_ROLE_FILES} from
+  "./approved-real-three-adk-writes.mjs";
 import {DelegatedA2ARoleRunner} from
   "../../../packages/orchestrator-runtime/src/a2a-workflow.ts";
 import {observedA2ACompletion} from
@@ -54,6 +56,10 @@ const URI="gitea://gitea.local/thesis/iam-console-poc";
 // Opt-in only in the EVM CI job. The default standalone smoke remains
 // explicitly fixture-verifier mode and requires no Rust/chain environment.
 const native=process.env.APPROVED_RUNNER_NATIVE_EVM==="1";
+const three=process.env.APPROVED_RUNNER_THREE_AGENT_DAG==="1";
+if(three&&!native)throw Error("Three-role real provider path requires native Rust EVM trust");
+const BACKEND_DID=three?nativeEnv("ADAPTER_ID_BACKEND"):null;
+const FRONTEND_DID=three?nativeEnv("ADAPTER_ID_FRONTEND"):null;
 function nativeEnv(key){
   const v=process.env[key];
   if(!v||!v.trim())throw Error("Native positive E2E missing trusted "+key);
@@ -112,23 +118,58 @@ export async function beginApprovedRealRunnerSession({
   let coordinator;
   try{
     const branchUri=URI+"/branches/"+encodeURIComponent(BRANCH);
+    const backendUri=branchUri+"/files/"+THREE_ROLE_FILES.backend;
+    const frontendUri=branchUri+"/files/"+THREE_ROLE_FILES.frontend;
+    const selectedPermissions=three?[
+      {operation:"update_file",resource:backendUri},
+      {operation:"update_file",resource:frontendUri},
+      {operation:"run_tests",resource:branchUri}
+    ]:[{operation:"run_tests",resource:branchUri}];
     const plan={
       schema_version:"1.0.0",plan_id:"real-gitea-runner-plan",
       session_id:sessionId,version:1,repository:REPOSITORY,base_revision:mainSha,
       requirement:"Run exact pinned feature SHA in Docker with researcher-owned acceptance",
-      candidate_agents:[{agent_id:"test",did:TEST_DID,card_ref:"trusted:test"}],
-      tasks:[{id:"verify",agent_id:"test",title:"Verify feature branch",
-        description:"Run all required project and independent acceptance tests",
-        depends_on:[],resources:[branchUri]}],
-      requested_permissions:[{id:"approved-runner-only",
-        task_id:"verify",agent_id:"test",resource:branchUri,
-        operation:"run_tests",reason:"Verify the exact approved feature revision"}],
+      candidate_agents:[
+        ...(three?[
+          {agent_id:"backend",did:BACKEND_DID,card_ref:"trusted:backend"},
+          {agent_id:"frontend",did:FRONTEND_DID,card_ref:"trusted:frontend"}
+        ]:[]),
+        {agent_id:"test",did:TEST_DID,card_ref:"trusted:test"}
+      ],
+      tasks:[
+        ...(three?[
+          {id:"backend",agent_id:"backend",title:"Backend scoped edit",
+            description:"Perform the approved reference-source backend update",
+            depends_on:[],resources:[backendUri]},
+          {id:"frontend",agent_id:"frontend",title:"Frontend scoped edit",
+            description:"Perform the approved reference-source frontend update",
+            depends_on:["backend"],resources:[frontendUri]}
+        ]:[]),
+        {id:"verify",agent_id:"test",title:"Verify feature branch",
+          description:"Run all required project and independent acceptance tests",
+          depends_on:three?["frontend"]:[],resources:[branchUri]}
+      ],
+      requested_permissions:[
+        ...(three?[
+          {id:"approved-backend-only",task_id:"backend",agent_id:"backend",
+            resource:backendUri,operation:"update_file",
+            reason:"Signed approved backend fixture update"},
+          {id:"approved-frontend-only",task_id:"frontend",agent_id:"frontend",
+            resource:frontendUri,operation:"update_file",
+            reason:"Signed approved frontend fixture update"}
+        ]:[]),
+        {id:"approved-runner-only",
+          task_id:"verify",agent_id:"test",resource:branchUri,
+          operation:"run_tests",reason:"Verify the exact approved feature revision"}
+      ],
       assumptions:[],uncertainties:[]
     };
     const now=new Date().toISOString();
     const approval=makeApproval(plan,{allowedOperations:new Set(RUST_OPERATIONS),
       decision_id:"signed-runner-"+sessionId,approved_by:DID,approved_at:now,
-      approved_permission_ids:["approved-runner-only"]});
+      approved_permission_ids:three?
+        ["approved-backend-only","approved-frontend-only","approved-runner-only"]:
+        ["approved-runner-only"]});
     const {privateKey,publicKey}=generateKeyPairSync("ed25519");
     const keyId="runner-fixture-pinned-v1";
     const signed=signEngineerApproval({
@@ -177,7 +218,7 @@ export async function beginApprovedRealRunnerSession({
         "urn:native:positive-operational-"+unique,18072,1500));
       assert.equal(active.plan_digest,planDigest(plan));
       assert.deepEqual(coordinator.trustedOperationalAuthority().permissions,
-        [{operation:"run_tests",resource:branchUri}]);
+        selectedPermissions);
       activeRootId=active.credential_id;
     }else{
       assert.equal(await registry.activate(sessionId,mainSha),planDigest(plan));
@@ -235,11 +276,6 @@ export async function beginApprovedRealRunnerSession({
         arguments:{branch:forbidden,profile:"poc-default"}
       }),/approved plan|Provider branch|denied/i);
     }
-    const prepared=gateway.prepare({
-      task_id:taskId,agent_role:"test",tool:"run_tests",
-      arguments:{branch:BRANCH,profile:"poc-default"}
-    });
-    assert.equal(prepared.required_permission.resource,branchUri);
     const childId=native?"urn:native:positive-test-"+unique:
       "urn:fixture:scoped-test-child";
     const childInput=nativeCredential(childId,18073,1200);
@@ -250,21 +286,42 @@ export async function beginApprovedRealRunnerSession({
         bearerToken:nativeEnv("ADAPTER_CALLER_ORCHESTRATOR"),
         timeoutMs:30000
       }):null;
+    let approvedFeatureSha=featureSha;
+    let completedEdits=0;
+    if(three){
+      const written=await applyApprovedRealAgentEdits({
+        approvals,coordinator,sessionId,expectedEngineerDid:DID,
+        baseRevision:mainSha,planDigest:planDigest(plan),
+        gateway,gitea:realGitea,approvedBranch:BRANCH,
+        operationalRootId:activeRootId
+      });
+      approvedFeatureSha=written.finalSha;
+      completedEdits=written.operations;
+      assert.equal(completedEdits,2);
+      assert.notEqual(approvedFeatureSha,featureSha,
+        "Native three-agent Gitea modifications must advance the feature HEAD");
+    }
+    // Test Prepare is AFTER both independently corroborated file writes.
+    const prepared=gateway.prepare({
+      task_id:taskId,agent_role:"test",tool:"run_tests",
+      arguments:{branch:BRANCH,profile:"poc-default"}
+    });
+    assert.equal(prepared.required_permission.resource,branchUri);
     let used=false,completed=false,observedA2ATaskId=null,
       observedPolicyVersion=null,observedNativeVerifier=false;
     return {
       request:{request_id:prepared.request_id,repository:URI,
-        branch:BRANCH,commit_sha:featureSha,profile:"poc-default"},
+        branch:BRANCH,commit_sha:approvedFeatureSha,profile:"poc-default"},
       async run(request){
         if(used)throw Error("Signed approved Runner Task cannot be replayed");
         used=true;
         if(request.request_id!==prepared.request_id||
-           request.branch!==BRANCH||request.commit_sha!==featureSha||
+           request.branch!==BRANCH||request.commit_sha!==approvedFeatureSha||
            request.repository!==URI||request.profile!=="poc-default"){
           throw Error("CI runner request differs from signed Test Task");
         }
         const received=await realGitea.getBranchMetadata(BRANCH);
-        assert.equal(received.commit_sha,featureSha,
+        assert.equal(received.commit_sha,approvedFeatureSha,
           "Real Gitea branch moved before signed Runner task");
         // A real A2A SDK client sends a protected Test Task to a local
         // dedicated Agent server; ONLY its taskHandler may invoke Gateway.
@@ -314,7 +371,7 @@ export async function beginApprovedRealRunnerSession({
               assert.equal(authorized.execution.provider,"runner");
               const effect=authorized.execution;
               assert.equal(effect.status,"pass");
-              assert.equal(effect.tested_commit_sha,featureSha);
+              assert.equal(effect.tested_commit_sha,approvedFeatureSha);
               assert.equal(effect.project_tests?.status,"pass");
               assert.equal(effect.researcher_acceptance?.status,"pass");
               observedExecution=effect;
@@ -373,7 +430,7 @@ export async function beginApprovedRealRunnerSession({
           });
           observedA2ATaskId=outcome.task_id;
           assert.notEqual(outcome.task_id,taskId);
-          assert.equal(outcome.artifact.tested_commit_sha,featureSha);
+          assert.equal(outcome.artifact.tested_commit_sha,approvedFeatureSha);
           assert.deepEqual(outcome.artifact.files_created,[]);
           const observation=observedA2ACompletion(outcome,taskId);
           if(coordinator)await coordinator.confirmTask(taskId,observation);
@@ -399,6 +456,7 @@ export async function beginApprovedRealRunnerSession({
       get observedA2ATaskId(){return observedA2ATaskId;},
       get observedPolicyVersion(){return observedPolicyVersion;},
       get nativeCredentialVerified(){return observedNativeVerifier;},
+      get approvedBackendFrontendEdits(){return completedEdits;},
       async close(){
         if(!completed){
           if(coordinator?.phase==="execution"){
