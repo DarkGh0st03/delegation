@@ -468,15 +468,18 @@ async function main(){
         assert.equal(positive?.positive_dag?.researcher_acceptance,"pass");
         assert.equal(positive?.positive_dag?.tested_commit_sha,
           positive?.positive_dag?.approved_branch_sha);
-        assert.equal(positive?.positive_dag?.source_writes,2);
+        assert.equal(positive?.positive_dag?.source_reads,10);
+        assert.equal(positive?.positive_dag?.source_writes,10);
+        assert.equal(positive?.positive_dag?.created_test_files,1);
         assert.equal(positive?.positive_dag?.main_unchanged,true);
         assert.equal(positive?.positive_dag?.operational_root_revoked,true);
-        assert.equal(positive?.provider_writes,2);
+        assert.equal(positive?.provider_writes,11);
         process.stderr.write("[trusted-positive-ci] native_disposable_planning "+
           JSON.stringify({status:"PASS",real_gitea_sha:fixture.mainSha,
             native_rust:true,live_opa:true,signed_handoff:true,
             operational_root:true,dispatcher_fail_closed:true,
-            signed_dag_positive:true,backend_frontend_a2a_updates:2,
+            signed_dag_positive:true,backend_frontend_a2a_updates:10,
+            test_agent_created_e2e:1,
             same_signed_dag_docker_acceptance:true,
             a2a_before_branch:0,main_mutations:0})+"\n");
       },1020000);
