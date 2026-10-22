@@ -36,7 +36,7 @@ interface ApprovedSnapshot{
     session_id:string;repository:{authority:string;owner:string;repository:string};
     base_revision:string;tasks:PlanTask[];
   };
-  approvedRows:{task_id:string;agent_id:string}[];
+  approvedRows:{task_id:string;agent_id:string;operation:string;resource:string}[];
   digest:string;
   approvedBranch:string;
 }
@@ -177,6 +177,12 @@ export class TrustedApprovedA2ADispatcher {
        typeof config.invokeOrchestratorTask!=="function"){
       throw Error("Trusted DAG requires a private Orchestrator provider callback");
     }
+    // A partially approved plan must not cause irreversible branch/file
+    // effects before reaching an unapproved node later in the DAG.
+    if(tasks.some(t=>!this.#snapshot.approvedRows.some(p=>
+       p.task_id===t.id&&p.agent_id===t.agent_id))){
+      throw Error("Approved DAG has a Task without Engineer-granted permissions");
+    }
     const remaining=new Set(tasks.map(t=>t.id));
     const results:DelegatedA2ARoleTaskResult[]=[];
     try{
@@ -245,8 +251,14 @@ export class TrustedApprovedA2ADispatcher {
     const branchRoot=repoRoot+"/branches/"+
       encodeURIComponent(this.#snapshot.approvedBranch);
     const prefix=branchRoot+"/files/";
+    // Only APPROVED permission resources reach the model/A2A context.
+    // The candidate Task may describe more requested files than the
+    // Engineer actually approved; never leak those into relevant_paths.
+    const approvedResources=this.#snapshot.approvedRows.filter(row=>
+      row.task_id===task.id&&row.agent_id===task.agent_id)
+      .map(row=>row.resource);
     const paths:string[]=[];
-    for(const resource of task.resources){
+    for(const resource of approvedResources){
       if(resource===repoRoot||resource===branchRoot)continue;
       if(resource.startsWith(prefix)){
         const encoded=resource.slice(prefix.length);
