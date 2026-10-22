@@ -13,6 +13,14 @@
 import {request as httpsRequest} from "node:https";
 
 const ADMISSION_PATH="/v1/trusted/github/oidc-admission";
+// The runner-provided URL varies by GitHub Actions infrastructure.
+// Allow only known GitHub-owned OIDC service hosts, never arbitrary
+// HTTPS destinations for the short-lived bearer credential.
+const GITHUB_OIDC_REQUEST_HOSTS=new Set([
+  "token.actions.githubusercontent.com",
+  "vstoken.actions.githubusercontent.com",
+  "pipelines.actions.githubusercontent.com"
+]);
 const MAX_BODY_BYTES=48*1024;
 const ENV_KEYS=[
   "GITHUB_ACTIONS","GITHUB_EVENT_NAME","GITHUB_RUN_ATTEMPT",
@@ -63,8 +71,9 @@ export async function submitTrustedGithubOidcFromRunner(
   }catch{fail();}
   // Reject redirects and any attacker-controlled token request destination.
   if(issuerUrl!.protocol!=="https:"||
-     issuerUrl!.hostname!=="pipelines.actions.githubusercontent.com"||
-     issuerUrl!.username||issuerUrl!.password||issuerUrl!.hash||
+     !GITHUB_OIDC_REQUEST_HOSTS.has(issuerUrl!.hostname)||
+     issuerUrl!.port||issuerUrl!.username||issuerUrl!.password||
+     issuerUrl!.hash||issuerUrl!.href.length>4096||
      endpoint!.protocol!=="https:"||
      endpoint!.pathname!==ADMISSION_PATH||
      endpoint!.search||endpoint!.hash||

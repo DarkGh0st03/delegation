@@ -255,6 +255,30 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
   await assert.rejects(submitTrustedGithubOidcFromRunner({
     ...submission,tokenRequestUrl:"https://attacker.example/token"
   }),/admission denied/);
+  await assert.rejects(submitTrustedGithubOidcFromRunner({
+    ...submission,tokenRequestUrl:"https://pipelines.actions.githubusercontent.com:8443/token"
+  }),/admission denied/);
+  // GitHub supplies the request URL at runtime: all recognized GitHub
+  // infrastructure hosts may be used without broad arbitrary-URL fetches.
+  for(const requestHost of [
+    "token.actions.githubusercontent.com",
+    "vstoken.actions.githubusercontent.com"
+  ]){
+    let tokenRequested=false;
+    await assert.rejects(submitTrustedGithubOidcFromRunner({
+      ...submission,
+      tokenRequestUrl:"https://"+requestHost+"/oidc?api-version=2.0",
+      tls:{...tls,ca:"invalid-ca"},
+      oidcFetchFn:(async(url,options)=>{
+        tokenRequested=true;
+        assert.equal(url.hostname,requestHost);
+        assert.equal(url.searchParams.get("audience"),aud);
+        assert.equal(options.redirect,"error");
+        return new Response(JSON.stringify({value:jwt()}),{status:200});
+      })
+    }),/admission denied/);
+    assert.equal(tokenRequested,true);
+  }
   assert.equal((await readdir(f.replays)).length,0);
   await assert.rejects(submitTrustedGithubOidcFromRunner({
     ...submission,tls:{...tls,ca:"invalid-ca"}

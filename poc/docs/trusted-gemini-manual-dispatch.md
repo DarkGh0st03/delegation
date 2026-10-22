@@ -254,3 +254,13 @@ The test uses separate short-lived disposable CA, server, trusted client,
 and CA-signed rogue client identities. Never reuse test certificates for
 deployment. Rotating an authorized client leaf requires an explicit trusted
 host configuration change.
+
+
+The runner obtains ACTIONS_ID_TOKEN_REQUEST_URL from GitHub rather than
+constructing a fixed issuer endpoint. GitHub's OIDC service URL can use
+token.actions.githubusercontent.com, vstoken.actions.githubusercontent.com,
+or pipelines.actions.githubusercontent.com. The bounded client accepts only
+these HTTPS hosts on the default TLS port, refuses redirects, and preserves
+the independently selected audience; no GitHub bearer is forwarded to a
+generic URL. The endpoint continues to authenticate the signed token
+against token.actions.githubusercontent.com and the pinned run identity.
