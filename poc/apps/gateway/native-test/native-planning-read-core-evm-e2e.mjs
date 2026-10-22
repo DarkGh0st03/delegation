@@ -23,6 +23,8 @@ import {SignedEngineerApprovalFileStore} from
 import {TrustedPlanningReviewGate} from
   "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
 import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts";
+import {TrustedApprovedA2ADispatcher} from
+  "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {BaseLlm} from "@google/adk";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
@@ -381,47 +383,84 @@ try{
     assert.equal(operational.credential_id,opId);
     assert.deepEqual(operational.permissions.map(p=>p.operation),
       ["create_branch","update_file"]);
-    const opaqueTask="dispatch_native_handoff_branch";
-    await coordinator.bindDispatchedTask("branch",opaqueTask,"orchestrator");
+    // Load the ACTUAL production-style approved DAG dispatcher from the
+    // same signed review gate, operational root, and immutable base SHA.
+    // A read-only provider cannot create a branch, so this stage deliberately
+    // proves fail-closed BEFORE any specialized A2A send/child DC issuance.
+    let a2aSends=0,childAllocations=0;
+    const dispatcher=await TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority({
+      approvals:reviewGate,coordinator,sessionId:session,
+      expectedPlanDigest:packet.plan_digest,baseRevision:baseSha,
+      expectedEngineerDid:engineerDid,
+      agentBaseUrls:{
+        backend:"http://127.0.0.1:18861",
+        frontend:"http://127.0.0.1:18862",
+        test:"http://127.0.0.1:18863"
+      },
+      a2a:{async sendProtectedTask(){
+        a2aSends++;
+        throw Error("A2A dispatch before verified branch provider effect");
+      }},
+      adapter:{adapterBaseUrl:adapterUrl,bearerToken:token,timeoutMs:60000},
+      async authorityForTask(){
+        childAllocations++;
+        throw Error("Cannot allocate a child before verified branch creation");
+      }
+    });
+    assert.equal(dispatcher.approvedBranch,workBranch);
+    await assert.rejects(dispatcher.dispatch("backend"),/dependencies/);
+    assert.equal(a2aSends,0);
+    assert.equal(childAllocations,0);
+    let branchRequestId;
     const countBefore=log.giteaReads;
-    await assert.rejects(async()=>runtime.prepare({
-      task_id:opaqueTask,agent_role:"orchestrator",
-      tool:"create_branch",arguments:{
-        base_branch:"main",branch:"feature/not-approved"
+    await assert.rejects(dispatcher.executeApprovedDag({
+      async invokeOrchestratorTask(taskId,gatewayTaskId){
+        assert.equal(taskId,"branch");
+        assert.match(gatewayTaskId,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+        await assert.rejects(async()=>runtime.prepare({
+          task_id:gatewayTaskId,agent_role:"orchestrator",
+          tool:"create_branch",arguments:{
+            base_branch:"main",branch:"feature/not-approved"
+          }
+        }),e=>e?.code==="approved_plan_denied");
+        await assert.rejects(async()=>runtime.prepare({
+          task_id:gatewayTaskId,agent_role:"orchestrator",
+          tool:"update_file",arguments:{
+            branch:"main",path:file,content:"malicious"
+          }
+        }));
+        // Correct signed plan action: real EVM-root JWT and native Rust VP
+        // verification, live OPA, then read-only Gitea provider DENIAL.
+        const prepared=runtime.prepare({
+          task_id:gatewayTaskId,agent_role:"orchestrator",
+          tool:"create_branch",arguments:{
+            base_branch:"main",branch:workBranch
+          }
+        });
+        branchRequestId=prepared.request_id;
+        const signed=await fetch(adapterUrl+"/v1/presentations",{
+          method:"POST",
+          headers:{authorization:"Bearer "+token,
+            "content-type":"application/json"},
+          body:JSON.stringify({
+            credential_id:opId,
+            disclosed_permissions:[prepared.required_permission],
+            audience:prepared.audience,challenge:prepared.challenge
+          })
+        });
+        assert.equal(signed.status,200);
+        const jwt=(await signed.json()).signed_vp;
+        assert.ok(typeof jwt==="string"&&jwt.length>100);
+        await runtime.execute({request_id:prepared.request_id,signed_vp:jwt});
       }
-    }),e=>e?.code==="approved_plan_denied");
-    await assert.rejects(async()=>runtime.prepare({
-      task_id:opaqueTask,agent_role:"orchestrator",
-      tool:"update_file",arguments:{
-        branch:"main",path:file,content:"malicious"
-      }
-    }));
-    // The EXACT approved operation reaches native Core Rust verification and
-    // OPA; a separate read-only provider then refuses any real branch write.
-    const branchPrepare=runtime.prepare({
-      task_id:opaqueTask,agent_role:"orchestrator",
-      tool:"create_branch",arguments:{
-        base_branch:"main",branch:workBranch
-      }
-    });
-    const branchJwt=await fetch(adapterUrl+"/v1/presentations",{
-      method:"POST",
-      headers:{authorization:"Bearer "+token,
-        "content-type":"application/json"},
-      body:JSON.stringify({
-        credential_id:opId,disclosed_permissions:[branchPrepare.required_permission],
-        audience:branchPrepare.audience,challenge:branchPrepare.challenge
-      })
-    });
-    assert.equal(branchJwt.status,200);
-    const branchVp=(await branchJwt.json()).signed_vp;
-    assert.ok(typeof branchVp==="string"&&branchVp.length>100);
-    await assert.rejects(runtime.execute({
-      request_id:branchPrepare.request_id,signed_vp:branchVp
     }),e=>e?.code==="provider_operation_unavailable");
+    assert.equal(dispatcher.completedTaskIds.length,0);
+    assert.equal(coordinator.phase,"closed"); // dispatcher closed and revoked root
+    assert.equal(a2aSends,0);
+    assert.equal(childAllocations,0);
     assert.equal(log.giteaReads,countBefore);
     const blocked=audit.events.filter(e=>e.event==="authorization_executed"&&
-      e.request_id===branchPrepare.request_id);
+      e.request_id===branchRequestId);
     assert.equal(blocked.length,1);
     assert.equal(blocked[0].policy_decision,"allow");
     assert.equal(blocked[0].provider_result,"error");
@@ -445,10 +484,11 @@ try{
   await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
   assert.equal(log.giteaReads,before);
   if(signedHandoff){
-    await coordinator.closeExecution();
     assert.equal(coordinator.phase,"closed");
+    // The newly bound dispatcher cannot continue its signed DAG after
+    // provider refusal, and the former operational root is EVM-revoked.
     await assert.rejects(async()=>runtime.prepare({
-      task_id:"dispatch_native_handoff_branch",agent_role:"orchestrator",
+      task_id:"dispatch_expired_native_handoff",agent_role:"orchestrator",
       tool:"create_branch",arguments:{base_branch:"main",branch:workBranch}
     }),e=>e?.code==="approved_plan_denied");
   }
@@ -474,6 +514,10 @@ try{
     signed_ed25519_fixture:signedHandoff,
     native_operational_root_and_activation:signedHandoff,
     operational_root_closed:signedHandoff,
+    dispatcher_bound_signed_dag:signedHandoff,
+    dispatcher_stopped_before_a2a_on_provider_denial:signedHandoff,
+    a2a_tasks_dispatched:0,
+    child_dc_issued:0,
     real_provider_mutations:0,
     provider_writes:0
   }));
