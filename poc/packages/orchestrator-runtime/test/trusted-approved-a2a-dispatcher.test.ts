@@ -52,6 +52,7 @@ function harness(options:{
   failResult?:boolean;removeApproval?:boolean;workBranch?:string;
   invalidArtifactBranch?:boolean;
   unapprovedCandidate?:boolean;
+  approvedReadContext?:boolean;
 }={}){
   const p=plan(options.workBranch);
   if(options.unapprovedCandidate){
@@ -62,6 +63,17 @@ function harness(options:{
     p.requested_permissions.push({
       id:"backend-candidate",task_id:"backend-task",agent_id:"backend",
       resource:extra,operation:"update_file",reason:"Proposed but not approved"
+    });
+  }
+  if(options.approvedReadContext){
+    const uriForRead=uri+"/branches/"+
+      encodeURIComponent(options.workBranch??branch)+
+      "/files/apps/backend/context.ts";
+    p.tasks[1]!.resources.push(uriForRead);
+    p.requested_permissions.push({
+      id:"backend-read-context",task_id:"backend-task",agent_id:"backend",
+      operation:"read_file",resource:uriForRead,
+      reason:"Approved read-only source context"
     });
   }
   const ids=p.requested_permissions.map(x=>x.id)
@@ -85,8 +97,10 @@ function harness(options:{
   const runner={
     async issueAndRun(input:any){
       log.push("run:"+input.subtask.subtask_id+":"+input.trusted_gateway_task_id);
-      if(options.unapprovedCandidate){
+      if(options.unapprovedCandidate||options.approvedReadContext){
         log.push("paths:"+input.subtask.relevant_paths.join(","));
+        log.push("file-rights:"+JSON.stringify(
+          input.subtask.approved_file_permissions));
       }
       return {
         role:options.failResult?"test":input.role,
@@ -301,4 +315,19 @@ test("A2A relevant_paths excludes requested-but-not-approved source files",async
  await d.dispatch("backend-task");
  assert.ok(h.log.includes("paths:apps/backend/user.ts"));
  assert.ok(!JSON.stringify(h.log).includes("never-approved.ts"));
+});
+
+
+test("signed Dispatcher emits read_file context and update_file target as distinct grants",async()=>{
+ const h=harness({approvedReadContext:true});
+ const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await dispatcher.runOrchestratorTask("branch",async()=>{});
+ await dispatcher.dispatch("backend-task");
+ const declared=h.log.find(s=>s.startsWith("file-rights:"));
+ assert.ok(declared);
+ assert.deepEqual(JSON.parse(declared.slice("file-rights:".length)),[
+   {operation:"update_file",path:"apps/backend/user.ts"},
+   {operation:"read_file",path:"apps/backend/context.ts"}
+ ]);
+ assert.ok(h.log.some(x=>x==="paths:apps/backend/user.ts,apps/backend/context.ts"));
 });

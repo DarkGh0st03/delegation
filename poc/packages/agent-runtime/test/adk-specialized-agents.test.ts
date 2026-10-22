@@ -489,3 +489,60 @@ test("Approved Test-only MCP profile exposes timed run_tests but no file MCP too
  assert.equal(built.mcpToolset,undefined);
  assert.deepEqual(built.agent.tools.map(t=>t.name),["run_tests"]);
 });
+
+
+test("Approved read-only context cannot become a write tool, even for a normally writable role file",async()=>{
+ const target="apps/backend/src/users/user.service.ts";
+ const context="apps/backend/src/users/user.controller.ts";
+ const fileRights=[
+   {operation:"read_file" as const,path:target},
+   {operation:"update_file" as const,path:target},
+   {operation:"read_file" as const,path:context}
+ ];
+ const model=new ScriptedAdkLlm("update_file",{
+   branch:BRANCH,path:context,content:"unexpected write"
+ });
+ let calls=0;
+ const built=createAdkSpecializedAgent({
+   role:"backend",model,
+   gatewayClient:{invoke:async()=>{calls++;return {commit_sha:"a".repeat(40)};}} as never,
+   trustedTaskPaths:[target,context],trustedFilePermissions:fileRights
+ });
+ assert.deepEqual(built.profile.writable_paths,[target]);
+ assert.deepEqual(built.profile.read_only_paths,[context]);
+ assert.ok(built.profile.system_prompt.includes("- "+context));
+ const svc=new InMemorySessionService();
+ const runner=new Runner({agent:built.agent,appName:"signed-read-context",sessionService:svc});
+ await svc.createSession({appName:"signed-read-context",userId:"u",sessionId:"s"});
+ for await(const _event of runner.runAsync({userId:"u",sessionId:"s",
+   newMessage:{role:"user",parts:[{text:"Read context, write only approved target"}]}
+ })){}
+ assert.equal(calls,0);
+ const declarations=(model.requests[0]?.config?.tools??[])
+   .flatMap(t=>t.functionDeclarations??[]);
+ const r=JSON.stringify(declarations.find(t=>t.name==="read_file"));
+ const w=JSON.stringify(declarations.find(t=>t.name==="update_file"));
+ assert.ok(r.includes(target)&&r.includes(context));
+ assert.ok(w.includes(target)&&!w.includes(context));
+});
+
+test("Approved write alone does not imply read permission; unsupported grants cannot broaden profile",()=>{
+ const target="apps/backend/src/users/user.service.ts";
+ const make=(rights:Array<{operation:"read_file"|"update_file"|"create_file";path:string}>)=>
+   createAdkSpecializedAgent({
+     role:"backend",
+     model:new ScriptedAdkLlm("update_file",{branch:BRANCH,path:target,content:"ok"}),
+     gatewayClient:{invoke:async()=>({commit_sha:"a".repeat(40)})} as never,
+     trustedTaskPaths:[target],trustedFilePermissions:rights
+   });
+ const writeOnly=make([{operation:"update_file",path:target}]);
+ assert.deepEqual(writeOnly.agent.tools.map(t=>t.name),["update_file"]);
+ assert.deepEqual(writeOnly.profile.read_only_paths,[]);
+ const readOnly=make([{operation:"read_file",path:target}]);
+ assert.deepEqual(readOnly.agent.tools.map(t=>t.name),["read_file"]);
+ assert.deepEqual(readOnly.profile.writable_paths,[]);
+ assert.throws(()=>make([{operation:"read_file",path:"apps/backend/src/users/other.ts"}]),
+   /Invalid signed Task operation-specific file hints/);
+ assert.throws(()=>make([{operation:"read_file",path:target},
+   {operation:"read_file",path:target}]),/Duplicate signed Task file operation/);
+});

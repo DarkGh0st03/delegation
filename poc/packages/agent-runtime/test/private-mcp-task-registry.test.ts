@@ -115,3 +115,58 @@ test("malformed signed MCP path ceiling is rejected before token issuance",()=>{
    }),/invalid_tool_call/);
  }
 });
+
+
+test("MCP enforces operation-specific grants: read context yes, write context no",async()=>{
+ const k=keys();let count=0;
+ const registry=new PrivateMcpTaskRegistry({
+   role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
+ });
+ const writable="apps/backend/src/users/user.service.ts";
+ const context="apps/backend/src/users/user.controller.ts";
+ registry.begin("approved-read-write",{
+   invoke:async(tool,args)=>{
+     count++;
+     return {tool,path:args.path};
+   }
+ },undefined,{
+   allowUpdateFile:true,allowedPaths:[writable,context],
+   allowedFilePermissions:[
+     {operation:"read_file",path:writable},
+     {operation:"update_file",path:writable},
+     {operation:"read_file",path:context}
+   ]
+ });
+ const bearer="Bearer "+registry.bearerFor("approved-read-write");
+ const msg=(tool:string,path:string)=>({tool,arguments:{
+   branch:"feature/account-suspension",path,
+   ...(tool==="update_file"?{content:"allowed only for writable"}:{})
+ }});
+ assert.deepEqual(await registry.invoke(bearer,msg("read_file",context)),
+   {tool:"read_file",path:context});
+ await assert.rejects(registry.invoke(bearer,msg("update_file",context)),
+   /invalid_tool_call/);
+ await registry.invoke(bearer,msg("update_file",writable));
+ assert.equal(count,2);
+ registry.end("approved-read-write");
+});
+
+test("MCP cannot infer read_file from a write grant on the same Task path",async()=>{
+ const k=keys();let count=0;
+ const registry=new PrivateMcpTaskRegistry({
+   role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
+ });
+ const path="apps/backend/src/users/user.service.ts";
+ registry.begin("write-only",{
+   invoke:async()=>{count++;return {};}
+ },undefined,{
+   allowUpdateFile:true,allowedPaths:[path],
+   allowedFilePermissions:[{operation:"update_file",path}]
+ });
+ const auth="Bearer "+registry.bearerFor("write-only");
+ await assert.rejects(registry.invoke(auth,{tool:"read_file",arguments:{
+   branch:"feature/account-suspension",path
+ }}),/invalid_tool_call/);
+ assert.equal(count,0);
+ registry.end("write-only");
+});
