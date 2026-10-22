@@ -25,7 +25,8 @@ import {TrustedEngineerAuthoritySession}
 import {TrustedExecutionCoordinator}
   from "../src/trusted-execution-coordinator.ts";
 import {verifyManualGeminiExecutionReadiness,createReviewedGeminiAdkModel,
-  createReviewedGeminiA2ARoleRuntime,startReviewedGeminiA2AServers}
+  createReviewedGeminiA2ARoleRuntime,startReviewedGeminiA2AServers,
+  verifyPortableManualGeminiHandoff}
   from "../src/trusted-gemini-execution-readiness.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
@@ -596,4 +597,61 @@ test("Planning checkpoint refuses forged, altered, stale, wrong-session or unpin
   }
   const malformed={...ticket,unknown:"value"};
   assert.throws(()=>verifyTrustedPlanningCheckpoint(malformed,config));
+});
+
+
+test("portable manual handoff verifies separate Planning and Engineer signatures before paid readiness",async()=>{
+  const f=await fixture();
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const proposal=f.proposal();
+    const checkpoint=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal,
+      keyId:"backend-1",
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    const input={
+      reviewGate:f.gate,checkpoint,
+      checkpointTrust:{
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch,
+        trustedKeys:{ "backend-1":{public_key_pem:backend.publicKey.export({
+          format:"pem",type:"spki"
+        }).toString()}}
+      },
+      readiness:{
+        githubEventName:"workflow_dispatch",
+        githubRunAttempt:"1",
+        authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+        geminiApiKey:"only-placeholder-never-used",
+        modelName:"gemini-3.8-flash",
+        maxModelTurns:8,maxOutputTokens:16000,
+        trustedPhase:()=>f.coordinator.phase
+      }
+    };
+    await assert.rejects(verifyPortableManualGeminiHandoff(input),
+      /real trusted Planning coordinator/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const ready=await verifyPortableManualGeminiHandoff(input);
+    assert.equal(ready.status,"signed_engineer_approved_manual_gemini_ready");
+    assert.equal(ready.plan_digest,proposal.digest);
+    assert.deepEqual(ready.approved_permission_ids,
+      ["permission-1","permission-3"]);
+    assert.deepEqual(f.revoked,[]);
+    assert.equal(f.issued.length,1);
+    assert.throws(()=>f.gate.stageTrustedProposal(proposal),
+      /one immutable proposal/);
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    assert.equal(f.coordinator.phase,"execution");
+    assert.deepEqual(f.revoked,["urn:preliminary"]);
+    await f.coordinator.closeExecution();
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{await f.close();}
 });

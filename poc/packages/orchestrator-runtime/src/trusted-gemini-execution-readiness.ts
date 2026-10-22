@@ -12,6 +12,10 @@
  */
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
 import {TrustedPlanningReviewGate} from "./trusted-planning-review-gate.ts";
+import {stageVerifiedPlanningCheckpoint,
+  type SignedPlanningCheckpoint,
+  type VerifiedPlanningCheckpoint}
+  from "./trusted-planning-checkpoint.ts";
 import {createGeminiAdkModel}
   from "../../agent-runtime/src/gemini-adk-model.ts";
 import type {AdkA2ATaskHandlerConfig}
@@ -295,4 +299,38 @@ export async function startReviewedGeminiA2AServers(input:{
     }
     throw error;
   }
+}
+
+
+/**
+ * Authenticated MANUAL entry into the existing paid-readiness verification:
+ *
+ *  1. check a separately signed, short-lived Planning checkpoint against
+ *     independently selected session/repository/Gitea SHA and backend key;
+ *  2. stage its exact proposal inside an ACTIVE trusted Planning coordinator;
+ *  3. verify the DIFFERENT Engineer Ed25519 approval receipt, its grant
+ *     subset, and explicit Github manual API-charge consent.
+ *
+ * A standalone GitHub job cannot truthfully assert "active Planning"
+ * simply by reading two files: the trusted coordinator and provisional
+ * authority MUST actually be present/restored before this method is called.
+ * No Gemini model is constructed, no inference billed, and no DC is issued.
+ */
+export async function verifyPortableManualGeminiHandoff(input:{
+  reviewGate:TrustedPlanningReviewGate;
+  checkpoint:SignedPlanningCheckpoint;
+  checkpointTrust:Parameters<typeof stageVerifiedPlanningCheckpoint>[2];
+  readiness:Omit<ManualGeminiExecutionReadinessInput,"reviewGate">;
+}):Promise<Readonly<ManualGeminiExecutionReadiness>>{
+  if(!(input.reviewGate instanceof TrustedPlanningReviewGate))
+    reject("trusted authenticated Engineer review gate required");
+  if(input.readiness.trustedPhase()!=="planning")
+    reject("real trusted Planning coordinator is not active");
+  const packet=stageVerifiedPlanningCheckpoint(input.reviewGate,
+    input.checkpoint,input.checkpointTrust);
+  if(packet.plan_digest!==input.checkpoint.proposal.digest)
+    reject("staged signed Planning provenance changed");
+  return verifyManualGeminiExecutionReadiness({
+    ...input.readiness,reviewGate:input.reviewGate
+  });
 }
