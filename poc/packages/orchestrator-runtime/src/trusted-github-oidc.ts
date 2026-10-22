@@ -126,9 +126,25 @@ async function verifySignedGithubOidcEvent(input:{
   if(failedNames.length){
     // Fixed field names ONLY on non-authorizing offline probe. This reports
     // no raw JWT, signed claim values, tokens or identity details.
-    if(input.expectedEvent==="push")
+    if(input.expectedEvent==="push"){
+      const subject=typeof claims.sub==="string"?claims.sub:"";
+      const repoId=String(claims.repository_id);
+      // Structural flags ONLY. Do not emit subject content.
+      const shape={
+        repo_name_prefix:subject.startsWith("repo:"+pinned.repository+":"),
+        repo_id_prefix:subject.startsWith("repo_id:"+repoId+":"),
+        has_ref:subject.includes(":ref:"),
+        ends_in_ref:subject.endsWith(pinned.ref),
+        has_environment:subject.includes(":environment:"),
+        has_job_workflow_ref:subject.includes(":job_workflow_ref:"),
+        has_pull_request:subject.includes(":pull_request"),
+        subject_length:subject.length
+      };
       process.stderr.write("[offline-oidc] fixed_mismatch_fields "+
         JSON.stringify(failedNames)+"\n");
+      process.stderr.write("[offline-oidc] subject_format_flags "+
+        JSON.stringify(shape)+"\n");
+    }
     fail("OIDC identity does not match trusted job/source/subject pins");
   }
   if(!pinned.sourceSha||pinned.sourceSha!==dispatch.source_sha)
