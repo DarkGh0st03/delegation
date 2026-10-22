@@ -375,8 +375,9 @@ export async function beginApprovedRealRunnerSession({
           assert.notEqual(outcome.task_id,taskId);
           assert.equal(outcome.artifact.tested_commit_sha,featureSha);
           assert.deepEqual(outcome.artifact.files_created,[]);
-          await registry.confirmTaskCompletion(taskId,
-            observedA2ACompletion(outcome,taskId));
+          const observation=observedA2ACompletion(outcome,taskId);
+          if(coordinator)await coordinator.confirmTask(taskId,observation);
+          else await registry.confirmTaskCompletion(taskId,observation);
         }finally{
           if(a2aServer)await a2aServer.close();
         }

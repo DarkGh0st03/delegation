@@ -478,6 +478,10 @@ async function main(){
     assert.equal(approvedSession.observedPolicyVersion,
       "phase6-approved-branch-v2",
       "Real OPA must allow signed, bound Test Task before CI success");
+    if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
+      assert.equal(approvedSession.nativeCredentialVerified,true,
+        "Positive Docker acceptance must use Rust Core verified signed Test VP");
+    }
     assert.equal(approvedSession.completed,true,
       "Gateway must attest the actual Runner result before CI marks success");
     assert.match(approvedSession.observedA2ATaskId??"",/^[A-Za-z0-9_-]{8,}$/u,
@@ -527,6 +531,8 @@ async function main(){
       gateway_signed_test_task_completed:true,
       real_a2a_sdk_task_completed:true,
       real_opa_signed_plan_policy:true,
+      native_rust_signed_child_and_vp:
+        approvedSession.nativeCredentialVerified,
       runner_via_gateway_http:true,
       exact_provider_sha_correlated:true,
       approval_created:true,pr_created:false,merge_calls:0,

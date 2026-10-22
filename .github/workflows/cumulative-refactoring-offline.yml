@@ -211,6 +211,20 @@ jobs:
         run: node poc/apps/gateway/native-test/native-real-evm-e2e.mjs
       - name: Verify signed Engineer handoff and REAL Rust scoped child DC via A2A and native Gateway (offline)
         run: node --experimental-strip-types poc/apps/gateway/native-test/native-approved-scoped-child-evm-e2e.mjs
+      - name: Preload disposable Gitea, OPA and Docker acceptance images
+        run: |
+          docker pull docker.gitea.com/gitea:28.0.0
+          docker pull node:22.15.0-bookworm
+          docker pull openpolicyagent/opa:1.21.1
+      - name: Single signed native VP plus real A2A OPA Gitea and Docker acceptance
+        env:
+          APPROVED_RUNNER_NATIVE_EVM: "1"
+          GITEA_ADMIN_USER: isolated_admin
+          GITEA_ADMIN_PASSWORD: local-native-ci-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+          OPA_IMAGE: openpolicyagent/opa:1.21.1
+        run: npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
       - name: Show trusted service diagnostics if verification fails
         if: failure()
         run: |
