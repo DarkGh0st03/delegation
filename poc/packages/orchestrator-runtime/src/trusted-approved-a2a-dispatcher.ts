@@ -13,7 +13,7 @@ import {randomBytes} from "node:crypto";
 import {assertApprovedPlanScope,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
-import {validatePrivateApprovedBranch} from "../../../packages/agent-runtime/src/approved-branch.ts";
+import {approvedWorkBranch} from "../../../packages/plan-contracts/src/approved-work-branch.mjs";
 import type {AuthenticatedPlanStore} from "../../../apps/gateway/src/approved-execution-plans.ts";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
 import type {
@@ -134,27 +134,14 @@ export class TrustedApprovedA2ADispatcher {
        digest!==config.expectedPlanDigest){
       throw Error("Trusted dispatcher plan does not match activated Gateway digest/SHA");
     }
-    // Derive the only permitted working branch from SIGNED resources.
-    // Arbitrary untrusted LLM-supplied branch strings are never consulted.
+    // Reuse the SAME signed-resource branch derivation as Gateway.
+    // Fail closed rather than picking a branch from model-supplied metadata.
     const root="gitea://"+plan.repository.authority+"/"+
       plan.repository.owner+"/"+plan.repository.repository;
-    const branches=new Set<string>();
-    for(const item of plan.requested_permissions){
-      if(typeof item.resource!=="string")throw Error("Malformed approved resource");
-      if(item.resource===root)continue;
-      const prefix=root+"/branches/";
-      if(!item.resource.startsWith(prefix))throw Error("Unrelated approved repository resource");
-      const encoded=item.resource.slice(prefix.length).split("/")[0];
-      let decoded:string;
-      try{decoded=decodeURIComponent(encoded);}
-      catch{throw Error("Malformed approved branch URI");}
-      if(encodeURIComponent(decoded)!==encoded){
-        throw Error("Approved branch resource is not canonically encoded");
-      }
-      branches.add(validatePrivateApprovedBranch(decoded));
+    if(!plan.requested_permissions.some((p:any)=>p.resource!==root)){
+      throw Error("Exactly one approved feature branch is required");
     }
-    if(branches.size!==1)throw Error("Exactly one approved feature branch is required");
-    const approvedBranch=[...branches][0]!;
+    const approvedBranch=approvedWorkBranch(plan);
     const snapshot:ApprovedSnapshot=structuredClone({
       plan,approvedRows:rows,digest,approvedBranch
     });
