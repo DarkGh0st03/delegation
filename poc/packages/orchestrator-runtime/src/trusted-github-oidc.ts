@@ -101,23 +101,36 @@ async function verifySignedGithubOidcEvent(input:{
      !DECIMAL.test(trust.expectedRepositoryId)||
      !DECIMAL.test(trust.expectedOwnerId))
     fail("missing independently pinned OIDC trust policy");
-  if(claims.iss!==ISSUER||claims.aud!==trust.expectedAudience||
-     claims.sub!==trust.expectedSubject||
-     claims.repository!==pinned.repository||
-     String(claims.repository_id)!==trust.expectedRepositoryId||
-     String(claims.repository_owner_id)!==trust.expectedOwnerId||
-     claims.ref!==pinned.ref||claims.ref_type!=="branch"||
-     claims.sha!==dispatch.source_sha||
-     claims.workflow_sha!==dispatch.source_sha||
-     claims.workflow_ref!==pinned.repository+"/"+
-       pinned.workflowPath+"@"+pinned.ref||
-     claims.event_name!==input.expectedEvent||
-     String(claims.run_id)!==dispatch.run_id||
-     String(claims.run_attempt)!=="1"||
-     !SHA.test(claims.sha??"")||
-     typeof claims.jti!=="string"||claims.jti.length<12||
-     claims.jti.length>256)
+  const comparisons={
+    issuer:claims.iss===ISSUER,
+    audience:claims.aud===trust.expectedAudience,
+    subject:claims.sub===trust.expectedSubject,
+    repository:claims.repository===pinned.repository,
+    repository_id:String(claims.repository_id)===trust.expectedRepositoryId,
+    owner_id:String(claims.repository_owner_id)===trust.expectedOwnerId,
+    ref:claims.ref===pinned.ref,
+    ref_type:claims.ref_type==="branch",
+    sha:claims.sha===dispatch.source_sha,
+    workflow_sha:claims.workflow_sha===dispatch.source_sha,
+    workflow_ref:claims.workflow_ref===pinned.repository+"/"+
+      pinned.workflowPath+"@"+pinned.ref,
+    event:claims.event_name===input.expectedEvent,
+    run_id:String(claims.run_id)===dispatch.run_id,
+    run_attempt:String(claims.run_attempt)==="1",
+    sha_format:SHA.test(claims.sha??""),
+    jti:typeof claims.jti==="string"&&claims.jti.length>=12&&
+      claims.jti.length<=256
+  };
+  const failedNames=Object.entries(comparisons)
+    .filter(([,ok])=>!ok).map(([name])=>name);
+  if(failedNames.length){
+    // Fixed field names ONLY on non-authorizing offline probe. This reports
+    // no raw JWT, signed claim values, tokens or identity details.
+    if(input.expectedEvent==="push")
+      process.stderr.write("[offline-oidc] fixed_mismatch_fields "+
+        JSON.stringify(failedNames)+"\n");
     fail("OIDC identity does not match trusted job/source/subject pins");
+  }
   if(!pinned.sourceSha||pinned.sourceSha!==dispatch.source_sha)
     fail("trusted GitHub source SHA must be pinned independently");
   let response:Response;
