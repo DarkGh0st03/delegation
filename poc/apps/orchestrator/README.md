@@ -384,3 +384,28 @@ trusted actual Gitea SHA, a disposable real Gitea provider and the
 Docker Runner with matching test evidence. Dynamic OPA branch support
 must first be engineered without relaxing its existing main-branch
 restrictions.
+
+## Unified native EVM-to-Docker Test Task (22 October)
+
+The approved-plan and Task-scoped child paths have been combined in
+a **single successful offline CI integration** for the scripted Test
+role: [#39740530903, rerun attempt 2](https://github.com/DarkGh0st03/delegation/actions/runs/39740530903).
+
+`poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs`
+accepts an explicit `APPROVED_RUNNER_NATIVE_EVM=1` trust profile, which
+uses `SoftwareEngineerAuthorityBootstrap`,
+`TrustedEngineerAuthoritySession`,
+`TrustedExecutionCoordinator`,
+`TrustedApprovedPlanChildAuthorityIssuer` and
+`loadDirectCoreRustVerifier`. It refuses missing native credentials
+rather than falling back to fixture authorization. After the native
+challenge-bound VP passes Core Rust and real OPA, the live Gitea/Runner
+provider effect must corroborate the A2A observation and exact tested
+SHA before the Task can complete. The trusted operational root is
+revoked when the session closes.
+
+Do **not** generalize this experiment to three generative Agents or
+human-review production readiness: the Test Agent uses a scripted
+handler against a known reference project; the Engineer signing key is
+ephemeral. The first run timed out in Docker, while an unchanged-code
+rerun passed, so reliability remains an explicit experimental limit.

@@ -111,3 +111,72 @@ Verifier** while keeping the immutable signed Task, OPA branch policy
 and the exact-SHA Runner acceptance unchanged. Only then evaluate
 full ADK-generated multi-agent integration offline before asking
 permission for any paid Gemini E2E.
+
+## Unified native authorization + actual provider checkpoint — 22 October 2026
+
+**Code commit:** `cc7c4333e3fb8896b8fea600190df13fdd10880b`.
+**Evidence:** [Cumulative Offline Refactoring Validation #39740530903,
+attempt 2](https://github.com/DarkGh0st03/delegation/actions/runs/39740530903).
+**Result:** all four jobs `success`, including
+`evm-real-credential` with the new
+`Single signed native VP plus real A2A OPA Gitea and Docker acceptance`
+step. No Gemini/OpenAI API request was made.
+
+This *single native EVM CI job* now contains a **positive, signed,
+pinned Test Task** with:
+
+1. An ephemeral Engineer Ed25519 signature covering the immutable
+   one-Task execution plan and the **actual observed Gitea main SHA**.
+2. Rust Adapter-issued read-only preliminary Planning root; on-chain
+   revocation **before** issuance of a new, independent operational root.
+3. Task/role binding in Gateway, followed by a genuine **Rust Adapter-issued
+   child DC** whose exact approved scope is `run_tests` on the feature
+   branch. The root grants nothing beyond the signed approval.
+4. A real A2A SDK Task and a private delegated evidence context. The
+   Test Agent requests a real challenge-bound VP signed by Rust Adapter.
+5. Independent native Core Rust VP validation, **real Rego OPA**
+   `phase6-approved-branch-v2`, then authorized real Gitea
+   `run_tests` dispatched over the authenticated Runner HTTP client.
+6. Seven actual Docker checks: six project phases and separate researcher
+   acceptance, all passing on the **same Gitea feature SHA**.
+7. Gateway task completion corroborated against the real provider effect,
+   operational root revocation, and Security CI publication
+   `pending -> success` on the exact verified commit.
+   The disposable Gitea main remains unchanged; no PR is created or
+   merged.
+
+Concrete provider evidence from the successful native step:
+feature SHA `1139d9da9f21bb430293ff24cbad801d082c95b9`,
+`policy_decision=allow`, `verification_ms=1607.84`,
+`opa_ms=4.64`, `provider_ms=55978.10`,
+`runner_status=pass`,
+`runner_project_tests_status=pass`, and
+`runner_researcher_acceptance_status=pass`.
+The programmatic CI evidence explicitly records
+`native_rust_signed_child_and_vp=true`,
+`real_opa_signed_plan_policy=true`,
+`real_a2a_sdk_task_completed=true`,
+`exact_provider_sha_correlated=true` and zero merge calls.
+These are observed values from **one integration run**, not average
+performance measurements.
+
+**Failure and reproducibility:** attempt 1 of the native job reached
+a 300-second Docker Runner phase timeout. Its signed VP was already
+accepted and OPA allowed the request; Gateway refused to attest
+Task completion. Retrying the SAME job on the SAME framework commit
+passed with no source modifications. This suggests environmental/
+dependency-install variability; the exact timed-out Docker phase was
+not conclusively identified from the CI's scrubbed diagnostics.
+Do not conceal this unsuccessful first attempt, claim deterministic
+reliability, or equate intermittent success with benchmark results.
+
+**Limits:** this is a scripted, deterministic **Test Agent** running a
+trusted, pinned reference Account Suspension implementation. It is
+**not** a Gemini-generated three-agent DAG, a live LLM planner, a
+production federated Engineer login, a real on-screen human sign-off,
+a real organizational Gitea installation, or a source-`main` merge.
+The Engineer Ed25519 approval uses a disposable CI test key and test
+identity. Provider authorization, immutable SHA and independent
+cryptographic checks are genuine inside the disposable environment,
+but the complete multi-agent generative workflow still needs separate
+real-world/paid verification with explicit owner permission.

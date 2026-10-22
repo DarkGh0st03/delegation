@@ -101,3 +101,28 @@ are real; the child DC, verifier and policy in THIS integration are test
 fixtures. Native Rust-signed child DC, EVM revocation and live OPA are
 independently exercised by the cumulative EVM job, not yet united with
 this specific A2A + Gitea + Docker Runner run. Gemini is not called.
+
+### Native Rust VP plus actual Runner end-to-end evidence
+
+The cumulative EVM job now executes the **same disposable positive
+acceptance script** with `APPROVED_RUNNER_NATIVE_EVM=1`, in addition to
+the ordinary fixture-verifier mode tested by the separate Docker job.
+Native mode fails immediately when required EVM identities or Adapter
+caller credentials are absent; it never silently substitutes a fixture
+verifier. It uses the compiled **native Core Rust** verifier, live
+Anvil registries, genuine Adapter root/child issuance and the real
+signed challenge-bound VP. Both modes retain the same Ed25519 Engineer
+plan validation, real OPA, A2A SDK, Gitea and Docker acceptance.
+
+Validated: [CI #39740530903, attempt 2](https://github.com/DarkGh0st03/delegation/actions/runs/39740530903).
+The native positive step emitted
+`native_rust_signed_child_and_vp=true`,
+`real_opa_signed_plan_policy=true`,
+`real_a2a_sdk_task_completed=true` and
+`exact_provider_sha_correlated=true`. The first native attempt timed out
+after 300 seconds of provider work; the unchanged-code rerun succeeded.
+No paid model or source-repository merge is part of either run.
+
+Only the **Test role** executes in this unified positive scenario.
+It consumes an existing, fixed reference commit; it does not generate
+Backend/Frontend source using Gemini or exercise an autonomous planner.
