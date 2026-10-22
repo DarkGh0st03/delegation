@@ -6,6 +6,8 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {GithubOidcReplayFileStore}
   from "../src/trusted-github-oidc-replay-store.ts";
+import {TrustedGithubAdmissionReceiptStore}
+  from "../src/trusted-github-admission-store.ts";
 import {startTrustedGithubOidcIntakeServer}
   from "../src/trusted-github-oidc-intake.ts";
 
@@ -78,8 +80,13 @@ const githubRunFetch=(async()=>new Response(JSON.stringify({
 test("loopback trusted admission independently validates OIDC and run, consumes replay, never authorizes Gemini",async()=>{
   const directory=await mkdtemp(join(tmpdir(),"trusted-oidc-admission-"));
   const replayStore=new GithubOidcReplayFileStore(directory);
+  const admissionStore=new TrustedGithubAdmissionReceiptStore({
+    directory,hmacSecret:Buffer.alloc(32,37),
+    expectedSessionId:"engineer-session-001"
+  });
   const server=await startTrustedGithubOidcIntakeServer({
-    pinned,trust,replayStore,githubApiToken:"local-read-only-github",
+    pinned,trust,replayStore,admissionStore,
+    githubApiToken:"local-read-only-github",
     oidcJwksFetchFn:jwksFetch,githubApiFetchFn:githubRunFetch,port:0
   });
   try{
@@ -102,7 +109,7 @@ test("loopback trusted admission independently validates OIDC and run, consumes 
       gemini_calls:0
     });
     assert.equal((await send(body)).status,403);
-    assert.equal((await readdir(directory)).length,1);
+    assert.equal((await readdir(directory)).length,2);
     const bad=await send({env,event,
       oidcJwt:makeJwt({sub:"repo:attacker/other:ref:"+ref})});
     assert.equal(bad.status,403);
@@ -118,7 +125,24 @@ test("loopback trusted admission independently validates OIDC and run, consumes 
       env,event:{...event,inputs:{...event.inputs,
         authorization:"NO"}},oidcJwt:makeJwt()
     })).status,403);
-    assert.equal((await readdir(directory)).length,1);
+    assert.equal((await readdir(directory)).length,2);
+    const admitted=await admissionStore.consume({
+      expectedRunId:runId,expectedSourceSha:sourceSha,
+      expectedSessionId:"engineer-session-001"
+    });
+    assert.equal(admitted.run_id,runId);
+    assert.equal(admitted.source_sha,sourceSha);
+    assert.equal(admitted.session_id,"engineer-session-001");
+    assert.equal(admitted.authorization_input,
+      "I AUTHORIZE GEMINI API CHARGES");
+    assert.equal(admitted.kind,
+      "oidc_authenticated_only_not_engineer_approved");
+    assert.equal(admitted.max_model_turns,12);
+    assert.equal(admitted.max_output_tokens,16000);
+    await assert.rejects(admissionStore.consume({
+      expectedRunId:runId,expectedSourceSha:sourceSha,
+      expectedSessionId:"engineer-session-001"
+    }),/already consumed/);
     const missing=await fetch(server.baseUrl+"/invalid");
     assert.equal(missing.status,404);
     assert.equal(missing.headers.get("cache-control"),"no-store");
@@ -132,13 +156,17 @@ test("loopback trusted admission independently validates OIDC and run, consumes 
 test("trusted admission rejects unpinned host configuration before listening",async()=>{
   const directory=await mkdtemp(join(tmpdir(),"trusted-oidc-reject-"));
   try{
+    const admissionStore=new TrustedGithubAdmissionReceiptStore({
+      directory,hmacSecret:Buffer.alloc(32,37),
+      expectedSessionId:"engineer-session-001"
+    });
     await assert.rejects(startTrustedGithubOidcIntakeServer({
       pinned:{...pinned,sourceSha:"invalid"},trust,
-      githubApiToken:"local-test",
+      githubApiToken:"local-test",admissionStore,
       replayStore:new GithubOidcReplayFileStore(directory)
     }),/host configuration missing/);
     await assert.rejects(startTrustedGithubOidcIntakeServer({
-      pinned,trust,githubApiToken:"",
+      pinned,trust,githubApiToken:"",admissionStore,
       replayStore:new GithubOidcReplayFileStore(directory)
     }),/host configuration missing/);
   }finally{await rm(directory,{recursive:true,force:true});}

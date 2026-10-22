@@ -17,6 +17,8 @@
 import {createServer,type Server} from "node:http";
 import {GithubOidcReplayFileStore}
   from "./trusted-github-oidc-replay-store.ts";
+import {TrustedGithubAdmissionReceiptStore}
+  from "./trusted-github-admission-store.ts";
 import {verifyGithubOidcJobAssertion,
   type GithubOidcTrustPolicy}
   from "./trusted-github-oidc.ts";
@@ -60,6 +62,8 @@ export interface TrustedGithubOidcIntakeConfig{
   trust:GithubOidcTrustPolicy;
   githubApiToken:string;
   replayStore:GithubOidcReplayFileStore;
+  /** Independent host-only one-use session-bound receipt store. */
+  admissionStore:TrustedGithubAdmissionReceiptStore;
   /** Useful only for offline unit tests. */
   githubApiFetchFn?:typeof fetch;
   oidcJwksFetchFn?:typeof fetch;
@@ -75,6 +79,7 @@ export async function startTrustedGithubOidcIntakeServer(
   config:TrustedGithubOidcIntakeConfig
 ):Promise<TrustedGithubOidcIntakeServer>{
   if(!(config.replayStore instanceof GithubOidcReplayFileStore)||
+     !(config.admissionStore instanceof TrustedGithubAdmissionReceiptStore)||
      !config.githubApiToken?.trim()||
      !/^[0-9a-f]{40}$/u.test(config.pinned?.sourceSha??"")||
      !config.trust?.expectedAudience?.trim()||
@@ -122,6 +127,9 @@ export async function startTrustedGithubOidcIntakeServer(
         fetchFn:config.githubApiFetchFn
       });
       await config.replayStore.claim(authenticated);
+      // Durable, signed session-bound consent for the trusted host, never
+      // a model/root authorization. Replays and persistence errors fail closed.
+      await config.admissionStore.record({dispatch,job:authenticated});
       respond(200,{
         status:"github_job_authenticated_only_not_engineer_approved",
         source_sha:dispatch.source_sha,run_id:dispatch.run_id,
