@@ -4,7 +4,7 @@ import {generateKeyPairSync,sign} from "node:crypto";
 import {mkdtemp,rm,chmod,readdir} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
-import {verifyGithubOidcJobAssertion}
+import {verifyGithubOidcJobAssertion,verifyGithubOidcOfflinePushProbe}
   from "../src/trusted-github-oidc.ts";
 import {GithubOidcReplayFileStore}
   from "../src/trusted-github-oidc-replay-store.ts";
@@ -233,4 +233,25 @@ test("rejected GitHub run metadata never consumes an otherwise valid OIDC token"
     } as any),/GitHub API does not corroborate/);
     assert.deepEqual(await readdir(dir),[]);
   }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+
+test("signed push identity is diagnostic only and cannot pass paid workflow_dispatch",async()=>{
+  const original=claims();
+  const push={...original,event_name:"push"};
+  const proof=await verifyGithubOidcOfflinePushProbe({
+    jwt:jwt(push),pinned,expectedRunId:RUN,trust,fetchFn:jwksFetch
+  });
+  assert.deepEqual(proof,{
+    kind:"offline_push_identity_only",run_id:RUN,
+    workflow_sha:SHA,signature_verified:true
+  });
+  assert.equal("jti" in proof,false);
+  await assert.rejects(verify(jwt(push)),/OIDC identity does not match/);
+  await assert.rejects(verifyGithubOidcOfflinePushProbe({
+    jwt:jwt(original),pinned,expectedRunId:RUN,trust,fetchFn:jwksFetch
+  }),/OIDC identity does not match/);
+  await assert.rejects(verifyGithubOidcOfflinePushProbe({
+    jwt:jwt(push),pinned,expectedRunId:"123",trust,fetchFn:jwksFetch
+  }),/OIDC identity does not match/);
 });

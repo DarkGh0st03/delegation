@@ -86,3 +86,17 @@ id-token: write, a host-specific OIDC audience, an independently pinned source
 SHA, and a secure authenticated transport to the host. Do not add the paid
 Gemini API secret to the input-check-only workflow, or infer human approval
 from the JWT alone. The old paid workflow is still separate.
+
+
+## Real GitHub-issued OIDC diagnostic (offline)
+
+The cumulative **push** workflow has an isolated job named github-issued-oidc-offline.
+It requests a real GitHub OIDC JWT with job-scoped id-token: write and validates
+issuer JWKS signature, unique test audience, exact subject, pinned numeric
+repository/owner IDs, ref, workflow path, SHA and run ID. No JWT or jti is
+logged or sent to an Engineer backend. There are zero model calls.
+
+It returns offline_push_identity_only, a separate type that is NOT accepted
+by the paid workflow_dispatch verification path. No signature of the human
+Engineer is supplied or inferred. Deployment of an authenticated Engineer
+service remains outside this offline smoke test.

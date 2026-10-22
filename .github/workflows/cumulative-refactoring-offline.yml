@@ -289,3 +289,23 @@ jobs:
         run: |
           docker ps -a --filter 'name=delegation-ci-positive-' --format '{{.Names}} {{.Status}}'
           docker ps -a --filter 'name=delegation-runner-' --format '{{.Names}} {{.Status}}'
+
+
+  github-issued-oidc-offline:
+    name: GitHub-issued OIDC signature and source proof (no models)
+    # Push-only diagnostic. A valid push JWT cannot authorize Gemini.
+    if: ${{ github.event_name == 'push' && github.run_attempt == 1 && github.repository == 'DarkGh0st03/delegation' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+      - name: Request GitHub-issued OIDC token and verify pinned push identity
+        run: node --experimental-strip-types poc/packages/orchestrator-runtime/scripts/check-real-github-oidc-offline.mjs
