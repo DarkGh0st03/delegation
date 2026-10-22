@@ -5,6 +5,11 @@
  */
 import {startPersistedReviewedGeminiHandoff}
   from "./trusted-manual-gemini-handoff.ts";
+import {verifyGithubOidcJobAssertion,
+  type GithubOidcTrustPolicy}
+  from "./trusted-github-oidc.ts";
+import {GithubOidcReplayFileStore}
+  from "./trusted-github-oidc-replay-store.ts";
 
 const SHA=/^[a-f0-9]{40}$/u;
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
@@ -165,16 +170,37 @@ export async function startGithubReviewedGeminiHandoff(input:
     /** Trusted backend token with Actions:read (never model-facing). */
     githubApiToken:string|undefined;
     githubApiFetchFn?:typeof fetch;
+    /** Short-lived issuer-signed GitHub job token from same TLS/IPC request. */
+    oidcJwt:string;
+    /** Backend-pinned numeric repository IDs, subject and private audience. */
+    oidcTrust:GithubOidcTrustPolicy;
+    /** Owner-only persistent backend replay ledger (not ephemeral CI). */
+    oidcReplayStore:GithubOidcReplayFileStore;
+    oidcJwksFetchFn?:typeof fetch;
   }
 ){
   const checked=verifyGithubManualGeminiDispatch(input);
+  if(!(input.oidcReplayStore instanceof GithubOidcReplayFileStore))
+    deny("persistent authenticated OIDC replay store required");
+  // The identity JWT MUST be verified independently of untrusted workflow
+  // event JSON, using the fixed GitHub issuer JWKS. No self-signed claims.
+  const job=await verifyGithubOidcJobAssertion({
+    jwt:input.oidcJwt,dispatch:checked,pinned:input.pinned,
+    trust:input.oidcTrust,fetchFn:input.oidcJwksFetchFn
+  });
+  // GitHub's authoritative run record corroborates this in-progress job.
   await verifyGithubManualRunViaApi({
     dispatch:checked,pinned:input.pinned,
     githubApiToken:input.githubApiToken,
     fetchFn:input.githubApiFetchFn
   });
+  // Consume the signed job assertion exactly once BEFORE granting authority.
+  // A failed downstream launch is intentionally nonretryable without a fresh
+  // manually authorized run and new independently validated token.
+  await input.oidcReplayStore.claim(job);
   const {env,event,pinned,geminiApiKey,githubApiToken,
-    githubApiFetchFn,...trusted}=input;
+    githubApiFetchFn,oidcJwt,oidcTrust,oidcReplayStore,
+    oidcJwksFetchFn,...trusted}=input;
   return startPersistedReviewedGeminiHandoff({
     ...trusted,
     maxModelCallMs:checked.max_model_call_ms,

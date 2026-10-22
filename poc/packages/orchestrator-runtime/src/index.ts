@@ -22,3 +22,5 @@ export * from "./trusted-planning-checkpoint.ts";
 export * from "./trusted-planning-checkpoint-store.ts";
 export * from "./trusted-manual-gemini-handoff.ts";
 export * from "./trusted-manual-github-dispatch.ts";
+export * from "./trusted-github-oidc.ts";
+export * from "./trusted-github-oidc-replay-store.ts";
