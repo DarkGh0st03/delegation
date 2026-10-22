@@ -23,6 +23,8 @@ type Command=
   |{action:"activate";session_id:string;base_revision:string}
   |{action:"bind";session_id:string;plan_task_id:string;runtime_task_id:string;role:AgentRole}
   |{action:"close";session_id:string}
+  |{action:"lease_status"}
+  |{action:"renew_lease";session_id:string;plan_digest:string}
   |{action:"complete";runtime_task_id:string;observation:TrustedCompletionObservation};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
@@ -37,6 +39,7 @@ function validate(x:unknown):Command{
      typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id)&&
      o.observation!==null&&typeof o.observation==="object"&&
      !Array.isArray(o.observation))return o as Command;
+  if(o.action==="lease_status"&&exact(o,["action"]))return o as Command;
   const sessionOk=typeof o.session_id==="string"&&ID.test(o.session_id);
   if(!sessionOk)fail("invalid session ID");
   if(o.action==="activate"&&exact(o,["action","session_id","base_revision"])&&
@@ -46,6 +49,9 @@ function validate(x:unknown):Command{
      typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id)&&
      typeof o.role==="string"&&ROLES.has(o.role))return o as Command;
   if(o.action==="close"&&exact(o,["action","session_id"]))return o as Command;
+  if(o.action==="renew_lease"&&exact(o,["action","session_id","plan_digest"])&&
+     typeof o.plan_digest==="string"&&MAC.test(o.plan_digest))
+    return o as Command;
   return fail("unknown or malformed command");
 }
 function sign(secret:Buffer,timestamp:string,nonce:string,body:Buffer):string{
@@ -131,7 +137,12 @@ export async function createTrustedPlanIpcServer(config:{
       }
       seen.set(nonce,now+MAX_AGE);
       const command=validate(JSON.parse(body.toString("utf8")));
-      if(command.action==="activate"){
+      if(command.action==="lease_status"){
+        response(res,200,{ok:true,enabled:config.plans.operationalLeaseConfigured()});
+      }else if(command.action==="renew_lease"){
+        config.plans.renewLease(command.session_id,command.plan_digest);
+        response(res,200,{ok:true});
+      }else if(command.action==="activate"){
         const plan_digest=await config.plans.activate(
           command.session_id,command.base_revision);
         response(res,200,{ok:true,plan_digest});
@@ -193,14 +204,30 @@ export async function createTrustedPlanIpcServer(config:{
 export class TrustedPlanIpcClient{
   readonly #socket:string;
   readonly #secret:Buffer;
+  #leaseEnabled=false;
   private constructor(path:string,secret:Buffer){
     this.#socket=path;this.#secret=secret;
   }
   static async connect(options:{socketPath:string;secretFile:string}){
-    return new TrustedPlanIpcClient(
+    const client=new TrustedPlanIpcClient(
       socketPath(options.socketPath),
       await loadTrustedPlanIpcSecret(options.secretFile)
     );
+    // The answer itself arrives over the authenticated owner-only socket:
+    // never trust a client-side boolean that could disagree with Gateway.
+    const capabilities=await client.#send({action:"lease_status"});
+    if(typeof capabilities.enabled!=="boolean")
+      fail("Gateway did not attest operational lease configuration");
+    client.#leaseEnabled=capabilities.enabled;
+    return client;
+  }
+  operationalLeaseConfigured():boolean{return this.#leaseEnabled;}
+  async renewLease(sessionId:string,expectedDigest:string):Promise<void>{
+    if(!this.#leaseEnabled)
+      fail("remote Gateway has no operational lease");
+    await this.#send({
+      action:"renew_lease",session_id:sessionId,plan_digest:expectedDigest
+    });
   }
   async #send(value:Command):Promise<any>{
     const body=Buffer.from(JSON.stringify(validate(value)));

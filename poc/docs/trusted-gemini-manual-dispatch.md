@@ -374,3 +374,28 @@ private renewal IPC to the Engineer process; no remote Gateway deployment or
 crash-recovery persistence is claimed. Provider operations already in flight
 at the precise instant of expiry are not automatically interrupted; a
 continuous trusted cancellation mechanism would be separate hardening.
+
+
+### Authenticated separate-process lease renewal
+
+The pre-existing owner-only Unix socket Gateway control plane now accepts
+two strictly scoped HMAC-authenticated management commands: lease_status
+and renew_lease (session ID + independently approved plan digest). Both
+commands are denied over public Gateway HTTP, A2A, MCP and agent tool
+surfaces. During connection, the Coordinator reads the actual remote Gateway
+lease capability over the authenticated socket, rather than trusting a
+caller-provided flag. The trusted deployment bootstrap optionally accepts
+TRUSTED_PLAN_OPERATIONAL_LEASE_MS (10,000..120,000) and owns the clock.
+
+A dedicated separate-process regression deliberately stops renewing the
+lease, leaves the Gateway child process and already-prepared challenge
+alive, waits for the minimum TTL, and checks that both Execute and Prepare
+are rejected. Even a valid private IPC renewal with the wrong plan digest,
+or any attempted renewal after expiry, is denied. The test also verifies
+that normal explicit Coordinator cleanup can still revoke the DC after
+Gateway expiry, but is not required to stop new provider calls.
+
+The separate-process IPC transport is implemented, but **not deployed** on
+an always-on Engineer + Gateway infrastructure. Lease enforcement is at
+Gateway authorization boundaries, not at the independent Rust status
+registry, and does not kill provider operations already in flight.

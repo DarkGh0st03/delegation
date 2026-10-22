@@ -66,7 +66,10 @@ function root(id:string,index:string){
     }
   };
 }
-async function setup(t:import("node:test").TestContext){
+async function setup(
+  t:import("node:test").TestContext,
+  options:{operationalLeaseMs?:number}={}
+){
   const home=await mkdtemp(join(tmpdir(),"trusted-plan-ipc-"));
   const privateDir=join(home,"private"),receipts=join(home,"receipts");
   await mkdir(privateDir,{mode:0o700});
@@ -108,7 +111,9 @@ async function setup(t:import("node:test").TestContext){
       TRUSTED_PLAN_APPROVAL_DIR:receipts,
       TRUSTED_PLAN_ENGINEER_DID:DID,
       TRUSTED_PLAN_KEY_ID:KEY_ID,
-      TRUSTED_PLAN_PUBLIC_KEY_FILE:publicKeyFile
+      TRUSTED_PLAN_PUBLIC_KEY_FILE:publicKeyFile,
+      ...(options.operationalLeaseMs===undefined
+        ?{}:{TRUSTED_PLAN_OPERATIONAL_LEASE_MS:String(options.operationalLeaseMs)})
     },
     stdio:["ignore","pipe","pipe","ipc"]
   });
@@ -410,4 +415,58 @@ test("signed DAG dispatches a real A2A SDK Task to a separate-process Gateway vi
 
   await coordinator.closeExecution();
   assert.equal(e.trace.at(-1),"revoke:urn:ipc:a2a-work-root");
+});
+
+
+test("independent Gateway child expires operational authority after Engineer crash without any close message",async t=>{
+  // Real separate processes, same Gateway enforcement instance as provider.
+  // A 10-second minimum lease is used; Engineer intentionally stops renewing.
+  const e=await setup(t,{operationalLeaseMs:10_000});
+  assert.equal(e.client.operationalLeaseConfigured(),true);
+  const coordinator=new TrustedExecutionCoordinator({
+    authority:e.authority,approvedGatewayPlans:e.client,credentials:e.credentials,
+    sessionId:e.p.session_id,baseRevision:SHA
+  });
+  coordinator.assertOperationalLeaseConfigured();
+  await coordinator.beginPlanning(root("urn:lease:read-root","700"));
+  await coordinator.beginExecution(root("urn:lease:work-root","701"));
+  await coordinator.bindDispatchedTask("branch","a2a-crash-branch","orchestrator");
+  const call={
+    task_id:"a2a-crash-branch",agent_role:"orchestrator",
+    tool:"create_branch",arguments:{
+      base_branch:"main",branch:"feature/approved"
+    }
+  };
+  const prepared=await post(e.publicUrl,"/v1/authorization/prepare",call);
+  assert.equal(prepared.status,201);
+  const challenge=await prepared.json();
+  await assert.rejects(
+    e.client.renewLease(e.p.session_id,"e".repeat(64)),/denied/);
+  await coordinator.renewExecutionLease();
+  // Simulate abrupt host termination: do NOT notify Gateway or call close.
+  // The independent Gateway clock expires the lease with no Engineer timers.
+  await new Promise(resolve=>setTimeout(resolve,10_100));
+  const execute=await post(e.publicUrl,"/v1/authorization/execute",{
+    request_id:challenge.request_id,signed_vp:"fixture-vp"
+  });
+  assert.equal(execute.status,403);
+  assert.equal((await post(e.publicUrl,"/v1/authorization/prepare",call)).status,403);
+  await assert.rejects(coordinator.renewExecutionLease(),/denied/);
+  // Cleanup remains possible, but must never resurrect authorization.
+  await coordinator.closeExecution();
+  assert.equal(e.trace.at(-1),"revoke:urn:lease:work-root");
+  assert.equal((await post(e.publicUrl,"/v1/authorization/prepare",call)).status,403);
+});
+
+test("legacy private plan-control cannot impersonate a Gateway lease policy",async t=>{
+  const e=await setup(t);
+  assert.equal(e.client.operationalLeaseConfigured(),false);
+  const coordinator=new TrustedExecutionCoordinator({
+    authority:e.authority,approvedGatewayPlans:e.client,credentials:e.credentials,
+    sessionId:e.p.session_id,baseRevision:SHA
+  });
+  assert.throws(()=>coordinator.assertOperationalLeaseConfigured(),
+    /Gateway-side operational lease/);
+  await assert.rejects(e.client.renewLease(e.p.session_id,
+    planDigest(e.p)),/no operational lease/);
 });

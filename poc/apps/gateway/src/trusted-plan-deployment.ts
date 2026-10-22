@@ -49,8 +49,15 @@ export async function trustedPlanDeploymentFromEnv(repository:GatewayRepositoryC
       [keyId]:{engineer_did:engineerDid,public_key_pem:publicKey}
     }
   });
+  // Optional independent Gateway watchdog: this TTL lives in the Gateway
+  // process and does NOT rely on Engineer Node timers for expiry. Admitted
+  // GitHub execution refuses any Gateway without this configured.
+  const leaseRaw=process.env.TRUSTED_PLAN_OPERATIONAL_LEASE_MS;
+  if(leaseRaw!==undefined&&!/^[1-9]\d{3,5}$/u.test(leaseRaw))
+    throw Error("Invalid trusted Gateway operational lease duration");
   const plans=new TrustedApprovedExecutionPlans({
     repository,engineerDid,approvals,
+    ...(leaseRaw===undefined?{}:{operationalLeaseMs:Number(leaseRaw)}),
     // Gateway independently corroborates private Coordinator observations
     // using results retained from authorized provider I/O.
     completionAttestor:new GatewayCorroboratedTaskAttestor()
