@@ -115,3 +115,26 @@ repo:DarkGh0st03@150908952/delegation@1374168963:ref:refs/heads/refactor/post-pr
 The trusted paid backend still requires an independently provided exact
 expectedSubject for its actual workflow and cannot derive trust from a
 JWT-supplied subject.
+
+
+## Loopback Engineer-host OIDC admission endpoint
+
+The trusted-github-oidc-intake.ts module starts a **localhost-only** HTTP
+endpoint at /v1/trusted/github/oidc-admission. The Engineer host independently
+injects OIDC audience/subject and immutable repository owner IDs, a pinned
+source revision, the GitHub Actions read token, and its **persistent**
+owner-only replay ledger. The incoming JSON may only include the GitHub
+workflow event, bounded environment metadata and short-lived OIDC token.
+
+Admission enforces manual workflow_dispatch identity, cryptographic GitHub
+OIDC signature, independent in-progress Actions REST corroboration and
+atomic one-use replay consumption. Responses never expose the JWT, API
+secret, token ID, Engineer approval or private host config.
+
+**This endpoint is deliberately authentication-only**. It does not issue
+root credentials, load Engineer signing keys, open ADK/Gemini, invoke tools,
+or launch execution. It cannot accept an unauthenticated public reverse
+proxy or replace actual Engineer Ed25519 approval. A future persistent
+Engineer service must deliver the OIDC assertion and event over an
+authenticated private channel and integrate the full trusted Coordinator
+and signed permission review atomically. No external backend is deployed.
