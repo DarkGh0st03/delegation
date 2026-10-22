@@ -467,6 +467,26 @@ test("Signed Task path hints fail closed on traversal, controls and unsupported 
     "apps/file\u0000.ts","apps\\secret.ts","apps/./secret.ts"," apps/file.ts"]){
     assert.throws(()=>make([invalid]),/Invalid private approved Task path hints/u);
   }
-  assert.throws(()=>make(["apps/backend/src/users/user.service.ts"],true),
-    /Task-scoped model tools with shared MCP are not yet supported/u);
+  const withMcp=make(["apps/backend/src/users/user.service.ts"],true);
+  assert.ok(withMcp.mcpToolset,
+    "Approved Task may retain shared MCP; private registry enforces path grants");
+  assert.deepEqual(withMcp.agent.tools.map(tool=>tool.name),[
+    "update_file","read_file"
+  ]);
+});
+
+
+test("Approved Test-only MCP profile exposes timed run_tests but no file MCP tools",()=>{
+ const built=createAdkSpecializedAgent({
+   role:"test",model:new ScriptedAdkLlm("run_tests",{
+     branch:BRANCH,profile:"poc-default"
+   }),
+   gatewayClient:{invoke:async()=>({})} as never,
+   trustedTaskPaths:[],
+   mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",
+     bearerForRequest:()=>"private-task-bearer"},
+   mcpRunTests:true
+ });
+ assert.equal(built.mcpToolset,undefined);
+ assert.deepEqual(built.agent.tools.map(t=>t.name),["run_tests"]);
 });
