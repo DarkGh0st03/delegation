@@ -10,8 +10,11 @@ import {constants} from "node:fs";
 import {lstat,open} from "node:fs/promises";
 import {join,resolve} from "node:path";
 import {verifyTrustedPlanningCheckpoint,
+  stageVerifiedPlanningCheckpoint,
   type SignedPlanningCheckpoint}
   from "./trusted-planning-checkpoint.ts";
+import type {TrustedPlanningReviewGate}
+  from "./trusted-planning-review-gate.ts";
 
 const SESSION=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MAX_BYTES=256*1024;
@@ -60,5 +63,10 @@ export class SignedPlanningCheckpointFileStore{
     catch{throw Error("Invalid persisted Planning checkpoint JSON");}
     verifyTrustedPlanningCheckpoint(checkpoint,this.#trust);
     return structuredClone(checkpoint) as SignedPlanningCheckpoint;
+  }
+
+  /** Revalidate with this store's PINNED keys, never caller-supplied keys. */
+  stageVerified(gate:TrustedPlanningReviewGate,ticket:SignedPlanningCheckpoint){
+    return stageVerifiedPlanningCheckpoint(gate,ticket,this.#trust);
   }
 }

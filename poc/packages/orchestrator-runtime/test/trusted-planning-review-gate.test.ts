@@ -22,6 +22,8 @@ import {signTrustedPlanningCheckpoint,verifyTrustedPlanningCheckpoint,
   from "../src/trusted-planning-checkpoint.ts";
 import {SignedPlanningCheckpointFileStore}
   from "../src/trusted-planning-checkpoint-store.ts";
+import {startPersistedReviewedGeminiHandoff}
+  from "../src/trusted-manual-gemini-handoff.ts";
 import {TrustedEngineerAuthoritySession}
   from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
@@ -703,4 +705,135 @@ test("checkpoint file store verifies pinned backend signature and owner-only per
     await chmod(file,0o644);
     await assert.rejects(store.load(),/owner-only/);
   }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
+test("trusted manual host loads persisted backend signature + Engineer receipt then activates three A2A roles",async()=>{
+  const f=await fixture();
+  const folder=await mkdtemp(join(tmpdir(),"manual-gemini-host-"));
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const plan=f.proposal();
+    const ticket=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal:plan,
+      keyId:"backend-host",
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    await writeFile(join(folder,SNAPSHOT.session_id+".json"),
+      JSON.stringify(ticket),{mode:0o600});
+    const checkpointStore=new SignedPlanningCheckpointFileStore({
+      directory:folder,trust:{
+        trustedKeys:{"backend-host":{
+          public_key_pem:backend.publicKey.export({
+            format:"pem",type:"spki"
+          }).toString()
+        }},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const manual={
+      githubEventName:"workflow_dispatch",
+      githubRunAttempt:"1",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+      geminiApiKey:"non-billable-dummy",modelName:"gemini-3.8-flash",
+      maxModelTurns:8,maxOutputTokens:8000
+    };
+    const transports={
+      backend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"backend-token"},
+      frontend:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"frontend-token"},
+      test:{gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",adapterToken:"test-token"}
+    };
+    const input={
+      coordinator:f.coordinator,reviewGate:f.gate,checkpointStore,
+      manual,transports,maxModelCallMs:30000,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:30581,frontend:30582,test:30583}
+    };
+    await assert.rejects(startPersistedReviewedGeminiHandoff(input),
+      /Active verified Planning root/);
+    assert.equal(f.issued.length,0);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await assert.rejects(startPersistedReviewedGeminiHandoff(input));
+    assert.equal(f.issued.length,1);
+    await f.sign(plan.plan,["permission-1","permission-3"]);
+    // The unsigned input object cannot override the trusted phase.
+    const launched=await startPersistedReviewedGeminiHandoff(input);
+    try{
+      assert.equal(launched.readiness.plan_digest,plan.digest);
+      assert.equal(launched.operational_root_id,"urn:operational");
+      assert.deepEqual(Object.keys(launched.endpoints),
+        ["backend","frontend","test"]);
+      assert.equal(f.coordinator.phase,"execution");
+      assert.equal(f.issued.length,2);
+      assert.deepEqual(f.revoked,["urn:preliminary"]);
+    }finally{await launched.close();}
+    await f.coordinator.closeExecution();
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{
+    await f.close();
+    await rm(folder,{recursive:true,force:true});
+  }
+});
+
+test("persisted manual host refuses wrong checkpoint SHA before operational issuance",async()=>{
+  const f=await fixture();
+  const folder=await mkdtemp(join(tmpdir(),"manual-gemini-invalid-"));
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const proposal=f.proposal();
+    const checkpoint=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal,
+      keyId:"backend-host",
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    await writeFile(join(folder,SNAPSHOT.session_id+".json"),
+      JSON.stringify(checkpoint),{mode:0o600});
+    const checkpointStore=new SignedPlanningCheckpointFileStore({
+      directory:folder,trust:{
+        trustedKeys:{"backend-host":{
+          public_key_pem:backend.publicKey.export({
+            format:"pem",type:"spki"
+          }).toString()
+        }},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,
+        expectedBaseRevision:"b".repeat(40),
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    await assert.rejects(startPersistedReviewedGeminiHandoff({
+      coordinator:f.coordinator,reviewGate:f.gate,checkpointStore,
+      manual:{
+        githubEventName:"workflow_dispatch",githubRunAttempt:"1",
+        authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+        geminiApiKey:"fake",modelName:"gemini-3.8-flash",
+        maxModelTurns:8,maxOutputTokens:8000
+      },
+      transports:{} as any,maxModelCallMs:30000,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:30581,frontend:30582,test:30583}
+    }),/not pinned to independently selected session or Gitea SHA/);
+    assert.equal(f.issued.length,1);
+    assert.equal(f.coordinator.phase,"planning");
+    assert.deepEqual(f.revoked,[]);
+  }finally{
+    await f.close();
+    await rm(folder,{recursive:true,force:true});
+  }
 });

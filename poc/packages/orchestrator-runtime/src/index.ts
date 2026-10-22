@@ -20,3 +20,4 @@ export * from "./trusted-planning-review-gate.ts";
 export * from "./trusted-gemini-execution-readiness.ts";
 export * from "./trusted-planning-checkpoint.ts";
 export * from "./trusted-planning-checkpoint-store.ts";
+export * from "./trusted-manual-gemini-handoff.ts";

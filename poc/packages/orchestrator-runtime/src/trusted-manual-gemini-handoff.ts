@@ -1,0 +1,107 @@
+/**
+ * Trusted host-side manual Gemini entry.
+ *
+ * THIS IS NOT a GitHub Actions entrypoint: CI files and CLI environment
+ * variables cannot reconstruct or impersonate active Planning authority.
+ * The host must already possess the real Rust-verified preliminary root,
+ * an immutable session/Gitea SHA, the pinned backend signature key, and a
+ * separately signed Engineer receipt in the protected approval store.
+ *
+ * No model inference happens here. When a later host executes signed A2A
+ * tasks it must use the returned exact endpoints with the trusted
+ * ApprovedA2ADispatcher and Gateway/Core Rust/OPA.
+ */
+import {isDeepStrictEqual} from "node:util";
+import {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
+import {TrustedPlanningReviewGate}
+  from "./trusted-planning-review-gate.ts";
+import {SignedPlanningCheckpointFileStore}
+  from "./trusted-planning-checkpoint-store.ts";
+import {preliminaryReadPermissions,
+  type RootParameters}
+  from "./trusted-engineer-authority.ts";
+import {
+  createReviewedGeminiA2ARoleRuntime,
+  startReviewedGeminiA2AServers,
+  type ManualGeminiExecutionReadinessInput,
+  type ReviewedGeminiAgentRole,
+  type TrustedGeminiAgentTransport
+} from "./trusted-gemini-execution-readiness.ts";
+
+function fail(reason:string):never{
+  throw new Error("Trusted manual Gemini handoff: "+reason);
+}
+
+/**
+ * One-use transition: authenticated Planning root + independently pinned
+ * backend checkpoint + separate Engineer signature + manual bill consent
+ * -> independently scoped operational root -> 3 local ADK/A2A servers.
+ *
+ * On failure after activation the operational root is revoked, and the
+ * error is propagated. The caller must close servers AND the Coordinator
+ * after running the separately authenticated plan dispatcher.
+ */
+export async function startPersistedReviewedGeminiHandoff(input:{
+  coordinator:TrustedExecutionCoordinator;
+  reviewGate:TrustedPlanningReviewGate;
+  checkpointStore:SignedPlanningCheckpointFileStore;
+  manual:Omit<ManualGeminiExecutionReadinessInput,
+    "reviewGate"|"trustedPhase">;
+  transports:Readonly<Record<ReviewedGeminiAgentRole,
+    TrustedGeminiAgentTransport>>;
+  maxModelCallMs:number;
+  operationalRoot:RootParameters;
+  ports:Readonly<Record<ReviewedGeminiAgentRole,number>>;
+}){
+  if(!(input.coordinator instanceof TrustedExecutionCoordinator)||
+     !(input.reviewGate instanceof TrustedPlanningReviewGate)||
+     !(input.checkpointStore instanceof SignedPlanningCheckpointFileStore))
+    fail("real trusted Coordinator, checkpoint store and Engineer review required");
+  // Do not accept a caller's fabricated phase callback or pasted receipt.
+  const root=input.coordinator.trustedPlanningAuthority();
+  const ticket=await input.checkpointStore.load();
+  if(root.session_id!==ticket.snapshot.session_id||
+     root.base_revision!==ticket.snapshot.base_revision||
+     !isDeepStrictEqual(root.permissions,preliminaryReadPermissions(ticket.snapshot)))
+    fail("active preliminary Rust root differs from signed Planning snapshot");
+  // Both provenance and Engineer receipt are separately checked.
+  const staged=input.checkpointStore.stageVerified(input.reviewGate,ticket);
+  const reviewed=await createReviewedGeminiA2ARoleRuntime({
+    ...input.manual,
+    trustedPhase:()=>input.coordinator.phase,
+    reviewGate:input.reviewGate,
+    transports:input.transports,
+    maxModelCallMs:input.maxModelCallMs
+  });
+  if(staged.plan_digest!==reviewed.readiness.plan_digest||
+     reviewed.readiness.session_id!==root.session_id||
+     reviewed.readiness.base_revision!==root.base_revision)
+    fail("signed manual review differs from activated Planning root");
+  let activated=false;
+  try{
+    const operational=await input.coordinator.beginExecution(
+      input.operationalRoot);
+    activated=true;
+    if(operational.plan_digest!==reviewed.readiness.plan_digest)
+      fail("new operational root does not match signed Engineer grant");
+    const servers=await startReviewedGeminiA2AServers({
+      coordinator:input.coordinator,reviewed,ports:input.ports
+    });
+    return Object.freeze({
+      readiness:reviewed.readiness,
+      operational_root_id:operational.credential_id,
+      endpoints:servers.endpoints,
+      servers:servers.servers,
+      close:servers.close
+    });
+  }catch(error){
+    if(activated&&input.coordinator.phase==="execution"){
+      try{await input.coordinator.closeExecution();}
+      catch{
+        throw new Error("Trusted Gemini handoff failed; operational root revocation requires reconciliation",
+          {cause:error});
+      }
+    }
+    throw error;
+  }
+}
