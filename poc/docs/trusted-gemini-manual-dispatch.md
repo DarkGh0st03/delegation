@@ -31,3 +31,17 @@ The new manual event workflow does not call it or inject a Gemini API key.
 This workflow_dispatch file will not appear as a runnable action until GitHub
 exposes the workflow from the default branch. Do not merge this feature work
 to main just to enable input validation.
+
+
+The paid in-process bridge also independently checks an active workflow run
+through the GitHub Actions REST API using a host-owned read-only GitHub token.
+It requires an independently pinned source SHA, the correct workflow file,
+repository, branch, first attempt, a fresh run, and an in-progress status.
+This blocks a copied/old dispatch event from being accepted as a live run.
+
+**Important remaining limitation:** the GitHub REST run record does not
+cryptographically attest the free-form workflow_dispatch input values.
+Any persistent Engineer backend accepting dispatch data from outside the
+runner must authenticate its caller, for example through validated GitHub
+OIDC claims or a private authenticated IPC channel. REST corroboration
+alone is not authentication of the user's charge-consent string.

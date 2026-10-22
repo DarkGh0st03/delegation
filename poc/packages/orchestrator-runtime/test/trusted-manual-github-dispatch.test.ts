@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {verifyGithubManualGeminiDispatch}
+import {verifyGithubManualGeminiDispatch,verifyGithubManualRunViaApi}
   from "../src/trusted-manual-github-dispatch.ts";
 const REPO="DarkGh0st03/delegation";
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -76,4 +76,61 @@ test("manual Github event rejects forged repository, ref and missing inputs",()=
   ])assert.throws(()=>verifyGithubManualGeminiDispatch({
     env,event:candidate,pinned
   }),/Trusted Github manual dispatch:/);
+});
+
+
+test("trusted GitHub API corroborates a fresh in-progress first manual run",async()=>{
+  const dispatch=check();
+  const good={
+    id:Number(dispatch.run_id),event:"workflow_dispatch",
+    run_attempt:1,status:"in_progress",
+    head_sha:SHA,head_branch:REF.slice("refs/heads/".length),
+    path:PATH,head_repository:{full_name:REPO},
+    created_at:new Date().toISOString()
+  };
+  const calls:any[]=[];
+  const fetchFn=async(url:any,options:any)=>{
+    calls.push({url,headers:options.headers});
+    return new Response(JSON.stringify(good),{status:200});
+  };
+  await verifyGithubManualRunViaApi({
+    dispatch,pinned,githubApiToken:"test-only-read-token",
+    fetchFn:fetchFn as typeof fetch
+  });
+  assert.equal(calls.length,1);
+  assert.equal(calls[0].url,
+    "https://api.github.com/repos/"+REPO+"/actions/runs/"+dispatch.run_id);
+  assert.equal(calls[0].headers.authorization,"Bearer test-only-read-token");
+});
+test("paid bridge rejects missing API attestation and tampered run metadata",async()=>{
+  const dispatch=check();
+  const good={
+    id:Number(dispatch.run_id),event:"workflow_dispatch",
+    run_attempt:1,status:"in_progress",
+    head_sha:SHA,head_branch:REF.slice("refs/heads/".length),
+    path:PATH,head_repository:{full_name:REPO},
+    created_at:new Date().toISOString()
+  };
+  const run=(body:any,status=200)=>verifyGithubManualRunViaApi({
+    dispatch,pinned,githubApiToken:"test-only-token",
+    fetchFn:(async()=>new Response(JSON.stringify(body),{status})) as typeof fetch
+  });
+  await assert.rejects(verifyGithubManualRunViaApi({
+    dispatch,pinned,githubApiToken:undefined
+  }),/GitHub API token missing/);
+  await assert.rejects(verifyGithubManualRunViaApi({
+    dispatch,pinned:{...pinned,sourceSha:undefined},
+    githubApiToken:"test"
+  }),/independently pin/);
+  for(const bad of [
+    {event:"push"},{run_attempt:2},{status:"completed"},
+    {head_sha:"0".repeat(40)},{head_branch:"main"},
+    {path:".github/workflows/legacy.yml"},
+    {id:100},{head_repository:{full_name:"attacker/delegation"}},
+    {created_at:new Date(Date.now()-3*60*60*1000).toISOString()}
+  ]){
+    await assert.rejects(run({...good,...bad}),
+      /Trusted Github manual dispatch:/);
+  }
+  await assert.rejects(run(good,401),/metadata rejected/);
 });

@@ -99,6 +99,62 @@ export function verifyGithubManualGeminiDispatch(input:{
   });
 }
 
+/**
+ * A backend outside GitHub Actions cannot treat caller-provided env/event as
+ * authenticated proof. Independently query the trusted GitHub REST API,
+ * using a read-only token from the HOST secret manager (not event inputs).
+ * Requiring the SAME in-progress first manual run blocks fake/old CI events.
+ *
+ * GitHub's run API does not attest arbitrary event inputs; the host MUST
+ * additionally authenticate the runner-to-host channel (OIDC or private IPC)
+ * before accepting the dispatch JSON. This REST check is necessary but NOT
+ * sufficient on its own to authenticate consent.
+ */
+export async function verifyGithubManualRunViaApi(input:{
+  dispatch:ReviewedGithubDispatchRequest;
+  pinned:PinnedGithubDispatch;
+  githubApiToken:string|undefined;
+  fetchFn?:typeof fetch;
+  nowMs?:number;
+}):Promise<void>{
+  const {dispatch,pinned}=input;
+  if(!input.githubApiToken?.trim())deny("trusted GitHub API token missing");
+  if(!pinned.sourceSha||pinned.sourceSha!==dispatch.source_sha)
+    deny("host must independently pin the workflow source revision");
+  const url="https://api.github.com/repos/"+
+    pinned.repository+"/actions/runs/"+dispatch.run_id;
+  let result:Response;
+  try{
+    result=await (input.fetchFn??fetch)(url,{
+      headers:{
+        authorization:"Bearer "+input.githubApiToken,
+        accept:"application/vnd.github+json",
+        "x-github-api-version":"2022-11-28"
+      },
+      signal:AbortSignal.timeout(10000)
+    });
+  }catch{
+    deny("trusted GitHub API run metadata unavailable");
+  }
+  if(!result.ok)deny("trusted GitHub API run metadata rejected");
+  let run:Record<string,any>;
+  try{run=await result.json() as Record<string,any>;}
+  catch{deny("malformed trusted GitHub run metadata");}
+  const created=Date.parse(run.created_at);
+  const now=input.nowMs??Date.now();
+  if(!Number.isFinite(created)||!Number.isFinite(now)||
+     created>now+60000||now-created>2*60*60*1000)
+    deny("manual workflow run is too old or premature");
+  if(String(run.id)!==dispatch.run_id||
+     run.event!=="workflow_dispatch"||run.run_attempt!==1||
+     run.status!=="in_progress"||
+     run.head_sha!==dispatch.source_sha||
+     run.head_branch!==pinned.ref.slice("refs/heads/".length)||
+     run.path!==pinned.workflowPath||
+     run.head_repository?.full_name!==pinned.repository)
+    deny("GitHub API does not corroborate active manual run identity");
+}
+
 /** The ONLY paid bridge: requires actual Coordinator/checkpoint/Engineer
  * objects in this process. No event input can supply those objects. */
 export async function startGithubReviewedGeminiHandoff(input:
@@ -106,10 +162,19 @@ export async function startGithubReviewedGeminiHandoff(input:
     "manual"|"maxModelCallMs">&{
     env:Env;event:unknown;pinned:PinnedGithubDispatch;
     geminiApiKey:string|undefined;
+    /** Trusted backend token with Actions:read (never model-facing). */
+    githubApiToken:string|undefined;
+    githubApiFetchFn?:typeof fetch;
   }
 ){
   const checked=verifyGithubManualGeminiDispatch(input);
-  const {env,event,pinned,geminiApiKey,...trusted}=input;
+  await verifyGithubManualRunViaApi({
+    dispatch:checked,pinned:input.pinned,
+    githubApiToken:input.githubApiToken,
+    fetchFn:input.githubApiFetchFn
+  });
+  const {env,event,pinned,geminiApiKey,githubApiToken,
+    githubApiFetchFn,...trusted}=input;
   return startPersistedReviewedGeminiHandoff({
     ...trusted,
     maxModelCallMs:checked.max_model_call_ms,
