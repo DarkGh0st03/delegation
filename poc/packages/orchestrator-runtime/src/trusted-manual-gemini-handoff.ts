@@ -64,8 +64,26 @@ export async function startPersistedReviewedGeminiHandoff(input:{
      root.base_revision!==ticket.snapshot.base_revision||
      !isDeepStrictEqual(root.permissions,preliminaryReadPermissions(ticket.snapshot)))
     fail("active preliminary Rust root differs from signed Planning snapshot");
-  // Both provenance and Engineer receipt are separately checked.
-  const staged=input.checkpointStore.stageVerified(input.reviewGate,ticket);
+  // A Planning proposal is one-shot. It may have been staged BEFORE the
+  // Engineer signed it, so re-entry after the signature must compare the
+  // complete previously staged proposal, never silently replace/restage it.
+  let staged:ReturnType<TrustedPlanningReviewGate["reviewPacket"]>|undefined;
+  try{staged=input.reviewGate.reviewPacket();}
+  catch(error){
+    if(!String(error).includes("no staged proposal available"))
+      throw error;
+  }
+  if(staged){
+    if(staged.plan_digest!==ticket.proposal.digest||
+       staged.session_id!==ticket.snapshot.session_id||
+       staged.base_revision!==ticket.snapshot.base_revision||
+       staged.work_branch!==ticket.expected_work_branch||
+       staged.verified_source_reads!==ticket.proposal.verified_source_reads||
+       !isDeepStrictEqual(staged.plan,ticket.proposal.plan))
+      fail("staged Engineer review does not match signed backend checkpoint");
+  }else{
+    staged=input.checkpointStore.stageVerified(input.reviewGate,ticket);
+  }
   const reviewed=await createReviewedGeminiA2ARoleRuntime({
     ...input.manual,
     trustedPhase:()=>input.coordinator.phase,
