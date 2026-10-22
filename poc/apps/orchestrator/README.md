@@ -409,3 +409,32 @@ human-review production readiness: the Test Agent uses a scripted
 handler against a known reference project; the Engineer signing key is
 ephemeral. The first run timed out in Docker, while an unchanged-code
 rerun passed, so reliability remains an explicit experimental limit.
+
+## Full approved DAG runner, three ADK roles — offline
+
+The `TrustedApprovedA2ADispatcher.executeApprovedDag` method adds a
+deterministic, dependency-aware execution driver to the previously
+manual `dispatch` and `runOrchestratorTask` operations. Orchestrator
+tasks must be invoked by a separately trusted callback; no model may
+supply its own authority, Agent Card URLs, resources or task graph.
+Success requires trusted Gateway/provider completion for *every* Task,
+followed by Gateway closure and operational-root revocation. An
+uncertain completion prevents downstream dispatch.
+
+The new integration test uses **three real ADK Runners and three live
+loopback A2A server instances** with scripted `BaseLlm` implementations.
+They execute the signed sequence Backend -> Frontend -> Test against a
+fixture-only controlled Gateway and Adapter exchange. The test checks
+that tool calls outside the Backend's approved resource fail closed and
+that no child credential or private Adapter token reaches the model
+request. The Engineer approval is signed with disposable Ed25519 keys
+and verified from an owner-only approval-file store.
+
+CI: [Trusted Prebound A2A Dispatch (Offline)
+#39744803272](https://github.com/DarkGh0st03/delegation/actions/runs/39744803272)
+**success**.
+
+This is NOT an actual Gemini call, production authentication, or a
+native Rust/Gitea/Docker three-agent execution. The latter is the
+next integration milestone, building upon the separately successful
+real-native, single-Test-Agent provider acceptance.

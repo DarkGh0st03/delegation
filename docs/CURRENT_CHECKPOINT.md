@@ -180,3 +180,44 @@ identity. Provider authorization, immutable SHA and independent
 cryptographic checks are genuine inside the disposable environment,
 but the complete multi-agent generative workflow still needs separate
 real-world/paid verification with explicit owner permission.
+
+## Full three-role signed ADK/A2A DAG orchestration — 22 October 2026
+
+The opt-in trusted dispatcher now exports
+`executeApprovedDag({invokeOrchestratorTask})`. It processes the immutable
+Engineer-approved graph in dependency order, maps each specialized Task to
+a private prebound Gateway Task ID, requires trusted provider completion
+before unlocking dependent nodes, and closes the Gateway session plus
+operational root after the whole DAG succeeds. A failure is terminal:
+no automatic retry or further Task dispatch, and session closure/
+credential-revocation failure must be surfaced for reconciliation.
+
+The dedicated offline test
+`poc/packages/orchestrator-runtime/test/trusted-approved-three-adk-a2a-offline.test.ts`
+covers an actual **three-role Google ADK Runtime**, three separate A2A
+HTTP+JSON Agent Card servers, real SDK sendMessage/getTask polling and
+an **authenticated Ed25519 signed Engineer approval file**. A scripted
+non-network model issues one tool request for Backend, then Frontend, then
+Test. The plan's branch creation is handled separately by the trusted
+Orchestrator. The test verifies the sequence
+`branch -> backend -> frontend -> tests`, checks that every A2A request
+is prebound, asserts that each model invocation is free from delegation
+credentials, and denies a Backend attempt to edit the Frontend path.
+Failure blocks all successor Tasks and closes the trusted session.
+
+**IMPORTANT evidence boundary:** this new all-three-agent test uses
+scripted `BaseLlm` models and deterministic **Adapter/VP/Gateway/OPA/
+Git/Runner fixtures**. It establishes real ADK and A2A transport and
+trusted DAG execution, NOT a positive full-cryptography, full-provider
+three-agent E2E. The existing **single-Test-Agent** native EVM positive
+run separately verified real Rust child DC issuance, Core Rust VP
+verification, OPA, Gitea and Docker in one run
+([#39740530903 attempt 2](https://github.com/DarkGh0st03/delegation/actions/runs/39740530903)).
+Combining these two dimensions into one multi-agent native-provider
+workflow remains an independent milestone.
+
+Evidence: [Trusted Prebound A2A Dispatch (Offline)
+#39744803272](https://github.com/DarkGh0st03/delegation/actions/runs/39744803272)
+succeeded with the signed three-role ADK/A2A tests and existing runtime
+regressions. The new DAG logic was not merged into `main`; no paid
+Gemini calls, PR merge or production user identity assertion occurred.
