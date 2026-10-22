@@ -604,3 +604,57 @@ The dedicated offline suite
 (https://github.com/DarkGh0st03/delegation/actions/runs/39750696187)
 passed with the narrowed signed ADK behavior. The cumulative suites
 run independently.
+
+
+## 22 October 2026 — pinned functional Backend and Frontend code changes
+
+**Validated code:** `aef4993b76651bfff437524481543e306b60de80`.
+**Validated CI:** [Cumulative Offline Refactoring Validation #39756850796]
+(https://github.com/DarkGh0st03/delegation/actions/runs/39756850796):
+**4 of 4 jobs succeeded on the same commit**, including real EVM/Rust
+credential checking, three-role ADK/A2A, actual Gitea file mutations,
+six real Docker application phases, independent researcher acceptance
+and Security CI `pending -> success` on the final Git SHA
+`8d92339f9be858a34d9f25c5b76b57ae333f42ff`.
+
+The previously appended inert comment edits are now replaced in
+this opt-in **offline reference test** by two **substantive but
+deterministic** transformations:
+- Backend `apps/backend/src/users/user.service.ts`: its `listUsers`
+  result is ordered by display name with `localeCompare`.
+- Frontend `apps/frontend/src/pages/UserDetailPage.tsx`: success
+  feedback uses `role="status"` and `aria-live="polite"`, while
+  error feedback uses `role="alert"`.
+
+`approved-functional-reference.mjs` is NOT an LLM. It applies only
+these narrow changes to a byte-exact pinned source. Unexpected,
+tampered or unpinned repository text is rejected. The signed
+three-Agent workflow performs four real Gateway-protected,
+native-Rust-VP-verified Gitea reads before the two changes: each
+Agent reads its exact write target and one separately approved,
+read-only contract/API context file. No read permission is inferred
+from write permission or vice versa. The test verifies the exact
+new file contents through an independent real Gitea reread and checks
+that Docker builds, backend/frontend tests, browser E2E and researcher
+acceptance pass on the final two-write SHA. Three dedicated offline
+source-transform tests also cover exact edits and rejection of
+malicious/unexpected source drift.
+
+**Further fail-closed preflight:** the later commit
+`e968d762c9ba6497566b8d61e80e3f1ff7daeb45`
+additionally refuses to call Gateway Prepare for a source update
+unless both the current target and approved context have first been
+read and matched. This is a defense-in-depth offline fixture guard,
+NOT a new authority mechanism. Its CI is
+[#39757771822](https://github.com/DarkGh0st03/delegation/actions/runs/39757771822);
+check the run status before asserting that extra change is fully
+validated.
+
+**Crucial scientific limitation:** These effects were created by
+fixed `BaseLlm` scripts over a prebuilt reference repository. No
+paid Gemini inference or autonomous requirements-to-code generation
+has been tested in this positive example. It must not be presented
+as evidence of the generative capability, production human
+authentication, persistence/recovery, or benchmark reliability.
+All crypto/plan/OPA/provider checks remain independent of the
+scripted model. GitHub `main` was not merged or modified.
