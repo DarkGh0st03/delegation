@@ -135,6 +135,14 @@ export async function beginApprovedRealRunnerSession({
         return {allow:true,policy_version:"signed-runner-provider-isolation-fixture"};
       }}
     });
+    // Even the approved Test role cannot select main or another feature
+    // branch: rejection happens BEFORE a Runner HTTP request exists.
+    for(const forbidden of ["main","feature/attacker"]){
+      assert.throws(()=>gateway.prepare({
+        task_id:taskId,agent_role:"test",tool:"run_tests",
+        arguments:{branch:forbidden,profile:"poc-default"}
+      }),/approved plan|Provider branch|denied/i);
+    }
     const prepared=gateway.prepare({
       task_id:taskId,agent_role:"test",tool:"run_tests",
       arguments:{branch:BRANCH,profile:"poc-default"}
@@ -175,6 +183,11 @@ export async function beginApprovedRealRunnerSession({
         });
         completed=true;
         registry.closeSession(sessionId);
+        // No second Docker execution is possible after trusted completion.
+        assert.throws(()=>gateway.prepare({
+          task_id:taskId,agent_role:"test",tool:"run_tests",
+          arguments:{branch:BRANCH,profile:"poc-default"}
+        }),/approved plan|completed task|inactive/i);
         // Return the ORIGINAL independently observed Docker result, adding
         // the bound CI request and repository identity; never forge phase PASS.
         return {...result,request_id:request.request_id,repository:URI};
