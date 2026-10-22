@@ -3,8 +3,8 @@
  * agents, real A2A servers, Rust-issued task-scoped child credentials, real
  * signed VP / native Core verifier / OPA and actual Gitea file commits.
  *
- * Only preapproved fixed reference-source comments are inserted, so this
- * proves real provider mutations without pretending the model authored code.
+ * The scripted model applies narrow functional edits to pinned reference
+ * source. This proves controlled provider behavior, NOT generative AI code.
  * Test Agent runs after both edits on their real final Git SHA elsewhere.
  */
 import assert from "node:assert/strict";
@@ -19,6 +19,7 @@ import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
   "../fixtures/account-suspension-reference.mjs";
+import {approvedFunctionalEdit} from "./approved-functional-reference.mjs";
 
 export const THREE_ROLE_FILES=Object.freeze({
   backend:"apps/backend/src/users/user.service.ts",
@@ -76,6 +77,7 @@ export async function applyApprovedRealAgentEdits({
   const servers=[];
   const endpoints={};
   const effects=[];
+  const validatedReads=new Map();
   try{
     const dispatchFetch=async(url,request)=>{
       const target=String(url);
@@ -90,6 +92,18 @@ export async function applyApprovedRealAgentEdits({
           assert.equal(result.policy.policy_version,"phase6-approved-branch-v2");
           assert.equal(result.execution.provider,"gitea");
           assert.equal(result.execution.performed,true);
+          if(result.execution.tool==="read_file"){
+            const observed=result.execution;
+            const expected=ACCOUNT_SUSPENSION_REFERENCE_FILES[observed.path];
+            if(typeof expected!=="string"||observed.content!==expected){
+              throw Error("Untrusted source mismatch: abort pinned functional edit");
+            }
+            validatedReads.set(observed.path,observed.content);
+          }
+          if(result.execution.tool==="update_file"&&
+             !validatedReads.has(result.execution.path)){
+            throw Error("Functional edit requires prior verified target read");
+          }
           effects.push(result.execution);
           return json(result);
         }
@@ -103,10 +117,9 @@ export async function applyApprovedRealAgentEdits({
       const path=THREE_ROLE_FILES[role];
       const source=ACCOUNT_SUSPENSION_REFERENCE_FILES[path];
       assert.equal(typeof source,"string");
-      // Deliberately additive, valid TypeScript. Existing generated
-      // implementation and researcher tests are never replaced.
-      const content=source.trimEnd()+
-        "\n// Offline signed-DAG provider attestation: "+role+".\n";
+      // The real provider file is independently checked during each
+      // authorized read; actual write is a pinned, non-LLM transformation.
+      const content=approvedFunctionalEdit(role,source);
       const server=await startSpecializedAgentServer({
         role,host:"127.0.0.1",port:await allocatePort(),
         delegatedAuthorization:true,
@@ -165,9 +178,11 @@ export async function applyApprovedRealAgentEdits({
       const reread=await gitea.readTextFile(
         approvedBranch,THREE_ROLE_FILES[role]);
       assert.equal(reread.revision,actual.commit_sha);
-      assert.equal(reread.content,
-        ACCOUNT_SUSPENSION_REFERENCE_FILES[THREE_ROLE_FILES[role]].trimEnd()+
-        "\n// Offline signed-DAG provider attestation: "+role+".\n");
+      assert.equal(reread.content,approvedFunctionalEdit(role,
+        ACCOUNT_SUSPENSION_REFERENCE_FILES[THREE_ROLE_FILES[role]]));
+      assert.notEqual(reread.content,
+        ACCOUNT_SUSPENSION_REFERENCE_FILES[THREE_ROLE_FILES[role]],
+        "Each scripted role must perform a substantive source change");
       lastSha=actual;
     }
     assert.deepEqual(dispatcher.completedTaskIds,ROLES);
