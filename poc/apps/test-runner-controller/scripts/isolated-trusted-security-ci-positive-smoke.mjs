@@ -543,6 +543,8 @@ async function main(){
       runner_via_gateway_http:true,
       exact_provider_sha_correlated:true,
       real_backend_frontend_gitea_edits:approvedSession.approvedBackendFrontendEdits,
+      native_approved_source_reads:process.env.APPROVED_RUNNER_THREE_AGENT_DAG==="1"
+        ? 2 : 0,
       approval_created:true,pr_created:false,merge_calls:0,
       persistent_gitea_modified:false
     })+"\n");
