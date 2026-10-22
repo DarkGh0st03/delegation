@@ -777,7 +777,8 @@ test("trusted manual host loads persisted backend signature + Engineer receipt t
       assert.equal(f.issued.length,2);
       assert.deepEqual(f.revoked,["urn:preliminary"]);
     }finally{await launched.close();}
-    await f.coordinator.closeExecution();
+    // One trusted host close must revoke the root, not just stop HTTP.
+    assert.equal(f.coordinator.phase,"closed");
     assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
   }finally{
     await f.close();

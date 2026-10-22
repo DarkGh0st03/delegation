@@ -138,7 +138,16 @@ export async function startPersistedReviewedGeminiHandoff(input:{
       operational_root_id:operational.credential_id,
       endpoints:servers.endpoints,
       servers:servers.servers,
-      close:servers.close
+      // High-level lifecycle: closing local A2A listeners alone would leave
+      // operational authority alive. Revoke even when server teardown fails.
+      close:async()=>{
+        let teardownError:unknown;
+        try{await servers.close();}
+        catch(error){teardownError=error;}
+        if(input.coordinator.phase==="execution")
+          await input.coordinator.closeExecution();
+        if(teardownError)throw teardownError;
+      }
     });
   }catch(error){
     if(activated&&input.coordinator.phase==="execution"){
