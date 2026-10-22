@@ -160,7 +160,7 @@ export async function runNativePositiveApprovedDag({
       a2a:new DeterministicA2AOrchestrator({
         deadlineMs:120000,initialIntervalMs:50,maxIntervalMs:200
       }),
-      adapter:{adapterBaseUrl,bearerToken:orchestratorToken,timeoutMs:30000},
+      adapter:{adapterBaseUrl:adapterUrl,bearerToken:orchestratorToken,timeoutMs:30000},
       async authorityForTask(taskId,role){
         assert.equal(taskId,role);
         assert.ok(ROLES.includes(role));
