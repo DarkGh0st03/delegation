@@ -33,18 +33,22 @@ const gatewayUrl="http://approved-gateway-inprocess.invalid";
 const adapterUrl="http://127.0.0.1:8090";
 
 class ScriptedAdkFileEdit extends BaseLlm{
-  #args;#read;#turn=0;
+  #args;#reads;#turn=0;
   constructor(readPath,args){
     super({model:"offline-fixed-allowed-source-comment"});
-    this.#read={branch:args.branch,path:readPath};
+    this.#reads=[
+      {branch:args.branch,path:args.path},
+      {branch:args.branch,path:readPath}
+    ];
     this.#args=args;
   }
   async *generateContentAsync(){
     this.#turn++;
-    if(this.#turn===1)yield {content:{role:"model",parts:[{
-      functionCall:{id:"approved-context-read",name:"read_file",args:this.#read}
+    if(this.#turn<=this.#reads.length)yield {content:{role:"model",parts:[{
+      functionCall:{id:"approved-source-read-"+this.#turn,
+        name:"read_file",args:this.#reads[this.#turn-1]}
     }]}};
-    else if(this.#turn===2)yield {content:{role:"model",parts:[{
+    else if(this.#turn===3)yield {content:{role:"model",parts:[{
       functionCall:{id:"real-gitea-approved-edit",name:"update_file",args:this.#args}
     }]}};
     else yield {content:{role:"model",parts:[{text:"Repository operation finished."}]}};
@@ -111,7 +115,7 @@ export async function applyApprovedRealAgentEdits({
         }),gatewayBaseUrl:gatewayUrl,
           adapterBaseUrl:adapterUrl,
           adapterToken:process.env["ADAPTER_CALLER_"+role.toUpperCase()],
-          fetchFn:dispatchFetch,maxModelTurns:3,maxModelCallMs:30_000,
+          fetchFn:dispatchFetch,maxModelTurns:4,maxModelCallMs:30_000,
           gatewayTimeoutMs:30_000}
       });
       servers.push(server);
@@ -168,9 +172,12 @@ export async function applyApprovedRealAgentEdits({
     }
     assert.deepEqual(dispatcher.completedTaskIds,ROLES);
     assert.deepEqual(effects.map(x=>x.tool),
-      ["read_file","update_file","read_file","update_file"]);
-    assert.deepEqual(effects.filter(x=>x.tool==="read_file").map(x=>x.path),
-      [READ_ONLY_CONTEXT.backend,READ_ONLY_CONTEXT.frontend]);
+      ["read_file","read_file","update_file",
+       "read_file","read_file","update_file"]);
+    assert.deepEqual(effects.filter(x=>x.tool==="read_file").map(x=>x.path),[
+      THREE_ROLE_FILES.backend,READ_ONLY_CONTEXT.backend,
+      THREE_ROLE_FILES.frontend,READ_ONLY_CONTEXT.frontend
+    ]);
     return {finalSha:lastSha.commit_sha,operations:effects.filter(
       x=>x.tool==="update_file").length,
       verifiedReads:effects.filter(x=>x.tool==="read_file").length,

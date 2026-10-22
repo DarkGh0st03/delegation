@@ -123,8 +123,10 @@ export async function beginApprovedRealRunnerSession({
     const backendContextUri=branchUri+"/files/packages/shared/src/account-status.ts";
     const frontendContextUri=branchUri+"/files/apps/frontend/src/api/users-api.ts";
     const selectedPermissions=three?[
+      {operation:"read_file",resource:backendUri},
       {operation:"read_file",resource:backendContextUri},
       {operation:"update_file",resource:backendUri},
+      {operation:"read_file",resource:frontendUri},
       {operation:"read_file",resource:frontendContextUri},
       {operation:"update_file",resource:frontendUri},
       {operation:"run_tests",resource:branchUri}
@@ -155,12 +157,18 @@ export async function beginApprovedRealRunnerSession({
       ],
       requested_permissions:[
         ...(three?[
+          {id:"approved-backend-read-target",task_id:"backend",agent_id:"backend",
+            resource:backendUri,operation:"read_file",
+            reason:"Read current approved backend file before full-file replacement"},
           {id:"approved-backend-read",task_id:"backend",agent_id:"backend",
             resource:backendContextUri,operation:"read_file",
             reason:"Read approved shared account status contract"},
           {id:"approved-backend-only",task_id:"backend",agent_id:"backend",
             resource:backendUri,operation:"update_file",
             reason:"Signed approved backend fixture update"},
+          {id:"approved-frontend-read-target",task_id:"frontend",agent_id:"frontend",
+            resource:frontendUri,operation:"read_file",
+            reason:"Read current approved frontend file before full-file replacement"},
           {id:"approved-frontend-read",task_id:"frontend",agent_id:"frontend",
             resource:frontendContextUri,operation:"read_file",
             reason:"Read approved frontend API contract"},
@@ -178,7 +186,8 @@ export async function beginApprovedRealRunnerSession({
     const approval=makeApproval(plan,{allowedOperations:new Set(RUST_OPERATIONS),
       decision_id:"signed-runner-"+sessionId,approved_by:DID,approved_at:now,
       approved_permission_ids:three?
-        ["approved-backend-read","approved-backend-only",
+        ["approved-backend-read-target","approved-backend-read",
+         "approved-backend-only","approved-frontend-read-target",
          "approved-frontend-read","approved-frontend-only","approved-runner-only"]:
         ["approved-runner-only"]});
     const {privateKey,publicKey}=generateKeyPairSync("ed25519");
@@ -309,8 +318,8 @@ export async function beginApprovedRealRunnerSession({
       approvedFeatureSha=written.finalSha;
       completedEdits=written.operations;
       assert.equal(completedEdits,2);
-      assert.equal(written.verifiedReads,2,
-        "Each real ADK role must read its own approved context via native VP");
+      assert.equal(written.verifiedReads,4,
+        "Each real ADK role must read target and approved context via native VP");
       assert.notEqual(approvedFeatureSha,featureSha,
         "Native three-agent Gitea modifications must advance the feature HEAD");
     }
