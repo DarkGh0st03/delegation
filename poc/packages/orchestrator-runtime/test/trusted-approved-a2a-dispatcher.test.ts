@@ -201,7 +201,7 @@ test("branch is never inferred from unapproved, multiple or invalid repository l
    }
    const h=harness({workBranch});
    await assert.rejects(TrustedApprovedA2ADispatcher.load(h.config as any),
-     /Invalid approved feature branch/);
+     /Approved branch: noncanonical or forbidden feature branch/);
    assert.deepEqual(h.log,[]);
  }
  const h=harness();
@@ -223,5 +223,5 @@ test("branch is never inferred from unapproved, multiple or invalid repository l
  };
  h.config.expectedPlanDigest=planDigest((await h.config.approvals.loadAuthenticatedApproval()).plan);
  await assert.rejects(TrustedApprovedA2ADispatcher.load(h.config as any),
-   /Exactly one approved feature branch/);
+   /Approved branch: multiple working branches/);
 });
