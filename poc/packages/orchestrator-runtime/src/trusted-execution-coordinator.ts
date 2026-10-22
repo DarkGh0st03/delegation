@@ -20,6 +20,9 @@ export interface TrustedApprovedPlanControl {
   bindTask(sessionId:string,planTaskId:string,runtimeTaskId:string,role:AgentRole):void|Promise<void>;
   confirmTaskCompletion(runtimeTaskId:string,observation?:TrustedCompletionObservation):Promise<void>;
   closeSession(sessionId:string):void|Promise<void>;
+  /** Optional for legacy tests; REQUIRED for admitted GitHub handoffs. */
+  operationalLeaseConfigured?():boolean;
+  renewLease?(sessionId:string,expectedDigest:string):void|Promise<void>;
 }
 
 type Phase="idle"|"planning"|"activating"|"execution"|"closed"|"failed_closed";
@@ -58,6 +61,24 @@ export class TrustedExecutionCoordinator {
   }
 
   get phase():Phase{return this.#phase;}
+
+  /** The admitted GitHub path MUST have a crash fence independent of host
+   * polling; otherwise it cannot claim to remain safe after Engineer exit. */
+  assertOperationalLeaseConfigured():void{
+    if(this.#gateway.operationalLeaseConfigured?.()!==true||
+       typeof this.#gateway.renewLease!=="function")
+      throw new Error("Trusted Coordinator requires Gateway-side operational lease");
+  }
+
+  /** Only a trusted in-process host may call this after validating live
+   * GitHub run identity. No A2A, MCP or public HTTP method delegates it. */
+  async renewExecutionLease():Promise<void>{
+    this.assertOperationalLeaseConfigured();
+    if(this.#phase!=="execution"||!this.#approvedDigest||
+       !this.#operationalId)
+      throw new Error("Trusted Coordinator cannot renew lease outside execution");
+    await this.#gateway.renewLease!(this.#sessionId,this.#approvedDigest);
+  }
 
   /** Authority facts from the actual, verified operational root issuance.
    * This is a trusted runtime interface, never an ADK or public HTTP API. */

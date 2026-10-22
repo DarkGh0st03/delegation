@@ -83,6 +83,8 @@ interface ActivePlan {
   readonly workBranch:string;
   active: boolean;
   readonly completedPlanTasks: Set<string>;
+  /** Gateway-owned TTL: never accepted from an agent or public HTTP. */
+  leaseExpiresAtMs?:number;
 }
 
 function denied(message: string, code = "approved_plan_denied"): never {
@@ -108,12 +110,17 @@ export class TrustedApprovedExecutionPlans {
   readonly #sessions=new Map<string,ActivePlan>();
   readonly #bindings=new Map<string,RuntimeTaskBinding>();
   readonly #closedSessionIds=new Set<string>();
+  readonly #operationalLeaseMs?:number;
+  readonly #nowMs:()=>number;
 
   constructor(config:{
     repository:GatewayRepositoryConfig;
     engineerDid:string;
     approvals:AuthenticatedPlanStore;
     completionAttestor:TrustedTaskCompletionAttestor;
+    /** Opt-in crash fence; mandatory for admitted paid GitHub handoffs. */
+    operationalLeaseMs?:number;
+    nowMs?:()=>number;
   }){
     if(!config.engineerDid?.startsWith("did:") || !config.approvals ||
        typeof config.approvals.loadAuthenticatedApproval!=="function" ||
@@ -125,6 +132,55 @@ export class TrustedApprovedExecutionPlans {
     this.#engineerDid=config.engineerDid;
     this.#store=config.approvals;
     this.#attestor=config.completionAttestor;
+    if(config.operationalLeaseMs!==undefined&&
+       (!Number.isSafeInteger(config.operationalLeaseMs)||
+        config.operationalLeaseMs<10_000||
+        config.operationalLeaseMs>120_000))
+      throw new Error("Trusted Gateway operational lease must be 10-120 seconds");
+    if(config.nowMs!==undefined&&typeof config.nowMs!=="function")
+      throw new Error("Trusted Gateway clock must be a trusted function");
+    this.#operationalLeaseMs=config.operationalLeaseMs;
+    this.#nowMs=config.nowMs??Date.now;
+  }
+
+  /** In-process trusted Coordinator can inspect this, NOT a public route. */
+  operationalLeaseConfigured():boolean{
+    return this.#operationalLeaseMs!==undefined;
+  }
+
+  #clock():number{
+    const now=this.#nowMs();
+    if(!Number.isSafeInteger(now)||now<0)
+      denied("Trusted Gateway lease clock invalid");
+    return now;
+  }
+
+  #ensureUnexpired(session:ActivePlan):void{
+    if(!session.active)denied("No active trusted plan session");
+    if(this.#operationalLeaseMs!==undefined){
+      const now=this.#clock();
+      if(session.leaseExpiresAtMs===undefined||
+         now>=session.leaseExpiresAtMs){
+        // Expiration is terminal; a clock rollback or late Engineer cannot
+        // resurrect this session. Root revocation is separately reconciled.
+        session.active=false;
+        denied("Trusted Gateway operational lease expired; plan permanently denied");
+      }
+    }
+  }
+
+  /** Called ONLY from trusted Coordinator after re-verifying GitHub Actions.
+   * The agent, A2A, MCP and public Gateway HTTP have NO renewal endpoint.
+   */
+  renewLease(sessionId:string,expectedDigest:string):void{
+    ensureId(sessionId,"session ID");
+    if(this.#operationalLeaseMs===undefined)
+      denied("Trusted Gateway operational lease is not configured");
+    const session=this.#sessions.get(sessionId);
+    if(!session || session.digest!==expectedDigest)
+      denied("Trusted Gateway lease session or signed digest mismatch");
+    this.#ensureUnexpired(session);
+    session.leaseExpiresAtMs=this.#clock()+this.#operationalLeaseMs;
   }
 
   /**
@@ -165,7 +221,9 @@ export class TrustedApprovedExecutionPlans {
       this.#sessions.set(sessionId,{
         sessionId,digest,plan:snapshot,approval:receipt,approvedAt:receipt.approved_at,
         workBranch,
-        active:true,completedPlanTasks:new Set()
+        active:true,completedPlanTasks:new Set(),
+        ...(this.#operationalLeaseMs===undefined?{}:
+          {leaseExpiresAtMs:this.#clock()+this.#operationalLeaseMs})
       });
       return digest;
     } catch(error) {
@@ -184,6 +242,7 @@ export class TrustedApprovedExecutionPlans {
     if(!session?.active || this.#bindings.has(runtimeTaskId)) {
       denied("Unknown, inactive or duplicate approved runtime task");
     }
+    this.#ensureUnexpired(session);
     const task=session.plan.tasks.find((t:any)=>t.id===planTaskId);
     if(!task || task.agent_id!==role ||
        [...this.#bindings.values()].some(b=>
@@ -292,6 +351,7 @@ export class TrustedApprovedExecutionPlans {
     if(!confirmed || !session.active) {
       denied("No verified A2A task completion attestation");
     }
+    this.#ensureUnexpired(session);
     this.#assertDependencies(session,binding);
     binding.completed=true;
     session.completedPlanTasks.add(binding.planTaskId);
@@ -315,6 +375,7 @@ export class TrustedApprovedExecutionPlans {
     if(!binding || !session?.active) {
       denied("No active trusted plan/task binding");
     }
+    this.#ensureUnexpired(session);
     return {session,binding};
   }
 

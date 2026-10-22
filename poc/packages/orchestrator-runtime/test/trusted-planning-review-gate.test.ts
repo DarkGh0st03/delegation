@@ -113,6 +113,7 @@ async function fixture(){
   });
   const plans=new TrustedApprovedExecutionPlans({
     repository:REPO,engineerDid:ENGINEER,approvals:gate,
+    operationalLeaseMs:45_000,
     completionAttestor:{async confirmCompleted(){return false;}}
   });
   coordinator=new TrustedExecutionCoordinator({

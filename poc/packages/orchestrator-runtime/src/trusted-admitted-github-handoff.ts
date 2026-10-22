@@ -125,6 +125,10 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
      !(input.reviewGate instanceof TrustedPlanningReviewGate)||
      !(input.checkpointStore instanceof SignedPlanningCheckpointFileStore))
     deny("active trusted Coordinator, backend checkpoint and Engineer review required");
+  // Enforced before the run's one-use receipt is consumed and BEFORE root
+  // issuance. Without a separately enforced Gateway TTL the Engineer
+  // process crashing would leave an active long-lived execution session.
+  input.coordinator.assertOperationalLeaseConfigured();
   const root=input.coordinator.trustedPlanningAuthority();
   if(root.session_id!==input.pins?.sessionId)
     deny("independent GitHub admission session differs from active Planning root");
@@ -216,6 +220,8 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
             workflowPath:expectedWorkflowPath,sourceSha:pins.sourceSha},
           githubApiToken,fetchFn:githubApiFetchFn
         });
+        // A renewal is permitted ONLY after fresh remote status proof.
+        await input.coordinator.renewExecutionLease();
       }catch{
         // Any verification failure, including an unavailable REST endpoint,
         // is fail-closed. Never retry a lost run or issue another root.

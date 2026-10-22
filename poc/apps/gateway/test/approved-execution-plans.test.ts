@@ -59,13 +59,19 @@ function harness(options:{
   attestation?:boolean;
   simulated?:boolean;
   wrongPresenter?:boolean;
-  skipPolicyDigestCheck?:boolean
+  skipPolicyDigestCheck?:boolean;
+  operationalLeaseMs?:number;
+  nowMs?:()=>number;
 }={}){
   const p=options.configuredPlan??plan();
   const a=approval(p,options.approvedIds);
   let attestCalls=0,providerCalls=0,verifiedCalls=0,opaCalls=0;
   const gates=new TrustedApprovedExecutionPlans({
     repository:repo,engineerDid:did,
+    ...(options.operationalLeaseMs===undefined?{}:{
+      operationalLeaseMs:options.operationalLeaseMs,
+      ...(options.nowMs?{nowMs:options.nowMs}:{})
+    }),
     approvals:{async loadAuthenticatedApproval(sessionId){
       assert.equal(sessionId,"session-approval");
       return {
@@ -360,4 +366,71 @@ test("trusted signed-plan working branch restricts even repository-root create_b
  await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
  assert.equal(h.providerCalls,1);
  assert.equal(h.opaCalls,1);
+});
+
+
+test("Gateway lease after Engineer crash denies new Prepare and previously prepared VP even if OPA allows",async()=>{
+  let now=1_000_000;
+  const h=harness({operationalLeaseMs:30_000,nowMs:()=>now});
+  assert.equal(h.gates.operationalLeaseConfigured(),true);
+  await activated(h);
+  const pre=h.runtime.prepare({
+    task_id:"a2a-bootstrap",agent_role:"orchestrator",
+    tool:"create_branch",arguments:branchArgs
+  });
+  assert.equal(h.store.size(),1);
+  // The Engineer disappears: there is NO close event and no renewal.
+  // Independently enforced expiry is checked by the live Gateway itself.
+  now+=30_000;
+  await assert.rejects(h.runtime.execute({
+    request_id:pre.request_id,signed_vp:"signed.vp.jwt"
+  }), (e:unknown)=>e instanceof GatewayError&&
+      e.code==="approved_plan_denied");
+  assert.equal(h.providerCalls,0);
+  assert.equal(h.verifiedCalls,1);
+  assert.equal(h.opaCalls,1);
+  assert.throws(()=>h.runtime.prepare({
+    task_id:"a2a-bootstrap",agent_role:"orchestrator",
+    tool:"create_branch",arguments:branchArgs
+  }), /No active trusted plan/);
+  assert.throws(()=>h.gates.renewLease(
+    "session-approval",planDigest(plan())
+  ),/No active trusted plan/);
+  now-=29_000; // time rollback must never reopen an expired lease
+  assert.throws(()=>h.gates.renewLease(
+    "session-approval",planDigest(plan())
+  ),/No active trusted plan/);
+});
+
+test("only a live exact-digest Gateway lease renews; stale/foreign lease cannot resurrect",async()=>{
+  let now=1_000_000;
+  const h=harness({operationalLeaseMs:45_000,nowMs:()=>now});
+  await activated(h);
+  assert.throws(()=>h.gates.renewLease(
+    "session-approval","a".repeat(64)
+  ),/digest mismatch/);
+  now+=15_000;
+  h.gates.renewLease("session-approval",planDigest(plan()));
+  now+=35_000; // beyond initial 45 sec, inside renewed 60 sec
+  const prepare=h.runtime.prepare({
+    task_id:"a2a-bootstrap",agent_role:"orchestrator",
+    tool:"create_branch",arguments:branchArgs
+  });
+  assert.ok(prepare.request_id);
+  now+=10_000;
+  assert.throws(()=>h.gates.bindTask(
+    "session-approval","bootstrap","new-task","orchestrator"
+  ),/plan/);
+  await assert.rejects(h.runtime.execute({
+    request_id:prepare.request_id,signed_vp:"signed.vp.jwt"
+  }),/approved plan/);
+  assert.equal(h.providerCalls,0);
+  assert.throws(()=>new TrustedApprovedExecutionPlans({
+    repository:repo,engineerDid:did,
+    approvals:{async loadAuthenticatedApproval(){return{
+      plan:plan(),approval:approval(plan()),authenticated_engineer_did:did
+    };}},
+    completionAttestor:{async confirmCompleted(){return true;}},
+    operationalLeaseMs:900_000
+  }),/10-120 seconds/);
 });

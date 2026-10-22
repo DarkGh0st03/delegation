@@ -342,3 +342,35 @@ listeners to drain. This denies new provider effects promptly even when
 an agent connection does not close immediately. A2A listener cleanup is
 still attempted if Gateway closure or DC revocation fails, and uncertain
 revocation is reported explicitly rather than treated as a successful stop.
+
+
+## Crash fence: Gateway-owned expiring operational lease
+
+To avoid depending on the Engineer process for enforcement, the opt-in
+TrustedApprovedExecutionPlans registry can be configured with an independent
+operationalLeaseMs (10 to 120 seconds). For the authenticated GitHub manual
+handoff, a lease-aware Gateway is now **mandatory** before consuming OIDC
+admission or issuing an operational root. The trusted Coordinator renews
+that lease only after a successful live GitHub Actions run verification
+(default manual watch: every 15 seconds; fixture Gateway lease: 45 seconds).
+No agent, ADK callback, MCP tool or public Gateway HTTP request can renew it.
+
+The Gateway checks its own wall-clock expiry on task binding, Prepare, and
+again **after** VP and OPA verification and immediately BEFORE provider I/O.
+A stale already-Prepared request therefore fails even if its signed VP and
+OPA decision would otherwise allow it. The lease also blocks asynchronous
+task-completion attestations when it expires before their return.
+Expiration permanently marks the session inactive: later renewals, even
+after clock rollback, cannot resurrect it. The tested failure scenario
+simulates an Engineer crash by stopping renewals while leaving Gateway
+running; authorization is denied without requiring the Engineer shutdown
+callback. Underlying Rust DC validity/revocation remains a separate and
+necessary security boundary, not replaced by this lease.
+
+The lease currently lives in the trusted Gateway registry's own process.
+An independently deployed Gateway process must inject the SAME in-memory
+registry into its real Prepare/Execute request paths and expose authenticated
+private renewal IPC to the Engineer process; no remote Gateway deployment or
+crash-recovery persistence is claimed. Provider operations already in flight
+at the precise instant of expiry are not automatically interrupted; a
+continuous trusted cancellation mechanism would be separate hardening.
