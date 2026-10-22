@@ -139,14 +139,23 @@ export async function startPersistedReviewedGeminiHandoff(input:{
       operational_root_id:operational.credential_id,
       endpoints:servers.endpoints,
       servers:servers.servers,
-      // High-level lifecycle: closing local A2A listeners alone would leave
-      // operational authority alive. Revoke even when server teardown fails.
+      // Fail closed at the enforcement boundary FIRST: stop new Gateway
+      // operations and revoke the Rust root before waiting for A2A listener
+      // shutdown. Server.close() may wait for in-flight connections.
+      // Regardless of either failure, ALWAYS attempt the other cleanup.
       close:async()=>{
-        let teardownError:unknown;
+        let authorityError:unknown,teardownError:unknown;
+        try{
+          if(input.coordinator.phase==="execution")
+            await input.coordinator.closeExecution();
+        }catch(error){authorityError=error;}
         try{await servers.close();}
         catch(error){teardownError=error;}
-        if(input.coordinator.phase==="execution")
-          await input.coordinator.closeExecution();
+        if(authorityError)
+          throw new Error(
+            "Trusted manual Gemini shutdown: Gateway closure or operational root revocation unconfirmed",
+            {cause:authorityError}
+          );
         if(teardownError)throw teardownError;
       }
     });

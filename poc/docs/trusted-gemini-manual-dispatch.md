@@ -332,3 +332,13 @@ bounded, fail-closed polling mechanism, **not instantaneous cancellation**.
 
 The regression test uses an active trusted Coordinator and models a completed
 GitHub run AFTER operational issuance. No paid Gemini inference is invoked.
+
+
+### Termination order at the policy boundary
+
+The trusted handoff closes the Gateway approved-plan session and attempts
+revocation of the operational Rust root **before** waiting for A2A HTTP
+listeners to drain. This denies new provider effects promptly even when
+an agent connection does not close immediately. A2A listener cleanup is
+still attempted if Gateway closure or DC revocation fails, and uncertain
+revocation is reported explicitly rather than treated as a successful stop.
