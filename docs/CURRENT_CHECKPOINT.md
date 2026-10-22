@@ -245,3 +245,44 @@ These are additional orchestration/context minimization guarantees.
 They are independent of the underlying Rust Core VP check, OPA
 and trusted provider attestation, which must remain active in the
 eventual native multi-agent integration.
+
+
+## 22 October — native three-role Rust/ADK/A2A execution (provider-emulated)
+
+**Code commit:** `185d8dac926f7289a8950085c2662780d18902f1`.
+**Evidence:** [Cumulative Offline Refactoring Validation #39746642733]
+(https://github.com/DarkGh0st03/delegation/actions/runs/39746642733),
+`evm-real-credential`, step `Three ADK and A2A roles with native Rust
+DC VP and live OPA (provider fixture)`.
+
+The native EVM CI runs a NEW dedicated scripted multi-agent scenario,
+`poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs`.
+It starts from an Engineer Ed25519-signed and authenticated immutable
+three-role plan, issues and revokes a real read-only Planning DC,
+issues a separate real operational root, and delegates **distinct,
+Task-scoped child DCs** to Backend, Frontend and Test via the real
+Rust Adapter and EVM trust stack. Three real Google ADK Runners (using
+deterministic offline models) send protected A2A HTTP+JSON Tasks via
+the SDK. Each Gateway action is checked by **native Core Rust** on a
+real challenge-bound signed VP, **real OPA/Rego**, the immutable
+plan's branch, Task, role and dependencies, and then a simulated
+Gitea/Runner effect. The Gateway requires its own effect record
+before the next Task starts and the operational root is revoked
+upon trusted session close.
+
+A second scenario asks Backend to update a Frontend-only file.
+The request is denied and the trusted DAG is terminated before
+Frontend or Test can run. The suite explicitly asserts no provider
+effect was created. Neither user approval nor ADK model messages
+are treated as standalone permission grants.
+
+**IMPORTANT limits:** The provider in this NEW native three-role
+test is an **in-process deterministic effect simulator**, not real
+Gitea or Docker. The separate existing native single-Test scenario
+uses actual Gitea/Runner/Docker; it must NOT be described as the
+same test. No generated backend/frontend application functionality
+has yet been validated across ALL three roles against disposable
+Gitea and real Docker in one unified run. The Engineer Ed25519
+signature is a test key; model output comes from scripted BaseLlm,
+not Gemini. A live user-approval UI/paid generative workflow remains
+outside the scope. No merge to source main occurred.
