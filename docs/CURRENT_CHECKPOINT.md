@@ -368,12 +368,19 @@ authority: the trusted dispatcher derives path hints from approved
 permission rows, and independent signed-plan Gateway, Rust DC/VP, OPA
 and provider-effect checks remain the actual security boundaries.
 
-**Limitation:** the shared MCP toolset does not yet support equally
-narrow per-Task model declarations, so signed Task-specific MCP mode
-currently fails closed rather than advertising the broad legacy tool
-surface. Legacy MCP tests remain unchanged. Real model code generation
-will also need explicit `read_file` grants in the Engineer plan before
-the agent can inspect source files. No paid Gemini calls are included.
+**Shared MCP integration:** The same signed Task path ceiling is now
+stored in the private, bearer-bound MCP task registry. Each actual MCP
+read/write/create call checks it BEFORE the Gateway client is invoked.
+The model-facing shared MCP catalog still has static argument schemas;
+only its tool names are minimized at construction. Consequently path
+authorization must never rely on the model schema: private MCP Task
+registry, signed-plan Gateway, DC/VP and OPA remain the enforcement.
+A Test Task with no file paths exposes only the bounded `run_tests`
+tool. Non-legacy dynamic branches remain unsupported by the shared
+MCP catalog and are refused rather than silently broadened. Real
+code generation also needs explicit `read_file` grants in the
+Engineer's plan before agents can inspect source files. No paid
+Gemini calls are included.
 
 The dedicated offline suite
 [Trusted Prebound A2A Dispatch #39750696187]
