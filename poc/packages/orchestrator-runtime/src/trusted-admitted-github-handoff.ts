@@ -158,7 +158,7 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
   });
   const {admissionStore,pins,geminiApiKey,githubApiToken,
     expectedWorkflowPath,githubApiFetchFn,...trusted}=input;
-  return startPersistedReviewedGeminiHandoff({
+  const running=await startPersistedReviewedGeminiHandoff({
     ...trusted,
     maxModelCallMs:admitted.max_model_call_ms,
     manual:{
@@ -169,6 +169,93 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
       modelName:admitted.model_name,
       maxModelTurns:admitted.max_model_turns,
       maxOutputTokens:admitted.max_output_tokens
+    }
+  });
+  // Once the operational root exists, recheck the authoritative GitHub run
+  // periodically; a canceled/completed/replaced run must never leave Gateway
+  // approval and the root valid until an operator notices. The check is
+  // non-billable and uses only the host's Actions:read credential.
+  type WatchStatus="active"|"closing"|"closed"|"revocation_unconfirmed";
+  let status:WatchStatus="active";
+  let pending:Promise<void>|undefined;
+  let closing:Promise<void>|undefined;
+  const stop=()=>{
+    if(closing)return closing;
+    status="closing";
+    clearInterval(timer);
+    closing=running.close().then(()=>{
+      status="closed";
+    },()=>{
+      status="revocation_unconfirmed";
+      throw Error("GitHub run watch: operational root revocation or server shutdown unconfirmed");
+    });
+    return closing;
+  };
+  const checkNow=():Promise<void>=>{
+    if(pending)return pending;
+    if(status!=="active")
+      return status==="revocation_unconfirmed"
+        ?Promise.reject(Error("GitHub run watch: revocation unconfirmed"))
+        :Promise.resolve();
+    const call=(async()=>{
+      try{
+        await verifyGithubManualRunViaApi({
+          dispatch:{
+            status:"manual_workflow_input_only_not_authorized",
+            source_repository:pins.repository,
+            source_ref:pins.ref,
+            source_sha:admitted.source_sha,
+            run_id:admitted.run_id,
+            model_name:admitted.model_name,
+            max_model_turns:admitted.max_model_turns,
+            max_output_tokens:admitted.max_output_tokens,
+            max_model_call_ms:admitted.max_model_call_ms,
+            authorization_input:admitted.authorization_input
+          },
+          pinned:{repository:pins.repository,ref:pins.ref,
+            workflowPath:expectedWorkflowPath,sourceSha:pins.sourceSha},
+          githubApiToken,fetchFn:githubApiFetchFn
+        });
+      }catch{
+        // Any verification failure, including an unavailable REST endpoint,
+        // is fail-closed. Never retry a lost run or issue another root.
+        await stop();
+        throw Error("GitHub run watch: active run identity lost; operational session closed");
+      }
+    })();
+    pending=call;
+    void call.finally(()=>{
+      if(pending===call)pending=undefined;
+    }).catch(()=>{});
+    return call;
+  };
+  // A successful start alone does not prove the job remained active while
+  // A2A listeners were starting. Check immediately, THEN return to caller.
+  const timer=setInterval(()=>{
+    void checkNow().catch(()=>{
+      // Terminal close/revocation is performed by checkNow itself.
+      // The trusted host may read githubRunWatch.status for reconciliation.
+    });
+  },15_000);
+  try{
+    await checkNow();
+  }catch(error){
+    // checkNow already closed/revoked; uncertainty must propagate.
+    if(status==="revocation_unconfirmed")
+      deny("GitHub job lost; operational root revocation unconfirmed");
+    throw error;
+  }
+  return Object.freeze({
+    ...running,
+    githubRunWatch:Object.freeze({
+      checkNow,
+      get status():WatchStatus{return status;}
+    }),
+    close:async()=>{
+      // A manual close cannot race an in-flight GitHub status check:
+      // await the check, then reuse the same one-time shutdown promise.
+      if(pending)await pending.catch(()=>{});
+      await stop();
     }
   });
 }

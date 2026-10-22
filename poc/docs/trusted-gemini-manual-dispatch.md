@@ -308,3 +308,27 @@ This check closes the intake-to-start TOCTOU window; stopping a run AFTER
 execution begins would still require a separate runtime cancellation/
 revocation watch. Do not claim it provides continuous GitHub status
 monitoring or that this process has been deployed.
+
+
+## Runtime GitHub-run watch and operational-root shutdown
+
+Once a manual signed run has passed the independent Engineer/Planning gate
+and activated the operational root, the trusted handoff starts a 15-second
+GitHub Actions REST status watch. It checks the same pinned first-attempt
+workflow identity, branch, GitHub source SHA and **in_progress** state using
+the host's Actions:read token. This does **not** call Gemini. An immediate
+check after starting A2A listeners closes the remaining activation race.
+
+If the run becomes canceled, completed or unverifiable (including loss of
+API connectivity), the watch closes A2A listeners, deactivates the Gateway
+approved-plan session and attempts revocation of the independent operational
+Rust DC. The watch exposes an in-process checkNow() for deterministic tests
+and a status of active, closing, closed or revocation_unconfirmed. The latter
+requires operator reconciliation; it must never be treated as a successful
+revocation. Manual shutdown and automatic shutdown share one promise and
+cannot issue a second root. A successful check does not prove that the run
+will remain active for the entire next 15-second interval: this is a
+bounded, fail-closed polling mechanism, **not instantaneous cancellation**.
+
+The regression test uses an active trusted Coordinator and models a completed
+GitHub run AFTER operational issuance. No paid Gemini inference is invoked.

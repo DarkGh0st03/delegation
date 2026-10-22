@@ -1066,6 +1066,17 @@ test("verified signed GitHub OIDC reaches live Planning and requires independent
         ["backend","frontend","test"]);
       assert.equal(f.coordinator.phase,"execution");
       assert.equal(f.issued.length,2);
+      assert.equal(running.githubRunWatch.status,"active");
+      await running.githubRunWatch.checkNow();
+      assert.equal(f.coordinator.phase,"execution");
+      // This run terminates AFTER operational activation; a live status
+      // check must automatically stop local A2A and revoke the root.
+      liveRunStatus="completed";
+      await assert.rejects(running.githubRunWatch.checkNow(),
+        /active run identity lost/);
+      assert.equal(running.githubRunWatch.status,"closed");
+      assert.equal(f.coordinator.phase,"closed");
+      assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
     }finally{await running.close();}
     assert.equal(f.coordinator.phase,"closed");
     assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
