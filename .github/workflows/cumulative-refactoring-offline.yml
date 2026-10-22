@@ -211,6 +211,8 @@ jobs:
         run: node poc/apps/gateway/native-test/native-real-evm-e2e.mjs
       - name: Verify signed Engineer handoff and REAL Rust scoped child DC via A2A and native Gateway (offline)
         run: node --experimental-strip-types poc/apps/gateway/native-test/native-approved-scoped-child-evm-e2e.mjs
+      - name: Three ADK and A2A roles with native Rust DC VP and live OPA (provider fixture)
+        run: node --experimental-strip-types poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs
       - name: Preload disposable Gitea, OPA and Docker acceptance images
         run: |
           docker pull docker.gitea.com/gitea:28.0.0
