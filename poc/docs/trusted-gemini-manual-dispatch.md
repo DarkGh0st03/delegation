@@ -100,3 +100,18 @@ It returns offline_push_identity_only, a separate type that is NOT accepted
 by the paid workflow_dispatch verification path. No signature of the human
 Engineer is supplied or inferred. Deployment of an authenticated Engineer
 service remains outside this offline smoke test.
+
+
+### GitHub immutable OIDC subject (July 2026)
+
+The real GitHub-issued push test found an OIDC subject differing from the
+legacy name-only template. This is expected for repositories created after
+July 15, 2026. GitHub's documented immutable default format is
+repo:OWNER@OWNER-ID/REPO@REPO-ID:ref:refs/heads/BRANCH.
+
+For this repository the independent GitHub API record fixes owner ID
+150908952 and repository ID 1374168963. The offline smoke therefore pins
+repo:DarkGh0st03@150908952/delegation@1374168963:ref:refs/heads/refactor/post-prof-plan-contracts-20261021.
+The trusted paid backend still requires an independently provided exact
+expectedSubject for its actual workflow and cannot derive trust from a
+JWT-supplied subject.

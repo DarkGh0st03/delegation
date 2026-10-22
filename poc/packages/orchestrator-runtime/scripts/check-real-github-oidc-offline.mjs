@@ -13,7 +13,9 @@ const WORKFLOW=".github/workflows/cumulative-refactoring-offline.yml";
 const AUDIENCE="urn:thesis:delegation:offline-github-oidc-check-v1";
 const POLICY=Object.freeze({
   expectedAudience:AUDIENCE,
-  expectedSubject:"repo:"+REPO+":ref:"+REF,
+  // Repositories created after 2026-07-15 use GitHub's immutable default
+  // subject: owner@ownerId/repository@repoId (not legacy mutable names).
+  expectedSubject:"repo:DarkGh0st03@150908952/delegation@1374168963:ref:"+REF,
   // Independently verified immutable GitHub repository and owner IDs.
   expectedRepositoryId:"1374168963",
   expectedOwnerId:"150908952"
