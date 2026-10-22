@@ -192,6 +192,7 @@ export async function runNativePositiveApprovedDag({
       delegatedAuthorization:true,capabilityProfile:"approved-plan",
       taskHandler:async context=>{
         testCalls++;
+        try{
         assert.equal(context.role,"test");
         assert.equal(context.subtask.subtask_id,"test");
         assert.equal(context.subtask.branch,branch);
@@ -220,6 +221,15 @@ export async function runNativePositiveApprovedDag({
         assert.equal(executed.policy.allow,true);
         assert.equal(effect.provider,"runner");
         assert.equal(effect.tool,"run_tests");
+        // Log only fixed phase names, phase status and error categories.
+        // Never print Gitea source, VP, Docker logs or tokens in CI.
+        process.stderr.write("[native-dag-test] docker_phase_status "+
+          JSON.stringify({
+            status:effect.status,
+            phases:effect.phases?.map(x=>({phase:x.phase,status:x.status})),
+            project_tests:effect.project_tests?.status,
+            researcher_acceptance:effect.researcher_acceptance?.status
+          })+"\n");
         assert.equal(effect.status,"pass");
         assert.equal(effect.tested_commit_sha,pinned.commit_sha);
         assert.equal(effect.project_tests?.status,"pass");
@@ -242,6 +252,14 @@ export async function runNativePositiveApprovedDag({
           project_tests:effect.project_tests.status,
           researcher_acceptance:effect.researcher_acceptance.status
         };
+        }catch(error){
+          process.stderr.write("[native-dag-test] bounded_failure "+
+            JSON.stringify({kind:error?.constructor?.name??"Error",
+              code:error?.code??"unknown",
+              message:String(error?.message??"test_failed").slice(0,250)
+            })+"\n");
+          throw error;
+        }
       }
     });
     servers.push(testAgent);urls.test=testAgent.baseUrl;
