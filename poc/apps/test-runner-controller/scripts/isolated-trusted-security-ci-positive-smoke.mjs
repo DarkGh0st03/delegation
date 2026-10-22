@@ -27,6 +27,8 @@ import {TrustedGiteaSecurityCi,SECURITY_STATUS_CONTEXT,
   TRUSTED_PROJECT_PHASES} from "../src/trusted-security-ci.ts";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
   "../fixtures/account-suspension-reference.mjs";
+import {beginApprovedRealRunnerSession} from
+  "./approved-gateway-runner-session.mjs";
 
 const baseline="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const baselineSource="https://github.com/DarkGh0st03/iam-console-poc.git";
@@ -343,7 +345,7 @@ async function main(){
     "--env","GITEA__actions__ENABLED=false",
     image],"start no-volume isolated Gitea");
   containerStarted=true;
-  let workRoot=null,logs=null;
+  let workRoot=null,logs=null,approvedSession=null;
   try{
     const portInfo=docker(["port",container,"3000/tcp"],
       "inspect disposable Gitea localhost port");
@@ -367,6 +369,15 @@ async function main(){
       log_dir:logs,acceptance_enabled:true,
       acceptance_dir:acceptanceDir
     });
+    // Engineer Ed25519 approval is verified by the Gateway plan registry.
+    // One true Docker run is submitted THROUGH Gateway/real Gitea/HTTP Runner;
+    // the resulting attested evidence is handed to the trusted CI publisher.
+    approvedSession=await stage("activate_signed_gateway_test_task",()=>
+      beginApprovedRealRunnerSession({
+        giteaBaseUrl:base,giteaGatewayToken:creds.statusToken,
+        giteaReadToken:creds.readToken,executor,
+        mainSha:fixture.mainSha,featureSha:fixture.featureSha
+      }),30000);
     let observedRunnerResult=null;
     const ci=new TrustedGiteaSecurityCi({
       giteaBaseUrl:base,giteaReadToken:creds.readToken,
@@ -374,7 +385,7 @@ async function main(){
       trustedStatusActor:creds.actor,
       runner:{
         async run(request){
-          const result=await executor.run(request);
+          const result=await approvedSession.run(request);
           observedRunnerResult=result;
           process.stderr.write(JSON.stringify({
             event:"positive_runner_phase_results",
@@ -416,7 +427,7 @@ async function main(){
       }
     });
     const exactRequest={
-      request_id:"isolated-positive-ci-"+randomUUID(),
+      request_id:approvedSession.request.request_id,
       repository:"gitea://gitea.local/thesis/iam-console-poc",
       branch,commit_sha:fixture.featureSha,profile:"poc-default"
     };
@@ -425,6 +436,8 @@ async function main(){
     assert.equal(verdict.status,"success",
       "Real reference app tests/acceptance did not pass");
     assert.equal(observedRunnerResult?.status,"pass");
+    assert.equal(approvedSession.completed,true,
+      "Gateway must attest the actual Runner result before CI marks success");
     assert.equal(observedRunnerResult?.tested_commit_sha,fixture.featureSha);
     assert.equal(observedRunnerResult?.project_tests?.status,"pass");
     assert.equal(observedRunnerResult?.researcher_acceptance?.status,"pass");
@@ -466,11 +479,16 @@ async function main(){
       security_context:SECURITY_STATUS_CONTEXT,
       gitea_statuses:["pending","success"],
       real_docker_runner:true,
-      approval_created:false,pr_created:false,merge_calls:0,
+      engineer_approval_ed25519:true,
+      gateway_signed_test_task_completed:true,
+      runner_via_gateway_http:true,
+      exact_provider_sha_correlated:true,
+      approval_created:true,pr_created:false,merge_calls:0,
       persistent_gitea_modified:false
     })+"\n");
   }finally{
     try{
+      if(approvedSession)await approvedSession.close();
       if(logs)await rm(logs,{recursive:true,force:true});
       if(workRoot)await rm(workRoot,{recursive:true,force:true});
     }finally{
