@@ -28,6 +28,8 @@ import {startAdmittedGithubReviewedGeminiHandoff}
   from "../src/trusted-admitted-github-handoff.ts";
 import {TrustedGithubAdmissionReceiptStore}
   from "../src/trusted-github-admission-store.ts";
+import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
+  from "../src/trusted-operational-recovery-store.ts";
 import {GithubOidcReplayFileStore}
   from "../src/trusted-github-oidc-replay-store.ts";
 import {startTrustedGithubOidcIntakeServer}
@@ -77,8 +79,10 @@ function root(id:string,index:string){
       statusListIndex:index,statusListCredential:"https://example.test/status/review"
     }};
 }
-async function fixture(){
+async function fixture(recovery=false){
   const directory=await mkdtemp(join(tmpdir(),"approved-review-"));
+  const recoveryDirectory=recovery?
+    await mkdtemp(join(tmpdir(),"operational-recovery-")):undefined;
   const keys=generateKeyPairSync("ed25519");
   const publicKey=keys.publicKey.export({format:"pem",type:"spki"}).toString();
   const privateKey=keys.privateKey.export({format:"pem",type:"pkcs8"}).toString();
@@ -118,7 +122,10 @@ async function fixture(){
   });
   coordinator=new TrustedExecutionCoordinator({
     authority,approvedGatewayPlans:plans,credentials,
-    sessionId:SNAPSHOT.session_id,baseRevision:SHA
+    sessionId:SNAPSHOT.session_id,baseRevision:SHA,
+    ...(recoveryDirectory?{
+      operationalRecovery:new TrustedOperationalRecoveryStore(recoveryDirectory)
+    }:{})
   });
   function proposal(){
     const result=compilePlanningProposal(sketch(),CFG);
@@ -143,7 +150,11 @@ async function fixture(){
     replaceReceiptAfterOperationalIssue(handler:()=>Promise<void>){
       onOperationalIssue=handler;
     },
-    close:()=>rm(directory,{recursive:true,force:true})};
+    close:async()=>{
+      await rm(directory,{recursive:true,force:true});
+      if(recoveryDirectory)
+        await rm(recoveryDirectory,{recursive:true,force:true});
+    }};
 }
 
 test("signed Engineer review exactly binds Planner digest and approved subset to operational root/Gateway",async()=>{
@@ -852,7 +863,7 @@ test("persisted manual host refuses wrong checkpoint SHA before operational issu
 
 
 test("verified signed GitHub OIDC reaches live Planning and requires independent Engineer signature",async()=>{
-  const f=await fixture();
+  const f=await fixture(true);
   const checkpointDir=await mkdtemp(join(tmpdir(),"engineer-checkpoint-admission-"));
   const consentDir=await mkdtemp(join(tmpdir(),"engineer-oidc-admission-"));
   const replayDir=await mkdtemp(join(tmpdir(),"engineer-oidc-replay-"));

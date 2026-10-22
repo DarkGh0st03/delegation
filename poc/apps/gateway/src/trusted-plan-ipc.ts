@@ -23,6 +23,7 @@ type Command=
   |{action:"activate";session_id:string;base_revision:string}
   |{action:"bind";session_id:string;plan_task_id:string;runtime_task_id:string;role:AgentRole}
   |{action:"close";session_id:string}
+  |{action:"retire";session_id:string}
   |{action:"lease_status"}
   |{action:"renew_lease";session_id:string;plan_digest:string}
   |{action:"complete";runtime_task_id:string;observation:TrustedCompletionObservation};
@@ -48,7 +49,8 @@ function validate(x:unknown):Command{
      typeof o.plan_task_id==="string"&&ID.test(o.plan_task_id)&&
      typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id)&&
      typeof o.role==="string"&&ROLES.has(o.role))return o as Command;
-  if(o.action==="close"&&exact(o,["action","session_id"]))return o as Command;
+  if((o.action==="close"||o.action==="retire")&&
+     exact(o,["action","session_id"]))return o as Command;
   if(o.action==="renew_lease"&&exact(o,["action","session_id","plan_digest"])&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest))
     return o as Command;
@@ -141,6 +143,9 @@ export async function createTrustedPlanIpcServer(config:{
         response(res,200,{ok:true,enabled:config.plans.operationalLeaseConfigured()});
       }else if(command.action==="renew_lease"){
         config.plans.renewLease(command.session_id,command.plan_digest);
+        response(res,200,{ok:true});
+      }else if(command.action==="retire"){
+        config.plans.retireSession(command.session_id);
         response(res,200,{ok:true});
       }else if(command.action==="activate"){
         const plan_digest=await config.plans.activate(
@@ -273,6 +278,9 @@ export class TrustedPlanIpcClient{
   async bindTask(sessionId:string,planTaskId:string,runtimeTaskId:string,role:AgentRole){
     await this.#send({action:"bind",session_id:sessionId,plan_task_id:planTaskId,
       runtime_task_id:runtimeTaskId,role});
+  }
+  async retireSession(sessionId:string){
+    await this.#send({action:"retire",session_id:sessionId});
   }
   async closeSession(sessionId:string){
     await this.#send({action:"close",session_id:sessionId});

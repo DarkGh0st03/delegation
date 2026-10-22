@@ -399,3 +399,24 @@ The separate-process IPC transport is implemented, but **not deployed** on
 an always-on Engineer + Gateway infrastructure. Lease enforcement is at
 Gateway authorization boundaries, not at the independent Rust status
 registry, and does not kill provider operations already in flight.
+
+
+## Durable operational-root crash recovery (trusted-only)
+
+A one-use, 0600, fsynced owner-only journal records the **intended operational
+credential ID and exact session/Gitea SHA before the Adapter issuing request**.
+If the Engineer process dies during or after issuing that root, a new trusted
+bootstrap can enumerate pending intents, permanently retire the session in the
+Gateway (including before activation), revoke the exact credential through
+the Rust Adapter, and retire the journal entry only after both operations
+have returned confirmation. A failed revoke, inaccessible Gateway or partial
+journal record blocks fresh Planning and demands operator reconciliation.
+Pending sessions are never resumed or automatically reapproved. The journal
+contains no keys, signed tokens or permission bodies. The authenticated
+GitHub handoff requires both this recovery journal and the Gateway lease.
+
+The explicit `reconcileOrphanedOperationalRoots` entrypoint is a trusted
+bootstrap operation, not an A2A/MCP/HTTP endpoint. Its caller must supply
+separate authenticated Gateway retirement and Adapter revocation ports.
+The journal prevents losing the root identifier, while the separate Gateway
+lease independently denies new operations if the Engineer is unavailable.

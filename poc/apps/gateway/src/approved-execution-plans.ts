@@ -358,6 +358,15 @@ export class TrustedApprovedExecutionPlans {
   }
 
   /** Existing prepared requests fail after this trusted revocation. */
+  /** Trusted crash recovery: permanently tombstone an orphan session even
+   * if the old host died before the Gateway activation request completed. */
+  retireSession(sessionId:string):void {
+    ensureId(sessionId,"session ID");
+    this.#closedSessionIds.add(sessionId);
+    const session=this.#sessions.get(sessionId);
+    if(session)session.active=false;
+  }
+
   closeSession(sessionId:string):void {
     ensureId(sessionId,"session ID");
     const session=this.#sessions.get(sessionId);

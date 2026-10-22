@@ -129,6 +129,7 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
   // issuance. Without a separately enforced Gateway TTL the Engineer
   // process crashing would leave an active long-lived execution session.
   input.coordinator.assertOperationalLeaseConfigured();
+  input.coordinator.assertOperationalRecoveryConfigured();
   const root=input.coordinator.trustedPlanningAuthority();
   if(root.session_id!==input.pins?.sessionId)
     deny("independent GitHub admission session differs from active Planning root");

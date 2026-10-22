@@ -10,6 +10,8 @@ import type {TrustedCompletionObservation} from "../../../apps/gateway/src/trust
 import type {AgentRole} from "../../../apps/gateway/src/types.ts";
 import type {DelegatedPermission} from "./permission-templates.ts";
 import type {DelegatedA2ARoleTaskResult} from "./a2a-workflow.ts";
+import {TrustedOperationalRecoveryStore}
+  from "./trusted-operational-recovery-store.ts";
 import {observedA2ACompletion,observedOrchestratorProviderCompletion} from "./trusted-a2a-observer.ts";
 import type {
   RootParameters,TrustedEngineerAuthoritySession
@@ -20,6 +22,8 @@ export interface TrustedApprovedPlanControl {
   bindTask(sessionId:string,planTaskId:string,runtimeTaskId:string,role:AgentRole):void|Promise<void>;
   confirmTaskCompletion(runtimeTaskId:string,observation?:TrustedCompletionObservation):Promise<void>;
   closeSession(sessionId:string):void|Promise<void>;
+  /** Crash recovery; marks an absent or active Gateway session terminal. */
+  retireSession?(sessionId:string):void|Promise<void>;
   /** Optional for legacy tests; REQUIRED for admitted GitHub handoffs. */
   operationalLeaseConfigured?():boolean;
   renewLease?(sessionId:string,expectedDigest:string):void|Promise<void>;
@@ -33,6 +37,7 @@ export class TrustedExecutionCoordinator {
   readonly #credentials:{revokeRoot(id:string):Promise<void>};
   readonly #sessionId:string;
   readonly #baseRevision:string;
+  readonly #recovery?:TrustedOperationalRecoveryStore;
   #phase:Phase="idle";
   #planningRoot?:{
     readonly credential_id:string;
@@ -48,7 +53,9 @@ export class TrustedExecutionCoordinator {
     credentials:{revokeRoot(id:string):Promise<void>};
     sessionId:string;
     baseRevision:string;
+    operationalRecovery?:TrustedOperationalRecoveryStore;
   }){
+
     if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(config.sessionId)||
        !/^[a-f0-9]{40}$/u.test(config.baseRevision)) {
       throw new Error("Trusted coordinator requires one pinned Planning session and Git SHA");
@@ -58,6 +65,10 @@ export class TrustedExecutionCoordinator {
     this.#authority=config.authority;
     this.#gateway=config.approvedGatewayPlans;
     this.#credentials=config.credentials;
+    if(config.operationalRecovery!==undefined&&
+       !(config.operationalRecovery instanceof TrustedOperationalRecoveryStore))
+      throw Error("Invalid trusted operational recovery journal");
+    this.#recovery=config.operationalRecovery;
   }
 
   get phase():Phase{return this.#phase;}
@@ -78,6 +89,12 @@ export class TrustedExecutionCoordinator {
        !this.#operationalId)
       throw new Error("Trusted Coordinator cannot renew lease outside execution");
     await this.#gateway.renewLease!(this.#sessionId,this.#approvedDigest);
+  }
+
+  assertOperationalRecoveryConfigured():void{
+    if(!(this.#recovery instanceof TrustedOperationalRecoveryStore)||
+       typeof this.#gateway.retireSession!=="function")
+      throw Error("Trusted Coordinator requires durable operational recovery and Gateway retirement");
   }
 
   /** Authority facts from the actual, verified operational root issuance.
@@ -117,6 +134,10 @@ export class TrustedExecutionCoordinator {
 
   async beginPlanning(root:RootParameters){
     if(this.#phase!=="idle")throw new Error("Trusted Planning is not idle");
+    if(this.#recovery){
+      this.assertOperationalRecoveryConfigured();
+      await this.#recovery.assertClean();
+    }
     this.#phase="failed_closed";
     const result=await this.#authority.startPlanning(root);
     if(result.phase!=="planning")throw new Error("Read-only authority not confirmed");
@@ -138,6 +159,14 @@ export class TrustedExecutionCoordinator {
     credential_id:string;plan_digest:string;
   }>{
     if(this.#phase!=="planning")throw new Error("Trusted execution requires prior Planning");
+    if(this.#recovery){
+      this.assertOperationalRecoveryConfigured();
+      // Persist the chosen future ID before ANY external issuing request.
+      await this.#recovery.recordIntent({
+        sessionId:this.#sessionId,baseRevision:this.#baseRevision,
+        credentialId:root.credential_id
+      });
+    }
     this.#phase="activating";
     this.#planningRoot=undefined; // never reuse provisional authority in Execution
     let operationalId:string|undefined;
@@ -157,6 +186,22 @@ export class TrustedExecutionCoordinator {
       return {credential_id:issued.credential_id,plan_digest:gatewayDigest};
     }catch(error){
       this.#phase="failed_closed";
+      if(this.#recovery){
+        let tombstone=false,revoked=false;
+        try{await this.#gateway.retireSession!(this.#sessionId);
+          tombstone=true;}catch{}
+        // Even a failed/ambiguous issue may have created an orphan in Rust.
+        try{await this.#credentials.revokeRoot(root.credential_id);
+          revoked=true;}catch{}
+        if(!tombstone||!revoked)
+          throw Error("Operational root uncertain; persistent reconciliation required",
+            {cause:error});
+        await this.#recovery.markReconciled({
+          sessionId:this.#sessionId,baseRevision:this.#baseRevision,
+          credentialId:root.credential_id
+        });
+        throw error;
+      }
       // When an operational credential exists but the plan was not installed,
       // revoke its status entry rather than leave a usable orphaned root.
       if(operationalId){
@@ -221,5 +266,9 @@ export class TrustedExecutionCoordinator {
       await this.#credentials.revokeRoot(this.#operationalId);
     }
     if(!gatewayClosed)throw new Error("Gateway plan shutdown is not confirmed");
+    if(this.#recovery)await this.#recovery.markReconciled({
+      sessionId:this.#sessionId,baseRevision:this.#baseRevision,
+      credentialId:this.#operationalId
+    });
   }
 }
