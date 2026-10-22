@@ -399,6 +399,42 @@ async function main(){
     const fixture=await stage("commit_reference_implementation",
       ()=>pushReferenceApp(base,workingDir,
         basic(adminUser,adminPassword)),300000);
+    if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
+      // Reuse this same disposable Gitea. Read-only PAT, actual main SHA,
+      // real Rust/EVM root, native Core verifier, and independent OPA.
+      // Running before A2A file writes makes the immutable feature SHA
+      // comparison meaningful; this Planning test creates no approvals.
+      await stage("native_preliminary_planning_real_disposable_gitea",async()=>{
+        const planningScript=fileURLToPath(new URL(
+          "../../gateway/native-test/native-planning-read-core-evm-e2e.mjs",
+          import.meta.url
+        ));
+        const output=execFileSync(process.execPath,[
+          "--experimental-strip-types",planningScript
+        ],{
+          cwd:process.cwd(),encoding:"utf8",timeout:180000,
+          env:{...process.env,
+            OPA_URL:opaBaseUrl,
+            PLANNING_DISPOSABLE_GITEA_URL:base,
+            PLANNING_DISPOSABLE_GITEA_READ_TOKEN:creds.readToken,
+            PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha
+          }
+        });
+        const result=output.split(/\r?\n/u).filter(Boolean)
+          .map(line=>{try{return JSON.parse(line);}catch{return null;}})
+          .find(event=>event?.event==="native_preliminary_adk_planning");
+        assert.equal(result?.status,"pass");
+        assert.equal(result?.real_disposable_gitea_pinned_reads,true);
+        assert.equal(result?.real_gitea_main_unchanged,true);
+        assert.equal(result?.native_rust_vp_verified,true);
+        assert.equal(result?.independent_revocation_denial,true);
+        assert.equal(result?.approval_created,false);
+        assert.equal(result?.provider_writes,0);
+        process.stderr.write("[trusted-positive-ci] native_disposable_planning "+
+          JSON.stringify({status:"PASS",real_gitea_sha:fixture.mainSha,
+            native_rust:true,live_opa:true,mutations:0})+"\n");
+      },190000);
+    }
     logs=await mkdtemp(join(tmpdir(),"thesis-positive-runner-"));
     const executor=new IsolatedDockerRunnerExecutor({
       gitea_base_url:base,gitea_owner:"thesis",

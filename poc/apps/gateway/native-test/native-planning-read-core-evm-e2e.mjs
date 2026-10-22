@@ -5,8 +5,10 @@
  * REAL: Rust-issued EVM-root DC, signed JWT VP, independent Core Rust verifier,
  * live OPA policy, Planning revision registry, Google ADK/A2A-independent
  * read-only Planner, and on-chain root revocation.
- * FIXTURE: Gitea read-only snapshot, controlled ADK model and HTTP transport
- * of the embedded Gateway. No live Gitea, external LLM or user approval.
+ * FIXTURE mode: pinned Gitea read snapshot.
+ * DISPOSABLE mode: real read-only Gitea from existing isolated Docker test.
+ * Both use a controlled ADK model and embedded Gateway HTTP transport.
+ * No external LLM, user approval, writes to main or persistent Gitea.
  */
 import assert from "node:assert/strict";
 import {randomBytes,randomInt} from "node:crypto";
@@ -14,6 +16,7 @@ import {BaseLlm} from "@google/adk";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
 import {GiteaReadOnlyExecutor} from "../src/gitea-read-executor.ts";
+import {GiteaClient} from "../src/gitea-client.ts";
 import {OpaPolicyClient} from "../src/policy-client.ts";
 import {TrustedPlanningRevisions} from "../src/planning-revisions.ts";
 import {InMemoryAuditSink} from "../src/prepare.ts";
@@ -39,7 +42,30 @@ for(const v of [token,engineerToken,engineerDid]){
 }
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const file="apps/backend/src/users/user.service.ts";
-const baseSha="a".repeat(40);
+const disposableBase=process.env.PLANNING_DISPOSABLE_GITEA_URL;
+const disposableToken=process.env.PLANNING_DISPOSABLE_GITEA_READ_TOKEN;
+const disposableSha=process.env.PLANNING_DISPOSABLE_GITEA_MAIN_SHA;
+const realGitea=[disposableBase,disposableToken,disposableSha]
+  .some(v=>v!==undefined);
+if(realGitea&&[disposableBase,disposableToken,disposableSha]
+  .some(v=>typeof v!=="string"||!v))
+  throw Error("Disposable Planning Gitea requires URL, read token and immutable SHA");
+if(realGitea&&!/^http:\/\/127\.0\.0\.1:\d+$/u.test(disposableBase))
+  throw Error("Disposable Planning Gitea must use temporary localhost port");
+if(realGitea&&!/^[a-f0-9]{40}$/u.test(disposableSha))
+  throw Error("Disposable Planning Gitea needs a full trusted SHA");
+const liveClient=realGitea?new GiteaClient({
+  baseUrl:disposableBase,token:disposableToken,owner:"thesis",
+  repository:"iam-console-poc",timeoutMs:10000
+}):undefined;
+const originalMain=liveClient?await liveClient.readRepository():undefined;
+if(liveClient&&(originalMain?.default_branch!=="main"||
+    originalMain?.revision!==disposableSha||
+    originalMain?.full_name!=="thesis/iam-console-poc"))
+  throw Error("Actual disposable Gitea main SHA/identity does not match fixture bootstrap");
+const baseSha=originalMain?.revision??"a".repeat(40);
+const originalFeature=liveClient?
+  (await liveClient.getBranchMetadata("feature/account-suspension")).commit_sha:undefined;
 const session="native-read-plan-"+randomBytes(5).toString("hex");
 const rootId="urn:native:planning-only-"+randomBytes(7).toString("hex");
 const snapshot={
@@ -90,7 +116,7 @@ class ScriptedReadPlanner extends BaseLlm{
 const adapterUrl="http://127.0.0.1:8090";
 const opaUrl=process.env.OPA_URL??"http://127.0.0.1:8181";
 const log={giteaReads:0,adapterPresentations:0,prepares:0,executions:0};
-const gitea={
+const fixtureGitea={
   async readRepository(pinned){
     log.giteaReads++;
     return {full_name:"thesis/iam-console-poc",default_branch:"main",
@@ -110,6 +136,20 @@ const gitea={
     return {branch,path,revision,entries:[]};
   }
 };
+const gitea=liveClient?{
+  async readRepository(pinned){
+    log.giteaReads++;
+    return liveClient.readRepository(pinned);
+  },
+  async readTextFile(branch,path,revision){
+    log.giteaReads++;
+    return liveClient.readTextFile(branch,path,revision);
+  },
+  async listDirectory(branch,path,revision){
+    log.giteaReads++;
+    return liveClient.listDirectory(branch,path,revision);
+  }
+}:fixtureGitea;
 const revisions=new TrustedPlanningRevisions(gitea);
 const audit=new InMemoryAuditSink();
 const config={bind_host:"127.0.0.1",bind_port:0,
@@ -209,7 +249,14 @@ try{
   assert.equal(log.adapterPresentations,1);
   assert.equal(log.prepares,1);
   assert.equal(log.executions,1);
-  assert.equal(log.giteaReads,2); // trusted SHA bootstrap + one pinned source read
+  assert.equal(log.giteaReads,2); // actual trusted SHA bootstrap + pinned source read
+  if(liveClient){
+    // Read-only PAT and the provider are backed by the disposable Gitea,
+    // never the public baseline or an in-memory repository emulator.
+    const fileAtSha=await liveClient.readTextFile("main",file,baseSha);
+    assert.ok(fileAtSha.content.includes("listUsers"));
+    assert.equal(fileAtSha.revision,baseSha);
+  }
   const executed=audit.events.filter(e=>e.event==="authorization_executed");
   assert.equal(executed.length,1);
   assert.equal(executed[0].decision,"allow");
@@ -254,6 +301,11 @@ try{
   revisions.end(session);
   await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
   assert.equal(log.giteaReads,before);
+  if(liveClient){
+    assert.equal((await liveClient.getBranchMetadata("main")).commit_sha,baseSha);
+    assert.equal((await liveClient.getBranchMetadata("feature/account-suspension")).commit_sha,
+      originalFeature);
+  }
   console.log(JSON.stringify({
     event:"native_preliminary_adk_planning",
     status:"pass",
@@ -261,7 +313,9 @@ try{
     native_rust_vp_verified:true,
     live_opa:true,
     model_calls_paid:false,
-    pinned_gitea_fixture:true,
+    pinned_gitea_fixture:!realGitea,
+    real_disposable_gitea_pinned_reads:realGitea,
+    real_gitea_main_unchanged:realGitea,
     independent_revocation_denial:true,
     source_reads:proposed.verified_source_reads,
     approval_created:false,
