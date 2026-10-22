@@ -31,6 +31,7 @@ import {startSpecializedAgentServer} from
   "../../../packages/agent-runtime/src/server.ts";
 import {DeterministicA2AOrchestrator} from
   "../../../packages/agent-runtime/src/orchestrator.ts";
+import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
 
 const adapterUrl="http://127.0.0.1:8090";
 const EDIT_ROLES=["backend","frontend"];
@@ -130,130 +131,98 @@ export async function runNativePositiveApprovedDag({
   const counts={backend:0,frontend:0},reads={backend:0,frontend:0},
     writes={backend:0,frontend:0};
   let testCalls=0,testCreates=0,runnerRuns=0,runnerOutcome=null,latestSha=baseSha;
-  const childIds={},servers=[],urls={};
-  try{
-    for(const role of EDIT_ROLES){
-      const targets=files[role],token=agentTokens[role];
-      const server=await startSpecializedAgentServer({
-        role,host:"127.0.0.1",port:await freePort(),
-        delegatedAuthorization:true,capabilityProfile:"approved-plan",
-        taskHandler:async context=>{
-          counts[role]++;
-          assert.equal(context.role,role);
-          assert.equal(context.subtask.subtask_id,role);
-          assert.equal(context.subtask.branch,branch);
-          assert.deepEqual(context.subtask.relevant_paths,targets);
-          assert.deepEqual(context.subtask.approved_file_permissions,
-            targets.flatMap(path=>[
-              {path,operation:"read_file"},
-              {path,operation:"update_file"}
-            ]));
-          assert.equal(context.delegation_evidence.presenter_id,
-            process.env["ADAPTER_ID_"+role.toUpperCase()]);
-          assert.equal(context.delegation_evidence.credential_id,childIds[role]);
-          const taskId=context.trusted_gateway_task_id;
-          assert.match(taskId,/^dispatch_[A-Za-z0-9_-]{22}$/u);
-          let finalSha=null;
-          for(const path of targets){
-            const read=gateway.prepare({task_id:taskId,agent_role:role,
-              tool:"read_file",arguments:{branch,path}});
-            const readJwt=await signedVp(childIds[role],read,token);
-            const source=await gateway.execute({
-              request_id:read.request_id,signed_vp:readJwt
-            });
-            assert.equal(source.execution.tool,"read_file");
-            assert.equal(source.execution.content,originals[path]);
-            reads[role]++;
-            const replace=gateway.prepare({task_id:taskId,agent_role:role,
-              tool:"update_file",arguments:{branch,path,
-                content:ACCOUNT_SUSPENSION_REFERENCE_FILES[path]}});
-            const updateJwt=await signedVp(childIds[role],replace,token);
-            const effect=await gateway.execute({
-              request_id:replace.request_id,signed_vp:updateJwt
-            });
-            assert.equal(effect.policy.allow,true);
-            assert.equal(effect.policy.policy_version,"phase6-approved-branch-v2");
-            assert.equal(effect.execution.provider,"gitea");
-            assert.equal(effect.execution.tool,"update_file");
-            assert.equal(effect.execution.path,path);
-            finalSha=effect.execution.commit_sha;
-            writes[role]++;
+  const childIds={},servers=[],urls={},models={};
+  const readPaths={backend:new Set(),frontend:new Set()};
+  const writePaths={backend:new Set(),frontend:new Set()};
+  const adkGatewayBase="http://approved-native-gateway.invalid";
+  const reply=(body,status=200)=>new Response(JSON.stringify(body),{
+    status,headers:{"content-type":"application/json"}
+  });
+  // ADK makes real controlled FunctionTool calls; this small in-process
+  // transport only avoids opening an unauthenticated public Gateway port.
+  // The Gateway itself still validates signed plans, live Rust VPs, OPA
+  // and Gitea/Docker provider effects for EVERY operation.
+  const adkFetchFor=role=>async(url,options)=>{
+    const target=String(url);
+    if(target.startsWith(adapterUrl+"/"))
+      return fetch(url,options);
+    if(!target.startsWith(adkGatewayBase+"/v1/authorization/"))
+      throw Error("ADK attempted unknown transport");
+    try{
+      const request=JSON.parse(String(options?.body));
+      if(target===adkGatewayBase+"/v1/authorization/prepare"){
+        assert.equal(request.agent_role,role);
+        assert.match(request.task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+        if(role==="test"){
+          assert.ok(["create_file","run_tests"].includes(request.tool));
+          if(request.tool==="create_file"){
+            assert.equal(request.arguments.path,createdTestFile);
+            assert.equal(request.arguments.branch,branch);
+          }else{
+            assert.equal(request.arguments.branch,branch);
+            assert.equal(request.arguments.profile,"poc-default");
+            assert.equal(testCreates,1);
           }
-          assert.match(finalSha,SHA);
-          assert.notEqual(finalSha,baseSha);
-          latestSha=finalSha;
-          return {
-            role,summary:"Exact signed reference updates from "+role,
-            files_modified:[...targets],files_created:[],branch,
-            revision:finalSha,commit_sha:finalSha,
-            test_outcome:"not_run",errors:[]
-          };
+        }else{
+          assert.ok(["read_file","update_file"].includes(request.tool));
+          assert.ok(files[role].includes(request.arguments.path));
+          assert.equal(request.arguments.branch,branch);
+          if(request.tool==="update_file"){
+            assert.ok(readPaths[role].has(request.arguments.path));
+            assert.equal(request.arguments.content,
+              ACCOUNT_SUSPENSION_REFERENCE_FILES[request.arguments.path]);
+          }
         }
-      });
-      servers.push(server);urls[role]=server.baseUrl;
-    }
-    const testAgent=await startSpecializedAgentServer({
-      role:"test",host:"127.0.0.1",port:await freePort(),
-      delegatedAuthorization:true,capabilityProfile:"approved-plan",
-      taskHandler:async context=>{
-        testCalls++;
-        try{
-          assert.equal(context.role,"test");
-          assert.equal(context.subtask.subtask_id,"test");
-          assert.equal(context.subtask.branch,branch);
-          assert.deepEqual(context.subtask.relevant_paths,[createdTestFile]);
-          assert.deepEqual(context.subtask.approved_file_permissions,[
-            {path:createdTestFile,operation:"create_file"}
-          ]);
-          assert.equal(context.delegation_evidence.presenter_id,
-            process.env.ADAPTER_ID_TEST);
-          assert.equal(context.delegation_evidence.credential_id,childIds.test);
+        return reply(gateway.prepare(request),201);
+      }
+      if(target===adkGatewayBase+"/v1/authorization/execute"){
+        const executed=await gateway.execute(request);
+        assert.equal(executed.policy.allow,true);
+        assert.equal(executed.policy.policy_version,"phase6-approved-branch-v2");
+        assert.equal(executed.verified_delegation.presenter_id,
+          process.env["ADAPTER_ID_"+role.toUpperCase()]);
+        assert.equal(executed.verified_delegation.credential_id,
+          childIds[role]);
+        const effect=executed.execution;
+        if(role!=="test"){
+          assert.equal(effect.provider,"gitea");
+          assert.ok(files[role].includes(effect.path));
+          if(effect.tool==="read_file"){
+            assert.equal(effect.content,originals[effect.path]);
+            assert.ok(!readPaths[role].has(effect.path));
+            readPaths[role].add(effect.path);
+            reads[role]++;
+          }else if(effect.tool==="update_file"){
+            assert.ok(readPaths[role].has(effect.path));
+            assert.ok(!writePaths[role].has(effect.path));
+            assert.match(effect.commit_sha,SHA);
+            writePaths[role].add(effect.path);
+            writes[role]++;
+            latestSha=effect.commit_sha;
+            if(writePaths[role].size===files[role].length)counts[role]++;
+          }else throw Error("ADK attempted unexpected approved provider operation");
+        }else if(effect.tool==="create_file"){
+          assert.equal(testCreates,0);
+          assert.equal(effect.provider,"gitea");
+          assert.equal(effect.path,createdTestFile);
+          assert.match(effect.commit_sha,SHA);
           assert.deepEqual(counts,{backend:1,frontend:1});
-          const taskId=context.trusted_gateway_task_id;
-          const before=await reader.getBranchMetadata(branch);
-          assert.equal(before.commit_sha,latestSha);
-          // The test file was missing on main. Only the Engineer-approved
-          // Test task creates it through Rust+Gateway, never a bootstrap push.
-          const preparedCreate=gateway.prepare({task_id:taskId,
-            agent_role:"test",tool:"create_file",arguments:{
-              branch,path:createdTestFile,
-              content:ACCOUNT_SUSPENSION_REFERENCE_FILES[createdTestFile]}
-          });
-          const createVp=await signedVp(
-            childIds.test,preparedCreate,agentTokens.test);
-          const created=await gateway.execute({
-            request_id:preparedCreate.request_id,signed_vp:createVp
-          });
-          assert.equal(created.execution.tool,"create_file");
-          assert.equal(created.execution.path,createdTestFile);
-          testCreates++;
+          const head=await reader.getBranchMetadata(branch);
+          assert.equal(head.commit_sha,effect.commit_sha);
+          testCalls++;testCreates++;
+        }else if(effect.tool==="run_tests"){
+          assert.equal(testCreates,1);
           const pinned=await reader.getBranchMetadata(branch);
-          assert.equal(pinned.commit_sha,created.execution.commit_sha);
-          const prepared=gateway.prepare({
-            task_id:taskId,agent_role:"test",tool:"run_tests",
-            arguments:{branch,profile:"poc-default"}
-          });
-          assert.equal(prepared.required_permission.resource,
-            repositoryUri+"/branches/"+encodeURIComponent(branch));
-          const signed=await signedVp(childIds.test,prepared,agentTokens.test);
-          const executed=await gateway.execute({
-            request_id:prepared.request_id,signed_vp:signed
-          });
-          const effect=executed.execution;
-          process.stderr.write("[native-dag-test] docker_phase_status "+
+          assert.equal(effect.provider,"runner");
+          assert.equal(effect.tested_commit_sha,pinned.commit_sha);
+          process.stderr.write("[native-dag-adk] docker_phase_status "+
             JSON.stringify({
               status:effect.status,
               phases:effect.phases?.map(x=>({phase:x.phase,status:x.status})),
               project_tests:effect.project_tests?.status,
               researcher_acceptance:effect.researcher_acceptance?.status
             })+"\n");
-          assert.equal(executed.verified_delegation.presenter_id,
-            process.env.ADAPTER_ID_TEST);
-          assert.equal(executed.policy.allow,true);
-          assert.equal(effect.provider,"runner");
-          assert.equal(effect.tool,"run_tests");
           assert.equal(effect.status,"pass");
-          assert.equal(effect.tested_commit_sha,pinned.commit_sha);
           assert.equal(effect.project_tests?.status,"pass");
           assert.equal(effect.researcher_acceptance?.status,"pass");
           assert.deepEqual(effect.phases.map(x=>x.phase),[
@@ -261,28 +230,60 @@ export async function runNativePositiveApprovedDag({
             "build","playwright_e2e","researcher_acceptance"
           ]);
           assert.ok(effect.phases.every(x=>x.status==="pass"));
-          runnerRuns++;
-          runnerOutcome=effect;
-          return {
-            role:"test",summary:"Exact-SHA Docker and researcher acceptance",
-            files_modified:[],files_created:[createdTestFile],branch,
-            revision:effect.tested_commit_sha,
-            commit_sha:effect.tested_commit_sha,
-            test_outcome:"pass",errors:[],
-            tested_commit_sha:effect.tested_commit_sha,
-            runner_profile:effect.runner_profile,
-            project_tests:effect.project_tests.status,
-            researcher_acceptance:effect.researcher_acceptance.status
-          };
-        }catch(error){
-          process.stderr.write("[native-dag-test] bounded_failure "+
-            JSON.stringify({
-              kind:error?.constructor?.name??"Error",
-              code:error?.code??"unknown",
-              message:String(error?.message??"test_failed").slice(0,220)
-            })+"\n");
-          throw error;
+          runnerRuns++;runnerOutcome=effect;
+        }else throw Error("ADK Test Agent attempted unexpected operation");
+        return reply(executed);
+      }
+      throw Error("Unsupported trusted Gateway route");
+    }catch(error){
+      // The model sees a generic denied result, never raw provider exceptions,
+      // confidential request arguments, VP, source data or service tokens.
+      process.stderr.write("[native-dag-adk] controlled_denial "+
+        JSON.stringify({role,kind:error?.constructor?.name??"Error",
+          code:error?.code??"unknown"})+"\n");
+      return reply({error:"trusted_operation_denied"},403);
+    }
+  };
+  try{
+    for(const role of EDIT_ROLES){
+      const targets=files[role];
+      const scripted=targets.flatMap(path=>[
+        {name:"read_file",args:{branch,path}},
+        {name:"update_file",args:{
+          branch,path,content:ACCOUNT_SUSPENSION_REFERENCE_FILES[path]
+        }}
+      ]);
+      const model=new OfflineApprovedAdkModel(role,scripted);
+      models[role]=model;
+      const server=await startSpecializedAgentServer({
+        role,host:"127.0.0.1",port:await freePort(),
+        delegatedAuthorization:true,capabilityProfile:"approved-plan",
+        adk:{
+          model,gatewayBaseUrl:adkGatewayBase,adapterBaseUrl:adapterUrl,
+          adapterToken:agentTokens[role],fetchFn:adkFetchFor(role),
+          maxModelTurns:scripted.length+2,maxModelCallMs:30000,
+          gatewayTimeoutMs:30000
         }
+      });
+      servers.push(server);urls[role]=server.baseUrl;
+    }
+    const testScript=[
+      {name:"create_file",args:{
+        branch,path:createdTestFile,
+        content:ACCOUNT_SUSPENSION_REFERENCE_FILES[createdTestFile]
+      }},
+      {name:"run_tests",args:{branch,profile:"poc-default"}}
+    ];
+    const testModel=new OfflineApprovedAdkModel("test",testScript);
+    models.test=testModel;
+    const testAgent=await startSpecializedAgentServer({
+      role:"test",host:"127.0.0.1",port:await freePort(),
+      delegatedAuthorization:true,capabilityProfile:"approved-plan",
+      adk:{
+        model:testModel,gatewayBaseUrl:adkGatewayBase,adapterBaseUrl:adapterUrl,
+        adapterToken:agentTokens.test,fetchFn:adkFetchFor("test"),
+        maxModelTurns:4,maxModelCallMs:30000,
+        gatewayTimeoutMs:30000
       }
     });
     servers.push(testAgent);urls.test=testAgent.baseUrl;
@@ -348,6 +349,11 @@ export async function runNativePositiveApprovedDag({
     assert.equal(testCalls,1);
     assert.equal(testCreates,1);
     assert.equal(runnerRuns,1);
+    assert.equal(models.backend.calls,13);
+    assert.equal(models.frontend.calls,9);
+    assert.equal(models.test.calls,3);
+    assert.ok(result.specialized_results.every(x=>
+      x.artifact.model_id?.startsWith("offline-signed-approved-plan-")));
     assert.ok(new Set(Object.values(childIds)).size===3);
     assert.equal(result.specialized_results[2].artifact.test_outcome,"pass");
     assert.equal(result.specialized_results[2].artifact.tested_commit_sha,
@@ -382,7 +388,13 @@ export async function runNativePositiveApprovedDag({
       researcher_acceptance:runnerOutcome.researcher_acceptance.status,
       tested_commit_sha:runnerOutcome.tested_commit_sha,
       main_unchanged:true,operational_root_revoked:true,
-      approved_branch_sha:head.commit_sha
+      approved_branch_sha:head.commit_sha,
+      adk_agents_executed:3,scripted_adk_no_paid_model:true,
+      adk_model_turns:{
+        backend:models.backend.calls,
+        frontend:models.frontend.calls,
+        test:models.test.calls
+      }
     };
   }finally{
     try{

@@ -471,6 +471,10 @@ async function main(){
         assert.equal(positive?.positive_dag?.source_reads,10);
         assert.equal(positive?.positive_dag?.source_writes,10);
         assert.equal(positive?.positive_dag?.created_test_files,1);
+        assert.equal(positive?.positive_dag?.adk_agents_executed,3);
+        assert.equal(positive?.positive_dag?.scripted_adk_no_paid_model,true);
+        assert.deepEqual(positive?.positive_dag?.adk_model_turns,
+          {backend:13,frontend:9,test:3});
         assert.equal(positive?.positive_dag?.main_unchanged,true);
         assert.equal(positive?.positive_dag?.operational_root_revoked,true);
         assert.equal(positive?.provider_writes,11);
@@ -480,6 +484,7 @@ async function main(){
             operational_root:true,dispatcher_fail_closed:true,
             signed_dag_positive:true,backend_frontend_a2a_updates:10,
             test_agent_created_e2e:1,
+            signed_generic_adk_agents:3,
             same_signed_dag_docker_acceptance:true,
             a2a_before_branch:0,main_mutations:0})+"\n");
       },1020000);
