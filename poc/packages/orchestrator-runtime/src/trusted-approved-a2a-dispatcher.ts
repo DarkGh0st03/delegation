@@ -16,10 +16,9 @@ import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
 import {validatePrivateApprovedBranch} from "../../../packages/agent-runtime/src/approved-branch.ts";
 import type {AuthenticatedPlanStore} from "../../../apps/gateway/src/approved-execution-plans.ts";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
-import {
-  DelegatedA2ARoleRunner,
-  type DelegatedA2ARoleTaskInput,type DelegatedA2ARoleTaskResult,
-  type ProtectedA2AClientPort
+import type {
+  DelegatedA2ARoleTaskInput,DelegatedA2ARoleTaskResult,
+  ProtectedA2AClientPort
 } from "./a2a-workflow.ts";
 import {TrustedApprovedPlanChildAuthorityIssuer} from "./trusted-approved-child-issuer.ts";
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
@@ -98,6 +97,9 @@ export class TrustedApprovedA2ADispatcher {
         }
       }
     });
+    // The optional A2A SDK must not become a runtime dependency of the
+    // standalone Gateway/approved-plan verifier used by offline CI.
+    const {DelegatedA2ARoleRunner}=await import("./a2a-workflow.ts");
     const authorityIssuer=await TrustedApprovedPlanChildAuthorityIssuer.create({
       approvals:base.approvals,coordinator:base.coordinator,
       sessionId:base.sessionId,engineerDid:base.expectedEngineerDid,
