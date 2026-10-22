@@ -158,7 +158,7 @@ async function fixture(recovery=false){
 }
 
 test("signed Engineer review exactly binds Planner digest and approved subset to operational root/Gateway",async()=>{
-  const f=await fixture();
+  const f=await fixture(true);
   try{
     await assert.rejects(f.coordinator.beginExecution(root("urn:operational","102")),
       /prior Planning/);
@@ -177,7 +177,13 @@ test("signed Engineer review exactly binds Planner digest and approved subset to
     await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id));
     assert.deepEqual(f.revoked,[]);
     await f.sign(proposal.plan,["permission-1","permission-3"]);
-    const active=await f.coordinator.beginExecution(root("urn:operational","102"));
+    const starting=f.coordinator.beginExecution(root("urn:operational","102"));
+    // The first activation reserves the phase synchronously, BEFORE
+    // awaiting journal I/O. A second simultaneous request never issues.
+    await assert.rejects(f.coordinator.beginExecution(
+      root("urn:parallel-root","103")
+    ),/prior Planning/);
+    const active=await starting;
     assert.equal(active.plan_digest,proposal.digest);
     assert.equal(f.coordinator.phase,"execution");
     assert.deepEqual(f.revoked,["urn:preliminary"]);
