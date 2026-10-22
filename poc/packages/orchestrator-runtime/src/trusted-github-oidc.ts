@@ -122,6 +122,8 @@ export async function verifyGithubOidcJobAssertion(input:{
   try{
     response=await (input.fetchFn??fetch)(JWKS_URL,{
       headers:{accept:"application/json"},
+      // A redirected host is not the pinned GitHub identity provider.
+      redirect:"error",
       signal:AbortSignal.timeout(10000)
     });
   }catch{fail("GitHub JWKS unavailable");}

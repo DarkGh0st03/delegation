@@ -42,9 +42,10 @@ const keys=generateKeyPairSync("rsa",{modulusLength:2048,
 const pub=keys.publicKey.export({format:"jwk"}) as any;
 const jwks={keys:[{...pub,kid:"pinned-oidc-key-1",
   kty:"RSA",alg:"RS256",use:"sig"}]};
-const jwksFetch=(async(url:any)=>{
+const jwksFetch=(async(url:any,options:any)=>{
   assert.equal(url,
     "https://token.actions.githubusercontent.com/.well-known/jwks");
+  assert.equal(options.redirect,"error");
   return new Response(JSON.stringify(jwks),{status:200});
 }) as typeof fetch;
 const claims=()=>{
