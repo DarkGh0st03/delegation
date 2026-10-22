@@ -53,3 +53,65 @@ test("cancelled task and late responses fail closed",async()=>{
   await assert.rejects(call,/inactive_task/);
   await assert.rejects(reg.invoke("Bearer "+token,request),/inactive_task/);
 });
+
+
+test("private MCP bearer cannot escape signed Task path ceiling before Gateway",async()=>{
+ const k=keys();let gateway=0;
+ const reg=new PrivateMcpTaskRegistry({
+   role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
+ });
+ const allowed="apps/backend/src/users/user.service.ts";
+ const denied="apps/backend/src/users/user.controller.ts";
+ reg.begin("signed-backend",{
+   invoke:async()=>{gateway++;return {status:"ok"};}
+ },undefined,{allowUpdateFile:true,allowedPaths:[allowed]});
+ const token="Bearer "+reg.bearerFor("signed-backend");
+ await assert.rejects(reg.invoke(token,{
+   tool:"read_file",arguments:{branch:"feature/account-suspension",
+     path:denied}
+ }),/invalid_tool_call/);
+ await assert.rejects(reg.invoke(token,{
+   tool:"update_file",arguments:{branch:"feature/account-suspension",
+     path:denied,content:"blocked"}
+ }),/invalid_tool_call/);
+ assert.equal(gateway,0);
+ await reg.invoke(token,{
+   tool:"update_file",arguments:{branch:"feature/account-suspension",
+     path:allowed,content:"authorized"}
+ });
+ assert.equal(gateway,1);
+ reg.end("signed-backend");
+});
+
+test("private MCP signed Test Task permits run_tests but no repository file calls",async()=>{
+ const k=keys();let calls=0;
+ const reg=new PrivateMcpTaskRegistry({
+   role:"test",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
+ });
+ reg.begin("signed-test",{
+   invoke:async(tool)=>{calls++;assert.equal(tool,"run_tests");return {};}
+ },undefined,{allowedPaths:[],allowRunTests:true});
+ const token="Bearer "+reg.bearerFor("signed-test");
+ await assert.rejects(reg.invoke(token,{
+   tool:"read_file",arguments:{branch:"feature/account-suspension",
+     path:"tests/backend/user.service.test.ts"}
+ }),/invalid_tool_call/);
+ await reg.invoke(token,{tool:"run_tests",arguments:{
+   branch:"feature/account-suspension",profile:"poc-default"
+ }});
+ assert.equal(calls,1);
+ reg.end("signed-test");
+});
+
+test("malformed signed MCP path ceiling is rejected before token issuance",()=>{
+ const k=keys();
+ const reg=new PrivateMcpTaskRegistry({
+   role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
+ });
+ for(const p of ["../secrets","/tmp/file","apps//backend","x\\secret",
+   "apps/./file","apps/file\u0000.ts"]){
+   assert.throws(()=>reg.begin("task-A",{invoke:async()=>({})},undefined,{
+     allowedPaths:[p]
+   }),/invalid_tool_call/);
+ }
+});
