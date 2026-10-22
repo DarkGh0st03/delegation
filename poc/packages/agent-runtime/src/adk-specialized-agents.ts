@@ -128,12 +128,6 @@ export function createAdkSpecializedAgent(
       /[\x00-\x1f\x7f]/u.test(path))){
       throw Error("Invalid private approved Task path hints");
     }
-    if(config.mcpReadFile){
-      // The shared MCP toolset does not yet support independent task-scoped
-      // model declarations. Prefer refusing a broad tool surface over
-      // silently advertising unrelated paths to an approved-plan agent.
-      throw Error("Task-scoped model tools with shared MCP are not yet supported");
-    }
   }
   const filterPaths=(paths:readonly string[]):readonly string[]=>
     scoped?paths.filter(path=>taskPaths.includes(path)):paths;
@@ -272,13 +266,20 @@ export function createAdkSpecializedAgent(
       url: config.mcpReadFile.endpoint,
       transportOptions: { fetch: authorizedFetch }
     };
-    mcpToolset = new MCPToolset(params, [
-      "read_file",
-      ...(config.mcpUpdateFile ? ["update_file"] : []),
-      ...(config.mcpCreateFile ? ["create_file"] : []),
-      // run_tests is still routed through this MCP server, but uses an
-      // explicit bounded call timeout via the trusted SDK helper below.
-    ]);
+    const visibleMcpTools=[
+      ...(!scoped||readablePaths.length>0?["read_file"]:[]),
+      ...(config.mcpUpdateFile&&(!scoped||writable.length>0)
+        ? ["update_file"]:[]),
+      ...(config.mcpCreateFile&&(!scoped||creatable.length>0)
+        ? ["create_file"]:[])
+      // run_tests uses the bounded FunctionTool below.
+    ];
+    if(visibleMcpTools.length>0){
+      // Shared MCP's catalog is static. The private, token-bound
+      // task registry checks the signed Task path ceiling on every call;
+      // the ADK model prompt and tool names are minimized here.
+      mcpToolset=new MCPToolset(params,visibleMcpTools);
+    }
   }
 
   const timedMcpRunTests = config.mcpRunTests && config.mcpReadFile
