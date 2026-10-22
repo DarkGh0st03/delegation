@@ -276,7 +276,10 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     });
     const {agent, mcpToolset} = configured;
-    const appName = "account_suspension_adk_" + context.role;
+    const appName = context.trusted_gateway_task_id &&
+      context.subtask.approved_file_permissions !== undefined
+      ? "delegated_adk_" + context.role
+      : "account_suspension_adk_" + context.role;
     const userId = "delegated_a2a";
     const sessionService = new InMemorySessionService();
     const runner = new Runner({agent, appName, sessionService});

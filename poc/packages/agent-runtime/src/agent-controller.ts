@@ -47,7 +47,20 @@ const DEFAULT_INSTRUCTIONS = [
   "Finish with a concise summary of work actually completed."
 ].join("\n");
 export function modelVisibleTaskContext(context: AgentTaskContext): AgentControllerRunInput {
-  return { task_id: context.task_id, role: context.role, subtask: structuredClone(context.subtask) };
+  // Allowlist the Task fields given to the LLM. Delegation evidence, trusted
+  // Gateway dispatch ID, private context ID and signed-plan permission hints
+  // stay in the trusted runtime, where they configure the actual tools.
+  // Repository paths remain non-authoritative context, not grants.
+  return {
+    task_id: context.task_id,
+    role: context.role,
+    subtask: {
+      subtask_id: context.subtask.subtask_id,
+      instruction: context.subtask.instruction,
+      branch: context.subtask.branch,
+      relevant_paths: [...context.subtask.relevant_paths]
+    }
+  };
 }
 function recordObject(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;

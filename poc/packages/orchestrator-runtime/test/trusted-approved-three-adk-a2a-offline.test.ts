@@ -259,6 +259,7 @@ async function setup({wrongBackendPath=false}={}){
       models[role]=new DeterministicModel(specs[role].tool,specs[role].args);
       const server=await startSpecializedAgentServer({
         role,port:await port(),host:"127.0.0.1",delegatedAuthorization:true,
+        capabilityProfile:"approved-plan",
         adk:{model:models[role],gatewayBaseUrl:"http://offline-gateway",
           adapterBaseUrl:"http://offline-adapter",adapterToken:"private-agent-token",
           fetchFn:gatewaySimulatedFetch,maxModelTurns:3,maxModelCallMs:5000}

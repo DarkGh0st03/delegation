@@ -34,6 +34,29 @@ const ROLE_CONFIG = {
   }
 } as const;
 
+// Agent Cards advertise generic ROLE CAPABILITIES only. Per-Task file and
+// operation permissions are signed separately and enforced by Gateway/Rust/OPA.
+const APPROVED_PLAN_SKILLS = {
+  backend: {
+    id: "backend-software-engineering",
+    name: "Backend Software Engineering",
+    description: "Implement authorized backend Tasks using delegated, verified repository operations.",
+    example: "Implement an approved backend change within the assigned repository files."
+  },
+  frontend: {
+    id: "frontend-software-engineering",
+    name: "Frontend Software Engineering",
+    description: "Implement authorized frontend Tasks using delegated, verified repository operations.",
+    example: "Implement an approved user-interface change within the assigned repository files."
+  },
+  test: {
+    id: "software-testing",
+    name: "Software Testing",
+    description: "Develop and run approved software tests under delegated, verified authorization.",
+    example: "Validate an approved change with the authorized test files and test profile."
+  }
+} as const;
+
 export function agentDid(role: SpecializedAgentRole): string {
   return ROLE_CONFIG[role].did;
 }
@@ -41,14 +64,20 @@ export function agentDid(role: SpecializedAgentRole): string {
 export function createSpecializedAgentCard(
   role: SpecializedAgentRole,
   baseUrl: string,
-  options: { delegatedAuthorization?: boolean } = {}
+  options: {
+    delegatedAuthorization?: boolean;
+    /** Trusted server-startup choice, not a per-Task grant or identity proof. */
+    capabilityProfile?: "legacy" | "approved-plan";
+  } = {}
 ): AgentCard {
   const config = ROLE_CONFIG[role];
+  const approved = options.capabilityProfile === "approved-plan";
+  const skill = approved ? APPROVED_PLAN_SKILLS[role] : undefined;
   const delegatedAuthorization = options.delegatedAuthorization ?? true;
 
   return {
     name: config.name,
-    description: config.description,
+    description: skill?.description ?? config.description,
     supportedInterfaces: [
       {
         url: `${baseUrl.replace(/\/+$/u, "")}/a2a/rest`,
@@ -87,16 +116,20 @@ export function createSpecializedAgentCard(
     defaultOutputModes: ["application/json"],
     skills: [
       {
-        id: config.skillId,
-        name: config.skillName,
-        description: config.description,
-        tags: ["thesis", "iam", "account-suspension", role],
+        id: skill?.id ?? config.skillId,
+        name: skill?.name ?? config.skillName,
+        description: skill?.description ?? config.description,
+        tags: approved
+          ? ["thesis", "software-engineering", "delegated-authorization", role]
+          : ["thesis", "iam", "account-suspension", role],
         examples: [
-          role === "backend"
-            ? "Implement the backend account suspension lifecycle."
-            : role === "frontend"
-              ? "Implement administrator Suspend/Reactivate controls."
-              : "Validate the Account Suspension workflow."
+          skill?.example ?? (
+            role === "backend"
+              ? "Implement the backend account suspension lifecycle."
+              : role === "frontend"
+                ? "Implement administrator Suspend/Reactivate controls."
+                : "Validate the Account Suspension workflow."
+          )
         ],
         inputModes: ["application/json"],
         outputModes: ["application/json"],

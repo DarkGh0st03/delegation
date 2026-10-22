@@ -133,6 +133,7 @@ export async function applyApprovedRealAgentEdits({
       const server=await startSpecializedAgentServer({
         role,host:"127.0.0.1",port:await allocatePort(),
         delegatedAuthorization:true,
+        capabilityProfile:"approved-plan",
         adk:{model:new ScriptedAdkFileEdit(READ_ONLY_CONTEXT[role],{
           branch:approvedBranch,path,content
         }),gatewayBaseUrl:gatewayUrl,

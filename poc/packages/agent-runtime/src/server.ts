@@ -28,6 +28,8 @@ export interface SpecializedAgentServerOptions {
   port: number;
   host?: string;
   delegatedAuthorization?: boolean;
+  /** Advertise generic role skills for a trusted approved-plan workflow. */
+  capabilityProfile?: "legacy" | "approved-plan";
   artifactBuilder?: DeterministicArtifactPayloadBuilder;
   taskHandler?: DeterministicTaskHandler;
   adk?: AdkA2ATaskHandlerConfig;
@@ -50,7 +52,8 @@ export async function startSpecializedAgentServer(
   const host = options.host ?? "127.0.0.1";
   const baseUrl = `http://${host}:${options.port}`;
   const card = createSpecializedAgentCard(options.role, baseUrl, {
-    delegatedAuthorization: options.delegatedAuthorization
+    delegatedAuthorization: options.delegatedAuthorization,
+    capabilityProfile: options.capabilityProfile
   });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
   if (options.adk?.mcpCreateFile && options.role!=="test") {
