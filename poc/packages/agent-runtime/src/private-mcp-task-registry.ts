@@ -4,6 +4,7 @@ import type {DelegationEvidenceHandler, PreparedGatewayAuthorization} from "./de
 import { issueTaskToken, verifyTaskToken, bearerToken, type AgentRole, type TaskClaims } from "../../../mcp-shared/src/task-token.ts";
 import { parseReadFileArgs, parseUpdateFileArgs, parseCreateFileArgs, parseRunTestsArgs } from "../../../mcp-shared/src/catalog.ts";
 import { SPECIALIZED_AGENT_PROFILES } from "./specialized-agents.ts";
+import type {ApprovedTaskFilePermission} from "./contracts.ts";
 import type { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 
 export class PrivateMcpTaskError extends Error {
@@ -34,6 +35,8 @@ interface ActiveTask {
   allowRunTests: boolean;
   /** Task-scoped path ceiling; absent only for legacy unbound sessions. */
   allowedPaths?: ReadonlySet<string>;
+  /** Exact approved read/write/create operations, not merely paths. */
+  allowedFilePermissions?: ReadonlySet<string>;
   onAbort?: () => void;
 }
 
@@ -68,6 +71,7 @@ export class PrivateMcpTaskRegistry {
       allowCreateFile?: boolean;
       allowRunTests?: boolean;
       allowedPaths?:readonly string[];
+      allowedFilePermissions?:readonly ApprovedTaskFilePermission[];
       evidenceHandler?: Pick<DelegationEvidenceHandler,
         "createPresentation"|"credentialId"|"presenterId">;
     } = {}
@@ -83,6 +87,20 @@ export class PrivateMcpTaskRegistry {
          /[\x00-\x1f\x7f]/u.test(p)))){
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
+    if(options.allowedFilePermissions!==undefined&&(
+       options.allowedPaths===undefined||
+       options.allowedFilePermissions.length>32||
+       options.allowedFilePermissions.some(p=>
+         !p||!["read_file","update_file","create_file"].includes(p.operation)||
+         typeof p.path!=="string"||!options.allowedPaths!.includes(p.path)))){
+      throw new PrivateMcpTaskError("invalid_tool_call");
+    }
+    const allowedOperationKeys=options.allowedFilePermissions?.map(p=>
+      p.operation+"\0"+p.path);
+    if(allowedOperationKeys&&new Set(allowedOperationKeys).size!==
+       allowedOperationKeys.length) {
+      throw new PrivateMcpTaskError("invalid_tool_call");
+    }
     const bearer = issueTaskToken(this.#signingKey, this.#role, taskId);
     const claims = verifyTaskToken(bearer, { [this.#role]: this.#verificationKey });
     const task: ActiveTask = {client, bearer, claims, signal,
@@ -90,6 +108,8 @@ export class PrivateMcpTaskRegistry {
       ...(options.evidenceHandler?{evidenceHandler:options.evidenceHandler}:{}),
       ...(options.allowedPaths!==undefined
         ? {allowedPaths:new Set(options.allowedPaths)} : {}),
+      ...(allowedOperationKeys!==undefined
+        ? {allowedFilePermissions:new Set(allowedOperationKeys)} : {}),
       allowUpdateFile: options.allowUpdateFile === true,
       allowCreateFile: this.#role==="test" && options.allowCreateFile===true,
       allowRunTests: this.#role==="test" && options.allowRunTests===true};
@@ -252,6 +272,12 @@ export class PrivateMcpTaskRegistry {
     } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
     if(payload.tool!=="run_tests"&&task.allowedPaths!==undefined&&
        !("path" in args && task.allowedPaths.has(args.path))){
+      throw new PrivateMcpTaskError("invalid_tool_call");
+    }
+    if(payload.tool!=="run_tests"&&
+       task.allowedFilePermissions!==undefined&&
+       !("path" in args &&task.allowedFilePermissions.has(
+         payload.tool+"\0"+args.path))){
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     if (payload.tool === "update_file" &&

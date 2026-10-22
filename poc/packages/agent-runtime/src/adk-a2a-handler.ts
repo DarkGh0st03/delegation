@@ -249,7 +249,11 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
        allowCreateFile: config.mcpCreateFile === true && context.role==="test",
        allowRunTests: config.mcpRunTests === true && context.role==="test",
        ...(context.trusted_gateway_task_id
-         ? {allowedPaths:context.subtask.relevant_paths} : {}),
+         ? {
+             allowedPaths:context.subtask.relevant_paths,
+             ...(context.subtask.approved_file_permissions!==undefined
+               ? {allowedFilePermissions:context.subtask.approved_file_permissions}:{})
+           } : {}),
        evidenceHandler});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
@@ -265,7 +269,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(context.trusted_gateway_task_id
         ? {
             trustedBranch:context.subtask.branch,
-            trustedTaskPaths:context.subtask.relevant_paths
+            trustedTaskPaths:context.subtask.relevant_paths,
+            ...(context.subtask.approved_file_permissions!==undefined
+              ? {trustedFilePermissions:context.subtask.approved_file_permissions}:{})
           }:{}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     });

@@ -7,7 +7,7 @@ import { createTaskBearerFetch } from "./mcp-task-fetch.ts";
 import {callTimedMcpRunTests} from "./timed-mcp-run-tests.ts";
 import { z } from "zod";
 import {LEGACY_A2A_BRANCH,validatePrivateApprovedBranch} from "./approved-branch.ts";
-import type { SpecializedAgentRole } from "./contracts.ts";
+import type { SpecializedAgentRole, ApprovedTaskFilePermission } from "./contracts.ts";
 import {
   ControlledToolError,
   controlledToolErrorPayload,
@@ -65,6 +65,8 @@ export interface AdkSpecializedAgentConfig {
    * Narrows ADK tool declarations; never grants permissions on its own.
    */
   trustedTaskPaths?:readonly string[];
+  /** Exact operation-specific approved Task hints, not new authority. */
+  trustedFilePermissions?:readonly ApprovedTaskFilePermission[];
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
   /** Shared MCP read_file opt-in. Credentials never enter model args. */
@@ -129,11 +131,34 @@ export function createAdkSpecializedAgent(
       throw Error("Invalid private approved Task path hints");
     }
   }
+  const permissions=config.trustedFilePermissions;
+  if(permissions!==undefined&&(!scoped||!Array.isArray(permissions)||
+     permissions.length>32||permissions.some(row=>
+       !row||!["read_file","update_file","create_file"].includes(row.operation)||
+       typeof row.path!=="string"||!taskPaths.includes(row.path)))){
+    throw Error("Invalid signed Task operation-specific file hints");
+  }
+  const grant=permissions===undefined?null:new Set(
+    permissions.map(row=>row.operation+"\0"+row.path)
+  );
+  if(grant&&grant.size!==permissions!.length)
+    throw Error("Duplicate signed Task file operation");
+  const hasGrant=(operation:ApprovedTaskFilePermission["operation"],path:string)=>
+    !grant||grant.has(operation+"\0"+path);
   const filterPaths=(paths:readonly string[]):readonly string[]=>
     scoped?paths.filter(path=>taskPaths.includes(path)):paths;
-  const writable=filterPaths(baseline.writable_paths);
-  const creatable=filterPaths(baseline.creatable_paths);
-  const readOnly=filterPaths(baseline.read_only_paths);
+  const writable=filterPaths(baseline.writable_paths)
+    .filter(path=>hasGrant("update_file",path));
+  const creatable=filterPaths(baseline.creatable_paths)
+    .filter(path=>hasGrant("create_file",path));
+  const readablePaths=grant
+    ? [...new Set(filterPaths([
+        ...baseline.writable_paths,...baseline.read_only_paths
+      ]))].filter(path=>hasGrant("read_file",path))
+    : [...new Set([...writable,...filterPaths(baseline.read_only_paths)])];
+  const readOnly=grant
+    ? readablePaths.filter(path=>!writable.includes(path))
+    : filterPaths(baseline.read_only_paths);
   let instruction=baseline.system_prompt.replaceAll(LEGACY_A2A_BRANCH,branch);
   if(scoped){
     // Keep the original role-specific engineering rules, while replacing
@@ -165,7 +190,6 @@ export function createAdkSpecializedAgent(
   // For approved Tasks, the model only sees the intersection of signed
   // Task path hints with the role's approved static profile. Gateway/OPA
   // still verify the exact permission, including read versus write.
-  const readablePaths=[...new Set([...writable,...readOnly])];
   const modelPathEnum = (paths: readonly string[]) => {
     if (paths.length === 0) throw new Error("Scoped model tool needs nonempty paths");
     return z.enum(paths as [string, ...string[]]);
