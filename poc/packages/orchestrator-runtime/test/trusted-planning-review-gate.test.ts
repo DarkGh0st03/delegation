@@ -67,10 +67,13 @@ async function fixture(){
     }});
   const issued:{id:string;permissions:{resource:string;operation:string}[]}[]=[];
   const revoked:string[]=[];
+  let onOperationalIssue:(()=>Promise<void>)|undefined;
   const credentials={
     async issueScopedOrchestratorRoot(input:any){
       issued.push({id:input.credential_id,
         permissions:structuredClone(input.permissions)});
+      if(input.credential_id==="urn:operational" && onOperationalIssue)
+        await onOperationalIssue();
       return {id:input.credential_id,credentialSubject:{
         per:structuredClone(input.permissions)
       }};
@@ -115,6 +118,9 @@ async function fixture(){
       JSON.stringify(receipt),{mode:0o600});
   }
   return {gate,coordinator,issued,revoked,proposal,sign,
+    replaceReceiptAfterOperationalIssue(handler:()=>Promise<void>){
+      onOperationalIssue=handler;
+    },
     close:()=>rm(directory,{recursive:true,force:true})};
 }
 
@@ -181,19 +187,26 @@ test("altered, independently signed plan is NOT the exact proposal and cannot re
   }finally{await f.close();}
 });
 
-test("substituted signed permission decision after root issuance is rejected by Gateway and revokes root",async()=>{
+test("changed valid signed decision after root issuance makes Gateway activation revoke the new root",async()=>{
   const f=await fixture();
   try{
     await f.coordinator.beginPlanning(root("urn:preliminary","101"));
     const p=f.proposal();f.gate.stageTrustedProposal(p);
     await f.sign(p.plan,["permission-1","permission-3"]);
-    // Standalone gate load freezes first signed decision, just as authority
-    // loads it immediately before issuing the independent root.
-    await f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id);
-    await f.sign(p.plan,["permission-1","permission-2"]);
-    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id),
-      /signed permission decision changed/);
-    assert.deepEqual(f.revoked,[]);
+    // After Rust issues its independently scoped operational root, replace
+    // the original signed receipt with a different ALSO-valid Engineer
+    // signature on the same plan but a different permission subset.
+    f.replaceReceiptAfterOperationalIssue(async()=>{
+      await f.sign(p.plan,["permission-1","permission-2"]);
+    });
+    await assert.rejects(f.coordinator.beginExecution(root("urn:operational","102")),
+      /signed permission decision changed after initial trusted load/);
+    assert.equal(f.coordinator.phase,"failed_closed");
+    assert.deepEqual(f.issued.map(x=>x.id),["urn:preliminary","urn:operational"]);
+    assert.deepEqual(f.issued[1].permissions.map(x=>x.operation),
+      ["create_branch","update_file"]);
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    await assert.rejects(f.coordinator.beginExecution(root("another","103")));
   }finally{await f.close();}
 });
 
