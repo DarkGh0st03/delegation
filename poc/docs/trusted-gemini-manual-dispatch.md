@@ -138,3 +138,30 @@ proxy or replace actual Engineer Ed25519 approval. A future persistent
 Engineer service must deliver the OIDC assertion and event over an
 authenticated private channel and integrate the full trusted Coordinator
 and signed permission review atomically. No external backend is deployed.
+
+
+## Persistent Engineer handoff of OIDC-verified manual inputs
+
+The intake now requires a TrustedGithubAdmissionReceiptStore configured
+with an independently selected **Engineer session ID** and a stable secret
+containing at least 256 bits, sourced from the trusted backend's secret
+manager. Only after OIDC, GitHub Actions REST corroboration and replay
+consumption does it persist a bounded HMAC-SHA256-authenticated record in
+an owner-only 0700 directory. The GitHub job's exact consent, bounded model
+settings, repository/ref, run ID and checkout SHA are covered by the MAC.
+The original JWT, its jti, private keys and Gemini API key are NOT written.
+
+The independent Engineer host calls startStoredGithubReviewedGeminiHandoff
+using its own pinned session, run ID, repository/ref and GitHub source SHA.
+The receipt is accepted only for these exact parameters, is valid for up to
+five minutes and is irreversibly consumed via an atomic exclusive marker
+even if a subsequent Engineer signature check or operational issuance
+fails. A fresh run and separate signed Engineer approval are necessary
+for subsequent attempts. Never treat the receipt, OIDC signature or manual
+charge consent as an authority grant by themselves.
+
+**Important:** two independently trusted processes must have the same host
+secret and protected persistent filesystem; this does NOT deploy a remote
+Engineer backend or create an authenticated network connection between
+GitHub-hosted Actions and the localhost-only intake. The old paid
+workflow is still separate, with no approval shortcut and no Gemini call.

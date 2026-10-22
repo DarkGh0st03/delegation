@@ -931,8 +931,33 @@ test("signed HMAC admission consumed by separate Engineer process still requires
     await assert.rejects(startStoredGithubReviewedGeminiHandoff({
       ...input,expectedEngineerSessionId:"attacker-session"
     }),/active Engineer Planning session/);
+    // OIDC identity and bounded cost consent, even signed with a valid host
+    // HMAC, are NOT Engineer approval. The first run must fail before root
+    // issuance and its admission remains irreversibly consumed.
+    await assert.rejects(startStoredGithubReviewedGeminiHandoff(input));
+    assert.equal(f.coordinator.phase,"planning");
+    assert.equal(f.issued.length,1);
+    await assert.rejects(admissionStore.consume({
+      expectedRunId:runId,expectedSourceSha:githubSha,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
+    // A fresh, separately authenticated manual GitHub run may be admitted.
+    // These are fixture values, not a real GitHub identity assertion.
+    const nextRunId="39829995556";
+    await admissionStore.record({
+      dispatch:{...dispatch,run_id:nextRunId},
+      job:{
+        kind:"github_actions_oidc_verified",
+        jti:"different-fixture-signed-job-id",
+        run_id:nextRunId,workflow_sha:githubSha,
+        repository_id:"1374168963",repository_owner_id:"150908952",
+        audience:"urn:trusted-engineer"
+      }
+    });
     await f.sign(plan.plan,["permission-1","permission-3"]);
-    const running=await startStoredGithubReviewedGeminiHandoff(input);
+    const running=await startStoredGithubReviewedGeminiHandoff({
+      ...input,expectedRunId:nextRunId
+    });
     try{
       assert.equal(running.readiness.plan_digest,plan.digest);
       assert.equal(running.readiness.max_model_turns,8);
