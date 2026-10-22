@@ -28,6 +28,8 @@ import {TrustedApprovedA2ADispatcher} from
 import {GatewayCorroboratedTaskAttestor} from
   "../src/trusted-task-observation.ts";
 import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
+import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
+  "../../test-runner-controller/fixtures/account-suspension-reference.mjs";
 import {BaseLlm} from "@google/adk";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
@@ -93,11 +95,43 @@ const originalFeature=liveClient?
   (await liveClient.getBranchMetadata("feature/account-suspension")).commit_sha:undefined;
 const session="native-read-plan-"+randomBytes(5).toString("hex");
 const rootId="urn:native:planning-only-"+randomBytes(7).toString("hex");
+// The 11-file deterministic reference fixture is NEVER a source of
+// authority; the signed plan and the snapshot explicitly enumerate every
+// permitted path. One E2E spec is absent on main and must be created by the
+// separately scoped Test role, not by Backend/Frontend.
+const roleFiles={
+  backend:[
+    "packages/shared/src/account-status.ts",
+    "apps/backend/src/users/user.service.ts",
+    "apps/backend/src/users/user.controller.ts",
+    "apps/backend/src/users/user.routes.ts",
+    "tests/backend/user.service.test.ts",
+    "tests/backend/user.routes.test.ts"
+  ],
+  frontend:[
+    "apps/frontend/src/api/users-api.ts",
+    "apps/frontend/src/pages/UserDetailPage.tsx",
+    "apps/frontend/src/styles.css",
+    "tests/frontend/UserDetailPage.test.tsx"
+  ]
+};
+const newTestFile="tests/e2e/account-suspension.spec.ts";
+const existingFiles=[...roleFiles.backend,...roleFiles.frontend];
+assert.deepEqual([...existingFiles,newTestFile].sort(),
+  Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES).sort());
+const approvedDirectories=new Set([""]);
+for(const path of [...existingFiles,newTestFile]){
+  const parts=path.split("/");
+  for(let i=1;i<parts.length;i++)
+    approvedDirectories.add(parts.slice(0,i).join("/"));
+}
 const snapshot={
   session_id:session,repository:repo,base_revision:baseSha,
-  directories:["","apps","apps/backend","apps/backend/src","apps/backend/src/users",
-    "apps/frontend","apps/frontend/src","apps/frontend/src/pages"],
-  files:[file,frontendFile]
+  directories:positiveDag?[...approvedDirectories]:[
+    "","apps","apps/backend","apps/backend/src","apps/backend/src/users",
+    "apps/frontend","apps/frontend/src","apps/frontend/src/pages"
+  ],
+  files:positiveDag?existingFiles:[file,frontendFile]
 };
 const agentDids={
   backend:process.env.ADAPTER_ID_BACKEND,
@@ -110,7 +144,7 @@ for(const did of Object.values(agentDids)){
 const agents=Object.fromEntries(Object.entries(agentDids).map(([role,did])=>
   [role,{did,card_ref:"trusted:"+role}]));
 const workBranch="feature/native-planning-read";
-const planSketch={
+const legacyPlanSketch={
   tasks:[
     {id:"branch",agent_id:"orchestrator",title:"Create isolated work branch",
       description:"Keep all changes out of main",depends_on:[],
@@ -134,6 +168,29 @@ const planSketch={
         reason:"Execute tests and independent acceptance on approved branch"}]}]:[])
   ],assumptions:[],uncertainties:[]
 };
+const planSketch=positiveDag?{
+  tasks:[
+    legacyPlanSketch.tasks[0],
+    ...(["backend","frontend"].map(role=>({
+      id:role,agent_id:role,title:"Authorized "+role+" implementation",
+      description:"Apply explicitly approved reference files for "+role,
+      depends_on:[role==="backend"?"branch":"backend"],
+      permissions:roleFiles[role].flatMap(path=>[
+        {operation:"read_file",path,reason:"Inspect pinned existing source"},
+        {operation:"update_file",path,reason:"Apply reviewed source replacement"}
+      ])
+    }))),
+    {id:"test",agent_id:"test",title:"Create exact reference E2E and verify",
+      description:"Create approved test fixture then run pinned Docker acceptance",
+      depends_on:["frontend"],
+      permissions:[
+        {operation:"create_file",path:newTestFile,
+          reason:"Add reviewed E2E account lifecycle acceptance"},
+        {operation:"run_tests",path:null,
+          reason:"Execute real Docker phases at the final approved SHA"}
+      ]}
+  ],assumptions:[],uncertainties:[]
+}:legacyPlanSketch;
 class ScriptedReadPlanner extends BaseLlm{
   turns=0; requests=[];
   constructor(){super({model:"native-planning-offline-script"});}
@@ -293,7 +350,8 @@ try{
   issued=true;
   assert.equal(started.phase,"planning");
   assert.equal(started.credential_id,rootId);
-  assert.equal(coordinator.trustedPlanningAuthority().permissions.length,11);
+  assert.equal(coordinator.trustedPlanningAuthority().permissions.length,
+    1+snapshot.directories.length+snapshot.files.length);
   const port=new TrustedPlanningGatewayReadPort({
     coordinator,snapshot,
     gatewayBaseUrl:"http://native-planning-gateway",
@@ -318,7 +376,8 @@ try{
   assert.equal(proposed.verified_source_reads,1);
   assert.equal(proposed.plan.base_revision,baseSha);
   assert.equal(proposed.plan.repository.repository,"iam-console-poc");
-  assert.equal(proposed.plan.requested_permissions.length,positiveDag?6:5);
+  assert.equal(proposed.plan.requested_permissions.length,
+    positiveDag?23:5);
   assert.equal(log.adapterPresentations,1);
   assert.equal(log.prepares,1);
   assert.equal(log.executions,1);
@@ -369,7 +428,7 @@ try{
     // create_branch and update_file, but NOT read_file. A model-proposed
     // permission without Engineer consent must never appear in the new root.
     const selected=positiveDag
-      ?["permission-1","permission-2","permission-3","permission-4","permission-5","permission-6"]
+      ?proposed.plan.requested_permissions.map(p=>p.id)
       :["permission-1","permission-3","permission-5"];
     const now=new Date(),approvedAt=now.toISOString();
     const approval=makeApproval(packet.plan,{
@@ -407,15 +466,14 @@ try{
     const operational=coordinator.trustedOperationalAuthority();
     assert.equal(operational.credential_id,opId);
     assert.deepEqual(operational.permissions.map(p=>p.operation),
-      positiveDag?["create_branch","read_file","update_file",
-        "read_file","update_file","run_tests"]:
+      positiveDag?proposed.plan.requested_permissions.map(p=>p.operation):
         ["create_branch","update_file","update_file"]);
     if(positiveDag){
       globalThis.__nativeDagPositive=await runNativePositiveApprovedDag({
         coordinator,reviewGate,approvedPlans,
         sessionId:session,planDigest:packet.plan_digest,baseSha,
         operationalRootId,branch:workBranch,
-        files:{backend:file,frontend:frontendFile},repo,
+        files:roleFiles,createdTestFile:newTestFile,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
         writerToken,opaUrl,engineerDid,orchestratorToken:token,
         agentTokens:{
@@ -425,7 +483,8 @@ try{
         }
       });
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
-      assert.equal(globalThis.__nativeDagPositive.source_writes,2);
+      assert.equal(globalThis.__nativeDagPositive.source_writes,10);
+      assert.equal(globalThis.__nativeDagPositive.created_test_files,1);
       assert.equal(globalThis.__nativeDagPositive.test_runner_runs,1);
       assert.equal(globalThis.__nativeDagPositive.tested_commit_sha,
         globalThis.__nativeDagPositive.approved_branch_sha);
@@ -566,8 +625,8 @@ try{
     dispatcher_stopped_before_a2a_on_provider_denial:signedHandoff&&!positiveDag,
     a2a_tasks_dispatched:positiveDag?3:0,
     child_dc_issued:positiveDag?3:0,
-    real_provider_mutations:positiveDag?2:0,
-    provider_writes:positiveDag?2:0,
+    real_provider_mutations:positiveDag?11:0,
+    provider_writes:positiveDag?11:0,
     ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{})
   }));
 }finally{
