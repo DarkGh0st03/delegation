@@ -24,3 +24,4 @@ export * from "./trusted-manual-gemini-handoff.ts";
 export * from "./trusted-manual-github-dispatch.ts";
 export * from "./trusted-github-oidc.ts";
 export * from "./trusted-github-oidc-replay-store.ts";
+export * from "./trusted-github-oidc-intake.ts";
