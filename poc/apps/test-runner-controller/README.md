@@ -63,15 +63,39 @@ This is a **positive approved-plan-to-real-Gitea-to-Docker-Runner
 integration** with signed human-authority metadata and provider-effect
 attestation; no model inference or PR merge occurs.
 
-**Scope limitation:** this CI exercises a scripted Test role on an
+**Scope limitation:** this CI exercises a scripted Test role over a real A2A SDK exchange on an
 existing reference feature commit. VP verification and policy evaluation
 are **injected test stubs** at the Gateway, not the live Rust/OPA
 implementations. Real Rust/EVM signed child DC, VP, OPA and revocation
-are exercised in a different cumulative EVM job; the separate A2A
-test uses a scripted Agent and a mock Gitea provider. These isolated
+are exercised in a different cumulative EVM job; a separate scoped-child test uses a real Rust DC and A2A with a mock Gitea provider. These isolated
 guarantees are not yet a single end-to-end run combining *every*
 component and do not assert that the dynamic ADK code-writing Agent
 has produced all source files.
 
 No API billing, persistent Gitea mutation, main write, PR merge,
 user-signing key exposure or model-driven approval is required.
+
+
+### Real A2A Task to real Gitea/Runner in one offline run
+
+The positive acceptance workflow now sends the approved Test Task through
+a **real A2A SDK** sendMessage/getTask sequence to a loopback Test Agent.
+The Agent carries an opaque, preallocated Gateway binding and executes
+the approved run_tests operation THROUGH Gateway Execute. Its output
+artifact contains the observed Git SHA and real project and researcher
+acceptance results. The trusted observer maps the validated A2A result
+to the private Gateway Task ID; the Gateway attestor independently
+correlates its exact SHA and real Runner provider effects before allowing
+task completion and CI publication. An A2A success claim alone is denied.
+
+The CI evidence includes real_a2a_sdk_task_completed=true,
+gateway_signed_test_task_completed=true, and exact_provider_sha_correlated=true,
+alongside pending then success on the tested Gitea commit. The original
+main remains protected; no PR or merge is performed.
+
+**Trust boundary:** this is a scripted, deterministic Test Agent on a pinned
+reference implementation. A2A transport and Docker/Gitea provider execution
+are real; the child DC, verifier and policy in THIS integration are test
+fixtures. Native Rust-signed child DC, EVM revocation and live OPA are
+independently exercised by the cumulative EVM job, not yet united with
+this specific A2A + Gitea + Docker Runner run. Gemini is not called.
