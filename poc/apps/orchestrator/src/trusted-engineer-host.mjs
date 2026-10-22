@@ -72,7 +72,7 @@ export async function startTrustedEngineerLocalHost(config){
     oidc.replayDirectory,oidc.admissionDirectory,approval.receiptDirectory
   ];
   if(directories.some(x=>typeof x!=="string"||!x.trim())||
-     new Set(directories.map(resolve)).size!==3)
+     new Set(directories.map(dir=>resolve(dir))).size!==3)
     deny("separate owner-only replay/admission/Engineer directories required");
   for(const dir of directories)await privateDirectory(dir);
   const replayStore=new GithubOidcReplayFileStore(oidc.replayDirectory);
