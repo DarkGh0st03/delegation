@@ -476,3 +476,31 @@ A2A SDK: only the SDK-specific integration subtest is marked skipped
 in that environment. The dedicated `trusted-plan-ipc-offline.yml`
 installs pinned Node dependencies and requires the complete integration
 subtest to pass.
+
+## Engineer-approved dynamic branch: actual Gateway/OPA/provider enforcement
+
+A branch selected in the immutable signed plan is now enforced at BOTH
+Gateway Prepare and Gateway Execute, independently of any verified VP.
+The branch is deterministically derived from the signed plan's exact
+repository resources by
+`poc/packages/plan-contracts/src/approved-work-branch.mjs`.
+Multiple, noncanonical, cross-repository, main or traversal branches
+are rejected. An older root-only plan without any branch-scoped resource
+remains restricted to the legacy Account Suspension branch.
+
+The Gateway adds `approved_work_branch` to *its own internal* request
+record and OPA input only when the plan registry has authenticated and
+activated the Engineer approval. It cannot be set from the public
+prepare request. The OPA policy preserves the frozen legacy rules for
+unbound requests and permits another canonical `feature/...` branch
+only with a valid trusted plan digest and this derived branch. The real
+Gitea provider applies the same branch check before creating branches,
+editing files, creating PRs, or invoking the Docker Runner.
+`main` writes and arbitrary Runner profiles remain denied.
+
+The integration under the Test Runner controller now exercises an
+actual Gitea branch, signed Test Task, real Gateway GiteaExecutor,
+authenticated Runner HTTP endpoint and Docker project/acceptance
+pipeline, and only then marks the Test Task complete. Native
+Rust/VP/OPA verification is tested separately in the EVM suite
+and is explicitly stubbed in this particular positive provider test.

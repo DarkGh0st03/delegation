@@ -30,3 +30,48 @@ npm --prefix poc run test -w @thesis/test-runner-controller
 The automated *scripted* real-Docker E2E is `.github/workflows/shared-mcp-real-positive-e2e.yml`. Historical paid real-Gemini evidence includes [13 October run 38379922436](https://github.com/DarkGh0st03/delegation/actions/runs/38379922436) and [15 October run 38761963415](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415) at `02c3395b9111a63ccc9f441ea2c91c81865d6673`. These runs do not validate subsequent commits and neither proves production-grade security or performs a genuine human merge.
 
 The privileged `security-ci:run` CLI must not run against persistent Gitea without reviewed service identities and configuration.
+
+## Real disposable Gitea + Engineer-signed Gateway Task + Docker acceptance
+
+The positive CI smoke `scripts/isolated-trusted-security-ci-positive-smoke.mjs`
+now runs the real Docker acceptance only **once**, through an opt-in,
+Engineer-approved Gateway Test Task:
+
+1. Bootstrap a fresh no-volume Gitea and verify the immutable GitHub
+   baseline SHA before creating an isolated feature reference commit;
+   the original main remains unchanged and protected.
+2. `approved-gateway-runner-session.mjs` prepares a short-lived
+   **Ed25519 Engineer-signed approval** in an owner-only filesystem store,
+   fixes the observed main/base SHA, and activates an immutable signed plan
+   granting the Test Agent exactly `run_tests` for the feature branch.
+3. Gateway Prepare binds the exact role, operation, branch and one-use
+   challenge to the authorized Task. Attempts to substitute `main` or
+   another feature branch are denied before executing a provider call.
+4. After the trusted CI publishes `pending`, Gateway Execute calls its
+   actual `GiteaExecutor`, which resolves the live feature HEAD from
+   disposable Gitea. Its `RunnerClient` connects to the real controlled
+   Runner HTTP service, which invokes `IsolatedDockerRunnerExecutor`
+   and independent researcher acceptance in isolated Docker.
+5. Gateway captures the genuine provider result, checked against the
+   request's SHA and the Engineer-approved Task. Its attestor validates
+   the exact tested commit, fixed profile, project tests and researcher
+   acceptance before marking the Task complete and closing the session.
+   The existing trusted Security CI then verifies the same result and
+   publishes `success` on that immutable SHA. Reuse is denied.
+
+This is a **positive approved-plan-to-real-Gitea-to-Docker-Runner
+integration** with signed human-authority metadata and provider-effect
+attestation; no model inference or PR merge occurs.
+
+**Scope limitation:** this CI exercises a scripted Test role on an
+existing reference feature commit. VP verification and policy evaluation
+are **injected test stubs** at the Gateway, not the live Rust/OPA
+implementations. Real Rust/EVM signed child DC, VP, OPA and revocation
+are exercised in a different cumulative EVM job; the separate A2A
+test uses a scripted Agent and a mock Gitea provider. These isolated
+guarantees are not yet a single end-to-end run combining *every*
+component and do not assert that the dynamic ADK code-writing Agent
+has produced all source files.
+
+No API billing, persistent Gitea mutation, main write, PR merge,
+user-signing key exposure or model-driven approval is required.
