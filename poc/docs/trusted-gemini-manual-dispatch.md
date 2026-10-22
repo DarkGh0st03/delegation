@@ -286,3 +286,25 @@ GitHub REST response, so it is **not** evidence that a deployed private
 network runner-to-host connection exists. Its intake is local HTTP because
 mTLS is separately exercised with real sockets and certificates in the
 Engineer host suite; neither endpoint is publicly exposed.
+
+
+## Recheck GitHub run status at the operational handoff
+
+An accepted and persisted OIDC admission proves that the manual job was
+in progress at INTAKE time, not necessarily when its Engineer-approved
+execution later starts. startAdmittedGithubReviewedGeminiHandoff now
+permanently consumes the one-use admission and immediately corroborates
+the exact GitHub run via a SECOND host-owned REST request: workflow file,
+first attempt, pinned repository/ref/source SHA, freshness, and
+**in_progress** state must still match. Completed, canceled, stale or
+substituted runs are denied before operational root issuance and cannot
+reuse the consumed receipt. The Engineer local host injects its OWN GitHub
+Actions read token and exact workflow path rather than trusting them from
+a runner-supplied request. Offline tests cover a run that completes after
+admission, then show that only a fresh, independently authenticated run
+can activate the real trusted Coordinator with Ed25519 approval.
+
+This check closes the intake-to-start TOCTOU window; stopping a run AFTER
+execution begins would still require a separate runtime cancellation/
+revocation watch. Do not claim it provides continuous GitHub status
+monitoring or that this process has been deployed.

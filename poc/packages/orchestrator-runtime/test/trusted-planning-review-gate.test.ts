@@ -938,6 +938,18 @@ test("verified signed GitHub OIDC reaches live Planning and requires independent
       return data+"."+signJwt("RSA-SHA256",Buffer.from(data),
         rsa.privateKey).toString("base64url");
     }
+    let liveRunStatus:"in_progress"|"completed"="in_progress";
+    const githubRunFetch=async(url:RequestInfo|URL)=>{
+      const id=String(url).split("/").at(-1);
+      return new Response(JSON.stringify({
+        id:Number(id),event:"workflow_dispatch",run_attempt:1,
+        status:liveRunStatus,head_sha:githubSha,
+        head_branch:githubRef.slice("refs/heads/".length),
+        path:githubWorkflow,
+        head_repository:{full_name:githubRepo},
+        created_at:new Date().toISOString()
+      }),{status:200});
+    };
     oidcServer=await startTrustedGithubOidcIntakeServer({
       pinned:{repository:githubRepo,ref:githubRef,
         workflowPath:githubWorkflow,sourceSha:githubSha},
@@ -951,17 +963,7 @@ test("verified signed GitHub OIDC reaches live Planning and requires independent
       oidcJwksFetchFn:(async()=>new Response(JSON.stringify({keys:[{
         ...publicJwk,kid:"offline-e2e-issuer-key",use:"sig",alg:"RS256"
       }]}),{status:200})) as typeof fetch,
-      githubApiFetchFn:(async(url)=>{
-        const id=String(url).split("/").at(-1);
-        return new Response(JSON.stringify({
-          id:Number(id),event:"workflow_dispatch",run_attempt:1,
-          status:"in_progress",head_sha:githubSha,
-          head_branch:githubRef.slice("refs/heads/".length),
-          path:githubWorkflow,
-          head_repository:{full_name:githubRepo},
-          created_at:new Date().toISOString()
-        }),{status:200});
-      }) as typeof fetch,port:0
+      githubApiFetchFn:githubRunFetch as typeof fetch,port:0
     });
     const event={
       repository:{full_name:githubRepo},ref:githubRef,
@@ -1007,6 +1009,9 @@ test("verified signed GitHub OIDC reaches live Planning and requires independent
       pins:{sessionId:SNAPSHOT.session_id,runId,sourceSha:githubSha,
         repository:githubRepo,ref:githubRef},
       geminiApiKey:"dummy-never-billed",
+      githubApiToken:"test-only-read-token",
+      githubApiFetchFn:githubRunFetch as typeof fetch,
+      expectedWorkflowPath:githubWorkflow,
       transports,operationalRoot:root("urn:operational","102"),
       ports:{backend:30781,frontend:30782,test:30783}
     };
@@ -1032,8 +1037,26 @@ test("verified signed GitHub OIDC reaches live Planning and requires independent
     assert.equal((await admitRun(nextRunId)).status,200);
     assert.equal((await readdir(replayDir)).length,2);
     await f.sign(plan.plan,["permission-1","permission-3"]);
-    const running=await startAdmittedGithubReviewedGeminiHandoff({
+    // A canceled/completed workflow between intake and handoff cannot
+    // activate the operational root, despite having a valid HMAC receipt.
+    liveRunStatus="completed";
+    await assert.rejects(startAdmittedGithubReviewedGeminiHandoff({
       ...input,pins:{...input.pins,runId:nextRunId}
+    }),/GitHub API does not corroborate active manual run identity/);
+    assert.equal(f.coordinator.phase,"planning");
+    assert.equal(f.issued.length,1);
+    await assert.rejects(admissionStore.consume({
+      expectedRunId:nextRunId,expectedSourceSha:githubSha,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
+    // A new explicitly dispatched run with a fresh signed OIDC assertion
+    // can continue only while GitHub still reports that run in progress.
+    liveRunStatus="in_progress";
+    const finalRunId="39829995557";
+    assert.equal((await admitRun(finalRunId)).status,200);
+    assert.equal((await readdir(replayDir)).length,3);
+    const running=await startAdmittedGithubReviewedGeminiHandoff({
+      ...input,pins:{...input.pins,runId:finalRunId}
     });
     try{
       assert.equal(running.readiness.plan_digest,plan.digest);

@@ -119,7 +119,11 @@ export async function startTrustedEngineerLocalHost(config){
     startReviewedHandoff({runId,...trusted}){
       if(closed)deny("host closed");
       return startAdmittedGithubReviewedGeminiHandoff({
-        ...trusted,admissionStore,pins:{...fixedPins,runId}
+        ...trusted,admissionStore,pins:{...fixedPins,runId},
+        // Host configuration wins over every in-process caller argument.
+        githubApiToken:oidc.githubApiToken,
+        githubApiFetchFn:oidc.githubApiFetchFn,
+        expectedWorkflowPath:oidc.pinned.workflowPath
       });
     },
     async close(){

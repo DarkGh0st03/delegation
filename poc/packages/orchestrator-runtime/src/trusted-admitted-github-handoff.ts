@@ -20,6 +20,8 @@ import {SignedPlanningCheckpointFileStore}
   from "./trusted-planning-checkpoint-store.ts";
 import {startPersistedReviewedGeminiHandoff}
   from "./trusted-manual-gemini-handoff.ts";
+import {verifyGithubManualRunViaApi}
+  from "./trusted-manual-github-dispatch.ts";
 
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const REF=/^refs\/heads\/[A-Za-z0-9][A-Za-z0-9._/-]*$/u;
@@ -111,6 +113,12 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
       admissionStore:TrustedGithubAdmissionReceiptStore;
       pins:PinnedGithubAdmissionForSession;
       geminiApiKey:string|undefined;
+      /** Host-owned read token; never runner-controlled. */
+      githubApiToken:string|undefined;
+      /** Independently pinned first-attempt manual workflow path. */
+      expectedWorkflowPath:string;
+      /** Offline fixtures ONLY; default is GitHub REST over HTTPS. */
+      githubApiFetchFn?:typeof fetch;
     }
 ){
   if(!(input.coordinator instanceof TrustedExecutionCoordinator)||
@@ -121,7 +129,35 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
   if(root.session_id!==input.pins?.sessionId)
     deny("independent GitHub admission session differs from active Planning root");
   const admitted=await consumePinnedGithubAdmission(input);
-  const {admissionStore,pins,geminiApiKey,...trusted}=input;
+  // TOCTOU guard: a workflow can complete or be canceled AFTER it was
+  // admitted. A still-valid 5-minute HMAC receipt does not prove the job
+  // remains active. Re-query GitHub just before signed Planning activation.
+  // Failed corroboration permanently consumes this run's admission.
+  if(typeof input.expectedWorkflowPath!=="string"||
+     !/^\.github\/workflows\/[A-Za-z0-9._-]+\.ya?ml$/u
+       .test(input.expectedWorkflowPath))
+    deny("independently pinned GitHub workflow required before activation");
+  await verifyGithubManualRunViaApi({
+    dispatch:{
+      status:"manual_workflow_input_only_not_authorized",
+      source_repository:input.pins.repository,
+      source_ref:input.pins.ref,
+      source_sha:admitted.source_sha,
+      run_id:admitted.run_id,
+      model_name:admitted.model_name,
+      max_model_turns:admitted.max_model_turns,
+      max_output_tokens:admitted.max_output_tokens,
+      max_model_call_ms:admitted.max_model_call_ms,
+      authorization_input:admitted.authorization_input
+    },
+    pinned:{repository:input.pins.repository,ref:input.pins.ref,
+      workflowPath:input.expectedWorkflowPath,
+      sourceSha:input.pins.sourceSha},
+    githubApiToken:input.githubApiToken,
+    fetchFn:input.githubApiFetchFn
+  });
+  const {admissionStore,pins,geminiApiKey,githubApiToken,
+    expectedWorkflowPath,githubApiFetchFn,...trusted}=input;
   return startPersistedReviewedGeminiHandoff({
     ...trusted,
     maxModelCallMs:admitted.max_model_call_ms,
