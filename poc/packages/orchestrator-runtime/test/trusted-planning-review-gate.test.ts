@@ -22,9 +22,10 @@ import {signTrustedPlanningCheckpoint,verifyTrustedPlanningCheckpoint,
   from "../src/trusted-planning-checkpoint.ts";
 import {SignedPlanningCheckpointFileStore}
   from "../src/trusted-planning-checkpoint-store.ts";
-import {startPersistedReviewedGeminiHandoff,
-  startStoredGithubReviewedGeminiHandoff}
+import {startPersistedReviewedGeminiHandoff}
   from "../src/trusted-manual-gemini-handoff.ts";
+import {startAdmittedGithubReviewedGeminiHandoff}
+  from "../src/trusted-admitted-github-handoff.ts";
 import {TrustedGithubAdmissionReceiptStore}
   from "../src/trusted-github-admission-store.ts";
 import {verifyGithubManualGeminiDispatch}
@@ -918,23 +919,22 @@ test("signed HMAC admission consumed by separate Engineer process still requires
     const input={
       coordinator:f.coordinator,reviewGate:f.gate,checkpointStore,
       admissionStore,
-      expectedRunId:runId,expectedGithubSha:githubSha,
-      expectedGithubRepository:githubRepo,expectedGithubRef:githubRef,
-      expectedEngineerSessionId:SNAPSHOT.session_id,
+      pins:{sessionId:SNAPSHOT.session_id,runId,sourceSha:githubSha,
+        repository:githubRepo,ref:githubRef},
       geminiApiKey:"dummy-never-billed",
       transports,operationalRoot:root("urn:operational","102"),
       ports:{backend:30781,frontend:30782,test:30783}
     };
-    await assert.rejects(startStoredGithubReviewedGeminiHandoff(input),
+    await assert.rejects(startAdmittedGithubReviewedGeminiHandoff(input),
       /Active verified Planning root/);
     await f.coordinator.beginPlanning(root("urn:preliminary","101"));
-    await assert.rejects(startStoredGithubReviewedGeminiHandoff({
-      ...input,expectedEngineerSessionId:"attacker-session"
-    }),/active Engineer Planning session/);
+    await assert.rejects(startAdmittedGithubReviewedGeminiHandoff({
+      ...input,pins:{...input.pins,sessionId:"attacker-session"}
+    }),/independent GitHub admission session differs/);
     // OIDC identity and bounded cost consent, even signed with a valid host
     // HMAC, are NOT Engineer approval. The first run must fail before root
     // issuance and its admission remains irreversibly consumed.
-    await assert.rejects(startStoredGithubReviewedGeminiHandoff(input));
+    await assert.rejects(startAdmittedGithubReviewedGeminiHandoff(input));
     assert.equal(f.coordinator.phase,"planning");
     assert.equal(f.issued.length,1);
     await assert.rejects(admissionStore.consume({
@@ -955,8 +955,8 @@ test("signed HMAC admission consumed by separate Engineer process still requires
       }
     });
     await f.sign(plan.plan,["permission-1","permission-3"]);
-    const running=await startStoredGithubReviewedGeminiHandoff({
-      ...input,expectedRunId:nextRunId
+    const running=await startAdmittedGithubReviewedGeminiHandoff({
+      ...input,pins:{...input.pins,runId:nextRunId}
     });
     try{
       assert.equal(running.readiness.plan_digest,plan.digest);

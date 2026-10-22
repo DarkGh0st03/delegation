@@ -151,7 +151,7 @@ an owner-only 0700 directory. The GitHub job's exact consent, bounded model
 settings, repository/ref, run ID and checkout SHA are covered by the MAC.
 The original JWT, its jti, private keys and Gemini API key are NOT written.
 
-The independent Engineer host calls startStoredGithubReviewedGeminiHandoff
+The independent Engineer host calls startAdmittedGithubReviewedGeminiHandoff
 using its own pinned session, run ID, repository/ref and GitHub source SHA.
 The receipt is accepted only for these exact parameters, is valid for up to
 five minutes and is irreversibly consumed via an atomic exclusive marker
