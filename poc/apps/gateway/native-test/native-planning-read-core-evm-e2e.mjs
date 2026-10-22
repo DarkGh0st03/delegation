@@ -58,6 +58,7 @@ for(const v of [token,engineerToken,engineerDid]){
 }
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const file="apps/backend/src/users/user.service.ts";
+const frontendFile="apps/frontend/src/pages/UserDetailPage.tsx";
 const disposableBase=process.env.PLANNING_DISPOSABLE_GITEA_URL;
 const disposableToken=process.env.PLANNING_DISPOSABLE_GITEA_READ_TOKEN;
 const disposableSha=process.env.PLANNING_DISPOSABLE_GITEA_MAIN_SHA;
@@ -94,8 +95,9 @@ const session="native-read-plan-"+randomBytes(5).toString("hex");
 const rootId="urn:native:planning-only-"+randomBytes(7).toString("hex");
 const snapshot={
   session_id:session,repository:repo,base_revision:baseSha,
-  directories:["","apps","apps/backend","apps/backend/src","apps/backend/src/users"],
-  files:[file]
+  directories:["","apps","apps/backend","apps/backend/src","apps/backend/src/users",
+    "apps/frontend","apps/frontend/src","apps/frontend/src/pages"],
+  files:[file,frontendFile]
 };
 const agentDids={
   backend:process.env.ADAPTER_ID_BACKEND,
@@ -118,6 +120,12 @@ const planSketch={
       permissions:[
         {operation:"read_file",path:file,reason:"Inspect existing code"},
         {operation:"update_file",path:file,reason:"Apply the approved edit"}
+      ]},
+    {id:"frontend",agent_id:"frontend",title:"Update approved page",
+      description:"Implement approved Frontend behavior",depends_on:["backend"],
+      permissions:[
+        {operation:"read_file",path:frontendFile,reason:"Inspect existing page"},
+        {operation:"update_file",path:frontendFile,reason:"Apply approved page edit"}
       ]}
   ],assumptions:[],uncertainties:[]
 };
@@ -280,7 +288,7 @@ try{
   issued=true;
   assert.equal(started.phase,"planning");
   assert.equal(started.credential_id,rootId);
-  assert.equal(coordinator.trustedPlanningAuthority().permissions.length,7);
+  assert.equal(coordinator.trustedPlanningAuthority().permissions.length,11);
   const port=new TrustedPlanningGatewayReadPort({
     coordinator,snapshot,
     gatewayBaseUrl:"http://native-planning-gateway",
@@ -305,7 +313,7 @@ try{
   assert.equal(proposed.verified_source_reads,1);
   assert.equal(proposed.plan.base_revision,baseSha);
   assert.equal(proposed.plan.repository.repository,"iam-console-poc");
-  assert.equal(proposed.plan.requested_permissions.length,3);
+  assert.equal(proposed.plan.requested_permissions.length,5);
   assert.equal(log.adapterPresentations,1);
   assert.equal(log.prepares,1);
   assert.equal(log.executions,1);
@@ -356,7 +364,7 @@ try{
     // create_branch and update_file, but NOT read_file. A model-proposed
     // permission without Engineer consent must never appear in the new root.
     const selected=positiveDag
-      ?["permission-1","permission-2","permission-3"]
+      ?["permission-1","permission-2","permission-3","permission-4","permission-5"]
       :["permission-1","permission-3"];
     const now=new Date(),approvedAt=now.toISOString();
     const approval=makeApproval(packet.plan,{
@@ -394,19 +402,23 @@ try{
     const operational=coordinator.trustedOperationalAuthority();
     assert.equal(operational.credential_id,opId);
     assert.deepEqual(operational.permissions.map(p=>p.operation),
-      positiveDag?["create_branch","read_file","update_file"]:
-        ["create_branch","update_file"]);
+      positiveDag?["create_branch","read_file","update_file",
+        "read_file","update_file"]:["create_branch","update_file"]);
     if(positiveDag){
       globalThis.__nativeDagPositive=await runNativePositiveApprovedDag({
         coordinator,reviewGate,approvedPlans,
         sessionId:session,planDigest:packet.plan_digest,baseSha,
-        operationalRootId,branch:workBranch,file,repo,
+        operationalRootId,branch:workBranch,
+        files:{backend:file,frontend:frontendFile},repo,
         giteaBase:disposableBase,readerToken:disposableToken,
-        writerToken,opaUrl,engineerDid,
-        orchestratorToken:token,
-        backendToken:process.env.ADAPTER_CALLER_BACKEND
+        writerToken,opaUrl,engineerDid,orchestratorToken:token,
+        agentTokens:{
+          backend:process.env.ADAPTER_CALLER_BACKEND,
+          frontend:process.env.ADAPTER_CALLER_FRONTEND
+        }
       });
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
+      assert.equal(globalThis.__nativeDagPositive.source_writes,2);
     }else{
     // Load the ACTUAL production-style approved DAG dispatcher from the
     // same signed review gate, operational root, and immutable base SHA.
@@ -542,10 +554,10 @@ try{
     operational_root_closed:signedHandoff,
     dispatcher_bound_signed_dag:signedHandoff,
     dispatcher_stopped_before_a2a_on_provider_denial:signedHandoff&&!positiveDag,
-    a2a_tasks_dispatched:positiveDag?1:0,
-    child_dc_issued:positiveDag?1:0,
-    real_provider_mutations:positiveDag?1:0,
-    provider_writes:positiveDag?1:0,
+    a2a_tasks_dispatched:positiveDag?2:0,
+    child_dc_issued:positiveDag?2:0,
+    real_provider_mutations:positiveDag?2:0,
+    provider_writes:positiveDag?2:0,
     ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{})
   }));
 }finally{
