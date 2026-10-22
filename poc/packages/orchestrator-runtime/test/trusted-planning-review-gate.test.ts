@@ -17,6 +17,9 @@ import {SignedEngineerApprovalFileStore}
   from "../src/signed-approval-store.ts";
 import {TrustedPlanningReviewGate}
   from "../src/trusted-planning-review-gate.ts";
+import {signTrustedPlanningCheckpoint,verifyTrustedPlanningCheckpoint,
+  stageVerifiedPlanningCheckpoint}
+  from "../src/trusted-planning-checkpoint.ts";
 import {TrustedEngineerAuthoritySession}
   from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
@@ -501,4 +504,96 @@ test("approved Gemini A2A server startup fails closed and revokes operational au
     assert.equal(f.coordinator.phase,"closed");
     assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
   }finally{await f.close();}
+});
+
+
+test("signed Planning provenance is independent of Engineer receipt and safely stages exact verified proposal",async()=>{
+  const f=await fixture();
+  try{
+    const signing=generateKeyPairSync("ed25519");
+    const publicPem=signing.publicKey.export({format:"pem",type:"spki"}).toString();
+    const privatePem=signing.privateKey.export({format:"pem",type:"pkcs8"}).toString();
+    const proposal=f.proposal();
+    const now=new Date();
+    const ticket=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,proposal,
+      keyId:"trusted-backend-1",privateKeyPem:privatePem,
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    const config={
+      trustedKeys:{"trusted-backend-1":{public_key_pem:publicPem}},
+      expectedSessionId:SNAPSHOT.session_id,
+      expectedRepository:REPO,
+      expectedBaseRevision:SHA,
+      expectedWorkBranch:CFG.workBranch
+    };
+    const verified=verifyTrustedPlanningCheckpoint(ticket,config);
+    assert.equal(verified.proposal.digest,proposal.digest);
+    assert.equal(verified.key_id,"trusted-backend-1");
+    assert.ok(!JSON.stringify(verified).includes(privatePem));
+    assert.throws(()=>stageVerifiedPlanningCheckpoint(f.gate,ticket,config),
+      /Planning phase is not active/);
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const review=stageVerifiedPlanningCheckpoint(f.gate,ticket,config);
+    assert.equal(review.plan_digest,proposal.digest);
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id));
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    assert.equal((await f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id))
+      .authenticated_engineer_did,ENGINEER);
+    assert.equal(f.issued.length,1);
+    assert.deepEqual(f.revoked,[]);
+  }finally{await f.close();}
+});
+
+test("Planning checkpoint refuses forged, altered, stale, wrong-session or unpinned provenance",async()=>{
+  const signing=generateKeyPairSync("ed25519");
+  const publicPem=signing.publicKey.export({format:"pem",type:"spki"}).toString();
+  const privatePem=signing.privateKey.export({format:"pem",type:"pkcs8"}).toString();
+  const now=new Date();
+  const original=compilePlanningProposal(sketch(),CFG);
+  const ticket=signTrustedPlanningCheckpoint({
+    snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+    proposal:{...original,verified_source_reads:1},
+    keyId:"backend-signing-key",privateKeyPem:privatePem,
+    issuedAt:now.toISOString(),
+    expiresAt:new Date(now.getTime()+600000).toISOString()
+  });
+  const config={
+    trustedKeys:{"backend-signing-key":{public_key_pem:publicPem}},
+    expectedSessionId:SNAPSHOT.session_id,
+    expectedRepository:REPO,
+    expectedBaseRevision:SHA,expectedWorkBranch:CFG.workBranch
+  };
+  const changes=[
+    (x:any)=>{x.signature="A".repeat(86);},
+    (x:any)=>{x.proposal.plan.tasks[1].description="attacker substitution";},
+    (x:any)=>{x.snapshot.files=["src/secrets.ts"];},
+    (x:any)=>{x.proposal.digest="0".repeat(64);},
+    (x:any)=>{x.expected_work_branch="feature/attacker";},
+    (x:any)=>{x.snapshot.base_revision="0".repeat(40);},
+    (x:any)=>{x.key_id="attacker";},
+    (x:any)=>{x.proposal.verified_source_reads=0;}
+  ];
+  for(const change of changes){
+    const forged=structuredClone(ticket);change(forged);
+    assert.throws(()=>verifyTrustedPlanningCheckpoint(forged,config));
+  }
+  for(const wrong of [
+    {expectedSessionId:"another-session"},
+    {expectedBaseRevision:"0".repeat(40)},
+    {expectedWorkBranch:"feature/other"},
+    {expectedRepository:{...REPO,owner:"attacker"}},
+    {trustedKeys:{"backend-signing-key":{
+      public_key_pem:generateKeyPairSync("ed25519")
+        .publicKey.export({format:"pem",type:"spki"}).toString()
+    }}},
+    {nowMs:now.getTime()+700000}
+  ]){
+    assert.throws(()=>verifyTrustedPlanningCheckpoint(ticket,{
+      ...config,...wrong
+    }));
+  }
+  const malformed={...ticket,unknown:"value"};
+  assert.throws(()=>verifyTrustedPlanningCheckpoint(malformed,config));
 });
