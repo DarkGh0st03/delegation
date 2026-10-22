@@ -325,7 +325,9 @@ test("one signed immutable DAG drives Backend, Frontend and Test through real AD
     }
     for(const role of roles){
       assert.ok(h.events.indexOf("issued:"+role)>h.events.indexOf("bound:"+role));
-      assert.ok(h.events.indexOf("confirmed:"+role)>h.events.indexOf("effect:"+role));
+      const planTaskId=role==="test"?"tests":role;
+      assert.ok(h.events.indexOf("confirmed:"+planTaskId)>
+        h.events.indexOf("effect:"+planTaskId));
     }
     assert.ok(h.events.indexOf("confirmed:backend")<h.events.indexOf("bound:frontend"));
     assert.ok(h.events.indexOf("confirmed:frontend")<h.events.indexOf("bound:tests"));
