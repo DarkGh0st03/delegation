@@ -695,7 +695,8 @@ test("checkpoint file store verifies pinned backend signature and owner-only per
     const modified=structuredClone(ticket);
     modified.proposal.plan.tasks[1].description="injected changed source";
     await writeFile(file,JSON.stringify(modified),{mode:0o600});
-    await assert.rejects(store.load(),/invalid Planning backend Ed25519/);
+    // Scope integrity is independently checked even before the signature.
+    await assert.rejects(store.load(),/Signed Planning checkpoint:/);
     await writeFile(file,JSON.stringify(ticket),{mode:0o644});
     await assert.rejects(store.load(),/owner-only/);
   }finally{await rm(directory,{recursive:true,force:true});}

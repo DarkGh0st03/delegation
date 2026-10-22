@@ -29,7 +29,13 @@ export class SignedPlanningCheckpointFileStore{
        !SESSION.test(config.trust?.expectedSessionId??""))
       throw Error("Trusted checkpoint directory and pinned session required");
     this.#directory=resolve(config.directory);
-    this.#trust=structuredClone(config.trust);
+    // Copy pinned identity/keys, but preserve an optional deterministic clock
+    // callback (structuredClone cannot copy functions).
+    this.#trust={
+      ...config.trust,
+      trustedKeys:structuredClone(config.trust.trustedKeys),
+      expectedRepository:structuredClone(config.trust.expectedRepository)
+    };
   }
 
   async load():Promise<SignedPlanningCheckpoint>{
