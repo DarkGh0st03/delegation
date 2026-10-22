@@ -151,6 +151,70 @@ export class TrustedApprovedA2ADispatcher {
   get completedTaskIds():readonly string[]{return [...this.#completed];}
   get approvedBranch():string{return this.#snapshot.approvedBranch;}
 
+  /**
+   * Run the *entire* immutable DAG in dependency order. Each specialized
+   * Task crosses the protected A2A path; the private Orchestrator callback
+   * alone handles approved infrastructure operations (e.g. create_branch).
+   *
+   * The next node is NOT released by the remote A2A "completed" status:
+   * dispatch() waits for independent trusted Gateway corroboration first.
+   * This method does not dynamically rewrite, reassign or expand the plan.
+   */
+  async executeApprovedDag(config:{
+    invokeOrchestratorTask?:(planTaskId:string,gatewayTaskId:string)=>Promise<unknown>;
+  }={}):Promise<{
+    plan_digest:string;
+    completed_task_ids:string[];
+    specialized_results:DelegatedA2ARoleTaskResult[];
+  }>{
+    if(this.#terminal||this.#busy||
+       this.#config.coordinator.phase!=="execution"||
+       this.#started.size>0||this.#completed.size>0){
+      throw Error("Trusted DAG execution requires a fresh approved Execution session");
+    }
+    const tasks=this.#snapshot.plan.tasks;
+    if(tasks.some(t=>t.agent_id==="orchestrator")&&
+       typeof config.invokeOrchestratorTask!=="function"){
+      throw Error("Trusted DAG requires a private Orchestrator provider callback");
+    }
+    const remaining=new Set(tasks.map(t=>t.id));
+    const results:DelegatedA2ARoleTaskResult[]=[];
+    try{
+      while(remaining.size>0){
+        const task=tasks.find(t=>remaining.has(t.id)&&
+          t.depends_on.every(parent=>this.#completed.has(parent)));
+        if(!task)throw Error("Approved DAG contains unreachable dependencies");
+        if(task.agent_id==="orchestrator"){
+          await this.runOrchestratorTask(task.id,gatewayTaskId=>
+            config.invokeOrchestratorTask!(task.id,gatewayTaskId));
+        }else{
+          results.push(await this.dispatch(task.id));
+        }
+        remaining.delete(task.id);
+      }
+      // Completion is durable only once the trusted Gateway is closed and
+      // the operational root revocation has been independently confirmed.
+      await this.#config.coordinator.closeExecution();
+      this.#terminal=true;
+      return {
+        plan_digest:this.#snapshot.digest,
+        completed_task_ids:[...this.#completed],
+        specialized_results:results
+      };
+    }catch(error){
+      this.#terminal=true;
+      // dispatch/runOrchestratorTask may have already failed closed.
+      if(this.#config.coordinator.phase==="execution"){
+        try{await this.#config.coordinator.closeExecution();}
+        catch{
+          throw new Error("Trusted DAG termination or revocation not confirmed",
+            {cause:error});
+        }
+      }
+      throw error;
+    }
+  }
+
   /** No speculative dispatch or concurrency in this incremental PoC. */
   async dispatch(planTaskId:string):Promise<DelegatedA2ARoleTaskResult>{
     if(this.#terminal||this.#busy||this.#config.coordinator.phase!=="execution"){
