@@ -7,6 +7,8 @@ on:
     paths:
       - "poc/apps/orchestrator/src/engineer-approval-server.mjs"
       - "poc/apps/orchestrator/test/engineer-approval-server.test.mjs"
+      - "poc/apps/orchestrator/src/trusted-engineer-host.mjs"
+      - "poc/apps/orchestrator/test/trusted-engineer-host.test.mjs"
       - "poc/workflow-ui/authenticated.html"
       - "poc/workflow-ui/authenticated.js"
       - ".github/workflows/engineer-approval-ui-offline.yml"
@@ -31,7 +33,7 @@ jobs:
       - name: Install pinned dependencies offline for test runtime
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
       - name: Run local Engineer login, CSRF, signed receipt and negative tests
-        run: node --experimental-strip-types --test poc/apps/orchestrator/test/engineer-approval-server.test.mjs
+        run: node --experimental-strip-types --test poc/apps/orchestrator/test/engineer-approval-server.test.mjs poc/apps/orchestrator/test/trusted-engineer-host.test.mjs
       - name: Regress trusted approval and GUI mock contracts
         run: |
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts

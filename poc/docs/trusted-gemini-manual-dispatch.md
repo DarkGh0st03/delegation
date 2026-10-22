@@ -187,3 +187,30 @@ The existing input-check-only GitHub workflow remains non-billable. There is
 still no publicly reachable Engineer service or permitted remote connection.
 Do not interpret an OIDC CI probe or stored admission as authorization for
 Gemini inference, and do not run the paid workflow without explicit consent.
+
+
+## Local co-hosted Engineer/OIDC process (offline, non-billable)
+
+poc/apps/orchestrator/src/trusted-engineer-host.mjs now composes the existing
+password/CSRF-protected Engineer approval console and the signed GitHub OIDC
+admission verifier in ONE trusted local process. It uses owner-only, separate
+persistent directories for the Engineer's Ed25519 approval receipts, OIDC
+replay ledger, and authenticated HMAC admission receipts. A single trusted
+session ID is pinned by the host; the GitHub code SHA and the independent
+Gitea Planning base SHA remain distinct.
+
+Neither HTTP endpoint starts Gemini, issues an operational root, consumes an
+Engineer approval or triggers an A2A task. The host offers a private
+in-process consumeAuthenticatedRun(runId) and startReviewedHandoff(...)
+interface; the latter is not exposed over HTTP and still requires the live
+Coordinator, backend signed checkpoint and independent Engineer signature.
+The simulated GitHub/JWKS and password integration test uses only disposable
+keys and zero paid API calls.
+
+IMPORTANT: both listeners bind to 127.0.0.1 ONLY. This is a testable local
+composition boundary, NOT a deployed remote connection from GitHub Actions
+to an Engineer machine. For a real GitHub-hosted workflow a separately
+authenticated private relay/tunnel or mTLS transport and its deployment
+must be designed and validated. Never open these loopback ports via a
+public reverse proxy, never forward an API key or Engineer signing key
+to a runner, and do not trigger the older paid workflow as a workaround.
