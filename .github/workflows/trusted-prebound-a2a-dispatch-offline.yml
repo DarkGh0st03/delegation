@@ -13,6 +13,7 @@ on:
       - "poc/packages/orchestrator-runtime/test/trusted-approved-child-issuer.test.ts"
       - "poc/packages/orchestrator-runtime/src/trusted-a2a-observer.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts"
+      - "poc/packages/orchestrator-runtime/test/trusted-approved-three-adk-a2a-offline.test.ts"
       - "poc/packages/agent-runtime/src/contracts.ts"
       - "poc/packages/agent-runtime/src/approved-branch.ts"
       - "poc/packages/agent-runtime/src/tool-registry.ts"
@@ -49,6 +50,8 @@ jobs:
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-approved-child-issuer.test.ts
       - name: Test immutable DAG and binding before private A2A dispatch
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts
+      - name: Three real ADK runtimes and A2A servers execute one approved DAG offline
+        run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-approved-three-adk-a2a-offline.test.ts
       - name: Test real SDK transports private binding without exposing it to model
         run: node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-a2a-dispatch-id.test.ts
       - name: Regress current agent and orchestrator runtime behavior
