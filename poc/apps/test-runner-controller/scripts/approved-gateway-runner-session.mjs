@@ -5,8 +5,8 @@
  * and the Gateway independently checks the exact tested SHA when accepting
  * a trusted Task-completion observation.
  *
- * This provider integration uses an injected verifier and policy stub;
- * native Rust VP/EVM/OPA are tested separately in the cumulative EVM job.
+ * This provider integration uses an injected VP verifier but REAL OPA;
+ * native Rust VP/EVM is independently tested in the cumulative EVM job.
  * The trusted signed plan and its Gateway enforcement are NOT stubbed.
  * No AI model is contacted; no authorization/merge endpoint is published.
  */
@@ -26,6 +26,7 @@ import {TrustedApprovedExecutionPlans} from
 import {GatewayCorroboratedTaskAttestor} from
   "../../gateway/src/trusted-task-observation.ts";
 import {GatewayRuntime} from "../../gateway/src/runtime.ts";
+import {OpaPolicyClient} from "../../gateway/src/policy-client.ts";
 import {GiteaClient} from "../../gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../gateway/src/gitea-executor.ts";
 import {RunnerClient} from "../../gateway/src/runner-client.ts";
@@ -47,8 +48,13 @@ const BRANCH="feature/account-suspension";
 const SHA=/^[a-f0-9]{40}$/u;
 
 export async function beginApprovedRealRunnerSession({
-  giteaBaseUrl,giteaGatewayToken,giteaReadToken,executor,mainSha,featureSha
+  giteaBaseUrl,giteaGatewayToken,giteaReadToken,executor,mainSha,featureSha,
+  opaBaseUrl
 }){
+  if(typeof opaBaseUrl!=="string"||
+     !/^http:\/\/127\.0\.0\.1:\d+$/u.test(opaBaseUrl)){
+    throw Error("Isolated real OPA endpoint is required for approved Runner test");
+  }
   if(!SHA.test(mainSha)||!SHA.test(featureSha)||mainSha===featureSha){
     throw Error("Approved Test Task requires distinct observed immutable Git SHAs");
   }
@@ -133,16 +139,9 @@ export async function beginApprovedRealRunnerSession({
           expiration:new Date(Date.now()+30*60*1000).toISOString()
         };
       }},
-      policy:{async evaluate(input){
-        // Policy is separately tested with live OPA in the cumulative gate.
-        // Here reject any provider action not in the signed Test Task.
-        assert.equal(input.approved_plan_digest,planDigest(plan));
-        assert.equal(input.approved_work_branch,BRANCH);
-        assert.equal(input.tool,"run_tests");
-        assert.equal(input.required_permission.resource,branchUri);
-        assert.equal(input.arguments.branch,BRANCH);
-        return {allow:true,policy_version:"signed-runner-provider-isolation-fixture"};
-      }}
+      // Real Rego evaluation in an isolated OPA Docker service.
+      // The immutable plan digest/branch are injected by Gateway, NOT A2A.
+      policy:new OpaPolicyClient({baseUrl:opaBaseUrl,timeoutMs:5000})
     });
     // Even the approved Test role cannot select main or another feature
     // branch: rejection happens BEFORE a Runner HTTP request exists.
@@ -157,7 +156,8 @@ export async function beginApprovedRealRunnerSession({
       arguments:{branch:BRANCH,profile:"poc-default"}
     });
     assert.equal(prepared.required_permission.resource,branchUri);
-    let used=false,completed=false,observedA2ATaskId=null;
+    let used=false,completed=false,observedA2ATaskId=null,
+      observedPolicyVersion=null;
     return {
       request:{request_id:prepared.request_id,repository:URI,
         branch:BRANCH,commit_sha:featureSha,profile:"poc-default"},
@@ -206,6 +206,9 @@ export async function beginApprovedRealRunnerSession({
                 request_id:prepared.request_id,
                 signed_vp:"offline-fixture-verifier"
               });
+              assert.equal(authorized.policy.allow,true);
+              assert.equal(authorized.policy.policy_version,
+                "phase6-approved-branch-v2");
               assert.equal(authorized.execution.provider,"runner");
               const effect=authorized.execution;
               assert.equal(effect.status,"pass");
@@ -213,6 +216,7 @@ export async function beginApprovedRealRunnerSession({
               assert.equal(effect.project_tests?.status,"pass");
               assert.equal(effect.researcher_acceptance?.status,"pass");
               observedExecution=effect;
+              observedPolicyVersion=authorized.policy.policy_version;
               return {
                 role:"test",
                 summary:"Observed real Docker Runner and researcher acceptance",
@@ -296,6 +300,7 @@ export async function beginApprovedRealRunnerSession({
       },
       get completed(){return completed;},
       get observedA2ATaskId(){return observedA2ATaskId;},
+      get observedPolicyVersion(){return observedPolicyVersion;},
       async close(){
         if(!completed){try{registry.closeSession(sessionId);}catch{}}
         if(server?.listening)await new Promise(resolve=>server.close(resolve));

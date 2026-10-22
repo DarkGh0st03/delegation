@@ -36,6 +36,8 @@ const branch="feature/account-suspension";
 const repository="/api/v1/repos/thesis/iam-console-poc";
 const suffix=randomBytes(6).toString("hex");
 const container="delegation-ci-positive-"+suffix;
+const opaContainer="delegation-ci-positive-opa-"+suffix;
+const opaImage=process.env.OPA_IMAGE??"openpolicyagent/opa:1.21.1";
 const image=process.env.GITEA_IMAGE??"docker.gitea.com/gitea:28.0.0";
 const nodeImage=process.env.TEST_RUNNER_DOCKER_IMAGE??"node:22.15.0-bookworm";
 const adminUser=process.env.GITEA_ADMIN_USER;
@@ -45,7 +47,7 @@ const readerUser="ci-reader-"+suffix;
 const publisherUser="ci-publisher-"+suffix;
 const readerPass=randomBytes(24).toString("hex");
 const publisherPass=randomBytes(24).toString("hex");
-let containerStarted=false;
+let containerStarted=false,opaStarted=false;
 
 function docker(args,label){
   try{
@@ -92,6 +94,15 @@ function git(args,{cwd,auth,timeout=180000,label="Git step"}={}){
     throw Error(label+" failed");
   }
 }
+function stopOpa(){
+  if(!opaStarted)return;
+  try{
+    execFileSync("docker",["stop","--time","5",opaContainer],{
+      timeout:30000,stdio:"ignore"
+    });
+  }catch{/* Already stopped or removed */}
+  opaStarted=false;
+}
 function stopDocker(){
   try{
     execFileSync("docker",["stop","--time","5",container],{
@@ -101,6 +112,7 @@ function stopDocker(){
 }
 for(const signal of ["SIGTERM","SIGINT"]){
   process.once(signal,()=>{
+    stopOpa();
     if(containerStarted)stopDocker();
     process.exitCode=130;
   });
@@ -332,6 +344,7 @@ async function main(){
   assert.ok((await stat(acceptanceDir)).isDirectory());
   docker(["image","inspect",image],"Gitea Docker image must be cached");
   docker(["image","inspect",nodeImage],"Node Docker image must be cached");
+  docker(["image","inspect",opaImage],"Pinned OPA image must be cached");
   docker(["run","--rm","--detach","--name",container,
     "--publish","127.0.0.1::3000/tcp",
     "--env","USER_UID=1000","--env","USER_GID=1000",
@@ -353,6 +366,31 @@ async function main(){
     if(!port)throw Error("Disposable Gitea not bound to loopback");
     const base="http://127.0.0.1:"+port;
     await stage("isolated_gitea_ready",()=>ready(base),125000);
+    // Real OPA, no shared docker-compose names, no persistent volumes.
+    const opaDir=fileURLToPath(new URL("../../../opa/",import.meta.url));
+    docker(["run","--rm","--detach","--name",opaContainer,
+      "--publish","127.0.0.1::8181/tcp",
+      "--volume",opaDir+":/policy:ro",
+      opaImage,"run","--server","--addr=0.0.0.0:8181","/policy"],
+      "start disposable real OPA policy server");
+    opaStarted=true;
+    const opaPortInfo=docker(["port",opaContainer,"8181/tcp"],
+      "inspect isolated OPA localhost port");
+    const opaPort=/127\.0\.0\.1:(\d+)/u.exec(opaPortInfo)?.[1];
+    if(!opaPort)throw Error("Real OPA port must bind only to loopback");
+    const opaBaseUrl="http://127.0.0.1:"+opaPort;
+    await stage("isolated_opa_ready",async()=>{
+      for(let i=0;i<100;i++){
+        try{
+          const response=await fetch(opaBaseUrl+"/health",{
+            signal:AbortSignal.timeout(1000)
+          });
+          if(response.ok)return;
+        }catch{/* OPA still loading policy */}
+        await sleep(250);
+      }
+      throw Error("Isolated OPA failed to load signed-plan Rego policy");
+    },35000);
     const creds=await stage("disposable_accounts",
       ()=>bootstrap(base),180000);
     workRoot=await mkdtemp(join(tmpdir(),"thesis-positive-acceptance-"));
@@ -376,7 +414,8 @@ async function main(){
       beginApprovedRealRunnerSession({
         giteaBaseUrl:base,giteaGatewayToken:creds.statusToken,
         giteaReadToken:creds.readToken,executor,
-        mainSha:fixture.mainSha,featureSha:fixture.featureSha
+        mainSha:fixture.mainSha,featureSha:fixture.featureSha,
+        opaBaseUrl
       }),30000);
     let observedRunnerResult=null;
     const ci=new TrustedGiteaSecurityCi({
@@ -436,6 +475,9 @@ async function main(){
     assert.equal(verdict.status,"success",
       "Real reference app tests/acceptance did not pass");
     assert.equal(observedRunnerResult?.status,"pass");
+    assert.equal(approvedSession.observedPolicyVersion,
+      "phase6-approved-branch-v2",
+      "Real OPA must allow signed, bound Test Task before CI success");
     assert.equal(approvedSession.completed,true,
       "Gateway must attest the actual Runner result before CI marks success");
     assert.match(approvedSession.observedA2ATaskId??"",/^[A-Za-z0-9_-]{8,}$/u,
@@ -484,6 +526,7 @@ async function main(){
       engineer_approval_ed25519:true,
       gateway_signed_test_task_completed:true,
       real_a2a_sdk_task_completed:true,
+      real_opa_signed_plan_policy:true,
       runner_via_gateway_http:true,
       exact_provider_sha_correlated:true,
       approval_created:true,pr_created:false,merge_calls:0,
@@ -492,6 +535,7 @@ async function main(){
   }finally{
     try{
       if(approvedSession)await approvedSession.close();
+      stopOpa();
       if(logs)await rm(logs,{recursive:true,force:true});
       if(workRoot)await rm(workRoot,{recursive:true,force:true});
     }finally{

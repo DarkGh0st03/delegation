@@ -253,6 +253,7 @@ jobs:
         run: |
           docker pull docker.gitea.com/gitea:28.0.0
           docker pull node:22.15.0-bookworm
+          docker pull openpolicyagent/opa:1.21.1
 
       - name: Run real positive acceptance with no external model
         env:
