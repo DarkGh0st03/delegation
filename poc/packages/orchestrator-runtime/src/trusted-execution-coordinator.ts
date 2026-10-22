@@ -159,16 +159,23 @@ export class TrustedExecutionCoordinator {
     credential_id:string;plan_digest:string;
   }>{
     if(this.#phase!=="planning")throw new Error("Trusted execution requires prior Planning");
-    if(this.#recovery){
-      this.assertOperationalRecoveryConfigured();
-      // Persist the chosen future ID before ANY external issuing request.
-      await this.#recovery.recordIntent({
-        sessionId:this.#sessionId,baseRevision:this.#baseRevision,
-        credentialId:root.credential_id
-      });
-    }
+    // Reserve synchronously BEFORE any journal filesystem await: two
+    // concurrent activation calls cannot race into issuing separate roots.
     this.#phase="activating";
     this.#planningRoot=undefined; // never reuse provisional authority in Execution
+    if(this.#recovery){
+      try{
+        this.assertOperationalRecoveryConfigured();
+        // Persist the chosen future ID before ANY external issuing request.
+        await this.#recovery.recordIntent({
+          sessionId:this.#sessionId,baseRevision:this.#baseRevision,
+          credentialId:root.credential_id
+        });
+      }catch(error){
+        this.#phase="failed_closed";
+        throw error;
+      }
+    }
     let operationalId:string|undefined;
     try {
       const issued=await this.#authority.approveAndIssueOperationalRoot(root);
