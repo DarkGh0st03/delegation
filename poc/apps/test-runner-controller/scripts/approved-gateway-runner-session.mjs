@@ -15,6 +15,7 @@ import {generateKeyPairSync,randomBytes} from "node:crypto";
 import {mkdtemp,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {createServer as createPortProbe} from "node:net";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../../gateway/src/operation-catalog.ts";
@@ -29,6 +30,14 @@ import {GiteaClient} from "../../gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../gateway/src/gitea-executor.ts";
 import {RunnerClient} from "../../gateway/src/runner-client.ts";
 import {createRunnerHttpServer} from "../src/http.ts";
+import {DelegatedA2ARoleRunner} from
+  "../../../packages/orchestrator-runtime/src/a2a-workflow.ts";
+import {observedA2ACompletion} from
+  "../../../packages/orchestrator-runtime/src/trusted-a2a-observer.ts";
+import {DeterministicA2AOrchestrator} from
+  "../../../packages/agent-runtime/src/orchestrator.ts";
+import {startSpecializedAgentServer} from
+  "../../../packages/agent-runtime/src/server.ts";
 
 const URI="gitea://gitea.local/thesis/iam-console-poc";
 const DID="did:thesis:engineer";
@@ -148,7 +157,7 @@ export async function beginApprovedRealRunnerSession({
       arguments:{branch:BRANCH,profile:"poc-default"}
     });
     assert.equal(prepared.required_permission.resource,branchUri);
-    let used=false,completed=false;
+    let used=false,completed=false,observedA2ATaskId=null;
     return {
       request:{request_id:prepared.request_id,repository:URI,
         branch:BRANCH,commit_sha:featureSha,profile:"poc-default"},
@@ -163,24 +172,117 @@ export async function beginApprovedRealRunnerSession({
         const received=await realGitea.getBranchMetadata(BRANCH);
         assert.equal(received.commit_sha,featureSha,
           "Real Gitea branch moved before signed Runner task");
-        const authorized=await gateway.execute({
-          request_id:prepared.request_id,signed_vp:"offline-fixture-verifier"
+        // A real A2A SDK client sends a protected Test Task to a local
+        // dedicated Agent server; ONLY its taskHandler may invoke Gateway.
+        // The issuer below is a TEST FIXTURE: this suite does not claim a
+        // Rust-signed child. The native EVM suite covers that separately.
+        const probe=createPortProbe();
+        await new Promise((resolve,reject)=>{
+          probe.once("error",reject);
+          probe.listen(0,"127.0.0.1",resolve);
         });
-        assert.equal(authorized.execution.provider,"runner");
-        const result=authorized.execution;
-        assert.equal(result.status,"pass");
-        assert.equal(result.tested_commit_sha,featureSha);
-        assert.equal(result.project_tests?.status,"pass");
-        assert.equal(result.researcher_acceptance?.status,"pass");
-        await registry.confirmTaskCompletion(taskId,{
-          source:"trusted_a2a_poll",state:"completed",runtime_task_id:taskId,
-          role:"test",artifact:{
-            branch:BRANCH,revision:featureSha,commit_sha:featureSha,
-            files_modified:[],files_created:[],test_outcome:"pass",
-            tested_commit_sha:featureSha,runner_profile:"poc-default",
-            project_tests:"pass",researcher_acceptance:"pass"
-          }
-        });
+        const a2aPort=probe.address().port;
+        await new Promise(resolve=>probe.close(resolve));
+        let a2aServer;
+        let observedExecution;
+        try{
+          a2aServer=await startSpecializedAgentServer({
+            role:"test",port:a2aPort,host:"127.0.0.1",
+            delegatedAuthorization:true,
+            taskHandler:async context=>{
+              assert.equal(context.role,"test");
+              assert.equal(context.trusted_gateway_task_id,taskId);
+              assert.equal(context.subtask.subtask_id,"verify");
+              assert.equal(context.subtask.branch,BRANCH);
+              assert.deepEqual(context.subtask.relevant_paths,[]);
+              assert.equal(context.delegation_evidence.presenter_id,TEST_DID);
+              assert.equal(context.delegation_evidence.credential_id,
+                "urn:fixture:scoped-test-child");
+              const credential=JSON.parse(context.delegation_evidence.credential);
+              assert.deepEqual(credential.credentialSubject.per,[{
+                operation:"run_tests",resource:branchUri
+              }]);
+              const authorized=await gateway.execute({
+                request_id:prepared.request_id,
+                signed_vp:"offline-fixture-verifier"
+              });
+              assert.equal(authorized.execution.provider,"runner");
+              const effect=authorized.execution;
+              assert.equal(effect.status,"pass");
+              assert.equal(effect.tested_commit_sha,featureSha);
+              assert.equal(effect.project_tests?.status,"pass");
+              assert.equal(effect.researcher_acceptance?.status,"pass");
+              observedExecution=effect;
+              return {
+                role:"test",
+                summary:"Observed real Docker Runner and researcher acceptance",
+                files_modified:[],files_created:[],branch:BRANCH,
+                revision:effect.tested_commit_sha,
+                commit_sha:effect.tested_commit_sha,
+                test_outcome:"pass",errors:[],
+                tested_commit_sha:effect.tested_commit_sha,
+                runner_profile:effect.runner_profile,
+                project_tests:effect.project_tests.status,
+                researcher_acceptance:effect.researcher_acceptance.status
+              };
+            }
+          });
+          const roleRunner=new DelegatedA2ARoleRunner({
+            authorityIssuer:{
+              async issueSpecializedChild(input){
+                assert.equal(input.parent_credential_id,
+                  "urn:fixture:operational-root");
+                assert.equal(input.credential_id,"urn:fixture:scoped-test-child");
+                assert.equal(input.selection.role,"test");
+                assert.equal(input.approved_task_id,"verify");
+                return {role:"test",credential:{
+                  "@context":["https://www.w3.org/ns/credentials/v2"],
+                  id:input.credential_id,
+                  type:["VerifiableCredential","DelegationCredential"],
+                  issuer:"did:thesis:orchestrator",
+                  validFrom:input.valid_from,
+                  credentialSubject:{sub:TEST_DID,per:[
+                    {operation:"run_tests",resource:branchUri}
+                  ]}
+                }};
+              }
+            },
+            a2a:new DeterministicA2AOrchestrator({
+              deadlineMs:24*60*1000,initialIntervalMs:50,
+              maxIntervalMs:250
+            })
+          });
+          const outcome=await roleRunner.issueAndRun({
+            role:"test",
+            parent_credential_id:"urn:fixture:operational-root",
+            credential_id:"urn:fixture:scoped-test-child",
+            valid_from:new Date().toISOString(),
+            validity_seconds:600,
+            credential_status:{
+              type:"BitstringStatusListEntry",statusPurpose:"revocation",
+              statusListIndex:"7192",
+              statusListCredential:"https://status.example/offline-fixture"
+            },
+            agent_base_url:a2aServer.baseUrl,
+            trusted_gateway_task_id:taskId,
+            approved_task_id:"verify",
+            subtask:{
+              subtask_id:"verify",
+              instruction:"Run pinned approved Test Task and independent acceptance",
+              branch:BRANCH,relevant_paths:[]
+            }
+          });
+          observedA2ATaskId=outcome.task_id;
+          assert.notEqual(outcome.task_id,taskId);
+          assert.equal(outcome.artifact.tested_commit_sha,featureSha);
+          assert.deepEqual(outcome.artifact.files_created,[]);
+          await registry.confirmTaskCompletion(taskId,
+            observedA2ACompletion(outcome,taskId));
+        }finally{
+          if(a2aServer)await a2aServer.close();
+        }
+        if(!observedExecution)throw Error("No corroborated Runner provider effect");
+        const result=observedExecution;
         completed=true;
         registry.closeSession(sessionId);
         // No second Docker execution is possible after trusted completion.
@@ -193,6 +295,7 @@ export async function beginApprovedRealRunnerSession({
         return {...result,request_id:request.request_id,repository:URI};
       },
       get completed(){return completed;},
+      get observedA2ATaskId(){return observedA2ATaskId;},
       async close(){
         if(!completed){try{registry.closeSession(sessionId);}catch{}}
         if(server?.listening)await new Promise(resolve=>server.close(resolve));
