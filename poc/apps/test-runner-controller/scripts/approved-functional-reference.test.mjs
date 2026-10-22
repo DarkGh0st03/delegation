@@ -26,7 +26,7 @@ test("Frontend offline edit gives user feedback accessible status and alerts",()
   assert.match(after,/className="error-message" role="alert"/u);
   assert.ok(after.includes('action === "suspend" ? await suspendUser'));
   assert.ok(after.includes('action === "suspend"'));
-  assert.ok(after.includes('action === "reactivate"'));
+  assert.ok(after.includes("await reactivateUser(id)"));
 });
 
 test("Functional source transformation denies unpinned or tampered input",()=>{
