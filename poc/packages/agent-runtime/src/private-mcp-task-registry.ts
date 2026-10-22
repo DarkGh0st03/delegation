@@ -32,6 +32,8 @@ interface ActiveTask {
   allowUpdateFile: boolean;
   allowCreateFile: boolean;
   allowRunTests: boolean;
+  /** Task-scoped path ceiling; absent only for legacy unbound sessions. */
+  allowedPaths?: ReadonlySet<string>;
   onAbort?: () => void;
 }
 
@@ -65,17 +67,29 @@ export class PrivateMcpTaskRegistry {
       allowUpdateFile?: boolean;
       allowCreateFile?: boolean;
       allowRunTests?: boolean;
+      allowedPaths?:readonly string[];
       evidenceHandler?: Pick<DelegationEvidenceHandler,
         "createPresentation"|"credentialId"|"presenterId">;
     } = {}
   ): void {
     if (this.#active.has(taskId)) throw new Error("Duplicate active MCP task");
     if (signal?.aborted) throw new PrivateMcpTaskError("inactive_task");
+    if(options.allowedPaths!==undefined&&(
+       options.allowedPaths.length>32||
+       options.allowedPaths.some(p=>typeof p!=="string"||p.length===0||
+         p.length>240||p.startsWith("/")||p.includes("\\")||
+         p.includes("//")||p.split("/").some(x=>
+           !x||x==="."||x==="..")||
+         /[\x00-\x1f\x7f]/u.test(p)))){
+      throw new PrivateMcpTaskError("invalid_tool_call");
+    }
     const bearer = issueTaskToken(this.#signingKey, this.#role, taskId);
     const claims = verifyTaskToken(bearer, { [this.#role]: this.#verificationKey });
     const task: ActiveTask = {client, bearer, claims, signal,
       pendingCrypto:new Map(), signedProofs:new Map(),
       ...(options.evidenceHandler?{evidenceHandler:options.evidenceHandler}:{}),
+      ...(options.allowedPaths!==undefined
+        ? {allowedPaths:new Set(options.allowedPaths)} : {}),
       allowUpdateFile: options.allowUpdateFile === true,
       allowCreateFile: this.#role==="test" && options.allowCreateFile===true,
       allowRunTests: this.#role==="test" && options.allowRunTests===true};
@@ -236,6 +250,10 @@ export class PrivateMcpTaskRegistry {
             ? parseCreateFileArgs(payload.arguments)
             : parseRunTestsArgs(payload.arguments);
     } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
+    if(payload.tool!=="run_tests"&&task.allowedPaths!==undefined&&
+       !task.allowedPaths.has(args.path)){
+      throw new PrivateMcpTaskError("invalid_tool_call");
+    }
     if (payload.tool === "update_file" &&
         (!task.allowUpdateFile ||
          !SPECIALIZED_AGENT_PROFILES[this.#role].writable_paths.includes(args.path))) {
