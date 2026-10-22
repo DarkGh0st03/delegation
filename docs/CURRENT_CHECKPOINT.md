@@ -66,3 +66,48 @@ This is a configuration proposal, **not a claim that protection has been enabled
 3. Update thesis results with explicit evidence separation: historical measured baseline, scripted shared-MCP validations, and genuine live-Gemini result.
 4. Review GitHub branch protection and any persistent Gitea reviewer/environment/CI setup as separate administrative deployment work. A passing disposable run does not configure these.
 5. Any further paid model experiment requires a new explicit decision by the thesis owner. Routine free CI remains automatic.
+
+
+## Later approved-plan refactor checkpoint — 22 October 2026
+
+This section records a **separate, newer experimental branch**, not a
+retroactive claim about the paid 15 October baseline above.
+
+- Branch: `refactor/post-prof-plan-contracts-20261021`. Validated code
+  checkpoint: `733ddbb7e30b5e2eb4169c1cae9461f00afbf425`.
+  The repository `main` was not merged or changed by this work.
+- [Cumulative Offline Refactoring Validation #39738559704,
+  attempt 2](https://github.com/DarkGh0st03/delegation/actions/runs/39738559704):
+  **four of four jobs succeeded**, including Rust/Solidity, Gateway/ADK/A2A,
+  EVM-native credentials and the positive disposable Gitea/Docker Runner.
+- The positive Test Task now crosses a **real A2A SDK** Task exchange, an
+  Engineer Ed25519-signed immutable plan, Gateway task binding, **real
+  OPA/Rego** (`phase6-approved-branch-v2`), the real Gitea branch/head,
+  the authenticated Runner HTTP service, six real Docker project phases,
+  independent researcher acceptance and Gateway-correlated task-completion
+  evidence. Security CI publishes `pending -> success` on the exact
+  tested feature SHA. No feature PR was created or merged.
+- A **first attempt** of the same job failed closed after a Docker phase
+  reached its five-minute timeout; OPA had already returned `allow`.
+  Retrying **only** that offline job on unchanged code passed in about
+  56 seconds of provider execution. Do not reinterpret the first
+  timeout as a policy failure or conceal it in thesis evidence.
+- Crucial boundary: this single positive provider test still injects a
+  **fixture child DC and verifier**. The EVM job independently proves
+  *real* scoped child issuance by Rust, native Rust VP verification,
+  real OPA and on-chain revocation with an A2A Task, but that separate
+  run uses a **mock provider**. The whole graph has therefore **not yet
+  been demonstrated in a single fully native VP + real Gitea/Runner**
+  execution. The application implementation remains the pinned,
+  scripted Account Suspension reference, not newly generated ADK code.
+- No paid Gemini execution was launched. A future paid inference
+  experiment still needs explicit owner authorization. No protected
+  source `main` merge, forged human review or claim of a production
+  authentication deployment occurred.
+
+The next scoped milestone is to replace the fixture child/VP verifier
+in the positive provider run with the **Rust-issued child and native
+Verifier** while keeping the immutable signed Task, OPA branch policy
+and the exact-SHA Runner acceptance unchanged. Only then evaluate
+full ADK-generated multi-agent integration offline before asking
+permission for any paid Gemini E2E.
