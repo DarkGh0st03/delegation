@@ -1,3 +1,9 @@
+import {deriveRequiredPermission} from "../../../apps/gateway/src/canonical.ts";
+import {validatePrepareAuthorizationRequest}
+  from "../../../apps/gateway/src/validation.ts";
+import type {GatewayRepositoryConfig}
+  from "../../../apps/gateway/src/types.ts";
+
 type FetchLike = typeof fetch;
 
 const FEATURE_BRANCH = "feature/account-suspension" as const;
@@ -167,19 +173,55 @@ export class OrchestratorProtectedGatewayClient {
     return this.#parseCreatePullRequest(execution);
   }
 
+  /**
+   * Planning-only read transport. Must be held by the trusted read port,
+   * never published to ADK as a writable/unrestricted client.
+   * Authority and snapshot pinning are independently enforced by Gateway.
+   */
+  async readPlanningResource(
+    taskId:string,
+    tool:"read_repository"|"list_directory"|"read_file",
+    args:Record<string,unknown>,
+    repository:GatewayRepositoryConfig
+  ):Promise<unknown> {
+    const normalized=validatePrepareAuthorizationRequest({
+      task_id:nonEmptyString(taskId,"Planning Task ID"),
+      agent_role:"orchestrator",tool,arguments:args
+    });
+    if(normalized.request.tool!==tool ||
+       (tool!=="read_repository"&&
+         (normalized.request.arguments as {branch?:string}).branch!=="main")) {
+      throw new OrchestratorGatewayClientError("Planning accepts main reads only");
+    }
+    const permission=deriveRequiredPermission(repository,normalized.request);
+    return this.#invoke(taskId,tool,normalized.request.arguments,permission);
+  }
+
   async #invoke(
     taskId: string,
-    tool: "create_branch" | "create_pull_request",
-    args: Record<string, unknown>
+    tool: "create_branch" | "create_pull_request" |
+      "read_repository"|"list_directory"|"read_file",
+    args: Record<string, unknown>,
+    expectedPermission?:RequiredPermission
   ): Promise<unknown> {
     const prepared = await this.#prepare(taskId, tool, args);
+    // Fail before the Adapter can sign an unexpected permission. The trusted
+    // Planning caller derives expectedPermission from its pinned snapshot.
+    if(expectedPermission && (prepared.required_permission.operation !==
+         expectedPermission.operation ||
+       prepared.required_permission.resource!==expectedPermission.resource)){
+      throw new OrchestratorGatewayClientError(
+        "Gateway Planning challenge does not match trusted resource"
+      );
+    }
     const signedVp = await this.#createPresentation(prepared);
     return this.#execute(prepared.request_id, signedVp);
   }
 
   async #prepare(
     taskId: string,
-    tool: "create_branch" | "create_pull_request",
+    tool: "create_branch" | "create_pull_request" |
+      "read_repository"|"list_directory"|"read_file",
     args: Record<string, unknown>
   ): Promise<PreparedAuthorization> {
     let response: Response;

@@ -15,3 +15,4 @@ export * from "./trusted-a2a-observer.ts";
 export * from "./trusted-approved-a2a-dispatcher.ts";
 export * from "./trusted-approved-child-issuer.ts";
 export * from "./trusted-adk-planner.ts";
+export * from "./trusted-planning-gateway-port.ts";

@@ -31,6 +31,10 @@ export class TrustedExecutionCoordinator {
   readonly #sessionId:string;
   readonly #baseRevision:string;
   #phase:Phase="idle";
+  #planningRoot?:{
+    readonly credential_id:string;
+    readonly permissions:readonly DelegatedPermission[];
+  };
   #operationalId?:string;
   #operationalPermissions?:readonly DelegatedPermission[];
   #approvedDigest?:string;
@@ -73,11 +77,30 @@ export class TrustedExecutionCoordinator {
     };
   }
 
+  /** Private trusted-only view: never pass this object to an LLM or A2A. */
+  trustedPlanningAuthority():{
+    credential_id:string;
+    session_id:string;
+    base_revision:string;
+    permissions:DelegatedPermission[];
+  }{
+    if(this.#phase!=="planning"||!this.#planningRoot)
+      throw new Error("Active verified Planning root is required");
+    return {
+      credential_id:this.#planningRoot.credential_id,
+      session_id:this.#sessionId,
+      base_revision:this.#baseRevision,
+      permissions:this.#planningRoot.permissions.map(p=>({...p}))
+    };
+  }
+
   async beginPlanning(root:RootParameters){
     if(this.#phase!=="idle")throw new Error("Trusted Planning is not idle");
     this.#phase="failed_closed";
     const result=await this.#authority.startPlanning(root);
     if(result.phase!=="planning")throw new Error("Read-only authority not confirmed");
+    this.#planningRoot={credential_id:result.credential_id,
+      permissions:result.permissions.map(p=>Object.freeze({...p}))};
     this.#phase="planning";
     return result;
   }
@@ -95,6 +118,7 @@ export class TrustedExecutionCoordinator {
   }>{
     if(this.#phase!=="planning")throw new Error("Trusted execution requires prior Planning");
     this.#phase="activating";
+    this.#planningRoot=undefined; // never reuse provisional authority in Execution
     let operationalId:string|undefined;
     try {
       const issued=await this.#authority.approveAndIssueOperationalRoot(root);
