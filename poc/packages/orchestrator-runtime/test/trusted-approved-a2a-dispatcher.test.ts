@@ -225,3 +225,47 @@ test("branch is never inferred from unapproved, multiple or invalid repository l
  await assert.rejects(TrustedApprovedA2ADispatcher.load(h.config as any),
    /Approved branch: multiple working branches/);
 });
+
+test("executeApprovedDag coordinates all three roles, confirms each dependency and closes root",async()=>{
+ const h=harness();
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await assert.rejects(d.executeApprovedDag(),/private Orchestrator provider callback/);
+ assert.deepEqual(h.log,[]);
+ const done=await d.executeApprovedDag({
+   async invokeOrchestratorTask(id,gatewayTaskId){
+     assert.equal(id,"branch");
+     h.log.push("provider:"+gatewayTaskId);
+   }
+ });
+ assert.equal(done.plan_digest,planDigest(h.p));
+ assert.deepEqual(done.completed_task_ids,[
+   "branch","backend-task","frontend-task","tests"
+ ]);
+ assert.deepEqual(done.specialized_results.map(x=>x.role),
+   ["backend","frontend","test"]);
+ assert.equal(h.coordinator.phase,"closed");
+ const positions={
+   backend:h.log.findIndex(x=>x.startsWith("confirm:")&&x.endsWith(":backend")),
+   frontend:h.log.findIndex(x=>x.startsWith("bind:frontend-task:")),
+   frontConfirmed:h.log.findIndex(x=>x.startsWith("confirm:")&&x.endsWith(":frontend")),
+   tests:h.log.findIndex(x=>x.startsWith("bind:tests:"))
+ };
+ assert.ok(positions.backend>=0&&positions.backend<positions.frontend);
+ assert.ok(positions.frontConfirmed>=0&&positions.frontConfirmed<positions.tests);
+ assert.equal(h.log.at(-1),"close");
+ await assert.rejects(d.executeApprovedDag({
+   invokeOrchestratorTask:async()=>{}
+ }),/fresh approved Execution/);
+});
+
+test("executeApprovedDag never reaches Frontend or Test after failed Backend result",async()=>{
+ const h=harness({failResult:true});
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await assert.rejects(d.executeApprovedDag({
+   invokeOrchestratorTask:async()=>{}
+ }),/does not match/);
+ assert.deepEqual(d.completedTaskIds,["branch"]);
+ assert.equal(h.coordinator.phase,"closed");
+ assert.ok(!h.log.some(x=>x.includes("bind:frontend-task:")||
+    x.includes("bind:tests:")));
+});
