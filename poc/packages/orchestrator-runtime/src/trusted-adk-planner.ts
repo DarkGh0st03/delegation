@@ -10,6 +10,7 @@ import {
 } from "@google/adk";
 import {z} from "zod";
 import {validatePlan,planDigest} from "../../plan-contracts/src/plan.mjs";
+import {approvedWorkBranch} from "../../plan-contracts/src/approved-work-branch.mjs";
 import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
   from "../../../apps/gateway/src/canonical.ts";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
@@ -172,6 +173,12 @@ export function compilePlanningProposal(
     tasks,requested_permissions,assumptions,uncertainties
   };
   validatePlan(plan,{allowedOperations:operations});
+  // The shared approved-plan dispatcher derives the branch from the final
+  // resource URIs. Reject branch-only sketches that silently fall back to a
+  // different legacy branch rather than trusting the Planner configuration.
+  if(!requested_permissions.some(p=>p.resource!==root)||
+     approvedWorkBranch(plan)!==branch)
+    fail("proposal does not encode the exact trusted work branch");
   return {status:"unapproved_proposal",plan,digest:planDigest(plan),
     verified_source_reads:0};
 }

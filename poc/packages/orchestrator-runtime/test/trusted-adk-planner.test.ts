@@ -132,3 +132,11 @@ test("untrusted model cannot request arbitrary operations, unknown source or sec
     assert.throws(()=>compilePlanningProposal(d,cfg));
   }
 });
+
+test("branch-only sketches cannot silently select the legacy branch",()=>{
+  const d=draft();
+  d.tasks[1]={id:"pr",agent_id:"orchestrator",title:"Open PR",
+    description:"Open a review request",depends_on:["branch"],
+    permissions:[{operation:"create_pull_request",path:null,reason:"Review"}]};
+  assert.throws(()=>compilePlanningProposal(d,cfg),/exact trusted work branch/);
+});
