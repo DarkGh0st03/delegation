@@ -148,3 +148,25 @@ Run service:
 ```bash
 cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked
 ```
+
+
+## Scoped child issuance under signed Engineer authority (opt-in)
+
+The experimental approved-DAG path uses
+`TrustedApprovedPlanChildAuthorityIssuer`, which loads a real
+Engineer-signed approval and the actual operational-root permissions
+through the trusted Coordinator. For each Task it sends the exact
+approved operation/resource subset to the existing Rust Adapter
+`POST /v1/credentials/child`, then refuses an Adapter response that
+adds/removes permissions or changes the credential ID. Role templates
+continue to serve the isolated legacy workflow.
+
+The cumulative native EVM job exercises that issuer against a **running
+Rust Adapter** with on-chain trust and revocation, and has a separately
+running Gateway with native Rust VP verification and OPA. See
+`poc/apps/gateway/native-test/native-approved-scoped-child-evm-e2e.mjs`.
+
+The reference test uses a scripted A2A agent and mock Git provider.
+No remote LLM is called; it cannot be cited as real Gitea/Runner
+end-to-end task completion. It intentionally verifies that the Gateway
+does NOT mark that mock Task as completed.

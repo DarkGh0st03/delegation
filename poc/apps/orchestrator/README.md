@@ -340,3 +340,47 @@ re-execute the whole new DAG with native Rust, real Gitea, Docker Runner
 and Gemini. Existing Rust Adapter subset tests independently validate
 cryptographic parent-child attenuation. The next full-system milestone is
 the integrated disposable-provider, offline E2E.
+
+
+## Verified offline EVM scoped-child integration — 22 October 2026
+
+The cumulative offline CI EVM job executes
+`poc/apps/gateway/native-test/native-approved-scoped-child-evm-e2e.mjs`
+**after** its existing native verifier/revocation regression. This is a
+separate, disposable, single-session integration test with no paid AI calls.
+
+It constructs a short-lived Engineer Ed25519 signed approval (pinned
+public key and protected receipt file), starts a second opt-in Gateway
+using the owner-only HMAC Unix control socket and native Core Rust
+verifier, and exercises the actual trusted two-phase transition:
+
+1. Real Rust Adapter issues a read-only preliminary Engineer root.
+2. The trusted authority checks the receipt and revokes the preliminary
+   root on Anvil before issuing a NEW operational root, independently.
+3. The Gateway accepts only the signed plan and binds a Backend Task
+   BEFORE its child credential is issued or its A2A Task is submitted.
+4. Rust Adapter issues a Backend child DC with **only** the Engineer
+   approved file update; the proposed-but-excluded create-file grant
+   never appears in the parent/child authorized scope.
+5. The real A2A SDK runs a scripted Backend Task whose VP is signed
+   by the Rust Adapter, verified by the Gateway's *native Rust Core*
+   and separately evaluated by OPA.
+6. The extra unapproved operation is denied. Because the provider is
+   deliberately non-mutating, Gateway refuses to attest Task completion.
+   The trusted dispatcher closes the session and the operational root
+   is revoked rather than treating a model/agent success claim as proof.
+
+The proof prints `signed-plan-scoped-child-native-evm-pass` and is
+tracked by the cumulative EVM CI job. It uses disposable Ed25519 keys,
+test DIDs, a **fixture** base SHA (not a live Gitea pin), the legacy
+`feature/account-suspension` branch (the existing OPA policy is still
+branch-specific), and the Gateway's mock provider. This establishes
+real DC issuance, on-chain revocation, VP verification and task/plan
+enforcement, **not** an end-to-end real Gitea mutation or real Docker
+Runner execution inside this same session.
+
+The remaining integration step is a single offline run against a
+trusted actual Gitea SHA, a disposable real Gitea provider and the
+Docker Runner with matching test evidence. Dynamic OPA branch support
+must first be engineered without relaxing its existing main-branch
+restrictions.
