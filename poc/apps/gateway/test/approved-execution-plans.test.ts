@@ -339,3 +339,25 @@ test("valid VP/OPA permission cannot authorize the wrong DID for an approved age
   assert.equal(h.opaCalls,2);
   assert.equal(h.providerCalls,1);
 });
+
+
+test("trusted signed-plan working branch restricts even repository-root create_branch permission",async()=>{
+ const h=harness();
+ await activated(h);
+ assert.equal(h.store.size(),0);
+ for(const wrong of ["feature/attacker","main","feature/account-suspension"]){
+   assert.throws(()=>h.runtime.prepare({
+     task_id:"a2a-bootstrap",agent_role:"orchestrator",
+     tool:"create_branch",arguments:{base_branch:"main",branch:wrong}
+   }),(e:unknown)=>e instanceof GatewayError&&e.code==="approved_plan_denied");
+ }
+ assert.throws(()=>h.runtime.prepare({
+   task_id:"a2a-bootstrap",agent_role:"orchestrator",
+   tool:"create_branch",arguments:{base_branch:"develop",branch}
+ }),(e:unknown)=>e instanceof GatewayError&&e.code==="approved_plan_denied");
+ assert.equal(h.store.size(),0);
+ assert.equal(h.providerCalls,0);
+ await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+ assert.equal(h.providerCalls,1);
+ assert.equal(h.opaCalls,1);
+});
