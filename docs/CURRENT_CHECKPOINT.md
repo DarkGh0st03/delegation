@@ -387,3 +387,62 @@ The dedicated offline suite
 (https://github.com/DarkGh0st03/delegation/actions/runs/39750696187)
 passed with the narrowed signed ADK behavior. The cumulative suites
 run independently.
+
+## 22 October — exact signed read_file versus update_file in one live A2A DAG
+
+**Validated code:** `cc1d162ce5d69787762b319f67df6a95d0364169`.
+**Validation:** [Cumulative Offline Refactoring Validation #39754904362]
+(https://github.com/DarkGh0st03/delegation/actions/runs/39754904362).
+**Result: 4/4 jobs SUCCESS, first attempt**. A subsequent focused
+A2A transport regression is also green:
+[Trusted Prebound A2A Dispatch #39755193640]
+(https://github.com/DarkGh0st03/delegation/actions/runs/39755193640).
+
+The immutable Engineer-approved plan now carries **operation-specific
+Task file hints** through the private prebound A2A dispatch:
+`approved_file_permissions: [{operation,path}]`. These are derived from
+the **approved permission rows**, never from a model request. A model
+can see a `read_file` tool for its explicitly approved context but
+not a `update_file` tool for that same context without a distinct
+approved write permission. The ADK path enum, prompts and local tool
+guard, as well as the private task-bearer MCP registry, enforce this
+presentation limit and pre-Gateway denial. Signed authorization remains
+independently enforced through Gateway, Rust DC/VP and OPA; the A2A
+metadata is not itself authenticated delegation authority.
+
+The **real Gitea + native EVM positive CI** was extended to two
+separate scripted specialist ADK/A2A tasks with **four authorized
+real provider file reads** (each agent reads its existing write
+target and one separate read-only context file) and **two real provider
+file commits** on its approved feature branch:
+- Backend reads `apps/backend/src/users/user.service.ts` and
+  `packages/shared/src/account-status.ts`, but may write only its
+  approved user service.
+- Frontend reads `apps/frontend/src/pages/UserDetailPage.tsx` and
+  `apps/frontend/src/api/users-api.ts`, but may write only the
+  approved UserDetailPage.
+- Test Agent runs native-Rust-verified signed `run_tests` on the
+  **resulting observed Git SHA**
+  `ea0ae979a1146a1e95463ef73731ba38e759a16f`, after both
+  writes are provider-confirmed.
+
+CI verifies the exact data fields:
+`native_approved_source_reads=4`,
+`real_backend_frontend_gitea_edits=2`,
+`native_rust_signed_child_and_vp=true`,
+`real_opa_signed_plan_policy=true`,
+`real_a2a_sdk_task_completed=true`,
+`exact_provider_sha_correlated=true`,
+six project phases pass, researcher acceptance passes, and
+Security CI status progresses `pending -> success`. No PR or merge.
+
+**Crucial limitation:** All agent models remain *deterministic
+`BaseLlm` scripts*, not Gemini; these scripts issue the reads, then
+append preselected harmless comments to existing reference
+implementations. They do **not** actually synthesize new source code
+from the retrieved files. File-read transport, scoped permissions
+and provider effects are real within disposable CI; autonomous
+generation and quality evaluation require a separate experiment
+with explicit permission before any paid Gemini call. This is not
+an LLM reliability benchmark and it does not implement a production
+Engineer authentication or persistent fault-recovery path.
