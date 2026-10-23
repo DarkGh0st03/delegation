@@ -622,3 +622,42 @@ host** after admitting one job. Its persisted replay/admission ledgers
 reject that same job again and allow the authenticated-only receipt to
 be consumed once after restart. This is not a deployed remote host,
 human plan approval or authorization for paid inference.
+
+
+## Persistently supervised Engineer host entrypoint (R5 offline)
+
+\`poc/apps/orchestrator/src/start-trusted-engineer-service.mjs\` is the
+**non-billable operator-owned bootstrap**, not a GitHub Actions workflow.
+It loads the absolute path \`DELEGATION_ENGINEER_SERVICE_CONFIG\` through
+\`trusted-engineer-service.mjs\`, refuses world/group-accessible files,
+symlinks and unsafe directories, and reads a local protected JSON config.
+
+The JSON config is operator-provisioned in a 0700 directory as a 0600
+file. It contains \`approval\`, \`oidc\` and \`recovery\` plus optional
+\`approvalPort\` and \`oidcPort\`. These use the same trusted fields
+as \`startTrustedEngineerRecoveringHost\`, except secret materials are
+referenced by **absolute owner-protected file paths**:
+\`approval.publicKeyPemFile\`,
+\`oidc.githubApiTokenFile\`, \`oidc.hmacSecretHexFile\`,
+\`oidc.tls.caFile\`, \`oidc.tls.certFile\`, \`oidc.tls.keyFile\`,
+\`recovery.adapterTokenFile\`. Existing
+\`approval.trustedPlanFile\`, \`approval.privateKeyFile\`,
+\`recovery.gatewaySecretFile\` are also verified. All persistent
+approval/replay/admission/recovery directories remain independently
+owner-only and distinct.
+
+The loader resolves these locally, then runs the existing strict
+bootstrap: **Gateway private IPC -> durable orphan-root reconciliation
+through the Rust Adapter -> Engineer UI on 127.0.0.1 -> mTLS private
+OIDC intake**. If recovery is ambiguous, it must fail closed *before*
+exposing listeners. A supervisor (e.g. systemd on a trusted host) owns
+service restarts and secret-file provisioning. A service process does
+not create a GitHub runner, VPN, signed Engineer approval, operational
+root, Gemini credentials or billable requests; a live in-process
+Coordinator and separately human-signed review remain prerequisites
+for R5 model dispatch. Signals SIGTERM/SIGINT initiate shutdown.
+
+Offline configuration tests cover owner-only secrets, symlinks,
+insecure directories, missing TLS and untrusted fields. **No service
+is installed or started outside the disposable test environment.**
+Use the guarded R5 NO-GO checklist before any external deployment.

@@ -1,0 +1,118 @@
+/**
+ * Non-billable, persistent Engineer-host BOOTSTRAP for an operator-controlled
+ * service machine. Reads only owner-controlled, local protected files.
+ * This module never calls Gemini, issues an operational root or supplies a
+ * fake signed approval. Actual Gateway IPC + Rust Adapter orphan-root
+ * reconciliation is performed by startTrustedEngineerRecoveringHost().
+ */
+import {open,lstat} from "node:fs/promises";
+import {constants} from "node:fs";
+import {dirname,isAbsolute,normalize} from "node:path";
+import {startTrustedEngineerRecoveringHost} from "./trusted-engineer-host.mjs";
+
+function denied(){
+  throw Error("Trusted Engineer service configuration denied");
+}
+function record(value){
+  return value!==null&&typeof value==="object"&&!Array.isArray(value);
+}
+async function ownedPrivateDir(path){
+  if(typeof path!=="string"||!isAbsolute(path)||normalize(path)!==path)
+    denied();
+  const st=await lstat(path);
+  if(!st.isDirectory()||st.isSymbolicLink()||(st.mode&0o077)!==0||
+     (typeof process.getuid==="function"&&st.uid!==process.getuid()))
+    denied();
+}
+async function protectedText(path,maxLength=131072){
+  if(typeof path!=="string"||!isAbsolute(path)||normalize(path)!==path)
+    denied();
+  await ownedPrivateDir(dirname(path));
+  // Don't follow an attacker-replaced final symlink, read the open inode.
+  const handle=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+  try{
+    const st=await handle.stat();
+    if(!st.isFile()||(st.mode&0o077)!==0||
+       (typeof process.getuid==="function"&&st.uid!==process.getuid())||
+       st.size===0||st.size>maxLength)denied();
+    return await handle.readFile({encoding:"utf8"});
+  }finally{await handle.close();}
+}
+function path(value){
+  if(typeof value!=="string"||!isAbsolute(value)||
+     normalize(value)!==value)denied();
+  return value;
+}
+/** Fail-closed loader; never accept configuration in GitHub events or HTTP. */
+export async function loadTrustedEngineerServiceConfig(configPath){
+  let source;
+  try{source=JSON.parse(await protectedText(configPath,32768));}
+  catch{denied();}
+  if(!record(source)||
+     Object.keys(source).some(k=>![
+       "approval","oidc","recovery","approvalPort","oidcPort"
+     ].includes(k))||
+     !record(source.approval)||!record(source.oidc)||
+     !record(source.recovery)||!record(source.oidc.tls)||
+     !record(source.oidc.pinned)||!record(source.oidc.trust))
+    denied();
+  const approval=source.approval,oidc=source.oidc,recovery=source.recovery;
+  const requiredPaths=[
+    approval.trustedPlanFile,approval.privateKeyFile,
+    approval.publicKeyPemFile,oidc.githubApiTokenFile,
+    oidc.hmacSecretHexFile,oidc.tls.caFile,
+    oidc.tls.certFile,oidc.tls.keyFile,
+    recovery.adapterTokenFile,recovery.gatewaySecretFile
+  ];
+  if(requiredPaths.some(v=>typeof v!=="string"))denied();
+  // Local signing key, plan, approval and recovery journal cannot be
+  // replaced by external workflow inputs or a model.
+  for(const p of [
+    approval.receiptDirectory,oidc.replayDirectory,
+    oidc.admissionDirectory,recovery.directory
+  ])await ownedPrivateDir(p);
+  if(new Set([
+    approval.receiptDirectory,oidc.replayDirectory,
+    oidc.admissionDirectory,recovery.directory
+  ]).size!==4)denied();
+  const reads=await Promise.all(requiredPaths.map(p=>protectedText(p)));
+  const [trustedPlan,signingKey,publicKey,githubApiToken,
+    hmacHex,ca,cert,key,adapterToken,gatewaySecret]=reads;
+  // Verify sensitive path ownership before the host opens them itself.
+  if(!trustedPlan.trim()||!signingKey.trim()||!gatewaySecret.trim()||
+     !publicKey.includes("BEGIN PUBLIC KEY")||
+     !/^[0-9a-f]{64,256}$/iu.test(hmacHex.trim())||
+     hmacHex.trim().length%2!==0||
+     githubApiToken.trim().length<8||
+     githubApiToken.trim().length>4096||
+     !adapterToken.trim()||adapterToken.trim().length>4096||
+     !ca.includes("BEGIN CERTIFICATE")||
+     !cert.includes("BEGIN CERTIFICATE")||
+     !key.includes("BEGIN")||
+     !/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/u
+       .test(oidc.tls.expectedClientFingerprint256??"")||
+     typeof recovery.adapterBaseUrl!=="string"||
+     typeof recovery.gatewaySocketPath!=="string"||
+     !isAbsolute(recovery.gatewaySocketPath))
+    denied();
+  const {publicKeyPemFile,...review}=approval;
+  const {githubApiTokenFile,hmacSecretHexFile,tls,...oidcSettings}=oidc;
+  const {adapterTokenFile,...recoverySettings}=recovery;
+  return Object.freeze({
+    approval:{...review,privateKeyFile:path(approval.privateKeyFile),
+      trustedPlanFile:path(approval.trustedPlanFile),
+      publicKeyPem:publicKey},
+    oidc:{...oidcSettings,githubApiToken:githubApiToken.trim(),
+      hmacSecret:Buffer.from(hmacHex.trim(),"hex"),
+      tls:{ca,cert,key,
+        expectedClientFingerprint256:tls.expectedClientFingerprint256}},
+    recovery:{...recoverySettings,gatewaySecretFile:
+      path(recovery.gatewaySecretFile),adapterToken:adapterToken.trim()},
+    approvalPort:source.approvalPort??0,
+    oidcPort:source.oidcPort??0
+  });
+}
+export async function startConfiguredTrustedEngineerService(configPath){
+  return startTrustedEngineerRecoveringHost(
+    await loadTrustedEngineerServiceConfig(configPath));
+}
