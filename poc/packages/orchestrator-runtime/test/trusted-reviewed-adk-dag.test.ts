@@ -205,7 +205,8 @@ async function exercise(x:Scenario,partial=false){
     await assert.rejects(gate.loadAuthenticatedApproval(snapshot.session_id));
     // The independent Engineer signs AFTER inspecting the exact staged plan.
     const allIds=proposal.plan.requested_permissions.map(p=>p.id);
-    const subset=partial?allIds.slice(0,-1):allIds;
+    const subset=partial?allIds.filter(id=>!proposal.plan.requested_permissions.some(p=>
+      p.id===id&&p.task_id==="tests")):allIds;
     const approvedAt=new Date();
     const decision=makeApproval(proposal.plan,{
       allowedOperations:new Set(RUST_OPERATIONS),
