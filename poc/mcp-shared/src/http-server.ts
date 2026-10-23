@@ -5,7 +5,7 @@ import {StreamableHTTPServerTransport} from "@modelcontextprotocol/sdk/server/st
 import {z} from "zod";
 import {bearerToken, verifyTaskToken, type VerificationKeys} from "./task-token.ts";
 import {TaskRouter} from "./task-router.ts";
-import {MCP_READ_FILE,MCP_UPDATE_FILE,MCP_CREATE_FILE,MCP_RUN_TESTS,MCP_CREATABLE_E2E_PATH,MAX_MCP_UPDATE_BYTES,MAX_MCP_CREATE_BYTES} from "./catalog.ts";
+import {MCP_READ_FILE,MCP_UPDATE_FILE,MCP_CREATE_FILE,MCP_RUN_TESTS,MAX_MCP_UPDATE_BYTES,MAX_MCP_CREATE_BYTES,isMcpFeatureBranch} from "./catalog.ts";
 
 export interface SharedMcpConfig {
   verificationKeys:VerificationKeys;
@@ -54,11 +54,13 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
       reply(res,400,{error:"invalid_or_oversized_mcp_json"});return;
     }
     const mcp=new McpServer({name:"thesis-shared-mcp",version:"0.1.0"});
+    // A tool schema validates syntax, not grant: active Task worker is authoritative.
+    const featureBranch=z.string().max(120).refine(isMcpFeatureBranch);
     if(config.profile!=="crypto") {
     mcp.registerTool(MCP_READ_FILE.name,{
       description:MCP_READ_FILE.description,
       inputSchema:{
-        branch:z.literal("feature/account-suspension"),
+        branch:featureBranch,
         path:z.string().min(1).max(2048)
       }
     },async args=>{
@@ -82,7 +84,7 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
     mcp.registerTool(MCP_UPDATE_FILE.name,{
       description:MCP_UPDATE_FILE.description,
       inputSchema:{
-        branch:z.literal("feature/account-suspension"),
+        branch:featureBranch,
         path:z.string().min(1).max(2048),
         // The transport caps the full HTTP body; parser checks actual UTF-8 bytes.
         content:z.string().max(MAX_MCP_UPDATE_BYTES)
@@ -108,8 +110,8 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
     mcp.registerTool(MCP_CREATE_FILE.name,{
       description:MCP_CREATE_FILE.description,
       inputSchema:{
-        branch:z.literal("feature/account-suspension"),
-        path:z.literal(MCP_CREATABLE_E2E_PATH),
+        branch:featureBranch,
+        path:z.string().min(1).max(2048),
         content:z.string().max(MAX_MCP_CREATE_BYTES)
       }
     },async args=>{
@@ -134,7 +136,7 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
     mcp.registerTool(MCP_RUN_TESTS.name,{
       description:MCP_RUN_TESTS.description,
       inputSchema:{
-        branch:z.literal("feature/account-suspension"),
+        branch:featureBranch,
         profile:z.literal("poc-default")
       }
     },async args=>{

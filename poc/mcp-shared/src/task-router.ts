@@ -20,16 +20,16 @@ export class TaskRouter {
     this.#workers=workers; this.#fetch=fetchFn;
   }
   async readFile(claims: Readonly<TaskClaims>, taskToken: string, raw: unknown): Promise<unknown> {
-    return this.#invoke(claims,taskToken,"read_file",parseReadFileArgs(raw));
+    return this.#invoke(claims,taskToken,"read_file",parseReadFileArgs(raw,"approved"));
   }
   async updateFile(claims: Readonly<TaskClaims>, taskToken: string, raw: unknown): Promise<unknown> {
-    return this.#invoke(claims,taskToken,"update_file",parseUpdateFileArgs(raw));
+    return this.#invoke(claims,taskToken,"update_file",parseUpdateFileArgs(raw,"approved"));
   }
   async createFile(claims: Readonly<TaskClaims>, taskToken: string, raw: unknown): Promise<unknown> {
-    return this.#invoke(claims,taskToken,"create_file",parseCreateFileArgs(raw));
+    return this.#invoke(claims,taskToken,"create_file",parseCreateFileArgs(raw,"approved"));
   }
   async runTests(claims: Readonly<TaskClaims>, taskToken: string, raw:unknown):Promise<unknown>{
-    return this.#invoke(claims,taskToken,"run_tests",parseRunTestsArgs(raw));
+    return this.#invoke(claims,taskToken,"run_tests",parseRunTestsArgs(raw,"approved"));
   }
   async createPresentation(
     claims:Readonly<TaskClaims>,taskToken:string,raw:unknown
