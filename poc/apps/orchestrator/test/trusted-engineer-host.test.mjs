@@ -428,3 +428,23 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     /trusted Coordinator recovery journal required/);
   await host.close();
 });
+
+
+
+test("Engineer host refuses wildcard OIDC binding and keeps Engineer login private",async t=>{
+  const f=await fixture(t);
+  await assert.rejects(startTrustedEngineerLocalHost({
+    ...f.config,oidc:{...f.config.oidc,bindAddress:"0.0.0.0"}
+  }),/public\/wildcard interface prohibited/);
+  await assert.rejects(startTrustedEngineerLocalHost({
+    ...f.config,oidc:{...f.config.oidc,bindAddress:"10.10.0.5"}
+  }),/requires pinned mTLS/);
+  const host=await startTrustedEngineerLocalHost({
+    ...f.config,oidc:{...f.config.oidc,bindAddress:"127.0.0.1"}
+  });
+  t.after(()=>host.close());
+  assert.match(host.engineerUrl,/^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.match(host.oidcAdmissionEndpoint,
+    /^http:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/oidc-admission$/);
+  assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+});

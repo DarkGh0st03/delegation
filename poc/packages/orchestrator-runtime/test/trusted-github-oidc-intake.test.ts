@@ -8,7 +8,8 @@ import {GithubOidcReplayFileStore}
   from "../src/trusted-github-oidc-replay-store.ts";
 import {TrustedGithubAdmissionReceiptStore}
   from "../src/trusted-github-admission-store.ts";
-import {startTrustedGithubOidcIntakeServer}
+import {startTrustedGithubOidcIntakeServer,
+  verifiedPrivateOidcBindAddress}
   from "../src/trusted-github-oidc-intake.ts";
 
 const repository="DarkGh0st03/delegation";
@@ -169,5 +170,45 @@ test("trusted admission rejects unpinned host configuration before listening",as
       pinned,trust,githubApiToken:"",admissionStore,
       replayStore:new GithubOidcReplayFileStore(directory)
     }),/host configuration missing/);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+
+
+test("OIDC admission binds ONLY loopback or explicitly mTLS-protected RFC1918",async()=>{
+  assert.equal(verifiedPrivateOidcBindAddress(undefined,false),"127.0.0.1");
+  assert.equal(verifiedPrivateOidcBindAddress("127.0.0.1",false),"127.0.0.1");
+  for(const address of ["10.14.2.6","172.16.1.2","172.31.255.254",
+                         "192.168.50.19"]){
+    assert.equal(verifiedPrivateOidcBindAddress(address,true),address);
+    assert.throws(()=>verifiedPrivateOidcBindAddress(address,false),
+      /requires pinned mTLS/);
+  }
+  for(const address of ["0.0.0.0","127.0.0.2","169.254.1.1","100.64.1.1",
+                         "172.32.1.1","192.169.1.1","8.8.8.8","::",
+                         "::1","[::]","private-host.example","10.0.0.1:8443"]){
+    assert.throws(()=>verifiedPrivateOidcBindAddress(address,true),
+      /interface/);
+  }
+  const directory=await mkdtemp(join(tmpdir(),"trusted-oidc-private-bind-"));
+  try{
+    const opts={pinned,trust,githubApiToken:"offline",
+      replayStore:new GithubOidcReplayFileStore(directory),
+      admissionStore:new TrustedGithubAdmissionReceiptStore({
+        directory,hmacSecret:Buffer.alloc(32,33),
+        expectedSessionId:"engineer-session-001"
+      })};
+    await assert.rejects(startTrustedGithubOidcIntakeServer({
+      ...opts,bindAddress:"10.0.0.8"
+    }),/requires pinned mTLS/);
+    await assert.rejects(startTrustedGithubOidcIntakeServer({
+      ...opts,bindAddress:"0.0.0.0"
+    }),/public\/wildcard interface prohibited/);
+    // No address is opened by either unsafe configuration.
+    const local=await startTrustedGithubOidcIntakeServer({
+      ...opts,bindAddress:"127.0.0.1"
+    });
+    assert.match(local.endpoint,/^http:\/\/127\.0\.0\.1:\d+\//);
+    await local.close();
   }finally{await rm(directory,{recursive:true,force:true});}
 });

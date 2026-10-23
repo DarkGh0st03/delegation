@@ -1,7 +1,9 @@
 /**
- * Single-process, LOCAL ONLY Engineer host for manual OIDC admission and
+ * Single-process Engineer host for manual OIDC admission and
  * independent human Ed25519 plan approval. No model or operational root is
- * started by this host. No network path is exposed to a GitHub runner.
+ * started by this host. Only the OIDC admission listener may use an
+ * explicitly configured private IPv4 mTLS interface; the Engineer UI ALWAYS
+ * stays on loopback. No network service is deployed by this module.
  *
  * Security boundaries remain separate:
  *  1. Signed GitHub job + live Actions run -> one-use authenticated admission
@@ -114,7 +116,8 @@ export async function startTrustedEngineerLocalHost(config){
       replayStore,admissionStore,
       githubApiFetchFn:oidc.githubApiFetchFn,
       oidcJwksFetchFn:oidc.oidcJwksFetchFn,
-      port:config.oidcPort??0,tls:oidc.tls
+      port:config.oidcPort??0,tls:oidc.tls,
+      bindAddress:oidc.bindAddress
     });
   }catch(error){
     await shutdown(engineerServer);
@@ -174,8 +177,9 @@ export async function startTrustedEngineerLocalHost(config){
 /**
  * Strict real-service bootstrap. Connect to the owner-only HMAC IPC Gateway,
  * construct the actual Adapter revocation client, reconcile on disk, and
- * ONLY THEN expose loopback Engineer UI/OIDC listeners. The private network
- * runner relay and live Planning root remain deployment prerequisites.
+ * ONLY THEN expose Engineer UI (loopback) and the chosen pinned mTLS
+ * OIDC admission interface. Private network routing, firewall isolation,
+ * persistent deployment and a live Planning root remain prerequisites.
  */
 export async function startTrustedEngineerRecoveringHost(config){
   // The permissive loopback HTTP admission mode exists only for unit

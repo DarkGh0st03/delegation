@@ -472,3 +472,45 @@ decision and actual provider effects are **test doubles**, so the result
 must not be represented as full real-infrastructure E2E. Live
 Gitea/Docker/OPA/Core Rust are separately validated by cumulative CI.
 It neither contacts GitHub nor constructs/invokes a Gemini model.
+
+
+
+## Strict private-network OIDC admission binding (R5 offline, 23 October)
+
+The admitted Engineer-host listener supports the **explicit**
+`oidc.bindAddress` setting. Its default is still `127.0.0.1`. A
+non-loopback address must be a literal **RFC1918 IPv4** interface in
+`10/8`, `172.16/12` or `192.168/16`, with server mTLS credentials and
+the independently pinned client certificate fingerprint already enforced
+by `trusted-github-oidc-intake.ts`. Public IPs, wildcard binds,
+hostname binds, IPv6 and insecure private HTTP are rejected before any
+socket is opened. Neither `0.0.0.0` nor a public reverse proxy is an
+accepted substitute. The Engineer login/CSRF listener always remains on
+`127.0.0.1`.
+
+The GitHub runner already has `submitTrustedGithubOidcFromRunner`: it
+verifies the server certificate chain, SAN and independently pinned SHA-256
+fingerprint, presents its own pinned mTLS client certificate, and submits
+the GitHub-issued OIDC token and event in a single limited request.
+Afterward the host independently checks GitHub issuer, Actions REST run,
+replay ledger and manual input bounds. **This does not approve the plan,
+release a Gemini key, or issue an operational DC.**
+
+To be *actually reachable* a host and an authorized GitHub runner must
+already share an independently provisioned private network (e.g. a
+restricted self-hosted runner on the same protected subnet or a separately
+managed VPN). The host's certificate requires a SAN matching the chosen
+private address, and ingress firewall rules should limit it to the
+designated runner. mTLS pins must come from protected host/runner
+configuration, never the workflow_dispatch event or model output.
+This repository does not deploy a VPN, server, runner or public endpoint.
+No API secret is delivered to GitHub-hosted CI; the legacy paid workflow
+must not be dispatched to bypass these requirements.
+
+**Offline validation:** `trusted-github-oidc-intake.test.ts` covers
+RFC1918 allowlisting and public/wildcard/unprotected bind refusal.
+`trusted-engineer-host.test.mjs` checks the Engineer UI is still local
+and unauthenticated clients cannot obtain the plan. Existing mTLS/IDC
+negative integration proves wrong runner cert, wrong CA, wrong server
+fingerprint and replay refusal. A genuine remote deployment/routing
+test remains a separate **R5 NO-GO** prerequisite.

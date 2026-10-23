@@ -1,7 +1,10 @@
 /**
  * Minimal authenticated intake for an existing trusted Engineer host.
  *
- * Deliberately LOCALHOST ONLY and AUTHENTICATION ONLY. This service never
+ * AUTHENTICATION ONLY. Default is loopback; operational deployments may
+ * explicitly bind ONE RFC1918 IPv4 interface under strict mTLS identity
+ * pinning. Never bind a wildcard/public interface or forward public HTTP.
+ * This service never
  * constructs a Gemini model, accepts API secrets, signs an Engineer receipt,
  * issues DCs, invokes the operational Coordinator or mutates Gitea.
  *
@@ -17,6 +20,7 @@
 import {createServer as createHttpServer,type IncomingMessage,type ServerResponse} from "node:http";
 import {createServer as createHttpsServer} from "node:https";
 import {timingSafeEqual} from "node:crypto";
+import {isIP} from "node:net";
 import type {TLSSocket} from "node:tls";
 import {GithubOidcReplayFileStore}
   from "./trusted-github-oidc-replay-store.ts";
@@ -31,6 +35,28 @@ import {verifyGithubManualGeminiDispatch,verifyGithubManualRunViaApi,
 
 const PATH="/v1/trusted/github/oidc-admission";
 const MAX_BYTES=48*1024;
+/**
+ * The only non-loopback listener allowed is an explicitly selected private
+ * IPv4 interface (RFC1918) with mutual TLS. Network routing and firewalls
+ * must be independently configured. This is NOT a deployment mechanism.
+ * No DNS name, 0.0.0.0, public IP, IPv6, or arbitrary loopback alias.
+ */
+export function verifiedPrivateOidcBindAddress(
+  value:string|undefined,tlsConfigured:boolean
+):string{
+  const address=value??"127.0.0.1";
+  if(address==="127.0.0.1")return address;
+  if(!tlsConfigured||isIP(address)!==4)
+    throw Error("Trusted OIDC intake: private interface requires pinned mTLS");
+  const octets=address.split(".").map(Number);
+  const [first,second]=octets;
+  const privateRfc1918=first===10||
+    (first===172&&second>=16&&second<=31)||
+    (first===192&&second===168);
+  if(!privateRfc1918)
+    throw Error("Trusted OIDC intake: public/wildcard interface prohibited");
+  return address;
+}
 const ENV_KEYS=[
   "GITHUB_ACTIONS","GITHUB_EVENT_NAME","GITHUB_RUN_ATTEMPT",
   "GITHUB_REPOSITORY","GITHUB_REF","GITHUB_WORKFLOW_REF",
@@ -71,7 +97,9 @@ export interface TrustedGithubOidcIntakeConfig{
   githubApiFetchFn?:typeof fetch;
   oidcJwksFetchFn?:typeof fetch;
   port?:number;
-  /** Optional mTLS on loopback; no network/public listener is added. */
+  /** Host-selected IPv4 address; default loopback. Non-loopback RFC1918 requires mTLS. */
+  bindAddress?:string;
+  /** mTLS mandatory for any private network listener. */
   tls?:Readonly<{key:string|Buffer;cert:string|Buffer;ca:string|Buffer;
     /** Host-pinned SHA256 fingerprint of the ONE admitted runner leaf. */
     expectedClientFingerprint256:string}>;
@@ -94,6 +122,9 @@ export async function startTrustedGithubOidcIntakeServer(
      !Number.isSafeInteger(config.port??0)||
      (config.port??0)<0||(config.port??0)>65535)
     throw Error("Trusted Github OIDC intake host configuration missing");
+  // Reject prohibited interfaces BEFORE allocating sockets or reading tokens.
+  const bindAddress=verifiedPrivateOidcBindAddress(
+    config.bindAddress,config.tls!==undefined);
   const validPem=(value:unknown)=>
     (typeof value==="string"||Buffer.isBuffer(value))&&
     Buffer.byteLength(value as string|Buffer)>0&&
@@ -174,8 +205,8 @@ export async function startTrustedGithubOidcIntakeServer(
       respond(403,{status:"denied"});
     }finally{active=false;}
   };
-  // mTLS is mandatory when TLS is configured; this listener never binds
-  // outside loopback. HTTP mode is retained only for existing local tests.
+  // Non-loopback RFC1918 is allowed only with full mTLS and a pinned
+  // client certificate. Password/CSRF Engineer UI remains localhost-only.
   const server=config.tls
     ?createHttpsServer({
       ...config.tls,requestCert:true,rejectUnauthorized:true,
@@ -187,7 +218,7 @@ export async function startTrustedGithubOidcIntakeServer(
   try{
     await new Promise<void>((resolve,reject)=>{
       server.once("error",reject);
-      server.listen(config.port??0,"127.0.0.1",()=>resolve());
+      server.listen(config.port??0,bindAddress,()=>resolve());
     });
   }catch(error){
     server.close();
@@ -198,7 +229,7 @@ export async function startTrustedGithubOidcIntakeServer(
     server.close();
     throw Error("Unable to determine trusted loopback port");
   }
-  const baseUrl=(config.tls?"https":"http")+"://127.0.0.1:"+address.port;
+  const baseUrl=(config.tls?"https":"http")+"://"+bindAddress+":"+address.port;
   let closed=false;
   return Object.freeze({
     baseUrl,endpoint:baseUrl+PATH,
