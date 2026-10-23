@@ -242,3 +242,18 @@ write results are still fixture-backed here. A model-directed wrong Backend
 path and a closed operational root must fail, exactly as before. This
 *reduces* the number of independent fixture boundaries but is not the final
 R3 real-provider E2E. It makes no paid API calls.
+
+
+### R3 Planning invariant: branch creation is a real protected Task
+
+The initial native EVM CI revealed a genuine contract mismatch: the ADK
+Planner correctly rejected a three-Agent DAG lacking the required initial
+Orchestrator `create_branch` Task. The native integration now uses a FOUR
+Task DAG: branch → Backend → Frontend → Test. Its first Task is executed
+through normal Gateway Prepare, the real operational Rust DC signed VP,
+Core Rust verification and live OPA, and its mocked provider produces a
+corroboratable Gitea-shaped branch effect. The signed DAG cannot advance
+to Backend without that successful trusted provider observation. The
+negative Backend test now expects only branch completion; Frontend/Test
+must still never run. These contract rules were not weakened to make the
+test pass, and `main` is never modified.

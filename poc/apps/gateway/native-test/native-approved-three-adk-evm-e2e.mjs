@@ -70,8 +70,12 @@ function credential(id,index,validity=1200){
  * this into the canonical permission/resource DAG after source inspection. */
 function planningSketch(){
   return {tasks:[
+    {id:"branch",agent_id:"orchestrator",title:"Create isolated feature branch",
+      description:"Create the exact work branch from the approved main SHA",
+      depends_on:[],permissions:[{operation:"create_branch",path:null,
+        reason:"Never modify main directly"}]},
     {id:"backend",agent_id:"backend",title:"Scoped backend update",
-      description:"Update the exact approved backend service",depends_on:[],
+      description:"Update the exact approved backend service",depends_on:["branch"],
       permissions:[{operation:"update_file",path:paths.backend,
         reason:"Approved backend edit"}]},
     {id:"frontend",agent_id:"frontend",title:"Scoped frontend update",
@@ -217,7 +221,11 @@ async function executeScenario({wrongBackend=false,seed}){
             return readOnlyExecutor.execute(record);
           if(args.branch!==branch)throw Error("Provider denied alternate branch");
           let result;
-          if(tool==="update_file"&&args.path===backendFile&&
+          if(tool==="create_branch"&&args.base_branch==="main"&&
+             expectedRevision===initial){
+            result={provider:"gitea",performed:true,tool,branch,
+              base_branch:"main",revision:initial,commit_sha:initial};
+          }else if(tool==="update_file"&&args.path===backendFile&&
              expectedRevision===initial){
             expectedRevision=revisions[0];
             result={provider:"gitea",performed:true,tool,branch,
@@ -258,9 +266,11 @@ async function executeScenario({wrongBackend=false,seed}){
             return response(x);
           }
           assert.equal(x.policy.policy_version,"phase6-approved-branch-v2");
-          assert.equal(x.verified_delegation.presenter_id,
-            did[x.execution.tool==="run_tests"?"test":
-              x.execution.path===backendFile?"backend":"frontend"]);
+          const exactPresenter=x.execution.tool==="create_branch"
+            ?process.env.ADAPTER_ID_ORCHESTRATOR
+            :did[x.execution.tool==="run_tests"?"test":
+              x.execution.path===backendFile?"backend":"frontend"];
+          assert.equal(x.verified_delegation.presenter_id,exactPresenter);
           return response(x);
         }
         throw Error("Unknown private Gateway route");
@@ -296,7 +306,7 @@ async function executeScenario({wrongBackend=false,seed}){
       e.event==="authorization_executed").length,1);
     approved=draft.plan;
     assert.deepEqual(approved.tasks.map(t=>t.id),
-      ["backend","frontend","tests"]);
+      ["branch","backend","frontend","tests"]);
     // The Planning backend and Engineer use INDEPENDENT signing keys.
     const planningKeys=generateKeyPairSync("ed25519");
     const checkpointAt=new Date();
@@ -345,6 +355,38 @@ async function executeScenario({wrongBackend=false,seed}){
         operation:x.operation,resource:x.resource
       })));
     phase="execution";
+    // The first Task is NOT a fake dispatcher success: the trusted
+    // orchestrator uses its genuine operational root signed by Rust and
+    // the same Gateway Prepare/Core Rust/OPA/provider boundary.
+    async function createApprovedBranch(planTaskId,privateTaskId){
+      assert.equal(planTaskId,"branch");
+      assert.match(privateTaskId,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+      const prepared=gateway.prepare({
+        task_id:privateTaskId,agent_role:"orchestrator",
+        tool:"create_branch",
+        arguments:{base_branch:"main",branch}
+      });
+      const vpResponse=await fetch(adapter+"/v1/presentations",{
+        method:"POST",
+        headers:{authorization:"Bearer "+
+          process.env.ADAPTER_CALLER_ORCHESTRATOR,
+          "content-type":"application/json"},
+        body:JSON.stringify({
+          credential_id:operational.credential_id,
+          disclosed_permissions:[prepared.required_permission],
+          audience:prepared.audience,challenge:prepared.challenge
+        })
+      });
+      assert.equal(vpResponse.status,200);
+      const {signed_vp}=await vpResponse.json();
+      assert.ok(typeof signed_vp==="string"&&signed_vp.length>100);
+      const executed=await gateway.execute({
+        request_id:prepared.request_id,signed_vp
+      });
+      assert.equal(executed.execution.tool,"create_branch");
+      assert.equal(executed.execution.performed,true);
+      assert.equal(executed.execution.provider,"gitea");
+    }
     const urls={},models={};
     const specs={
       backend:{tool:"update_file",args:{branch,
@@ -386,18 +428,22 @@ async function executeScenario({wrongBackend=false,seed}){
       }
     });
     if(wrongBackend){
-      await assert.rejects(dispatcher.executeApprovedDag(),
-        /Protected A2A task ended without completion|ADK|failed/);
-      assert.deepEqual(dispatcher.completedTaskIds,[]);
-      assert.equal(effectCount,0);
+      await assert.rejects(dispatcher.executeApprovedDag({
+        invokeOrchestratorTask:createApprovedBranch
+      }),/Protected A2A task ended without completion|ADK|failed/);
+      assert.deepEqual(dispatcher.completedTaskIds,["branch"]);
+      assert.equal(effectCount,1);
       assert.equal(coordinator.phase,"closed");
     }else{
-      const result=await dispatcher.executeApprovedDag();
-      assert.deepEqual(result.completed_task_ids,["backend","frontend","tests"]);
+      const result=await dispatcher.executeApprovedDag({
+        invokeOrchestratorTask:createApprovedBranch
+      });
+      assert.deepEqual(result.completed_task_ids,
+        ["branch","backend","frontend","tests"]);
       assert.deepEqual(result.specialized_results.map(x=>x.role),agents);
-      assert.equal(effectCount,3);
+      assert.equal(effectCount,4);
       assert.deepEqual(observations.map(x=>x.tool),
-        ["update_file","update_file","run_tests"]);
+        ["create_branch","update_file","update_file","run_tests"]);
       assert.equal(expectedRevision,revisions[1]);
       assert.equal(coordinator.phase,"closed");
       for(const role of agents){
