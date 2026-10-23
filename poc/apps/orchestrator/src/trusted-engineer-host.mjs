@@ -12,6 +12,8 @@
  *     handoff (never callable over either HTTP service).
  */
 import {lstat} from "node:fs/promises";
+import {createTrustedReviewedHandoffLifecycle}
+  from "./trusted-reviewed-handoff-lifecycle.mjs";
 import {resolve} from "node:path";
 import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
@@ -129,7 +131,9 @@ export async function startTrustedEngineerLocalHost(config){
     repository:oidc.pinned.repository,
     ref:oidc.pinned.ref
   });
-  let closed=false;
+  let closed=false,shutdownPromise;
+  const handoff=createTrustedReviewedHandoffLifecycle(trusted=>
+    startAdmittedGithubReviewedGeminiHandoff(trusted));
   return Object.freeze({
     engineerUrl,
     oidcAdmissionEndpoint:oidcIntake.endpoint,
@@ -152,7 +156,7 @@ export async function startTrustedEngineerLocalHost(config){
       if(typeof trusted.coordinator?.assertOperationalRecoveryStore!=="function")
         deny("trusted Coordinator recovery journal required");
       trusted.coordinator.assertOperationalRecoveryStore(operationalRecoveryStore);
-      return startAdmittedGithubReviewedGeminiHandoff({
+      return handoff.start({
         ...trusted,admissionStore,pins:{...fixedPins,runId},
         // Host configuration wins over every in-process caller argument.
         githubApiToken:oidc.githubApiToken,
@@ -160,15 +164,20 @@ export async function startTrustedEngineerLocalHost(config){
         expectedWorkflowPath:oidc.pinned.workflowPath
       });
     },
-    async close(){
-      if(closed)return;
+    close(){
+      if(shutdownPromise)return shutdownPromise;
       closed=true;
-      const results=await Promise.allSettled([
-        oidcIntake.close(),shutdown(engineerServer)
-      ]);
-      const failures=results.filter(x=>x.status==="rejected");
-      if(failures.length)
-        deny("server shutdown incomplete; manual reconciliation required");
+      shutdownPromise=(async()=>{
+        // Crucial: the host must own the operational root lifetime, even
+        // if SIGTERM races ongoing Gemini/A2A server startup. Never report
+        // clean shutdown while a delegated root may remain live.
+        const results=await Promise.allSettled([
+          handoff.close(),oidcIntake.close(),shutdown(engineerServer)
+        ]);
+        if(results.some(r=>r.status==="rejected"))
+          deny("Engineer shutdown incomplete: operational root revocation or listener teardown unconfirmed; manual reconciliation required");
+      })();
+      return shutdownPromise;
     }
   });
 }

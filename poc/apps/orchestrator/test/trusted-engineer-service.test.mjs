@@ -173,3 +173,59 @@ test("service rejects unknown nested host authorities and untrusted runtime over
     }
   }finally{await f.close();}
 });
+
+
+test("trusted handoff lifecycle refuses second approval/run and closes authority exactly once",async()=>{
+  const {createTrustedReviewedHandoffLifecycle}=await import(
+    "../src/trusted-reviewed-handoff-lifecycle.mjs");
+  let started=0,revoked=0;
+  const owner=createTrustedReviewedHandoffLifecycle(async input=>{
+    started++;
+    assert.equal(input.session,"approved");
+    return {async close(){revoked++;}};
+  });
+  const running=await owner.start({session:"approved"});
+  assert.equal(typeof running.close,"function");
+  assert.equal(owner.status,"active");
+  assert.throws(()=>owner.start({session:"unapproved"}),/already attempted/);
+  await Promise.all([owner.close(),owner.close()]);
+  assert.equal(started,1);
+  assert.equal(revoked,1);
+  assert.equal(owner.status,"closed");
+  assert.throws(()=>owner.start({session:"replayed"}),/already attempted/);
+});
+test("SIGTERM racing an unfinished approved handoff still revokes its root",async()=>{
+  const {createTrustedReviewedHandoffLifecycle}=await import(
+    "../src/trusted-reviewed-handoff-lifecycle.mjs");
+  let unblock;
+  const pending=new Promise(resolve=>{unblock=resolve;});
+  let revoked=0;
+  const owner=createTrustedReviewedHandoffLifecycle(async()=>{
+    await pending;
+    return {async close(){revoked++;}};
+  });
+  const started=owner.start({});
+  const stopping=owner.close();
+  unblock();
+  await assert.rejects(started,/host shutdown/);
+  await stopping;
+  assert.equal(revoked,1);
+  assert.equal(owner.status,"closed");
+});
+test("unconfirmed delegated-root revocation blocks clean host shutdown",async()=>{
+  const {createTrustedReviewedHandoffLifecycle}=await import(
+    "../src/trusted-reviewed-handoff-lifecycle.mjs");
+  let attempts=0;
+  const owner=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){
+      attempts++;
+      throw Error("revocation unconfirmed");
+    }
+  }));
+  await owner.start({});
+  await assert.rejects(owner.close(),/revocation unconfirmed/);
+  await assert.rejects(owner.close(),/revocation unconfirmed/);
+  assert.equal(attempts,1);
+  assert.equal(owner.status,"closing");
+  assert.throws(()=>owner.start({}),/already attempted/);
+});
