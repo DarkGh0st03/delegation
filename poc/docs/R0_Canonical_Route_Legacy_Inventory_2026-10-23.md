@@ -1,0 +1,127 @@
+# R0 — Canonical route, integration ownership and legacy inventory
+
+**Work branch:** `refactor/post-prof-plan-contracts-20261021`  
+**Starting baseline:** `242b4d15626e3db1e1b267f2bbe3e35b285b0ffd`  
+**`main` reference:** `62c5c2f4c81c92218a262204a3f1a5acb00f8867`  
+**Approved roadmap:** `Tesi_Delegation_Handoff_Completo_Roadmap_e_Pulizia_23-10-2026.pdf` (R0→R7).  
+**Safety rule:** no merge; no Gemini Developer API calls without explicit user authorization.
+
+This is the *source-of-truth integration inventory* for R0, not evidence
+that a single full generative run already completed. File classifications
+are **initial** and must be revised using actual runtime callers before R6
+removes anything. Verification evidence must distinguish real-provider CI,
+local process integrations and simulated/model-scripted tests.
+
+## Canonical architecture, in execution order
+
+```text
+Requirement + pinned Gitea snapshot
+  -> Engineer read-only Planning root
+  -> ADK Planner read_repository/list_directory/read_file
+     -> Gateway Prepare -> Adapter VP -> Rust verification/OPA -> Gitea
+  -> Backend-signed Planning checkpoint (session, Gitea SHA, digest)
+  -> authenticated Engineer console + independent signed permission subset
+  -> trusted Coordinator: revoke Planning, journal, issue independent root
+  -> Gateway activates same signed plan; timed lease via HMAC private IPC
+  -> approved A2A dispatcher: bind Task/role/permissions before child DC
+  -> Backend / Frontend / Test ADK handler with Task-minimal context
+  -> approved MCP tools + PRIVATE cryptographic MCP proof path
+  -> Gateway Prepare + signed VP + native Rust verification + OPA
+  -> Gitea, Docker Runner, exact-commit acceptance, PR (no automatic merge)
+  -> Gateway close, Rust root revocation, durable reconciliation
+```
+
+## Critical files and trust boundaries
+
+| Boundary | Authoritative source (relative to repository) | Verified behavior / still missing |
+|---|---|---|
+| Preliminary and operational roots | `poc/packages/orchestrator-runtime/src/trusted-engineer-authority.ts`, `trusted-execution-coordinator.ts` | Independent root issuance, revocation, plan digest; actual persistence handled separately |
+| Planning read transport | `poc/packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts`, `orchestrator-gateway-client.ts` | Exact Gitea SHA, scope and Gateway Prepare→signed VP→Execute. R1 test covers **two file reads plus repository metadata and two directory listings** with five VP/OPA checks; simulated Adapter verifier/policy in this specific test |
+| ADK plan compilation | `poc/packages/orchestrator-runtime/src/trusted-adk-planner.ts` | Trusted file list, read budgets and structured **unapproved** plan; no real Gemini Planning E2E yet |
+| Checkpoint signature and persistent import | `poc/packages/orchestrator-runtime/src/trusted-planning-checkpoint.ts`, `trusted-planning-checkpoint-store.ts` | Pinned backend Ed25519 signature, session/digest/SHA, no model-owned key; new canonical driver still needed |
+| Engineer console + review | `poc/apps/orchestrator/src/engineer-approval-server.mjs`, `poc/packages/orchestrator-runtime/src/signed-approval-store.ts`, `trusted-planning-review-gate.ts` | Password/CSRF, independent Engineer Ed25519 permission subset; offline cross-process test |
+| Trusted handoff and crash recovery | `poc/apps/orchestrator/src/trusted-engineer-host.mjs`, `poc/packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts`, `trusted-manual-gemini-handoff.ts` | Revoke before activation; fail-closed journaling; live remote installation not yet shown |
+| Signed Task scheduling | `poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts`, `trusted-approved-child-issuer.ts` | Task prebinding, DAG, role, child DC; generic three-agent pipeline in one E2E still pending |
+| Three ADK roles | `poc/packages/agent-runtime/src/adk-a2a-handler.ts`, `adk-specialized-agents.ts`, `server.ts` | Generic signed-task path exists; legacy Account Suspension branch/opt-ins remain |
+| Shared operational MCP | `poc/mcp-shared/src/catalog.ts`, `http-server.ts`, `task-router.ts` | Tool catalog/validated bearer, not independently security-authoritative; branch assumptions must be migrated |
+| Private cryptographic MCP | `poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts`, `poc/mcp-shared/src/crypto-catalog.ts`, `poc/packages/agent-runtime/src/private-mcp-task-registry.ts` | Opaque proof reference; VP not returned to the model. Opt-in today; R1 must connect universally where required |
+| Core enforcement | `poc/apps/gateway/src/approved-execution-plans.ts`, `prepare.ts`, `execute.ts` | Signed plan/task/resource/digest checks independent from DC/VP native Rust and OPA; provider checked before effects |
+| Deployment control | `poc/apps/gateway/src/main.ts`, `trusted-plan-deployment.ts`, `trusted-plan-ipc.ts` | Single registry instance for HTTP Gateway and owner-only private control, lease renewal |
+| GitHub trust boundary | `poc/packages/orchestrator-runtime/src/trusted-github-oidc-intake.ts`, `trusted-admitted-github-handoff.ts`, `trusted-github-oidc-submit.ts` | OIDC real JWT test, HMAC admission, live run recheck; secure deployed runner-host network path NOT present |
+| Real provider & acceptance | Gitea and Docker execution scripts under `poc/packages/agent-runtime/scripts/`; cumulative GitHub Actions | Rust/EVM/Gitea/Docker CI tested separately; all-new-architecture single scripted run R3 **pending** |
+
+No module in this table can be retired without checking its importers,
+runtime entrypoints, Docker/CI setup, exports and regression tests.
+
+## Early cleanup classification (C0/C1 now; removal only at R6)
+
+| Component | Class / decision | Evidence needed to migrate or remove |
+|---|---|---|
+| Planning → checkpoint → review → coordinator → signed A2A dispatcher | **A / KEEP** | Core new path. Consolidate call sites, do not duplicate |
+| `adk-specialized-agents.ts` approved-Task route | **A + B / KEEP, MIGRATE callers** | Verify tool selection and private signed task constraints with two non-Account-Suspension requirements |
+| Opt-in shared/crypto MCP flags and fallback FunctionTools | **B / MIGRATE** | Test same signed Task with MCP/Gateway path; prove no legacy bypass before pruning |
+| Legacy fixed `feature/account-suspension` source assumptions | **B / MIGRATE** | Remove only after generic work-branch and file scopes are tested through real provider |
+| `.github/workflows/gemini-paid-shared-mcp-final.yml` | **C / RETAIN AS PRIOR EXPERIMENT** | Old paid Gemini proof uses different flow; do not call it the new approved workflow; preserve until R5/R6 comparative analysis |
+| `a2a-production-coordinator-mcp-gemini-live.mjs` | **B+C / LEGACY DEMO** | Must not become canonical entrypoint without review/porting of planning+approval |
+| `.github/workflows/trusted-gemini-dispatch-preflight.yml` | **A / INPUT VALIDATION ONLY** | No active Planning or Engineer approval implied; not executable E2E |
+| `workflow-ui/mock-plan.js` and scripted models | **C / TEST ONLY** | Keep until replacement tests verify same production path |
+| `poc/apps/gateway/src/composite-authorization.ts` | **A / KEEP AS AUTHORIZATION-ONLY** | `authorization_only:true` is *not* an atomic provider batch; no batch implementation required for R3 |
+| Other possibly unused files | **F / UNVERIFIED** | Not safe to classify as dead using filename or grep alone |
+| Build outputs, temporary keys/secrets and local fixtures | **E / ENVIRONMENT** | Exclude from version control; audit CI scripts/.gitignore in R6 |
+
+## Required sequence of next gates
+
+**R0 — Route ownership:** This critical-file map, execution-order diagram and
+legacy candidates are documented. The legacy paid workflow remains explicitly
+separate. Close R0 after CI verifies new multi-read regression.
+
+**R1 — One authoritative tool/authority route:** Audit ADK FunctionTool and
+MCP callers, normalize Task/branch scopes, wire existing crypto MCP bridge
+through the real agent runtime, preserve Gateway/Rust/OPA enforcement.
+Run positive and denial tests against real Gateway. The completed R1 multi-read
+test verifies five authorizations with two distinct file contents; it does
+not alone satisfy the complete R1 gate.
+
+**R2 — Generic Planner and agents:** Two distinct application requirements,
+real ADK scripted planning, the *same* immutable signed checkpoint and
+Engineer subset approval, generic Backend/Frontend/Test dispatch. No
+hard-coded transformations that predetermine the code changes.
+
+**R3 — Single unified offline E2E:** Disposable Gitea+OPA+Anvil+Rust Adapter,
+Gateway native Rust verifier, approved MCP, three ADK agents, real Docker
+tests, PR left open. Models can be scripted **only as decision sources**; the
+same runner/handler/provider must be used for a future paid Gemini run.
+
+**R4 — Negative tests and bounded threat model:** Plan/digest/role/permissions,
+main write deny, replay, revoked VP, OPA refusal, lease expiry and
+reconciliation. Technical Go/No-Go before any billable inference.
+
+**R5 — Gemini real (explicit opt-in):** No API calls without user approval.
+Separate GitHub OIDC admission from human Engineer approval and costs.
+Evaluate generated plan, implementation, acceptance, safety and billing.
+
+**R6 — Mandatory cleanup:** Build a full dependency graph (imports, dynamic
+loads, workspace scripts, workflow files, Docker and env, docs, routes),
+migrate active callers, remove dead files **in coherent batches**, run all
+regressions and real-provider acceptance after each batch. Preserve only
+justified compatibility or experimental evidence. Mark every removed file
+with replacement/evidence; fail if unwanted legacy imports remain.
+
+**R7 — Freeze final reproducible thesis:** Final commit, test receipts,
+diagrammed trust boundaries, architecture comparison, defense presentation,
+remaining explicit limitations and branch protection/merge decision.
+
+## Mandatory operating rules
+
+1. Keep `main` untouched, no automatic PR merge.
+2. Test offline autonomously; Gemini only on an explicit user request.
+3. A JWT authenticates a GitHub job, *not* software permissions or a human.
+4. Tool availability and ADK callbacks never replace Gateway/Core Rust/OPA.
+5. Do not delete legacy before the new flow has proven its replacement.
+6. Every block must end with a specific SHA, relevant CI jobs, negative-case
+   coverage and honest scope of mocks vs. real providers.
+
+**Current blocker for R2/R3:** a canonical executable driver connecting
+the existing ADK Planner → signed checkpoint → Engineer review →
+TrustedApprovedA2ADispatcher → approved three-agent path, without using
+the older preprogrammed Account Suspension workflow.
