@@ -212,9 +212,9 @@ async function disposableMtls(tlsDir){
     cmd(["req","-newkey","rsa:2048","-nodes","-subj",subject,
       "-keyout",role+".key","-out",role+".csr"]);
     writeFileSync(join(tlsDir,role+".ext"),
-      "basicConstraints=critical,CA:FALSE\\n"+
-      "keyUsage=critical,digitalSignature,keyEncipherment\\n"+
-      "extendedKeyUsage="+usage+"\\n"+
+      "basicConstraints=critical,CA:FALSE\n"+
+      "keyUsage=critical,digitalSignature,keyEncipherment\n"+
+      "extendedKeyUsage="+usage+"\n"+
       extra,{mode:0o600});
     cmd(["x509","-req","-days","1","-in",role+".csr",
       "-CA","ca.pem","-CAkey","ca.key","-CAcreateserial",
@@ -225,7 +225,7 @@ async function disposableMtls(tlsDir){
     };
   };
   const server=signed("server","/CN=127.0.0.1","serverAuth",
-    "subjectAltName=IP:127.0.0.1\\n");
+    "subjectAltName=IP:127.0.0.1\n");
   const client=signed("trusted","/CN=trusted-runner","clientAuth");
   const rogue=signed("rogue","/CN=rogue-runner","clientAuth");
   const ca=readFileSync(join(tlsDir,"ca.pem"),"utf8");
@@ -250,7 +250,7 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
   });
   t.after(()=>host.close());
   assert.match(host.oidcAdmissionEndpoint,
-    /^https:\\/\\/127\\.0\\.0\\.1:\\d+\\/v1\\/trusted\\/github\\/oidc-admission$/);
+    /^https:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/oidc-admission$/);
   const submission={
     tokenRequestUrl:"https://pipelines.actions.githubusercontent.com/oidc",
     tokenRequestBearer:"offline-local-oidc-bearer",audience:aud,
