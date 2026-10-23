@@ -35,8 +35,14 @@ export function createTrustedReviewedHandoffLifecycle(start){
       shutdown=(async()=>{
         // A concurrently starting handoff can issue its operational root
         // after shutdown began. Wait, then revoke that root too.
-        if(attempt)await attempt.catch(()=>{});
+        let startingFailed=false;
+        if(attempt)await attempt.catch(()=>{startingFailed=true;});
         if(active)await active.close();
+        // If start rejected before returning a closable authority, the
+        // caller cannot independently prove that no root was issued.
+        // Treat it as revocation uncertainty, never clean success.
+        if(startingFailed&&!active)
+          throw Error("Trusted handoff start failed without independently confirmed root closure; manual reconciliation required");
         state="closed";
       })();
       // On failure retain the rejected promise; silently retrying could

@@ -229,3 +229,16 @@ test("unconfirmed delegated-root revocation blocks clean host shutdown",async()=
   assert.equal(owner.status,"closing");
   assert.throws(()=>owner.start({}),/already attempted/);
 });
+
+
+test("rejected trusted handoff start cannot be misreported as clean shutdown",async()=>{
+  const {createTrustedReviewedHandoffLifecycle}=await import(
+    "../src/trusted-reviewed-handoff-lifecycle.mjs");
+  const owner=createTrustedReviewedHandoffLifecycle(async()=>{
+    throw Error("operational root revocation unconfirmed");
+  });
+  await assert.rejects(owner.start({}),/revocation unconfirmed/);
+  await assert.rejects(owner.close(),/manual reconciliation required/);
+  assert.equal(owner.status,"closing");
+  assert.throws(()=>owner.start({}),/already attempted/);
+});
