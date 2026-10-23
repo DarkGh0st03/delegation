@@ -595,3 +595,23 @@ Merely labelling a runner \`delegation-private\` or adding a required
 reviewer to GitHub YAML does not install the necessary protection.
 The workflow MUST remain unexecuted while any of these preconditions
 is absent. No Gemini call is permitted under this workflow.
+
+
+### Cross-process private-IP mTLS admission proof (offline)
+
+\`trusted-engineer-host.test.mjs\` now includes a two-OS-process
+integration: a real Engineer host binds an **OS-assigned RFC1918 IPv4**
+address, while a separate Node process loads protected runner files and
+submits HTTPS/mTLS over that non-loopback interface. The test signs a
+disposable GitHub-formatted JWT locally, uses a mocked GitHub JWKS/REST
+issuer, and verifies the host's on-disk one-use replay and admission
+record. A second request, a wrong server fingerprint and an
+unauthenticated attempt must fail. The Engineer UI stays on loopback;
+successful admission still does **not** sign or issue anything.
+
+This does **not** contact GitHub, establish a VPN, use a Gemini key,
+or show deployment on two separate physical hosts. On CI environments
+without a real RFC1918 interface the test is **explicitly skipped**
+rather than silently treating \`127.0.0.1\` as a network E2E. Record
+whether it actually ran before promoting R5 readiness. No billable
+workflow is executed by this test.

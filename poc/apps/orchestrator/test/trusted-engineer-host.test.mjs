@@ -198,7 +198,7 @@ test("host rejects insecure persistent directories and never starts unsafe ports
 });
 
 
-async function disposableMtls(tlsDir){
+async function disposableMtls(tlsDir,serverIp="127.0.0.1"){
   const {execFileSync}=await import("node:child_process");
   const {X509Certificate}=await import("node:crypto");
   await mkdir(tlsDir,{mode:0o700});
@@ -224,8 +224,8 @@ async function disposableMtls(tlsDir){
       key:readFileSync(join(tlsDir,role+".key"),"utf8")
     };
   };
-  const server=signed("server","/CN=127.0.0.1","serverAuth",
-    "subjectAltName=IP:127.0.0.1\n");
+  const server=signed("server","/CN="+serverIp,"serverAuth",
+    "subjectAltName=IP:"+serverIp+"\n");
   const client=signed("trusted","/CN=trusted-runner","clientAuth");
   const rogue=signed("rogue","/CN=rogue-runner","clientAuth");
   const ca=readFileSync(join(tlsDir,"ca.pem"),"utf8");
@@ -447,4 +447,120 @@ test("Engineer host refuses wildcard OIDC binding and keeps Engineer login priva
   assert.match(host.oidcAdmissionEndpoint,
     /^http:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/oidc-admission$/);
   assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+});
+
+
+test("two OS processes exchange pinned private-IP mTLS OIDC and reject replay or server drift",async t=>{
+  const {networkInterfaces}=await import("node:os");
+  const interfaces=Object.values(networkInterfaces()).flat().filter(Boolean);
+  const selected=interfaces.find(x=>{
+    if(x.family!=="IPv4"||x.internal)return false;
+    const [first,second]=x.address.split(".").map(Number);
+    return first===10||first===172&&second>=16&&second<=31||
+      first===192&&second===168;
+  });
+  if(!selected){
+    // Do not disguise loopback as a successfully tested private network.
+    t.skip("No OS-assigned RFC1918 interface; cross-process private route not exercised");
+    return;
+  }
+  const f=await fixture(t);
+  const home=await mkdtemp(join(tmpdir(),"private-ip-oidc-"));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  const {ca,tls,serverTls,rogue,X509Certificate}=
+    await disposableMtls(join(home,"certificates"),selected.address);
+  const actualWorkflow=".github/workflows/trusted-private-github-admission.yml";
+  const workflowRef=repository+"/"+actualWorkflow+"@"+ref;
+  const eventPrivate={...event};
+  const signedJwt=jwt({workflow_ref:workflowRef});
+  const host=await startTrustedEngineerLocalHost({
+    ...f.config,
+    oidc:{
+      ...f.config.oidc,
+      pinned:{...f.config.oidc.pinned,workflowPath:actualWorkflow},
+      bindAddress:selected.address,tls:serverTls,
+      githubApiFetchFn:async()=>new Response(JSON.stringify({
+        id:Number(runId),event:"workflow_dispatch",run_attempt:1,
+        status:"in_progress",head_sha:sha,
+        head_branch:ref.slice("refs/heads/".length),path:actualWorkflow,
+        head_repository:{full_name:repository},
+        created_at:new Date().toISOString()
+      }),{status:200})
+    }
+  });
+  t.after(()=>host.close());
+  assert.match(host.engineerUrl,/^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.equal(new URL(host.oidcAdmissionEndpoint).hostname,selected.address);
+  assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+
+  const storeDir=join(home,"runner-secret-store");
+  await mkdir(storeDir,{mode:0o700});
+  const paths={
+    config:join(storeDir,"client.json"),
+    ca:join(storeDir,"ca.pem"),
+    cert:join(storeDir,"client.pem"),
+    key:join(storeDir,"client.key"),
+    event:join(storeDir,"github-event.json"),
+    payload:join(storeDir,"offline-fixture.json")
+  };
+  for(const [target,textValue] of [
+    [paths.ca,ca],[paths.cert,tls.cert],[paths.key,tls.key],
+    [paths.event,JSON.stringify(eventPrivate)]
+  ])await writeFile(target,textValue,{mode:0o600});
+  const settings={
+    expectedRepository:repository,expectedRef:ref,
+    expectedWorkflowPath:actualWorkflow,expectedSourceSha:sha,
+    intakeUrl:host.oidcAdmissionEndpoint,
+    audience:aud,
+    expectedServerFingerprint256:tls.expectedServerFingerprint256,
+    caFile:paths.ca,clientCertFile:paths.cert,clientKeyFile:paths.key
+  };
+  await writeFile(paths.config,JSON.stringify(settings),{mode:0o600});
+  const environment={
+    ...env,GITHUB_WORKFLOW_REF:workflowRef,
+    GITHUB_EVENT_PATH:paths.event,
+    DELEGATION_RUNNER_OIDC_CONFIG:paths.config,
+    ACTIONS_ID_TOKEN_REQUEST_URL:
+      "https://token.actions.githubusercontent.com/oidc",
+    ACTIONS_ID_TOKEN_REQUEST_TOKEN:"offline-only-token-not-real"
+  };
+  await writeFile(paths.payload,JSON.stringify({
+    environment,oidcJwt:signedJwt
+  }),{mode:0o600});
+  const {promisify}=await import("node:util");
+  const {execFile}=await import("node:child_process");
+  const run=promisify(execFile);
+  const child=new URL("./fixtures/private-oidc-child.mjs",import.meta.url);
+  const options={env:{
+    ...process.env,PRIVATE_OIDC_OFFLINE_FIXTURE:paths.payload
+  },timeout:20000,maxBuffer:8192};
+  const {stdout,stderr}=await run(process.execPath,[
+    "--experimental-strip-types",child.pathname
+  ],options);
+  assert.equal(stderr,"");
+  assert.deepEqual(JSON.parse(stdout),{
+    status:"authenticated_only_not_engineer_approved",
+    run_id:runId,source_sha:sha,
+    engineer_approval:"not_checked",
+    operational_credential:"not_issued",gemini_calls:0
+  });
+  assert.equal((await readdir(f.admissions)).length,1);
+  assert.equal((await readdir(f.replays)).length,1);
+  await assert.rejects(run(process.execPath,[
+    "--experimental-strip-types",child.pathname
+  ],options),/Command failed/);
+  assert.equal((await readdir(f.admissions)).length,1);
+  // New runner-side pin cannot be replaced with another CA-signed leaf.
+  await writeFile(paths.config,JSON.stringify({
+    ...settings,expectedServerFingerprint256:
+      new X509Certificate(rogue.cert).fingerprint256
+  }),{mode:0o600});
+  await assert.rejects(run(process.execPath,[
+    "--experimental-strip-types",child.pathname
+  ],options),/Command failed/);
+  assert.equal((await readdir(f.admissions)).length,1);
+  const record=await host.consumeAuthenticatedRun(runId);
+  assert.equal(record.session_id,f.plan.session_id);
+  assert.ok(!("approved_permission_ids" in record));
+  assert.ok(!("operational_root_id" in record));
 });
