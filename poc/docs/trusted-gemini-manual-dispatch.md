@@ -514,3 +514,50 @@ and unauthenticated clients cannot obtain the plan. Existing mTLS/IDC
 negative integration proves wrong runner cert, wrong CA, wrong server
 fingerprint and replay refusal. A genuine remote deployment/routing
 test remains a separate **R5 NO-GO** prerequisite.
+
+
+## Opt-in self-hosted runner handoff (R5 offline, unconfigured)
+
+The **separate** \`.github/workflows/trusted-private-github-admission.yml\`
+is a manual, non-billable admission-only workflow, NOT the legacy paid
+workflow. Its labels \`self-hosted, linux, x64, delegation-private\`
+mean it requires an *already deployed, isolated and administratively
+trusted* runner with network access to a privately bound Engineer OIDC
+intake. This repository does not install a runner or VPN and never
+auto-runs this workflow. Its permissions are restricted to
+\`contents: read\` and \`id-token: write\`; no Gemini key, signing key or
+Adapter bearer is in the job.
+
+The runner service must own \`DELEGATION_RUNNER_OIDC_CONFIG\`, an absolute
+path to an owner-only local JSON file (0600 in a 0700 directory).
+The file independently pins all of
+\`expectedRepository\`, \`expectedRef\`, \`expectedWorkflowPath\`,
+\`expectedSourceSha\`, \`intakeUrl\`, \`audience\`,
+\`expectedServerFingerprint256\`, \`caFile\`, \`clientCertFile\`,
+\`clientKeyFile\`. The last three point to separate owner-only PEM
+files in owner-only directories, provisioned **outside GitHub**.
+The intake URL must be a literal RFC1918 HTTPS address and the host
+certificate must have the matching private IP SAN. The independently
+configured Engineer host must pin the same GitHub ref/SHA/workflow and
+exact runner certificate, and provide real Actions REST validation.
+
+The runner-side module
+\`poc/apps/orchestrator/src/trusted-private-runner-oidc.mjs\`
+checks the protected config, expected source SHA, manual workflow identity
+and non-retry attempt before it asks GitHub for a short-lived OIDC token.
+It then uses the existing pinned-mTLS submission function; on success
+it returns only authenticated run ID/SHA and explicit **NOT APPROVED,
+ZERO GEMINI CALLS** metadata. The owner-only config and PEM bytes are
+never serialized as workflow output. CI tests reject public endpoints,
+wrong refs, wrong SHA, insecure file modes, symlinks, missing tokens and
+a forged "approved" response.
+
+**Caution:** a self-hosted runner executing untrusted repository code
+could read its local client certificate and keys. Deploy this workflow
+only on a dedicated protected runner group and reviewed protected Git
+ref/environment with an operator-managed file provisioner; the runner
+must not accept fork PRs or unrelated workflows. In particular, simply
+adding the \`delegation-private\` label to a shared runner is NOT a
+security boundary. Do not dispatch this workflow until that isolation
+and the Engineer host are configured; no live admission has yet been
+demonstrated. R5 remains **NO-GO** for paid inference.

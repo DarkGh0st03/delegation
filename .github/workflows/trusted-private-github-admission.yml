@@ -1,0 +1,55 @@
+# NON-BILLABLE private GitHub OIDC admission ONLY.
+# Requires an isolated, explicitly provisioned self-hosted runner with a
+# preinstalled Node 22 runtime and out-of-band owner-only mTLS config.
+# Do NOT use a GitHub-hosted runner, public proxy or untrusted PR runner.
+# A valid run never signs an Engineer plan, activates Rust/Gateway or uses Gemini.
+name: Trusted Private Runner OIDC Admission (No Models)
+on:
+  workflow_dispatch:
+    inputs:
+      authorization:
+        description: "Explicit future model charge consent; this workflow NEVER uses an API"
+        required: true
+        type: string
+      model:
+        description: "Model value bound to authenticated admission only"
+        type: string
+        required: true
+        default: "gemini-3.8-flash"
+      max_model_turns:
+        type: string
+        required: true
+        default: "12"
+      max_output_tokens:
+        type: string
+        required: true
+        default: "16000"
+      max_model_call_ms:
+        type: string
+        required: true
+        default: "120000"
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: trusted-private-runner-oidc-admission
+  cancel-in-progress: false
+jobs:
+  private-admission-only:
+    name: Authenticate job on private Engineer intake, no approval
+    runs-on: [self-hosted, linux, x64, delegation-private]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # DELEGATION_RUNNER_OIDC_CONFIG MUST be set by the runner service
+      # from an owner-only local config path, never a workflow_dispatch input.
+      # Its contents pin repository, workflow, source SHA, server fingerprint
+      # and local client certificate/private-key file paths.
+      - name: Submit protected runner OIDC to private Engineer host
+        run: node --experimental-strip-types poc/apps/orchestrator/src/submit-private-github-oidc.mjs
+      - name: State explicitly that no authority or Gemini was created
+        run: |
+          echo "GitHub job identity submitted only. Engineer signature NOT granted."
+          echo "No operational Rust DC, Gateway plan, A2A execution or Gemini calls."
