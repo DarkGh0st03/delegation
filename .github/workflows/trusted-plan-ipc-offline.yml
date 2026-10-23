@@ -12,6 +12,8 @@ on:
       - "poc/apps/gateway/test/trusted-task-observation.test.ts"
       - "poc/apps/gateway/src/main.ts"
       - "poc/apps/gateway/test/trusted-plan-ipc.test.ts"
+      - "poc/apps/orchestrator/src/engineer-approval-server.mjs"
+      - "poc/packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts"
       - "poc/apps/gateway/test/fixtures/trusted-plan-ipc-child.ts"
       - "poc/packages/orchestrator-runtime/src/trusted-execution-coordinator.ts"
       - "poc/packages/orchestrator-runtime/src/trusted-a2a-observer.ts"

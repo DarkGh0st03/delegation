@@ -447,3 +447,28 @@ single-writer locking, cross-restart Gateway tombstone durability, or a
 deployed GitHub-runner private route. Operators must ensure there is only
 one trusted Engineer owner of the recovery directory and never run a
 second host concurrently.
+
+
+## Composed offline approved execution across real process boundaries
+
+The existing Unix IPC integration suite now has a composed smoke test that
+starts the real local Engineer approval HTTP server with a disposable Ed25519
+private key and private plan, while the Gateway runs in a distinct Node
+process serving its normal Prepare/Execute routes and owner-only HMAC IPC.
+Before approval, both the Gateway and UI reject unauthenticated writes.
+The test checks password login, CSRF rejection, permission escalation
+rejection, immutable plan digest, and an actual signed receipt saved in
+the trusted directory. The live Coordinator issues a mock provisional root,
+confirms revocation, issues a mock operational root with a durable recovery
+journal, activates the same signed plan in the remote Gateway and renews
+the remote lease. It then exercises DAG gating, actual private task bindings,
+two provider tool requests and trusted completion attestations, followed
+by closure, mock Rust revocation and permanent journal retirement.
+
+This is ONE continuous cross-process regression, not a collection of
+separate green unit tests. The signed review/UI/IPC/Gateway/Coordinator
+parts are real. The Rust credential issuer, VP verification, policy
+decision and actual provider effects are **test doubles**, so the result
+must not be represented as full real-infrastructure E2E. Live
+Gitea/Docker/OPA/Core Rust are separately validated by cumulative CI.
+It neither contacts GitHub nor constructs/invokes a Gemini model.

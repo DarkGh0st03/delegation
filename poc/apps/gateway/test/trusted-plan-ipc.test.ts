@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {mkdtemp,mkdir,writeFile,rm,readFile} from "node:fs/promises";
+import {mkdtemp,mkdir,writeFile,rm,readFile,readdir} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
-import {randomBytes,generateKeyPairSync,createHmac,createHash} from "node:crypto";
+import {randomBytes,generateKeyPairSync,createHmac,createHash,scryptSync} from "node:crypto";
 import {fork} from "node:child_process";
 import {request as httpRequest} from "node:http";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
@@ -24,6 +24,8 @@ import {TrustedApprovedA2ADispatcher} from
 import {GatewayControlledToolClient} from
   "../../../packages/agent-runtime/src/gateway-tool-client.ts";
 import {createServer as createTcpServer} from "node:net";
+import {createAuthenticatedEngineerServer}
+  from "../../orchestrator/src/engineer-approval-server.mjs";
 
 const REPO={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const URI="gitea://gitea.local/thesis/iam-console-poc";
@@ -70,7 +72,7 @@ function root(id:string,index:string){
 }
 async function setup(
   t:import("node:test").TestContext,
-  options:{operationalLeaseMs?:number}={}
+  options:{operationalLeaseMs?:number;approvalViaUi?:boolean}={}
 ){
   const home=await mkdtemp(join(tmpdir(),"trusted-plan-ipc-"));
   const privateDir=join(home,"private"),receipts=join(home,"receipts");
@@ -86,6 +88,12 @@ async function setup(
   const pub=key.publicKey.export({format:"pem",type:"spki"}).toString();
   const publicKeyFile=join(privateDir,"engineer-public.pem");
   await writeFile(publicKeyFile,pub,{mode:0o600});
+  const planFile=join(privateDir,"engineer-plan.json");
+  const signerFile=join(privateDir,"engineer-signer.pem");
+  if(options.approvalViaUi){
+    await writeFile(planFile,JSON.stringify(p),{mode:0o600});
+    await writeFile(signerFile,priv,{mode:0o600});
+  }
   const issuedAt=new Date(),expiry=new Date(issuedAt.getTime()+30*60*1000);
   const approval=makeApproval(p,{
     allowedOperations:OPERATIONS,decision_id:"decision-ipc-1",
@@ -96,8 +104,9 @@ async function setup(
     plan:p,approval,engineerDid:DID,keyId:KEY_ID,privateKeyPem:priv,
     issuedAt:issuedAt.toISOString(),expiresAt:expiry.toISOString()
   });
-  await writeFile(join(receipts,p.session_id+".json"),
-    JSON.stringify(signed),{mode:0o600});
+  if(!options.approvalViaUi)
+    await writeFile(join(receipts,p.session_id+".json"),
+      JSON.stringify(signed),{mode:0o600});
   const configFile=join(privateDir,"config.json");
   await writeFile(configFile,JSON.stringify({
     approvalDir:receipts,socketPath,secretFile,repository:REPO,
@@ -161,7 +170,10 @@ async function setup(
     },
     credentials,approvals:store,authenticatedEngineerDid:DID
   });
-  return {p,trace,authority,credentials,client,store,publicUrl,socketPath,secret};
+  return {
+    p,trace,authority,credentials,client,store,publicUrl,socketPath,secret,
+    receipts,planFile,signerFile,publicKeyPem:pub
+  };
 }
 async function post(base:string,path:string,data:unknown){
   return fetch(base+path,{
@@ -518,4 +530,138 @@ test("new Engineer process reconciles orphaned root by terminal Gateway IPC tomb
   assert.equal((await post(e.publicUrl,"/v1/private-plan-control",{
     action:"retire",session_id:e.p.session_id
   })).status,404);
+});
+
+
+test("complete offline chain: Engineer login + CSRF + Ed25519 approval -> separate Gateway + root lease -> provider evidence -> revocation",async t=>{
+  // One composed test across ACTUAL loopback Engineer UI, a distinct
+  // Gateway child process and authenticated owner-only Unix IPC.
+  // Only credentials, provider calls and VP verification are fixtures.
+  const e=await setup(t,{operationalLeaseMs:45_000,approvalViaUi:true});
+  const recoveryDir=await mkdtemp(join(tmpdir(),"trusted-composed-recovery-"));
+  t.after(()=>rm(recoveryDir,{recursive:true,force:true}));
+  const recovery=new TrustedOperationalRecoveryStore(recoveryDir);
+  const coordinator=new TrustedExecutionCoordinator({
+    authority:e.authority,approvedGatewayPlans:e.client,credentials:e.credentials,
+    sessionId:e.p.session_id,baseRevision:SHA,operationalRecovery:recovery
+  });
+  coordinator.assertOperationalLeaseConfigured();
+  coordinator.assertOperationalRecoveryConfigured();
+
+  const branchCall={
+    task_id:"a2a-engineer-reviewed-branch",agent_role:"orchestrator" as const,
+    tool:"create_branch",
+    arguments:{base_branch:"main",branch:"feature/approved"}
+  };
+  assert.equal((await post(e.publicUrl,"/v1/authorization/prepare",branchCall)).status,403);
+  await coordinator.beginPlanning(root("urn:reviewed:planning","810"));
+  // Provisional root does not authorize a provider write.
+  assert.equal((await post(e.publicUrl,"/v1/authorization/prepare",branchCall)).status,403);
+  assert.equal((await readdir(e.receipts)).length,0);
+  assert.equal((await recovery.pending()).length,0);
+
+  const salt=randomBytes(16),password="offline-review-only";
+  const ui=await createAuthenticatedEngineerServer({
+    host:"127.0.0.1",engineerDid:DID,keyId:KEY_ID,
+    trustedPlanFile:e.planFile,expectedSessionId:e.p.session_id,
+    expectedBaseRevision:SHA,repository:REPO,
+    privateKeyFile:e.signerFile,publicKeyPem:e.publicKeyPem,
+    receiptDirectory:e.receipts,
+    passwordSaltHex:salt.toString("hex"),
+    passwordScryptHex:scryptSync(password,salt,64).toString("hex")
+  });
+  await new Promise<void>(resolve=>ui.listen(0,"127.0.0.1",resolve));
+  t.after(()=>new Promise<void>((resolve,reject)=>ui.close(error=>error?reject(error):resolve())));
+  const uiUrl="http://127.0.0.1:"+(ui.address() as import("node:net").AddressInfo).port;
+  assert.equal((await fetch(uiUrl+"/api/plan")).status,401);
+  const login=await fetch(uiUrl+"/api/login",{
+    method:"POST",headers:{"content-type":"application/json",origin:uiUrl},
+    body:JSON.stringify({password})
+  });
+  assert.equal(login.status,200);
+  const cookie=login.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(cookie);
+  const review=await (await fetch(uiUrl+"/api/plan",{headers:{cookie}})).json();
+  assert.equal(review.plan_digest,planDigest(e.p));
+  assert.equal(review.plan.base_revision,SHA);
+  const requestApproval=(input:object,csrf=review.csrf_token)=>
+    fetch(uiUrl+"/api/approve",{
+      method:"POST",headers:{
+        "content-type":"application/json",origin:uiUrl,
+        cookie,"x-csrf-token":csrf
+      },body:JSON.stringify(input)
+    });
+  const approvedIds=["permission-branch","permission-backend"];
+  const decision={
+    plan_digest:planDigest(e.p),approved_permission_ids:approvedIds,
+    confirmation:"APPROVE "+planDigest(e.p)
+  };
+  assert.equal((await requestApproval(decision,"wrong-csrf")).status,403);
+  assert.equal((await requestApproval({
+    ...decision,approved_permission_ids:[...approvedIds,"permission-foreign"]
+  })).status,403);
+  assert.equal((await readdir(e.receipts)).length,0);
+  const approved=await requestApproval(decision);
+  assert.equal(approved.status,201);
+  assert.equal((await approved.json()).operational_credential_issued,false);
+  const receipt=await e.store.loadAuthenticatedApproval(e.p.session_id);
+  assert.deepEqual(receipt.approval.approved_permission_ids,approvedIds);
+  // The initial authenticated browser session cannot issue another approval.
+  assert.equal((await requestApproval(decision)).status,401);
+
+  const activated=await coordinator.beginExecution(root("urn:reviewed:operational","811"));
+  assert.equal(activated.plan_digest,planDigest(e.p));
+  assert.equal((await recovery.pending()).length,1);
+  assert.deepEqual(e.trace.slice(0,3),[
+    "issue:urn:reviewed:planning",
+    "revoke:urn:reviewed:planning",
+    "issue:urn:reviewed:operational"
+  ]);
+  await coordinator.renewExecutionLease();
+  await coordinator.bindDispatchedTask(
+    "branch",branchCall.task_id,"orchestrator");
+  await coordinator.bindDispatchedTask(
+    "backend","a2a-engineer-reviewed-backend","backend");
+  const backendCall={
+    task_id:"a2a-engineer-reviewed-backend",agent_role:"backend" as const,
+    tool:"update_file",arguments:{
+      branch:"feature/approved",path:"apps/backend/user.ts",
+      content:"export const approved=true;"
+    }
+  };
+  // Signed approval does not skip plan task dependencies.
+  assert.equal((await post(e.publicUrl,"/v1/authorization/prepare",backendCall)).status,403);
+  const branchPrep=await post(e.publicUrl,"/v1/authorization/prepare",branchCall);
+  assert.equal(branchPrep.status,201);
+  const branchRequest=await branchPrep.json();
+  assert.equal((await post(e.publicUrl,"/v1/authorization/execute",{
+    request_id:branchRequest.request_id,signed_vp:"fixture-vp"
+  })).status,200);
+  await coordinator.confirmTask(branchCall.task_id,{
+    source:"trusted_orchestrator",runtime_task_id:branchCall.task_id,
+    role:"orchestrator",state:"completed"
+  });
+  const backPrep=await post(e.publicUrl,"/v1/authorization/prepare",backendCall);
+  assert.equal(backPrep.status,201);
+  const backRequest=await backPrep.json();
+  assert.equal((await post(e.publicUrl,"/v1/authorization/execute",{
+    request_id:backRequest.request_id,signed_vp:"fixture-vp"
+  })).status,200);
+  await coordinator.confirmTask(backendCall.task_id,{
+    source:"trusted_a2a_poll",runtime_task_id:backendCall.task_id,
+    role:"backend",state:"completed",
+    artifact:{
+      branch:"feature/approved",revision:SHA,commit_sha:SHA,
+      files_modified:["apps/backend/user.ts"],files_created:[],
+      test_outcome:"not_run"
+    }
+  });
+  await coordinator.closeExecution();
+  assert.equal((await recovery.pending()).length,0);
+  assert.deepEqual(e.trace.slice(-1),["revoke:urn:reviewed:operational"]);
+  assert.equal((await post(e.publicUrl,"/v1/authorization/prepare",branchCall)).status,403);
+  await assert.rejects(recovery.assertFreshSession(e.p.session_id),
+    /reconciled session cannot be reused/);
+  await assert.rejects(coordinator.renewExecutionLease(),
+    /outside execution/);
 });
