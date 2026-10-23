@@ -497,3 +497,41 @@ test("approved PR refuses changed HEAD before creating provider-side PR",async()
   ),ProviderConflictError);
   assert.equal(posts,0);
 });
+
+
+test("approved PR detects changed Gitea head during POST, never attests it",async()=>{
+  const approved="a".repeat(40),changed="b".repeat(40);
+  let gets=0,posts=0;
+  const client=clientWith((async(_url,init)=>{
+    if(init?.method==="POST"){
+      posts++;
+      return new Response(JSON.stringify({
+        id:77,number:7,
+        head:{ref:"feature/account-suspension",sha:changed},
+        base:{ref:"main"}
+      }),{status:201});
+    }
+    gets++;
+    return new Response(JSON.stringify({
+      name:"feature/account-suspension",commit:{id:approved}
+    }),{status:200});
+  }) as typeof fetch);
+  await assert.rejects(()=>client.createPullRequest(
+    "feature/account-suspension","main","Review","",approved
+  ),ProviderUnavailableError);
+  assert.equal(gets,1);
+  assert.equal(posts,1);
+  // Gitea might have created the PR during this race. Its effect must not
+  // be recorded as a verified success or used to authorize a merge.
+});
+test("malformed attested PR SHA is rejected before any Gitea request",async()=>{
+  let touches=0;
+  const client=clientWith((async()=>{
+    touches++;
+    throw Error("No network request allowed");
+  }) as typeof fetch);
+  await assert.rejects(()=>client.createPullRequest(
+    "feature/account-suspension","main","Review","", "not-a-sha"
+  ),ProviderConflictError);
+  assert.equal(touches,0);
+});
