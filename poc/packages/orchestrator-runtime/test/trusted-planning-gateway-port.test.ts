@@ -26,12 +26,13 @@ import {TrustedAdkReadOnlyPlanner}
   from "../src/trusted-adk-planner.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
+const SECOND_FILE="src/billing/tax.ts";
 const rootId="urn:test:planning-root";
 const snapshot={
   session_id:"trusted-billing-planning",
   repository:{authority:"gitea.local",owner:"thesis",repository:"invoices"},
   base_revision:SHA,
-  directories:["","src","src/billing"],files:[FILE]
+  directories:["","src","src/billing"],files:[FILE,SECOND_FILE]
 };
 const agents={
   backend:{did:"did:thesis:backend",card_ref:"trusted:backend"},
@@ -70,6 +71,38 @@ class ScriptedPlanner extends BaseLlm {
     return Promise.reject(Error("No live model in test"));
   }
 }
+/** Real multi-call ADK sequence: every operation passes the Gateway. */
+class MultiReadScriptedPlanner extends BaseLlm {
+  requests:LlmRequest[]=[];
+  readonly readOutsideScope:boolean;
+  constructor(readOutsideScope=false){
+    super({model:"offline-gateway-multi-read"});
+    this.readOutsideScope=readOutsideScope;
+  }
+  override async *generateContentAsync(request:LlmRequest):
+    AsyncGenerator<LlmResponse,void>{
+    this.requests.push(request);
+    const calls=[
+      {name:"read_repository",args:{}},
+      {name:"list_directory",args:{branch:"main",path:"src"}},
+      {name:"list_directory",args:{branch:"main",path:"src/billing"}},
+      {name:"read_file",args:{branch:"main",path:FILE}},
+      {name:"read_file",args:{branch:"main",
+        path:this.readOutsideScope?"src/secrets.txt":SECOND_FILE}}
+    ];
+    const call=calls[this.requests.length-1];
+    if(call){
+      yield {content:{role:"model",parts:[{functionCall:{
+        id:"read-"+this.requests.length,name:call.name,args:call.args
+      }}]}};
+    }else{
+      yield {content:{role:"model",parts:[{text:JSON.stringify(proposal)}]}};
+    }
+  }
+  override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+    return Promise.reject(Error("Offline test may not call Gemini"));
+  }
+}
 function response(value:unknown,status=200){
   return new Response(JSON.stringify(value),{status,headers:{"content-type":"application/json"}});
 }
@@ -84,17 +117,23 @@ function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean}={}){
     },
     async readTextFile(branch:string,path:string,revision?:string){
       observed.provider++;
-      assert.equal(branch,"main");assert.equal(path,FILE);assert.equal(revision,SHA);
-      return {branch,path,revision:SHA,content:"export const invoices = [];\n",
+      assert.equal(branch,"main");
+      assert.ok([FILE,SECOND_FILE].includes(path));assert.equal(revision,SHA);
+      const content=path===FILE?"export const invoices = [];\n":
+        "export const taxRate = 0.22;\n";
+      return {branch,path,revision:SHA,content,
         encoding:"utf-8" as const,blob_sha:"b".repeat(40),
-        last_commit_sha:SHA,size:28};
+        last_commit_sha:SHA,size:Buffer.byteLength(content,"utf8")};
     },
     async listDirectory(branch:string,path:string,revision?:string){
       observed.provider++;
       assert.equal(branch,"main");assert.equal(revision,SHA);
       return {branch,path,revision:SHA,entries:path===""?
         [{name:"src",path:"src",type:"dir"}]:
-        [{name:"billing",path:"src/billing",type:"dir"}]};
+        path==="src"?
+          [{name:"billing",path:"src/billing",type:"dir"}]:
+          [{name:"invoice.ts",path:FILE,type:"file"},
+            {name:"tax.ts",path:SECOND_FILE,type:"file"}]};
     }
   };
   const revisions=new TrustedPlanningRevisions(client);
@@ -238,6 +277,50 @@ test("trusted coordinator-issued root -> Gateway VP/OPA -> pinned Gitea -> unapp
   for(const hidden of [rootId,"trusted-orchestrator-token","signed-vp",
     "delegation_evidence","authenticatedEngineerDid"])
     assert.ok(!visible.includes(hidden),hidden);
+});
+
+test("R1 multiple Gateway-backed ADK reads preserve VP, OPA and Gitea SHA per operation",async()=>{
+  const f=fixture();await f.start();
+  const model=new MultiReadScriptedPlanner();
+  const draft=await new TrustedAdkReadOnlyPlanner({
+    model,snapshot,
+    requirement:"Sort invoices and calculate tax",
+    planId:"invoice-multi-read-proposal",workBranch:"feature/invoice-sort",
+    agents,readPort:f.makePort()
+  }).propose();
+  assert.equal(draft.status,"unapproved_proposal");
+  // Only distinct file reads count as source reads; repository and directory
+  // metadata also traverse Prepare/Execute but do not inflate this counter.
+  assert.equal(draft.verified_source_reads,2);
+  assert.equal(draft.plan.base_revision,SHA);
+  assert.equal(model.requests.length,6);
+  assert.deepEqual({
+    prepare:f.observed.prepare,adapter:f.observed.adapter,
+    verify:f.observed.verification,opa:f.observed.policy,
+    execute:f.observed.execute,provider:f.observed.provider
+  },{prepare:5,adapter:5,verify:5,opa:5,execute:5,provider:6});
+  const entries=f.audit.events.filter(e=>e.event==="authorization_prepared");
+  assert.equal(entries.length,5);
+  assert.ok(entries.every(e=>e.pinned_revision===SHA));
+  const visible=JSON.stringify(model.requests);
+  for(const secret of [rootId,"trusted-orchestrator-token",
+    "fixture-signed-vp","signed_vp","adapterToken"])
+    assert.ok(!visible.includes(secret),secret);
+});
+
+test("R1 multi-read denies out-of-scope file after authorized repository inspection",async()=>{
+  const f=fixture();await f.start();
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    model:new MultiReadScriptedPlanner(true),snapshot,
+    requirement:"Sort invoices without secrets",
+    planId:"invoice-unapproved-source",workBranch:"feature/invoice-sort",
+    agents,readPort:f.makePort()
+  }).propose(),/no verified read-only grounded proposal/);
+  assert.deepEqual({
+    adapter:f.observed.adapter,verify:f.observed.verification,
+    opa:f.observed.policy,execute:f.observed.execute,
+    provider:f.observed.provider
+  },{adapter:4,verify:4,opa:4,execute:4,provider:5});
 });
 
 test("bound Planning port refuses write, outside files and non-main without Adapter calls",async()=>{
