@@ -102,7 +102,9 @@ export async function submitProtectedPrivateRunnerAdmission({
      typeof env.DELEGATION_RUNNER_OIDC_CONFIG!=="string"||
      typeof env.GITHUB_EVENT_PATH!=="string"||
      typeof env.ACTIONS_ID_TOKEN_REQUEST_URL!=="string"||
+     !env.ACTIONS_ID_TOKEN_REQUEST_URL.trim()||
      typeof env.ACTIONS_ID_TOKEN_REQUEST_TOKEN!=="string"||
+     !env.ACTIONS_ID_TOKEN_REQUEST_TOKEN.trim()||
      !RUN.test(env.GITHUB_RUN_ID??"")||
      ENV_KEYS.some(k=>typeof env[k]!=="string")||
      env.GITHUB_ACTIONS!=="true"||
