@@ -190,7 +190,12 @@ const planSketch=positiveDag?{
           reason:"Add reviewed scenario-specific regression and acceptance"},
         {operation:"run_tests",path:null,
           reason:"Execute real Docker phases at the final approved SHA"}
-      ]}
+      ]},
+    {id:"pr",agent_id:"orchestrator",title:"Open tested feature Pull Request",
+      description:"Request human review of the exact tested branch; never merge",
+      depends_on:["test"],
+      permissions:[{operation:"create_pull_request",path:null,
+        reason:"Propose tested changes without modifying protected main"}]}
   ],assumptions:[],uncertainties:[]
 }:legacyPlanSketch;
 class ScriptedReadPlanner extends BaseLlm{

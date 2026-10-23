@@ -137,6 +137,7 @@ export async function runNativePositiveApprovedDag({
   const counts={backend:0,frontend:0},reads={backend:0,frontend:0},
     writes={backend:0,frontend:0};
   let testCalls=0,testCreates=0,runnerRuns=0,runnerOutcome=null,latestSha=baseSha;
+  let createdPr=null;
   const childIds={},servers=[],urls={},models={};
   // Explicit opt-in makes the SAME real-provider test exercise the
   // production shared MCP and private A2A worker rather than FunctionTool
@@ -388,6 +389,48 @@ export async function runNativePositiveApprovedDag({
     assert.deepEqual(counts,{backend:0,frontend:0});
     const result=await dispatcher.executeApprovedDag({
       async invokeOrchestratorTask(planId,runtimeTaskId){
+        if(planId==="pr"){
+          // Approval of the repository operation is a separate signed Task.
+          // It may run only after the Test Agent's provider-corroborated
+          // exact-SHA Docker and independent researcher acceptance.
+          assert.equal(runnerRuns,1);
+          assert.equal(runnerOutcome?.status,"pass");
+          assert.equal(runnerOutcome?.project_tests?.status,"pass");
+          assert.equal(runnerOutcome?.researcher_acceptance?.status,"pass");
+          assert.equal((await reader.getBranchMetadata(branch)).commit_sha,
+            runnerOutcome.tested_commit_sha);
+          assert.throws(()=>gateway.prepare({
+            task_id:runtimeTaskId,agent_role:"orchestrator",
+            tool:"create_pull_request",arguments:{
+              head_branch:"main",base_branch:"main",title:"Unapproved main PR"
+            }
+          }),e=>e?.code==="approved_plan_denied");
+          const prepared=gateway.prepare({
+            task_id:runtimeTaskId,agent_role:"orchestrator",
+            tool:"create_pull_request",arguments:{
+              head_branch:branch,base_branch:"main",
+              title:"Reviewed "+scenarioId+" changes",
+              body:"Engineer-signed plan digest: "+planDigest+
+                "\\nExact tested feature SHA: "+runnerOutcome.tested_commit_sha+
+                "\\nHuman approval and merge are NOT performed by this run."
+            }
+          });
+          const vp=await signedVp(
+            operationalRootId,prepared,orchestratorToken);
+          const executed=await gateway.execute({
+            request_id:prepared.request_id,signed_vp:vp
+          });
+          assert.equal(executed.execution.provider,"gitea");
+          assert.equal(executed.execution.tool,"create_pull_request");
+          assert.equal(executed.execution.head_branch,branch);
+          assert.equal(executed.execution.base_branch,"main");
+          assert.equal(executed.execution.revision,
+            runnerOutcome.tested_commit_sha);
+          assert.ok(Number.isSafeInteger(
+            executed.execution.pull_request_number));
+          createdPr=executed.execution;
+          return;
+        }
         assert.equal(planId,"branch");
         assert.throws(()=>gateway.prepare({
           task_id:runtimeTaskId,agent_role:"orchestrator",
@@ -410,7 +453,8 @@ export async function runNativePositiveApprovedDag({
     });
     assert.equal(coordinator.phase,"closed");
     assert.equal(result.plan_digest,planDigest);
-    assert.deepEqual(result.completed_task_ids,["branch",...ROLES]);
+    assert.deepEqual(result.completed_task_ids,["branch",...ROLES,"pr"]);
+    assert.ok(createdPr,"A signed, provider-confirmed PR must be opened");
     assert.deepEqual(result.specialized_results.map(x=>x.role),ROLES);
     assert.deepEqual(counts,{backend:1,frontend:1});
     assert.deepEqual(reads,{backend:6,frontend:4});
@@ -447,6 +491,7 @@ export async function runNativePositiveApprovedDag({
       referenceFiles[createdTestFile]);
     const head=await reader.getBranchMetadata(branch);
     assert.equal(head.commit_sha,runnerOutcome.tested_commit_sha);
+    assert.equal(createdPr.revision,head.commit_sha);
     assert.equal((await reader.getBranchMetadata("main")).commit_sha,baseSha);
     assert.throws(()=>gateway.prepare({
       task_id:"after_closed",agent_role:"backend",
@@ -468,6 +513,8 @@ export async function runNativePositiveApprovedDag({
       tested_commit_sha:runnerOutcome.tested_commit_sha,
       main_unchanged:true,operational_root_revoked:true,
       approved_branch_sha:head.commit_sha,
+      pr_created:true,pull_request_number:createdPr.pull_request_number,
+      pull_request_url:createdPr.url??null,merge_calls:0,
       adk_agents_executed:3,scripted_adk_no_paid_model:true,
       approved_shared_mcp_enabled:sharedMcpEnabled,
       shared_mcp_http_requests:normalMcpCalls,

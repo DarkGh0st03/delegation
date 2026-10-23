@@ -474,7 +474,7 @@ async function main(){
         assert.equal(positive?.positive_dag?.real_a2a_sdk,true);
         assert.equal(positive?.positive_dag?.native_rust_child_credentials,3);
         assert.deepEqual(positive?.positive_dag?.completed_task_ids,
-          ["branch","backend","frontend","test"]);
+          ["branch","backend","frontend","test","pr"]);
         assert.equal(positive?.positive_dag?.test_runner_runs,1);
         assert.equal(positive?.positive_dag?.project_tests,"pass");
         assert.equal(positive?.positive_dag?.researcher_acceptance,"pass");
@@ -489,6 +489,10 @@ async function main(){
           {backend:13,frontend:9,test:3});
         assert.equal(positive?.positive_dag?.main_unchanged,true);
         assert.equal(positive?.positive_dag?.operational_root_revoked,true);
+        assert.equal(positive?.positive_dag?.pr_created,true);
+        assert.ok(Number.isSafeInteger(
+          positive?.positive_dag?.pull_request_number));
+        assert.equal(positive?.positive_dag?.merge_calls,0);
         assert.equal(positive?.provider_writes,11);
         process.stderr.write("[trusted-positive-ci] native_disposable_planning "+
           JSON.stringify({status:"PASS",real_gitea_sha:fixture.mainSha,
@@ -615,7 +619,7 @@ async function main(){
         label:"read_real_security_statuses"
       }),
       api(base,repository+"/pulls?state=all",{
-        authorization:creds.admin,label:"check_zero_pull_requests"
+        authorization:creds.admin,label:"verify_signed_dag_pull_request"
       })
     ]);
     assert.equal(main.commit.id,fixture.mainSha);
@@ -627,7 +631,21 @@ async function main(){
     assert.ok(own.some(s=>s.status==="success"&&
       s.creator?.id===creds.actor.id&&s.creator?.login===creds.actor.login));
     assert.ok(!own.some(s=>s.status==="failure"||s.status==="error"));
-    assert.deepEqual(prs,[]);
+    assert.ok(Array.isArray(prs));
+    const signedDag=process.env.APPROVED_RUNNER_THREE_AGENT_DAG==="1";
+    if(signedDag){
+      assert.equal(prs.length,1,
+        "Signed DAG must open one real PR after exact-SHA acceptance");
+      const pr=prs[0];
+      assert.equal(pr.state,"open");
+      assert.equal(pr.merged,false);
+      assert.equal(pr.head?.ref,branch);
+      assert.equal(pr.head?.sha,approvedFeatureSha);
+      assert.equal(pr.base?.ref,"main");
+    }else{
+      assert.deepEqual(prs,[],
+        "Non-DAG security regression must not create a PR");
+    }
     process.stdout.write(JSON.stringify({
       event:"trusted_security_ci_real_docker_positive_acceptance",
       status:"PASS",scenario_id:scenario.id,
@@ -649,7 +667,7 @@ async function main(){
       real_backend_frontend_gitea_edits:approvedSession.approvedBackendFrontendEdits,
       native_approved_source_reads:process.env.APPROVED_RUNNER_THREE_AGENT_DAG==="1"
         ? 4 : 0,
-      approval_created:true,pr_created:false,merge_calls:0,
+      approval_created:true,pr_created:signedDag,merge_calls:0,
       persistent_gitea_modified:false
     })+"\n");
   }finally{
