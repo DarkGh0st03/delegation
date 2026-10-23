@@ -23,8 +23,7 @@ import {IsolatedDockerRunnerExecutor} from
   "../../test-runner-controller/src/isolated-executor.ts";
 import {createRunnerHttpServer} from
   "../../test-runner-controller/src/http.ts";
-import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
-  "../../test-runner-controller/fixtures/account-suspension-reference.mjs";
+
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {startSpecializedAgentServer} from
@@ -66,7 +65,8 @@ async function freePort(){
 }
 export async function runNativePositiveApprovedDag({
   coordinator,reviewGate,approvedPlans,sessionId,planDigest,baseSha,
-  operationalRootId,branch,files,createdTestFile,repo,giteaBase,
+  operationalRootId,branch,files,createdTestFile,
+  referenceFiles,scenarioId,repo,giteaBase,
   readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens
 }){
   assert.match(giteaBase,/^http:\/\/127\.0\.0\.1:\d+$/u);
@@ -75,11 +75,14 @@ export async function runNativePositiveApprovedDag({
     ...ROLES.map(role=>agentTokens[role])])
     assert.ok(typeof token==="string"&&token.length>10);
   assert.equal(coordinator.phase,"execution");
+  assert.ok(["account-suspension","department-directory"].includes(scenarioId));
+  if(!referenceFiles||typeof referenceFiles!=="object"||
+     Object.keys(referenceFiles).length!==11)throw Error("Invalid scenario fixture");
   assert.deepEqual(Object.keys(files).sort(),[...EDIT_ROLES].sort());
   const expectedExisting=[...files.backend,...files.frontend];
   assert.equal(expectedExisting.length,10);
   assert.deepEqual([...expectedExisting,createdTestFile].sort(),
-    Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES).sort());
+    Object.keys(referenceFiles).sort());
   const reader=new GiteaClient({
     baseUrl:giteaBase,token:readerToken,owner:repo.owner,
     repository:repo.repository,timeoutMs:20000
@@ -93,7 +96,7 @@ export async function runNativePositiveApprovedDag({
     const result=await reader.readTextFile("main",path,baseSha);
     assert.equal(result.revision,baseSha);
     originals[path]=result.content;
-    assert.notEqual(result.content,ACCOUNT_SUSPENSION_REFERENCE_FILES[path],
+    assert.notEqual(result.content,referenceFiles[path],
       "Native reference fixture must actually change the approved baseline");
   }
   await assert.rejects(()=>reader.getBranchMetadata(branch));
@@ -181,7 +184,7 @@ export async function runNativePositiveApprovedDag({
           if(request.tool==="update_file"){
             assert.ok(readPaths[role].has(request.arguments.path));
             assert.equal(request.arguments.content,
-              ACCOUNT_SUSPENSION_REFERENCE_FILES[request.arguments.path]);
+              referenceFiles[request.arguments.path]);
           }
         }
         return reply(gateway.prepare(request),201);
@@ -306,7 +309,7 @@ export async function runNativePositiveApprovedDag({
       const scripted=targets.flatMap(path=>[
         {name:"read_file",args:{branch,path}},
         {name:"update_file",args:{
-          branch,path,content:ACCOUNT_SUSPENSION_REFERENCE_FILES[path]
+          branch,path,content:referenceFiles[path]
         }}
       ]);
       const model=new OfflineApprovedAdkModel(role,scripted);
@@ -331,7 +334,7 @@ export async function runNativePositiveApprovedDag({
     const testScript=[
       {name:"create_file",args:{
         branch,path:createdTestFile,
-        content:ACCOUNT_SUSPENSION_REFERENCE_FILES[createdTestFile]
+        content:referenceFiles[createdTestFile]
       }},
       {name:"run_tests",args:{branch,profile:"poc-default"}}
     ];
@@ -435,13 +438,13 @@ export async function runNativePositiveApprovedDag({
       runnerOutcome.tested_commit_sha);
     for(const path of expectedExisting){
       const updated=await reader.readTextFile(branch,path);
-      assert.equal(updated.content,ACCOUNT_SUSPENSION_REFERENCE_FILES[path]);
+      assert.equal(updated.content,referenceFiles[path]);
       const unchanged=await reader.readTextFile("main",path,baseSha);
       assert.equal(unchanged.content,originals[path]);
     }
     const savedTest=await reader.readTextFile(branch,createdTestFile);
     assert.equal(savedTest.content,
-      ACCOUNT_SUSPENSION_REFERENCE_FILES[createdTestFile]);
+      referenceFiles[createdTestFile]);
     const head=await reader.getBranchMetadata(branch);
     assert.equal(head.commit_sha,runnerOutcome.tested_commit_sha);
     assert.equal((await reader.getBranchMetadata("main")).commit_sha,baseSha);
@@ -453,6 +456,7 @@ export async function runNativePositiveApprovedDag({
     }),e=>e?.code==="approved_plan_denied");
     return {
       status:"pass",signed_dag_completed:true,
+      scenario_id:scenarioId,approved_work_branch:branch,
       completed_task_ids:result.completed_task_ids,
       real_a2a_sdk:true,native_rust_child_credentials:3,
       native_verifier:true,live_opa:true,real_gitea:true,

@@ -28,8 +28,8 @@ import {TrustedApprovedA2ADispatcher} from
 import {GatewayCorroboratedTaskAttestor} from
   "../src/trusted-task-observation.ts";
 import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
-import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
-  "../../test-runner-controller/fixtures/account-suspension-reference.mjs";
+import {getApprovedOfflineScenario} from
+  "../../test-runner-controller/fixtures/approved-scenarios.mjs";
 import {BaseLlm} from "@google/adk";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
@@ -59,6 +59,8 @@ for(const v of [token,engineerToken,engineerDid]){
   if(typeof v!=="string"||!v)throw Error("Missing trusted EVM fixture setting");
 }
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+const scenario=getApprovedOfflineScenario(process.env.APPROVED_RUNNER_SCENARIO);
+const referenceFiles=scenario.files;
 const file="apps/backend/src/users/user.service.ts";
 const frontendFile="apps/frontend/src/pages/UserDetailPage.tsx";
 const disposableBase=process.env.PLANNING_DISPOSABLE_GITEA_URL;
@@ -92,7 +94,7 @@ if(liveClient&&(originalMain?.default_branch!=="main"||
   throw Error("Actual disposable Gitea main SHA/identity does not match fixture bootstrap");
 const baseSha=originalMain?.revision??"a".repeat(40);
 const originalFeature=liveClient?
-  (await liveClient.getBranchMetadata("feature/account-suspension")).commit_sha:undefined;
+  (await liveClient.getBranchMetadata(scenario.fixtureBranch)).commit_sha:undefined;
 const session="native-read-plan-"+randomBytes(5).toString("hex");
 const rootId="urn:native:planning-only-"+randomBytes(7).toString("hex");
 // The 11-file deterministic reference fixture is NEVER a source of
@@ -118,7 +120,7 @@ const roleFiles={
 const newTestFile="tests/e2e/account-suspension.spec.ts";
 const existingFiles=[...roleFiles.backend,...roleFiles.frontend];
 assert.deepEqual([...existingFiles,newTestFile].sort(),
-  Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES).sort());
+  Object.keys(referenceFiles).sort());
 const approvedDirectories=new Set([""]);
 for(const path of [...existingFiles,newTestFile]){
   const parts=path.split("/");
@@ -143,7 +145,7 @@ for(const did of Object.values(agentDids)){
 }
 const agents=Object.fromEntries(Object.entries(agentDids).map(([role,did])=>
   [role,{did,card_ref:"trusted:"+role}]));
-const workBranch="feature/native-planning-read";
+const workBranch=positiveDag?scenario.workBranch:"feature/native-planning-read";
 const legacyPlanSketch={
   tasks:[
     {id:"branch",agent_id:"orchestrator",title:"Create isolated work branch",
@@ -185,7 +187,7 @@ const planSketch=positiveDag?{
       depends_on:["frontend"],
       permissions:[
         {operation:"create_file",path:newTestFile,
-          reason:"Add reviewed E2E account lifecycle acceptance"},
+          reason:"Add reviewed scenario-specific regression and acceptance"},
         {operation:"run_tests",path:null,
           reason:"Execute real Docker phases at the final approved SHA"}
       ]}
@@ -369,7 +371,7 @@ try{
   const model=new ScriptedReadPlanner();
   const proposed=await new TrustedAdkReadOnlyPlanner({
     model,snapshot,workBranch,
-    requirement:"Improve authorized backend behavior",
+    requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
     planId:"native-planning-proposal",agents,readPort:port
   }).propose();
   assert.equal(proposed.status,"unapproved_proposal");
@@ -473,7 +475,8 @@ try{
         coordinator,reviewGate,approvedPlans,
         sessionId:session,planDigest:packet.plan_digest,baseSha,
         operationalRootId,branch:workBranch,
-        files:roleFiles,createdTestFile:newTestFile,repo,
+        files:roleFiles,createdTestFile:newTestFile,
+        referenceFiles,scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
         writerToken,opaUrl,engineerDid,orchestratorToken:token,
         agentTokens:{
@@ -601,7 +604,7 @@ try{
   }
   if(liveClient){
     assert.equal((await liveClient.getBranchMetadata("main")).commit_sha,baseSha);
-    assert.equal((await liveClient.getBranchMetadata("feature/account-suspension")).commit_sha,
+    assert.equal((await liveClient.getBranchMetadata(scenario.fixtureBranch)).commit_sha,
       originalFeature);
   }
   console.log(JSON.stringify({

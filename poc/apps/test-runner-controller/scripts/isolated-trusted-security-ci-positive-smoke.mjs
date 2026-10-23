@@ -26,14 +26,16 @@ import {setTimeout as sleep} from "node:timers/promises";
 import {IsolatedDockerRunnerExecutor} from "../src/isolated-executor.ts";
 import {TrustedGiteaSecurityCi,SECURITY_STATUS_CONTEXT,
   TRUSTED_PROJECT_PHASES} from "../src/trusted-security-ci.ts";
-import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
-  "../fixtures/account-suspension-reference.mjs";
+import {getApprovedOfflineScenario} from
+  "../fixtures/approved-scenarios.mjs";
 import {beginApprovedRealRunnerSession} from
   "./approved-gateway-runner-session.mjs";
 
 const baseline="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const baselineSource="https://github.com/DarkGh0st03/iam-console-poc.git";
-const branch="feature/account-suspension";
+const scenario=getApprovedOfflineScenario(process.env.APPROVED_RUNNER_SCENARIO);
+const referenceFiles=scenario.files;
+const branch=scenario.fixtureBranch;
 const repository="/api/v1/repos/thesis/iam-console-poc";
 const suffix=randomBytes(6).toString("hex");
 const container="delegation-ci-positive-"+suffix;
@@ -298,7 +300,7 @@ async function pushReferenceApp(base,workTree,admin){
   git(["switch","-c",branch],{
     cwd:workTree,label:"create local feature branch"
   });
-  const entries=Object.entries(ACCOUNT_SUSPENSION_REFERENCE_FILES);
+  const entries=Object.entries(referenceFiles);
   assert.equal(entries.length,11,"Reference app must have eleven fixed files");
   for(const [path,content] of entries){
     assert.ok(typeof content==="string"&&content.length>0);
@@ -311,8 +313,8 @@ async function pushReferenceApp(base,workTree,admin){
   }
   git(["-c","user.name=Isolated Fixture Builder",
     "-c","user.email=fixture@localhost.invalid",
-    "commit","-m","fixture: complete Account Suspension reference implementation"
-  ],{cwd:workTree,label:"commit isolated Account Suspension fixture"});
+    "commit","-m","fixture: implement "+scenario.id+" offline reference requirement"
+  ],{cwd:workTree,label:"commit isolated approved scenario fixture"});
   const sha=git(["rev-parse","HEAD"],{cwd:workTree,
     label:"resolve final exact feature SHA"});
   assert.match(sha,/^[a-f0-9]{40}$/u);
@@ -454,7 +456,8 @@ async function main(){
             PLANNING_NATIVE_POSITIVE_DAG:"1",
             // Same real Gitea/Docker/Rust/OPA positive DAG, but all
             // model-facing tools and VP issuance now use shared MCP.
-            APPROVED_RUNNER_NATIVE_MCP:"1"
+            APPROVED_RUNNER_NATIVE_MCP:"1",
+            APPROVED_RUNNER_SCENARIO:scenario.id
           }
         });
         const positive=positiveOutput.split(/\r?\n/u).filter(Boolean)
@@ -462,6 +465,9 @@ async function main(){
           .find(event=>event?.event==="native_preliminary_adk_planning");
         assert.equal(positive?.status,"pass");
         assert.equal(positive?.positive_dag?.signed_dag_completed,true);
+        assert.equal(positive?.positive_dag?.scenario_id,scenario.id);
+        assert.equal(positive?.positive_dag?.approved_work_branch,
+          scenario.workBranch);
         assert.equal(positive?.positive_dag?.approved_shared_mcp_enabled,true);
         assert.ok(positive?.positive_dag?.shared_mcp_http_requests>=21);
         assert.ok(positive?.positive_dag?.private_crypto_mcp_http_requests>=21);
@@ -623,7 +629,8 @@ async function main(){
     assert.deepEqual(prs,[]);
     process.stdout.write(JSON.stringify({
       event:"trusted_security_ci_real_docker_positive_acceptance",
-      status:"PASS",source:"pinned_baseline_plus_phase10b_reference",
+      status:"PASS",scenario_id:scenario.id,
+      source:"pinned_baseline_plus_phase10b_reference",
       baseline_sha:baseline,tested_commit_sha:approvedFeatureSha,
       exact_project_phases:TRUSTED_PROJECT_PHASES.length,
       project_tests:"pass",researcher_acceptance:"pass",

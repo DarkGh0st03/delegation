@@ -150,7 +150,8 @@ export const APPROVED_OFFLINE_SCENARIOS=Object.freeze({
   })
 });
 export function getApprovedOfflineScenario(id="account-suspension"){
+  if(!Object.hasOwn(APPROVED_OFFLINE_SCENARIOS,id))
+    throw Error("Unsupported approved offline scenario");
   const selected=APPROVED_OFFLINE_SCENARIOS[id];
-  if(!selected)throw Error("Unsupported approved offline scenario");
   return selected;
 }
