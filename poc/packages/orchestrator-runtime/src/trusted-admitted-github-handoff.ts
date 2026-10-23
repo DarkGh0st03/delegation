@@ -20,6 +20,8 @@ import {SignedPlanningCheckpointFileStore}
   from "./trusted-planning-checkpoint-store.ts";
 import {startPersistedReviewedGeminiHandoff}
   from "./trusted-manual-gemini-handoff.ts";
+import {createReviewedApprovedDagExecution}
+  from "./trusted-reviewed-approved-dag.ts";
 import {verifyGithubManualRunViaApi}
   from "./trusted-manual-github-dispatch.ts";
 
@@ -252,8 +254,16 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
       deny("GitHub job lost; operational root revocation unconfirmed");
     throw error;
   }
+  // The admitted host now exposes ONE private execution route that binds
+  // the reviewed Gemini role servers to the SAME signed-plan dispatcher used
+  // by offline E2E. Merely creating this controller performs no inference.
+  const approvedDag=createReviewedApprovedDagExecution({
+    coordinator:input.coordinator,reviewGate:input.reviewGate,running,
+    verifyLiveRun:checkNow,close:stop
+  });
   return Object.freeze({
     ...running,
+    approvedDag,
     githubRunWatch:Object.freeze({
       checkNow,
       get status():WatchStatus{return status;}
