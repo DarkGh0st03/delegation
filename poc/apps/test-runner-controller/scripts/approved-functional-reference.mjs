@@ -4,8 +4,8 @@
  * They intentionally affect observable application behavior, not comments.
  * Every transformation is anchored to the exact reference source.
  */
-import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
-  "../fixtures/account-suspension-reference.mjs";
+import {getApprovedOfflineScenario} from
+  "../fixtures/approved-scenarios.mjs";
 
 export const APPROVED_FUNCTIONAL_CHANGES=Object.freeze({
   backend:{
@@ -25,16 +25,20 @@ function replaceExactlyOnce(source,oldText,newText){
   return source.slice(0,first)+newText+source.slice(first+oldText.length);
 }
 
-export function approvedFunctionalEdit(role,source){
+export function approvedFunctionalEdit(role,source,
+  scenarioId=process.env.APPROVED_RUNNER_SCENARIO){
   const entry=APPROVED_FUNCTIONAL_CHANGES[role];
+  const approved=getApprovedOfflineScenario(scenarioId);
   if(!entry||typeof source!=="string"||
-     source!==ACCOUNT_SUSPENSION_REFERENCE_FILES[entry.path]){
+     source!==approved.files[entry.path]){
     throw Error("Functional edit refused: role or pinned source differs");
   }
   if(role==="backend"){
-    const before="    }));\n  }\n\n  getUser(id: string): UserDetails {";
+    // The service may also contain a separate department-filtering method.
+    // Anchor to the exact summary map instead of a neighboring method name.
+    const before="    }));\n  }\n\n";
     const after="    })).sort((a, b) => a.displayName.localeCompare(b.displayName));\n"+
-      "  }\n\n  getUser(id: string): UserDetails {";
+      "  }\n\n";
     return replaceExactlyOnce(source,before,after);
   }
   if(role==="frontend"){

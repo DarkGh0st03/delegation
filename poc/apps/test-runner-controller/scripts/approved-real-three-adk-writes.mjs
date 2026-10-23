@@ -17,8 +17,10 @@ import {startSpecializedAgentServer} from
   "../../../packages/agent-runtime/src/server.ts";
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
-import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
-  "../fixtures/account-suspension-reference.mjs";
+import {getApprovedOfflineScenario} from
+  "../fixtures/approved-scenarios.mjs";
+const SCENARIO=getApprovedOfflineScenario(process.env.APPROVED_RUNNER_SCENARIO);
+const referenceFiles=SCENARIO.files;
 import {approvedFunctionalEdit} from "./approved-functional-reference.mjs";
 
 export const THREE_ROLE_FILES=Object.freeze({
@@ -104,7 +106,7 @@ export async function applyApprovedRealAgentEdits({
           assert.equal(result.execution.performed,true);
           if(result.execution.tool==="read_file"){
             const observed=result.execution;
-            const expected=ACCOUNT_SUSPENSION_REFERENCE_FILES[observed.path];
+            const expected=referenceFiles[observed.path];
             if(typeof expected!=="string"||observed.content!==expected){
               throw Error("Untrusted source mismatch: abort pinned functional edit");
             }
@@ -125,7 +127,7 @@ export async function applyApprovedRealAgentEdits({
     };
     for(const role of ROLES){
       const path=THREE_ROLE_FILES[role];
-      const source=ACCOUNT_SUSPENSION_REFERENCE_FILES[path];
+      const source=referenceFiles[path];
       assert.equal(typeof source,"string");
       // The real provider file is independently checked during each
       // authorized read; actual write is a pinned, non-LLM transformation.
@@ -169,7 +171,8 @@ export async function applyApprovedRealAgentEdits({
           validity_seconds:1200,
           credential_status:{
             type:"BitstringStatusListEntry",statusPurpose:"revocation",
-            statusListIndex:role==="backend"?"18074":"18075",
+            statusListIndex:String(SCENARIO.statusIndexBase+
+               (role==="backend"?3:4)),
             statusListCredential:
               "https://status.example/lists/scoped-native-evm"
           }
@@ -190,9 +193,9 @@ export async function applyApprovedRealAgentEdits({
         approvedBranch,THREE_ROLE_FILES[role]);
       assert.equal(reread.revision,actual.commit_sha);
       assert.equal(reread.content,approvedFunctionalEdit(role,
-        ACCOUNT_SUSPENSION_REFERENCE_FILES[THREE_ROLE_FILES[role]]));
+        referenceFiles[THREE_ROLE_FILES[role]]));
       assert.notEqual(reread.content,
-        ACCOUNT_SUSPENSION_REFERENCE_FILES[THREE_ROLE_FILES[role]],
+        referenceFiles[THREE_ROLE_FILES[role]],
         "Each scripted role must perform a substantive source change");
       lastSha=actual;
     }

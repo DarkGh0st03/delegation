@@ -139,6 +139,7 @@ export const APPROVED_OFFLINE_SCENARIOS=Object.freeze({
   "account-suspension":Object.freeze({
     id:"account-suspension",requirement:"Implement account suspension and reactivation",
     fixtureBranch:"feature/account-suspension",workBranch:"feature/native-planning-read",
+    statusIndexBase:18071,
     files:ACCOUNT_SUSPENSION_REFERENCE_FILES
   }),
   "department-directory":Object.freeze({
@@ -146,6 +147,7 @@ export const APPROVED_OFFLINE_SCENARIOS=Object.freeze({
     requirement:"Provide authorized, case-insensitive user directory search by department",
     fixtureBranch:"feature/department-directory",
     workBranch:"feature/native-department-directory",
+    statusIndexBase:18171,
     files:department
   })
 });

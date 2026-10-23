@@ -43,6 +43,8 @@ import {RunnerClient} from "../../gateway/src/runner-client.ts";
 import {createRunnerHttpServer} from "../src/http.ts";
 import {applyApprovedRealAgentEdits,THREE_ROLE_FILES} from
   "./approved-real-three-adk-writes.mjs";
+import {getApprovedOfflineScenario} from
+  "../fixtures/approved-scenarios.mjs";
 import {DelegatedA2ARoleRunner} from
   "../../../packages/orchestrator-runtime/src/a2a-workflow.ts";
 import {observedA2ACompletion} from
@@ -97,7 +99,9 @@ async function adapterPresentation(credentialId,required,prepared){
   return result.signed_vp;
 }
 const REPOSITORY={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
-const BRANCH="feature/account-suspension";
+const SCENARIO=getApprovedOfflineScenario(process.env.APPROVED_RUNNER_SCENARIO);
+const BRANCH=SCENARIO.fixtureBranch;
+const STATUS_BASE=SCENARIO.statusIndexBase;
 const SHA=/^[a-f0-9]{40}$/u;
 
 export async function beginApprovedRealRunnerSession({
@@ -230,12 +234,12 @@ export async function beginApprovedRealRunnerSession({
         credentials,sessionId,baseRevision:mainSha
       });
       const planning=await coordinator.beginPlanning(
-        nativeCredential("urn:native:positive-plan-"+unique,18071,180));
+        nativeCredential("urn:native:positive-plan-"+unique,STATUS_BASE,180));
       assert.equal(planning.phase,"planning");
       assert(planning.permissions.every(p=>
         ["read_repository","list_directory","read_file"].includes(p.operation)));
       const active=await coordinator.beginExecution(nativeCredential(
-        "urn:native:positive-operational-"+unique,18072,1500));
+        "urn:native:positive-operational-"+unique,STATUS_BASE+1,1500));
       assert.equal(active.plan_digest,planDigest(plan));
       assert.deepEqual(coordinator.trustedOperationalAuthority().permissions,
         selectedPermissions);
@@ -298,7 +302,7 @@ export async function beginApprovedRealRunnerSession({
     }
     const childId=native?"urn:native:positive-test-"+unique:
       "urn:fixture:scoped-test-child";
-    const childInput=nativeCredential(childId,18073,1200);
+    const childInput=nativeCredential(childId,STATUS_BASE+2,1200);
     const scopedIssuer=native?
       await TrustedApprovedPlanChildAuthorityIssuer.create({
         approvals,coordinator,sessionId,engineerDid:DID,

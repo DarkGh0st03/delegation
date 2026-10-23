@@ -5,6 +5,9 @@ test("second requirement changes actual backend, Frontend and tests while keepin
   const old=getApprovedOfflineScenario("account-suspension");
   const second=getApprovedOfflineScenario("department-directory");
   assert.notEqual(old.workBranch,second.workBranch);
+  assert.equal(old.statusIndexBase,18071);
+  assert.equal(second.statusIndexBase,18171);
+  assert.ok(second.statusIndexBase-old.statusIndexBase>=5);
   assert.deepEqual(Object.keys(old.files).sort(),Object.keys(second.files).sort());
   const changed=Object.keys(old.files).filter(path=>old.files[path]!==second.files[path]);
   assert.ok(changed.length>=7);
@@ -23,4 +26,22 @@ test("second requirement changes actual backend, Frontend and tests while keepin
 test("scenario selector never accepts an untrusted path or unregistered variant",()=>{
   assert.throws(()=>getApprovedOfflineScenario("../../secrets"),/Unsupported/);
   assert.throws(()=>getApprovedOfflineScenario("toString"),/Unsupported/);
+});
+
+test("both pinned functional source edits work on the distinct Department Directory requirement",async()=>{
+ const {approvedFunctionalEdit}=await import("./approved-functional-reference.mjs");
+ for(const id of ["account-suspension","department-directory"]){
+   const scenario=getApprovedOfflineScenario(id);
+   for(const [role,path] of [
+     ["backend","apps/backend/src/users/user.service.ts"],
+     ["frontend","apps/frontend/src/pages/UserDetailPage.tsx"]
+   ]){
+     const edited=approvedFunctionalEdit(role,scenario.files[path],id);
+     assert.notEqual(edited,scenario.files[path]);
+   }
+ }
+ assert.throws(()=>approvedFunctionalEdit("backend",
+   getApprovedOfflineScenario("account-suspension").files[
+    "apps/backend/src/users/user.service.ts"],"department-directory"),
+   /pinned source differs/);
 });
