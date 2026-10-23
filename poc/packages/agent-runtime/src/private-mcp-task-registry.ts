@@ -130,6 +130,16 @@ export class PrivateMcpTaskRegistry {
       signal.addEventListener("abort", task.onAbort, {once:true});
     }
     this.#active.set(taskId, task);
+    if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&this.#role==="backend"){
+      // Temporary offline diagnostic: counts only, no paths or private data.
+      process.stderr.write(JSON.stringify({
+        event:"native_mcp_task_scope",
+        role:this.#role,allowedPaths:task.allowedPaths?.size??0,
+        approvedFileOperations:task.allowedFilePermissions?.size??0,
+        testPathCount:[...(task.allowedPaths??[])].filter(x=>x.startsWith("tests/")).length,
+        testOperationCount:[...(task.allowedFilePermissions??[])].filter(x=>x.includes("tests/")).length
+      })+"\n");
+    }
   }
 
   /** Only the trusted ADK client factory may read this value; never pass to Gemini. */
@@ -269,6 +279,15 @@ export class PrivateMcpTaskRegistry {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     const payload = request as Record<string,unknown>;
+    const failScoped=(check:string):never=>{
+      if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"){
+        process.stderr.write(JSON.stringify({
+          event:"native_mcp_scope_refusal",role:this.#role,
+          tool:payload.tool,check
+        })+"\n");
+      }
+      throw new PrivateMcpTaskError("invalid_tool_call");
+    };
     if (Object.keys(payload).sort().join(",") !== "arguments,tool" || (payload.tool !== "read_file" && payload.tool !== "update_file" && payload.tool !== "create_file" && payload.tool !== "run_tests")) {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
@@ -281,18 +300,18 @@ export class PrivateMcpTaskRegistry {
           : payload.tool === "create_file"
             ? parseCreateFileArgs(payload.arguments,"approved")
             : parseRunTestsArgs(payload.arguments,"approved");
-    } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
+    } catch { return failScoped("parse"); }
     if(args.branch!==(task.approvedBranch??LEGACY_A2A_BRANCH))
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      return failScoped("branch");
     if(payload.tool!=="run_tests"&&task.allowedPaths!==undefined&&
        !("path" in args && task.allowedPaths.has(args.path))){
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      return failScoped("path");
     }
     if(payload.tool!=="run_tests"&&
        task.allowedFilePermissions!==undefined&&
        !("path" in args &&task.allowedFilePermissions.has(
          payload.tool+"\0"+args.path))){
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      return failScoped("operation");
     }
     if (payload.tool === "update_file" &&
         (!task.allowUpdateFile ||
