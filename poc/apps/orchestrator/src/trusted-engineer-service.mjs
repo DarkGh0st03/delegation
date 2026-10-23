@@ -29,14 +29,18 @@ async function protectedText(path,maxLength=131072){
     denied();
   await ownedPrivateDir(dirname(path));
   // Don't follow an attacker-replaced final symlink, read the open inode.
-  const handle=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+  let handle;
   try{
+    handle=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
     const st=await handle.stat();
     if(!st.isFile()||(st.mode&0o077)!==0||
        (typeof process.getuid==="function"&&st.uid!==process.getuid())||
        st.size===0||st.size>maxLength)denied();
     return await handle.readFile({encoding:"utf8"});
-  }finally{await handle.close();}
+  }catch{
+    // Never leak key paths or filesystem error codes to service logs.
+    denied();
+  }finally{await handle?.close();}
 }
 function path(value){
   if(typeof value!=="string"||!isAbsolute(value)||
