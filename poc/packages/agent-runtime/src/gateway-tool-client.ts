@@ -128,6 +128,13 @@ export class GatewayControlledToolClient {
       );
     }
 
+    if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&tool==="read_file"){
+      process.stderr.write(JSON.stringify({
+        event:"native_mcp_gateway_prepare_status",role:this.#agentRole,
+        testPath:typeof args.path==="string"&&args.path.startsWith("tests/"),
+        httpStatus:prepareResponse.status
+      })+"\n");
+    }
     const preparedBody = await parseJson(prepareResponse, "Gateway prepare");
     if (!prepareResponse.ok) {
       throw new ControlledToolError(

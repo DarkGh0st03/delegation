@@ -329,7 +329,24 @@ export class PrivateMcpTaskRegistry {
         !SPECIALIZED_AGENT_PROFILES.test.can_run_tests)){
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
-    const result = await task.client.invoke(payload.tool, args);
+    // Offline integration diagnostics only. No source, credentials, paths or
+    // model-controlled text is ever included in these events.
+    const trace=process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&
+      payload.tool==="read_file";
+    if(trace)process.stderr.write(JSON.stringify({
+      event:"native_mcp_gateway_boundary",role:this.#role,phase:"invoke",
+      isTestPath:"path" in args && args.path.startsWith("tests/")
+    })+"\n");
+    let result:unknown;
+    try{result=await task.client.invoke(payload.tool, args);}
+    catch(error){
+      if(trace)process.stderr.write(JSON.stringify({
+        event:"native_mcp_gateway_boundary",role:this.#role,phase:"rejected",
+        kind:error instanceof Error&&"kind" in error&&
+          typeof error.kind==="string" ? error.kind:"unknown"
+      })+"\n");
+      throw error;
+    }
     // If cancellation raced with the network call, never advertise success.
     if (task.signal?.aborted || this.#active.get(claims.task_id) !== task) {
       throw new PrivateMcpTaskError("inactive_task");
