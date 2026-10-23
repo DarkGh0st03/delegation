@@ -34,11 +34,10 @@ export function approvedFunctionalEdit(role,source,
     throw Error("Functional edit refused: role or pinned source differs");
   }
   if(role==="backend"){
-    // The service may also contain a separate department-filtering method.
-    // Anchor to the exact summary map instead of a neighboring method name.
-    const before="    }));\n  }\n\n";
-    const after="    })).sort((a, b) => a.displayName.localeCompare(b.displayName));\n"+
-      "  }\n\n";
+    // Match the complete listUsers method: Department Directory adds
+    // another summary mapping and a trailing-only anchor becomes ambiguous.
+    const before="  listUsers(): UserSummary[] {\n    return this.repository.findAll().map(({ id, displayName, email, status }) => ({\n      id,\n      displayName,\n      email,\n      status\n    }));\n  }";
+    const after="  listUsers(): UserSummary[] {\n    return this.repository.findAll().map(({ id, displayName, email, status }) => ({\n      id,\n      displayName,\n      email,\n      status\n    })).sort((a, b) => a.displayName.localeCompare(b.displayName));\n  }";
     return replaceExactlyOnce(source,before,after);
   }
   if(role==="frontend"){
