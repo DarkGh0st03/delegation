@@ -95,7 +95,8 @@ function sketch(x:Scenario){
 }
 class ScriptedPlanningModel extends BaseLlm{
   turns=0;
-  constructor(readonly x:Scenario){super({model:"scripted-r2-planning-only"});}
+  readonly x:Scenario;
+  constructor(x:Scenario){super({model:"scripted-r2-planning-only"});this.x=x;}
   override async *generateContentAsync(_req:LlmRequest):
     AsyncGenerator<LlmResponse,void>{
     this.turns++;
