@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {mkdtemp,mkdir,writeFile,chmod,symlink,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {execFile} from "node:child_process";
+import {promisify} from "node:util";
 import {loadTrustedEngineerServiceConfig}
   from "../src/trusted-engineer-service.mjs";
 async function fixture(){
@@ -132,5 +134,42 @@ test("service refuses empty/weak tokens, missing TLS material or unsafe config",
     await f.save();
     await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
       /configuration denied/);
+  }finally{await f.close();}
+});
+
+
+test("service command loads Node 22 TypeScript dependencies and fails closed before startup",async()=>{
+  const run=promisify(execFile);
+  const executable=new URL("../src/start-trusted-engineer-service.mjs",import.meta.url);
+  const env={...process.env};
+  delete env.DELEGATION_ENGINEER_SERVICE_CONFIG;
+  await assert.rejects(run(process.execPath,[
+    "--experimental-strip-types",executable.pathname
+  ],{env,timeout:12000,maxBuffer:8192}),error=>{
+    assert.equal(error.code,1);
+    assert.match(error.stderr,/Trusted Engineer service startup denied/);
+    assert.doesNotMatch(error.stderr,/ERR_UNKNOWN_FILE_EXTENSION|secret|Bearer |private key/);
+    assert.equal(error.stdout,"");
+    return true;
+  });
+});
+test("service rejects unknown nested host authorities and untrusted runtime overrides",async()=>{
+  const f=await fixture();
+  try{
+    const variants=[
+      [f.config.approval,"runtimeApproval",true],
+      [f.config.oidc,"githubApiFetchFn","malicious"],
+      [f.config.oidc.tls,"rejectUnauthorized",false],
+      [f.config.oidc.pinned,"sourceShaOverride","c".repeat(40)],
+      [f.config.oidc.trust,"ownerOverride","attacker"],
+      [f.config.recovery,"credentials",{revokeRoot:"untrusted"}]
+    ];
+    for(const [target,key,value] of variants){
+      target[key]=value;
+      await f.save();
+      await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
+        /configuration denied/);
+      delete target[key];
+    }
   }finally{await f.close();}
 });

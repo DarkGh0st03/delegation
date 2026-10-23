@@ -16,6 +16,12 @@ function denied(){
 function record(value){
   return value!==null&&typeof value==="object"&&!Array.isArray(value);
 }
+// Owner-authored JSON is still data, not executable host policy. Refuse
+// unexpected keys rather than silently forwarding newly added authority,
+// transport or integration fields into the trusted runtime.
+function allowedKeys(value,keys){
+  return record(value)&&Object.keys(value).every(k=>keys.includes(k));
+}
 async function ownedPrivateDir(path){
   if(typeof path!=="string"||!isAbsolute(path)||normalize(path)!==path)
     denied();
@@ -61,6 +67,29 @@ export async function loadTrustedEngineerServiceConfig(configPath){
      !record(source.oidc.pinned)||!record(source.oidc.trust))
     denied();
   const approval=source.approval,oidc=source.oidc,recovery=source.recovery;
+  if(!allowedKeys(approval,[
+       "engineerDid","keyId","expectedSessionId","expectedBaseRevision",
+       "repository","receiptDirectory","trustedPlanFile","privateKeyFile",
+       "publicKeyPemFile","passwordSaltHex","passwordScryptHex"
+     ])||
+     !allowedKeys(oidc,[
+       "pinned","trust","replayDirectory","admissionDirectory",
+       "bindAddress","githubApiTokenFile","hmacSecretHexFile","tls"
+     ])||
+     !allowedKeys(recovery,[
+       "directory","gatewaySocketPath","gatewaySecretFile",
+       "adapterBaseUrl","adapterTokenFile"
+     ])||
+     !allowedKeys(oidc.tls,[
+       "caFile","certFile","keyFile","expectedClientFingerprint256"
+     ])||
+     !allowedKeys(oidc.pinned,[
+       "repository","ref","workflowPath","sourceSha"
+     ])||
+     !allowedKeys(oidc.trust,[
+       "expectedAudience","expectedSubject",
+       "expectedRepositoryId","expectedOwnerId"
+     ]))denied();
   const requiredPaths=[
     approval.trustedPlanFile,approval.privateKeyFile,
     approval.publicKeyPemFile,oidc.githubApiTokenFile,

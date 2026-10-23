@@ -661,3 +661,6 @@ Offline configuration tests cover owner-only secrets, symlinks,
 insecure directories, missing TLS and untrusted fields. **No service
 is installed or started outside the disposable test environment.**
 Use the guarded R5 NO-GO checklist before any external deployment.
+
+
+**Verified launch command (Node 22):** `npm --prefix poc run engineer:service`. This script explicitly enables Node's `--experimental-strip-types` for the existing TypeScript Gateway/Coordinator dependencies. The command requires the protected `DELEGATION_ENGINEER_SERVICE_CONFIG` service environment variable; without it, startup exits with a generic denial and never opens a listener. A bare `node start-trusted-engineer-service.mjs` without the Node 22 flag is **not** a supported deployment command. The loader also rejects unexpected nested runtime fields rather than silently forwarding them into the trusted host.
