@@ -46,8 +46,8 @@ export function verifiedPrivateOidcBindAddress(
 ):string{
   const address=value??"127.0.0.1";
   if(address==="127.0.0.1")return address;
-  if(!tlsConfigured||isIP(address)!==4)
-    throw Error("Trusted OIDC intake: private interface requires pinned mTLS");
+  if(isIP(address)!==4)
+    throw Error("Trusted OIDC intake: invalid private interface address");
   const octets=address.split(".").map(Number);
   const [first,second]=octets;
   const privateRfc1918=first===10||
@@ -55,6 +55,8 @@ export function verifiedPrivateOidcBindAddress(
     (first===192&&second===168);
   if(!privateRfc1918)
     throw Error("Trusted OIDC intake: public/wildcard interface prohibited");
+  if(!tlsConfigured)
+    throw Error("Trusted OIDC intake: private interface requires pinned mTLS");
   return address;
 }
 const ENV_KEYS=[
