@@ -362,6 +362,7 @@ async function main(){
     image],"start no-volume isolated Gitea");
   containerStarted=true;
   let workRoot=null,logs=null,approvedSession=null;
+  let nativePrEvidence=null; // Separate signed DAG branch, not Security CI's branch
   try{
     const portInfo=docker(["port",container,"3000/tcp"],
       "inspect disposable Gitea localhost port");
@@ -493,6 +494,15 @@ async function main(){
         assert.ok(Number.isSafeInteger(
           positive?.positive_dag?.pull_request_number));
         assert.equal(positive?.positive_dag?.merge_calls,0);
+        nativePrEvidence=Object.freeze({
+          branch:positive.positive_dag.approved_work_branch,
+          sha:positive.positive_dag.approved_branch_sha,
+          number:positive.positive_dag.pull_request_number,
+          url:positive.positive_dag.pull_request_url
+        });
+        assert.equal(nativePrEvidence.branch,scenario.workBranch);
+        assert.match(nativePrEvidence.sha,/^[a-f0-9]{40}$/u);
+        assert.equal(positive.positive_dag.tested_commit_sha,nativePrEvidence.sha);
         assert.equal(positive?.provider_writes,11);
         process.stderr.write("[trusted-positive-ci] native_disposable_planning "+
           JSON.stringify({status:"PASS",real_gitea_sha:fixture.mainSha,
@@ -634,14 +644,28 @@ async function main(){
     assert.ok(Array.isArray(prs));
     const signedDag=process.env.APPROVED_RUNNER_THREE_AGENT_DAG==="1";
     if(signedDag){
+      assert.ok(nativePrEvidence,
+        "Missing immutable native DAG PR evidence");
       assert.equal(prs.length,1,
         "Signed DAG must open one real PR after exact-SHA acceptance");
       const pr=prs[0];
+      // The signed DAG and independent Security CI intentionally operate
+      // on DIFFERENT feature branches. Do not compare the PR to the latter.
       assert.equal(pr.state,"open");
       assert.equal(pr.merged,false);
-      assert.equal(pr.head?.ref,branch);
-      assert.equal(pr.head?.sha,approvedFeatureSha);
+      assert.equal(pr.number,nativePrEvidence.number);
+      assert.equal(pr.head?.ref,nativePrEvidence.branch);
+      assert.equal(pr.head?.sha,nativePrEvidence.sha);
       assert.equal(pr.base?.ref,"main");
+      if(nativePrEvidence.url!==null){
+        assert.equal(pr.html_url,nativePrEvidence.url);
+      }
+      const nativeHead=await api(base,repository+"/branches/"+
+        encodeURIComponent(nativePrEvidence.branch),{
+          authorization:creds.admin,label:"verify_native_pr_exact_head"
+        });
+      assert.equal(nativeHead.commit.id,nativePrEvidence.sha);
+      assert.equal(main.commit.id,fixture.mainSha);
     }else{
       assert.deepEqual(prs,[],
         "Non-DAG security regression must not create a PR");
@@ -667,7 +691,8 @@ async function main(){
       real_backend_frontend_gitea_edits:approvedSession.approvedBackendFrontendEdits,
       native_approved_source_reads:process.env.APPROVED_RUNNER_THREE_AGENT_DAG==="1"
         ? 4 : 0,
-      approval_created:true,pr_created:signedDag,merge_calls:0,
+      approval_created:true,pr_created:signedDag,
+      pr_source:signedDag?"native_signed_dag":null,merge_calls:0,
       persistent_gitea_modified:false
     })+"\n");
   }finally{
