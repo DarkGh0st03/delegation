@@ -447,7 +447,7 @@ try{
   assert.equal(jwtResponse.status,200);
   const signedBeforeRevoke=(await jwtResponse.json()).signed_vp;
   assert.ok(typeof signedBeforeRevoke==="string"&&signedBeforeRevoke.length>100);
-  let operationalRootId;
+  let operationalRootId,revocationChecked=false;
   if(signedHandoff){
     const packet=reviewGate.stageTrustedProposal(proposed);
     assert.equal(packet.status,"awaiting_engineer_signature");
@@ -490,6 +490,17 @@ try{
       }
     });
     revoked=true; // Coordinator confirmed EVM revocation before activation
+    // Test the PRE-revocation signed VP immediately while its challenge
+    // is still live. Docker can exceed the short Prepare TTL; checking after
+    // the full E2E would only prove request expiry (410), not EVM revocation.
+    const revocationReadCount=log.giteaReads;
+    await assert.rejects(
+      runtime.execute({request_id:waiting.request_id,
+        signed_vp:signedBeforeRevoke}),
+      e=>e?.code==="verification_rejected"
+    );
+    assert.equal(log.giteaReads,revocationReadCount);
+    revocationChecked=true;
     operationalRootId=active.credential_id;
     assert.equal(active.plan_digest,packet.plan_digest);
     assert.equal(coordinator.phase,"execution");
@@ -610,13 +621,16 @@ try{
     revoked=true;
   }
   const before=log.giteaReads;
-  await assert.rejects(
-    runtime.execute({request_id:waiting.request_id,
-      signed_vp:signedBeforeRevoke}),
-    (e)=>e?.code==="verification_rejected"
-  );
+  if(!revocationChecked){
+    // Standalone Planning-only test revokes shortly before this point.
+    await assert.rejects(
+      runtime.execute({request_id:waiting.request_id,
+        signed_vp:signedBeforeRevoke}),
+      e=>e?.code==="verification_rejected"
+    );
+  }
   assert.equal(log.giteaReads,before);
-  // Coordinator is still in Planning; retaining its read port must not
+  // A stale Planning read port must never
   // let any caller bypass status revocation or obtain new effective access.
   await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
   assert.equal(log.giteaReads,before);
