@@ -30,6 +30,8 @@ import {GatewayCorroboratedTaskAttestor} from
 import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
 import {getApprovedOfflineScenario} from
   "../../test-runner-controller/fixtures/approved-scenarios.mjs";
+import {makeOfflineReviewableDag} from
+  "../../../packages/orchestrator-runtime/test/fixtures/offline-planning-dag.mjs";
 import {BaseLlm} from "@google/adk";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
@@ -101,23 +103,8 @@ const rootId="urn:native:planning-only-"+randomBytes(7).toString("hex");
 // authority; the signed plan and the snapshot explicitly enumerate every
 // permitted path. One E2E spec is absent on main and must be created by the
 // separately scoped Test role, not by Backend/Frontend.
-const roleFiles={
-  backend:[
-    "packages/shared/src/account-status.ts",
-    "apps/backend/src/users/user.service.ts",
-    "apps/backend/src/users/user.controller.ts",
-    "apps/backend/src/users/user.routes.ts",
-    "tests/backend/user.service.test.ts",
-    "tests/backend/user.routes.test.ts"
-  ],
-  frontend:[
-    "apps/frontend/src/api/users-api.ts",
-    "apps/frontend/src/pages/UserDetailPage.tsx",
-    "apps/frontend/src/styles.css",
-    "tests/frontend/UserDetailPage.test.tsx"
-  ]
-};
-const newTestFile="tests/e2e/account-suspension.spec.ts";
+const roleFiles=scenario.planning_intent.edits;
+const newTestFile=scenario.planning_intent.newTestFile;
 const existingFiles=[...roleFiles.backend,...roleFiles.frontend];
 assert.deepEqual([...existingFiles,newTestFile].sort(),
   Object.keys(referenceFiles).sort());
@@ -170,34 +157,10 @@ const legacyPlanSketch={
         reason:"Execute tests and independent acceptance on approved branch"}]}]:[])
   ],assumptions:[],uncertainties:[]
 };
-const planSketch=positiveDag?{
-  tasks:[
-    legacyPlanSketch.tasks[0],
-    ...(["backend","frontend"].map(role=>({
-      id:role,agent_id:role,title:"Authorized "+role+" implementation",
-      description:"Apply explicitly approved reference files for "+role,
-      depends_on:["branch"],
-      permissions:roleFiles[role].flatMap(path=>[
-        {operation:"read_file",path,reason:"Inspect pinned existing source"},
-        {operation:"update_file",path,reason:"Apply reviewed source replacement"}
-      ])
-    }))),
-    {id:"test",agent_id:"test",title:"Create exact reference E2E and verify",
-      description:"Create approved test fixture then run pinned Docker acceptance",
-      depends_on:["backend","frontend"],
-      permissions:[
-        {operation:"create_file",path:newTestFile,
-          reason:"Add reviewed scenario-specific regression and acceptance"},
-        {operation:"run_tests",path:null,
-          reason:"Execute real Docker phases at the final approved SHA"}
-      ]},
-    {id:"pr",agent_id:"orchestrator",title:"Open tested feature Pull Request",
-      description:"Request human review of the exact tested branch; never merge",
-      depends_on:["test"],
-      permissions:[{operation:"create_pull_request",path:null,
-        reason:"Propose tested changes without modifying protected main"}]}
-  ],assumptions:[],uncertainties:[]
-}:legacyPlanSketch;
+const planSketch=positiveDag?
+  makeOfflineReviewableDag({
+    snapshot,edits:roleFiles,newTestFile
+  }):legacyPlanSketch;
 class ScriptedReadPlanner extends BaseLlm{
   turns=0; requests=[];
   constructor(){super({model:"native-planning-offline-script"});}

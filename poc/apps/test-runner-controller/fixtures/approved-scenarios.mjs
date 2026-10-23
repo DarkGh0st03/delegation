@@ -135,12 +135,30 @@ const department=departmentDirectoryFiles();
 const previous=Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES).sort();
 const current=Object.keys(department).sort();
 if(JSON.stringify(previous)!==JSON.stringify(current))throw Error("Fixture key mismatch");
+const IAM_EDIT_INTENT=Object.freeze({
+  backend:Object.freeze([
+    "packages/shared/src/account-status.ts",
+    "apps/backend/src/users/user.service.ts",
+    "apps/backend/src/users/user.controller.ts",
+    "apps/backend/src/users/user.routes.ts",
+    "tests/backend/user.service.test.ts",
+    "tests/backend/user.routes.test.ts"
+  ]),
+  frontend:Object.freeze([
+    "apps/frontend/src/api/users-api.ts",
+    "apps/frontend/src/pages/UserDetailPage.tsx",
+    "apps/frontend/src/styles.css",
+    "tests/frontend/UserDetailPage.test.tsx"
+  ])
+});
+const IAM_TEST_FILE="tests/e2e/account-suspension.spec.ts";
 export const APPROVED_OFFLINE_SCENARIOS=Object.freeze({
   "account-suspension":Object.freeze({
     id:"account-suspension",requirement:"Implement account suspension and reactivation",
     fixtureBranch:"feature/account-suspension",workBranch:"feature/native-planning-read",
     statusIndexBase:18071,
-    files:ACCOUNT_SUSPENSION_REFERENCE_FILES
+    files:ACCOUNT_SUSPENSION_REFERENCE_FILES,
+    planning_intent:Object.freeze({edits:IAM_EDIT_INTENT,newTestFile:IAM_TEST_FILE})
   }),
   "department-directory":Object.freeze({
     id:"department-directory",
@@ -148,7 +166,8 @@ export const APPROVED_OFFLINE_SCENARIOS=Object.freeze({
     fixtureBranch:"feature/department-directory",
     workBranch:"feature/native-department-directory",
     statusIndexBase:18171,
-    files:department
+    files:department,
+    planning_intent:Object.freeze({edits:IAM_EDIT_INTENT,newTestFile:IAM_TEST_FILE})
   })
 });
 export function getApprovedOfflineScenario(id="account-suspension"){
