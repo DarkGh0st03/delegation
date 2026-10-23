@@ -158,3 +158,13 @@ The Gateway verifier, OPA decision, VP-issuing Adapter and provider execution
 are instrumented **test doubles**; actual plan/Gateway/MCP/HTTP/task logic is
 used unchanged. This is the R1 composition evidence, NOT the final R3
 Gitea+OPA+native Rust+EVM+Docker unified E2E or independent human signature.
+
+
+### Independent Engineer signature used in R1 composition
+
+The composed R1 test now loads its plan and permission subset through the
+actual owner-only SignedEngineerApprovalFileStore: a disposable Ed25519
+Engineer key signs the canonical plan and receipt, and the Gateway verifies
+its signature, key pin, session and validity window before activation.
+The test does not simulate an authenticated human GUI click and must not be
+reported as human consent. Browser login/CSRF/approval are separately tested.

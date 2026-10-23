@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync} from "node:crypto";
+import {mkdtemp,rm,writeFile} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import type {AddressInfo} from "node:net";
 import express from "express";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
@@ -19,6 +22,10 @@ import {TrustedCryptoMcpBridge} from "../src/trusted-crypto-mcp-bridge.ts";
 import {ControlledToolError} from "../src/controlled-errors.ts";
 import {makeApproval,planDigest}
   from "../../../packages/plan-contracts/src/plan.mjs";
+import {signEngineerApproval}
+  from "../../../packages/plan-contracts/src/signed-approval.mjs";
+import {SignedEngineerApprovalFileStore}
+  from "../../orchestrator-runtime/src/signed-approval-store.ts";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedExecutionPlans}
   from "../../../apps/gateway/src/approved-execution-plans.ts";
@@ -213,6 +220,7 @@ test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved 
   const resource=root+"/branches/"+encodeURIComponent(branch)+"/files/"+path;
   const sessionId="session-invoice-reviewed",taskId="dispatch_invoice_signed_01";
   const engineer="did:thesis:engineer",sha="a".repeat(40);
+  const reviewedAt=new Date();
   const plan={
     schema_version:"1.0.0",plan_id:"invoice-dynamic-mcp",
     session_id:sessionId,version:1,repository:repo,base_revision:sha,
@@ -231,15 +239,28 @@ test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved 
   const signedSubset=makeApproval(plan,{
     allowedOperations:new Set(RUST_OPERATIONS),
     decision_id:"decision-invoice",approved_by:engineer,
-    approved_at:"2026-10-23T09:00:00Z",
+    approved_at:reviewedAt.toISOString(),
     approved_permission_ids:["permission-invoice-write"]
   });
-  const approvalStore={
-    async loadAuthenticatedApproval(id:string){
-      assert.equal(id,sessionId);
-      return {plan,approval:signedSubset,authenticated_engineer_did:engineer};
-    }
-  };
+  // The trusted Gateway consumes an Ed25519 Engineer-signed receipt from
+  // the real protected file store. This proves signature and immutable
+  // plan binding (human GUI authentication is tested in a separate suite).
+  const approvalDirectory=await mkdtemp(join(tmpdir(),"r1-mcp-signed-engineer-"));
+  const engineerKey=keys();
+  const signedReceipt=signEngineerApproval({
+    plan,approval:signedSubset,engineerDid:engineer,
+    keyId:"r1-engineer-key",privateKeyPem:engineerKey.privateKey,
+    issuedAt:reviewedAt.toISOString(),
+    expiresAt:new Date(reviewedAt.getTime()+600_000).toISOString()
+  });
+  await writeFile(join(approvalDirectory,sessionId+".json"),
+    JSON.stringify(signedReceipt),{mode:0o600});
+  const approvalStore=new SignedEngineerApprovalFileStore({
+    directory:approvalDirectory,engineerDid:engineer,
+    trustedKeys:{"r1-engineer-key":{
+      engineer_did:engineer,public_key_pem:engineerKey.publicKey
+    }}
+  });
   const approvedPlans=new TrustedApprovedExecutionPlans({
     repository:repo,engineerDid:engineer,approvals:approvalStore,
     completionAttestor:{async confirmCompleted(){return false;}},
@@ -411,5 +432,6 @@ test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved 
     if(conn)await conn.close();
     await stop(crypto);await stop(shared);
     await stop(privateListener);await stop(gateway);
+    await rm(approvalDirectory,{recursive:true,force:true});
   }
 });
