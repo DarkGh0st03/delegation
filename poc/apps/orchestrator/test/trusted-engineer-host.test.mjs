@@ -397,6 +397,6 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   }),/reconciled session cannot be reused/);
   assert.equal(adapterCalls,2);
   assert.throws(()=>host.startReviewedHandoff({runId}),
-    /Cannot read properties|recovery journal/);
+    /trusted Coordinator recovery journal required/);
   await host.close();
 });

@@ -80,7 +80,7 @@ export async function startTrustedEngineerLocalHost(config){
     ...(recovery?[recovery.directory]:[])
   ];
   if(directories.some(x=>typeof x!=="string"||!x.trim())||
-     new Set(directories.map(dir=>resolve(dir))).size!==3)
+     new Set(directories.map(dir=>resolve(dir))).size!==directories.length)
     deny("separate owner-only replay/admission/Engineer directories required");
   for(const dir of directories)await privateDirectory(dir);
   // Reconcile BEFORE creating/listening on the Engineer UI or GitHub OIDC
@@ -146,7 +146,9 @@ export async function startTrustedEngineerLocalHost(config){
       // activate an operational DC without startup crash reconciliation.
       if(!operationalRecoveryStore)
         deny("startup operational recovery mandatory for reviewed handoff");
-      trusted.coordinator?.assertOperationalRecoveryStore(operationalRecoveryStore);
+      if(typeof trusted.coordinator?.assertOperationalRecoveryStore!=="function")
+        deny("trusted Coordinator recovery journal required");
+      trusted.coordinator.assertOperationalRecoveryStore(operationalRecoveryStore);
       return startAdmittedGithubReviewedGeminiHandoff({
         ...trusted,admissionStore,pins:{...fixedPins,runId},
         // Host configuration wins over every in-process caller argument.
