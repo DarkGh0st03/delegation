@@ -125,3 +125,20 @@ remaining explicit limitations and branch protection/merge decision.
 the existing ADK Planner → signed checkpoint → Engineer review →
 TrustedApprovedA2ADispatcher → approved three-agent path, without using
 the older preprogrammed Account Suspension workflow.
+
+
+## R1 branch migration: syntax at MCP, authorization at trusted worker
+
+The common MCP catalog, router and Streamable HTTP handler now accept
+syntactically valid `feature/*` branches. This does **not** grant authority:
+the private A2A task worker requires the exact active task's trusted branch,
+signed operation/path grants and role; Gateway Rust/DC/VP, plan checks,
+OPA and provider checks remain independent. A dynamic branch is accepted
+only when the trusted A2A handler supplies explicit approved file grants
+and scoped file paths. The old Account Suspension branch and static paths
+remain locked down for legacy tasks without those grants. The Docker test
+profile remains `poc-default`. The signed task worker, not the MCP tool
+schema or ADK callback, enforces all branch and file restrictions.
+The new tests exercise signed generic Backend read/write and Test create
+plus run_tests, and reject different branches, operations and paths.
+These are integration regressions, NOT a claim of completed R3 E2E.

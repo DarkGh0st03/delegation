@@ -20,3 +20,16 @@ test("model cannot inject role/task or request directory traversal",()=>{
     {branch:"feature/account-suspension",path:"a/./b"}
   ]) assert.throws(()=>parseReadFileArgs(x));
 });
+
+test("new signed Task parser admits safe feature branches, legacy default does not",()=>{
+  for(const branch of ["feature/invoice-sort","feature/ticket-42"]){
+    assert.equal(parseReadFileArgs({branch,path:"src/billing/invoice.ts"},"approved").branch,branch);
+    assert.throws(()=>parseReadFileArgs({branch,path:"src/billing/invoice.ts"}),/invalid_tool_arguments/);
+  }
+  for(const branch of ["main","feature/a..b","feature/x.lock",
+    "feature/x//y","feature/X","feature/x@{1}"]){
+    assert.throws(()=>parseReadFileArgs({branch,path:"src/billing/invoice.ts"},"approved"));
+  }
+  assert.throws(()=>parseReadFileArgs({branch:"feature/invoice-sort",
+    path:"src/billing/invoice.ts",session_id:"other"},"approved"));
+});
