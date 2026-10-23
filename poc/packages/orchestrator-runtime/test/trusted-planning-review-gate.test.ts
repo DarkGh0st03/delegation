@@ -26,6 +26,8 @@ import {startPersistedReviewedGeminiHandoff}
   from "../src/trusted-manual-gemini-handoff.ts";
 import {startAdmittedGithubReviewedGeminiHandoff}
   from "../src/trusted-admitted-github-handoff.ts";
+import {createReviewedApprovedDagExecution}
+  from "../src/trusted-reviewed-approved-dag.ts";
 import {TrustedGithubAdmissionReceiptStore}
   from "../src/trusted-github-admission-store.ts";
 import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
@@ -1109,4 +1111,66 @@ test("verified signed GitHub OIDC reaches live Planning and requires independent
     await rm(consentDir,{recursive:true,force:true});
     await rm(replayDir,{recursive:true,force:true});
   }
+});
+
+
+test("offline admitted manual bridge loads the SAME authenticated approved DAG without Gemini inference",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:bridge:planning","801"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,proposal.plan.requested_permissions.map(p=>p.id));
+    const active=await f.coordinator.beginExecution(root("urn:bridge:operational","802"));
+    assert.equal(active.plan_digest,proposal.digest);
+    let liveChecks=0,closed=0,orchestratorStarts=0,modelCalls=0;
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,
+      running:{
+        operational_root_id:active.credential_id,
+        readiness:{
+          session_id:SNAPSHOT.session_id,
+          base_revision:SHA,
+          plan_digest:proposal.digest,
+          authenticated_engineer_did:ENGINEER
+        },
+        endpoints:{
+          backend:"http://127.0.0.1:18831",
+          frontend:"http://127.0.0.1:18832",
+          test:"http://127.0.0.1:18833"
+        }
+      } as any,
+      async verifyLiveRun(){liveChecks++;},
+      async close(){
+        closed++;
+        if(f.coordinator.phase==="execution")
+          await f.coordinator.closeExecution();
+      }
+    });
+    await assert.rejects(bridge.executeApprovedDag({
+      a2a:{async sendProtectedTask(){
+        modelCalls++;
+        throw Error("No role inference should start in this offline check");
+      }},
+      adapter:{adapterBaseUrl:"http://127.0.0.1:8090",
+        bearerToken:"offline-adapter-never-called"},
+      async authorityForTask(){
+        throw Error("No child root before Orchestrator branch confirmation");
+      },
+      async invokeOrchestratorTask(taskId,gatewayTaskId){
+        orchestratorStarts++;
+        assert.equal(taskId,"branch");
+        assert.match(gatewayTaskId,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+        // Confirms the signed DAG was loaded and the correct first Task was
+        // reached. Abort before any mock/paid provider or specialized Agent.
+        throw Error("offline signed-DAG bridge reached approved branch Task");
+      }
+    }),/offline signed-DAG bridge reached approved branch Task/);
+    assert.equal(liveChecks,1);
+    assert.equal(orchestratorStarts,1);
+    assert.equal(modelCalls,0);
+    assert.equal(closed,1);
+    assert.equal(f.coordinator.phase,"closed");
+    assert.ok(f.revoked.includes("urn:bridge:operational"));
+  }finally{await f.close();}
 });
