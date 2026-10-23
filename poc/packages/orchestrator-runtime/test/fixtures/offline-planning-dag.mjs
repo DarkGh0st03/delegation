@@ -7,10 +7,17 @@
  * planner/compiler and a separately signed Engineer approval.
  */
 const ROLES=["backend","frontend"];
-const SAFE_PATH=/^[^%\\\\\\x00-\\x1f\\x7f]+$/u;
+function unsafePath(path){
+  if(path.includes("%")||path.includes(String.fromCharCode(92)))return true;
+  for(let i=0;i<path.length;i++){
+    const code=path.charCodeAt(i);
+    if(code<32||code===127)return true;
+  }
+  return false;
+}
 function canonical(path){
   return typeof path==="string" && path.length>0 && path.length<=240 &&
-    SAFE_PATH.test(path) && !path.startsWith("/") && !path.includes("//") &&
+    !unsafePath(path) && !path.startsWith("/") && !path.includes("//") &&
     path.split("/").every(p=>p!==""&&p!=="."&&p!=="..");
 }
 function requirePath(path){
