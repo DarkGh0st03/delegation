@@ -222,3 +222,23 @@ and Test never start. Rust issuance/VP, policy and provider remain test
 doubles, and the trusted root coordinator in this test is a minimal fixture.
 The next R3 milestone is to replace those fixtures with real services in a
 single disposable CI topology, not to rewrite the A2A transport.
+
+
+### R3 bridge: same native Gateway for read-only ADK Planning and three-Agent EVM execution
+
+The native EVM 3-role script now obtains a *real Rust-issued preliminary
+Planning root first*, registers the Gitea SHA in TrustedPlanningRevisions,
+and runs the existing TrustedAdkReadOnlyPlanner with a source read through
+the real TrustedPlanningGatewayReadPort and SAME GatewayRuntime's Prepare/
+Execute, Adapter-signed VP, native Core Rust verification and live OPA.
+The underlying repository contents are **pinned fixture data** in this job,
+not actual Gitea. After ADK produces an unapproved plan, a distinct backend
+Ed25519 key signs its checkpoint and TrustedPlanningReviewGate verifies it.
+An independently signed Engineer receipt is then verified and the real
+Coordinator revokes the preliminary root before issuing the operational
+root. The existing three real ADK/A2A agent servers execute that SAME plan
+through native Rust-signed task child credentials and OPA; Gitea/Docker
+write results are still fixture-backed here. A model-directed wrong Backend
+path and a closed operational root must fail, exactly as before. This
+*reduces* the number of independent fixture boundaries but is not the final
+R3 real-provider E2E. It makes no paid API calls.

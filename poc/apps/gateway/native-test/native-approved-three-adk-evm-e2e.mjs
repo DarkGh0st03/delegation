@@ -26,6 +26,14 @@ import {TrustedExecutionCoordinator} from "../../../packages/orchestrator-runtim
 import {TrustedApprovedA2ADispatcher} from "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {DeterministicA2AOrchestrator} from "../../../packages/agent-runtime/src/orchestrator.ts";
 import {startSpecializedAgentServer} from "../../../packages/agent-runtime/src/server.ts";
+import {TrustedAdkReadOnlyPlanner} from "../../../packages/orchestrator-runtime/src/trusted-adk-planner.ts";
+import {TrustedPlanningGatewayReadPort} from "../../../packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts";
+import {TrustedPlanningReviewGate} from "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
+import {signTrustedPlanningCheckpoint,stageVerifiedPlanningCheckpoint}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint.ts";
+import {TrustedPlanningRevisions} from "../src/planning-revisions.ts";
+import {GiteaReadOnlyExecutor} from "../src/gitea-read-executor.ts";
+import {InMemoryAuditSink} from "../src/prepare.ts";
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const root="gitea://gitea.local/thesis/iam-console-poc";
@@ -58,37 +66,38 @@ function credential(id,index,validity=1200){
       statusListCredential:"https://status.example/lists/three-agent-native-e2e"
     }};
 }
-function plan(id){
-  return {
-    schema_version:"1.0.0",plan_id:"native-three-agent-plan",
-    session_id:id,version:1,repository:repo,base_revision:initial,
-    requirement:"Complete three approved specialist Tasks with verified Rust DC",
-    candidate_agents:agents.map(role=>({
-      agent_id:role,did:did[role],card_ref:"trusted:"+role
-    })),
-    tasks:[
-      {id:"backend",agent_id:"backend",title:"Scoped backend update",
-        description:"Update the exact approved backend service",
-        depends_on:[],resources:[branchUri+"/files/"+paths.backend]},
-      {id:"frontend",agent_id:"frontend",title:"Scoped frontend update",
-        description:"Update the exact approved frontend page",
-        depends_on:["backend"],resources:[branchUri+"/files/"+paths.frontend]},
-      {id:"tests",agent_id:"test",title:"Pinned controlled tests",
-        description:"Verify the exact approved branch",
-        depends_on:["frontend"],resources:[branchUri]}
-    ],
-    requested_permissions:[
-      {id:"backend-update",task_id:"backend",agent_id:"backend",
-        operation:"update_file",resource:branchUri+"/files/"+paths.backend,
-        reason:"Approved backend edit"},
-      {id:"frontend-update",task_id:"frontend",agent_id:"frontend",
-        operation:"update_file",resource:branchUri+"/files/"+paths.frontend,
-        reason:"Approved frontend edit"},
-      {id:"tests-run",task_id:"tests",agent_id:"test",
-        operation:"run_tests",resource:branchUri,reason:"Approved test profile"}
-    ],
-    assumptions:[],uncertainties:[]
-  };
+/** Scripted LLM *intent* only: the real ADK Planner compiles and validates
+ * this into the canonical permission/resource DAG after source inspection. */
+function planningSketch(){
+  return {tasks:[
+    {id:"backend",agent_id:"backend",title:"Scoped backend update",
+      description:"Update the exact approved backend service",depends_on:[],
+      permissions:[{operation:"update_file",path:paths.backend,
+        reason:"Approved backend edit"}]},
+    {id:"frontend",agent_id:"frontend",title:"Scoped frontend update",
+      description:"Update the exact approved frontend page",
+      depends_on:["backend"],permissions:[{operation:"update_file",
+        path:paths.frontend,reason:"Approved frontend edit"}]},
+    {id:"tests",agent_id:"test",title:"Pinned controlled tests",
+      description:"Verify the exact approved branch",depends_on:["frontend"],
+      permissions:[{operation:"run_tests",path:null,
+        reason:"Approved test profile"}]}
+  ],assumptions:[],uncertainties:[]};
+}
+class NativePlanningModel extends BaseLlm {
+  turns=0;requests=[];
+  constructor(){super({model:"native-offline-ADK-planner-script"});}
+  async *generateContentAsync(request){
+    this.requests.push(request);this.turns++;
+    if(this.turns===1)yield {content:{role:"model",parts:[{
+      functionCall:{id:"pinned-backend-source",name:"read_file",
+        args:{branch:"main",path:paths.backend}}
+    }]}};
+    else yield {content:{role:"model",parts:[{
+      text:JSON.stringify(planningSketch())
+    }]}};
+  }
+  connect(){return Promise.reject(Error("External Gemini prohibited in native CI"));}
 }
 class OfflineAdkModel extends BaseLlm {
   turns=0;requests=[];tool;args;
@@ -117,14 +126,9 @@ const response=(x,status=200)=>new Response(JSON.stringify(x),{
 });
 async function executeScenario({wrongBackend=false,seed}){
   const session="native-adk-"+randomBytes(7).toString("hex");
-  const approved=plan(session);
-  const now=new Date().toISOString();
-  const decision=makeApproval(approved,{
-    allowedOperations:new Set(RUST_OPERATIONS),
-    decision_id:"native-adk-approval-"+session,
-    approved_by:did.engineer,approved_at:now,
-    approved_permission_ids:approved.requested_permissions.map(x=>x.id)
-  });
+  // This plan does not exist yet: only the independently authorized
+  // preliminary read-only Planning root may precede the ADK proposal.
+  let approved;
   const dir=await mkdtemp(join(tmpdir(),"native-three-adk-"));
   const servers=[];
   let coordinator,phase="initial",effectCount=0,expectedRevision=initial;
@@ -132,12 +136,6 @@ async function executeScenario({wrongBackend=false,seed}){
   try{
     const {privateKey,publicKey}=generateKeyPairSync("ed25519");
     const keyId="native-adk-engineer-key";
-    const signed=signEngineerApproval({
-      plan:approved,approval:decision,engineerDid:did.engineer,keyId,
-      privateKeyPem:privateKey.export({format:"pem",type:"pkcs8"}).toString(),
-      issuedAt:now,expiresAt:new Date(Date.now()+20*60_000).toISOString()
-    });
-    await writeFile(join(dir,session+".json"),JSON.stringify(signed),{mode:0o600});
     const approvals=new SignedEngineerApprovalFileStore({
       directory:dir,engineerDid:did.engineer,
       trustedKeys:{[keyId]:{engineer_did:did.engineer,
@@ -147,15 +145,45 @@ async function executeScenario({wrongBackend=false,seed}){
       adapterBaseUrl:adapter,bearerToken:process.env.ADAPTER_CALLER_ENGINEER,
       timeoutMs:30_000
     });
+    const snapshot={session_id:session,repository:repo,base_revision:initial,
+      directories:["","apps","apps/backend","apps/backend/src",
+        "apps/backend/src/users","apps/frontend","apps/frontend/src",
+        "apps/frontend/src/pages"],
+      files:[paths.backend,paths.frontend]
+    };
+    const pinnedGitea={
+      async readRepository(){
+        return {full_name:"thesis/iam-console-poc",default_branch:"main",
+          revision:initial};
+      },
+      async readTextFile(name,path,revision){
+        assert.equal(name,"main");assert.equal(revision,initial);
+        assert.ok(snapshot.files.includes(path));
+        const content="export const nativePlanningSource = true;\n";
+        return {branch:name,path,revision,content,blob_sha:"f".repeat(40),
+          last_commit_sha:initial,size:Buffer.byteLength(content),
+          encoding:"utf-8"};
+      },
+      async listDirectory(name,path,revision){
+        assert.equal(name,"main");assert.equal(revision,initial);
+        assert.ok(snapshot.directories.includes(path));
+        return {branch:name,path,revision,entries:[]};
+      }
+    };
+    const planningRevisions=new TrustedPlanningRevisions(pinnedGitea);
+    let coordinator;
+    const gate=new TrustedPlanningReviewGate({
+      snapshot,expectedWorkBranch:branch,
+      authenticatedEngineerDid:did.engineer,signedApprovals:approvals,
+      planningIsActive:()=>coordinator?.phase==="planning"
+    });
     const registry=new TrustedApprovedExecutionPlans({
-      repository:repo,engineerDid:did.engineer,approvals,
+      repository:repo,engineerDid:did.engineer,approvals:gate,
       completionAttestor:new GatewayCorroboratedTaskAttestor()
     });
     const authority=new TrustedEngineerAuthoritySession({
-      snapshot:{session_id:session,repository:repo,base_revision:initial,
-        directories:[""],files:[]},
-      credentials:authorityClient,approvals,
-      authenticatedEngineerDid:did.engineer
+      snapshot,credentials:authorityClient,approvals:gate,
+      authenticatedEngineerDid:did.engineer,planningRevisions
     });
     coordinator=new TrustedExecutionCoordinator({
       authority,approvedGatewayPlans:registry,credentials:authorityClient,
@@ -165,15 +193,9 @@ async function executeScenario({wrongBackend=false,seed}){
     const planIssued=await coordinator.beginPlanning(credential(
       "urn:native:three-plan-"+unique,seed,180));
     assert.equal(planIssued.phase,"planning");
-    const operational=await coordinator.beginExecution(credential(
-      "urn:native:three-root-"+unique,seed+1,1200));
-    assert.equal(operational.plan_digest,planDigest(approved));
-    assert.deepEqual(coordinator.trustedOperationalAuthority().permissions,
-      approved.requested_permissions.map(x=>({
-        operation:x.operation,resource:x.resource
-      })));
-    phase="execution";
     const backendFile=paths.backend,frontendFile=paths.frontend;
+    const planningAudit=new InMemoryAuditSink();
+    const readOnlyExecutor=new GiteaReadOnlyExecutor(pinnedGitea);
     // The provider simulator emits structurally authentic Gitea/Runner
     // results, but DOES NOT perform Gitea or Docker I/O.
     const gateway=new GatewayRuntime({
@@ -183,7 +205,7 @@ async function executeScenario({wrongBackend=false,seed}){
       opa_url:opa,opa_timeout_ms:5000,
       provider_mode:"mock",gitea_timeout_ms:20000
     },{
-      approvedPlans:registry,
+      approvedPlans:registry,planningRevisions,audit:planningAudit,
       verifier:loadDirectCoreRustVerifier(),
       policy:new OpaPolicyClient({baseUrl:opa,timeoutMs:5000}),
       executor:{
@@ -191,6 +213,8 @@ async function executeScenario({wrongBackend=false,seed}){
         providerFor:r=>r.request.tool==="run_tests"?"runner":"gitea",
         async execute(record){
           const {tool,arguments:args}=record.request;
+          if(["read_repository","list_directory","read_file"].includes(tool))
+            return readOnlyExecutor.execute(record);
           if(args.branch!==branch)throw Error("Provider denied alternate branch");
           let result;
           if(tool==="update_file"&&args.path===backendFile&&
@@ -228,6 +252,11 @@ async function executeScenario({wrongBackend=false,seed}){
         if(path.endsWith("/v1/authorization/execute")){
           const x=await gateway.execute(body);
           assert.equal(x.policy.allow,true);
+          if(x.execution.tool==="read_file"&&x.execution.branch==="main"){
+            assert.equal(x.verified_delegation.presenter_id,
+              process.env.ADAPTER_ID_ORCHESTRATOR);
+            return response(x);
+          }
           assert.equal(x.policy.policy_version,"phase6-approved-branch-v2");
           assert.equal(x.verified_delegation.presenter_id,
             did[x.execution.tool==="run_tests"?"test":
@@ -240,6 +269,82 @@ async function executeScenario({wrongBackend=false,seed}){
           error.status??403);
       }
     };
+    // The actual production Planning port crosses Gateway Prepare, the
+    // Rust Adapter's signed VP, native Core Rust verification and live OPA.
+    // Gitea source is pinned but fixture-backed in this native-only job.
+    const plannerModel=new NativePlanningModel();
+    const readPort=new TrustedPlanningGatewayReadPort({
+      coordinator,snapshot,
+      gatewayBaseUrl:"http://native-embedded-gateway",
+      adapterBaseUrl:adapter,
+      adapterToken:process.env.ADAPTER_CALLER_ORCHESTRATOR,
+      timeoutMs:30_000,fetchFn
+    });
+    const draft=await new TrustedAdkReadOnlyPlanner({
+      model:plannerModel,snapshot,workBranch:branch,
+      requirement:"Complete three approved specialist Tasks with verified Rust DC",
+      planId:"native-three-agent-planned",
+      agents:Object.fromEntries(agents.map(role=>[role,{
+        did:did[role],card_ref:"trusted:"+role
+      }])),
+      readPort
+    }).propose();
+    assert.equal(draft.status,"unapproved_proposal");
+    assert.equal(draft.verified_source_reads,1);
+    assert.equal(plannerModel.requests.length,2);
+    assert.equal(planningAudit.events.filter(e=>
+      e.event==="authorization_executed").length,1);
+    approved=draft.plan;
+    assert.deepEqual(approved.tasks.map(t=>t.id),
+      ["backend","frontend","tests"]);
+    // The Planning backend and Engineer use INDEPENDENT signing keys.
+    const planningKeys=generateKeyPairSync("ed25519");
+    const checkpointAt=new Date();
+    const checkpoint=signTrustedPlanningCheckpoint({
+      snapshot,expectedWorkBranch:branch,proposal:draft,
+      keyId:"native-planning-backend",
+      privateKeyPem:planningKeys.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),
+      issuedAt:checkpointAt.toISOString(),
+      expiresAt:new Date(checkpointAt.getTime()+600_000).toISOString()
+    });
+    const staged=stageVerifiedPlanningCheckpoint(gate,checkpoint,{
+      trustedKeys:{"native-planning-backend":{
+        public_key_pem:planningKeys.publicKey.export({
+          format:"pem",type:"spki"
+        }).toString()
+      }},
+      expectedSessionId:session,expectedRepository:repo,
+      expectedBaseRevision:initial,expectedWorkBranch:branch
+    });
+    assert.equal(staged.plan_digest,planDigest(approved));
+    assert.equal(staged.status,"awaiting_engineer_signature");
+    await assert.rejects(gate.loadAuthenticatedApproval(session));
+    const now=new Date(),decision=makeApproval(approved,{
+      allowedOperations:new Set(RUST_OPERATIONS),
+      decision_id:"native-adk-approval-"+session,
+      approved_by:did.engineer,approved_at:now.toISOString(),
+      approved_permission_ids:approved.requested_permissions.map(x=>x.id)
+    });
+    const signed=signEngineerApproval({
+      plan:approved,approval:decision,engineerDid:did.engineer,keyId,
+      privateKeyPem:privateKey.export({format:"pem",type:"pkcs8"}).toString(),
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+20*60_000).toISOString()
+    });
+    await writeFile(join(dir,session+".json"),
+      JSON.stringify(signed),{mode:0o600});
+    const trusted=await gate.loadAuthenticatedApproval(session);
+    assert.equal(planDigest(trusted.plan),draft.digest);
+    const operational=await coordinator.beginExecution(credential(
+      "urn:native:three-root-"+unique,seed+1,1200));
+    assert.equal(operational.plan_digest,draft.digest);
+    assert.deepEqual(coordinator.trustedOperationalAuthority().permissions,
+      approved.requested_permissions.map(x=>({
+        operation:x.operation,resource:x.resource
+      })));
+    phase="execution";
     const urls={},models={};
     const specs={
       backend:{tool:"update_file",args:{branch,
@@ -262,7 +367,7 @@ async function executeScenario({wrongBackend=false,seed}){
       servers.push(server);urls[role]=server.baseUrl;
     }
     const dispatcher=await TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority({
-      approvals,coordinator,sessionId:session,
+      approvals:gate,coordinator,sessionId:session,
       expectedEngineerDid:did.engineer,
       expectedPlanDigest:planDigest(approved),baseRevision:initial,
       agentBaseUrls:urls,
@@ -307,6 +412,9 @@ async function executeScenario({wrongBackend=false,seed}){
       event:"three_native_adk_a2a_dag",
       mode:wrongBackend?"forbidden_backend":"positive",
       roles:agents,native_signed_vp:true,opa_real:true,
+      adk_planning:true,checkpoint_ed25519_verified:true,
+      planning_read_gitea:"pinned_fixture",
+      native_planning_gateway_ops:1,
       a2a_sdk_real:true,provider:"emulated",
       effects:effectCount,session_closed:coordinator.phase==="closed",
       paid_inference:false
