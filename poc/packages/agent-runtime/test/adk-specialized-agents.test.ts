@@ -365,7 +365,7 @@ test("Engineer-approved branch is exposed as an exact ADK tool argument, not as 
     gatewayClient:{invoke:async()=>({})} as never,
     trustedBranch:b,
     mcpReadFile:{endpoint:"http://127.0.0.1:9999",bearerForRequest:()=>"unused"}
-  }),/not yet supported by shared MCP/);
+  }),/requires a prebound signed Task grant/);
 });
 
 
@@ -657,4 +657,25 @@ test("Unsigned A2A path hints still cannot expand Account Suspension static role
     gatewayClient:{invoke:async()=>({})} as never,
     trustedFilePermissions:[{operation:"read_file",path:foreign}]
   }),/Invalid signed Task operation-specific file hints/);
+});
+
+test("ADK offers signed dynamic-branch MCP tools only with exact operation grants",()=>{
+  const branch="feature/invoice-sort",path="src/billing/invoice.ts";
+  const built=createAdkSpecializedAgent({
+    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedBranch:branch,trustedTaskPaths:[path],
+    trustedFilePermissions:[
+      {operation:"read_file",path},{operation:"update_file",path}
+    ],
+    mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",
+      bearerForRequest:()=>"offline-test-token"},
+    mcpUpdateFile:true
+  });
+  assert.ok(built.mcpToolset);
+  assert.deepEqual(built.profile.read_only_paths,[]);
+  assert.deepEqual(built.profile.writable_paths,[path]);
+  assert.equal(built.agent.name,"delegated_backend");
+  assert.match(built.profile.system_prompt,/feature\/invoice-sort/);
+  assert.doesNotMatch(built.profile.system_prompt,/account suspension/i);
 });

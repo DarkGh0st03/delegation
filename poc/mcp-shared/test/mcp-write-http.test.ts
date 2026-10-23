@@ -106,3 +106,60 @@ test("ONE shared MCP update_file routes only permitted active task writes to pri
     await stop(shared);await stop(worker);
   }
 });
+
+
+test("signed feature branch goes through real MCP HTTP, private worker and exact Task grants",async()=>{
+  const b=pair(),f=pair(),t=pair(),branch="feature/invoice-sort";
+  const path="src/billing/invoice.ts",wrong="src/billing/tax.ts";
+  const hits:Array<{tool:string;branch:string;path:string}>=[];
+  const registry=new PrivateMcpTaskRegistry({
+    role:"backend",signingPrivateKeyPem:b.private,signingPublicKeyPem:b.public
+  });
+  registry.begin("invoice-task",{
+    invoke:async(tool,args)=>{
+      hits.push({tool,branch:args.branch as string,path:args.path as string});
+      return {provider:"gitea",performed:true,branch,tool,
+        commit_sha:"a".repeat(40)};
+    }
+  } as never,undefined,{
+    approvedBranch:branch,allowedPaths:[path],allowUpdateFile:true,
+    allowedFilePermissions:[
+      {operation:"read_file",path},{operation:"update_file",path}
+    ]
+  });
+  const app=express();attachPrivateMcpWorker(app,registry);
+  const worker=app.listen(0,"127.0.0.1");
+  await new Promise<void>(resolve=>worker.once("listening",resolve));
+  const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
+  const shared=createSharedMcpHttpServer({
+    verificationKeys:{backend:b.public,frontend:f.public,test:t.public},
+    router:new TaskRouter({
+      backend:{baseUrl:workerUrl},frontend:{baseUrl:workerUrl},
+      test:{baseUrl:workerUrl}
+    })
+  });
+  const sharedUrl=await listen(shared);
+  const c=await clientFor(sharedUrl,registry.bearerFor("invoice-task"));
+  try{
+    const wrote=await c.callTool({name:"update_file",arguments:{
+      branch,path,content:"export const invoice = true;"
+    }});
+    assert.notEqual(wrote.isError,true);
+    assert.deepEqual(hits,[{tool:"update_file",branch,path}]);
+    const denied=async(tool:string,argumentsRecord:Record<string,unknown>)=>{
+      const result=await c.callTool({name:tool,arguments:argumentsRecord});
+      assert.equal(result.isError,true);
+    };
+    await denied("update_file",{branch:"feature/foreign",path,content:"bad"});
+    await denied("update_file",{branch,path:wrong,content:"bad"});
+    await denied("create_file",{branch,path,content:"bad"});
+    await denied("update_file",{branch:"main",path,content:"bad"});
+    assert.equal(hits.length,1,"Unauthorized request reached the private Gateway client");
+    registry.end("invoice-task");
+    await denied("read_file",{branch,path});
+    assert.equal(hits.length,1);
+  }finally{
+    registry.end("invoice-task");
+    await c.close();await stop(shared);await stop(worker);
+  }
+});
