@@ -159,9 +159,15 @@ export async function runNativePositiveApprovedDag({
       return fetch(url,options);
     if(!target.startsWith(adkGatewayBase+"/v1/authorization/"))
       throw Error("ADK attempted unknown transport");
+    let operation="unknown",pathIndex=-1,stage="decode";
     try{
       const request=JSON.parse(String(options?.body));
+      operation=request?.tool??"execute";
+      if(request?.arguments?.path){
+        pathIndex=files[role]?.indexOf(request.arguments.path)??-1;
+      }
       if(target===adkGatewayBase+"/v1/authorization/prepare"){
+        stage="prepare-assertions";
         assert.equal(request.agent_role,role);
         assert.match(request.task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
         if(role==="test"){
@@ -187,7 +193,13 @@ export async function runNativePositiveApprovedDag({
         return reply(gateway.prepare(request),201);
       }
       if(target===adkGatewayBase+"/v1/authorization/execute"){
+        stage="gateway-execute";
         const executed=await gateway.execute(request);
+        stage="execute-assertions";
+        const executedPath=executed.execution?.path;
+        if(typeof executedPath==="string")
+          pathIndex=files[role]?.indexOf(executedPath)??-1;
+        operation=executed.execution?.tool??"execute";
         assert.equal(executed.policy.allow,true);
         assert.equal(executed.policy.policy_version,"phase6-approved-branch-v2");
         assert.equal(executed.verified_delegation.presenter_id,
@@ -249,8 +261,15 @@ export async function runNativePositiveApprovedDag({
     }catch(error){
       // The model sees a generic denied result, never raw provider exceptions,
       // confidential request arguments, VP, source data or service tokens.
+      // Test-only SAFE diagnostics: stage, operation, file index and
+      // the failing assertion's source line (never its raw values/message).
+      const site=String(error?.stack??"").match(
+        /native-approved-planner-dag-positive\\.mjs:(\\d+):(\\d+)/u
+      );
       process.stderr.write("[native-dag-adk] controlled_denial "+
-        JSON.stringify({role,kind:error?.constructor?.name??"Error",
+        JSON.stringify({role,stage,operation,pathIndex,
+          assertion_line:site?Number(site[1]):null,
+          kind:error?.constructor?.name??"Error",
           code:error?.code??"unknown"})+"\n");
       return reply({error:"trusted_operation_denied"},403);
     }
