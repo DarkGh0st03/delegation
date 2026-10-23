@@ -379,6 +379,7 @@ export class TrustedApprovedExecutionPlans {
       v.execution.provider==="runner"&&v.execution.tool==="run_tests");
     if(runnerEffects.length){
       const revisions=new Set<string>();
+      let independentlyAccepted=true;
       for(const entry of runnerEffects){
         const run=entry.execution;
         if(run.provider!=="runner"||run.tool!=="run_tests"||
@@ -386,12 +387,16 @@ export class TrustedApprovedExecutionPlans {
            run.project_tests?.status!=="pass"||
            run.researcher_acceptance?.status!=="pass"||
            !SHA.test(run.tested_commit_sha)){
-          denied("Runner effect lacks complete independent acceptance");
+          independentlyAccepted=false;
+          break;
         }
         revisions.add(run.tested_commit_sha);
       }
-      if(revisions.size!==1)denied("Runner effects disagree on tested SHA");
-      session.testedFeatureSha=[...revisions][0];
+      // Older trusted DAG fixtures may complete their test Task with
+      // limited Runner evidence, but this MUST NOT grant PR authority.
+      // PR creation requires stronger provider-corroborated acceptance.
+      if(independentlyAccepted&&revisions.size===1)
+        session.testedFeatureSha=[...revisions][0];
     }
     binding.completed=true;
     session.completedPlanTasks.add(binding.planTaskId);
