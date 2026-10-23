@@ -561,3 +561,37 @@ adding the \`delegation-private\` label to a shared runner is NOT a
 security boundary. Do not dispatch this workflow until that isolation
 and the Engineer host are configured; no live admission has yet been
 demonstrated. R5 remains **NO-GO** for paid inference.
+
+
+### Critical correction: privileged runner MUST NOT checkout the ref
+
+The manual admission workflow deliberately **does not invoke**
+\`actions/checkout\`, an arbitrary repository script, an npm install or
+a downloaded action after the privileged runner is allocated. It runs
+an **operator-installed and reviewed** module tree at the fixed
+\`/opt/delegation/r5/poc/...\` absolute path. The operator must deploy
+that directory from an audited immutable commit and make it read-only
+to the runner's service identity (root-owned, no symlink substitution
+or writable ancestor). The Node runtime must be preinstalled and
+secured. Updating this client requires a separate controlled operator
+deployment, not a GitHub Actions branch checkout.
+
+The job declares the GitHub Environment \`r5-private-admission\`,
+which must be created with appropriate independent required reviewers
+before any manual dispatch. The job also checks the intended repository,
+branch and first run attempt. **These YAML conditions alone are NOT
+a security boundary if a contributor can modify that branch or another
+workflow using the same runner.** The GitHub self-hosted runner group
+must externally restrict permitted workflows/ref access, and the
+source branch must be protected against unauthorized pushes and
+workflow changes. A shared self-hosted runner is expressly forbidden.
+
+The owner-provisioned config continues to pin the **exact checkout
+commit SHA** against GitHub job claims, but the job no longer checks out
+that SHA; it only authenticates its GitHub provenance. The server and
+client must independently pin the GitHub workflow path, runner identity,
+mTLS certificates, source SHA and expected network endpoint.
+Merely labelling a runner \`delegation-private\` or adding a required
+reviewer to GitHub YAML does not install the necessary protection.
+The workflow MUST remain unexecuted while any of these preconditions
+is absent. No Gemini call is permitted under this workflow.

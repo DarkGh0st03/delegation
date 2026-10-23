@@ -147,3 +147,21 @@ test("wrong admission response cannot be promoted to signed authority",async()=>
     }
   }finally{await f.close();}
 });
+
+
+test("privileged self-hosted workflow never checks out mutable branch code",async()=>{
+  const {readFile}=await import("node:fs/promises");
+  const yaml=await readFile(new URL(
+    "../../../../.github/workflows/trusted-private-github-admission.yml",
+    import.meta.url),"utf8");
+  assert.match(yaml,/workflow_dispatch:/);
+  assert.match(yaml,/id-token: write/);
+  assert.match(yaml,/runs-on: \[self-hosted, linux, x64, delegation-private\]/);
+  assert.match(yaml,/environment: r5-private-admission/);
+  assert.match(yaml,/github\.run_attempt == 1/);
+  assert.match(yaml,/node --experimental-strip-types \/opt\/delegation\/r5\/poc\/apps\/orchestrator\/src\/submit-private-github-oidc\.mjs/);
+  assert.doesNotMatch(yaml,/actions\/checkout@|actions\/setup-node@/);
+  assert.doesNotMatch(yaml,/npm ci|npm install|curl |wget |pip install/);
+  assert.doesNotMatch(yaml,/run:.*(?:GITHUB_WORKSPACE|\.\/poc\/| node poc\/)/);
+  assert.doesNotMatch(yaml,/GEMINI_API_KEY|GOOGLE_API_KEY|GEMINI_API_SECRET/);
+});

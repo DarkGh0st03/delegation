@@ -37,18 +37,24 @@ concurrency:
 jobs:
   private-admission-only:
     name: Authenticate job on private Engineer intake, no approval
+    # The operator must configure this environment with required reviewers.
+    # Approval to START an admission is not the Engineer's Ed25519 plan signature.
+    environment: r5-private-admission
     runs-on: [self-hosted, linux, x64, delegation-private]
+    # Avoid allocating the privileged runner for unrelated branches/forks.
+    # Also restrict the runner group to this exact workflow and protected ref.
+    if: ${{ github.repository == 'DarkGh0st03/delegation' && github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 }}
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      # DELEGATION_RUNNER_OIDC_CONFIG MUST be set by the runner service
-      # from an owner-only local config path, never a workflow_dispatch input.
-      # Its contents pin repository, workflow, source SHA, server fingerprint
-      # and local client certificate/private-key file paths.
+      # SECURITY: do NOT checkout a mutable branch or run arbitrary npm/setup
+      # actions on a runner holding an independently provisioned mTLS key.
+      # Operator installs a reviewed, immutable build of the submission
+      # client and its local imports under /opt/delegation/r5/ ahead of time.
+      # Provision DELEGATION_RUNNER_OIDC_CONFIG as a private runner service
+      # variable; never as workflow_dispatch data or GitHub repository secrets.
       - name: Submit protected runner OIDC to private Engineer host
-        run: node --experimental-strip-types poc/apps/orchestrator/src/submit-private-github-oidc.mjs
+        shell: bash
+        run: node --experimental-strip-types /opt/delegation/r5/poc/apps/orchestrator/src/submit-private-github-oidc.mjs
       - name: State explicitly that no authority or Gemini was created
         run: |
           echo "GitHub job identity submitted only. Engineer signature NOT granted."
