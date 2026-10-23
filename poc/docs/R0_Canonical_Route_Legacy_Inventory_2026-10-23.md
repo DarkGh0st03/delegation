@@ -185,3 +185,22 @@ issuing/revocation, VP Rust verifier, OPA and provider operations remain
 bounded offline fixtures (and role A2A transport remains stubbed), so R3 still
 requires real native Rust/OPA/Gitea/Docker and A2A in ONE run. This test
 provides an integration contract, not an automatic human approval capability.
+
+
+### R2: shared Planner output driving the existing real A2A/ADK transport
+
+Rather than creating a parallel mock A2A implementation, the existing
+`trusted-approved-three-adk-a2a-offline.test.ts` now accepts an optional
+**genuine ADK Planner-generated, grounded, unapproved Task plan**. It signs
+that output with a separate Planning backend Ed25519 key, verifies its
+pinned checkpoint, then feeds the same plan to the existing independent
+Engineer Ed25519 receipt store and the existing signed approved-DAG
+Dispatcher. The *same three live* Backend, Frontend and Test Node agent
+servers communicate over the A2A SDK/HTTP transport and their own ADK
+Runners. An out-of-scope Backend tool call stops the DAG before Frontend/Test.
+The model decisions are offline scripted. The old test fixture still mocks
+Adapter/VP, Rust/OPA, Gitea and Docker provider operations and simulates the
+Coordinator; a real Planning-to-Execution root lifecycle is separately
+verified in `trusted-reviewed-adk-dag.test.ts`. These two slices converge
+on the same production dispatcher, but R3 still requires one run joining
+**both** slices and real providers with the same entrypoint.

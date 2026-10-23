@@ -22,6 +22,10 @@ import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatch
 import {DelegatedA2ARoleRunner} from "../src/a2a-workflow.ts";
 import {startSpecializedAgentServer} from "../../agent-runtime/src/server.ts";
 import {DeterministicA2AOrchestrator} from "../../agent-runtime/src/orchestrator.ts";
+import {TrustedAdkReadOnlyPlanner} from "../src/trusted-adk-planner.ts";
+import {
+  signTrustedPlanningCheckpoint,verifyTrustedPlanningCheckpoint
+} from "../src/trusted-planning-checkpoint.ts";
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const ROOT="gitea://gitea.local/thesis/iam-console-poc";
@@ -68,16 +72,16 @@ function plan(session){
 }
 class DeterministicModel extends BaseLlm{
   requests=[];turn=0;tool;args;
-  constructor(tool,args){
+  constructor(tool,args,finalText="Tool exchange concluded."){
     super({model:"offline-scripted-adk-no-api"});
-    this.tool=tool;this.args=args;
+    this.tool=tool;this.args=args;this.finalText=finalText;
   }
   async *generateContentAsync(req){
     this.requests.push(req);this.turn++;
     if(this.turn===1)yield {content:{role:"model",parts:[{
       functionCall:{id:"offline-allowed-call",name:this.tool,args:this.args}
     }]}};
-    else yield {content:{role:"model",parts:[{text:"Tool exchange concluded."}]}};
+    else yield {content:{role:"model",parts:[{text:this.finalText}]}};
   }
   connect(){return Promise.reject(Error("External ADK model connections forbidden"));}
 }
@@ -95,9 +99,90 @@ function json(data,status=200){
     status,headers:{"content-type":"application/json"}
   });
 }
-async function setup({wrongBackendPath=false}={}){
+
+/** The plan, not only the Task messages, is produced by a REAL ADK Runner.
+ * Model responses are scripted; no third-party API or callback signs it.
+ */
+async function groundedPlanFromAdk(session){
+  const snapshot={
+    session_id:session,repository:repo,base_revision:sha[0],
+    directories:["","apps","apps/backend","apps/backend/src",
+      "apps/backend/src/users","apps/frontend","apps/frontend/src",
+      "apps/frontend/src/pages"],
+    files:[files.backend,files.frontend]
+  };
+  const requested=[
+    {id:"branch",agent_id:"orchestrator",title:"Create isolated work branch",
+      description:"Create the exact feature branch",depends_on:[],
+      permissions:[{operation:"create_branch",path:null,reason:"Isolate edits"}]},
+    {id:"backend",agent_id:"backend",title:"Update service",
+      description:"Implement approved backend change",depends_on:["branch"],
+      permissions:[{operation:"update_file",path:files.backend,
+        reason:"Change approved service"}]},
+    {id:"frontend",agent_id:"frontend",title:"Update interface",
+      description:"Render approved service change",depends_on:["backend"],
+      permissions:[{operation:"update_file",path:files.frontend,
+        reason:"Change approved page"}]},
+    {id:"tests",agent_id:"test",title:"Run regression",
+      description:"Run exact approved test profile",depends_on:["frontend"],
+      permissions:[{operation:"run_tests",path:null,reason:"Verify changes"}]}
+  ];
+  const draft={tasks:requested,assumptions:[],uncertainties:[]};
+  const model=new DeterministicModel("read_file",
+    {branch:"main",path:files.backend},JSON.stringify(draft));
+  let reads=0;
+  const unapproved=await new TrustedAdkReadOnlyPlanner({
+    model,snapshot,
+    requirement:"Implement approved service and interface updates with tests",
+    planId:"planned-from-adk-three-role",workBranch:BRANCH,
+    agents:Object.fromEntries(roles.map(role=>[role,{
+      did:"did:thesis:"+role,card_ref:"trusted:"+role
+    }])),
+    readPort:{async invoke(tool,args){
+      reads++;
+      assert.equal(tool,"read_file");
+      assert.deepEqual(args,{branch:"main",path:files.backend});
+      return {provider:"gitea",performed:true,tool,
+        branch:"main",path:files.backend,revision:sha[0],
+        content:"export const state = [];"};
+    }}
+  }).propose();
+  assert.equal(reads,1);
+  assert.equal(model.requests.length,2);
+  assert.equal(unapproved.status,"unapproved_proposal");
+  assert.equal(unapproved.verified_source_reads,1);
+  assert.deepEqual(unapproved.plan.tasks.map(x=>x.id),
+    ["branch","backend","frontend","tests"]);
+  const {privateKey,publicKey}=generateKeyPairSync("ed25519");
+  const issuedAt=new Date();
+  const signedCheckpoint=signTrustedPlanningCheckpoint({
+    snapshot,expectedWorkBranch:BRANCH,proposal:unapproved,
+    keyId:"trusted-planning-backend",
+    privateKeyPem:privateKey.export({type:"pkcs8",format:"pem"}).toString(),
+    issuedAt:issuedAt.toISOString(),
+    expiresAt:new Date(issuedAt.getTime()+600_000).toISOString()
+  });
+  const verify={
+    trustedKeys:{"trusted-planning-backend":{
+      public_key_pem:publicKey.export({type:"spki",format:"pem"}).toString()
+    }},
+    expectedSessionId:session,expectedRepository:repo,
+    expectedBaseRevision:sha[0],expectedWorkBranch:BRANCH
+  };
+  const checked=verifyTrustedPlanningCheckpoint(signedCheckpoint,verify);
+  assert.equal(checked.proposal.digest,planDigest(unapproved.plan));
+  assert.equal(checked.proposal.plan.requirement,
+    "Implement approved service and interface updates with tests");
+  assert.throws(()=>verifyTrustedPlanningCheckpoint({
+    ...signedCheckpoint,expected_work_branch:"feature/attacker"
+  },verify),/checkpoint|signature|branch/i);
+  return {approved:checked.proposal.plan,model};
+}
+
+async function setup({wrongBackendPath=false,plannerProduced=false}={}){
   const session="offline-adk-"+randomBytes(6).toString("hex");
-  const approved=plan(session);
+  const planned=plannerProduced?await groundedPlanFromAdk(session):undefined;
+  const approved=planned?.approved??plan(session);
   const receipt=makeApproval(approved,{
     allowedOperations:new Set(RUST_OPERATIONS),
     decision_id:"three-agent-decision",approved_by:did,
@@ -305,6 +390,7 @@ async function setup({wrongBackendPath=false}={}){
       }
     });
     return {dispatcher,coordinator,events,models,
+      planningModel:planned?.model,
       get revision(){return providerRevision;},
       async createBranch(planTaskId,privateId){
         assert.equal(planTaskId,"branch");
@@ -368,5 +454,45 @@ test("ADK call outside approved Task scope fails closed before Frontend and Test
     assert.ok(!h.events.includes("bound:frontend"));
     assert.ok(!h.events.includes("bound:tests"));
     assert.ok(!h.events.includes("effect:backend"));
+  }finally{await h.close();}
+});
+
+
+test("R2 real ADK Planning + signed checkpoint -> signed Engineer plan -> three live A2A/ADK agents",async()=>{
+  const h=await setup({plannerProduced:true});
+  try{
+    assert.equal(h.planningModel.requests.length,2);
+    const done=await h.dispatcher.executeApprovedDag({
+      invokeOrchestratorTask:h.createBranch
+    });
+    assert.deepEqual(done.completed_task_ids,["branch","backend","frontend","tests"]);
+    assert.deepEqual(done.specialized_results.map(x=>x.role),roles);
+    assert.equal(h.revision,sha[2]);
+    assert.equal(h.coordinator.phase,"closed");
+    for(const role of roles){
+      assert.equal(h.models[role].requests.length,2);
+      const exposed=JSON.stringify(h.models[role].requests);
+      assert.ok(!exposed.includes("private-agent-token"));
+      assert.ok(!exposed.includes("delegation_evidence"));
+    }
+    for(const role of roles){
+      assert.ok(h.events.indexOf("issued:"+role)>h.events.indexOf("bound:"+role));
+    }
+    assert.ok(h.events.indexOf("confirmed:backend")<h.events.indexOf("bound:frontend"));
+    assert.ok(h.events.indexOf("confirmed:frontend")<h.events.indexOf("bound:tests"));
+    assert.equal(h.events.at(-1),"closed");
+  }finally{await h.close();}
+});
+
+test("R2 model-planned Task outside approved backend scope cannot dispatch later A2A agents",async()=>{
+  const h=await setup({plannerProduced:true,wrongBackendPath:true});
+  try{
+    await assert.rejects(h.dispatcher.executeApprovedDag({
+      invokeOrchestratorTask:h.createBranch
+    }),/Protected A2A task ended without completion|ADK|failed/);
+    assert.deepEqual(h.dispatcher.completedTaskIds,["branch"]);
+    assert.equal(h.coordinator.phase,"closed");
+    assert.ok(!h.events.includes("bound:frontend"));
+    assert.ok(!h.events.includes("bound:tests"));
   }finally{await h.close();}
 });
