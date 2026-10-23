@@ -176,7 +176,7 @@ const planSketch=positiveDag?{
     ...(["backend","frontend"].map(role=>({
       id:role,agent_id:role,title:"Authorized "+role+" implementation",
       description:"Apply explicitly approved reference files for "+role,
-      depends_on:[role==="backend"?"branch":"backend"],
+      depends_on:["branch"],
       permissions:roleFiles[role].flatMap(path=>[
         {operation:"read_file",path,reason:"Inspect pinned existing source"},
         {operation:"update_file",path,reason:"Apply reviewed source replacement"}
@@ -184,7 +184,7 @@ const planSketch=positiveDag?{
     }))),
     {id:"test",agent_id:"test",title:"Create exact reference E2E and verify",
       description:"Create approved test fixture then run pinned Docker acceptance",
-      depends_on:["frontend"],
+      depends_on:["backend","frontend"],
       permissions:[
         {operation:"create_file",path:newTestFile,
           reason:"Add reviewed scenario-specific regression and acceptance"},
@@ -203,10 +203,20 @@ class ScriptedReadPlanner extends BaseLlm{
   constructor(){super({model:"native-planning-offline-script"});}
   async *generateContentAsync(req){
     this.requests.push(req);this.turns++;
-    if(this.turns===1){
+    // Exercise the same bounded, read-only repository discovery tools that
+    // a real Planner may use. No scripted source write or approval occurs.
+    // The original negative/handoff fixture keeps its single pinned read.
+    const exploration=positiveDag?[
+      {name:"read_repository",args:{}},
+      {name:"list_directory",args:{branch:"main",path:""}},
+      {name:"read_file",args:{branch:"main",path:file}},
+      {name:"read_file",args:{branch:"main",path:frontendFile}}
+    ]:[{name:"read_file",args:{branch:"main",path:file}}];
+    if(this.turns<=exploration.length){
+      const call=exploration[this.turns-1];
       yield {content:{role:"model",parts:[{functionCall:{
-        id:"planning-source-read",name:"read_file",
-        args:{branch:"main",path:file}
+        id:"planning-discovery-"+this.turns,
+        name:call.name,args:call.args
       }}]}};
       return;
     }
@@ -225,7 +235,8 @@ const fixtureGitea={
   },
   async readTextFile(branch,path,revision){
     log.giteaReads++;
-    assert.equal(branch,"main");assert.equal(path,file);
+    assert.equal(branch,"main");
+    assert.ok([file,frontendFile].includes(path));
     assert.equal(revision,baseSha);
     return {path,branch,revision,blob_sha:"b".repeat(40),
       last_commit_sha:baseSha,size:32,encoding:"utf-8",
@@ -380,15 +391,16 @@ try{
     planId:"native-planning-proposal",agents,readPort:port
   }).propose();
   assert.equal(proposed.status,"unapproved_proposal");
-  assert.equal(proposed.verified_source_reads,1);
+  assert.equal(proposed.verified_source_reads,positiveDag?2:1);
   assert.equal(proposed.plan.base_revision,baseSha);
   assert.equal(proposed.plan.repository.repository,"iam-console-poc");
   assert.equal(proposed.plan.requested_permissions.length,
     positiveDag?(2*existingFiles.length+4):5); // read+write per file; branch, create, tests, PR
-  assert.equal(log.adapterPresentations,1);
-  assert.equal(log.prepares,1);
-  assert.equal(log.executions,1);
-  assert.equal(log.giteaReads,2); // actual trusted SHA bootstrap + pinned source read
+  assert.equal(log.adapterPresentations,positiveDag?4:1);
+  assert.equal(log.prepares,positiveDag?4:1);
+  assert.equal(log.executions,positiveDag?4:1);
+  assert.equal(log.giteaReads,positiveDag?5:2);
+  // Trusted SHA bootstrap plus bounded real read-only model discovery.
   if(liveClient){
     // Read-only PAT and the provider are backed by the disposable Gitea,
     // never the public baseline or an in-memory repository emulator.
@@ -397,11 +409,22 @@ try{
     assert.equal(fileAtSha.revision,baseSha);
   }
   const executed=audit.events.filter(e=>e.event==="authorization_executed");
-  assert.equal(executed.length,1);
-  assert.equal(executed[0].decision,"allow");
-  assert.equal(executed[0].policy_decision,"allow");
-  assert.equal(executed[0].pinned_revision,baseSha);
-  assert.equal(executed[0].provider_result,"success");
+  assert.equal(executed.length,positiveDag?4:1);
+  for(const effect of executed){
+    assert.equal(effect.decision,"allow");
+    assert.equal(effect.policy_decision,"allow");
+    assert.equal(effect.pinned_revision,baseSha);
+    assert.equal(effect.provider_result,"success");
+  }
+  if(positiveDag){
+    assert.deepEqual(executed.map(e=>e.tool),[
+      "read_repository","list_directory","read_file","read_file"
+    ]);
+    assert.deepEqual(proposed.plan.tasks.find(t=>t.id==="frontend")?.depends_on,
+      ["branch"]);
+    assert.deepEqual(proposed.plan.tasks.find(t=>t.id==="test")?.depends_on,
+      ["backend","frontend"]);
+  }
   const visible=JSON.stringify(model.requests);
   for(const secret of [rootId,token,engineerToken,
     "signed_vp","delegation_evidence","credential_status"]){
