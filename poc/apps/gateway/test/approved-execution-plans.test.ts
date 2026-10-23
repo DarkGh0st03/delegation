@@ -543,3 +543,58 @@ test("model-proposed PR permission omitted from signed Engineer receipt is denie
   assert.equal(h.providerCalls,0);
   assert.equal(h.store.size(),0);
 });
+
+
+test("an approved file edit AFTER passing tests invalidates the earlier PR SHA",async()=>{
+  const p=plan();
+  const latePath="apps/backend/audit.ts";
+  const lateUri=testBranch+"/files/"+latePath;
+  p.tasks.push({
+    id:"late-edit",agent_id:"backend",title:"Late approved edit",
+    description:"An independent approved change after initial acceptance",
+    depends_on:["tests"],resources:[lateUri]
+  },{
+    id:"pr",agent_id:"orchestrator",title:"Request final review",
+    description:"PR requires fresh acceptance after every edit",
+    depends_on:["tests","late-edit"],resources:[uri]
+  });
+  p.requested_permissions.push({
+    id:"p-late",task_id:"late-edit",agent_id:"backend",
+    resource:lateUri,operation:"update_file",
+    reason:"Engineer explicitly permitted late edit"
+  },{
+    id:"p-pr",task_id:"pr",agent_id:"orchestrator",
+    resource:uri,operation:"create_pull_request",
+    reason:"Request review after final acceptance"
+  });
+  const h=harness({configuredPlan:p,approvedIds:[
+    "p-branch","p-backend","p-test","p-late","p-pr"
+  ]});
+  await h.gates.activate("session-approval",sha);
+  for(const [planTask,runtimeTask,role] of [
+    ["bootstrap","a2a-bootstrap","orchestrator"],
+    ["backend-task","a2a-backend","backend"],
+    ["tests","a2a-tests","test"],
+    ["late-edit","a2a-late","backend"],
+    ["pr","a2a-pr","orchestrator"]
+  ] as const)h.gates.bindTask("session-approval",planTask,runtimeTask,role);
+  await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+  await h.gates.confirmTaskCompletion("a2a-bootstrap");
+  await h.invoke("a2a-backend","backend","update_file",updateArgs);
+  await h.gates.confirmTaskCompletion("a2a-backend");
+  await h.invoke("a2a-tests","test","run_tests",{
+    branch,profile:"poc-default"
+  });
+  await h.gates.confirmTaskCompletion("a2a-tests");
+  await h.invoke("a2a-late","backend","update_file",{
+    branch,path:latePath,content:"// approved late edit"
+  });
+  await h.gates.confirmTaskCompletion("a2a-late");
+  assert.throws(()=>h.runtime.prepare({
+    task_id:"a2a-pr",agent_role:"orchestrator",
+    tool:"create_pull_request",
+    arguments:{head_branch:branch,base_branch:"main",title:"Stale acceptance"}
+  }),(e:unknown)=>e instanceof GatewayError&&
+      e.code==="approved_plan_denied");
+  assert.equal(h.providerCalls,4);
+});
