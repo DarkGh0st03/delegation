@@ -6,6 +6,11 @@ import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
+import {createServer} from "node:http";
+import {createTrustedPlanIpcServer}
+  from "../../gateway/src/trusted-plan-ipc.ts";
+import {TrustedOperationalRecoveryStore}
+  from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {startTrustedEngineerLocalHost}
   from "../src/trusted-engineer-host.mjs";
 import {SignedEngineerApprovalFileStore}
@@ -171,6 +176,8 @@ test("same persistent Engineer session holds separate real-verified OIDC intake 
   assert.equal(consumed.model_name,"gemini-3.8-flash");
   assert.equal(consumed.status,"github_oidc_admitted_only_not_engineer_approved");
   assert.ok(!("approved_permission_ids" in consumed));
+  assert.throws(()=>host.startReviewedHandoff({runId}),
+    /startup operational recovery mandatory/);
   await assert.rejects(host.consumeAuthenticatedRun(runId),/already consumed/);
   // No Gemini key was provided; no root issuance or inference is possible.
   await host.close();
@@ -306,4 +313,90 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
   assert.equal(record.session_id,f.plan.session_id);
   assert.ok(!("approved_permission_ids" in record));
   assert.ok(!("operational_root_id" in record));
+});
+
+
+test("strict Engineer bootstrap completes real private IPC + Adapter recovery before listeners and forbids reused sessions",async t=>{
+  const f=await fixture(t);
+  const home=await mkdtemp(join(tmpdir(),"engineer-real-bootstrap-"));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  const recoveryDir=join(home,"recovery"),ipcDir=join(home,"ipc");
+  for(const dir of [recoveryDir,ipcDir])
+    await mkdir(dir,{mode:0o700});
+  const secretFile=join(ipcDir,"secret.hex"),socketPath=join(ipcDir,"plan.sock");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+    {mode:0o600});
+  const oldSession="session-orphan-crashed-2026";
+  const rootId="urn:operational:old-orphan";
+  const journal=new TrustedOperationalRecoveryStore(recoveryDir);
+  await journal.recordIntent({
+    sessionId:oldSession,baseRevision:f.plan.base_revision,
+    credentialId:rootId
+  });
+  const retired=[];
+  const ipc=await createTrustedPlanIpcServer({
+    socketPath,secretFile,
+    plans:{
+      operationalLeaseConfigured:()=>true,
+      retireSession:id=>{retired.push(id);}
+    }
+  });
+  await ipc.start();
+  t.after(()=>ipc.close());
+  let shouldFail=true,adapterCalls=0;
+  const adapter=createServer(async(req,res)=>{
+    const chunks=[];
+    for await(const chunk of req)chunks.push(chunk);
+    const request=JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    assert.equal(req.url,"/v1/credentials/status");
+    assert.equal(req.method,"POST");
+    assert.equal(req.headers.authorization,"Bearer offline-adapter-token");
+    assert.deepEqual(request,{credential_id:rootId,status_set:true});
+    adapterCalls++;
+    res.setHeader("content-type","application/json");
+    if(shouldFail){
+      res.writeHead(503).end(JSON.stringify({error:"revocation-unconfirmed"}));
+      return;
+    }
+    res.writeHead(200).end(JSON.stringify({
+      credential_id:rootId,status_purpose:"revocation",status_set:true
+    }));
+  });
+  await new Promise(resolve=>adapter.listen(0,"127.0.0.1",resolve));
+  t.after(()=>new Promise(resolve=>adapter.close(resolve)));
+  const adapterBaseUrl="http://127.0.0.1:"+adapter.address().port;
+  const {startTrustedEngineerRecoveringHost}=await import(
+    "../src/trusted-engineer-host.mjs");
+  const config={...f.config,recovery:{
+    directory:recoveryDir,gatewaySocketPath:socketPath,
+    gatewaySecretFile:secretFile,adapterBaseUrl,
+    adapterToken:"offline-adapter-token"
+  }};
+  // Boot is rejected while the real Adapter cannot confirm revocation.
+  await assert.rejects(startTrustedEngineerRecoveringHost(config),
+    /manual reconciliation required/);
+  assert.equal(adapterCalls,1);
+  assert.deepEqual(retired,[oldSession]);
+  assert.equal((await journal.pending()).length,1);
+  // Retrying the *same* cold boot after Adapter recovery is allowed. No
+  // previous OIDC admission or human approval is replayed automatically.
+  shouldFail=false;
+  const host=await startTrustedEngineerRecoveringHost(config);
+  t.after(()=>host.close());
+  assert.equal(adapterCalls,2);
+  assert.deepEqual(retired,[oldSession,oldSession]);
+  await journal.assertClean();
+  assert.equal(host.operationalRecoveryStore instanceof
+    TrustedOperationalRecoveryStore,true);
+  assert.match(host.engineerUrl,/^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+  await assert.rejects(startTrustedEngineerRecoveringHost({
+    ...config,approval:{
+      ...config.approval,expectedSessionId:oldSession
+    }
+  }),/reconciled session cannot be reused/);
+  assert.equal(adapterCalls,2);
+  assert.throws(()=>host.startReviewedHandoff({runId}),
+    /Cannot read properties|recovery journal/);
+  await host.close();
 });
