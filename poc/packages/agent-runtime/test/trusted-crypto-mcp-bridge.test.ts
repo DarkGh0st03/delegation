@@ -131,16 +131,21 @@ test("Gateway Prepare -> trusted crypto MCP SDK -> private Adapter VP -> Gateway
       cryptoPresentation:broker,signal:signal.signal
     });
     registry.begin("task-crypto-mcp",client,signal.signal,{evidenceHandler:evidence});
-    const response=await client.invoke("read_file",{
-      branch:"feature/account-suspension",path:"apps/backend/app.ts"
-    });
-    assert.equal(executor.callCount,1);
-    assert.equal(verifierCalls,1);
-    assert.equal(policyCalls,1);
-    assert.equal(adapterCalls,1);
-    assert.equal((response as {tool:string}).tool,"read_file");
-    assert.doesNotMatch(JSON.stringify(response),
-      /private\.signed\.vp|adapter-private-only-secret|PRIVATE_DELEGATION_CREDENTIAL|proof_/u);
+    // The former bug blocked the ninth sequential operation even though
+    // no other crypto request was in flight. Exercise the SAME real MCP
+    // HTTP transport, private worker, Adapter and Gateway across 12 reads.
+    for(let operation=0;operation<12;operation++){
+      const response=await client.invoke("read_file",{
+        branch:"feature/account-suspension",path:"apps/backend/app.ts"
+      });
+      assert.equal((response as {tool:string}).tool,"read_file");
+      assert.doesNotMatch(JSON.stringify(response),
+        /private\.signed\.vp|adapter-private-only-secret|PRIVATE_DELEGATION_CREDENTIAL|proof_/u);
+    }
+    assert.equal(executor.callCount,12);
+    assert.equal(verifierCalls,12);
+    assert.equal(policyCalls,12);
+    assert.equal(adapterCalls,12);
     // The shared MCP process exposes only cryptographic tools, never repository
     // mutation or proof retrieval. It cannot return the private signed VP.
     const transport=new StreamableHTTPClientTransport(new URL(sharedUrl+"/mcp"),{

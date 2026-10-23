@@ -234,3 +234,66 @@ test("signed Test task may create exact approved file and run tests on its branc
  assert.deepEqual(seen,["create_file","run_tests"]);
  reg.end("signed-test");
 });
+
+
+test("crypto challenge concurrency budget permits 12 sequential proofs but never replays",async()=>{
+ const k=keys(),reg=new PrivateMcpTaskRegistry({
+   role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
+ });
+ let signatures=0;
+ reg.begin("bounded-crypto",{invoke:async()=>({})},undefined,{
+   evidenceHandler:{
+     credentialId:"urn:scoped:backend",presenterId:"did:thesis:backend",
+     async createPresentation(input){
+       signatures++;
+       return "test-signed-vp-"+input.request_id;
+     }
+   }
+ });
+ const auth="Bearer "+reg.bearerFor("bounded-crypto");
+ const prepared=(id:string)=>({
+   request_id:id,audience:"cloud-access-gateway",
+   challenge:"distinct-nonce-for-"+id,
+   expires_at:new Date(Date.now()+60_000).toISOString(),
+   required_permission:{
+     operation:"read_file",
+     resource:"gitea://gitea.local/thesis/example/branches/feature%2Finvoice-sort/files/src/invoice.ts"
+   }
+ });
+ const sign=async(id:string)=>{
+   const outcome=await reg.invokeCrypto(auth,{
+     tool:"delegation_create_presentation",arguments:{request_id:id}
+   }) as {proof_ref:string;request_id:string};
+   assert.equal(outcome.request_id,id);
+   assert.equal(reg.takeSignedPresentation("bounded-crypto",outcome.proof_ref),
+     "test-signed-vp-"+id);
+   await assert.rejects(reg.invokeCrypto(auth,{
+     tool:"delegation_create_presentation",arguments:{request_id:id}
+   }),/invalid_tool_call/);
+   assert.throws(()=>reg.stageGatewayChallenge("bounded-crypto",prepared(id)),
+     /invalid_tool_call/);
+ };
+ try{
+   for(let i=0;i<12;i++){
+     const id="req_sequential_"+i;
+     reg.stageGatewayChallenge("bounded-crypto",prepared(id));
+     await sign(id);
+   }
+   assert.equal(signatures,12);
+   for(let i=0;i<8;i++)
+     reg.stageGatewayChallenge("bounded-crypto",prepared("req_parallel_"+i));
+   assert.throws(()=>reg.stageGatewayChallenge("bounded-crypto",
+     prepared("req_over_limit")),
+     /invalid_tool_call/);
+   await sign("req_parallel_0");
+   reg.stageGatewayChallenge("bounded-crypto",prepared("req_over_limit"));
+   await sign("req_over_limit");
+   for(let i=1;i<8;i++)await sign("req_parallel_"+i);
+   assert.equal(signatures,21);
+   reg.end("bounded-crypto");
+   await assert.rejects(reg.invokeCrypto(auth,{
+     tool:"delegation_create_presentation",
+     arguments:{request_id:"req_sequential_1"}
+   }),/inactive_task/);
+ }finally{reg.end("bounded-crypto");}
+});

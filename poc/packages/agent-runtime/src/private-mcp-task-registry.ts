@@ -130,16 +130,6 @@ export class PrivateMcpTaskRegistry {
       signal.addEventListener("abort", task.onAbort, {once:true});
     }
     this.#active.set(taskId, task);
-    if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&this.#role==="backend"){
-      // Temporary offline diagnostic: counts only, no paths or private data.
-      process.stderr.write(JSON.stringify({
-        event:"native_mcp_task_scope",
-        role:this.#role,allowedPaths:task.allowedPaths?.size??0,
-        approvedFileOperations:task.allowedFilePermissions?.size??0,
-        testPathCount:[...(task.allowedPaths??[])].filter(x=>x.startsWith("tests/")).length,
-        testOperationCount:[...(task.allowedFilePermissions??[])].filter(x=>x.includes("tests/")).length
-      })+"\n");
-    }
   }
 
   /** Only the trusted ADK client factory may read this value; never pass to Gemini. */
@@ -183,9 +173,16 @@ export class PrivateMcpTaskRegistry {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     const deadline=Date.parse(prepared.expires_at);
+    // Bound requests currently waiting for Adapter signing, NOT completed
+    // one-shot challenges. Completed request IDs remain as replay tombstones
+    // until the Task ends; they must not exhaust the concurrency ceiling.
+    // The separate total cap prevents a long task from retaining unbounded IDs.
+    const activeChallenges=[...task.pendingCrypto.values()]
+      .filter(entry=>!entry.used).length;
     if(!Number.isFinite(deadline) || deadline<=Date.now() ||
        deadline>Date.now()+120_000 ||
-       task.pendingCrypto.size>=8 || task.pendingCrypto.has(prepared.request_id)) {
+       activeChallenges>=8 || task.pendingCrypto.size>=256 ||
+       task.pendingCrypto.has(prepared.request_id)) {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     task.pendingCrypto.set(prepared.request_id,{
@@ -279,15 +276,6 @@ export class PrivateMcpTaskRegistry {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     const payload = request as Record<string,unknown>;
-    const failScoped=(check:string):never=>{
-      if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"){
-        process.stderr.write(JSON.stringify({
-          event:"native_mcp_scope_refusal",role:this.#role,
-          tool:payload.tool,check
-        })+"\n");
-      }
-      throw new PrivateMcpTaskError("invalid_tool_call");
-    };
     if (Object.keys(payload).sort().join(",") !== "arguments,tool" || (payload.tool !== "read_file" && payload.tool !== "update_file" && payload.tool !== "create_file" && payload.tool !== "run_tests")) {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
@@ -300,18 +288,18 @@ export class PrivateMcpTaskRegistry {
           : payload.tool === "create_file"
             ? parseCreateFileArgs(payload.arguments,"approved")
             : parseRunTestsArgs(payload.arguments,"approved");
-    } catch { return failScoped("parse"); }
+    } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
     if(args.branch!==(task.approvedBranch??LEGACY_A2A_BRANCH))
-      return failScoped("branch");
+      throw new PrivateMcpTaskError("invalid_tool_call");
     if(payload.tool!=="run_tests"&&task.allowedPaths!==undefined&&
        !("path" in args && task.allowedPaths.has(args.path))){
-      return failScoped("path");
+      throw new PrivateMcpTaskError("invalid_tool_call");
     }
     if(payload.tool!=="run_tests"&&
        task.allowedFilePermissions!==undefined&&
        !("path" in args &&task.allowedFilePermissions.has(
          payload.tool+"\0"+args.path))){
-      return failScoped("operation");
+      throw new PrivateMcpTaskError("invalid_tool_call");
     }
     if (payload.tool === "update_file" &&
         (!task.allowUpdateFile ||
@@ -329,24 +317,7 @@ export class PrivateMcpTaskRegistry {
         !SPECIALIZED_AGENT_PROFILES.test.can_run_tests)){
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
-    // Offline integration diagnostics only. No source, credentials, paths or
-    // model-controlled text is ever included in these events.
-    const trace=process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&
-      payload.tool==="read_file";
-    if(trace)process.stderr.write(JSON.stringify({
-      event:"native_mcp_gateway_boundary",role:this.#role,phase:"invoke",
-      isTestPath:"path" in args && args.path.startsWith("tests/")
-    })+"\n");
-    let result:unknown;
-    try{result=await task.client.invoke(payload.tool, args);}
-    catch(error){
-      if(trace)process.stderr.write(JSON.stringify({
-        event:"native_mcp_gateway_boundary",role:this.#role,phase:"rejected",
-        kind:error instanceof Error&&"kind" in error&&
-          typeof error.kind==="string" ? error.kind:"unknown"
-      })+"\n");
-      throw error;
-    }
+    const result = await task.client.invoke(payload.tool, args);
     // If cancellation raced with the network call, never advertise success.
     if (task.signal?.aborted || this.#active.get(claims.task_id) !== task) {
       throw new PrivateMcpTaskError("inactive_task");

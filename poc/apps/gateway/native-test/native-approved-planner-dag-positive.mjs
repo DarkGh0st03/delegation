@@ -140,7 +140,6 @@ export async function runNativePositiveApprovedDag({
   // transport. Agent model instructions and signed plan are unchanged.
   const sharedMcpEnabled=process.env.APPROVED_RUNNER_NATIVE_MCP==="1";
   let normalMcpCalls=0,privateCryptoMcpCalls=0;
-  const mcpReadAudit={backend:[],frontend:[],test:[]};
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
@@ -160,15 +159,9 @@ export async function runNativePositiveApprovedDag({
       return fetch(url,options);
     if(!target.startsWith(adkGatewayBase+"/v1/authorization/"))
       throw Error("ADK attempted unknown transport");
-    let operation="unknown",pathIndex=-1,stage="decode";
     try{
       const request=JSON.parse(String(options?.body));
-      operation=request?.tool??"execute";
-      if(request?.arguments?.path){
-        pathIndex=files[role]?.indexOf(request.arguments.path)??-1;
-      }
       if(target===adkGatewayBase+"/v1/authorization/prepare"){
-        stage="prepare-assertions";
         assert.equal(request.agent_role,role);
         assert.match(request.task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
         if(role==="test"){
@@ -194,13 +187,7 @@ export async function runNativePositiveApprovedDag({
         return reply(gateway.prepare(request),201);
       }
       if(target===adkGatewayBase+"/v1/authorization/execute"){
-        stage="gateway-execute";
         const executed=await gateway.execute(request);
-        stage="execute-assertions";
-        const executedPath=executed.execution?.path;
-        if(typeof executedPath==="string")
-          pathIndex=files[role]?.indexOf(executedPath)??-1;
-        operation=executed.execution?.tool??"execute";
         assert.equal(executed.policy.allow,true);
         assert.equal(executed.policy.policy_version,"phase6-approved-branch-v2");
         assert.equal(executed.verified_delegation.presenter_id,
@@ -262,15 +249,8 @@ export async function runNativePositiveApprovedDag({
     }catch(error){
       // The model sees a generic denied result, never raw provider exceptions,
       // confidential request arguments, VP, source data or service tokens.
-      // Test-only SAFE diagnostics: stage, operation, file index and
-      // the failing assertion's source line (never its raw values/message).
-      const site=String(error?.stack??"").match(
-        /native-approved-planner-dag-positive\.mjs:(\d+):(\d+)/u
-      );
       process.stderr.write("[native-dag-adk] controlled_denial "+
-        JSON.stringify({role,stage,operation,pathIndex,
-          assertion_line:site?Number(site[1]):null,
-          kind:error?.constructor?.name??"Error",
+        JSON.stringify({role,kind:error?.constructor?.name??"Error",
           code:error?.code??"unknown"})+"\n");
       return reply({error:"trusted_operation_denied"},403);
     }
@@ -299,28 +279,6 @@ export async function runNativePositiveApprovedDag({
           baseUrl:"http://127.0.0.1:"+rolePorts[role]
         }])
       ));
-      // Trace the PRIVATE result classification only. It is impossible
-      // to diagnose an ADK/MCP decoding failure from Gateway effects alone.
-      // Never log payloads, file content, model text, bearer or VP material.
-      const originalReadFile=router.readFile.bind(router);
-      router.readFile=async(claims,token,raw)=>{
-        const pathIndex=files[claims.role]?.indexOf(raw?.path)??-1;
-        try{
-          const result=await originalReadFile(claims,token,raw);
-          mcpReadAudit[claims.role].push({pathIndex,kind:"routed"});
-          return result;
-        }catch(error){
-          const kind=String(error?.message??"");
-          const allowed=["invalid_tool_call","inactive_task","unauthorized",
-            "authorization_denied","tool_unavailable","tests_failed",
-            "task_worker_rejected","task_worker_unavailable",
-            "task_worker_invalid_result"];
-          mcpReadAudit[claims.role].push({
-            pathIndex,kind:allowed.includes(kind)?kind:"blocked"
-          });
-          throw error;
-        }
-      };
       for(const profile of ["legacy","crypto"]){
         const server=createSharedMcpHttpServer({
           verificationKeys,router,
@@ -425,9 +383,7 @@ export async function runNativePositiveApprovedDag({
     for(const role of ROLES)await assert.rejects(
       dispatcher.dispatch(role),/dependencies/);
     assert.deepEqual(counts,{backend:0,frontend:0});
-    let result;
-    try{
-      result=await dispatcher.executeApprovedDag({
+    const result=await dispatcher.executeApprovedDag({
       async invokeOrchestratorTask(planId,runtimeTaskId){
         assert.equal(planId,"branch");
         assert.throws(()=>gateway.prepare({
@@ -448,20 +404,7 @@ export async function runNativePositiveApprovedDag({
         assert.equal(created.execution.commit_sha,baseSha);
         assert.equal((await reader.getBranchMetadata(branch)).commit_sha,baseSha);
       }
-      });
-    }catch(error){
-      if(sharedMcpEnabled){
-        // File positions and fixed classifications ONLY: no raw arguments.
-        process.stderr.write("[native-dag-adk] mcp_read_audit "+
-          JSON.stringify({
-            audit:mcpReadAudit,
-            confirmedReadCounts:reads,
-            confirmedWriteCounts:writes,
-            normalMcpCalls,privateCryptoMcpCalls
-          })+"\n");
-      }
-      throw error;
-    }
+    });
     assert.equal(coordinator.phase,"closed");
     assert.equal(result.plan_digest,planDigest);
     assert.deepEqual(result.completed_task_ids,["branch",...ROLES]);
@@ -479,8 +422,6 @@ export async function runNativePositiveApprovedDag({
     // normal shared MCP and separate private cryptographic MCP. A green
     // FunctionTool fallback alone cannot satisfy this gate.
     if(sharedMcpEnabled){
-      assert.equal(mcpReadAudit.backend.filter(x=>x.kind==="routed").length,6);
-      assert.equal(mcpReadAudit.frontend.filter(x=>x.kind==="routed").length,4);
       assert.ok(normalMcpCalls>=21,
         "Approved ADK tools must traverse real shared MCP HTTP");
       assert.ok(privateCryptoMcpCalls>=21,
