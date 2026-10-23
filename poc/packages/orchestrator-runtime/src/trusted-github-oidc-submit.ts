@@ -11,6 +11,8 @@
  * endpoint. A GitHub-hosted runner cannot reach its localhost listener.
  */
 import {request as httpsRequest} from "node:https";
+import {checkServerIdentity} from "node:tls";
+import {timingSafeEqual} from "node:crypto";
 
 const ADMISSION_PATH="/v1/trusted/github/oidc-admission";
 // The runner-provided URL varies by GitHub Actions infrastructure.
@@ -22,6 +24,10 @@ const GITHUB_OIDC_REQUEST_HOSTS=new Set([
   "pipelines.actions.githubusercontent.com"
 ]);
 const MAX_BODY_BYTES=48*1024;
+const FINGERPRINT=/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/u;
+function fingerprintBytes(value:string):Buffer{
+  return Buffer.from(value.replaceAll(":",""),"hex");
+}
 const ENV_KEYS=[
   "GITHUB_ACTIONS","GITHUB_EVENT_NAME","GITHUB_RUN_ATTEMPT",
   "GITHUB_REPOSITORY","GITHUB_REF","GITHUB_WORKFLOW_REF",
@@ -39,7 +45,11 @@ export interface TrustedGithubRunnerSubmission{
   env:Record<typeof ENV_KEYS[number],string>;
   event:unknown;
   /** CA for verifying the server, plus runner client cert and private key. */
-  tls:{ca:string|Buffer;cert:string|Buffer;key:string|Buffer};
+  tls:{
+    ca:string|Buffer;cert:string|Buffer;key:string|Buffer;
+    /** Pinned independently of endpoint/dispatch JSON; HTTPS CA alone is not enough. */
+    expectedServerFingerprint256:string;
+  };
   /** Offline unit fixture; never fill with data from the event. */
   oidcFetchFn?:typeof fetch;
 }
@@ -51,7 +61,9 @@ export async function submitTrustedGithubOidcFromRunner(
      input.audience.length<16||input.audience.length>512||
      typeof input.tokenRequestBearer!=="string"||
      !input.tokenRequestBearer.trim()||
-     !input.tls||["ca","cert","key"].some(field=>{
+     !input.tls||
+     !FINGERPRINT.test(input.tls.expectedServerFingerprint256??"")||
+     ["ca","cert","key"].some(field=>{
        const v=input.tls[field as keyof typeof input.tls];
        return !(typeof v==="string"||Buffer.isBuffer(v))||
          !v.length||v.length>128*1024;
@@ -109,6 +121,20 @@ export async function submitTrustedGithubOidcFromRunner(
     const req=httpsRequest(endpoint!,{
       method:"POST",ca:input.tls.ca,cert:input.tls.cert,
       key:input.tls.key,rejectUnauthorized:true,minVersion:"TLSv1.2",
+      // Verify DNS/IP against certificate SAN AND the trusted host leaf.
+      // A new HTTPS origin, including another leaf signed by the same CA,
+      // cannot receive the one-use GitHub OIDC token.
+      checkServerIdentity:(host,certificate)=>{
+        const identityError=checkServerIdentity(host,certificate);
+        if(identityError)return identityError;
+        if(typeof certificate.fingerprint256!=="string"||
+           !FINGERPRINT.test(certificate.fingerprint256)||
+           !timingSafeEqual(
+             fingerprintBytes(certificate.fingerprint256),
+             fingerprintBytes(input.tls.expectedServerFingerprint256)
+           ))return new Error("Trusted Engineer intake TLS certificate differs from independent pin");
+        return undefined;
+      },
       headers:{"content-type":"application/json",
         "content-length":Buffer.byteLength(body,"utf8")},
       timeout:12000

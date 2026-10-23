@@ -238,7 +238,9 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
   const ca=readFileSync(join(tlsDir,"ca.pem"),"utf8");
   const expectedClientFingerprint256=
     new X509Certificate(client.cert).fingerprint256;
-  const tls={ca,cert:client.cert,key:client.key};
+  const tls={ca,cert:client.cert,key:client.key,
+    expectedServerFingerprint256:
+      new X509Certificate(server.cert).fingerprint256};
   const serverTls={ca,cert:server.cert,key:server.key,
     expectedClientFingerprint256};
   const host=await startTrustedEngineerLocalHost({
@@ -287,6 +289,20 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
     assert.equal(tokenRequested,true);
   }
   assert.equal((await readdir(f.replays)).length,0);
+  let unpinnedOidcRequests=0;
+  await assert.rejects(submitTrustedGithubOidcFromRunner({
+    ...submission,tls:{...tls,expectedServerFingerprint256:""},
+    oidcFetchFn:async()=>{
+      unpinnedOidcRequests++;
+      throw Error("OIDC should not be fetched");
+    }
+  }),/admission denied/);
+  assert.equal(unpinnedOidcRequests,0);
+  await assert.rejects(submitTrustedGithubOidcFromRunner({
+    ...submission,tls:{...tls,expectedServerFingerprint256:
+      new X509Certificate(rogue.cert).fingerprint256}
+  }),/admission denied/);
+  assert.equal((await readdir(f.replays)).length,0);
   await assert.rejects(submitTrustedGithubOidcFromRunner({
     ...submission,tls:{...tls,ca:"invalid-ca"}
   }),/admission denied/);
@@ -294,7 +310,7 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
   // This cert is signed by the SAME CA but cannot impersonate the pinned
   // client. TLS accepts it; the Engineer admission boundary must reject it.
   await assert.rejects(submitTrustedGithubOidcFromRunner({
-    ...submission,tls:{ca,cert:rogue.cert,key:rogue.key}
+    ...submission,tls:{...tls,cert:rogue.cert,key:rogue.key}
   }),/admission denied/);
   assert.equal((await readdir(f.replays)).length,0);
   const result=await submitTrustedGithubOidcFromRunner(submission);
