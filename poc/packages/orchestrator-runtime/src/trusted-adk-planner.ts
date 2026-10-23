@@ -173,6 +173,35 @@ export function compilePlanningProposal(
     tasks,requested_permissions,assumptions,uncertainties
   };
   validatePlan(plan,{allowedOperations:operations});
+  // Independent DAG nodes may run in either order. Never propose unordered
+  // writes to the SAME resource: their provider SHAs would conflict and
+  // the approved plan would not define which edit takes precedence.
+  // This is a Planning consistency check, NOT an authorization decision.
+  const grantKeys=new Set<string>();
+  const writers=new Map<string,string[]>();
+  const isAncestor=(ancestor:string,node:string,seen=new Set<string>()):boolean=>{
+    if(seen.has(node))return false;
+    seen.add(node);
+    const task=byId.get(node);
+    return !!task?.depends_on.some((parent:string)=>
+      parent===ancestor||isAncestor(ancestor,parent,seen));
+  };
+  for(const permission of requested_permissions){
+    const key=[permission.task_id,permission.operation,permission.resource]
+      .join("\u0000");
+    if(grantKeys.has(key))fail("duplicate Task permission");
+    grantKeys.add(key);
+    if(permission.operation!=="update_file"&&
+       permission.operation!=="create_file")continue;
+    const previous=writers.get(permission.resource)??[];
+    for(const prior of previous){
+      if(!isAncestor(prior,permission.task_id)&&
+         !isAncestor(permission.task_id,prior))
+        fail("independent Tasks cannot modify the same file");
+    }
+    previous.push(permission.task_id);
+    writers.set(permission.resource,previous);
+  }
   // The shared approved-plan dispatcher derives the branch from the final
   // resource URIs. Reject branch-only sketches that silently fall back to a
   // different legacy branch rather than trusting the Planner configuration.

@@ -140,3 +140,110 @@ test("branch-only sketches cannot silently select the legacy branch",()=>{
     permissions:[{operation:"create_pull_request",path:null,reason:"Review"}]};
   assert.throws(()=>compilePlanningProposal(d,cfg),/exact trusted work branch/);
 });
+
+test("generic multi-read Planning permits independent disjoint edits and exact-SHA review",async()=>{
+  const UI="src/ui/invoice-list.tsx";
+  const E2E="tests/e2e/invoice-order.spec.ts";
+  const snapshot={...SNAPSHOT,
+    directories:["","src","src/billing","src/ui","tests","tests/e2e"],
+    files:[FILE,UI]
+  };
+  const proposed={
+    tasks:[
+      {id:"branch",agent_id:"orchestrator",title:"Start isolated branch",
+       description:"Create an approved work branch",depends_on:[],
+       permissions:[{operation:"create_branch",path:null,reason:"Isolate writes"}]},
+      {id:"backend",agent_id:"backend",title:"Update billing ordering",
+       description:"Update due-date sort",depends_on:["branch"],
+       permissions:[
+         {operation:"read_file",path:FILE,reason:"Inspect billing"},
+         {operation:"update_file",path:FILE,reason:"Fix ordering"}]},
+      {id:"frontend",agent_id:"frontend",title:"Update invoice display",
+       description:"Display sorted invoices",depends_on:["branch"],
+       permissions:[
+         {operation:"read_file",path:UI,reason:"Inspect UI"},
+         {operation:"update_file",path:UI,reason:"Show ordering"}]},
+      {id:"test",agent_id:"test",title:"Test ordering",
+       description:"Run exact pinned SHA acceptance",
+       depends_on:["backend","frontend"],permissions:[
+         {operation:"create_file",path:E2E,reason:"Create regression"},
+         {operation:"run_tests",path:null,reason:"Check final SHA"}]},
+      {id:"pr",agent_id:"orchestrator",title:"Request human review",
+       description:"Open PR without merge",depends_on:["test"],
+       permissions:[{operation:"create_pull_request",path:null,reason:"Review only"}]}
+    ],assumptions:[],uncertainties:[]
+  };
+  const readSequence=[
+    {name:"read_repository",args:{}},
+    {name:"list_directory",args:{branch:"main",path:""}},
+    {name:"read_file",args:{branch:"main",path:FILE}},
+    {name:"read_file",args:{branch:"main",path:UI}}
+  ];
+  class DiscoveryModel extends BaseLlm{
+    turns=0;
+    constructor(){super({model:"offline-generic-discovery"});}
+    override async *generateContentAsync():AsyncGenerator<LlmResponse,void>{
+      const step=readSequence[this.turns++];
+      if(step){
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"trusted-discovery-"+this.turns,name:step.name,args:step.args
+        }}]}};return;
+      }
+      yield {content:{role:"model",parts:[{text:JSON.stringify(proposed)}]}};
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("No paid model in offline tests"));
+    }
+  }
+  const invoked:string[]=[];
+  const plan=await new TrustedAdkReadOnlyPlanner({
+    ...cfg,snapshot,model:new DiscoveryModel(),
+    readPort:{async invoke(tool:string,args:Record<string,unknown>){
+      invoked.push(tool);
+      const base={provider:"gitea",performed:true,tool,
+        revision:snapshot.base_revision};
+      if(tool==="read_repository")
+        return {...base,default_branch:"main",full_name:"thesis/invoices"};
+      if(tool==="list_directory")
+        return {...base,branch:"main",path:args.path,entries:[
+          {type:"dir",path:"src"},{type:"dir",path:"tests"}]};
+      return {...base,branch:"main",path:args.path,
+        content:"export const publicSource = true;"};
+    }}
+  }).propose();
+  assert.equal(plan.verified_source_reads,2);
+  assert.deepEqual(invoked,readSequence.map(x=>x.name));
+  assert.equal(plan.plan.requested_permissions.length,8);
+  assert.deepEqual(plan.plan.tasks.find(x=>x.id==="frontend")?.depends_on,["branch"]);
+  assert.deepEqual(plan.plan.tasks.find(x=>x.id==="test")?.depends_on,
+    ["backend","frontend"]);
+  assert.deepEqual(plan.plan.requested_permissions
+    .filter(x=>x.operation==="create_pull_request").map(x=>x.agent_id),
+    ["orchestrator"]);
+  assert.equal(plan.plan.base_revision,snapshot.base_revision);
+  assert.equal("approval" in plan,false);
+});
+
+test("Planner rejects unordered writes to the same discovered file",()=>{
+  const UI="src/ui/invoice-list.tsx";
+  const snapshot={...SNAPSHOT,files:[FILE,UI],
+    directories:["","src","src/billing","src/ui"]};
+  const config={...cfg,snapshot};
+  const proposed=draft();
+  proposed.tasks.push({
+    id:"frontend",agent_id:"frontend",
+    title:"Conflicting UI edit",description:"Update same invoice service",
+    depends_on:["branch"],permissions:[
+      {operation:"update_file",path:FILE,reason:"Conflicting change"}
+    ]
+  });
+  assert.throws(()=>compilePlanningProposal(proposed,config),
+    /independent Tasks cannot modify the same file/);
+  proposed.tasks[2].depends_on=["backend"];
+  assert.doesNotThrow(()=>compilePlanningProposal(proposed,config));
+  const duplicate=draft();
+  duplicate.tasks[1].permissions.push({
+    operation:"update_file",path:FILE,reason:"Duplicate write"});
+  assert.throws(()=>compilePlanningProposal(duplicate,config),
+    /duplicate Task permission/);
+});
