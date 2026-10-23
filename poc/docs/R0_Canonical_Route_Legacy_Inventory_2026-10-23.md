@@ -168,3 +168,20 @@ Engineer key signs the canonical plan and receipt, and the Gateway verifies
 its signature, key pin, session and validity window before activation.
 The test does not simulate an authenticated human GUI click and must not be
 reported as human consent. Browser login/CSRF/approval are separately tested.
+
+
+## R2 composition gate: ADK proposal to signed DAG (offline)
+
+The new `trusted-reviewed-adk-dag.test.ts` exercises the **same actual** ADK
+Planner, signed backend Planning checkpoint, immutable Review Gate, owner-only
+Engineer Ed25519 receipt, real TrustedExecutionCoordinator, Gateway
+ApprovedExecutionPlans, signed plan A2A dispatcher, DAG dependency checks,
+Gateway Prepare/Execute and normal task-completion evidence, sequentially in
+one session. Two entirely distinct requirements (`invoice-sort` and
+`audit-dashboard`) prove work-branch and file selection are not pinned to
+Account Suspension. A third scenario denies a partially Engineer-approved
+DAG before provider effects. Only the LLM decisions are scripted; credential
+issuing/revocation, VP Rust verifier, OPA and provider operations remain
+bounded offline fixtures (and role A2A transport remains stubbed), so R3 still
+requires real native Rust/OPA/Gitea/Docker and A2A in ONE run. This test
+provides an integration contract, not an automatic human approval capability.
