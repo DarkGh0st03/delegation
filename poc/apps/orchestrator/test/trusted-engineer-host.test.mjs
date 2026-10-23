@@ -394,6 +394,45 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
       adapterToken:"offline-adapter-token"
     }
   };
+  // Exercise the actual operator-owned JSON + local-file bootstrap,
+  // rather than calling the recovering host with in-memory fixtures only.
+  const {startConfiguredTrustedEngineerService}=await import(
+    "../src/trusted-engineer-service.mjs");
+  const ownerConfigFile=join(home,"operator-service.json");
+  const ownerFiles={
+    public:join(home,"engineer-public.pem"),
+    github:join(home,"github-rest.token"),
+    hmac:join(home,"admission-hmac.hex"),
+    ca:join(home,"admission-ca.pem"),
+    cert:join(home,"admission-server.pem"),
+    key:join(home,"admission-server.key"),
+    adapter:join(home,"adapter-bearer.token")
+  };
+  for(const [file,data] of [
+    [ownerFiles.public,config.approval.publicKeyPem],
+    [ownerFiles.github,config.oidc.githubApiToken],
+    [ownerFiles.hmac,config.oidc.hmacSecret.toString("hex")],
+    [ownerFiles.ca,config.oidc.tls.ca],
+    [ownerFiles.cert,config.oidc.tls.cert],
+    [ownerFiles.key,config.oidc.tls.key],
+    [ownerFiles.adapter,config.recovery.adapterToken]
+  ])await writeFile(file,data,{mode:0o600});
+  const {publicKeyPem,...reviewFields}=config.approval;
+  const {githubApiToken,hmacSecret,tls,githubApiFetchFn,
+    oidcJwksFetchFn,...oidcFields}=config.oidc;
+  const {adapterToken,...recoveryFields}=config.recovery;
+  const fileConfig={
+    approval:{...reviewFields,publicKeyPemFile:ownerFiles.public},
+    oidc:{...oidcFields,
+      githubApiTokenFile:ownerFiles.github,
+      hmacSecretHexFile:ownerFiles.hmac,
+      tls:{caFile:ownerFiles.ca,certFile:ownerFiles.cert,
+        keyFile:ownerFiles.key,
+        expectedClientFingerprint256:tls.expectedClientFingerprint256}},
+    recovery:{...recoveryFields,adapterTokenFile:ownerFiles.adapter},
+    approvalPort:0,oidcPort:0
+  };
+  await writeFile(ownerConfigFile,JSON.stringify(fileConfig),{mode:0o600});
   // A production-like recovering host must NEVER silently fall back to
   // unauthenticated plaintext, even if the IPC and Adapter are configured.
   await assert.rejects(startTrustedEngineerRecoveringHost({
@@ -401,7 +440,7 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   }),/requires pinned mutual TLS/);
   assert.equal(adapterCalls,0);
   // Boot is rejected while the real Adapter cannot confirm revocation.
-  await assert.rejects(startTrustedEngineerRecoveringHost(config),
+  await assert.rejects(startConfiguredTrustedEngineerService(ownerConfigFile),
     /manual reconciliation required/);
   assert.equal(adapterCalls,1);
   assert.deepEqual(retired,[oldSession]);
@@ -409,7 +448,7 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   // Retrying the *same* cold boot after Adapter recovery is allowed. No
   // previous OIDC admission or human approval is replayed automatically.
   shouldFail=false;
-  const host=await startTrustedEngineerRecoveringHost(config);
+  const host=await startConfiguredTrustedEngineerService(ownerConfigFile);
   t.after(()=>host.close());
   assert.equal(adapterCalls,2);
   assert.deepEqual(retired,[oldSession,oldSession]);
