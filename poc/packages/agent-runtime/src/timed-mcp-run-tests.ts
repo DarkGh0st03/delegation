@@ -10,7 +10,7 @@ import {createTaskBearerFetch} from "./mcp-task-fetch.ts";
 export const MCP_RUN_TESTS_TIMEOUT_MS = 930_000;
 
 export type McpRunTestsArguments = {
-  branch: "feature/account-suspension";
+  branch: string;
   profile: "poc-default";
 };
 

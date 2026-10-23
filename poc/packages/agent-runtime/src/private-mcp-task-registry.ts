@@ -4,6 +4,7 @@ import type {DelegationEvidenceHandler, PreparedGatewayAuthorization} from "./de
 import { issueTaskToken, verifyTaskToken, bearerToken, type AgentRole, type TaskClaims } from "../../../mcp-shared/src/task-token.ts";
 import { parseReadFileArgs, parseUpdateFileArgs, parseCreateFileArgs, parseRunTestsArgs } from "../../../mcp-shared/src/catalog.ts";
 import { SPECIALIZED_AGENT_PROFILES } from "./specialized-agents.ts";
+import {LEGACY_A2A_BRANCH,validatePrivateApprovedBranch} from "./approved-branch.ts";
 import type {ApprovedTaskFilePermission} from "./contracts.ts";
 import type { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 
@@ -33,6 +34,7 @@ interface ActiveTask {
   allowUpdateFile: boolean;
   allowCreateFile: boolean;
   allowRunTests: boolean;
+  approvedBranch?:string;
   /** Task-scoped path ceiling; absent only for legacy unbound sessions. */
   allowedPaths?: ReadonlySet<string>;
   /** Exact approved read/write/create operations, not merely paths. */
@@ -70,6 +72,7 @@ export class PrivateMcpTaskRegistry {
       allowUpdateFile?: boolean;
       allowCreateFile?: boolean;
       allowRunTests?: boolean;
+      approvedBranch?:string;
       allowedPaths?:readonly string[];
       allowedFilePermissions?:readonly ApprovedTaskFilePermission[];
       evidenceHandler?: Pick<DelegationEvidenceHandler,
@@ -95,6 +98,13 @@ export class PrivateMcpTaskRegistry {
          typeof p.path!=="string"||!options.allowedPaths!.includes(p.path)))){
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
+    if(options.approvedBranch!==undefined){
+      try{validatePrivateApprovedBranch(options.approvedBranch);}
+      catch{throw new PrivateMcpTaskError("invalid_tool_call");}
+      if(options.allowedPaths===undefined||
+         options.allowedFilePermissions===undefined)
+        throw new PrivateMcpTaskError("invalid_tool_call");
+    }
     const allowedOperationKeys=options.allowedFilePermissions?.map(p=>
       p.operation+"\0"+p.path);
     if(allowedOperationKeys&&new Set(allowedOperationKeys).size!==
@@ -110,6 +120,8 @@ export class PrivateMcpTaskRegistry {
         ? {allowedPaths:new Set(options.allowedPaths)} : {}),
       ...(allowedOperationKeys!==undefined
         ? {allowedFilePermissions:new Set(allowedOperationKeys)} : {}),
+      ...(options.approvedBranch!==undefined
+        ?{approvedBranch:options.approvedBranch}:{}),
       allowUpdateFile: options.allowUpdateFile === true,
       allowCreateFile: this.#role==="test" && options.allowCreateFile===true,
       allowRunTests: this.#role==="test" && options.allowRunTests===true};
@@ -263,13 +275,15 @@ export class PrivateMcpTaskRegistry {
     let args;
     try {
       args = payload.tool === "read_file"
-        ? parseReadFileArgs(payload.arguments)
+        ? parseReadFileArgs(payload.arguments,"approved")
         : payload.tool === "update_file"
-          ? parseUpdateFileArgs(payload.arguments)
+          ? parseUpdateFileArgs(payload.arguments,"approved")
           : payload.tool === "create_file"
-            ? parseCreateFileArgs(payload.arguments)
-            : parseRunTestsArgs(payload.arguments);
+            ? parseCreateFileArgs(payload.arguments,"approved")
+            : parseRunTestsArgs(payload.arguments,"approved");
     } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
+    if(args.branch!==(task.approvedBranch??LEGACY_A2A_BRANCH))
+      throw new PrivateMcpTaskError("invalid_tool_call");
     if(payload.tool!=="run_tests"&&task.allowedPaths!==undefined&&
        !("path" in args && task.allowedPaths.has(args.path))){
       throw new PrivateMcpTaskError("invalid_tool_call");
@@ -282,13 +296,13 @@ export class PrivateMcpTaskRegistry {
     }
     if (payload.tool === "update_file" &&
         (!task.allowUpdateFile ||
-         !SPECIALIZED_AGENT_PROFILES[this.#role].writable_paths.includes(args.path))) {
+         (task.approvedBranch===undefined&&!SPECIALIZED_AGENT_PROFILES[this.#role].writable_paths.includes(args.path)))) {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
 
     if (payload.tool === "create_file" &&
         (!task.allowCreateFile || this.#role!=="test" ||
-         !SPECIALIZED_AGENT_PROFILES.test.creatable_paths.includes(args.path))) {
+         (task.approvedBranch===undefined&&!SPECIALIZED_AGENT_PROFILES.test.creatable_paths.includes(args.path)))) {
       throw new PrivateMcpTaskError("invalid_tool_call");
     }
     if(payload.tool === "run_tests" &&

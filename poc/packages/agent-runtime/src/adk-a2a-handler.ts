@@ -257,6 +257,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
          ? {
              allowedPaths:context.subtask.relevant_paths,
              ...(context.subtask.approved_file_permissions!==undefined
+               ?{approvedBranch:context.subtask.branch}:{}),
+             ...(context.subtask.approved_file_permissions!==undefined
                ? {allowedFilePermissions:context.subtask.approved_file_permissions}:{})
            } : {}),
        evidenceHandler});

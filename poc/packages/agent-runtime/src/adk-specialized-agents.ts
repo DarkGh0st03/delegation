@@ -113,12 +113,6 @@ export function createAdkSpecializedAgent(
   const baseline=SPECIALIZED_AGENT_PROFILES[config.role];
   if(!baseline)throw new Error("Unknown specialized agent role");
   const branch=validatePrivateApprovedBranch(config.trustedBranch??LEGACY_A2A_BRANCH);
-  if(config.mcpReadFile && branch!==LEGACY_A2A_BRANCH){
-    // The shared MCP catalog is intentionally still frozen to the legacy
-    // branch. Never silently send model calls that it would reject or
-    // weaken its server-side schema to support this incremental refactor.
-    throw new Error("Dynamic approved branch is not yet supported by shared MCP");
-  }
   const scoped=config.trustedTaskPaths!==undefined;
   const taskPaths=scoped ? [...new Set(config.trustedTaskPaths)] : [];
   if(scoped){
@@ -152,6 +146,9 @@ export function createAdkSpecializedAgent(
   // Legacy tasks without signed per-operation hints retain the original
   // Account Suspension role allowlists for backward compatibility.
   const signedTask=grant!==null;
+  if(config.mcpReadFile&&branch!==LEGACY_A2A_BRANCH&&
+     (!signedTask||!scoped))
+    throw Error("Dynamic MCP branch requires a prebound signed Task grant");
   const writable=signedTask
     ? taskPaths.filter(path=>baseline.tools.includes("update_file")&&
         hasGrant("update_file",path))
@@ -356,7 +353,7 @@ export function createAdkSpecializedAgent(
             const response=await callTimedMcpRunTests({
               endpoint:config.mcpReadFile!.endpoint,
               bearerForRequest:config.mcpReadFile!.bearerForRequest,
-              args:args as {branch:"feature/account-suspension";profile:"poc-default"},
+              args:args as {branch:string;profile:"poc-default"},
               ...(config.signal ? {signal:config.signal} : {})
             });
             outcome=normalizeMcpRunTestsOutcome(response,argumentsRecord);
