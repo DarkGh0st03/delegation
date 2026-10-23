@@ -411,8 +411,8 @@ export async function runNativePositiveApprovedDag({
               head_branch:branch,base_branch:"main",
               title:"Reviewed "+scenarioId+" changes",
               body:"Engineer-signed plan digest: "+planDigest+
-                "\\nExact tested feature SHA: "+runnerOutcome.tested_commit_sha+
-                "\\nHuman approval and merge are NOT performed by this run."
+                "\nExact tested feature SHA: "+runnerOutcome.tested_commit_sha+
+                "\nHuman approval and merge are NOT performed by this run."
             }
           });
           const vp=await signedVp(

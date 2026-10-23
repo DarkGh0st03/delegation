@@ -384,7 +384,7 @@ try{
   assert.equal(proposed.plan.base_revision,baseSha);
   assert.equal(proposed.plan.repository.repository,"iam-console-poc");
   assert.equal(proposed.plan.requested_permissions.length,
-    positiveDag?23:5);
+    positiveDag?(2*existingFiles.length+4):5); // read+write per file; branch, create, tests, PR
   assert.equal(log.adapterPresentations,1);
   assert.equal(log.prepares,1);
   assert.equal(log.executions,1);
