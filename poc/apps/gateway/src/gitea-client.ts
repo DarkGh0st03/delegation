@@ -320,9 +320,22 @@ export class GiteaClient {
     headBranch: string,
     baseBranch: string,
     title: string,
-    body?: string
+    body?: string,
+    expectedHeadSha?:string
   ): Promise<GiteaCreatedPullRequest> {
+    if(expectedHeadSha!==undefined&&
+       !/^[a-f0-9]{40}$/u.test(expectedHeadSha)){
+      throw new ProviderConflictError(
+        "Exact tested PR head SHA is invalid");
+    }
     const headMetadata = await this.getBranchMetadata(headBranch);
+    // This check MUST precede POST /pulls: a changed feature head cannot
+    // open an approved PR on a revision that never passed acceptance.
+    if(expectedHeadSha!==undefined&&
+       headMetadata.commit_sha!==expectedHeadSha){
+      throw new ProviderConflictError(
+        "PR feature head changed after exact-SHA Runner acceptance");
+    }
     const response = object(
       await this.#requestJson(this.#repoApi("/pulls"), {
         method: "POST",
@@ -351,9 +364,14 @@ export class GiteaClient {
       typeof head.sha === "string" && head.sha.trim().length > 0
         ? head.sha
         : headMetadata.commit_sha;
-    if (returnedHeadSha !== headMetadata.commit_sha) {
+    if (returnedHeadSha !== headMetadata.commit_sha ||
+        (expectedHeadSha!==undefined&&(
+          typeof head.sha!=="string"||head.sha!==expectedHeadSha))) {
+      // Gitea does not expose an atomic compare-and-create PR API. A branch
+      // race AFTER the preflight is detected here, but POST may have created
+      // a PR; never treat that PR as an attested successful handoff.
       throw new ProviderUnavailableError(
-        "Gitea pull request head revision does not match the requested branch"
+        "Gitea PR head revision differs from exact tested feature SHA"
       );
     }
 

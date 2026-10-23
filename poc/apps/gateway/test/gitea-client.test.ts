@@ -480,3 +480,20 @@ test("createPullRequest maps duplicate PR validation failures to provider confli
     ProviderConflictError
   );
 });
+
+
+test("approved PR refuses changed HEAD before creating provider-side PR",async()=>{
+  const approved="a".repeat(40);
+  let posts=0;
+  const client=clientWith((async (url,init)=>{
+    if(init?.method==="POST")posts++;
+    return new Response(JSON.stringify({
+      name:"feature/account-suspension",
+      commit:{id:"b".repeat(40)}
+    }),{status:200});
+  }) as typeof fetch);
+  await assert.rejects(()=>client.createPullRequest(
+    "feature/account-suspension","main","Review","",approved
+  ),ProviderConflictError);
+  assert.equal(posts,0);
+});

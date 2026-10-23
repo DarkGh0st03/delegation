@@ -83,6 +83,8 @@ interface ActivePlan {
   readonly workBranch:string;
   active: boolean;
   readonly completedPlanTasks: Set<string>;
+  /** Only a trusted, attested exact-SHA Runner success may populate this. */
+  testedFeatureSha?:string;
   /** Gateway-owned TTL: never accepted from an agent or public HTTP. */
   leaseExpiresAtMs?:number;
 }
@@ -258,14 +260,20 @@ export class TrustedApprovedExecutionPlans {
   /** Called during Gateway Prepare, before a one-shot challenge is created. */
   authorizePrepare(runtimeTaskId:string, role:AgentRole, required:Permission,
     request?:NormalizedToolRequest):
-    { plan_digest:string; plan_task_id:string; work_branch:string } {
+    { plan_digest:string; plan_task_id:string; work_branch:string;
+      tested_head_sha?:string } {
     const {session,binding}=this.#activeBinding(runtimeTaskId);
     if(binding.agent!==role || binding.completed) {
       denied("Runtime role or completed task is outside approved plan");
     }
     this.#checkAction(session,binding,required,request);
+    const approvedTestedSha=request?.tool==="create_pull_request"
+      ?session.testedFeatureSha:undefined;
+    if(request?.tool==="create_pull_request"&&!approvedTestedSha)
+      denied("PR requires a trusted, completed exact-SHA Runner acceptance");
     return {plan_digest:session.digest,plan_task_id:binding.planTaskId,
-      work_branch:session.workBranch};
+      work_branch:session.workBranch,
+      ...(approvedTestedSha?{tested_head_sha:approvedTestedSha}:{})};
   }
 
   /** Re-evaluate AFTER VP and OPA, immediately BEFORE provider I/O. */
@@ -295,6 +303,11 @@ export class TrustedApprovedExecutionPlans {
     if(record.approved_work_branch!==session.workBranch){
       denied("Trusted plan working branch changed after Prepare");
     }
+    if(record.request.tool==="create_pull_request"&&
+       (!session.testedFeatureSha||
+        record.approved_tested_head_sha!==session.testedFeatureSha)){
+      denied("Prepared PR SHA differs from completed trusted Runner acceptance");
+    }
     this.#checkAction(session,binding,record.required_permission,record.request);
   }
 
@@ -312,6 +325,13 @@ export class TrustedApprovedExecutionPlans {
     if(result.tool!==record.request.tool)return;
     // Failed Runner jobs cannot be evidence of a passing Test Task.
     if(result.provider==="runner"&&result.status!=="pass")return;
+    // Any successful approved file mutation invalidates the previous test
+    // attestation; tests must be rerun on the new immutable branch head.
+    if(result.tool==="create_file"||result.tool==="update_file"){
+      const bound=this.#bindings.get(record.task_id);
+      const session=bound&&this.#sessions.get(bound.sessionId);
+      if(session)session.testedFeatureSha=undefined;
+    }
     this.#bindings.get(record.task_id)?.successfulRequests.set(record.request_id,
       Object.freeze({
         request_id:record.request_id,tool:record.request.tool,
@@ -353,6 +373,26 @@ export class TrustedApprovedExecutionPlans {
     }
     this.#ensureUnexpired(session);
     this.#assertDependencies(session,binding);
+    // A model-reported "tests passed" cannot supply this SHA. It comes only
+    // from a Gateway-recorded Runner provider effect plus trusted attestation.
+    const runnerEffects=[...binding.successfulRequests.values()].filter(v=>
+      v.execution.provider==="runner"&&v.execution.tool==="run_tests");
+    if(runnerEffects.length){
+      const revisions=new Set<string>();
+      for(const entry of runnerEffects){
+        const run=entry.execution;
+        if(run.provider!=="runner"||run.tool!=="run_tests"||
+           run.branch!==session.workBranch||run.status!=="pass"||
+           run.project_tests?.status!=="pass"||
+           run.researcher_acceptance?.status!=="pass"||
+           !SHA.test(run.tested_commit_sha)){
+          denied("Runner effect lacks complete independent acceptance");
+        }
+        revisions.add(run.tested_commit_sha);
+      }
+      if(revisions.size!==1)denied("Runner effects disagree on tested SHA");
+      session.testedFeatureSha=[...revisions][0];
+    }
     binding.completed=true;
     session.completedPlanTasks.add(binding.planTaskId);
   }

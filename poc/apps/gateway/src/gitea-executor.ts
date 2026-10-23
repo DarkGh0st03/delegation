@@ -118,11 +118,16 @@ export class GiteaExecutor implements ExecutionPort {
       }
       requireFeatureBranch(record,head_branch);
 
+      if(record.approved_plan_digest&&!record.approved_tested_head_sha){
+        throw new ProviderOperationUnavailableError(
+          "Approved PR is missing independently tested feature SHA");
+      }
       const created = await this.#client.createPullRequest(
         head_branch,
         base_branch,
         title,
-        body
+        body,
+        record.approved_tested_head_sha
       );
       const result: GiteaCreatePullRequestExecutionResult = {
         provider: "gitea",

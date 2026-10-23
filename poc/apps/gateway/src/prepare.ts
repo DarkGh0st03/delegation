@@ -118,7 +118,9 @@ export function prepareAuthorization(
     ...(approvedBinding ? {
       approved_plan_digest:approvedBinding.plan_digest,
       approved_plan_task_id:approvedBinding.plan_task_id,
-      approved_work_branch:approvedBinding.work_branch
+      approved_work_branch:approvedBinding.work_branch,
+      ...(approvedBinding.tested_head_sha
+        ?{approved_tested_head_sha:approvedBinding.tested_head_sha}:{})
     } : {}),
     created_at_ms: nowMs,
     expires_at_ms: nowMs + config.request_ttl_ms,

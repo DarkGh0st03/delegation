@@ -107,7 +107,9 @@ function harness(options:{
       if(req.tool==="run_tests")return{
         provider:"runner",performed:true,tool:"run_tests",
         branch:req.arguments.branch,revision:sha,tested_commit_sha:sha,
-        runner_profile:"poc-default",status:"pass",phases:[]
+        runner_profile:"poc-default",status:"pass",phases:[],
+        project_tests:{status:"pass"},
+        researcher_acceptance:{status:"pass"}
       };
       throw Error("unapproved provider operation");
     }
@@ -433,4 +435,51 @@ test("only a live exact-digest Gateway lease renews; stale/foreign lease cannot 
     completionAttestor:{async confirmCompleted(){return true;}},
     operationalLeaseMs:900_000
   }),/10-120 seconds/);
+});
+
+
+test("approved PR is pinned to trusted completed Runner SHA, not model text",async()=>{
+  const p=plan();
+  p.tasks.push({
+    id:"pr",agent_id:"orchestrator",title:"Request reviewed PR",
+    description:"Open tested feature for human review",
+    depends_on:["tests"],resources:[uri]
+  });
+  p.requested_permissions.push({
+    id:"p-pr",task_id:"pr",agent_id:"orchestrator",
+    resource:uri,operation:"create_pull_request",reason:"Human review"
+  });
+  const h=harness({configuredPlan:p,
+    approvedIds:["p-branch","p-backend","p-test","p-pr"]});
+  await h.gates.activate("session-approval",sha);
+  h.gates.bindTask("session-approval","bootstrap","a2a-bootstrap","orchestrator");
+  h.gates.bindTask("session-approval","backend-task","a2a-backend","backend");
+  h.gates.bindTask("session-approval","tests","a2a-tests","test");
+  h.gates.bindTask("session-approval","pr","a2a-pr","orchestrator");
+  const request={task_id:"a2a-pr",agent_role:"orchestrator",
+    tool:"create_pull_request",arguments:{
+      head_branch:branch,base_branch:"main",title:"Review tested revision"}};
+  assert.throws(()=>h.runtime.prepare(request),
+    (e:unknown)=>e instanceof GatewayError&&e.code==="approved_plan_denied");
+  await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+  await h.gates.confirmTaskCompletion("a2a-bootstrap");
+  await h.invoke("a2a-backend","backend","update_file",updateArgs);
+  await h.gates.confirmTaskCompletion("a2a-backend");
+  await h.invoke("a2a-tests","test","run_tests",{
+    branch,profile:"poc-default"
+  });
+  assert.throws(()=>h.runtime.prepare(request),
+    (e:unknown)=>e instanceof GatewayError&&e.code==="approved_plan_denied");
+  await h.gates.confirmTaskCompletion("a2a-tests");
+  const prepared=h.runtime.prepare(request);
+  const row=h.store.get(prepared.request_id);
+  assert.equal(row?.approved_tested_head_sha,sha);
+  // Even after an approved Prepare, the exact authenticated SHA must remain
+  // unchanged at Execute; public caller args have no trusted-SHA field.
+  if(!row)throw Error("Missing prepared record");
+  row.approved_tested_head_sha="b".repeat(40);
+  await assert.rejects(()=>h.runtime.execute({
+    request_id:prepared.request_id,signed_vp:"signed.vp.jwt"
+  }),(e:unknown)=>e instanceof GatewayError&&
+     e.code==="approved_plan_denied");
 });
