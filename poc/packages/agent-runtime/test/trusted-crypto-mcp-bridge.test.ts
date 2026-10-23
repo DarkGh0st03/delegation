@@ -17,6 +17,11 @@ import {DelegationEvidenceHandler} from "../src/delegation-evidence-handler.ts";
 import {GatewayControlledToolClient} from "../src/gateway-tool-client.ts";
 import {TrustedCryptoMcpBridge} from "../src/trusted-crypto-mcp-bridge.ts";
 import {ControlledToolError} from "../src/controlled-errors.ts";
+import {makeApproval,planDigest}
+  from "../../../packages/plan-contracts/src/plan.mjs";
+import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+import {TrustedApprovedExecutionPlans}
+  from "../../../apps/gateway/src/approved-execution-plans.ts";
 
 function keys(){
   const kp=generateKeyPairSync("ed25519");
@@ -194,4 +199,217 @@ test("fail-closed: crypto MCP outage does not fall back to direct Adapter signin
     assert.equal(gatewayCalls,1,"Only prepare may reach Gateway");
     assert.equal(directAdapterCalls,0);
   }finally{registry.end("task-down");}
+});
+
+
+test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved Gateway before provider effects",async()=>{
+  // The same GatewayRuntime instance owns the immutable Engineer-reviewed
+  // plan and normal HTTP Prepare/Execute routes. Crypto/OPA/provider adapters
+  // are instrumented fixtures; no Gemini, network Gitea or billed inference.
+  const k=keys(),front=keys(),testKey=keys();
+  const repo={authority:"gitea.local",owner:"thesis",repository:"invoices"};
+  const branch="feature/invoice-sort",path="src/billing/invoice.ts";
+  const root="gitea://gitea.local/thesis/invoices";
+  const resource=root+"/branches/"+encodeURIComponent(branch)+"/files/"+path;
+  const sessionId="session-invoice-reviewed",taskId="dispatch_invoice_signed_01";
+  const engineer="did:thesis:engineer",sha="a".repeat(40);
+  const plan={
+    schema_version:"1.0.0",plan_id:"invoice-dynamic-mcp",
+    session_id:sessionId,version:1,repository:repo,base_revision:sha,
+    requirement:"Implement invoice sorting in the approved existing file",
+    candidate_agents:[{
+      agent_id:"backend",did:"did:thesis:backend",card_ref:"trusted:backend"
+    }],
+    tasks:[{id:"invoice",agent_id:"backend",title:"Implement invoice sorting",
+      description:"Change approved invoice implementation",depends_on:[],
+      resources:[resource]}],
+    requested_permissions:[{id:"permission-invoice-write",
+      task_id:"invoice",agent_id:"backend",resource,operation:"update_file",
+      reason:"Modify the approved invoice module"}],
+    assumptions:[],uncertainties:[]
+  };
+  const signedSubset=makeApproval(plan,{
+    allowedOperations:new Set(RUST_OPERATIONS),
+    decision_id:"decision-invoice",approved_by:engineer,
+    approved_at:"2026-10-23T09:00:00Z",
+    approved_permission_ids:["permission-invoice-write"]
+  });
+  const approvalStore={
+    async loadAuthenticatedApproval(id:string){
+      assert.equal(id,sessionId);
+      return {plan,approval:signedSubset,authenticated_engineer_did:engineer};
+    }
+  };
+  const approvedPlans=new TrustedApprovedExecutionPlans({
+    repository:repo,engineerDid:engineer,approvals:approvalStore,
+    completionAttestor:{async confirmCompleted(){return false;}},
+    operationalLeaseMs:45_000
+  });
+  const digest=await approvedPlans.activate(sessionId,sha);
+  assert.equal(digest,planDigest(plan));
+  approvedPlans.bindTask(sessionId,"invoice",taskId,"backend");
+
+  let adapterCalls=0,coreCalls=0,opaCalls=0,providerCalls=0;
+  let opaAllows=true;
+  const vp="opaque.private.adapter.vp";
+  const audit=new InMemoryAuditSink();
+  const runtime=new GatewayRuntime({
+    bind_host:"127.0.0.1",bind_port:0,
+    prepare:{audience:"cloud-access-gateway",request_ttl_ms:90_000,
+      repository:repo},
+    adapter_url:"http://unused",adapter_gateway_token:"unused",
+    opa_url:"http://unused",opa_timeout_ms:2000,
+    provider_mode:"mock",gitea_timeout_ms:2000
+  },{
+    approvedPlans,audit,
+    executor:{
+      provider:"gitea",
+      providerFor(){return "gitea";},
+      async execute(record:any){
+        providerCalls++;
+        assert.equal(record.request.tool,"update_file");
+        assert.equal(record.request.arguments.branch,branch);
+        assert.equal(record.approved_plan_digest,digest);
+        return {provider:"gitea",performed:true,tool:"update_file",
+          branch,path,revision:sha,commit_sha:sha,
+          blob_sha:"b".repeat(40),precondition_blob_sha:"c".repeat(40)};
+      }
+    } as any,
+    verifier:{async verify(request){
+      coreCalls++;
+      assert.equal(request.signed_vp,vp);
+      assert.equal(request.presenter,"backend");
+      assert.equal(request.required_permission.operation,"update_file");
+      assert.equal(request.required_permission.resource,resource);
+      return {
+        presenter_id:"did:thesis:backend",issuer_id:engineer,
+        credential_id:"urn:dc:approved:invoice",
+        permissions:[request.required_permission],
+        hierarchy_depth:1,expiration:"999999999999999999"
+      };
+    }},
+    policy:{async evaluate(input){
+      opaCalls++;
+      assert.equal(input.approved_plan_digest,digest);
+      return {allow:opaAllows,policy_version:"opa-invoice-test"};
+    }}
+  });
+  const gateway=createGatewayHttpServer(runtime);
+  const gatewayUrl=await start(gateway);
+  const registry=new PrivateMcpTaskRegistry({
+    role:"backend",signingPrivateKeyPem:k.privateKey,signingPublicKeyPem:k.publicKey
+  });
+  const worker=express();
+  attachPrivateMcpWorker(worker,registry);
+  const privateListener=worker.listen(0,"127.0.0.1");
+  await new Promise<void>(resolve=>privateListener.once("listening",resolve));
+  const workerUrl="http://127.0.0.1:"+
+    (privateListener.address() as AddressInfo).port;
+  const route=new TaskRouter({
+    backend:{baseUrl:workerUrl},frontend:{baseUrl:workerUrl},
+    test:{baseUrl:workerUrl}
+  });
+  const keysByRole={
+    backend:k.publicKey,frontend:front.publicKey,test:testKey.publicKey
+  };
+  const shared=createSharedMcpHttpServer({
+    verificationKeys:keysByRole,router:route
+  });
+  const crypto=createSharedMcpHttpServer({
+    profile:"crypto",verificationKeys:keysByRole,router:route
+  });
+  const sharedUrl=await start(shared),cryptoUrl=await start(crypto);
+  const cancelled=new AbortController();
+  let conn:Client|undefined;
+  try{
+    const evidence=new DelegationEvidenceHandler({
+      adapterBaseUrl:"http://adapter.invalid",
+      adapterToken:"private-adapter-token",
+      evidence:{
+        credential_id:"urn:dc:approved:invoice",
+        presenter_id:"did:thesis:backend",credential:"private-dc-material"
+      },
+      fetchFn:(async(_url,init)=>{
+        adapterCalls++;
+        assert.equal((init?.headers as Record<string,string>).authorization,
+          "Bearer private-adapter-token");
+        const parsed=JSON.parse(String(init?.body));
+        assert.equal(parsed.disclosed_permissions[0].operation,"update_file");
+        assert.equal(parsed.disclosed_permissions[0].resource,resource);
+        return new Response(JSON.stringify({signed_vp:vp}),{status:200});
+      }) as typeof fetch
+    });
+    const cryptoBroker=new TrustedCryptoMcpBridge({
+      endpoint:cryptoUrl,taskId,registry
+    });
+    const controlled=new GatewayControlledToolClient({
+      gatewayBaseUrl:gatewayUrl,agentRole:"backend",taskId,
+      evidenceHandler:evidence,cryptoPresentation:cryptoBroker,
+      signal:cancelled.signal
+    });
+    registry.begin(taskId,controlled,cancelled.signal,{
+      approvedBranch:branch,allowedPaths:[path],
+      allowedFilePermissions:[{operation:"update_file",path}],
+      allowUpdateFile:true,evidenceHandler:evidence
+    });
+    const transport=new StreamableHTTPClientTransport(
+      new URL(sharedUrl+"/mcp"),{
+        requestInit:{headers:{authorization:"Bearer "+registry.bearerFor(taskId)}}
+      }
+    );
+    conn=new Client({
+      name:"reviewed-branch-gateway-bridge",version:"1.0.0"
+    },{capabilities:{}});
+    await conn.connect(transport);
+    const approvedCall={branch,path,content:"export const sortedInvoices=true;"};
+    const ok=await conn.callTool({name:"update_file",arguments:approvedCall});
+    assert.notEqual(ok.isError,true);
+    assert.equal(providerCalls,1);
+    assert.equal(adapterCalls,1);
+    assert.equal(coreCalls,1);
+    assert.equal(opaCalls,1);
+    assert.doesNotMatch(JSON.stringify(ok),
+      /opaque\.private\.adapter\.vp|private-dc-material|private-adapter-token|proof_/u);
+
+    // All three are denied in the private worker or MCP parser BEFORE
+    // another Gateway Prepare / Adapter / provider operation.
+    for(const rejected of [
+      {name:"update_file",arguments:{
+        ...approvedCall,branch:"feature/attacker"}},
+      {name:"update_file",arguments:{
+        ...approvedCall,path:"src/billing/tax.ts"}},
+      {name:"create_file",arguments:approvedCall},
+      {name:"update_file",arguments:{...approvedCall,branch:"main"}}
+    ]){
+      const denial=await conn.callTool(rejected);
+      assert.equal(denial.isError,true);
+    }
+    assert.equal(adapterCalls,1);
+    assert.equal(providerCalls,1);
+
+    // An exact Task operation and file are not enough if OPA denies.
+    opaAllows=false;
+    const opaDenied=await conn.callTool({
+      name:"update_file",arguments:approvedCall
+    });
+    assert.equal(opaDenied.isError,true);
+    assert.equal(opaCalls,2);
+    assert.equal(providerCalls,1);
+    opaAllows=true;
+
+    // Trust-session termination blocks even the same signed Task bearer.
+    approvedPlans.closeSession(sessionId);
+    const afterClose=await conn.callTool({
+      name:"update_file",arguments:approvedCall
+    });
+    assert.equal(afterClose.isError,true);
+    assert.equal(adapterCalls,2);
+    assert.equal(providerCalls,1);
+  } finally {
+    cancelled.abort();
+    registry.end(taskId);
+    if(conn)await conn.close();
+    await stop(crypto);await stop(shared);
+    await stop(privateListener);await stop(gateway);
+  }
 });

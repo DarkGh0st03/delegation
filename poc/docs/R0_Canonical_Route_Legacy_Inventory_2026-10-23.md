@@ -142,3 +142,19 @@ schema or ADK callback, enforces all branch and file restrictions.
 The new tests exercise signed generic Backend read/write and Test create
 plus run_tests, and reject different branches, operations and paths.
 These are integration regressions, NOT a claim of completed R3 E2E.
+
+
+## R1 cross-boundary regression: approved generic MCP → Gateway → private VP
+
+A composed offline regression now uses `feature/invoice-sort` through an
+actual MCP Streamable HTTP server, authenticated TaskRouter, active private
+Agent worker, Gateway normal Prepare/Execute HTTP routes, an independently
+activated `TrustedApprovedExecutionPlans` session and the PRIVATE crypto-only
+MCP VP path. The immutable approved plan pins Task, agent DID, path,
+operation, branch, SHA, digest and lease. A valid call completes one provider
+operation; wrong branch, path or tool cannot reach the Gateway/provider.
+A denied OPA decision and trusted plan closure both block provider effects.
+The Gateway verifier, OPA decision, VP-issuing Adapter and provider execution
+are instrumented **test doubles**; actual plan/Gateway/MCP/HTTP/task logic is
+used unchanged. This is the R1 composition evidence, NOT the final R3
+Gitea+OPA+native Rust+EVM+Docker unified E2E or independent human signature.
