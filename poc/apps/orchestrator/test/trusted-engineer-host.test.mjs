@@ -537,7 +537,9 @@ test("two OS processes exchange pinned private-IP mTLS OIDC and reject replay or
   const {stdout,stderr}=await run(process.execPath,[
     "--experimental-strip-types",child.pathname
   ],options);
-  assert.equal(stderr,"");
+  // Node 22 may print its standard experimental type-stripping warning.
+  // The runner itself must not leak any private token, key or denial text.
+  assert.doesNotMatch(stderr,/Offline private runner admission denied|offline-only-token-not-real|disposable-key|uncaught exception/iu);
   assert.deepEqual(JSON.parse(stdout),{
     status:"authenticated_only_not_engineer_approved",
     run_id:runId,source_sha:sha,
