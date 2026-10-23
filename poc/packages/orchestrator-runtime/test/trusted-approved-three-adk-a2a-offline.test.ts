@@ -179,7 +179,7 @@ async function groundedPlanFromAdk(session){
   return {approved:checked.proposal.plan,model};
 }
 
-async function setup({wrongBackendPath=false,plannerProduced=false}={}){
+async function setup({wrongBackendPath=false,plannerProduced=false,scopedChild=false,amplifiedChild=false}={}){
   const session="offline-adk-"+randomBytes(6).toString("hex");
   const planned=plannerProduced?await groundedPlanFromAdk(session):undefined;
   const approved=planned?.approved??plan(session);
@@ -220,6 +220,13 @@ async function setup({wrongBackendPath=false,plannerProduced=false}={}){
   const expectedFor=role=>approved.requested_permissions.find(p=>p.agent_id===role);
   const coordinator={
     get phase(){return phase;},
+    trustedOperationalAuthority(){
+      if(phase!=="execution")throw Error("No active trusted root");
+      return {
+        credential_id:"urn:approved:root",plan_digest:planDigest(approved),
+        permissions:perms
+      };
+    },
     async bindDispatchedTask(id,privateId,role){
       if(phase!=="execution")throw Error("Closed approved session");
       bindings.set(privateId,{id,role});
@@ -351,29 +358,11 @@ async function setup({wrongBackendPath=false,plannerProduced=false}={}){
       });
       servers.push(server);baseUrls[role]=server.baseUrl;
     }
-    const roleRunner=new DelegatedA2ARoleRunner({
-      authorityIssuer:{
-        async issueSpecializedChild(input){
-          const role=input.selection.role,found=expectedFor(role);
-          assert.ok(found);
-          assert.equal(input.approved_task_id,found.task_id);
-          assert.equal(input.parent_credential_id,"urn:approved:root");
-          const permissions=[{resource:found.resource,operation:found.operation}];
-          issued.set(input.credential_id,{role,permissions});
-          events.push("issued:"+role);
-          return {role,credential:{"@context":["https://www.w3.org/ns/credentials/v2"],
-            id:input.credential_id,issuer:"did:thesis:orchestrator",
-            type:["VerifiableCredential","DelegationCredential"],
-            validFrom:input.valid_from,
-            credentialSubject:{sub:"did:thesis:"+role,per:permissions}}};
-        }
-      },
-      a2a:new DeterministicA2AOrchestrator({
-        deadlineMs:15_000,initialIntervalMs:25,maxIntervalMs:80
-      })
+    const a2a=new DeterministicA2AOrchestrator({
+      deadlineMs:15_000,initialIntervalMs:25,maxIntervalMs:80
     });
-    const dispatcher=await TrustedApprovedA2ADispatcher.load({
-      approvals:store,coordinator,roleRunner,
+    const baseConfig={
+      approvals:store,coordinator,
       sessionId:session,expectedPlanDigest:planDigest(approved),
       expectedEngineerDid:did,baseRevision:sha[0],
       agentBaseUrls:baseUrls,
@@ -388,7 +377,75 @@ async function setup({wrongBackendPath=false,plannerProduced=false}={}){
             statusListCredential:"https://status.example/offline"}
         };
       }
-    });
+    };
+    // Existing generic A2A runtime: either the legacy issuance fixture or
+    // the actual *production* scoped-child issuer factory. Both run the SAME
+    // live ADK agent servers and A2A SDK transport.
+    const dispatcher=scopedChild
+      ?await TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority({
+        ...baseConfig,a2a,
+        adapter:{
+          adapterBaseUrl:"http://trusted-offline-adapter",
+          bearerToken:"private-orchestrator-adapter-bearer",
+          fetchFn:async(url,init)=>{
+            assert.equal(String(url),
+              "http://trusted-offline-adapter/v1/credentials/child");
+            assert.equal(new Headers(init.headers).get("authorization"),
+              "Bearer private-orchestrator-adapter-bearer");
+            const body=JSON.parse(String(init.body));
+            const found=expectedFor(body.delegatee);
+            assert.ok(found);
+            assert.equal(body.parent_credential_id,"urn:approved:root");
+            assert.deepEqual(body.permissions,[{
+              resource:found.resource,operation:found.operation
+            }]);
+            const permissions=amplifiedChild?
+              [...body.permissions,{
+                resource:ROOT,operation:"create_pull_request"
+              }]:body.permissions;
+            if(!amplifiedChild){
+              issued.set(body.credential_id,{role:body.delegatee,
+                permissions:body.permissions});
+              events.push("issued:"+body.delegatee);
+            }
+            return json({
+              "@context":["https://www.w3.org/ns/credentials/v2"],
+              id:body.credential_id,
+              type:["VerifiableCredential","DelegationCredential"],
+              issuer:"did:thesis:orchestrator",
+              validFrom:body.valid_from,
+              credentialSubject:{sub:"did:thesis:"+body.delegatee,
+                per:permissions}
+            },201);
+          }
+        }
+      })
+      :await TrustedApprovedA2ADispatcher.load({
+        ...baseConfig,roleRunner:new DelegatedA2ARoleRunner({
+          authorityIssuer:{
+            async issueSpecializedChild(input){
+              const role=input.selection.role,found=expectedFor(role);
+              assert.ok(found);
+              assert.equal(input.approved_task_id,found.task_id);
+              assert.equal(input.parent_credential_id,"urn:approved:root");
+              const permissions=[{
+                resource:found.resource,operation:found.operation
+              }];
+              issued.set(input.credential_id,{role,permissions});
+              events.push("issued:"+role);
+              return {role,credential:{
+                "@context":["https://www.w3.org/ns/credentials/v2"],
+                id:input.credential_id,issuer:"did:thesis:orchestrator",
+                type:["VerifiableCredential","DelegationCredential"],
+                validFrom:input.valid_from,
+                credentialSubject:{
+                  sub:"did:thesis:"+role,per:permissions
+                }
+              }};
+            }
+          },a2a
+        })
+      });
     return {dispatcher,coordinator,events,models,
       planningModel:planned?.model,
       get revision(){return providerRevision;},
@@ -494,5 +551,41 @@ test("R2 model-planned Task outside approved backend scope cannot dispatch later
     assert.equal(h.coordinator.phase,"closed");
     assert.ok(!h.events.includes("bound:frontend"));
     assert.ok(!h.events.includes("bound:tests"));
+  }finally{await h.close();}
+});
+
+
+test("R2 grounded Planner reaches scoped child DC Adapter and all three live ADK/A2A agents",async()=>{
+  const h=await setup({plannerProduced:true,scopedChild:true});
+  try{
+    const result=await h.dispatcher.executeApprovedDag({
+      invokeOrchestratorTask:h.createBranch
+    });
+    assert.deepEqual(result.completed_task_ids,
+      ["branch","backend","frontend","tests"]);
+    assert.deepEqual(result.specialized_results.map(x=>x.role),roles);
+    assert.equal(h.revision,sha[2]);
+    for(const role of roles){
+      assert.equal(h.models[role].requests.length,2);
+      assert.ok(h.events.indexOf("issued:"+role)>h.events.indexOf("bound:"+role));
+    }
+    assert.ok(h.events.indexOf("confirmed:backend")<h.events.indexOf("bound:frontend"));
+    assert.ok(h.events.indexOf("confirmed:frontend")<h.events.indexOf("bound:tests"));
+    assert.equal(h.coordinator.phase,"closed");
+  }finally{await h.close();}
+});
+
+test("R2 Adapter cannot amplify a signed Task child: abort A2A before Backend execution",async()=>{
+  const h=await setup({plannerProduced:true,scopedChild:true,
+    amplifiedChild:true});
+  try{
+    await assert.rejects(h.dispatcher.executeApprovedDag({
+      invokeOrchestratorTask:h.createBranch
+    }),/Adapter child response differs from exact approved permissions/);
+    assert.deepEqual(h.dispatcher.completedTaskIds,["branch"]);
+    assert.ok(!h.events.includes("effect:backend"));
+    assert.ok(!h.events.includes("bound:frontend"));
+    assert.ok(!h.events.includes("bound:tests"));
+    assert.equal(h.coordinator.phase,"closed");
   }finally{await h.close();}
 });

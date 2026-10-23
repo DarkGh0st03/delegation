@@ -204,3 +204,21 @@ Coordinator; a real Planning-to-Execution root lifecycle is separately
 verified in `trusted-reviewed-adk-dag.test.ts`. These two slices converge
 on the same production dispatcher, but R3 still requires one run joining
 **both** slices and real providers with the same entrypoint.
+
+
+### R2: canonical scoped child issuer + live three-Agent A2A
+
+The new composite R2 case additionally calls the existing production
+`TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority` factory rather
+than a bespoke fixture issuer. The real `TrustedApprovedPlanChildAuthorityIssuer`
+derives each delegated child's *exact operations/resources* from the
+Engineer-signed plan and the trusted operational parent. A small HTTP
+Adapter response fixture stands in for real Rust issuance; the returned
+credential is checked for permission amplification. The same actual
+HTTP A2A SDK, ADK models and Backend/Frontend/Test agent servers are used
+without duplicating their implementations. A malicious Adapter response
+that expands a child's scope fails before Backend A2A execution; Frontend
+and Test never start. Rust issuance/VP, policy and provider remain test
+doubles, and the trusted root coordinator in this test is a minimal fixture.
+The next R3 milestone is to replace those fixtures with real services in a
+single disposable CI topology, not to rewrite the A2A transport.
