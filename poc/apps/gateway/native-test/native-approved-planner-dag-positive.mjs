@@ -31,6 +31,11 @@ import {startSpecializedAgentServer} from
 import {DeterministicA2AOrchestrator} from
   "../../../packages/agent-runtime/src/orchestrator.ts";
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
+import {assertApprovedPlanScope,planDigest as hashApprovedPlan} from
+  "../../../packages/plan-contracts/src/plan.mjs";
+import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
+import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
+  from "../src/canonical.ts";
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
 import {createSharedMcpHttpServer}
   from "../../../mcp-shared/src/http-server.ts";
@@ -65,7 +70,7 @@ async function freePort(){
 }
 export async function runNativePositiveApprovedDag({
   coordinator,reviewGate,approvedPlans,sessionId,planDigest,baseSha,
-  operationalRootId,branch,files,createdTestFile,
+  operationalRootId,branch,
   referenceFiles,scenarioId,repo,giteaBase,
   readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens
 }){
@@ -77,10 +82,59 @@ export async function runNativePositiveApprovedDag({
   assert.equal(coordinator.phase,"execution");
   assert.ok(["account-suspension","department-directory"].includes(scenarioId));
   if(!referenceFiles||typeof referenceFiles!=="object"||
-     Object.keys(referenceFiles).length!==11)throw Error("Invalid scenario fixture");
-  assert.deepEqual(Object.keys(files).sort(),[...EDIT_ROLES].sort());
+     Array.isArray(referenceFiles))throw Error("Invalid scenario fixture");
+  // The signed, authenticated Engineer receipt determines every file/operation.
+  // Reference payloads remain scripted test inputs, NEVER a grant of authority.
+  const signed=await reviewGate.loadAuthenticatedApproval(sessionId);
+  assert.equal(hashApprovedPlan(signed.plan),planDigest);
+  const grants=assertApprovedPlanScope(signed.plan,signed.approval,{
+    allowedOperations:new Set(RUST_OPERATIONS),
+    expectedEngineerDid:engineerDid
+  });
+  const root=canonicalRepositoryUri(repo);
+  const scopedBranch=canonicalBranchUri(repo,branch);
+  const filePrefix=scopedBranch+"/files/";
+  const approvedFiles=(role,operation)=>grants.filter(g=>
+    g.agent_id===role&&g.operation===operation).map(g=>{
+    assert.ok(g.resource.startsWith(filePrefix),"Wrong approved file branch");
+    const encoded=g.resource.slice(filePrefix.length);
+    const parts=encoded.split("/");
+    assert.ok(parts.length>0&&parts.every(x=>x.length>0));
+    const decoded=parts.map(decodeURIComponent);
+    assert.ok(decoded.every(x=>x&&x!=="."&&x!==".."&&
+      !x.includes("/")&&!x.includes("\\")&&!/[\x00-\x1f\x7f]/u.test(x)),
+      "Invalid approved file path");
+    const path=decoded.join("/");
+    assert.equal(canonicalFileUri(repo,branch,path),g.resource);
+    return path;
+  });
+  const files={};
+  for(const role of EDIT_ROLES){
+    files[role]=approvedFiles(role,"update_file");
+    const read=approvedFiles(role,"read_file");
+    assert.ok(files[role].length>0,"Signed role has no approved edits");
+    assert.deepEqual([...read].sort(),[...files[role]].sort());
+    assert.equal(new Set(files[role]).size,files[role].length);
+  }
+  const testCreates=approvedFiles("test","create_file");
+  assert.equal(testCreates.length,1,"Only one exact approved Test creation");
+  const createdTestFile=testCreates[0];
+  const allowedNonFile=[
+    ["orchestrator","create_branch",root],
+    ["orchestrator","create_pull_request",root],
+    ["test","run_tests",scopedBranch]
+  ];
+  for(const [role,operation,resource] of allowedNonFile){
+    assert.equal(grants.filter(g=>g.agent_id===role&&
+      g.operation===operation&&g.resource===resource).length,1);
+  }
+  const approvedCount=files.backend.length*2+files.frontend.length*2+
+    testCreates.length+allowedNonFile.length;
+  assert.equal(grants.length,approvedCount,
+    "Signed plan contains unexpected extra tool grants");
   const expectedExisting=[...files.backend,...files.frontend];
-  assert.equal(expectedExisting.length,10);
+  assert.equal(new Set([...expectedExisting,createdTestFile]).size,
+    expectedExisting.length+1);
   assert.deepEqual([...expectedExisting,createdTestFile].sort(),
     Object.keys(referenceFiles).sort());
   const reader=new GiteaClient({
@@ -457,21 +511,25 @@ export async function runNativePositiveApprovedDag({
     assert.ok(createdPr,"A signed, provider-confirmed PR must be opened");
     assert.deepEqual(result.specialized_results.map(x=>x.role),ROLES);
     assert.deepEqual(counts,{backend:1,frontend:1});
-    assert.deepEqual(reads,{backend:6,frontend:4});
-    assert.deepEqual(writes,{backend:6,frontend:4});
+    assert.deepEqual(reads,{
+      backend:files.backend.length,frontend:files.frontend.length
+    });
+    assert.deepEqual(writes,{
+      backend:files.backend.length,frontend:files.frontend.length
+    });
     assert.equal(testCalls,1);
     assert.equal(testCreates,1);
     assert.equal(runnerRuns,1);
-    assert.equal(models.backend.calls,13);
-    assert.equal(models.frontend.calls,9);
+    assert.equal(models.backend.calls,2*files.backend.length+1);
+    assert.equal(models.frontend.calls,2*files.frontend.length+1);
     assert.equal(models.test.calls,3);
     // This is the proof that the same signed DAG actually used both the
     // normal shared MCP and separate private cryptographic MCP. A green
     // FunctionTool fallback alone cannot satisfy this gate.
     if(sharedMcpEnabled){
-      assert.ok(normalMcpCalls>=21,
+      assert.ok(normalMcpCalls>=2*expectedExisting.length+2,
         "Approved ADK tools must traverse real shared MCP HTTP");
-      assert.ok(privateCryptoMcpCalls>=21,
+      assert.ok(privateCryptoMcpCalls>=2*expectedExisting.length+2,
         "Adapter VP generation must traverse the crypto MCP boundary");
     }
     assert.ok(result.specialized_results.every(x=>
@@ -505,7 +563,9 @@ export async function runNativePositiveApprovedDag({
       completed_task_ids:result.completed_task_ids,
       real_a2a_sdk:true,native_rust_child_credentials:3,
       native_verifier:true,live_opa:true,real_gitea:true,
-      source_reads:10,source_writes:10,created_test_files:1,
+      source_reads:expectedExisting.length,
+      source_writes:expectedExisting.length,created_test_files:1,
+      manifest_source:"engineer_signed_approved_plan",
       test_runner_runs:runnerRuns,
       test_runner_phases:runnerOutcome.phases.map(x=>x.phase),
       project_tests:runnerOutcome.project_tests.status,

@@ -480,7 +480,6 @@ try{
         coordinator,reviewGate,approvedPlans,
         sessionId:session,planDigest:packet.plan_digest,baseSha,
         operationalRootId,branch:workBranch,
-        files:roleFiles,createdTestFile:newTestFile,
         referenceFiles,scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
         writerToken,opaUrl,engineerDid,orchestratorToken:token,
@@ -491,7 +490,10 @@ try{
         }
       });
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
-      assert.equal(globalThis.__nativeDagPositive.source_writes,10);
+      assert.equal(globalThis.__nativeDagPositive.source_writes,
+        existingFiles.length);
+      assert.equal(globalThis.__nativeDagPositive.manifest_source,
+        "engineer_signed_approved_plan");
       assert.equal(globalThis.__nativeDagPositive.created_test_files,1);
       assert.equal(globalThis.__nativeDagPositive.test_runner_runs,1);
       assert.equal(globalThis.__nativeDagPositive.tested_commit_sha,
