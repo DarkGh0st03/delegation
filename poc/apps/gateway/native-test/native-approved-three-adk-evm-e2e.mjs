@@ -171,7 +171,6 @@ async function executeScenario({wrongBackend=false,seed}){
       }
     };
     const planningRevisions=new TrustedPlanningRevisions(pinnedGitea);
-    let coordinator;
     const gate=new TrustedPlanningReviewGate({
       snapshot,expectedWorkBranch:branch,
       authenticatedEngineerDid:did.engineer,signedApprovals:approvals,
