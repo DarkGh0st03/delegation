@@ -276,3 +276,33 @@ no new pipeline, paid Gemini invocation, or unconditional legacy deletion.
 The real-provider acceptance still uses the historical Account Suspension
 reference fixture, rather than demonstrating generation of arbitrary code.
 The separate R2 scenarios exercise generalized work branches and requirements.
+
+
+## R3 - Second real-provider requirement: Department Directory (23 October 2026)
+
+The identical `native-planning-read-core-evm-e2e.mjs` + `native-approved-planner-dag-positive.mjs`
+and `isolated-trusted-security-ci-positive-smoke.mjs` chain now accepts an
+**explicit allowlisted scenario**; its branch, immutable source payloads,
+plan requirement, and expected provider contents are bound to that selection.
+The cumulative EVM job runs *both* allowlisted scenarios in separate
+disposable Gitea/OPA sessions using the same native Rust, ADK/A2A, Shared MCP,
+private VP, signed Engineer plan, and Docker Runner components. No new
+parallel E2E service or paid-model integration was introduced.
+
+The new distinct software requirement, **department-directory**, implements
+case-insensitive department filtering in the backend service, a protected
+admin-only API endpoint, a typed Frontend API method and visible user-detail
+department-directory count. The modified service, HTTP route, and Playwright
+E2E specifications include independent assertions of the new feature.
+The historical Account Suspension reference remains available, unmodified.
+Both scenarios currently share the same pinned IAM-console baseline and
+historical 11-file scope to preserve old researcher-owned acceptance: this is
+two different software requirements on ONE project, not proof of arbitrary
+project/repository generality or AI-generated code.
+
+**Mandatory cleanup gate:** after both pass, audit the static reference file
+dependency chain and replace the fixed 11-file role scope with approved
+per-task path/resource manifests. Then prove unused legacy components no
+longer import or execute, remove them only in dependency order, and rerun the
+entire offline EVM/Gitea/Docker and security regression suite. Do not merge
+into main or schedule paid Gemini without the Engineer's separate approval.
