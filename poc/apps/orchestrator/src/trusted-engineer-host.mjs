@@ -11,6 +11,12 @@
  */
 import {lstat} from "node:fs/promises";
 import {resolve} from "node:path";
+import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
+  from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
+import {TrustedPlanIpcClient}
+  from "../../gateway/src/trusted-plan-ipc.ts";
+import {SoftwareEngineerAuthorityBootstrap}
+  from "../../../packages/orchestrator-runtime/src/authority-client.ts";
 import {createAuthenticatedEngineerServer}
   from "./engineer-approval-server.mjs";
 import {GithubOidcReplayFileStore}
@@ -68,13 +74,29 @@ export async function startTrustedEngineerLocalHost(config){
     deny("independently pinned approval/OIDC config and strong secret required");
   // In particular, Gitea Planning base SHA and GitHub workflow source SHA
   // have different identities; neither is derived from the other.
+  const recovery=config?.recovery;
   const directories=[
-    oidc.replayDirectory,oidc.admissionDirectory,approval.receiptDirectory
+    oidc.replayDirectory,oidc.admissionDirectory,approval.receiptDirectory,
+    ...(recovery?[recovery.directory]:[])
   ];
   if(directories.some(x=>typeof x!=="string"||!x.trim())||
      new Set(directories.map(dir=>resolve(dir))).size!==3)
     deny("separate owner-only replay/admission/Engineer directories required");
   for(const dir of directories)await privateDirectory(dir);
+  // Reconcile BEFORE creating/listening on the Engineer UI or GitHub OIDC
+  // intake. No old approval may be served while an orphan root is uncertain.
+  let operationalRecoveryStore;
+  if(recovery){
+    if(typeof recovery.gateway?.retireSession!=="function"||
+       typeof recovery.credentials?.revokeRoot!=="function")
+      deny("trusted Gateway retirement and Rust Adapter revocation required");
+    operationalRecoveryStore=new TrustedOperationalRecoveryStore(recovery.directory);
+    await reconcileOrphanedOperationalRoots({
+      store:operationalRecoveryStore,gateway:recovery.gateway,
+      credentials:recovery.credentials
+    });
+    await operationalRecoveryStore.assertFreshSession(approval.expectedSessionId);
+  }
   const replayStore=new GithubOidcReplayFileStore(oidc.replayDirectory);
   const admissionStore=new TrustedGithubAdmissionReceiptStore({
     directory:oidc.admissionDirectory,hmacSecret:oidc.hmacSecret,
@@ -108,6 +130,8 @@ export async function startTrustedEngineerLocalHost(config){
   return Object.freeze({
     engineerUrl,
     oidcAdmissionEndpoint:oidcIntake.endpoint,
+    /** Trusted process reference only, never returned by HTTP. */
+    operationalRecoveryStore,
     /** Does NOT imply human approval; read-only, one-use status only. */
     consumeAuthenticatedRun(runId){
       if(closed)deny("host closed");
@@ -118,6 +142,11 @@ export async function startTrustedEngineerLocalHost(config){
     /** Trusted in-process call ONLY: never registered as an HTTP endpoint. */
     startReviewedHandoff({runId,...trusted}){
       if(closed)deny("host closed");
+      // Legacy test-only Engineer hosts can accept local OIDC, but cannot
+      // activate an operational DC without startup crash reconciliation.
+      if(!operationalRecoveryStore)
+        deny("startup operational recovery mandatory for reviewed handoff");
+      trusted.coordinator?.assertOperationalRecoveryStore(operationalRecoveryStore);
       return startAdmittedGithubReviewedGeminiHandoff({
         ...trusted,admissionStore,pins:{...fixedPins,runId},
         // Host configuration wins over every in-process caller argument.
@@ -136,5 +165,42 @@ export async function startTrustedEngineerLocalHost(config){
       if(failures.length)
         deny("server shutdown incomplete; manual reconciliation required");
     }
+  });
+}
+
+
+/**
+ * Strict real-service bootstrap. Connect to the owner-only HMAC IPC Gateway,
+ * construct the actual Adapter revocation client, reconcile on disk, and
+ * ONLY THEN expose loopback Engineer UI/OIDC listeners. The private network
+ * runner relay and live Planning root remain deployment prerequisites.
+ */
+export async function startTrustedEngineerRecoveringHost(config){
+  const recovery=config?.recovery;
+  if(!recovery||typeof recovery.directory!=="string"||
+     typeof recovery.gatewaySocketPath!=="string"||
+     typeof recovery.gatewaySecretFile!=="string"||
+     typeof recovery.adapterBaseUrl!=="string"||
+     typeof recovery.adapterToken!=="string"||!recovery.adapterToken.trim())
+    deny("complete trusted recovery IPC and Adapter configuration required");
+  let adapterUrl;
+  try{adapterUrl=new URL(recovery.adapterBaseUrl);}
+  catch{deny("invalid trusted Adapter URL");}
+  if(!((adapterUrl.protocol==="https:"&&!adapterUrl.username&&!adapterUrl.password)||
+       (adapterUrl.protocol==="http:"&&
+        adapterUrl.hostname==="127.0.0.1"&&
+        !adapterUrl.username&&!adapterUrl.password)))
+    deny("Adapter must use HTTPS or loopback HTTP");
+  const gateway=await TrustedPlanIpcClient.connect({
+    socketPath:recovery.gatewaySocketPath,
+    secretFile:recovery.gatewaySecretFile
+  });
+  if(!gateway.operationalLeaseConfigured())
+    deny("private Gateway must enforce its own operational lease");
+  const credentials=new SoftwareEngineerAuthorityBootstrap({
+    adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken
+  });
+  return startTrustedEngineerLocalHost({
+    ...config,recovery:{directory:recovery.directory,gateway,credentials}
   });
 }

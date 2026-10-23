@@ -85,6 +85,18 @@ export class TrustedOperationalRecoveryStore{
     if((await this.pending()).length!==0)
       fail("orphaned root intent: reconcile before any new Planning");
   }
+  /** Bootstrapping a reconciled/retired session is NOT a fresh approval. */
+  async assertFreshSession(sessionId:string):Promise<void>{
+    await this.assertClean();
+    const retired=this.#name(sessionId,"retired");
+    try{
+      await lstat(retired);
+    }catch(error){
+      if((error as NodeJS.ErrnoException).code==="ENOENT")return;
+      throw error;
+    }
+    fail("reconciled session cannot be reused; fresh Engineer approval required");
+  }
   /** MUST run before the external Rust issuing request, never after. */
   async recordIntent(input:{
     sessionId:string;baseRevision:string;credentialId:string

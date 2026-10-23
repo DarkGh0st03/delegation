@@ -420,3 +420,30 @@ bootstrap operation, not an A2A/MCP/HTTP endpoint. Its caller must supply
 separate authenticated Gateway retirement and Adapter revocation ports.
 The journal prevents losing the root identifier, while the separate Gateway
 lease independently denies new operations if the Engineer is unavailable.
+
+
+## Engineer bootstrap recovery wired into the real entrypoint
+
+The local Engineer host now optionally runs the durable root-recovery
+reconciler **before creating or binding either the signed-approval UI or OIDC
+intake**. Missing/unsafe owner-only recovery directories, a failed Gateway
+tombstone, uncertain Adapter revocation, malformed persisted records, or an
+attempt to reuse a retired session all reject startup. The host passes its
+exact verified journal instance through the private process API; an admitted
+paid handoff rejects a Coordinator using another journal or an Engineer host
+started without recovery.
+
+The strict `startTrustedEngineerRecoveringHost` bootstrap connects the
+actual HMAC-authenticated `TrustedPlanIpcClient`, demands an independently
+enforced Gateway lease, creates a `SoftwareEngineerAuthorityBootstrap`
+Adapter client, reconciles orphan records and only then opens the two
+loopback listeners. It never creates a new Planning root or approves a
+previous one on behalf of the human. A deployment must still supply
+owner-managed persistent directories, a private Gateway/Adapter connection
+and a new active Planning session.
+
+This solves **bootstrap ordering**. It does not provide distributed
+single-writer locking, cross-restart Gateway tombstone durability, or a
+deployed GitHub-runner private route. Operators must ensure there is only
+one trusted Engineer owner of the recovery directory and never run a
+second host concurrently.

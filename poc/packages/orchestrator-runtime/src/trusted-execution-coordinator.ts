@@ -91,6 +91,12 @@ export class TrustedExecutionCoordinator {
     await this.#gateway.renewLease!(this.#sessionId,this.#approvedDigest);
   }
 
+  assertOperationalRecoveryStore(store:TrustedOperationalRecoveryStore):void{
+    this.assertOperationalRecoveryConfigured();
+    if(this.#recovery!==store)
+      throw Error("Trusted Coordinator recovery journal differs from verified Engineer host");
+  }
+
   assertOperationalRecoveryConfigured():void{
     if(!(this.#recovery instanceof TrustedOperationalRecoveryStore)||
        typeof this.#gateway.retireSession!=="function")
