@@ -308,14 +308,20 @@ test("R1 multiple Gateway-backed ADK reads preserve VP, OPA and Gitea SHA per op
     assert.ok(!visible.includes(secret),secret);
 });
 
-test("R1 multi-read denies out-of-scope file after authorized repository inspection",async()=>{
+test("R1 out-of-scope ADK arguments never reach Gateway or mint an additional VP",async()=>{
   const f=fixture();await f.start();
-  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
-    model:new MultiReadScriptedPlanner(true),snapshot,
+  const model=new MultiReadScriptedPlanner(true);
+  const draft=await new TrustedAdkReadOnlyPlanner({
+    model,snapshot,
     requirement:"Sort invoices without secrets",
     planId:"invoice-unapproved-source",workBranch:"feature/invoice-sort",
     agents,readPort:f.makePort()
-  }).propose(),/no verified read-only grounded proposal/);
+  }).propose();
+  // ADK's strict enum rejects unknown paths BEFORE the FunctionTool. The
+  // Planner is still permitted to return an UNAPPROVED draft grounded by an
+  // earlier legitimate file read; it does NOT grant write authority.
+  assert.equal(draft.status,"unapproved_proposal");
+  assert.equal(draft.verified_source_reads,1);
   assert.deepEqual({
     adapter:f.observed.adapter,verify:f.observed.verification,
     opa:f.observed.policy,execute:f.observed.execute,
