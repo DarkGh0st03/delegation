@@ -116,9 +116,9 @@ export async function runNativePositiveApprovedDag({
     assert.deepEqual([...read].sort(),[...files[role]].sort());
     assert.equal(new Set(files[role]).size,files[role].length);
   }
-  const testCreates=approvedFiles("test","create_file");
-  assert.equal(testCreates.length,1,"Only one exact approved Test creation");
-  const createdTestFile=testCreates[0];
+  const approvedTestCreates=approvedFiles("test","create_file");
+  assert.equal(approvedTestCreates.length,1,"Only one exact approved Test creation");
+  const createdTestFile=approvedTestCreates[0];
   const allowedNonFile=[
     ["orchestrator","create_branch",root],
     ["orchestrator","create_pull_request",root],
@@ -129,7 +129,7 @@ export async function runNativePositiveApprovedDag({
       g.operation===operation&&g.resource===resource).length,1);
   }
   const approvedCount=files.backend.length*2+files.frontend.length*2+
-    testCreates.length+allowedNonFile.length;
+    approvedTestCreates.length+allowedNonFile.length;
   assert.equal(grants.length,approvedCount,
     "Signed plan contains unexpected extra tool grants");
   const expectedExisting=[...files.backend,...files.frontend];
