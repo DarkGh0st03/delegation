@@ -264,7 +264,7 @@ export async function runNativePositiveApprovedDag({
       // Test-only SAFE diagnostics: stage, operation, file index and
       // the failing assertion's source line (never its raw values/message).
       const site=String(error?.stack??"").match(
-        /native-approved-planner-dag-positive\\.mjs:(\\d+):(\\d+)/u
+        /native-approved-planner-dag-positive\.mjs:(\d+):(\d+)/u
       );
       process.stderr.write("[native-dag-adk] controlled_denial "+
         JSON.stringify({role,stage,operation,pathIndex,
