@@ -615,3 +615,10 @@ without a real RFC1918 interface the test is **explicitly skipped**
 rather than silently treating \`127.0.0.1\` as a network E2E. Record
 whether it actually ran before promoting R5 readiness. No billable
 workflow is executed by this test.
+
+
+The private-IP cross-process fixture also **restarts the Engineer
+host** after admitting one job. Its persisted replay/admission ledgers
+reject that same job again and allow the authenticated-only receipt to
+be consumed once after restart. This is not a deployed remote host,
+human plan approval or authorization for paid inference.

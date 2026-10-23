@@ -473,7 +473,7 @@ test("two OS processes exchange pinned private-IP mTLS OIDC and reject replay or
   const workflowRef=repository+"/"+actualWorkflow+"@"+ref;
   const eventPrivate={...event};
   const signedJwt=jwt({workflow_ref:workflowRef});
-  const host=await startTrustedEngineerLocalHost({
+  const hostConfig={
     ...f.config,
     oidc:{
       ...f.config.oidc,
@@ -487,7 +487,8 @@ test("two OS processes exchange pinned private-IP mTLS OIDC and reject replay or
         created_at:new Date().toISOString()
       }),{status:200})
     }
-  });
+  };
+  const host=await startTrustedEngineerLocalHost(hostConfig);
   t.after(()=>host.close());
   assert.match(host.engineerUrl,/^http:\/\/127\.0\.0\.1:\d+$/);
   assert.equal(new URL(host.oidcAdmissionEndpoint).hostname,selected.address);
@@ -548,20 +549,29 @@ test("two OS processes exchange pinned private-IP mTLS OIDC and reject replay or
   });
   assert.equal((await readdir(f.admissions)).length,1);
   assert.equal((await readdir(f.replays)).length,1);
+  // Restart the Engineer process: the one-use job and durable admission
+  // receipt must retain their meaning after a new listener comes online.
+  await host.close();
+  const restarted=await startTrustedEngineerLocalHost(hostConfig);
+  t.after(()=>restarted.close());
+  assert.equal((await fetch(restarted.engineerUrl+"/api/plan")).status,401);
+  const afterRestart={...settings,
+    intakeUrl:restarted.oidcAdmissionEndpoint};
+  await writeFile(paths.config,JSON.stringify(afterRestart),{mode:0o600});
   await assert.rejects(run(process.execPath,[
     "--experimental-strip-types",child.pathname
   ],options),/Command failed/);
   assert.equal((await readdir(f.admissions)).length,1);
   // New runner-side pin cannot be replaced with another CA-signed leaf.
   await writeFile(paths.config,JSON.stringify({
-    ...settings,expectedServerFingerprint256:
+    ...afterRestart,expectedServerFingerprint256:
       new X509Certificate(rogue.cert).fingerprint256
   }),{mode:0o600});
   await assert.rejects(run(process.execPath,[
     "--experimental-strip-types",child.pathname
   ],options),/Command failed/);
   assert.equal((await readdir(f.admissions)).length,1);
-  const record=await host.consumeAuthenticatedRun(runId);
+  const record=await restarted.consumeAuthenticatedRun(runId);
   assert.equal(record.session_id,f.plan.session_id);
   assert.ok(!("approved_permission_ids" in record));
   assert.ok(!("operational_root_id" in record));
