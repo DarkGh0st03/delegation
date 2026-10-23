@@ -131,7 +131,8 @@ async function executeScenario({wrongBackend=false,seed}){
   let approved;
   const dir=await mkdtemp(join(tmpdir(),"native-three-adk-"));
   const servers=[];
-  let coordinator,phase="initial",effectCount=0,expectedRevision=initial;
+  let coordinator,authorityClient,planningRevisions;
+  let phase="initial",effectCount=0,expectedRevision=initial;
   const observations=[];
   try{
     const {privateKey,publicKey}=generateKeyPairSync("ed25519");
@@ -141,7 +142,7 @@ async function executeScenario({wrongBackend=false,seed}){
       trustedKeys:{[keyId]:{engineer_did:did.engineer,
         public_key_pem:publicKey.export({format:"pem",type:"spki"}).toString()}}
     });
-    const authorityClient=new SoftwareEngineerAuthorityBootstrap({
+    authorityClient=new SoftwareEngineerAuthorityBootstrap({
       adapterBaseUrl:adapter,bearerToken:process.env.ADAPTER_CALLER_ENGINEER,
       timeoutMs:30_000
     });
@@ -170,7 +171,7 @@ async function executeScenario({wrongBackend=false,seed}){
         return {branch:name,path,revision,entries:[]};
       }
     };
-    const planningRevisions=new TrustedPlanningRevisions(pinnedGitea);
+    planningRevisions=new TrustedPlanningRevisions(pinnedGitea);
     const gate=new TrustedPlanningReviewGate({
       snapshot,expectedWorkBranch:branch,
       authenticatedEngineerDid:did.engineer,signedApprovals:approvals,
@@ -423,6 +424,13 @@ async function executeScenario({wrongBackend=false,seed}){
       try{await server.close();}catch{}
     }
     if(coordinator?.phase==="execution")await coordinator.closeExecution();
+    if(coordinator?.phase==="planning"){
+      // An offline failure between preliminary issuance and Engineer signing
+      // must not strand a genuine, still-valid on-chain read-only credential.
+      const pending=coordinator.trustedPlanningAuthority();
+      try{planningRevisions?.end(session);}
+      finally{await authorityClient.revokeRoot(pending.credential_id);}
+    }
     await rm(dir,{recursive:true,force:true});
   }
 }
