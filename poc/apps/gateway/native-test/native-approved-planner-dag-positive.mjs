@@ -140,6 +140,7 @@ export async function runNativePositiveApprovedDag({
   // transport. Agent model instructions and signed plan are unchanged.
   const sharedMcpEnabled=process.env.APPROVED_RUNNER_NATIVE_MCP==="1";
   let normalMcpCalls=0,privateCryptoMcpCalls=0;
+  const mcpReadAudit={backend:[],frontend:[],test:[]};
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
@@ -298,6 +299,28 @@ export async function runNativePositiveApprovedDag({
           baseUrl:"http://127.0.0.1:"+rolePorts[role]
         }])
       ));
+      // Trace the PRIVATE result classification only. It is impossible
+      // to diagnose an ADK/MCP decoding failure from Gateway effects alone.
+      // Never log payloads, file content, model text, bearer or VP material.
+      const originalReadFile=router.readFile.bind(router);
+      router.readFile=async(claims,token,raw)=>{
+        const pathIndex=files[claims.role]?.indexOf(raw?.path)??-1;
+        try{
+          const result=await originalReadFile(claims,token,raw);
+          mcpReadAudit[claims.role].push({pathIndex,kind:"routed"});
+          return result;
+        }catch(error){
+          const kind=String(error?.message??"");
+          const allowed=["invalid_tool_call","inactive_task","unauthorized",
+            "authorization_denied","tool_unavailable","tests_failed",
+            "task_worker_rejected","task_worker_unavailable",
+            "task_worker_invalid_result"];
+          mcpReadAudit[claims.role].push({
+            pathIndex,kind:allowed.includes(kind)?kind:"blocked"
+          });
+          throw error;
+        }
+      };
       for(const profile of ["legacy","crypto"]){
         const server=createSharedMcpHttpServer({
           verificationKeys,router,
@@ -402,7 +425,9 @@ export async function runNativePositiveApprovedDag({
     for(const role of ROLES)await assert.rejects(
       dispatcher.dispatch(role),/dependencies/);
     assert.deepEqual(counts,{backend:0,frontend:0});
-    const result=await dispatcher.executeApprovedDag({
+    let result;
+    try{
+      result=await dispatcher.executeApprovedDag({
       async invokeOrchestratorTask(planId,runtimeTaskId){
         assert.equal(planId,"branch");
         assert.throws(()=>gateway.prepare({
@@ -423,7 +448,20 @@ export async function runNativePositiveApprovedDag({
         assert.equal(created.execution.commit_sha,baseSha);
         assert.equal((await reader.getBranchMetadata(branch)).commit_sha,baseSha);
       }
-    });
+      });
+    }catch(error){
+      if(sharedMcpEnabled){
+        // File positions and fixed classifications ONLY: no raw arguments.
+        process.stderr.write("[native-dag-adk] mcp_read_audit "+
+          JSON.stringify({
+            audit:mcpReadAudit,
+            confirmedReadCounts:reads,
+            confirmedWriteCounts:writes,
+            normalMcpCalls,privateCryptoMcpCalls
+          })+"\n");
+      }
+      throw error;
+    }
     assert.equal(coordinator.phase,"closed");
     assert.equal(result.plan_digest,planDigest);
     assert.deepEqual(result.completed_task_ids,["branch",...ROLES]);
@@ -441,6 +479,8 @@ export async function runNativePositiveApprovedDag({
     // normal shared MCP and separate private cryptographic MCP. A green
     // FunctionTool fallback alone cannot satisfy this gate.
     if(sharedMcpEnabled){
+      assert.equal(mcpReadAudit.backend.filter(x=>x.kind==="routed").length,6);
+      assert.equal(mcpReadAudit.frontend.filter(x=>x.kind==="routed").length,4);
       assert.ok(normalMcpCalls>=21,
         "Approved ADK tools must traverse real shared MCP HTTP");
       assert.ok(privateCryptoMcpCalls>=21,
