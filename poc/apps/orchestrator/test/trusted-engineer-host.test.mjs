@@ -251,6 +251,8 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
   t.after(()=>host.close());
   assert.match(host.oidcAdmissionEndpoint,
     /^https:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/oidc-admission$/);
+  const {submitTrustedGithubOidcFromRunner}=await import(
+    "../../../packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts");
   const submission={
     tokenRequestUrl:"https://pipelines.actions.githubusercontent.com/oidc",
     tokenRequestBearer:"offline-local-oidc-bearer",audience:aud,
