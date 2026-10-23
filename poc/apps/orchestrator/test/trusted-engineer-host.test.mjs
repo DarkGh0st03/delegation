@@ -198,16 +198,9 @@ test("host rejects insecure persistent directories and never starts unsafe ports
 });
 
 
-test("mTLS private submission authenticates runner transport plus OIDC but never Engineer approval",async t=>{
-  const f=await fixture(t);
-  // Disposable local-only certificate fixture. Deployment requires separate
-  // server/client keys, a protected CA and a private route, never this cert.
+async function disposableMtls(tlsDir){
   const {execFileSync}=await import("node:child_process");
   const {X509Certificate}=await import("node:crypto");
-  const {dirname}=await import("node:path");
-  // CA and three independent leaves. The untrusted client is CA-signed,
-  // proving that mTLS trust alone is insufficient without the leaf pin.
-  const tlsDir=join(dirname(f.admissions),"tls-fixtures");
   await mkdir(tlsDir,{mode:0o700});
   const cmd=(args)=>execFileSync("openssl",args,{stdio:"ignore",cwd:tlsDir});
   cmd(["req","-x509","-newkey","rsa:2048","-nodes","-days","1",
@@ -219,9 +212,9 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
     cmd(["req","-newkey","rsa:2048","-nodes","-subj",subject,
       "-keyout",role+".key","-out",role+".csr"]);
     writeFileSync(join(tlsDir,role+".ext"),
-      "basicConstraints=critical,CA:FALSE\n"+
-      "keyUsage=critical,digitalSignature,keyEncipherment\n"+
-      "extendedKeyUsage="+usage+"\n"+
+      "basicConstraints=critical,CA:FALSE\\n"+
+      "keyUsage=critical,digitalSignature,keyEncipherment\\n"+
+      "extendedKeyUsage="+usage+"\\n"+
       extra,{mode:0o600});
     cmd(["x509","-req","-days","1","-in",role+".csr",
       "-CA","ca.pem","-CAkey","ca.key","-CAcreateserial",
@@ -232,25 +225,32 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
     };
   };
   const server=signed("server","/CN=127.0.0.1","serverAuth",
-    "subjectAltName=IP:127.0.0.1\n");
+    "subjectAltName=IP:127.0.0.1\\n");
   const client=signed("trusted","/CN=trusted-runner","clientAuth");
   const rogue=signed("rogue","/CN=rogue-runner","clientAuth");
   const ca=readFileSync(join(tlsDir,"ca.pem"),"utf8");
-  const expectedClientFingerprint256=
-    new X509Certificate(client.cert).fingerprint256;
   const tls={ca,cert:client.cert,key:client.key,
     expectedServerFingerprint256:
       new X509Certificate(server.cert).fingerprint256};
   const serverTls={ca,cert:server.cert,key:server.key,
-    expectedClientFingerprint256};
+    expectedClientFingerprint256:
+      new X509Certificate(client.cert).fingerprint256};
+  return {ca,client,rogue,tls,serverTls,X509Certificate};
+}
+test("mTLS private submission authenticates runner transport plus OIDC but never Engineer approval",async t=>{
+  const f=await fixture(t);
+  // Disposable local-only certificate fixture. Deployment requires separate
+  // server/client keys, a protected CA and a private route, never this cert.
+  const {dirname}=await import("node:path");
+  const tlsDir=join(dirname(f.admissions),"tls-fixtures");
+  const {ca,rogue,tls,serverTls,X509Certificate}=
+    await disposableMtls(tlsDir);
   const host=await startTrustedEngineerLocalHost({
     ...f.config,oidc:{...f.config.oidc,tls:serverTls}
   });
   t.after(()=>host.close());
   assert.match(host.oidcAdmissionEndpoint,
-    /^https:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/oidc-admission$/);
-  const {submitTrustedGithubOidcFromRunner}=await import(
-    "../../../packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts");
+    /^https:\\/\\/127\\.0\\.0\\.1:\\d+\\/v1\\/trusted\\/github\\/oidc-admission$/);
   const submission={
     tokenRequestUrl:"https://pipelines.actions.githubusercontent.com/oidc",
     tokenRequestBearer:"offline-local-oidc-bearer",audience:aud,
@@ -383,11 +383,21 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   const adapterBaseUrl="http://127.0.0.1:"+adapter.address().port;
   const {startTrustedEngineerRecoveringHost}=await import(
     "../src/trusted-engineer-host.mjs");
-  const config={...f.config,recovery:{
-    directory:recoveryDir,gatewaySocketPath:socketPath,
-    gatewaySecretFile:secretFile,adapterBaseUrl,
-    adapterToken:"offline-adapter-token"
-  }};
+  const {serverTls}=await disposableMtls(join(home,"mtls"));
+  const config={...f.config,
+    oidc:{...f.config.oidc,tls:serverTls},
+    recovery:{
+      directory:recoveryDir,gatewaySocketPath:socketPath,
+      gatewaySecretFile:secretFile,adapterBaseUrl,
+      adapterToken:"offline-adapter-token"
+    }
+  };
+  // A production-like recovering host must NEVER silently fall back to
+  // unauthenticated plaintext, even if the IPC and Adapter are configured.
+  await assert.rejects(startTrustedEngineerRecoveringHost({
+    ...config,oidc:{...config.oidc,tls:undefined}
+  }),/requires pinned mutual TLS/);
+  assert.equal(adapterCalls,0);
   // Boot is rejected while the real Adapter cannot confirm revocation.
   await assert.rejects(startTrustedEngineerRecoveringHost(config),
     /manual reconciliation required/);

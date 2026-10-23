@@ -178,6 +178,15 @@ export async function startTrustedEngineerLocalHost(config){
  * runner relay and live Planning root remain deployment prerequisites.
  */
 export async function startTrustedEngineerRecoveringHost(config){
+  // The permissive loopback HTTP admission mode exists only for unit
+  // fixtures. A recovering Engineer host is an operational entrypoint:
+  // require mutually authenticated TLS and one trusted runner leaf pin
+  // before connecting Gateway IPC or exposing any host listener.
+  if(!config?.oidc?.tls?.cert||!config.oidc.tls.key||
+     !config.oidc.tls.ca||
+     !/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/u
+       .test(config.oidc.tls.expectedClientFingerprint256??""))
+    deny("operational Engineer host requires pinned mutual TLS admission");
   const recovery=config?.recovery;
   if(!recovery||typeof recovery.directory!=="string"||
      typeof recovery.gatewaySocketPath!=="string"||
