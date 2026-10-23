@@ -25,8 +25,9 @@ function record(value:unknown):Json|null{
   return value!==null&&typeof value==="object"&&!Array.isArray(value)
     ?value as Json:null;
 }
-function requireExactRequest(req:RunnerRunRequest):void{
-  if(req.repository!==REPOSITORY||req.branch!==BRANCH||
+// The CI process owns the permitted branch, not the incoming Runner request.
+function requireExactRequest(req:RunnerRunRequest,approvedBranch=BRANCH):void{
+  if(req.repository!==REPOSITORY||req.branch!==approvedBranch||
      req.profile!=="poc-default"||!SHA.test(req.commit_sha)||
      typeof req.request_id!=="string"||req.request_id.trim().length===0){
     throw new Error("Invalid fixed-security-pipeline Runner request");
@@ -46,12 +47,13 @@ function exactPhases(value:unknown,names:readonly string[]):boolean{
  * IsolatedDockerRunnerExecutor with researcher acceptance ENABLED.
  */
 export function classifyTrustedSecurityRunnerResult(
-  result:RunnerRunResult,request:RunnerRunRequest
+  result:RunnerRunResult,request:RunnerRunRequest,
+  approvedBranch=BRANCH
 ):"success"|"failure"{
-  requireExactRequest(request);
+  requireExactRequest(request,approvedBranch);
   if(result.request_id!==request.request_id||
      result.repository!==request.repository||
-     result.branch!==BRANCH||
+     result.branch!==approvedBranch||
      result.tested_commit_sha!==request.commit_sha||
      result.runner_profile!=="poc-default"){
     throw new Error("Runner result does not match exact authorized revision");
@@ -91,6 +93,8 @@ export interface TrustedSecurityCiConfig{
   giteaStatusToken:string;
   trustedStatusActor:{id:number;login:string};
   runner:RunnerExecutor;
+  /** Pinned by the trusted CI runner, never accepted from the model. */
+  approvedBranch?:string;
   timeoutMs?:number;
   fetchFn?:FetchLike;
 }
@@ -106,6 +110,7 @@ export class TrustedGiteaSecurityCi{
   readonly #writer:string;
   readonly #actor:{id:number;login:string};
   readonly #runner:RunnerExecutor;
+  readonly #branch:string;
   readonly #fetch:FetchLike;
   readonly #timeout:number;
 
@@ -130,6 +135,12 @@ export class TrustedGiteaSecurityCi{
     if(!Number.isSafeInteger(timeout)||timeout<1||timeout>60000){
       throw new Error("Invalid CI network timeout");
     }
+    const branch=config.approvedBranch??BRANCH;
+    if(!/^feature\/[a-z0-9][a-z0-9._-]{0,100}$/u.test(branch)||
+       branch.includes("..")||branch.endsWith(".")){
+      throw new Error("Trusted CI requires one pinned feature branch");
+    }
+    this.#branch=branch;
     this.#base=url.origin;
     this.#reader=config.giteaReadToken;
     this.#writer=config.giteaStatusToken;
@@ -162,7 +173,7 @@ export class TrustedGiteaSecurityCi{
   }
   async #branchSha():Promise<string>{
     const metadata=await this.#json(
-      API_REPO+"/branches/"+encodeURIComponent(BRANCH),this.#reader
+      API_REPO+"/branches/"+encodeURIComponent(this.#branch),this.#reader
     );
     const sha=record(metadata.commit)?.id;
     if(typeof sha!=="string"||!SHA.test(sha)){
@@ -200,7 +211,7 @@ export class TrustedGiteaSecurityCi{
     return data.id as number;
   }
   async run(request:RunnerRunRequest):Promise<SecurityCiOutcome>{
-    requireExactRequest(request);
+    requireExactRequest(request,this.#branch);
     await this.#verifyActor();
     if(await this.#branchSha()!==request.commit_sha){
       throw new Error("Trusted CI rejected stale branch SHA before execution");
@@ -211,7 +222,8 @@ export class TrustedGiteaSecurityCi{
 
     try{
       const result=await this.#runner.run(request);
-      const status=classifyTrustedSecurityRunnerResult(result,request);
+      const status=classifyTrustedSecurityRunnerResult(
+        result,request,this.#branch);
       if(await this.#branchSha()!==request.commit_sha){
         throw new Error("Trusted CI branch changed during execution");
       }

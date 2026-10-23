@@ -37,7 +37,7 @@ function makeResult(projectFailure=false,acceptanceFailure=false):RunnerRunResul
 }
 function harness(result:RunnerRunResult=makeResult(true),opts:{
   sha?:string;actor?:{id:number;login:string};throwRunner?:boolean;
-  moveAfterRun?:boolean;postError?:boolean
+  moveAfterRun?:boolean;postError?:boolean;approvedBranch?:string
 }={}){
   const calls:Array<{method:string;path:string;auth:string;body:Record<string,unknown>|null}>=[];
   let runCount=0,branchReads=0,sequence=0;
@@ -51,7 +51,8 @@ function harness(result:RunnerRunResult=makeResult(true),opts:{
     let status=200;
     if(path==="/api/v1/user"){
       value=opts.actor??actor;
-    }else if(path.endsWith("/branches/feature%2Faccount-suspension")){
+    }else if(path.endsWith("/branches/"+
+       encodeURIComponent(opts.approvedBranch??request.branch))){
       branchReads++;
       value={commit:{id:opts.moveAfterRun&&branchReads>=2?other:opts.sha??sha}};
     }else if(path.endsWith("/statuses/"+sha)&&method==="POST"){
@@ -69,6 +70,7 @@ function harness(result:RunnerRunResult=makeResult(true),opts:{
     giteaReadToken:"test-read-token",
     giteaStatusToken:"test-status-token",
     trustedStatusActor:actor,
+    ...(opts.approvedBranch?{approvedBranch:opts.approvedBranch}:{}),
     runner:{async run(){
       runCount++;
       if(opts.throwRunner)throw Error("docker execution failed");
@@ -139,4 +141,23 @@ test("cannot publish unverifiable status if Gitea refuses the response",async()=
   await assert.rejects(pipeline.run(request),/HTTP request failed/);
   assert.equal(getRuns(),0);
   assert.equal(calls.filter(c=>c.method==="POST").length,1);
+});
+
+test("CI-owned department feature branch accepts only its own approved SHA",async()=>{
+  const dept="feature/department-directory";
+  const selected={...request,branch:dept};
+  const evidence={...makeResult(),branch:dept};
+  assert.equal(classifyTrustedSecurityRunnerResult(evidence,selected,dept),"success");
+  assert.throws(()=>classifyTrustedSecurityRunnerResult(evidence,request,dept),
+    /fixed-security-pipeline Runner request/);
+  const {pipeline,calls}=harness(evidence,{approvedBranch:dept});
+  const receipt=await pipeline.run(selected);
+  assert.equal(receipt.status,"success");
+  assert.deepEqual(calls.filter(c=>c.path.includes("/branches/")).map(c=>c.path),[
+    "/api/v1/repos/thesis/iam-console-poc/branches/feature%2Fdepartment-directory",
+    "/api/v1/repos/thesis/iam-console-poc/branches/feature%2Fdepartment-directory"
+  ]);
+  await assert.rejects(pipeline.run(request),/fixed-security-pipeline Runner request/);
+  assert.throws(()=>harness(evidence,{approvedBranch:"main"}),/pinned feature branch/);
+  assert.throws(()=>harness(evidence,{approvedBranch:"feature/../main"}),/pinned feature branch/);
 });

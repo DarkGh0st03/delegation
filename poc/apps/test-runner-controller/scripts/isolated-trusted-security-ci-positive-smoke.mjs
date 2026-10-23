@@ -531,6 +531,7 @@ async function main(){
       giteaBaseUrl:base,giteaReadToken:creds.readToken,
       giteaStatusToken:creds.statusToken,
       trustedStatusActor:creds.actor,
+      approvedBranch:branch,
       runner:{
         async run(request){
           const result=await approvedSession.run(request);
