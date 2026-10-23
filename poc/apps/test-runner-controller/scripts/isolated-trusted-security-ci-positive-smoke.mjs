@@ -451,7 +451,10 @@ async function main(){
             PLANNING_DISPOSABLE_GITEA_WRITE_TOKEN:creds.statusToken,
             PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha,
             PLANNING_NATIVE_SIGNED_HANDOFF:"1",
-            PLANNING_NATIVE_POSITIVE_DAG:"1"
+            PLANNING_NATIVE_POSITIVE_DAG:"1",
+            // Same real Gitea/Docker/Rust/OPA positive DAG, but all
+            // model-facing tools and VP issuance now use shared MCP.
+            APPROVED_RUNNER_NATIVE_MCP:"1"
           }
         });
         const positive=positiveOutput.split(/\r?\n/u).filter(Boolean)
@@ -459,6 +462,9 @@ async function main(){
           .find(event=>event?.event==="native_preliminary_adk_planning");
         assert.equal(positive?.status,"pass");
         assert.equal(positive?.positive_dag?.signed_dag_completed,true);
+        assert.equal(positive?.positive_dag?.approved_shared_mcp_enabled,true);
+        assert.ok(positive?.positive_dag?.shared_mcp_http_requests>=21);
+        assert.ok(positive?.positive_dag?.private_crypto_mcp_http_requests>=21);
         assert.equal(positive?.positive_dag?.real_a2a_sdk,true);
         assert.equal(positive?.positive_dag?.native_rust_child_credentials,3);
         assert.deepEqual(positive?.positive_dag?.completed_task_ids,

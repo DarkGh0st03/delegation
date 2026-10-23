@@ -257,3 +257,22 @@ to Backend without that successful trusted provider observation. The
 negative Backend test now expects only branch completion; Frontend/Test
 must still never run. These contract rules were not weakened to make the
 test pass, and `main` is never modified.
+
+
+### R3 integration: ONE positive real-provider E2E now uses shared MCP
+
+The existing native EVM+Gitea+Docker positive DAG offers an explicit
+`APPROVED_RUNNER_NATIVE_MCP=1` mode. It retains the **same** signed
+Planner proposal, Engineer receipt, Rust-issued EVM root and task children,
+trusted Dispatcher, three live ADK/A2A servers, normal Gateway Prepare/
+Execute, native Rust verifier, OPA, disposable Gitea, controlled Docker
+Runner and independently mounted acceptance suite. Only the tool transport
+changes: model-facing read/update/create/run_tests use the shared MCP server,
+a private signed-Task worker per Agent and a separate private crypto-only
+MCP service to request the signed VP. Private signing material stays in the
+Agent runtime and Adapter closures, never an LLM tool argument. The offline
+cumulative workflow enables this mode for its existing real positive test;
+no new pipeline, paid Gemini invocation, or unconditional legacy deletion.
+The real-provider acceptance still uses the historical Account Suspension
+reference fixture, rather than demonstrating generation of arbitrary code.
+The separate R2 scenarios exercise generalized work branches and requirements.
