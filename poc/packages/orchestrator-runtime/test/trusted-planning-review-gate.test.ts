@@ -1097,6 +1097,15 @@ test("verified signed GitHub OIDC reaches live Planning and requires independent
       assert.equal(running.githubRunWatch.status,"closed");
       assert.equal(f.coordinator.phase,"closed");
       assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+      // Once closed, GitHub freshness MUST fail, not succeed as a no-op.
+      await assert.rejects(running.githubRunWatch.checkNow(),
+        /run not active; Execution is forbidden/);
+      // An authenticated plan and minted root from the past cannot be
+      // resurrected by a late private dispatcher invocation.
+      await assert.rejects(
+        running.approvedDag.executeApprovedDag({} as any),
+        /run not active; Execution is forbidden/);
+      assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
     }finally{await running.close();}
     assert.equal(f.coordinator.phase,"closed");
     assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);

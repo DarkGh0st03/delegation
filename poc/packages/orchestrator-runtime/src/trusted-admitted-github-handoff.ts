@@ -199,11 +199,17 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
     return closing;
   };
   const checkNow=():Promise<void>=>{
-    if(pending)return pending;
+    // A prior host close / canceled job must NEVER count as a fresh
+    // authentication proof. In particular, the DAG dispatcher must
+    // not enter Execution while a concurrent shutdown is still
+    // revoking the delegated root.
     if(status!=="active")
-      return status==="revocation_unconfirmed"
-        ?Promise.reject(Error("GitHub run watch: revocation unconfirmed"))
-        :Promise.resolve();
+      return Promise.reject(Error(
+        "GitHub run watch: run not active; Execution is forbidden"));
+    if(pending)return pending.then(()=>{
+      if(status!=="active")
+        throw Error("GitHub run watch: run closed during status verification");
+    });
     const call=(async()=>{
       try{
         await verifyGithubManualRunViaApi({
@@ -223,8 +229,14 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
             workflowPath:expectedWorkflowPath,sourceSha:pins.sourceSha},
           githubApiToken,fetchFn:githubApiFetchFn
         });
-        // A renewal is permitted ONLY after fresh remote status proof.
+        // An external SIGTERM may have started root revocation WHILE
+        // GitHub REST was in flight. Verify the local guard again
+        // before and after lease renewal.
+        if(status!=="active")
+          throw Error("GitHub run watch: shutdown began during verification");
         await input.coordinator.renewExecutionLease();
+        if(status!=="active")
+          throw Error("GitHub run watch: shutdown began during renewal");
       }catch{
         // Any verification failure, including an unavailable REST endpoint,
         // is fail-closed. Never retry a lost run or issue another root.
