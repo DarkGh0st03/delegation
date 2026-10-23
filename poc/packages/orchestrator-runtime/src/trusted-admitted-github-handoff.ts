@@ -281,9 +281,10 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
       get status():WatchStatus{return status;}
     }),
     close:async()=>{
-      // A manual close cannot race an in-flight GitHub status check:
-      // await the check, then reuse the same one-time shutdown promise.
-      if(pending)await pending.catch(()=>{});
+      // Reserve the closing state IMMEDIATELY, not after waiting for
+      // a pending GitHub REST check. Otherwise a late dispatcher can
+      // mistake that pending check for permission to start during
+      // Engineer SIGTERM. The running root/servers are retired by stop().
       await stop();
     }
   });
