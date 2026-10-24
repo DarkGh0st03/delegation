@@ -1301,3 +1301,24 @@ test("unconfirmed Rust revocation cannot be retried or represented as a clean sh
  assert.equal(revocations,1);
  assert.equal(coordinator.phase,"closed");
 });
+
+
+test("recovery-enabled Planning reserves its one-use phase before the first journal await",async()=>{
+ const f=await fixture(true);
+ try{
+   const first=f.coordinator.beginPlanning(root("urn:planning:only-once","810"));
+   // The first call must synchronously fence all new calls, even though
+   // TrustedOperationalRecoveryStore.assertClean() has not resolved yet.
+   assert.equal(f.coordinator.phase,"failed_closed");
+   await assert.rejects(
+     f.coordinator.beginPlanning(root("urn:planning:duplicate","811")),
+     /Trusted Planning is not idle/
+   );
+   assert.equal(f.issued.length,0);
+   const active=await first;
+   assert.equal(active.credential_id,"urn:planning:only-once");
+   assert.equal(f.coordinator.phase,"planning");
+   assert.deepEqual(f.issued.map(x=>x.id),["urn:planning:only-once"]);
+   assert.deepEqual(f.revoked,[]);
+ }finally{await f.close();}
+});

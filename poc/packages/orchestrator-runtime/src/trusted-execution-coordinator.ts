@@ -142,11 +142,15 @@ export class TrustedExecutionCoordinator {
 
   async beginPlanning(root:RootParameters){
     if(this.#phase!=="idle")throw new Error("Trusted Planning is not idle");
+    // Reserve the one-use Planning transition synchronously, BEFORE the
+    // recovery journal filesystem await. Otherwise concurrent callers
+    // could both observe "idle" and race into preliminary root issuance.
+    // Keep failed_closed on any recovery or issuance uncertainty.
+    this.#phase="failed_closed";
     if(this.#recovery){
       this.assertOperationalRecoveryConfigured();
       await this.#recovery.assertClean();
     }
-    this.#phase="failed_closed";
     const result=await this.#authority.startPlanning(root);
     if(result.phase!=="planning")throw new Error("Read-only authority not confirmed");
     this.#planningRoot={credential_id:result.credential_id,
