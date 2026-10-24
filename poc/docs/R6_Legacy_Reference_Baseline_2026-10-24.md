@@ -1093,3 +1093,45 @@ historical billed Gemini workflow as R5.
 The original failed CI is retained as evidence of the safety gate.
 Certify only after an entirely green 5/5 cumulative run for the
 new exact commit. No paid Gemini calls or changes to `main`.
+
+### R6 cleanup batch 24 — restore historical PR/merge-readiness imports after API isolation
+
+**Regression detected in source audit:** batch 21 removed the
+`merge-readiness.ts` wildcard export from the canonical
+`orchestrator-runtime/src/index.ts`. Three historical coordinator
+scripts still requested `GiteaMergeReadinessVerifier` and
+`MergeReadinessDenied` from that public barrel. Node syntax checks,
+local import-path tests, and the five-job cumulative CI did not
+validate the existence of those runtime named exports, because
+these three historical scripts were not all executed by the
+current cumulative matrix. An attempted historical PR/CI smoke or
+billed run would fail at ESM module linking before its gate could
+verify independent human review and trusted CI status.
+
+**Fix:** in the historical real-Gitea positive runner, historical
+PR-open smoke, and manually gated Gemini script, retain
+`DelegatedA2ARoleRunner` as a generic public import but import
+`GiteaMergeReadinessVerifier` and `MergeReadinessDenied`
+**directly** from the human-only
+`orchestrator-runtime/src/merge-readiness.ts` module.
+Do **not** restore these controls in the agent-facing barrel.
+The original fixed repository/branch, strict readiness/denial and
+no-automatic-merge logic remain unchanged.
+
+**Regression evidence:** add a checkout test requiring precisely
+these three historical scripts to use explicit named imports from
+the implementation module, confirming the names are defined there
+and absent from the generic public barrel. The negative legacy
+smoke remains free of privileged merge-readiness imports.
+Existing focused `merge-readiness.test.ts` and protected
+human-only merge CLI regression must also remain green.
+
+**Limit:** source-level import repair, not a paid or real external
+provider end-to-end proof. The scripts should only be exercised
+under their previously reviewed CI conditions; the old manual
+Gemini workflow is not a substitute for R5 authenticated Engineer
+handoff and remains NO-GO. No main merge or billable execution.
+
+**Gate:** five-job exact-SHA cumulative offline CI plus static
+named-export regression. Roll back this batch to
+`75c2e390662d64ad1bd3ba8f36decb2177f7edc9`.

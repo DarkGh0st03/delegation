@@ -1046,3 +1046,40 @@ test("R6 11-file historical reference checker retains its six audited CI callers
   assert.deepEqual(unexpectedHistoricalReferenceScopeCallers(inventory),[],
     "Historical 11-file scope checker must not migrate to approved DAG/ADK code");
 });
+
+
+test("R6 historical PR/CI scripts import protected merge readiness directly, not from agent API",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const {join}=await import("node:path");
+  const {fileURLToPath}=await import("node:url");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const read=p=>readFileSync(join(root,p),"utf8");
+  const dir="poc/packages/agent-runtime/scripts/";
+  const names=[
+    "a2a-production-coordinator-mcp-gemini-live.mjs",
+    "a2a-production-coordinator-mcp-isolated-real-positive.mjs",
+    "a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs"
+  ];
+  const barrel=read("poc/packages/orchestrator-runtime/src/index.ts");
+  const module=read("poc/packages/orchestrator-runtime/src/merge-readiness.ts");
+  for(const name of ["GiteaMergeReadinessVerifier","MergeReadinessDenied"]){
+    assert.equal(barrel.includes(name),false,
+      "The privileged manual readiness checker must not be exported to ADK");
+    assert.match(module,new RegExp("export class "+name+"\\\\b","u"));
+  }
+  for(const name of names){
+    const script=read(dir+name);
+    assert.match(script,
+      /import\s*\{\s*GiteaMergeReadinessVerifier\s*,\s*MergeReadinessDenied\s*\}\s*from\s*["']\.\.\/\.\.\/orchestrator-runtime\/src\/merge-readiness\.ts["']/u,
+      "Historic script lost its explicit merge-readiness verification: "+name);
+    const agentBarrel=/import\s*\{([^{}]*)\}\s*from\s*["']\.\.\/\.\.\/orchestrator-runtime\/src\/index\.ts["']/gu;
+    for(const match of script.matchAll(agentBarrel)){
+      assert.doesNotMatch(match[1],
+        /GiteaMergeReadinessVerifier|MergeReadinessDenied/u,
+        "Historic script still tries to import removed named exports: "+name);
+    }
+  }
+  // The simple scripted negative case has no merge-readiness client.
+  const negative=read(dir+"a2a-production-coordinator-mcp-isolated-smoke.mjs");
+  assert.doesNotMatch(negative,/GiteaMergeReadinessVerifier|MergeReadinessDenied/u);
+});

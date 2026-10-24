@@ -31,10 +31,12 @@ import {Role,TaskState} from "@a2a-js/sdk";
 import {ClientFactory,ClientFactoryOptions,ServiceParameters,withA2AExtensions} from "@a2a-js/sdk/client";
 import {startSpecializedAgentServer,DeterministicA2AOrchestrator,createGeminiAdkModel} from "../src/index.ts";
 import {resolveRoleGeminiConfiguration,buildGeminiGenerationConfig} from "../../../scripts/gemini-thinking-policy.mjs";
-import {
-  DelegatedA2ARoleRunner,
-  GiteaMergeReadinessVerifier,MergeReadinessDenied
-} from "../../orchestrator-runtime/src/index.ts";
+import {DelegatedA2ARoleRunner}
+  from "../../orchestrator-runtime/src/index.ts";
+// These historic PR/CI probes still require the strict human-merge
+// readiness checker; it is intentionally not part of the agent API.
+import {GiteaMergeReadinessVerifier,MergeReadinessDenied}
+  from "../../orchestrator-runtime/src/merge-readiness.ts";
 /** Legacy Account Suspension Gateway write helpers; NOT signed DAG API. */
 import {OrchestratorProtectedGatewayClient}
   from "../../orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts";
