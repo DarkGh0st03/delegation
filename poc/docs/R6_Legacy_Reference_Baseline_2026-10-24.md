@@ -217,3 +217,36 @@ current refactoring.
 `d6748406c73e954021e70a4973ec90f0563eb07d`. No change to main
 or paid API calls. Validate the full five-job cumulative CI at the
 new exact SHA before certifying this batch.
+
+
+### R6 cleanup batch 5 — dynamic/module and direct launcher fence
+
+The conservative tracked-source inventory now applies the existing
+five-file historical coordinator allowlist to **explicit literal runtime
+edges** (`import('./...')`, CommonJS `require('./...')`, and
+`new URL('./...', import.meta.url)`) in addition to parsed static ESM
+imports. It also rejects newly configured npm/Actions/Shell/Compose
+commands that directly invoke the historical coordinator. The latter
+are not implicitly allowlisted just because they are old; no current
+manifest or intended workflow needs to call that source file directly.
+
+Two additional offline tests prove that a historical permitted dynamic
+import is accepted, while a new dynamic import, CommonJS load, module
+URL and GitHub Actions launch are rejected. Comment-only references
+must remain inert. The checkout test checks for newly introduced
+indirect/configured caller edges. This is a **boundary guard, not a
+dead-code detector**: computed paths and external loaders stay
+unresolved, and removing legacy files still requires independent
+static+dynamic and provider evidence.
+
+**Documentation consistency:** `docs/CURRENT_CHECKPOINT.md` retains
+the full October 15 historical evidence unchanged but is now prefaced
+with an explicit refactoring-branch notice, canonical source pointers,
+and the R5 NO-GO rule. This prevents the earlier sequential flow from
+being mistaken for the current security design.
+
+**Rollback:** revert batch 5 to parent commit
+`303af680abee65dccca9bd5393c33f13bf9ccda5` on the
+refactoring branch. No changes to source `main`, no calls to paid
+models and no deletion of historical coordinator or provider tests.
+Certify only after the full exact-SHA cumulative five-job CI succeeds.

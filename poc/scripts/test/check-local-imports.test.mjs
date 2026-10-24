@@ -374,3 +374,49 @@ test("R6 checkout has no forbidden direct sequential-coordinator import",async()
     "Unexpected caller must migrate to TrustedApprovedA2ADispatcher"
   );
 });
+
+
+test("R6 blocks new dynamic and configured legacy coordinator entrypoints",async t=>{
+  const target="poc/packages/orchestrator-runtime/src/sequential-coordinator.ts";
+  const files={
+    [target]:"export const legacy=true;",
+    "src/history.mjs":
+      "const f=()=>import('../poc/packages/orchestrator-runtime/src/sequential-coordinator.ts');",
+    "src/dynamic.mjs":
+      "const f=()=>import('../poc/packages/orchestrator-runtime/src/sequential-coordinator.ts');",
+    "src/commonjs.mjs":
+      "const f=()=>require('../poc/packages/orchestrator-runtime/src/sequential-coordinator.ts');",
+    "src/resource.mjs":
+      "const p=new URL('../poc/packages/orchestrator-runtime/src/sequential-coordinator.ts',import.meta.url);",
+    "src/comment.mjs":
+      "// import('../poc/packages/orchestrator-runtime/src/sequential-coordinator.ts')\nexport const safe=1;",
+    ".github/workflows/unapproved.yml":
+      "name: forbidden\njobs:\n  test:\n    steps:\n      - run: node poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
+    "notes.md":"sequential-coordinator.ts was used in the previous experiment"
+  };
+  const root=fixture(t,files);
+  const {collectLegacyReferences,unexpectedSequentialRuntimeReferences}=
+    await import("../r6-legacy-references.mjs");
+  const inventory=collectLegacyReferences(root,Object.keys(files),{candidates:[target]});
+  const forbidden=unexpectedSequentialRuntimeReferences(inventory,["src/history.mjs"]);
+  assert.deepEqual(forbidden.map(x=>x.source).sort(),[
+    ".github/workflows/unapproved.yml","src/commonjs.mjs",
+    "src/dynamic.mjs","src/resource.mjs"
+  ]);
+  assert.deepEqual(forbidden.map(x=>x.edgeType).sort(),[
+    "commonjs-require","dynamic-import","github-actions-command","module-url"
+  ]);
+  assert.equal(inventory.unresolvedRuntimeIndirections.length,0);
+});
+
+test("R6 checkout has no unexpected indirect sequential coordinator callers",async()=>{
+  const {fileURLToPath}=await import("node:url");
+  const {collectLegacyReferences,gitTrackedFiles,unexpectedSequentialRuntimeReferences}=
+    await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  assert.deepEqual(
+    unexpectedSequentialRuntimeReferences(
+      collectLegacyReferences(root,gitTrackedFiles(root))),[],
+    "Historical coordinator must not gain new dynamic or configured entrypoints"
+  );
+});

@@ -1,5 +1,25 @@
 # Current integration checkpoint — 15 October 2026
 
+> **Current architecture notice — 24 October 2026, R6 refactoring branch.**
+> This document began as the **15 October historical Gemini baseline**
+> and includes later 22 October notes. Its earlier claims about a
+> deterministic sequential coordinator refer to the **previous PoC**,
+> not the canonical signed Planning/Execution architecture on
+> `refactor/post-prof-plan-contracts-20261021`.
+> The new route is read-only ADK Planning → pinned checkpoint →
+> independently signed Engineer permission subset → operational Rust
+> delegation → approved A2A Task DAG → MCP/Gateway/native Rust/OPA →
+> real provider attestation and PR without automatic merge.
+> Consult [R0 canonical architecture](../poc/docs/R0_Canonical_Route_Legacy_Inventory_2026-10-23.md),
+> [R4 readiness and R5 NO-GO](../poc/docs/R4_Security_Gate_and_R5_Readiness_2026-10-23.md)
+> and [R6 cleanup evidence](../poc/docs/R6_Legacy_Reference_Baseline_2026-10-24.md)
+> for refactoring status. **No new paid Gemini E2E has been run on that
+> architecture.** Do not dispatch the historical paid workflow as R5.
+>
+> The verified historical October 15 results below are preserved as
+> evidence for their original immutable commit and are not being
+> reattributed to the refactored branch.
+
 ## Scope and architecture
 
 Reference scripted architecture commit (historical): `c7af6ca0a6b0254e3b9966e7631325ab1e540be5`. **Latest fully tested live Gemini framework commit:** `02c3395b9111a63ccc9f441ea2c91c81865d6673` on `main` — [manual paid run #5, 15 October 2026](https://github.com/DarkGh0st03/delegation/actions/runs/38761963415), SUCCESS. The 13 October reference `9012c8c4e7a9244cb931bcdef411cc5f443f0c08` remains historical.

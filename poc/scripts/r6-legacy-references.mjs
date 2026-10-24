@@ -49,6 +49,32 @@ export function unexpectedSequentialImporters(inventory,allowed=R6_ALLOWED_SEQUE
   return Object.freeze(entry.staticImporters.filter(x=>!allowedSet.has(x.source)));
 }
 
+/**
+ * Bounded second edge class: detect explicit runtime module references and
+ * direct configured commands to the retired sequential coordinator.
+ * Only a KNOWN historical module may retain a literal dynamic reference;
+ * configuration commands cannot directly launch this unapproved coordinator.
+ *
+ * Computed calls and external loaders remain unresolved and cannot be used
+ * to infer deletion safety. See scanRuntimeIndirections().
+ */
+export function unexpectedSequentialRuntimeReferences(
+  inventory,allowed=R6_ALLOWED_SEQUENTIAL_IMPORTERS
+){
+  const target="poc/packages/orchestrator-runtime/src/sequential-coordinator.ts";
+  const entry=inventory.candidates.find(x=>x.target===target);
+  if(!entry)throw Error("R6 historical coordinator missing from tracked audit targets");
+  const allowedSet=new Set(allowed);
+  return Object.freeze([
+    ...entry.runtimeIndirectionHints
+      .filter(x=>!allowedSet.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind})),
+    ...entry.configuredCallers
+      .filter(x=>!allowedSet.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind}))
+  ]);
+}
+
 const TEXT_SOURCE=/\.(?:js|mjs|cjs|ts|tsx|json|ya?ml|sh|toml|md|Dockerfile)$/u;
 
 /** A configured command mention is not automatically executed by a job. */
@@ -350,7 +376,12 @@ function main(){
   for(const edge of forbidden)
     console.error("R6 blocked legacy coordinator import: "+edge.source+
       " -> "+edge.specifier+"; migrate to signed approved DAG");
-  if(forbidden.length>0||result.candidates.some(x=>!x.exists))
+  const indirect=unexpectedSequentialRuntimeReferences(result);
+  for(const edge of indirect)
+    console.error("R6 blocked legacy coordinator "+edge.edgeType+
+      " caller: "+edge.source+"; migrate to signed approved DAG");
+  if(forbidden.length>0||indirect.length>0||
+     result.candidates.some(x=>!x.exists))
     process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)
