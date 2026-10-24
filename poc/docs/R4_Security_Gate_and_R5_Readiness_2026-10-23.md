@@ -484,3 +484,18 @@ restart sequencing. The authenticated real human, live Planning
 session transfer, provider spend cap and exact-SHA full CI are
 outstanding R5 prerequisites. R5 remains NO-GO, no paid Gemini call
 and no merge to main.
+
+### R5 offline IPC child fixture adapted without relaxing Gitea production gate
+
+Run [#40126135274](https://github.com/DarkGh0st03/delegation/actions/runs/40126135274)
+correctly rejected a mock provider through the newly hardened
+`trustedPlanDeploymentFromEnv`. Seven historical IPC tests
+were still starting their child subprocess through this *production*
+entrypoint while explicitly using scripted Gitea/VP/OPA fixtures.
+
+The disposable test child now constructs the same approved plan registry,
+same-instance Planning revisions and authenticated socket with explicit
+offline fixture dependencies, rather than invoking the protected production
+bootstrap. The production requirement for a real owner-authenticated
+Gitea URL and token remains mandatory and unchanged. No paid calls.
+Certify the repair on the next exact-SHA dedicated and cumulative CI.

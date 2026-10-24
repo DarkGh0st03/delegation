@@ -3,15 +3,45 @@
  * Real signed-approval verification; mocked VP/OPA/provider ONLY.
  */
 import {readFile} from "node:fs/promises";
-import {trustedPlanDeploymentFromEnv} from "../../src/trusted-plan-deployment.ts";
+import {SignedEngineerApprovalFileStore}
+  from "../../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
+import {TrustedApprovedExecutionPlans}
+  from "../../src/approved-execution-plans.ts";
+import {GatewayCorroboratedTaskAttestor}
+  from "../../src/trusted-task-observation.ts";
+import {TrustedPlanningRevisions}
+  from "../../src/planning-revisions.ts";
+import {createTrustedPlanIpcServer}
+  from "../../src/trusted-plan-ipc.ts";
 import {GatewayRuntime} from "../../src/runtime.ts";
 import {createGatewayHttpServer} from "../../src/http.ts";
 
 const cfg=JSON.parse(await readFile(process.env.IPC_TEST_CONFIG!,"utf8"));
-// Exercise the SAME optional deployment bootstrap that main.ts uses.
-const deployed=await trustedPlanDeploymentFromEnv(cfg.repository);
-if(!deployed)throw Error("Trusted deployment was not enabled in test process");
-const {plans,ipc:control}=deployed;
+// Deliberate OFFLINE fixture boundary. The real deployed bootstrap MUST
+// reject mock Gitea credentials. This child instead constructs the identical
+// trusted plan + shared Planning registry interfaces around its explicit
+// scripted provider, without invoking the production env bootstrap.
+const approvals=new SignedEngineerApprovalFileStore({
+  directory:cfg.approvalDir,engineerDid:cfg.engineerDid,
+  trustedKeys:{[cfg.keyId]:{
+    engineer_did:cfg.engineerDid,public_key_pem:cfg.publicKey
+  }}
+});
+const leaseRaw=process.env.TRUSTED_PLAN_OPERATIONAL_LEASE_MS;
+const plans=new TrustedApprovedExecutionPlans({
+  repository:cfg.repository,engineerDid:cfg.engineerDid,approvals,
+  ...(leaseRaw===undefined?{}:{operationalLeaseMs:Number(leaseRaw)}),
+  completionAttestor:new GatewayCorroboratedTaskAttestor()
+});
+const planningRevisions=new TrustedPlanningRevisions({
+  async readRepository(){
+    return {default_branch:"main",revision:cfg.repositoryBaseSha??"a".repeat(40)};
+  }
+});
+const control=await createTrustedPlanIpcServer({
+  socketPath:cfg.socketPath,secretFile:cfg.secretFile,
+  plans,planningRevisions
+});
 const runtime=new GatewayRuntime({
   bind_host:"127.0.0.1",bind_port:0,
   prepare:{
@@ -22,7 +52,7 @@ const runtime=new GatewayRuntime({
   opa_url:"http://test-disabled",opa_timeout_ms:500,
   provider_mode:"mock",gitea_timeout_ms:500
 },{
-  approvedPlans:plans,
+  approvedPlans:plans,planningRevisions,
   verifier:{async verify(req){
     return {
       presenter_id:"did:thesis:"+req.presenter,issuer_id:cfg.engineerDid,
