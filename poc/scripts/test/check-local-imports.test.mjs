@@ -1111,12 +1111,15 @@ test("R6 named historical authority-boundary helper is a permitted Gateway-write
   const {fileURLToPath}=await import("node:url");
   const {
     R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS,
+    R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS,
     unexpectedHistoricalGatewayCallers,gitTrackedFiles,collectLegacyReferences
   }=await import("../r6-legacy-references.mjs");
   const root=fileURLToPath(new URL("../../../",import.meta.url));
   const source="poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs";
   const content=readFileSync(new URL(source,new URL("../../../",import.meta.url)),"utf8");
   assert.equal(R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS.includes(source),true);
+  assert.equal(R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS.includes(source),false,
+    "Source is a historical Gateway writer caller, not a credential issuer");
   assert.match(content,/import\s*\{\s*OrchestratorProtectedGatewayClient\s*\}\s*from\s*["']\.\.\/\.\.\/orchestrator-runtime\/src\/legacy-orchestrator-gateway-client\.ts["']/u);
   const inventory=collectLegacyReferences(root,gitTrackedFiles(root));
   const target="poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts";

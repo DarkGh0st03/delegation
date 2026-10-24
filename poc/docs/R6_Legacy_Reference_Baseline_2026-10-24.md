@@ -1282,3 +1282,26 @@ or Agent script execution is relaxed. The initial failed CI remains
 historical evidence of the reference gate. Require a new **5/5**
 exact-SHA offline cumulative run, without Gemini payment or merging
 into `main`.
+
+### R6 batch 26 correction — place exception in the Gateway, NOT authority list
+
+The first follow-up exact-SHA CI `40097238718` failed the
+R6 reference gate. A text replacement had accidentally added
+`assert-current-authority-boundaries.mjs` to the separate
+`R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS` list, whose last
+script entry had the same text as the historical Gateway list.
+The actual `R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS` was
+unmodified and correctly rejected the new writer import.
+
+**Fix:** remove that unrelated allowance from the historical
+credential issuer and add it precisely to the Gateway
+branch/PR writer allowlist. Strengthen the checkout regression
+to demand the helper is accepted **only** as a Gateway writer
+consumer and explicitly rejected as a historical authority
+credential issuer. This enforces the intended minimum privilege
+and prevents a future accidental cross-list edit.
+
+No runtime credential, OPA, Gateway, EVM or permission check is
+modified. Original failed CI remains recorded; certify only after
+the new exact-SHA five-job offline suite passes. R5 remains NO-GO
+and `main` is unchanged.
