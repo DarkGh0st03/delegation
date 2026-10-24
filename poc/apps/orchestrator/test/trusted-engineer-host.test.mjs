@@ -444,6 +444,9 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     }
   });
   await checkpoints.persistVerified(ticket);
+  const operationalConfig={...config,approval:{
+    ...config.approval,planningCheckpointStore:checkpoints
+  }};
   for(const [file,data] of [
     [ownerFiles.public,config.approval.publicKeyPem],
     [ownerFiles.backendPublic,backendPublicPem],
@@ -481,6 +484,11 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     ...config,oidc:{...config.oidc,tls:undefined}
   }),/requires pinned mutual TLS/);
   assert.equal(adapterCalls,0);
+  // A direct in-process recovering bootstrap cannot bypass the verified
+  // Planning checkpoint that the strict file loader already requires.
+  await assert.rejects(startTrustedEngineerRecoveringHost(config),
+    /requires verified backend-signed Planning checkpoint/);
+  assert.equal(adapterCalls,0);
   // Boot is rejected while the real Adapter cannot confirm revocation.
   await assert.rejects(startConfiguredTrustedEngineerService(ownerConfigFile),
     /manual reconciliation required/);
@@ -499,11 +507,17 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     TrustedOperationalRecoveryStore,true);
   assert.match(host.engineerUrl,/^http:\/\/127\.0\.0\.1:\d+$/);
   assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+  // A separate root session cannot borrow this checkpoint, even if the
+  // signed ticket itself is valid and the operator controls the config.
   await assert.rejects(startTrustedEngineerRecoveringHost({
-    ...config,approval:{
-      ...config.approval,expectedSessionId:oldSession
+    ...operationalConfig,approval:{
+      ...operationalConfig.approval,expectedSessionId:oldSession
     }
-  }),/reconciled session cannot be reused/);
+  }),/checkpoint differs from pinned Engineer session/);
+  // Retain an independent assertion that successful revocation tombstones
+  // cannot be used for a later trusted Coordinator session.
+  await assert.rejects(journal.assertFreshSession(oldSession),
+    /reconciled session cannot be reused/);
   assert.equal(adapterCalls,2);
   assert.throws(()=>host.startReviewedHandoff({runId}),
     /trusted Coordinator recovery journal required/);

@@ -296,3 +296,31 @@ production requirement is relaxed, and no mocked Engineer approval is added.
 
 This correction is certified only by a fresh exact-SHA offline CI. The
 user has not authorized a paid Gemini call or a merge onto `main`.
+
+### R5 strict recovering host rejects direct checkpoint-provenance bypass (24 October 2026)
+
+Review of the persistent Engineer bootstrap found a second operational
+entrypoint, `startTrustedEngineerRecoveringHost`, which was
+callable directly from a trusted process with an in-memory configuration.
+The strict owner-file service loader already required the pinned,
+backend-signed Planning checkpoint, but this direct bootstrap previously
+relied on the optional local approval UI check. A caller could therefore
+start a recovering host on the test/demo raw-plan fallback without the
+independent checkpoint.
+
+Before connecting to the Gateway IPC, the strict recovering bootstrap now
+requires an actual `SignedPlanningCheckpointFileStore`, verifies
+the persisted Ed25519 checkpoint using the store's independently pinned
+key/branch/repository/SHA, and separately matches the verified session,
+source SHA and repository against the host's pinned Engineer configuration.
+Missing/expired/tampered/mismatched checkpoints fail before any remote
+reconciliation or HTTP listener. The local test-only host retains its
+explicit mock mode; no authority is granted to that fixture.
+
+The real IPC/Adapter crash-recovery test now passes its own valid signed
+backend ticket when exercising the direct strict bootstrap; it also checks
+that a missing store and a session mismatch fail closed while preserving
+the independent tombstone replay guard. No paid model calls, automatic
+Engineer signatures or main-branch changes. Certify only after both the
+dedicated Engineer CI and all five cumulative offline jobs succeed on the
+same new SHA.

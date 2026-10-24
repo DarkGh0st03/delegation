@@ -23,6 +23,8 @@ import {SoftwareEngineerAuthorityBootstrap}
   from "../../../packages/orchestrator-runtime/src/authority-client.ts";
 import {createAuthenticatedEngineerServer}
   from "./engineer-approval-server.mjs";
+import {SignedPlanningCheckpointFileStore}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
 import {GithubOidcReplayFileStore}
   from "../../../packages/orchestrator-runtime/src/trusted-github-oidc-replay-store.ts";
 import {TrustedGithubAdmissionReceiptStore}
@@ -200,6 +202,21 @@ export async function startTrustedEngineerRecoveringHost(config){
      !/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/u
        .test(config.oidc.tls.expectedClientFingerprint256??""))
     deny("operational Engineer host requires pinned mutual TLS admission");
+  // The lower-level recovering bootstrap is also callable directly by an
+  // operator process. It MUST enforce the same independent backend Planning
+  // provenance as the strict on-disk configuration loader. Never let this
+  // path silently fall back to a raw trustedPlanFile or test-only UI mode.
+  const checkpointStore=config?.approval?.planningCheckpointStore;
+  if(!(checkpointStore instanceof SignedPlanningCheckpointFileStore))
+    deny("operational Engineer host requires verified backend-signed Planning checkpoint");
+  let verified;
+  try{verified=await checkpointStore.load();}
+  catch{deny("operational Engineer host requires valid backend-signed Planning checkpoint");}
+  if(verified.snapshot.session_id!==config.approval.expectedSessionId||
+     verified.snapshot.base_revision!==config.approval.expectedBaseRevision||
+     JSON.stringify(verified.snapshot.repository)!==
+       JSON.stringify(config.approval.repository))
+    deny("backend-signed Planning checkpoint differs from pinned Engineer session");
   const recovery=config?.recovery;
   if(!recovery||typeof recovery.directory!=="string"||
      typeof recovery.gatewaySocketPath!=="string"||
