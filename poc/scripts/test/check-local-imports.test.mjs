@@ -549,8 +549,12 @@ test("R6 historical static issuer is not part of canonical exports or trusted co
   const historical=get("poc/packages/orchestrator-runtime/src/legacy-authority-client.ts");
   // Both historical exports must remain present after introducing the
   // independently named fixed-root bootstrap; ESM formatting is irrelevant.
-  assert.match(historical,
-    /export\s*\{\s*DeterministicOrchestratorAuthorityIssuer\s*,\s*LegacySoftwareEngineerAuthorityBootstrap\s*\}/u);
+  assert.match(historical,/export class LegacySoftwareEngineerAuthorityBootstrap/u);
+  assert.match(historical,/export class DeterministicOrchestratorAuthorityIssuer/u);
+  assert.doesNotMatch(
+    get("poc/packages/orchestrator-runtime/src/authority-client.ts"),
+    /LegacySoftwareEngineerAuthorityBootstrap|DeterministicOrchestratorAuthorityIssuer/u
+  );
   for(const name of ["a2a-production-coordinator-mcp-gemini-live.mjs","a2a-production-coordinator-mcp-isolated-real-positive.mjs","a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs","a2a-production-coordinator-mcp-isolated-smoke.mjs"]){
     const src=get("poc/packages/agent-runtime/scripts/"+name);
     assert.match(src,/from ["']\.\.\/\.\.\/orchestrator-runtime\/src\/legacy-authority-client\.ts["']/u);
@@ -567,13 +571,18 @@ test("R6 fixed-root method exists only on historical Engineer subclass",async()=
   const root=new URL("../../../",import.meta.url);
   const read=p=>readFileSync(new URL(p,root),"utf8");
   const code=read("poc/packages/orchestrator-runtime/src/authority-client.ts");
-  const start=code.indexOf("export class SoftwareEngineerAuthorityBootstrap");
-  const end=code.indexOf("export class LegacySoftwareEngineerAuthorityBootstrap");
-  assert.ok(start>=0&&end>start);
-  assert.equal(code.slice(start,end).includes("issueOrchestratorRoot("),false);
-  assert.equal(code.slice(start,end).includes("issueScopedOrchestratorRoot("),true);
-  assert.equal(code.slice(start,end).includes("revokeRoot("),true);
-  assert.equal(code.slice(end).includes("async issueOrchestratorRoot("),true);
+  const old=read("poc/packages/orchestrator-runtime/src/legacy-authority-client.ts");
+  const transport=read("poc/packages/orchestrator-runtime/src/authority-adapter-transport.ts");
+  assert.equal(code.includes("export class SoftwareEngineerAuthorityBootstrap"),true);
+  assert.equal(code.includes("issueOrchestratorRoot("),false);
+  assert.equal(code.includes("issueScopedOrchestratorRoot("),true);
+  assert.equal(code.includes("revokeRoot("),true);
+  assert.equal(code.includes("rootAuthorityPermissions"),false);
+  assert.equal(old.includes("export class LegacySoftwareEngineerAuthorityBootstrap"),true);
+  assert.equal(old.includes("async issueOrchestratorRoot("),true);
+  assert.equal(old.includes("export class DeterministicOrchestratorAuthorityIssuer"),true);
+  assert.equal(transport.includes("export async function postCredential("),true);
+  assert.equal(transport.includes("rootAuthorityPermissions"),false);
   assert.equal(read("poc/packages/orchestrator-runtime/src/index.ts")
     .includes("LegacySoftwareEngineerAuthorityBootstrap"),false);
   assert.equal(read("poc/packages/orchestrator-runtime/src/legacy-authority-client.ts")
@@ -582,4 +591,24 @@ test("R6 fixed-root method exists only on historical Engineer subclass",async()=
     assert.equal(read("poc/packages/agent-runtime/scripts/"+name)
       .includes("LegacySoftwareEngineerAuthorityBootstrap as SoftwareEngineerAuthorityBootstrap"),true);
   }
+});
+
+test("R6 canonical root issuance has no runtime dependency on fixed Account Suspension templates",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const root=new URL("../../../",import.meta.url);
+  const read=p=>readFileSync(new URL(p,root),"utf8");
+  const dir="poc/packages/orchestrator-runtime/src/";
+  const canonical=read(dir+"authority-client.ts");
+  const internal=read(dir+"authority-adapter-transport.ts");
+  const legacy=read(dir+"legacy-authority-client.ts");
+  const barrel=read(dir+"index.ts");
+  assert.equal(canonical.includes("permission-templates.ts"),false);
+  assert.equal(canonical.includes("legacy-authority-client.ts"),false);
+  assert.equal(internal.includes("permission-templates.ts"),false);
+  assert.equal(canonical.includes("authority-adapter-transport.ts"),true);
+  assert.equal(legacy.includes("permission-templates.ts"),true);
+  assert.equal(legacy.includes("authority-adapter-transport.ts"),true);
+  assert.equal(barrel.includes("legacy-authority-client.ts"),false);
+  assert.equal(barrel.includes("authority-adapter-transport.ts"),false);
+  assert.equal(canonical.includes("DeterministicOrchestratorAuthorityIssuer"),false);
 });

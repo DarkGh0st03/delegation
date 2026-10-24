@@ -426,3 +426,46 @@ with a stricter ESM export check that requires **both**
 `LegacySoftwareEngineerAuthorityBootstrap` in the legacy wrapper.
 No runtime class, credential or Gateway policy is changed. Re-run the
 whole exact-SHA cumulative suite; do not treat the original run as green.
+
+### R6 cleanup batch 10 — physically isolate historical authority implementations
+
+Before this batch the new canonical `authority-client.ts` still
+defined the old fixed-root `LegacySoftwareEngineerAuthorityBootstrap`
+and fixed-role `DeterministicOrchestratorAuthorityIssuer`.
+This also made it runtime-import the old Account Suspension permission
+matrix even though those classes were hidden from the public index.
+
+**Files:** The two *unchanged historical class bodies* are now
+physically defined by `legacy-authority-client.ts`, retaining the
+broad-root `rootAuthorityPermissions()`, static
+`resolveDelegationTemplate()` and original historical Adapter
+requests. The canonical `authority-client.ts` now contains only
+`SoftwareEngineerAuthorityBootstrap` and its neutral credential
+types, with `issueScopedOrchestratorRoot()` and `revokeRoot()`.
+
+**Shared boundary:** Move the original input validation,
+`AdapterClientConfig` and `postCredential()` helper to the
+internal `authority-adapter-transport.ts`. Neither this transport
+nor the legacy class module is exported from canonical
+`orchestrator-runtime/src/index.ts`. A type-only import of the
+credential contract in this transport has no runtime side effects.
+The Adapter HTTP request formatting, retries/timeouts, Bearer
+authentication, parse/errors and permission response equality
+remain as before. The model cannot authorize itself.
+
+**Tests and R6 guard:** Update static audit tests to examine the
+two physical source files (not merely the named exports). Keep the
+existing runtime authority tests covering historical root,
+historical child, trusted scoped root and terminal revocation.
+The R6 legacy import graph still allows only four historical agent
+scripts plus the dedicated test to import `legacy-authority-client.ts`.
+No legacy artifacts are removed in this batch.
+
+**Limits:** This refactor does not make private source imports
+cryptographically impossible; Rust DC/VP and Gateway+OPA enforce
+permission irrespective of TypeScript module layout. R5 remains
+NO-GO pending real reviewed Gemini end-to-end integration.
+Require all five exact-SHA cumulative CI jobs and dedicated
+offline authority and A2A tests to certify. Revert to
+`2b9ab897f08ed1ea1a53c162cbda53fee27d21eb` if needed.
+No merge into `main` or paid model call.
