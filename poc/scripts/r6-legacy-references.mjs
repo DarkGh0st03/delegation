@@ -125,6 +125,83 @@ export function collectConfiguredEntrypoints(root,tracked,options={}){
   })));
 }
 
+
+/** Conservative lexical hints; these are NOT verified execution edges. */
+export function scanRuntimeIndirections(text){
+  const tokens=[];let i=0;
+  const identifier=c=>/[A-Za-z_$]/u.test(c??"");
+  const identifierTail=c=>/[A-Za-z0-9_$]/u.test(c??"");
+  while(i<text.length){
+    const c=text[i],next=text[i+1];
+    if(/\s/u.test(c)){i++;continue;}
+    if(c==="/"&&next==="/"){
+      i+=2;while(i<text.length&&text[i]!=="\n")i++;continue;
+    }
+    if(c==="/"&&next==="*"){
+      i+=2;while(i<text.length&&(text[i]!=="*"||text[i+1]!=="/"))i++;
+      i=Math.min(i+2,text.length);continue;
+    }
+    if(c==="/"&&next!=="/"&&next!=="*"){
+      const prev=tokens.at(-1);
+      if(!prev||["=","(","[",":",",",";","return","=>"].includes(prev.value)){
+        let j=i+1,escaped=false,inClass=false;
+        while(j<text.length&&text[j]!=="\n"){
+          const k=text[j];
+          if(escaped){escaped=false;j++;continue;}
+          if(k==="\\"){escaped=true;j++;continue;}
+          if(k==="["){inClass=true;j++;continue;}
+          if(k==="]"){inClass=false;j++;continue;}
+          if(k==="/"&&!inClass)break;
+          j++;
+        }
+        if(j<text.length&&text[j]==="/"){
+          i=j+1;while(/[a-z]/iu.test(text[i]??""))i++;
+          tokens.push({kind:"regex",value:"<regex>"});continue;
+        }
+      }
+    }
+    if(c==="'"||c==='"'||c.charCodeAt(0)===96){
+      const quote=c;let value="",escaped=false,computed=false;
+      i++;
+      while(i<text.length){
+        const k=text[i++];
+        if(k==="\\"){escaped=true;if(i<text.length)value+=text[i++];continue;}
+        if(k===quote)break;
+        if(quote.charCodeAt(0)===96&&k==="$"&&text[i]==="{")
+          computed=true;
+        value+=k;
+      }
+      tokens.push({kind:computed?"computed":escaped?"escaped":"literal",value});
+      continue;
+    }
+    if(identifier(c)){
+      const start=i++;while(i<text.length&&identifierTail(text[i]))i++;
+      tokens.push({kind:"id",value:text.slice(start,i)});continue;
+    }
+    tokens.push({kind:"punct",value:c});i++;
+  }
+  const hints=[],unresolved=[];
+  for(let j=0;j<tokens.length;j++){
+    const a=tokens[j],b=tokens[j+1],value=tokens[j+2],end=tokens[j+3];
+    if((a.value==="import"||a.value==="require")&&b?.value==="("){
+      const kind=a.value==="import"?"dynamic-import":"commonjs-require";
+      if(value?.kind==="literal"&&[")",","].includes(end?.value))
+        hints.push({kind,specifier:value.value});
+      else unresolved.push({kind:"computed-"+kind});
+    }
+    if(a.value==="new"&&b?.value==="URL"&&value?.value==="("){
+      const arg=tokens[j+3];
+      if(arg?.kind==="literal"&&tokens[j+4]?.value===","&&
+        tokens[j+5]?.value==="import"&&tokens[j+6]?.value==="."&&
+        tokens[j+7]?.value==="meta"&&tokens[j+8]?.value==="."&&
+        tokens[j+9]?.value==="url")
+        hints.push({kind:"module-url",specifier:arg.value});
+      else unresolved.push({kind:"unresolved-new-url"});
+    }
+  }
+  return {hints,unresolved};
+}
+
 function type(path){
   if(path.startsWith(".github/workflows/"))return "workflow";
   if(path.endsWith("package.json"))return "package-script-or-config";
@@ -145,6 +222,8 @@ export function collectLegacyReferences(root,tracked,options={}){
     .map(x=>[x.target,x.configuredCallers]));
   const seen=new Map(candidates.map(path=>[path,[]]));
   const staticImporters=new Map(candidates.map(path=>[path,[]]));
+  const runtimeIndirectionHints=new Map(candidates.map(path=>[path,[]]));
+  const unresolvedRuntimeIndirections=[];
   const candidatesByAbsolutePath=new Map(candidates.map(path=>[
     resolve(root,path),path
   ]));
@@ -169,6 +248,20 @@ export function collectLegacyReferences(root,tracked,options={}){
         throw Error("R6 cannot parse tracked source "+source,
           {cause:error});
       }
+      const scanned=scanRuntimeIndirections(
+        /\.(?:ts|tsx)$/u.test(source)?stripTypeScriptTypes(text):text);
+      for(const hint of scanned.hints){
+        if(!hint.specifier.startsWith("./")&&!hint.specifier.startsWith("../"))
+          continue;
+        const target=candidatesByAbsolutePath.get(
+          resolve(dirname(file),hint.specifier));
+        if(target&&target!==source)runtimeIndirectionHints.get(target).push(
+          Object.freeze({source,kind:hint.kind,specifier:hint.specifier}));
+      }
+      for(const hint of scanned.unresolved)
+        unresolvedRuntimeIndirections.push(Object.freeze({
+          source,kind:hint.kind
+        }));
       for(const specifier of module.dependencySpecifiers){
         if(!specifier.startsWith("./")&&!specifier.startsWith("../"))
           continue;
@@ -193,11 +286,13 @@ export function collectLegacyReferences(root,tracked,options={}){
   }
   return Object.freeze({
     methodology:"Literal reference observations are not an import graph or deletion proof; staticImporters are independently parsed runtime ESM edges, not a complete dependency graph",
+    unresolvedRuntimeIndirections:Object.freeze(unresolvedRuntimeIndirections),
     candidates:Object.freeze(candidates.map(target=>Object.freeze({
       target,
       exists:existsSync(resolve(root,target)),
       references:Object.freeze(seen.get(target)),
       staticImporters:Object.freeze(staticImporters.get(target)),
+      runtimeIndirectionHints:Object.freeze(runtimeIndirectionHints.get(target)),
       configuredCallers:configured.get(target)
     })))
   });
@@ -223,9 +318,12 @@ function main(){
       "runtime/build text refs="+live.length,
       "docs text refs="+(candidate.references.length-live.length),
       "proven static importers="+candidate.staticImporters.length,
-      "configured commands="+candidate.configuredCallers.length
+      "configured commands="+candidate.configuredCallers.length,
+      "runtime indirection hints="+candidate.runtimeIndirectionHints.length
     ].join(" | "));
   }
+  console.log("Unresolved runtime indirections="+
+    result.unresolvedRuntimeIndirections.length);
   if(result.candidates.some(x=>!x.exists))process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)

@@ -253,3 +253,51 @@ test("R6 config scan distinguishes comments/path filters from executable workflo
  ],{candidates:["poc/scripts/retired.mjs"]});
  assert.deepEqual(item.configuredCallers,[]);
 });
+
+
+test("R6 records literal dynamic imports, require and module URLs without running source",async t=>{
+  const template=String.fromCharCode(96);
+  const root=fixture(t,{
+    "src/old.ts":"export const old=true;",
+    "src/dynamic.mjs":[
+      "const f=()=>import('./old.ts');",
+      "const g=()=>require('./old.ts');",
+      "const h=new URL('./old.ts', import.meta.url);",
+      "const unknown=()=>import('./'+name);",
+      "const computed=()=>import("+template+"./"+"$"+"{name}.ts"+template+");"
+    ].join("\n"),
+    "src/comments.mjs":[
+      "// import('./old.ts')",
+      "/* require('./old.ts') */",
+      "const demo=\"import('./old.ts')\";",
+      "const inline="+template+"require('./old.ts')"+template+";"
+    ].join("\n")
+  });
+  const {collectLegacyReferences}=await import("../r6-legacy-references.mjs");
+  const item=collectLegacyReferences(root,[
+    "src/old.ts","src/dynamic.mjs","src/comments.mjs"
+  ],{candidates:["src/old.ts"]});
+  assert.deepEqual(item.candidates[0].runtimeIndirectionHints.map(x=>x.kind),[
+    "dynamic-import","commonjs-require","module-url"
+  ]);
+  assert.ok(item.candidates[0].runtimeIndirectionHints.every(x=>x.source==="src/dynamic.mjs"));
+  assert.deepEqual(item.unresolvedRuntimeIndirections.map(x=>x.kind),[
+    "computed-dynamic-import","computed-dynamic-import"
+  ]);
+  assert.equal(item.candidates[0].staticImporters.length,0);
+});
+
+test("R6 considers computed runtime references unresolved and never declares them unused",async()=>{
+  const {scanRuntimeIndirections}=await import("../r6-legacy-references.mjs");
+  const output=scanRuntimeIndirections([
+    "import(fileName);",
+    "require(variable);",
+    "new URL(asset,import.meta.url);",
+    "const s=\"import('./not-code.mjs')\";"
+  ].join("\n"));
+  assert.deepEqual(output.hints,[]);
+  assert.deepEqual(output.unresolved.map(x=>x.kind),[
+    "computed-dynamic-import","computed-commonjs-require",
+    "unresolved-new-url"
+  ]);
+});
