@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bootstrap": "node --experimental-strip-types ./src/bootstrap-engineer.ts",
     "engineer:approval-ui": "node --experimental-strip-types ./src/engineer-approval-server.mjs",
     "engineer:service": "node --experimental-strip-types ./src/start-trusted-engineer-service.mjs"
   },

@@ -301,3 +301,19 @@ test("R6 considers computed runtime references unresolved and never declares the
     "unresolved-new-url"
   ]);
 });
+
+
+test("R6 retired unsigned root bootstrap cannot be invoked through public npm scripts",async()=>{
+  const {existsSync,readFileSync}=await import("node:fs");
+  const repoRoot=new URL("../../../",import.meta.url);
+  const workspace=JSON.parse(readFileSync(
+    new URL("poc/apps/orchestrator/package.json",repoRoot),"utf8"));
+  const root=JSON.parse(readFileSync(
+    new URL("poc/package.json",repoRoot),"utf8"));
+  assert.equal(Object.hasOwn(workspace.scripts,"bootstrap"),false);
+  assert.equal(Object.hasOwn(root.scripts,"orchestrator:bootstrap"),false);
+  assert.equal(existsSync(new URL(
+    "poc/apps/orchestrator/src/bootstrap-engineer.ts",repoRoot)),false);
+  assert.ok(workspace.scripts["engineer:service"]?.includes(
+    "start-trusted-engineer-service.mjs"));
+});

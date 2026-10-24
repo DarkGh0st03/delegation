@@ -66,10 +66,14 @@ prove a remote two-host deployment or real paid inference.
 
 ## Historical paths — NOT the canonical workflow
 
-`src/bootstrap-engineer.ts` and its
-`npm --prefix poc run orchestrator:bootstrap` script implement the
-**historical IAM Console template-root experiment**. Do not use it to
-start the new signed Planning/Execution sequence.
+The former `src/bootstrap-engineer.ts` CLI and
+`orchestrator:bootstrap` npm wrapper have been **removed during R6**.
+They could mint the broad historical IAM Console root without the new
+immutable Engineer-approved plan. The original implementation is
+recoverable from Git history at `28ca28c688137504958f6c56f7a297a7b556260a`, but there is no longer an
+operator-facing command in this branch. The underlying
+`SoftwareEngineerAuthorityBootstrap` Adapter client remains available
+to the existing trusted scoped-root flow and legacy offline tests.
 
 Likewise, the older
 [`sequential-coordinator.ts`](../../packages/orchestrator-runtime/src/sequential-coordinator.ts)

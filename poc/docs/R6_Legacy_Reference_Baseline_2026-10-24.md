@@ -133,3 +133,25 @@ finish green at the deletion commit before this batch is certified.
 ### R6 docs cleanup — canonical Orchestrator README
 
 The old 661-line `poc/apps/orchestrator/README.md` mixed obsolete Stage 9–12 milestones with the statement that the historical sequential Coordinator was the **current** execution path. It has been replaced with a concise map of the actual signed Planning/Execution path, explicitly segregated legacy bootstraps, command-level offline checks, service deployment prerequisites, and pointers to the existing R0/R4/R5/R6 handoffs. The old text remains recoverable at `05c0859ff20c8e3496b98cb5542506a98f261521`. No historical scripts or tests were deleted. The R5 service command was also corrected to target the manifest that actually defines `engineer:service` (`poc/apps/orchestrator/package.json`); the root `poc/package.json` does not expose that command.
+
+
+### R6 cleanup batch 2 — retire unsigned historical root-bootstrap CLI
+
+**Deleted:** `poc/apps/orchestrator/src/bootstrap-engineer.ts` (60 lines). **Removed command aliases:**
+`bootstrap` from `poc/apps/orchestrator/package.json` and `orchestrator:bootstrap` from
+`poc/package.json`. The historical CLI issued a broad IAM Console root
+with `issueOrchestratorRoot` and no independent signed Engineer-approved
+plan. It must not be an alternative startup path beside the R5 trusted
+Planning/Execution Coordinator.
+
+**Callers examined:** 27 Actions workflow definitions (no direct CLI or
+npm-script invocation), two package manifests (both commands removed),
+`check-scaffold.mjs` (only directory and gateway prerequisites), and
+Orchestrator README (rewritten). The `SoftwareEngineerAuthorityBootstrap`
+client, `authority-client.ts`, delegated permission templates, old
+sequential experiments and their security tests are **retained**.
+A new static npm-manifest test fails if the legacy root CLI or either
+of its command aliases is accidentally reintroduced. **Rollback:**
+recover the deleted CLI and both npm script entries from commit
+`28ca28c688137504958f6c56f7a297a7b556260a`. This batch does **not** claim that a local Engineer service
+is already deployed or that R5 paid Gemini is safe to run.
