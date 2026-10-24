@@ -24,7 +24,8 @@
     "agent-runtime:test": "npm run test -w @thesis/agent-runtime",
     "orchestrator-runtime:test": "npm run test -w @thesis/orchestrator-runtime",
     "experiment:repro-check": "node ./scripts/phase12b-check-reproducibility.mjs",
-    "audit:r6:references": "node --experimental-vm-modules --experimental-strip-types ./scripts/r6-legacy-references.mjs"
+    "audit:r6:references": "node --experimental-vm-modules --experimental-strip-types ./scripts/r6-legacy-references.mjs",
+    "audit:r6:types": "node ./scripts/r6-type-imports.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "1.3.0",

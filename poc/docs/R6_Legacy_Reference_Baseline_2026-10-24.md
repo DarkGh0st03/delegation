@@ -767,3 +767,33 @@ and existing historical sequential-coordinator tests before marking
 the batch validated. Roll back to
 `68c3c8e9a762f2448ecb831ae7e0d3ddbfbe28d2` if required.
 `main` stays untouched; R5 paid Gemini remains NO-GO.
+
+### R6 cleanup batch 17 — independently validate local named TypeScript-only imports
+
+After batch 16 found a dangling `import type` for the historical
+Gateway branch/PR result interfaces, we added the **R6 named type
+contract audit** in `poc/scripts/r6-type-imports.mjs`. The audited
+scope is `poc/packages/orchestrator-runtime/src/*.ts` and its
+`test/*.ts`. It checks relative named `import type`, inline
+`import {type X}`, and `export type {X} from` declarations.
+It verifies source-file existence and resolves directly declared
+exported symbols and simple named/star re-exports without evaluating
+any source, calling models, or accessing credentials.
+
+The pinned cumulative offline workflow now runs
+`npm --prefix poc run audit:r6:types` alongside
+`check:imports` and `audit:r6:references`; unit tests cover
+positive aliases/re-exports, moved symbols, deleted targets and
+comment/string false positives. This expands coverage to dependencies
+erased by Node's TypeScript stripping. The static scanner is
+intentionally a **bounded check, not `tsc`**: it does not validate
+generic assignability, complex ambient declaration merging,
+computed imports, packages imported without a relative path,
+non-named/default/namespace-only type imports or the other
+workspaces. Future R6 work must not present a passing scan as
+a full TypeScript build.
+
+No operational provider, signed-plan, DC/VP, OPA, A2A, Gemini
+workflow or `main` branch is altered. Certify only if exact-SHA
+cumulative five-job offline CI passes. Rollback:
+`4ab251b734879cb73b5802605e8f8eb0cfc5f052`.
