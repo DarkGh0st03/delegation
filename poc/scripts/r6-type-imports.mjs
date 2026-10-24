@@ -1,7 +1,8 @@
 /**
  * R6 conservative named type-import integrity checker.
  * Checks local "import type", inline named type imports, and type re-exports
- * in the Orchestrator src/test subtree without evaluating any application code.
+ * in selected Orchestrator, Agent Runtime and A2A agent src/test subtrees
+ * without evaluating any application code.
  * This is NOT a full TypeScript compiler or a dead-code proof.
  */
 import {execFileSync} from "node:child_process";
@@ -77,8 +78,11 @@ function hasNamedExport(file,symbol,visited){
 }
 export function checkR6TypeImports(root,tracked){
   const base=resolve(root),errors=[];
+  // Expand in controlled cohorts. Each scope has an independent runtime
+  // test suite already in cumulative offline CI. Do not silently include
+  // unrelated workspaces or claim this is a TypeScript compiler.
   const selected=tracked.filter(p=>
-    /^poc\/packages\/orchestrator-runtime\/(?:src|test)\/[^/]+\.ts$/u.test(p)
+    /^poc\/(?:packages\/(?:orchestrator-runtime|agent-runtime)|apps\/a2a-agent)\/(?:src|test)\/[^/]+\.ts$/u.test(p)
   ).sort();
   let checkedImports=0;
   for(const path of selected){

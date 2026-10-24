@@ -43,3 +43,52 @@ test("R6 skips comments, templates and quoted fake import statements",t=>{
   assert.equal(result.checkedImports,1);
   assert.deepEqual(result.errors,[]);
 });
+
+
+test("R6 expands named type audit to Agent Runtime and A2A host, but no other workspaces",t=>{
+  const root=mkdtempSync(join(tmpdir(),"r6-cross-workspace-"));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const entries={
+    "poc/packages/agent-runtime/src/contracts.ts":
+      "export interface AgentContext{}; export type TaskKind=string;",
+    "poc/packages/agent-runtime/src/index.ts":
+      "export type {AgentContext,TaskKind} from './contracts.ts';",
+    "poc/packages/agent-runtime/test/context.test.ts":
+      "import type {AgentContext,TaskKind} from '../src/index.ts';",
+    "poc/apps/a2a-agent/src/main.ts":
+      "import type {AgentContext} from '../../../packages/agent-runtime/src/index.ts';",
+    "poc/apps/a2a-agent/test/bootstrap.test.ts":
+      "import type {TaskKind} from '../../../packages/agent-runtime/src/contracts.ts';",
+    "poc/apps/gateway/src/unrelated.ts":
+      "import type {Missing} from './not-yet-checked.ts';"
+  };
+  for(const [file,text] of Object.entries(entries)){
+    const target=join(root,file);
+    mkdirSync(dirname(target),{recursive:true});
+    writeFileSync(target,text);
+  }
+  const report=checkR6TypeImports(root,Object.keys(entries));
+  assert.equal(report.checkedFiles,5);
+  assert.equal(report.checkedImports,4);
+  assert.deepEqual(report.errors,[]);
+});
+
+test("R6 expanded audit rejects cross-workspace moved types",t=>{
+  const root=mkdtempSync(join(tmpdir(),"r6-agent-type-drift-"));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const entries={
+    "poc/packages/agent-runtime/src/contracts.ts":"export interface RealTask{};",
+    "poc/packages/agent-runtime/src/runner.ts":
+      "import type {LegacyTask} from './contracts.ts';",
+    "poc/apps/a2a-agent/src/main.ts":
+      "import type {LegacyTask} from '../../../packages/agent-runtime/src/contracts.ts';"
+  };
+  for(const [file,source] of Object.entries(entries)){
+    mkdirSync(dirname(join(root,file)),{recursive:true});
+    writeFileSync(join(root,file),source);
+  }
+  const report=checkR6TypeImports(root,Object.keys(entries));
+  assert.equal(report.checkedImports,2);
+  assert.deepEqual(report.errors.map(x=>x.reason),
+    ["missing named export","missing named export"]);
+});

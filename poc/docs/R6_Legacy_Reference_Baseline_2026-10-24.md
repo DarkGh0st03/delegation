@@ -797,3 +797,41 @@ No operational provider, signed-plan, DC/VP, OPA, A2A, Gemini
 workflow or `main` branch is altered. Certify only if exact-SHA
 cumulative five-job offline CI passes. Rollback:
 `4ab251b734879cb73b5802605e8f8eb0cfc5f052`.
+
+### R6 cleanup batch 18 — expand erased TypeScript import audit to Agents
+
+Batch 17 introduced a bounded named-type import checker after
+discovering that Node's `--experimental-strip-types` does not
+type-check the historical Coordinator. The original scope covered
+only `poc/packages/orchestrator-runtime/{src,test}`.
+
+**Expanded scope:** include both `src/*.ts` and `test/*.ts` of
+`poc/packages/agent-runtime`, plus
+`poc/apps/a2a-agent/{src,test}`. This covers the core ADK/A2A
+agent handlers, task/permission types, gateway-crypto presentation
+integration and A2A host regression tests in addition to the
+Orchestrator. It reuses the existing
+`npm --prefix poc run audit:r6:types` stage in the cumulative
+offline workflow, so no additional workflow or paid model is needed.
+
+**Proof:** new synthetic tests check cross-workspace named type
+re-exports and imports, scope selection/exclusion, and fail-closed
+detection of a moved or removed exported type in both Agent
+Runtime and the A2A host. Existing tests for direct/aliased
+imports, quoted/comment false positives, deleted modules and
+transitive barrel re-exports remain.
+
+**Intentionally bounded:** `poc/apps/gateway`,
+`test-runner-controller`, package imports, declarations from
+external libraries and more complex TypeScript typing are outside
+this batch. Only tracked `src/test` top-level `.ts` files in the
+three named workspaces are scanned. This is still not full `tsc`.
+Further R6 cohorts can be admitted after their known compiler
+patterns are investigated. It is unsafe to delete historical
+regression fixtures based solely on these reports.
+
+No production code, Rust authorization, Gateway, OPA, task
+orchestration or Gemini calls are changed. Require the full
+five-job exact-SHA cumulative offline CI before calling this
+validated; `main` is unchanged. Rollback to
+`c466b9814889ff5e3f0a60ec1c4250e51772fdb5`.
