@@ -18,6 +18,8 @@ import {validatePlan,planDigest,makeApproval} from
 import {signEngineerApproval,verifyEngineerApproval} from
   "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../../gateway/src/operation-catalog.ts";
+import {SignedPlanningCheckpointFileStore} from
+  "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
 
 const OPERATIONS=new Set(RUST_OPERATIONS);
 const MAX_BYTES=256*1024;
@@ -114,6 +116,24 @@ export async function createAuthenticatedEngineerServer(config){
     throw new Error("Trusted plan does not match pinned repository/session/revision");
   }
   const pinnedDigest=planDigest(initial);
+  // Local historical/test entrypoints may omit a signed backend checkpoint.
+  // The deployed Engineer SERVICE must inject an independently pinned store.
+  const checkpointStore=config.planningCheckpointStore;
+  if(checkpointStore!==undefined&&
+     !(checkpointStore instanceof SignedPlanningCheckpointFileStore))
+    throw Error("Invalid trusted Planning checkpoint store");
+  const verifyCheckpoint=async()=>{
+    if(!checkpointStore)return;
+    const persisted=await checkpointStore.load();
+    if(planDigest(persisted.proposal.plan)!==pinnedDigest||
+       persisted.proposal.digest!==pinnedDigest||
+       persisted.snapshot.session_id!==config.expectedSessionId||
+       persisted.snapshot.base_revision!==config.expectedBaseRevision||
+       JSON.stringify(persisted.snapshot.repository)!==
+         JSON.stringify(config.repository))
+      invalid("Backend-signed Planning checkpoint differs from pinned Engineer plan",409);
+  };
+  await verifyCheckpoint();
   // Validate signer accessibility and pinned public identity at startup,
   // but re-read the protected key immediately before every signing action.
   const privateKey=await privateText(keyFile);
@@ -193,6 +213,7 @@ export async function createAuthenticatedEngineerServer(config){
         invalid("Engineer authentication required",401);
       }
       if(req.method==="GET"&&url.pathname==="/api/plan"){
+        await verifyCheckpoint();
         respond(res,200,{
           plan:initial,plan_digest:pinnedDigest,
           engineer_did:config.engineerDid,csrf_token:session.csrf
@@ -220,6 +241,9 @@ export async function createAuthenticatedEngineerServer(config){
         if(approvalInProgress)invalid("Approval already in progress",409);
         approvalInProgress=true;
         try{
+          // A valid check at startup cannot outlive checkpoint expiry,
+          // revocation of provenance, or later filesystem modification.
+          await verifyCheckpoint();
           const latest=JSON.parse(await privateText(planFile));
           validatePlan(latest,{allowedOperations:OPERATIONS});
           if(planDigest(latest)!==pinnedDigest ||

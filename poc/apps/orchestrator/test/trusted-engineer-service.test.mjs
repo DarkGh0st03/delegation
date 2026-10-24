@@ -10,7 +10,7 @@ import {loadTrustedEngineerServiceConfig}
 async function fixture(){
   const home=await mkdtemp(join(tmpdir(),"engineer-service-config-"));
   const dirs={};
-  for(const name of ["approval","replays","admissions","recovery"]){
+  for(const name of ["approval","checkpoints","replays","admissions","recovery"]){
     dirs[name]=join(home,name);
     await mkdir(dirs[name],{mode:0o700});
   }
@@ -19,6 +19,7 @@ async function fixture(){
     config:filename("config.json"),
     plan:filename("plan.json"),privateKey:filename("signing.key"),
     publicKey:filename("public.pem"),
+    backendPublicKey:filename("backend-public.pem"),
     github:filename("github.token"),hmac:filename("hmac.hex"),
     ca:filename("ca.pem"),cert:filename("server.pem"),
     tlsKey:filename("server.key"),adapter:filename("adapter.token"),
@@ -28,6 +29,7 @@ async function fixture(){
     [files.plan,"{\"session_id\":\"test\"}"],
     [files.privateKey,"LOCAL TEST KEY"],
     [files.publicKey,"-----BEGIN PUBLIC KEY-----\nexample\n-----END PUBLIC KEY-----"],
+    [files.backendPublicKey,"-----BEGIN PUBLIC KEY-----\nbackend\n-----END PUBLIC KEY-----"],
     [files.github,"offline-github-token"],
     [files.hmac,"ab".repeat(32)+"\n"],
     [files.ca,"-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----"],
@@ -45,7 +47,10 @@ async function fixture(){
       trustedPlanFile:files.plan,privateKeyFile:files.privateKey,
       publicKeyPemFile:files.publicKey,
       passwordSaltHex:"cc".repeat(16),
-      passwordScryptHex:"dd".repeat(64)
+      passwordScryptHex:"dd".repeat(64),
+      checkpoint:{directory:dirs.checkpoints,backendKeyId:"planning-backend",
+        backendPublicKeyPemFile:files.backendPublicKey,
+        expectedWorkBranch:"feature/account-suspension"}
     },
     oidc:{
       pinned:{repository:"DarkGh0st03/delegation",
@@ -88,6 +93,9 @@ test("service loads only protected, local config and independent secrets",async(
     assert.equal("hmacSecretHexFile" in c.oidc,false);
     assert.equal("adapterTokenFile" in c.recovery,false);
     assert.equal("publicKeyPemFile" in c.approval,false);
+    assert.equal("checkpoint" in c.approval,false);
+    assert.equal(typeof c.approval.planningCheckpointStore.load,"function");
+    assert.equal(typeof c.approval.planningCheckpointStore.persistVerified,"function");
     assert.equal(c.recovery.gatewaySocketPath,f.config.recovery.gatewaySocketPath);
   }finally{await f.close();}
 });
@@ -241,4 +249,30 @@ test("rejected trusted handoff start cannot be misreported as clean shutdown",as
   await assert.rejects(owner.close(),/manual reconciliation required/);
   assert.equal(owner.status,"closing");
   assert.throws(()=>owner.start({}),/already attempted/);
+});
+
+test("strict operational host config rejects missing, untrusted or shared checkpoint pins",async()=>{
+  const f=await fixture();
+  try{
+    const original=f.config.approval.checkpoint;
+    delete f.config.approval.checkpoint;
+    await f.save();
+    await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
+      /configuration denied/);
+    f.config.approval.checkpoint={...original,
+      directory:f.dirs.approval};
+    await f.save();
+    await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
+      /configuration denied/);
+    f.config.approval.checkpoint={...original,
+      expectedWorkBranch:"main"};
+    await f.save();
+    await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
+      /configuration denied/);
+    f.config.approval.checkpoint={...original};
+    await f.save();
+    await chmod(f.files.backendPublicKey,0o644);
+    await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
+      /configuration denied/);
+  }finally{await f.close();}
 });

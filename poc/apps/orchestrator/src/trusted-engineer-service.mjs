@@ -9,6 +9,8 @@ import {open,lstat} from "node:fs/promises";
 import {constants} from "node:fs";
 import {dirname,isAbsolute,normalize} from "node:path";
 import {startTrustedEngineerRecoveringHost} from "./trusted-engineer-host.mjs";
+import {SignedPlanningCheckpointFileStore} from
+  "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
 
 function denied(){
   throw Error("Trusted Engineer service configuration denied");
@@ -63,14 +65,20 @@ export async function loadTrustedEngineerServiceConfig(configPath){
        "approval","oidc","recovery","approvalPort","oidcPort"
      ].includes(k))||
      !record(source.approval)||!record(source.oidc)||
-     !record(source.recovery)||!record(source.oidc.tls)||
+     !record(source.recovery)||!record(source.approval.checkpoint)||
+     !record(source.oidc.tls)||
      !record(source.oidc.pinned)||!record(source.oidc.trust))
     denied();
   const approval=source.approval,oidc=source.oidc,recovery=source.recovery;
   if(!allowedKeys(approval,[
        "engineerDid","keyId","expectedSessionId","expectedBaseRevision",
        "repository","receiptDirectory","trustedPlanFile","privateKeyFile",
-       "publicKeyPemFile","passwordSaltHex","passwordScryptHex"
+       "publicKeyPemFile","passwordSaltHex","passwordScryptHex",
+       "checkpoint"
+     ])||
+     !allowedKeys(approval.checkpoint,[
+       "directory","backendKeyId","backendPublicKeyPemFile",
+       "expectedWorkBranch"
      ])||
      !allowedKeys(oidc,[
        "pinned","trust","replayDirectory","admissionDirectory",
@@ -92,7 +100,8 @@ export async function loadTrustedEngineerServiceConfig(configPath){
      ]))denied();
   const requiredPaths=[
     approval.trustedPlanFile,approval.privateKeyFile,
-    approval.publicKeyPemFile,oidc.githubApiTokenFile,
+    approval.publicKeyPemFile,
+    approval.checkpoint.backendPublicKeyPemFile,oidc.githubApiTokenFile,
     oidc.hmacSecretHexFile,oidc.tls.caFile,
     oidc.tls.certFile,oidc.tls.keyFile,
     recovery.adapterTokenFile,recovery.gatewaySecretFile
@@ -101,19 +110,26 @@ export async function loadTrustedEngineerServiceConfig(configPath){
   // Local signing key, plan, approval and recovery journal cannot be
   // replaced by external workflow inputs or a model.
   for(const p of [
-    approval.receiptDirectory,oidc.replayDirectory,
-    oidc.admissionDirectory,recovery.directory
+    approval.receiptDirectory,approval.checkpoint.directory,
+    oidc.replayDirectory,oidc.admissionDirectory,recovery.directory
   ])await ownedPrivateDir(p);
   if(new Set([
-    approval.receiptDirectory,oidc.replayDirectory,
-    oidc.admissionDirectory,recovery.directory
-  ]).size!==4)denied();
+    approval.receiptDirectory,approval.checkpoint.directory,
+    oidc.replayDirectory,oidc.admissionDirectory,recovery.directory
+  ]).size!==5)denied();
   const reads=await Promise.all(requiredPaths.map(p=>protectedText(p)));
-  const [trustedPlan,signingKey,publicKey,githubApiToken,
-    hmacHex,ca,cert,key,adapterToken,gatewaySecret]=reads;
+  const [trustedPlan,signingKey,publicKey,backendPublicKey,
+    githubApiToken,hmacHex,ca,cert,key,adapterToken,gatewaySecret]=reads;
   // Verify sensitive path ownership before the host opens them itself.
   if(!trustedPlan.trim()||!signingKey.trim()||!gatewaySecret.trim()||
      !publicKey.includes("BEGIN PUBLIC KEY")||
+     !backendPublicKey.includes("BEGIN PUBLIC KEY")||
+     typeof approval.checkpoint.backendKeyId!=="string"||
+     !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(
+       approval.checkpoint.backendKeyId)||
+     typeof approval.checkpoint.expectedWorkBranch!=="string"||
+     !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(
+       approval.checkpoint.expectedWorkBranch)||
      !/^[0-9a-f]{64,256}$/iu.test(hmacHex.trim())||
      hmacHex.trim().length%2!==0||
      githubApiToken.trim().length<8||
@@ -128,13 +144,25 @@ export async function loadTrustedEngineerServiceConfig(configPath){
      typeof recovery.gatewaySocketPath!=="string"||
      !isAbsolute(recovery.gatewaySocketPath))
     denied();
-  const {publicKeyPemFile,...review}=approval;
+  const {publicKeyPemFile,checkpoint,...review}=approval;
+  const checkpointStore=new SignedPlanningCheckpointFileStore({
+    directory:path(checkpoint.directory),
+    trust:{
+      trustedKeys:{[checkpoint.backendKeyId]:{
+        public_key_pem:backendPublicKey
+      }},
+      expectedSessionId:approval.expectedSessionId,
+      expectedRepository:approval.repository,
+      expectedBaseRevision:approval.expectedBaseRevision,
+      expectedWorkBranch:checkpoint.expectedWorkBranch
+    }
+  });
   const {githubApiTokenFile,hmacSecretHexFile,tls,...oidcSettings}=oidc;
   const {adapterTokenFile,...recoverySettings}=recovery;
   return Object.freeze({
     approval:{...review,privateKeyFile:path(approval.privateKeyFile),
       trustedPlanFile:path(approval.trustedPlanFile),
-      publicKeyPem:publicKey},
+      publicKeyPem:publicKey,planningCheckpointStore:checkpointStore},
     oidc:{...oidcSettings,githubApiToken:githubApiToken.trim(),
       hmacSecret:Buffer.from(hmacHex.trim(),"hex"),
       tls:{ca,cert,key,

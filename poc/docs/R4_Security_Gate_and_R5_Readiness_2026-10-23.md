@@ -245,3 +245,34 @@ private signing-key bootstrap. A crash after durable checkpoint creation
 must be reconciled, never bypassed by a retry. Until these are proven in
 the operational deployment, R5 remains NO-GO. This change is validated
 only if the exact-SHA cumulative offline CI reaches five successful jobs.
+
+### R5 authenticated Engineer UI pins signed backend Planning provenance
+
+The operational Engineer service loader now **requires** an operator-owned
+`approval.checkpoint` configuration with independently selected
+backend Ed25519 public key ID/file, owner-only checkpoint directory and
+approved feature branch. It constructs
+`SignedPlanningCheckpointFileStore` with session, Gitea SHA,
+repository and branch pins from the *owner's* configuration, not an A2A or
+GitHub request. The checkpoint directory is distinct from the separate
+approval, OIDC replay/admission and recovery journals.
+
+The loopback Engineer review console validates the verified, persisted,
+backend-signed checkpoint against its immutable `plan.json` at
+startup, on viewing the plan and immediately before an independent human
+Ed25519 approval. A modified, expired or replaced checkpoint cannot turn
+into an Engineer signature. The interactive Engineer still independently
+chooses the approved permission subset; no inference, automated approval,
+operational root, or paid dispatch is performed.
+
+Standalone historical local GUI fixtures may omit the optional store for
+non-operational demonstration. The **strict configured persistent service**
+rejects a missing checkpoint trust configuration. Existing deployed
+service configurations therefore need owner-provisioned checkpoint pins
+before startup; this is deliberate fail-closed behavior.
+
+Offline tests cover valid signed provenance through human UI approval,
+mutated checkpoint rejection, raw-plan disagreement and strict
+configuration rejection. This does not establish persistent live Planning,
+private-network routing, real Engineer review or R5 GO.
+Certify only when exact-SHA cumulative offline CI reaches 5/5 success.
