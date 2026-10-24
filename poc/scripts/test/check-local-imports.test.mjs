@@ -171,6 +171,10 @@ test("R6 AST graph ignores erased TS type-only imports",async t=>{
   const result=collectLegacyReferences(root,[
     "src/old.ts","src/type-only.ts","src/real.ts"
   ],{candidates:["src/old.ts"]});
-  assert.deepEqual(result.candidates[0].staticImporters,[]);
+  // Node 22 strips import type entirely, but retains an explicit
+  // "export {} from" dependency when stripping export {type Old}.
+  // Conservative safety: the latter must remain a static edge.
+  assert.deepEqual(result.candidates[0].staticImporters.map(x=>x.source),
+    ["src/real.ts"]);
   assert.equal(result.candidates[0].references.length,2);
 });
