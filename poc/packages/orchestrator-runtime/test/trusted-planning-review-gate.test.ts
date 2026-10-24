@@ -95,6 +95,7 @@ async function fixture(recovery=false){
   const issued:{id:string;permissions:{resource:string;operation:string}[]}[]=[];
   const revoked:string[]=[];
   let onOperationalIssue:(()=>Promise<void>)|undefined;
+  let onOperationalRevoke:(()=>Promise<void>)|undefined;
   const credentials={
     async issueScopedOrchestratorRoot(input:any){
       issued.push({id:input.credential_id,
@@ -105,7 +106,11 @@ async function fixture(recovery=false){
         per:structuredClone(input.permissions)
       }};
     },
-    async revokeRoot(id:string){revoked.push(id);}
+    async revokeRoot(id:string){
+      if(id==="urn:operational"&&onOperationalRevoke)
+        await onOperationalRevoke();
+      revoked.push(id);
+    }
   };
   let coordinator!:TrustedExecutionCoordinator;
   const gate=new TrustedPlanningReviewGate({
@@ -151,6 +156,9 @@ async function fixture(recovery=false){
   return {gate,coordinator,issued,revoked,proposal,sign,
     replaceReceiptAfterOperationalIssue(handler:()=>Promise<void>){
       onOperationalIssue=handler;
+    },
+    delayOperationalRevocation(handler:()=>Promise<void>){
+      onOperationalRevoke=handler;
     },
     close:async()=>{
       await rm(directory,{recursive:true,force:true});
@@ -806,6 +814,24 @@ test("trusted manual host loads persisted backend signature + Engineer receipt t
       assert.equal(f.coordinator.phase,"execution");
       assert.equal(f.issued.length,2);
       assert.deepEqual(f.revoked,["urn:preliminary"]);
+      // Simulate the trusted dispatcher starting shutdown BEFORE the
+      // Engineer host. The Coordinator enters phase=closed synchronously,
+      // but native Rust revocation has not finished yet.
+      let unblock:()=>void=()=>{};
+      const revocationBarrier=new Promise<void>(resolve=>{unblock=resolve;});
+      f.delayOperationalRevocation(()=>revocationBarrier);
+      const inFlight=f.coordinator.closeExecution();
+      assert.equal(f.coordinator.phase,"closed");
+      const hostStop=launched.close();
+      assert.equal(hostStop,launched.close()); // same close promise
+      let hostClosed=false;
+      void hostStop.then(()=>{hostClosed=true;},()=>{});
+      await Promise.resolve();
+      assert.equal(hostClosed,false);
+      assert.deepEqual(f.revoked,["urn:preliminary"]);
+      unblock();
+      await Promise.all([inFlight,hostStop]);
+      assert.equal(hostClosed,true);
     }finally{await launched.close();}
     // One trusted host close must revoke the root, not just stop HTTP.
     assert.equal(f.coordinator.phase,"closed");

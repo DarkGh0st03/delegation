@@ -134,6 +134,7 @@ export async function startPersistedReviewedGeminiHandoff(input:{
     const servers=await startReviewedGeminiA2AServers({
       coordinator:input.coordinator,reviewed,ports:input.ports
     });
+    let shutdown:Promise<void>|undefined;
     return Object.freeze({
       readiness:reviewed.readiness,
       operational_root_id:operational.credential_id,
@@ -143,24 +144,32 @@ export async function startPersistedReviewedGeminiHandoff(input:{
       // operations and revoke the Rust root before waiting for A2A listener
       // shutdown. Server.close() may wait for in-flight connections.
       // Regardless of either failure, ALWAYS attempt the other cleanup.
-      close:async()=>{
-        let authorityError:unknown,teardownError:unknown;
-        try{
-          if(input.coordinator.phase==="execution")
+      close:()=>{
+        if(shutdown)return shutdown;
+        shutdown=(async()=>{
+          let authorityError:unknown,teardownError:unknown;
+          try{
+            // closeExecution is now single-flight: a "closed" phase may
+            // mean revocation is STILL IN FLIGHT. Always await the actual
+            // Gateway + Rust closure promise, not the phase flag.
             await input.coordinator.closeExecution();
-        }catch(error){authorityError=error;}
-        try{await servers.close();}
-        catch(error){teardownError=error;}
-        if(authorityError)
-          throw new Error(
-            "Trusted manual Gemini shutdown: Gateway closure or operational root revocation unconfirmed",
-            {cause:authorityError}
-          );
-        if(teardownError)throw teardownError;
+          }catch(error){authorityError=error;}
+          try{await servers.close();}
+          catch(error){teardownError=error;}
+          if(authorityError)
+            throw new Error(
+              "Trusted manual Gemini shutdown: Gateway closure or operational root revocation unconfirmed",
+              {cause:authorityError}
+            );
+          if(teardownError)throw teardownError;
+        })();
+        return shutdown;
       }
     });
   }catch(error){
-    if(activated&&input.coordinator.phase==="execution"){
+    if(activated){
+      // Failure during server start may race an independent Engineer
+      // shutdown. Await terminal revocation even if phase says "closed".
       try{await input.coordinator.closeExecution();}
       catch{
         throw new Error("Trusted Gemini handoff failed; operational root revocation requires reconciliation",
