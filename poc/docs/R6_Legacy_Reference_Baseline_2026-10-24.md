@@ -735,3 +735,35 @@ approved Task IDs continue to execute unchanged. Re-run exact-SHA
 cumulative, real Docker acceptance and trusted IPC regressions
 before marking batch 15 validated. The original 5-job CI remains
 red in the GitHub record.
+
+### R6 cleanup batch 16 — repair dangling historical TypeScript-only imports
+
+**Finding:** after the physical Gateway read/write separation (batch
+13), the historical `sequential-coordinator.ts` still declared
+`import type` for `OrchestratorCreateBranchResult` and
+`OrchestratorCreatePullRequestResult` from
+`orchestrator-gateway-client.ts`. The trusted read-only client
+does NOT export those contracts: both now live only in
+`legacy-orchestrator-gateway-client.ts`. Runtime Node
+`--experimental-strip-types` erased this mistake and did not fail
+existing A2A/Account Suspension tests.
+
+**Correction:** redirect just these two type imports to the
+explicitly historical writer. Do not move the types back into
+the trusted Planning client or canonical barrel. The historical
+fixed branch and PR logic and all runtime behavior are unchanged.
+
+**Prevent recurrence:** add a tracked-source R6 regression that checks
+the concrete TypeScript `import type` declaration, verifies that the
+historical module actually declares both exported interfaces,
+and asserts they are not present in the read-only client or canonical
+public index. This is a targeted dependency-integrity check, not
+a general compiler-based typecheck; other TS type resolutions still
+need scrutiny as part of final R6 review.
+
+**Safety:** no model calls, no changes to Rust DC/VP, Adapter, Gateway,
+OPA, signed planning or A2A runtime. Require exact-SHA cumulative CI
+and existing historical sequential-coordinator tests before marking
+the batch validated. Roll back to
+`68c3c8e9a762f2448ecb831ae7e0d3ddbfbe28d2` if required.
+`main` stays untouched; R5 paid Gemini remains NO-GO.

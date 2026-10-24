@@ -839,3 +839,34 @@ test("R6 private Gateway transport is imported only by the two reviewed wrappers
     "Private Adapter VP transport cannot become a new runtime dependency"
   );
 });
+
+
+test("R6 historical sequential Gateway result types resolve only from legacy writer",async()=>{
+  // Node's TS stripping deliberately skips type checking: a stale import
+  // would make all runtime tests green despite invalid TypeScript contracts.
+  const {readFileSync}=await import("node:fs");
+  const {join}=await import("node:path");
+  const {fileURLToPath}=await import("node:url");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const base="poc/packages/orchestrator-runtime/src/";
+  const read=p=>readFileSync(join(root,base+p),"utf8");
+  const sequential=read("sequential-coordinator.ts");
+  const writer=read("legacy-orchestrator-gateway-client.ts");
+  const canonical=read("orchestrator-gateway-client.ts");
+  const publicApi=read("index.ts");
+  assert.match(sequential,
+    /import type\s*\{\s*OrchestratorCreateBranchResult\s*,\s*OrchestratorCreatePullRequestResult\s*\}\s*from\s*["']\.\/legacy-orchestrator-gateway-client\.ts["']/u);
+  for(const name of [
+    "OrchestratorCreateBranchResult",
+    "OrchestratorCreatePullRequestResult"
+  ]){
+    assert.ok(writer.includes("export interface "+name+" {"),
+      "Historical writer must actually declare exported "+name);
+    assert.equal(canonical.includes(name),false,
+      "Canonical read client must not declare historical "+name);
+    assert.equal(publicApi.includes(name),false,
+      "Historical branch/PR result type must not re-enter public API");
+  }
+  assert.equal(sequential.includes('from "./orchestrator-gateway-client.ts"'),false);
+  assert.equal(sequential.includes('from "./legacy-orchestrator-gateway-client.ts"'),true);
+});

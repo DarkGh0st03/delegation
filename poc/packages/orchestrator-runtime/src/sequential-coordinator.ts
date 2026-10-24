@@ -3,10 +3,12 @@ import type {
   DelegatedA2ARoleTaskInput,
   DelegatedA2ARoleTaskResult
 } from "./a2a-workflow.ts";
+// Account Suspension's fixed branch and PR result contracts live in
+// the explicitly historical Gateway writer, never the trusted read client.
 import type {
   OrchestratorCreateBranchResult,
   OrchestratorCreatePullRequestResult
-} from "./orchestrator-gateway-client.ts";
+} from "./legacy-orchestrator-gateway-client.ts";
 import {
   AccountSuspensionWorkflow,
   type AccountSuspensionWorkflowSnapshot
