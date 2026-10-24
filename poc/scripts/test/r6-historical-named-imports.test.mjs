@@ -246,3 +246,41 @@ test("R6 ADK/MCP docker smokes remain source audited rather than executed by imp
       "Each effectful smoke must be audited once, not executed: "+name);
   }
 });
+test("R6 rejects a fake value export inside a multiline block comment",t=>{
+  const f=fixture(t,{
+    [entry]:"import {Phantom} from '../src/phantom.ts';",
+    "poc/packages/agent-runtime/src/phantom.ts":
+      "/*\nexport class Phantom {}\n*/\nexport const Real=true;"
+  });
+  assert.deepEqual(checkHistoricalRuntimeNamedImports(
+    f.root,f.paths,[entry]).errors.map(x=>x.reason),
+    ["missing runtime named export"]);
+});
+
+test("R6 rejects re-exports hidden in comments and template literals",t=>{
+  const f=fixture(t,{
+    [entry]:"import {Phantom,Disguised} from '../src/index.ts';",
+    "poc/packages/agent-runtime/src/index.ts":
+      "/*\nexport {Phantom} from './missing.ts';\n*/\n"+
+      "const note="+String.fromCharCode(96)+
+      "\nexport const Disguised=true;\n"+String.fromCharCode(96)+
+      ";\nexport const Real=true;"
+  });
+  assert.deepEqual(checkHistoricalRuntimeNamedImports(
+    f.root,f.paths,[entry]).errors.map(x=>x.symbol),
+    ["Phantom","Disguised"]);
+});
+
+test("R6 preserves real named export after slash-containing string and quoted regex",t=>{
+  const f=fixture(t,{
+    [entry]:"import {Allowed} from '../src/allowed.ts';",
+    "poc/packages/agent-runtime/src/allowed.ts":
+      "const address='https://example.invalid/foo/*none*/';\n"+
+      "const expression=/[\\\"'"+String.fromCharCode(96)+"]/u;\n"+
+      "export {Valid as Allowed} from './actual.ts';",
+    "poc/packages/agent-runtime/src/actual.ts":
+      "export class Valid {}"
+  });
+  assert.deepEqual(checkHistoricalRuntimeNamedImports(
+    f.root,f.paths,[entry]).errors,[]);
+});

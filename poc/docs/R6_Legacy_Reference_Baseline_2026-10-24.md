@@ -1411,3 +1411,34 @@ contracts are unchanged.
 offline cumulative CI success. Leave main protected and R5
 paid Gemini NO-GO. Rollback to
 `a92165ca393642e9c0187a4dac44d3128f63ef4f`.
+### R6 cleanup batch 29 — reject phantom runtime exports in archived ESM source
+
+Batch 28 completed successfully on exact SHA
+`f2f85e1c220ed81da82b20e052e6326110076668`
+([cumulative CI #40099177050](https://github.com/DarkGh0st03/delegation/actions/runs/40099177050):
+5/5 jobs succeeded). The static historical named-import checker still had
+one concrete **false-green risk**: its raw-source export resolver could
+treat `export class` or `export {...} from` inside a multiline
+block comment as a real JavaScript value export. An import of a deleted
+runtime symbol could then pass the audit even though a later ESM link would
+fail before its actual historical security/provider test.
+
+**Correction:** use a bounded lexical filter when inspecting both historical
+named import statements and referenced export declarations. It masks comments,
+template bodies and regex literals while preserving the quoted module
+specifier of a legitimate `export {...} from` and the runtime
+declaration that follows. Negative fixtures cover block-comment fake exports,
+commented re-exports and multiline template decoys; a positive fixture
+protects exports following regex character classes and URL-like strings.
+No historic entrypoint is imported, executed, rewritten or deleted.
+
+**Limits:** the filter is deliberately not a full ECMAScript/TypeScript
+parser, real module linker, dynamic resolver or dead-code detector.
+Computed dynamic imports, complex template interpolation and external
+package exports still require independent verification before cleanup.
+This improvement cannot itself establish that a legacy file is unused.
+
+**Gate:** certify Batch 29 only after exact-SHA 5/5 offline cumulative CI.
+It changes no signed Engineer approval, Rust DC/VP, Gateway/OPA,
+provider-side permission or live model request. Do not run historical paid
+Gemini, change `main` or allow automatic merge.

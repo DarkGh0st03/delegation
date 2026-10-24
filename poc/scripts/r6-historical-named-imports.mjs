@@ -28,18 +28,34 @@ export const HISTORICAL_RUNTIME_ENTRYPOINTS=Object.freeze([
 
 function isFile(p){return existsSync(p)&&statSync(p).isFile();}
 function withoutComments(text){
-  let out="",state="code",i=0;
+  // Preserve ESM import/export strings; hide comments, templates and regex
+  // bodies so a dormant "export" cannot satisfy a historical runtime import.
+  // This is a bounded lexical audit, not an ECMAScript parser.
+  let out="",state="code",i=0,previous="",inClass=false;
   const blank=c=>c==="\n"?"\n":" ";
+  const regexStart=()=>"=([{,:;!?&|+-*%^~<>".includes(previous)||
+    /(?:^|\W)(?:return|throw|case|yield|await|typeof|void|delete)$/u
+      .test(text.slice(Math.max(0,i-45),i).trimEnd());
   while(i<text.length){
     const c=text[i],n=text[i+1];
     if(state==="code"){
       if(c==="/"&&n==="/"){out+="  ";i+=2;state="line";continue;}
       if(c==="/"&&n==="*"){out+="  ";i+=2;state="block";continue;}
-      if(c===String.fromCharCode(96)){out+=" ";i++;state="template";continue;}
+      if(c==="/"&&regexStart()){
+        out+=" ";i++;state="regex";inClass=false;continue;
+      }
+      if(c===String.fromCharCode(96)){
+        out+=" ";i++;state="template";continue;
+      }
       if(c==="'"||c==='"'){out+=c;i++;state=c;continue;}
-      out+=c;i++;continue;
+      out+=c;i++;
+      if(!/\s/u.test(c))previous=c;
+      continue;
     }
-    if(state==="line"){out+=blank(c);i++;if(c==="\n")state="code";continue;}
+    if(state==="line"){
+      out+=blank(c);i++;if(c==="\n")state="code";
+      continue;
+    }
     if(state==="block"){
       if(c==="*"&&n==="/"){out+="  ";i+=2;state="code";continue;}
       out+=blank(c);i++;continue;
@@ -50,6 +66,16 @@ function withoutComments(text){
       if(c===String.fromCharCode(96))state="code";
       continue;
     }
+    if(state==="regex"){
+      if(c==="\\"&&n!==undefined){out+=blank(c)+blank(n);i+=2;continue;}
+      if(c==="[")inClass=true;
+      if(c==="]")inClass=false;
+      out+=blank(c);i++;
+      if(c==="/"&&!inClass)state="code";
+      continue;
+    }
+    // Ordinary quoted strings are retained so export-from specifiers
+    // still resolve; their slashes cannot open comments.
     out+=c;i++;
     if(c==="\\"&&n!==undefined){out+=n;i++;continue;}
     if(c===state)state="code";
@@ -77,7 +103,7 @@ function hasValueExport(file,name,visited=new Set()){
   // Masking with an incomplete JS lexer can erase subsequent real exports.
   // Match declarations at statement starts in raw source instead; never
   // treat an unanchored string or prose mention as an exported value.
-  const text=readFileSync(file,"utf8");
+  const text=withoutComments(readFileSync(file,"utf8"));
   const escaped=name.replace(/[$]/gu,"\\$&");
   const direct=new RegExp(
     "(?:^|[;\\n])\\s*export\\s+(?:(?:async|abstract)\\s+)*(?:class|function|const|let|var|enum)\\s+"+
