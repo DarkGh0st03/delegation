@@ -1025,3 +1025,45 @@ functional correctness. No paid Gemini experiment or merge to
 including original historical regression tests, before certifying.
 Rollback to `27d54ef9a9de4300aacb838171fbde34cf6255c5`
 if a legitimate unlisted consumer emerges.
+
+### R6 cleanup batch 23 — preserve and fence the 11-file historical DC-scope checker
+
+**Evidence:** `check-account-suspension-reference-scope.mjs` is still
+a side-effect CLI that verifies precisely **11** IAM reference files
+across Backend (4), Frontend (3), and Test (4), fixed write
+permission templates, an Engineer-to-Orchestrator root permission
+superset, and exclusive `run_tests` for the Test role. It is **not**
+the dynamic permission subset review or independent Runner
+acceptance used by the new signed-plan workflow.
+
+**Verified configured callers:** exactly four workflows currently
+launch it: cumulative offline refactoring validation,
+`shared-mcp-production-coordinator.yml`,
+`shared-mcp-real-positive-e2e.yml`, and
+`gemini-paid-shared-mcp-final.yml`. The last workflow remains
+manual, gated by explicit billing consent and historical-only;
+adding a CI allowance does not authorize a paid model request.
+
+**Changes:** retain the existing script, fixture, fixed template
+roles, and all four workflow invocations. Extend the tracked R6
+inventory with `unexpectedHistoricalReferenceScopeCallers()`.
+The regression check fails on *any new source import or literal
+dynamic load* of this side-effect-only checker, or a configured
+launcher outside the four named workflows. Synthetic tests cover
+an unauthorized GitHub Actions launcher, an eager import, a dynamic
+import and inert comments. A checkout test asserts the 11-file
+contract markers and exact four configured CI sources; it
+does not execute the checker or the billed workflow.
+
+**Limits:** the scanner is conservative and static. It does not
+resolve computed dynamic imports or infer whether a CI trigger
+actually ran, and no observation alone proves a file removable.
+The generic approved-plan DAG must use signed scopes and
+independent Gateway/Rust/OPA checks, not this hardcoded
+historical IAM contract. This batch does not alter any runtime
+scope, permission, EVM status bit, model request or Gitea merge.
+
+**Gate:** require 5/5 cumulative offline CI success on the new
+exact commit. `main` remains unchanged and R5 Gemini stays NO-GO.
+Rollback this batch to `4c84e954f00e5a0dd80f94c2c6a5758050582a11`
+if any unrecognized, legitimate historical command is found.

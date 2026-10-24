@@ -256,6 +256,36 @@ export function unexpectedHistoricalPreflightCallers(
   ]);
 }
 
+
+/**
+ * Historical Account Suspension 11-file role/DC-scope contract CHECK.
+ * Keep its exact four configured workflow callers, but do not introduce
+ * new imports of a side-effect-only checker into signed ADK/DAG source.
+ * An invocation checks fixed IAM fixtures; it does not authorize a tool.
+ */
+export const R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS=Object.freeze([
+  ".github/workflows/cumulative-refactoring-offline.yml",
+  ".github/workflows/shared-mcp-production-coordinator.yml",
+  ".github/workflows/shared-mcp-real-positive-e2e.yml",
+  ".github/workflows/gemini-paid-shared-mcp-final.yml"
+]);
+export function unexpectedHistoricalReferenceScopeCallers(
+  inventory,allowed=R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS
+){
+  const target="poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs";
+  const entry=inventory.candidates.find(x=>x.target===target);
+  if(!entry)throw Error("R6 Account Suspension reference scope checker missing from inventory");
+  const accepted=new Set(allowed);
+  return Object.freeze([
+    ...entry.staticImporters
+      .map(x=>Object.freeze({...x,edgeType:"static-import-or-reexport"})),
+    ...entry.runtimeIndirectionHints
+      .map(x=>Object.freeze({...x,edgeType:x.kind})),
+    ...entry.configuredCallers.filter(x=>!accepted.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind}))
+  ]);
+}
+
 const TEXT_SOURCE=/\.(?:js|mjs|cjs|ts|tsx|json|ya?ml|sh|toml|md|Dockerfile)$/u;
 
 /** A configured command mention is not automatically executed by a job. */
@@ -587,10 +617,16 @@ function main(){
     console.error("R6 blocked Account Suspension-only preflight "+
       edge.edgeType+" caller: "+edge.source+
       "; the approved-plan path requires generic plan-bound validation");
+  const scopeCheckerCallers=unexpectedHistoricalReferenceScopeCallers(result);
+  for(const edge of scopeCheckerCallers)
+    console.error("R6 blocked historical 11-file scope checker "+
+      edge.edgeType+" caller: "+edge.source+
+      "; scope checker is a fixed IAM fixture, not signed-plan validation");
   if(forbidden.length>0||indirect.length>0||
      historicalWorkflowCallers.length>0||authorityCallers.length>0||
      templateCallers.length>0||gatewayCallers.length>0||
      privateTransportCallers.length>0||historicalPreflightCallers.length>0||
+     scopeCheckerCallers.length>0||
      result.candidates.some(x=>!x.exists))
     process.exitCode=1;
 }

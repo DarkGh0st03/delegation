@@ -979,3 +979,70 @@ test("R6 historical preflight remains tested but excluded from approved-plan API
     "Do not enable new historical preflight consumers"
   );
 });
+
+
+test("R6 Account Suspension 11-file scope checker rejects new launchers or source imports",async t=>{
+  const target="poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs";
+  const files={
+    [target]:"throw Error('historical checker must never be imported by this audit');",
+    ".github/workflows/cumulative-refactoring-offline.yml":
+      "jobs:\n  safe:\n    steps:\n      - run: node poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
+    ".github/workflows/new-canonical-run.yml":
+      "jobs:\n  unsafe:\n    steps:\n      - run: node poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
+    "poc/packages/agent-runtime/src/bad.ts":
+      "import '../../orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs';",
+    "poc/packages/agent-runtime/src/dynamic.ts":
+      "const run=()=>import('../../orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs');",
+    "poc/packages/agent-runtime/src/comment.ts":
+      "// import '../../orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs';\nexport const safe=true;",
+    "notes.md":"check-account-suspension-reference-scope.mjs is a historical file"
+  };
+  const root=fixture(t,files);
+  const {collectLegacyReferences,unexpectedHistoricalReferenceScopeCallers}
+    =await import("../r6-legacy-references.mjs");
+  const inventory=collectLegacyReferences(root,Object.keys(files),{candidates:[target]});
+  const unsafe=unexpectedHistoricalReferenceScopeCallers(inventory);
+  assert.deepEqual(unsafe.map(x=>x.source).sort(),[
+    ".github/workflows/new-canonical-run.yml",
+    "poc/packages/agent-runtime/src/bad.ts",
+    "poc/packages/agent-runtime/src/dynamic.ts"
+  ].sort());
+  assert.equal(unsafe.some(x=>x.source==="notes.md"),false);
+  assert.equal(unsafe.some(x=>x.source==="poc/packages/agent-runtime/src/comment.ts"),false);
+  assert.deepEqual(unsafe.map(x=>x.edgeType).sort(),[
+    "github-actions-command","static-import-or-reexport","dynamic-import"
+  ].sort());
+});
+
+test("R6 11-file historical reference checker retains only its four audited CI callers",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const {join}=await import("node:path");
+  const {fileURLToPath}=await import("node:url");
+  const {
+    collectLegacyReferences,gitTrackedFiles,
+    R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS,unexpectedHistoricalReferenceScopeCallers
+  }=await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const tracked=gitTrackedFiles(root);
+  const target="poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs";
+  const checker=readFileSync(join(root,target),"utf8");
+  assert.ok(checker.includes("assert.equal(expectedPaths.length,11)"));
+  assert.ok(checker.includes("new Set(Object.keys(files))"));
+  assert.ok(checker.includes("DELEGATION_TEMPLATES[role]"));
+  assert.ok(checker.includes("ENGINEER_TO_ORCHESTRATOR_ROOT_AUTHORITY"));
+  assert.ok(checker.includes("verified,11"));
+  const expected=[...R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS].sort();
+  assert.equal(expected.length,4);
+  for(const workflow of expected){
+    const content=readFileSync(join(root,workflow),"utf8");
+    assert.ok(content.includes(target),
+      "Preserve reference-scope check in known workflow "+workflow);
+  }
+  const inventory=collectLegacyReferences(root,tracked);
+  const observed=inventory.candidates.find(c=>c.target===target);
+  assert.ok(observed);
+  assert.deepEqual([...new Set(observed.configuredCallers.map(x=>x.source))].sort(),
+    expected,"Scope check is limited to previously reviewed workflow commands");
+  assert.deepEqual(unexpectedHistoricalReferenceScopeCallers(inventory),[],
+    "Historical 11-file scope checker must not migrate to approved DAG/ADK code");
+});
