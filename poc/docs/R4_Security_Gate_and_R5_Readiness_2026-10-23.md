@@ -459,3 +459,28 @@ instance as its prepare/execute runtime. This handshake does not attest
 instance pointer equality across process boundaries, does not persist
 Gateway tombstones across a full Gateway crash, and is not proof of a
 live authentic human Planning->Execution handoff. R5 stays NO-GO.
+
+### R5 actual deployed Gateway process shares authenticated Planning registry
+
+The production `trustedPlanDeploymentFromEnv` bootstrap
+no longer provisions a private operational-plan IPC without Planning
+recovery support. Whenever trusted control is enabled, it requires an
+authenticated real Gitea provider and creates one
+`TrustedPlanningRevisions` instance, sourced from the
+owner-configured Gitea URL/token/repository. That **same object** is
+injected into both `GatewayRuntime` (prepare and execute
+revision checks) and `createTrustedPlanIpcServer`
+(authenticated `retire_planning`).
+
+This closes the incorrect possibility that Engineer cold-start recovery
+tombstones a separate, ineffective registry while the live Gateway still
+accepts provisional reads. Mock-provider deployments with trusted plan
+control now fail at startup rather than advertising recoverability.
+
+Limitations remain: the currently in-memory Gateway tombstone does not
+survive restart across separate Gateway process lifetimes; the owner
+and Engineer need a durable Gateway recovery protocol or guaranteed
+restart sequencing. The authenticated real human, live Planning
+session transfer, provider spend cap and exact-SHA full CI are
+outstanding R5 prerequisites. R5 remains NO-GO, no paid Gemini call
+and no merge to main.

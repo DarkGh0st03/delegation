@@ -11,7 +11,9 @@ import {SignedEngineerApprovalFileStore} from
 import {TrustedApprovedExecutionPlans} from "./approved-execution-plans.ts";
 import {GatewayCorroboratedTaskAttestor} from "./trusted-task-observation.ts";
 import {createTrustedPlanIpcServer} from "./trusted-plan-ipc.ts";
-import type {GatewayRepositoryConfig} from "./types.ts";
+import {TrustedPlanningRevisions} from "./planning-revisions.ts";
+import {GiteaClient} from "./gitea-client.ts";
+import type {GatewayRuntimeConfig} from "./config.ts";
 
 const ENV=[
   "TRUSTED_PLAN_IPC_SOCKET","TRUSTED_PLAN_IPC_SECRET_FILE",
@@ -34,8 +36,14 @@ async function pinnedPublicKey(path:string):Promise<string>{
   }finally{await fd.close();}
 }
 
-export async function trustedPlanDeploymentFromEnv(repository:GatewayRepositoryConfig){
+export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
   if(!ENV.some(name=>process.env[name]))return null;
+  // An operationally trusted host MUST NOT run without the independently
+  // authenticated, pinned Gitea Planning registry. In particular the
+  // mock provider is never a substitute for the real read-only root.
+  if(config.provider_mode==="mock"||
+     !config.gitea_base_url||!config.gitea_gateway_token)
+    throw Error("Trusted Gateway Planning requires real authenticated Gitea");
   if(ENV.some(name=>!process.env[name]?.trim())){
     throw Error("Incomplete trusted plan IPC configuration; fail closed");
   }
@@ -55,8 +63,15 @@ export async function trustedPlanDeploymentFromEnv(repository:GatewayRepositoryC
   const leaseRaw=process.env.TRUSTED_PLAN_OPERATIONAL_LEASE_MS;
   if(leaseRaw!==undefined&&!/^[1-9]\d{3,5}$/u.test(leaseRaw))
     throw Error("Invalid trusted Gateway operational lease duration");
+  const planningRevisions=new TrustedPlanningRevisions(new GiteaClient({
+    baseUrl:config.gitea_base_url,
+    token:config.gitea_gateway_token,
+    owner:config.prepare.repository.owner,
+    repository:config.prepare.repository.repository,
+    timeoutMs:config.gitea_timeout_ms
+  }));
   const plans=new TrustedApprovedExecutionPlans({
-    repository,engineerDid,approvals,
+    repository:config.prepare.repository,engineerDid,approvals,
     ...(leaseRaw===undefined?{}:{operationalLeaseMs:Number(leaseRaw)}),
     // Gateway independently corroborates private Coordinator observations
     // using results retained from authorized provider I/O.
@@ -64,7 +79,9 @@ export async function trustedPlanDeploymentFromEnv(repository:GatewayRepositoryC
   });
   const ipc=await createTrustedPlanIpcServer({
     socketPath:value("TRUSTED_PLAN_IPC_SOCKET"),
-    secretFile:value("TRUSTED_PLAN_IPC_SECRET_FILE"),plans
+    secretFile:value("TRUSTED_PLAN_IPC_SECRET_FILE"),plans,
+    planningRevisions
   });
-  return {plans,ipc};
+  // SAME instance must be installed into GatewayRuntime.prepare/execute.
+  return {plans,planningRevisions,ipc};
 }

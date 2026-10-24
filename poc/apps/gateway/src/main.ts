@@ -4,9 +4,12 @@ import { GatewayRuntime } from "./runtime.ts";
 import {trustedPlanDeploymentFromEnv} from "./trusted-plan-deployment.ts";
 
 const config = gatewayConfigFromEnv();
-const trusted = await trustedPlanDeploymentFromEnv(config.prepare.repository);
+const trusted = await trustedPlanDeploymentFromEnv(config);
 const runtime = new GatewayRuntime(config,
-  trusted ? {approvedPlans:trusted.plans} : {});
+  trusted ? {
+    approvedPlans:trusted.plans,
+    planningRevisions:trusted.planningRevisions
+  } : {});
 const server = createGatewayHttpServer(runtime);
 
 // Private control must start securely BEFORE public provider-facing HTTP.
