@@ -379,3 +379,34 @@ R5 **NO-GO**, never executed during this batch. No merge to `main`.
 **Rollback:** revert this batch to
 `ef6bad3a20de775c58c298a3487433d1e746407a`. Exact-SHA offline
 cumulative and dedicated authority CI results are required to certify it.
+
+### R6 cleanup batch 9 — old Engineer fixed-root method isolated
+
+**Risk:** the canonical `SoftwareEngineerAuthorityBootstrap` class
+still exposed `issueOrchestratorRoot()`, using the historical frozen
+Account Suspension `rootAuthorityPermissions()` union. This is
+not an Engineer-reviewed permission subset.
+
+**Implementation:** Move this method (including its input validation,
+Adapter endpoint, JSON payload and response handling, unchanged)
+to `LegacySoftwareEngineerAuthorityBootstrap`, a subclass which
+stores the original private Adapter config for the old request. The
+canonical Engineer class now exposes only
+`issueScopedOrchestratorRoot()` and `revokeRoot()`.
+The explicit `legacy-authority-client.ts` exports the historical
+subclass and static-template child issuer. Four legacy scripts import
+the subclass under their original local bootstrap name, leaving
+call sites and provider semantics unchanged. The fixed-root unit test
+uses the subclass; the scoped Engineer and revocation tests keep the
+canonical class.
+
+**Regressions:** test that the trusted prototype cannot issue the
+old broad root, while historical roots and child templates remain
+testable; a separate checkout test verifies the API and all four
+historical script imports. Do not delete old sources.
+
+**Scope:** no change to signed plan, Rust DC/VP, Adapter credentials,
+OPA, Gateway, ADK/A2A, Merge policy or provider checks. The historical
+paid Gemini workflow is still **not R5** and was not executed.
+Require exact-SHA cumulative/offline authority and A2A CI success.
+Rollback to `640b672cb085f5ecd0d997c7718333f923597a77`.

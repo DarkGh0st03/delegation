@@ -226,6 +226,16 @@ export class SoftwareEngineerAuthorityBootstrap {
     }
   }
 
+}
+
+/** @deprecated Old fixed-scope Account Suspension root, NEVER canonical. */
+export class LegacySoftwareEngineerAuthorityBootstrap
+  extends SoftwareEngineerAuthorityBootstrap {
+  readonly #legacyConfig: AdapterClientConfig;
+  constructor(config: AdapterClientConfig) {
+    super(config);
+    this.#legacyConfig=config;
+  }
   /**
    * @deprecated Historical Account Suspension root with a frozen, broad
    * permission matrix. ONLY for the legacy experiment and its regression.
@@ -237,7 +247,7 @@ export class SoftwareEngineerAuthorityBootstrap {
   ): Promise<IssuedDelegationCredential> {
     validateCommon(input);
 
-    return postCredential(this.#config, "/v1/credentials/root", {
+    return postCredential(this.#legacyConfig, "/v1/credentials/root", {
       credential_id: input.credential_id,
       delegatee: "orchestrator",
       valid_from: input.valid_from,
@@ -246,6 +256,7 @@ export class SoftwareEngineerAuthorityBootstrap {
       permissions: rootAuthorityPermissions()
     });
   }
+
 }
 
 /** @deprecated Legacy static role/skill authority: use signed Task-scoped issuer. */

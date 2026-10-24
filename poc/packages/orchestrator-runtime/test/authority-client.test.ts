@@ -10,8 +10,10 @@ import {
   SoftwareEngineerAuthorityBootstrap,
   type IssuedDelegationCredential
 } from "../src/index.ts";
-import {DeterministicOrchestratorAuthorityIssuer}
-  from "../src/legacy-authority-client.ts";
+import {
+  DeterministicOrchestratorAuthorityIssuer,
+  LegacySoftwareEngineerAuthorityBootstrap
+} from "../src/legacy-authority-client.ts";
 import * as canonicalOrchestratorApi from "../src/index.ts";
 
 function vc(id: string, sub: string, permissions: unknown[]): IssuedDelegationCredential {
@@ -37,7 +39,7 @@ const status = {
 
 test("Engineer bootstrap always sends the exact frozen root authority to the Adapter", async () => {
   const bodies: unknown[] = [];
-  const client = new SoftwareEngineerAuthorityBootstrap({
+  const client = new LegacySoftwareEngineerAuthorityBootstrap({
     adapterBaseUrl: "http://adapter.local",
     bearerToken: "engineer-token",
     fetchFn: async (_input, init) => {
@@ -262,4 +264,15 @@ test("R6 canonical Orchestrator cannot import broad static-template child issuer
     "function");
   // The historical module is still tested through its explicitly named path.
   assert.equal(typeof DeterministicOrchestratorAuthorityIssuer,"function");
+});
+
+test("R6 Engineer canonical API excludes the frozen-root issuance method",()=>{
+  const canonical=SoftwareEngineerAuthorityBootstrap.prototype as unknown as Record<string,unknown>;
+  const legacy=LegacySoftwareEngineerAuthorityBootstrap.prototype as unknown as Record<string,unknown>;
+  assert.equal("issueOrchestratorRoot" in canonical,false);
+  assert.equal(typeof canonical.issueScopedOrchestratorRoot,"function");
+  assert.equal(typeof canonical.revokeRoot,"function");
+  assert.equal(typeof legacy.issueOrchestratorRoot,"function");
+  assert.equal(Object.hasOwn(canonicalOrchestratorApi,"LegacySoftwareEngineerAuthorityBootstrap"),false);
+  assert.equal(Object.hasOwn(canonicalOrchestratorApi,"DeterministicOrchestratorAuthorityIssuer"),false);
 });

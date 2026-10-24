@@ -557,3 +557,26 @@ test("R6 historical static issuer is not part of canonical exports or trusted co
     "No new runtime may depend on the frozen historical child issuer"
   );
 });
+
+
+test("R6 fixed-root method exists only on historical Engineer subclass",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const root=new URL("../../../",import.meta.url);
+  const read=p=>readFileSync(new URL(p,root),"utf8");
+  const code=read("poc/packages/orchestrator-runtime/src/authority-client.ts");
+  const start=code.indexOf("export class SoftwareEngineerAuthorityBootstrap");
+  const end=code.indexOf("export class LegacySoftwareEngineerAuthorityBootstrap");
+  assert.ok(start>=0&&end>start);
+  assert.equal(code.slice(start,end).includes("issueOrchestratorRoot("),false);
+  assert.equal(code.slice(start,end).includes("issueScopedOrchestratorRoot("),true);
+  assert.equal(code.slice(start,end).includes("revokeRoot("),true);
+  assert.equal(code.slice(end).includes("async issueOrchestratorRoot("),true);
+  assert.equal(read("poc/packages/orchestrator-runtime/src/index.ts")
+    .includes("LegacySoftwareEngineerAuthorityBootstrap"),false);
+  assert.equal(read("poc/packages/orchestrator-runtime/src/legacy-authority-client.ts")
+    .includes("LegacySoftwareEngineerAuthorityBootstrap"),true);
+  for(const name of ["a2a-production-coordinator-mcp-gemini-live.mjs","a2a-production-coordinator-mcp-isolated-real-positive.mjs","a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs","a2a-production-coordinator-mcp-isolated-smoke.mjs"]){
+    assert.equal(read("poc/packages/agent-runtime/scripts/"+name)
+      .includes("LegacySoftwareEngineerAuthorityBootstrap as SoftwareEngineerAuthorityBootstrap"),true);
+  }
+});

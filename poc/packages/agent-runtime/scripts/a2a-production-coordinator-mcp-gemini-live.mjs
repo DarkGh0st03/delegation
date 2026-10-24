@@ -34,12 +34,13 @@ import {resolveRoleGeminiConfiguration,buildGeminiGenerationConfig} from "../../
 import {
   DelegatedA2ARoleRunner,
   OrchestratorProtectedGatewayClient,
-  SoftwareEngineerAuthorityBootstrap,
   GiteaMergeReadinessVerifier,MergeReadinessDenied
 } from "../../orchestrator-runtime/src/index.ts";
 /** Historical static-template child issuance: never canonical approved DAG. */
-import {DeterministicOrchestratorAuthorityIssuer}
-  from "../../orchestrator-runtime/src/legacy-authority-client.ts";
+import {
+  DeterministicOrchestratorAuthorityIssuer,
+  LegacySoftwareEngineerAuthorityBootstrap as SoftwareEngineerAuthorityBootstrap
+} from "../../orchestrator-runtime/src/legacy-authority-client.ts";
 // Historical Account Suspension-specific check is deliberately not a
 // public canonical Planner/Execution preflight contract.
 import {checkAccountSuspensionPreflight} from
