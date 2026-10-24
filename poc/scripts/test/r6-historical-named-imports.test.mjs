@@ -91,3 +91,26 @@ test("R6 historical audit pins four A2A cohorts and manual merge",()=>{
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/human-merge.mjs")));
 });
+
+
+test("R6 finds a legitimate export after regex with quotes and template delimiter",t=>{
+  const f=fixture(t,{
+    [entry]:"import {checkPreflight} from '../src/preflight.ts';",
+    "poc/packages/agent-runtime/src/preflight.ts":
+      "const path=String.raw"+String.fromCharCode(96)+"hello"+String.fromCharCode(96)+";\n"+
+      "const match=/[\"'"+String.fromCharCode(96)+"]route/gu;\n"+
+      "export function checkPreflight() {return path.length>0&&match.test('route');}"
+  });
+  assert.deepEqual(checkHistoricalRuntimeNamedImports(
+    f.root,f.paths,[entry]).errors,[]);
+});
+
+test("R6 runtime exports must not match non-statement quoted examples",t=>{
+  const f=fixture(t,{
+    [entry]:"import {Phantom} from '../src/example.ts';",
+    "poc/packages/agent-runtime/src/example.ts":
+      "const note=\"example: export class Phantom {}\";\nexport const Valid=1;"
+  });
+  assert.equal(checkHistoricalRuntimeNamedImports(f.root,f.paths,[entry])
+    .errors[0].reason,"missing runtime named export");
+});

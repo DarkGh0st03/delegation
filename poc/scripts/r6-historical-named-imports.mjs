@@ -63,13 +63,17 @@ function hasValueExport(file,name,visited=new Set()){
   const key=file+"\0"+name;
   if(visited.has(key))return false;
   const seen=new Set(visited);seen.add(key);
-  const text=withoutComments(readFileSync(file,"utf8"));
+  // The source may contain regex literals with quote/backtick characters.
+  // Masking with an incomplete JS lexer can erase subsequent real exports.
+  // Match declarations at statement starts in raw source instead; never
+  // treat an unanchored string or prose mention as an exported value.
+  const text=readFileSync(file,"utf8");
   const escaped=name.replace(/[$]/gu,"\\$&");
   const direct=new RegExp(
-    "\\bexport\\s+(?:(?:async|abstract)\\s+)*(?:class|function|const|let|var|enum)\\s+"+
+    "(?:^|[;\\n])\\s*export\\s+(?:(?:async|abstract)\\s+)*(?:class|function|const|let|var|enum)\\s+"+
     escaped+"(?![\\w$])","u");
   if(direct.test(text))return true;
-  const named=/\bexport\s+(type\s+)?\{([^{}]*)\}(?:\s*from\s*(["'])([^"']+)\3)?/gu;
+  const named=/(?:^|[;\n])\s*export\s+(type\s+)?\{([^{}]*)\}(?:\s*from\s*(["'])([^"']+)\3)?/gu;
   for(const m of text.matchAll(named)){
     if(m[1])continue;
     for(const raw of m[2].split(",")){
@@ -88,7 +92,7 @@ function hasValueExport(file,name,visited=new Set()){
       }
     }
   }
-  const star=/\bexport\s+\*\s+from\s*(["'])(\.[^"']+)\1/gu;
+  const star=/(?:^|[;\n])\s*export\s+\*\s+from\s*(["'])(\.[^"']+)\1/gu;
   for(const m of text.matchAll(star))
     if(hasValueExport(resolve(dirname(file),m[2]),name,seen))
       return true;

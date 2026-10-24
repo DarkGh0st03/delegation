@@ -1184,3 +1184,34 @@ native Rust, Adapter, Gateway, OPA, child issuance or ADK behavior.
 `3a21c964c8ade967ea07e1fe738ad1417476d800`; require
 five successful cumulative offline jobs for the resulting
 exact commit before certifying.
+
+### R6 batch 25 correction — avoid masking real exports after regex syntax
+
+The initial exact-SHA runtime export audit reported
+`checkAccountSuspensionPreflight` missing, despite the function
+being visibly exported by `account-suspension-preflight.ts`.
+The target contains a regex character class with quote and
+backtick characters before the exported function. The audit's
+minimal comment/template masking incorrectly consumed the
+subsequent `export function`, producing a **false positive**.
+The Gateway/Planning production code was not faulty.
+
+**Fix:** retain comment/template filtering for the selected
+historical entrypoint import statements, which occur in their
+module headers. For resolving exported values from referenced
+modules, use statement-anchored declaration and named/star
+re-export patterns on the raw source; this avoids pretending the
+minimal scanner fully tokenizes JavaScript regex literals.
+Add tests for a real named export after quoted regex/template
+syntax and for a quoted example that must not resolve a named
+runtime export. No importer permission is relaxed.
+
+**Limit:** static anchored matching is deliberately not an
+ECMAScript parser and can still be conservative around complex
+multiline comments or computed re-exports. The checker is
+regression assistance; actual module linking remains a separate
+required runtime test where safe. Historical Gemini cannot be
+imported or launched just to test its bindings.
+
+Repeat the full five-job exact-SHA cumulative CI before
+certifying batch 25. Leave `main` and R5 unchanged.
