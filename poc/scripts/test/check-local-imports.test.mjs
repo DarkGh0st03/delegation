@@ -1014,7 +1014,7 @@ test("R6 Account Suspension 11-file scope checker rejects new launchers or sourc
   ].sort());
 });
 
-test("R6 11-file historical reference checker retains only its four audited CI callers",async()=>{
+test("R6 11-file historical reference checker retains its six audited CI callers",async()=>{
   const {readFileSync}=await import("node:fs");
   const {join}=await import("node:path");
   const {fileURLToPath}=await import("node:url");
@@ -1032,7 +1032,7 @@ test("R6 11-file historical reference checker retains only its four audited CI c
   assert.ok(checker.includes("ENGINEER_TO_ORCHESTRATOR_ROOT_AUTHORITY"));
   assert.ok(checker.includes("verified,11"));
   const expected=[...R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS].sort();
-  assert.equal(expected.length,4);
+  assert.equal(expected.length,6);
   for(const workflow of expected){
     const content=readFileSync(join(root,workflow),"utf8");
     assert.ok(content.includes(target),

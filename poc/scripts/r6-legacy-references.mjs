@@ -267,7 +267,9 @@ export const R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS=Object.freeze([
   ".github/workflows/cumulative-refactoring-offline.yml",
   ".github/workflows/shared-mcp-production-coordinator.yml",
   ".github/workflows/shared-mcp-real-positive-e2e.yml",
-  ".github/workflows/gemini-paid-shared-mcp-final.yml"
+  ".github/workflows/gemini-paid-shared-mcp-final.yml",
+  ".github/workflows/disposable-simulated-approval-merge.yml",
+  ".github/workflows/poc-baseline.yml"
 ]);
 export function unexpectedHistoricalReferenceScopeCallers(
   inventory,allowed=R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS

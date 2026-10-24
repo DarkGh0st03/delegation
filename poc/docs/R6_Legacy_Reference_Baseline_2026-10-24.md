@@ -1067,3 +1067,29 @@ scope, permission, EVM status bit, model request or Gitea merge.
 exact commit. `main` remains unchanged and R5 Gemini stays NO-GO.
 Rollback this batch to `4c84e954f00e5a0dd80f94c2c6a5758050582a11`
 if any unrecognized, legitimate historical command is found.
+
+### R6 batch 23 correction — six historical workflow callers, not four
+
+The first batch-23 exact-SHA CI `40094663412` failed the
+new source-reference gate before running most other checks.
+The audit correctly identified **two additional real, configured**
+invocations of `check-account-suspension-reference-scope.mjs`:
+`.github/workflows/disposable-simulated-approval-merge.yml`
+and `.github/workflows/poc-baseline.yml`. Both contain a concrete
+`run: node --experimental-strip-types ...` command for the
+11-file Account Suspension scope check. They were inadvertently
+omitted from the earlier inventory, not unauthorized new behavior.
+
+**Correction:** extend the allowlist to these two known offline
+regression workflows (six legitimate configured callers total) and
+change the checkout regression expectation from four to six.
+Keep every invariant checking the fixed **11 IAM files**, exact
+write permissions, root containment, exclusive Test Runner rights
+and detection of any newly introduced source import or
+seventh configured launcher. Do not delete or rewrite the two
+workflows, do not add canonical ADK consumers, and never run the
+historical billed Gemini workflow as R5.
+
+The original failed CI is retained as evidence of the safety gate.
+Certify only after an entirely green 5/5 cumulative run for the
+new exact commit. No paid Gemini calls or changes to `main`.
