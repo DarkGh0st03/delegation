@@ -890,3 +890,27 @@ ledger are modified. No paid Gemini calls, no main merge and no
 change to signed-plan/DAG, Gateway, Rust DC/VP or OPA semantics.
 Require exact-SHA cumulative offline CI 5/5 before certifying.
 Rollback to `e826a2a70077f5ee55589b9040a8abc000a1b1bc`.
+
+### R6 batch 19 follow-up — update previous cohort fixture to reflect Gateway admission
+
+The first batch-19 cumulative run `40090083967` detected a
+stale **test fixture** in the batch-18 scope test: it intentionally
+placed a broken import in `poc/apps/gateway/src/unrelated.ts` as
+an out-of-scope example. After adding Gateway to the checked cohort,
+the scanner correctly counted this file as a sixth input and the
+old test's `checkedFiles === 5` assertion failed. The production
+type contract scan and the new Gateway positive/negative fixtures
+had passed their preliminary gate.
+
+**Correction:** replace the obsolete Gateway-exclusion example with
+the still-excluded `poc/apps/test-runner-controller/src/unrelated.ts`;
+rename the test to explain that it is the unrelated Runner workspace
+that remains outside the scope. The scanner and the requirements
+`checkedFiles === 5`, `checkedImports === 6` and empty errors
+are not weakened. The separate Gateway tests continue to require
+both successful type resolution and fail-closed detection of
+missing exports or targets.
+
+No production code or runtime permission changes. The original
+failed CI must remain recorded; certify only after a new exact-SHA
+cumulative five-job CI is fully green.

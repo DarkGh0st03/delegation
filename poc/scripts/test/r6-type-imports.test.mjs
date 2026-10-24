@@ -45,7 +45,7 @@ test("R6 skips comments, templates and quoted fake import statements",t=>{
 });
 
 
-test("R6 expands named type audit to Agent Runtime and A2A host, but no other workspaces",t=>{
+test("R6 includes Agent Runtime and A2A but excludes unrelated Runner workspace",t=>{
   const root=mkdtempSync(join(tmpdir(),"r6-cross-workspace-"));
   t.after(()=>rmSync(root,{recursive:true,force:true}));
   const entries={
@@ -59,7 +59,7 @@ test("R6 expands named type audit to Agent Runtime and A2A host, but no other wo
       "import type {AgentContext} from '../../../packages/agent-runtime/src/index.ts';",
     "poc/apps/a2a-agent/test/bootstrap.test.ts":
       "import type {TaskKind} from '../../../packages/agent-runtime/src/contracts.ts';",
-    "poc/apps/gateway/src/unrelated.ts":
+    "poc/apps/test-runner-controller/src/unrelated.ts":
       "import type {Missing} from './not-yet-checked.ts';"
   };
   for(const [file,text] of Object.entries(entries)){
