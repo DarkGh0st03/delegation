@@ -488,18 +488,32 @@ import, re-export, dynamically load with literal paths or configure a
 direct launcher for `permission-templates.ts` without failing
 `audit:r6:references`.
 
-**Historical evidence:** `legacy-authority-client.ts` still
-intentionally uses the frozen role/skill matrix, as do historical
-regression fixtures. The scanner retains their observed references;
-it does not assert deletion safety or automatically prevent
-computed dynamic imports, external loaders or direct imports by
-other packages. The synthetic tests demonstrate blocked type-only,
-static re-export, CommonJS and dynamic paths while allowing the
-named historical class module. The checkout test exercises the actual
-Git-tracked canonical dependency graph.
+**Historical evidence and parser limit:**
+`legacy-authority-client.ts` intentionally uses the frozen role/skill
+matrix, as do historical regression fixtures. The AST-based scanner
+sees static *runtime* edges and literal CommonJS/dynamic edges but
+`stripTypeScriptTypes` erases type-only imports before
+`SourceTextModule` parses the dependencies. Consequently a separate
+**conservative tracked-source textual assertion** checks every
+`src/trusted-*.ts`, the canonical index, Engineer client and private
+Adapter transport for ANY mention of `permission-templates.ts`,
+including type-only imports. Such a comment mention is intentionally
+reviewed as a possible false positive instead of silently passing.
+The scanner does not establish deletion safety or catch computed
+dynamic imports and external loaders. Synthetic tests verify the
+runtime graph limitation and protections; the checkout test checks
+the actual Git-tracked canonical source tree.
 
 **Security impact:** no runtime code path, native Core Rust DC/VP,
 OPA policy, Engineer-signed approvals or Adapter request changed.
 This is a type-only import migration and a protective R6 regression
 gate. Require full exact-SHA offline CI, with no paid Gemini call.
 Rollback to `5e3cfde8dd224a7f79d5396c621918ed6d5d0bc7`.
+
+**Test correction before certification:** the initial batch-11 test
+had expected a type-only import to appear in the ESM parser's runtime
+dependency graph. A direct Node 22.16 check established that
+`stripTypeScriptTypes` erases such imports. The test now explicitly
+requires their absence from the graph, and the separate conservative
+tracked-source check covers type-only imports in the protected module
+set. This is not a relaxation of native authorization checks.

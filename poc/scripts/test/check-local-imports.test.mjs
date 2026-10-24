@@ -614,7 +614,7 @@ test("R6 canonical root issuance has no runtime dependency on fixed Account Susp
 });
 
 
-test("R6 frozen permission template guard blocks typed, dynamic and re-exported trusted edges",async t=>{
+test("R6 frozen template graph blocks runtime imports and re-exports",async t=>{
   const target="poc/packages/orchestrator-runtime/src/permission-templates.ts";
   const src="poc/packages/orchestrator-runtime/src/";
   const files={
@@ -638,12 +638,14 @@ test("R6 frozen permission template guard blocks typed, dynamic and re-exported 
     =await import("../r6-legacy-references.mjs");
   const inventory=collectLegacyReferences(root,Object.keys(files),{candidates:[target]});
   const found=unexpectedTrustedTemplateCallers(inventory);
+  // Type-only imports vanish under Node stripTypeScriptTypes before
+  // SourceTextModule parsing; a separate tracked-text check below covers them.
   assert.deepEqual(found.map(x=>x.source).sort(),[
-    src+"trusted-dag.ts",
     src+"trusted-dynamic.ts",
     src+"authority-client.ts",
     src+"authority-adapter-transport.ts"
   ].sort());
+  assert.equal(found.some(x=>x.source===src+"trusted-dag.ts"),false);
   assert.equal(found.some(x=>x.source===src+"legacy-authority-client.ts"),false);
   assert.equal(found.some(x=>x.source===src+"trusted-comment.ts"),false);
   assert.equal(found.some(x=>x.source==="notes.md"),false);
@@ -652,9 +654,29 @@ test("R6 frozen permission template guard blocks typed, dynamic and re-exported 
 test("R6 signed Execution imports neutral permission type without frozen IAM matrix",async()=>{
   const {readFileSync}=await import("node:fs");
   const {fileURLToPath}=await import("node:url");
+  const {join}=await import("node:path");
   const {collectLegacyReferences,gitTrackedFiles,unexpectedTrustedTemplateCallers}
     =await import("../r6-legacy-references.mjs");
   const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const tracked=gitTrackedFiles(root);
+  // SourceTextModule sees runtime dependencies, not TS type-only imports.
+  // Fail closed on any textual mention in trusted/canonical source files:
+  // comments would also require a deliberate review rather than silently
+  // permitting a new type import through to frozen IAM authorization types.
+  const dir="poc/packages/orchestrator-runtime/src/";
+  const named=new Set([
+    dir+"index.ts",
+    dir+"authority-client.ts",
+    dir+"authority-adapter-transport.ts"
+  ]);
+  for(const path of tracked.filter(p=>named.has(p)||
+    (p.startsWith(dir+"trusted-")&&p.endsWith(".ts")))){
+    assert.doesNotMatch(
+      readFileSync(join(root,path),"utf8"),
+      /permission-templates\.ts/u,
+      "Canonical source contains a frozen IAM template reference: "+path
+    );
+  }
   const source=readFileSync(new URL(
     "poc/packages/orchestrator-runtime/src/trusted-execution-coordinator.ts",
     new URL("../../../",import.meta.url)),"utf8");
@@ -662,7 +684,7 @@ test("R6 signed Execution imports neutral permission type without frozen IAM mat
   assert.doesNotMatch(source,/from "\.\/permission-templates\.ts"/u);
   assert.deepEqual(
     unexpectedTrustedTemplateCallers(
-      collectLegacyReferences(root,gitTrackedFiles(root))),[],
+      collectLegacyReferences(root,tracked)),[],
     "Trusted approved-plan code must not import Account Suspension templates"
   );
 });
