@@ -1,19 +1,10 @@
 import type { SpecializedAgentRole } from "@thesis/agent-runtime";
 
-export type TemplateOperation =
-  | "read_repository"
-  | "list_directory"
-  | "read_file"
-  | "update_file"
-  | "create_file"
-  | "create_branch"
-  | "create_pull_request"
-  | "run_tests";
-
-export interface DelegatedPermission {
-  resource: string;
-  operation: TemplateOperation;
-}
+import type {DelegatedPermission,TemplateOperation}
+  from "./delegated-permission.ts";
+// Legacy callers importing from the template module retain type compatibility.
+export type {DelegatedPermission,TemplateOperation}
+  from "./delegated-permission.ts";
 
 export const POC_REPOSITORY = Object.freeze({
   authority: "gitea.local",

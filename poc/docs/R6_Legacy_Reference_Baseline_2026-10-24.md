@@ -277,3 +277,41 @@ Rust/OPA/Engineer enforcement and do not run paid Gemini.
 **Rollback:** revert to `4834fceef57055914105790b912e7bfd3ca9d27c`
 on the refactoring branch. Certify only after 5/5 cumulative offline CI
 jobs complete successfully on this exact commit.
+
+### R6 cleanup batch 7 — extract permission type from frozen IAM Console matrix
+
+**Finding:** `permission-templates.ts` contains hard-coded Account
+Suspension file/branch and skill matrices. Its broad root and
+role-template values still support historical
+`SoftwareEngineerAuthorityBootstrap.issueOrchestratorRoot` and
+`DeterministicOrchestratorAuthorityIssuer` and their regression suites.
+Those old methods remain unchanged and may not be used as the canonical
+Engineer-approved operational path.
+
+**Refactor:** move the identical `TemplateOperation` union and
+`DelegatedPermission` interface to the new,
+authorization-neutral `delegated-permission.ts`. The old template
+module re-exports those two **types** for legacy compatibility, while
+the public Orchestrator runtime barrel exports only the neutral types,
+**not** the static permission matrix. The Engineer trusted root,
+Task-scoped child issuer, and shared Adapter client use the new type
+directly. The historical `permission-templates.test.ts` obtains its
+frozen IAM Console fixtures from an explicit legacy import.
+
+**Security:** only type-import locations and API exports change; signed
+plan validation, attenuation, native Rust/DC/VP, Rego OPA and actual
+Gateway provider effects are unchanged. Static `rootAuthorityPermissions`
+is retained for the historical path, NOT promoted into Planning/Execution.
+The new checkout regression prevents the broad permission matrix from
+being re-exported by the canonical barrel.
+
+**Evidence/limits:** full five-job exact-SHA offline CI is required
+before this batch is certified. Deletion of `permission-templates.ts`,
+`authority-client.ts`, `orchestrator-gateway-client.ts` or
+`merge-readiness.ts` would be unsafe: the last two have active
+trusted Planning or human merge dependencies. No paid Gemini inference
+and no source main merge.
+
+**Rollback:** revert this commit to parent
+`760428162f7ee18d65f5d35fd502c99c4dd2780a` on the refactoring
+branch.

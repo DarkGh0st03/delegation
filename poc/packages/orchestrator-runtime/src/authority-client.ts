@@ -1,9 +1,9 @@
 import type { SpecializedAgentRole } from "@thesis/agent-runtime";
 import {
   resolveDelegationTemplate,
-  rootAuthorityPermissions,
-  type DelegatedPermission
+  rootAuthorityPermissions
 } from "./permission-templates.ts";
+import type {DelegatedPermission} from "./delegated-permission.ts";
 
 type FetchLike = typeof fetch;
 

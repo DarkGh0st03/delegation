@@ -16,7 +16,7 @@ import type {AuthenticatedPlanStore} from
   "../../../apps/gateway/src/approved-execution-plans.ts";
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 import type {ChildIssuanceInput,IssuedDelegationCredential} from "./authority-client.ts";
-import type {DelegatedPermission} from "./permission-templates.ts";
+import type {DelegatedPermission} from "./delegated-permission.ts";
 
 type FetchLike=typeof fetch;
 type ScopedInput=ChildIssuanceInput;

@@ -10,7 +10,7 @@ import {
   POC_REPOSITORY,
   resolveDelegationTemplate,
   templatePermissionKey
-} from "../src/index.ts";
+} from "../src/permission-templates.ts";
 import { SPECIALIZED_AGENT_PROFILES } from "@thesis/agent-runtime";
 import {
   canonicalBranchUri,

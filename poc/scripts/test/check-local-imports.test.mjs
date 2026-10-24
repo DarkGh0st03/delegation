@@ -476,3 +476,29 @@ test("R6 current checkout exposes no historical workflow through canonical barre
     "Only the sequential coordinator and focused test may consume workflow.ts"
   );
 });
+
+
+test("R6 separates generic permission types from frozen Account Suspension templates",async()=>{
+  const {readFileSync,existsSync}=await import("node:fs");
+  const root=new URL("../../../",import.meta.url);
+  const get=p=>readFileSync(new URL(p,root),"utf8");
+  const dir="poc/packages/orchestrator-runtime/src/";
+  const entry=get(dir+"index.ts");
+  assert.match(entry,/export \* from "\.\/delegated-permission\.ts"/u);
+  assert.doesNotMatch(entry,/export \* from "\.\/permission-templates\.ts"/u);
+  assert.ok(existsSync(new URL(dir+"delegated-permission.ts",root)));
+  const legacy=get(dir+"permission-templates.ts");
+  assert.match(legacy,/from "\.\/delegated-permission\.ts"/u);
+  assert.match(legacy,/export type \{DelegatedPermission,TemplateOperation\}/u);
+  for(const path of [
+    "authority-client.ts",
+    "trusted-engineer-authority.ts",
+    "trusted-approved-child-issuer.ts"
+  ]){
+    const code=get(dir+path);
+    assert.match(code,/import type \{DelegatedPermission\} from "\.\/delegated-permission\.ts"/u);
+  }
+  const legacyTest=get("poc/packages/orchestrator-runtime/test/permission-templates.test.ts");
+  assert.match(legacyTest,/from "\.\.\/src\/permission-templates\.ts"/u);
+  // No executable module needs to be loaded for this API boundary assertion.
+});

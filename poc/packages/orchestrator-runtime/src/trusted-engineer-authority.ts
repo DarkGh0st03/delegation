@@ -19,7 +19,7 @@ import {assertApprovedPlanScope,planDigest}
 import type {
   CredentialStatusInput, IssuedDelegationCredential,
 } from "./authority-client.ts";
-import type {DelegatedPermission} from "./permission-templates.ts";
+import type {DelegatedPermission} from "./delegated-permission.ts";
 
 export interface TrustedPlanningSnapshot {
   session_id:string;
