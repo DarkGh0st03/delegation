@@ -28,6 +28,103 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   ".github/workflows/shared-mcp-real-positive-e2e.yml"
 ]);
 const TEXT_SOURCE=/\.(?:js|mjs|cjs|ts|tsx|json|ya?ml|sh|toml|md|Dockerfile)$/u;
+
+/** A configured command mention is not automatically executed by a job. */
+function configuredMatch(command,target){
+  const leaf=target.split("/").at(-1);
+  return command.includes(target)||command.includes(leaf);
+}
+function workflowCommands(contents){
+  const lines=contents.split("\n");
+  const collected=[];
+  for(let i=0;i<lines.length;i++){
+    const match=/^(\s*)(?:-\s*)?run:\s*(.*)$/u.exec(lines[i]);
+    if(!match)continue;
+    const indent=match[1].length;
+    const command=[match[2]];
+    if(/^(?:\||>)(?:[+-])?\s*$/u.test(match[2])){
+      command.length=0;
+      for(let j=i+1;j<lines.length;j++){
+        const line=lines[j];
+        if(line.trim()===""){command.push("");continue;}
+        const space=/^\s*/u.exec(line)[0].length;
+        if(space<=indent){i=j-1;break;}
+        if(!line.trimStart().startsWith("#"))
+          command.push(line.trim());
+        if(j===lines.length-1)i=j;
+      }
+    }
+    collected.push(command.join("\n"));
+  }
+  return collected;
+}
+/**
+ * Record configured script/command references and one-hop npm workflow ->
+ * workspace script chains. Never execute YAML, shell, package scripts, or
+ * run the referenced files. Do NOT treat an absent match as dead-code proof.
+ */
+export function collectConfiguredEntrypoints(root,tracked,options={}){
+  const candidates=options.candidates??R6_LEGACY_CANDIDATES;
+  const result=new Map(candidates.map(x=>[x,[]]));
+  const files=[...new Set(tracked)].sort();
+  const scripts=[];
+  for(const path of files.filter(p=>p.endsWith("package.json"))){
+    const abs=resolve(root,path);
+    if(!existsSync(abs))continue;
+    const manifest=JSON.parse(readFileSync(abs,"utf8"));
+    for(const [name,command] of Object.entries(manifest.scripts??{})){
+      if(typeof command!=="string")continue;
+      scripts.push({path,name,command,packageName:manifest.name??""});
+      for(const target of candidates)if(configuredMatch(command,target))
+        result.get(target).push(Object.freeze({
+          source:path,kind:"npm-script",entrypoint:name
+        }));
+    }
+  }
+  for(const path of files){
+    if(!/^(?:\.github\/workflows\/.*\.ya?ml|.*\.sh|.*docker-compose\.ya?ml)$/u.test(path))
+      continue;
+    const abs=resolve(root,path);
+    if(!existsSync(abs))continue;
+    const text=readFileSync(abs,"utf8");
+    const commands=path.startsWith(".github/workflows/")
+      ?workflowCommands(text)
+      :text.split("\n").filter(x=>!x.trimStart().startsWith("#")).join("\n");
+    for(const command of (Array.isArray(commands)?commands:[commands])){
+      for(const target of candidates){
+        if(configuredMatch(command,target))
+          result.get(target).push(Object.freeze({
+            source:path,
+            kind:path.startsWith(".github/workflows/")?"github-actions-command":
+              path.endsWith(".sh")?"shell-script-command":"compose-config",
+            entrypoint:target.split("/").at(-1)
+          }));
+      }
+      if(!path.startsWith(".github/workflows/"))continue;
+      // Resolve explicit npm run steps to workspace scripts, preserving
+      // the -w workspace selector. Unscoped workspaces are ambiguous and
+      // intentionally omitted, NOT classified as unreferenced.
+      const pattern=/\bnpm\s+(?:--prefix\s+\S+\s+)?run\s+([\w:.-]+)(?:\s+-w\s+([^\s;|&]+))?/gu;
+      for(const call of command.matchAll(pattern)){
+        const scriptName=call[1],workspace=call[2];
+        const qualified=scripts.filter(x=>x.name===scriptName&&
+          (workspace?workspace===x.packageName:
+           x.path==="poc/package.json"));
+        for(const script of qualified)for(const target of candidates){
+          if(!configuredMatch(script.command,target))continue;
+          result.get(target).push(Object.freeze({
+            source:path,kind:"github-actions-via-npm-script",
+            entrypoint:(script.packageName||script.path)+":"+script.name
+          }));
+        }
+      }
+    }
+  }
+  return Object.freeze(candidates.map(target=>Object.freeze({
+    target,configuredCallers:Object.freeze(result.get(target))
+  })));
+}
+
 function type(path){
   if(path.startsWith(".github/workflows/"))return "workflow";
   if(path.endsWith("package.json"))return "package-script-or-config";
@@ -44,6 +141,8 @@ export function collectLegacyReferences(root,tracked,options={}){
     "poc/scripts/r6-legacy-references.mjs",
     "poc/scripts/test/check-local-imports.test.mjs"
   ]);
+  const configured=new Map(collectConfiguredEntrypoints(root,tracked,{candidates})
+    .map(x=>[x.target,x.configuredCallers]));
   const seen=new Map(candidates.map(path=>[path,[]]));
   const staticImporters=new Map(candidates.map(path=>[path,[]]));
   const candidatesByAbsolutePath=new Map(candidates.map(path=>[
@@ -98,7 +197,8 @@ export function collectLegacyReferences(root,tracked,options={}){
       target,
       exists:existsSync(resolve(root,target)),
       references:Object.freeze(seen.get(target)),
-      staticImporters:Object.freeze(staticImporters.get(target))
+      staticImporters:Object.freeze(staticImporters.get(target)),
+      configuredCallers:configured.get(target)
     })))
   });
 }
@@ -122,7 +222,8 @@ function main(){
       candidate.target,
       "runtime/build text refs="+live.length,
       "docs text refs="+(candidate.references.length-live.length),
-      "proven static importers="+candidate.staticImporters.length
+      "proven static importers="+candidate.staticImporters.length,
+      "configured commands="+candidate.configuredCallers.length
     ].join(" | "));
   }
   if(result.candidates.some(x=>!x.exists))process.exitCode=1;

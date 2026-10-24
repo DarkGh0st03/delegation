@@ -178,3 +178,78 @@ test("R6 AST graph ignores erased TS type-only imports",async t=>{
     ["src/real.ts"]);
   assert.equal(result.candidates[0].references.length,2);
 });
+
+
+test("R6 resolves configured npm scripts and workflow npm -w callers without executing commands",async t=>{
+ const root=fixture(t,{
+   "poc/packages/agent-runtime/package.json":JSON.stringify({
+     name:"@thesis/agent-runtime",scripts:{
+       "history:smoke":"node ./scripts/old-coordinator.mjs"
+     }
+   }),
+   "poc/packages/agent-runtime/scripts/old-coordinator.mjs":
+     "throw Error('this file must not be executed')",
+   ".github/workflows/calls.yml":[
+     "name: Historical workflow",
+     "on:",
+     "  workflow_dispatch:",
+     "jobs:",
+     "  run:",
+     "    steps:",
+     "      - name: historical",
+     "        run: |",
+     "          npm --prefix poc run history:smoke -w @thesis/agent-runtime",
+     "      - name: direct",
+     "        run: node poc/packages/agent-runtime/scripts/old-coordinator.mjs"
+   ].join("\n"),
+   "notes.md":"old-coordinator.mjs is described but not invoked"
+ });
+ const {collectConfiguredEntrypoints}=await import("../r6-legacy-references.mjs");
+ const files=[
+   "poc/packages/agent-runtime/package.json",
+   "poc/packages/agent-runtime/scripts/old-coordinator.mjs",
+   ".github/workflows/calls.yml","notes.md"
+ ];
+ const [item]=collectConfiguredEntrypoints(root,files,{
+   candidates:["poc/packages/agent-runtime/scripts/old-coordinator.mjs"]
+ });
+ assert.deepEqual(item.configuredCallers.map(x=>x.kind).sort(),[
+   "github-actions-command","github-actions-via-npm-script","npm-script"
+ ]);
+ assert.ok(item.configuredCallers.some(x=>
+   x.kind==="github-actions-via-npm-script"&&
+   x.entrypoint==="@thesis/agent-runtime:history:smoke"));
+});
+
+test("R6 config scan distinguishes comments/path filters from executable workflow steps",async t=>{
+ const root=fixture(t,{
+   ".github/workflows/only-filters.yml":[
+     "on:",
+     "  push:",
+     "    paths:",
+     "      - 'poc/scripts/retired.mjs'",
+     "jobs:",
+     "  audit:",
+     "    steps:",
+     "      - run: echo 'no legacy invocation'"
+   ].join("\n"),
+   "poc/infra/docker-compose.yml":[
+     "# node poc/scripts/retired.mjs",
+     "services:",
+     "  safe:",
+     "    command: ['echo', 'no legacy']"
+   ].join("\n"),
+   "poc/scripts/start.sh":[
+     "# node poc/scripts/retired.mjs",
+     "echo safe"
+   ].join("\n"),
+   "poc/scripts/retired.mjs":"export const neverStarted=true"
+ });
+ const {collectConfiguredEntrypoints}=await import("../r6-legacy-references.mjs");
+ const [item]=collectConfiguredEntrypoints(root,[
+   ".github/workflows/only-filters.yml",
+   "poc/infra/docker-compose.yml",
+   "poc/scripts/start.sh","poc/scripts/retired.mjs"
+ ],{candidates:["poc/scripts/retired.mjs"]});
+ assert.deepEqual(item.configuredCallers,[]);
+});
