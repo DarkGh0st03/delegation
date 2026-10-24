@@ -190,3 +190,28 @@ substitutes for Rust revocation or Gateway leases. This is not a persistent
 Engineer deployment, a live Gemini run, or account-level spend enforcement.
 Certification requires 5/5 cumulative offline jobs on this exact SHA.
 R5 remains NO-GO; no manual paid workflow or main merge.
+
+### R5 trusted Planning checkpoint durable write (24 October 2026)
+
+The authenticated, backend-signed Planning checkpoint store now supports a
+trusted host-only `persistVerified(ticket)` operation, in addition to its
+existing independent read-side Ed25519 verification. Its verification uses
+out-of-band pinned backend public keys, repository identity, exact Planning
+session, Gitea source SHA and work branch; never data from a model or an
+incoming GitHub event. Validation happens before filesystem mutation.
+
+Persistence requires a private owner-owned directory, uses exclusive
+no-follow file creation at mode 0600, checks the bounded envelope size,
+synchronizes the checkpoint inode and directory, and refuses to overwrite
+an existing or incomplete session record. Both writer and loader check
+file/directory ownership where supported. Offline regressions exercise a
+valid roundtrip, a second attempted write, a modified/forged checkpoint and
+an insecure owner-only directory. A half-written record remains a
+fail-closed condition requiring operator reconciliation, not an automatic
+retry.
+
+This removes a manual raw-write step in the portable checkpoint path, but
+DOES NOT deploy an Engineer process, start a live Gitea Planning root,
+sign on behalf of a human, connect a remote GitHub job, or authorize paid
+Gemini. Certify only on an exact-SHA five-job cumulative CI; R5 remains
+NO-GO, and `main` remains untouched.

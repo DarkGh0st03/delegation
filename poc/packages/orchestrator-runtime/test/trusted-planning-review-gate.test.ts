@@ -729,8 +729,18 @@ test("checkpoint file store verifies pinned backend signature and owner-only per
       }
     });
     const file=join(directory,SNAPSHOT.session_id+".json");
-    await writeFile(file,JSON.stringify(ticket),{mode:0o600});
+    await store.persistVerified(ticket);
     const verified=await store.load();
+    // One immutable, durable signed Planning checkpoint per session.
+    await assert.rejects(store.persistVerified(ticket),error=>{
+      assert.equal((error as NodeJS.ErrnoException).code,"EEXIST");
+      return true;
+    });
+    const invalid=structuredClone(ticket);
+    invalid.proposal.plan.tasks[1].description="injected changed source";
+    await assert.rejects(store.persistVerified(invalid),
+      /Signed Planning checkpoint:/);
+    assert.equal((await store.load()).proposal.digest,ticket.proposal.digest);
     assert.equal(verified.proposal.digest,ticket.proposal.digest);
     const modified=structuredClone(ticket);
     modified.proposal.plan.tasks[1].description="injected changed source";
@@ -1321,4 +1331,41 @@ test("recovery-enabled Planning reserves its one-use phase before the first jour
    assert.deepEqual(f.issued.map(x=>x.id),["urn:planning:only-once"]);
    assert.deepEqual(f.revoked,[]);
  }finally{await f.close();}
+});
+
+test("trusted checkpoint writer rejects forged backend signature before any disk write",async()=>{
+  const directory=await mkdtemp(join(tmpdir(),"trusted-checkpoint-writer-"));
+  try{
+    const backend=generateKeyPairSync("ed25519");
+    const now=new Date();
+    const signed=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:{...compilePlanningProposal(sketch(),CFG),verified_source_reads:1},
+      keyId:"trusted-backend-2",
+      privateKeyPem:backend.privateKey.export({format:"pem",type:"pkcs8"}).toString(),
+      issuedAt:now.toISOString(),
+      expiresAt:new Date(now.getTime()+600000).toISOString()
+    });
+    const store=new SignedPlanningCheckpointFileStore({directory,
+      trust:{
+        trustedKeys:{"trusted-backend-2":{public_key_pem:
+          backend.publicKey.export({format:"pem",type:"spki"}).toString()}},
+        expectedSessionId:SNAPSHOT.session_id,expectedRepository:REPO,
+        expectedBaseRevision:SHA,expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const changed=structuredClone(signed);
+    changed.signature=changed.signature.slice(0,-2)+"AA";
+    await assert.rejects(store.persistVerified(changed),
+      /Signed Planning checkpoint:/);
+    await assert.rejects(store.load(),error=>{
+      assert.equal((error as NodeJS.ErrnoException).code,"ENOENT");
+      return true;
+    });
+    await store.persistVerified(signed);
+    assert.equal((await store.load()).signature,signed.signature);
+    await chmod(directory,0o755);
+    await assert.rejects(store.persistVerified(signed),/owner-only/);
+    await assert.rejects(store.load(),/owner-only/);
+  }finally{await rm(directory,{recursive:true,force:true});}
 });
