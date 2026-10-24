@@ -337,3 +337,45 @@ security rules or credential permissions.
 **Evidence needed:** re-run the exact-SHA cumulative and dedicated
 Engineer/ADK/A2A tests. Keep both commits in Git history; no merge to
 source `main` and no billable model call.
+
+### R6 cleanup batch 8 — explicit historical static authority API
+
+The previous type extraction left the class
+`DeterministicOrchestratorAuthorityIssuer` exported by the canonical
+`orchestrator-runtime/src/index.ts` wildcard. This class obtains a role's
+frozen Account Suspension permissions from
+`permission-templates.ts`; it is **not** the independent signed-Plan
+`TrustedApprovedPlanChildAuthorityIssuer`.
+
+**Change:** The canonical barrel now exposes only the shared credential
+**types** and `SoftwareEngineerAuthorityBootstrap`, not a wildcard of
+`authority-client.ts`. A new explicitly named
+`legacy-authority-client.ts` re-exports the unmodified historical
+`DeterministicOrchestratorAuthorityIssuer`. Four historical
+Account Suspension coordinator scripts and
+`authority-client.test.ts` now import the old class directly from that
+legacy module. Their other public client imports are unchanged.
+
+`SoftwareEngineerAuthorityBootstrap.issueOrchestratorRoot` remains
+available for comparison to the historic Phase 9A root, but is
+documented `@deprecated`. **Trusted approved Execution must continue
+to call `issueScopedOrchestratorRoot`, whose runtime exact-permission
+validation is untouched.** Do not claim that the legacy method was
+deleted or made intrinsically inaccessible by this API cleanup.
+
+**Guard:** the R6 inventory adds the named historical wrapper and
+permits only the four specified scripts plus the old authority test as
+static/dynamic/configured callers. Synthetic and current-checkout tests
+enforce that new canonical code does not import the wrapper, and the
+runtime test asserts the old class is absent from the public index.
+A computed require/import and external consumer remain out of the
+inventory's proof scope.
+
+**No auth behavior changes:** Adapter transport, root issuance payloads,
+Ed25519 Engineer approval, Rust DC/VP, Gateway, OPA, Gitea and merge
+restrictions are unchanged. The historical paid Gemini workflow remains
+R5 **NO-GO**, never executed during this batch. No merge to `main`.
+
+**Rollback:** revert this batch to
+`ef6bad3a20de775c58c298a3487433d1e746407a`. Exact-SHA offline
+cumulative and dedicated authority CI results are required to certify it.

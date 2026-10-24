@@ -1,4 +1,12 @@
-export * from "./authority-client.ts";
+// Canonical API exports the scoped trusted Engineer client and neutral
+// credential contracts, never the historical static-template child issuer.
+export {SoftwareEngineerAuthorityBootstrap} from "./authority-client.ts";
+export type {
+  CredentialStatusInput,
+  RootIssuanceInput,
+  ChildIssuanceInput,
+  IssuedDelegationCredential
+} from "./authority-client.ts";
 export * from "./trusted-engineer-authority.ts";
 export * from "./signed-approval-store.ts";
 export * from "./trusted-execution-coordinator.ts";

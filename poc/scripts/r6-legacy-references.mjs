@@ -16,6 +16,7 @@ import {fileURLToPath,pathToFileURL} from "node:url";
 
 export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
+  "poc/packages/orchestrator-runtime/src/legacy-authority-client.ts",
   "poc/packages/orchestrator-runtime/src/workflow.ts",
   "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
@@ -92,6 +93,36 @@ export function unexpectedHistoricalWorkflowCallers(
   const target="poc/packages/orchestrator-runtime/src/workflow.ts";
   const entry=inventory.candidates.find(x=>x.target===target);
   if(!entry)throw Error("R6 historical workflow missing from audit targets");
+  const accepted=new Set(allowed);
+  return Object.freeze([
+    ...entry.staticImporters.filter(x=>!accepted.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:"static-import-or-reexport"})),
+    ...entry.runtimeIndirectionHints.filter(x=>!accepted.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind})),
+    ...entry.configuredCallers.filter(x=>!accepted.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind}))
+  ]);
+}
+
+
+/**
+ * A historical static-template child issuer is intentionally an explicit,
+ * opt-in import. No approved-Plan runtime may import its wrapper.
+ * The old class still exists in authority-client for backwards compatibility,
+ * but is NOT re-exported through the canonical index.
+ */
+export const R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS=Object.freeze([
+  "poc/packages/orchestrator-runtime/test/authority-client.test.ts",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
+]);
+export function unexpectedHistoricalAuthorityCallers(
+  inventory,allowed=R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS
+){
+  const entry=inventory.candidates.find(x=>x.target==="poc/packages/orchestrator-runtime/src/legacy-authority-client.ts");
+  if(!entry)throw new Error("R6 historical authority wrapper missing from audit");
   const accepted=new Set(allowed);
   return Object.freeze([
     ...entry.staticImporters.filter(x=>!accepted.has(x.source))
@@ -412,8 +443,12 @@ function main(){
   for(const edge of historicalWorkflowCallers)
     console.error("R6 blocked historical workflow "+edge.edgeType+
       " caller: "+edge.source+"; use approved-plan DAG");
+  const authorityCallers=unexpectedHistoricalAuthorityCallers(result);
+  for(const edge of authorityCallers)
+    console.error("R6 blocked legacy static authority "+
+      edge.edgeType+" caller: "+edge.source);
   if(forbidden.length>0||indirect.length>0||
-     historicalWorkflowCallers.length>0||
+     historicalWorkflowCallers.length>0||authorityCallers.length>0||
      result.candidates.some(x=>!x.exists))
     process.exitCode=1;
 }

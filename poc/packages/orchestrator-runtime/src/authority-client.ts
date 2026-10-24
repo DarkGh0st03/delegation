@@ -226,6 +226,12 @@ export class SoftwareEngineerAuthorityBootstrap {
     }
   }
 
+  /**
+   * @deprecated Historical Account Suspension root with a frozen, broad
+   * permission matrix. ONLY for the legacy experiment and its regression.
+   * Trusted Planning/Execution must use issueScopedOrchestratorRoot with
+   * the independently reviewed exact permission subset.
+   */
   async issueOrchestratorRoot(
     input: RootIssuanceInput
   ): Promise<IssuedDelegationCredential> {
@@ -242,6 +248,7 @@ export class SoftwareEngineerAuthorityBootstrap {
   }
 }
 
+/** @deprecated Legacy static role/skill authority: use signed Task-scoped issuer. */
 export class DeterministicOrchestratorAuthorityIssuer {
   readonly #config: AdapterClientConfig;
 

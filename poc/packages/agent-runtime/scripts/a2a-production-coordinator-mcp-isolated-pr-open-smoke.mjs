@@ -25,11 +25,13 @@ import {ClientFactory,ClientFactoryOptions,ServiceParameters,withA2AExtensions} 
 import {startSpecializedAgentServer,DeterministicA2AOrchestrator} from "../src/index.ts";
 import {
   DelegatedA2ARoleRunner,
-  DeterministicOrchestratorAuthorityIssuer,
   OrchestratorProtectedGatewayClient,
   SoftwareEngineerAuthorityBootstrap,
   GiteaMergeReadinessVerifier,MergeReadinessDenied
 } from "../../orchestrator-runtime/src/index.ts";
+/** Historical static-template child issuance: never canonical approved DAG. */
+import {DeterministicOrchestratorAuthorityIssuer}
+  from "../../orchestrator-runtime/src/legacy-authority-client.ts";
 // Historical Account Suspension coordinator is intentionally NOT public API.
 import {AccountSuspensionSequentialCoordinator} from
   "../../orchestrator-runtime/src/sequential-coordinator.ts";

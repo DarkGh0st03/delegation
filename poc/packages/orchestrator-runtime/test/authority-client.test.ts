@@ -7,10 +7,12 @@ import {
   ENGINEER_TO_ORCHESTRATOR_ROOT_AUTHORITY
 } from "../src/permission-templates.ts";
 import {
-  DeterministicOrchestratorAuthorityIssuer,
   SoftwareEngineerAuthorityBootstrap,
   type IssuedDelegationCredential
 } from "../src/index.ts";
+import {DeterministicOrchestratorAuthorityIssuer}
+  from "../src/legacy-authority-client.ts";
+import * as canonicalOrchestratorApi from "../src/index.ts";
 
 function vc(id: string, sub: string, permissions: unknown[]): IssuedDelegationCredential {
   return {
@@ -245,4 +247,19 @@ test("Engineer-only revocation requires exact terminal status receipt",async()=>
     });
     await assert.rejects(()=>client.revokeRoot("urn:root:preliminary"),/not confirmed/);
   }
+});
+
+test("R6 canonical Orchestrator cannot import broad static-template child issuer",()=>{
+  assert.equal(
+    Object.hasOwn(canonicalOrchestratorApi,"DeterministicOrchestratorAuthorityIssuer"),
+    false
+  );
+  assert.equal(
+    canonicalOrchestratorApi.SoftwareEngineerAuthorityBootstrap,
+    SoftwareEngineerAuthorityBootstrap
+  );
+  assert.equal(typeof SoftwareEngineerAuthorityBootstrap.prototype.issueScopedOrchestratorRoot,
+    "function");
+  // The historical module is still tested through its explicitly named path.
+  assert.equal(typeof DeterministicOrchestratorAuthorityIssuer,"function");
 });

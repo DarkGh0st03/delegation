@@ -516,3 +516,44 @@ test("R6 historical authority fixtures import templates directly, never through 
   // Preserve legacy issuance tests; importing from a frozen fixture is not
   // permission to expose or invoke broad root issuance in signed Execution.
 });
+
+test("R6 protects historical frozen-template issuer against canonical callers",async t=>{
+  const target="poc/packages/orchestrator-runtime/src/legacy-authority-client.ts";
+  const old="poc/packages/orchestrator-runtime/test/authority-client.test.ts";
+  const fresh="poc/packages/orchestrator-runtime/src/trusted-unsafe.ts";
+  const files={
+    [target]:"export const issuer=1;",
+    [old]:"import {issuer} from '../src/legacy-authority-client.ts';",
+    [fresh]:"export {issuer} from './legacy-authority-client.ts';",
+    "comment.md":"Historical legacy-authority-client.ts is not a trusted runtime"
+  };
+  const root=fixture(t,files);
+  const {collectLegacyReferences,unexpectedHistoricalAuthorityCallers}
+    =await import("../r6-legacy-references.mjs");
+  const inventory=collectLegacyReferences(root,Object.keys(files),{candidates:[target]});
+  assert.deepEqual(unexpectedHistoricalAuthorityCallers(inventory).map(x=>x.source),[fresh]);
+  assert.deepEqual(unexpectedHistoricalAuthorityCallers(inventory,[old,fresh]),[]);
+});
+
+test("R6 historical static issuer is not part of canonical exports or trusted consumers",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const {fileURLToPath}=await import("node:url");
+  const {collectLegacyReferences,gitTrackedFiles,unexpectedHistoricalAuthorityCallers}
+    =await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const get=p=>readFileSync(new URL(p,new URL("../../../",import.meta.url)),"utf8");
+  const canonical=get("poc/packages/orchestrator-runtime/src/index.ts");
+  assert.doesNotMatch(canonical,/export \* from ["']\.\/authority-client\.ts["']/u);
+  assert.match(canonical,/export \{SoftwareEngineerAuthorityBootstrap\}/u);
+  assert.doesNotMatch(canonical,/DeterministicOrchestratorAuthorityIssuer/u);
+  const historical=get("poc/packages/orchestrator-runtime/src/legacy-authority-client.ts");
+  assert.match(historical,/export \{DeterministicOrchestratorAuthorityIssuer\}/u);
+  for(const name of ["a2a-production-coordinator-mcp-gemini-live.mjs","a2a-production-coordinator-mcp-isolated-real-positive.mjs","a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs","a2a-production-coordinator-mcp-isolated-smoke.mjs"]){
+    const src=get("poc/packages/agent-runtime/scripts/"+name);
+    assert.match(src,/from ["']\.\.\/\.\.\/orchestrator-runtime\/src\/legacy-authority-client\.ts["']/u);
+  }
+  assert.deepEqual(unexpectedHistoricalAuthorityCallers(
+    collectLegacyReferences(root,gitTrackedFiles(root))),[],
+    "No new runtime may depend on the frozen historical child issuer"
+  );
+});
