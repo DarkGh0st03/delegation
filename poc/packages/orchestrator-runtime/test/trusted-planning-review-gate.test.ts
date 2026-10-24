@@ -1183,3 +1183,95 @@ test("offline admitted manual bridge loads the SAME authenticated approved DAG w
     assert.ok(f.revoked.includes("urn:bridge:operational"));
   }finally{await f.close();}
 });
+
+
+test("concurrent Engineer/dispatcher shutdown awaits exactly one Gateway close and root revocation",async()=>{
+ const digest="d".repeat(64),events:string[]=[];
+ let resolveGateway:(()=>void)|undefined;
+ const gate=new Promise<void>(resolve=>{resolveGateway=resolve;});
+ const coordinator=new TrustedExecutionCoordinator({
+   authority:{
+     async startPlanning(){return {
+       phase:"planning",credential_id:"urn:planning:single-close",
+       permissions:[]
+     };},
+     async approveAndIssueOperationalRoot(){return {
+       credential_id:"urn:execution:single-close",plan_digest:digest,
+       permissions:[]
+     };}
+   } as any,
+   approvedGatewayPlans:{
+     async activate(){return digest;},
+     async closeSession(){events.push("gateway:start");await gate;
+       events.push("gateway:closed");}
+   } as any,
+   credentials:{async revokeRoot(id){
+     events.push("revoke:"+id);
+   }},
+   sessionId:"close-one-session",baseRevision:"c".repeat(40)
+ });
+ await coordinator.beginPlanning({} as any);
+ await coordinator.beginExecution({credential_id:"urn:execution:single-close"} as any);
+ const first=coordinator.closeExecution();
+ const second=coordinator.closeExecution();
+ assert.equal(first,second);
+ assert.equal(coordinator.phase,"closed");
+ assert.deepEqual(events,[]);
+ await Promise.resolve();
+ assert.deepEqual(events,["gateway:start"]);
+ resolveGateway!();
+ await Promise.all([first,second,coordinator.closeExecution()]);
+ assert.deepEqual(events,[
+   "gateway:start","gateway:closed","revoke:urn:execution:single-close"
+ ]);
+ await coordinator.closeExecution();
+ assert.equal(events.filter(x=>x.startsWith("revoke:")).length,1);
+});
+
+test("failed Gateway shutdown still attempts Rust revocation once; every caller receives same failure",async()=>{
+ const digest="d".repeat(64),events:string[]=[];
+ const coordinator=new TrustedExecutionCoordinator({
+   authority:{
+     async startPlanning(){return {phase:"planning",credential_id:"urn:planning:failed-close",permissions:[]};},
+     async approveAndIssueOperationalRoot(){return {
+       credential_id:"urn:execution:failed-close",plan_digest:digest,permissions:[]
+     };}
+   } as any,
+   approvedGatewayPlans:{
+     async activate(){return digest;},
+     async closeSession(){events.push("gateway:failed");
+       throw Error("Gateway cannot confirm terminal state");}
+   } as any,
+   credentials:{async revokeRoot(id){events.push("revoke:"+id);}},
+   sessionId:"failed-close-session",baseRevision:"c".repeat(40)
+ });
+ await coordinator.beginPlanning({} as any);
+ await coordinator.beginExecution({credential_id:"urn:execution:failed-close"} as any);
+ const first=coordinator.closeExecution(),second=coordinator.closeExecution();
+ await assert.rejects(first,/Gateway cannot confirm terminal state/);
+ await assert.rejects(second,/Gateway cannot confirm terminal state/);
+ await assert.rejects(coordinator.closeExecution(),/Gateway cannot confirm terminal state/);
+ assert.deepEqual(events,["gateway:failed","revoke:urn:execution:failed-close"]);
+});
+
+test("unconfirmed Rust revocation cannot be retried or represented as a clean shutdown",async()=>{
+ const digest="d".repeat(64);let revocations=0;
+ const coordinator=new TrustedExecutionCoordinator({
+   authority:{
+     async startPlanning(){return {phase:"planning",credential_id:"urn:planning:uncertain",permissions:[]};},
+     async approveAndIssueOperationalRoot(){return {
+       credential_id:"urn:execution:uncertain",plan_digest:digest,permissions:[]
+     };}
+   } as any,
+   approvedGatewayPlans:{async activate(){return digest;},async closeSession(){} } as any,
+   credentials:{async revokeRoot(){revocations++;
+     throw Error("native revocation cannot be confirmed");}},
+   sessionId:"uncertain-close-session",baseRevision:"c".repeat(40)
+ });
+ await coordinator.beginPlanning({} as any);
+ await coordinator.beginExecution({credential_id:"urn:execution:uncertain"} as any);
+ await assert.rejects(coordinator.closeExecution(),/native revocation cannot be confirmed/);
+ await assert.rejects(coordinator.closeExecution(),/native revocation cannot be confirmed/);
+ assert.equal(revocations,1);
+ assert.equal(coordinator.phase,"closed");
+});

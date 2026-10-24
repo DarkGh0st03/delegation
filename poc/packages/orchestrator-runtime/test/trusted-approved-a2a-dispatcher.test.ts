@@ -54,7 +54,7 @@ function harness(options:{
   unapprovedCandidate?:boolean;
   approvedReadContext?:boolean;
   closeDuringA2A?:boolean;closeAfterGatewayConfirmation?:boolean;
-  closeAfterBranchConfirmation?:boolean;
+  closeAfterBranchConfirmation?:boolean;failGatewayConfirmation?:boolean;
 }={}){
   const p=plan(options.workBranch);
   if(options.unapprovedCandidate){
@@ -93,6 +93,8 @@ function harness(options:{
     },
     async confirmTask(id:string,observation:any){
       log.push("confirm:"+id+":"+observation.role);
+      if(options.failGatewayConfirmation&&observation.role==="backend")
+        throw Error("trusted Gateway attestor denied Backend evidence");
       if((options.closeAfterGatewayConfirmation&&observation.role==="backend")||
          (options.closeAfterBranchConfirmation&&observation.role==="orchestrator"))
         coordinator.phase="closed";
@@ -380,4 +382,19 @@ test("Orchestrator branch confirmation racing shutdown cannot unlock Backend A2A
  assert.equal(h.coordinator.phase,"closed");
  assert.ok(!h.log.some(x=>x.startsWith("allocate:backend-task")||
    x.startsWith("run:backend-task:")));
+});
+
+
+test("Gateway attestation rejection revokes root and cannot release Frontend or Test",async()=>{
+ const h=harness({failGatewayConfirmation:true});
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await assert.rejects(d.executeApprovedDag({
+   invokeOrchestratorTask:async()=>{}
+ }),/trusted Gateway attestor denied Backend evidence/);
+ assert.deepEqual(d.completedTaskIds,["branch"]);
+ assert.equal(h.coordinator.phase,"closed");
+ assert.equal(h.log.filter(x=>x==="close").length,1);
+ assert.ok(h.log.some(x=>x.startsWith("confirm:")&&x.endsWith(":backend")));
+ assert.ok(!h.log.some(x=>x.startsWith("bind:frontend-task:")||
+   x.startsWith("bind:tests:")));
 });

@@ -46,6 +46,8 @@ export class TrustedExecutionCoordinator {
   #operationalId?:string;
   #operationalPermissions?:readonly DelegatedPermission[];
   #approvedDigest?:string;
+  /** One terminal shutdown for all callers; retain failures for reconciliation. */
+  #shutdown?:Promise<void>;
 
   constructor(config:{
     authority:TrustedEngineerAuthoritySession;
@@ -262,26 +264,36 @@ export class TrustedExecutionCoordinator {
    * This ends new Gateway effects. Ending/revoking the operational root
    * remains a separate necessary action and is always attempted.
    */
-  async closeExecution():Promise<void>{
-    if(this.#phase!=="execution"||!this.#operationalId){
-      throw new Error("No operational session available to close");
-    }
-    this.#phase="closed";
+  closeExecution():Promise<void>{
+    // Engineer shutdown, A2A rejection and Gateway completion can all
+    // request closure simultaneously. Every caller MUST await the same
+    // final Gateway + Rust revocation outcome; a premature "closed" phase
+    // alone is not evidence of completed revocation.
+    if(this.#shutdown)return this.#shutdown;
+    if(this.#phase!=="execution"||!this.#operationalId)
+      return Promise.reject(Error("No operational session available to close"));
+    const operationalId=this.#operationalId;
+    this.#phase="closed"; // reject new tool calls before any async teardown
     this.#operationalPermissions=undefined;
     this.#approvedDigest=undefined;
-    let gatewayClosed=false;
-    try {
-      await this.#gateway.closeSession(this.#sessionId);
-      gatewayClosed=true;
-    } finally {
-      // An error in plan-session shutdown must NEVER skip revocation of
-      // the independently issued root credential.
-      await this.#credentials.revokeRoot(this.#operationalId);
-    }
-    if(!gatewayClosed)throw new Error("Gateway plan shutdown is not confirmed");
-    if(this.#recovery)await this.#recovery.markReconciled({
-      sessionId:this.#sessionId,baseRevision:this.#baseRevision,
-      credentialId:this.#operationalId
+    this.#shutdown=Promise.resolve().then(async()=>{
+      let gatewayClosed=false;
+      try {
+        await this.#gateway.closeSession(this.#sessionId);
+        gatewayClosed=true;
+      } finally {
+        // Even when Gateway closure fails, ALWAYS attempt native revocation.
+        await this.#credentials.revokeRoot(operationalId);
+      }
+      if(!gatewayClosed)
+        throw Error("Gateway plan shutdown is not confirmed");
+      if(this.#recovery)await this.#recovery.markReconciled({
+        sessionId:this.#sessionId,baseRevision:this.#baseRevision,
+        credentialId:operationalId
+      });
     });
+    // Never discard a rejected promise or retry under the same root;
+    // durable reconciliation remains mandatory on any failure.
+    return this.#shutdown;
   }
 }
