@@ -24,13 +24,15 @@ import {Role,TaskState} from "@a2a-js/sdk";
 import {ClientFactory,ClientFactoryOptions,ServiceParameters,withA2AExtensions} from "@a2a-js/sdk/client";
 import {startSpecializedAgentServer,DeterministicA2AOrchestrator} from "../src/index.ts";
 import {
-  AccountSuspensionSequentialCoordinator,
   DelegatedA2ARoleRunner,
   DeterministicOrchestratorAuthorityIssuer,
   OrchestratorProtectedGatewayClient,
   SoftwareEngineerAuthorityBootstrap,
   GiteaMergeReadinessVerifier,MergeReadinessDenied
 } from "../../orchestrator-runtime/src/index.ts";
+// Historical Account Suspension coordinator is intentionally NOT public API.
+import {AccountSuspensionSequentialCoordinator} from
+  "../../orchestrator-runtime/src/sequential-coordinator.ts";
 import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
 import {createGatewayHttpServer} from "../../../apps/gateway/src/http.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";

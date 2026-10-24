@@ -120,3 +120,23 @@ test("R6 inventory never promotes absent textual references to deletion approval
   assert.deepEqual(found.candidates[1].references,[]);
   assert.match(found.methodology,/not an import graph or deletion proof/);
 });
+
+
+test("R6 canonical Orchestrator public barrel no longer exports the historical coordinator",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const barrel=readFileSync(new URL("../../packages/orchestrator-runtime/src/index.ts",
+    import.meta.url),"utf8");
+  assert.doesNotMatch(barrel,/sequential-coordinator\.ts/u);
+  const historic=[
+    "a2a-production-coordinator-mcp-gemini-live.mjs",
+    "a2a-production-coordinator-mcp-isolated-real-positive.mjs",
+    "a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
+    "a2a-production-coordinator-mcp-isolated-smoke.mjs"
+  ];
+  for(const name of historic){
+    const script=readFileSync(new URL(
+      "../../packages/agent-runtime/scripts/"+name,import.meta.url),"utf8");
+    assert.match(script,/from\s*"..\/..\/orchestrator-runtime\/src\/sequential-coordinator\.ts"/u,
+      "historical workflow must explicitly select the historical coordinator: "+name);
+  }
+});

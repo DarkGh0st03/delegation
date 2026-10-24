@@ -93,3 +93,8 @@ proof of a live runtime caller.
 the same IAM Console base repository. It is not a real Gemini-generated
 implementation across arbitrary repositories, and a legacy file cannot
 be declared removable merely because an offline positive test passes.
+
+
+## R6 migration 1 — isolate legacy coordinator from canonical exports
+
+The canonical `poc/packages/orchestrator-runtime/src/index.ts` **no longer re-exports** `sequential-coordinator.ts`. Four historical MCP coordinator scripts (including the archived paid Gemini variant) now explicitly import that historical implementation from its source file. The old sequential coordinator unit tests also use its direct import. This **does not delete or rewrite historical results** and does not make the legacy paid workflow eligible for R5. A static regression asserts the public barrel does not accidentally re-export the obsolete coordinator and checks that each historical script keeps its explicit dependency. Full runtime/CI evidence must be green before any further cleanup. `main` remains untouched.

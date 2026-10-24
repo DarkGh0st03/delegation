@@ -7,7 +7,7 @@ import {
   ACCOUNT_SUSPENSION_TASK_PLAN,
   type SequentialGatewayPort,
   type SequentialRoleRunnerPort
-} from "../src/index.ts";
+} from "../src/sequential-coordinator.ts";
 
 const branchRevision = "a".repeat(40);
 const backendRevision = "b".repeat(40);

@@ -32,7 +32,6 @@ import {ClientFactory,ClientFactoryOptions,ServiceParameters,withA2AExtensions} 
 import {startSpecializedAgentServer,DeterministicA2AOrchestrator,createGeminiAdkModel} from "../src/index.ts";
 import {resolveRoleGeminiConfiguration,buildGeminiGenerationConfig} from "../../../scripts/gemini-thinking-policy.mjs";
 import {
-  AccountSuspensionSequentialCoordinator,
   DelegatedA2ARoleRunner,
   DeterministicOrchestratorAuthorityIssuer,
   OrchestratorProtectedGatewayClient,
@@ -40,6 +39,9 @@ import {
   GiteaMergeReadinessVerifier,MergeReadinessDenied,
   checkAccountSuspensionPreflight
 } from "../../orchestrator-runtime/src/index.ts";
+// Historical Account Suspension coordinator is intentionally NOT public API.
+import {AccountSuspensionSequentialCoordinator} from
+  "../../orchestrator-runtime/src/sequential-coordinator.ts";
 import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
 import {createGatewayHttpServer} from "../../../apps/gateway/src/http.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";

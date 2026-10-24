@@ -7,7 +7,6 @@ export * from "./artifact-validation.ts";
 export * from "./workflow.ts";
 export * from "./orchestrator-gateway-client.ts";
 export * from "./a2a-workflow.ts";
-export * from "./sequential-coordinator.ts";
 export * from "./account-suspension-preflight.ts";
 export * from "./adk-orchestrator.ts";
 export * from "./merge-readiness.ts";
