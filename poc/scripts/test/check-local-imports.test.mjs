@@ -908,3 +908,74 @@ test("R6 human-only protected Gitea merge modules are absent from canonical runt
   // Do not mistake hiding exports for a permission mechanism: the protected
   // human workflow and native provider checks remain authoritative.
 });
+
+
+test("R6 only historical Gemini experiment and focused test may load Account Suspension preflight",async t=>{
+  const target="poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts";
+  const dir="poc/packages/orchestrator-runtime/src/";
+  const historical="poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs";
+  const regression="poc/packages/orchestrator-runtime/test/account-suspension-preflight.test.ts";
+  const files={
+    [target]:"export const checkAccountSuspensionPreflight=()=>true;",
+    [historical]:
+      "import {checkAccountSuspensionPreflight} from '../../orchestrator-runtime/src/account-suspension-preflight.ts';",
+    [regression]:
+      "import {checkAccountSuspensionPreflight} from '../src/account-suspension-preflight.ts';",
+    [dir+"index.ts"]:
+      "export * from './account-suspension-preflight.ts';",
+    [dir+"trusted-plan.ts"]:
+      "const probe=()=>import('./account-suspension-preflight.ts');",
+    [dir+"trusted-comment.ts"]:
+      "// import './account-suspension-preflight.ts';\nexport const safe=true;",
+    "notes.md":"account-suspension-preflight.ts is an old experiment"
+  };
+  const root=fixture(t,files);
+  const {collectLegacyReferences,unexpectedHistoricalPreflightCallers}
+    =await import("../r6-legacy-references.mjs");
+  const result=collectLegacyReferences(root,Object.keys(files),{candidates:[target]});
+  assert.deepEqual(
+    unexpectedHistoricalPreflightCallers(result).map(x=>x.source).sort(),
+    [dir+"index.ts",dir+"trusted-plan.ts"].sort()
+  );
+  assert.deepEqual(
+    unexpectedHistoricalPreflightCallers(result,[
+      historical,regression,dir+"index.ts",dir+"trusted-plan.ts"
+    ]),[]
+  );
+});
+
+test("R6 historical preflight remains tested but excluded from approved-plan API",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const {join}=await import("node:path");
+  const {fileURLToPath}=await import("node:url");
+  const {collectLegacyReferences,gitTrackedFiles,unexpectedHistoricalPreflightCallers}
+    =await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const tracked=gitTrackedFiles(root);
+  const path="poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts";
+  const publicIndex=readFileSync(join(root,
+    "poc/packages/orchestrator-runtime/src/index.ts"),"utf8");
+  const preflight=readFileSync(join(root,path),"utf8");
+  const historic=readFileSync(join(root,
+    "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs"),"utf8");
+  const oldTest=readFileSync(join(root,
+    "poc/packages/orchestrator-runtime/test/account-suspension-preflight.test.ts"),"utf8");
+  assert.equal(publicIndex.includes("account-suspension-preflight.ts"),false);
+  assert.match(preflight,/export function checkAccountSuspensionPreflight/u);
+  assert.match(historic,/from\s*["']\.\.\/\.\.\/orchestrator-runtime\/src\/account-suspension-preflight\.ts["']/u);
+  assert.match(oldTest,/from\s*["']\.\.\/src\/account-suspension-preflight\.ts["']/u);
+  // AST runtime graphs strip type-only imports. Protect canonical TS source
+  // against adding an Account Suspension-only import type as well.
+  for(const file of tracked.filter(x=>
+    x.startsWith("poc/packages/orchestrator-runtime/src/")&&
+    (x.endsWith("/index.ts")||/\/trusted-[^/]+\.ts$/u.test(x))
+  )){
+    const source=readFileSync(join(root,file),"utf8");
+    assert.equal(source.includes("account-suspension-preflight.ts"),false,
+      "Trusted source must not link legacy preflight: "+file);
+  }
+  assert.deepEqual(unexpectedHistoricalPreflightCallers(
+    collectLegacyReferences(root,tracked)),[],
+    "Do not enable new historical preflight consumers"
+  );
+});

@@ -20,6 +20,7 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts",
   "poc/packages/orchestrator-runtime/src/orchestrator-gateway-transport.ts",
   "poc/packages/orchestrator-runtime/src/permission-templates.ts",
+  "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",
   "poc/packages/orchestrator-runtime/src/workflow.ts",
   "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
@@ -224,6 +225,34 @@ export function unexpectedPrivateGatewayTransportCallers(
       .map(x=>Object.freeze({...x,edgeType:x.kind})),
     ...entry.configuredCallers.filter(x=>!approved.has(x.source))
       .map(x=>Object.freeze({...x,edgeType:x.kind}))
+  ]);
+}
+
+
+/**
+ * Historical, non-generalizable IAM lifecycle preflight is a regression-only
+ * check. It must never become an approved-plan or generic agent policy gate.
+ * Only the manually billed Account Suspension experiment and its regression
+ * may import/load it. The file is retained, not a deletion candidate.
+ */
+export const R6_ALLOWED_ACCOUNT_SUSPENSION_PREFLIGHT_CALLERS=Object.freeze([
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
+  "poc/packages/orchestrator-runtime/test/account-suspension-preflight.test.ts"
+]);
+export function unexpectedHistoricalPreflightCallers(
+  inventory,allowed=R6_ALLOWED_ACCOUNT_SUSPENSION_PREFLIGHT_CALLERS
+){
+  const target="poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts";
+  const entry=inventory.candidates.find(x=>x.target===target);
+  if(!entry)throw Error("R6 historical Account Suspension preflight missing from inventory");
+  const accepted=new Set(allowed);
+  return Object.freeze([
+    ...entry.staticImporters.filter(e=>!accepted.has(e.source))
+      .map(e=>Object.freeze({...e,edgeType:"static-import-or-reexport"})),
+    ...entry.runtimeIndirectionHints.filter(e=>!accepted.has(e.source))
+      .map(e=>Object.freeze({...e,edgeType:e.kind})),
+    ...entry.configuredCallers.filter(e=>!accepted.has(e.source))
+      .map(e=>Object.freeze({...e,edgeType:e.kind}))
   ]);
 }
 
@@ -553,10 +582,15 @@ function main(){
     console.error("R6 blocked private Gateway transport "+
       edge.edgeType+" caller: "+edge.source+
       "; keep private VP/Adapter access out of new modules");
+  const historicalPreflightCallers=unexpectedHistoricalPreflightCallers(result);
+  for(const edge of historicalPreflightCallers)
+    console.error("R6 blocked Account Suspension-only preflight "+
+      edge.edgeType+" caller: "+edge.source+
+      "; the approved-plan path requires generic plan-bound validation");
   if(forbidden.length>0||indirect.length>0||
      historicalWorkflowCallers.length>0||authorityCallers.length>0||
      templateCallers.length>0||gatewayCallers.length>0||
-     privateTransportCallers.length>0||
+     privateTransportCallers.length>0||historicalPreflightCallers.length>0||
      result.candidates.some(x=>!x.exists))
     process.exitCode=1;
 }

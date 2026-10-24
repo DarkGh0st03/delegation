@@ -983,3 +983,45 @@ No historical merge experiment or native verifier test is removed.
 validation before certification. No `main` merge and no paid
 Gemini usage. Roll back to
 `99e914d0d68b2c0503c685dd400e5e7492d5e940` if needed.
+
+### R6 cleanup batch 22 — fence historical Account Suspension-only interface preflight
+
+The 57-line `account-suspension-preflight.ts` is an intentionally
+narrow detector of the specific `suspend/reactivate` Backend,
+Frontend and accessible-label contract from the *old* IAM Console
+experiment. It is **NOT** a generic approved-plan validator,
+independent Runner acceptance or a Gemini quality metric.
+A prior cleanup removed its canonical index export, but the file
+still has two real, valid importers: the historical
+`a2a-production-coordinator-mcp-gemini-live.mjs` workflow script
+and `account-suspension-preflight.test.ts`.
+
+**Change:** add this module as a separately classified historical
+target in `r6-legacy-references.mjs`. Fail the audit if any other
+module imports/re-exports it, performs a literal dynamic load or
+configures a direct invocation. Allowlist precisely the two
+historical references above. Runtime graph checking is backed by a
+synthetic unauthorized canonical re-export and trusted dynamic
+load test; a checkout regression verifies the named historical
+callers and excludes the module from all trusted production
+`src/trusted-*.ts` sources and the public Orchestrator barrel,
+including TypeScript-only textual references.
+
+**Preserved:** the old billed script, IAM reference files, exact
+11-file permission fixture, preflight implementation, and regression
+tests. The static scope checker under
+`scripts/check-account-suspension-reference-scope.mjs` remains
+necessary to historical CI and must not be deleted because an
+unrelated source graph reports a small caller set.
+
+**Boundary:** absence of a source import is not a cryptographic
+authorization control or proof of dead code. The new approved-plan
+DAG, Gateway, Rust DC/VP, OPA, exact-SHA acceptance and Engineer
+approval remain independent. A passing preflight does not prove
+functional correctness. No paid Gemini experiment or merge to
+`main` is authorized by this gate.
+
+**Validation:** require exact-SHA cumulative five-job CI success,
+including original historical regression tests, before certifying.
+Rollback to `27d54ef9a9de4300aacb838171fbde34cf6255c5`
+if a legitimate unlisted consumer emerges.
