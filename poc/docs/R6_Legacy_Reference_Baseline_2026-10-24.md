@@ -1324,3 +1324,48 @@ and the entire 5-job exact-SHA suite must run again.
 No policy, historical Gateway write operation, DC/VP, OPA,
 Adapter or provider behavior changes. No paid Gemini calls and
 no merge to `main`.
+
+### R6 cleanup batch 27 — broaden read-only runtime-export auditing of historic A2A/MCP smoke
+
+After batch 26 established the six-entrypoint `audit:r6:runtime-named`
+gate, the R6 source inventory still contained four useful historical
+**offline** integration scripts outside that named-value scan:
+`a2a-real-mcp-read-smoke.mjs`,
+`a2a-three-roles-shared-mcp-read-smoke.mjs`,
+`a2a-shared-mcp-isolated-sequential-write-smoke.mjs`, and
+`assert-researcher-acceptance-negative.mjs`.
+They exercise protected A2A calls, shared MCP Task routing, real
+Gateway/Rust/OPA boundaries and negative Researcher acceptance
+under separately provisioned local fixtures. Their import names
+could drift when the shared modules are reorganized even though
+`check:imports` still finds the referenced file paths.
+
+**Change:** extend the fixed `HISTORICAL_RUNTIME_ENTRYPOINTS`
+source-audit cohort from six to **ten distinct scripts**. The
+checker resolves only local relative named runtime exports,
+including simple transitive re-exports. No target entrypoint is
+imported or executed, no model or external provider is contacted,
+and no billed workflow is triggered. The existing
+`npm --prefix poc run audit:r6:runtime-named` command remains
+in the first stage of the five-job cumulative offline workflow.
+
+**Tests:** pin all ten cohort paths to avoid quiet coverage loss;
+add a synthetic A2A shared-MCP positive chain through the ADK
+agent barrel to `startSpecializedAgentServer`, plus HTTP Server,
+TaskRouter and task-token exports. Add a negative test that an
+interface with the same name as an expected **runtime class**
+must not satisfy the historical named-value link. Existing
+missing-module, alias, regex literal and no-runtime-execution
+regressions remain.
+
+**Limits:** the checker does not prove provider availability,
+offline historical application correctness, full ESM linking of
+packages, dynamic import resolution or safe deletion of any old
+script. Native Rust DC/VP, Gateway/OPA, Gitea and the approved
+Engineer signed-plan DAG are unchanged. Historical Gemini remains
+a NO-GO substitute for R5.
+
+**Gate:** certify only upon full exact-SHA cumulative five-job
+offline CI success. Leave `main` unchanged and do not invoke paid
+Gemini. Rollback to `ef0c7ed7a78c0f9254a340d6cd143a88d6ffe14e`
+if this additional cohort reveals unresolved legitimate exports.

@@ -83,15 +83,20 @@ test("R6 catches deleted local files and missing checked entrypoints",t=>{
     ["missing local module","missing audited script"]);
 });
 
-test("R6 historical audit pins four A2A cohorts, boundary probe and manual merge",()=>{
-  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,6);
-  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,6);
+test("R6 audit pins ten distinct historical, offline-smoke, boundary and human-merge entrypoints",()=>{
+  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,10);
+  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,10);
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/a2a-production-coordinator-mcp-gemini-live.mjs")));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/human-merge.mjs")));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/assert-current-authority-boundaries.mjs")));
+  for(const name of ["a2a-real-mcp-read-smoke.mjs","a2a-three-roles-shared-mcp-read-smoke.mjs","a2a-shared-mcp-isolated-sequential-write-smoke.mjs","assert-researcher-acceptance-negative.mjs"]) {
+    assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>x.endsWith("/"+name)),
+      "Missing offline historical A2A/MCP or Researcher check: "+name);
+  }
+
 });
 
 
@@ -146,4 +151,42 @@ test("R6 detects the pre-split historical Gateway class import in an authority p
   });
   assert.deepEqual(checkHistoricalRuntimeNamedImports(
     good.root,good.paths,[entry]).errors,[]);
+});
+
+
+test("R6 offline A2A/MCP smoke imports check real exports through ADK star barrel",t=>{
+  const smoke="poc/packages/agent-runtime/scripts/a2a-real-mcp-read-smoke.mjs";
+  const f=fixture(t,{
+    [smoke]:
+      "import {startSpecializedAgentServer} from '../src/index.ts';\n"+
+      "import {createSharedMcpHttpServer} from '../../../mcp-shared/src/http-server.ts';\n"+
+      "import {TaskRouter} from '../../../mcp-shared/src/task-router.ts';\n"+
+      "import {issueTaskToken} from '../../../mcp-shared/src/task-token.ts';",
+    "poc/packages/agent-runtime/src/index.ts":
+      "export * from './server.ts';",
+    "poc/packages/agent-runtime/src/server.ts":
+      "export async function startSpecializedAgentServer(){}",
+    "poc/mcp-shared/src/http-server.ts":
+      "export function createSharedMcpHttpServer(){}",
+    "poc/mcp-shared/src/task-router.ts":"export class TaskRouter {}",
+    "poc/mcp-shared/src/task-token.ts":"export function issueTaskToken(){}"
+  });
+  const result=checkHistoricalRuntimeNamedImports(f.root,f.paths,[smoke]);
+  assert.equal(result.checkedFiles,1);
+  assert.equal(result.checkedImports,4);
+  assert.deepEqual(result.errors,[]);
+});
+
+test("R6 scripted A2A/MCP smoke reports missing provider-side runtime symbol",t=>{
+  const smoke="poc/packages/agent-runtime/scripts/a2a-three-roles-shared-mcp-read-smoke.mjs";
+  const f=fixture(t,{
+    [smoke]:
+      "import {TaskRouter} from '../../../mcp-shared/src/task-router.ts';",
+    "poc/mcp-shared/src/task-router.ts":
+      "export interface TaskRouter {foo:string};\nexport class RenamedRouter {}"
+  });
+  assert.deepEqual(checkHistoricalRuntimeNamedImports(
+    f.root,f.paths,[smoke]).errors.map(x=>({
+      symbol:x.symbol,reason:x.reason
+    })),[{symbol:"TaskRouter",reason:"missing runtime named export"}]);
 });

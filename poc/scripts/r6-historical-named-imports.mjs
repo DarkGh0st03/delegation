@@ -1,5 +1,6 @@
 /**
- * R6 named runtime ESM imports of historic A2A and human merge entrypoints.
+ * R6 named runtime ESM imports of historical A2A/MCP/read-only smoke,
+ * researcher negative acceptance, authority-boundary and human merge entrypoints.
  * Static, read-only source inspection. Never import or execute these scripts.
  * Not a full JavaScript/TypeScript linker or proof of provider availability.
  */
@@ -14,6 +15,10 @@ export const HISTORICAL_RUNTIME_ENTRYPOINTS=Object.freeze([
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
   "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-real-mcp-read-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-three-roles-shared-mcp-read-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-shared-mcp-isolated-sequential-write-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/assert-researcher-acceptance-negative.mjs",
   "poc/packages/orchestrator-runtime/scripts/human-merge.mjs"
 ]);
 
