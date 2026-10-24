@@ -83,16 +83,16 @@ test("R6 catches deleted local files and missing checked entrypoints",t=>{
     ["missing local module","missing audited script"]);
 });
 
-test("R6 audit pins ten distinct historical, offline-smoke, boundary and human-merge entrypoints",()=>{
-  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,10);
-  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,10);
+test("R6 audit pins fourteen distinct historical ADK/A2A/MCP, boundary and human merge entrypoints",()=>{
+  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,14);
+  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,14);
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/a2a-production-coordinator-mcp-gemini-live.mjs")));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/human-merge.mjs")));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/assert-current-authority-boundaries.mjs")));
-  for(const name of ["a2a-real-mcp-read-smoke.mjs","a2a-three-roles-shared-mcp-read-smoke.mjs","a2a-shared-mcp-isolated-sequential-write-smoke.mjs","assert-researcher-acceptance-negative.mjs"]) {
+  for(const name of ["adk-real-mcp-smoke.mjs","adk-isolated-mcp-create-smoke.mjs","adk-isolated-mcp-write-smoke.mjs","adk-isolated-mcp-real-runner-smoke.mjs","a2a-real-mcp-read-smoke.mjs","a2a-three-roles-shared-mcp-read-smoke.mjs","a2a-shared-mcp-isolated-sequential-write-smoke.mjs","assert-researcher-acceptance-negative.mjs"]) {
     assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>x.endsWith("/"+name)),
       "Missing offline historical A2A/MCP or Researcher check: "+name);
   }
@@ -189,4 +189,60 @@ test("R6 scripted A2A/MCP smoke reports missing provider-side runtime symbol",t=
     f.root,f.paths,[smoke]).errors.map(x=>({
       symbol:x.symbol,reason:x.reason
     })),[{symbol:"TaskRouter",reason:"missing runtime named export"}]);
+});
+
+
+
+test("R6 native ADK MCP smoke checks real named Gateway, Runner and private-worker exports",t=>{
+  const entry="poc/packages/agent-runtime/scripts/adk-isolated-mcp-real-runner-smoke.mjs";
+  const f=fixture(t,{
+    [entry]:
+      "import {createAdkSpecializedAgent} from '../src/adk-specialized-agents.ts';\n"+
+      "import {PrivateMcpTaskRegistry} from '../src/private-mcp-task-registry.ts';\n"+
+      "import {attachPrivateMcpWorker} from '../src/private-mcp-worker-http.ts';\n"+
+      "import {GatewayRuntime} from '../../../apps/gateway/src/runtime.ts';\n"+
+      "import {IsolatedDockerRunnerExecutor} from '../../../apps/test-runner-controller/src/isolated-executor.ts';\n"+
+      "import {createRunnerHttpServer} from '../../../apps/test-runner-controller/src/http.ts';",
+    "poc/packages/agent-runtime/src/adk-specialized-agents.ts":
+      "export function createAdkSpecializedAgent(){}",
+    "poc/packages/agent-runtime/src/private-mcp-task-registry.ts":
+      "export class PrivateMcpTaskRegistry {}",
+    "poc/packages/agent-runtime/src/private-mcp-worker-http.ts":
+      "export function attachPrivateMcpWorker(){}",
+    "poc/apps/gateway/src/runtime.ts":"export class GatewayRuntime {}",
+    "poc/apps/test-runner-controller/src/isolated-executor.ts":
+      "export class IsolatedDockerRunnerExecutor {}",
+    "poc/apps/test-runner-controller/src/http.ts":
+      "export function createRunnerHttpServer(){}"
+  });
+  const report=checkHistoricalRuntimeNamedImports(f.root,f.paths,[entry]);
+  assert.equal(report.checkedFiles,1);
+  assert.equal(report.checkedImports,6);
+  assert.deepEqual(report.errors,[]);
+});
+
+test("R6 native ADK smoke fails when private MCP worker export was renamed",t=>{
+  const entry="poc/packages/agent-runtime/scripts/adk-isolated-mcp-write-smoke.mjs";
+  const f=fixture(t,{
+    [entry]:
+      "import {attachPrivateMcpWorker} from '../src/private-mcp-worker-http.ts';",
+    "poc/packages/agent-runtime/src/private-mcp-worker-http.ts":
+      "export function renamedPrivateMcpWorker(){}"
+  });
+  const report=checkHistoricalRuntimeNamedImports(f.root,f.paths,[entry]);
+  assert.deepEqual(report.errors.map(e=>({
+    symbol:e.symbol,reason:e.reason
+  })),[{symbol:"attachPrivateMcpWorker",reason:"missing runtime named export"}]);
+});
+
+test("R6 ADK/MCP docker smokes remain source audited rather than executed by import",()=>{
+  for(const name of [
+    "adk-real-mcp-smoke.mjs",
+    "adk-isolated-mcp-create-smoke.mjs",
+    "adk-isolated-mcp-write-smoke.mjs",
+    "adk-isolated-mcp-real-runner-smoke.mjs"
+  ]){
+    assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.filter(e=>e.endsWith("/"+name)).length,1,
+      "Each effectful smoke must be audited once, not executed: "+name);
+  }
 });

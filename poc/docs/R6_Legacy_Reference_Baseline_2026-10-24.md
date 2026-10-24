@@ -1369,3 +1369,45 @@ a NO-GO substitute for R5.
 offline CI success. Leave `main` unchanged and do not invoke paid
 Gemini. Rollback to `ef0c7ed7a78c0f9254a340d6cd143a88d6ffe14e`
 if this additional cohort reveals unresolved legitimate exports.
+
+### R6 cleanup batch 28 — audit four historical native ADK shared-MCP smoke entrypoints
+
+After Batch 27, the read-only `audit:r6:runtime-named` scan
+covered ten historical A2A/MCP, authority, Researcher and
+manual-merge scripts. Four additional historic **scripted-model**
+ADK → shared MCP integration entrypoints still required named
+runtime export coverage:
+`adk-real-mcp-smoke.mjs`,
+`adk-isolated-mcp-create-smoke.mjs`,
+`adk-isolated-mcp-write-smoke.mjs` and
+`adk-isolated-mcp-real-runner-smoke.mjs`.
+
+**Change:** extend the fixed audited cohort from ten to **fourteen
+distinct entrypoints** without changing their source or executing
+them. These scripts are valuable historic regressions for
+PrivateMcpTaskRegistry, attachPrivateMcpWorker,
+createAdkSpecializedAgent, GatewayRuntime and the isolated
+Docker Runner HTTP API. The old scripts may require Docker,
+a real local Adapter, OPA and disposable Gitea, so importing
+them in CI merely to check ESM symbols would be unsafe.
+
+**Regression tests:** pin all four paths, verify six realistic
+named imports through ADK, private MCP, Gateway and Runner
+modules, and require a missing worker export to produce a
+fail-closed diagnostic. The existing source-only checker,
+ten-entrypoint regressions, no-provider guarantee and
+cumulative `audit:r6:runtime-named` invocation are retained.
+
+**Limits:** this is a bounded source export check, not a full
+module linker, live Gemini integration, authorization assessment,
+proof of local provider health or dead-code finder. No historical
+container or model workflow is executed here. Other historical
+scripts, default/namespace imports and external packages
+require separate coverage if warranted. Native Rust Core/VP/DC,
+Gateway/OPA, signed approved plan and actual Gitea provider
+contracts are unchanged.
+
+**Validation/rollback:** only certify upon exact-SHA 5/5
+offline cumulative CI success. Leave main protected and R5
+paid Gemini NO-GO. Rollback to
+`a92165ca393642e9c0187a4dac44d3128f63ef4f`.
