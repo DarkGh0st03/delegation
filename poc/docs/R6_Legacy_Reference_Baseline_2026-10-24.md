@@ -410,3 +410,19 @@ OPA, Gateway, ADK/A2A, Merge policy or provider checks. The historical
 paid Gemini workflow is still **not R5** and was not executed.
 Require exact-SHA cumulative/offline authority and A2A CI success.
 Rollback to `640b672cb085f5ecd0d997c7718333f923597a77`.
+
+### R6 batch 9 CI correction — multiline historical export assertion
+
+The cumulative offline run `40082595663` correctly reported one failure
+in the read-only import audit test: a historical test still expected
+`export {DeterministicOrchestratorAuthorityIssuer}` on a single
+line, while the new historical module explicitly exports two classes
+in a multiline ESM export. The protected Engineer and A2A dedicated
+CI checks passed. No native security enforcement failed.
+
+**Correction:** replace the outdated, formatting-sensitive assertion
+with a stricter ESM export check that requires **both**
+`DeterministicOrchestratorAuthorityIssuer` and
+`LegacySoftwareEngineerAuthorityBootstrap` in the legacy wrapper.
+No runtime class, credential or Gateway policy is changed. Re-run the
+whole exact-SHA cumulative suite; do not treat the original run as green.

@@ -547,7 +547,10 @@ test("R6 historical static issuer is not part of canonical exports or trusted co
   assert.match(canonical,/export \{SoftwareEngineerAuthorityBootstrap\}/u);
   assert.doesNotMatch(canonical,/DeterministicOrchestratorAuthorityIssuer/u);
   const historical=get("poc/packages/orchestrator-runtime/src/legacy-authority-client.ts");
-  assert.match(historical,/export \{DeterministicOrchestratorAuthorityIssuer\}/u);
+  // Both historical exports must remain present after introducing the
+  // independently named fixed-root bootstrap; ESM formatting is irrelevant.
+  assert.match(historical,
+    /export\s*\{\s*DeterministicOrchestratorAuthorityIssuer\s*,\s*LegacySoftwareEngineerAuthorityBootstrap\s*\}/u);
   for(const name of ["a2a-production-coordinator-mcp-gemini-live.mjs","a2a-production-coordinator-mcp-isolated-real-positive.mjs","a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs","a2a-production-coordinator-mcp-isolated-smoke.mjs"]){
     const src=get("poc/packages/agent-runtime/scripts/"+name);
     assert.match(src,/from ["']\.\.\/\.\.\/orchestrator-runtime\/src\/legacy-authority-client\.ts["']/u);
