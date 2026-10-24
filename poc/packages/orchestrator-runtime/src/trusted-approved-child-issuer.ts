@@ -143,14 +143,24 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     );
   }
 
+  /**
+   * Recheck the real Coordinator/root at the final protected A2A boundary.
+   * An Engineer shutdown can occur while the Adapter HTTP issuance is in
+   * flight. The issued child cannot justify a new Agent Task after that.
+   */
+  assertActiveBeforeA2ASend():void{
+    if(this.#coordinator.phase!=="execution")
+      reject("operational parent is no longer active");
+    const current=this.#coordinator.trustedOperationalAuthority();
+    if(current.credential_id!==this.#rootId||
+       current.plan_digest!==this.#digest)
+      reject("operational parent is no longer active");
+  }
+
   async issueSpecializedChild(input:ScopedInput):Promise<{
     role:Role;credential:IssuedDelegationCredential;
   }>{
-    if(this.#coordinator.phase!=="execution"||
-       this.#coordinator.trustedOperationalAuthority().credential_id!==this.#rootId||
-       this.#coordinator.trustedOperationalAuthority().plan_digest!==this.#digest){
-      reject("operational parent is no longer active");
-    }
+    this.assertActiveBeforeA2ASend();
     const role=exactRole(input.selection);
     if(typeof input.approved_task_id!=="string"||!ID.test(input.approved_task_id)){
       reject("missing immutable approved Task binding");
@@ -202,6 +212,9 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
        !exactCredentialPermissions(credential,permissions)){
       reject("Adapter child response differs from exact approved permissions");
     }
+    // A successful HTTP response may arrive AFTER human-initiated root
+    // revocation. Never hand an Agent a formerly valid child on that path.
+    this.assertActiveBeforeA2ASend();
     return {role,credential};
   }
 }

@@ -18,6 +18,8 @@ export interface ChildAuthorityIssuerPort {
     role: SpecializedAgentRole;
     credential: IssuedDelegationCredential;
   }>;
+  /** Present on the approved-plan issuer, not on legacy static issuers. */
+  assertActiveBeforeA2ASend?(): void;
 }
 
 export interface ProtectedA2AClientPort {
@@ -139,6 +141,10 @@ export class DelegatedA2ARoleRunner {
       presenter_id: issued.credential.credentialSubject.sub
     };
 
+    // In the signed DAG path this is mandatory: no async gap remains
+    // between observing the active root and starting the A2A send.
+    // Legacy role issuers do not expose this optional guard.
+    this.#authorityIssuer.assertActiveBeforeA2ASend?.();
     const result = await this.#a2a.sendProtectedTask({
       agent_base_url: input.agent_base_url,
       subtask: structuredClone(input.subtask),

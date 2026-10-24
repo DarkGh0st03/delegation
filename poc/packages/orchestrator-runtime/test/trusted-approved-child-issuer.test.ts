@@ -314,3 +314,67 @@ test("Test Agent receives only approved run_tests on the signed work branch",asy
  assert.equal(issued.credential.id,"urn:issued:scoped-test-child");
  assert.ok(!JSON.stringify(e.calls[0].body).includes("create_pull_request"));
 });
+
+
+test("operational root revoked during Adapter child issuance is rejected BEFORE A2A",async()=>{
+ const e=fixture();
+ const original=e.config.fetchFn;
+ let attempted=0,sent=0;
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer.create({
+   ...e.config,
+   fetchFn:(async(url,options)=>{
+     attempted++;
+     const response=await original(url,options);
+     // Simulate the Engineer terminating Execution before Adapter returns.
+     e.control.phase="closed";
+     return response;
+   }) as typeof fetch
+ } as any);
+ const runner=new DelegatedA2ARoleRunner({
+   authorityIssuer:issuer,
+   a2a:{async sendProtectedTask(){sent++;throw Error("A2A MUST NOT start");}}
+ });
+ const input={
+   ...child(),role:"backend",agent_base_url:"http://127.0.0.1:8001",
+   subtask:{subtask_id:"backend",instruction:"Approved backend change",
+     branch:BRANCH,relevant_paths:["apps/backend/user.ts"]}
+ };
+ await assert.rejects(runner.issueAndRun(input as any),/operational parent is no longer active/);
+ assert.equal(attempted,1);
+ assert.equal(sent,0);
+ assert.equal(e.calls.length,1);
+ // A canceled issuance cannot be retried, even if a misleading callback
+ // claims Execution has returned.
+ e.control.phase="execution";
+ await assert.rejects(issuer.issueSpecializedChild(child()),/already attempted/);
+ assert.equal(e.calls.length,1);
+});
+
+test("root revoked AFTER child return but BEFORE protected A2A send is refused",async()=>{
+ const e=fixture();
+ let sent=0,guarded=0;
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer.create(e.config as any);
+ const runner=new DelegatedA2ARoleRunner({
+   authorityIssuer:{
+     async issueSpecializedChild(input){
+       const issued=await issuer.issueSpecializedChild(input);
+       // Deterministically close the Coordinator in the final microtask gap.
+       e.control.phase="closed";
+       return issued;
+     },
+     assertActiveBeforeA2ASend(){
+       guarded++;
+       issuer.assertActiveBeforeA2ASend();
+     }
+   },
+   a2a:{async sendProtectedTask(){sent++;throw Error("A2A MUST NOT start");}}
+ });
+ await assert.rejects(runner.issueAndRun({
+   ...child(),role:"backend",agent_base_url:"http://127.0.0.1:8001",
+   subtask:{subtask_id:"backend",instruction:"Approved edit",
+     branch:BRANCH,relevant_paths:["apps/backend/user.ts"]}
+ } as any),/operational parent is no longer active/);
+ assert.equal(e.calls.length,1);
+ assert.equal(guarded,1);
+ assert.equal(sent,0);
+});
