@@ -561,3 +561,44 @@ leave `main` unchanged, and do NOT invoke the historical paid Gemini
 workflow as R5. Require the five-job offline cumulative CI on the
 exact new SHA before certifying. Rollback to
 `d193447bff345b613f28cf802c965d665108d209`.
+
+### R6 cleanup batch 13 — physically isolate protected Planning reads from the historical Gateway writer
+
+Prior to this batch, `TrustedPlanningGatewayReadPort` instantiated a
+`OrchestratorProtectedGatewayClient` that also contained historical,
+fixed Account Suspension `createFeatureBranch()` and
+`createAccountSuspensionPullRequest()`. Hiding the class from the
+canonical barrel did not remove those write methods from the object.
+
+**Change:** move the unchanged Gateway prepare → challenge-bound
+Adapter VP → Gateway execute HTTP machinery and error processing into
+the internal, non-public `orchestrator-gateway-transport.ts`.
+The canonical `orchestrator-gateway-client.ts` defines only the
+read-only `OrchestratorPlanningGatewayReadClient`, with the same
+Gateway validation and derived permission equality checks as before.
+The trusted Planning read port now holds this read-only class.
+`legacy-orchestrator-gateway-client.ts` physically defines the old
+writer, exact fixed branch/PR helper methods, and legacy provider
+result validation; four archived coordinator scripts keep their
+existing explicit opt-in import unchanged.
+
+**Tests:** existing historical Gateway unit tests retain the
+wire contract and fail-closed provider validation; trusted Planning
+read port tests exercise pinned Gitea revision, preliminary read DC,
+OPA and challenge-bound VP. New runtime and checkout assertions
+verify that the canonical class and internal transport contain no
+old writer methods or fixed branch names, while the archived class
+does, and that the canonical barrel never exports the internal
+transport or historical writer. Existing R6 static importer guard
+for the legacy module still applies.
+
+**Trust boundary:** TypeScript exports cannot replace native Rust
+DC/VP, signed-plan Task checks, Gateway, OPA, or protection of the
+private Adapter bearer in deployment. A trusted source could still
+import the internal transport; it must never be exposed to an agent.
+No external models, status lists, policy changes or source-main merges.
+The historical paid Gemini workflow remains R5 NO-GO.
+
+**Gate:** full exact-SHA five-job cumulative offline CI, plus
+relevant trusted Planning/Engineer regressions, before certification.
+Rollback to `e785ede1bf4c2194eaa954d787a63725d4245c46`.

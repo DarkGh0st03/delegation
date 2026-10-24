@@ -14,7 +14,11 @@ export * from "./delegated-permission.ts";
 export * from "./artifact-validation.ts";
 // Keep the error type shared; historical branch/PR-writing convenience
 // methods are intentionally absent from the signed runtime's public API.
-export {OrchestratorGatewayClientError}
+export {
+  OrchestratorGatewayClientError,
+  OrchestratorPlanningGatewayReadClient
+} from "./orchestrator-gateway-client.ts";
+export type {OrchestratorPlanningGatewayReadClientConfig}
   from "./orchestrator-gateway-client.ts";
 export * from "./a2a-workflow.ts";
 export * from "./merge-readiness.ts";

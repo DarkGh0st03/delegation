@@ -745,3 +745,31 @@ test("R6 old Gateway write convenience stays behind historical opt-in import",as
     "Only the historical scripts and Gateway regression may import old writer"
   );
 });
+
+test("R6 Gateway read/write source boundary excludes historical write methods from Planning",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const root=new URL("../../../",import.meta.url);
+  const src=p=>readFileSync(new URL(p,root),"utf8");
+  const d="poc/packages/orchestrator-runtime/src/";
+  const read=src(d+"orchestrator-gateway-client.ts");
+  const wire=src(d+"orchestrator-gateway-transport.ts");
+  const old=src(d+"legacy-orchestrator-gateway-client.ts");
+  const planning=src(d+"trusted-planning-gateway-port.ts");
+  const barrel=src(d+"index.ts");
+  for(const text of [read,wire]){
+    assert.equal(text.includes("createFeatureBranch("),false);
+    assert.equal(text.includes("createAccountSuspensionPullRequest("),false);
+    assert.equal(text.includes("feature/account-suspension"),false);
+  }
+  assert.equal(read.includes("async readPlanningResource("),true);
+  assert.equal(read.includes("async invoke("),false);
+  assert.equal(wire.includes("async invoke("),true);
+  assert.equal(old.includes("async createFeatureBranch("),true);
+  assert.equal(old.includes("async createAccountSuspensionPullRequest("),true);
+  assert.equal(old.includes("feature/account-suspension"),true);
+  assert.equal(planning.includes("new OrchestratorPlanningGatewayReadClient({"),true);
+  assert.equal(planning.includes("OrchestratorProtectedGatewayClient"),false);
+  assert.equal(barrel.includes("OrchestratorPlanningGatewayReadClient"),true);
+  assert.equal(barrel.includes("OrchestratorGatewayTransport"),false);
+  assert.equal(barrel.includes("OrchestratorProtectedGatewayClient"),false);
+});

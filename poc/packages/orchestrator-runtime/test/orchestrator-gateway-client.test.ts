@@ -4,6 +4,8 @@ import {OrchestratorGatewayClientError} from "../src/index.ts";
 import {OrchestratorProtectedGatewayClient}
   from "../src/legacy-orchestrator-gateway-client.ts";
 import * as canonicalApi from "../src/index.ts";
+import {OrchestratorPlanningGatewayReadClient}
+  from "../src/orchestrator-gateway-client.ts";
 
 const baseline = "a".repeat(40);
 const feature = "b".repeat(40);
@@ -255,4 +257,17 @@ test("R6 canonical public API excludes historical fixed branch and PR writer",()
     typeof OrchestratorProtectedGatewayClient.prototype.createAccountSuspensionPullRequest,
     "function"
   );
+});
+
+test("R6 Planning read-only client has no branch or Pull Request shortcuts",()=>{
+  const planning=OrchestratorPlanningGatewayReadClient.prototype;
+  const archived=OrchestratorProtectedGatewayClient.prototype;
+  assert.equal(Object.hasOwn(planning,"readPlanningResource"),true);
+  assert.equal(Object.hasOwn(planning,"createFeatureBranch"),false);
+  assert.equal(Object.hasOwn(planning,"createAccountSuspensionPullRequest"),false);
+  assert.equal(Object.hasOwn(archived,"readPlanningResource"),false);
+  assert.equal(Object.hasOwn(archived,"createFeatureBranch"),true);
+  assert.equal(Object.hasOwn(archived,"createAccountSuspensionPullRequest"),true);
+  assert.equal(typeof canonicalApi.OrchestratorPlanningGatewayReadClient,"function");
+  assert.equal(Object.hasOwn(canonicalApi,"OrchestratorProtectedGatewayClient"),false);
 });

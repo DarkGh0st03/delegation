@@ -16,7 +16,7 @@ import type {TrustedPlanningSnapshot}
   from "./trusted-engineer-authority.ts";
 import {preliminaryReadPermissions}
   from "./trusted-engineer-authority.ts";
-import {OrchestratorProtectedGatewayClient}
+import {OrchestratorPlanningGatewayReadClient}
   from "./orchestrator-gateway-client.ts";
 import type {TrustedExecutionCoordinator}
   from "./trusted-execution-coordinator.ts";
@@ -40,7 +40,7 @@ function fail():never{
 export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
   readonly #coordinator:TrustedExecutionCoordinator;
   readonly #snapshot:TrustedPlanningSnapshot;
-  readonly #client:OrchestratorProtectedGatewayClient;
+  readonly #client:OrchestratorPlanningGatewayReadClient;
   readonly #allowed:Set<string>;
   readonly #credentialId:string;
   constructor(config:TrustedPlanningGatewayPortConfig){
@@ -56,7 +56,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     this.#snapshot=snapshot;
     this.#allowed=new Set(allowed.map(key));
     this.#credentialId=root.credential_id;
-    this.#client=new OrchestratorProtectedGatewayClient({
+    this.#client=new OrchestratorPlanningGatewayReadClient({
       gatewayBaseUrl:config.gatewayBaseUrl,
       adapterBaseUrl:config.adapterBaseUrl,
       adapterToken:config.adapterToken,
