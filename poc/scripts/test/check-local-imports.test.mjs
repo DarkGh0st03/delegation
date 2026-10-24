@@ -420,3 +420,59 @@ test("R6 checkout has no unexpected indirect sequential coordinator callers",asy
     "Historical coordinator must not gain new dynamic or configured entrypoints"
   );
 });
+
+
+test("R6 fixed Account Suspension workflow must not become canonical public API",async t=>{
+  const target="poc/packages/orchestrator-runtime/src/workflow.ts";
+  const files={
+    [target]:"export const historical=true;",
+    "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts":
+      "import {historical} from './workflow.ts';",
+    "poc/packages/orchestrator-runtime/test/workflow.test.ts":
+      "import {historical} from '../src/workflow.ts';",
+    "poc/packages/orchestrator-runtime/src/index.ts":
+      "export * from './workflow.ts';",
+    "poc/packages/orchestrator-runtime/src/unapproved.ts":
+      "const late=()=>import('./workflow.ts');",
+    "poc/packages/orchestrator-runtime/src/comment.ts":
+      "// export * from './workflow.ts';\nexport const safe=true;",
+    "notes.md":"Historical workflow.ts remains as experimental evidence"
+  };
+  const root=fixture(t,files);
+  const {collectLegacyReferences,unexpectedHistoricalWorkflowCallers}=
+    await import("../r6-legacy-references.mjs");
+  const inventory=collectLegacyReferences(root,Object.keys(files),{candidates:[target]});
+  assert.deepEqual(
+    unexpectedHistoricalWorkflowCallers(inventory).map(x=>x.source),[
+      "poc/packages/orchestrator-runtime/src/index.ts",
+      "poc/packages/orchestrator-runtime/src/unapproved.ts"
+    ]);
+  assert.deepEqual(
+    unexpectedHistoricalWorkflowCallers(inventory,[
+      "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
+      "poc/packages/orchestrator-runtime/test/workflow.test.ts",
+      "poc/packages/orchestrator-runtime/src/index.ts",
+      "poc/packages/orchestrator-runtime/src/unapproved.ts"
+    ]),[]
+  );
+});
+
+test("R6 current checkout exposes no historical workflow through canonical barrel",async()=>{
+  const {readFileSync,existsSync}=await import("node:fs");
+  const {fileURLToPath}=await import("node:url");
+  const {collectLegacyReferences,gitTrackedFiles,unexpectedHistoricalWorkflowCallers}=
+    await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const barrel=readFileSync(new URL(
+    "poc/packages/orchestrator-runtime/src/index.ts",new URL("../../../",import.meta.url)
+  ),"utf8");
+  assert.doesNotMatch(barrel,/["']\.\/workflow\.ts["']/u);
+  assert.equal(existsSync(new URL(
+    "poc/packages/orchestrator-runtime/src/workflow.ts",new URL("../../../",import.meta.url)
+  )),true);
+  assert.deepEqual(
+    unexpectedHistoricalWorkflowCallers(
+      collectLegacyReferences(root,gitTrackedFiles(root))),[],
+    "Only the sequential coordinator and focused test may consume workflow.ts"
+  );
+});

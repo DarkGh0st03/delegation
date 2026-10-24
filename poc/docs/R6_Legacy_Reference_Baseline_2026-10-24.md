@@ -250,3 +250,30 @@ being mistaken for the current security design.
 refactoring branch. No changes to source `main`, no calls to paid
 models and no deletion of historical coordinator or provider tests.
 Certify only after the full exact-SHA cumulative five-job CI succeeds.
+
+### R6 cleanup batch 6 — isolate historical Account Suspension state machine
+
+The Orchestrator runtime public barrel no longer exports `workflow.ts`
+(`AccountSuspensionWorkflow`, fixed requirement and branch constants).
+This is the obsolete Phase 9B sequential state machine, not the new
+Engineer-signed Task DAG. The historical sequential coordinator already
+imports it directly; its dedicated `workflow.test.ts` now does likewise.
+The generic artifact validator in that test is imported explicitly from
+`artifact-validation.ts`. The old behavior and source implementation are
+preserved, including the historical paid workflow and regression tests.
+
+The R6 source audit now treats `workflow.ts` as a legacy candidate.
+Only the historical sequential coordinator and its test can refer to it
+through direct ESM imports or literal indirect/configured entrypoints.
+New public-barrel exports, canonical direct imports, dynamic literal loads
+and executable launchers fail the offline guard. Synthetic and checkout
+regressions exercise accepted versus rejected static/dynamic edges.
+
+**Limits:** This is not permission to delete the old state machine or
+evidence that all dynamic/external loaders have been examined. We retain
+the full previous Account Suspension evidence, do not change trusted
+Rust/OPA/Engineer enforcement and do not run paid Gemini.
+
+**Rollback:** revert to `4834fceef57055914105790b912e7bfd3ca9d27c`
+on the refactoring branch. Certify only after 5/5 cumulative offline CI
+jobs complete successfully on this exact commit.

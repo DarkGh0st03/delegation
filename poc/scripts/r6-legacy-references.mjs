@@ -16,6 +16,7 @@ import {fileURLToPath,pathToFileURL} from "node:url";
 
 export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
+  "poc/packages/orchestrator-runtime/src/workflow.ts",
   "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
@@ -71,6 +72,33 @@ export function unexpectedSequentialRuntimeReferences(
       .map(x=>Object.freeze({...x,edgeType:x.kind})),
     ...entry.configuredCallers
       .filter(x=>!allowedSet.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind}))
+  ]);
+}
+
+
+/**
+ * Keep Phase 9B's fixed Account Suspension state machine solely in the
+ * historical sequential coordinator and its own regression test.
+ * Canonical approved-plan code must never import it via the public barrel.
+ */
+export const R6_ALLOWED_HISTORICAL_WORKFLOW_CALLERS=Object.freeze([
+  "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
+  "poc/packages/orchestrator-runtime/test/workflow.test.ts"
+]);
+export function unexpectedHistoricalWorkflowCallers(
+  inventory, allowed=R6_ALLOWED_HISTORICAL_WORKFLOW_CALLERS
+){
+  const target="poc/packages/orchestrator-runtime/src/workflow.ts";
+  const entry=inventory.candidates.find(x=>x.target===target);
+  if(!entry)throw Error("R6 historical workflow missing from audit targets");
+  const accepted=new Set(allowed);
+  return Object.freeze([
+    ...entry.staticImporters.filter(x=>!accepted.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:"static-import-or-reexport"})),
+    ...entry.runtimeIndirectionHints.filter(x=>!accepted.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind})),
+    ...entry.configuredCallers.filter(x=>!accepted.has(x.source))
       .map(x=>Object.freeze({...x,edgeType:x.kind}))
   ]);
 }
@@ -380,7 +408,12 @@ function main(){
   for(const edge of indirect)
     console.error("R6 blocked legacy coordinator "+edge.edgeType+
       " caller: "+edge.source+"; migrate to signed approved DAG");
+  const historicalWorkflowCallers=unexpectedHistoricalWorkflowCallers(result);
+  for(const edge of historicalWorkflowCallers)
+    console.error("R6 blocked historical workflow "+edge.edgeType+
+      " caller: "+edge.source+"; use approved-plan DAG");
   if(forbidden.length>0||indirect.length>0||
+     historicalWorkflowCallers.length>0||
      result.candidates.some(x=>!x.exists))
     process.exitCode=1;
 }

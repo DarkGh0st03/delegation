@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  ACCOUNT_SUSPENSION_BRANCH,
-  AccountSuspensionWorkflow,
-  validateWorkflowArtifact
-} from "../src/index.ts";
+// The historical Account Suspension state machine is not public Orchestrator API.
+import {ACCOUNT_SUSPENSION_BRANCH,AccountSuspensionWorkflow}
+  from "../src/workflow.ts";
+import {validateWorkflowArtifact}
+  from "../src/artifact-validation.ts";
 
 const sha = (character: string): string => character.repeat(40);
 
