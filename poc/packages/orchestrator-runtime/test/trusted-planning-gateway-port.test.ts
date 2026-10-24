@@ -596,8 +596,8 @@ test("owner bootstrap issues one read-only root, traverses Gateway and persists 
     await closed;
     assert.equal(f.coordinator.phase,"closed");
     assert.equal(f.observed.revoked,1);
-    await assert.rejects(f.coordinator.closePlanning(),
-      /No active trusted Planning root|./);
+    await f.coordinator.closePlanning();
+    assert.equal(f.coordinator.phase,"closed");
     assert.equal(f.observed.revoked,1);
   }finally{await f.cleanup();}
 });
