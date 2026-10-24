@@ -1,0 +1,93 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {dirname,join} from "node:path";
+import {
+  checkHistoricalRuntimeNamedImports,HISTORICAL_RUNTIME_ENTRYPOINTS
+} from "../r6-historical-named-imports.mjs";
+const dir="poc/packages/agent-runtime/scripts/";
+const entry=dir+"historical.mjs";
+function fixture(t,entries){
+  const root=mkdtempSync(join(tmpdir(),"r6-legacy-values-"));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  for(const [path,source] of Object.entries(entries)){
+    mkdirSync(dirname(join(root,path)),{recursive:true});
+    writeFileSync(join(root,path),source);
+  }
+  return {root,paths:Object.keys(entries)};
+}
+
+test("R6 runtime aliases, direct values and recursive star barrels resolve",t=>{
+  const f=fixture(t,{
+    [entry]:
+      "import {Allowed as Alias,AlsoAllowed} from '../src/index.ts';\n"+
+      "import {Ready} from './ready.mjs';",
+    "poc/packages/agent-runtime/src/index.ts":
+      "export * from './other.ts';\nexport {Actual as Allowed} from './aliased.ts';",
+    "poc/packages/agent-runtime/src/other.ts":
+      "export async function AlsoAllowed(){}",
+    "poc/packages/agent-runtime/src/aliased.ts":"export class Actual {}",
+    [dir+"ready.mjs"]:"export const Ready=true;"
+  });
+  const out=checkHistoricalRuntimeNamedImports(f.root,f.paths,[entry]);
+  assert.equal(out.checkedImports,3);
+  assert.deepEqual(out.errors,[]);
+});
+
+test("R6 detects runtime names that disappeared from an otherwise valid barrel",t=>{
+  const f=fixture(t,{
+    [entry]:"import {GiteaMergeReadinessVerifier} from '../src/index.ts';",
+    "poc/packages/agent-runtime/src/index.ts":"export const Unrelated=1;"
+  });
+  const out=checkHistoricalRuntimeNamedImports(f.root,f.paths,[entry]);
+  assert.deepEqual(out.errors.map(x=>({
+    symbol:x.symbol,reason:x.reason
+  })),[{
+    symbol:"GiteaMergeReadinessVerifier",reason:"missing runtime named export"
+  }]);
+});
+
+test("R6 runtime named exports cannot resolve to stripped TS types",t=>{
+  const f=fixture(t,{
+    [entry]:"import {Contract} from '../src/model.ts';",
+    "poc/packages/agent-runtime/src/model.ts":
+      "export interface Contract {name:string}\nexport type Alias=Contract;"
+  });
+  assert.equal(checkHistoricalRuntimeNamedImports(f.root,f.paths,[entry])
+    .errors[0].reason,"missing runtime named export");
+});
+
+test("R6 comment and quoted import examples are not executable imports",t=>{
+  const f=fixture(t,{
+    [entry]:
+      "// import {Bad} from './missing.mjs';\n"+
+      "/* import {Wrong} from './missing.mjs'; */\n"+
+      "const example=\"import {Bad} from './missing.mjs'\";\n"+
+      "import {Valid} from './valid.mjs';",
+    [dir+"valid.mjs"]:"export const Valid=1;"
+  });
+  const out=checkHistoricalRuntimeNamedImports(f.root,f.paths,[entry]);
+  assert.equal(out.checkedImports,1);
+  assert.deepEqual(out.errors,[]);
+});
+
+test("R6 catches deleted local files and missing checked entrypoints",t=>{
+  const f=fixture(t,{
+    [entry]:"import {Gone} from './deleted.mjs';",
+    [dir+"ok.mjs"]:"export const Good=1;"
+  });
+  const out=checkHistoricalRuntimeNamedImports(
+    f.root,f.paths,[entry,dir+"not-tracked.mjs"]);
+  assert.deepEqual(out.errors.map(x=>x.reason),
+    ["missing local module","missing audited script"]);
+});
+
+test("R6 historical audit pins four A2A cohorts and manual merge",()=>{
+  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,5);
+  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,5);
+  assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
+    x.endsWith("/a2a-production-coordinator-mcp-gemini-live.mjs")));
+  assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
+    x.endsWith("/scripts/human-merge.mjs")));
+});

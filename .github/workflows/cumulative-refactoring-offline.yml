@@ -43,6 +43,7 @@ jobs:
           npm --prefix poc run check:imports
           npm --prefix poc run audit:r6:references
           npm --prefix poc run audit:r6:types
+          npm --prefix poc run audit:r6:runtime-named
           node poc/scripts/sync-rust-operation-catalog.mjs --check
       - name: Gateway / provider / composite authorization
         run: npm --prefix poc run gateway:test

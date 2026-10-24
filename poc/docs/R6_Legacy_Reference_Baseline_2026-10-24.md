@@ -1141,3 +1141,46 @@ two exported merge-readiness classes to an explicit source declaration
 assertion. The first version had an over-escaped dynamic word-boundary
 pattern; this test-only correction verifies the same class names and
 does not change their implementation or any security policy.
+
+### R6 cleanup batch 25 — historical entrypoint named-runtime-export audit
+
+**Motivation:** after the human-only `merge-readiness.ts` export
+was removed from `orchestrator-runtime/src/index.ts`, three legacy
+Account Suspension A2A scripts still attempted to import
+`GiteaMergeReadinessVerifier` and `MergeReadinessDenied`
+from the public barrel. The import-path guard passed because the
+barrel file existed, but the runtime named symbols were missing.
+Batch 24 repaired the explicit imports. The old experimental
+scripts were not all executed by the five-job cumulative matrix.
+
+**New gate:** `poc/scripts/r6-historical-named-imports.mjs`
+statically checks all relative named *runtime* ESM imports in
+the four archived A2A coordinator entrypoints and the protected
+human-only `human-merge.mjs` command. The imported target must
+be a Git-tracked file and define the requested value export
+directly or through simple named, aliased or star re-exports.
+TypeScript `export interface` and `export type` cannot satisfy
+runtime value imports. Source files are only read; no historical
+entrypoint or model is invoked.
+
+**Test coverage:** direct values, alias forwarding, recursive
+barrel exports; missing value in a present file; erased
+TypeScript interfaces; inert commented/quoted examples; and
+missing Git-tracked dependency or audited historical script.
+Add `npm --prefix poc run audit:r6:runtime-named` to the first
+stage of cumulative offline validation. These checks specifically
+protect the privileged merge-readiness API isolation without
+requiring historical paid or Gitea side-effect execution.
+
+**Scope limitations:** intentionally pinned to five entrypoints;
+this is not a complete Node linker, `tsc`, dynamic-import audit,
+third-party package export validator, actual provider handshake,
+signed-plan end-to-end proof or legacy deletion finding.
+Do not infer that external workflow approval gates were exercised.
+The old Gemini run remains R5 NO-GO. No changes to `main`,
+native Rust, Adapter, Gateway, OPA, child issuance or ADK behavior.
+
+**Rollback and gate:** compare-and-swap parent
+`3a21c964c8ade967ea07e1fe738ad1417476d800`; require
+five successful cumulative offline jobs for the resulting
+exact commit before certifying.
