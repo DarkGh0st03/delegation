@@ -83,9 +83,9 @@ test("R6 catches deleted local files and missing checked entrypoints",t=>{
     ["missing local module","missing audited script"]);
 });
 
-test("R6 historical audit pins four A2A cohorts and manual merge",()=>{
+test("R6 historical audit pins four A2A cohorts, boundary probe and manual merge",()=>{
   assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,6);
-  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,5);
+  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,6);
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/a2a-production-coordinator-mcp-gemini-live.mjs")));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>

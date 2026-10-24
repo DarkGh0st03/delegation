@@ -1305,3 +1305,22 @@ No runtime credential, OPA, Gateway, EVM or permission check is
 modified. Original failed CI remains recorded; certify only after
 the new exact-SHA five-job offline suite passes. R5 remains NO-GO
 and `main` is unchanged.
+
+### R6 batch 26 final test correction — six DISTINCT audited historical entrypoints
+
+The next exact-SHA cumulative run `40097455706` passed the
+R6 import-path and named-runtime-export stage; its Node regression
+suite then found a stale assertion that the set of six historical
+entrypoint paths should have only five unique entries. That was a
+test counter leftover from the prior five-script audit, not an
+export-resolution or authorization failure.
+
+**Correction:** assert six entrypoints and **six distinct paths**
+and rename the test to include the new historical authority
+boundary probe. Keep all six paths mandatory. Do not silence,
+skip, or weaken the test. The older red CI is preserved in GitHub
+and the entire 5-job exact-SHA suite must run again.
+
+No policy, historical Gateway write operation, DC/VP, OPA,
+Adapter or provider behavior changes. No paid Gemini calls and
+no merge to `main`.
