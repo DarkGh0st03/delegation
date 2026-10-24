@@ -17,6 +17,8 @@ import {createTrustedReviewedHandoffLifecycle}
 import {resolve} from "node:path";
 import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
+import {TrustedPlanningRecoveryStore,reconcileOrphanedPlanningRoots}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
 import {TrustedPlanIpcClient}
   from "../../gateway/src/trusted-plan-ipc.ts";
 import {SoftwareEngineerAuthorityBootstrap}
@@ -83,7 +85,8 @@ export async function startTrustedEngineerLocalHost(config){
   const recovery=config?.recovery;
   const directories=[
     oidc.replayDirectory,oidc.admissionDirectory,approval.receiptDirectory,
-    ...(recovery?[recovery.directory]:[])
+    ...(recovery?[recovery.directory]:[]),
+    ...(recovery?.planning?[recovery.planning.directory]:[])
   ];
   if(directories.some(x=>typeof x!=="string"||!x.trim())||
      new Set(directories.map(dir=>resolve(dir))).size!==directories.length)
@@ -91,7 +94,20 @@ export async function startTrustedEngineerLocalHost(config){
   for(const dir of directories)await privateDirectory(dir);
   // Reconcile BEFORE creating/listening on the Engineer UI or GitHub OIDC
   // intake. No old approval may be served while an orphan root is uncertain.
-  let operationalRecoveryStore;
+  let operationalRecoveryStore,planningRecoveryStore;
+  if(recovery?.planning){
+    if(typeof recovery.planning.gateway?.retirePlanning!=="function"||
+       typeof recovery.planning.credentials?.revokeRoot!=="function")
+      deny("trusted Gateway Planning retirement and Rust revocation required");
+    planningRecoveryStore=new TrustedPlanningRecoveryStore(recovery.planning.directory);
+    // Cold restart never resumes old provisional authority or consent.
+    await reconcileOrphanedPlanningRoots({
+      store:planningRecoveryStore,
+      gateway:recovery.planning.gateway,
+      credentials:recovery.planning.credentials
+    });
+    await planningRecoveryStore.assertFreshSession(approval.expectedSessionId);
+  }
   if(recovery){
     if(typeof recovery.gateway?.retireSession!=="function"||
        typeof recovery.credentials?.revokeRoot!=="function")
@@ -141,6 +157,7 @@ export async function startTrustedEngineerLocalHost(config){
     oidcAdmissionEndpoint:oidcIntake.endpoint,
     /** Trusted process reference only, never returned by HTTP. */
     operationalRecoveryStore,
+    planningRecoveryStore,
     /** Does NOT imply human approval; read-only, one-use status only. */
     consumeAuthenticatedRun(runId){
       if(closed)deny("host closed");
@@ -219,6 +236,8 @@ export async function startTrustedEngineerRecoveringHost(config){
     deny("backend-signed Planning checkpoint differs from pinned Engineer session");
   const recovery=config?.recovery;
   if(!recovery||typeof recovery.directory!=="string"||
+     typeof recovery.planningDirectory!=="string"||
+     recovery.planningDirectory===recovery.directory||
      typeof recovery.gatewaySocketPath!=="string"||
      typeof recovery.gatewaySecretFile!=="string"||
      typeof recovery.adapterBaseUrl!=="string"||
@@ -232,6 +251,7 @@ export async function startTrustedEngineerRecoveringHost(config){
         adapterUrl.hostname==="127.0.0.1"&&
         !adapterUrl.username&&!adapterUrl.password)))
     deny("Adapter must use HTTPS or loopback HTTP");
+  await privateDirectory(recovery.planningDirectory);
   const gateway=await TrustedPlanIpcClient.connect({
     socketPath:recovery.gatewaySocketPath,
     secretFile:recovery.gatewaySecretFile
@@ -242,6 +262,9 @@ export async function startTrustedEngineerRecoveringHost(config){
     adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken
   });
   return startTrustedEngineerLocalHost({
-    ...config,recovery:{directory:recovery.directory,gateway,credentials}
+    ...config,recovery:{
+      directory:recovery.directory,gateway,credentials,
+      planning:{directory:recovery.planningDirectory,gateway,credentials}
+    }
   });
 }

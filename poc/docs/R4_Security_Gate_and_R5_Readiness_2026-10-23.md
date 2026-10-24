@@ -416,3 +416,26 @@ actually passes its live registry, nor that a restarted Gateway persisted
 the tombstone, nor that the Engineer host has recovered its pending
 Planning journal. Both sides must be connected and validated before
 calling the process-restart path safe. No paid Gemini or main merge.
+
+### R5 Engineer cold-start recovery of provisional Planning roots
+
+The persistent owner-file Engineer service now requires a sixth, distinct
+owner-only directory `recovery.planningDirectory`. Strict
+startup validates it before connecting to the authenticated Gateway IPC.
+The Engineer host independently reconciles its persisted preliminary
+root journal by requiring both the Gateway
+`retirePlanning(sessionId)` registry operation and the
+Rust/Adapter `revokeRoot(credentialId)` receipt, before
+opening either human approval or GitHub OIDC listener. A missing,
+inaccessible or unconfirmed component causes a terminal boot rejection
+and retains the pending root intent. A cold-restarted session with a
+retired provisional root cannot silently resume an earlier review.
+
+The local offline test exercises a failed Gateway retirement followed by
+successful cold restart with the same protected journal, verifies Rust
+revocation is still attempted when Gateway fails, and checks no listener
+is exposed prematurely. The actual Gateway deployment must still pass
+its live `TrustedPlanningRevisions` registry to the
+authenticated private IPC server. This host startup path is not yet a
+same-process handoff of a still-active Planning root to the authenticated
+Engineer session. R5 remains NO-GO; no paid model call or merge.

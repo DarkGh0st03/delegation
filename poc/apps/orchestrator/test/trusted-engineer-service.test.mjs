@@ -10,7 +10,7 @@ import {loadTrustedEngineerServiceConfig}
 async function fixture(){
   const home=await mkdtemp(join(tmpdir(),"engineer-service-config-"));
   const dirs={};
-  for(const name of ["approval","checkpoints","replays","admissions","recovery"]){
+  for(const name of ["approval","checkpoints","replays","admissions","recovery","planning"]){
     dirs[name]=join(home,name);
     await mkdir(dirs[name],{mode:0o700});
   }
@@ -67,7 +67,8 @@ async function fixture(){
         expectedClientFingerprint256:Array(32).fill("AA").join(":")}
     },
     recovery:{
-      directory:dirs.recovery,gatewaySocketPath:filename("gateway.sock"),
+      directory:dirs.recovery,planningDirectory:dirs.planning,
+      gatewaySocketPath:filename("gateway.sock"),
       gatewaySecretFile:files.gateway,adapterBaseUrl:"http://127.0.0.1:8090",
       adapterTokenFile:files.adapter
     },
@@ -85,6 +86,7 @@ test("service loads only protected, local config and independent secrets",async(
     assert.equal(c.oidc.hmacSecret.length,32);
     assert.equal(c.oidc.githubApiToken,"offline-github-token");
     assert.equal(c.recovery.adapterToken,"offline-adapter-bearer");
+    assert.equal(c.recovery.planningDirectory,f.dirs.planning);
     assert.equal(c.approval.publicKeyPem.includes("BEGIN PUBLIC KEY"),true);
     assert.equal(c.oidc.tls.expectedClientFingerprint256,
       f.config.oidc.tls.expectedClientFingerprint256);

@@ -11,6 +11,8 @@ import {createTrustedPlanIpcServer}
   from "../../gateway/src/trusted-plan-ipc.ts";
 import {TrustedOperationalRecoveryStore}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
+import {TrustedPlanningRecoveryStore}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
 import {startTrustedEngineerLocalHost}
   from "../src/trusted-engineer-host.mjs";
 import {SignedEngineerApprovalFileStore}
@@ -344,7 +346,8 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   t.after(()=>rm(home,{recursive:true,force:true}));
   const recoveryDir=join(home,"recovery"),ipcDir=join(home,"ipc");
   const checkpointDir=join(home,"checkpoints");
-  for(const dir of [recoveryDir,ipcDir,checkpointDir])
+  const planningDir=join(home,"planning-recovery");
+  for(const dir of [recoveryDir,ipcDir,checkpointDir,planningDir])
     await mkdir(dir,{mode:0o700});
   const secretFile=join(ipcDir,"secret.hex"),socketPath=join(ipcDir,"plan.sock");
   await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
@@ -394,7 +397,8 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   const config={...f.config,
     oidc:{...f.config.oidc,tls:serverTls},
     recovery:{
-      directory:recoveryDir,gatewaySocketPath:socketPath,
+      directory:recoveryDir,planningDirectory:planningDir,
+      gatewaySocketPath:socketPath,
       gatewaySecretFile:secretFile,adapterBaseUrl,
       adapterToken:"offline-adapter-token"
     }
@@ -670,4 +674,54 @@ test("two OS processes exchange pinned private-IP mTLS OIDC and reject replay or
   assert.equal(record.session_id,f.plan.session_id);
   assert.ok(!("approved_permission_ids" in record));
   assert.ok(!("operational_root_id" in record));
+});
+
+
+test("Engineer cold startup requires Gateway Planning retirement and Rust revocation",async t=>{
+  const f=await fixture(t);
+  const home=await mkdtemp(join(tmpdir(),"planning-cold-restart-"));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  const operational=join(home,"operational"),planning=join(home,"planning");
+  await mkdir(operational,{mode:0o700});
+  await mkdir(planning,{mode:0o700});
+  const journal=new TrustedPlanningRecoveryStore(planning);
+  const crashed="crashed-planning-before-checkpoint";
+  const root="urn:provisional:possibly-issued";
+  await journal.recordIntent({
+    sessionId:crashed,baseRevision:f.plan.base_revision,credentialId:root
+  });
+  const actions=[];
+  let blockGateway=true;
+  const gateway={
+    async retireSession(){throw Error("unexpected operational tombstone");},
+    async retirePlanning(id){
+      actions.push("planning:"+id);
+      if(blockGateway)throw Error("Gateway retirement unconfirmed");
+    }
+  };
+  const credentials={
+    async revokeRoot(id){actions.push("rust:"+id);}
+  };
+  const config={...f.config,recovery:{
+    directory:operational,gateway,credentials,
+    planning:{directory:planning,gateway,credentials}
+  }};
+  await assert.rejects(startTrustedEngineerLocalHost(config),
+    /manual reconciliation required/);
+  assert.deepEqual(actions,["planning:"+crashed,"rust:"+root]);
+  assert.equal((await journal.pending()).length,1);
+  blockGateway=false;
+  const host=await startTrustedEngineerLocalHost(config);
+  t.after(()=>host.close());
+  assert.deepEqual(actions,[
+    "planning:"+crashed,"rust:"+root,
+    "planning:"+crashed,"rust:"+root
+  ]);
+  await journal.assertClean();
+  await assert.rejects(journal.assertFreshSession(crashed),
+    /retired session cannot be reused/);
+  assert.equal(host.planningRecoveryStore instanceof
+    TrustedPlanningRecoveryStore,true);
+  assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+  await host.close();
 });

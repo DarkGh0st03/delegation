@@ -85,8 +85,8 @@ export async function loadTrustedEngineerServiceConfig(configPath){
        "bindAddress","githubApiTokenFile","hmacSecretHexFile","tls"
      ])||
      !allowedKeys(recovery,[
-       "directory","gatewaySocketPath","gatewaySecretFile",
-       "adapterBaseUrl","adapterTokenFile"
+       "directory","planningDirectory","gatewaySocketPath",
+       "gatewaySecretFile","adapterBaseUrl","adapterTokenFile"
      ])||
      !allowedKeys(oidc.tls,[
        "caFile","certFile","keyFile","expectedClientFingerprint256"
@@ -111,12 +111,14 @@ export async function loadTrustedEngineerServiceConfig(configPath){
   // replaced by external workflow inputs or a model.
   for(const p of [
     approval.receiptDirectory,approval.checkpoint.directory,
-    oidc.replayDirectory,oidc.admissionDirectory,recovery.directory
+    oidc.replayDirectory,oidc.admissionDirectory,
+    recovery.directory,recovery.planningDirectory
   ])await ownedPrivateDir(p);
   if(new Set([
     approval.receiptDirectory,approval.checkpoint.directory,
-    oidc.replayDirectory,oidc.admissionDirectory,recovery.directory
-  ]).size!==5)denied();
+    oidc.replayDirectory,oidc.admissionDirectory,
+    recovery.directory,recovery.planningDirectory
+  ]).size!==6)denied();
   const reads=await Promise.all(requiredPaths.map(p=>protectedText(p)));
   const [trustedPlan,signingKey,publicKey,backendPublicKey,
     githubApiToken,hmacHex,ca,cert,key,adapterToken,gatewaySecret]=reads;
