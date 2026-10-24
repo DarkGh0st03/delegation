@@ -669,3 +669,8 @@ Use the guarded R5 NO-GO checklist before any external deployment.
 ### Reviewed Execution lifetime under Engineer host supervision
 
 The Engineer host now owns one **tracked, one-shot** admitted handoff per process. An in-process continuation may start only once after the trusted operational-recovery check. Host shutdown (`SIGTERM`, `SIGINT`, explicit close) waits for an in-flight handoff start and invokes its trusted `close()` method (Gateway retirement and Rust root revocation) alongside listener teardown. A failed revocation is propagated as an uncertain shutdown requiring manual reconciliation, never reported as clean success. No model can call this lifecycle API, and it cannot fabricate or replace an Engineer receipt. Offline regression covers duplicate starts, shutdown during startup, and unconfirmed revocation.
+
+
+### R5 offline — cancellation after protected A2A dispatch
+
+The trusted DAG dispatcher rechecks the Coordinator Execution phase after the protected A2A result and after Gateway task confirmation, before recording completion or enabling DAG dependents. The Orchestrator branch task follows the same post-confirmation rule. Negative tests simulate shutdown (1) while Backend A2A is in flight, (2) immediately after Backend Gateway confirmation, and (3) after Orchestrator branch confirmation. No subsequent Task may begin. This is deterministic offline race testing, not rollback of external effects. Gateway and Rust revocation remain the enforcement boundaries.

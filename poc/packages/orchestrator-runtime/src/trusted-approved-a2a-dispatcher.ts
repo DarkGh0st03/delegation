@@ -308,6 +308,10 @@ export class TrustedApprovedA2ADispatcher {
           approved_file_permissions:approvedFilePermissions
         }
       });
+      // The signed root may be revoked while protected A2A is in flight.
+      // No stale A2A response may generate Gateway completion evidence.
+      if(this.#config.coordinator.phase!=="execution")
+        throw Error("Trusted A2A response arrived after operational shutdown");
       if(result.role!==role||!result.task_id||
          result.artifact?.role!==role||
          result.artifact?.branch!==this.#snapshot.approvedBranch){
@@ -315,6 +319,10 @@ export class TrustedApprovedA2ADispatcher {
       }
       await this.#config.coordinator.confirmTask(
         dispatchId,observedA2ACompletion(result,dispatchId));
+      // A concurrent close may race the attestor. Never unlock a
+      // dependent node based on a confirmation from a closed session.
+      if(this.#config.coordinator.phase!=="execution")
+        throw Error("Trusted A2A confirmation raced operational shutdown");
       this.#completed.add(task.id);
       return result;
     }catch(error){
@@ -358,6 +366,8 @@ export class TrustedApprovedA2ADispatcher {
           source:"trusted_orchestrator",runtime_task_id:dispatchId,
           role:"orchestrator",state:"completed"
         });
+      if(this.#config.coordinator.phase!=="execution")
+        throw Error("Trusted Orchestrator confirmation raced operational shutdown");
       this.#completed.add(task.id);
     }catch(error){
       this.#terminal=true;

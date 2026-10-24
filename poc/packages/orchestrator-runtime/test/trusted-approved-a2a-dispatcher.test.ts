@@ -53,6 +53,8 @@ function harness(options:{
   invalidArtifactBranch?:boolean;
   unapprovedCandidate?:boolean;
   approvedReadContext?:boolean;
+  closeDuringA2A?:boolean;closeAfterGatewayConfirmation?:boolean;
+  closeAfterBranchConfirmation?:boolean;
 }={}){
   const p=plan(options.workBranch);
   if(options.unapprovedCandidate){
@@ -91,12 +93,17 @@ function harness(options:{
     },
     async confirmTask(id:string,observation:any){
       log.push("confirm:"+id+":"+observation.role);
+      if((options.closeAfterGatewayConfirmation&&observation.role==="backend")||
+         (options.closeAfterBranchConfirmation&&observation.role==="orchestrator"))
+        coordinator.phase="closed";
     },
     async closeExecution(){log.push("close");coordinator.phase="closed";}
   };
   const runner={
     async issueAndRun(input:any){
       log.push("run:"+input.subtask.subtask_id+":"+input.trusted_gateway_task_id);
+      if(options.closeDuringA2A&&input.role==="backend")
+        coordinator.phase="closed";
       if(options.unapprovedCandidate||options.approvedReadContext){
         log.push("paths:"+input.subtask.relevant_paths.join(","));
         log.push("file-rights:"+JSON.stringify(
@@ -330,4 +337,47 @@ test("signed Dispatcher emits read_file context and update_file target as distin
    {operation:"read_file",path:"apps/backend/context.ts"}
  ]);
  assert.ok(h.log.some(x=>x==="paths:apps/backend/user.ts,apps/backend/context.ts"));
+});
+
+
+test("Engineer shutdown during in-flight Backend A2A blocks Gateway confirmation and all dependents",async()=>{
+ const h=harness({closeDuringA2A:true});
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await assert.rejects(d.executeApprovedDag({
+   invokeOrchestratorTask:async()=>{}
+ }),/A2A response arrived after operational shutdown/);
+ assert.deepEqual(d.completedTaskIds,["branch"]);
+ assert.equal(h.coordinator.phase,"closed");
+ assert.ok(h.log.some(x=>x.startsWith("run:backend-task:")));
+ assert.ok(!h.log.some(x=>x.startsWith("confirm:")&&x.endsWith(":backend")));
+ assert.ok(!h.log.some(x=>x.startsWith("bind:frontend-task:")||
+   x.startsWith("bind:tests:")));
+ await assert.rejects(d.executeApprovedDag({
+   invokeOrchestratorTask:async()=>{}
+ }),/fresh approved Execution/);
+});
+
+test("Gateway completion racing Engineer shutdown cannot release Frontend or Test",async()=>{
+ const h=harness({closeAfterGatewayConfirmation:true});
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await assert.rejects(d.executeApprovedDag({
+   invokeOrchestratorTask:async()=>{}
+ }),/A2A confirmation raced operational shutdown/);
+ assert.deepEqual(d.completedTaskIds,["branch"]);
+ assert.equal(h.coordinator.phase,"closed");
+ assert.ok(h.log.some(x=>x.startsWith("confirm:")&&x.endsWith(":backend")));
+ assert.ok(!h.log.some(x=>x.startsWith("bind:frontend-task:")||
+   x.startsWith("bind:tests:")));
+});
+
+test("Orchestrator branch confirmation racing shutdown cannot unlock Backend A2A",async()=>{
+ const h=harness({closeAfterBranchConfirmation:true});
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await assert.rejects(d.executeApprovedDag({
+   invokeOrchestratorTask:async()=>{}
+ }),/Orchestrator confirmation raced operational shutdown/);
+ assert.deepEqual(d.completedTaskIds,[]);
+ assert.equal(h.coordinator.phase,"closed");
+ assert.ok(!h.log.some(x=>x.startsWith("allocate:backend-task")||
+   x.startsWith("run:backend-task:")));
 });
