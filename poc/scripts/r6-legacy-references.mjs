@@ -18,6 +18,7 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
   "poc/packages/orchestrator-runtime/src/legacy-authority-client.ts",
   "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts",
+  "poc/packages/orchestrator-runtime/src/orchestrator-gateway-transport.ts",
   "poc/packages/orchestrator-runtime/src/permission-templates.ts",
   "poc/packages/orchestrator-runtime/src/workflow.ts",
   "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
@@ -186,6 +187,35 @@ export function unexpectedHistoricalGatewayCallers(
   const target="poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts";
   const entry=inventory.candidates.find(x=>x.target===target);
   if(!entry)throw Error("R6 historical Gateway wrapper missing from inventory");
+  const approved=new Set(allowed);
+  return Object.freeze([
+    ...entry.staticImporters.filter(x=>!approved.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:"static-import-or-reexport"})),
+    ...entry.runtimeIndirectionHints.filter(x=>!approved.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind})),
+    ...entry.configuredCallers.filter(x=>!approved.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind}))
+  ]);
+}
+
+
+/**
+ * R6 SECURITY-SENSITIVE INVENTORY TARGET (not obsolete/deletion candidate).
+ * The internal Gateway transport can request arbitrary tools and holds a
+ * private Adapter bearer. Only two deliberately reviewed clients may import
+ * it: the read-only Planning wrapper and the historical write wrapper.
+ * This static safety net does NOT replace Gateway/Core Rust/OPA enforcement.
+ */
+export const R6_ALLOWED_PRIVATE_GATEWAY_TRANSPORT_CALLERS=Object.freeze([
+  "poc/packages/orchestrator-runtime/src/orchestrator-gateway-client.ts",
+  "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts"
+]);
+export function unexpectedPrivateGatewayTransportCallers(
+  inventory,allowed=R6_ALLOWED_PRIVATE_GATEWAY_TRANSPORT_CALLERS
+){
+  const target="poc/packages/orchestrator-runtime/src/orchestrator-gateway-transport.ts";
+  const entry=inventory.candidates.find(x=>x.target===target);
+  if(!entry)throw Error("R6 private Gateway transport is missing from inventory");
   const approved=new Set(allowed);
   return Object.freeze([
     ...entry.staticImporters.filter(x=>!approved.has(x.source))
@@ -518,9 +548,15 @@ function main(){
   for(const edge of gatewayCallers)
     console.error("R6 blocked legacy branch/PR Gateway "+
       edge.edgeType+" caller: "+edge.source);
+  const privateTransportCallers=unexpectedPrivateGatewayTransportCallers(result);
+  for(const edge of privateTransportCallers)
+    console.error("R6 blocked private Gateway transport "+
+      edge.edgeType+" caller: "+edge.source+
+      "; keep private VP/Adapter access out of new modules");
   if(forbidden.length>0||indirect.length>0||
      historicalWorkflowCallers.length>0||authorityCallers.length>0||
      templateCallers.length>0||gatewayCallers.length>0||
+     privateTransportCallers.length>0||
      result.candidates.some(x=>!x.exists))
     process.exitCode=1;
 }

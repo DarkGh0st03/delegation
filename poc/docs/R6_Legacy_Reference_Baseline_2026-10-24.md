@@ -602,3 +602,44 @@ The historical paid Gemini workflow remains R5 NO-GO.
 **Gate:** full exact-SHA five-job cumulative offline CI, plus
 relevant trusted Planning/Engineer regressions, before certification.
 Rollback to `e785ede1bf4c2194eaa954d787a63725d4245c46`.
+
+### R6 cleanup batch 14 — protect private Gateway transport after physical read/write split
+
+Batch 13 physically separated trusted read-only Planning from the
+Account Suspension fixed branch/PR helpers, but introduced the internal
+`orchestrator-gateway-transport.ts` with the powerful generic
+`invoke()` machinery and the private Adapter credential. A new
+canonical or agent-facing module must not import or re-export that
+transport as a convenient direct Gateway tool.
+
+**Enforced boundary:** add the internal transport to the tracked R6
+audit as a **sensitive source**, explicitly NOT as a deletion
+candidate. Allow only
+`orchestrator-gateway-client.ts` (trusted read wrapper) and
+`legacy-orchestrator-gateway-client.ts` (historical writer)
+to import it. Existing R6 AST-based checks reject static imports,
+literal dynamic imports/CommonJS/module URLs and newly configured
+direct launchers outside this exact two-file set.
+
+**Type-only gap:** the parser erases TS type-only imports. A separate
+checkout regression conservatively examines tracked Orchestrator
+`src/*.ts` files except the transport and two approved wrappers.
+It rejects even type-only or comment mentions of the internal
+transport path. A synthetic regression ensures a new canonical
+re-export or trusted dynamic import is rejected while documentation
+and comment-only runtime edges do not count as parsed execution.
+
+**Boundary limitations:** this is a source-integrity and regression
+guard, NOT an authorization boundary, a threat-model claim that
+untrusted code cannot read a source path, or evidence that this file
+is dead. The two permitted wrappers remain reviewed trusted code
+and an attacker holding a valid Adapter bearer would require
+independent infrastructure controls. Gateway, native Rust DC/VP,
+signed-plan scope, OPA, and credential secret isolation remain
+mandatory. This batch changes no provider or issuance behavior
+and does not execute Gemini.
+
+**Gate:** require exact-SHA cumulative offline validation after this
+change; keep R5 NO-GO and do not merge into `main`.
+Rollback to `3bbbc6506079f7a08d542581ccdea9e2ac72d85d`
+if a legitimate dependency is discovered and requires redesign.

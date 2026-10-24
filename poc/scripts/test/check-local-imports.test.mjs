@@ -773,3 +773,69 @@ test("R6 Gateway read/write source boundary excludes historical write methods fr
   assert.equal(barrel.includes("OrchestratorGatewayTransport"),false);
   assert.equal(barrel.includes("OrchestratorProtectedGatewayClient"),false);
 });
+
+test("R6 private Gateway transport rejects public re-exports and new trusted direct loads",async t=>{
+  const target="poc/packages/orchestrator-runtime/src/orchestrator-gateway-transport.ts";
+  const base="poc/packages/orchestrator-runtime/src/";
+  const reader=base+"orchestrator-gateway-client.ts";
+  const writer=base+"legacy-orchestrator-gateway-client.ts";
+  const files={
+    [target]:"export const transport=true;",
+    [reader]:"import {transport} from './orchestrator-gateway-transport.ts';",
+    [writer]:"import {transport} from './orchestrator-gateway-transport.ts';",
+    [base+"index.ts"]:"export {transport} from './orchestrator-gateway-transport.ts';",
+    [base+"trusted-unsafe.ts"]:
+      "const module=()=>import('./orchestrator-gateway-transport.ts');",
+    [base+"comment.ts"]:
+      "// import './orchestrator-gateway-transport.ts';\nexport const safe=true;",
+    "docs/history.md":"orchestrator-gateway-transport.ts is an internal source"
+  };
+  const root=fixture(t,files);
+  const {collectLegacyReferences,unexpectedPrivateGatewayTransportCallers}
+    =await import("../r6-legacy-references.mjs");
+  const inventory=collectLegacyReferences(root,Object.keys(files),{candidates:[target]});
+  assert.deepEqual(unexpectedPrivateGatewayTransportCallers(inventory)
+    .map(x=>x.source).sort(),[
+      base+"index.ts",base+"trusted-unsafe.ts"
+    ].sort());
+  assert.deepEqual(unexpectedPrivateGatewayTransportCallers(inventory,[
+    reader,writer,base+"index.ts",base+"trusted-unsafe.ts"
+  ]),[]);
+});
+
+test("R6 private Gateway transport is imported only by the two reviewed wrappers",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const {join}=await import("node:path");
+  const {fileURLToPath}=await import("node:url");
+  const {
+    collectLegacyReferences,gitTrackedFiles,
+    unexpectedPrivateGatewayTransportCallers
+  }=await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const tracked=gitTrackedFiles(root);
+  const base="poc/packages/orchestrator-runtime/src/";
+  const allowed=new Set([
+    base+"orchestrator-gateway-client.ts",
+    base+"legacy-orchestrator-gateway-client.ts"
+  ]);
+  const sensitive="orchestrator-gateway-transport.ts";
+  // Type-only imports disappear from the runtime ESM import graph.
+  // Cover them too, in the production source trees, without mistakenly
+  // treating source-code strings in the audit's own tests as consumers.
+  for(const path of tracked.filter(p=>
+    p.startsWith(base)&&p.endsWith(".ts")&&
+    p!==base+sensitive&&!allowed.has(p)
+  )){
+    assert.equal(readFileSync(join(root,path),"utf8").includes(sensitive),false,
+      "Unexpected private Gateway transport reference: "+path);
+  }
+  for(const path of allowed){
+    assert.equal(readFileSync(join(root,path),"utf8").includes(sensitive),true);
+  }
+  const exported=readFileSync(join(root,base+"index.ts"),"utf8");
+  assert.equal(exported.includes("OrchestratorGatewayTransport"),false);
+  assert.deepEqual(unexpectedPrivateGatewayTransportCallers(
+    collectLegacyReferences(root,tracked)),[],
+    "Private Adapter VP transport cannot become a new runtime dependency"
+  );
+});
