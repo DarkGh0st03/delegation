@@ -418,6 +418,15 @@ export async function beginApprovedRealRunnerSession({
           });
           const roleRunner=new DelegatedA2ARoleRunner({
             authorityIssuer:scopedIssuer??{
+              // This is the SCRIPTED, non-native issuer. Native mode uses
+              // TrustedApprovedPlanChildAuthorityIssuer's real revocation
+              // and plan-digest guard, never this fixture callback.
+              assertActiveBeforeA2ASend(){
+                assert.equal(used,true,"Signed Runner request must be active");
+                assert.equal(completed,false,
+                  "Completed Runner session cannot start another A2A Task");
+                assert.equal(activeRootId,"urn:fixture:operational-root");
+              },
               async issueSpecializedChild(input){
                 assert.equal(input.parent_credential_id,
                   "urn:fixture:operational-root");

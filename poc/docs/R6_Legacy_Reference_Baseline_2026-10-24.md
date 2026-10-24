@@ -703,3 +703,35 @@ No production authorization check is weakened or removed. Re-run
 the full exact-SHA cumulative gate and dedicated A2A workflow
 before declaring batch 15 valid. The original failed run remains
 in GitHub history as a useful regression record.
+
+### R6 batch 15 integration corrections — require realistic liveness in offline fixtures
+
+The first exact-SHA cumulative run after the mandatory
+`approved_task_id` liveness guard found **two real integration fixtures**
+that previously provided a child issuer with no
+`assertActiveBeforeA2ASend()`. The new runtime correctly refused
+these send attempts: one protected A2A Task in
+`poc/apps/gateway/test/trusted-plan-ipc.test.ts`, and one Docker
+acceptance Test Task in
+`poc/apps/test-runner-controller/scripts/approved-gateway-runner-session.mjs`.
+Those original failed checks are retained in GitHub Actions history;
+we do not weaken or bypass the new security condition.
+
+**IPC fixture:** the check now queries the actual
+`TrustedExecutionCoordinator.phase` and verifies that the
+operational root ID still matches the activated Engineer-approved
+root. Both checks execute synchronously before issuance and send.
+
+**Docker fixture:** only the scripted **non-native** child-issuer
+branch receives a local guard that requires a started, incomplete
+Runner session and the exact fixture root ID. The native EVM/Rust
+branch continues to use the existing
+`TrustedApprovedPlanChildAuthorityIssuer`, which verifies
+Coordinator phase, root credential ID and immutable signed digest.
+
+**Scope:** these changes touch only test fixtures. No production
+authorization logic is relaxed; legacy role-based tests without
+approved Task IDs continue to execute unchanged. Re-run exact-SHA
+cumulative, real Docker acceptance and trusted IPC regressions
+before marking batch 15 validated. The original 5-job CI remains
+red in the GitHub record.

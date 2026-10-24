@@ -375,6 +375,15 @@ test("signed DAG dispatches a real A2A SDK Task to a separate-process Gateway vi
   t.after(()=>server.close());
   const roleRunner=new DelegatedA2ARoleRunner({
     authorityIssuer:{
+      assertActiveBeforeA2ASend(){
+        // This IPC fixture uses an unsigned stub for the child DC but must
+        // still enforce the actual Coordinator's operational-root lifetime.
+        assert.equal(coordinator.phase,"execution");
+        assert.equal(
+          coordinator.trustedOperationalAuthority().credential_id,
+          operational.credential_id
+        );
+      },
       async issueSpecializedChild(input){
         return {role:input.selection.role,credential:{
           "@context":["https://www.w3.org/ns/credentials/v2"],
