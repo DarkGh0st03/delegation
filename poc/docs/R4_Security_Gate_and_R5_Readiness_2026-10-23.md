@@ -123,3 +123,21 @@ remain necessary before explicit paid authorization.
 Only mark this hardening verified after 5/5 cumulative offline CI on the
 changed commit. R5 remains NO-GO; neither the archived paid workflow nor
 `main` is changed, and no external model request was made.
+
+### R5 Planner timeout regression correction (24 October 2026)
+
+The first cumulative validation of Planner budgets, CI
+[#40119952815](https://github.com/DarkGh0st03/delegation/actions/runs/40119952815)
+on `61b2ad2938be9b5a99c072f4455e199a059e8b83`, found a **test
+expectation error** in the scripted non-cooperative timeout case. The ADK
+Runner reports a model-generation failure as an event; the trusted Planner
+intentionally returns the generic fail-closed
+`no verified read-only grounded proposal` denial rather than
+propagating internal provider exceptions. The regression incorrectly
+expected the internal `model call timed out or cancelled` text.
+
+The focused correction requires the correct public fail-closed denial and
+still separately asserts that the model received an **aborted** deadline
+signal. This retains the timeout and token bounds and does not weaken any
+policy or permission. Do not certify this follow-up until a new exact-SHA
+five-job cumulative CI succeeds. R5 remains NO-GO.

@@ -293,6 +293,8 @@ test("Planner fails closed after a model ignores the per-call abort signal",asyn
   await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
     ...cfg,model:new SlowScripted(),maxModelCallMs:1000,
     readPort:{async invoke(){throw Error("unexpected provider read");}}
-  }).propose(),/model call timed out or cancelled/);
+  }).propose(),/no verified read-only grounded proposal/);
+  // The ADK Runner deliberately collapses internal model errors into
+  // a generic unapproved-plan denial; the abort signal proves the deadline.
   assert.equal(observed?.aborted,true);
 });
