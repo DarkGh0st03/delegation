@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+// The frozen Account Suspension permission matrices are historical fixtures.
 import {
   DC_BACKEND,
   DC_TEST,
-  ENGINEER_TO_ORCHESTRATOR_ROOT_AUTHORITY,
+  ENGINEER_TO_ORCHESTRATOR_ROOT_AUTHORITY
+} from "../src/permission-templates.ts";
+import {
   DeterministicOrchestratorAuthorityIssuer,
   SoftwareEngineerAuthorityBootstrap,
   type IssuedDelegationCredential

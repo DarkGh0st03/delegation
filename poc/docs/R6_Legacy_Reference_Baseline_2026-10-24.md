@@ -315,3 +315,25 @@ and no source main merge.
 **Rollback:** revert this commit to parent
 `760428162f7ee18d65f5d35fd502c99c4dd2780a` on the refactoring
 branch.
+
+### R6 batch 7 follow-up — authority test import regression
+
+The first CI on commit `ecda95ea91f533cead3de209319c9f743dc20006`
+failed the Orchestrator regression because
+`test/authority-client.test.ts` still imported `DC_BACKEND`,
+`DC_TEST` and `ENGINEER_TO_ORCHESTRATOR_ROOT_AUTHORITY` from the
+canonical barrel. The runtime intentionally no longer exports those
+static matrices. The trusted issuer, signed approval, independent
+DC/VP authorization and Gateway regressions preceding that import
+completed successfully; do **not** call the original run green.
+
+**Fix:** migrate this historical test to explicitly import its frozen
+fixture values from `permission-templates.ts`; keep the production
+Adapter client imports as before. Add a static regression asserting
+the explicit fixture dependency and continued absence of the legacy
+matrix from the public barrel. No widening of production exports,
+security rules or credential permissions.
+
+**Evidence needed:** re-run the exact-SHA cumulative and dedicated
+Engineer/ADK/A2A tests. Keep both commits in Git history; no merge to
+source `main` and no billable model call.

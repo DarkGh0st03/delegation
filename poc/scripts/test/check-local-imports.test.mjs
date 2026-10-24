@@ -502,3 +502,17 @@ test("R6 separates generic permission types from frozen Account Suspension templ
   assert.match(legacyTest,/from "\.\.\/src\/permission-templates\.ts"/u);
   // No executable module needs to be loaded for this API boundary assertion.
 });
+
+
+test("R6 historical authority fixtures import templates directly, never through public runtime",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const root=new URL("../../../",import.meta.url);
+  const legacy=readFileSync(new URL(
+    "poc/packages/orchestrator-runtime/test/authority-client.test.ts",root),"utf8");
+  assert.match(legacy,/from "\.\.\/src\/permission-templates\.ts"/u);
+  const barrel=readFileSync(new URL(
+    "poc/packages/orchestrator-runtime/src/index.ts",root),"utf8");
+  assert.doesNotMatch(barrel,/export \* from "\.\/permission-templates\.ts"/u);
+  // Preserve legacy issuance tests; importing from a frozen fixture is not
+  // permission to expose or invoke broad root issuance in signed Execution.
+});
