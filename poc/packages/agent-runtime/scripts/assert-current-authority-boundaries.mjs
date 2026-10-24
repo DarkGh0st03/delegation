@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import {DelegationEvidenceHandler} from "../src/delegation-evidence-handler.ts";
 import {GatewayControlledToolClient} from "../src/gateway-tool-client.ts";
 import {ControlledToolError} from "../src/controlled-errors.ts";
-import {OrchestratorProtectedGatewayClient,OrchestratorGatewayClientError}
+// The fixed Account Suspension PR writer is historical only; its error class
+// stays shared with the canonical read-only Gateway client via transport.
+import {OrchestratorProtectedGatewayClient}
+  from "../../orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts";
+import {OrchestratorGatewayClientError}
   from "../../orchestrator-runtime/src/orchestrator-gateway-client.ts";
 
 // Reuse the current Coordinator's real DCs and disposable providers. These

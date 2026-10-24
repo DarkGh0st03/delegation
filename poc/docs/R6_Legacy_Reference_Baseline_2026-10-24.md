@@ -1215,3 +1215,45 @@ imported or launched just to test its bindings.
 
 Repeat the full five-job exact-SHA cumulative CI before
 certifying batch 25. Leave `main` and R5 unchanged.
+
+### R6 cleanup batch 26 — repair historical live authority-boundary probe imports
+
+**Finding:** after batch 13 physically separated protected Planning
+reads from historical Account Suspension branch/PR writers,
+`assert-current-authority-boundaries.mjs` still imported
+`OrchestratorProtectedGatewayClient` from the former shared
+`orchestrator-gateway-client.ts`. The latter now exports only the
+read-only Planning class and the shared error. When a historical
+coordinator loads the independent authority-boundary probe,
+ESM linking would fail **before** testing negative delegated
+permissions, stale provider SHA, or duplicate PR provider conflicts.
+The five-job cumulative matrix did not previously link that helper.
+
+**Correction:** import the historical write class explicitly from
+`legacy-orchestrator-gateway-client.ts`; retain
+`OrchestratorGatewayClientError` from the read-only client
+(they share the exact transport error class). Do not publish the
+writer back through the public index. No tool, permission or VP
+execution behavior is changed, and the probe remains capable of
+testing real Adapter/Gateway denial when launched under its existing
+historical integration conditions.
+
+**Audit:** expand the previous five-entrypoint
+`audit:r6:runtime-named` scan to include this effectful historical
+helper as its sixth **read-only source-inspected** entrypoint.
+A synthetic regression proves a reference to the removed canonical
+value export is rejected and the explicit legacy module resolves.
+A checkout regression asserts the two real imports, actual class
+definition and absence of the historical writer in the canonical
+read API. The checks do not execute the helper or any billed script.
+
+**Limits:** source-level named-export resolution is not full ESM
+linking or native cryptographic authorization; untested package
+imports and computed loading remain out of scope. The historical
+negative probes require independently provisioned real providers.
+The refactored Engineer-approved R5 paid Gemini path remains NO-GO.
+
+**Validation:** require full five-job offline CI success on the
+exact Batch-26 SHA. `main` stays unchanged; no merge or billable
+Gemini run. Rollback to
+`253f558ff700bb2e3e99cac5bb965bf0153dc84a`.

@@ -1084,3 +1084,23 @@ test("R6 historical PR/CI scripts import protected merge readiness directly, not
   const negative=read(dir+"a2a-production-coordinator-mcp-isolated-smoke.mjs");
   assert.doesNotMatch(negative,/GiteaMergeReadinessVerifier|MergeReadinessDenied/u);
 });
+
+
+test("R6 real authority-boundary regression imports only the historical Gateway writer",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const root=new URL("../../../",import.meta.url);
+  const get=p=>readFileSync(new URL(p,root),"utf8");
+  const base="poc/packages/orchestrator-runtime/src/";
+  const script=get("poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs");
+  const writer=get(base+"legacy-orchestrator-gateway-client.ts");
+  const trusted=get(base+"orchestrator-gateway-client.ts");
+  const index=get(base+"index.ts");
+  assert.match(script,
+    /import\s*\{\s*OrchestratorProtectedGatewayClient\s*\}\s*from\s*["']\.\.\/\.\.\/orchestrator-runtime\/src\/legacy-orchestrator-gateway-client\.ts["']/u);
+  assert.match(script,
+    /import\s*\{\s*OrchestratorGatewayClientError\s*\}\s*from\s*["']\.\.\/\.\.\/orchestrator-runtime\/src\/orchestrator-gateway-client\.ts["']/u);
+  assert.match(writer,/export class OrchestratorProtectedGatewayClient/u);
+  assert.equal(trusted.includes("OrchestratorProtectedGatewayClient"),false);
+  assert.equal(index.includes("OrchestratorProtectedGatewayClient"),false);
+  assert.match(script,/async function assertCurrentAuthorityBoundaries/u);
+});

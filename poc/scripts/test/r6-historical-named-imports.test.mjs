@@ -84,12 +84,14 @@ test("R6 catches deleted local files and missing checked entrypoints",t=>{
 });
 
 test("R6 historical audit pins four A2A cohorts and manual merge",()=>{
-  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,5);
+  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,6);
   assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,5);
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/a2a-production-coordinator-mcp-gemini-live.mjs")));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/human-merge.mjs")));
+  assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
+    x.endsWith("/scripts/assert-current-authority-boundaries.mjs")));
 });
 
 
@@ -113,4 +115,35 @@ test("R6 runtime exports must not match non-statement quoted examples",t=>{
   });
   assert.equal(checkHistoricalRuntimeNamedImports(f.root,f.paths,[entry])
     .errors[0].reason,"missing runtime named export");
+});
+
+
+test("R6 detects the pre-split historical Gateway class import in an authority probe",t=>{
+  const entry="poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs";
+  const from="poc/packages/orchestrator-runtime/src/orchestrator-gateway-client.ts";
+  const legacy="poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts";
+  const old=fixture(t,{
+    [entry]:
+      "import {OrchestratorProtectedGatewayClient} from '../../orchestrator-runtime/src/orchestrator-gateway-client.ts';",
+    [from]:
+      "export class OrchestratorPlanningGatewayReadClient {}",
+    [legacy]:
+      "export class OrchestratorProtectedGatewayClient {}"
+  });
+  const bad=checkHistoricalRuntimeNamedImports(old.root,old.paths,[entry]);
+  assert.deepEqual(bad.errors.map(e=>({symbol:e.symbol,reason:e.reason})),[
+    {symbol:"OrchestratorProtectedGatewayClient",reason:"missing runtime named export"}
+  ]);
+  // Validate the corrected, explicit historical path in a new fixture,
+  // rather than importing an effectful script that requires real Gitea.
+  const good=fixture(t,{
+    [entry]:
+      "import {OrchestratorProtectedGatewayClient} from '../../orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts';",
+    [from]:
+      "export class OrchestratorPlanningGatewayReadClient {}",
+    [legacy]:
+      "export class OrchestratorProtectedGatewayClient {}"
+  });
+  assert.deepEqual(checkHistoricalRuntimeNamedImports(
+    good.root,good.paths,[entry]).errors,[]);
 });
