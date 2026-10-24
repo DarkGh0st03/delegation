@@ -686,3 +686,20 @@ fixed-coordinator scripts nor paid Gemini workflows were run.
 any dedicated approved-Task tests must pass. R5 remains NO-GO.
 Rollback to `e8eb24643f7244d432427fec96a3673f1d3cfef6`.
 No changes to `main`.
+
+### R6 batch 15 follow-up — adjust revoked-root test to the two-check protocol
+
+The first dedicated `Trusted Prebound A2A Dispatch` run on
+`b964d16e205d6351e6893917893e28bc1766c078` failed in a
+**test expectation**: the existing revoked-root fixture counted a
+single `assertActiveBeforeA2ASend()` callback, but the hardened
+approved-task runner correctly executes two checks (pre-issuance and
+immediately pre-send). One scoped Adapter child issuance still
+occurred, and protected A2A was still denied after simulated
+revocation. The test now explicitly requires `guarded === 2`,
+`Adapter calls === 1`, and `A2A sends === 0`.
+
+No production authorization check is weakened or removed. Re-run
+the full exact-SHA cumulative gate and dedicated A2A workflow
+before declaring batch 15 valid. The original failed run remains
+in GitHub history as a useful regression record.

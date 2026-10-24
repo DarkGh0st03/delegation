@@ -375,6 +375,9 @@ test("root revoked AFTER child return but BEFORE protected A2A send is refused",
      branch:BRANCH,relevant_paths:["apps/backend/user.ts"]}
  } as any),/operational parent is no longer active/);
  assert.equal(e.calls.length,1);
- assert.equal(guarded,1);
+ // The approved runner now rejects a missing guard and invokes a real
+ // guard before irreversible issuance and again immediately before A2A.
+ // Revocation in the issuance gap must be observed by the second check.
+ assert.equal(guarded,2);
  assert.equal(sent,0);
 });
