@@ -335,3 +335,42 @@ test("R6 removes superseded Phase 6 ADK Orchestrator and isolates historic IAM p
  assert.equal(existsSync(new URL(
    "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",root)),true);
 });
+
+
+test("R6 blocks an unauthorized static legacy import but not historical imports or prose",async t=>{
+  const historical="poc/packages/orchestrator-runtime/src/sequential-coordinator.ts";
+  const root=fixture(t,{
+    [historical]:"export const legacy=true;",
+    "src/old.mjs":
+      "import {legacy} from '../poc/packages/orchestrator-runtime/src/sequential-coordinator.ts';",
+    "src/new.ts":
+      "export {legacy} from '../poc/packages/orchestrator-runtime/src/sequential-coordinator.ts';",
+    "src/comment.mjs":
+      "// import '../poc/packages/orchestrator-runtime/src/sequential-coordinator.ts';\nexport const good=true;",
+    "notes.md":"the sequential-coordinator.ts is mentioned historically"
+  });
+  const {collectLegacyReferences,unexpectedSequentialImporters}=
+    await import("../r6-legacy-references.mjs");
+  const inventory=collectLegacyReferences(root,[
+    historical,"src/old.mjs","src/new.ts","src/comment.mjs","notes.md"
+  ],{candidates:[historical]});
+  assert.deepEqual(
+    unexpectedSequentialImporters(inventory,["src/old.mjs"]).map(x=>x.source),
+    ["src/new.ts"]
+  );
+  assert.deepEqual(
+    unexpectedSequentialImporters(inventory,["src/old.mjs","src/new.ts"]),[]
+  );
+});
+
+test("R6 checkout has no forbidden direct sequential-coordinator import",async()=>{
+  const {fileURLToPath}=await import("node:url");
+  const {collectLegacyReferences,gitTrackedFiles,unexpectedSequentialImporters}=
+    await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  assert.deepEqual(
+    unexpectedSequentialImporters(
+      collectLegacyReferences(root,gitTrackedFiles(root))),[],
+    "Unexpected caller must migrate to TrustedApprovedA2ADispatcher"
+  );
+});

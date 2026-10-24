@@ -27,6 +27,28 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   ".github/workflows/shared-mcp-production-coordinator.yml",
   ".github/workflows/shared-mcp-real-positive-e2e.yml"
 ]);
+
+/**
+ * R6 CI boundary: only five explicit historical modules may statically
+ * import the old Account Suspension coordinator. Canonical production
+ * code must use the signed approved-DAG dispatcher instead.
+ * Parsed ESM static edges only; dynamic/external callers still need audit.
+ */
+export const R6_ALLOWED_SEQUENTIAL_IMPORTERS=Object.freeze([
+  "poc/packages/orchestrator-runtime/test/sequential-coordinator.test.ts",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs"
+]);
+export function unexpectedSequentialImporters(inventory,allowed=R6_ALLOWED_SEQUENTIAL_IMPORTERS){
+  const target="poc/packages/orchestrator-runtime/src/sequential-coordinator.ts";
+  const entry=inventory.candidates.find(x=>x.target===target);
+  if(!entry)throw Error("R6 historical coordinator missing from tracked audit targets");
+  const allowedSet=new Set(allowed);
+  return Object.freeze(entry.staticImporters.filter(x=>!allowedSet.has(x.source)));
+}
+
 const TEXT_SOURCE=/\.(?:js|mjs|cjs|ts|tsx|json|ya?ml|sh|toml|md|Dockerfile)$/u;
 
 /** A configured command mention is not automatically executed by a job. */
@@ -324,7 +346,12 @@ function main(){
   }
   console.log("Unresolved runtime indirections="+
     result.unresolvedRuntimeIndirections.length);
-  if(result.candidates.some(x=>!x.exists))process.exitCode=1;
+  const forbidden=unexpectedSequentialImporters(result);
+  for(const edge of forbidden)
+    console.error("R6 blocked legacy coordinator import: "+edge.source+
+      " -> "+edge.specifier+"; migrate to signed approved DAG");
+  if(forbidden.length>0||result.candidates.some(x=>!x.exists))
+    process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)
   main();

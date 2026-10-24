@@ -190,3 +190,30 @@ bindings at commit `aa17bb63f83152a93d1370b2c789a60d21b38dd9`. A new R6 regressi
 reintroduction. No claim of complete dynamic-reference proof is made:
 the full cumulative exact-SHA CI must confirm the replacement and
 historical test compatibility before certifying the cleanup.
+
+
+### R6 cleanup batch 4 — enforce historical coordinator isolation
+
+**Scope:** no legacy workflow or coordinator was removed in this batch.
+The existing AST-based R6 reference scanner now enforces a *narrow
+allowlist* of static importers of `sequential-coordinator.ts`: four
+explicit historical Account Suspension coordinator scripts and
+`sequential-coordinator.test.ts`. A new canonical import/re-export
+fails the offline `audit:r6:references` command. Two tests demonstrate
+denial of a new static re-export, approval of explicitly historical
+callers, ignoring prose/comments, and a full checkout scan.
+
+This is a prevention gate, not proof of dead code: computed dynamic
+imports, CommonJS, runtime CLI/Docker paths and external callers remain
+separately unresolved in R6. The historical paid workflow remains
+**R5 NO-GO** as a demonstration of the new signed architecture.
+
+The root README now presents the canonical signed Planning/Engineer/DAG
+path before a clearly marked 15 October historical baseline. The exact
+15 October Gemini success remains valid for its old commit, not the
+current refactoring.
+
+**Rollback:** revert this commit on the refactoring branch to
+`d6748406c73e954021e70a4973ec90f0563eb07d`. No change to main
+or paid API calls. Validate the full five-job cumulative CI at the
+new exact SHA before certifying this batch.
