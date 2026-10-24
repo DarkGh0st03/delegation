@@ -128,3 +128,8 @@ commands, Docker entrypoints, Rust modules, historical evidence, or
 security tests are changed by this deletion. **Rollback:** restore the
 four blobs from commit `9671ab1a9073dbda67d7bb54b0d9a3e01fbb6963`. The full cumulative CI must still
 finish green at the deletion commit before this batch is certified.
+
+
+### R6 docs cleanup — canonical Orchestrator README
+
+The old 661-line `poc/apps/orchestrator/README.md` mixed obsolete Stage 9–12 milestones with the statement that the historical sequential Coordinator was the **current** execution path. It has been replaced with a concise map of the actual signed Planning/Execution path, explicitly segregated legacy bootstraps, command-level offline checks, service deployment prerequisites, and pointers to the existing R0/R4/R5/R6 handoffs. The old text remains recoverable at `05c0859ff20c8e3496b98cb5542506a98f261521`. No historical scripts or tests were deleted. The R5 service command was also corrected to target the manifest that actually defines `engineer:service` (`poc/apps/orchestrator/package.json`); the root `poc/package.json` does not expose that command.
