@@ -4,6 +4,10 @@
  * policy and Gitea transport are explicit fixtures, NOT native Rust/EVM.
  * No Gemini call or production credential material.
  */
+import {generateKeyPairSync} from "node:crypto";
+import {mkdtemp,rm} from "node:fs/promises";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {BaseLlm,type LlmRequest,type LlmResponse,type BaseLlmConnection}
@@ -24,6 +28,14 @@ import {TrustedPlanningGatewayReadPort}
   from "../src/trusted-planning-gateway-port.ts";
 import {TrustedAdkReadOnlyPlanner}
   from "../src/trusted-adk-planner.ts";
+import {TrustedActivePlanningCheckpoint}
+  from "../src/trusted-active-planning-checkpoint.ts";
+import {SignedEngineerApprovalFileStore}
+  from "../src/signed-approval-store.ts";
+import {SignedPlanningCheckpointFileStore}
+  from "../src/trusted-planning-checkpoint-store.ts";
+import {TrustedPlanningReviewGate}
+  from "../src/trusted-planning-review-gate.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
 const SECOND_FILE="src/billing/tax.ts";
@@ -377,4 +389,119 @@ test("OPA denial prevents Gitea read and ADK proposal",async()=>{
   assert.equal(f.observed.policy,1);
   assert.equal(f.observed.provider,1);
   assert.equal(f.observed.execute,1);
+});
+
+async function checkpointFixture(){
+  const f=fixture();
+  const receiptDir=await mkdtemp(join(tmpdir(),"live-planning-receipts-"));
+  const checkpointDir=await mkdtemp(join(tmpdir(),"live-planning-checkpoint-"));
+  const engineer=generateKeyPairSync("ed25519");
+  const backend=generateKeyPairSync("ed25519");
+  const keyId="planning-backend-key";
+  const privateKeyPem=backend.privateKey.export({
+    format:"pem",type:"pkcs8"
+  }).toString();
+  const publicKeyPem=backend.publicKey.export({
+    format:"pem",type:"spki"
+  }).toString();
+  const signedApprovals=new SignedEngineerApprovalFileStore({
+    directory:receiptDir,engineerDid:"did:thesis:engineer",
+    trustedKeys:{engineer:{engineer_did:"did:thesis:engineer",
+      public_key_pem:engineer.publicKey.export({
+        format:"pem",type:"spki"
+      }).toString()}}
+  });
+  const reviewGate=new TrustedPlanningReviewGate({
+    snapshot,expectedWorkBranch:"feature/invoice-sort",
+    authenticatedEngineerDid:"did:thesis:engineer",
+    signedApprovals,planningIsActive:()=>f.coordinator.phase==="planning"
+  });
+  const checkpointStore=new SignedPlanningCheckpointFileStore({
+    directory:checkpointDir,
+    trust:{
+      trustedKeys:{[keyId]:{public_key_pem:publicKeyPem}},
+      expectedSessionId:snapshot.session_id,
+      expectedRepository:snapshot.repository,
+      expectedBaseRevision:SHA,
+      expectedWorkBranch:"feature/invoice-sort"
+    }
+  });
+  const planner=()=>new TrustedAdkReadOnlyPlanner({
+    model:new ScriptedPlanner(),snapshot,
+    requirement:"Sort invoices by due date",planId:"invoice-proposal-v1",
+    workBranch:"feature/invoice-sort",agents,readPort:f.makePort()
+  });
+  const config=(instance:TrustedAdkReadOnlyPlanner)=>({
+    coordinator:f.coordinator,planner:instance,reviewGate,
+    checkpointStore,snapshot,expectedWorkBranch:"feature/invoice-sort",
+    backendKeyId:keyId,backendPrivateKeyPem:privateKeyPem
+  });
+  return {...f,reviewGate,checkpointStore,planner,config,
+    async close(){
+      await rm(receiptDir,{recursive:true,force:true});
+      await rm(checkpointDir,{recursive:true,force:true});
+    }};
+}
+
+test("active real Gateway Planning produces one durable backend-signed review packet",async()=>{
+  const f=await checkpointFixture();
+  try{
+    await f.start();
+    const model=f.planner();
+    const bridge=new TrustedActivePlanningCheckpoint(f.config(model));
+    const packet=await bridge.proposePersistAndStage();
+    assert.equal(packet.status,"awaiting_engineer_signature");
+    assert.equal(packet.session_id,snapshot.session_id);
+    assert.equal(packet.base_revision,SHA);
+    assert.equal(packet.verified_source_reads,1);
+    const saved=await f.checkpointStore.load();
+    assert.equal(saved.proposal.digest,packet.plan_digest);
+    assert.equal(f.reviewGate.reviewPacket().plan_digest,packet.plan_digest);
+    assert.equal(f.observed.prepare,1);
+    assert.equal(f.observed.adapter,1);
+    assert.equal(f.observed.verification,1);
+    assert.equal(f.observed.policy,1);
+    assert.equal(f.observed.execute,1);
+    // No operational credential or autonomous human approval.
+    assert.equal(f.observed.issued,1);
+    assert.equal(f.coordinator.phase,"planning");
+    await assert.rejects(bridge.proposePersistAndStage(),/one attempt only/);
+  }finally{await f.close();}
+});
+
+test("checkpoint bridge rejects forged snapshot and unrelated Planning authority",async()=>{
+  const f=await checkpointFixture();
+  try{
+    await f.start();
+    const goodPlanner=f.planner();
+    const changed={...snapshot,base_revision:"b".repeat(40)};
+    assert.throws(()=>new TrustedActivePlanningCheckpoint({
+      ...f.config(goodPlanner),snapshot:changed
+    }),/missing or changed active authority/);
+    // A real port bound to a different coordinator is not equivalent to
+    // merely copying the same root ID and SHA.
+    const other=fixture();await other.start();
+    assert.throws(()=>new TrustedActivePlanningCheckpoint({
+      ...f.config(goodPlanner),coordinator:other.coordinator
+    }),/inactive or out-of-scope read/);
+    assert.equal(f.observed.adapter,0);
+    assert.equal(f.observed.execute,0);
+    await assert.rejects(f.checkpointStore.load(),
+      (error:any)=>error.code==="ENOENT");
+  }finally{await f.close();}
+});
+
+test("backend signing key must be valid before any model read",async()=>{
+  const f=await checkpointFixture();
+  try{
+    await f.start();
+    const planner=f.planner();
+    assert.throws(()=>new TrustedActivePlanningCheckpoint({
+      ...f.config(planner),backendPrivateKeyPem:"not a private key"
+    }),/missing or changed active authority/);
+    assert.equal(f.observed.adapter,0);
+    assert.equal(f.observed.execute,0);
+    await assert.rejects(f.checkpointStore.load(),
+      (error:any)=>error.code==="ENOENT");
+  }finally{await f.close();}
 });

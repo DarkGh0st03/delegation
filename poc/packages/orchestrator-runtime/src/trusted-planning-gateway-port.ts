@@ -6,6 +6,7 @@
  * -> OPA -> pinned Gitea provider. The model only sees read-only ADK tools.
  * Neither model text nor an HTTP caller can select a credential or grant.
  */
+import {isDeepStrictEqual} from "node:util";
 import {deriveRequiredPermission} from "../../../apps/gateway/src/canonical.ts";
 import {validatePrepareAuthorizationRequest}
   from "../../../apps/gateway/src/validation.ts";
@@ -64,6 +65,18 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
       ...(config.fetchFn?{fetchFn:config.fetchFn}:{}),
       ...(config.timeoutMs?{timeoutMs:config.timeoutMs}:{})
     });
+  }
+
+  /** Private host-only binding check. This instance and its provisional
+   * credential must belong to the exact active coordinator and snapshot. */
+  assertTrustedPlanningBinding(coordinator:TrustedExecutionCoordinator,
+    snapshot:TrustedPlanningSnapshot):void{
+    if(this.#coordinator!==coordinator||
+       !isDeepStrictEqual(this.#snapshot,snapshot))fail();
+    const root=this.#coordinator.trustedPlanningAuthority();
+    if(root.credential_id!==this.#credentialId||
+       root.session_id!==snapshot.session_id||
+       root.base_revision!==snapshot.base_revision)fail();
   }
 
   async invoke(tool:ReadTool,args:Record<string,unknown>,

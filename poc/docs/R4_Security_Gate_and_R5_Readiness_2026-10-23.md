@@ -215,3 +215,33 @@ DOES NOT deploy an Engineer process, start a live Gitea Planning root,
 sign on behalf of a human, connect a remote GitHub job, or authorize paid
 Gemini. Certify only on an exact-SHA five-job cumulative CI; R5 remains
 NO-GO, and `main` remains untouched.
+
+### R5 active Planning to durable checkpoint bridge (24 October 2026)
+
+A dedicated **private in-process** `TrustedActivePlanningCheckpoint` bridges
+an actual `TrustedExecutionCoordinator` in active Planning phase,
+its identity-bound `TrustedPlanningGatewayReadPort`, the one-shot
+`TrustedAdkReadOnlyPlanner`, the independently pinned Ed25519
+`SignedPlanningCheckpointFileStore`, and the existing
+`TrustedPlanningReviewGate`.
+
+Only the direct model proposal grounded by an authorized Gateway/Adapter
+VP/OPA/Gitea read may be signed by the backend; it is stored exclusively and
+reloaded from owner-only disk before staging the immutable review packet.
+Coordinator identity, session, Gitea SHA, work branch, root ID and active
+phase are rechecked after asynchronous model inference and file writes.
+The bridge is one-use and denies replays. Its backend key is kept strictly
+out of ADK tools, A2A and HTTP, and no Engineer signature or operational
+credential is produced. Tests use the actual Gateway transport and ADK
+scripted model with mocked Rust/OPA/Gitea ports and independent backend
+and Engineer keys. They reject mismatched coordinator/snapshot, bad key
+material and a repeated stage.
+
+**Boundary:** this is a private integration building block, not a live
+persistent Engineer service, human approval, live native EVM verification,
+or remotely admitted paid workflow. The Engineer service still needs
+an owner-provisioned Planning root, trusted Gitea inventory and a
+private signing-key bootstrap. A crash after durable checkpoint creation
+must be reconciled, never bypassed by a retry. Until these are proven in
+the operational deployment, R5 remains NO-GO. This change is validated
+only if the exact-SHA cumulative offline CI reaches five successful jobs.
