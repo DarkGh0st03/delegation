@@ -16,6 +16,10 @@ import {startTrustedEngineerLocalHost}
 import {SignedEngineerApprovalFileStore}
   from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
 import {planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
+import {signTrustedPlanningCheckpoint}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint.ts";
+import {SignedPlanningCheckpointFileStore}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
 
 const repository="DarkGh0st03/delegation";
 const ref="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -339,7 +343,8 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   const home=await mkdtemp(join(tmpdir(),"engineer-real-bootstrap-"));
   t.after(()=>rm(home,{recursive:true,force:true}));
   const recoveryDir=join(home,"recovery"),ipcDir=join(home,"ipc");
-  for(const dir of [recoveryDir,ipcDir])
+  const checkpointDir=join(home,"checkpoints");
+  for(const dir of [recoveryDir,ipcDir,checkpointDir])
     await mkdir(dir,{mode:0o700});
   const secretFile=join(ipcDir,"secret.hex"),socketPath=join(ipcDir,"plan.sock");
   await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
@@ -401,6 +406,7 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   const ownerConfigFile=join(home,"operator-service.json");
   const ownerFiles={
     public:join(home,"engineer-public.pem"),
+    backendPublic:join(home,"planning-backend-public.pem"),
     github:join(home,"github-rest.token"),
     hmac:join(home,"admission-hmac.hex"),
     ca:join(home,"admission-ca.pem"),
@@ -408,8 +414,39 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     key:join(home,"admission-server.key"),
     adapter:join(home,"adapter-bearer.token")
   };
+  const backend=generateKeyPairSync("ed25519");
+  const backendKeyId="active-planning-backend";
+  const backendPublicPem=backend.publicKey.export({
+    format:"pem",type:"spki"
+  }).toString();
+  const ticket=signTrustedPlanningCheckpoint({
+    snapshot:{session_id:f.plan.session_id,
+      repository:f.plan.repository,base_revision:f.plan.base_revision,
+      directories:[""],files:[]},
+    expectedWorkBranch:"feature/account-suspension",
+    proposal:{status:"unapproved_proposal",plan:f.plan,
+      digest:planDigest(f.plan),verified_source_reads:1},
+    keyId:backendKeyId,
+    privateKeyPem:backend.privateKey.export({
+      format:"pem",type:"pkcs8"
+    }).toString(),
+    issuedAt:new Date().toISOString(),
+    expiresAt:new Date(Date.now()+600000).toISOString()
+  });
+  const checkpoints=new SignedPlanningCheckpointFileStore({
+    directory:checkpointDir,
+    trust:{
+      trustedKeys:{[backendKeyId]:{public_key_pem:backendPublicPem}},
+      expectedSessionId:f.plan.session_id,
+      expectedRepository:f.plan.repository,
+      expectedBaseRevision:f.plan.base_revision,
+      expectedWorkBranch:"feature/account-suspension"
+    }
+  });
+  await checkpoints.persistVerified(ticket);
   for(const [file,data] of [
     [ownerFiles.public,config.approval.publicKeyPem],
+    [ownerFiles.backendPublic,backendPublicPem],
     [ownerFiles.github,config.oidc.githubApiToken],
     [ownerFiles.hmac,config.oidc.hmacSecret.toString("hex")],
     [ownerFiles.ca,config.oidc.tls.ca],
@@ -422,7 +459,12 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     oidcJwksFetchFn,...oidcFields}=config.oidc;
   const {adapterToken,...recoveryFields}=config.recovery;
   const fileConfig={
-    approval:{...reviewFields,publicKeyPemFile:ownerFiles.public},
+    approval:{...reviewFields,publicKeyPemFile:ownerFiles.public,
+      checkpoint:{
+        directory:checkpointDir,backendKeyId,
+        backendPublicKeyPemFile:ownerFiles.backendPublic,
+        expectedWorkBranch:"feature/account-suspension"
+      }},
     oidc:{...oidcFields,
       githubApiTokenFile:ownerFiles.github,
       hmacSecretHexFile:ownerFiles.hmac,

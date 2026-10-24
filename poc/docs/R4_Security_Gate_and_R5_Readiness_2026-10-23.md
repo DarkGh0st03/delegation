@@ -276,3 +276,23 @@ mutated checkpoint rejection, raw-plan disagreement and strict
 configuration rejection. This does not establish persistent live Planning,
 private-network routing, real Engineer review or R5 GO.
 Certify only when exact-SHA cumulative offline CI reaches 5/5 success.
+
+### Strict Engineer-host offline fixture now uses actual signed Planning provenance
+
+The first dedicated Engineer CI for `b429313` (run
+[#40123094408](https://github.com/DarkGh0st03/delegation/actions/runs/40123094408))
+found one stale integration fixture. The strict on-disk bootstrap was
+still configured with a raw plan but without the newly required owner-pinned
+backend-signed Planning checkpoint, so it failed at configuration load
+*before* reaching its intended crash-recovery assertions.
+
+The fixture now creates independent Ed25519 backend keys, signs a structurally
+valid unapproved Planning checkpoint for the pinned Gitea repository, source
+SHA, session and work branch, stores it through the owner-only exclusive
+`SignedPlanningCheckpointFileStore`, and includes its public-key
+pin in the protected operator configuration. Its original Gateway IPC and
+Rust Adapter orphan-root revocation assertions remain unchanged; no
+production requirement is relaxed, and no mocked Engineer approval is added.
+
+This correction is certified only by a fresh exact-SHA offline CI. The
+user has not authorized a paid Gemini call or a merge onto `main`.
