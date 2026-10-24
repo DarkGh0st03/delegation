@@ -21,7 +21,8 @@ export {
 export type {OrchestratorPlanningGatewayReadClientConfig}
   from "./orchestrator-gateway-client.ts";
 export * from "./a2a-workflow.ts";
-export * from "./merge-readiness.ts";
+// Human-only Gitea merge/readiness remains a direct, privileged CLI
+// import, never a canonical agent-orchestrator API export.
 export * from "./trusted-a2a-observer.ts";
 export * from "./trusted-approved-a2a-dispatcher.ts";
 export * from "./trusted-approved-child-issuer.ts";

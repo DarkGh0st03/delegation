@@ -870,3 +870,41 @@ test("R6 historical sequential Gateway result types resolve only from legacy wri
   assert.equal(sequential.includes('from "./orchestrator-gateway-client.ts"'),false);
   assert.equal(sequential.includes('from "./legacy-orchestrator-gateway-client.ts"'),true);
 });
+
+
+test("R6 human-only protected Gitea merge modules are absent from canonical runtime API",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const root=new URL("../../../",import.meta.url);
+  const load=p=>readFileSync(new URL(p,root),"utf8");
+  const directory="poc/packages/orchestrator-runtime/";
+  const publicIndex=load(directory+"src/index.ts");
+  const verifier=load(directory+"src/merge-readiness.ts");
+  const merger=load(directory+"src/trusted-merge.ts");
+  const intent=load(directory+"src/manual-merge-intent.ts");
+  const cli=load(directory+"scripts/human-merge.mjs");
+  const workflow=load(".github/workflows/human-approved-gitea-merge.yml");
+  for(const moduleName of ["merge-readiness.ts","trusted-merge.ts",
+                            "manual-merge-intent.ts"]){
+    assert.equal(publicIndex.includes('from "./'+moduleName+'"'),false,
+      "Agent-facing index must not re-export manual-merge module "+moduleName);
+  }
+  for(const forbiddenName of [
+    "GiteaMergeReadinessVerifier","TrustedGiteaMergeExecutor",
+    "validateManualMergeIntent","MergeReadinessDenied"
+  ]){
+    assert.equal(publicIndex.includes(forbiddenName),false,
+      "Canonical runtime index leaked human-only merge symbol "+forbiddenName);
+  }
+  assert.equal(verifier.includes("export class GiteaMergeReadinessVerifier"),true);
+  assert.equal(merger.includes('from "./merge-readiness.ts"'),true);
+  assert.equal(intent.includes("export function validateManualMergeIntent"),true);
+  assert.equal(cli.includes('from "../src/merge-readiness.ts"'),true);
+  assert.equal(cli.includes('from "../src/trusted-merge.ts"'),true);
+  assert.equal(cli.includes('from "../src/manual-merge-intent.ts"'),true);
+  assert.equal(cli.includes('process.argv[2]!=="--execute"'),true);
+  assert.equal(workflow.includes("workflow_dispatch:"),true);
+  assert.equal(workflow.includes("name: protected-gitea-merge"),true);
+  assert.equal(workflow.includes("environment:"),true);
+  // Do not mistake hiding exports for a permission mechanism: the protected
+  // human workflow and native provider checks remain authoritative.
+});

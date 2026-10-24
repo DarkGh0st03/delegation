@@ -947,3 +947,39 @@ type gate. Require all five exact-SHA offline CI jobs to pass
 before certification. Paid Gemini remains NO-GO and `main`
 is untouched. Rollback to
 `be019853b8502de78e4a61b411ece95c001d3485`.
+
+### R6 cleanup batch 21 — keep manual protected merge outside canonical agent API
+
+**Residual public exposure:** `orchestrator-runtime/src/index.ts`
+still wildcard-exported `merge-readiness.ts`, a verifier fixed to the
+old IAM Console repository, branch and Gitea security pipeline.
+This is a read-only check but belongs to the independently
+authenticated, explicitly human-invoked *protected merge* workflow,
+not to the general trusted Planning/ADK/A2A runtime API.
+
+**Change:** remove just this canonical barrel export. Preserve
+`merge-readiness.ts`, `trusted-merge.ts`,
+`manual-merge-intent.ts` and the human-only
+`scripts/human-merge.mjs`, which continue to use direct imports.
+Do not weaken Gitea branch protection, separate reviewer/CI/merge
+identities, exact SHA evidence, double-check before protected merge,
+or the `workflow_dispatch`/operator confirmation requirement.
+
+**Regression:** the existing `check-local-imports.test.mjs` R6 suite
+now asserts the three human-merge modules are absent from the
+canonical public index. It verifies that the verifier and manual
+intent still exist, the privileged script imports the
+security-critical modules directly, and the protected workflow
+still uses manual dispatch and its protected environment. No
+workflow is invoked during the check.
+
+**Limitations:** this is a source/API exposure reduction, *not*
+authorization by TypeScript exports. Direct source imports remain
+possible to trusted repository code; service-account isolation,
+human approval and Gitea server-side enforcement remain essential.
+No historical merge experiment or native verifier test is removed.
+
+**Gate/rollback:** require exact-SHA five-job cumulative offline
+validation before certification. No `main` merge and no paid
+Gemini usage. Roll back to
+`99e914d0d68b2c0503c685dd400e5e7492d5e940` if needed.
