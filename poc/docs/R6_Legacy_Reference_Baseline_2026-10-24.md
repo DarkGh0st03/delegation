@@ -835,3 +835,20 @@ orchestration or Gemini calls are changed. Require the full
 five-job exact-SHA cumulative offline CI before calling this
 validated; `main` is unchanged. Rollback to
 `c466b9814889ff5e3f0a60ec1c4250e51772fdb5`.
+
+### R6 batch 18 follow-up — correct edge accounting in synthetic cross-workspace test
+
+The first CI `40089028919` passed the production
+`audit:r6:types` gate and the substantive Gateway/Engineer,
+ADK/A2A and real Docker work, but the Node test suite caught an
+incorrect expected counter in the new synthetic fixture:
+`checkedImports` was expected as **4** while the checker correctly
+reported **6**. Four edges were `import type` names; the other
+two were named `export type` re-exports in the Agent Runtime barrel.
+
+The test now expects six verified **named type edges**. This is an
+assertion correction only, not a relaxation of the scanner:
+`report.errors` is still required to be empty. No production
+code, native verifier, delegated permissions or A2A behavior
+changes. CI `40089028919` is not green; rerun all exact-SHA
+offline cumulative jobs after the correction.

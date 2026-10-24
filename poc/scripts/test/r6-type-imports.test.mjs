@@ -69,7 +69,9 @@ test("R6 expands named type audit to Agent Runtime and A2A host, but no other wo
   }
   const report=checkR6TypeImports(root,Object.keys(entries));
   assert.equal(report.checkedFiles,5);
-  assert.equal(report.checkedImports,4);
+  // Four imported type names plus two named types re-exported by the Agent
+  // Runtime barrel: all six named edges must be resolved successfully.
+  assert.equal(report.checkedImports,6);
   assert.deepEqual(report.errors,[]);
 });
 
