@@ -95,3 +95,31 @@ before any R7 baseline freeze or decision on merging `main`.
 
 Do not auto-dispatch a paid workflow, fabricate a human review, call
 `merge_pull_request`, or change `main` from this checkpoint.
+
+## R5 non-billable Planner budget hardening — 24 October 2026
+
+The R6-29 cleanup baseline `adb1baa4b915a811630fbb299751c8df409e5ccf` passed
+[cumulative offline CI #40100508975](https://github.com/DarkGh0st03/delegation/actions/runs/40100508975)
+on all five jobs, same SHA.
+
+Before any real paid Planner request, the canonical
+`TrustedAdkReadOnlyPlanner` now configures an actual ADK
+`generateContentConfig.maxOutputTokens` (default 8192, range
+1..32000) and accepts a bounded per-call `maxModelCallMs` (default
+60000, range 1000..360000). Existing turn count and trusted read budgets
+remain active. Calls receive a combined cancellation signal and late
+responses after the deadline fail closed. Offline regressions reject
+bad budgets, inspect the ADK model request and exercise an uncooperative
+scripted response after timeout.
+
+**Limits:** AbortSignal delivery is cooperative; a provider that ignores
+cancellation may still perform/bill a remote operation. These checks do
+not create an overall Planner runtime budget, ensure live API spend caps,
+prove the current Gemini model API supports an exact token cap, authenticate
+a remote Engineer, or complete R5. A real host-level hard deadline,
+credential-scoped provider abort/cleanup and account-level spend controls
+remain necessary before explicit paid authorization.
+
+Only mark this hardening verified after 5/5 cumulative offline CI on the
+changed commit. R5 remains NO-GO; neither the archived paid workflow nor
+`main` is changed, and no external model request was made.

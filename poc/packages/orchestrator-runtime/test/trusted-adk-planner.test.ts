@@ -247,3 +247,52 @@ test("Planner rejects unordered writes to the same discovered file",()=>{
   assert.throws(()=>compilePlanningProposal(duplicate,config),
     /duplicate Task permission/);
 });
+
+test("Planner validates per-call and output-token bounds before any model request",()=>{
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  const port={async invoke(){return {};}};
+  for(const budget of [
+    {maxModelCallMs:999},{maxModelCallMs:360001},
+    {maxModelCallMs:NaN},{maxOutputTokens:0},
+    {maxOutputTokens:32001},{maxOutputTokens:1.5}
+  ])assert.throws(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,readPort:port,...budget
+  }),/invalid trusted Planning config/);
+  assert.equal(model.requests.length,0);
+});
+
+test("Planner propagates bounded inference config into real ADK model requests",async()=>{
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  const result=await new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,maxModelCallMs:2000,maxOutputTokens:1234,
+    readPort:{async invoke(tool:string){
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"export const invoices=[];"};
+    }}
+  }).propose();
+  assert.equal(result.verified_source_reads,1);
+  assert.equal(model.requests.length,2);
+  assert.equal((model.requests[0].config as any)?.maxOutputTokens,1234);
+});
+
+test("Planner fails closed after a model ignores the per-call abort signal",async()=>{
+  let observed:AbortSignal|undefined;
+  class SlowScripted extends BaseLlm{
+    constructor(){super({model:"offline-hanging-planner"});}
+    override async *generateContentAsync(
+      _r:LlmRequest,_stream?:boolean,signal?:AbortSignal
+    ):AsyncGenerator<LlmResponse,void>{
+      observed=signal;
+      await new Promise(resolve=>setTimeout(resolve,1200));
+      yield {content:{role:"model",parts:[{text:JSON.stringify(draft())}]}};
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("No model network"));
+    }
+  }
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model:new SlowScripted(),maxModelCallMs:1000,
+    readPort:{async invoke(){throw Error("unexpected provider read");}}
+  }).propose(),/model call timed out or cancelled/);
+  assert.equal(observed?.aborted,true);
+});
