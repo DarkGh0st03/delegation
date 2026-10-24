@@ -254,7 +254,9 @@ test("Planner validates per-call and output-token bounds before any model reques
   for(const budget of [
     {maxModelCallMs:999},{maxModelCallMs:360001},
     {maxModelCallMs:NaN},{maxOutputTokens:0},
-    {maxOutputTokens:32001},{maxOutputTokens:1.5}
+    {maxOutputTokens:32001},{maxOutputTokens:1.5},
+    {maxPlanningMs:999},{maxPlanningMs:900001},
+    {maxPlanningMs:Infinity},{maxPlanningMs:1.5}
   ])assert.throws(()=>new TrustedAdkReadOnlyPlanner({
     ...cfg,model,readPort:port,...budget
   }),/invalid trusted Planning config/);
@@ -297,4 +299,42 @@ test("Planner fails closed after a model ignores the per-call abort signal",asyn
   // The ADK Runner deliberately collapses internal model errors into
   // a generic unapproved-plan denial; the abort signal proves the deadline.
   assert.equal(observed?.aborted,true);
+});
+
+test("Planner's total session budget aborts a model even when per-call budget remains",async()=>{
+  let observed:AbortSignal|undefined;
+  class Stalled extends BaseLlm{
+    constructor(){super({model:"offline-delayed-session"});}
+    override async *generateContentAsync(
+      _r:LlmRequest,_s?:boolean,signal?:AbortSignal
+    ):AsyncGenerator<LlmResponse,void>{
+      observed=signal;
+      await new Promise(resolve=>setTimeout(resolve,1200));
+      yield {content:{role:"model",parts:[{text:JSON.stringify(draft())}]}};
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("Offline model has no network"));
+    }
+  }
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model:new Stalled(),maxPlanningMs:1000,maxModelCallMs:3000,
+    readPort:{async invoke(){throw Error("provider must not be used");}}
+  }).propose(),/no verified read-only grounded proposal/);
+  assert.equal(observed?.aborted,true);
+});
+
+test("Planner refuses a late real-provider-shaped source read after session deadline",async()=>{
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  let calls=0;
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,maxPlanningMs:1000,maxModelCallMs:3000,
+    readPort:{async invoke(tool:string){
+      calls++;
+      await new Promise(resolve=>setTimeout(resolve,1200));
+      return {provider:"gitea",performed:true,tool,branch:"main",
+        path:FILE,revision:SNAPSHOT.base_revision,
+        content:"export const invoices=[];"};
+    }}
+  }).propose(),/no verified read-only grounded proposal/);
+  assert.equal(calls,1);
 });

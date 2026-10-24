@@ -141,3 +141,27 @@ still separately asserts that the model received an **aborted** deadline
 signal. This retains the timeout and token bounds and does not weaken any
 policy or permission. Do not certify this follow-up until a new exact-SHA
 five-job cumulative CI succeeds. R5 remains NO-GO.
+
+### R5 Planner full-session acceptance deadline (24 October 2026)
+
+On the separate refactoring branch, the read-only ADK Planner now
+takes a `maxPlanningMs` session limit (default 300000ms; supported
+range 1000..900000ms), in addition to its per-call
+`maxModelCallMs`, `maxModelTurns`, output token budget,
+and pinned/read-only Gitea tools. A single session abort signal begins
+before ADK initialization, is combined with each model-call timeout,
+and is rechecked after actual provider reads, ADK events, and plan
+compilation. Even an upstream which ignores cancellation cannot have
+a *late result accepted* as an Engineer-reviewable proposal. Tests
+exercise an uncooperative scripted model and a late real-provider-shaped
+source response. All operations remain offline and read-only.
+
+This is a bounded **acceptance/cancellation guard**, NOT a hard
+process-wide timer or a promise that a remote Gemini request ceases
+billing on cancellation. External process supervision, authenticated
+persistent Engineer host, API account spend cap, secure runner channel,
+and explicit economic authorization remain mandatory before R5 GO.
+
+Certify this increment only when all five cumulative offline jobs
+pass on its exact framework SHA. Do not launch the archived paid
+Gemini workflow or merge `main`.

@@ -49,6 +49,8 @@ export interface TrustedAdkPlannerConfig {
   maxModelCallMs?:number;
   /** Actual ADK generateContentConfig cap, not merely a response-size check. */
   maxOutputTokens?:number;
+  /** Entire Planning session, including model, tool and proposal processing. */
+  maxPlanningMs?:number;
 }
 export interface UnapprovedPlanProposal {
   status:"unapproved_proposal";
@@ -221,17 +223,25 @@ class BudgetedModel extends BaseLlm {
   readonly delegate:BaseLlm;
   readonly limit:number;
   readonly maxCallMs:number;
-  constructor(model:BaseLlm,limit:number,maxCallMs:number){
+  readonly planningSignal:AbortSignal;
+  constructor(model:BaseLlm,limit:number,maxCallMs:number,
+    planningSignal:AbortSignal){
     super({model:model.model});
     this.delegate=model;this.limit=limit;this.maxCallMs=maxCallMs;
+    this.planningSignal=planningSignal;
   }
   override async *generateContentAsync(request:LlmRequest,stream?:boolean,
     signal?:AbortSignal):AsyncGenerator<LlmResponse,void>{
+    if(this.planningSignal.aborted)
+      fail("Planning session deadline exceeded");
     if(this.turns++>=this.limit)fail("model turn budget exceeded");
-    // Reuse the protected ADK Agent per-call cancellation pattern.
-    // Cooperative signal delivery is not a guarantee of provider cancellation.
+    // Per-call and session budgets are independent and both must hold.
+    // Signal delivery is cooperative: late responses still fail closed.
     const timeout=AbortSignal.timeout(this.maxCallMs);
-    const bounded=signal?AbortSignal.any([signal,timeout]):timeout;
+    const bounded=AbortSignal.any(
+      signal?[signal,timeout,this.planningSignal]:
+        [timeout,this.planningSignal]
+    );
     if(bounded.aborted)fail("model call timed out or cancelled");
     for await(const response of this.delegate.generateContentAsync(
       request,stream,bounded
@@ -262,17 +272,26 @@ export class TrustedAdkReadOnlyPlanner {
        (config.maxModelCallMs??60000)>360000||
        !Number.isSafeInteger(config.maxOutputTokens??8192)||
        (config.maxOutputTokens??8192)<1||
-       (config.maxOutputTokens??8192)>32000)
+       (config.maxOutputTokens??8192)>32000||
+       !Number.isSafeInteger(config.maxPlanningMs??300000)||
+       (config.maxPlanningMs??300000)<1000||
+       (config.maxPlanningMs??300000)>900000)
       fail("invalid trusted Planning config");
     this.config=config;
   }
   async propose():Promise<UnapprovedPlanProposal>{
     const cfg=this.config,sp=cfg.snapshot;
+    // The total session limit starts before any ADK setup or provider read.
+    // Late responses are never accepted even when an upstream ignores abort.
+    const planningDeadline=AbortSignal.timeout(cfg.maxPlanningMs??300000);
     const model=new BudgetedModel(cfg.model,cfg.maxModelTurns??8,
-      cfg.maxModelCallMs??60000);
+      cfg.maxModelCallMs??60000,planningDeadline);
     const files=new Set(sp.files),directories=new Set(sp.directories);
     let calls=0,bytes=0,readCount=0,denied=false;
     const read=async(tool:ReadTool,args:Record<string,unknown>)=>{
+      if(planningDeadline.aborted){
+        denied=true;return {ok:false,error:"planning_deadline"};
+      }
       if(++calls>16){denied=true;return {ok:false,error:"read_budget"};}
       if((tool==="read_file"&&(!files.has(args.path as string)||args.branch!=="main"))||
          (tool==="list_directory"&&(!directories.has(args.path as string)||args.branch!=="main"))||
@@ -281,6 +300,8 @@ export class TrustedAdkReadOnlyPlanner {
       }
       try{
         const result=obj(await cfg.readPort.invoke(tool,args));
+        if(planningDeadline.aborted)
+          throw Error("Planning deadline elapsed during provider read");
         if(result.provider!=="gitea"||result.performed!==true||
            result.tool!==tool||result.revision!==sp.base_revision)
           throw Error("provider revision mismatched");
@@ -376,6 +397,7 @@ export class TrustedAdkReadOnlyPlanner {
         directories:sp.directories,files:sp.files
       })}]}
     })){
+      if(planningDeadline.aborted){error=true;break;}
       if(event.errorCode||event.errorMessage)error=true;
       if(event.author===agent.name&&event.content?.role==="model"){
         for(const part of event.content.parts??[]){
@@ -384,11 +406,14 @@ export class TrustedAdkReadOnlyPlanner {
         }
       }
     }
-    if(error||denied||readCount===0||!finalText||finalText.length>65000)
+    if(planningDeadline.aborted||error||denied||
+       readCount===0||!finalText||finalText.length>65000)
       fail("no verified read-only grounded proposal");
     let proposed:unknown;
     try{proposed=JSON.parse(finalText);}catch{fail("model output was not strict JSON");}
     const result=compilePlanningProposal(proposed,cfg);
+    if(planningDeadline.aborted)
+      fail("no verified read-only grounded proposal");
     return {...result,verified_source_reads:readCount};
   }
 }
