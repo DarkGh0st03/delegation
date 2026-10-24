@@ -66,7 +66,9 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     });
   }
 
-  async invoke(tool:ReadTool,args:Record<string,unknown>):Promise<unknown>{
+  async invoke(tool:ReadTool,args:Record<string,unknown>,
+    signal?:AbortSignal):Promise<unknown>{
+    if(signal?.aborted)fail();
     // Bound again for every call. Approval/revocation transitions make the
     // provisional credential unusable even if the port object is retained.
     const root=this.#coordinator.trustedPlanningAuthority();
@@ -92,8 +94,14 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
     if(!this.#allowed.has(key(required)))fail();
 
     const execution=await this.#client.readPlanningResource(
-      root.session_id,tool,request.arguments,this.#snapshot.repository
+      root.session_id,tool,request.arguments,this.#snapshot.repository,
+      signal
     );
+    if(signal?.aborted)fail();
+    // Reject a read whose provisional root was revoked during transport.
+    const current=this.#coordinator.trustedPlanningAuthority();
+    if(current.credential_id!==this.#credentialId||
+       current.base_revision!==root.base_revision)fail();
     if(!execution||typeof execution!=="object"||Array.isArray(execution))fail();
     const response=execution as Record<string,unknown>;
     if(response.provider!=="gitea"||response.performed!==true||

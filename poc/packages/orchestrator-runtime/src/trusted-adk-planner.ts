@@ -33,7 +33,8 @@ const roleOps:Record<Role|"orchestrator",Set<Op>>={
   test:new Set(["read_file","update_file","create_file","run_tests"])
 };
 export interface PlanningReadPort {
-  invoke(tool:ReadTool,args:Record<string,unknown>):Promise<unknown>;
+  invoke(tool:ReadTool,args:Record<string,unknown>,
+    signal?:AbortSignal):Promise<unknown>;
 }
 export interface TrustedAdkPlannerConfig {
   model:BaseLlm;
@@ -258,6 +259,7 @@ class BudgetedModel extends BaseLlm {
 
 export class TrustedAdkReadOnlyPlanner {
   readonly config:TrustedAdkPlannerConfig;
+  #attempted=false;
   constructor(config:TrustedAdkPlannerConfig){
     preliminaryReadPermissions(config.snapshot);
     validatePrivateApprovedBranch(config.workBranch);
@@ -280,6 +282,10 @@ export class TrustedAdkReadOnlyPlanner {
     this.config=config;
   }
   async propose():Promise<UnapprovedPlanProposal>{
+    // Reserve synchronously: no retries, including concurrent attempts,
+    // may consume another model budget or create divergent unsigned plans.
+    if(this.#attempted)fail("Planning proposal already attempted");
+    this.#attempted=true;
     const cfg=this.config,sp=cfg.snapshot;
     // The total session limit starts before any ADK setup or provider read.
     // Late responses are never accepted even when an upstream ignores abort.
@@ -299,7 +305,7 @@ export class TrustedAdkReadOnlyPlanner {
         denied=true;return {ok:false,error:"outside_planning_scope"};
       }
       try{
-        const result=obj(await cfg.readPort.invoke(tool,args));
+        const result=obj(await cfg.readPort.invoke(tool,args,planningDeadline));
         if(planningDeadline.aborted)
           throw Error("Planning deadline elapsed during provider read");
         if(result.provider!=="gitea"||result.performed!==true||

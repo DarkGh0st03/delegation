@@ -165,3 +165,28 @@ and explicit economic authorization remain mandatory before R5 GO.
 Certify this increment only when all five cumulative offline jobs
 pass on its exact framework SHA. Do not launch the archived paid
 Gemini workflow or merge `main`.
+
+
+### R5 Planning cancellation propagation and one-shot session (24 October 2026)
+
+The canonical read-only Planner now reserves its proposal attempt **before
+its first await**, prohibiting concurrent or repeated ADK inference under
+the same Planner object. The already bounded session signal is passed through
+TrustedPlanningGatewayReadPort, OrchestratorPlanningGatewayReadClient,
+and the shared Gateway prepare -> Adapter VP -> Gateway execute transport.
+Each stage checks cancellation before onward HTTP work and after parsing a
+provider response. A retained Planning port also re-checks the trusted root
+after its round trip, rejecting reads that finish after revocation.
+
+Offline regressions exercise pre-cancelled reads, cancellation after a valid
+Gateway prepare response (zero Adapter/execute calls), successful one-shot
+Planning, and concurrent replay denial. Historical branch/PR operations
+retain their old call signatures and are not connected to the new signal
+by default. Neither the model nor an HTTP caller can authorize scope.
+
+**Limits:** abort is cooperative across external HTTP processes; a request
+already sent might have an irreversible side effect, and no timeout
+substitutes for Rust revocation or Gateway leases. This is not a persistent
+Engineer deployment, a live Gemini run, or account-level spend enforcement.
+Certification requires 5/5 cumulative offline jobs on this exact SHA.
+R5 remains NO-GO; no manual paid workflow or main merge.

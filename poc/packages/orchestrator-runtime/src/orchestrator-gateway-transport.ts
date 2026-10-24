@@ -109,14 +109,28 @@ export class OrchestratorGatewayTransport {
   }
 
 
+  /** Cancellation prevents subsequent stages and rejects late results.
+   * Provider effects already initiated cannot be undone by AbortSignal. */
+  #assertActive(signal?:AbortSignal):void {
+    if(signal?.aborted)
+      throw new OrchestratorGatewayClientError("Trusted Gateway invocation cancelled");
+  }
+  #requestSignal(signal?:AbortSignal):AbortSignal {
+    this.#assertActive(signal);
+    const timeout=AbortSignal.timeout(this.#timeoutMs);
+    return signal?AbortSignal.any([signal,timeout]):timeout;
+  }
   async invoke(
     taskId: string,
     tool: "create_branch" | "create_pull_request" |
       "read_repository"|"list_directory"|"read_file",
     args: Record<string, unknown>,
-    expectedPermission?:RequiredPermission
+    expectedPermission?:RequiredPermission,
+    signal?:AbortSignal
   ): Promise<unknown> {
-    const prepared = await this.#prepare(taskId, tool, args);
+    this.#assertActive(signal);
+    const prepared = await this.#prepare(taskId, tool, args,signal);
+    this.#assertActive(signal);
     // Fail before the Adapter can sign an unexpected permission. The trusted
     // Planning caller derives expectedPermission from its pinned snapshot.
     if(expectedPermission && (prepared.required_permission.operation !==
@@ -126,15 +140,19 @@ export class OrchestratorGatewayTransport {
         "Gateway Planning challenge does not match trusted resource"
       );
     }
-    const signedVp = await this.#createPresentation(prepared);
-    return this.#execute(prepared.request_id, signedVp);
+    const signedVp = await this.#createPresentation(prepared,signal);
+    this.#assertActive(signal);
+    const result=await this.#execute(prepared.request_id,signedVp,signal);
+    this.#assertActive(signal);
+    return result;
   }
 
   async #prepare(
     taskId: string,
     tool: "create_branch" | "create_pull_request" |
       "read_repository"|"list_directory"|"read_file",
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    signal?:AbortSignal
   ): Promise<PreparedAuthorization> {
     let response: Response;
     try {
@@ -152,7 +170,7 @@ export class OrchestratorGatewayTransport {
             tool,
             arguments: args
           }),
-          signal: AbortSignal.timeout(this.#timeoutMs)
+          signal: this.#requestSignal(signal)
         }
       );
     } catch (error) {
@@ -163,7 +181,9 @@ export class OrchestratorGatewayTransport {
       );
     }
 
+    this.#assertActive(signal);
     const body = await parseJson(response, "Gateway prepare");
+    this.#assertActive(signal);
     if (!response.ok) {
       throw new OrchestratorGatewayClientError(
         errorMessage(
@@ -208,7 +228,7 @@ export class OrchestratorGatewayTransport {
   }
 
   async #createPresentation(
-    prepared: PreparedAuthorization
+    prepared: PreparedAuthorization,signal?:AbortSignal
   ): Promise<string> {
     let response: Response;
     try {
@@ -227,7 +247,7 @@ export class OrchestratorGatewayTransport {
             audience: prepared.audience,
             challenge: prepared.challenge
           }),
-          signal: AbortSignal.timeout(this.#timeoutMs)
+          signal: this.#requestSignal(signal)
         }
       );
     } catch (error) {
@@ -238,10 +258,12 @@ export class OrchestratorGatewayTransport {
       );
     }
 
+    this.#assertActive(signal);
     const body = await parseJson(
       response,
       "Delegation Adapter presentation"
     );
+    this.#assertActive(signal);
     if (!response.ok) {
       throw new OrchestratorGatewayClientError(
         errorMessage(
@@ -263,7 +285,8 @@ export class OrchestratorGatewayTransport {
     );
   }
 
-  async #execute(requestId: string, signedVp: string): Promise<unknown> {
+  async #execute(requestId: string, signedVp: string,
+    signal?:AbortSignal): Promise<unknown> {
     let response: Response;
     try {
       response = await this.#fetch(
@@ -278,7 +301,7 @@ export class OrchestratorGatewayTransport {
             request_id: requestId,
             signed_vp: signedVp
           }),
-          signal: AbortSignal.timeout(this.#timeoutMs)
+          signal: this.#requestSignal(signal)
         }
       );
     } catch (error) {
@@ -289,7 +312,9 @@ export class OrchestratorGatewayTransport {
       );
     }
 
+    this.#assertActive(signal);
     const body = await parseJson(response, "Gateway execute");
+    this.#assertActive(signal);
     if (!response.ok) {
       throw new OrchestratorGatewayClientError(
         errorMessage(

@@ -338,3 +338,39 @@ test("Planner refuses a late real-provider-shaped source read after session dead
   }).propose(),/no verified read-only grounded proposal/);
   assert.equal(calls,1);
 });
+
+
+test("R5 Planner is one-shot even after a successful unsigned proposal",async()=>{
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  let providerCalls=0;
+  const planner=new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,readPort:{async invoke(tool:string){
+      providerCalls++;
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"export const invoices=[];"};
+    }}
+  });
+  const result=await planner.propose();
+  assert.equal(result.status,"unapproved_proposal");
+  assert.equal(providerCalls,1);
+  const modelTurns=model.requests.length;
+  await assert.rejects(planner.propose(),/already attempted/);
+  assert.equal(providerCalls,1);
+  assert.equal(model.requests.length,modelTurns);
+});
+
+test("R5 Planner concurrent calls cannot generate two independent drafts",async()=>{
+  let runs=0;
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  const planner=new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,readPort:{async invoke(tool:string){
+      runs++;
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"export const invoices=[];"};
+    }}
+  });
+  const first=planner.propose();
+  await assert.rejects(planner.propose(),/already attempted/);
+  assert.equal((await first).status,"unapproved_proposal");
+  assert.equal(runs,1);
+});

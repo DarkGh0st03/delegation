@@ -32,7 +32,8 @@ export class OrchestratorPlanningGatewayReadClient {
     taskId:string,
     tool:"read_repository"|"list_directory"|"read_file",
     args:Record<string,unknown>,
-    repository:GatewayRepositoryConfig
+    repository:GatewayRepositoryConfig,
+    signal?:AbortSignal
   ):Promise<unknown> {
     const normalized=validatePrepareAuthorizationRequest({
       task_id:nonEmptyString(taskId,"Planning Task ID"),
@@ -44,7 +45,8 @@ export class OrchestratorPlanningGatewayReadClient {
       throw new OrchestratorGatewayClientError("Planning accepts main reads only");
     }
     const permission=deriveRequiredPermission(repository,normalized.request);
-    return this.#transport.invoke(taskId,tool,normalized.request.arguments,permission);
+    return this.#transport.invoke(
+      taskId,tool,normalized.request.arguments,permission,signal);
   }
 
 
