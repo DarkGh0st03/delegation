@@ -1065,7 +1065,8 @@ test("R6 historical PR/CI scripts import protected merge readiness directly, not
   for(const name of ["GiteaMergeReadinessVerifier","MergeReadinessDenied"]){
     assert.equal(barrel.includes(name),false,
       "The privileged manual readiness checker must not be exported to ADK");
-    assert.match(module,new RegExp("export class "+name+"\\\\b","u"));
+    assert.ok(module.includes("export class "+name),
+      "Historical protected merge module must define "+name);
   }
   for(const name of names){
     const script=read(dir+name);

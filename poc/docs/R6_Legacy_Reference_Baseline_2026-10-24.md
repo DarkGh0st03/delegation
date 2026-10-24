@@ -1135,3 +1135,9 @@ handoff and remains NO-GO. No main merge or billable execution.
 **Gate:** five-job exact-SHA cumulative offline CI plus static
 named-export regression. Roll back this batch to
 `75c2e390662d64ad1bd3ba8f36decb2177f7edc9`.
+
+**Batch-24 regression test follow-up:** normalize the test for the
+two exported merge-readiness classes to an explicit source declaration
+assertion. The first version had an over-escaped dynamic word-boundary
+pattern; this test-only correction verifies the same class names and
+does not change their implementation or any security policy.
