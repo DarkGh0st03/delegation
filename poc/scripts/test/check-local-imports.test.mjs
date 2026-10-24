@@ -317,3 +317,21 @@ test("R6 retired unsigned root bootstrap cannot be invoked through public npm sc
   assert.ok(workspace.scripts["engineer:service"]?.includes(
     "start-trusted-engineer-service.mjs"));
 });
+
+test("R6 removes superseded Phase 6 ADK Orchestrator and isolates historic IAM preflight",async()=>{
+ const {readFileSync,existsSync}=await import("node:fs");
+ const root=new URL("../../../",import.meta.url);
+ const barrel=readFileSync(new URL(
+   "poc/packages/orchestrator-runtime/src/index.ts",root),"utf8");
+ assert.doesNotMatch(barrel,/adk-orchestrator\.ts|account-suspension-preflight\.ts/u);
+ assert.equal(existsSync(new URL(
+   "poc/packages/orchestrator-runtime/src/adk-orchestrator.ts",root)),false);
+ assert.equal(existsSync(new URL(
+   "poc/packages/orchestrator-runtime/test/adk-orchestrator.test.ts",root)),false);
+ const historical=readFileSync(new URL(
+   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",root),"utf8");
+ assert.match(historical,
+   /from\s+"\.\.\/\.\.\/orchestrator-runtime\/src\/account-suspension-preflight\.ts"/u);
+ assert.equal(existsSync(new URL(
+   "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",root)),true);
+});

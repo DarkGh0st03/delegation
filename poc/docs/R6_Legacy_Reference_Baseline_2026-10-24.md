@@ -155,3 +155,38 @@ of its command aliases is accidentally reintroduced. **Rollback:**
 recover the deleted CLI and both npm script entries from commit
 `28ca28c688137504958f6c56f7a297a7b556260a`. This batch does **not** claim that a local Engineer service
 is already deployed or that R5 paid Gemini is safe to run.
+
+
+### R6 cleanup batch 3 — retire obsolete Phase 6 ADK Orchestrator wrapper
+
+**Removed:** `poc/packages/orchestrator-runtime/src/adk-orchestrator.ts`
+(169 lines) and its dedicated Phase 6/7 test
+`test/adk-orchestrator.test.ts` (141 lines). This obsolete wrapper
+exposed a model-callable `run_account_suspension_workflow` FunctionTool
+to invoke the old sequential Account Suspension coordinator. The signed
+two-phase Engineer/Coordinator/DAG runtime no longer uses such a
+model-selected privileged workflow call.
+
+**Caller evidence:** reviewed the orchestrator-runtime `src/*.ts`
+and `test/*.ts` import/export uses; the only in-package consumer
+of `AdkAccountSuspensionOrchestrator` was the removed historical test
+plus the wildcard public `src/index.ts` export. The four historical
+MCP coordinator scripts call the separate
+`AccountSuspensionSequentialCoordinator` directly and remain intact.
+The old OpenAI ADK provider implementation and independent adapter
+tests remain intact; this change does **not** remove or claim to
+replace those provider tests. The current trusted dispatcher test
+suite separately checks denial on false/unsigned task evidence,
+duplicates, failed Gateway attestation and DAG dependencies.
+
+**Preserved:** the 57-line Account Suspension interface preflight and
+its tests, including the old paid-workflow script that uses it; the
+historical paid script now imports that preflight **directly** rather
+than through the signed runtime's canonical barrel. The old paid
+workflow remains **R5 NO-GO** and was not executed.
+
+**Rollback:** recover the two deleted files and the old exports/import
+bindings at commit `aa17bb63f83152a93d1370b2c789a60d21b38dd9`. A new R6 regression prevents accidental
+reintroduction. No claim of complete dynamic-reference proof is made:
+the full cumulative exact-SHA CI must confirm the replacement and
+historical test compatibility before certifying the cleanup.

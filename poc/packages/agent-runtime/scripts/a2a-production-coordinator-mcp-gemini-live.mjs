@@ -36,9 +36,12 @@ import {
   DeterministicOrchestratorAuthorityIssuer,
   OrchestratorProtectedGatewayClient,
   SoftwareEngineerAuthorityBootstrap,
-  GiteaMergeReadinessVerifier,MergeReadinessDenied,
-  checkAccountSuspensionPreflight
+  GiteaMergeReadinessVerifier,MergeReadinessDenied
 } from "../../orchestrator-runtime/src/index.ts";
+// Historical Account Suspension-specific check is deliberately not a
+// public canonical Planner/Execution preflight contract.
+import {checkAccountSuspensionPreflight} from
+  "../../orchestrator-runtime/src/account-suspension-preflight.ts";
 // Historical Account Suspension coordinator is intentionally NOT public API.
 import {AccountSuspensionSequentialCoordinator} from
   "../../orchestrator-runtime/src/sequential-coordinator.ts";
