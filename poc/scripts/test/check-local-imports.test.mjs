@@ -80,3 +80,43 @@ test("makes its limits explicit for type-only imports, dynamic imports and resou
     checkedFiles: 1, localImports: 0, missing: []
   });
 });
+
+
+test("R6 legacy reference inventory distinguishes workflow, runtime, package and prose",async t=>{
+  const root=fixture(t,{
+    "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts":
+      "export class HistoricalCoordinator {}",
+    "poc/apps/old.mjs":
+      "import {HistoricalCoordinator} from '../packages/orchestrator-runtime/src/sequential-coordinator.ts';",
+    ".github/workflows/old.yml":
+      "run: node poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
+    "poc/package.json":JSON.stringify({scripts:{old:"node sequential-coordinator.ts"}}),
+    "notes.md":"historical sequential-coordinator.ts is no longer canonical",
+    "some-unrelated-file.mjs":"export const ready=true;"
+  });
+  const {collectLegacyReferences}=await import("../r6-legacy-references.mjs");
+  const result=collectLegacyReferences(root,[
+    "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
+    "poc/apps/old.mjs",".github/workflows/old.yml",
+    "poc/package.json","notes.md","some-unrelated-file.mjs"
+  ],{candidates:["poc/packages/orchestrator-runtime/src/sequential-coordinator.ts"]});
+  const item=result.candidates[0];
+  assert.equal(item.exists,true);
+  assert.deepEqual(item.references.map(x=>x.referenceType).sort(),[
+    "documentation-only","package-script-or-config",
+    "runtime-or-test-source","workflow"
+  ]);
+  assert.ok(result.methodology.includes("not an import graph"));
+});
+test("R6 inventory never promotes absent textual references to deletion approval",async t=>{
+  const root=fixture(t,{"unused.ts":"export const unused=1;"});
+  const {collectLegacyReferences}=await import("../r6-legacy-references.mjs");
+  const found=collectLegacyReferences(root,["unused.ts"],{
+    candidates:["unused.ts","untracked-dependency.mjs"]
+  });
+  assert.equal(found.candidates[0].exists,true);
+  assert.deepEqual(found.candidates[0].references,[]);
+  assert.equal(found.candidates[1].exists,false);
+  assert.deepEqual(found.candidates[1].references,[]);
+  assert.match(found.methodology,/not an import graph or deletion proof/);
+});

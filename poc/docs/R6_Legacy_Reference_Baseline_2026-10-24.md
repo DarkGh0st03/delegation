@@ -1,0 +1,95 @@
+# R6 — Legacy reference baseline and conservative cleanup gate
+
+**Branch:** `refactor/post-prof-plan-contracts-20261021`  
+**Inspection baseline:** `eca214b5f44f073730ef9e4956fee53d464acf37` (24 October 2026).  
+**Main unchanged:** `62c5c2f4c81c92218a262204a3f1a5acb00f8867`.  
+**Deletion decision:** **NO FILES REMOVED IN THIS PASS.** Every historical
+entrypoint listed below has a known reason to retain it, or still requires
+full source/dynamic-caller audit. Never run Gemini to test cleanup.
+
+## Evidence snapshot
+
+- Git tree at the inspection commit has **497 tracked blobs**, no truncated
+  tree response, and **27 workflow definitions** under `.github/workflows/`.
+- The new signed flow uses `trusted-adk-planner.ts`,
+  `trusted-planning-checkpoint-store.ts`, `trusted-planning-review-gate.ts`,
+  `trusted-execution-coordinator.ts`,
+  `trusted-approved-a2a-dispatcher.ts`, `trusted-approved-child-issuer.ts`,
+  the shared MCP Gateway path, and the Rust Adapter/Core verifier + OPA.
+- `.github/workflows/cumulative-refactoring-offline.yml` runs approved-plan,
+  Node/ADK/A2A/MCP, Core Rust, signed/native EVM, Gitea and real Docker
+  acceptance; its legacy references remain intentional compatibility tests.
+  It **does not** call a model provider.
+- `.github/workflows/gemini-paid-shared-mcp-final.yml` still invokes
+  `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs`
+  and the historical Account Suspension scope check. It is **NOT** the
+  new Engineer-approved trusted Planning/Execution driver. Do not dispatch
+  it as the final R5 proof, even though its historical consent-input guard
+  exists. Both script and workflow are historical experiment evidence.
+- `.github/workflows/shared-mcp-production-coordinator.yml`,
+  `shared-mcp-real-positive-e2e.yml`, and
+  `disposable-simulated-approval-merge.yml` invoke separate legacy smoke
+  scripts and therefore still have active CI/workflow consumers. The latter
+  simulates merge approval in disposable Gitea; this is NOT an instruction
+  to merge the actual thesis branch.
+
+## Cleanup classification from observed callers
+
+| File group | Decision today | Evidence / unblock requirement |
+|---|---|---|
+| `poc/packages/orchestrator-runtime/src/trusted-*.ts` plus signed review stores | **KEEP — canonical** | Signed checkpoint/Engineer/authorized DAG flow, current dedicated and cumulative test callers |
+| Gateway/Rust/Core/OPA, `poc/mcp-shared`, private IPC and Docker/Gitea runner | **KEEP — security/provider boundary** | A2A callbacks do not authorize tools without Gateway; CI exercises these providers |
+| `sequential-coordinator.ts` and `sequential-coordinator.test.ts` | **MIGRATE/RETAIN TEST** | Historical 11-file Account Suspension flow; check all imports, dynamic loaders and old scripts before migration |
+| `a2a-production-coordinator-mcp-gemini-live.mjs` plus paid workflow | **RETAIN AS HISTORICAL, NEVER R5 ENTRYPOINT** | Old paid workflow invokes it; protect evidence while designing separate approved-plan Gemini driver |
+| `a2a-production-coordinator-mcp-isolated-{smoke,pr-open-smoke,real-positive}.mjs` | **RETAIN UNTIL HISTORICAL CI RETIRED** | Several configured workflows still execute them; preserve real-provider comparison |
+| `check-account-suspension-reference-scope.mjs` and Account Suspension fixture | **RETAIN, FLAG GENERICITY DEBT** | Invoked from cumulative baseline and historic workflows; replacement needs generic multi-repository source acceptance |
+| `poc/workflow-ui/mock-plan.js` | **KEEP TEST-ONLY** | UI fixture must not be confused with independent Engineer signature |
+| Old `phase11`, `phase12`, native, multipermission and catalog workflows | **REVIEW OVERLAP, DO NOT DELETE YET** | Security/reproducibility tests may exercise distinct threats beyond the cumulative gate |
+| Legacy environment/template paths and local fixtures | **KEEP UNTIL REF GRAPH CONFIRMS** | Existing `check:scaffold`, import checker, Docker/compose references, native Rust and scripts |
+
+## Reference-audit command (read-only)
+
+`npm --prefix poc run audit:r6:references`
+
+Optional machine-readable: `node poc/scripts/r6-legacy-references.mjs --json`
+
+The small inventory utility reads only **Git-tracked** textual files and
+records literal full-path or basename observations for known legacy targets.
+It labels references as workflow, workspace script/config, JS/TS source,
+deployment, or documentation. It is also executed in the cumulative Node
+job and tested with synthetic references. No program is executed, no
+credential is read, no file is deleted.
+
+**Important precision:** this is a FIRST PASS, **not** a complete import/
+runtime graph and not deletion authority. String/AST dynamic imports,
+runtime-generated paths, external code, GitHub Actions `uses:` actions,
+transitive Docker/Compose entrypoints, Bash substitutions, and test
+fixtures require manual or dedicated follow-up. A missing literal match
+is `UNVERIFIED`, not `UNUSED`. A path mentioned only in prose is not
+proof of a live runtime caller.
+
+## R6 next mandatory gates
+
+1. Resolve all direct import/export and `import()` references into paths,
+   plus package scripts, CI jobs, Shell/Compose/Docker startup, tool
+   registrations and provider modes. Record file `→` actual caller, not
+   solely a text match.
+2. Migrate *active* historical callers to the same new signed plan/Task
+   path, or explicitly isolate them as historical experiments with
+   matching still-executed regressions. Do not redirect paid Gemini to an
+   unsigned coordinator.
+3. For every proposed deletion record **old path, proven callers,
+   replacement, all denied/allowed test evidence and rollback commit**.
+   Remove in coherent batches only after existing exact-SHA/Gitea/Docker
+   and Rust/OPA cases are green.
+4. After each cleanup batch run the cumulative pipeline **on the exact
+   changed SHA**, including full native EVM real-provider acceptance, not
+   only fast Node tests.
+5. Finish R6 by checking that no unintended legacy route can supply or
+   bypass new planning/approval authority. Keep `main` untouched and R5
+   billable execution blocked without express user approval.
+
+**Boundary:** the existing native E2E uses two scripted requirements on
+the same IAM Console base repository. It is not a real Gemini-generated
+implementation across arbitrary repositories, and a legacy file cannot
+be declared removable merely because an offline positive test passes.

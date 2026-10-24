@@ -41,6 +41,7 @@ jobs:
         run: |
           npm --prefix poc run check:scaffold
           npm --prefix poc run check:imports
+          npm --prefix poc run audit:r6:references
           node poc/scripts/sync-rust-operation-catalog.mjs --check
       - name: Gateway / provider / composite authorization
         run: npm --prefix poc run gateway:test
