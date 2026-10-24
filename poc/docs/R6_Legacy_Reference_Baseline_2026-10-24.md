@@ -914,3 +914,36 @@ missing exports or targets.
 No production code or runtime permission changes. The original
 failed CI must remain recorded; certify only after a new exact-SHA
 cumulative five-job CI is fully green.
+
+### R6 cleanup batch 20 — include Test Runner Controller in local type-contract checks
+
+The isolated Runner provides exact-Git-SHA testing, a fixed Docker
+phase pipeline, researcher acceptance and the trusted Gitea CI
+evidence used by the Gateway. TypeScript-only imports in these
+interfaces could silently become invalid when modules are moved:
+Node runtime tests strip such imports without type-checking them.
+
+**Change:** expand the existing `audit:r6:types` scan to include
+`poc/apps/test-runner-controller/{src,test}/*.ts`. It now covers
+five explicitly selected workspaces: Orchestrator, Agent Runtime,
+A2A Agent, Gateway and Test Runner Controller.
+
+**Regression evidence:** add synthetic positive checks for named
+Runner request/result type imports, barrel alias re-exports,
+a Runner test consumer and a cross-workspace Gateway consumer.
+Add negative checks for a removed named Runner interface and
+a deleted local type module. Older cohort-scope fixtures were
+updated to use a genuinely unrelated synthetic workspace instead
+of the now-in-scope Runner, without relaxing their assertions.
+
+**Limits:** this is not a full TypeScript compiler. It does not
+check assignability, generic constraints, node_modules declarations,
+ambient modules, or nested JavaScript Runner integration scripts.
+It is not evidence that legacy Runner files can be deleted.
+
+**Safety:** no production Gateway, Runner, Rust, credentials, ADK
+or OPA behavior changes. The cumulative CI runs the same named
+type gate. Require all five exact-SHA offline CI jobs to pass
+before certification. Paid Gemini remains NO-GO and `main`
+is untouched. Rollback to
+`be019853b8502de78e4a61b411ece95c001d3485`.

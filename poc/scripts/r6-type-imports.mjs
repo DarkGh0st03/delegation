@@ -82,7 +82,7 @@ export function checkR6TypeImports(root,tracked){
   // test suite already in cumulative offline CI. Do not silently include
   // unrelated workspaces or claim this is a TypeScript compiler.
   const selected=tracked.filter(p=>
-    /^poc\/(?:packages\/(?:orchestrator-runtime|agent-runtime)|apps\/(?:a2a-agent|gateway))\/(?:src|test)\/[^/]+\.ts$/u.test(p)
+    /^poc\/(?:packages\/(?:orchestrator-runtime|agent-runtime)|apps\/(?:a2a-agent|gateway|test-runner-controller))\/(?:src|test)\/[^/]+\.ts$/u.test(p)
   ).sort();
   let checkedImports=0;
   for(const path of selected){

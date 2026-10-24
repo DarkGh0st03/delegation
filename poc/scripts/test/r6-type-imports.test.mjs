@@ -45,7 +45,7 @@ test("R6 skips comments, templates and quoted fake import statements",t=>{
 });
 
 
-test("R6 includes Agent Runtime and A2A but excludes unrelated Runner workspace",t=>{
+test("R6 includes Agent Runtime and A2A while excluding unrelated workspaces",t=>{
   const root=mkdtempSync(join(tmpdir(),"r6-cross-workspace-"));
   t.after(()=>rmSync(root,{recursive:true,force:true}));
   const entries={
@@ -59,7 +59,7 @@ test("R6 includes Agent Runtime and A2A but excludes unrelated Runner workspace"
       "import type {AgentContext} from '../../../packages/agent-runtime/src/index.ts';",
     "poc/apps/a2a-agent/test/bootstrap.test.ts":
       "import type {TaskKind} from '../../../packages/agent-runtime/src/contracts.ts';",
-    "poc/apps/test-runner-controller/src/unrelated.ts":
+    "poc/apps/unrelated-workspace/src/unrelated.ts":
       "import type {Missing} from './not-yet-checked.ts';"
   };
   for(const [file,text] of Object.entries(entries)){
@@ -112,7 +112,7 @@ test("R6 checks Gateway source, tests and cross-workspace named types without wi
       "import type {AgentRole} from '../../../apps/gateway/src/types.ts';",
     "poc/apps/gateway/native-test/ignored.ts":
       "import type {Unresolved} from '../src/missing.ts';",
-    "poc/apps/test-runner-controller/src/ignored.ts":
+    "poc/apps/unrelated-workspace/src/ignored.ts":
       "import type {Unresolved} from './missing.ts';"
   };
   for(const [path,text] of Object.entries(entries)){
@@ -156,5 +156,63 @@ test("R6 Gateway cohort rejects missing named and missing module type imports",t
       source:"poc/apps/gateway/test/loader.test.ts",
       symbol:"Gone",reason:"missing module"
     }
+  ]);
+});
+
+
+test("R6 Runner source, tests and Gateway consumers resolve moved named types",t=>{
+  const root=mkdtempSync(join(tmpdir(),"r6-runner-types-"));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const entries={
+    "poc/apps/test-runner-controller/src/types.ts":
+      "export interface RunnerRunRequest{}; export interface RunnerRunResult{};",
+    "poc/apps/test-runner-controller/src/barrel.ts":
+      "export type {RunnerRunRequest as ApprovedRunnerRequest} from './types.ts';",
+    "poc/apps/test-runner-controller/src/executor.ts":
+      "import type {ApprovedRunnerRequest} from './barrel.ts';",
+    "poc/apps/test-runner-controller/src/validation.ts":
+      "import {type RunnerRunResult} from './types.ts';",
+    "poc/apps/test-runner-controller/test/runner.test.ts":
+      "import type {RunnerRunRequest} from '../src/types.ts';",
+    "poc/apps/gateway/src/runner-client.ts":
+      "import type {RunnerRunResult} from '../../test-runner-controller/src/types.ts';",
+    "poc/apps/unrelated-workspace/src/ignored.ts":
+      "import type {Unresolved} from './not-in-scope.ts';"
+  };
+  for(const [path,source] of Object.entries(entries)){
+    mkdirSync(dirname(join(root,path)),{recursive:true});
+    writeFileSync(join(root,path),source);
+  }
+  const result=checkR6TypeImports(root,Object.keys(entries));
+  assert.equal(result.checkedFiles,6);
+  assert.equal(result.checkedImports,5);
+  assert.deepEqual(result.errors,[]);
+});
+
+test("R6 Runner cohort rejects removed named interfaces and local modules",t=>{
+  const root=mkdtempSync(join(tmpdir(),"r6-runner-missing-"));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const entries={
+    "poc/apps/test-runner-controller/src/types.ts":
+      "export interface RunnerRunRequest{};",
+    "poc/apps/test-runner-controller/src/executor.ts":
+      "import type {LegacyRunnerExecution} from './types.ts';",
+    "poc/apps/test-runner-controller/test/executor.test.ts":
+      "import type {RemovedRunnerConfig} from '../src/deleted.ts';"
+  };
+  for(const [path,source] of Object.entries(entries)){
+    mkdirSync(dirname(join(root,path)),{recursive:true});
+    writeFileSync(join(root,path),source);
+  }
+  const result=checkR6TypeImports(root,Object.keys(entries));
+  assert.equal(result.checkedFiles,3);
+  assert.equal(result.checkedImports,2);
+  assert.deepEqual(result.errors.map(x=>({
+    source:x.source,symbol:x.symbol,reason:x.reason
+  })),[
+    {source:"poc/apps/test-runner-controller/src/executor.ts",
+     symbol:"LegacyRunnerExecution",reason:"missing named export"},
+    {source:"poc/apps/test-runner-controller/test/executor.test.ts",
+     symbol:"RemovedRunnerConfig",reason:"missing module"}
   ]);
 });
