@@ -12,6 +12,8 @@ import type {DelegatedPermission} from "./delegated-permission.ts";
 import type {DelegatedA2ARoleTaskResult} from "./a2a-workflow.ts";
 import {TrustedOperationalRecoveryStore}
   from "./trusted-operational-recovery-store.ts";
+import {TrustedPlanningRecoveryStore}
+  from "./trusted-planning-recovery-store.ts";
 import {observedA2ACompletion,observedOrchestratorProviderCompletion} from "./trusted-a2a-observer.ts";
 import type {
   RootParameters,TrustedEngineerAuthoritySession
@@ -38,6 +40,7 @@ export class TrustedExecutionCoordinator {
   readonly #sessionId:string;
   readonly #baseRevision:string;
   readonly #recovery?:TrustedOperationalRecoveryStore;
+  readonly #planningRecovery?:TrustedPlanningRecoveryStore;
   #phase:Phase="idle";
   #planningRoot?:{
     readonly credential_id:string;
@@ -57,6 +60,7 @@ export class TrustedExecutionCoordinator {
     sessionId:string;
     baseRevision:string;
     operationalRecovery?:TrustedOperationalRecoveryStore;
+    planningRecovery?:TrustedPlanningRecoveryStore;
   }){
 
     if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(config.sessionId)||
@@ -72,9 +76,18 @@ export class TrustedExecutionCoordinator {
        !(config.operationalRecovery instanceof TrustedOperationalRecoveryStore))
       throw Error("Invalid trusted operational recovery journal");
     this.#recovery=config.operationalRecovery;
+    if(config.planningRecovery!==undefined&&
+       !(config.planningRecovery instanceof TrustedPlanningRecoveryStore))
+      throw Error("Invalid trusted Planning recovery journal");
+    this.#planningRecovery=config.planningRecovery;
   }
 
   get phase():Phase{return this.#phase;}
+  assertPlanningRecoveryStore(store:TrustedPlanningRecoveryStore):void{
+    if(!(store instanceof TrustedPlanningRecoveryStore)||
+       this.#planningRecovery!==store)
+      throw Error("Trusted Coordinator requires matching Planning recovery journal");
+  }
 
   /** The admitted GitHub path MUST have a crash fence independent of host
    * polling; otherwise it cannot claim to remain safe after Engineer exit. */
@@ -152,6 +165,13 @@ export class TrustedExecutionCoordinator {
       this.assertOperationalRecoveryConfigured();
       await this.#recovery.assertClean();
     }
+    if(this.#planningRecovery){
+      // Persist an intent before Gateway registration or any Rust issuance.
+      await this.#planningRecovery.recordIntent({
+        sessionId:this.#sessionId,baseRevision:this.#baseRevision,
+        credentialId:root.credential_id
+      });
+    }
     const result=await this.#authority.startPlanning(root);
     if(result.phase!=="planning")throw new Error("Read-only authority not confirmed");
     this.#planningRoot={credential_id:result.credential_id,
@@ -169,8 +189,14 @@ export class TrustedExecutionCoordinator {
     if(this.#phase!=="planning"||!this.#planningRoot)
       return Promise.reject(Error("No active trusted Planning root to close"));
     this.#phase="failed_closed";
+    const id=this.#planningRoot.credential_id;
     this.#planningRoot=undefined;
-    this.#planningShutdown=this.#authority.cancelPlanning().then(()=>{
+    this.#planningShutdown=this.#authority.cancelPlanning().then(async()=>{
+      if(this.#planningRecovery)
+        await this.#planningRecovery.markReconciled({
+          sessionId:this.#sessionId,baseRevision:this.#baseRevision,
+          credentialId:id
+        });
       this.#phase="closed";
     });
     return this.#planningShutdown;
@@ -191,6 +217,7 @@ export class TrustedExecutionCoordinator {
     // Reserve synchronously BEFORE any journal filesystem await: two
     // concurrent activation calls cannot race into issuing separate roots.
     this.#phase="activating";
+    const preliminaryId=this.#planningRoot?.credential_id;
     this.#planningRoot=undefined; // never reuse provisional authority in Execution
     if(this.#recovery){
       try{
@@ -209,6 +236,14 @@ export class TrustedExecutionCoordinator {
     try {
       const issued=await this.#authority.approveAndIssueOperationalRoot(root);
       operationalId=issued.credential_id;
+      if(this.#planningRecovery){
+        if(!preliminaryId)throw Error("Missing preliminary root at signed handoff");
+        // Authority returned only AFTER it confirmed preliminary revocation.
+        await this.#planningRecovery.markReconciled({
+          sessionId:this.#sessionId,baseRevision:this.#baseRevision,
+          credentialId:preliminaryId
+        });
+      }
       const gatewayDigest=await this.#gateway.activate(
         this.#sessionId,this.#baseRevision
       );

@@ -38,6 +38,8 @@ import {TrustedPlanningReviewGate}
   from "../src/trusted-planning-review-gate.ts";
 import {TrustedActivePlanningCheckpoint}
   from "../src/trusted-active-planning-checkpoint.ts";
+import {TrustedPlanningRecoveryStore}
+  from "../src/trusted-planning-recovery-store.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
 const SECOND_FILE="src/billing/tax.ts";
@@ -121,7 +123,7 @@ function response(value:unknown,status=200){
   return new Response(JSON.stringify(value),{status,headers:{"content-type":"application/json"}});
 }
 function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean;
-  revocationFails?:boolean}={}){
+  revocationFails?:boolean;planningRecovery?:TrustedPlanningRecoveryStore}={}){
   const observed={adapter:0,verification:0,policy:0,provider:0,
     prepare:0,execute:0,issued:0,revoked:0};
   const signed=new Map<string,{resource:string;operation:string;challenge:string;audience:string}>();
@@ -217,7 +219,8 @@ function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean;
       async confirmTaskCompletion(){throw Error("Execution prohibited");},
       closeSession(){throw Error("Execution prohibited");}
     },
-    credentials:{async revokeRoot(){throw Error("Execution prohibited");}}
+    credentials:{async revokeRoot(){throw Error("Execution prohibited");}},
+    ...(options.planningRecovery?{planningRecovery:options.planningRecovery}:{})
   });
   const fetchFn:typeof fetch=async(url,init)=>{
     const path=String(url);
@@ -517,7 +520,9 @@ test("backend signing key must be valid before any model read",async()=>{
 async function makeOwnerReviewFixture(options:{
   tamperPermission?:boolean;revocationFails?:boolean
 }={}){
-  const f=fixture(options);
+  const planningDir=await mkdtemp(join(tmpdir(),"owner-planning-intents-"));
+  const planningRecovery=new TrustedPlanningRecoveryStore(planningDir);
+  const f=fixture({...options,planningRecovery});
   const receipts=await mkdtemp(join(tmpdir(),"owner-planning-approvals-"));
   const checkpoints=await mkdtemp(join(tmpdir(),"owner-planning-checkpoints-"));
   const engineer=generateKeyPairSync("ed25519");
@@ -555,12 +560,13 @@ async function makeOwnerReviewFixture(options:{
     gateway:{gatewayBaseUrl:"http://trusted-gateway",
       adapterBaseUrl:"http://trusted-adapter",
       adapterToken:"trusted-orchestrator-token",fetchFn:f.fetchFn},
-    reviewGate:gate,checkpointStore:store,backendKeyId,
+    reviewGate:gate,checkpointStore:store,planningRecovery,backendKeyId,
     backendPrivateKeyPem:backend.privateKey.export({
       format:"pem",type:"pkcs8"
     }).toString()
   });
-  return {...f,store,gate,makeConfig,async cleanup(){
+  return {...f,store,gate,planningRecovery,makeConfig,async cleanup(){
+    await rm(planningDir,{recursive:true,force:true});
     await rm(receipts,{recursive:true,force:true});
     await rm(checkpoints,{recursive:true,force:true});
   }};
@@ -586,6 +592,9 @@ test("owner bootstrap issues one read-only root, traverses Gateway and persists 
     await closed;
     assert.equal(f.coordinator.phase,"closed");
     assert.equal(f.observed.revoked,1);
+    await f.planningRecovery.assertClean();
+    await assert.rejects(f.planningRecovery.assertFreshSession(snapshot.session_id),
+      /retired session cannot be reused/);
     await f.coordinator.closePlanning();
     assert.equal(f.coordinator.phase,"closed");
     assert.equal(f.observed.revoked,1);
@@ -618,6 +627,7 @@ test("uncertain native revocation after failed Planning remains terminal",async(
       /manual reconciliation required/);
     assert.equal(f.observed.revoked,1);
     assert.equal(f.coordinator.phase,"failed_closed");
+    assert.equal((await f.planningRecovery.pending()).length,1);
     await assert.rejects(f.coordinator.closePlanning(),
       /cancellation not confirmed/);
     assert.equal(f.observed.revoked,1);

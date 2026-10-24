@@ -12,6 +12,8 @@
  * retirement is MANUAL RECONCILIATION, never an automatic retry.
  */
 import {isDeepStrictEqual} from "node:util";
+import {TrustedPlanningRecoveryStore}
+  from "./trusted-planning-recovery-store.ts";
 import {TrustedExecutionCoordinator}
   from "./trusted-execution-coordinator.ts";
 import {TrustedAdkReadOnlyPlanner,type TrustedAdkPlannerConfig}
@@ -36,6 +38,7 @@ export interface OwnerControlledPlanningConfig {
   gateway:Omit<TrustedPlanningGatewayPortConfig,"coordinator"|"snapshot">;
   reviewGate:TrustedPlanningReviewGate;
   checkpointStore:SignedPlanningCheckpointFileStore;
+  planningRecovery:TrustedPlanningRecoveryStore;
   backendKeyId:string;
   backendPrivateKeyPem:string;
   checkpointLifetimeMs?:number;
@@ -55,6 +58,7 @@ export async function startOwnerControlledPlanningReview(
   if(!(config.coordinator instanceof TrustedExecutionCoordinator)||
      !(config.reviewGate instanceof TrustedPlanningReviewGate)||
      !(config.checkpointStore instanceof SignedPlanningCheckpointFileStore)||
+     !(config.planningRecovery instanceof TrustedPlanningRecoveryStore)||
      config.coordinator.phase!=="idle"||
      !isDeepStrictEqual(config.planner?.snapshot,config.snapshot)||
      !config.gateway?.gatewayBaseUrl||!config.gateway?.adapterBaseUrl||
@@ -62,6 +66,7 @@ export async function startOwnerControlledPlanningReview(
      !config.backendPrivateKeyPem||!config.backendKeyId)
     refuse("independent Planning components and idle Coordinator required");
   preliminaryReadPermissions(config.snapshot);
+  config.coordinator.assertPlanningRecoveryStore(config.planningRecovery);
   await config.coordinator.beginPlanning(config.preliminaryRoot);
   try{
     const readPort=new TrustedPlanningGatewayReadPort({

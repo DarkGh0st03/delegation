@@ -42,4 +42,5 @@ export * from "./trusted-github-oidc-intake.ts";
 export * from "./trusted-github-admission-store.ts";
 export * from "./trusted-admitted-github-handoff.ts";
 export * from "./trusted-operational-recovery-store.ts";
+export * from "./trusted-planning-recovery-store.ts";
 export * from "./trusted-github-oidc-submit.ts";

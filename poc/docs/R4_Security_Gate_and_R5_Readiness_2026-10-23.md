@@ -359,3 +359,31 @@ durable *preliminary* root intent across process crashes and handoff of the
 same in-memory Coordinator to the authenticated host are still missing.
 Do not claim R5 GO, call paid Gemini or merge to `main` based
 on offline tests alone. A new exact-SHA cumulative CI is required.
+
+### R5 provisional Planning root: distinct durable pre-issuance journal
+
+The owner-controlled read-only Planning bootstrap now requires an
+independently owner-provisioned `TrustedPlanningRecoveryStore`
+bound to the same Coordinator instance. It records a one-use provisional
+root ID, exact pinned Gitea SHA and session before initiating Gateway
+Planning registration or native Rust/Adapter issuance. The record is
+exclusive, owner-only, fsynced and contains no credential payload,
+private key, token or model data. Ambiguous issuance/crash retains the
+pending intent. Following confirmed cancellation, or confirmed
+preliminary-root revocation during signed operational handoff, a
+non-replayable tombstone is persisted.
+
+A separate `reconcileOrphanedPlanningRoots` primitive accepts
+only a trusted Gateway **Planning** registry retirement port plus Rust
+revocation; both must be independently confirmed before it tombstones the
+root. Tests cover pre-issuance reservation, recovery from a fresh store
+instance, failures on either side, file-integrity denial and successful
+Coordinator cleanup.
+
+**Remaining deployment gap:** the existing authenticated private IPC
+supports operational-plan retirement but does not yet expose a *separate
+Planning registry retirement* command. Therefore the persistent Engineer
+host does NOT yet automatically reconcile the preliminary journal at
+startup, and cannot claim full crash recovery or R5 GO. Retained pending
+intents MUST block a new owner Planning attempt. No paid Gemini request
+or main merge is authorized by this work.
