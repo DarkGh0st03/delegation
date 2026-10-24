@@ -1104,3 +1104,28 @@ test("R6 real authority-boundary regression imports only the historical Gateway 
   assert.equal(index.includes("OrchestratorProtectedGatewayClient"),false);
   assert.match(script,/async function assertCurrentAuthorityBoundaries/u);
 });
+
+
+test("R6 named historical authority-boundary helper is a permitted Gateway-writer consumer",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const {fileURLToPath}=await import("node:url");
+  const {
+    R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS,
+    unexpectedHistoricalGatewayCallers,gitTrackedFiles,collectLegacyReferences
+  }=await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const source="poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs";
+  const content=readFileSync(new URL(source,new URL("../../../",import.meta.url)),"utf8");
+  assert.equal(R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS.includes(source),true);
+  assert.match(content,/import\s*\{\s*OrchestratorProtectedGatewayClient\s*\}\s*from\s*["']\.\.\/\.\.\/orchestrator-runtime\/src\/legacy-orchestrator-gateway-client\.ts["']/u);
+  const inventory=collectLegacyReferences(root,gitTrackedFiles(root));
+  const target="poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts";
+  const entry=inventory.candidates.find(x=>x.target===target);
+  assert.ok(entry);
+  assert.equal(entry.staticImporters.some(x=>x.source===source),true,
+    "Real negative boundary probe must be retained as a historical writer consumer");
+  assert.deepEqual(unexpectedHistoricalGatewayCallers(inventory),[]);
+  const restricted=R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS.filter(x=>x!==source);
+  assert.equal(unexpectedHistoricalGatewayCallers(inventory,restricted).some(x=>x.source===source),true,
+    "Dropping the helper from the exact allowlist must fail audit");
+});

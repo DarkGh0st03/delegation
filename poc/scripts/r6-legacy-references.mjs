@@ -121,6 +121,7 @@ export const R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS=Object.freeze([
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs"
 ]);
 export function unexpectedHistoricalAuthorityCallers(
   inventory,allowed=R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS

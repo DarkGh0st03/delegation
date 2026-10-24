@@ -1257,3 +1257,28 @@ The refactored Engineer-approved R5 paid Gemini path remains NO-GO.
 exact Batch-26 SHA. `main` stays unchanged; no merge or billable
 Gemini run. Rollback to
 `253f558ff700bb2e3e99cac5bb965bf0153dc84a`.
+
+### R6 batch 26 follow-up — narrow legitimate historical Gateway caller exception
+
+The first Batch-26 cumulative run `40097071236` correctly failed
+the R6 static reference guard: moving the negative
+`assert-current-authority-boundaries.mjs` probe to the actual
+historical write module introduced a *new import edge* not yet
+included in `R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS`.
+It is legitimate: the probe exercises a duplicate historical
+pull-request provider conflict through the same real Gateway
+prepare → Adapter VP → Gateway execute chain, including 409 denial
+and no protected branch mutation.
+
+**Correction:** extend that exact legacy writer import allowlist
+with only this named, historical security probe. Retain denial
+of all new generic/canonical ADK, Planning and A2A callers. Add
+a checkout regression showing the helper is a real direct importer,
+the full observed runtime inventory is permitted, and deliberately
+removing its allowlist entry fails as intended.
+
+No Gateway authorization, OPA rule, native DC/VP, provider behavior
+or Agent script execution is relaxed. The initial failed CI remains
+historical evidence of the reference gate. Require a new **5/5**
+exact-SHA offline cumulative run, without Gemini payment or merging
+into `main`.
