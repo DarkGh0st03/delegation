@@ -387,3 +387,12 @@ host does NOT yet automatically reconcile the preliminary journal at
 startup, and cannot claim full crash recovery or R5 GO. Retained pending
 intents MUST block a new owner Planning attempt. No paid Gemini request
 or main merge is authorized by this work.
+
+### Planning journal offline regression: truncated vs malformed JSON
+
+The first CI on `8d522fe` correctly rejected a truncated
+Planning record at the inode size gate, before trying JSON.parse.
+One new test wrongly expected the later parsing error. The regression now
+asserts both fail-closed paths separately: truncated record rejection and
+well-sized malformed JSON rejection. No runtime permission or journal
+validation was relaxed. New exact-SHA offline CI must still pass.

@@ -64,6 +64,10 @@ test("malformed record, unexpected names or public journal permissions fail clos
     await f.store.recordIntent(data);
     const [file]=await readdir(f.directory);
     await writeFile(join(f.directory,file),"{");
+    // Truncated records are rejected at the bounded inode check.
+    await assert.rejects(f.store.pending(),/unsafe or incomplete Planning journal/);
+    // Full-sized syntactically invalid JSON is rejected independently.
+    await writeFile(join(f.directory,file),"{"+" ".repeat(80));
     await assert.rejects(f.store.pending(),/invalid persistent Planning JSON/);
     await rm(join(f.directory,file));
     await writeFile(join(f.directory,"unknown"),"x",{mode:0o600});
