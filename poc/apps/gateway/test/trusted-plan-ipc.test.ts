@@ -699,6 +699,7 @@ test("private IPC retires the actual Gateway Planning registry and reserves unkn
   await server.start();
   t.after(()=>server.close());
   const trusted=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+  assert.equal(trusted.planningRetirementConfigured(),true);
   // Retire BEFORE the pending authenticated Gitea read resolves.
   const pending=registry.begin("late-planning",5000);
   await trusted.retirePlanning("late-planning");
@@ -725,5 +726,7 @@ test("private Planning retirement is denied without actual Gateway registry",asy
   await server.start();
   t.after(()=>server.close());
   const trusted=await TrustedPlanIpcClient.connect({socketPath,secretFile});
-  await assert.rejects(trusted.retirePlanning("orphan-session"),/denied/);
+  assert.equal(trusted.planningRetirementConfigured(),false);
+  await assert.rejects(trusted.retirePlanning("orphan-session"),
+    /no authenticated Planning retirement/);
 });

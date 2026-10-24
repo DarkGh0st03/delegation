@@ -439,3 +439,23 @@ its live `TrustedPlanningRevisions` registry to the
 authenticated private IPC server. This host startup path is not yet a
 same-process handoff of a still-active Planning root to the authenticated
 Engineer session. R5 remains NO-GO; no paid model call or merge.
+
+### R5 hard gate: authenticated Planning retirement capability
+
+The private Gateway IPC `lease_status` reply now attests
+two separate capabilities over the authenticated Unix channel:
+`enabled` for the operational lease, and
+`planning_retirement_enabled` for an injected real
+`TrustedPlanningRevisions` registry. The strict Engineer
+recovering bootstrap refuses to expose any listener if either capability
+is missing, even when the Planning journal happens to be empty. This
+prevents a missing Gateway Planning registry from becoming a latent
+unrecoverable provisional root during the next run.
+
+Offline regressions cover both capabilities and ensure absent Planning
+support cannot be invoked as an operational-plan retirement alias.
+The Gateway deployer must still supply the **same** Planning registry
+instance as its prepare/execute runtime. This handshake does not attest
+instance pointer equality across process boundaries, does not persist
+Gateway tombstones across a full Gateway crash, and is not proof of a
+live authentic human Planning->Execution handoff. R5 stays NO-GO.

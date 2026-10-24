@@ -146,7 +146,11 @@ export async function createTrustedPlanIpcServer(config:{
       seen.set(nonce,now+MAX_AGE);
       const command=validate(JSON.parse(body.toString("utf8")));
       if(command.action==="lease_status"){
-        response(res,200,{ok:true,enabled:config.plans.operationalLeaseConfigured()});
+        response(res,200,{
+          ok:true,enabled:config.plans.operationalLeaseConfigured(),
+          planning_retirement_enabled:
+            config.planningRevisions instanceof TrustedPlanningRevisions
+        });
       }else if(command.action==="renew_lease"){
         config.plans.renewLease(command.session_id,command.plan_digest);
         response(res,200,{ok:true});
@@ -221,6 +225,7 @@ export class TrustedPlanIpcClient{
   readonly #socket:string;
   readonly #secret:Buffer;
   #leaseEnabled=false;
+  #planningRetirementEnabled=false;
   private constructor(path:string,secret:Buffer){
     this.#socket=path;this.#secret=secret;
   }
@@ -232,12 +237,15 @@ export class TrustedPlanIpcClient{
     // The answer itself arrives over the authenticated owner-only socket:
     // never trust a client-side boolean that could disagree with Gateway.
     const capabilities=await client.#send({action:"lease_status"});
-    if(typeof capabilities.enabled!=="boolean")
-      fail("Gateway did not attest operational lease configuration");
+    if(typeof capabilities.enabled!=="boolean"||
+       typeof capabilities.planning_retirement_enabled!=="boolean")
+      fail("Gateway did not attest authenticated recovery capabilities");
     client.#leaseEnabled=capabilities.enabled;
+    client.#planningRetirementEnabled=capabilities.planning_retirement_enabled;
     return client;
   }
   operationalLeaseConfigured():boolean{return this.#leaseEnabled;}
+  planningRetirementConfigured():boolean{return this.#planningRetirementEnabled;}
   async renewLease(sessionId:string,expectedDigest:string):Promise<void>{
     if(!this.#leaseEnabled)
       fail("remote Gateway has no operational lease");
@@ -295,6 +303,8 @@ export class TrustedPlanIpcClient{
   }
   /** Private, one-use HMAC operation: never the operational plan tombstone. */
   async retirePlanning(sessionId:string):Promise<void>{
+    if(!this.#planningRetirementEnabled)
+      fail("Gateway has no authenticated Planning retirement");
     await this.#send({action:"retire_planning",session_id:sessionId});
   }
   async closeSession(sessionId:string){

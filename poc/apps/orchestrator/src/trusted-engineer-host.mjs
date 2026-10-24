@@ -258,6 +258,8 @@ export async function startTrustedEngineerRecoveringHost(config){
   });
   if(!gateway.operationalLeaseConfigured())
     deny("private Gateway must enforce its own operational lease");
+  if(!gateway.planningRetirementConfigured())
+    deny("private Gateway must expose actual Planning registry retirement");
   const credentials=new SoftwareEngineerAuthorityBootstrap({
     adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken
   });

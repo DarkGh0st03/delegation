@@ -9,6 +9,8 @@ import {tmpdir} from "node:os";
 import {createServer} from "node:http";
 import {createTrustedPlanIpcServer}
   from "../../gateway/src/trusted-plan-ipc.ts";
+import {TrustedPlanningRevisions}
+  from "../../gateway/src/planning-revisions.ts";
 import {TrustedOperationalRecoveryStore}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {TrustedPlanningRecoveryStore}
@@ -362,6 +364,11 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   const retired=[];
   const ipc=await createTrustedPlanIpcServer({
     socketPath,secretFile,
+    planningRevisions:new TrustedPlanningRevisions({
+      async readRepository(){
+        return {default_branch:"main",revision:f.plan.base_revision};
+      }
+    }),
     plans:{
       operationalLeaseConfigured:()=>true,
       retireSession:id=>{retired.push(id);}
