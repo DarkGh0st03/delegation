@@ -6,10 +6,6 @@
  */
 import {generateKeyPairSync} from "node:crypto";
 import {mkdtemp,rm} from "node:fs/promises";
-import {tmpdir} from "node:os";
-import {join} from "node:path";
-import {generateKeyPairSync} from "node:crypto";
-import {mkdtemp,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import assert from "node:assert/strict";
@@ -42,12 +38,6 @@ import {TrustedPlanningReviewGate}
   from "../src/trusted-planning-review-gate.ts";
 import {TrustedActivePlanningCheckpoint}
   from "../src/trusted-active-planning-checkpoint.ts";
-import {SignedEngineerApprovalFileStore}
-  from "../src/signed-approval-store.ts";
-import {SignedPlanningCheckpointFileStore}
-  from "../src/trusted-planning-checkpoint-store.ts";
-import {TrustedPlanningReviewGate}
-  from "../src/trusted-planning-review-gate.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
 const SECOND_FILE="src/billing/tax.ts";
