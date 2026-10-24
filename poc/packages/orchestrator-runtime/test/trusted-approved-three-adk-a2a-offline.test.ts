@@ -423,6 +423,11 @@ async function setup({wrongBackendPath=false,plannerProduced=false,scopedChild=f
       :await TrustedApprovedA2ADispatcher.load({
         ...baseConfig,roleRunner:new DelegatedA2ARoleRunner({
           authorityIssuer:{
+            assertActiveBeforeA2ASend(){
+              // The scripted issuer must satisfy the same synchronous
+              // operational-liveness contract as the scoped Rust issuer.
+              assert.equal(coordinator.phase,"execution");
+            },
             async issueSpecializedChild(input){
               const role=input.selection.role,found=expectedFor(role);
               assert.ok(found);

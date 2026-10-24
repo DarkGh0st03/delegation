@@ -113,6 +113,16 @@ export class DelegatedA2ARoleRunner {
        !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(input.trusted_gateway_task_id)){
       throw new Error("Invalid trusted pre-dispatch Gateway Task ID");
     }
+    // The generic legacy runner may use a role-template issuer, but once an
+    // immutable approved-plan Task ID is present a missing liveness guard
+    // would silently skip the Engineer operational-root recheck.
+    // Reject BEFORE minting any irreversible child credential.
+    const approvedTask=input.approved_task_id!==undefined;
+    if(approvedTask &&
+       typeof this.#authorityIssuer.assertActiveBeforeA2ASend!=="function"){
+      throw new Error("Approved A2A Task requires operational authority guard");
+    }
+    if(approvedTask)this.#authorityIssuer.assertActiveBeforeA2ASend!();
 
     const issued = await this.#authorityIssuer.issueSpecializedChild({
       parent_credential_id: input.parent_credential_id,
@@ -141,10 +151,11 @@ export class DelegatedA2ARoleRunner {
       presenter_id: issued.credential.credentialSubject.sub
     };
 
-    // In the signed DAG path this is mandatory: no async gap remains
-    // between observing the active root and starting the A2A send.
-    // Legacy role issuers do not expose this optional guard.
-    this.#authorityIssuer.assertActiveBeforeA2ASend?.();
+    // Recheck AFTER the async credential issuance and directly BEFORE A2A.
+    // A revoked operational root must never create another protected Task.
+    // The legacy no-approved-task path retains its historical optional guard.
+    if(approvedTask)this.#authorityIssuer.assertActiveBeforeA2ASend!();
+    else this.#authorityIssuer.assertActiveBeforeA2ASend?.();
     const result = await this.#a2a.sendProtectedTask({
       agent_base_url: input.agent_base_url,
       subtask: structuredClone(input.subtask),

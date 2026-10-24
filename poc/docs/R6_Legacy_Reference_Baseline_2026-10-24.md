@@ -643,3 +643,46 @@ and does not execute Gemini.
 change; keep R5 NO-GO and do not merge into `main`.
 Rollback to `3bbbc6506079f7a08d542581ccdea9e2ac72d85d`
 if a legitimate dependency is discovered and requires redesign.
+
+### R6 cleanup batch 15 — fail-closed approved A2A liveness contract
+
+**Residual risk:** the shared `DelegatedA2ARoleRunner` is used by
+both the historical static-template coordinator and the new
+Engineer-approved Task DAG. The role runner previously invoked
+`assertActiveBeforeA2ASend?.()` *optionally*, regardless of whether
+an immutable `approved_task_id` was present. A replacement or
+test-injected issuer lacking that guard could mint a child and send
+an approved Task after the operational root had been revoked.
+
+**Change:** when `approved_task_id` is present, require the issuer's
+`assertActiveBeforeA2ASend()` method at runtime. Check it **before**
+the irreversible child issuance and recheck it **synchronously
+immediately before** protected A2A send, after the asynchronous
+Adapter interaction. If the guard is absent, reject before any
+issuance or A2A request. The original legacy path with no approved
+Task ID retains the optional call and the same historical behavior.
+The trusted scoped issuer already implements this method and
+revalidates the coordinator phase, operational credential ID and
+approved plan digest.
+
+**Regressions:** new A2A runner tests assert no child issuance/A2A
+send when a trusted issuer lacks the guard and the positive ordering
+`guard → issue → guard → send`. The deterministic three-agent ADK
+offline fixture now supplies a faithful liveness callback that
+checks its Coordinator phase, rather than implicitly exercising
+a fail-open test double. Existing denial of revocation between
+child issuance and protected A2A send remains in the original
+trusted child-issuer test suite.
+
+**Limits:** this is a runtime contract, not cryptographic proof
+that an arbitrary callback is trustworthy; the canonical scoped
+issuer must still be created by the trusted coordinator from
+authenticated signed plan approval. Native Rust DC/VP, Gateway
+Task binding, OPA, status revocation and the independent
+A2A corroboration remain mandatory. Neither the historic
+fixed-coordinator scripts nor paid Gemini workflows were run.
+
+**Gate:** all five exact-SHA cumulative offline CI jobs and
+any dedicated approved-Task tests must pass. R5 remains NO-GO.
+Rollback to `e8eb24643f7244d432427fec96a3673f1d3cfef6`.
+No changes to `main`.

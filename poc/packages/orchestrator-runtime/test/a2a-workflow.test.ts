@@ -284,3 +284,77 @@ test("malformed prebound Gateway Task ID cannot mint a child DC",async()=>{
   assert.equal(issues,0);
   assert.equal(sends,0);
 });
+
+
+test("approved A2A task refuses issuer without operational guard before mint/send",async()=>{
+  let minted=0,sent=0;
+  const runner=new DelegatedA2ARoleRunner({
+    authorityIssuer:{
+      async issueSpecializedChild(){
+        minted++;
+        return {role:"backend",credential:credential("backend")};
+      }
+    },
+    a2a:{
+      async sendProtectedTask(){
+        sent++;
+        return {card:{name:"Backend"},task:completedTask("backend") as never};
+      }
+    }
+  });
+  await assert.rejects(runner.issueAndRun({
+    role:"backend",approved_task_id:"backend",
+    parent_credential_id:"urn:trusted:operational-root",
+    credential_id:"urn:phase9b:backend",
+    valid_from:"2026-10-21T18:00:00Z",validity_seconds:300,
+    credential_status:{
+      type:"BitstringStatusListEntry",statusPurpose:"revocation",
+      statusListIndex:"7201",
+      statusListCredential:"https://status.example/approved"
+    },
+    agent_base_url:"http://trusted-backend.local",
+    subtask:{
+      subtask_id:"backend",instruction:"Authorized backend task",
+      branch:"feature/account-suspension",relevant_paths:[]
+    }
+  }),/requires operational authority guard/u);
+  assert.equal(minted,0);
+  assert.equal(sent,0);
+});
+
+test("approved A2A task checks operational root before AND after child issuance",async()=>{
+  const events:string[]=[];
+  const runner=new DelegatedA2ARoleRunner({
+    authorityIssuer:{
+      assertActiveBeforeA2ASend(){events.push("liveness");},
+      async issueSpecializedChild(){
+        events.push("mint");
+        return {role:"backend",credential:credential("backend")};
+      }
+    },
+    a2a:{
+      async sendProtectedTask(){
+        events.push("send");
+        return {card:{name:"Backend"},task:completedTask("backend") as never};
+      }
+    }
+  });
+  const result=await runner.issueAndRun({
+    role:"backend",approved_task_id:"backend",
+    parent_credential_id:"urn:trusted:operational-root",
+    credential_id:"urn:phase9b:backend",
+    valid_from:"2026-10-21T18:00:00Z",validity_seconds:300,
+    credential_status:{
+      type:"BitstringStatusListEntry",statusPurpose:"revocation",
+      statusListIndex:"7202",
+      statusListCredential:"https://status.example/approved"
+    },
+    agent_base_url:"http://trusted-backend.local",
+    subtask:{
+      subtask_id:"backend",instruction:"Authorized backend task",
+      branch:"feature/account-suspension",relevant_paths:[]
+    }
+  });
+  assert.equal(result.task_id,"task-backend");
+  assert.deepEqual(events,["liveness","mint","liveness","send"]);
+});
