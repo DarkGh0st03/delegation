@@ -17,6 +17,7 @@ import {fileURLToPath,pathToFileURL} from "node:url";
 export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
   "poc/packages/orchestrator-runtime/src/legacy-authority-client.ts",
+  "poc/packages/orchestrator-runtime/src/permission-templates.ts",
   "poc/packages/orchestrator-runtime/src/workflow.ts",
   "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
@@ -108,8 +109,8 @@ export function unexpectedHistoricalWorkflowCallers(
 /**
  * A historical static-template child issuer is intentionally an explicit,
  * opt-in import. No approved-Plan runtime may import its wrapper.
- * The old class still exists in authority-client for backwards compatibility,
- * but is NOT re-exported through the canonical index.
+ * Legacy classes are physically isolated in legacy-authority-client.ts;
+ * neither is exported through the canonical runtime index.
  */
 export const R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS=Object.freeze([
   "poc/packages/orchestrator-runtime/test/authority-client.test.ts",
@@ -131,6 +132,36 @@ export function unexpectedHistoricalAuthorityCallers(
       .map(x=>Object.freeze({...x,edgeType:x.kind})),
     ...entry.configuredCallers.filter(x=>!accepted.has(x.source))
       .map(x=>Object.freeze({...x,edgeType:x.kind}))
+  ]);
+}
+
+
+/**
+ * Do not silently reintroduce the IAM Console role/skill permission matrix
+ * into signed Planning/Execution or its public credential interface.
+ * Other historical callers remain in the inventory; this is a carefully
+ * scoped canonical-code boundary, not a dead-code or dependency-free claim.
+ */
+export function unexpectedTrustedTemplateCallers(inventory){
+  const target="poc/packages/orchestrator-runtime/src/permission-templates.ts";
+  const entry=inventory.candidates.find(x=>x.target===target);
+  if(!entry)throw Error("R6 frozen permission-template candidate missing");
+  const prefix="poc/packages/orchestrator-runtime/src/";
+  const protectedNames=new Set([
+    prefix+"index.ts",
+    prefix+"authority-client.ts",
+    prefix+"authority-adapter-transport.ts"
+  ]);
+  const protectedSource=source=>
+    protectedNames.has(source)||
+    (source.startsWith(prefix+"trusted-")&&source.endsWith(".ts"));
+  return Object.freeze([
+    ...entry.staticImporters.filter(e=>protectedSource(e.source))
+      .map(e=>Object.freeze({...e,edgeType:"static-import-or-reexport"})),
+    ...entry.runtimeIndirectionHints.filter(e=>protectedSource(e.source))
+      .map(e=>Object.freeze({...e,edgeType:e.kind})),
+    ...entry.configuredCallers.filter(e=>protectedSource(e.source))
+      .map(e=>Object.freeze({...e,edgeType:e.kind}))
   ]);
 }
 
@@ -447,8 +478,13 @@ function main(){
   for(const edge of authorityCallers)
     console.error("R6 blocked legacy static authority "+
       edge.edgeType+" caller: "+edge.source);
+  const templateCallers=unexpectedTrustedTemplateCallers(result);
+  for(const edge of templateCallers)
+    console.error("R6 blocked frozen IAM template "+edge.edgeType+
+      " dependency in canonical trusted code: "+edge.source);
   if(forbidden.length>0||indirect.length>0||
      historicalWorkflowCallers.length>0||authorityCallers.length>0||
+     templateCallers.length>0||
      result.candidates.some(x=>!x.exists))
     process.exitCode=1;
 }

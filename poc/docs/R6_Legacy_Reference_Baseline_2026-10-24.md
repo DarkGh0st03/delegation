@@ -469,3 +469,37 @@ Require all five exact-SHA cumulative CI jobs and dedicated
 offline authority and A2A tests to certify. Revert to
 `2b9ab897f08ed1ea1a53c162cbda53fee27d21eb` if needed.
 No merge into `main` or paid model call.
+
+### R6 cleanup batch 11 — no frozen IAM templates in canonical trusted modules
+
+**Observed residual dependency:** after the physical authority split,
+`trusted-execution-coordinator.ts` still imported the
+`DelegatedPermission` *type* from `permission-templates.ts`.
+That import is type-only (no runtime credential escalation) but
+undermines the source-level separation from the historical IAM Console.
+
+**Change:** import the identical neutral type from
+`delegated-permission.ts`. Add the frozen template file to the tracked
+R6 inventory and a **conservative fail-closed static import fence**
+covering `src/trusted-*.ts`, public `src/index.ts`, the canonical
+`authority-client.ts` and internal
+`authority-adapter-transport.ts`. These canonical modules cannot
+import, re-export, dynamically load with literal paths or configure a
+direct launcher for `permission-templates.ts` without failing
+`audit:r6:references`.
+
+**Historical evidence:** `legacy-authority-client.ts` still
+intentionally uses the frozen role/skill matrix, as do historical
+regression fixtures. The scanner retains their observed references;
+it does not assert deletion safety or automatically prevent
+computed dynamic imports, external loaders or direct imports by
+other packages. The synthetic tests demonstrate blocked type-only,
+static re-export, CommonJS and dynamic paths while allowing the
+named historical class module. The checkout test exercises the actual
+Git-tracked canonical dependency graph.
+
+**Security impact:** no runtime code path, native Core Rust DC/VP,
+OPA policy, Engineer-signed approvals or Adapter request changed.
+This is a type-only import migration and a protective R6 regression
+gate. Require full exact-SHA offline CI, with no paid Gemini call.
+Rollback to `5e3cfde8dd224a7f79d5396c621918ed6d5d0bc7`.

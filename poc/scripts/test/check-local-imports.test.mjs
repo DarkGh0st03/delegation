@@ -612,3 +612,57 @@ test("R6 canonical root issuance has no runtime dependency on fixed Account Susp
   assert.equal(barrel.includes("authority-adapter-transport.ts"),false);
   assert.equal(canonical.includes("DeterministicOrchestratorAuthorityIssuer"),false);
 });
+
+
+test("R6 frozen permission template guard blocks typed, dynamic and re-exported trusted edges",async t=>{
+  const target="poc/packages/orchestrator-runtime/src/permission-templates.ts";
+  const src="poc/packages/orchestrator-runtime/src/";
+  const files={
+    [target]:"export const FROZEN=1; export type DelegatedPermission=string;",
+    [src+"legacy-authority-client.ts"]:
+      "import {FROZEN} from './permission-templates.ts';",
+    [src+"trusted-dag.ts"]:
+      "import type {DelegatedPermission} from './permission-templates.ts';",
+    [src+"trusted-dynamic.ts"]:
+      "const f=()=>import('./permission-templates.ts');",
+    [src+"authority-client.ts"]:
+      "export {FROZEN} from './permission-templates.ts';",
+    [src+"authority-adapter-transport.ts"]:
+      "const m=require('./permission-templates.ts');",
+    [src+"trusted-comment.ts"]:
+      "// import './permission-templates.ts';\nexport const safe=1;",
+    "notes.md":"permission-templates.ts is historical documentation"
+  };
+  const root=fixture(t,files);
+  const {collectLegacyReferences,unexpectedTrustedTemplateCallers}
+    =await import("../r6-legacy-references.mjs");
+  const inventory=collectLegacyReferences(root,Object.keys(files),{candidates:[target]});
+  const found=unexpectedTrustedTemplateCallers(inventory);
+  assert.deepEqual(found.map(x=>x.source).sort(),[
+    src+"trusted-dag.ts",
+    src+"trusted-dynamic.ts",
+    src+"authority-client.ts",
+    src+"authority-adapter-transport.ts"
+  ].sort());
+  assert.equal(found.some(x=>x.source===src+"legacy-authority-client.ts"),false);
+  assert.equal(found.some(x=>x.source===src+"trusted-comment.ts"),false);
+  assert.equal(found.some(x=>x.source==="notes.md"),false);
+});
+
+test("R6 signed Execution imports neutral permission type without frozen IAM matrix",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const {fileURLToPath}=await import("node:url");
+  const {collectLegacyReferences,gitTrackedFiles,unexpectedTrustedTemplateCallers}
+    =await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const source=readFileSync(new URL(
+    "poc/packages/orchestrator-runtime/src/trusted-execution-coordinator.ts",
+    new URL("../../../",import.meta.url)),"utf8");
+  assert.match(source,/import type \{DelegatedPermission\} from "\.\/delegated-permission\.ts"/u);
+  assert.doesNotMatch(source,/from "\.\/permission-templates\.ts"/u);
+  assert.deepEqual(
+    unexpectedTrustedTemplateCallers(
+      collectLegacyReferences(root,gitTrackedFiles(root))),[],
+    "Trusted approved-plan code must not import Account Suspension templates"
+  );
+});

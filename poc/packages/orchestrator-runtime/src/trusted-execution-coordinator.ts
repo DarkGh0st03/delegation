@@ -8,7 +8,7 @@
  */
 import type {TrustedCompletionObservation} from "../../../apps/gateway/src/trusted-task-observation.ts";
 import type {AgentRole} from "../../../apps/gateway/src/types.ts";
-import type {DelegatedPermission} from "./permission-templates.ts";
+import type {DelegatedPermission} from "./delegated-permission.ts";
 import type {DelegatedA2ARoleTaskResult} from "./a2a-workflow.ts";
 import {TrustedOperationalRecoveryStore}
   from "./trusted-operational-recovery-store.ts";
