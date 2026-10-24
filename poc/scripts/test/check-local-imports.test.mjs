@@ -688,3 +688,60 @@ test("R6 signed Execution imports neutral permission type without frozen IAM mat
     "Trusted approved-plan code must not import Account Suspension templates"
   );
 });
+
+test("R6 rejects new direct or dynamically loaded historical Gateway writer",async t=>{
+  const target="poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts";
+  const srcDir="poc/packages/orchestrator-runtime/src/";
+  const historical="poc/packages/orchestrator-runtime/test/orchestrator-gateway-client.test.ts";
+  const files={
+    [target]:"export const writer=true;",
+    [historical]:"import {writer} from '../src/legacy-orchestrator-gateway-client.ts';",
+    [srcDir+"index.ts"]:
+      "export * from './legacy-orchestrator-gateway-client.ts';",
+    [srcDir+"trusted-route.ts"]:
+      "const f=()=>import('./legacy-orchestrator-gateway-client.ts');",
+    [srcDir+"trusted-comment.ts"]:
+      "// import './legacy-orchestrator-gateway-client.ts';\nexport const safe=1;",
+    "docs/historical.md":"legacy-orchestrator-gateway-client.ts is old"
+  };
+  const root=fixture(t,files);
+  const {collectLegacyReferences,unexpectedHistoricalGatewayCallers}
+    =await import("../r6-legacy-references.mjs");
+  const inventory=collectLegacyReferences(root,Object.keys(files),{candidates:[target]});
+  assert.deepEqual(
+    unexpectedHistoricalGatewayCallers(inventory).map(x=>x.source),
+    [srcDir+"index.ts",srcDir+"trusted-route.ts"]
+  );
+  assert.deepEqual(
+    unexpectedHistoricalGatewayCallers(inventory,[
+      historical,srcDir+"index.ts",srcDir+"trusted-route.ts"
+    ]),[]
+  );
+});
+
+test("R6 old Gateway write convenience stays behind historical opt-in import",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const {fileURLToPath}=await import("node:url");
+  const {collectLegacyReferences,gitTrackedFiles,unexpectedHistoricalGatewayCallers}
+    =await import("../r6-legacy-references.mjs");
+  const root=fileURLToPath(new URL("../../../",import.meta.url));
+  const read=p=>readFileSync(new URL(p,new URL("../../../",import.meta.url)),"utf8");
+  const publicApi=read("poc/packages/orchestrator-runtime/src/index.ts");
+  assert.equal(publicApi.includes("export * from \"./orchestrator-gateway-client.ts\""),false);
+  assert.equal(publicApi.includes("OrchestratorProtectedGatewayClient"),false);
+  assert.equal(publicApi.includes("OrchestratorGatewayClientError"),true);
+  const optIn=read("poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts");
+  assert.equal(optIn.includes("OrchestratorProtectedGatewayClient"),true);
+  const planner=read("poc/packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts");
+  assert.equal(planner.includes("from \"./orchestrator-gateway-client.ts\""),true);
+  const scripts=["a2a-production-coordinator-mcp-gemini-live.mjs","a2a-production-coordinator-mcp-isolated-real-positive.mjs","a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs","a2a-production-coordinator-mcp-isolated-smoke.mjs"];
+  for(const name of scripts){
+    const script=read("poc/packages/agent-runtime/scripts/"+name);
+    assert.equal(script.includes("legacy-orchestrator-gateway-client.ts"),true);
+  }
+  assert.deepEqual(
+    unexpectedHistoricalGatewayCallers(
+      collectLegacyReferences(root,gitTrackedFiles(root))),[],
+    "Only the historical scripts and Gateway regression may import old writer"
+  );
+});

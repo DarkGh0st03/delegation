@@ -517,3 +517,47 @@ dependency graph. A direct Node 22.16 check established that
 requires their absence from the graph, and the separate conservative
 tracked-source check covers type-only imports in the protected module
 set. This is not a relaxation of native authorization checks.
+
+### R6 cleanup batch 12 — opt-in historical Gateway branch/PR writer
+
+**Remaining issue:** the canonical `orchestrator-runtime/src/index.ts`
+still star-exported `OrchestratorProtectedGatewayClient`, including
+`createFeatureBranch()` and
+`createAccountSuspensionPullRequest()`. Those methods are frozen to
+`feature/account-suspension` and the old fixed Pull Request title.
+They do NOT belong to the approved-plan Task DAG API, even though the
+same class also provides `readPlanningResource()`.
+
+**Change:** the canonical barrel now exports only the shared
+`OrchestratorGatewayClientError` from that module. A clearly named
+`legacy-orchestrator-gateway-client.ts` re-exports the unchanged
+historical client and its fixed branch/PR result types.
+The four old Account Suspension coordinator scripts and the dedicated
+Gateway client regression import it explicitly. The active
+`TrustedPlanningGatewayReadPort` retains its direct import of the
+underlying implementation and still enforces read-only, pinned,
+credential-bound Gateway operations before calling it.
+
+**Guard:** add the legacy wrapper to the tracked R6 import inventory,
+allow only the four old scripts and dedicated test, and make an
+unexpected static ESM import, literal dynamic import/require, or
+configured command fail the audit. Synthetic tests ensure a new
+canonical re-export or trusted dynamic import fails while comments
+and the authorized historical import remain inert.
+A runtime export test confirms the old writer is absent from
+the canonical public API.
+
+**Scope and limitation:** no client transport, cryptographic
+challenge, VP, Gateway, OPA or Gitea provider behavior is modified.
+The Planner still instantiates the same implementation internally,
+which means its code module still physically contains the write
+methods. This batch removes public API exposure and prevents new
+opt-in wrapper consumers; a later source split, with separate
+read-only and historical write classes, may eliminate that residual
+co-location. Exports alone are not an authorization mechanism.
+
+**Safety:** retain all old tests and scripts until fully retired,
+leave `main` unchanged, and do NOT invoke the historical paid Gemini
+workflow as R5. Require the five-job offline cumulative CI on the
+exact new SHA before certifying. Rollback to
+`d193447bff345b613f28cf802c965d665108d209`.

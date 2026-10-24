@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  OrchestratorGatewayClientError,
-  OrchestratorProtectedGatewayClient
-} from "../src/index.ts";
+import {OrchestratorGatewayClientError} from "../src/index.ts";
+import {OrchestratorProtectedGatewayClient}
+  from "../src/legacy-orchestrator-gateway-client.ts";
+import * as canonicalApi from "../src/index.ts";
 
 const baseline = "a".repeat(40);
 const feature = "b".repeat(40);
@@ -238,5 +238,21 @@ test("Orchestrator client fails closed on malformed provider results", async () 
   await assert.rejects(
     () => client.createFeatureBranch("phase9b-malformed"),
     OrchestratorGatewayClientError
+  );
+});
+
+test("R6 canonical public API excludes historical fixed branch and PR writer",()=>{
+  assert.equal(
+    Object.hasOwn(canonicalApi,"OrchestratorProtectedGatewayClient"),false
+  );
+  assert.equal(typeof OrchestratorProtectedGatewayClient,"function");
+  assert.equal(typeof OrchestratorGatewayClientError,"function");
+  assert.equal(
+    typeof OrchestratorProtectedGatewayClient.prototype.createFeatureBranch,
+    "function"
+  );
+  assert.equal(
+    typeof OrchestratorProtectedGatewayClient.prototype.createAccountSuspensionPullRequest,
+    "function"
   );
 });

@@ -17,6 +17,7 @@ import {fileURLToPath,pathToFileURL} from "node:url";
 export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
   "poc/packages/orchestrator-runtime/src/legacy-authority-client.ts",
+  "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts",
   "poc/packages/orchestrator-runtime/src/permission-templates.ts",
   "poc/packages/orchestrator-runtime/src/workflow.ts",
   "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
@@ -162,6 +163,37 @@ export function unexpectedTrustedTemplateCallers(inventory){
       .map(e=>Object.freeze({...e,edgeType:e.kind})),
     ...entry.configuredCallers.filter(e=>protectedSource(e.source))
       .map(e=>Object.freeze({...e,edgeType:e.kind}))
+  ]);
+}
+
+
+/**
+ * Explicitly historical branch/PR convenience client. The trusted Planning
+ * port still imports the underlying read transport directly while it is
+ * shared with legacy code; never permit a signed canonical caller to
+ * import the legacy opt-in gateway wrapper.
+ */
+export const R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS=Object.freeze([
+  "poc/packages/orchestrator-runtime/test/orchestrator-gateway-client.test.ts",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
+]);
+export function unexpectedHistoricalGatewayCallers(
+  inventory,allowed=R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS
+){
+  const target="poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts";
+  const entry=inventory.candidates.find(x=>x.target===target);
+  if(!entry)throw Error("R6 historical Gateway wrapper missing from inventory");
+  const approved=new Set(allowed);
+  return Object.freeze([
+    ...entry.staticImporters.filter(x=>!approved.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:"static-import-or-reexport"})),
+    ...entry.runtimeIndirectionHints.filter(x=>!approved.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind})),
+    ...entry.configuredCallers.filter(x=>!approved.has(x.source))
+      .map(x=>Object.freeze({...x,edgeType:x.kind}))
   ]);
 }
 
@@ -482,9 +514,13 @@ function main(){
   for(const edge of templateCallers)
     console.error("R6 blocked frozen IAM template "+edge.edgeType+
       " dependency in canonical trusted code: "+edge.source);
+  const gatewayCallers=unexpectedHistoricalGatewayCallers(result);
+  for(const edge of gatewayCallers)
+    console.error("R6 blocked legacy branch/PR Gateway "+
+      edge.edgeType+" caller: "+edge.source);
   if(forbidden.length>0||indirect.length>0||
      historicalWorkflowCallers.length>0||authorityCallers.length>0||
-     templateCallers.length>0||
+     templateCallers.length>0||gatewayCallers.length>0||
      result.candidates.some(x=>!x.exists))
     process.exitCode=1;
 }

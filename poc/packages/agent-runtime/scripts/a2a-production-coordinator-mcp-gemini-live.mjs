@@ -33,9 +33,11 @@ import {startSpecializedAgentServer,DeterministicA2AOrchestrator,createGeminiAdk
 import {resolveRoleGeminiConfiguration,buildGeminiGenerationConfig} from "../../../scripts/gemini-thinking-policy.mjs";
 import {
   DelegatedA2ARoleRunner,
-  OrchestratorProtectedGatewayClient,
   GiteaMergeReadinessVerifier,MergeReadinessDenied
 } from "../../orchestrator-runtime/src/index.ts";
+/** Legacy Account Suspension Gateway write helpers; NOT signed DAG API. */
+import {OrchestratorProtectedGatewayClient}
+  from "../../orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts";
 /** Historical static-template child issuance: never canonical approved DAG. */
 import {
   DeterministicOrchestratorAuthorityIssuer,
