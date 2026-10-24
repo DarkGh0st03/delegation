@@ -113,3 +113,18 @@ The inventory now parses tracked JavaScript/TypeScript ESM **without evaluating 
 ### R6 runtime dynamic references (conservative hints)
 
 The read-only inventory now distinguishes literal dynamic import(), require() and module-relative new URL() references as runtimeIndirectionHints. It does not run the code or assert the import was executed. Computed module names are collected in unresolvedRuntimeIndirections and prevent interpreting a missing match as unused code. The lexical scanner skips comments and regular strings, but is not a complete JavaScript AST; template interpolation, aliases and custom loaders remain review blockers. Static ESM imports, npm/Actions commands and these hints are reported separately. No automatic deletion follows from an empty list.
+
+### R6 cleanup batch 1 — remove obsolete populated-directory placeholders
+
+Four `.gitkeep` files were removed from already populated, tracked
+directories: `poc/apps`, `poc/packages`, `poc/opa`, and
+`poc/runner/acceptance`. The Git tree showed 104, 168, 3, and 4
+other tracked files beneath these directories, respectively. Git does
+not require a placeholder to retain a directory containing tracked files.
+
+`poc/scripts/check-scaffold.mjs` checks actual directory and file
+paths, not these `.gitkeep` markers. No application imports, workflow
+commands, Docker entrypoints, Rust modules, historical evidence, or
+security tests are changed by this deletion. **Rollback:** restore the
+four blobs from commit `9671ab1a9073dbda67d7bb54b0d9a3e01fbb6963`. The full cumulative CI must still
+finish green at the deletion commit before this batch is certified.
