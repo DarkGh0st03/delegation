@@ -21,6 +21,7 @@ interface Session {
   baseRevision: string;
   expiresAtMs: number;
   active: boolean;
+  retired: boolean;
 }
 
 export interface TrustedPlanningRevision {
@@ -61,7 +62,8 @@ export class TrustedPlanningRevisions {
     // Reserve the identifier before the first await; concurrent begins cannot
     // race to register different base revisions for the same task.
     const session: Session = {
-      taskId, baseRevision: "", expiresAtMs: 0, active: false
+      taskId, baseRevision: "", expiresAtMs: 0, active: false,
+      retired: false
     };
     this.#sessions.set(taskId, session);
     try {
@@ -72,6 +74,12 @@ export class TrustedPlanningRevisions {
           503, "planning_revision_unavailable",
           "Trusted Gitea Planning snapshot must identify main at a full SHA-1 commit"
         );
+      }
+      // A private retire may race the in-flight Gitea discovery. It must
+      // remain terminal even if the original HTTP read completes late.
+      if (session.retired) {
+        throw new GatewayError(403,"planning_session_retired",
+          "Trusted Planning session retired during Gitea discovery");
       }
       // An issuer/Planner can never supply its own revision. The verified
       // Gitea client is the sole origin of the pinned SHA.
@@ -97,6 +105,27 @@ export class TrustedPlanningRevisions {
       throw new GatewayError(404, "planning_session_missing", "Unknown Planning session");
     }
     session.active = false;
+    session.retired = true;
+  }
+
+  /** Owner-only, authenticated, idempotent terminal barrier for crash recovery.
+   * Reserve even an UNKNOWN ID so an in-flight begin cannot later start it.
+   * Unlike operational-plan retirement, this touches the *real* Gateway
+   * Planning registry used by prepare/execute. Never expose on public HTTP. */
+  retire(taskId: string): void {
+    if (typeof taskId !== "string" ||
+        !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId))
+      throw new GatewayError(400,"invalid_planning_session",
+        "Invalid trusted Planning session");
+    const existing=this.#sessions.get(taskId);
+    if(existing){
+      existing.active=false;
+      existing.retired=true;
+      return;
+    }
+    this.#sessions.set(taskId,{
+      taskId,baseRevision:"",expiresAtMs:0,active:false,retired:true
+    });
   }
 
   /** Invoked by Gateway prepare; binds immutable revision into the request record. */

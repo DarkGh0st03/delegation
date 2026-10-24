@@ -396,3 +396,23 @@ One new test wrongly expected the later parsing error. The regression now
 asserts both fail-closed paths separately: truncated record rejection and
 well-sized malformed JSON rejection. No runtime permission or journal
 validation was relaxed. New exact-SHA offline CI must still pass.
+
+### R5 private IPC Planning registry retirement (24 October 2026)
+
+`TrustedPlanIpcClient.retirePlanning(sessionId)` now sends a
+separate HMAC-authenticated, one-use `retire_planning` command
+over the existing owner-only Unix socket. Unlike operational plan
+`retire`, the new command acts on the exact
+`TrustedPlanningRevisions` instance provided to the Gateway
+IPC server. A server without that registry denies the operation. The
+registry reserves an inactive terminal tombstone even for a previously
+unknown session ID; an outstanding Gitea discovery cannot reactivate it
+after authenticated retirement.
+
+Offline IPC regressions cover retired-during-Gitea-discovery races,
+idempotent missing-session tombstones, and denial without a real registry.
+This capability DOES NOT by itself guarantee that a deploying Gateway
+actually passes its live registry, nor that a restarted Gateway persisted
+the tombstone, nor that the Engineer host has recovered its pending
+Planning journal. Both sides must be connected and validated before
+calling the process-restart path safe. No paid Gemini or main merge.

@@ -11,6 +11,7 @@ import {constants} from "node:fs";
 import type {AgentRole} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import type {TrustedApprovedExecutionPlans} from "./approved-execution-plans.ts";
+import {TrustedPlanningRevisions} from "./planning-revisions.ts";
 
 const ROUTE="/v1/private-plan-control";
 const MAX_BODY=4096,MAX_NONCES=4096,MAX_AGE=30_000;
@@ -24,6 +25,7 @@ type Command=
   |{action:"bind";session_id:string;plan_task_id:string;runtime_task_id:string;role:AgentRole}
   |{action:"close";session_id:string}
   |{action:"retire";session_id:string}
+  |{action:"retire_planning";session_id:string}
   |{action:"lease_status"}
   |{action:"renew_lease";session_id:string;plan_digest:string}
   |{action:"complete";runtime_task_id:string;observation:TrustedCompletionObservation};
@@ -49,7 +51,8 @@ function validate(x:unknown):Command{
      typeof o.plan_task_id==="string"&&ID.test(o.plan_task_id)&&
      typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id)&&
      typeof o.role==="string"&&ROLES.has(o.role))return o as Command;
-  if((o.action==="close"||o.action==="retire")&&
+  if((o.action==="close"||o.action==="retire"||
+      o.action==="retire_planning")&&
      exact(o,["action","session_id"]))return o as Command;
   if(o.action==="renew_lease"&&exact(o,["action","session_id","plan_digest"])&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest))
@@ -98,6 +101,9 @@ function response(res:import("node:http").ServerResponse,status:number,value:obj
 /** Uses the same registry instance as GatewayRuntime's prepare/execute. */
 export async function createTrustedPlanIpcServer(config:{
   socketPath:string;secretFile:string;plans:TrustedApprovedExecutionPlans;
+  /** Must be the EXACT registry instance used by GatewayRuntime prepare and
+   * execute, not a newly allocated registry or operational-plan alias. */
+  planningRevisions?:TrustedPlanningRevisions;
 }):Promise<{start():Promise<void>;close():Promise<void>;server:Server}>{
   const path=socketPath(config.socketPath);
   await ownerDirectory(dirname(path));
@@ -146,6 +152,11 @@ export async function createTrustedPlanIpcServer(config:{
         response(res,200,{ok:true});
       }else if(command.action==="retire"){
         config.plans.retireSession(command.session_id);
+        response(res,200,{ok:true});
+      }else if(command.action==="retire_planning"){
+        if(!(config.planningRevisions instanceof TrustedPlanningRevisions))
+          fail("actual Gateway Planning revision registry missing");
+        config.planningRevisions.retire(command.session_id);
         response(res,200,{ok:true});
       }else if(command.action==="activate"){
         const plan_digest=await config.plans.activate(
@@ -281,6 +292,10 @@ export class TrustedPlanIpcClient{
   }
   async retireSession(sessionId:string){
     await this.#send({action:"retire",session_id:sessionId});
+  }
+  /** Private, one-use HMAC operation: never the operational plan tombstone. */
+  async retirePlanning(sessionId:string):Promise<void>{
+    await this.#send({action:"retire_planning",session_id:sessionId});
   }
   async closeSession(sessionId:string){
     await this.#send({action:"close",session_id:sessionId});

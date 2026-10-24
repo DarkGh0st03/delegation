@@ -17,7 +17,9 @@ import {TrustedExecutionCoordinator} from
   "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
-import {TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
+import {TrustedPlanIpcClient,createTrustedPlanIpcServer}
+  from "../src/trusted-plan-ipc.ts";
+import {TrustedPlanningRevisions} from "../src/planning-revisions.ts";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
@@ -673,4 +675,55 @@ test("complete offline chain: Engineer login + CSRF + Ed25519 approval -> separa
     /reconciled session cannot be reused/);
   await assert.rejects(coordinator.renewExecutionLease(),
     /outside execution/);
+});
+
+
+test("private IPC retires the actual Gateway Planning registry and reserves unknown sessions",async t=>{
+  const home=await mkdtemp(join(tmpdir(),"planning-registry-ipc-"));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  const privateDir=join(home,"private");
+  await mkdir(privateDir,{mode:0o700});
+  const socketPath=join(privateDir,"control.sock");
+  const secretFile=join(privateDir,"secret.hex");
+  const secret=randomBytes(32).toString("hex");
+  await writeFile(secretFile,secret+"\n",{mode:0o600});
+  let resolveGitea:(value:any)=>void=()=>{};
+  const registry=new TrustedPlanningRevisions({
+    readRepository:()=>new Promise(resolve=>{resolveGitea=resolve;})
+  } as any);
+  const server=await createTrustedPlanIpcServer({
+    socketPath,secretFile,
+    plans:{operationalLeaseConfigured:()=>true} as any,
+    planningRevisions:registry
+  });
+  await server.start();
+  t.after(()=>server.close());
+  const trusted=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+  // Retire BEFORE the pending authenticated Gitea read resolves.
+  const pending=registry.begin("late-planning",5000);
+  await trusted.retirePlanning("late-planning");
+  resolveGitea({default_branch:"main",revision:SHA});
+  await assert.rejects(pending,/retired during Gitea discovery/);
+  await assert.rejects(registry.begin("late-planning",5000),
+    /already registered/);
+  // A missing ID must also be tombstoned to prevent delayed registration.
+  await trusted.retirePlanning("missing-after-crash");
+  await trusted.retirePlanning("missing-after-crash");
+  await assert.rejects(registry.begin("missing-after-crash",5000),
+    /already registered/);
+  // No operational activation or model invocation is triggered.
+});
+
+test("private Planning retirement is denied without actual Gateway registry",async t=>{
+  const home=await mkdtemp(join(tmpdir(),"planning-ipc-no-registry-"));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  const secretFile=join(home,"secret.hex"),socketPath=join(home,"control.sock");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+  const server=await createTrustedPlanIpcServer({
+    socketPath,secretFile,plans:{operationalLeaseConfigured:()=>true} as any
+  });
+  await server.start();
+  t.after(()=>server.close());
+  const trusted=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+  await assert.rejects(trusted.retirePlanning("orphan-session"),/denied/);
 });
