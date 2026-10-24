@@ -48,6 +48,7 @@ export class TrustedExecutionCoordinator {
   #approvedDigest?:string;
   /** One terminal shutdown for all callers; retain failures for reconciliation. */
   #shutdown?:Promise<void>;
+  #planningShutdown?:Promise<void>;
 
   constructor(config:{
     authority:TrustedEngineerAuthoritySession;
@@ -157,6 +158,22 @@ export class TrustedExecutionCoordinator {
       permissions:result.permissions.map(p=>Object.freeze({...p}))};
     this.#phase="planning";
     return result;
+  }
+
+  /** Trusted operator cancellation while the provisional read-only root is
+   * active. All new reads are fenced synchronously; a confirmed Rust
+   * revocation and Gateway revision retirement are required for closure.
+   * Failure remains terminal and requires manual reconciliation. */
+  closePlanning():Promise<void>{
+    if(this.#planningShutdown)return this.#planningShutdown;
+    if(this.#phase!=="planning"||!this.#planningRoot)
+      return Promise.reject(Error("No active trusted Planning root to close"));
+    this.#phase="failed_closed";
+    this.#planningRoot=undefined;
+    this.#planningShutdown=this.#authority.cancelPlanning().then(()=>{
+      this.#phase="closed";
+    });
+    return this.#planningShutdown;
   }
 
   /**

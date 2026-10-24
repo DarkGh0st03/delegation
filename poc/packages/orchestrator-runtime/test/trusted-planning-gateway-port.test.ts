@@ -8,6 +8,10 @@ import {generateKeyPairSync} from "node:crypto";
 import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {generateKeyPairSync} from "node:crypto";
+import {mkdtemp,rm} from "node:fs/promises";
+import {join} from "node:path";
+import {tmpdir} from "node:os";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {BaseLlm,type LlmRequest,type LlmResponse,type BaseLlmConnection}
@@ -28,6 +32,14 @@ import {TrustedPlanningGatewayReadPort}
   from "../src/trusted-planning-gateway-port.ts";
 import {TrustedAdkReadOnlyPlanner}
   from "../src/trusted-adk-planner.ts";
+import {startOwnerControlledPlanningReview}
+  from "../src/trusted-owner-planning-bootstrap.ts";
+import {SignedPlanningCheckpointFileStore}
+  from "../src/trusted-planning-checkpoint-store.ts";
+import {SignedEngineerApprovalFileStore}
+  from "../src/signed-approval-store.ts";
+import {TrustedPlanningReviewGate}
+  from "../src/trusted-planning-review-gate.ts";
 import {TrustedActivePlanningCheckpoint}
   from "../src/trusted-active-planning-checkpoint.ts";
 import {SignedEngineerApprovalFileStore}
@@ -118,9 +130,10 @@ class MultiReadScriptedPlanner extends BaseLlm {
 function response(value:unknown,status=200){
   return new Response(JSON.stringify(value),{status,headers:{"content-type":"application/json"}});
 }
-function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean}={}){
+function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean;
+  revocationFails?:boolean}={}){
   const observed={adapter:0,verification:0,policy:0,provider:0,
-    prepare:0,execute:0,issued:0};
+    prepare:0,execute:0,issued:0,revoked:0};
   const signed=new Map<string,{resource:string;operation:string;challenge:string;audience:string}>();
   const client={
     async readRepository(revision?:string){
@@ -196,7 +209,11 @@ function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean}={}){
             per:req.permissions.map(x=>({...x}))}
         };
       },
-      async revokeRoot(){throw Error("No revocation should run in this test");}
+      async revokeRoot(id:string){
+        assert.equal(id,rootId);
+        observed.revoked++;
+        if(options.revocationFails)throw Error("offline Rust revocation unconfirmed");
+      }
     },
     approvals:{async loadAuthenticatedApproval(){throw Error("No approval exists");}},
     authenticatedEngineerDid:"did:thesis:engineer",
@@ -253,14 +270,15 @@ function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean}={}){
     adapterToken:"trusted-orchestrator-token",
     fetchFn
   });
-  const start=()=>coordinator.beginPlanning({
+  const root=()=>({
     credential_id:rootId,valid_from:new Date().toISOString(),
     validity_seconds:300,
-    credential_status:{type:"BitstringStatusListEntry",
-      statusPurpose:"revocation",statusListIndex:"19",
+    credential_status:{type:"BitstringStatusListEntry" as const,
+      statusPurpose:"revocation" as const,statusListIndex:"19",
       statusListCredential:"https://example.test/status/planning"}
   });
-  return {coordinator,start,makePort,observed,revisions,audit};
+  const start=()=>coordinator.beginPlanning(root());
+  return {coordinator,start,root,makePort,fetchFn,observed,revisions,audit};
 }
 
 test("trusted coordinator-issued root -> Gateway VP/OPA -> pinned Gitea -> unapproved ADK plan",async()=>{
@@ -504,4 +522,115 @@ test("backend signing key must be valid before any model read",async()=>{
     await assert.rejects(f.checkpointStore.load(),
       (error:any)=>error.code==="ENOENT");
   }finally{await f.close();}
+});
+
+async function makeOwnerReviewFixture(options:{
+  tamperPermission?:boolean;revocationFails?:boolean
+}={}){
+  const f=fixture(options);
+  const receipts=await mkdtemp(join(tmpdir(),"owner-planning-approvals-"));
+  const checkpoints=await mkdtemp(join(tmpdir(),"owner-planning-checkpoints-"));
+  const engineer=generateKeyPairSync("ed25519");
+  const backend=generateKeyPairSync("ed25519");
+  const backendKeyId="owner-planning-backend";
+  const approvals=new SignedEngineerApprovalFileStore({
+    directory:receipts,engineerDid:"did:thesis:engineer",
+    trustedKeys:{engineer:{engineer_did:"did:thesis:engineer",
+      public_key_pem:engineer.publicKey.export({
+        format:"pem",type:"spki"
+      }).toString()}}
+  });
+  const gate=new TrustedPlanningReviewGate({
+    snapshot,expectedWorkBranch:"feature/invoice-sort",
+    authenticatedEngineerDid:"did:thesis:engineer",
+    signedApprovals:approvals,
+    planningIsActive:()=>f.coordinator.phase==="planning"
+  });
+  const store=new SignedPlanningCheckpointFileStore({
+    directory:checkpoints,
+    trust:{
+      trustedKeys:{[backendKeyId]:{public_key_pem:
+        backend.publicKey.export({format:"pem",type:"spki"}).toString()}},
+      expectedSessionId:snapshot.session_id,
+      expectedRepository:snapshot.repository,
+      expectedBaseRevision:SHA,
+      expectedWorkBranch:"feature/invoice-sort"
+    }
+  });
+  const makeConfig=()=>({
+    coordinator:f.coordinator,snapshot,preliminaryRoot:f.root(),
+    planner:{model:new ScriptedPlanner(),snapshot,
+      requirement:"Sort invoices by due date",planId:"invoice-proposal-v1",
+      workBranch:"feature/invoice-sort",agents},
+    gateway:{gatewayBaseUrl:"http://trusted-gateway",
+      adapterBaseUrl:"http://trusted-adapter",
+      adapterToken:"trusted-orchestrator-token",fetchFn:f.fetchFn},
+    reviewGate:gate,checkpointStore:store,backendKeyId,
+    backendPrivateKeyPem:backend.privateKey.export({
+      format:"pem",type:"pkcs8"
+    }).toString()
+  });
+  return {...f,store,gate,makeConfig,async cleanup(){
+    await rm(receipts,{recursive:true,force:true});
+    await rm(checkpoints,{recursive:true,force:true});
+  }};
+}
+
+test("owner bootstrap issues one read-only root, traverses Gateway and persists signed review",async()=>{
+  const f=await makeOwnerReviewFixture();
+  try{
+    const packet=await startOwnerControlledPlanningReview(f.makeConfig());
+    assert.equal(packet.status,"awaiting_engineer_signature");
+    assert.equal(packet.verified_source_reads,1);
+    assert.equal(packet.base_revision,SHA);
+    assert.equal((await f.store.load()).proposal.digest,packet.plan_digest);
+    assert.equal(f.gate.reviewPacket().plan_digest,packet.plan_digest);
+    assert.equal(f.coordinator.phase,"planning");
+    assert.deepEqual({issued:f.observed.issued,revoked:f.observed.revoked,
+      adapter:f.observed.adapter,opa:f.observed.policy,execute:f.observed.execute},
+      {issued:1,revoked:0,adapter:1,opa:1,execute:1});
+    await assert.rejects(startOwnerControlledPlanningReview(f.makeConfig()),
+      /idle Coordinator required/);
+    const closed=f.coordinator.closePlanning();
+    assert.equal(f.coordinator.phase,"failed_closed");
+    await closed;
+    assert.equal(f.coordinator.phase,"closed");
+    assert.equal(f.observed.revoked,1);
+    await assert.rejects(f.coordinator.closePlanning(),
+      /No active trusted Planning root|./);
+    assert.equal(f.observed.revoked,1);
+  }finally{await f.cleanup();}
+});
+
+test("failed owner Planning read cancels root and denies any signed checkpoint",async()=>{
+  const f=await makeOwnerReviewFixture({tamperPermission:true});
+  try{
+    await assert.rejects(startOwnerControlledPlanningReview(f.makeConfig()),
+      /no verified read-only grounded proposal/);
+    assert.equal(f.observed.issued,1);
+    assert.equal(f.observed.revoked,1);
+    assert.equal(f.coordinator.phase,"closed");
+    assert.equal(f.observed.adapter,0);
+    assert.equal(f.observed.execute,0);
+    await assert.rejects(f.store.load(),
+      (e:any)=>e.code==="ENOENT");
+    await assert.rejects(startOwnerControlledPlanningReview(f.makeConfig()),
+      /idle Coordinator required/);
+  }finally{await f.cleanup();}
+});
+
+test("uncertain native revocation after failed Planning remains terminal",async()=>{
+  const f=await makeOwnerReviewFixture({
+    tamperPermission:true,revocationFails:true
+  });
+  try{
+    await assert.rejects(startOwnerControlledPlanningReview(f.makeConfig()),
+      /manual reconciliation required/);
+    assert.equal(f.observed.revoked,1);
+    assert.equal(f.coordinator.phase,"failed_closed");
+    await assert.rejects(f.coordinator.closePlanning(),
+      /cancellation not confirmed/);
+    assert.equal(f.observed.revoked,1);
+    await assert.rejects(f.store.load(),(e:any)=>e.code==="ENOENT");
+  }finally{await f.cleanup();}
 });

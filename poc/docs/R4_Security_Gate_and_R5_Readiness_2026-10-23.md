@@ -324,3 +324,38 @@ the independent tombstone replay guard. No paid model calls, automatic
 Engineer signatures or main-branch changes. Certify only after both the
 dedicated Engineer CI and all five cumulative offline jobs succeed on the
 same new SHA.
+
+### R5 owner-controlled Planning root issuance, signed checkpoint and failure cancellation
+
+A new **trusted in-process** `startOwnerControlledPlanningReview` primitive
+performs a genuine preliminary `TrustedExecutionCoordinator.beginPlanning`
+root request, binds the resulting verified root to the Gateway read-only
+port, invokes the real Google ADK `TrustedAdkReadOnlyPlanner` object
+with a model supplied exclusively by the trusted owner process, signs its
+grounded unsigned result with an independently configured backend Ed25519
+key, writes the immutable provenance to the already-pinned checkpoint
+store, and stages it for a separate Engineer signature. The source Gitea
+SHA must be verified through the coordinator's Planning revision port
+before issuing the provisional root. No paid model or delegated Execution
+is started by this helper.
+
+An aborted inference, rejected read, invalid signing key or failed
+checkpoint persistence now invokes `TrustedExecutionCoordinator.closePlanning`,
+which synchronously fences further Planning reads. The lower-level
+`TrustedEngineerAuthoritySession.cancelPlanning` attempts both
+Gateway revision retirement and actual Rust/Adapter root revocation,
+requires both confirmations before closing, and returns the same result
+to concurrent/repeated callers. A failed revocation is terminal and
+requires manual reconciliation; do not silently retry the same root.
+Offline tests prove a successful real Gateway/VP/OPA read and checkpoint,
+a failed read with confirmed revocation and a failed revocation with
+fail-closed status.
+
+The successful case deliberately retains the **short-lived Planning
+root** for subsequent independent Engineer review/approval, and exposes
+a trusted-only `closePlanning()` for cancellation. This is NOT
+the deployed host bootstrap: owner-side local key/status-list provisioning,
+durable *preliminary* root intent across process crashes and handoff of the
+same in-memory Coordinator to the authenticated host are still missing.
+Do not claim R5 GO, call paid Gemini or merge to `main` based
+on offline tests alone. A new exact-SHA cumulative CI is required.

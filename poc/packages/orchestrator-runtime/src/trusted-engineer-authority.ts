@@ -219,6 +219,7 @@ export class TrustedEngineerAuthoritySession {
   #provisionalStatus?:CredentialStatusInput;
   #operationalId?:string;
   #approvedPlanDigest?:string;
+  #planningClosure?:Promise<void>;
 
   constructor(options:{
     snapshot:TrustedPlanningSnapshot;
@@ -280,6 +281,34 @@ export class TrustedEngineerAuthoritySession {
       }
       throw error;
     }
+  }
+
+  /** Private Engineer-side abort. Reserve terminal state BEFORE awaiting
+   * Gateway retirement and native Rust/Adapter revocation; every concurrent
+   * caller receives the same result, including failed reconciliation. */
+  cancelPlanning():Promise<void>{
+    if(this.#planningClosure)return this.#planningClosure;
+    if(this.#state!=="planning"||!this.#provisionalId)
+      return Promise.reject(Error("No active provisional root to cancel"));
+    const rootId=this.#provisionalId;
+    this.#state="failed_closed";
+    this.#planningClosure=(async()=>{
+      let registryEnded=false,rootRevoked=false;
+      try{
+        this.#planningRevisions?.end(this.#snapshot.session_id);
+        registryEnded=true;
+      }catch{/* Still attempt native root revocation. */}
+      try{
+        await this.#client.revokeRoot(rootId);
+        rootRevoked=true;
+      }catch{/* Never claim a completed cancellation without a Rust receipt. */}
+      if(!registryEnded||!rootRevoked)
+        fail("Planning root cancellation not confirmed; manual reconciliation required");
+      this.#provisionalId=undefined;
+      this.#provisionalStatus=undefined;
+      this.#state="revoked";
+    })();
+    return this.#planningClosure;
   }
 
   /**
