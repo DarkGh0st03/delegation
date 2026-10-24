@@ -140,3 +140,37 @@ test("R6 canonical Orchestrator public barrel no longer exports the historical c
       "historical workflow must explicitly select the historical coordinator: "+name);
   }
 });
+
+
+test("R6 AST source graph resolves verified relative static importers, not comments/dynamic imports",async t=>{
+  const root=fixture(t,{
+    "src/old.ts":"export const historical=true;",
+    "src/index.ts":"export * from './old.ts';",
+    "src/consumer.mjs":"import {historical} from './old.ts';",
+    "src/dynamic.mjs":"const lazy=()=>import('./old.ts');",
+    "src/comment.mjs":"// import './old.ts';\nconst text=\"import './old.ts'\";",
+    ".github/workflows/history.yml":"run: node src/old.ts"
+  });
+  const {collectLegacyReferences}=await import("../r6-legacy-references.mjs");
+  const result=collectLegacyReferences(root,[
+    "src/old.ts","src/index.ts","src/consumer.mjs",
+    "src/dynamic.mjs","src/comment.mjs",".github/workflows/history.yml"
+  ],{candidates:["src/old.ts"]});
+  assert.deepEqual(result.candidates[0].staticImporters.map(x=>x.source),
+    ["src/consumer.mjs","src/index.ts"]);
+  assert.equal(result.candidates[0].references.length,5);
+  assert.match(result.methodology,/not a complete dependency graph/);
+});
+test("R6 AST graph ignores erased TS type-only imports",async t=>{
+  const root=fixture(t,{
+    "src/old.ts":"export type Old = {id:string};",
+    "src/type-only.ts":"import type {Old} from './old.ts';\nlet x:Old;",
+    "src/real.ts":"export {type Old} from './old.ts';"
+  });
+  const {collectLegacyReferences}=await import("../r6-legacy-references.mjs");
+  const result=collectLegacyReferences(root,[
+    "src/old.ts","src/type-only.ts","src/real.ts"
+  ],{candidates:["src/old.ts"]});
+  assert.deepEqual(result.candidates[0].staticImporters,[]);
+  assert.equal(result.candidates[0].references.length,2);
+});

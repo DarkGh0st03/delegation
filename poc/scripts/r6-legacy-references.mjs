@@ -9,7 +9,9 @@
  */
 import {execFileSync} from "node:child_process";
 import {existsSync,readFileSync} from "node:fs";
-import {resolve} from "node:path";
+import {stripTypeScriptTypes} from "node:module";
+import {dirname,relative,resolve} from "node:path";
+import {SourceTextModule} from "node:vm";
 import {fileURLToPath,pathToFileURL} from "node:url";
 
 export const R6_LEGACY_CANDIDATES=Object.freeze([
@@ -43,12 +45,44 @@ export function collectLegacyReferences(root,tracked,options={}){
     "poc/scripts/test/check-local-imports.test.mjs"
   ]);
   const seen=new Map(candidates.map(path=>[path,[]]));
+  const staticImporters=new Map(candidates.map(path=>[path,[]]));
+  const candidatesByAbsolutePath=new Map(candidates.map(path=>[
+    resolve(root,path),path
+  ]));
   const files=[...new Set(tracked)].sort();
   for(const source of files){
     if(ignored.has(source)||!TEXT_SOURCE.test(source))continue;
     const file=resolve(root,source);
     if(!existsSync(file))continue;
     const text=readFileSync(file,"utf8");
+    if(/\.(?:ts|tsx|mjs|cjs|js)$/u.test(source)){
+      // Reuse the same Node ESM parser strategy as check-local-imports.
+      // Only static runtime import/export edges are proven. Literal
+      // import(), require(), package aliases, codegen, CLI and Docker
+      // callers remain separately unverified.
+      let module;
+      try{
+        module=new SourceTextModule(
+          /\.(?:ts|tsx)$/u.test(source)?stripTypeScriptTypes(text):text,
+          {identifier:file}
+        );
+      }catch(error){
+        throw Error("R6 cannot parse tracked source "+source,
+          {cause:error});
+      }
+      for(const specifier of module.dependencySpecifiers){
+        if(!specifier.startsWith("./")&&!specifier.startsWith("../"))
+          continue;
+        const target=candidatesByAbsolutePath.get(
+          resolve(dirname(file),specifier)
+        );
+        if(target&&target!==source){
+          staticImporters.get(target).push(Object.freeze({
+            source,specifier,referenceType:type(source)
+          }));
+        }
+      }
+    }
     for(const target of candidates){
       if(source===target)continue; // a file is not its own importer
       const leaf=target.split("/").at(-1);
@@ -59,11 +93,12 @@ export function collectLegacyReferences(root,tracked,options={}){
     }
   }
   return Object.freeze({
-    methodology:"Literal path/basename observations, not an import graph or deletion proof",
+    methodology:"Literal reference observations are not an import graph or deletion proof; staticImporters are independently parsed runtime ESM edges, not a complete dependency graph",
     candidates:Object.freeze(candidates.map(target=>Object.freeze({
       target,
       exists:existsSync(resolve(root,target)),
-      references:Object.freeze(seen.get(target))
+      references:Object.freeze(seen.get(target)),
+      staticImporters:Object.freeze(staticImporters.get(target))
     })))
   });
 }
@@ -85,8 +120,9 @@ function main(){
     console.log([
       candidate.exists?"PRESENT":"MISSING",
       candidate.target,
-      "runtime/build refs="+live.length,
-      "docs refs="+(candidate.references.length-live.length)
+      "runtime/build text refs="+live.length,
+      "docs text refs="+(candidate.references.length-live.length),
+      "proven static importers="+candidate.staticImporters.length
     ].join(" | "));
   }
   if(result.candidates.some(x=>!x.exists))process.exitCode=1;
