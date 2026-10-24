@@ -94,3 +94,67 @@ test("R6 expanded audit rejects cross-workspace moved types",t=>{
   assert.deepEqual(report.errors.map(x=>x.reason),
     ["missing named export","missing named export"]);
 });
+
+
+test("R6 checks Gateway source, tests and cross-workspace named types without widening to native-test",t=>{
+  const root=mkdtempSync(join(tmpdir(),"r6-gateway-imports-"));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const entries={
+    "poc/apps/gateway/src/types.ts":
+      "export interface Permission{}; export type AgentRole=string;",
+    "poc/apps/gateway/src/barrel.ts":
+      "export type {Permission as ScopedPermission} from './types.ts';",
+    "poc/apps/gateway/src/prepare.ts":
+      "import type {Permission} from './types.ts';",
+    "poc/apps/gateway/test/prepare.test.ts":
+      "import type {ScopedPermission} from '../src/barrel.ts';",
+    "poc/packages/orchestrator-runtime/src/port.ts":
+      "import type {AgentRole} from '../../../apps/gateway/src/types.ts';",
+    "poc/apps/gateway/native-test/ignored.ts":
+      "import type {Unresolved} from '../src/missing.ts';",
+    "poc/apps/test-runner-controller/src/ignored.ts":
+      "import type {Unresolved} from './missing.ts';"
+  };
+  for(const [path,text] of Object.entries(entries)){
+    const target=join(root,path);
+    mkdirSync(dirname(target),{recursive:true});
+    writeFileSync(target,text);
+  }
+  const report=checkR6TypeImports(root,Object.keys(entries));
+  assert.equal(report.checkedFiles,5);
+  // Re-export alias + Gateway source + Gateway test + cross-workspace port.
+  assert.equal(report.checkedImports,4);
+  assert.deepEqual(report.errors,[]);
+});
+
+test("R6 Gateway cohort rejects missing named and missing module type imports",t=>{
+  const root=mkdtempSync(join(tmpdir(),"r6-gateway-moved-types-"));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const entries={
+    "poc/apps/gateway/src/types.ts":"export interface Permission{};",
+    "poc/apps/gateway/src/loader.ts":
+      "import type {OldBranchResult} from './types.ts';",
+    "poc/apps/gateway/test/loader.test.ts":
+      "import type {Gone} from '../src/deleted.ts';"
+  };
+  for(const [path,text] of Object.entries(entries)){
+    const target=join(root,path);
+    mkdirSync(dirname(target),{recursive:true});
+    writeFileSync(target,text);
+  }
+  const report=checkR6TypeImports(root,Object.keys(entries));
+  assert.equal(report.checkedFiles,3);
+  assert.equal(report.checkedImports,2);
+  assert.deepEqual(report.errors.map(x=>({
+    source:x.source,symbol:x.symbol,reason:x.reason
+  })),[
+    {
+      source:"poc/apps/gateway/src/loader.ts",
+      symbol:"OldBranchResult",reason:"missing named export"
+    },
+    {
+      source:"poc/apps/gateway/test/loader.test.ts",
+      symbol:"Gone",reason:"missing module"
+    }
+  ]);
+});

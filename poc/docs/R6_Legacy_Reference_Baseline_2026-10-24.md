@@ -852,3 +852,41 @@ assertion correction only, not a relaxation of the scanner:
 code, native verifier, delegated permissions or A2A behavior
 changes. CI `40089028919` is not green; rerun all exact-SHA
 offline cumulative jobs after the correction.
+
+### R6 cleanup batch 19 — named TypeScript contracts in the Gateway workspace
+
+**Prior scope:** the R6 type-only import check covered
+`orchestrator-runtime`, `agent-runtime` and `a2a-agent`,
+but not the Gateway. The Gateway supplies canonical protected
+request types, Rust operation mappings, prepared authorization
+records, approved execution plan interfaces and trusted completion
+observations imported by the Orchestrator. Broken named type
+imports can be erased by Node's TypeScript stripping, so existing
+runtime tests are not sufficient to detect all source drift.
+
+**Added scope:** include top-level
+`poc/apps/gateway/{src,test}/*.ts` in the existing bounded
+`audit:r6:types` source validation and cumulative offline CI gate.
+Do not modify production TypeScript, the Gateway runtime itself,
+or any cryptographic or provider authorization logic.
+
+**Regression fixtures:** verify a Gateway type barrel alias,
+direct source and test type imports, and a Gateway type consumed
+cross-workspace by the Orchestrator. Explicitly keep nested
+`gateway/native-test` and unrelated Runner workspaces outside
+the cohort. Check that an obsolete named Gateway interface and a
+deleted local type module both fail with the correct diagnostics.
+
+**Limitations:** the checker confirms the presence of relative
+named type exports and simple re-exports; it is **not a full
+TypeScript compiler** and cannot prove type assignment correctness,
+generic constraints, third-party declaration validity, ambient
+module availability, default/namespace imports, or dead-code
+safety. Compiler-level verification should remain a separately
+tracked future improvement, not be assumed from this gate.
+
+**Safety and rollback:** only the audit script, its tests and this
+ledger are modified. No paid Gemini calls, no main merge and no
+change to signed-plan/DAG, Gateway, Rust DC/VP or OPA semantics.
+Require exact-SHA cumulative offline CI 5/5 before certifying.
+Rollback to `e826a2a70077f5ee55589b9040a8abc000a1b1bc`.
