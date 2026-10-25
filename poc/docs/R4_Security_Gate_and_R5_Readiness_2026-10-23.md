@@ -1436,3 +1436,53 @@ revocation confirmation and then a terminal verified job result.
 Model spending and merges remain prohibited without explicit consent.
 R5 stays **NO-GO** until the entire physical run and latest
 exact-SHA cumulative CI are verified.
+
+
+### R5 — Fail-closed live A2A readiness and protected child-authority binding (25 October 2026)
+
+The strict in-process Engineer Host's
+`runReviewedApprovedDagWithGateway` now runs a **non-billable live
+Agent Card readiness probe after signed operational-root issuance and
+before any approved DAG Task**. It verifies the **actual three
+newly started role-server endpoints** returned by the trusted
+`startAdmittedGithubReviewedGeminiHandoff` result, rather than model,
+workflow or caller-supplied endpoints. Each URI must be a distinct,
+canonical 127.0.0.1 HTTP listener. A bounded, timeout-controlled
+GET requests only `/.well-known/agent-card.json` with no credentials,
+redirects, Task dispatch, Adapter call or model prompt.
+
+Every returned card must describe the correct Backend/Frontend/Test
+role, the exact local HTTP+JSON A2A REST interface, its known role
+DID, required delegated-evidence extension and the approved-plan
+role skill. A missing server, swapped role, malformed/truncated card,
+unexpected protocol, wrong DID or non-delegated Agent Card denies
+Execution and propagates into the established lifecycle's **mandatory
+Gateway/native root closure**. This is a *readiness / misconfiguration
+check*, not cryptographic peer authentication: signed child VCs/VPs,
+private task binding, Gateway, Rust and OPA remain mandatory.
+
+At the same trusted boundary, `childStatusProvisioning` is now
+treated as strict **owner data**, not an authority object. Unexpected
+keys are rejected before admission consumption; the function
+explicitly copies only the operator-pinned reservation directory,
+Status List URI, Task-to-index mapping, external exclusions and
+bounded validity. An attacker or misconfigured caller may no longer
+smuggle `coordinator`, `reviewGate`, `sessionId` or
+`engineerDid` into the child allocator through object spread.
+Offline regressions prove these override attempts cannot consume a
+GitHub admission or issue operational authority.
+
+Tests: `trusted-a2a-startup-probe.test.ts` uses actual local
+Backend/Frontend/Test HTTP servers and forbidden-card variations.
+`trusted-engineer-host.test.mjs` proves independently signed UI
+approval and authenticated GitHub OIDC persist while invalid child
+provisioning is rejected **before** consuming the run or changing the
+Planning phase. This is additional proof within the private owner
+service; not a physical single-run deployment across all providers.
+
+The complete canonical R5 paid-run readiness remains **NO-GO** until
+one cumulative same-SHA offline green, a deployed private runner,
+persistent Engineer Host with actual Gateway IPC, genuine signed
+approval and separately operated three-agent A2A/Adapter workflow
+are demonstrated together. No paid Gemini run, merge or cleanup on
+`main` was performed.
