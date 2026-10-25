@@ -349,12 +349,17 @@ export async function startTrustedEngineerRecoveringHost(config){
 
 export async function startTrustedEngineerLivePlanningHost(config){
   const active=config?.activePlanning;
-  if(!(active?.coordinator instanceof TrustedExecutionCoordinator)||
-     !(active.planningRecovery instanceof TrustedPlanningRecoveryStore)||
-     !(active.checkpointStore instanceof SignedPlanningCheckpointFileStore)||
-     active.checkpointStore!==config?.approval?.planningCheckpointStore)
-    deny("live Planning startup requires the original Coordinator and signed provenance");
+  if(!(active?.coordinator instanceof TrustedExecutionCoordinator))
+    deny("live Planning startup requires the original Coordinator");
   try{
+    // Once the trusted caller has passed the ACTUAL live Coordinator,
+    // every later validation failure is a startup failure which must
+    // revoke that Coordinator's preliminary root. Never check other
+    // configuration fields outside the cleanup try/catch.
+    if(!(active.planningRecovery instanceof TrustedPlanningRecoveryStore)||
+       !(active.checkpointStore instanceof SignedPlanningCheckpointFileStore)||
+       active.checkpointStore!==config?.approval?.planningCheckpointStore)
+      deny("live Planning startup requires matching journal and signed provenance");
     return await strictRecoveringHost(config);
   }catch(error){
     // The process still owns this root and has not returned a live host.

@@ -688,3 +688,34 @@ startup failure and preliminary-root revocation. Cold restart without
 The internal lower-level strict bootstrap is no longer exported, avoiding
 an accidental direct bypass of the live-root shutdown guarantee. There
 is no new HTTP endpoint or automatic credential issuance. R5 stays NO-GO.
+
+### R5 actual Engineer browser approval drives the original trusted two-root Coordinator (offline)
+
+A new integrated test in `trusted-planning-review-gate.test.ts`
+uses the existing signed-plan Gateway registry and Rust credential-port
+fixture with its original Coordinator. It signs the staged, Gitea-pinned
+read-only Planning result with a distinct backend Ed25519 key, writes
+the exact immutable Engineer UI plan through
+`TrustedReviewedPlanFile`, and opens the REAL loopback
+Engineer approval server with a protected Engineer private signing key.
+The test verifies password login, CSRF-bound GET/POST review, denial of
+an unauthorized new permission, and a valid *human UI action* selecting
+a strict permission subset. Only after the independently authenticated
+Ed25519 receipt is written does the SAME Coordinator revoke the
+preliminary root, issue a separate operational credential with only
+those selected permissions, activate the Gateway approved-plan digest
+and then revoke the operational root. It asserts zero operational root
+issuance from approval alone. This fixture uses explicit offline
+credentials/Gateway stubs, NOT native EVM/Gitea or any Gemini model.
+
+Also hardened `startTrustedEngineerLivePlanningHost`:
+once a real same-process Coordinator object is supplied, errors checking
+its journal or checkpoint provenance occur *inside* the startup cleanup
+boundary rather than before it. A malformed pinned configuration must
+never leave a previously issued provisional root alive by skipping the
+startup-failure revocation path.
+
+A still-missing deployment requirement is the private owner-controlled
+bootstrap wiring of the genuine Gitea snapshot and Rust-issued Planning
+credential to the authenticated host. The full paid R5 run remains
+NO-GO without explicit separate consent and full offline CI.

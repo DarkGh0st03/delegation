@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {generateKeyPairSync,sign as signJwt,randomBytes} from "node:crypto";
+import {generateKeyPairSync,sign as signJwt,randomBytes,scryptSync} from "node:crypto";
 import {mkdtemp,rm,writeFile,chmod,readdir} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
@@ -17,6 +17,10 @@ import {SignedEngineerApprovalFileStore}
   from "../src/signed-approval-store.ts";
 import {TrustedPlanningReviewGate}
   from "../src/trusted-planning-review-gate.ts";
+import {TrustedReviewedPlanFile}
+  from "../src/trusted-reviewed-plan-file.ts";
+import {createAuthenticatedEngineerServer}
+  from "../../../apps/orchestrator/src/engineer-approval-server.mjs";
 import {signTrustedPlanningCheckpoint,verifyTrustedPlanningCheckpoint,
   stageVerifiedPlanningCheckpoint}
   from "../src/trusted-planning-checkpoint.ts";
@@ -154,6 +158,7 @@ async function fixture(recovery=false){
       JSON.stringify(receipt),{mode:0o600});
   }
   return {gate,coordinator,issued,revoked,proposal,sign,
+    directory,privateKey,publicKey,
     replaceReceiptAfterOperationalIssue(handler:()=>Promise<void>){
       onOperationalIssue=handler;
     },
@@ -1368,4 +1373,136 @@ test("trusted checkpoint writer rejects forged backend signature before any disk
     await assert.rejects(store.persistVerified(signed),/owner-only/);
     await assert.rejects(store.load(),/owner-only/);
   }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test("real Engineer login and signed UI permission choice activates only the staged Planning Coordinator",async()=>{
+  // A fully local, zero-model-inference integration: signed backend
+  // Planning provenance -> protected reviewed plan file -> authenticated
+  // Engineer browser/CSRF/Ed25519 receipt -> original two-root Coordinator
+  // -> independently checked Gateway plan scope -> confirmed root closure.
+  const f=await fixture(true);
+  const uiDir=await mkdtemp(join(tmpdir(),"engineer-ui-live-chain-"));
+  const checkpointDir=await mkdtemp(join(tmpdir(),"backend-checkpoint-live-chain-"));
+  let server:any,started=false;
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const unsigned=f.proposal();
+    const packet=f.gate.stageTrustedProposal(unsigned);
+    assert.equal(packet.plan_digest,unsigned.digest);
+    assert.equal(f.issued.length,1);
+    const backend=generateKeyPairSync("ed25519");
+    const keyId="trusted-backend-live-chain";
+    const store=new SignedPlanningCheckpointFileStore({
+      directory:checkpointDir,
+      trust:{
+        trustedKeys:{[keyId]:{public_key_pem:backend.publicKey.export({
+          format:"pem",type:"spki"
+        }).toString()}},
+        expectedSessionId:SNAPSHOT.session_id,
+        expectedRepository:REPO,expectedBaseRevision:SHA,
+        expectedWorkBranch:CFG.workBranch
+      }
+    });
+    const now=Date.now();
+    await store.persistVerified(signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:unsigned,keyId,
+      privateKeyPem:backend.privateKey.export({
+        format:"pem",type:"pkcs8"
+      }).toString(),
+      issuedAt:new Date(now).toISOString(),
+      expiresAt:new Date(now+300000).toISOString()
+    }));
+    const planFile=join(uiDir,"approved-input-plan.json");
+    const keyFile=join(uiDir,"engineer-private-key.pem");
+    const salt=randomBytes(16);
+    const password="trusted-offline-engineer";
+    await new TrustedReviewedPlanFile({
+      filePath:planFile,checkpointStore:store
+    }).persist(packet);
+    await writeFile(keyFile,f.privateKey,{mode:0o600});
+    server=await createAuthenticatedEngineerServer({
+      host:"127.0.0.1",engineerDid:ENGINEER,keyId:"key1",
+      trustedPlanFile:planFile,privateKeyFile:keyFile,
+      expectedSessionId:SNAPSHOT.session_id,expectedBaseRevision:SHA,
+      repository:REPO,publicKeyPem:f.publicKey,
+      receiptDirectory:f.directory,passwordSaltHex:salt.toString("hex"),
+      passwordScryptHex:scryptSync(password,salt,64).toString("hex"),
+      planningCheckpointStore:store
+    });
+    await new Promise<void>((resolve,reject)=>{
+      server.once("error",reject);
+      server.listen(0,"127.0.0.1",resolve);
+    });
+    started=true;
+    const address=server.address();
+    assert.ok(address&&typeof address!=="string");
+    const origin="http://127.0.0.1:"+address.port;
+    assert.equal((await fetch(origin+"/api/plan")).status,401);
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id));
+    const login=await fetch(origin+"/api/login",{
+      method:"POST",
+      headers:{"content-type":"application/json",origin},
+      body:JSON.stringify({password})
+    });
+    assert.equal(login.status,200);
+    const cookie=login.headers.get("set-cookie")!.split(";")[0];
+    const visible=await (await fetch(origin+"/api/plan",{
+      headers:{cookie}
+    })).json() as any;
+    assert.equal(visible.plan_digest,packet.plan_digest);
+    assert.deepEqual(visible.plan,packet.plan);
+    // The Engineer chooses a strict permission subset; a model/runner
+    // cannot inject a fresh permission into the already staged proposal.
+    const bad=await fetch(origin+"/api/approve",{
+      method:"POST",
+      headers:{"content-type":"application/json",origin,cookie,
+        "x-csrf-token":visible.csrf_token},
+      body:JSON.stringify({
+        plan_digest:packet.plan_digest,
+        approved_permission_ids:["unknown-extra-scope"],
+        confirmation:"APPROVE "+packet.plan_digest
+      })
+    });
+    assert.equal(bad.status,403);
+    assert.equal(f.revoked.length,0);
+    assert.equal(f.issued.length,1);
+    await assert.rejects(f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id));
+    const ok=await fetch(origin+"/api/approve",{
+      method:"POST",
+      headers:{"content-type":"application/json",origin,cookie,
+        "x-csrf-token":visible.csrf_token},
+      body:JSON.stringify({
+        plan_digest:packet.plan_digest,
+        approved_permission_ids:["permission-1","permission-3"],
+        confirmation:"APPROVE "+packet.plan_digest
+      })
+    });
+    assert.equal(ok.status,201);
+    const response=await ok.json() as any;
+    assert.equal(response.signed,true);
+    assert.equal(response.operational_credential_issued,false);
+    assert.equal(f.issued.length,1); // Human signature != operational issuance
+    const receipt=await f.gate.loadAuthenticatedApproval(SNAPSHOT.session_id);
+    assert.deepEqual(receipt.approval.approved_permission_ids,
+      ["permission-1","permission-3"]);
+    const activated=await f.coordinator.beginExecution(
+      root("urn:operational","102"));
+    assert.equal(activated.plan_digest,packet.plan_digest);
+    assert.equal(f.coordinator.phase,"execution");
+    assert.deepEqual(f.revoked,["urn:preliminary"]);
+    assert.deepEqual(f.issued[1].permissions.map(p=>p.operation),
+      ["create_branch","update_file"]);
+    await f.coordinator.closeExecution();
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{
+    if(started){
+      await new Promise<void>((resolve,reject)=>
+        server.close((err:Error|undefined)=>err?reject(err):resolve()));
+    }
+    await rm(uiDir,{recursive:true,force:true});
+    await rm(checkpointDir,{recursive:true,force:true});
+    await f.close();
+  }
 });
