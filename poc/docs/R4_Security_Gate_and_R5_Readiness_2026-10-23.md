@@ -798,3 +798,20 @@ always overrides any caller-provided callback.
 This guard does not claim cross-process filesystem atomicity. Native
 Gateway and Rust revocation, along with the durable journals, still
 provide the independent authority fence. No paid model call is made.
+
+### R5 live Engineer rejection verified against original Coordinator and journals
+
+An Engineer-host integration regression now starts the actual local
+password/CSRF browser service with a backend-Ed25519-signed checkpoint,
+owner-private provisional-root journal, and active trusted Coordinator.
+An authenticated reject request enters native revocation. The test
+deliberately delays that revocation, submits a conflicting Engineer
+signature while the root is being retired, and checks it is refused.
+After the native revocation confirmation, the rejection returns success,
+the Gateway Planning retire port has been called exactly once, the
+Coordinator is closed and the durable provisional-root journal is
+tombstoned. No signed approval receipt or operational root is issued.
+The test uses explicit local Rust/Gateway port stubs, not real EVM.
+
+The host still refuses any later attempted paid handoff from the
+rejected session. Exact-SHA CI certification remains necessary.

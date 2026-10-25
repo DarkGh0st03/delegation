@@ -910,3 +910,132 @@ test("strict live-Planning bootstrap failure revokes root before any UI or OIDC 
     /pinned mutual TLS admission|root state uncertain/);
   assert.equal(revocations,1);
 });
+
+test("live Engineer UI rejection revokes original root and fences concurrent Ed25519 approval",async t=>{
+  const f=await fixture(t);
+  const parent=(await import("node:path")).dirname(f.receipts);
+  const planning=join(parent,"interactive-reject-planning");
+  const operational=join(parent,"interactive-reject-operational");
+  const checkpoints=join(parent,"interactive-reject-checkpoints");
+  for(const dir of [planning,operational,checkpoints])
+    await mkdir(dir,{mode:0o700});
+  const journal=new TrustedPlanningRecoveryStore(planning);
+  const session=f.plan.session_id,rootId="urn:offline:interactive-reject-root";
+  const backend=generateKeyPairSync("ed25519");
+  const backendKeyId="interactive-reject-signer";
+  const checkpointStore=new SignedPlanningCheckpointFileStore({
+    directory:checkpoints,trust:{
+      trustedKeys:{[backendKeyId]:{
+        public_key_pem:backend.publicKey.export({format:"pem",type:"spki"}).toString()
+      }},
+      expectedSessionId:session,expectedRepository:f.plan.repository,
+      expectedBaseRevision:f.plan.base_revision,
+      expectedWorkBranch:"feature/account-suspension"
+    }
+  });
+  const now=Date.now();
+  await checkpointStore.persistVerified(signTrustedPlanningCheckpoint({
+    snapshot:{session_id:session,repository:f.plan.repository,
+      base_revision:f.plan.base_revision,directories:[""],files:[]},
+    expectedWorkBranch:"feature/account-suspension",
+    proposal:{status:"unapproved_proposal",plan:f.plan,
+      digest:planDigest(f.plan),verified_source_reads:1},
+    keyId:backendKeyId,
+    privateKeyPem:backend.privateKey.export({format:"pem",type:"pkcs8"}).toString(),
+    issuedAt:new Date(now).toISOString(),
+    expiresAt:new Date(now+600000).toISOString()
+  }));
+  let gatewayRetired=0,nativeRevoked=0,beginNative,finishNative;
+  const startedNative=new Promise(resolve=>{beginNative=resolve;});
+  const releaseNative=new Promise(resolve=>{finishNative=resolve;});
+  const gateway={
+    async retirePlanning(id){
+      assert.equal(id,session);
+      gatewayRetired++;
+    },
+    async retireSession(){throw Error("No operational root issued");},
+    async activate(){throw Error("No operational activation");}
+  };
+  const credentials={
+    async revokeRoot(id){
+      assert.equal(id,rootId);
+      nativeRevoked++;
+      beginNative();
+      await releaseNative;
+    }
+  };
+  const coordinator=new TrustedExecutionCoordinator({
+    sessionId:session,baseRevision:f.plan.base_revision,
+    planningRecovery:journal,approvedGatewayPlans:gateway,credentials,
+    authority:{
+      async startPlanning(root){
+        assert.equal(root.credential_id,rootId);
+        return {phase:"planning",credential_id:rootId,permissions:[]};
+      },
+      async cancelPlanning(){
+        await gateway.retirePlanning(session);
+        await credentials.revokeRoot(rootId);
+      }
+    }
+  });
+  await coordinator.beginPlanning({credential_id:rootId});
+  const config={...f.config,
+    approval:{...f.config.approval,planningCheckpointStore:checkpointStore},
+    activePlanning:{
+      coordinator,planningRecovery:journal,checkpointStore
+    },
+    recovery:{directory:operational,gateway,credentials,
+      planning:{directory:planning,gateway,credentials}}
+  };
+  let host;
+  try{
+    host=await startTrustedEngineerLocalHost(config);
+    const origin=host.engineerUrl;
+    const login=await fetch(origin+"/api/login",{
+      method:"POST",headers:{"content-type":"application/json",origin},
+      body:JSON.stringify({password:f.password})
+    });
+    assert.equal(login.status,200);
+    const cookie=login.headers.get("set-cookie").split(";")[0];
+    const view=await (await fetch(origin+"/api/plan",{
+      headers:{cookie}
+    })).json();
+    assert.equal(view.reject_enabled,true);
+    const rejectBody={plan_digest:view.plan_digest,
+      confirmation:"REJECT "+view.plan_digest};
+    const post=(path,body)=>fetch(origin+path,{
+      method:"POST",headers:{"content-type":"application/json",
+        origin,cookie,"x-csrf-token":view.csrf_token},
+      body:JSON.stringify(body)
+    });
+    const rejecting=post("/api/reject",rejectBody);
+    // Force the native revocation to stay in-flight, then attempt a
+    // conflicting human approval in the same authenticated browser.
+    await startedNative;
+    assert.equal(coordinator.phase,"failed_closed");
+    assert.equal((await post("/api/approve",{
+      plan_digest:view.plan_digest,
+      approved_permission_ids:["p1"],
+      confirmation:"APPROVE "+view.plan_digest
+    })).status,409);
+    finishNative();
+    const response=await rejecting;
+    assert.equal(response.status,200);
+    assert.equal((await response.json()).provisional_credential_revoked,true);
+    assert.equal(coordinator.phase,"closed");
+    assert.equal(gatewayRetired,1);
+    assert.equal(nativeRevoked,1);
+    await journal.assertClean();
+    assert.equal((await readdir(f.receipts)).length,0);
+    assert.throws(()=>host.startReviewedHandoff({
+      runId,coordinator,checkpointStore
+    }),/original active Planning Coordinator/);
+    await host.close();
+    assert.equal(nativeRevoked,1);
+    await assert.rejects(journal.assertFreshSession(session),
+      /retired session cannot be reused/);
+  }finally{
+    finishNative?.();
+    await host?.close();
+  }
+});
