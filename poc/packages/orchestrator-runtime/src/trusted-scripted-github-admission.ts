@@ -282,7 +282,7 @@ export async function authenticateScriptedGithubRun(input:{
   await verifyGithubManualRunViaApi({
     // The REST corroboration uses only the identity fields common to
     // BOTH workflows; this assertion grants no permission or charge consent.
-    dispatch:dispatch as any,pinned:input.pinned,
+    dispatch,pinned:input.pinned,
     githubApiToken:input.githubApiToken,
     fetchFn:input.githubApiFetchFn
   });
