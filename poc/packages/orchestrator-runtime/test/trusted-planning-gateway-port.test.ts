@@ -7,6 +7,7 @@
 import {generateKeyPairSync} from "node:crypto";
 import {mkdtemp,mkdir,rm,readFile,writeFile,chmod,readdir} from "node:fs/promises";
 import {join} from "node:path";
+import {planDigest} from "../../plan-contracts/src/plan.mjs";
 import {tmpdir} from "node:os";
 import assert from "node:assert/strict";
 import test from "node:test";
