@@ -13,6 +13,12 @@ import {TrustedPlanningRevisions}
   from "../../gateway/src/planning-revisions.ts";
 import {TrustedPlanningRetirementStore}
   from "../../gateway/src/trusted-planning-retirement-store.ts";
+import {TrustedOperationalSessionStore}
+  from "../../gateway/src/trusted-operational-session-store.ts";
+import {TrustedApprovedExecutionPlans}
+  from "../../gateway/src/approved-execution-plans.ts";
+import {TrustedPlanIpcClient}
+  from "../../gateway/src/trusted-plan-ipc.ts";
 import {TrustedOperationalRecoveryStore}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {TrustedPlanningRecoveryStore}
@@ -894,6 +900,148 @@ test("same-process live Planning host preserves provisional root for review then
   // A different process cannot recover the same root as an active session.
   await assert.rejects(startTrustedEngineerLocalHost(config),
     /Active verified Planning root is required|retired session cannot be reused/);
+});
+
+
+test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gateway planning and operational fences",async t=>{
+  const f=await fixture(t);
+  const base=await mkdtemp(join(tmpdir(),"live-real-engineer-ipc-"));
+  t.after(()=>rm(base,{recursive:true,force:true}));
+  const dirs={};
+  for(const name of ["planning","operational","checkpoints","ipc",
+    "gateway-retired","gateway-operational"]){
+    dirs[name]=join(base,name);
+    await mkdir(dirs[name],{mode:0o700});
+  }
+  const secretFile=join(dirs.ipc,"trusted-secret.hex");
+  const socketPath=join(dirs.ipc,"gateway.sock");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+    {mode:0o600});
+  const session=f.plan.session_id,rootId="urn:offline:live-strict-root";
+  const preliminary=new TrustedPlanningRecoveryStore(dirs.planning);
+  const operational=new TrustedOperationalRecoveryStore(dirs.operational);
+  const retired=new TrustedPlanningRetirementStore(dirs["gateway-retired"]);
+  const revisions=new TrustedPlanningRevisions({
+    async readRepository(){return {
+      default_branch:"main",revision:f.plan.base_revision
+    };}
+  },{retirementStore:retired});
+  await revisions.begin(session,300000);
+  const gatewayPlans=new TrustedApprovedExecutionPlans({
+    repository:f.plan.repository,
+    engineerDid:f.did,
+    approvals:{async loadAuthenticatedApproval(){
+      throw Error("No unsigned Engineer consent accepted");
+    }},
+    completionAttestor:{async confirmCompleted(){return false;}},
+    operationalLeaseMs:60000,
+    operationalSessionStore:new TrustedOperationalSessionStore(
+      dirs["gateway-operational"])
+  });
+  const ipc=await createTrustedPlanIpcServer({
+    socketPath,secretFile,plans:gatewayPlans,planningRevisions:revisions
+  });
+  await ipc.start();
+  t.after(()=>ipc.close());
+  const privateClient=await TrustedPlanIpcClient.connect({
+    socketPath,secretFile
+  });
+  assert.equal(privateClient.operationalLeaseConfigured(),true);
+  assert.equal(privateClient.operationalSessionDurableConfigured(),true);
+  assert.equal(privateClient.planningRetirementConfigured(),true);
+  assert.equal(privateClient.planningRetirementDurableConfigured(),true);
+
+  const key=generateKeyPairSync("ed25519"),backendKeyId="strict-live-backend";
+  const checkpointStore=new SignedPlanningCheckpointFileStore({
+    directory:dirs.checkpoints,
+    trust:{
+      trustedKeys:{[backendKeyId]:{
+        public_key_pem:key.publicKey.export({
+          format:"pem",type:"spki"
+        }).toString()
+      }},
+      expectedSessionId:session,expectedRepository:f.plan.repository,
+      expectedBaseRevision:f.plan.base_revision,
+      expectedWorkBranch:"feature/account-suspension"
+    }
+  });
+  const signed=signTrustedPlanningCheckpoint({
+    snapshot:{session_id:session,repository:f.plan.repository,
+      base_revision:f.plan.base_revision,directories:[""],files:[]},
+    expectedWorkBranch:"feature/account-suspension",
+    proposal:{status:"unapproved_proposal",plan:f.plan,
+      digest:planDigest(f.plan),verified_source_reads:1},
+    keyId:backendKeyId,
+    privateKeyPem:key.privateKey.export({format:"pem",type:"pkcs8"}).toString(),
+    issuedAt:new Date().toISOString(),
+    expiresAt:new Date(Date.now()+600000).toISOString()
+  });
+  await checkpointStore.persistVerified(signed);
+  let provisionalRevoked=0;
+  const coordinator=new TrustedExecutionCoordinator({
+    sessionId:session,baseRevision:f.plan.base_revision,
+    planningRecovery:preliminary,operationalRecovery:operational,
+    credentials:{async revokeRoot(id){
+      assert.equal(id,rootId);
+      provisionalRevoked++;
+    }},
+    approvedGatewayPlans:gatewayPlans,
+    authority:{
+      async startPlanning(root){return {
+        phase:"planning",credential_id:root.credential_id,permissions:[]
+      };},
+      async cancelPlanning(){
+        await privateClient.retirePlanning(session);
+        provisionalRevoked++;
+      }
+    }
+  });
+  await coordinator.beginPlanning({credential_id:rootId});
+  const {serverTls}=await disposableMtls(join(base,"mtls"));
+  const recovery={
+    directory:dirs.operational,planningDirectory:dirs.planning,
+    gatewaySocketPath:socketPath,gatewaySecretFile:secretFile,
+    adapterBaseUrl:"http://127.0.0.1:8090",
+    adapterToken:"offline-private-adapter"
+  };
+  const host=await startTrustedEngineerLivePlanningHost({
+    ...f.config,
+    approval:{...f.config.approval,planningCheckpointStore:checkpointStore},
+    oidc:{...f.config.oidc,tls:serverTls},
+    recovery,
+    activePlanning:{
+      coordinator,planningRecovery:preliminary,
+      operationalRecovery:operational,checkpointStore
+    }
+  });
+  t.after(()=>host.close());
+  assert.match(host.engineerUrl,/^http:\/\/127\.0\.0\.1:\d+$/u);
+  assert.match(host.oidcAdmissionEndpoint,
+    /^https:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/oidc-admission$/u);
+  assert.equal(coordinator.phase,"planning");
+  assert.equal(provisionalRevoked,0);
+  assert.equal(host.operationalRecoveryStore,operational);
+  assert.equal(host.planningRecoveryStore,preliminary);
+  assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+  assert.equal((await operational.pending()).length,0);
+  assert.equal((await preliminary.pending()).length,1);
+  // HTTP read does not mint an approval, authenticate a GitHub run,
+  // activate the signed DAG or issue any operational credential.
+  await host.close();
+  assert.equal(coordinator.phase,"closed");
+  assert.equal(provisionalRevoked,1);
+  assert.equal((await preliminary.pending()).length,0);
+  await retired.assertReady();
+  await assert.rejects(revisions.begin(session,300000),
+    /retired|already registered/iu);
+  await assert.rejects(startTrustedEngineerLivePlanningHost({
+    ...f.config,
+    approval:{...f.config.approval,planningCheckpointStore:checkpointStore},
+    oidc:{...f.config.oidc,tls:serverTls},recovery,
+    activePlanning:{coordinator,planningRecovery:preliminary,
+      operationalRecovery:operational,checkpointStore}
+  }),/root state uncertain|requires|replay|reconciled|retired|planning/iu);
+  assert.equal(provisionalRevoked,1);
 });
 
 test("live Planning host rejects spoofed recovery journal without closing real root",async t=>{
