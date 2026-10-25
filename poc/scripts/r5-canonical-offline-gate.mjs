@@ -32,6 +32,11 @@ const SUITES=Object.freeze([
     title:"loopback trusted admission independently validates OIDC and run, consumes replay, never authorizes Gemini"
   },
   {
+    id:"engineer_review_freezes_during_both_handoffs",
+    path:"poc/apps/orchestrator/test/trusted-engineer-host.test.mjs",
+    title:"R5 Engineer approval and rejection freeze at the start of either one-shot handoff"
+  },
+  {
     id:"scripted_offline_same_engineer_mtls",
     path:"poc/apps/orchestrator/test/trusted-engineer-host.test.mjs",
     title:"same Engineer process isolates paid and offline OIDC HTTPS listeners and never promotes offline identity into authority"
