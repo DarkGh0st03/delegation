@@ -162,7 +162,12 @@ test("privileged self-hosted workflow never checks out mutable branch code",asyn
   assert.match(yaml,/github\.run_attempt == 1/);
   assert.match(yaml,/node --experimental-strip-types \/opt\/delegation\/r5\/poc\/apps\/orchestrator\/src\/hold-private-scripted-github-session\.mjs/);
   assert.doesNotMatch(yaml,/actions\/checkout@|actions\/setup-node@/);
-  assert.doesNotMatch(yaml,/npm ci|npm install|curl |wget |pip install/);
+  // Security is about executable workflow commands, not explanatory
+  // comments. A comment stating "no npm install" must not fail this
+  // invariant, while an actual dependency download in run: still must.
+  const executable=yaml.split("\n").filter(line=>
+    !line.trimStart().startsWith("#")).join("\n");
+  assert.doesNotMatch(executable,/npm ci|npm install|curl |wget |pip install/);
   assert.doesNotMatch(yaml,/run:.*(?:GITHUB_WORKSPACE|\.\/poc\/| node poc\/)/);
   assert.doesNotMatch(yaml,/GEMINI_API_KEY|GOOGLE_API_KEY|GEMINI_API_SECRET/);
 });
