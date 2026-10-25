@@ -13,13 +13,20 @@
 import {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 import {TrustedPlanningReviewGate} from "./trusted-planning-review-gate.ts";
 import {TrustedApprovedA2ADispatcher} from "./trusted-approved-a2a-dispatcher.ts";
-import type {startPersistedReviewedGeminiHandoff}
-  from "./trusted-manual-gemini-handoff.ts";
+// Both independently approved paid and nonbillable scripted executions
+// present the same immutable, authority-relevant facts. Neither model
+// budgets nor charge-consent fields can be used by the DAG dispatcher.
 
-type Running=Pick<
-  Awaited<ReturnType<typeof startPersistedReviewedGeminiHandoff>>,
-  "readiness"|"operational_root_id"|"endpoints"
->;
+type Running={
+  readonly readiness:Readonly<{
+    session_id:string;
+    base_revision:string;
+    plan_digest:string;
+    authenticated_engineer_did:string;
+  }>;
+  readonly operational_root_id:string;
+  readonly endpoints:Readonly<Record<"backend"|"frontend"|"test",string>>;
+};
 type DispatcherInput=Parameters<
   typeof TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority
 >[0];
