@@ -82,6 +82,11 @@ const SUITES=Object.freeze([
     title:"R5 missing offline OIDC receipt or canceled job cannot issue the operational root"
   },
   {
+    id:"scripted_unsigned_engineer_retires_preliminary",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
+    title:"R5 consumed offline OIDC denies missing Engineer signature and retires preliminary root"
+  },
+  {
     id:"live_agent_card_roles",
     path:"poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts",
     title:"R5 only genuine, distinct localhost delegated A2A HTTP Agent Cards are ready"
