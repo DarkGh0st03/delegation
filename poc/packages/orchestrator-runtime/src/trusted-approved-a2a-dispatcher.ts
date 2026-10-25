@@ -162,6 +162,8 @@ export class TrustedApprovedA2ADispatcher {
    */
   async executeApprovedDag(config:{
     invokeOrchestratorTask?:(planTaskId:string,gatewayTaskId:string)=>Promise<unknown>;
+    /** Trusted host-owned liveness check before EACH Task, including branch. */
+    beforeTask?:(planTaskId:string)=>Promise<void>;
   }={}):Promise<{
     plan_digest:string;
     completed_task_ids:string[];
@@ -190,6 +192,12 @@ export class TrustedApprovedA2ADispatcher {
         const task=tasks.find(t=>remaining.has(t.id)&&
           t.depends_on.every(parent=>this.#completed.has(parent)));
         if(!task)throw Error("Approved DAG contains unreachable dependencies");
+        // An initial OIDC check cannot authorize every later A2A/branch
+        // effect. Recheck the live GitHub run before each independently
+        // signed Task, not just once before loading the DAG.
+        await config.beforeTask?.(task.id);
+        if(this.#config.coordinator.phase!=="execution")
+          throw Error("Trusted DAG operational session closed before Task");
         if(task.agent_id==="orchestrator"){
           await this.runOrchestratorTask(task.id,gatewayTaskId=>
             config.invokeOrchestratorTask!(task.id,gatewayTaskId));
