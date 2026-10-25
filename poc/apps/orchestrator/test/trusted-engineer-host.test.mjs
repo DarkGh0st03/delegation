@@ -869,13 +869,17 @@ test("same-process live Planning host preserves provisional root for review then
     runId,
     execution:{
       a2a:{sendProtectedTask:async()=>{}},
-      adapter:{adapterBaseUrl:"http://127.0.0.1:8090",bearerToken:"offline"},
-      authorityForTask:async()=>({})
+      adapter:{adapterBaseUrl:"http://127.0.0.1:8090",bearerToken:"offline"}
     },
     privateGatewayTransport:{
       gatewayBaseUrl:"http://127.0.0.1:8080",
       adapterBaseUrl:"http://127.0.0.1:8090",
       adapterToken:"offline"
+    },
+    childStatusProvisioning:{
+      reservationDirectory:operational,
+      statusListCredential:"https://example.test/status/review",
+      excludedIndices:["101","102"],indexByTask:{backend:"8042"}
     }
   }),/original live signed Planning session required/);
   await host.close();
