@@ -1175,3 +1175,54 @@ private runner. No paid workflow or `main` branch was modified.
 a fully integrated non-billable physical execution and explicit paid
 Gemini consent are established. A previous green CI does not certify
 the new branch provider.
+
+
+### R5 — Engineer Host late-bound Gateway/A2A execution (25 October 2026)
+
+The trusted Engineer Host now offers a stricter **private in-process**
+`runReviewedApprovedDagWithGateway` entrypoint for the canonical
+owner-managed Execution. It is not available through the Engineer
+browser, mTLS OIDC/status endpoint, GitHub workflow, ADK or MCP.
+
+The caller provides independently provisioned A2A client,
+child-credential allocator, private Adapter settings and dedicated
+loopback Gateway/Adapter transport **without** an
+`invokeOrchestratorTask` callback. The Host:
+
+1. Checks the **original in-memory** Planning Coordinator, authentic
+   review gate, signed checkpoint and exact operational recovery journal.
+   Invalid ports/factories are rejected before consuming the one-use
+   admission. The private Gateway/Adapter ports must be loopback-only.
+2. Starts the **same admitted GitHub run**, reads the independent Engineer
+   signature and emits the operational root through the existing
+   trusted handoff (including Gateway/lease/Rust recovery checks).
+3. **Only after operational issuance** constructs the signed-plan
+   `createTrustedApprovedBranchGateway` provider. The provider reloads
+   the authentic review receipt and checks its digest and live root.
+   No arbitrary model/operator branch callback can be substituted in
+   this canonical path.
+4. Passes this privately derived branch callback and the
+   owner-configured A2A/Adapter/child-authority ports to the existing
+   approved dispatcher. The dispatcher still verifies GitHub before
+   every Task and requires Gateway provider evidence before dependencies.
+5. Always awaits native/Gateway root revocation and A2A shutdown before
+   issuing a `verified_complete` result to the waiting GitHub runner.
+   A bad factory, shutdown race or incomplete revocation fails closed.
+
+`createTrustedReviewedHandoffLifecycle.runApprovedDagWithFactory`
+provides the late-bind primitive. Offline regression cases check the
+correct issue→bind→DAG→revoke order, failure before any Task, invalid
+factory, non-retry, host SIGTERM during factory construction, and
+rejection when no live trusted review gate is available.
+
+**Still outstanding:** a configured, independently deployed Engineer
+host and private self-hosted runner actually invoking this path with
+real three-agent A2A services and fully scripted (no-charge) providers
+must be demonstrated before R5 can be called ready. The owner must
+arrange the scoped child credential allocator and private A2A client:
+a live browser, independent OIDC identity, or signed digest cannot
+supply them automatically.
+
+No Gemini inference, paid workflow run, protected `main` merge or
+destructive cleanup was performed. **R5 remains NO-GO pending same-SHA
+CI and deployed E2E.**
