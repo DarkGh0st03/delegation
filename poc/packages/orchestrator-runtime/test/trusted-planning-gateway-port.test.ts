@@ -44,6 +44,8 @@ import {TrustedOperationalRecoveryStore}
   from "../src/trusted-operational-recovery-store.ts";
 import {startOwnerControlledEngineerReviewHost}
   from "../../../apps/orchestrator/src/trusted-engineer-host.mjs";
+import {prepareConfiguredOwnerEngineerBootstrap}
+  from "../../../apps/orchestrator/src/trusted-engineer-service.mjs";
 import {TrustedReviewedPlanFile}
   from "../src/trusted-reviewed-plan-file.ts";
 
@@ -585,6 +587,17 @@ async function makeOwnerReviewFixture(options:{
   });
   return {...f,store,gate,planningRecovery,operationalRecovery,
     planningDir,operationalDir,planFilePath,
+    approvalDir:receipts,checkpointDir:checkpoints,
+    backendKeyId,
+    backendPublicKeyPem:backend.publicKey.export({
+      format:"pem",type:"spki"
+    }).toString(),
+    engineerPublicKeyPem:engineer.publicKey.export({
+      format:"pem",type:"spki"
+    }).toString(),
+    engineerPrivateKeyPem:engineer.privateKey.export({
+      format:"pem",type:"pkcs8"
+    }).toString(),
     planFile,makeConfig,async cleanup(){
     await rm(planningDir,{recursive:true,force:true});
     await rm(operationalDir,{recursive:true,force:true});
