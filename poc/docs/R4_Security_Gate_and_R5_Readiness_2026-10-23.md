@@ -815,3 +815,25 @@ The test uses explicit local Rust/Gateway port stubs, not real EVM.
 
 The host still refuses any later attempted paid handoff from the
 rejected session. Exact-SHA CI certification remains necessary.
+
+### R5 durable terminal Engineer rejection intent (25 October 2026)
+
+`TrustedEngineerRejectionStore` saves an exclusive,
+owner-owned 0600 rejection-intent marker **before** requesting Gateway
+Planning retirement and native Rust root revocation. It is bound to
+the pinned session ID, Gitea base SHA and exact plan digest. File and
+directory are fsynced. The authenticated Engineer server checks for
+any existing marker, including a truncated or corrupted file, before
+opening its review listener after restart and permanently refuses that
+session. A complete revocation is still proven by the independent
+Planning root journal; the human rejection intent is NOT a certificate
+that native revocation succeeded.
+
+The in-process rejection state is reserved synchronously before the
+first async signed-approval-receipt filesystem check, closing a race
+where an approval request could begin while rejection was checking
+for a pre-existing signature. Failed or uncertain revocation remains
+terminal; a fresh session and independent Engineering approval are
+required for further work. Tests cover completed rejection, ambiguous
+native revocation and partially written tombstone after simulated crash.
+The marker is never cleared automatically. R5 remains NO-GO.

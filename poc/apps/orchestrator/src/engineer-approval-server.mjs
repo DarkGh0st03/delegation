@@ -20,6 +20,8 @@ import {signEngineerApproval,verifyEngineerApproval} from
 import {RUST_OPERATIONS} from "../../gateway/src/operation-catalog.ts";
 import {SignedPlanningCheckpointFileStore} from
   "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
+import {TrustedEngineerRejectionStore}
+  from "./trusted-engineer-rejection-store.mjs";
 
 const OPERATIONS=new Set(RUST_OPERATIONS);
 const MAX_BYTES=256*1024;
@@ -120,6 +122,13 @@ export async function createAuthenticatedEngineerServer(config){
     throw new Error("Trusted plan does not match pinned repository/session/revision");
   }
   const pinnedDigest=planDigest(initial);
+  const rejectionStore=new TrustedEngineerRejectionStore({
+    directory:receiptDir,sessionId:config.expectedSessionId,
+    baseRevision:config.expectedBaseRevision,planDigest:pinnedDigest
+  });
+  // A previous rejection cannot be silently reused as a new approval
+  // session, even when the root has already been retired and UI restarted.
+  await rejectionStore.assertFresh();
   // Local historical/test entrypoints may omit a signed backend checkpoint.
   // The deployed Engineer SERVICE must inject an independently pinned store.
   const checkpointStore=config.planningCheckpointStore;
@@ -248,22 +257,24 @@ export async function createAuthenticatedEngineerServer(config){
           invalid("Invalid Engineer rejection confirmation",403);
         if(decision!=="reviewing"||approvalInProgress)
           invalid("Engineer decision already final or in progress",409);
-        // A preexisting signed receipt (including from a different host)
-        // is a final decision that cannot be overwritten by a rejection.
-        try{
-          await lstat(join(receiptDir,initial.session_id+".json"));
-          invalid("Signed Engineer approval already exists",409);
-        }catch(error){
-          if(error.code!=="ENOENT")throw error;
-        }
-        // Reserve terminal action SYNCHRONOUSLY before async validation.
+        // Fence signing synchronously, BEFORE filesystem checks can yield
+        // to another request. A prior signed receipt stays authoritative.
         decision="rejecting";
         try{
+          try{
+            await lstat(join(receiptDir,initial.session_id+".json"));
+            invalid("Signed Engineer approval already exists",409);
+          }catch(error){
+            if(error.code!=="ENOENT")throw error;
+          }
           await verifyCheckpoint();
           const latest=JSON.parse(await privateText(planFile));
           validatePlan(latest,{allowedOperations:OPERATIONS});
           if(planDigest(latest)!==pinnedDigest)
             invalid("Trusted plan changed before rejection",409);
+          // Durable decision is recorded first; a crash during native
+          // retirement must never reopen this session for approval.
+          await rejectionStore.reserve();
           await config.rejectPlanning();
           decision="rejected";
           sessions.clear();

@@ -342,3 +342,55 @@ test("revoked live Planning root cannot authorize review or late Engineer signin
   await assert.rejects(readFile(join(e.receipts,e.p.session_id+".json")),
     error=>error.code==="ENOENT");
 });
+
+test("restart cannot reapprove a rejected Engineer session",async t=>{
+  const e=await environment(t,true,async()=>{});
+  const cookie=await e.login();
+  const data=await (await fetch(e.root+"/api/plan",{
+    headers:{Cookie:cookie}
+  })).json();
+  const rejection=await e.post("/api/reject",{
+    plan_digest:data.plan_digest,
+    confirmation:"REJECT "+data.plan_digest
+  },cookie,data.csrf_token);
+  assert.equal(rejection.status,200);
+  await assert.rejects(createAuthenticatedEngineerServer(e.config),
+    /prior Engineer rejection intent forbids restarting review/);
+  const files=await (await import("node:fs/promises")).readdir(e.receipts);
+  assert.equal(files.length,1);
+  assert.match(files[0],/^[a-f0-9]{64}\.rejection-intent\.json$/);
+});
+
+test("ambiguous native revocation persists rejection intent across restart",async t=>{
+  const e=await environment(t,true,async()=>{
+    throw Error("native status cannot be confirmed");
+  });
+  const cookie=await e.login();
+  const data=await (await fetch(e.root+"/api/plan",{
+    headers:{Cookie:cookie}
+  })).json();
+  const response=await e.post("/api/reject",{
+    plan_digest:data.plan_digest,
+    confirmation:"REJECT "+data.plan_digest
+  },cookie,data.csrf_token);
+  assert.equal(response.status,500);
+  await assert.rejects(createAuthenticatedEngineerServer(e.config),
+    /prior Engineer rejection intent forbids restarting review/);
+  await assert.rejects(readFile(join(e.receipts,e.p.session_id+".json")),
+    error=>error.code==="ENOENT");
+});
+
+test("partial or tampered rejection intent never allows replay",async t=>{
+  const e=await environment(t,true);
+  const {readdir}=await import("node:fs/promises");
+  const {createHash}=await import("node:crypto");
+  const name=createHash("sha256").update(e.p.session_id).digest("hex")+
+    ".rejection-intent.json";
+  const file=join(e.receipts,name);
+  // Emulate a crash after exclusive creation but before complete fsync.
+  await writeFile(file,"{",{mode:0o600});
+  await assert.rejects(createAuthenticatedEngineerServer(e.config),
+    /prior Engineer rejection intent forbids restarting review/);
+  assert.equal((await readdir(e.receipts)).length,1);
+  assert.equal(await readFile(file,"utf8"),"{");
+});
