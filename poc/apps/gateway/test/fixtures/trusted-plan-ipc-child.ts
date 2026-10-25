@@ -11,6 +11,10 @@ import {GatewayCorroboratedTaskAttestor}
   from "../../src/trusted-task-observation.ts";
 import {TrustedPlanningRevisions}
   from "../../src/planning-revisions.ts";
+import {TrustedPlanningRetirementStore}
+  from "../../src/trusted-planning-retirement-store.ts";
+import {TrustedOperationalSessionStore}
+  from "../../src/trusted-operational-session-store.ts";
 import {createTrustedPlanIpcServer}
   from "../../src/trusted-plan-ipc.ts";
 import {GatewayRuntime} from "../../src/runtime.ts";
@@ -28,16 +32,23 @@ const approvals=new SignedEngineerApprovalFileStore({
   }}
 });
 const leaseRaw=process.env.TRUSTED_PLAN_OPERATIONAL_LEASE_MS;
+const operationalStore=cfg.operationalDir?
+  new TrustedOperationalSessionStore(cfg.operationalDir):undefined;
+if(operationalStore)await operationalStore.assertReady();
 const plans=new TrustedApprovedExecutionPlans({
   repository:cfg.repository,engineerDid:cfg.engineerDid,approvals,
   ...(leaseRaw===undefined?{}:{operationalLeaseMs:Number(leaseRaw)}),
+  ...(operationalStore?{operationalSessionStore:operationalStore}:{}),
   completionAttestor:new GatewayCorroboratedTaskAttestor()
 });
+const planningRetirement=cfg.retirementDir?
+  new TrustedPlanningRetirementStore(cfg.retirementDir):undefined;
+if(planningRetirement)await planningRetirement.assertReady();
 const planningRevisions=new TrustedPlanningRevisions({
   async readRepository(){
     return {default_branch:"main",revision:cfg.repositoryBaseSha??"a".repeat(40)};
   }
-});
+},planningRetirement?{retirementStore:planningRetirement}:{});
 const control=await createTrustedPlanIpcServer({
   socketPath:cfg.socketPath,secretFile:cfg.secretFile,
   plans,planningRevisions

@@ -1030,3 +1030,23 @@ proof that the Rust EVM credential was revoked.
 
 No paid Gemini test or main merge; R5 remains NO-GO until further
 offline/native/restart validation and explicit owner authorization.
+
+
+### Gateway SIGKILL and independent process restart regression
+
+The separate `trusted-gateway-operational-restart.test.ts`
+now validates physical **SIGKILL of the Gateway's actual Unix IPC
+process** after the Engineer-signed plan was activated. A second
+Gateway process boots with the same immutable operational journal
+and the same valid Ed25519 receipt: it MUST deny activation. The
+trusted recovery command can still retire the session and, after a
+third fresh Gateway process boot, the session is still non-reusable.
+The test checks new process IDs and removes a stale test socket only
+AFTER the previously owning PID has exited; it does not simulate
+restart by simply replacing an in-memory registry.
+
+This test intentionally uses scripted Gitea/VP/OPA and no Rust issuance,
+so it verifies Gateway persistence and authenticated IPC replay denial,
+NOT real EVM revocation. Together with independent native EVM and
+Engineer SIGKILL fixtures, this exercises both crash boundaries but
+does not claim a combined end-to-end multi-process outage test.
