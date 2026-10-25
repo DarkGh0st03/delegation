@@ -60,8 +60,11 @@ export function verifyScriptedGithubManualDispatch(input:{
   event:unknown;
   pinned:PinnedGithubDispatch&{sourceSha:string};
 }):Readonly<ScriptedGithubDispatch>{
+  if(!input?.env||!input?.pinned)
+    deny("missing host-pinned manual job envelope");
   const {env,event,pinned}=input;
-  if(pinned?.workflowPath!==WORKFLOW||
+  if(ENV_KEYS.some(k=>typeof env[k]!=="string")||
+     pinned?.workflowPath!==WORKFLOW||
      !SOURCE.test(pinned.repository??"")||
      !REF.test(pinned.ref??"")||
      !SHA.test(pinned.sourceSha??"")||
