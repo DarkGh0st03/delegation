@@ -1383,3 +1383,56 @@ Planning and private OIDC runner against the **same** deployed host,
 with real local A2A agents and scripted zero-cost providers before any
 explicitly authorized paid Gemini run. R5 remains NO-GO until this
 physical end-to-end and complete same-SHA cumulative CI pass.
+
+
+### R5 — Positive strict Engineer Host over real private Gateway IPC (25 October 2026)
+
+The operational Engineer Host's **live Planning** path now has a
+positive CI integration regression, complementing the earlier
+missing-IPC rejection test. It constructs a real authenticated
+`createTrustedPlanIpcServer` on a 0600 Unix socket with a protected
+HMAC secret, a `TrustedApprovedExecutionPlans` registry carrying an
+actual `TrustedOperationalSessionStore` and bounded lease, and a
+`TrustedPlanningRevisions` registry with durable
+`TrustedPlanningRetirementStore`. The Engineer process connects by
+`TrustedPlanIpcClient.connect`, proving the independent remote lease
+and both persistent retirement capabilities **before** serving either
+Engineer UI or private mTLS OIDC admission.
+
+The same test keeps the **original** Coordinator's read-only
+preliminary root active, verifies an independently Ed25519-signed
+backend Planning checkpoint, starts
+`startTrustedEngineerLivePlanningHost`, and checks that the UI denies
+anonymous access. It then uses the password+CSRF authenticated
+**human-review API** to sign and persist an Engineer approval, verifies
+the receipt using the trusted Ed25519 approval store, and submits a
+separately signed GitHub Actions OIDC JWT over pinned mutual TLS to the
+same host. The runner's read-only status is still
+`waiting_for_owner`: neither human approval nor authenticated GitHub
+OIDC automatically issues an operational root or starts a model. A host
+shutdown must durably retire the provisional Planning session over
+authenticated IPC, revoke the original root and reject replay.
+
+**Evidence boundary:** this positive boot test uses test-only Planning
+issuance, disposable certificates, offline GitHub/JWKS HTTP fixtures
+and a signed pre-staged backend checkpoint. The *separate*
+`trusted-planning-gateway-port.test.ts` checks that scripted ADK
+Planning traverses Gateway/VP/OPA and creates that checkpoint
+exclusively from the owner process. The
+`trusted-reviewed-adk-dag.test.ts` suite verifies real localhost
+Backend/Frontend/Test A2A HTTP execution with a scripted provider.
+These verified pieces are now closer to a canonical workflow, but the
+test does **not** claim that a live remote private runner, real Gitea
+workspace, native Rust-issuance service and billed Gemini provider all
+ran in one physical deployment.
+
+The next owner/deployment milestone is a **single non-billable,
+scripted-provider positive run** that uses
+`prepareConfiguredOwnerEngineerBootstrap` through real deployed
+Gateway IPC, authentic human Engineer approval, a still-running
+GitHub OIDC job, strict host-owned
+`runReviewedApprovedDagWithGateway`, actual A2A services, native
+revocation confirmation and then a terminal verified job result.
+Model spending and merges remain prohibited without explicit consent.
+R5 stays **NO-GO** until the entire physical run and latest
+exact-SHA cumulative CI are verified.
