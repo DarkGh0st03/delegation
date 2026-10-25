@@ -551,3 +551,20 @@ issuing the same session by separate deployment controls. Further
 operational tests with the Engineer/Gateway restarted together are
 needed before R5 GO. The change does not call Gemini, request human
 approval or alter `main`.
+
+### Gateway durable retirement race-test synchronization (25 October 2026)
+
+The first Gateway CI on `66e38db`, run
+[#40172483645](https://github.com/DarkGh0st03/delegation/actions/runs/40172483645),
+found an **offline timing error** in the new race regression. An
+unconditional event-loop yield could retire a session before the
+journal's asynchronous initial check reached the simulated Gitea
+client. The test then correctly received the earlier fail-closed
+`retired before Gitea discovery` denial, and its
+late-installed rejection assertion created an unhandledRejection.
+
+The test now waits for an explicit "inside Gitea discovery" barrier,
+attaches its rejection assertion at promise creation and then retires
+the session. This deterministically verifies the intended late-result
+denial with no modification to runtime authority, journal or security
+policy. A new exact-SHA CI is required for certification.

@@ -78,18 +78,24 @@ test("retirement during in-flight Gitea discovery blocks acceptance after restar
   const f=await setup();
   try{
     let finish:(v:{default_branch:string;revision:string})=>void=()=>{};
-    const client={readRepository:()=>new Promise<{default_branch:string;revision:string}>
-      (resolve=>{finish=resolve;})};
+    let entered!:()=>void;
+    const inside=new Promise<void>(resolve=>{entered=resolve;});
+    const client={readRepository:()=>{
+      entered();
+      return new Promise<{default_branch:string;revision:string}>
+        (resolve=>{finish=resolve;});
+    }};
     const registry=new TrustedPlanningRevisions(client,{
       retirementStore:f.store
     });
     const pending=registry.begin(session,5000);
-    // Registration waits for durable-journal check before Gitea discovery.
-    // Yield so the scripted Gitea promise is created.
-    await new Promise(resolve=>setImmediate(resolve));
+    // Observe rejection immediately to prevent a transient unhandled
+    // promise and wait deterministically for authenticated Gitea entry.
+    const rejected=assert.rejects(pending,/retired during Gitea discovery/);
+    await inside;
     await registry.retire(session);
     finish({default_branch:"main",revision:SHA});
-    await assert.rejects(pending,/retired during Gitea discovery/);
+    await rejected;
     const after=new TrustedPlanningRevisions(gitea(),{
       retirementStore:new TrustedPlanningRetirementStore(f.dir)
     });
