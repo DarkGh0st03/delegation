@@ -51,7 +51,7 @@ jobs:
         run: |
           node --test poc/packages/plan-contracts/test/*.test.mjs
           npm --prefix poc run orchestrator-runtime:test
-          node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-engineer-service.test.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-engineer-service.test.mjs poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs
       - name: ADK/A2A agent and MCP (legacy plus crypto profile)
         run: |
           npm --prefix poc run agent-runtime:test
