@@ -1486,3 +1486,62 @@ persistent Engineer Host with actual Gateway IPC, genuine signed
 approval and separately operated three-agent A2A/Adapter workflow
 are demonstrated together. No paid Gemini run, merge or cleanup on
 `main` was performed.
+
+
+### R5 — Canonical owner Orchestrator now supports reviewed Pull Requests (25 October 2026)
+
+The private signed-plan Orchestrator provider
+`createTrustedApprovedBranchGateway` previously rejected a common
+and essential FIVE-task Engineering DAG because it allowed exactly one
+Orchestrator Task (`create_branch`). It now allows exactly one
+`create_branch` plus **OPTIONALLY** one
+`create_pull_request`, each with its own independent Engineer-approved
+repository-root permission and corresponding native operational-root
+scope. Every other Orchestrator operation (especially merge, delete or
+unsanctioned tools) is denied. Existing branch-only DAGs are
+backward-compatible.
+
+If a signed PR Task exists, it must depend explicitly on **every
+approved Test Task**; the task must have the exact signed
+`create_pull_request` resource and no additional orchestrator grant.
+The PR title/body and feature branch derive from the immutable signed
+plan: the model or operator cannot inject an alternative head/base,
+PR title, branch or approval. The trusted callback reserves each Task's
+one attempt before network effects, forwards the exact bound Gateway
+Task ID through Gateway Prepare → Adapter signed VP → Gateway Execute,
+and validates the confirmed Gitea PR provider result (both branches,
+tool, positive numeric PR identifiers and SHA). A GitHub job/session
+cannot automatically merge or approve its own Pull Request.
+
+**Independent last-mile gate:** Gateway
+`TrustedApprovedExecutionPlans.authorizePrepare` and
+`assertAuthorizedForExecution` require a previously completed and
+Gateway-observed Test Task whose Runner provider effect carries
+`project_tests.status=pass`, `researcher_acceptance.status=pass`
+and an exact 40-digit tested commit SHA. Merely reporting
+`test_outcome=pass` from ADK or A2A does not authorize a PR. The
+private Coordinator's Task-completion attestation must have accepted
+the Runner evidence before the PR is allowed. Consequently an
+apparently valid signed PR that lacks this external acceptance fails
+**before Adapter presentation signing or Gitea PR creation** and
+closes the operational root.
+
+Offline tests added to
+`trusted-reviewed-adk-dag.test.ts` exercise the COMPLETE
+five-Task signed Engineering DAG with genuine three-role localhost
+A2A HTTP transport, signed Planning, Engineer review, durable Task
+status allocation, private create_branch and create_pull_request
+Gateway/VP/OPA, independently attested Runner acceptance and
+post-Execution credential revocation. The negative test uses the same
+A2A and Gateway paths but deliberately omits independent Runner
+acceptance: the signed PR is refused before the second Orchestrator VP,
+no PR provider effect occurs, one-use lifecycle fails closed and
+native root closure is verified. All external Gemini model inference,
+Gitea/Docker effects, and Rust native verifier remain scripted or
+covered by separate CI jobs. Passing this fixture does NOT yet prove
+a single physical host+runner+Gitea+Gemini deployment.
+
+**R5 still NO-GO** for the eventual paid trial until an exact-SHA
+cumulative CI is green and a non-billable private runner/Engineer Host
+deployment exercises the actual handoff end-to-end. No paid Gemini
+workflow, merge to main, or automatic PR merge was triggered.
