@@ -112,7 +112,8 @@ export async function startTrustedEngineerLocalHost(config){
      !scripted.tls||
      !port(config.scriptedOidcPort??0)||
      !Buffer.isBuffer(scripted.hmacSecret)||
-     scripted.hmacSecret.length<32||scripted.hmacSecret.length>128))
+     scripted.hmacSecret.length<32||scripted.hmacSecret.length>128||
+     scripted.hmacSecret.equals(oidc.hmacSecret)))
     deny("separate pinned no-charge OIDC intake configuration required");
   // In particular, Gitea Planning base SHA and GitHub workflow source SHA
   // have different identities; neither is derived from the other.
