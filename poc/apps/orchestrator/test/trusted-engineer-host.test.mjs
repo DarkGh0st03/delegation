@@ -1520,6 +1520,13 @@ test("same Engineer process isolates paid and offline OIDC HTTPS listeners and n
     intakeUrl:host.scriptedOidcAdmissionEndpoint,tls,
     runId,sourceSha:sha
   }),"terminated");
+  // A signed OIDC assertion alone cannot invoke signed Engineering or
+  // spend model tokens. The host has no active original Coordinator here,
+  // so the owner-only execution route must deny BEFORE consuming a receipt.
+  assert.throws(()=>host.runReviewedScriptedApprovedDagWithGateway({
+    runId,operationalRoot:{credential_id:"urn:forged-root"}
+  }),/original live signed Planning session required/);
+  assert.equal((await readdir(scriptedReceipts)).length,1);
   const receipt=await host.consumeAuthenticatedScriptedRun(runId);
   assert.equal(receipt.execution_profile,"scripted_offline");
   assert.equal(receipt.model_inference_allowed,false);
