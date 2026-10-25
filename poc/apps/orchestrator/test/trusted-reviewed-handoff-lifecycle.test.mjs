@@ -236,3 +236,27 @@ test("missing trusted factory never consumes a one-use admission",async()=>{
   assert.equal(started,0);
   assert.equal(lifecycle.status,"idle");
 });
+
+
+test("late nominal DAG result cannot certify canceled Engineer host",async()=>{
+  let reached,finish;
+  const inFlight=new Promise(resolve=>{reached=resolve;});
+  const wait=new Promise(resolve=>{finish=resolve;});
+  let revoked=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    approvedDag:{async executeApprovedDag(){
+      reached();
+      await wait;
+      return {completed:true};
+    }},
+    async close(){revoked++;}
+  }));
+  const executing=lifecycle.runApprovedDagWithFactory({},async()=>executor());
+  await inFlight;
+  await lifecycle.close();
+  assert.equal(lifecycle.status,"closed");
+  finish();
+  await assert.rejects(executing,/shutdown raced approved DAG completion/);
+  assert.equal(lifecycle.verifiedOutcome,"failed");
+  assert.equal(revoked,1);
+});
