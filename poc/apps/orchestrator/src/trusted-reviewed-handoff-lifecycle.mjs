@@ -40,6 +40,46 @@ export function createTrustedReviewedHandoffLifecycle(start){
     })();
     return shutdown;
   };
+  const assertExecution=execution=>{
+    if(!execution||typeof execution!=="object"||
+       Array.isArray(execution)||
+       typeof execution.invokeOrchestratorTask!=="function"||
+       typeof execution.authorityForTask!=="function"||
+       !execution.adapter||!execution.a2a)
+      throw Error("Trusted handoff requires owner-provisioned signed DAG executor");
+  };
+  const executeOnce=async(input,createExecution)=>{
+    let completed=false;
+    try{
+      const running=await startAttempt(input);
+      if(state!=="active")
+        throw Error("Trusted handoff closed before approved DAG dispatch");
+      if(typeof running.approvedDag?.executeApprovedDag!=="function")
+        throw Error("Trusted handoff missing canonical signed DAG dispatcher");
+      // The signed approved root now exists; no write-side transport may be
+      // constructed against preliminary authority or a caller-selected root.
+      const execution=await createExecution(running);
+      assertExecution(execution);
+      if(state!=="active")
+        throw Error("Trusted handoff closed while binding Gateway executor");
+      const result=await running.approvedDag.executeApprovedDag(execution);
+      completed=true;
+      return result;
+    }catch(error){
+      verifiedOutcome="failed";
+      throw error;
+    }finally{
+      // A positive private runner result needs BOTH a successful approved
+      // DAG and independently verified root/Gateway revocation.
+      try{
+        await closeAttempt();
+        verifiedOutcome=completed?"verified_complete":"failed";
+      }catch(error){
+        verifiedOutcome="failed";
+        throw error;
+      }
+    }
+  };
   return Object.freeze({
     start:startAttempt,
     /**
@@ -48,36 +88,19 @@ export function createTrustedReviewedHandoffLifecycle(start){
      * No HTTP, A2A, MCP or GitHub caller is wired to this method.
      */
     async runApprovedDag(input,execution){
-      if(!execution||typeof execution!=="object"||
-         Array.isArray(execution)||
-         typeof execution.invokeOrchestratorTask!=="function"||
-         typeof execution.authorityForTask!=="function"||
-         !execution.adapter||!execution.a2a)
-        throw Error("Trusted handoff requires owner-provisioned signed DAG executor");
-      let completed=false;
-      try{
-        const running=await startAttempt(input);
-        if(state!=="active")
-          throw Error("Trusted handoff closed before approved DAG dispatch");
-        if(typeof running.approvedDag?.executeApprovedDag!=="function")
-          throw Error("Trusted handoff missing canonical signed DAG dispatcher");
-        const result=await running.approvedDag.executeApprovedDag(execution);
-        completed=true;
-        return result;
-      }catch(error){
-        verifiedOutcome="failed";
-        throw error;
-      }finally{
-        // Only a successful signed DAG PLUS confirmed authority revocation
-        // can be reported as complete to the private waiting runner.
-        try{
-          await closeAttempt();
-          verifiedOutcome=completed?"verified_complete":"failed";
-        }catch(error){
-          verifiedOutcome="failed";
-          throw error;
-        }
-      }
+      // Invalid owner input must not consume a single-use GitHub receipt.
+      assertExecution(execution);
+      return executeOnce(input,async()=>execution);
+    },
+    /**
+     * Owner-only late binding: creates the actual Gateway branch transport
+     * only AFTER the signed Engineer handoff issued its operational root.
+     * Never expose this factory to GitHub HTTP, A2A, ADK, MCP or the UI.
+     */
+    runApprovedDagWithFactory(input,createExecution){
+      if(typeof createExecution!=="function")
+        throw Error("Trusted handoff requires owner-provisioned execution factory");
+      return executeOnce(input,createExecution);
     },
     close:closeAttempt,
     get status(){return state;},
