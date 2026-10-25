@@ -1597,3 +1597,72 @@ profile with an authority capability that cannot instantiate Gemini;
 then attest the entire DAG and revocation in a single process/run,
 followed by R6 cleanup and R7 freeze. The paid path must remain
 untouched and disabled until fresh user consent. **R5 remains NO-GO.**
+
+
+### R5 — Distinct non-billable scripted Engineer handoff (25 October 2026)
+
+New owner-only module:
+`poc/packages/orchestrator-runtime/src/trusted-scripted-offline-handoff.ts`,
+exporting `startPersistedReviewedScriptedHandoff`. This is a
+**separate route**, not an option added to the paid Gemini API
+readiness; it does not import an ADK model, Gemini credential, paid
+workflow authorization parser or provider constructor. The public
+argument schema contains exactly six trusted in-process fields:
+Coordinator, authenticated Planning review gate, backend-signed
+checkpoint store, separately scoped operational root request, three
+pinned localhost A2A ports and **three owner-supplied deterministic
+Task handlers**. Passing `geminiApiKey`, `modelName`, charge consent,
+or GitHub workflow-input fields is rejected *before* root issuance.
+
+The scripted route reloads and cryptographically verifies the persisted
+backend Planning checkpoint and independent Engineer Ed25519 approval,
+checks that the original Planning root matches the signed read-only
+snapshot, and compares the staged proposal with the checkpoint. Only
+after these checks does it use the ORIGINAL
+`TrustedExecutionCoordinator.beginExecution` to retire the preliminary
+root, issue the independent operational root and activate the approved
+Gateway plan; the root permission set must exactly match the signed
+Engineer-approved subset. Then it starts **real** delegated-profile
+Backend/Frontend/Test A2A HTTP servers on three owner-pinned loopback
+ports, with deterministic providers rather than Gemini ADK models.
+
+It returns only signed review metadata, the actual operational root
+identity, the three server endpoints and a one-shot closure function.
+On success, closure first waits for Gateway/Rust root retirement and
+then shuts down A2A listeners. On a partial A2A startup failure, the
+operational root is revoked before a failed launch returns, and
+started listeners are closed. It never claims that merely starting
+servers constitutes successful Task execution.
+
+The shared `createReviewedApprovedDagExecution` type contract
+was narrowed to the **four signed authority-relevant fields** common
+to paid and scripted modes (session, base SHA, plan digest, Engineer
+DID), root ID and three server endpoints. The DAG still requires
+independent live GitHub verification and its existing Gateway/OPA,
+child credential, and A2A Task controls. No model-budget or payment
+metadata is accepted as delegated authority.
+
+New tests in `trusted-planning-review-gate.test.ts` prove:
+signed Engineer approval, no-key/no-model real A2A listeners, root
+revocation on success, rejection when no authentic Engineer receipt
+exists, rejection of extra model/charge inputs and malformed role
+handlers **before** root issuance, and revocation when an A2A port
+cannot bind. Both successful and failed scripted handoffs have been
+added to the single-SHA R5 offline gate. This increases the fixed
+gate to **eight** named checks, still all non-billable and still
+distinct integrations.
+
+**Remaining gap / NO-GO:** the existing protected GitHub OIDC intake
+and its durable receipt format are intentionally **paid-specific**:
+they require explicit charge consent and bounded Gemini parameters.
+They have NOT been reused for the scripted path; that would
+incorrectly record billing approval. A future non-billable
+`scripted_offline` workflow profile needs its **own**
+independently signed/manual GitHub claim, workflow path, audience,
+persistent HMAC admission, one-use consumption and REST job watch,
+without altering the paid consent contract. Only then should the
+same fully deployed owner-runner-Engineer-Gateway-A2A-Docker-Gitea
+session be exercised in one live no-cost run. A green scripted role
+server test is NOT an authenticated real GitHub runner proof.
+
+No paid inference was triggered and main remains unchanged.
