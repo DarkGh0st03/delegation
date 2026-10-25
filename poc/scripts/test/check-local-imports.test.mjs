@@ -803,7 +803,7 @@ test("R6 private Gateway transport rejects public re-exports and new trusted dir
   ]),[]);
 });
 
-test("R6 private Gateway transport is imported only by the two reviewed wrappers",async()=>{
+test("R6 private Gateway transport has exactly three reviewed callers, never models",async()=>{
   const {readFileSync}=await import("node:fs");
   const {join}=await import("node:path");
   const {fileURLToPath}=await import("node:url");
@@ -814,9 +814,13 @@ test("R6 private Gateway transport is imported only by the two reviewed wrappers
   const root=fileURLToPath(new URL("../../../",import.meta.url));
   const tracked=gitTrackedFiles(root);
   const base="poc/packages/orchestrator-runtime/src/";
+  // Only these three narrowly reviewed trusted runtime ports can hold
+  // the private VP/Adapter transport. In particular, do not extend to
+  // Agent runtimes, ADK tools, MCP or dynamic/indirect importers.
   const allowed=new Set([
     base+"orchestrator-gateway-client.ts",
-    base+"legacy-orchestrator-gateway-client.ts"
+    base+"legacy-orchestrator-gateway-client.ts",
+    base+"trusted-approved-branch-gateway.ts"
   ]);
   const sensitive="orchestrator-gateway-transport.ts";
   // Type-only imports disappear from the runtime ESM import graph.
