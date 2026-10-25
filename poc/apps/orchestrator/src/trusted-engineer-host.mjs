@@ -263,7 +263,7 @@ export async function startTrustedEngineerLocalHost(config){
  * OIDC admission interface. Private network routing, firewall isolation,
  * persistent deployment and a live Planning root remain prerequisites.
  */
-export async function startTrustedEngineerRecoveringHost(config){
+async function strictRecoveringHost(config){
   // The permissive loopback HTTP admission mode exists only for unit
   // fixtures. A recovering Engineer host is an operational entrypoint:
   // require mutually authenticated TLS and one trusted runner leaf pin
@@ -336,6 +336,17 @@ export async function startTrustedEngineerRecoveringHost(config){
  * Gateway/Engineer journals; no in-memory coordinator is reconstructed
  * from a file or untrusted GitHub input.
  */
+/**
+ * Preserve the existing cold-recovery API. An explicitly supplied live
+ * Coordinator must ALWAYS use the startup-failure cleanup wrapper; no
+ * operator code path can accidentally bypass preliminary-root revocation.
+ */
+export async function startTrustedEngineerRecoveringHost(config){
+  return config?.activePlanning
+    ?startTrustedEngineerLivePlanningHost(config)
+    :strictRecoveringHost(config);
+}
+
 export async function startTrustedEngineerLivePlanningHost(config){
   const active=config?.activePlanning;
   if(!(active?.coordinator instanceof TrustedExecutionCoordinator)||
@@ -344,7 +355,7 @@ export async function startTrustedEngineerLivePlanningHost(config){
      active.checkpointStore!==config?.approval?.planningCheckpointStore)
     deny("live Planning startup requires the original Coordinator and signed provenance");
   try{
-    return await startTrustedEngineerRecoveringHost(config);
+    return await strictRecoveringHost(config);
   }catch(error){
     // The process still owns this root and has not returned a live host.
     // Retire immediately; an uncertain Adapter/Gateway result remains on

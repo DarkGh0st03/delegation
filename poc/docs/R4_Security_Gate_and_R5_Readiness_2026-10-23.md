@@ -677,3 +677,14 @@ intentionally unable to reconstruct a live Coordinator from disk.
 
 No paid model, automatic approval, or production root is issued here.
 The full operational run remains R5 NO-GO until separately authorized.
+
+### Live root fail-safe covers the existing recovering-host public API
+
+The exported `startTrustedEngineerRecoveringHost` entrypoint
+now delegates any explicit live Coordinator option to the same strict
+`startTrustedEngineerLivePlanningHost` wrapper that handles
+startup failure and preliminary-root revocation. Cold restart without
+`activePlanning` retains its original recovery path.
+The internal lower-level strict bootstrap is no longer exported, avoiding
+an accidental direct bypass of the live-root shutdown guarantee. There
+is no new HTTP endpoint or automatic credential issuance. R5 stays NO-GO.
