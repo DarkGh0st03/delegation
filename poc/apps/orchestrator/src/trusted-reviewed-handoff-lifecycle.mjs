@@ -63,6 +63,11 @@ export function createTrustedReviewedHandoffLifecycle(start){
       if(state!=="active")
         throw Error("Trusted handoff closed while binding Gateway executor");
       const result=await running.approvedDag.executeApprovedDag(execution);
+      // Host shutdown may have begun while an A2A/Provider response was
+      // in flight. Even a late nominal DAG result must NOT turn a
+      // canceled root into a successful GitHub job.
+      if(state!=="active")
+        throw Error("Trusted handoff shutdown raced approved DAG completion");
       completed=true;
       return result;
     }catch(error){
