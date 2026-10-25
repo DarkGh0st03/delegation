@@ -97,7 +97,10 @@ export function createReviewedApprovedDagExecution(input:{
           authorityForTask:config.authorityForTask
         });
         return await dispatcher.executeApprovedDag({
-          invokeOrchestratorTask:config.invokeOrchestratorTask
+          invokeOrchestratorTask:config.invokeOrchestratorTask,
+          // The trusted host owns this callback; neither the model nor
+          // the operator-supplied task executor can replace it.
+          beforeTask:async()=>{await input.verifyLiveRun();}
         });
       } finally {
         // Closing the host's session is mandatory even when a plan mismatch,
