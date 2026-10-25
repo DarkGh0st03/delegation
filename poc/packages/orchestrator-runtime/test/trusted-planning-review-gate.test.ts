@@ -3,6 +3,7 @@ import test from "node:test";
 import {generateKeyPairSync,sign as signJwt,randomBytes,scryptSync,randomInt} from "node:crypto";
 import {mkdtemp,rm,writeFile,chmod,readdir} from "node:fs/promises";
 import {join} from "node:path";
+import {createServer as createNetServer} from "node:net";
 import {tmpdir} from "node:os";
 import {makeApproval,planDigest}
   from "../../plan-contracts/src/plan.mjs";
@@ -1780,4 +1781,34 @@ test("R5 scripted_offline rejects model-like and missing role handlers BEFORE co
     assert.deepEqual(f.revoked,[]);
     await f.coordinator.closePlanning();
   }finally{await f.dispose();}
+});
+
+
+test("R5 scripted_offline role-bind error revokes operational root before returning to owner",async()=>{
+  const f=await signedScriptedFixture();
+  const reserved=createNetServer();
+  await new Promise<void>((resolve,reject)=>{
+    reserved.once("error",reject);
+    reserved.listen(0,"127.0.0.1",resolve);
+  });
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    const endpoint=reserved.address();
+    assert.ok(endpoint&&typeof endpoint!=="string");
+    const port=endpoint.port;
+    await assert.rejects(startPersistedReviewedScriptedHandoff({
+      coordinator:f.coordinator,reviewGate:f.gate,
+      checkpointStore:f.store,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:port,frontend:port===65535?1025:port+1,
+        test:port===65535?1026:port+2},
+      handlers:noModelHandlers
+    }),/EADDRINUSE|listen|address already in use/iu);
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    assert.equal(f.issued.length,2);
+  }finally{
+    await new Promise<void>(resolve=>reserved.close(()=>resolve()));
+    await f.dispose();
+  }
 });
