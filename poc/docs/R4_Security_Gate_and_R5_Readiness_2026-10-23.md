@@ -1281,3 +1281,44 @@ allocate them. The configured Engineer service bootstrap remains
 separate from the already live owner-controlled Planning process. R5
 continues **NO-GO** pending real non-billable host↔runner↔A2A
 demonstration, latest exact-SHA CI, and fresh explicit paid consent.
+
+
+### R5 — Genuine three-role localhost A2A transport in signed offline DAG (25 October 2026)
+
+The offline scripted-Planning/Engineer-signed/Gateway-backed R5 DAG now has
+additional **real HTTP+JSON A2A** success and cancellation test modes.
+The fixture starts three actual localhost Express A2A servers via
+`startSpecializedAgentServer` (Backend/Frontend/Test, distinct Agent
+Cards), and the Orchestrator uses the existing
+`DeterministicA2AOrchestrator.sendProtectedTask` SDK HTTP+JSON client.
+The SDK performs authenticated-extension discovery, protected
+`sendMessage` with private delegation evidence and prebound Gateway
+Task ID, status polling, Task completion and artifact validation.
+These are **real local HTTP requests**, not direct roleRunner Task
+return stubs; the corresponding handlers execute the fixture's
+actual in-process Gateway Prepare → OPA → Execute provider effects
+before emitting Task artifacts. The root and three Task status indices
+are still reserved by the durable signed-plan allocator; and the
+Orchestrator `create_branch` still crosses the signed private
+Gateway/VP transport.
+
+Positive checks: one Task each on Backend/Frontend/Test, correct signed
+branch and plan digest, independent Gateway provider corroboration,
+terminal operational-root revocation and one-use replay denial. All
+three A2A Task SDK results must exclude child DC evidence and the
+private Gateway preallocated Task ID; the evidence stays only in the
+agent-private context. Negative checks: a simulated independent GitHub
+run cancellation immediately after Backend causes **zero HTTP A2A
+requests** to Frontend and Test, only one child-index reservation,
+no downstream Gateway write and a failed, permanently closed
+Execution.
+
+**Crucial limits:** the private host + GitHub runner are not physically
+deployed together by these tests. The local A2A servers use scripted
+taskHandlers and mock a child-VC issuer rather than real Gemini models,
+remote Gitea, paid inference or on-chain Rust verification. The full
+EVM/Rust validation remains a separate CI job. This strengthens
+transport integration evidence but is **not** a deployed single
+operator/runner/real-provider E2E; R5 stays NO-GO. A cumulative CI
+failure of any one job means the corresponding exact SHA is not yet
+fully certified, regardless of local A2A success.
