@@ -119,7 +119,7 @@ const gatewayChild=spawn(process.execPath,[
   TRUSTED_PLAN_ENGINEER_DID:ENGINEER,
   TRUSTED_PLAN_KEY_ID:keyId,
   TRUSTED_PLAN_PUBLIC_KEY_FILE:publicFile,
-  TRUSTED_PLAN_OPERATIONAL_LEASE_MS:"300000"
+  TRUSTED_PLAN_OPERATIONAL_LEASE_MS:"120000"
 },stdio:["ignore","pipe","pipe"]});
 let logs="";
 for(const stream of [gatewayChild.stdout,gatewayChild.stderr]){
