@@ -113,7 +113,7 @@ class ScriptedPlanningModel extends BaseLlm{
     return Promise.reject(Error("No Gemini or provider model calls in R2"));
   }
 }
-async function exercise(x:Scenario,partial=false){
+async function exercise(x:Scenario,partial=false,cancelBeforeFrontend=false){
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
   try{
     const snapshot={session_id:"r2-"+x.name+(partial?"-partial":""),
@@ -345,7 +345,33 @@ async function exercise(x:Scenario,partial=false){
       assert.equal(revoked.at(-1),"urn:execution:"+x.name);
       return;
     }
+    const checkedTaskIds:string[]=[];
+    if(cancelBeforeFrontend){
+      await assert.rejects(dispatcher.executeApprovedDag({
+        async beforeTask(id){
+          checkedTaskIds.push(id);
+          if(id==="frontend")throw Error("offline GitHub run canceled before Frontend");
+        },
+        async invokeOrchestratorTask(_task,id){
+          await invoke(id,"orchestrator","create_branch",{
+            base_branch:"main",branch:x.branch
+          });
+        }
+      }),/offline GitHub run canceled before Frontend/);
+      assert.deepEqual(checkedTaskIds,["branch","backend","frontend"]);
+      // Only branch and Backend may have touched the real Gateway fixture.
+      assert.equal(providerCalls,2);
+      assert.equal(opaCalls,2);
+      assert.equal(coordinator.phase,"closed");
+      assert.deepEqual(revoked.slice(-2),[
+        "urn:planning:"+x.name,"urn:execution:"+x.name
+      ]);
+      assert.ok(!events.some(event=>
+        event.startsWith("a2a:frontend")||event.startsWith("a2a:test")));
+      return;
+    }
     const done=await dispatcher.executeApprovedDag({
+      async beforeTask(id){checkedTaskIds.push(id);},
       async invokeOrchestratorTask(_task,id){
         await invoke(id,"orchestrator","create_branch",{
           base_branch:"main",branch:x.branch
@@ -354,6 +380,7 @@ async function exercise(x:Scenario,partial=false){
     });
     assert.deepEqual(done.completed_task_ids,
       ["branch","backend","frontend","tests"]);
+    assert.deepEqual(checkedTaskIds,done.completed_task_ids);
     assert.deepEqual(done.specialized_results.map(x=>x.role),
       ["backend","frontend","test"]);
     assert.equal(done.plan_digest,proposal.digest);
@@ -374,4 +401,7 @@ for(const x of SCENARIOS){
 }
 test("R2 denied Engineer subset never starts any provider Task",async()=>{
   await exercise(SCENARIOS[0]!,true);
+});
+test("R2 canceled GitHub run prevents Frontend and Test Gateway effects",async()=>{
+  await exercise(SCENARIOS[0]!,false,true);
 });
