@@ -83,7 +83,7 @@ const SCENARIOS:Scenario[]=[
     backend:"src/audit.ts",frontend:"src/audit-ui.ts",
     created:"src/audit.test.ts"}
 ];
-function sketch(x:Scenario){
+function sketch(x:Scenario,withPullRequest=false){
   return {tasks:[
     {id:"branch",agent_id:"orchestrator",title:"Isolate implementation",
       description:"Create the exact approved feature branch from main",
@@ -102,13 +102,27 @@ function sketch(x:Scenario){
       description:"Create an exact regression and run the controlled test profile",
       depends_on:["frontend"],permissions:[
         {operation:"create_file",path:x.created,reason:"Add requested regression"},
-        {operation:"run_tests",path:null,reason:"Confirm implementation"}]}
+        {operation:"run_tests",path:null,reason:"Confirm implementation"}]},
+    ...(withPullRequest?[{
+      id:"pr",agent_id:"orchestrator",title:"Request human review",
+      description:"Open a Pull Request only after successful trusted tests",
+      depends_on:["tests"],
+      permissions:[{
+        operation:"create_pull_request",path:null,
+        reason:"Submit the signed, acceptance-tested feature for review"
+      }]
+    }]:[])
   ],assumptions:[],uncertainties:[]};
 }
 class ScriptedPlanningModel extends BaseLlm{
   turns=0;
   readonly x:Scenario;
-  constructor(x:Scenario){super({model:"scripted-r2-planning-only"});this.x=x;}
+  readonly withPullRequest:boolean;
+  constructor(x:Scenario,withPullRequest=false){
+    super({model:"scripted-r2-planning-only"});
+    this.x=x;
+    this.withPullRequest=withPullRequest;
+  }
   override async *generateContentAsync(_req:LlmRequest):
     AsyncGenerator<LlmResponse,void>{
     this.turns++;
@@ -119,7 +133,7 @@ class ScriptedPlanningModel extends BaseLlm{
       }}]}};
       return;
     }
-    yield {content:{role:"model",parts:[{text:JSON.stringify(sketch(this.x))}]}};
+    yield {content:{role:"model",parts:[{text:JSON.stringify(sketch(this.x,this.withPullRequest))}]}};
   }
   override connect(_req:LlmRequest):Promise<BaseLlmConnection>{
     return Promise.reject(Error("No Gemini or provider model calls in R2"));
@@ -127,7 +141,7 @@ class ScriptedPlanningModel extends BaseLlm{
 }
 async function exercise(
   x:Scenario,partial=false,cancelBeforeFrontend=false,
-  ownerLifecycle=false,realHttpA2A=false
+  ownerLifecycle=false,realHttpA2A=false,withPullRequest=false
 ){
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
   const servers:Array<{role:string;baseUrl:string;close:()=>Promise<void>;executor:any}>=[];
@@ -179,7 +193,7 @@ async function exercise(
     // Before Planning, neither model nor A2A can activate authority.
     assert.throws(()=>gate.reviewPacket(),/no staged proposal/);
     await coordinator.beginPlanning(root("urn:planning:"+x.name,"701"));
-    const model=new ScriptedPlanningModel(x);
+    const model=new ScriptedPlanningModel(x,withPullRequest);
     const proposal=await new TrustedAdkReadOnlyPlanner({
       model,snapshot,requirement:x.requirement,
       planId:"plan-"+x.name,workBranch:x.branch,agents:AGENTS,
@@ -196,7 +210,7 @@ async function exercise(
     }).propose();
     assert.equal(proposal.verified_source_reads,1);
     assert.equal(model.turns,2);
-    assert.equal(proposal.plan.tasks.length,4);
+    assert.equal(proposal.plan.tasks.length,withPullRequest?5:4);
     assert.equal(proposal.plan.requirement,x.requirement);
 
     // Checkpoint signature is created by the trusted Planning backend key.
@@ -271,12 +285,30 @@ async function exercise(
           if(tool==="run_tests")return {
             provider:"runner",performed:true,tool,branch:x.branch,
             revision:SHA,tested_commit_sha:SHA,runner_profile:"poc-default",
-            status:"pass",phases:[]
+            status:"pass",phases:[],
+            ...(withPullRequest?{
+              project_tests:{status:"pass",phases:[]},
+              researcher_acceptance:{
+                status:"pass",phase:"researcher_acceptance"
+              }
+            }:{})
           };
           if(tool==="create_branch")return {
             provider:"gitea",performed:true,tool,branch:x.branch,
             base_branch:"main",revision:SHA,commit_sha:SHA
           };
+          if(tool==="create_pull_request"){
+            assert.equal(rec.request.arguments.head_branch,x.branch);
+            assert.equal(rec.request.arguments.base_branch,"main");
+            assert.match(rec.request.arguments.title,/^Approved software changes:/);
+            events.push("trusted-pr-created");
+            return {
+              provider:"gitea",performed:true,tool,
+              head_branch:x.branch,base_branch:"main",revision:SHA,
+              pull_request_id:17,pull_request_number:23,
+              url:"http://gitea.local/thesis/projects/pulls/23"
+            };
+          }
           return {
             provider:"gitea",performed:true,tool,
             branch:x.branch,path:rec.request.arguments.path,
@@ -527,8 +559,8 @@ async function exercise(
             assert.equal(options?.headers?.authorization,
               "Bearer owner-offline-r2");
             assert.equal(body.credential_id,"urn:execution:"+x.name);
-            assert.equal(body.disclosed_permissions[0]?.operation,
-              "create_branch");
+            assert.ok(["create_branch","create_pull_request"].includes(
+              body.disclosed_permissions[0]?.operation));
             return new Response(JSON.stringify({signed_vp:"offline-r2-vp"}),
               {status:200});
           }
@@ -619,7 +651,9 @@ async function exercise(
       assert.equal(owner.verifiedOutcome,"verified_complete");
       assert.equal(branchProvider?.approvedTaskId,"branch");
       assert.equal(branchProvider.approvedBranch,x.branch);
-      assert.equal(branchVpRequests,1);
+      assert.equal(branchVpRequests,withPullRequest?2:1);
+      if(withPullRequest)
+        assert.equal(branchProvider.approvedPullRequestTaskId,"pr");
       assert.equal((await readdir(statusDir)).length,3);
       await assert.rejects(owner.runApprovedDag(ownerInput,ownerExec),
         /already attempted/);
@@ -628,13 +662,20 @@ async function exercise(
       ),/one-shot/);
     }
     assert.deepEqual(done.completed_task_ids,
-      ["branch","backend","frontend","tests"]);
+      ["branch","backend","frontend","tests",...(withPullRequest?["pr"]:[])]);
     assert.deepEqual(checkedTaskIds,done.completed_task_ids);
     assert.deepEqual(done.specialized_results.map(x=>x.role),
       ["backend","frontend","test"]);
     assert.equal(done.plan_digest,proposal.digest);
-    assert.equal(providerCalls,5);
-    assert.equal(opaCalls,5);
+    assert.equal(providerCalls,withPullRequest?6:5);
+    assert.equal(opaCalls,withPullRequest?6:5);
+    if(withPullRequest){
+      assert.ok(events.indexOf("trusted-pr-created")>
+        events.lastIndexOf("attest:tests"));
+      await assert.rejects(ownerExec.invokeOrchestratorTask(
+        "pr","dispatch_"+"a".repeat(22)
+      ),/one-shot/);
+    }
     assert.equal(coordinator.phase,"closed");
     assert.equal(revoked.at(-1),"urn:execution:"+x.name);
     if(realHttpA2A){
@@ -683,4 +724,8 @@ test("R5 real HTTP A2A servers execute the signed three-role DAG without model c
 
 test("R5 real HTTP A2A cancels after Backend without contacting Frontend/Test",async()=>{
   await exercise(SCENARIOS[1]!,false,true,true,true);
+});
+
+test("R5 approved full HTTP A2A workflow creates signed PR only AFTER Gateway-correlated Runner acceptance",async()=>{
+  await exercise(SCENARIOS[0]!,false,false,true,true,true);
 });
