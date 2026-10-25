@@ -1127,3 +1127,51 @@ and trusted Gateway controls remain necessary. The separate
 self-hosted runner/Engineer deployment and a single model-scripted
 real-provider canonical E2E are still unproven. This is offline-only
 code; R5 stays **NO-GO** pending same-SHA CI and explicit charge consent.
+
+
+### R5 — Signed owner lifecycle, Gateway-backed create_branch and offline composition (25 October 2026)
+
+The R2 ADK scripted Planner / signed checkpoint / independently signed
+Engineer review / real in-process Gateway policy / 3-role approved-DAG
+fixture is now reused by **two R5 owner-lifecycle regression paths**:
+success and GitHub cancellation between Backend and Frontend. Both go
+through `createTrustedReviewedHandoffLifecycle.runApprovedDag` and
+the existing `TrustedApprovedA2ADispatcher`; completion is acknowledged
+only after the operational root is closed, and cancellation cannot
+unlock dependent Frontend/Test Tasks.
+
+A new explicitly reviewed private provider,
+`poc/packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts`,
+supplies the Orchestrator `create_branch` callback using the actual
+`OrchestratorGatewayTransport` prepare → Adapter signed VP → Gateway
+execute path, with unchanged native Rust/OPA verification. The provider:
+
+- Loads the **authenticated Ed25519 Engineer receipt** and checks exact
+  session, pinned Gitea base SHA, Engineer DID and activated root digest.
+- Rejects any additional/unsupported Orchestrator Task, any permission
+  other than **one exact approved repository-root create_branch**, or a
+  missing permission in the already issued operational root.
+- Computes the branch from the **approved signed plan**, never from a
+  callback argument or an LLM response.
+- Accepts only the dispatcher's preallocated Gateway Task ID, checks
+  active root again, and reserves the one attempt **before** Gateway I/O.
+- Checks the Gateway's reported performed operation, tool and branch;
+  the independent Gateway completion attestor still gates downstream DAG
+  dependencies.
+
+The private Adapter bearer is held only by this trusted host-side
+executor. The existing R6 static import audit was extended by precisely
+**one reviewed caller**; the transport must not become accessible to
+ADK, A2A, MCP or model-generated code.
+
+The R5 tests use *actual in-process Gateway policy/Task binding* and
+mock only external provider/VP transport. They DO NOT claim a physical
+two-host deployment, real human interaction or actual three-agent Gemini
+inference. The existing `startOwnerControlledEngineerReviewHost`
+still requires real protected configuration and independently provisioned
+private runner. No paid workflow or `main` branch was modified.
+
+**R5 status: NO-GO** until exact-SHA CI, genuine operator deployment,
+a fully integrated non-billable physical execution and explicit paid
+Gemini consent are established. A previous green CI does not certify
+the new branch provider.
