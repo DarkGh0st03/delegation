@@ -117,6 +117,11 @@ const SUITES=Object.freeze([
     title:"R5 final GitHub revalidation accepts a still-active job before root retirement"
   },
   {
+    id:"scripted_default_workflow_registration_guard",
+    path:"poc/scripts/test/r5-scripted-dispatch-registration.test.mjs",
+    title:"R5 refuses missing default-branch manual workflow, without dispatching"
+  },
+  {
     id:"signed_dag_with_pr_and_acceptance",
     path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
     title:"R5 approved full HTTP A2A workflow creates signed PR only AFTER Gateway-correlated Runner acceptance"
