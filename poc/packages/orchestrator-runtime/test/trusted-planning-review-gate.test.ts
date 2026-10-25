@@ -1990,3 +1990,56 @@ test("R5 missing offline OIDC receipt or canceled job cannot issue the operation
     }finally{await f.dispose();}
   }
 });
+
+
+test("R5 scripted signed DAG cannot start any Task when GitHub run is canceled after root activation",async()=>{
+  const f=await admittedScriptedFixture();
+  let running:Awaited<ReturnType<typeof startAdmittedGithubReviewedScriptedHandoff>>|undefined;
+  let adapterCalls=0,a2aCalls=0;
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    await f.emitReceipt();
+    running=await startAdmittedGithubReviewedScriptedHandoff(f.input);
+    assert.equal(f.coordinator.phase,"execution");
+    f.cancelGithubRun(); // cancellation AFTER issuance but BEFORE first Task
+    await assert.rejects(running.approvedDag.executeApprovedDag({
+      a2a:{
+        async sendProtectedTask(){
+          a2aCalls++;
+          throw Error("A2A must never execute after GitHub cancellation");
+        }
+      },
+      adapter:{
+        adapterBaseUrl:"http://127.0.0.1:8090",
+        bearerToken:"offline-only",
+        fetchFn:async()=>{
+          adapterCalls++;
+          throw Error("Adapter must never sign a canceled Task");
+        }
+      },
+      authorityForTask:async()=>{
+        throw Error("Child root must not be allocated");
+      },
+      invokeOrchestratorTask:async()=>{
+        throw Error("Canceled Orchestrator branch must not be created");
+      }
+    }),/scripted GitHub job lost/);
+    assert.equal(adapterCalls,0);
+    assert.equal(a2aCalls,0);
+    assert.deepEqual(running.servers.map(s=>s.executor.executionCount),
+      [0,0,0]);
+    assert.equal(f.coordinator.phase,"closed");
+    assert.equal(running.githubRunWatch.status,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    await assert.rejects(running.approvedDag.executeApprovedDag({
+      a2a:{async sendProtectedTask(){throw Error("forbidden");}},
+      adapter:{adapterBaseUrl:"http://127.0.0.1:8090",
+        bearerToken:"offline-only"},
+      authorityForTask:async()=>{throw Error("forbidden");},
+      invokeOrchestratorTask:async()=>{throw Error("forbidden");}
+    }),/one-shot/);
+  }finally{
+    await running?.close();
+    await f.dispose();
+  }
+});
