@@ -27,6 +27,16 @@ const SUITES=Object.freeze([
     title:"strict LIVE Engineer Host joins authenticated Unix IPC with durable Gateway planning and operational fences"
   },
   {
+    id:"scripted_offline_signed_handoff",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
+    title:"R5 scripted_offline verified Engineer handoff starts three genuine A2A servers without Gemini"
+  },
+  {
+    id:"scripted_offline_root_revocation",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
+    title:"R5 scripted_offline role-bind error revokes operational root before returning to owner"
+  },
+  {
     id:"live_agent_card_roles",
     path:"poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts",
     title:"R5 only genuine, distinct localhost delegated A2A HTTP Agent Cards are ready"
