@@ -105,7 +105,7 @@ export interface TrustedGithubOidcIntakeConfig{
    * approve a plan, renew authority or produce a synthetic status here.
    * Used only by a previously authenticated private mTLS runner.
    */
-  statusForAdmittedRun?:()=>(
+  statusForAdmittedRun?:(runId:string)=>(
     "waiting_for_owner"|"execution_active"|"completed_verified"|"terminated"
   );
   port?:number;
@@ -149,8 +149,10 @@ export async function startTrustedGithubOidcIntakeServer(
   if(config.tls&&!fingerprint.test(config.tls.expectedClientFingerprint256??""))
     throw Error("Trusted Github OIDC intake requires pinned client certificate fingerprint");
   let active=false;
-  let admittedRunId:string|undefined;
-  let admittedSourceSha:string|undefined;
+  // Distinct manual dispatches may be admitted in one Planning session.
+  // Every admission is independently HMAC-recorded and one-shot consumed;
+  // the host must separately bind the eventual DAG outcome to its run ID.
+  const admittedRuns=new Map<string,string>();
   const handler=async(req:IncomingMessage,res:ServerResponse)=>{
     const respond=(status:number,result:Record<string,unknown>)=>{
       if(res.writableEnded)return;
@@ -192,10 +194,10 @@ export async function startTrustedGithubOidcIntakeServer(
            fields[0]!=="run_id"||fields[1]!=="source_sha"||
            !RUN.test(runId??"")||
            !/^[a-f0-9]{40}$/u.test(sourceSha??"")||
-           runId!==admittedRunId||sourceSha!==admittedSourceSha){
+           admittedRuns.get(runId??"")!==sourceSha){
           respond(404,{status:"denied"});return;
         }
-        const state=config.statusForAdmittedRun();
+        const state=config.statusForAdmittedRun(runId!);
         if(!["waiting_for_owner","execution_active",
              "completed_verified","terminated"].includes(state))
           throw Error("invalid trusted runner status");
@@ -236,16 +238,16 @@ export async function startTrustedGithubOidcIntakeServer(
         githubApiToken:config.githubApiToken,
         fetchFn:config.githubApiFetchFn
       });
-      // Only one distinct GitHub job may own a live Engineer session.
-      // A fresh run requires a separately provisioned new host/session.
-      if(admittedRunId&&admittedRunId!==dispatch.run_id)
-        throw Error("trusted Engineer session already admitted another run");
+      // Cap verified jobs retained in this process. Re-attempts require
+      // a fresh independently signed OIDC event; the admission store and
+      // human review still enforce one-shot independent authorization.
+      if(admittedRuns.size>=16&&!admittedRuns.has(dispatch.run_id))
+        throw Error("trusted Engineer host has too many recorded admissions");
       await config.replayStore.claim(authenticated);
       // Durable, signed session-bound consent for the trusted host, never
       // a model/root authorization. Replays and persistence errors fail closed.
       await config.admissionStore.record({dispatch,job:authenticated});
-      admittedRunId=dispatch.run_id;
-      admittedSourceSha=dispatch.source_sha;
+      admittedRuns.set(dispatch.run_id,dispatch.source_sha);
       respond(200,{
         status:"github_job_authenticated_only_not_engineer_approved",
         source_sha:dispatch.source_sha,run_id:dispatch.run_id,
