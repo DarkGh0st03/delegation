@@ -10,7 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync} from "node:crypto";
-import {mkdtemp,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,readdir,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {
@@ -39,6 +39,8 @@ import {createTrustedReviewedHandoffLifecycle}
   from "../../../apps/orchestrator/src/trusted-reviewed-handoff-lifecycle.mjs";
 import {createTrustedApprovedBranchGateway}
   from "../src/trusted-approved-branch-gateway.ts";
+import {createTrustedApprovedTaskAuthorityAllocator}
+  from "../src/trusted-approved-task-authority.ts";
 
 const SHA="a".repeat(40),ENGINEER="did:thesis:engineer";
 const REPO={authority:"gitea.local",owner:"thesis",repository:"projects"};
@@ -297,6 +299,20 @@ async function exercise(
       });
       assert.equal(result.execution.performed,true);
     }
+    // Owner-only execution reserves real, durable Task Status List indices
+    // BEFORE attempting child issuance or protected A2A. This exercises the
+    // same authenticated allocator now wired into the trusted Engineer Host.
+    const statusDir=join(directory,"r5-status");
+    if(ownerLifecycle)await mkdir(statusDir,{mode:0o700});
+    const children=ownerLifecycle
+      ?await createTrustedApprovedTaskAuthorityAllocator({
+        coordinator,reviewGate:gate,sessionId:snapshot.session_id,
+        engineerDid:ENGINEER,reservationDirectory:statusDir,
+        statusListCredential:"https://example.test/status/r5",
+        excludedIndices:["701","702"],
+        indexByTask:{backend:"8101",frontend:"8102",tests:"8103"},
+        validitySeconds:300
+      }):undefined;
     const dispatcher=await TrustedApprovedA2ADispatcher.load({
       approvals:gate,coordinator,sessionId:snapshot.session_id,
       expectedPlanDigest:proposal.digest,baseRevision:SHA,
@@ -308,6 +324,12 @@ async function exercise(
       },
       async authorityForTask(id:string,role:any){
         events.push("child-issue:"+id+":"+role);
+        if(children){
+          const request=await children.authorityForTask(id,role);
+          assert.equal(request.parent_credential_id,"urn:execution:"+x.name);
+          assert.equal(request.credential_status.statusPurpose,"revocation");
+          return request;
+        }
         return root("urn:child:"+x.name+":"+id,
           String(800+events.length));
       },
@@ -454,6 +476,7 @@ async function exercise(
       if(owner){
         assert.equal(branchProvider?.approvedBranch,x.branch);
         assert.equal(branchVpRequests,1);
+        assert.equal((await readdir(statusDir)).length,1);
         await assert.rejects(ownerExec.invokeOrchestratorTask(
           "branch","dispatch_"+"a".repeat(22)
         ),/one-shot/);
@@ -481,6 +504,7 @@ async function exercise(
       assert.equal(branchProvider?.approvedTaskId,"branch");
       assert.equal(branchProvider.approvedBranch,x.branch);
       assert.equal(branchVpRequests,1);
+      assert.equal((await readdir(statusDir)).length,3);
       await assert.rejects(owner.runApprovedDag(ownerInput,ownerExec),
         /already attempted/);
       await assert.rejects(ownerExec.invokeOrchestratorTask(
