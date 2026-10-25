@@ -203,9 +203,9 @@ export async function verifyGithubOidcScriptedManualJob(input:{
   fetchFn?:typeof fetch;
   nowMs?:number;
 }):Promise<Readonly<VerifiedGithubOidcJob>>{
-  if(!input.pinned.workflowPath.endsWith(
-    "/trusted-scripted-offline-session-hold.yml"))
-    fail("scripted verification requires distinct pinned no-charge workflow");
+  if(input.pinned.workflowPath!==
+     ".github/workflows/trusted-scripted-offline-session-hold.yml")
+    fail("scripted verification requires exact independent no-charge workflow");
   return verifySignedGithubOidcEvent({
     ...input,expectedEvent:"workflow_dispatch"
   });
