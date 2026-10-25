@@ -107,6 +107,16 @@ const SUITES=Object.freeze([
     title:"R5 only genuine, distinct localhost delegated A2A HTTP Agent Cards are ready"
   },
   {
+    id:"final_task_github_cancellation_denied",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-approved-dag.test.ts",
+    title:"R5 GitHub cancellation during the LAST signed Task denies terminal success and still retires root"
+  },
+  {
+    id:"final_task_github_freshness_confirmed",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-approved-dag.test.ts",
+    title:"R5 final GitHub revalidation accepts a still-active job before root retirement"
+  },
+  {
     id:"signed_dag_with_pr_and_acceptance",
     path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
     title:"R5 approved full HTTP A2A workflow creates signed PR only AFTER Gateway-correlated Runner acceptance"
