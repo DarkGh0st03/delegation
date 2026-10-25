@@ -997,7 +997,7 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
     }
   });
   await coordinator.beginPlanning({credential_id:rootId});
-  const {serverTls}=await disposableMtls(join(base,"mtls"));
+  const {tls,serverTls}=await disposableMtls(join(base,"mtls"));
   const recovery={
     directory:dirs.operational,planningDirectory:dirs.planning,
     gatewaySocketPath:socketPath,gatewaySecretFile:secretFile,
@@ -1062,6 +1062,33 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
   }).loadAuthenticatedApproval(session);
   assert.deepEqual(verified.approval.approved_permission_ids,["p1"]);
   assert.equal((await operational.pending()).length,0);
+  // The separately authenticated private runner can now present a real
+  // signed GitHub OIDC assertion over mTLS, while the ORIGINAL Planning
+  // root and independently authenticated Engineer receipt remain live.
+  const {submitTrustedGithubOidcFromRunner,readTrustedPrivateRunState}
+    =await import(
+      "../../../packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts");
+  const admitted=await submitTrustedGithubOidcFromRunner({
+    tokenRequestUrl:"https://pipelines.actions.githubusercontent.com/oidc",
+    tokenRequestBearer:"offline-live-host-runner",audience:aud,
+    intakeUrl:host.oidcAdmissionEndpoint,tls,env,event,
+    oidcFetchFn:async()=>new Response(JSON.stringify({
+      value:jwt()
+    }),{status:200})
+  });
+  assert.deepEqual(admitted,{
+    status:"authenticated_only_not_engineer_approved",
+    run_id:runId,source_sha:sha
+  });
+  assert.equal(await readTrustedPrivateRunState({
+    intakeUrl:host.oidcAdmissionEndpoint,tls,runId,sourceSha:sha
+  }),"waiting_for_owner");
+  assert.equal((await readdir(f.admissions)).length,1);
+  assert.equal((await readdir(f.replays)).length,1);
+  assert.equal((await operational.pending()).length,0);
+  // Even human approval + GitHub admission are NOT an operational root.
+  // Execution still requires the authenticated host-owned same-Coordinator
+  // reviewed handoff, active job and explicit model-cost consent.
   // A signed GUI decision alone never creates an operational root, an
   // admitted GitHub run or any callable private A2A executor.
   assert.equal((await preliminary.pending()).length,1);
