@@ -14,6 +14,8 @@
 import {lstat} from "node:fs/promises";
 import {createTrustedReviewedHandoffLifecycle}
   from "./trusted-reviewed-handoff-lifecycle.mjs";
+import {createTrustedApprovedBranchGateway}
+  from "../../../packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts";
 import {resolve} from "node:path";
 import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
@@ -314,6 +316,62 @@ export async function startTrustedEngineerLocalHost(config){
         deny("different manual run already selected for Engineer execution");
       selectedRunId=input.runId;
       return handoff.runApprovedDag(trusted,execution);
+    },
+    /**
+     * Strict canonical Execution: after the authenticated human approval,
+     * issue the root through the pinned handoff, then build the ONLY
+     * Orchestrator write callback from that same signed, active root.
+     * Unlike runReviewedApprovedDag, the owner cannot inject a
+     * model-controlled create_branch callback. Owner-supplied A2A/Adapter
+     * ports and scoped task allocation stay outside HTTP, ADK and MCP.
+     */
+    runReviewedApprovedDagWithGateway({
+      execution,privateGatewayTransport,...input
+    }){
+      if(closed)deny("host closed");
+      if(!active?.reviewGate||
+         active.coordinator.phase!=="planning")
+        deny("original live signed Planning session required");
+      if(!execution||typeof execution!=="object"||
+         typeof execution.authorityForTask!=="function"||
+         typeof execution.a2a?.sendProtectedTask!=="function"||
+         !execution.adapter?.adapterBaseUrl||
+         !execution.adapter?.bearerToken||
+         !privateGatewayTransport?.gatewayBaseUrl||
+         !privateGatewayTransport?.adapterBaseUrl||
+         !privateGatewayTransport?.adapterToken)
+        deny("private reviewed A2A/Adapter and Gateway transport required");
+      // The entire approved DAG is localhost-bound. Do not let an
+      // operator-selected URL turn the private Adapter bearer into an
+      // accidental outbound credential to an arbitrary host.
+      const local=url=>typeof url==="string"&&
+        /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/u.test(url)&&
+        Number(url.slice(url.lastIndexOf(":")+1))<=65535;
+      if(!local(privateGatewayTransport.gatewayBaseUrl)||
+         !local(privateGatewayTransport.adapterBaseUrl)||
+         !local(execution.adapter.adapterBaseUrl))
+        deny("trusted canonical Gateway and Adapter must use loopback ports");
+      const trusted=pinnedHandoffInput(input);
+      if(selectedRunId&&selectedRunId!==input.runId)
+        deny("different manual run already selected for Engineer execution");
+      selectedRunId=input.runId;
+      return handoff.runApprovedDagWithFactory(trusted,async()=>{
+        if(closed||active.coordinator.phase!=="execution")
+          deny("operational handoff unavailable before signed Gateway branch binding");
+        const branch=await createTrustedApprovedBranchGateway({
+          coordinator:active.coordinator,
+          reviewGate:active.reviewGate,
+          sessionId:approval.expectedSessionId,
+          baseRevision:approval.expectedBaseRevision,
+          engineerDid:approval.engineerDid,
+          transport:privateGatewayTransport
+        });
+        return {
+          a2a:execution.a2a,adapter:execution.adapter,
+          authorityForTask:execution.authorityForTask,
+          invokeOrchestratorTask:branch.invokeOrchestratorTask
+        };
+      });
     },
     close(){
       if(shutdownPromise)return shutdownPromise;
