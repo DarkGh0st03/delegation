@@ -226,13 +226,22 @@ export async function startConfiguredTrustedEngineerService(configPath){
  * invokes any remote service. Only the owner's explicit one-shot start()
  * calls the existing read-only Planning and recovering Engineer bootstrap.
  */
-export async function prepareConfiguredOwnerEngineerBootstrap(configPath){
+export async function prepareConfiguredOwnerEngineerBootstrap(
+  configPath,{operationalRecovery:originalRecovery}={}
+){
   const config=await loadTrustedEngineerServiceConfig(configPath,{
     pendingPlanningOutput:true
   });
   const checkpoints=config.approval.planningCheckpointStore;
-  const operationalRecovery=new TrustedOperationalRecoveryStore(
-    config.recovery.directory);
+  // When the owner already constructed a Coordinator with a recovery
+  // journal, reuse THAT EXACT INSTANCE. A second object pointed at the
+  // same on-disk directory is not an authenticated authority handoff.
+  const operationalRecovery=originalRecovery===undefined
+    ?new TrustedOperationalRecoveryStore(config.recovery.directory)
+    :originalRecovery;
+  if(!(operationalRecovery instanceof TrustedOperationalRecoveryStore))
+    throw Error("Configured Engineer owner requires authentic recovery journal");
+  operationalRecovery.assertDirectory(config.recovery.directory);
   const reviewFile=new TrustedReviewedPlanFile({
     filePath:config.approval.trustedPlanFile,
     checkpointStore:checkpoints
