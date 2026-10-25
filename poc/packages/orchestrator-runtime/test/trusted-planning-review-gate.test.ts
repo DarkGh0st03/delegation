@@ -1216,7 +1216,9 @@ test("offline admitted manual bridge loads the SAME authenticated approved DAG w
         throw Error("offline signed-DAG bridge reached approved branch Task");
       }
     }),/offline signed-DAG bridge reached approved branch Task/);
-    assert.equal(liveChecks,1);
+    // One check before loading the signed DAG, another immediately before
+    // its first irreversible Orchestrator Task (create_branch).
+    assert.equal(liveChecks,2);
     assert.equal(orchestratorStarts,1);
     assert.equal(modelCalls,0);
     assert.equal(closed,1);
