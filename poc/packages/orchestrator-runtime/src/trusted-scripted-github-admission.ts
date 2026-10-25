@@ -75,8 +75,12 @@ export function verifyScriptedGithubManualDispatch(input:{
      env.GITHUB_SHA!==pinned.sourceSha||
      !RUN.test(env.GITHUB_RUN_ID??""))
     deny("pinned first manual offline job identity mismatch");
-  if(!exact(event,["repository","ref","inputs"])||
-     !exact((event as any).repository,["full_name"])||
+  // GitHub's authentic event contains many additional repository/event
+  // properties; only the workflow_dispatch *inputs* are an exact schema.
+  if(!event||typeof event!=="object"||Array.isArray(event)||
+     !(event as any).repository||
+     typeof (event as any).repository!=="object"||
+     Array.isArray((event as any).repository)||
      (event as any).repository.full_name!==pinned.repository||
      (event as any).ref!==pinned.ref||
      !exact((event as any).inputs,["execution_profile","authorization"]))
@@ -276,6 +280,8 @@ export async function authenticateScriptedGithubRun(input:{
     fetchFn:input.oidcJwksFetchFn
   });
   await verifyGithubManualRunViaApi({
+    // The REST corroboration uses only the identity fields common to
+    // BOTH workflows; this assertion grants no permission or charge consent.
     dispatch:dispatch as any,pinned:input.pinned,
     githubApiToken:input.githubApiToken,
     fetchFn:input.githubApiFetchFn
