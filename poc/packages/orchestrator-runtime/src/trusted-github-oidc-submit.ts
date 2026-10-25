@@ -119,6 +119,10 @@ export async function submitTrustedGithubOidcFromRunner(
       reject(Error("Trusted GitHub private OIDC admission denied"));
     }
     const req=httpsRequest(endpoint!,{
+      // A fresh TLS handshake is required for EVERY pinned leaf check.
+      // Node's shared HTTPS Agent can resume a TLS session without calling
+      // checkServerIdentity; don't permit cached trust across requests.
+      agent:false,
       method:"POST",ca:input.tls.ca,cert:input.tls.cert,
       key:input.tls.key,rejectUnauthorized:true,minVersion:"TLSv1.2",
       // Verify DNS/IP against certificate SAN AND the trusted host leaf.
@@ -218,6 +222,7 @@ export async function readTrustedPrivateRunState(input:{
       reject(Error("Trusted private runner session status denied"));
     };
     const req=httpsRequest(url!,{
+      agent:false, // prohibit session resumption bypassing the leaf pin
       method:"GET",ca:input.tls.ca,cert:input.tls.cert,
       key:input.tls.key,rejectUnauthorized:true,minVersion:"TLSv1.2",
       ...(input.signal?{signal:input.signal}:{}),
