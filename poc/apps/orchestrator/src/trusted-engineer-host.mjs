@@ -180,10 +180,17 @@ export async function startTrustedEngineerLocalHost(config){
   const handoff=createTrustedReviewedHandoffLifecycle(trusted=>
     startAdmittedGithubReviewedGeminiHandoff(trusted));
   // Only the trusted host selects the real Coordinator and revocation port.
-  const {rejectPlanning:ignoredRejectPlanning,...fixedApproval}=approval;
+  const {
+    rejectPlanning:ignoredRejectPlanning,
+    planningIsActive:ignoredPlanningIsActive,
+    ...fixedApproval
+  }=approval;
   const engineerServer=await createAuthenticatedEngineerServer({
     ...fixedApproval,host:"127.0.0.1",
-    ...(active?{rejectPlanning:async()=>{
+    ...(active?{
+      planningIsActive:()=>!closed&&
+        active.coordinator.phase==="planning",
+      rejectPlanning:async()=>{
       if(closed||handoff.status!=="idle"||
          active.coordinator.phase!=="planning")
         deny("Planning rejection unavailable after handoff or shutdown");

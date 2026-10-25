@@ -98,7 +98,9 @@ export async function createAuthenticatedEngineerServer(config){
      !hex.test(config.passwordSaltHex||"")||!hex.test(config.passwordScryptHex||"")||
      config.passwordSaltHex.length<32||config.passwordScryptHex.length!==128||
      (config.rejectPlanning!==undefined&&
-      typeof config.rejectPlanning!=="function")){
+      typeof config.rejectPlanning!=="function")||
+     (config.planningIsActive!==undefined&&
+      typeof config.planningIsActive!=="function")){
     throw new Error("Invalid local trusted Engineer configuration");
   }
   const planFile=resolve(config.trustedPlanFile);
@@ -125,6 +127,8 @@ export async function createAuthenticatedEngineerServer(config){
      !(checkpointStore instanceof SignedPlanningCheckpointFileStore))
     throw Error("Invalid trusted Planning checkpoint store");
   const verifyCheckpoint=async()=>{
+    if(config.planningIsActive&&config.planningIsActive()!==true)
+      invalid("Live Planning root no longer authorizes Engineer review",409);
     if(!checkpointStore)return;
     const persisted=await checkpointStore.load();
     if(planDigest(persisted.proposal.plan)!==pinnedDigest||
@@ -309,9 +313,12 @@ export async function createAuthenticatedEngineerServer(config){
             approved_by:config.engineerDid,approved_at:now.toISOString(),
             approved_permission_ids:body.approved_permission_ids
           });
+          const latestSigner=await privateText(keyFile);
+          if(config.planningIsActive&&config.planningIsActive()!==true)
+            invalid("Live Planning root revoked before Engineer signing",409);
           const signed=signEngineerApproval({
             plan:latest,approval,engineerDid:config.engineerDid,keyId:config.keyId,
-            privateKeyPem:await privateText(keyFile),
+            privateKeyPem:latestSigner,
             issuedAt:now.toISOString(),
             expiresAt:new Date(now.getTime()+RECEIPT_MS).toISOString()
           });
@@ -322,6 +329,8 @@ export async function createAuthenticatedEngineerServer(config){
             }}
           });
           await protectedDirectory(receiptDir);
+          if(config.planningIsActive&&config.planningIsActive()!==true)
+            invalid("Live Planning root revoked before receipt persistence",409);
           await writeFile(join(receiptDir,latest.session_id+".json"),
             JSON.stringify(signed,null,2)+"\n",{mode:0o600,flag:"wx"});
           decision="approved";

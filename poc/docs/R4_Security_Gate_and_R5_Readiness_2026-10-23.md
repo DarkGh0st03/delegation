@@ -784,3 +784,17 @@ terminal unavailability, signed-approval replay rejection, and the
 legacy UI's inability to claim a revocation it cannot perform.
 
 No automated Engineer consent or Gemini call is present. R5 is NO-GO.
+
+### R5 live-Planning phase fenced during Engineer review and signing
+
+The trusted host now supplies a private `planningIsActive`
+callback bound to its original Coordinator. The Engineer approval server
+checks this at bootstrap, on every review request, just before producing
+an Ed25519 signature and just before persisting its signed receipt.
+Concurrent shutdown or preliminary-root rejection cannot authorize a
+new signature based solely on a still-valid signed checkpoint. The host
+always overrides any caller-provided callback.
+
+This guard does not claim cross-process filesystem atomicity. Native
+Gateway and Rust revocation, along with the durable journals, still
+provide the independent authority fence. No paid model call is made.

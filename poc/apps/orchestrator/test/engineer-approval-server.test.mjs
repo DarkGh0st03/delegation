@@ -25,7 +25,7 @@ function plan(){
 const DID="did:thesis:software-engineer",PASSWORD="a-local-operator-test-password";
 const KEYID="engineer-test-key";
 
-async function environment(t,withCheckpoint=false,rejectPlanning){
+async function environment(t,withCheckpoint=false,rejectPlanning,planningIsActive){
   const home=await mkdtemp(join(tmpdir(),"engineer-ui-"));
   t.after(()=>rm(home,{recursive:true,force:true}));
   const dir=join(home,"protected"),receipts=join(home,"receipts");
@@ -84,6 +84,7 @@ async function environment(t,withCheckpoint=false,rejectPlanning){
     config.planningCheckpointStore=store;
   }
   if(rejectPlanning!==undefined)config.rejectPlanning=rejectPlanning;
+  if(planningIsActive!==undefined)config.planningIsActive=planningIsActive;
   const server=await createAuthenticatedEngineerServer(config);
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
   t.after(()=>new Promise(resolve=>server.close(resolve)));
@@ -320,4 +321,24 @@ test("unbound historical Engineer UI cannot claim to revoke a root",async t=>{
   assert.equal((await e.post("/api/reject",{
     plan_digest:p.plan_digest,confirmation:"REJECT "+p.plan_digest
   },cookie,p.csrf_token)).status,404);
+});
+
+test("revoked live Planning root cannot authorize review or late Engineer signing",async t=>{
+  let active=true;
+  const e=await environment(t,true,undefined,()=>active);
+  const cookie=await e.login();
+  const packet=await (await fetch(e.root+"/api/plan",{
+    headers:{Cookie:cookie}
+  })).json();
+  active=false;
+  assert.equal((await fetch(e.root+"/api/plan",{
+    headers:{Cookie:cookie}
+  })).status,409);
+  const signed=await e.post("/api/approve",{
+    plan_digest:packet.plan_digest,approved_permission_ids:["p1"],
+    confirmation:"APPROVE "+packet.plan_digest
+  },cookie,packet.csrf_token);
+  assert.equal(signed.status,409);
+  await assert.rejects(readFile(join(e.receipts,e.p.session_id+".json")),
+    error=>error.code==="ENOENT");
 });
