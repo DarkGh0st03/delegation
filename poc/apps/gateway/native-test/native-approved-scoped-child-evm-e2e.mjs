@@ -10,7 +10,7 @@
  */
 import assert from "node:assert/strict";
 import {generateKeyPairSync,randomBytes} from "node:crypto";
-import {mkdtemp,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,writeFile,rm,mkdir} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {spawn} from "node:child_process";
@@ -25,6 +25,10 @@ import {TrustedEngineerAuthoritySession} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from
   "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
+import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
+  from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
+import {TrustedPlanningRecoveryStore}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
@@ -114,7 +118,8 @@ const gatewayChild=spawn(process.execPath,[
   TRUSTED_PLAN_APPROVAL_DIR:temp,
   TRUSTED_PLAN_ENGINEER_DID:ENGINEER,
   TRUSTED_PLAN_KEY_ID:keyId,
-  TRUSTED_PLAN_PUBLIC_KEY_FILE:publicFile
+  TRUSTED_PLAN_PUBLIC_KEY_FILE:publicFile,
+  TRUSTED_PLAN_OPERATIONAL_LEASE_MS:"300000"
 },stdio:["ignore","pipe","pipe"]});
 let logs="";
 for(const stream of [gatewayChild.stdout,gatewayChild.stderr]){
@@ -264,6 +269,117 @@ try{
     arguments:{branch,path:file,content:"never"}
   });
   assert.equal(afterClose.status,403);
+
+  /**
+   * Independently signed SECOND Engineer decision using ACTUAL Rust/EVM
+   * credential issuance and revocation, but disposable mock Gitea provider.
+   *
+   * Model an Engineer-process crash immediately AFTER operational issuance:
+   * discard the original Coordinator reference, reopen its on-disk journal,
+   * and perform only revocations through a fresh trusted recovery instance.
+   */
+  const crashSession=session+"-crash-recovery";
+  const crashPlan={...plan,session_id:crashSession,
+    plan_id:"scoped-evm-crash-recovery"};
+  const crashSignedAt=new Date().toISOString();
+  const crashApproval=makeApproval(crashPlan,{
+    allowedOperations:new Set(RUST_OPERATIONS),
+    decision_id:"scoped-evm-crash-recovery-approval",
+    approved_by:ENGINEER,approved_at:crashSignedAt,
+    approved_permission_ids:["backend-approved"]
+  });
+  await writeFile(join(temp,crashSession+".json"),JSON.stringify(
+    signEngineerApproval({
+      plan:crashPlan,approval:crashApproval,
+      engineerDid:ENGINEER,keyId,privateKeyPem:priv,
+      issuedAt:crashSignedAt,
+      expiresAt:new Date(Date.now()+30*60*1000).toISOString()
+    })
+  ),{mode:0o600});
+  const independentlySigned=await approvals.loadAuthenticatedApproval(crashSession);
+  assert.equal(planDigest(independentlySigned.plan),planDigest(crashPlan));
+  const intentHome=join(temp,"crash-intents");
+  const preliminaryHome=join(intentHome,"preliminary");
+  const operationalHome=join(intentHome,"operational");
+  for(const dir of [intentHome,preliminaryHome,operationalHome])
+    await mkdir(dir,{mode:0o700});
+  const planningJournal=new TrustedPlanningRecoveryStore(preliminaryHome);
+  const operationalJournal=new TrustedOperationalRecoveryStore(operationalHome);
+  const crashedAuthority=new TrustedEngineerAuthoritySession({
+    snapshot:{session_id:crashSession,repository:repo,
+      base_revision:baseSha,directories:[""],files:[]},
+    credentials,approvals,authenticatedEngineerDid:ENGINEER
+  });
+  const crashedCoordinator=new TrustedExecutionCoordinator({
+    authority:crashedAuthority,approvedGatewayPlans:ipc,credentials,
+    sessionId:crashSession,baseRevision:baseSha,
+    planningRecovery:planningJournal,operationalRecovery:operationalJournal
+  });
+  const crashPreliminaryId="urn:scoped-native:crash-preliminary";
+  const crashOperationalId="urn:scoped-native:crash-operational";
+  await crashedCoordinator.beginPlanning(root(crashPreliminaryId,"17213",180));
+  assert.equal((await planningJournal.pending()).length,1);
+  const activated=await crashedCoordinator.beginExecution(
+    root(crashOperationalId,"17214",600));
+  assert.equal(activated.plan_digest,planDigest(crashPlan));
+  assert.equal(crashedCoordinator.phase,"execution");
+  await planningJournal.assertClean();
+  await assert.rejects(planningJournal.assertFreshSession(crashSession),
+    /retired session cannot be reused/);
+  const firstRecovery=new TrustedOperationalRecoveryStore(operationalHome);
+  assert.equal((await firstRecovery.pending()).length,1);
+  // Gateway tombstones even an ambiguous or timed-out Rust revocation.
+  // Keep the actual root ID in the journal until EVM acknowledges it.
+  await assert.rejects(reconcileOrphanedOperationalRoots({
+    store:firstRecovery,
+    gateway:{retireSession:id=>ipc.retireSession(id)},
+    credentials:{async revokeRoot(id){
+      assert.equal(id,crashOperationalId);
+      throw Error("simulated lost native revocation acknowledgement");
+    }}
+  }),/manual reconciliation required/);
+  assert.equal((await firstRecovery.pending()).length,1);
+  await assert.rejects(firstRecovery.recordIntent({
+    sessionId:crashSession,baseRevision:baseSha,
+    credentialId:"urn:scoped-native:unauthorized-second-operational"
+  }),/orphaned root intent/);
+  // Reconstruct the store (as on Engineer restart), NOT the Coordinator.
+  // Native Adapter really revokes the Rust-issued EVM operational root.
+  const freshRecovery=new TrustedOperationalRecoveryStore(operationalHome);
+  let gatewayRetirements=0,nativeRevocations=0;
+  assert.equal(await reconcileOrphanedOperationalRoots({
+    store:freshRecovery,
+    gateway:{async retireSession(id){
+      assert.equal(id,crashSession);
+      gatewayRetirements++;
+      await ipc.retireSession(id);
+    }},
+    credentials:{async revokeRoot(id){
+      assert.equal(id,crashOperationalId);
+      nativeRevocations++;
+      await credentials.revokeRoot(id);
+    }}
+  }),1);
+  assert.equal(gatewayRetirements,1);
+  assert.equal(nativeRevocations,1);
+  await freshRecovery.assertClean();
+  await assert.rejects(freshRecovery.assertFreshSession(crashSession),
+    /reconciled session cannot be reused/);
+  await assert.rejects(freshRecovery.recordIntent({
+    sessionId:crashSession,baseRevision:baseSha,
+    credentialId:"urn:scoped-native:second-issuance-denied"
+  }),/reconciled session cannot be reused/);
+  assert.equal(await reconcileOrphanedOperationalRoots({
+    store:new TrustedOperationalRecoveryStore(operationalHome),
+    gateway:{async retireSession(){throw Error("must not repeat");}},
+    credentials:{async revokeRoot(){throw Error("must not repeat");}}
+  }),0);
+  const afterCrash=await post(gateway,"/v1/authorization/prepare",{
+    task_id:"dispatch_"+randomBytes(16).toString("base64url"),
+    agent_role:"backend",tool:"update_file",
+    arguments:{branch,path:file,content:"never after signed crash"}
+  });
+  assert.equal(afterCrash.status,403);
   process.stdout.write(JSON.stringify({
     result:"signed-plan-scoped-child-native-evm-pass",
     engineer_approval_ed25519:true,independent_roots:true,
@@ -271,7 +387,12 @@ try{
     native_core_vp_verified:true,real_opa_evaluated:true,
     a2a_sdk_task_completed:true,unapproved_permission_denied:true,
     mock_provider_effects_not_attested:true,operational_root_revoked:true,
-    real_gitea_operations:0,paid_model_calls:0
+    real_gitea_operations:0,paid_model_calls:0,
+    crash_recovery_signed_engineer_receipt:true,
+    crash_recovery_real_evm_root_reissued:false,
+    crash_recovery_actual_rust_status_revoked:true,
+    crash_recovery_gateway_retired:true,
+    crash_recovery_persistent_tombstone:true
   },null,2)+"\n");
 }finally{
   if(server)await server.close().catch(()=>{});

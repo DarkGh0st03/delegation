@@ -924,3 +924,29 @@ startup and verifies the original retirement bytes cannot be replaced.
 This mirrors the existing operational-root tombstone protection and
 strengthens replay denial across both stages. No Gemini usage, no paid
 workflow run and no main merge.
+
+### R5 native Rust/EVM signed approval and operational-root crash-recovery fixture
+
+The existing **offline** native scoped-child EVM test now covers a
+second independent Ed25519-signed Engineer decision, with its own
+session and unique Rust/EVM status indices. A real provisional root and
+a separate operational root are issued by the native Rust Adapter;
+the same signed approval is activated through HMAC-authenticated
+Gateway IPC. Both root intents are persisted in private journals before
+external issuance. The preliminary root is confirmed revoked and
+retired before operational activation.
+
+Immediately after real operational issuance, the test simulates loss
+of the owning Coordinator by reconstructing the durable journal in
+another object. It first simulates missing revocation acknowledgement,
+ensuring the operational intent stays pending and second issuance is
+blocked; a fresh recovery instance then tombstones the real Gateway
+session and invokes the REAL Rust/EVM root revocation operation.
+The retired session is permanently non-reusable, including on later
+recovery attempts. No model API or paid workflow is invoked.
+
+This is a **simulated crash/restart at the journal boundary**, not a
+SIGKILL or a proof of distributed-replica recovery. The disposable
+Gateway provider is mocked, while Rust/Adapter/EVM, signed Engineer
+receipt and private IPC are real. R5 remains NO-GO until exact-SHA
+native CI, real deployed recovery and separate paid-run authorization.
