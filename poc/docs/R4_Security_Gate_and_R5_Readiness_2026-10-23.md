@@ -1062,3 +1062,39 @@ if the Gateway has a lease but no durable operational session fence.
 The loopback-only historical test harness may still omit the ledger
 but cannot claim the strict deployment capability. The SIGKILL
 regression asserts the real durable Gateway fixture advertises it.
+
+
+### R5 owner-only single-invocation signed DAG execution (25 October 2026)
+
+The authenticated Engineer host now exposes a **private in-process**
+`runReviewedApprovedDag({runId, execution, ...trusted})` operation. It
+uses the exact same host-pinned Planning Coordinator, signed Engineer
+checkpoint, protected operational recovery store, consumed OIDC admission,
+GitHub live-run verification and host-owned workflow/source pins as
+`startReviewedHandoff`. It cannot be invoked via the browser, GitHub OIDC
+HTTP endpoint, A2A, MCP or Gateway.
+
+The new `createTrustedReviewedHandoffLifecycle.runApprovedDag` owns one
+attempt from handoff startup to `approvedDag.executeApprovedDag` and
+always awaits trusted authority shutdown, including failed dispatch,
+missing approved dispatcher, concurrency with host close and ambiguous
+startup. Invalid owner-provisioned A2A/Adapter/child-authority executor
+arguments are rejected **before** consuming admission. No model calls
+are performed by the new wrapper itself.
+
+Offline tests:
+`poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs`.
+The dedicated Engineer UI workflow and cumulative refactoring CI now
+include the test. This proves lifecycle wiring and negative cases with
+injected local test ports, **not** deployed runner-to-host transport or a
+complete real-provider three-agent execution. The process owner still
+has to supply genuine trusted A2A, Adapter and task authority ports and
+invoke the private method. The prior split-phase operator method remains
+for controlled diagnostics.
+
+**Certification pending:** verify all cumulative offline jobs and the
+Engineer-host checks on the exact new HEAD; do not infer green from a
+previous SHA. R5 is **NO-GO** until persistent deployment, authentic
+human review, canonical provider integration, spend limits and explicit
+charge authorization have independently been demonstrated. Neither
+`main` nor the historical paid Gemini workflow was modified.
