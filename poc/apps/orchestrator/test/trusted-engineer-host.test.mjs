@@ -385,7 +385,10 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
     run_id:runId,source_sha:sha
   });
   assert.equal((await readdir(f.replays)).length,1);
-  assert.equal(await liveStatus(),"waiting_for_owner");
+  // An authenticated GitHub job without the original live Planning
+  // Coordinator cannot ever complete. Fail promptly rather than stranding
+  // the private runner indefinitely in a fabricated "waiting" state.
+  assert.equal(await liveStatus(),"terminated");
   // This is a read-only view, NOT human approval or a root issuance.
   await assert.rejects(readTrustedPrivateRunState({
     intakeUrl:host.oidcAdmissionEndpoint,tls,
