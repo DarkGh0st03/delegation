@@ -962,3 +962,31 @@ terminal tombstone. The regression exercises failed Gateway retirement,
 an attempted independent Rust revocation, preserved pending intent
 and later full reconciliation. No second credential issue is permitted.
 This is offline port testing and not a paid model execution.
+
+
+### R5 — SIGKILL reale dell'Engineer e recupero con PID indipendenti (25 ottobre 2026)
+
+Il test offline `trusted-two-root-process-crash.test.ts` crea un
+server Gateway con IPC Unix autenticato HMAC, registry dei piani approvati,
+retirement Planning persistente e un'approvazione Engineer verificata
+con Ed25519. Un processo Engineer separato usa il
+`TrustedExecutionCoordinator` originale, registra su disco
+gli intenti delle due credenziali, revoca la provvisoria e attiva
+l'Execution tramite IPC. Il processo viene quindi terminato
+effettivamente con **SIGKILL** mentre l'Execution è attiva.
+
+Un secondo PID riconcilia il journal ma incontra una revoca Rust
+intenzionalmente senza conferma: il record operativo resta pending e
+una seconda emissione è vietata. Un terzo PID ripete la chiusura,
+conferma separatamente la revoca tramite porta simulata, registra il
+tombstone operativo e ritira la sessione Planning nel Gateway. Un
+ulteriore processo verifica che l'approvazione già firmata e la sessione
+ritirata non possano essere riattivate o riemesse.
+
+**Perimetro della prova:** arresto reale del processo Engineer, nuove
+istanze Node con PID distinti, file owner-only e fsync, firma Engineer
+reale e IPC Gateway HMAC autentico. Le operazioni Rust di issue/revoke
+sono porte deterministiche simulate; il provider Gitea non viene
+chiamato. Non è un SIGKILL del Gateway stesso né una prova con rete
+EVM in questo singolo test. Le prove EVM native rimangono indipendenti,
+e non si effettuano chiamate Gemini a pagamento. R5 resta NO-GO.
