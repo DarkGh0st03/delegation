@@ -61,7 +61,7 @@ function path(value){
   return value;
 }
 /** Fail-closed loader; never accept configuration in GitHub events or HTTP. */
-export async function loadTrustedEngineerServiceConfig(configPath){
+export async function loadTrustedEngineerServiceConfig(configPath,options={}){
   let source;
   try{source=JSON.parse(await protectedText(configPath,32768));}
   catch{denied();}
@@ -74,6 +74,15 @@ export async function loadTrustedEngineerServiceConfig(configPath){
      !record(source.oidc.tls)||
      !record(source.oidc.pinned)||!record(source.oidc.trust))
     denied();
+  // Only owner-side Planning preparation may omit plan.json; cold
+  // recovering service startup must always verify the already written
+  // backend-signed, owner-protected plan. This switch is NOT read from
+  // GitHub, a file, UI, model or workflow_dispatch.
+  if(!allowedKeys(options,["pendingPlanningOutput"])||
+     (options.pendingPlanningOutput!==undefined&&
+      options.pendingPlanningOutput!==true))
+    denied();
+  const pending=options.pendingPlanningOutput===true;
   const approval=source.approval,oidc=source.oidc,recovery=source.recovery;
   if(!allowedKeys(approval,[
        "engineerDid","keyId","expectedSessionId","expectedBaseRevision",
@@ -104,7 +113,7 @@ export async function loadTrustedEngineerServiceConfig(configPath){
        "expectedRepositoryId","expectedOwnerId"
      ]))denied();
   const requiredPaths=[
-    approval.trustedPlanFile,approval.privateKeyFile,
+    approval.privateKeyFile,
     approval.publicKeyPemFile,
     approval.checkpoint.backendPublicKeyPemFile,oidc.githubApiTokenFile,
     oidc.hmacSecretHexFile,oidc.tls.caFile,
@@ -124,11 +133,28 @@ export async function loadTrustedEngineerServiceConfig(configPath){
     oidc.replayDirectory,oidc.admissionDirectory,
     recovery.directory,recovery.planningDirectory
   ]).size!==6)denied();
+  // Planning's immutable reviewed plan is created using O_EXCL by
+  // TrustedReviewedPlanFile.persist AFTER the backend signs the snapshot.
+  // Reject even a valid preexisting plan in fresh-start mode, so this
+  // bootstrap cannot silently reuse a stale/attacker-provided plan.
+  let trustedPlan;
+  if(pending){
+    const target=path(approval.trustedPlanFile);
+    await ownedPrivateDir(dirname(target));
+    try{
+      await lstat(target);
+      denied(); // any existing entry (including symlink) is unsafe
+    }catch(error){
+      if(error?.code!=="ENOENT")denied();
+    }
+  }else{
+    trustedPlan=await protectedText(approval.trustedPlanFile);
+  }
   const reads=await Promise.all(requiredPaths.map(p=>protectedText(p)));
-  const [trustedPlan,signingKey,publicKey,backendPublicKey,
+  const [signingKey,publicKey,backendPublicKey,
     githubApiToken,hmacHex,ca,cert,key,adapterToken,gatewaySecret]=reads;
   // Verify sensitive path ownership before the host opens them itself.
-  if(!trustedPlan.trim()||!signingKey.trim()||!gatewaySecret.trim()||
+  if((!pending&&!trustedPlan.trim())||!signingKey.trim()||!gatewaySecret.trim()||
      !publicKey.includes("BEGIN PUBLIC KEY")||
      !backendPublicKey.includes("BEGIN PUBLIC KEY")||
      typeof approval.checkpoint.backendKeyId!=="string"||
@@ -201,7 +227,9 @@ export async function startConfiguredTrustedEngineerService(configPath){
  * calls the existing read-only Planning and recovering Engineer bootstrap.
  */
 export async function prepareConfiguredOwnerEngineerBootstrap(configPath){
-  const config=await loadTrustedEngineerServiceConfig(configPath);
+  const config=await loadTrustedEngineerServiceConfig(configPath,{
+    pendingPlanningOutput:true
+  });
   const checkpoints=config.approval.planningCheckpointStore;
   const operationalRecovery=new TrustedOperationalRecoveryStore(
     config.recovery.directory);
