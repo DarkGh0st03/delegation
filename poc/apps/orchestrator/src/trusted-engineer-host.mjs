@@ -224,6 +224,28 @@ export async function startTrustedEngineerLocalHost(config){
     repository:oidc.pinned.repository,
     ref:oidc.pinned.ref
   });
+  // Both operator routes enforce the SAME pinned live Coordinator,
+  // verified recovery store and host-owned GitHub source/workflow pins.
+  // In particular, an execution helper cannot bypass the normal handoff.
+  const pinnedHandoffInput=({runId,...trusted})=>{
+    if(closed)deny("host closed");
+    if(active&&(trusted.coordinator!==active.coordinator||
+       active.coordinator.phase!=="planning"||
+       (active.reviewGate&&trusted.reviewGate!==active.reviewGate)||
+       trusted.checkpointStore!==active.checkpointStore))
+      deny("reviewed Execution must use original active Planning Coordinator, review gate and checkpoint");
+    if(!operationalRecoveryStore)
+      deny("startup operational recovery mandatory for reviewed handoff");
+    if(typeof trusted.coordinator?.assertOperationalRecoveryStore!=="function")
+      deny("trusted Coordinator recovery journal required");
+    trusted.coordinator.assertOperationalRecoveryStore(operationalRecoveryStore);
+    return {
+      ...trusted,admissionStore,pins:{...fixedPins,runId},
+      githubApiToken:oidc.githubApiToken,
+      githubApiFetchFn:oidc.githubApiFetchFn,
+      expectedWorkflowPath:oidc.pinned.workflowPath
+    };
+  };
   return Object.freeze({
     engineerUrl,
     oidcAdmissionEndpoint:oidcIntake.endpoint,
@@ -238,27 +260,24 @@ export async function startTrustedEngineerLocalHost(config){
       });
     },
     /** Trusted in-process call ONLY: never registered as an HTTP endpoint. */
-    startReviewedHandoff({runId,...trusted}){
+    /** Owner-only split phase for callers which need explicit dispatch. */
+    startReviewedHandoff(input){
+      return handoff.start(pinnedHandoffInput(input));
+    },
+    /**
+     * Canonical owner-only single invocation: admitted GitHub run, signed
+     * Engineer handoff, immutable approved DAG, then trusted root closure.
+     * Not an HTTP route, model tool or remotely callable OIDC endpoint.
+     */
+    runReviewedApprovedDag({execution,...input}){
       if(closed)deny("host closed");
-      if(active&&(trusted.coordinator!==active.coordinator||
-         active.coordinator.phase!=="planning"||
-         (active.reviewGate&&trusted.reviewGate!==active.reviewGate)||
-         trusted.checkpointStore!==active.checkpointStore))
-        deny("reviewed Execution must use original active Planning Coordinator, review gate and checkpoint");
-      // Legacy test-only Engineer hosts can accept local OIDC, but cannot
-      // activate an operational DC without startup crash reconciliation.
-      if(!operationalRecoveryStore)
-        deny("startup operational recovery mandatory for reviewed handoff");
-      if(typeof trusted.coordinator?.assertOperationalRecoveryStore!=="function")
-        deny("trusted Coordinator recovery journal required");
-      trusted.coordinator.assertOperationalRecoveryStore(operationalRecoveryStore);
-      return handoff.start({
-        ...trusted,admissionStore,pins:{...fixedPins,runId},
-        // Host configuration wins over every in-process caller argument.
-        githubApiToken:oidc.githubApiToken,
-        githubApiFetchFn:oidc.githubApiFetchFn,
-        expectedWorkflowPath:oidc.pinned.workflowPath
-      });
+      // Validate before consuming the HMAC admission or issuing a root.
+      if(!execution||typeof execution!=="object"||
+         typeof execution.invokeOrchestratorTask!=="function"||
+         typeof execution.authorityForTask!=="function"||
+         !execution.adapter||!execution.a2a)
+        deny("owner-provisioned approved DAG executor required");
+      return handoff.runApprovedDag(pinnedHandoffInput(input),execution);
     },
     close(){
       if(shutdownPromise)return shutdownPromise;
