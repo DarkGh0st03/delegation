@@ -369,6 +369,7 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     credentialId:rootId
   });
   const retired=[];
+  let advertisedOperationalDurability=true;
   const ipc=await createTrustedPlanIpcServer({
     socketPath,secretFile,
     planningRevisions:new TrustedPlanningRevisions({
@@ -380,7 +381,7 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
       operationalLeaseConfigured:()=>true,
       // Explicit private IPC capability fixture; deployed Gateway reports
       // this from its real owner-private durable OperationalSessionStore.
-      operationalSessionDurableConfigured:()=>true,
+      operationalSessionDurableConfigured:()=>advertisedOperationalDurability,
       retireSession:id=>{retired.push(id);}
     }
   });
@@ -499,6 +500,14 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     approvalPort:0,oidcPort:0
   };
   await writeFile(ownerConfigFile,JSON.stringify(fileConfig),{mode:0o600});
+  // A Gateway lease alone is insufficient: the signed plan could be
+  // replayed after a Gateway restart without a persistent session fence.
+  advertisedOperationalDurability=false;
+  await assert.rejects(startTrustedEngineerRecoveringHost(operationalConfig),
+    /persist operational session fences across restarts/);
+  assert.equal(adapterCalls,0);
+  assert.equal((await journal.pending()).length,1);
+  advertisedOperationalDurability=true;
   // A production-like recovering host must NEVER silently fall back to
   // unauthenticated plaintext, even if the IPC and Adapter are configured.
   await assert.rejects(startTrustedEngineerRecoveringHost({
