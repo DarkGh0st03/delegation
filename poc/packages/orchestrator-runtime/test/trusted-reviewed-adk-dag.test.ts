@@ -421,6 +421,18 @@ async function exercise(
           });
         }
     };
+    if(owner){
+      // An unapproved Task ID or a fabricated SDK Task ID cannot force the
+      // private Adapter to mint a VP or reach Gateway prepare.
+      await assert.rejects(ownerExec.invokeOrchestratorTask(
+        "frontend","dispatch_"+"a".repeat(22)
+      ),/unapproved branch Task or Gateway binding/);
+      await assert.rejects(ownerExec.invokeOrchestratorTask(
+        "branch","attacker_sdk_task_1"
+      ),/unapproved branch Task or Gateway binding/);
+      assert.equal(branchVpRequests,0);
+      assert.equal(providerCalls,0);
+    }
     if(cancelBeforeFrontend){
       if(owner){
         await assert.rejects(owner.runApprovedDag(ownerInput,ownerExec),
