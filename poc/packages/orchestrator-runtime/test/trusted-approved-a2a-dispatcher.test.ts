@@ -296,6 +296,50 @@ test("executeApprovedDag coordinates all three roles, confirms each dependency a
  }),/fresh approved Execution/);
 });
 
+test("trusted GitHub liveness is rechecked before EVERY signed Task",async()=>{
+ const h=harness();
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ const visited:string[]=[];
+ const done=await d.executeApprovedDag({
+   async invokeOrchestratorTask(_id,gatewayTaskId){h.log.push("provider:"+gatewayTaskId);},
+   async beforeTask(id){visited.push(id);}
+ });
+ assert.deepEqual(visited,["branch","backend-task","frontend-task","tests"]);
+ assert.deepEqual(done.completed_task_ids,visited);
+ assert.equal(h.coordinator.phase,"closed");
+});
+
+test("lost GitHub run after Backend forbids Frontend and Test before side effects",async()=>{
+ const h=harness();
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ const visited:string[]=[];
+ await assert.rejects(d.executeApprovedDag({
+   async invokeOrchestratorTask(_id,gatewayTaskId){h.log.push("provider:"+gatewayTaskId);},
+   async beforeTask(id){
+     visited.push(id);
+     if(id==="frontend-task")throw Error("GitHub run became inactive");
+   }
+ }),/GitHub run became inactive/);
+ assert.deepEqual(visited,["branch","backend-task","frontend-task"]);
+ assert.deepEqual(d.completedTaskIds,["branch","backend-task"]);
+ assert.ok(!h.log.some(x=>x.includes("bind:frontend-task:")||
+   x.includes("bind:tests:")||x==="allocate:frontend-task"));
+ assert.equal(h.coordinator.phase,"closed");
+ assert.equal(h.log.at(-1),"close");
+});
+
+test("shutdown while verifying GitHub run forbids further approved Task",async()=>{
+ const h=harness();
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ await assert.rejects(d.executeApprovedDag({
+   async invokeOrchestratorTask(_id,gatewayTaskId){h.log.push("provider:"+gatewayTaskId);},
+   async beforeTask(id){
+     if(id==="backend-task")h.coordinator.phase="closed";
+   }
+ }),/operational session closed before Task/);
+ assert.ok(!h.log.some(x=>x.startsWith("bind:backend-task:")));
+});
+
 test("executeApprovedDag never reaches Frontend or Test after failed Backend result",async()=>{
  const h=harness({failResult:true});
  const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
