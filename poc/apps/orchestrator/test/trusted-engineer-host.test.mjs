@@ -1025,6 +1025,46 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
   assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
   assert.equal((await operational.pending()).length,0);
   assert.equal((await preliminary.pending()).length,1);
+  // Actual authenticated human UI flow on this strict live-IPC host:
+  // independent login, CSRF binding, canonical digest, Ed25519 signing,
+  // and read-back from the authenticated receipt store. This does NOT
+  // activate Execution, and no GitHub job or Gemini model is called.
+  const login=await fetch(host.engineerUrl+"/api/login",{
+    method:"POST",
+    headers:{"content-type":"application/json",origin:host.engineerUrl},
+    body:JSON.stringify({password:f.password})
+  });
+  assert.equal(login.status,200);
+  const cookie=login.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(cookie);
+  const review=await fetch(host.engineerUrl+"/api/plan",{
+    headers:{cookie}
+  });
+  assert.equal(review.status,200);
+  const reviewPacket=await review.json();
+  assert.equal(reviewPacket.plan_digest,planDigest(f.plan));
+  const approval=await fetch(host.engineerUrl+"/api/approve",{
+    method:"POST",
+    headers:{"content-type":"application/json",origin:host.engineerUrl,
+      cookie,"x-csrf-token":reviewPacket.csrf_token},
+    body:JSON.stringify({
+      plan_digest:planDigest(f.plan),
+      approved_permission_ids:["p1"],
+      confirmation:"APPROVE "+planDigest(f.plan)
+    })
+  });
+  assert.equal(approval.status,201);
+  const verified=await new SignedEngineerApprovalFileStore({
+    directory:f.receipts,engineerDid:f.did,
+    trustedKeys:{[f.keyId]:{
+      engineer_did:f.did,public_key_pem:f.publicKeyPem
+    }}
+  }).loadAuthenticatedApproval(session);
+  assert.deepEqual(verified.approval.approved_permission_ids,["p1"]);
+  assert.equal((await operational.pending()).length,0);
+  // A signed GUI decision alone never creates an operational root, an
+  // admitted GitHub run or any callable private A2A executor.
+  assert.equal((await preliminary.pending()).length,1);
   // HTTP read does not mint an approval, authenticate a GitHub run,
   // activate the signed DAG or issue any operational credential.
   await host.close();
