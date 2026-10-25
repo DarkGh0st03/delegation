@@ -568,3 +568,29 @@ attaches its rejection assertion at promise creation and then retires
 the session. This deterministically verifies the intended late-result
 denial with no modification to runtime authority, journal or security
 policy. A new exact-SHA CI is required for certification.
+
+### R5 authenticated IPC attests *durable* Planning retirement (25 October 2026)
+
+The private Unix IPC `lease_status` capability reply
+now reports `planning_retirement_durable` separately from
+the presence of a Planning revision registry. The trusted client
+validates both bits; the strict
+`startTrustedEngineerRecoveringHost` refuses to start
+listeners when the Gateway has only in-memory retirement (even when
+the Engineer provisional-root journal is currently empty). The
+production deployment has already pinned a real Gitea registry with a
+distinct owner-only persistent retirement store; this change checks
+that the actual connected Gateway attests its presence.
+
+Offline integration tests create real HMAC IPC sockets and independent
+Engineer/Gateway owner-private journals. After an orphan provisional
+credential is reconciled via IPC plus a scripted native Rust-status
+receipt, the Gateway process/registry and IPC client are recreated
+over the same on-disk directory. The retired session cannot begin
+again, its Engineer pending intent stays retired, repeated IPC retirement
+is idempotent, and a *new* session remains usable. These tests are not
+a deployment of real Rust/EVM, and do not validate process-isolated
+storage locking across multiple active Gateway replicas.
+
+R5 remains NO-GO until full exact-SHA CI, authentic human review and
+the paid canonical Planning/3-agent path are separately authorized.

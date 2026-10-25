@@ -11,6 +11,8 @@ import {createTrustedPlanIpcServer}
   from "../../gateway/src/trusted-plan-ipc.ts";
 import {TrustedPlanningRevisions}
   from "../../gateway/src/planning-revisions.ts";
+import {TrustedPlanningRetirementStore}
+  from "../../gateway/src/trusted-planning-retirement-store.ts";
 import {TrustedOperationalRecoveryStore}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {TrustedPlanningRecoveryStore}
@@ -349,7 +351,9 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
   const recoveryDir=join(home,"recovery"),ipcDir=join(home,"ipc");
   const checkpointDir=join(home,"checkpoints");
   const planningDir=join(home,"planning-recovery");
-  for(const dir of [recoveryDir,ipcDir,checkpointDir,planningDir])
+  const gatewayRetiredDir=join(home,"gateway-planning-retirements");
+  for(const dir of [recoveryDir,ipcDir,checkpointDir,planningDir,
+    gatewayRetiredDir])
     await mkdir(dir,{mode:0o700});
   const secretFile=join(ipcDir,"secret.hex"),socketPath=join(ipcDir,"plan.sock");
   await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
@@ -368,7 +372,7 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
       async readRepository(){
         return {default_branch:"main",revision:f.plan.base_revision};
       }
-    }),
+    },{retirementStore:new TrustedPlanningRetirementStore(gatewayRetiredDir)}),
     plans:{
       operationalLeaseConfigured:()=>true,
       retireSession:id=>{retired.push(id);}

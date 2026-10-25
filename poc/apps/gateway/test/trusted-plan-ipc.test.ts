@@ -20,6 +20,10 @@ import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
 import {TrustedPlanIpcClient,createTrustedPlanIpcServer}
   from "../src/trusted-plan-ipc.ts";
 import {TrustedPlanningRevisions} from "../src/planning-revisions.ts";
+import {TrustedPlanningRetirementStore}
+  from "../src/trusted-planning-retirement-store.ts";
+import {TrustedPlanningRecoveryStore,reconcileOrphanedPlanningRoots}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
@@ -700,6 +704,7 @@ test("private IPC retires the actual Gateway Planning registry and reserves unkn
   t.after(()=>server.close());
   const trusted=await TrustedPlanIpcClient.connect({socketPath,secretFile});
   assert.equal(trusted.planningRetirementConfigured(),true);
+  assert.equal(trusted.planningRetirementDurableConfigured(),false);
   // Retire BEFORE the pending authenticated Gitea read resolves.
   const pending=registry.begin("late-planning",5000);
   await trusted.retirePlanning("late-planning");
@@ -727,6 +732,68 @@ test("private Planning retirement is denied without actual Gateway registry",asy
   t.after(()=>server.close());
   const trusted=await TrustedPlanIpcClient.connect({socketPath,secretFile});
   assert.equal(trusted.planningRetirementConfigured(),false);
+  assert.equal(trusted.planningRetirementDurableConfigured(),false);
   await assert.rejects(trusted.retirePlanning("orphan-session"),
     /no authenticated Planning retirement/);
+});
+
+
+test("restarted Gateway IPC retains durable Planning retirement while Engineer reconciles pending root",async t=>{
+  const home=await mkdtemp(join(tmpdir(),"gateway-engineer-cold-restart-"));
+  const privateDir=join(home,"private"),retiredDir=join(home,"retired"),
+    engineerDir=join(home,"engineer-intents");
+  for(const dir of [privateDir,retiredDir,engineerDir])
+    await mkdir(dir,{mode:0o700});
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  const socketPath=join(privateDir,"control.sock");
+  const secretFile=join(privateDir,"secret.hex");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+    {mode:0o600});
+  const session="restarted-verified-planning";
+  const credentialId="urn:offline:provisional-crashed";
+  const journal=new TrustedPlanningRecoveryStore(engineerDir);
+  await journal.recordIntent({
+    sessionId:session,credentialId,baseRevision:SHA
+  });
+  const gatewayJournal=new TrustedPlanningRetirementStore(retiredDir);
+  const newGateway=async()=>{
+    const revision=new TrustedPlanningRevisions({
+      async readRepository(){return {default_branch:"main",revision:SHA};}
+    },{retirementStore:new TrustedPlanningRetirementStore(retiredDir)});
+    const listener=await createTrustedPlanIpcServer({
+      socketPath,secretFile,planningRevisions:revision,
+      plans:{operationalLeaseConfigured:()=>true} as any
+    });
+    await listener.start();
+    return {revision,listener,
+      client:await TrustedPlanIpcClient.connect({socketPath,secretFile})};
+  };
+  let first=await newGateway();
+  assert.equal(first.client.planningRetirementConfigured(),true);
+  assert.equal(first.client.planningRetirementDurableConfigured(),true);
+  await gatewayJournal.assertReady();
+  const native:string[]=[];
+  assert.equal(await reconcileOrphanedPlanningRoots({
+    store:journal,gateway:first.client,
+    credentials:{async revokeRoot(id){native.push(id);}}
+  }),1);
+  assert.deepEqual(native,[credentialId]);
+  await journal.assertClean();
+  await first.listener.close();
+  // New server/registry/client over the SAME durable Gateway directory.
+  const restarted=await newGateway();
+  t.after(()=>restarted.listener.close());
+  assert.equal(restarted.client.planningRetirementDurableConfigured(),true);
+  await assert.rejects(restarted.revision.begin(session,300000),
+    /retired Planning session cannot be registered/);
+  await restarted.client.retirePlanning(session);
+  assert.equal(await reconcileOrphanedPlanningRoots({
+    store:new TrustedPlanningRecoveryStore(engineerDir),
+    gateway:restarted.client,
+    credentials:{async revokeRoot(){throw Error("native must not be called");}}
+  }),0);
+  await assert.rejects(journal.assertFreshSession(session),
+    /retired session cannot be reused/);
+  const newSession=await restarted.revision.begin("new-after-boot",5000);
+  assert.equal(newSession.base_revision,SHA);
 });

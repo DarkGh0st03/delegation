@@ -56,6 +56,12 @@ export class TrustedPlanningRevisions {
     this.#retirement=options.retirementStore;
   }
 
+  /** Attest configured durable replay denial, never merely in-memory state.
+   * Trusted IPC consumers must distinguish the two before admitting a host. */
+  durableRetirementConfigured():boolean{
+    return this.#retirement instanceof TrustedPlanningRetirementStore;
+  }
+
   /** Bootstrap is trusted code only: never exposed through Gateway HTTP. */
   async begin(taskId: string, ttlMs: number): Promise<TrustedPlanningRevision> {
     if (typeof taskId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId) ||

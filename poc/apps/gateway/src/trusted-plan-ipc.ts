@@ -149,7 +149,10 @@ export async function createTrustedPlanIpcServer(config:{
         response(res,200,{
           ok:true,enabled:config.plans.operationalLeaseConfigured(),
           planning_retirement_enabled:
-            config.planningRevisions instanceof TrustedPlanningRevisions
+            config.planningRevisions instanceof TrustedPlanningRevisions,
+          planning_retirement_durable:
+            config.planningRevisions instanceof TrustedPlanningRevisions&&
+            config.planningRevisions.durableRetirementConfigured()
         });
       }else if(command.action==="renew_lease"){
         config.plans.renewLease(command.session_id,command.plan_digest);
@@ -226,6 +229,7 @@ export class TrustedPlanIpcClient{
   readonly #secret:Buffer;
   #leaseEnabled=false;
   #planningRetirementEnabled=false;
+  #planningRetirementDurable=false;
   private constructor(path:string,secret:Buffer){
     this.#socket=path;this.#secret=secret;
   }
@@ -238,14 +242,21 @@ export class TrustedPlanIpcClient{
     // never trust a client-side boolean that could disagree with Gateway.
     const capabilities=await client.#send({action:"lease_status"});
     if(typeof capabilities.enabled!=="boolean"||
-       typeof capabilities.planning_retirement_enabled!=="boolean")
+       typeof capabilities.planning_retirement_enabled!=="boolean"||
+       typeof capabilities.planning_retirement_durable!=="boolean"||
+       (capabilities.planning_retirement_durable&&
+        !capabilities.planning_retirement_enabled))
       fail("Gateway did not attest authenticated recovery capabilities");
     client.#leaseEnabled=capabilities.enabled;
     client.#planningRetirementEnabled=capabilities.planning_retirement_enabled;
+    client.#planningRetirementDurable=capabilities.planning_retirement_durable;
     return client;
   }
   operationalLeaseConfigured():boolean{return this.#leaseEnabled;}
   planningRetirementConfigured():boolean{return this.#planningRetirementEnabled;}
+  planningRetirementDurableConfigured():boolean{
+    return this.#planningRetirementDurable;
+  }
   async renewLease(sessionId:string,expectedDigest:string):Promise<void>{
     if(!this.#leaseEnabled)
       fail("remote Gateway has no operational lease");
