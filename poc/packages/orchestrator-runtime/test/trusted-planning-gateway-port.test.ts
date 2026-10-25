@@ -40,6 +40,10 @@ import {TrustedActivePlanningCheckpoint}
   from "../src/trusted-active-planning-checkpoint.ts";
 import {TrustedPlanningRecoveryStore}
   from "../src/trusted-planning-recovery-store.ts";
+import {TrustedOperationalRecoveryStore}
+  from "../src/trusted-operational-recovery-store.ts";
+import {startOwnerControlledEngineerReviewHost}
+  from "../../../apps/orchestrator/src/trusted-engineer-host.mjs";
 import {TrustedReviewedPlanFile}
   from "../src/trusted-reviewed-plan-file.ts";
 
@@ -125,7 +129,8 @@ function response(value:unknown,status=200){
   return new Response(JSON.stringify(value),{status,headers:{"content-type":"application/json"}});
 }
 function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean;
-  revocationFails?:boolean;planningRecovery?:TrustedPlanningRecoveryStore}={}){
+  revocationFails?:boolean;planningRecovery?:TrustedPlanningRecoveryStore;
+  operationalRecovery?:TrustedOperationalRecoveryStore}={}){
   const observed={adapter:0,verification:0,policy:0,provider:0,
     prepare:0,execute:0,issued:0,revoked:0};
   const signed=new Map<string,{resource:string;operation:string;challenge:string;audience:string}>();
@@ -219,9 +224,12 @@ function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean;
       async activate(){throw Error("Execution prohibited");},
       bindTask(){throw Error("Execution prohibited");},
       async confirmTaskCompletion(){throw Error("Execution prohibited");},
-      closeSession(){throw Error("Execution prohibited");}
+      closeSession(){throw Error("Execution prohibited");},
+      retireSession(){throw Error("Operational retirement prohibited");}
     },
     credentials:{async revokeRoot(){throw Error("Execution prohibited");}},
+    ...(options.operationalRecovery?
+      {operationalRecovery:options.operationalRecovery}:{}),
     ...(options.planningRecovery?{planningRecovery:options.planningRecovery}:{})
   });
   const fetchFn:typeof fetch=async(url,init)=>{
@@ -524,7 +532,9 @@ async function makeOwnerReviewFixture(options:{
 }={}){
   const planningDir=await mkdtemp(join(tmpdir(),"owner-planning-intents-"));
   const planningRecovery=new TrustedPlanningRecoveryStore(planningDir);
-  const f=fixture({...options,planningRecovery});
+  const operationalDir=await mkdtemp(join(tmpdir(),"owner-operational-intents-"));
+  const operationalRecovery=new TrustedOperationalRecoveryStore(operationalDir);
+  const f=fixture({...options,planningRecovery,operationalRecovery});
   const receipts=await mkdtemp(join(tmpdir(),"owner-planning-approvals-"));
   const checkpoints=await mkdtemp(join(tmpdir(),"owner-planning-checkpoints-"));
   const plans=await mkdtemp(join(tmpdir(),"owner-planning-ui-plan-"));
@@ -573,9 +583,11 @@ async function makeOwnerReviewFixture(options:{
       format:"pem",type:"pkcs8"
     }).toString()
   });
-  return {...f,store,gate,planningRecovery,planFilePath,
+  return {...f,store,gate,planningRecovery,operationalRecovery,
+    planningDir,operationalDir,planFilePath,
     planFile,makeConfig,async cleanup(){
     await rm(planningDir,{recursive:true,force:true});
+    await rm(operationalDir,{recursive:true,force:true});
     await rm(receipts,{recursive:true,force:true});
     await rm(checkpoints,{recursive:true,force:true});
     await rm(plans,{recursive:true,force:true});
@@ -682,5 +694,79 @@ test("review plan file requires the identical independently pinned checkpoint st
       ...config,checkpointStore:alienStore
     }),/checkpoint store identity differs/);
     assert.equal(f.observed.issued,0);
+  }finally{await f.cleanup();}
+});
+
+test("owner Planning and Engineer host bind exact recovery journal, signed UI file and session before root",async()=>{
+  const f=await makeOwnerReviewFixture();
+  try{
+    const planning=f.makeConfig();
+    const host={
+      approval:{
+        expectedSessionId:snapshot.session_id,
+        expectedBaseRevision:SHA,repository:snapshot.repository,
+        trustedPlanFile:f.planFilePath,
+        planningCheckpointStore:f.store
+      },
+      recovery:{
+        planningDirectory:f.planningDir,directory:f.operationalDir
+      },
+      operationalRecovery:f.operationalRecovery
+    };
+    await assert.rejects(startOwnerControlledEngineerReviewHost({
+      planning,host:{...host,approval:{
+        ...host.approval,trustedPlanFile:join(f.operationalDir,"foreign.json")
+      }}
+    }),/Engineer host plan path differs/);
+    await assert.rejects(startOwnerControlledEngineerReviewHost({
+      planning,host:{...host,recovery:{
+        ...host.recovery,planningDirectory:f.operationalDir
+      }}
+    }),/active Planning journal differs|journal differs/);
+    await assert.rejects(startOwnerControlledEngineerReviewHost({
+      planning,host:{...host,operationalRecovery:
+        new TrustedOperationalRecoveryStore(f.operationalDir)}
+    }),/recovery journal differs from verified Engineer host/);
+    assert.equal(f.observed.issued,0);
+    assert.equal(f.coordinator.phase,"idle");
+    assert.equal((await f.planningRecovery.pending()).length,0);
+  }finally{await f.cleanup();}
+});
+
+test("owner Planning generates signed UI plan then strict host denial revokes original root",async()=>{
+  const f=await makeOwnerReviewFixture();
+  try{
+    const planning=f.makeConfig();
+    const host={
+      approval:{
+        expectedSessionId:snapshot.session_id,
+        expectedBaseRevision:SHA,repository:snapshot.repository,
+        trustedPlanFile:f.planFilePath,
+        planningCheckpointStore:f.store
+      },
+      recovery:{
+        planningDirectory:f.planningDir,directory:f.operationalDir
+      },
+      operationalRecovery:f.operationalRecovery,
+      oidc:{} // Intentionally absent pinned mutual TLS on operational host
+    };
+    await assert.rejects(startOwnerControlledEngineerReviewHost({
+      planning,host
+    }),/pinned mutual TLS admission/);
+    assert.equal(f.observed.issued,1);
+    assert.equal(f.observed.revoked,1);
+    assert.equal(f.observed.adapter,1);
+    assert.equal(f.observed.verification,1);
+    assert.equal(f.observed.policy,1);
+    assert.equal(f.coordinator.phase,"closed");
+    await f.planningRecovery.assertClean();
+    assert.equal(JSON.parse(await readFile(f.planFilePath,"utf8"))
+      .session_id,snapshot.session_id);
+    assert.equal((await f.store.load()).proposal.digest,
+      f.gate.reviewPacket().plan_digest);
+    // A crashed/denied host may not silently repeat an old Planning run.
+    await assert.rejects(startOwnerControlledEngineerReviewHost({
+      planning,host
+    }),/owner Planning Coordinator must be unused/);
   }finally{await f.cleanup();}
 });

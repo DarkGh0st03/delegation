@@ -21,6 +21,12 @@ import {TrustedPlanningRecoveryStore,reconcileOrphanedPlanningRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
 import {TrustedExecutionCoordinator}
   from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
+import {startOwnerControlledPlanningReview}
+  from "../../../packages/orchestrator-runtime/src/trusted-owner-planning-bootstrap.ts";
+import {TrustedReviewedPlanFile}
+  from "../../../packages/orchestrator-runtime/src/trusted-reviewed-plan-file.ts";
+import {TrustedPlanningReviewGate}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
 import {TrustedPlanIpcClient}
   from "../../gateway/src/trusted-plan-ipc.ts";
 import {SoftwareEngineerAuthorityBootstrap}
@@ -91,6 +97,10 @@ export async function startTrustedEngineerLocalHost(config){
      !(active.planningRecovery instanceof TrustedPlanningRecoveryStore)||
      !(active.checkpointStore instanceof SignedPlanningCheckpointFileStore)||
      active.checkpointStore!==approval.planningCheckpointStore||
+     (active.reviewGate!==undefined&&
+       !(active.reviewGate instanceof TrustedPlanningReviewGate))||
+     (active.operationalRecovery!==undefined&&
+       !(active.operationalRecovery instanceof TrustedOperationalRecoveryStore))||
      !recovery?.planning?.directory))
     deny("live Planning requires same-process Coordinator, journal and signed checkpoint");
   const directories=[
@@ -144,10 +154,17 @@ export async function startTrustedEngineerLocalHost(config){
     }
   }
   if(recovery){
+    if(active?.operationalRecovery){
+      active.coordinator.assertOperationalRecoveryStore(active.operationalRecovery);
+      active.operationalRecovery.assertDirectory(recovery.directory);
+    }
     if(typeof recovery.gateway?.retireSession!=="function"||
        typeof recovery.credentials?.revokeRoot!=="function")
       deny("trusted Gateway retirement and Rust Adapter revocation required");
-    operationalRecoveryStore=new TrustedOperationalRecoveryStore(recovery.directory);
+    // An active Coordinator must keep ITS original operational journal:
+    // allocating a second instance makes later handoff impossible.
+    operationalRecoveryStore=active?.operationalRecovery??
+      new TrustedOperationalRecoveryStore(recovery.directory);
     await reconcileOrphanedOperationalRoots({
       store:operationalRecoveryStore,gateway:recovery.gateway,
       credentials:recovery.credentials
@@ -204,8 +221,10 @@ export async function startTrustedEngineerLocalHost(config){
     startReviewedHandoff({runId,...trusted}){
       if(closed)deny("host closed");
       if(active&&(trusted.coordinator!==active.coordinator||
-         active.coordinator.phase!=="planning"))
-        deny("reviewed Execution must use original active Planning Coordinator");
+         active.coordinator.phase!=="planning"||
+         (active.reviewGate&&trusted.reviewGate!==active.reviewGate)||
+         trusted.checkpointStore!==active.checkpointStore))
+        deny("reviewed Execution must use original Planning Coordinator, review gate and checkpoint");
       // Legacy test-only Engineer hosts can accept local OIDC, but cannot
       // activate an operational DC without startup crash reconciliation.
       if(!operationalRecoveryStore)
@@ -377,4 +396,61 @@ export async function startTrustedEngineerLivePlanningHost(config){
     }
     throw error;
   }
+}
+
+/**
+ * Owner-only SAME-PROCESS handoff from the real read-only Planning bootstrap
+ * to the persistent, authenticated Engineer host.
+ *
+ * This is a private owner API, never an HTTP/GitHub/A2A/MCP handler.
+ * It DOES invoke the caller-supplied ADK model during Planning, so it must
+ * only be invoked by the operator after explicitly choosing a model and
+ * approving any provider cost. Tests inject a scripted, zero-cost model.
+ * There is NO automatic Engineer approval, OIDC admission or Execution.
+ *
+ * Reject mismatched file paths, journal identities, session/SHA and backend
+ * checkpoints BEFORE provisional root issuance. Once Planning starts, every
+ * failed service bootstrap must attempt confirmed revocation.
+ */
+export async function startOwnerControlledEngineerReviewHost({planning,host}={}){
+  const snapshot=planning?.snapshot;
+  const approval=host?.approval;
+  const recovery=host?.recovery;
+  const coordinator=planning?.coordinator;
+  if(!(coordinator instanceof TrustedExecutionCoordinator)||
+     !(planning?.reviewPlanFile instanceof TrustedReviewedPlanFile)||
+     !(planning?.reviewGate instanceof TrustedPlanningReviewGate)||
+     !(planning?.planningRecovery instanceof TrustedPlanningRecoveryStore)||
+     !(planning?.checkpointStore instanceof SignedPlanningCheckpointFileStore)||
+     !(host?.operationalRecovery instanceof TrustedOperationalRecoveryStore)||
+     host?.activePlanning!==undefined||
+     !snapshot||!approval||!recovery||
+     approval.planningCheckpointStore!==planning.checkpointStore||
+     approval.expectedSessionId!==snapshot.session_id||
+     approval.expectedBaseRevision!==snapshot.base_revision||
+     JSON.stringify(approval.repository)!==JSON.stringify(snapshot.repository))
+    deny("owner Planning and Engineer session pins must be identical");
+  // All these validations are synchronous and happen BEFORE calling the
+  // owner Planning bootstrap (which would issue the provisional credential).
+  planning.reviewPlanFile.assertCheckpointStore(planning.checkpointStore);
+  planning.reviewPlanFile.assertFilePath(approval.trustedPlanFile);
+  planning.planningRecovery.assertDirectory(recovery.planningDirectory);
+  coordinator.assertPlanningRecoveryStore(planning.planningRecovery);
+  host.operationalRecovery.assertDirectory(recovery.directory);
+  coordinator.assertOperationalRecoveryStore(host.operationalRecovery);
+  if(coordinator.phase!=="idle")
+    deny("owner Planning Coordinator must be unused");
+  // If the Planner fails it invokes closePlanning itself. If it completes
+  // and Engineer host startup later fails, the strict wrapper closes it.
+  await startOwnerControlledPlanningReview(planning);
+  return startTrustedEngineerLivePlanningHost({
+    ...host,
+    activePlanning:{
+      coordinator,
+      planningRecovery:planning.planningRecovery,
+      operationalRecovery:host.operationalRecovery,
+      checkpointStore:planning.checkpointStore,
+      reviewGate:planning.reviewGate
+    }
+  });
 }

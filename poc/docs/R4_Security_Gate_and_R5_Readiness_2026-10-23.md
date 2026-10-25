@@ -719,3 +719,35 @@ A still-missing deployment requirement is the private owner-controlled
 bootstrap wiring of the genuine Gitea snapshot and Rust-issued Planning
 credential to the authenticated host. The full paid R5 run remains
 NO-GO without explicit separate consent and full offline CI.
+
+### R5 single-process owner Planning -> authenticated Engineer bootstrap binding (25 October 2026)
+
+`startOwnerControlledEngineerReviewHost` now provides one
+private owner API that connects the existing real Gateway/OPA/Gitea/ADK
+`startOwnerControlledPlanningReview` procedure to the
+strict persistent Engineer-host bootstrap, preserving the **original**
+Coordinator. It requires identity equality for the independently
+configured backend checkpoint, Planning recovery journal and
+operational recovery journal. It verifies the Engineer host's expected
+session, repository, pinned source SHA, and precise protected
+`trustedPlanFile` destination **before** issuing any
+preliminary root or calling the owner-selected model.
+
+Once the Planning result is grounded, signed and materialized to the
+reviewable plan, it supplies the exact Coordinator and review gate to the
+strict host. The same operational recovery-store object remains bound
+both to the Coordinator and the Engineer host, preventing a previously
+latent failure in which the host allocated a second in-memory journal
+object, making operational handoff's identity check impossible.
+Untrusted GitHub input or a remote HTTP caller cannot select these
+component instances or sign on behalf of a human.
+
+Any failed strict Engineer bootstrap after Planning must retire the live
+provisional root; offline tests exercise denied foreign UI paths,
+journal mismatch, foreign operational stores before issuance and
+the real scripted-ADK/Gateway/VP/OPA Planning followed by mTLS bootstrap
+denial and confirmed root cancellation. This owner API invokes its
+owner-provided LLM when called: production usage must first obtain
+independent cost authorization. NO paid Gemini inference has been
+triggered here. The separate human approval/OIDC-verified Execution
+and fully deployed network transport are still unproven; R5 is NO-GO.

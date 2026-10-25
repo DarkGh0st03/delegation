@@ -46,6 +46,11 @@ export class TrustedReviewedPlanFile {
     if(this.#store!==store)
       refuse("Planning checkpoint store identity differs from Engineer input");
   }
+  /** Reject any mismatched Engineer UI file BEFORE issuing a Planning root. */
+  assertFilePath(path:string):void{
+    if(typeof path!=="string"||resolve(path)!==this.#path)
+      refuse("Engineer host plan path differs from signed Planning output");
+  }
 
   /** Materialize only once from the already staged, independently verified
    * checkpoint. Never overwrite any preexisting raw or partial plan. */

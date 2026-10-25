@@ -44,6 +44,12 @@ export class TrustedOperationalRecoveryStore{
       fail("explicit absolute owner-only journal directory required");
     this.#dir=resolve(directory);
   }
+  /** The Engineer host must use this exact Coordinator-bound store.
+   * A second instance over the same path is not an authority handoff. */
+  assertDirectory(directory:string):void{
+    if(typeof directory!=="string"||resolve(directory)!==this.#dir)
+      fail("operational journal differs from owner-configured host directory");
+  }
   async #checkDir(){
     const m=await lstat(this.#dir);
     if(!m.isDirectory()||m.isSymbolicLink()||(m.mode&0o077)!==0||
