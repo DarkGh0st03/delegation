@@ -12,6 +12,8 @@ import {TrustedPlanningReviewGate}
   from "../src/trusted-planning-review-gate.ts";
 import {createReviewedApprovedDagExecution}
   from "../src/trusted-reviewed-approved-dag.ts";
+import {TrustedApprovedA2ADispatcher}
+  from "../src/trusted-approved-a2a-dispatcher.ts";
 
 const sha="a".repeat(40),digest="b".repeat(64);
 async function fixture(){
@@ -111,5 +113,90 @@ test("reviewed DAG never accepts arbitrary endpoints, SHA or Engineer authority"
     ])assert.throws(()=>createReviewedApprovedDagExecution({
       ...base,running:{...f.running,readiness} as any
     }),/authenticated signed plan/);
+  }finally{await f.close();}
+});
+
+
+test("R5 GitHub cancellation during the LAST signed Task denies terminal success and still retires root",async t=>{
+  const f=await fixture();
+  let githubActive=true,checks=0,closed=0,lastTaskEffects=0;
+  // Mock ONLY the Task dispatcher after signed admission. This isolated
+  // regression exercises the real shared terminal guard: no external
+  // provider, model, Adapter or GitHub API is invoked by the fixture.
+  t.mock.method(TrustedApprovedA2ADispatcher,
+    "loadWithScopedChildAuthority",async()=>({
+      async executeApprovedDag({beforeTask}:any){
+        await beforeTask("last-test");
+        lastTaskEffects++;
+        githubActive=false; // cancellation occurs DURING final provider effect
+        return {completed_task_ids:["last-test"]};
+      }
+    } as any));
+  try{
+    Object.defineProperty(f.coordinator,"phase",{
+      configurable:true,get:()=>"execution"
+    });
+    Object.defineProperty(f.coordinator,"trustedOperationalAuthority",{
+      configurable:true,value:()=>({
+        credential_id:f.running.operational_root_id,
+        plan_digest:f.running.readiness.plan_digest,permissions:[]
+      })
+    });
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,running:f.running as any,
+      async verifyLiveRun(){
+        checks++;
+        if(!githubActive)throw Error("GitHub last Task job canceled");
+      },
+      async close(){closed++;}
+    });
+    await assert.rejects(bridge.executeApprovedDag({
+      a2a:{},adapter:{},
+      authorityForTask:async()=>{throw Error("not used");},
+      invokeOrchestratorTask:async()=>{throw Error("not used");}
+    } as any),/GitHub last Task job canceled/);
+    assert.equal(checks,3,
+      "must verify before load, before final Task AND after completion");
+    assert.equal(lastTaskEffects,1);
+    assert.equal(closed,1,"canceling the final Task must close authority");
+    await assert.rejects(bridge.executeApprovedDag({} as any),
+      /one-shot; retry forbidden/);
+    assert.equal(closed,1);
+  }finally{await f.close();}
+});
+
+test("R5 final GitHub revalidation accepts a still-active job before root retirement",async t=>{
+  const f=await fixture();
+  let checks=0,closed=0;
+  t.mock.method(TrustedApprovedA2ADispatcher,
+    "loadWithScopedChildAuthority",async()=>({
+      async executeApprovedDag({beforeTask}:any){
+        await beforeTask("last-test");
+        return {completed_task_ids:["last-test"]};
+      }
+    } as any));
+  try{
+    Object.defineProperty(f.coordinator,"phase",{
+      configurable:true,get:()=>"execution"
+    });
+    Object.defineProperty(f.coordinator,"trustedOperationalAuthority",{
+      configurable:true,value:()=>({
+        credential_id:f.running.operational_root_id,
+        plan_digest:f.running.readiness.plan_digest,permissions:[]
+      })
+    });
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,running:f.running as any,
+      async verifyLiveRun(){checks++;},
+      async close(){closed++;}
+    });
+    const result=await bridge.executeApprovedDag({
+      a2a:{},adapter:{},
+      authorityForTask:async()=>{throw Error("not used");},
+      invokeOrchestratorTask:async()=>{throw Error("not used");}
+    } as any);
+    assert.deepEqual(result,{completed_task_ids:["last-test"]});
+    assert.equal(checks,3);
+    assert.equal(closed,1);
   }finally{await f.close();}
 });
