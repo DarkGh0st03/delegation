@@ -188,6 +188,29 @@ export function verifyGithubOidcJobAssertion(input:
   });
 }
 
+/**
+ * Authenticated GitHub job identity for a completely separate,
+ * non-billable manual scripted workflow. The caller must FIRST validate
+ * its exact offline workflow_dispatch schema and pinned workflow path.
+ * This proof is job authentication ONLY, never Engineer approval or
+ * operational authority and, critically, never charge consent.
+ */
+export async function verifyGithubOidcScriptedManualJob(input:{
+  jwt:string;
+  dispatch:Pick<ReviewedGithubDispatchRequest,"run_id"|"source_sha">;
+  pinned:PinnedGithubDispatch&{sourceSha:string};
+  trust:GithubOidcTrustPolicy;
+  fetchFn?:typeof fetch;
+  nowMs?:number;
+}):Promise<Readonly<VerifiedGithubOidcJob>>{
+  if(!input.pinned.workflowPath.endsWith(
+    "/trusted-scripted-offline-session-hold.yml"))
+    fail("scripted verification requires distinct pinned no-charge workflow");
+  return verifySignedGithubOidcEvent({
+    ...input,expectedEvent:"workflow_dispatch"
+  });
+}
+
 export interface OfflineGithubOidcProof{
   readonly kind:"offline_push_identity_only";
   readonly run_id:string;
