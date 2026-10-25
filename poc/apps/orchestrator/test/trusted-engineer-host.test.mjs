@@ -1026,7 +1026,12 @@ test("live Engineer UI rejection revokes original root and fences concurrent Ed2
     assert.equal(gatewayRetired,1);
     assert.equal(nativeRevoked,1);
     await journal.assertClean();
-    assert.equal((await readdir(f.receipts)).length,0);
+    // Terminal rejection is now durably journaled before Rust revocation.
+    // Verify the only receipt-directory entry is the rejection intent;
+    // no signed Engineer approval has been issued.
+    const entries=await readdir(f.receipts);
+    assert.equal(entries.length,1);
+    assert.match(entries[0],/^[a-f0-9]{64}\.rejection-intent\.json$/u);
     assert.throws(()=>host.startReviewedHandoff({
       runId,coordinator,checkpointStore
     }),/original active Planning Coordinator/);
