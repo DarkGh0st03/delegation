@@ -17,6 +17,7 @@ import {approvedWorkBranch} from "../../../packages/plan-contracts/src/approved-
 import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord,
   type NormalizedToolRequest } from "./types.ts";
 import { GatewayError } from "./errors.ts";
+import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
 import type {ExecutionResult} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import type { GatewayRepositoryConfig } from "./types.ts";
@@ -112,6 +113,10 @@ export class TrustedApprovedExecutionPlans {
   readonly #sessions=new Map<string,ActivePlan>();
   readonly #bindings=new Map<string,RuntimeTaskBinding>();
   readonly #closedSessionIds=new Set<string>();
+  // A trusted retirement fences an in-flight activation even if the
+  // signed approval load is still pending.
+  readonly #retiredIds=new Set<string>();
+  readonly #sessionStore?:TrustedOperationalSessionStore;
   readonly #operationalLeaseMs?:number;
   readonly #nowMs:()=>number;
 
@@ -122,6 +127,8 @@ export class TrustedApprovedExecutionPlans {
     completionAttestor:TrustedTaskCompletionAttestor;
     /** Opt-in crash fence; mandatory for admitted paid GitHub handoffs. */
     operationalLeaseMs?:number;
+    /** Production: mandatory one-shot durable Gateway activation ledger. */
+    operationalSessionStore?:TrustedOperationalSessionStore;
     nowMs?:()=>number;
   }){
     if(!config.engineerDid?.startsWith("did:") || !config.approvals ||
@@ -134,6 +141,10 @@ export class TrustedApprovedExecutionPlans {
     this.#engineerDid=config.engineerDid;
     this.#store=config.approvals;
     this.#attestor=config.completionAttestor;
+    if(config.operationalSessionStore!==undefined&&
+       !(config.operationalSessionStore instanceof TrustedOperationalSessionStore))
+      throw Error("Invalid trusted operational session journal");
+    this.#sessionStore=config.operationalSessionStore;
     if(config.operationalLeaseMs!==undefined&&
        (!Number.isSafeInteger(config.operationalLeaseMs)||
         config.operationalLeaseMs<10_000||
@@ -198,9 +209,14 @@ export class TrustedApprovedExecutionPlans {
     if(this.#sessions.has(sessionId) || this.#closedSessionIds.has(sessionId)) {
       throw new GatewayError(409,"approved_plan_conflict","Plan session is already installed or closed");
     }
-    // Reserve before await to prevent two competing activations.
+    // Reserve in RAM before any await and durably on the Gateway disk
+    // BEFORE using a persisted human approval. If Gateway dies afterwards,
+    // its replacement cannot re-activate this session or reissue authority.
     this.#closedSessionIds.add(sessionId);
     try {
+      await this.#sessionStore?.reserveActivation(sessionId);
+      if(this.#retiredIds.has(sessionId))
+        denied("Operational session retired during activation");
       const fetched=await this.#store.loadAuthenticatedApproval(sessionId);
       if(fetched?.authenticated_engineer_did!==this.#engineerDid) {
         denied("Approval is not authenticated for the expected Engineer");
@@ -220,6 +236,8 @@ export class TrustedApprovedExecutionPlans {
       const workBranch=approvedWorkBranch(plan);
       const snapshot=structuredClone(plan), receipt=structuredClone(approval);
       const digest=planDigest(snapshot);
+      if(this.#retiredIds.has(sessionId))
+        denied("Operational session retired while verifying signed approval");
       this.#sessions.set(sessionId,{
         sessionId,digest,plan:snapshot,approval:receipt,approvedAt:receipt.approved_at,
         workBranch,
@@ -405,11 +423,17 @@ export class TrustedApprovedExecutionPlans {
   /** Existing prepared requests fail after this trusted revocation. */
   /** Trusted crash recovery: permanently tombstone an orphan session even
    * if the old host died before the Gateway activation request completed. */
-  retireSession(sessionId:string):void {
+  async retireSession(sessionId:string):Promise<void> {
     ensureId(sessionId,"session ID");
+    // Fence synchronously before the first await. A concurrent activation
+    // must never install a new active plan when retirement has started.
+    this.#retiredIds.add(sessionId);
     this.#closedSessionIds.add(sessionId);
     const session=this.#sessions.get(sessionId);
     if(session)session.active=false;
+    // ACK only after owner-private durable fsync. An uncertain write
+    // blocks host recovery and preserves the separate Rust root journal.
+    await this.#sessionStore?.markRetired(sessionId);
   }
 
   closeSession(sessionId:string):void {

@@ -990,3 +990,43 @@ sono porte deterministiche simulate; il provider Gitea non viene
 chiamato. Non è un SIGKILL del Gateway stesso né una prova con rete
 EVM in questo singolo test. Le prove EVM native rimangono indipendenti,
 e non si effettuano chiamate Gemini a pagamento. R5 resta NO-GO.
+
+
+### R5 — Gateway operational activation and retirement journal (25 ottobre 2026)
+
+A critical additional restart fence has been implemented for the
+**Gateway itself**, not just the Engineer process. Before loading
+an Ed25519-signed Engineer approval or activating its approved
+Execution plan, `TrustedApprovedExecutionPlans` reserves
+the session ID as an exclusive owner-only 0600 operational record and
+fsyncs the record and its directory. A new Gateway instance with the
+same protected journal cannot accept the old signed plan after a crash.
+
+The authenticated HMAC IPC `retire` command now waits
+for a durable operational retirement record before acknowledging
+recovery to the Engineer. An early retirement also prevents activation
+when it precedes first issuance. A concurrent retirement fences any
+activation that is waiting on approval-file verification. A completed
+activation is terminal for that session ID: after a restart, the
+Gateway may ONLY continue recovery/retirement, never resume an
+incomplete DAG or issue additional authority based on the old receipt.
+
+**Deployment requirement:** the real Gateway trusted mode now requires
+`TRUSTED_PLAN_OPERATIONAL_SESSION_DIR` alongside the
+existing `TRUSTED_PLAN_PLANNING_RETIREMENT_DIR`. Both
+owner-private durable journals are audited *before* opening the
+private IPC listener and provider-facing HTTP server. Operators must
+provision a separate persistent 0700 directory, owned by the Gateway
+process, backed by a filesystem that honors O_EXCL and fsync. This is
+intentionally fail-closed for old configurations.
+
+A new offline test suite verifies restart denial, preactivation
+retirement, concurrency fencing, and rejection of corrupt/private-mode
+journal failures. These are independent Gateway restart-state tests,
+not yet a live crash of the actual Gateway service process.
+The Engineer operational root journal still independently governs
+Rust/Adapter revocation; Gateway terminal records alone are NEVER
+proof that the Rust EVM credential was revoked.
+
+No paid Gemini test or main merge; R5 remains NO-GO until further
+offline/native/restart validation and explicit owner authorization.

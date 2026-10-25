@@ -158,7 +158,7 @@ export async function createTrustedPlanIpcServer(config:{
         config.plans.renewLease(command.session_id,command.plan_digest);
         response(res,200,{ok:true});
       }else if(command.action==="retire"){
-        config.plans.retireSession(command.session_id);
+        await config.plans.retireSession(command.session_id);
         response(res,200,{ok:true});
       }else if(command.action==="retire_planning"){
         if(!(config.planningRevisions instanceof TrustedPlanningRevisions))

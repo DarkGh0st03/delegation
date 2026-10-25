@@ -13,6 +13,7 @@ import {GatewayCorroboratedTaskAttestor} from "./trusted-task-observation.ts";
 import {createTrustedPlanIpcServer} from "./trusted-plan-ipc.ts";
 import {TrustedPlanningRevisions} from "./planning-revisions.ts";
 import {TrustedPlanningRetirementStore} from "./trusted-planning-retirement-store.ts";
+import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
 import {GiteaClient} from "./gitea-client.ts";
 import type {GatewayRuntimeConfig} from "./config.ts";
 
@@ -20,7 +21,8 @@ const ENV=[
   "TRUSTED_PLAN_IPC_SOCKET","TRUSTED_PLAN_IPC_SECRET_FILE",
   "TRUSTED_PLAN_APPROVAL_DIR","TRUSTED_PLAN_ENGINEER_DID",
   "TRUSTED_PLAN_KEY_ID","TRUSTED_PLAN_PUBLIC_KEY_FILE",
-  "TRUSTED_PLAN_PLANNING_RETIREMENT_DIR"
+  "TRUSTED_PLAN_PLANNING_RETIREMENT_DIR",
+  "TRUSTED_PLAN_OPERATIONAL_SESSION_DIR"
 ] as const;
 
 async function pinnedPublicKey(path:string):Promise<string>{
@@ -67,8 +69,12 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
     throw Error("Invalid trusted Gateway operational lease duration");
   const retirementStore=new TrustedPlanningRetirementStore(
     value("TRUSTED_PLAN_PLANNING_RETIREMENT_DIR"));
-  // Verify all prior retirements before any trusted socket or public HTTP.
+  // Verify both independently durable Gateway ledgers BEFORE any
+  // private IPC listener or public provider endpoint can start.
   await retirementStore.assertReady();
+  const operationalSessionStore=new TrustedOperationalSessionStore(
+    value("TRUSTED_PLAN_OPERATIONAL_SESSION_DIR"));
+  await operationalSessionStore.assertReady();
   const planningRevisions=new TrustedPlanningRevisions(new GiteaClient({
     baseUrl:config.gitea_base_url,
     token:config.gitea_gateway_token,
@@ -78,6 +84,7 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
   }),{retirementStore});
   const plans=new TrustedApprovedExecutionPlans({
     repository:config.prepare.repository,engineerDid,approvals,
+    operationalSessionStore,
     ...(leaseRaw===undefined?{}:{operationalLeaseMs:Number(leaseRaw)}),
     // Gateway independently corroborates private Coordinator observations
     // using results retained from authorized provider I/O.
