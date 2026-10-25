@@ -8,7 +8,12 @@
 import {open,lstat} from "node:fs/promises";
 import {constants} from "node:fs";
 import {dirname,isAbsolute,normalize} from "node:path";
-import {startTrustedEngineerRecoveringHost} from "./trusted-engineer-host.mjs";
+import {startTrustedEngineerRecoveringHost,
+  startOwnerControlledEngineerReviewHost} from "./trusted-engineer-host.mjs";
+import {TrustedOperationalRecoveryStore}
+  from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
+import {TrustedReviewedPlanFile}
+  from "../../../packages/orchestrator-runtime/src/trusted-reviewed-plan-file.ts";
 import {SignedPlanningCheckpointFileStore} from
   "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
 
@@ -178,4 +183,60 @@ export async function loadTrustedEngineerServiceConfig(configPath){
 export async function startConfiguredTrustedEngineerService(configPath){
   return startTrustedEngineerRecoveringHost(
     await loadTrustedEngineerServiceConfig(configPath));
+}
+
+/**
+ * Production-oriented, owner-only TWO-STAGE bootstrap. Unlike the
+ * cold-recovery CLI, it connects the protected on-disk service settings to
+ * the SAME process that constructs the live Planning Coordinator.
+ *
+ * IMPORTANT: Loading the config must happen BEFORE constructing the
+ * Coordinator and BEFORE any Planning root is issued. This ensures the
+ * Coordinator and the host use the exact same checkpoint-store INSTANCE,
+ * not independent objects with coincidentally equal directory paths.
+ *
+ * Preparation itself NEVER starts a model, signs an Engineer approval,
+ * consumes GitHub OIDC, issues an authority, starts an HTTP listener or
+ * invokes any remote service. Only the owner's explicit one-shot start()
+ * calls the existing read-only Planning and recovering Engineer bootstrap.
+ */
+export async function prepareConfiguredOwnerEngineerBootstrap(configPath){
+  const config=await loadTrustedEngineerServiceConfig(configPath);
+  const checkpoints=config.approval.planningCheckpointStore;
+  const operationalRecovery=new TrustedOperationalRecoveryStore(
+    config.recovery.directory);
+  const reviewFile=new TrustedReviewedPlanFile({
+    filePath:config.approval.trustedPlanFile,
+    checkpointStore:checkpoints
+  });
+  let attempted=false;
+  return Object.freeze({
+    planningCheckpointStore:checkpoints,
+    operationalRecovery,
+    /**
+     * Owner provisions the Coordinator, reviewGate, Gitea snapshot,
+     * scoped preliminary root, read-only ADK Planner, Gateway and journals.
+     * A paid model MAY be invoked by this explicit start call; operator
+     * must separately authorize charges and provide a model/config.
+     * Neither workflow_dispatch nor model code can invoke this API.
+     */
+    start:async planning=>{
+      if(attempted)
+        throw Error("Configured Engineer owner bootstrap is single-use");
+      attempted=true; // reserve before any async Planning or root effect
+      if(!planning||typeof planning!=="object"||
+         planning.checkpointStore!==checkpoints||
+         planning.coordinator?.phase!=="idle"||
+         planning.reviewPlanFile!==undefined&&
+           planning.reviewPlanFile!==reviewFile)
+        throw Error("Configured Engineer owner requires original idle Planning and checkpoint identity");
+      // No operator can substitute a different plan.json, backend
+      // verification key, or persistent recovery store after the
+      // protected configuration has been successfully loaded.
+      return startOwnerControlledEngineerReviewHost({
+        planning:{...planning,reviewPlanFile:reviewFile},
+        host:{...config,operationalRecovery}
+      });
+    }
+  });
 }
