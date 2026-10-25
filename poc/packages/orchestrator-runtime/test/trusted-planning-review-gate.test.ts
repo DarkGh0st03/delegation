@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {generateKeyPairSync,sign as signJwt,randomBytes,scryptSync} from "node:crypto";
+import {generateKeyPairSync,sign as signJwt,randomBytes,scryptSync,randomInt} from "node:crypto";
 import {mkdtemp,rm,writeFile,chmod,readdir} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
@@ -28,6 +28,8 @@ import {SignedPlanningCheckpointFileStore}
   from "../src/trusted-planning-checkpoint-store.ts";
 import {startPersistedReviewedGeminiHandoff}
   from "../src/trusted-manual-gemini-handoff.ts";
+import {startPersistedReviewedScriptedHandoff}
+  from "../src/trusted-scripted-offline-handoff.ts";
 import {startAdmittedGithubReviewedGeminiHandoff}
   from "../src/trusted-admitted-github-handoff.ts";
 import {createReviewedApprovedDagExecution}
@@ -1636,4 +1638,146 @@ test("R5 simultaneous Task-status claims cannot issue duplicate VC indices",asyn
     await rm(dir,{recursive:true,force:true});
     await f.close();
   }
+});
+
+
+async function signedScriptedFixture(){
+  const f=await fixture();
+  const directory=await mkdtemp(join(tmpdir(),"signed-scripted-r5-"));
+  const backend=generateKeyPairSync("ed25519");
+  const keyId="scripted-backend-key";
+  const store=new SignedPlanningCheckpointFileStore({
+    directory,
+    trust:{
+      trustedKeys:{[keyId]:{
+        public_key_pem:backend.publicKey.export({
+          format:"pem",type:"spki"
+        }).toString()
+      }},
+      expectedSessionId:SNAPSHOT.session_id,
+      expectedRepository:REPO,expectedBaseRevision:SHA,
+      expectedWorkBranch:CFG.workBranch
+    }
+  });
+  await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+  const proposal=f.proposal();
+  f.gate.stageTrustedProposal(proposal);
+  const checkpoint=signTrustedPlanningCheckpoint({
+    snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+    proposal,keyId,
+    privateKeyPem:backend.privateKey.export({
+      format:"pem",type:"pkcs8"
+    }).toString(),
+    issuedAt:new Date().toISOString(),
+    expiresAt:new Date(Date.now()+600000).toISOString()
+  });
+  await store.persistVerified(checkpoint);
+  return {
+    ...f,store,proposal,backendDirectory:directory,
+    dispose:async()=>{
+      await f.close();
+      await rm(directory,{recursive:true,force:true});
+    }
+  };
+}
+
+const noModelHandlers={
+  backend:async(context:any)=>{
+    assert.equal(context.role,"backend");
+    return {role:"backend",test_outcome:"not_run",files_modified:[],
+      files_created:[],errors:[],summary:"scripted backend",
+      revision:SHA,commit_sha:SHA,branch:CFG.workBranch};
+  },
+  frontend:async(context:any)=>{
+    assert.equal(context.role,"frontend");
+    return {role:"frontend",test_outcome:"not_run",files_modified:[],
+      files_created:[],errors:[],summary:"scripted frontend",
+      revision:SHA,commit_sha:SHA,branch:CFG.workBranch};
+  },
+  test:async(context:any)=>{
+    assert.equal(context.role,"test");
+    return {role:"test",test_outcome:"pass",files_modified:[],
+      files_created:[],errors:[],summary:"scripted test",
+      revision:SHA,commit_sha:SHA,branch:CFG.workBranch,
+      tested_commit_sha:SHA,runner_profile:"poc-default",
+      project_tests:"pass",researcher_acceptance:"pass"};
+  }
+};
+
+test("R5 scripted_offline verified Engineer handoff starts three genuine A2A servers without Gemini",async()=>{
+  const f=await signedScriptedFixture();
+  let running:Awaited<ReturnType<typeof startPersistedReviewedScriptedHandoff>>|undefined;
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    const port=22000+randomInt(0,12000);
+    running=await startPersistedReviewedScriptedHandoff({
+      coordinator:f.coordinator,reviewGate:f.gate,
+      checkpointStore:f.store,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:port,frontend:port+1,test:port+2},
+      handlers:noModelHandlers
+    });
+    assert.equal(running.readiness.status,"scripted_offline_no_model_or_charge_consent");
+    assert.equal(running.readiness.plan_digest,f.proposal.digest);
+    assert.equal(running.operational_root_id,"urn:operational");
+    assert.equal(f.coordinator.phase,"execution");
+    assert.deepEqual(running.servers.map(x=>x.role),
+      ["backend","frontend","test"]);
+    for(const role of ["backend","frontend","test"] as const){
+      const response=await fetch(running.endpoints[role]+
+        "/.well-known/agent-card.json");
+      assert.equal(response.status,200);
+      const card=await response.json();
+      assert.ok(card.capabilities.extensions.some((x:any)=>x.required));
+    }
+    assert.deepEqual(running.servers.map(s=>s.executor.executionCount),
+      [0,0,0]);
+    await running.close();
+    await running.close();
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{
+    await running?.close();
+    await f.dispose();
+  }
+});
+
+test("R5 scripted_offline cannot issue operational authority without authentic Ed25519 Engineer approval",async()=>{
+  const f=await signedScriptedFixture();
+  try{
+    const port=22000+randomInt(0,12000);
+    await assert.rejects(startPersistedReviewedScriptedHandoff({
+      coordinator:f.coordinator,reviewGate:f.gate,
+      checkpointStore:f.store,
+      operationalRoot:root("urn:operational","102"),
+      ports:{backend:port,frontend:port+1,test:port+2},
+      handlers:noModelHandlers
+    }),/ENOENT|signed|receipt|approval|No such file/i);
+    assert.equal(f.coordinator.phase,"planning");
+    assert.deepEqual(f.revoked,[]);
+    await f.coordinator.closePlanning();
+  }finally{await f.dispose();}
+});
+
+test("R5 scripted_offline rejects model-like and missing role handlers BEFORE consuming a signed root",async()=>{
+  const f=await signedScriptedFixture();
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    const port=22000+randomInt(0,12000);
+    for(const handlers of [
+      {...noModelHandlers,test:null},
+      {...noModelHandlers,other:async()=>{}}
+    ]){
+      await assert.rejects(startPersistedReviewedScriptedHandoff({
+        coordinator:f.coordinator,reviewGate:f.gate,
+        checkpointStore:f.store,
+        operationalRoot:root("urn:operational","102"),
+        ports:{backend:port,frontend:port+1,test:port+2},
+        handlers:handlers as any
+      }),/three distinct bound scripted role ports and handlers/);
+    }
+    assert.equal(f.coordinator.phase,"planning");
+    assert.deepEqual(f.revoked,[]);
+    await f.coordinator.closePlanning();
+  }finally{await f.dispose();}
 });
