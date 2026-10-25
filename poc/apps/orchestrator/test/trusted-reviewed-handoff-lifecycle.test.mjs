@@ -115,3 +115,27 @@ test("unconfirmed root closure is never masked as successful dispatch",async()=>
   assert.equal(lifecycle.status,"closing");
   assert.equal(lifecycle.verifiedOutcome,"failed");
 });
+
+
+test("completion stays PENDING while signed DAG root closure is in flight",async()=>{
+  let releaseClose,enterClose;
+  const blocked=new Promise(resolve=>{releaseClose=resolve;});
+  const entering=new Promise(resolve=>{enterClose=resolve;});
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){
+      enterClose();
+      await blocked;
+    },
+    approvedDag:{
+      async executeApprovedDag(){return {completed:true};}
+    }
+  }));
+  const executing=lifecycle.runApprovedDag({},executor());
+  await entering;
+  assert.equal(lifecycle.status,"closing");
+  assert.equal(lifecycle.verifiedOutcome,"pending");
+  releaseClose();
+  assert.deepEqual(await executing,{completed:true});
+  assert.equal(lifecycle.verifiedOutcome,"verified_complete");
+  assert.equal(lifecycle.status,"closed");
+});
