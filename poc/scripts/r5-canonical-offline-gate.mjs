@@ -27,6 +27,16 @@ const SUITES=Object.freeze([
     title:"strict LIVE Engineer Host joins authenticated Unix IPC with durable Gateway planning and operational fences"
   },
   {
+    id:"scripted_offline_oidc_no_billing",
+    path:"poc/packages/orchestrator-runtime/test/trusted-scripted-github-admission.test.ts",
+    title:"R5 signed offline GitHub OIDC and REST corroboration produce one-use HMAC receipt only"
+  },
+  {
+    id:"scripted_offline_cross_profile_denial",
+    path:"poc/packages/orchestrator-runtime/test/trusted-scripted-github-admission.test.ts",
+    title:"R5 offline identity denies cross-profile consent, paid workflow, ref or extra inputs"
+  },
+  {
     id:"scripted_offline_signed_handoff",
     path:"poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
     title:"R5 scripted_offline verified Engineer handoff starts three genuine A2A servers without Gemini"
