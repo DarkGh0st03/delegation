@@ -9,7 +9,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import {generateKeyPairSync} from "node:crypto";
+import {generateKeyPairSync,randomInt} from "node:crypto";
 import {mkdtemp,mkdir,readdir,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
@@ -41,6 +41,12 @@ import {createTrustedApprovedBranchGateway}
   from "../src/trusted-approved-branch-gateway.ts";
 import {createTrustedApprovedTaskAuthorityAllocator}
   from "../src/trusted-approved-task-authority.ts";
+import {DelegatedA2ARoleRunner}
+  from "../src/a2a-workflow.ts";
+import {startSpecializedAgentServer}
+  from "../../agent-runtime/src/server.ts";
+import {DeterministicA2AOrchestrator}
+  from "../../agent-runtime/src/orchestrator.ts";
 
 const SHA="a".repeat(40),ENGINEER="did:thesis:engineer";
 const REPO={authority:"gitea.local",owner:"thesis",repository:"projects"};
@@ -120,9 +126,11 @@ class ScriptedPlanningModel extends BaseLlm{
   }
 }
 async function exercise(
-  x:Scenario,partial=false,cancelBeforeFrontend=false,ownerLifecycle=false
+  x:Scenario,partial=false,cancelBeforeFrontend=false,
+  ownerLifecycle=false,realHttpA2A=false
 ){
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
+  const servers:Array<{role:string;baseUrl:string;close:()=>Promise<void>;executor:any}>=[];
   try{
     const snapshot={session_id:"r2-"+x.name+(partial?"-partial":""),
       repository:REPO,base_revision:SHA,
@@ -313,15 +321,99 @@ async function exercise(
         indexByTask:{backend:"8101",frontend:"8102",tests:"8103"},
         validitySeconds:300
       }):undefined;
+    if(realHttpA2A){
+      // Genuine A2A HTTP+JSON / agent-card + protected REST endpoints:
+      // scripted PROVIDER effects only, no external Gemini or Gitea calls.
+      const roles=["backend","frontend","test"] as const;
+      const firstPort=43000+randomInt(100,3000)*3;
+      for(let i=0;i<roles.length;i++){
+        const role=roles[i]!;
+        servers.push(await startSpecializedAgentServer({
+          role,host:"127.0.0.1",port:firstPort+i,
+          delegatedAuthorization:true,
+          capabilityProfile:"approved-plan",
+          taskHandler:async context=>{
+            const sub=context.subtask;
+            assert.equal(context.role,role);
+            assert.equal(sub.branch,x.branch);
+            assert.match(context.trusted_gateway_task_id??"",
+              /^dispatch_[A-Za-z0-9_-]{22}$/u);
+            assert.equal(context.delegation_evidence.credential_id.startsWith(
+              "urn:task-child:"),true);
+            events.push("a2a:"+role+":"+sub.subtask_id);
+            for(const grant of sub.approved_file_permissions??[]){
+              if(grant.operation==="update_file"||grant.operation==="create_file"){
+                await invoke(context.trusted_gateway_task_id!,role,
+                  grant.operation,{
+                    branch:x.branch,path:grant.path,
+                    content:"export const r5_"+x.name+" = true;"
+                  });
+              }
+            }
+            if(role==="test"){
+              await invoke(context.trusted_gateway_task_id!,"test","run_tests",{
+                branch:x.branch,profile:"poc-default"
+              });
+            }
+            return {
+              role,branch:x.branch,revision:SHA,commit_sha:SHA,
+              summary:"Offline A2A HTTP Task validated by Gateway",
+              files_modified:role==="test"?[]:sub.relevant_paths,
+              files_created:role==="test"?[x.created]:[],
+              test_outcome:role==="test"?"pass":"not_run",
+              errors:[],
+              ...(role==="test"?{
+                tested_commit_sha:SHA,runner_profile:"poc-default" as const,
+                project_tests:"pass" as const,
+                researcher_acceptance:"pass" as const
+              }:{})
+            };
+          }
+        }));
+      }
+    }
+    const realRoleRunner=realHttpA2A
+      ?new DelegatedA2ARoleRunner({
+        authorityIssuer:{
+          assertActiveBeforeA2ASend(){
+            if(coordinator.phase!=="execution")
+              throw Error("Operational root revoked before A2A");
+          },
+          async issueSpecializedChild(input){
+            if(coordinator.phase!=="execution")
+              throw Error("No approved root for A2A Task");
+            // Offline VC fixture: the real Adapter/Rust crypto and
+            // attenuation are independently checked in other CI jobs.
+            return {
+              role:input.selection.role,
+              credential:{
+                id:input.credential_id,
+                credentialSubject:{
+                  sub:"did:thesis:"+input.selection.role,
+                  per:[]
+                }
+              } as any
+            };
+          }
+        },
+        a2a:new DeterministicA2AOrchestrator({
+          deadlineMs:7000,initialIntervalMs:20,maxIntervalMs:80
+        })
+      }):undefined;
     const dispatcher=await TrustedApprovedA2ADispatcher.load({
       approvals:gate,coordinator,sessionId:snapshot.session_id,
       expectedPlanDigest:proposal.digest,baseRevision:SHA,
       expectedEngineerDid:ENGINEER,
-      agentBaseUrls:{
-        backend:"http://127.0.0.1:11001",
-        frontend:"http://127.0.0.1:11002",
-        test:"http://127.0.0.1:11003"
-      },
+      agentBaseUrls:realHttpA2A
+        ?{
+          backend:servers.find(s=>s.role==="backend")!.baseUrl,
+          frontend:servers.find(s=>s.role==="frontend")!.baseUrl,
+          test:servers.find(s=>s.role==="test")!.baseUrl
+        }:{
+          backend:"http://127.0.0.1:11001",
+          frontend:"http://127.0.0.1:11002",
+          test:"http://127.0.0.1:11003"
+        },
       async authorityForTask(id:string,role:any){
         events.push("child-issue:"+id+":"+role);
         if(children){
@@ -333,7 +425,7 @@ async function exercise(
         return root("urn:child:"+x.name+":"+id,
           String(800+events.length));
       },
-      roleRunner:{async issueAndRun(input:any){
+      roleRunner:realRoleRunner??{async issueAndRun(input:any){
         const sub=input.subtask,role=input.role;
         events.push("a2a:"+role+":"+sub.subtask_id);
         assert.equal(sub.branch,x.branch);
@@ -521,10 +613,21 @@ async function exercise(
     assert.equal(opaCalls,5);
     assert.equal(coordinator.phase,"closed");
     assert.equal(revoked.at(-1),"urn:execution:"+x.name);
+    if(realHttpA2A){
+      assert.deepEqual(servers.map(s=>s.executor.executionCount),[1,1,1]);
+      assert.equal(done.specialized_results.length,3);
+      for(const server of servers){
+        for(const context of server.executor.taskContexts.values()){
+          assert.match(context.trusted_gateway_task_id,
+            /^dispatch_[A-Za-z0-9_-]{22}$/u);
+        }
+      }
+    }
     assert.ok(events.indexOf("provider:create_branch:"+(
       events.find(v=>v.startsWith("provider:create_branch:"))?.split(":").at(-1)
     )) < events.findIndex(v=>v.startsWith("a2a:backend")));
   }finally{
+    await Promise.allSettled(servers.map(s=>s.close()));
     await rm(directory,{recursive:true,force:true});
   }
 }
@@ -543,4 +646,8 @@ test("R5 owner-only lifecycle executes signed Engineer DAG with actual Gateway c
 });
 test("R5 owner-only lifecycle denies canceled run and revokes native root before rerun",async()=>{
   await exercise(SCENARIOS[1]!,false,true,true);
+});
+
+test("R5 real HTTP A2A servers execute the signed three-role DAG without model calls",async()=>{
+  await exercise(SCENARIOS[0]!,false,false,true,true);
 });
