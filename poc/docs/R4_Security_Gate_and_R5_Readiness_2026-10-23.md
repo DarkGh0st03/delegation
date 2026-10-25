@@ -1098,3 +1098,32 @@ previous SHA. R5 is **NO-GO** until persistent deployment, authentic
 human review, canonical provider integration, spend limits and explicit
 charge authorization have independently been demonstrated. Neither
 `main` nor the historical paid Gemini workflow was modified.
+
+
+### R5 GitHub run liveness rechecked before every approved Task (25 October 2026)
+
+The owner-only `createReviewedApprovedDagExecution` bridge no longer
+checks GitHub Actions liveness only before loading the approved DAG.
+It also supplies a trusted, non-model-controlled `beforeTask` callback
+to `TrustedApprovedA2ADispatcher.executeApprovedDag`.
+The callback performs the same authenticated GitHub REST active-run and
+operational-lease check **before each signed Task**, including
+Orchestrator `create_branch` and Backend/Frontend/Test dispatch.
+An inactive/canceled job, REST failure, or Coordinator shutdown fails
+closed before dispatching the next Task, and the dispatcher closes
+the operational authority on failure.
+
+The task callback is optional only in legacy and independent offline
+dispatcher tests; it is mandatory by construction for the admitted
+Gemini bridge. No user-supplied model or A2A payload can substitute
+that callback. Regression tests cover the four-Task healthy sequence,
+cancellation between Backend and Frontend (no Frontend/Test effects),
+and shutdown during the verification boundary.
+
+**Limitations:** a check is not an atomic lock on external GitHub run
+state. Already-started provider actions can finish after an independent
+cancellation; bounded leases, periodic job monitoring, native revocation
+and trusted Gateway controls remain necessary. The separate
+self-hosted runner/Engineer deployment and a single model-scripted
+real-provider canonical E2E are still unproven. This is offline-only
+code; R5 stays **NO-GO** pending same-SHA CI and explicit charge consent.
