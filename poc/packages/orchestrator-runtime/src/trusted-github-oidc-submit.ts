@@ -172,3 +172,146 @@ export async function submitTrustedGithubOidcFromRunner(
     req.end(body,"utf8");
   });
 }
+
+
+/**
+ * Read-only mTLS runner rendezvous. This DOES NOT receive a command from the
+ * host or run Gemini locally: it only keeps the original GitHub workflow job
+ * alive until the trusted host confirms its signed DAG AND root closure.
+ */
+const STATE_PATH="/v1/trusted/github/admission-status";
+const RUN_ID=/^[1-9]\d{0,19}$/u;
+const SHA_40=/^[a-f0-9]{40}$/u;
+const STATE_VALUES=[
+  "waiting_for_owner","execution_active","completed_verified","terminated"
+] as const;
+export type TrustedPrivateRunState=typeof STATE_VALUES[number];
+
+export async function readTrustedPrivateRunState(input:{
+  intakeUrl:string;
+  tls:TrustedGithubRunnerSubmission["tls"];
+  runId:string;
+  sourceSha:string;
+  signal?:AbortSignal;
+}):Promise<TrustedPrivateRunState>{
+  if(!RUN_ID.test(input.runId??"")||
+     !SHA_40.test(input.sourceSha??"")||
+     !input.tls||
+     !FINGERPRINT.test(input.tls.expectedServerFingerprint256??"")||
+     ["ca","cert","key"].some(field=>{
+       const v=input.tls[field as "ca"|"cert"|"key"];
+       return !(typeof v==="string"||Buffer.isBuffer(v))||
+         !v.length||v.length>128*1024;
+     }))fail();
+  let url:URL;
+  try{url=new URL(input.intakeUrl);}catch{fail();}
+  if(url!.protocol!=="https:"||url!.pathname!==ADMISSION_PATH||
+     url!.search||url!.hash||url!.username||url!.password)fail();
+  url!.pathname=STATE_PATH;
+  url!.searchParams.set("run_id",input.runId);
+  url!.searchParams.set("source_sha",input.sourceSha);
+  return new Promise((resolve,reject)=>{
+    let settled=false;
+    const denied=()=>{
+      if(settled)return;
+      settled=true;
+      reject(Error("Trusted private runner session status denied"));
+    };
+    const req=httpsRequest(url!,{
+      method:"GET",ca:input.tls.ca,cert:input.tls.cert,
+      key:input.tls.key,rejectUnauthorized:true,minVersion:"TLSv1.2",
+      ...(input.signal?{signal:input.signal}:{}),
+      checkServerIdentity:(host,certificate)=>{
+        const mismatch=checkServerIdentity(host,certificate);
+        if(mismatch)return mismatch;
+        if(typeof certificate.fingerprint256!=="string"||
+           !FINGERPRINT.test(certificate.fingerprint256)||
+           !timingSafeEqual(
+             fingerprintBytes(certificate.fingerprint256),
+             fingerprintBytes(input.tls.expectedServerFingerprint256)
+           ))return Error("Trusted private runner host fingerprint changed");
+        return undefined;
+      },
+      headers:{accept:"application/json"},timeout:12000
+    },res=>{
+      const chunks:Buffer[]=[];
+      let bytes=0;
+      res.on("data",(part:Buffer)=>{
+        bytes+=part.length;
+        if(bytes>2048){req.destroy();denied();return;}
+        chunks.push(part);
+      });
+      res.on("end",()=>{
+        if(settled)return;
+        try{
+          const body=JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          if(res.statusCode!==200||
+             body?.status!=="private_runner_status_only_not_authorization"||
+             body?.run_id!==input.runId||
+             body?.source_sha!==input.sourceSha||
+             !STATE_VALUES.includes(body?.execution_state))
+            {denied();return;}
+          settled=true;
+          resolve(body.execution_state as TrustedPrivateRunState);
+        }catch{denied();}
+      });
+      res.on("error",denied);
+    });
+    req.on("timeout",()=>{req.destroy();denied();});
+    req.on("error",denied);
+    req.end();
+  });
+}
+
+/** 
+ * Bounded and fail-closed. Only the host can attest completed_verified.
+ * Offline tests may inject a status reader; no GitHub event can do so.
+ */
+export async function awaitTrustedPrivateRunCompletion(input:{
+  intakeUrl:string;
+  tls:TrustedGithubRunnerSubmission["tls"];
+  runId:string;
+  sourceSha:string;
+  maxWaitMs?:number;
+  pollEveryMs?:number;
+  signal?:AbortSignal;
+  /** TEST ONLY; the locked runner CLI always uses the real mTLS GET. */
+  readState?:typeof readTrustedPrivateRunState;
+  /** TEST ONLY; deterministic no-network scheduling. */
+  sleep?:(ms:number,signal:AbortSignal)=>Promise<void>;
+}):Promise<Readonly<{status:"verified_closed_no_runner_authority";
+                      run_id:string;source_sha:string}>>{
+  const max=input.maxWaitMs??60*60*1000;
+  const interval=input.pollEveryMs??5000;
+  if(!Number.isSafeInteger(max)||max<1000||max>75*60*1000||
+     !Number.isSafeInteger(interval)||interval<1000||interval>20000||
+     !RUN_ID.test(input.runId??"")||!SHA_40.test(input.sourceSha??""))
+    fail();
+  const deadline=AbortSignal.timeout(max);
+  const combined=input.signal?AbortSignal.any([deadline,input.signal]):deadline;
+  const {setTimeout:sleepDefault}=await import("node:timers/promises");
+  const sleep=input.sleep??(async(ms:number,signal:AbortSignal)=>{
+    await sleepDefault(ms,undefined,{signal});
+  });
+  const read=input.readState??readTrustedPrivateRunState;
+  try{
+    while(!combined.aborted){
+      const state=await read({...input,signal:combined});
+      if(combined.aborted)break;
+      if(state==="completed_verified"){
+        return Object.freeze({
+          status:"verified_closed_no_runner_authority",
+          run_id:input.runId,source_sha:input.sourceSha
+        });
+      }
+      if(state==="terminated")
+        throw Error("Trusted private runner: signed DAG was not completed");
+      if(state!=="waiting_for_owner"&&state!=="execution_active")
+        throw Error("Trusted private runner: invalid terminal state");
+      await sleep(interval,combined);
+    }
+  }catch{
+    throw Error("Trusted private runner session terminated without verified closure");
+  }
+  throw Error("Trusted private runner session exceeded its bounded deadline");
+}
