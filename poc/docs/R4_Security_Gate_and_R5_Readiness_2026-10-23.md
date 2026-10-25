@@ -885,3 +885,25 @@ Engineer session can start. No new credential is issued by recovery.
 This is a recovery-ordering and fail-closed proof using explicit
 Gateway/Adapter mocks. It does not replace real EVM/native status proof
 or constitute an R5 GO decision. No paid Gemini invocation or main merge.
+
+### R5 operational pre-issuance reservation fails closed without leaking preliminary authority
+
+`TrustedExecutionCoordinator.beginExecution` now explicitly
+cancels its live provisional root when the durable operational-root
+pre-issuance journal refuses a session **before** any new credential
+can be issued. Previously the synchronous `activating`
+phase fence discarded its reference to the Planning root and the
+reservation error left the original provisional root potentially
+live until process restart. The new path uses the original Engineer
+authority to confirm Planning registry closure plus native Rust
+revocation, and tombstones the provisional journal only after the
+confirmation. If any revocation or journal flush fails, both the
+Coordinator and persistent intent remain fail-closed, demanding manual
+reconciliation. No new operational issuance may be retried.
+
+Offline tests force an already retired operational session, prove that
+operational root issuing was never invoked, and check the original
+Planning root was retired exactly once. They also simulate failed
+preliminary revocation and verify the durable Planning intent remains
+pending, blocking further use. No paid workflow, EVM deployment,
+or main merge was performed.

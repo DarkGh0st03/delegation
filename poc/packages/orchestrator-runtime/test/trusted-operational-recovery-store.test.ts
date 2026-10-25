@@ -122,3 +122,91 @@ test("operational recovery rejects corrupted or publicly readable journal",async
     await assert.rejects(f.operational.assertClean(),/owner-only/);
   }finally{await f.close();}
 });
+
+test("operational reservation failure revokes live provisional root without issuing a second root",async()=>{
+  const f=await setup();
+  try{
+    // The session was used previously and is operationally retired.
+    // Planning may have begun with an independently confirmed read-only
+    // root; the handoff must not leave it active if the new reservation
+    // fails before ANY Rust operational issuing request.
+    await f.operational.recordIntent(operational);
+    await f.operational.markReconciled(operational);
+    const {TrustedExecutionCoordinator}=await import(
+      "../src/trusted-execution-coordinator.ts");
+    const revoked:string[]=[];
+    let provisionalCancellations=0,operationalIssueAttempts=0;
+    const coordinator=new TrustedExecutionCoordinator({
+      sessionId,baseRevision,planningRecovery:f.planning,
+      operationalRecovery:f.operational,
+      credentials:{async revokeRoot(id:string){revoked.push(id);}},
+      approvedGatewayPlans:{
+        retireSession(){},async activate(){throw Error("never activate");},
+        bindTask(){},async confirmTaskCompletion(){},closeSession(){}
+      },
+      authority:{
+        async startPlanning(root:any){return {
+          phase:"planning",credential_id:root.credential_id,permissions:[]
+        };},
+        async cancelPlanning(){
+          provisionalCancellations++;
+          revoked.push(preliminary.credentialId);
+        },
+        async approveAndIssueOperationalRoot(){
+          operationalIssueAttempts++;
+          throw Error("must not issue");
+        }
+      } as any
+    });
+    await coordinator.beginPlanning({credential_id:preliminary.credentialId} as any);
+    await assert.rejects(coordinator.beginExecution({
+      credential_id:"urn:test:second-operational"
+    } as any),/reconciled session cannot be reused/);
+    assert.equal(coordinator.phase,"failed_closed");
+    assert.equal(provisionalCancellations,1);
+    assert.deepEqual(revoked,[preliminary.credentialId]);
+    assert.equal(operationalIssueAttempts,0);
+    await f.planning.assertClean();
+    await assert.rejects(f.planning.assertFreshSession(sessionId),
+      /retired session cannot be reused/);
+    await assert.rejects(coordinator.beginExecution({
+      credential_id:"urn:test:third-operational"
+    } as any),/requires prior Planning/);
+  }finally{await f.close();}
+});
+
+test("uncertain preliminary revocation after failed operational reservation retains Planning intent",async()=>{
+  const f=await setup();
+  try{
+    await f.operational.recordIntent(operational);
+    await f.operational.markReconciled(operational);
+    const {TrustedExecutionCoordinator}=await import(
+      "../src/trusted-execution-coordinator.ts");
+    const coordinator=new TrustedExecutionCoordinator({
+      sessionId,baseRevision,planningRecovery:f.planning,
+      operationalRecovery:f.operational,
+      credentials:{async revokeRoot(){}},
+      approvedGatewayPlans:{
+        retireSession(){},async activate(){throw Error("never");},
+        bindTask(){},async confirmTaskCompletion(){},closeSession(){}
+      },
+      authority:{
+        async startPlanning(root:any){return {
+          phase:"planning",credential_id:root.credential_id,permissions:[]
+        };},
+        async cancelPlanning(){throw Error("Gateway Planning retirement unavailable");},
+        async approveAndIssueOperationalRoot(){throw Error("must not issue");}
+      } as any
+    });
+    await coordinator.beginPlanning({credential_id:preliminary.credentialId} as any);
+    await assert.rejects(coordinator.beginExecution({
+      credential_id:"urn:test:never-issue"
+    } as any),/preliminary root revocation unconfirmed; manual reconciliation required/);
+    assert.equal(coordinator.phase,"failed_closed");
+    assert.equal((await f.planning.pending()).length,1);
+    await assert.rejects(f.planning.assertFreshSession(sessionId),
+      /orphaned Planning root/);
+    await assert.rejects(f.operational.assertFreshSession(sessionId),
+      /reconciled session cannot be reused/);
+  }finally{await f.close();}
+});

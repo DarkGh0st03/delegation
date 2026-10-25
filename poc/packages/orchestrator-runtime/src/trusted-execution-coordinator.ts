@@ -228,7 +228,35 @@ export class TrustedExecutionCoordinator {
           credentialId:root.credential_id
         });
       }catch(error){
+        // Operational issuance has NOT been attempted, but the provisional
+        // read-only credential is still live. The phase was fenced above,
+        // so closePlanning() cannot run here. Explicitly cancel through
+        // the original Engineer authority, then retire the exact Planning
+        // intent ONLY after confirmed Gateway + Rust cancellation.
         this.#phase="failed_closed";
+        let preliminaryRetired=false;
+        try{
+          await this.#authority.cancelPlanning();
+          preliminaryRetired=true;
+        }catch{
+          // Keep pending Planning intent on disk for trusted cold recovery.
+        }
+        if(preliminaryRetired&&this.#planningRecovery&&preliminaryId){
+          try{
+            await this.#planningRecovery.markReconciled({
+              sessionId:this.#sessionId,baseRevision:this.#baseRevision,
+              credentialId:preliminaryId
+            });
+          }catch{
+            throw Error("Operational journal reservation failed; Planning tombstone unconfirmed; manual reconciliation required",
+              {cause:error});
+          }
+        }
+        if(!preliminaryRetired)
+          throw Error("Operational journal reservation failed; preliminary root revocation unconfirmed; manual reconciliation required",
+            {cause:error});
+        // A confirmed provisional cancellation is safe, but NEVER retry
+        // the old approval or root under this terminal Coordinator.
         throw error;
       }
     }
