@@ -12,13 +12,15 @@ import {TrustedApprovedExecutionPlans} from "./approved-execution-plans.ts";
 import {GatewayCorroboratedTaskAttestor} from "./trusted-task-observation.ts";
 import {createTrustedPlanIpcServer} from "./trusted-plan-ipc.ts";
 import {TrustedPlanningRevisions} from "./planning-revisions.ts";
+import {TrustedPlanningRetirementStore} from "./trusted-planning-retirement-store.ts";
 import {GiteaClient} from "./gitea-client.ts";
 import type {GatewayRuntimeConfig} from "./config.ts";
 
 const ENV=[
   "TRUSTED_PLAN_IPC_SOCKET","TRUSTED_PLAN_IPC_SECRET_FILE",
   "TRUSTED_PLAN_APPROVAL_DIR","TRUSTED_PLAN_ENGINEER_DID",
-  "TRUSTED_PLAN_KEY_ID","TRUSTED_PLAN_PUBLIC_KEY_FILE"
+  "TRUSTED_PLAN_KEY_ID","TRUSTED_PLAN_PUBLIC_KEY_FILE",
+  "TRUSTED_PLAN_PLANNING_RETIREMENT_DIR"
 ] as const;
 
 async function pinnedPublicKey(path:string):Promise<string>{
@@ -63,13 +65,17 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
   const leaseRaw=process.env.TRUSTED_PLAN_OPERATIONAL_LEASE_MS;
   if(leaseRaw!==undefined&&!/^[1-9]\d{3,5}$/u.test(leaseRaw))
     throw Error("Invalid trusted Gateway operational lease duration");
+  const retirementStore=new TrustedPlanningRetirementStore(
+    value("TRUSTED_PLAN_PLANNING_RETIREMENT_DIR"));
+  // Verify all prior retirements before any trusted socket or public HTTP.
+  await retirementStore.assertReady();
   const planningRevisions=new TrustedPlanningRevisions(new GiteaClient({
     baseUrl:config.gitea_base_url,
     token:config.gitea_gateway_token,
     owner:config.prepare.repository.owner,
     repository:config.prepare.repository.repository,
     timeoutMs:config.gitea_timeout_ms
-  }));
+  }),{retirementStore});
   const plans=new TrustedApprovedExecutionPlans({
     repository:config.prepare.repository,engineerDid,approvals,
     ...(leaseRaw===undefined?{}:{operationalLeaseMs:Number(leaseRaw)}),

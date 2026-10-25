@@ -1,4 +1,5 @@
 import { GatewayError } from "./errors.ts";
+import {TrustedPlanningRetirementStore} from "./trusted-planning-retirement-store.ts";
 import type { GiteaClient } from "./gitea-client.ts";
 import type { AgentRole, NormalizedToolRequest, PreparedRequestRecord } from "./types.ts";
 
@@ -10,8 +11,8 @@ import type { AgentRole, NormalizedToolRequest, PreparedRequestRecord } from "./
  * obtains the revision from its own authenticated Gitea client.
  *
  * This registry is NOT a substitute for Engineer authentication or DC/VP/OPA,
- * nor does it persist sessions across Gateway replicas/restarts. A durable
- * store and authenticated bootstrap are required for live Planning.
+ * the memory map alone cannot survive Gateway restart. Production requires
+ * a separate owner-only durable retirement store and authenticated bootstrap.
  */
 const COMMIT_SHA = /^[a-f0-9]{40}$/u;
 const MAX_PLANNING_TTL_MS = 15 * 60 * 1000;
@@ -40,18 +41,24 @@ export class TrustedPlanningRevisions {
   readonly #client: Pick<GiteaClient, "readRepository">;
   readonly #sessions = new Map<string, Session>();
   readonly #now: () => number;
+  readonly #retirement?:TrustedPlanningRetirementStore;
 
   constructor(
     authenticatedGiteaClient: Pick<GiteaClient, "readRepository">,
-    options: { nowMs?: () => number } = {}
+    options: { nowMs?: () => number;
+      retirementStore?:TrustedPlanningRetirementStore } = {}
   ) {
     this.#client = authenticatedGiteaClient;
     this.#now = options.nowMs ?? Date.now;
+    if(options.retirementStore!==undefined&&
+       !(options.retirementStore instanceof TrustedPlanningRetirementStore))
+      throw Error("Invalid trusted Gateway Planning retirement store");
+    this.#retirement=options.retirementStore;
   }
 
   /** Bootstrap is trusted code only: never exposed through Gateway HTTP. */
   async begin(taskId: string, ttlMs: number): Promise<TrustedPlanningRevision> {
-    if (typeof taskId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(taskId) ||
+    if (typeof taskId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId) ||
         !Number.isSafeInteger(ttlMs) || ttlMs < 1 || ttlMs > MAX_PLANNING_TTL_MS) {
       throw new GatewayError(400, "invalid_planning_session", "Invalid trusted Planning session");
     }
@@ -67,6 +74,12 @@ export class TrustedPlanningRevisions {
     };
     this.#sessions.set(taskId, session);
     try {
+      // Persistent tombstones are checked BEFORE touching Gitea. A
+      // concurrent retire also fences this reserved in-memory session.
+      await this.#retirement?.assertNotRetired(taskId);
+      if(session.retired)
+        throw new GatewayError(403,"planning_session_retired",
+          "Trusted Planning session retired before Gitea discovery");
       const repository = await this.#client.readRepository();
       const now = this.#now();
       if (repository.default_branch !== "main" || !COMMIT_SHA.test(repository.revision)) {
@@ -112,20 +125,22 @@ export class TrustedPlanningRevisions {
    * Reserve even an UNKNOWN ID so an in-flight begin cannot later start it.
    * Unlike operational-plan retirement, this touches the *real* Gateway
    * Planning registry used by prepare/execute. Never expose on public HTTP. */
-  retire(taskId: string): void {
+  async retire(taskId: string): Promise<void> {
     if (typeof taskId !== "string" ||
         !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId))
       throw new GatewayError(400,"invalid_planning_session",
         "Invalid trusted Planning session");
-    const existing=this.#sessions.get(taskId);
+    let existing=this.#sessions.get(taskId);
     if(existing){
       existing.active=false;
       existing.retired=true;
-      return;
+    }else{
+      existing={taskId,baseRevision:"",expiresAtMs:0,active:false,retired:true};
+      this.#sessions.set(taskId,existing);
     }
-    this.#sessions.set(taskId,{
-      taskId,baseRevision:"",expiresAtMs:0,active:false,retired:true
-    });
+    // A failed disk write never becomes a successful IPC retirement ACK.
+    // The caller retains its pending provisional root for reconciliation.
+    await this.#retirement?.markRetired(taskId);
   }
 
   /** Invoked by Gateway prepare; binds immutable revision into the request record. */

@@ -523,3 +523,31 @@ revocation. The actual `main.ts`/real-Gitea security
 requirement stays unchanged. No paid Gemini usage or main merge.
 
 New exact-SHA cumulative offline CI must pass 5/5 before certification.
+
+### R5 Gateway Planning retirement durable across process restarts (25 October 2026)
+
+`TrustedPlanningRetirementStore` is a **separate**
+owner-owned, mode-0700, exclusively created/fsynced journal of retired
+Planning session IDs. The production trusted Gateway now requires
+`TRUSTED_PLAN_PLANNING_RETIREMENT_DIR`, validates all
+existing tombstones before binding either its private IPC or public HTTP,
+and shares that store with the **same** Gitea-backed
+`TrustedPlanningRevisions` object used in prepare/execute.
+
+The authenticated `retire_planning` command sets an immediate
+in-memory fence and waits for the file+directory fsync before acknowledging
+success. A cold-restarted Gateway refuses even an otherwise valid
+`begin` for a previously retired session before Gitea I/O.
+Concurrent Gitea discovery is also rejected if retirement races it.
+A missing/corrupt/symlinked or publicly readable retirement journal
+fails closed. Tests cover cold restart, unknown session tombstone,
+corrupt journal and in-flight read races.
+
+A storage write error leaves an unconfirmed Engineer journal; it must
+be reconciled rather than accepted as successful termination. This is
+a single-owner filesystem durability primitive, not distributed
+consensus. All concurrent Gateway replicas MUST be prevented from
+issuing the same session by separate deployment controls. Further
+operational tests with the Engineer/Gateway restarted together are
+needed before R5 GO. The change does not call Gemini, request human
+approval or alter `main`.

@@ -160,7 +160,7 @@ export async function createTrustedPlanIpcServer(config:{
       }else if(command.action==="retire_planning"){
         if(!(config.planningRevisions instanceof TrustedPlanningRevisions))
           fail("actual Gateway Planning revision registry missing");
-        config.planningRevisions.retire(command.session_id);
+        await config.planningRevisions.retire(command.session_id);
         response(res,200,{ok:true});
       }else if(command.action==="activate"){
         const plan_digest=await config.plans.activate(
