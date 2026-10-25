@@ -32,6 +32,16 @@ const SUITES=Object.freeze([
     title:"loopback trusted admission independently validates OIDC and run, consumes replay, never authorizes Gemini"
   },
   {
+    id:"runner_terminal_requires_dag_and_root_closure",
+    path:"poc/apps/orchestrator/test/trusted-engineer-run-status.test.mjs",
+    title:"R5 paid and scripted runner status requires selected run AND fully closed verified native authority"
+  },
+  {
+    id:"cold_runner_never_waits_for_fake_planning",
+    path:"poc/apps/orchestrator/test/trusted-engineer-run-status.test.mjs",
+    title:"R5 cold Engineer host and canceled paid or scripted sessions NEVER strand GitHub worker"
+  },
+  {
     id:"engineer_review_freezes_during_both_handoffs",
     path:"poc/apps/orchestrator/test/trusted-engineer-host.test.mjs",
     title:"R5 Engineer approval and rejection freeze at the start of either one-shot handoff"
