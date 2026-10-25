@@ -191,6 +191,15 @@ test("same persistent Engineer session holds separate real-verified OIDC intake 
   assert.ok(!("approved_permission_ids" in consumed));
   assert.throws(()=>host.startReviewedHandoff({runId}),
     /startup operational recovery mandatory/);
+  // New owner-only single-call route cannot fabricate an Executor or
+  // bypass the existing persistent Coordinator/recovery admission checks.
+  assert.throws(()=>host.runReviewedApprovedDag({runId,execution:{}}),
+    /owner-provisioned approved DAG executor required/);
+  assert.throws(()=>host.runReviewedApprovedDag({runId,execution:{
+    a2a:{},adapter:{},
+    authorityForTask:async()=>({}),
+    invokeOrchestratorTask:async()=>({})
+  }}),/startup operational recovery mandatory/);
   await assert.rejects(host.consumeAuthenticatedRun(runId),/already consumed/);
   // No Gemini key was provided; no root issuance or inference is possible.
   await host.close();
