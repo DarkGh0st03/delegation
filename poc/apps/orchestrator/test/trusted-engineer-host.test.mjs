@@ -862,6 +862,22 @@ test("same-process live Planning host preserves provisional root for review then
   assert.throws(()=>host.startReviewedHandoff({
     runId,coordinator:new Object()
   }),/original active Planning Coordinator/);
+  // Only the original live signed Coordinator may construct the new
+  // Gateway branch executor. Neither a source SHA nor a model callback
+  // can supply a missing trusted Engineer review gate.
+  assert.throws(()=>host.runReviewedApprovedDagWithGateway({
+    runId,
+    execution:{
+      a2a:{sendProtectedTask:async()=>{}},
+      adapter:{adapterBaseUrl:"http://127.0.0.1:8090",bearerToken:"offline"},
+      authorityForTask:async()=>({})
+    },
+    privateGatewayTransport:{
+      gatewayBaseUrl:"http://127.0.0.1:8080",
+      adapterBaseUrl:"http://127.0.0.1:8090",
+      adapterToken:"offline"
+    }
+  }),/original live signed Planning session required/);
   await host.close();
   assert.equal(coordinator.phase,"closed");
   assert.equal(gatewayRetired,1);
