@@ -326,3 +326,39 @@ export async function startTrustedEngineerRecoveringHost(config){
     }
   });
 }
+
+/**
+ * Production entrypoint for an ALREADY ACTIVE same-process Planning session.
+ * Unlike cold recovery, this caller owns a live root and MUST cancel it if
+ * host bootstrap fails at any stage (TLS, IPC, checkpoint or listener).
+ *
+ * A killed process is still recovered through the independent durable
+ * Gateway/Engineer journals; no in-memory coordinator is reconstructed
+ * from a file or untrusted GitHub input.
+ */
+export async function startTrustedEngineerLivePlanningHost(config){
+  const active=config?.activePlanning;
+  if(!(active?.coordinator instanceof TrustedExecutionCoordinator)||
+     !(active.planningRecovery instanceof TrustedPlanningRecoveryStore)||
+     !(active.checkpointStore instanceof SignedPlanningCheckpointFileStore)||
+     active.checkpointStore!==config?.approval?.planningCheckpointStore)
+    deny("live Planning startup requires the original Coordinator and signed provenance");
+  try{
+    return await startTrustedEngineerRecoveringHost(config);
+  }catch(error){
+    // The process still owns this root and has not returned a live host.
+    // Retire immediately; an uncertain Adapter/Gateway result remains on
+    // disk and MUST prevent retries.
+    if(active.coordinator.phase==="planning"){
+      try{await active.coordinator.closePlanning();}
+      catch(revocationError){
+        throw Error("Trusted Engineer live Planning startup: preliminary root closure unconfirmed; manual reconciliation required",
+          {cause:revocationError});
+      }
+    }else if(active.coordinator.phase!=="closed"){
+      throw Error("Trusted Engineer live Planning startup: root state uncertain; manual reconciliation required",
+        {cause:error});
+    }
+    throw error;
+  }
+}

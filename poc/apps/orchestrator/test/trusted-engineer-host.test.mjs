@@ -19,7 +19,8 @@ import {TrustedPlanningRecoveryStore}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
 import {TrustedExecutionCoordinator}
   from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
-import {startTrustedEngineerLocalHost}
+import {startTrustedEngineerLocalHost,
+  startTrustedEngineerLivePlanningHost}
   from "../src/trusted-engineer-host.mjs";
 import {SignedEngineerApprovalFileStore}
   from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
@@ -854,4 +855,58 @@ test("live Planning host rejects spoofed recovery journal without closing real r
       checkpointStore:undefined}
   }),/same-process Coordinator, journal and signed checkpoint/);
   assert.equal(coordinator.phase,"idle");
+});
+
+test("strict live-Planning bootstrap failure revokes root before any UI or OIDC listener",async t=>{
+  const f=await fixture(t);
+  const home=join((await import("node:path")).dirname(f.receipts),"strict-live-error");
+  const journalDir=join(home,"pending"),operational=join(home,"operational"),
+    checkpointDir=join(home,"checkpoint");
+  for(const path of [home,journalDir,operational,checkpointDir])
+    await mkdir(path,{mode:0o700});
+  const journal=new TrustedPlanningRecoveryStore(journalDir);
+  const checkpoint=new SignedPlanningCheckpointFileStore({
+    directory:checkpointDir,trust:{
+      trustedKeys:{},expectedSessionId:f.plan.session_id,
+      expectedRepository:f.plan.repository,
+      expectedBaseRevision:f.plan.base_revision,
+      expectedWorkBranch:"feature/account-suspension"
+    }
+  });
+  const rootId="urn:offline:planning-root-on-bootstrap-failure";
+  let revocations=0,retirements=0;
+  const coordinator=new TrustedExecutionCoordinator({
+    sessionId:f.plan.session_id,baseRevision:f.plan.base_revision,
+    planningRecovery:journal,
+    credentials:{async revokeRoot(id){
+      assert.equal(id,rootId);revocations++;
+    }},
+    approvedGatewayPlans:{async activate(){throw Error("no Execution");}},
+    authority:{
+      async startPlanning(root){return {
+        phase:"planning",credential_id:root.credential_id,permissions:[]
+      };},
+      async cancelPlanning(){retirements++;revocations++;}
+    }
+  });
+  await coordinator.beginPlanning({credential_id:rootId});
+  assert.equal((await journal.pending()).length,1);
+  const config={...f.config,
+    approval:{...f.config.approval,planningCheckpointStore:checkpoint},
+    activePlanning:{coordinator,planningRecovery:journal,checkpointStore:checkpoint},
+    recovery:{directory:operational,planningDirectory:journalDir}
+  };
+  // Strict host cannot expose GitHub OIDC without pinned mTLS. Since the
+  // Planning root was issued BEFORE host startup, it still must be retired.
+  await assert.rejects(startTrustedEngineerLivePlanningHost(config),
+    /pinned mutual TLS admission/);
+  assert.equal(retirements,1);
+  assert.equal(revocations,1);
+  assert.equal(coordinator.phase,"closed");
+  await journal.assertClean();
+  await assert.rejects(journal.assertFreshSession(f.plan.session_id),
+    /retired session cannot be reused/);
+  await assert.rejects(startTrustedEngineerLivePlanningHost(config),
+    /pinned mutual TLS admission|root state uncertain/);
+  assert.equal(revocations,1);
 });

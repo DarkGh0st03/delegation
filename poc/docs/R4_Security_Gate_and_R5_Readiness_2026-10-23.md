@@ -654,3 +654,26 @@ Engineer approval and admission must still precede operational root
 activation; none occurs automatically. Real/native Rust/EVM full-path
 test and spending authorization are outstanding. Do not claim R5 GO,
 run Gemini or merge main; certify on exact-SHA 5/5 offline CI.
+
+### R5 fail-closed strict startup wrapper for same-process live Planning
+
+The strict `startTrustedEngineerLivePlanningHost(config)`
+entrypoint now explicitly owns an already-active Coordinator at the point
+where it attempts persistent Engineer/mTLS/Gateway bootstrap. If TLS,
+checkpoint, Unix IPC, listener initialization or any other startup stage
+fails *before a host is returned*, the wrapper calls
+`closePlanning()` on that SAME Coordinator. It reports
+normal startup failure only after native preliminary-root revocation,
+Gateway Planning retirement and the owner journal tombstone have all
+been confirmed. On cancellation uncertainty it returns a mandatory
+manual-reconciliation error and does not claim a safe shutdown.
+
+The new dedicated offline test creates a provisional root and durable
+intent, intentionally misconfigures the strict mTLS admission, and
+verifies one-shot retirement before either Engineer UI or OIDC startup.
+This is a trusted in-process entrypoint, never an HTTP route and never
+invoked from ADK/A2A/MCP. The separate cold-restart host remains
+intentionally unable to reconstruct a live Coordinator from disk.
+
+No paid model, automatic approval, or production root is issued here.
+The full operational run remains R5 NO-GO until separately authorized.
