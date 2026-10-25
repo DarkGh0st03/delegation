@@ -275,6 +275,13 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
     /^https:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/oidc-admission$/);
   const {submitTrustedGithubOidcFromRunner}=await import(
     "../../../packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts");
+  const {readTrustedPrivateRunState}=await import(
+    "../../../packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts");
+  const liveStatus=()=>readTrustedPrivateRunState({
+    intakeUrl:host.oidcAdmissionEndpoint,tls,runId,sourceSha:sha
+  });
+  // A pinned mTLS certificate alone cannot query an unadmitted job.
+  await assert.rejects(liveStatus(),/session status denied/);
   const submission={
     tokenRequestUrl:"https://pipelines.actions.githubusercontent.com/oidc",
     tokenRequestBearer:"offline-local-oidc-bearer",audience:aud,
@@ -343,6 +350,21 @@ test("mTLS private submission authenticates runner transport plus OIDC but never
     run_id:runId,source_sha:sha
   });
   assert.equal((await readdir(f.replays)).length,1);
+  assert.equal(await liveStatus(),"waiting_for_owner");
+  // This is a read-only view, NOT human approval or a root issuance.
+  await assert.rejects(readTrustedPrivateRunState({
+    intakeUrl:host.oidcAdmissionEndpoint,tls,
+    runId:"987654321",sourceSha:sha
+  }),/session status denied/);
+  await assert.rejects(readTrustedPrivateRunState({
+    intakeUrl:host.oidcAdmissionEndpoint,tls,
+    runId,sourceSha:"f".repeat(40)
+  }),/session status denied/);
+  await assert.rejects(readTrustedPrivateRunState({
+    intakeUrl:host.oidcAdmissionEndpoint,tls:{
+      ...tls,cert:rogue.cert,key:rogue.key
+    },runId,sourceSha:sha
+  }),/session status denied/);
   // The second valid JWT is new, but the same workflow RUN is one-use.
   await assert.rejects(submitTrustedGithubOidcFromRunner(submission),
     /admission denied/);
