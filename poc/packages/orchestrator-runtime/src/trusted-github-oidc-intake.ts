@@ -34,6 +34,8 @@ import {verifyGithubManualGeminiDispatch,verifyGithubManualRunViaApi,
   from "./trusted-manual-github-dispatch.ts";
 
 const PATH="/v1/trusted/github/oidc-admission";
+const STATUS_PATH="/v1/trusted/github/admission-status";
+const RUN=/^[1-9]\d{0,19}$/u;
 const MAX_BYTES=48*1024;
 /**
  * The only non-loopback listener allowed is an explicitly selected private
@@ -98,6 +100,14 @@ export interface TrustedGithubOidcIntakeConfig{
   /** Useful only for offline unit tests. */
   githubApiFetchFn?:typeof fetch;
   oidcJwksFetchFn?:typeof fetch;
+  /**
+   * Trusted host-owned, read-only outcome. No caller can start inference,
+   * approve a plan, renew authority or produce a synthetic status here.
+   * Used only by a previously authenticated private mTLS runner.
+   */
+  statusForAdmittedRun?:()=>(
+    "waiting_for_owner"|"execution_active"|"completed_verified"|"terminated"
+  );
   port?:number;
   /** Host-selected IPv4 address; default loopback. Non-loopback RFC1918 requires mTLS. */
   bindAddress?:string;
@@ -139,6 +149,8 @@ export async function startTrustedGithubOidcIntakeServer(
   if(config.tls&&!fingerprint.test(config.tls.expectedClientFingerprint256??""))
     throw Error("Trusted Github OIDC intake requires pinned client certificate fingerprint");
   let active=false;
+  let admittedRunId:string|undefined;
+  let admittedSourceSha:string|undefined;
   const handler=async(req:IncomingMessage,res:ServerResponse)=>{
     const respond=(status:number,result:Record<string,unknown>)=>{
       if(res.writableEnded)return;
@@ -162,6 +174,39 @@ export async function startTrustedGithubOidcIntakeServer(
            Buffer.from(expected.replaceAll(":",""),"hex"))){
         respond(403,{status:"denied"});return;
       }
+    }
+    // Read-only, previously authenticated runner hold. This endpoint
+    // cannot issue credentials, sign consent, start tasks or trigger Gemini.
+    // It is unavailable in the HTTP/loopback demonstration mode.
+    if(req.method==="GET"){
+      if(!config.tls||!config.statusForAdmittedRun||
+         typeof req.url!=="string"||req.url.length>280){
+        respond(404,{status:"denied"});return;
+      }
+      try{
+        const url=new URL(req.url,"https://127.0.0.1");
+        const fields=[...url.searchParams.keys()];
+        const runId=url.searchParams.get("run_id");
+        const sourceSha=url.searchParams.get("source_sha");
+        if(url.pathname!==STATUS_PATH||fields.length!==2||
+           fields[0]!=="run_id"||fields[1]!=="source_sha"||
+           !RUN.test(runId??"")||
+           !/^[a-f0-9]{40}$/u.test(sourceSha??"")||
+           runId!==admittedRunId||sourceSha!==admittedSourceSha){
+          respond(404,{status:"denied"});return;
+        }
+        const state=config.statusForAdmittedRun();
+        if(!["waiting_for_owner","execution_active",
+             "completed_verified","terminated"].includes(state))
+          throw Error("invalid trusted runner status");
+        respond(200,{
+          status:"private_runner_status_only_not_authorization",
+          run_id:runId,source_sha:sourceSha,execution_state:state
+        });
+      }catch{
+        respond(403,{status:"denied"});
+      }
+      return;
     }
     // Serialize admission and replay consumption within this host. O_EXCL
     // in the file store independently serializes across separate processes.
@@ -191,10 +236,16 @@ export async function startTrustedGithubOidcIntakeServer(
         githubApiToken:config.githubApiToken,
         fetchFn:config.githubApiFetchFn
       });
+      // Only one distinct GitHub job may own a live Engineer session.
+      // A fresh run requires a separately provisioned new host/session.
+      if(admittedRunId&&admittedRunId!==dispatch.run_id)
+        throw Error("trusted Engineer session already admitted another run");
       await config.replayStore.claim(authenticated);
       // Durable, signed session-bound consent for the trusted host, never
       // a model/root authorization. Replays and persistence errors fail closed.
       await config.admissionStore.record({dispatch,job:authenticated});
+      admittedRunId=dispatch.run_id;
+      admittedSourceSha=dispatch.source_sha;
       respond(200,{
         status:"github_job_authenticated_only_not_engineer_approved",
         source_sha:dispatch.source_sha,run_id:dispatch.run_id,
