@@ -27,6 +27,12 @@ export DELEGATION_SCRIPTED_RUNNER_OIDC_CONFIG=/path/to/owner-protected/scripted-
 node --experimental-strip-types poc/scripts/r5-scripted-dispatch-registration.mjs
 ```
 
+The immutable `trusted-scripted-offline-session-hold.yml` also invokes
+this check as its **first job step**, before the runner requests any
+GitHub OIDC token or opens an admission session. The mandatory workflow
+step reads only the independently provisioned runner configuration; no
+repository checkout, mutable install or model invocation is allowed.
+
 Run from the installed, reviewed tree. The script first reads the existing
 fail-closed private-runner configuration loader. It then queries only the
 public GitHub REST API to check that (a) repository/default branch are the

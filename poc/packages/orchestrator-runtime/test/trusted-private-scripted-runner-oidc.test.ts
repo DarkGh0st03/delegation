@@ -161,6 +161,11 @@ test("privileged self-hosted workflow never checks out mutable branch code",asyn
   assert.match(yaml,/environment: r5-private-scripted-admission/);
   assert.match(yaml,/github\.run_attempt == 1/);
   assert.match(yaml,/node --experimental-strip-types \/opt\/delegation\/r5\/poc\/apps\/orchestrator\/src\/hold-private-scripted-github-session\.mjs/);
+  const preflight="node --experimental-strip-types /opt/delegation/r5/poc/scripts/r5-scripted-dispatch-registration.mjs";
+  const hold="node --experimental-strip-types /opt/delegation/r5/poc/apps/orchestrator/src/hold-private-scripted-github-session.mjs";
+  assert.ok(yaml.includes(preflight),"immutable registration preflight required");
+  assert.ok(yaml.indexOf(preflight)<yaml.indexOf(hold),
+    "registration/source gate must run BEFORE requesting GitHub OIDC");
   assert.doesNotMatch(yaml,/actions\/checkout@|actions\/setup-node@/);
   // Security is about executable workflow commands, not explanatory
   // comments. A comment stating "no npm install" must not fail this
