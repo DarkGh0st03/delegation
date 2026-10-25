@@ -62,7 +62,7 @@ export interface VerifiedGithubOidcJob{
  */
 async function verifySignedGithubOidcEvent(input:{
   jwt:string;
-  dispatch:ReviewedGithubDispatchRequest;
+  dispatch:Pick<ReviewedGithubDispatchRequest,"run_id"|"source_sha">;
   pinned:PinnedGithubDispatch;
   trust:GithubOidcTrustPolicy;
   fetchFn?:typeof fetch;
@@ -180,9 +180,14 @@ async function verifySignedGithubOidcEvent(input:{
  * STRICT paid authorization path. Deliberately not configurable by callers:
  * only a first, explicitly approved workflow_dispatch is permitted.
  */
-export function verifyGithubOidcJobAssertion(input:
-  Omit<Parameters<typeof verifySignedGithubOidcEvent>[0],"expectedEvent">
-):Promise<Readonly<VerifiedGithubOidcJob>>{
+export function verifyGithubOidcJobAssertion(input:{
+  jwt:string;
+  dispatch:ReviewedGithubDispatchRequest;
+  pinned:PinnedGithubDispatch;
+  trust:GithubOidcTrustPolicy;
+  fetchFn?:typeof fetch;
+  nowMs?:number;
+}):Promise<Readonly<VerifiedGithubOidcJob>>{
   return verifySignedGithubOidcEvent({
     ...input,expectedEvent:"workflow_dispatch"
   });
