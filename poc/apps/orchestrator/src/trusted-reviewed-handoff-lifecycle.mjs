@@ -6,7 +6,7 @@
  */
 export function createTrustedReviewedHandoffLifecycle(start){
   if(typeof start!=="function")throw Error("Trusted handoff start required");
-  let state="idle",attempt,active,shutdown;
+  let state="idle",attempt,active,shutdown,verifiedOutcome="pending";
   const startAttempt=input=>{
     if(state!=="idle")
       throw Error("Trusted handoff already attempted or host closing");
@@ -54,20 +54,34 @@ export function createTrustedReviewedHandoffLifecycle(start){
          typeof execution.authorityForTask!=="function"||
          !execution.adapter||!execution.a2a)
         throw Error("Trusted handoff requires owner-provisioned signed DAG executor");
+      let completed=false;
       try{
         const running=await startAttempt(input);
         if(state!=="active")
           throw Error("Trusted handoff closed before approved DAG dispatch");
         if(typeof running.approvedDag?.executeApprovedDag!=="function")
           throw Error("Trusted handoff missing canonical signed DAG dispatcher");
-        return await running.approvedDag.executeApprovedDag(execution);
+        const result=await running.approvedDag.executeApprovedDag(execution);
+        completed=true;
+        return result;
+      }catch(error){
+        verifiedOutcome="failed";
+        throw error;
       }finally{
-        // The dispatcher also closes on exit. Both close paths are
-        // deliberately idempotent; host shutdown may race dispatch.
-        await closeAttempt();
+        // Only a successful signed DAG PLUS confirmed authority revocation
+        // can be reported as complete to the private waiting runner.
+        try{
+          await closeAttempt();
+          verifiedOutcome=completed?"verified_complete":"failed";
+        }catch(error){
+          verifiedOutcome="failed";
+          throw error;
+        }
       }
     },
     close:closeAttempt,
-    get status(){return state;}
+    get status(){return state;},
+    /** Status only: not an Engineer approval or model execution receipt. */
+    get verifiedOutcome(){return verifiedOutcome;}
   });
 }
