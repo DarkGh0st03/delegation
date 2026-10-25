@@ -1880,3 +1880,37 @@ billable Gemini model or merge to main for this test. Additionally,
 a queue of cumulative offline workflows does NOT constitute passed
 CI: record the actual five green jobs for the exact final SHA before
 elevating the release gate.
+
+
+### R5 — GitHub manual-dispatch registration gate (25 October 2026)
+
+**Verified deployment blocker, not a source-code test failure:** GitHub
+requires a workflow file to exist on the repository's **default
+branch** before its `workflow_dispatch` event can be invoked
+manually. The reviewed
+`.github/workflows/trusted-scripted-offline-session-hold.yml`
+currently exists ONLY on
+`refactor/post-prof-plan-contracts-20261021`, not on `main`.
+Consequently an owner cannot yet launch the intended private
+first-attempt GitHub job through the normal manual workflow route.
+The same requirement affects the existing paid private workflow.
+GitHub documents this under *Events that trigger workflows →
+workflow_dispatch* and *Workflow syntax → on.workflow_dispatch*.
+
+A future **explicit Engineer/operator-approved** deployment decision
+must register a reviewed and immutable entrypoint on the default
+branch (or a separate owner-controlled test repository's default
+branch with freshly pinned repo/ref IDs). It must also provision the
+isolated private runner, its immutable installed code and mTLS
+credentials, and the separately persistent Engineer/Gateway
+services. A change to `main` is **not** authorized as part of
+normal R5 branch work and must never be silently merged merely to
+make a manual dispatch available.
+
+Do NOT weaken the event parser to accept `push`, `pull_request`,
+an unsigned local JSON file or a synthesized GitHub JWT: these would
+not verify the stated manual-job boundary. This blocker is distinct
+from the cumulative offline GitHub CI queue and from the need for
+one actual signed Planner-to-PR scripted-run deployment.
+Until both deployment prerequisites and the exact-SHA test evidence
+are met, R5 remains **NO-GO**.
