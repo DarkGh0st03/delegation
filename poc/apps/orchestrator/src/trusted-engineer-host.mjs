@@ -47,6 +47,10 @@ import {TrustedGithubAdmissionReceiptStore}
   from "../../../packages/orchestrator-runtime/src/trusted-github-admission-store.ts";
 import {startTrustedGithubOidcIntakeServer}
   from "../../../packages/orchestrator-runtime/src/trusted-github-oidc-intake.ts";
+import {TrustedScriptedGithubAdmissionStore}
+  from "../../../packages/orchestrator-runtime/src/trusted-scripted-github-admission.ts";
+import {startTrustedScriptedGithubOidcIntakeServer}
+  from "../../../packages/orchestrator-runtime/src/trusted-scripted-github-oidc-intake.ts";
 import {consumePinnedGithubAdmission,startAdmittedGithubReviewedGeminiHandoff}
   from "../../../packages/orchestrator-runtime/src/trusted-admitted-github-handoff.ts";
 
@@ -87,13 +91,29 @@ async function shutdown(server){
  * loopback endpoints alone are not reachable by GitHub-hosted runners.
  */
 export async function startTrustedEngineerLocalHost(config){
-  const approval=config?.approval,oidc=config?.oidc;
+  const approval=config?.approval,oidc=config?.oidc,
+    scripted=config?.scriptedOidc;
   if(!approval||!oidc||!approval.expectedSessionId||
      !oidc.pinned?.sourceSha||!oidc.pinned?.repository||!oidc.pinned?.ref||
      !port(config.approvalPort??0)||!port(config.oidcPort??0)||
      !Buffer.isBuffer(oidc.hmacSecret)||
      oidc.hmacSecret.length<32||oidc.hmacSecret.length>128)
     deny("independently pinned approval/OIDC config and strong secret required");
+  // The optional no-charge listener has independently pinned OIDC
+  // and disjoint durable state. It cannot consume a paid receipt.
+  if(scripted&&(
+     scripted.pinned?.workflowPath!==
+       ".github/workflows/trusted-scripted-offline-session-hold.yml"||
+     scripted.pinned.repository!==oidc.pinned.repository||
+     scripted.pinned.ref!==oidc.pinned.ref||
+     scripted.pinned.sourceSha!==oidc.pinned.sourceSha||
+     scripted.trust?.expectedAudience===oidc.trust?.expectedAudience||
+     !scripted.githubApiToken?.trim()||
+     !scripted.tls||
+     !port(config.scriptedOidcPort??0)||
+     !Buffer.isBuffer(scripted.hmacSecret)||
+     scripted.hmacSecret.length<32||scripted.hmacSecret.length>128))
+    deny("separate pinned no-charge OIDC intake configuration required");
   // In particular, Gitea Planning base SHA and GitHub workflow source SHA
   // have different identities; neither is derived from the other.
   const recovery=config?.recovery;
@@ -111,6 +131,7 @@ export async function startTrustedEngineerLocalHost(config){
     deny("live Planning requires same-process Coordinator, journal and signed checkpoint");
   const directories=[
     oidc.replayDirectory,oidc.admissionDirectory,approval.receiptDirectory,
+    ...(scripted?[scripted.replayDirectory,scripted.admissionDirectory]:[]),
     ...(recovery?[recovery.directory]:[]),
     ...(recovery?.planning?[recovery.planning.directory]:[])
   ];
@@ -187,6 +208,14 @@ export async function startTrustedEngineerLocalHost(config){
     directory:oidc.admissionDirectory,hmacSecret:oidc.hmacSecret,
     expectedSessionId:approval.expectedSessionId
   });
+  const scriptedReplayStore=scripted
+    ?new GithubOidcReplayFileStore(scripted.replayDirectory):undefined;
+  const scriptedAdmissionStore=scripted
+    ?new TrustedScriptedGithubAdmissionStore({
+      directory:scripted.admissionDirectory,
+      hmacSecret:scripted.hmacSecret,
+      expectedSessionId:approval.expectedSessionId
+    }):undefined;
   let closed=false,shutdownPromise;
   const handoff=createTrustedReviewedHandoffLifecycle(trusted=>
     startAdmittedGithubReviewedGeminiHandoff(trusted));
@@ -210,7 +239,7 @@ export async function startTrustedEngineerLocalHost(config){
       await active.coordinator.closePlanning();
     }}:{})
   });
-  let engineerUrl,oidcIntake;
+  let engineerUrl,oidcIntake,scriptedIntake;
   try{
     engineerUrl=await listen(engineerServer,config.approvalPort??0);
     oidcIntake=await startTrustedGithubOidcIntakeServer({
@@ -248,8 +277,29 @@ export async function startTrustedEngineerLocalHost(config){
         return "waiting_for_owner";
       }
     });
+    if(scripted){
+      scriptedIntake=await startTrustedScriptedGithubOidcIntakeServer({
+        pinned:scripted.pinned,trust:scripted.trust,
+        githubApiToken:scripted.githubApiToken,
+        replayStore:scriptedReplayStore,
+        admissionStore:scriptedAdmissionStore,
+        githubApiFetchFn:scripted.githubApiFetchFn,
+        oidcJwksFetchFn:scripted.oidcJwksFetchFn,
+        port:config.scriptedOidcPort??0,tls:scripted.tls,
+        bindAddress:scripted.bindAddress,
+        // A signed JWT / consumed receipt is NOT completed Engineering.
+        // No private status can report success until a genuine reviewed
+        // DAG and all roots have been independently confirmed retired.
+        statusForAdmittedRun:()=>{
+          return "terminated";
+        }
+      });
+    }
   }catch(error){
-    await shutdown(engineerServer);
+    await Promise.allSettled([
+      ...(oidcIntake?[oidcIntake.close()]:[]),
+      shutdown(engineerServer)
+    ]);
     throw error;
   }
   const fixedPins=Object.freeze({
@@ -283,10 +333,22 @@ export async function startTrustedEngineerLocalHost(config){
   return Object.freeze({
     engineerUrl,
     oidcAdmissionEndpoint:oidcIntake.endpoint,
+    ...(scriptedIntake?{
+      scriptedOidcAdmissionEndpoint:scriptedIntake.endpoint
+    }:{}),
     /** Trusted process reference only, never returned by HTTP. */
     operationalRecoveryStore,
     planningRecoveryStore,
     /** Does NOT imply human approval; read-only, one-use status only. */
+    consumeAuthenticatedScriptedRun(runId){
+      if(closed||!scriptedAdmissionStore)
+        deny("no separate scripted OIDC admission available");
+      return scriptedAdmissionStore.consume({
+        expectedSessionId:approval.expectedSessionId,
+        expectedSourceSha:scripted.pinned.sourceSha,
+        expectedRunId:runId
+      });
+    },
     consumeAuthenticatedRun(runId){
       if(closed)deny("host closed");
       return consumePinnedGithubAdmission({
@@ -425,7 +487,9 @@ export async function startTrustedEngineerLocalHost(config){
         // if SIGTERM races ongoing Gemini/A2A server startup. Never report
         // clean shutdown while a delegated root may remain live.
         const results=await Promise.allSettled([
-          handoff.close(),oidcIntake.close(),shutdown(engineerServer)
+          handoff.close(),oidcIntake.close(),
+          ...(scriptedIntake?[scriptedIntake.close()]:[]),
+          shutdown(engineerServer)
         ]);
         // The signed plan may have been reviewed without an admitted
         // Execution. Closing the host must not leave that read-only root
