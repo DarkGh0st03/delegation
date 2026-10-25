@@ -284,6 +284,9 @@ test("strict operational host config rejects missing, untrusted or shared checkp
 test("configured owner bootstrap prepares exact protected checkpoint/recovery identity without issuing a root",async()=>{
   const f=await fixture();
   try{
+    // Fresh owner Planning must materialize plan.json exclusively AFTER
+    // the signed checkpoint, not reuse the cold-recovery fixture's file.
+    await rm(f.files.plan);
     const bootstrap=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
     assert.equal(typeof bootstrap.start,"function");
     assert.equal(typeof bootstrap.planningCheckpointStore.load,"function");
@@ -309,6 +312,9 @@ test("configured owner bootstrap prepares exact protected checkpoint/recovery id
 test("configured owner bootstrap rejects a separately constructed checkpoint identity before any Planning",async()=>{
   const f=await fixture();
   try{
+    // Fresh owner Planning must materialize plan.json exclusively AFTER
+    // the signed checkpoint, not reuse the cold-recovery fixture's file.
+    await rm(f.files.plan);
     const first=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
     const second=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
     assert.notEqual(first.planningCheckpointStore,second.planningCheckpointStore);
@@ -323,6 +329,9 @@ test("configured owner bootstrap rejects a separately constructed checkpoint ide
 test("configured owner bootstrap rejects unsigned Plan override and active Coordinator before dispatch",async()=>{
   const f=await fixture();
   try{
+    // Fresh owner Planning must materialize plan.json exclusively AFTER
+    // the signed checkpoint, not reuse the cold-recovery fixture's file.
+    await rm(f.files.plan);
     const owner=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
     await assert.rejects(owner.start({
       checkpointStore:owner.planningCheckpointStore,
@@ -341,6 +350,9 @@ test("configured owner bootstrap rejects unsigned Plan override and active Coord
 test("bad protected service config cannot be prepared as an owner bootstrap",async()=>{
   const f=await fixture();
   try{
+    // Fresh owner Planning must materialize plan.json exclusively AFTER
+    // the signed checkpoint, not reuse the cold-recovery fixture's file.
+    await rm(f.files.plan);
     await chmod(f.files.config,0o644);
     await assert.rejects(prepareConfiguredOwnerEngineerBootstrap(f.files.config),
       /configuration denied/);
@@ -348,6 +360,36 @@ test("bad protected service config cannot be prepared as an owner bootstrap",asy
     f.config.recovery.unknownOwnerCallback="permissionEscalation";
     await f.save();
     await assert.rejects(prepareConfiguredOwnerEngineerBootstrap(f.files.config),
+      /configuration denied/);
+  }finally{await f.close();}
+});
+
+
+test("fresh owner Planning refuses stale plan; cold recovery rejects missing plan",async()=>{
+  const f=await fixture();
+  try{
+    // Existing plan.json is rejected even if it is private and well formed:
+    // it cannot become a replacement for this run's signed proposal.
+    await assert.rejects(prepareConfiguredOwnerEngineerBootstrap(f.files.config),
+      /configuration denied/);
+    await rm(f.files.plan);
+    await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
+      /configuration denied/);
+    const prepared=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
+    assert.equal(typeof prepared.start,"function");
+    assert.equal((await (await import("node:fs/promises")).readdir(f.dirs.checkpoints)).length,0);
+  }finally{await f.close();}
+});
+
+test("pending Planning output cannot override cold-recovery verification via config JSON",async()=>{
+  const f=await fixture();
+  try{
+    await rm(f.files.plan);
+    f.config.pendingPlanningOutput=true;
+    await f.save();
+    await assert.rejects(prepareConfiguredOwnerEngineerBootstrap(f.files.config),
+      /configuration denied/);
+    await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
       /configuration denied/);
   }finally{await f.close();}
 });
