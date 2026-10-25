@@ -35,6 +35,8 @@ import {signTrustedPlanningCheckpoint}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint.ts";
 import {SignedPlanningCheckpointFileStore}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
+import {TrustedPlanningReviewGate}
+  from "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
 
 const repository="DarkGh0st03/delegation";
 const ref="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -997,6 +999,19 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
     }
   });
   await coordinator.beginPlanning({credential_id:rootId});
+  const reviewGate=new TrustedPlanningReviewGate({
+    snapshot:signed.snapshot,
+    expectedWorkBranch:"feature/account-suspension",
+    authenticatedEngineerDid:f.did,
+    signedApprovals:new SignedEngineerApprovalFileStore({
+      directory:f.receipts,engineerDid:f.did,
+      trustedKeys:{[f.keyId]:{
+        engineer_did:f.did,public_key_pem:f.publicKeyPem
+      }}
+    }),
+    planningIsActive:()=>coordinator.phase==="planning"
+  });
+  checkpointStore.stageVerified(reviewGate,signed);
   const {tls,serverTls}=await disposableMtls(join(base,"mtls"));
   const recovery={
     directory:dirs.operational,planningDirectory:dirs.planning,
@@ -1011,7 +1026,7 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
     recovery,
     activePlanning:{
       coordinator,planningRecovery:preliminary,
-      operationalRecovery:operational,checkpointStore
+      operationalRecovery:operational,checkpointStore,reviewGate
     }
   });
   t.after(()=>host.close());
@@ -1086,6 +1101,40 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
   assert.equal((await readdir(f.admissions)).length,1);
   assert.equal((await readdir(f.replays)).length,1);
   assert.equal((await operational.pending()).length,0);
+  const noEffectA2A={
+    a2a:{async sendProtectedTask(){throw Error("A2A must never run");}},
+    adapter:{adapterBaseUrl:"http://127.0.0.1:8090",
+      bearerToken:"offline-adapter-token"}
+  };
+  const gatewayTransport={
+    gatewayBaseUrl:"http://127.0.0.1:8080",
+    adapterBaseUrl:"http://127.0.0.1:8090",
+    adapterToken:"offline-adapter-token"
+  };
+  const childProvision={
+    reservationDirectory:dirs.operational,
+    statusListCredential:"https://example.test/status/review",
+    indexByTask:{backend:"8101",frontend:"8102",tests:"8103"},
+    excludedIndices:["100","101"]
+  };
+  for(const forged of [
+    {...childProvision,coordinator:{phase:"execution"}},
+    {...childProvision,engineerDid:"did:attacker:software-engineer"},
+    {...childProvision,sessionId:"attacker-session"},
+    {...childProvision,reviewGate:{fake:true}}
+  ]){
+    assert.throws(()=>host.runReviewedApprovedDagWithGateway({
+      runId,execution:noEffectA2A,
+      privateGatewayTransport:gatewayTransport,
+      childStatusProvisioning:forged
+    }),/provisioning may not override trusted session or Engineer identity/);
+  }
+  assert.equal(coordinator.phase,"planning");
+  assert.equal((await operational.pending()).length,0);
+  // Invalid owner inputs must not consume the already authenticated job.
+  assert.equal(await readTrustedPrivateRunState({
+    intakeUrl:host.oidcAdmissionEndpoint,tls,runId,sourceSha:sha
+  }),"waiting_for_owner");
   // Even human approval + GitHub admission are NOT an operational root.
   // Execution still requires the authenticated host-owned same-Coordinator
   // reviewed handoff, active job and explicit model-cost consent.
