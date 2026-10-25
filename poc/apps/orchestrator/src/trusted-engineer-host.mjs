@@ -51,6 +51,8 @@ import {TrustedScriptedGithubAdmissionStore}
   from "../../../packages/orchestrator-runtime/src/trusted-scripted-github-admission.ts";
 import {startTrustedScriptedGithubOidcIntakeServer}
   from "../../../packages/orchestrator-runtime/src/trusted-scripted-github-oidc-intake.ts";
+import {startAdmittedGithubReviewedScriptedHandoff}
+  from "../../../packages/orchestrator-runtime/src/trusted-admitted-scripted-handoff.ts";
 import {consumePinnedGithubAdmission,startAdmittedGithubReviewedGeminiHandoff}
   from "../../../packages/orchestrator-runtime/src/trusted-admitted-github-handoff.ts";
 
@@ -220,8 +222,10 @@ export async function startTrustedEngineerLocalHost(config){
   let closed=false,shutdownPromise;
   const handoff=createTrustedReviewedHandoffLifecycle(trusted=>
     startAdmittedGithubReviewedGeminiHandoff(trusted));
+  const scriptedHandoff=createTrustedReviewedHandoffLifecycle(trusted=>
+    startAdmittedGithubReviewedScriptedHandoff(trusted));
   // Only a private in-process owner selects the run tied to this DAG.
-  let selectedRunId;
+  let selectedRunId,selectedScriptedRunId;
   // Only the trusted host selects the real Coordinator and revocation port.
   const {
     rejectPlanning:ignoredRejectPlanning,
@@ -291,7 +295,21 @@ export async function startTrustedEngineerLocalHost(config){
         // A signed JWT / consumed receipt is NOT completed Engineering.
         // No private status can report success until a genuine reviewed
         // DAG and all roots have been independently confirmed retired.
-        statusForAdmittedRun:()=>{
+        statusForAdmittedRun:(runId)=>{
+          if(closed)return "terminated";
+          if(selectedScriptedRunId&&runId!==selectedScriptedRunId)
+            return "terminated";
+          if(!selectedScriptedRunId){
+            return active?.coordinator.phase==="closed"
+              ?"terminated":"waiting_for_owner";
+          }
+          if(scriptedHandoff.verifiedOutcome==="verified_complete")
+            return "completed_verified";
+          if(scriptedHandoff.verifiedOutcome==="failed"||
+             ["failed","closed"].includes(scriptedHandoff.status))
+            return "terminated";
+          if(["starting","active","closing"].includes(scriptedHandoff.status))
+            return "execution_active";
           return "terminated";
         }
       });
@@ -480,6 +498,123 @@ export async function startTrustedEngineerLocalHost(config){
         };
       });
     },
+    /**
+     * Owner-only, zero-billing canonical signed Execution. Consumes ONLY a
+     * scripted_offline HMAC receipt and uses the SAME signed Coordinator,
+     * Gateway transport, protected child allocator and three pinned A2A
+     * servers as the paid DAG. Never exposed via the mTLS listener/UI.
+     * A verified runner status follows ONLY after DAG and root teardown.
+     */
+    runReviewedScriptedApprovedDagWithGateway({
+      execution,privateGatewayTransport,childStatusProvisioning,
+      runId,operationalRoot,ports,handlers
+    }){
+      if(closed)deny("host closed");
+      if(!scripted)deny("independent no-charge OIDC profile required");
+      if(!active?.reviewGate||
+         active.coordinator.phase!=="planning")
+        deny("original live signed Planning session required");
+      if(!execution||typeof execution!=="object"||
+         // Neither caller nor model may choose a new branch operation or
+         // assign a child index after the signed execution has started.
+         Object.hasOwn(execution,"authorityForTask")||
+         Object.hasOwn(execution,"invokeOrchestratorTask")||
+         typeof execution.a2a?.sendProtectedTask!=="function"||
+         !execution.adapter?.adapterBaseUrl||
+         !execution.adapter?.bearerToken||
+         !privateGatewayTransport?.gatewayBaseUrl||
+         !privateGatewayTransport?.adapterBaseUrl||
+         !privateGatewayTransport?.adapterToken||
+         !childStatusProvisioning?.reservationDirectory||
+         !childStatusProvisioning?.statusListCredential||
+         !childStatusProvisioning?.indexByTask||
+         !Array.isArray(childStatusProvisioning?.excludedIndices))
+        deny("private reviewed A2A/Adapter, Gateway and durable child status provisioning required");
+      // The entire approved DAG is localhost-bound. Do not let an
+      // operator-selected URL turn the private Adapter bearer into an
+      // accidental outbound credential to an arbitrary host.
+      const local=url=>typeof url==="string"&&
+        /^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/u.test(url)&&
+        Number(url.slice(url.lastIndexOf(":")+1))<=65535;
+      if(!local(privateGatewayTransport.gatewayBaseUrl)||
+         !local(privateGatewayTransport.adapterBaseUrl)||
+         !local(execution.adapter.adapterBaseUrl))
+        deny("trusted canonical Gateway and Adapter must use loopback ports");
+      // Child allocation metadata is an operator-supplied DATA object,
+      // never a source of trusted Coordinator, reviewGate, Engineer DID,
+      // session or authenticated permissions. Forbid all extra keys
+      // before the one-use OIDC admission can be consumed.
+      const statusKeys=new Set([
+        "reservationDirectory","statusListCredential","indexByTask",
+        "excludedIndices","validitySeconds"
+      ]);
+      if(Object.getPrototypeOf(childStatusProvisioning)!==Object.prototype||
+         Object.keys(childStatusProvisioning).some(k=>!statusKeys.has(k))||
+         Object.keys(childStatusProvisioning.indexByTask).some(
+           k=>k==="__proto__"||k==="constructor"||k==="prototype"))
+        deny("child Status List provisioning may not override trusted session or Engineer identity");
+      if(!scriptedHandoff||!scriptedAdmissionStore||!scripted)
+        deny("no independently authenticated scripted profile available");
+      if(handoff.status!=="idle"||selectedRunId)
+        deny("paid handoff already selected for this Coordinator");
+      if(selectedScriptedRunId)
+        deny("scripted GitHub execution already selected: one-shot");
+      if(!/^[1-9][0-9]{0,19}$/.test(runId??""))
+        deny("original GitHub run identity required");
+      if(!operationalRoot||typeof operationalRoot!=="object"||
+         !ports||!handlers)
+        deny("private scripted root and three deterministic role handlers required");
+      const trusted={
+        coordinator:active.coordinator,
+        reviewGate:active.reviewGate,
+        checkpointStore:active.checkpointStore,
+        operationalRoot,ports,handlers,
+        admissionStore:scriptedAdmissionStore,
+        pins:{...fixedPins,runId},
+        githubApiToken:scripted.githubApiToken,
+        githubApiFetchFn:scripted.githubApiFetchFn
+      };
+      active.coordinator.assertOperationalRecoveryStore(
+        operationalRecoveryStore);
+      selectedScriptedRunId=runId;
+      return scriptedHandoff.runApprovedDagWithFactory(trusted,async running=>{
+        if(closed||active.coordinator.phase!=="execution")
+          deny("operational handoff unavailable before signed Gateway branch binding");
+        // Real role servers were started only after the operational root.
+        // Confirm that their bound localhost HTTP Agent Cards identify
+        // the exact delegated roles before any provider effect or VP mint.
+        // The probe does not send a credential, model prompt or tool call.
+        await assertTrustedApprovedA2AStartup({
+          endpoints:running.endpoints
+        });
+        if(closed||active.coordinator.phase!=="execution")
+          deny("signed Gateway authority closed while checking A2A servers");
+        const branch=await createTrustedApprovedBranchGateway({
+          coordinator:active.coordinator,
+          reviewGate:active.reviewGate,
+          sessionId:approval.expectedSessionId,
+          baseRevision:approval.expectedBaseRevision,
+          engineerDid:approval.engineerDid,
+          transport:privateGatewayTransport
+        });
+        const children=await createTrustedApprovedTaskAuthorityAllocator({
+          coordinator:active.coordinator,reviewGate:active.reviewGate,
+          sessionId:approval.expectedSessionId,
+          engineerDid:approval.engineerDid,
+          reservationDirectory:childStatusProvisioning.reservationDirectory,
+          statusListCredential:childStatusProvisioning.statusListCredential,
+          indexByTask:childStatusProvisioning.indexByTask,
+          excludedIndices:childStatusProvisioning.excludedIndices,
+          ...(childStatusProvisioning.validitySeconds===undefined?{}:
+            {validitySeconds:childStatusProvisioning.validitySeconds})
+        });
+        return {
+          a2a:execution.a2a,adapter:execution.adapter,
+          authorityForTask:children.authorityForTask,
+          invokeOrchestratorTask:branch.invokeOrchestratorTask
+        };
+      });
+    },
     close(){
       if(shutdownPromise)return shutdownPromise;
       closed=true;
@@ -488,7 +623,7 @@ export async function startTrustedEngineerLocalHost(config){
         // if SIGTERM races ongoing Gemini/A2A server startup. Never report
         // clean shutdown while a delegated root may remain live.
         const results=await Promise.allSettled([
-          handoff.close(),oidcIntake.close(),
+          handoff.close(),scriptedHandoff.close(),oidcIntake.close(),
           ...(scriptedIntake?[scriptedIntake.close()]:[]),
           shutdown(engineerServer)
         ]);
