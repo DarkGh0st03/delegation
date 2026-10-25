@@ -5,7 +5,7 @@
  */
 import {createHash} from "node:crypto";
 import {constants} from "node:fs";
-import {lstat,open,readdir,rename} from "node:fs/promises";
+import {lstat,open,readdir,link,unlink} from "node:fs/promises";
 import {isAbsolute,resolve,join} from "node:path";
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u,SHA=/^[a-f0-9]{40}$/u;
 type Intent=Readonly<{schema_version:1;purpose:"planning";
@@ -109,10 +109,15 @@ export class TrustedPlanningRecoveryStore{
        row.base_revision!==input.baseRevision||
        row.credential_id!==input.credentialId)
       fail("reconciliation does not match immutable Planning intent");
-    try{await lstat(this.#path(input.sessionId,"retired"));fail("retired intent already exists");}
-    catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
-    await rename(this.#path(input.sessionId,"pending"),
+    // link() has exclusive destination semantics: rename() would replace
+    // an existing retired tombstone after a cross-process time-of-check
+    // race. Fsync the new tombstone before unlinking the pending intent.
+    // If a crash leaves BOTH names, pending() rejects the duplicate
+    // session rather than pretending the root was safely retired.
+    await link(this.#path(input.sessionId,"pending"),
       this.#path(input.sessionId,"retired"));
+    await this.#sync();
+    await unlink(this.#path(input.sessionId,"pending"));
     await this.#sync();
   }
 }

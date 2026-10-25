@@ -907,3 +907,20 @@ Planning root was retired exactly once. They also simulate failed
 preliminary revocation and verify the durable Planning intent remains
 pending, blocking further use. No paid workflow, EVM deployment,
 or main merge was performed.
+
+### R5 Planning retirement tombstone is now immutable across interrupted writes
+
+The provisional Planning recovery journal now uses exclusive filesystem
+`link()` creation and a durable directory sync before
+removing its pending root intent. It no longer uses a destination-
+overwriting `rename()` when finalizing retirement.
+If a crash leaves both names, startup detects their duplicate session
+and refuses reconciliation rather than accepting an ambiguous state.
+The existing owner-only storage and native/Gateway revocation checks
+are unchanged. A new offline regression explicitly forges a second
+pending root beside an immutable retired record, proves fail-closed
+startup and verifies the original retirement bytes cannot be replaced.
+
+This mirrors the existing operational-root tombstone protection and
+strengthens replay denial across both stages. No Gemini usage, no paid
+workflow run and no main merge.

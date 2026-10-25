@@ -77,3 +77,32 @@ test("malformed record, unexpected names or public journal permissions fail clos
     await assert.rejects(f.store.assertClean(),/owner-only/);
   }finally{await f.close();}
 });
+
+
+test("Planning retirement cannot overwrite a terminal record and duplicate state fails closed",async()=>{
+  const f=await env();
+  try{
+    await f.store.recordIntent(data);
+    await f.store.markReconciled(data);
+    const names=await readdir(f.directory);
+    assert.equal(names.length,1);
+    const retired=names[0];
+    assert.match(retired,/\.retired\.json$/u);
+    const {readFile}=await import("node:fs/promises");
+    const original=await readFile(join(f.directory,retired),"utf8");
+    const pending=retired.replace(".retired.",".pending.");
+    // Simulate a crash between durable tombstone creation and pending
+    // unlink. Never substitute a second operational or provisional ID.
+    await writeFile(join(f.directory,pending),JSON.stringify({
+      schema_version:1,purpose:"planning",session_id:data.sessionId,
+      base_revision:data.baseRevision,
+      credential_id:"urn:test:second-untrusted-root"
+    })+"\n",{mode:0o600});
+    await assert.rejects(f.store.pending(),/duplicate session/);
+    await assert.rejects(f.store.markReconciled({
+      ...data,credentialId:"urn:test:second-untrusted-root"
+    }),error=>(error as NodeJS.ErrnoException).code==="EEXIST");
+    assert.equal(await readFile(join(f.directory,retired),"utf8"),original);
+    await assert.rejects(f.store.assertClean(),/duplicate session/);
+  }finally{await f.close();}
+});
