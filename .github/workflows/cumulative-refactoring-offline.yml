@@ -17,7 +17,9 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: cumulative-refactoring-${{ github.ref }}-${{ github.sha }}
+  # Only the branch's newest cumulative run is a release-gate candidate.
+  # Cancel obsolete SHA runs instead of running Rust/Gitea/EVM in parallel.
+  group: cumulative-refactoring-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   all-node-and-policy:
