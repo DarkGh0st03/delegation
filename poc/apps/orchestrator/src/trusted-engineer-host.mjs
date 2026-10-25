@@ -351,6 +351,8 @@ async function strictRecoveringHost(config){
   });
   if(!gateway.operationalLeaseConfigured())
     deny("private Gateway must enforce its own operational lease");
+  if(!gateway.operationalSessionDurableConfigured())
+    deny("private Gateway must persist operational session fences across restarts");
   if(!gateway.planningRetirementConfigured())
     deny("private Gateway must expose actual Planning registry retirement");
   if(!gateway.planningRetirementDurableConfigured())

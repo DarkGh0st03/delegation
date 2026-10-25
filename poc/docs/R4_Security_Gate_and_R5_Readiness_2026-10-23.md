@@ -1050,3 +1050,15 @@ so it verifies Gateway persistence and authenticated IPC replay denial,
 NOT real EVM revocation. Together with independent native EVM and
 Engineer SIGKILL fixtures, this exercises both crash boundaries but
 does not claim a combined end-to-end multi-process outage test.
+
+### HMAC operational durability attestation
+
+The private `lease_status` IPC response now includes
+`operational_session_durable`, derived from the actual
+Gateway-owned operational ledger (not a client-controlled flag).
+`TrustedPlanIpcClient` validates and exposes it. The
+strict deployed Engineer host refuses to open authentication listeners
+if the Gateway has a lease but no durable operational session fence.
+The loopback-only historical test harness may still omit the ledger
+but cannot claim the strict deployment capability. The SIGKILL
+regression asserts the real durable Gateway fixture advertises it.

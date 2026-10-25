@@ -124,6 +124,7 @@ test("SIGKILL genuine Gateway IPC process does not replay signed operational act
       ipc:await TrustedPlanIpcClient.connect({socketPath,secretFile})};
   };
   const first=await boot();
+  assert.equal(first.ipc.operationalSessionDurableConfigured(),true);
   assert.equal(await first.ipc.activate(SESSION,SHA),planDigest(PLAN));
   const ledger=new TrustedOperationalSessionStore(operational);
   await ledger.assertReady();

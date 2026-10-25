@@ -148,6 +148,8 @@ export async function createTrustedPlanIpcServer(config:{
       if(command.action==="lease_status"){
         response(res,200,{
           ok:true,enabled:config.plans.operationalLeaseConfigured(),
+          operational_session_durable:
+            config.plans.operationalSessionDurableConfigured?.()===true,
           planning_retirement_enabled:
             config.planningRevisions instanceof TrustedPlanningRevisions,
           planning_retirement_durable:
@@ -230,6 +232,7 @@ export class TrustedPlanIpcClient{
   #leaseEnabled=false;
   #planningRetirementEnabled=false;
   #planningRetirementDurable=false;
+  #operationalSessionDurable=false;
   private constructor(path:string,secret:Buffer){
     this.#socket=path;this.#secret=secret;
   }
@@ -244,15 +247,20 @@ export class TrustedPlanIpcClient{
     if(typeof capabilities.enabled!=="boolean"||
        typeof capabilities.planning_retirement_enabled!=="boolean"||
        typeof capabilities.planning_retirement_durable!=="boolean"||
+       typeof capabilities.operational_session_durable!=="boolean"||
        (capabilities.planning_retirement_durable&&
         !capabilities.planning_retirement_enabled))
       fail("Gateway did not attest authenticated recovery capabilities");
     client.#leaseEnabled=capabilities.enabled;
     client.#planningRetirementEnabled=capabilities.planning_retirement_enabled;
     client.#planningRetirementDurable=capabilities.planning_retirement_durable;
+    client.#operationalSessionDurable=capabilities.operational_session_durable;
     return client;
   }
   operationalLeaseConfigured():boolean{return this.#leaseEnabled;}
+  operationalSessionDurableConfigured():boolean{
+    return this.#operationalSessionDurable;
+  }
   planningRetirementConfigured():boolean{return this.#planningRetirementEnabled;}
   planningRetirementDurableConfigured():boolean{
     return this.#planningRetirementDurable;

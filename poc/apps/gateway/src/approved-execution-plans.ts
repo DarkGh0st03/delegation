@@ -160,6 +160,10 @@ export class TrustedApprovedExecutionPlans {
   operationalLeaseConfigured():boolean{
     return this.#operationalLeaseMs!==undefined;
   }
+  /** Authenticated IPC capability: the deployed Gateway needs both fences. */
+  operationalSessionDurableConfigured():boolean{
+    return this.#sessionStore instanceof TrustedOperationalSessionStore;
+  }
 
   #clock():number{
     const now=this.#nowMs();

@@ -378,6 +378,9 @@ test("strict Engineer bootstrap completes real private IPC + Adapter recovery be
     },{retirementStore:new TrustedPlanningRetirementStore(gatewayRetiredDir)}),
     plans:{
       operationalLeaseConfigured:()=>true,
+      // Explicit private IPC capability fixture; deployed Gateway reports
+      // this from its real owner-private durable OperationalSessionStore.
+      operationalSessionDurableConfigured:()=>true,
       retireSession:id=>{retired.push(id);}
     }
   });
