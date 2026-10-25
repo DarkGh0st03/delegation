@@ -1804,3 +1804,79 @@ Engineer review and durable scripted GitHub receipt, live GitHub run,
 Gateway/Rust verified root closure and all approved Tasks. Then deploy
 the independent runner/host network and exercise one complete free
 E2E; only then consider paid-run readiness after fresh user consent.
+
+
+### R5 — Scripted OIDC → signed approved DAG → host-verifiable terminal outcome (25 October 2026)
+
+The remaining **logical connection** between the independent
+`scripted_offline` OIDC receipt and the existing signed Execution DAG
+has been implemented in
+`poc/packages/orchestrator-runtime/src/trusted-admitted-scripted-handoff.ts`
+and the owner-only
+`runReviewedScriptedApprovedDagWithGateway` entrypoint in
+`trusted-engineer-host.mjs`.
+
+The one-shot no-charge handoff requires the **original Coordinator**
+with a configured Gateway-side operational TTL and persistent recovery
+journal, independently signed backend Planning checkpoint, original
+Engineer review gate, owner-only scoped operational-root request,
+locked deterministic A2A role handlers, and the **separate**
+`TrustedScriptedGithubAdmissionStore`. It first consumes the
+five-minute session/run/SHA-bound offline HMAC admission. It then
+re-correlates that exact manual first-attempt job through GitHub's
+read-only REST API under the **offline-only workflow path**, BEFORE
+issuing any write-scoped root.
+
+The non-billing `startPersistedReviewedScriptedHandoff` independently
+verifies the existing Engineer Ed25519 receipt and signed permission
+subset, revokes the provisional Planning authority, activates only the
+approved operational root and starts real Backend/Frontend/Test A2A
+HTTP servers with deterministic handlers. The shared
+`createReviewedApprovedDagExecution` binds the actual root ID,
+Engineer DID, plan digest, base revision, Coordinator and role URLs to
+the previously reviewed plan. Its Gateway provider callback and child
+Status List allocator are constructed **inside** the trusted Host
+AFTER issuance, never accepted as model- or runner-supplied functions.
+
+The trusted offline GitHub watch checks the authoritative same run
+IMMEDIATELY after A2A startup, before **each** signed Task, and
+periodically during the DAG. Lease renewal requires the original
+Coordinator; job cancellation, expired source, REST outage or root
+closure fails closed. The lifecycle only sets
+`verifiedOutcome=verified_complete` AFTER all signed DAG Tasks have
+completed AND the Gateway/Rust operational-root revocation and A2A
+server closure succeed. A separate read-only mTLS runner hold
+returns `completed_verified` ONLY for the matching selected offline
+run in that state. Every mismatched run remains `terminated`; a
+runner can observe `waiting_for_owner` only while an original live
+Planning Coordinator exists. Merely authenticating OIDC or signing
+a human approval NEVER yields a successful GitHub workflow status.
+
+The paid and scripted handoff lifecycles are mutually exclusive for
+one Coordinator. Neither may begin if the other has already been
+selected; the offline path explicitly refuses paid Gateway
+callbacks, API-key configuration and any injected Task-authority
+allocator. The signed private Gateway transport and localhost role
+Agent Cards continue to be checked before the first provider effect.
+No model is instantiated in the offline route.
+
+New dedicated tests in `trusted-planning-review-gate.test.ts`
+exercise real scripted A2A server startup after consumed HMAC admission
+and Engineer receipt, repeated live GitHub REST checks, confirmed
+operational-root retirement after simulated job cancellation, replay
+denial, and failure before issuance for absent admission/completed
+jobs. The fixed single-SHA offline CI gate now includes these three
+scenarios alongside private mTLS, authenticated Engineer UI, Gateway,
+DAG PR/acceptance and credential-revocation checks.
+
+**Evidence boundary / remaining R5 NO-GO:** The source-level owner
+handoff is connected, but a single *physical* deployed private GitHub
+runner, persistent Engineer Host, real Gateway/Adapter IPC,
+actual Gitea/Docker provider and three role servers running the SAME
+complete owner-executed DAG have **not yet** been observed together.
+The environment must independently provision pinned mTLS credentials
+and exact immutable runner startup binaries. Do not dispatch any
+billable Gemini model or merge to main for this test. Additionally,
+a queue of cumulative offline workflows does NOT constitute passed
+CI: record the actual five green jobs for the exact final SHA before
+elevating the release gate.
