@@ -1322,3 +1322,64 @@ transport integration evidence but is **not** a deployed single
 operator/runner/real-provider E2E; R5 stays NO-GO. A cumulative CI
 failure of any one job means the corresponding exact SHA is not yet
 fully certified, regardless of local A2A success.
+
+
+### R5 — Protected owner bootstrapping from one trusted service config (25 October 2026)
+
+New entrypoint: `prepareConfiguredOwnerEngineerBootstrap(configPath)`,
+in `poc/apps/orchestrator/src/trusted-engineer-service.mjs`. This
+resolves a genuine operational gap between the **cold-recovery-only**
+`startConfiguredTrustedEngineerService` and the existing
+`startOwnerControlledEngineerReviewHost` same-process Planning route.
+
+There are now **two deliberately different configuration states**:
+
+- **Fresh owner Planning (pre-issuance)**: protected configuration JSON and
+  keys must exist, with owner-only 0700 directories / 0600 secret files.
+  The Engineer `trustedPlanFile` must NOT exist. A preexisting file,
+  including a symlink, is rejected before any preliminary authority or
+  ADK call. Call `prepareConfiguredOwnerEngineerBootstrap` once, obtain
+  its exact `planningCheckpointStore` and `operationalRecovery`
+  instances, then construct the original Coordinator, Planning review
+  gate, planning-recovery store and read-only Planner using these SAME
+  objects. The operator invokes `prepared.start(planning)` **once**.
+  That call (not preparation) MAY invoke a billed ADK provider if the
+  operator supplied one; explicit authorization is separately required.
+  The fresh Planning bootstrap creates `trustedPlanFile` exclusively
+  with `O_EXCL` **after** persisting the independent backend-signed
+  checkpoint. Strict Engineer Host startup then verifies the SAME
+  checkpoint, pinned source, live root and private Gateway IPC.
+- **Cold recovery or host restart**:
+  `startConfiguredTrustedEngineerService(configPath)` still requires a
+  protected, existing `trustedPlanFile` and a valid backend-signed
+  checkpoint. It must reconcile orphaned Planning and Execution roots
+  through Gateway + native Adapter **before** opening listeners, and
+  it does not reconstruct a live Coordinator or automatically approve
+  an Engineer plan. The optional pending-file flag is only passed
+  directly by the trusted in-process owner wrapper, never accepted
+  from config JSON, a model, a GitHub event or an HTTP route.
+
+A successful Planning submission and authenticated human signature
+remain separate from any authorized Execution. This new bootstrap
+does not create Gemini calls, an OIDC admission, a child credential, a
+real GitHub private runner or A2A servers automatically.
+
+**Integrated offline regression** in
+`trusted-planning-gateway-port.test.ts`: a locally protected owner
+configuration drives actual scripted ADK read-only Planning through
+Gateway Prepare → VP → OPA → source read, signs and verifies an
+Ed25519 backend checkpoint and materializes its immutable Engineer plan.
+The strict host deliberately receives a **missing private Gateway IPC
+socket** and must revoke its original provisional root. The test checks
+no GitHub admissions, no replay records, no leaked root and a retired
+Planning journal; a second invocation cannot silently restart the
+same session. These are real Node filesystem and Gateway code paths;
+external RPC/IPC, native EVM and remote self-hosted runners remain
+separate integration requirements.
+
+**Next deployment gate:** provision actual persistent Gateway IPC,
+Adapter and authenticated review. Run the original process-owned
+Planning and private OIDC runner against the **same** deployed host,
+with real local A2A agents and scripted zero-cost providers before any
+explicitly authorized paid Gemini run. R5 remains NO-GO until this
+physical end-to-end and complete same-SHA cumulative CI pass.
