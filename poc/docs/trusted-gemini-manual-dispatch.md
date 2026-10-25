@@ -695,9 +695,13 @@ GitHub OIDC assertion over the pinned private mTLS channel, then
 polls the **same** Engineer Host on
 `GET /v1/trusted/github/admission-status?run_id=...&source_sha=...`.
 Both endpoint handlers require the independently pinned runner client
-certificate; the status path is unavailable without mTLS and admits
-only the one verified run/source SHA stored by that host. Its data is
-a small nonauthorizing state, never an Engineer signature, credential,
+certificate; the status path is unavailable without mTLS and checks
+every run ID and source SHA against previously authenticated admissions.
+Multiple manual runs can be admitted after a failed/consumed attempt,
+but ONLY the run selected by the trusted in-process Engineer host can
+receive the signed DAG's verified completion. An unrelated admitted
+run cannot inherit its result. The status data is a small nonauthorizing
+state, never an Engineer signature, credential,
 approved plan, model prompt, or provider command.
 
 The host reports `completed_verified` only after its private
