@@ -236,9 +236,11 @@ export async function startTrustedEngineerLocalHost(config){
     ...fixedApproval,host:"127.0.0.1",
     ...(active?{
       planningIsActive:()=>!closed&&
-        active.coordinator.phase==="planning",
+        active.coordinator.phase==="planning"&&
+        handoff.status==="idle"&&scriptedHandoff.status==="idle",
       rejectPlanning:async()=>{
       if(closed||handoff.status!=="idle"||
+         scriptedHandoff.status!=="idle"||
          active.coordinator.phase!=="planning")
         deny("Planning rejection unavailable after handoff or shutdown");
       await active.coordinator.closePlanning();
