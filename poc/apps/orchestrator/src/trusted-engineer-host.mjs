@@ -18,6 +18,8 @@ import {createTrustedApprovedBranchGateway}
   from "../../../packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts";
 import {createTrustedApprovedTaskAuthorityAllocator}
   from "../../../packages/orchestrator-runtime/src/trusted-approved-task-authority.ts";
+import {assertTrustedApprovedA2AStartup}
+  from "../../../packages/orchestrator-runtime/src/trusted-a2a-startup-probe.ts";
 import {resolve} from "node:path";
 import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
@@ -360,13 +362,35 @@ export async function startTrustedEngineerLocalHost(config){
          !local(privateGatewayTransport.adapterBaseUrl)||
          !local(execution.adapter.adapterBaseUrl))
         deny("trusted canonical Gateway and Adapter must use loopback ports");
+      // Child allocation metadata is an operator-supplied DATA object,
+      // never a source of trusted Coordinator, reviewGate, Engineer DID,
+      // session or authenticated permissions. Forbid all extra keys
+      // before the one-use OIDC admission can be consumed.
+      const statusKeys=new Set([
+        "reservationDirectory","statusListCredential","indexByTask",
+        "excludedIndices","validitySeconds"
+      ]);
+      if(Object.getPrototypeOf(childStatusProvisioning)!==Object.prototype||
+         Object.keys(childStatusProvisioning).some(k=>!statusKeys.has(k))||
+         Object.keys(childStatusProvisioning.indexByTask).some(
+           k=>k==="__proto__"||k==="constructor"||k==="prototype"))
+        deny("child Status List provisioning may not override trusted session or Engineer identity");
       const trusted=pinnedHandoffInput(input);
       if(selectedRunId&&selectedRunId!==input.runId)
         deny("different manual run already selected for Engineer execution");
       selectedRunId=input.runId;
-      return handoff.runApprovedDagWithFactory(trusted,async()=>{
+      return handoff.runApprovedDagWithFactory(trusted,async running=>{
         if(closed||active.coordinator.phase!=="execution")
           deny("operational handoff unavailable before signed Gateway branch binding");
+        // Real role servers were started only after the operational root.
+        // Confirm that their bound localhost HTTP Agent Cards identify
+        // the exact delegated roles before any provider effect or VP mint.
+        // The probe does not send a credential, model prompt or tool call.
+        await assertTrustedApprovedA2AStartup({
+          endpoints:running.endpoints
+        });
+        if(closed||active.coordinator.phase!=="execution")
+          deny("signed Gateway authority closed while checking A2A servers");
         const branch=await createTrustedApprovedBranchGateway({
           coordinator:active.coordinator,
           reviewGate:active.reviewGate,
@@ -378,7 +402,13 @@ export async function startTrustedEngineerLocalHost(config){
         const children=await createTrustedApprovedTaskAuthorityAllocator({
           coordinator:active.coordinator,reviewGate:active.reviewGate,
           sessionId:approval.expectedSessionId,
-          engineerDid:approval.engineerDid,...childStatusProvisioning
+          engineerDid:approval.engineerDid,
+          reservationDirectory:childStatusProvisioning.reservationDirectory,
+          statusListCredential:childStatusProvisioning.statusListCredential,
+          indexByTask:childStatusProvisioning.indexByTask,
+          excludedIndices:childStatusProvisioning.excludedIndices,
+          ...(childStatusProvisioning.validitySeconds===undefined?{}:
+            {validitySeconds:childStatusProvisioning.validitySeconds})
         });
         return {
           a2a:execution.a2a,adapter:execution.adapter,
