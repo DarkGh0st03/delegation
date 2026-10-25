@@ -141,7 +141,8 @@ class ScriptedPlanningModel extends BaseLlm{
 }
 async function exercise(
   x:Scenario,partial=false,cancelBeforeFrontend=false,
-  ownerLifecycle=false,realHttpA2A=false,withPullRequest=false
+  ownerLifecycle=false,realHttpA2A=false,withPullRequest=false,
+  missingRunnerAcceptance=false
 ){
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
   const servers:Array<{role:string;baseUrl:string;close:()=>Promise<void>;executor:any}>=[];
@@ -286,7 +287,7 @@ async function exercise(
             provider:"runner",performed:true,tool,branch:x.branch,
             revision:SHA,tested_commit_sha:SHA,runner_profile:"poc-default",
             status:"pass",phases:[],
-            ...(withPullRequest?{
+            ...(withPullRequest&&!missingRunnerAcceptance?{
               project_tests:{status:"pass",phases:[]},
               researcher_acceptance:{
                 status:"pass",phase:"researcher_acceptance"
@@ -640,6 +641,25 @@ async function exercise(
       }
       return;
     }
+    if(withPullRequest&&missingRunnerAcceptance){
+      await assert.rejects(owner!.runApprovedDag(ownerInput,ownerExec),
+        /PR requires a trusted|Gateway prepare is unavailable/i);
+      assert.equal(owner!.verifiedOutcome,"failed");
+      assert.equal(owner!.status,"closed");
+      assert.equal(coordinator.phase,"closed");
+      assert.deepEqual(revoked.slice(-2),[
+        "urn:planning:"+x.name,"urn:execution:"+x.name
+      ]);
+      assert.equal(providerCalls,5);
+      assert.equal(opaCalls,5);
+      assert.equal(branchVpRequests,1); // PR rejected BEFORE signing its VP
+      assert.equal((await readdir(statusDir)).length,3);
+      assert.ok(!events.includes("trusted-pr-created"));
+      assert.deepEqual(servers.map(s=>s.executor.executionCount),[1,1,1]);
+      await assert.rejects(owner!.runApprovedDag(ownerInput,ownerExec),
+        /already attempted/);
+      return;
+    }
     const done=owner
       ?await owner.runApprovedDag(ownerInput,ownerExec)
       :await dispatcher.executeApprovedDag({
@@ -728,4 +748,8 @@ test("R5 real HTTP A2A cancels after Backend without contacting Frontend/Test",a
 
 test("R5 approved full HTTP A2A workflow creates signed PR only AFTER Gateway-correlated Runner acceptance",async()=>{
   await exercise(SCENARIOS[0]!,false,false,true,true,true);
+});
+
+test("R5 signed PR is denied without independently accepted exact-SHA Runner output",async()=>{
+  await exercise(SCENARIOS[1]!,false,false,true,true,true,true);
 });
