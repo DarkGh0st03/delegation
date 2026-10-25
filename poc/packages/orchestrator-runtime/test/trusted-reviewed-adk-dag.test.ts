@@ -582,6 +582,13 @@ async function exercise(
       ]);
       assert.ok(!events.some(event=>
         event.startsWith("a2a:frontend")||event.startsWith("a2a:test")));
+      if(realHttpA2A){
+        // Real HTTP Agent servers exist, but neither the Frontend nor
+        // the Test Agent may receive a protected A2A request.
+        assert.deepEqual(servers.map(s=>s.executor.executionCount),[1,0,0]);
+        const trace=events.filter(event=>event.startsWith("a2a:"));
+        assert.deepEqual(trace,["a2a:backend:backend"]);
+      }
       return;
     }
     const done=owner
@@ -655,4 +662,8 @@ test("R5 owner-only lifecycle denies canceled run and revokes native root before
 
 test("R5 real HTTP A2A servers execute the signed three-role DAG without model calls",async()=>{
   await exercise(SCENARIOS[0]!,false,false,true,true);
+});
+
+test("R5 real HTTP A2A cancels after Backend without contacting Frontend/Test",async()=>{
+  await exercise(SCENARIOS[1]!,false,true,true,true);
 });
