@@ -22,11 +22,9 @@ try{
   if(trusted.expectedSourceSha!==admitted.source_sha||
      trusted.expectedRepository!==process.env.GITHUB_REPOSITORY||
      trusted.expectedRef!==process.env.GITHUB_REF||
-     trusted.expectedWorkflowPath!==
-       process.env.GITHUB_WORKFLOW_REF?.slice(
-         trusted.expectedRepository.length+1,
-         -1*(trusted.expectedRef.length+1)
-       ))
+     process.env.GITHUB_WORKFLOW_REF!==
+       trusted.expectedRepository+"/"+trusted.expectedWorkflowPath+
+       "@"+trusted.expectedRef)
     throw Error("Runner pins drifted between admission and hold");
   const closed=await awaitTrustedPrivateRunCompletion({
     intakeUrl:trusted.intakeUrl,tls:trusted.tls,
