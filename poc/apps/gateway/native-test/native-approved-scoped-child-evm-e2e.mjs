@@ -104,7 +104,8 @@ assert.equal(planDigest(loaded.plan),planDigest(plan));
 assert.deepEqual(loaded.approval.approved_permission_ids,["backend-approved"]);
 
 const gatewayChild=spawn(process.execPath,[
-  "--experimental-strip-types","poc/apps/gateway/src/main.ts"
+  "--experimental-strip-types",
+  "poc/apps/gateway/native-test/fixtures/native-scoped-mock-gateway.ts"
 ],{cwd:process.cwd(),env:{
   ...process.env,GATEWAY_BIND_ADDR:"127.0.0.1:18081",
   GATEWAY_VERIFIER_MODE:"core-rust",GATEWAY_PROVIDER_MODE:"mock",

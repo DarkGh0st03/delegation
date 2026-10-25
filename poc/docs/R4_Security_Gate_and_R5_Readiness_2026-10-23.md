@@ -499,3 +499,27 @@ offline fixture dependencies, rather than invoking the protected production
 bootstrap. The production requirement for a real owner-authenticated
 Gitea URL and token remains mandatory and unchanged. No paid calls.
 Certify the repair on the next exact-SHA dedicated and cumulative CI.
+
+### Native Rust EVM offline scoped-child process isolated from production bootstrap
+
+The 4/5 cumulative CI on `b682e7f8`, run
+[#40126288538](https://github.com/DarkGh0st03/delegation/actions/runs/40126288538),
+passed Gateway, OIDC, Rust/Solidity and Docker/Gitea but failed the
+native EVM composite at the scripted scoped-child step. That test used a
+Gateway provider_mode=mock process while launching `main.ts`,
+which deliberately rejects such a provider after the trusted deployment
+bootstrap was hardened. Disabling the production Gitea requirement to
+make this offline test pass would weaken R5.
+
+The scoped-child script now launches an explicitly disposable
+`native-scoped-mock-gateway.ts` fixture. It uses the real
+`GatewayRuntime`, native Rust verifier, live OPA, authentic
+signed Engineer approval store and IPC enforcement, but constructs an
+owner-supplied isolated *scripted* provider/Planning revision registry
+without pretending to run the authenticated production bootstrap.
+It deliberately retains the mock provider's inability to corroborate
+successful task completion, so the E2E still expects fail-closed root
+revocation. The actual `main.ts`/real-Gitea security
+requirement stays unchanged. No paid Gemini usage or main merge.
+
+New exact-SHA cumulative offline CI must pass 5/5 before certification.
