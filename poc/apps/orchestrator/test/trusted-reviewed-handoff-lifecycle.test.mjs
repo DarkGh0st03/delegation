@@ -30,6 +30,7 @@ test("owner's one-shot run executes exactly one approved DAG then closes",async(
   assert.deepEqual(output,{completed:true});
   assert.deepEqual([started,executed,closed],[1,1,1]);
   assert.equal(lifecycle.status,"closed");
+  assert.equal(lifecycle.verifiedOutcome,"verified_complete");
   await assert.rejects(lifecycle.runApprovedDag({},executor()),/already attempted/);
   assert.deepEqual([started,executed,closed],[1,1,1]);
 });
@@ -56,6 +57,7 @@ test("dispatcher failure always closes and prevents retry",async()=>{
   }));
   await assert.rejects(lifecycle.runApprovedDag({},executor()),/A2A provider offline/);
   assert.equal(lifecycle.status,"closed");
+  assert.equal(lifecycle.verifiedOutcome,"failed");
   assert.equal(closed,1);
   assert.equal(calls,1);
   await assert.rejects(lifecycle.runApprovedDag({},executor()),/already attempted/);
@@ -79,6 +81,7 @@ test("start rejection cannot be reported as a confirmed root revocation",async()
   await assert.rejects(lifecycle.runApprovedDag({},executor()),
     /manual reconciliation required/);
   assert.equal(lifecycle.status,"closing");
+  assert.equal(lifecycle.verifiedOutcome,"failed");
 });
 
 test("host close racing asynchronous handoff prevents dispatch and closes authority",async()=>{
@@ -110,4 +113,5 @@ test("unconfirmed root closure is never masked as successful dispatch",async()=>
   await assert.rejects(lifecycle.runApprovedDag({},executor()),
     /native revocation not confirmed/);
   assert.equal(lifecycle.status,"closing");
+  assert.equal(lifecycle.verifiedOutcome,"failed");
 });
