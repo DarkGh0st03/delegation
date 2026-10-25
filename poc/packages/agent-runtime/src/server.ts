@@ -104,8 +104,29 @@ export async function startSpecializedAgentServer(
   );
 
   const server = await new Promise<Server>((resolve, reject) => {
-    const listening = app.listen(options.port, host, () => resolve(listening));
-    listening.once("error", reject);
+    // Express 5 invokes app.listen's callback with an Error when bind
+    // fails (e.g. EADDRINUSE). Older Express versions instead report an
+    // "error" event. The callback MUST inspect its argument: otherwise
+    // a failed bind resolves as a ready A2A server and strands the
+    // privileged operational root and CI runner.
+    let settled = false;
+    const onError = (error:Error) => {
+      if (settled) return;
+      settled = true;
+      listening.removeListener("error", onError);
+      reject(error);
+    };
+    const listening = app.listen(options.port, host, (error?:Error) => {
+      if (error) {
+        onError(error);
+        return;
+      }
+      if (settled) return;
+      settled = true;
+      listening.removeListener("error", onError);
+      resolve(listening);
+    });
+    listening.once("error", onError);
   });
 
   return {
