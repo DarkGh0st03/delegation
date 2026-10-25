@@ -221,11 +221,16 @@ export async function startTrustedEngineerLocalHost(config){
         if(handoff.verifiedOutcome==="verified_complete")
           return "completed_verified";
         if(handoff.verifiedOutcome==="failed"||
-           ["failed","closing","closed"].includes(handoff.status))
+           ["failed","closed"].includes(handoff.status))
           return "terminated";
+        // Running a signed DAG may already have closed its root while
+        // A2A listeners finish draining. A runner must not treat this
+        // non-atomic teardown interval as failed Execution. The lifecycle
+        // declares verified_complete only AFTER every closure succeeds.
+        if(["starting","active","closing"].includes(handoff.status))
+          return "execution_active";
         if(active?.coordinator.phase==="closed")return "terminated";
-        return ["starting","active"].includes(handoff.status)
-          ?"execution_active":"waiting_for_owner";
+        return "waiting_for_owner";
       }
     });
   }catch(error){
