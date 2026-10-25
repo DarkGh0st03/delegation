@@ -47,6 +47,16 @@ export async function startPersistedReviewedScriptedHandoff(input:{
   /** Trusted local scripted provider implementation, never from plan/LLM. */
   handlers:Readonly<Record<Role,DeterministicTaskHandler>>;
 }){
+  // Strictly separate the scripted configuration surface from Gemini:
+  // paid secrets, model names, workflow input maps and charge-consent
+  // tokens are not valid arguments, even if later code ignores them.
+  const fields=new Set([
+    "coordinator","reviewGate","checkpointStore",
+    "operationalRoot","ports","handlers"
+  ]);
+  if(!input||Object.keys(input).length!==fields.size||
+     Object.keys(input).some(key=>!fields.has(key)))
+    fail("unexpected model, billing or workflow configuration in scripted-only handoff");
   if(!(input.coordinator instanceof TrustedExecutionCoordinator)||
      !(input.reviewGate instanceof TrustedPlanningReviewGate)||
      !(input.checkpointStore instanceof SignedPlanningCheckpointFileStore))
