@@ -62,6 +62,21 @@ const SUITES=Object.freeze([
     title:"R5 scripted_offline role-bind error revokes operational root before returning to owner"
   },
   {
+    id:"scripted_admitted_engineer_root",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
+    title:"R5 admitted scripted OIDC + signed Engineer activates exactly one root and watches live GitHub run"
+  },
+  {
+    id:"scripted_job_cancellation_revocation",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
+    title:"R5 canceled scripted GitHub run retires real operational root and all three A2A servers"
+  },
+  {
+    id:"scripted_missing_oidc_denies_root",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
+    title:"R5 missing offline OIDC receipt or canceled job cannot issue the operational root"
+  },
+  {
     id:"live_agent_card_roles",
     path:"poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts",
     title:"R5 only genuine, distinct localhost delegated A2A HTTP Agent Cards are ready"
