@@ -139,3 +139,100 @@ test("completion stays PENDING while signed DAG root closure is in flight",async
   assert.equal(lifecycle.verifiedOutcome,"verified_complete");
   assert.equal(lifecycle.status,"closed");
 });
+
+
+test("late-bound owner creates Gateway branch only AFTER signed root startup",async()=>{
+  const events=[];
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>{
+    events.push("issued-operational-root");
+    return {
+      async close(){events.push("revoked-operational-root");},
+      approvedDag:{async executeApprovedDag(execution){
+        events.push("trusted-DAG-execute");
+        assert.equal(typeof execution.invokeOrchestratorTask,"function");
+        return {completed_task_ids:["branch","backend","frontend","tests"]};
+      }}
+    };
+  });
+  const result=await lifecycle.runApprovedDagWithFactory({},async()=>{
+    events.push("bound-Gateway-provider-after-issuance");
+    return executor();
+  });
+  assert.deepEqual(result.completed_task_ids,
+    ["branch","backend","frontend","tests"]);
+  assert.deepEqual(events,[
+    "issued-operational-root",
+    "bound-Gateway-provider-after-issuance",
+    "trusted-DAG-execute",
+    "revoked-operational-root"
+  ]);
+  assert.equal(lifecycle.verifiedOutcome,"verified_complete");
+});
+
+test("Gateway provider initialization failure revokes root without dispatch",async()=>{
+  let revoked=0,dispatched=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    approvedDag:{async executeApprovedDag(){dispatched++;}},
+    async close(){revoked++;}
+  }));
+  await assert.rejects(lifecycle.runApprovedDagWithFactory({},async()=>{
+    throw Error("signed Gateway branch could not be loaded");
+  }),/signed Gateway branch could not be loaded/);
+  assert.equal(revoked,1);
+  assert.equal(dispatched,0);
+  assert.equal(lifecycle.verifiedOutcome,"failed");
+  assert.equal(lifecycle.status,"closed");
+  await assert.rejects(lifecycle.runApprovedDagWithFactory({},async()=>executor()),
+    /already attempted/);
+});
+
+test("late executor factory cannot return unsigned or malformed Task ports",async()=>{
+  let revoked=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){revoked++;},
+    approvedDag:{async executeApprovedDag(){
+      throw Error("unapproved task must never execute");
+    }}
+  }));
+  await assert.rejects(lifecycle.runApprovedDagWithFactory({},async()=>({
+    ...executor(),invokeOrchestratorTask:null
+  })),/owner-provisioned signed DAG executor/);
+  assert.equal(revoked,1);
+  assert.equal(lifecycle.verifiedOutcome,"failed");
+});
+
+test("host close during async Gateway factory refuses late side effects",async()=>{
+  let enter,release;
+  const entered=new Promise(resolve=>{enter=resolve;});
+  const waiting=new Promise(resolve=>{release=resolve;});
+  let dispatched=0,revoked=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){revoked++;},
+    approvedDag:{async executeApprovedDag(){dispatched++;}}
+  }));
+  const running=lifecycle.runApprovedDagWithFactory({},async()=>{
+    enter();
+    await waiting;
+    return executor();
+  });
+  await entered;
+  const stopping=lifecycle.close();
+  release();
+  await assert.rejects(running,/closed while binding Gateway executor/);
+  await stopping;
+  assert.equal(dispatched,0);
+  assert.equal(revoked,1);
+  assert.equal(lifecycle.verifiedOutcome,"failed");
+});
+
+test("missing trusted factory never consumes a one-use admission",async()=>{
+  let started=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>{
+    started++;
+    throw Error("must not start");
+  });
+  assert.throws(()=>lifecycle.runApprovedDagWithFactory({},null),
+    /owner-provisioned execution factory/);
+  assert.equal(started,0);
+  assert.equal(lifecycle.status,"idle");
+});
