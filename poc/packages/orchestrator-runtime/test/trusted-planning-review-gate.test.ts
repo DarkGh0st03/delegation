@@ -1360,7 +1360,11 @@ test("trusted checkpoint writer rejects forged backend signature before any disk
       }
     });
     const changed=structuredClone(signed);
-    changed.signature=changed.signature.slice(0,-2)+"AA";
+    // Always change a significant signature byte. Mutating the last
+    // base64url characters is non-deterministic because they can already
+    // equal the replacement (and padding bits may be unused).
+    changed.signature=(changed.signature[0]==="A"?"B":"A")+
+      changed.signature.slice(1);
     await assert.rejects(store.persistVerified(changed),
       /Signed Planning checkpoint:/);
     await assert.rejects(store.load(),error=>{
