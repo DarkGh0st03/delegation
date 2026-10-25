@@ -26,7 +26,7 @@ import {TrustedPlanningRecoveryStore}
 import {TrustedExecutionCoordinator}
   from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {startTrustedEngineerLocalHost,
-  startTrustedEngineerLivePlanningHost}
+  startTrustedEngineerLivePlanningHost,canReviewOriginalEngineerPlan}
   from "../src/trusted-engineer-host.mjs";
 import {SignedEngineerApprovalFileStore}
   from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
@@ -134,6 +134,33 @@ async function fixture(t){
   };
   return {plan,password,did,keyId,publicKeyPem,receipts,replays,admissions,config};
 }
+
+test("R5 Engineer approval and rejection freeze at the start of either one-shot handoff",()=>{
+  const live={closed:false,coordinatorPhase:"planning",
+    paidHandoffStatus:"idle",scriptedHandoffStatus:"idle"};
+  assert.equal(canReviewOriginalEngineerPlan(live),true);
+  for(const type of ["paidHandoffStatus","scriptedHandoffStatus"]){
+    for(const transition of ["starting","active","closing","closed","failed"]){
+      assert.equal(canReviewOriginalEngineerPlan({
+        ...live,[type]:transition
+      }),false,`human plan edit permitted while ${type}=${transition}`);
+    }
+  }
+  assert.equal(canReviewOriginalEngineerPlan({
+    ...live,closed:true
+  }),false);
+  for(const coordinatorPhase of [
+    "idle","execution","failed_closed","closed"
+  ]){
+    assert.equal(canReviewOriginalEngineerPlan({
+      ...live,coordinatorPhase
+    }),false);
+  }
+  // No default-allow on an unrecognized lifecycle or missing status.
+  assert.equal(canReviewOriginalEngineerPlan({
+    ...live,scriptedHandoffStatus:undefined
+  }),false);
+});
 
 test("same persistent Engineer session holds separate real-verified OIDC intake and signed human approval",async t=>{
   const f=await fixture(t);
