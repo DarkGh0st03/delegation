@@ -35,6 +35,8 @@ import {TrustedExecutionCoordinator}
   from "../src/trusted-execution-coordinator.ts";
 import {TrustedApprovedA2ADispatcher}
   from "../src/trusted-approved-a2a-dispatcher.ts";
+import {createTrustedReviewedHandoffLifecycle}
+  from "../../../apps/orchestrator/src/trusted-reviewed-handoff-lifecycle.mjs";
 
 const SHA="a".repeat(40),ENGINEER="did:thesis:engineer";
 const REPO={authority:"gitea.local",owner:"thesis",repository:"projects"};
@@ -113,7 +115,9 @@ class ScriptedPlanningModel extends BaseLlm{
     return Promise.reject(Error("No Gemini or provider model calls in R2"));
   }
 }
-async function exercise(x:Scenario,partial=false,cancelBeforeFrontend=false){
+async function exercise(
+  x:Scenario,partial=false,cancelBeforeFrontend=false,ownerLifecycle=false
+){
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
   try{
     const snapshot={session_id:"r2-"+x.name+(partial?"-partial":""),
@@ -346,18 +350,53 @@ async function exercise(x:Scenario,partial=false,cancelBeforeFrontend=false){
       return;
     }
     const checkedTaskIds:string[]=[];
-    if(cancelBeforeFrontend){
-      await assert.rejects(dispatcher.executeApprovedDag({
-        async beforeTask(id){
-          checkedTaskIds.push(id);
-          if(id==="frontend")throw Error("offline GitHub run canceled before Frontend");
+    // This owner-only path deliberately reuses the ACTUAL signed-plan
+    // dispatcher and Gateway from above, rather than faking successful
+    // software effects or constructing an unsigned plan at dispatch time.
+    const owner=ownerLifecycle?createTrustedReviewedHandoffLifecycle(async input=>{
+      assert.equal(input.session_id,snapshot.session_id);
+      return {
+        approvedDag:{
+          executeApprovedDag:async (execution:any)=>
+            dispatcher.executeApprovedDag({
+              beforeTask:async id=>{
+                checkedTaskIds.push(id);
+                if(cancelBeforeFrontend&&id==="frontend")
+                  throw Error("offline GitHub run canceled before Frontend");
+              },
+              invokeOrchestratorTask:execution.invokeOrchestratorTask
+            })
         },
-        async invokeOrchestratorTask(_task,id){
-          await invoke(id,"orchestrator","create_branch",{
-            base_branch:"main",branch:x.branch
-          });
-        }
-      }),/offline GitHub run canceled before Frontend/);
+        close:()=>coordinator.closeExecution()
+      };
+    }):undefined;
+    const ownerInput={session_id:snapshot.session_id};
+    const ownerExec={
+      a2a:{},adapter:{},
+      async authorityForTask(){throw Error("owner-only scoped issuer controls children");},
+      async invokeOrchestratorTask(_task:string,id:string){
+        await invoke(id,"orchestrator","create_branch",{
+          base_branch:"main",branch:x.branch
+        });
+      }
+    };
+    if(cancelBeforeFrontend){
+      if(owner){
+        await assert.rejects(owner.runApprovedDag(ownerInput,ownerExec),
+          /offline GitHub run canceled before Frontend/);
+        assert.equal(owner.status,"closed");
+        assert.equal(owner.verifiedOutcome,"failed");
+        await assert.rejects(owner.runApprovedDag(ownerInput,ownerExec),
+          /already attempted/);
+      }else{
+        await assert.rejects(dispatcher.executeApprovedDag({
+          async beforeTask(id){
+            checkedTaskIds.push(id);
+            if(id==="frontend")throw Error("offline GitHub run canceled before Frontend");
+          },
+          invokeOrchestratorTask:ownerExec.invokeOrchestratorTask
+        }),/offline GitHub run canceled before Frontend/);
+      }
       assert.deepEqual(checkedTaskIds,["branch","backend","frontend"]);
       // Only branch and Backend may have touched the real Gateway fixture.
       assert.equal(providerCalls,2);
@@ -370,14 +409,18 @@ async function exercise(x:Scenario,partial=false,cancelBeforeFrontend=false){
         event.startsWith("a2a:frontend")||event.startsWith("a2a:test")));
       return;
     }
-    const done=await dispatcher.executeApprovedDag({
-      async beforeTask(id){checkedTaskIds.push(id);},
-      async invokeOrchestratorTask(_task,id){
-        await invoke(id,"orchestrator","create_branch",{
-          base_branch:"main",branch:x.branch
-        });
-      }
-    });
+    const done=owner
+      ?await owner.runApprovedDag(ownerInput,ownerExec)
+      :await dispatcher.executeApprovedDag({
+        async beforeTask(id){checkedTaskIds.push(id);},
+        invokeOrchestratorTask:ownerExec.invokeOrchestratorTask
+      });
+    if(owner){
+      assert.equal(owner.status,"closed");
+      assert.equal(owner.verifiedOutcome,"verified_complete");
+      await assert.rejects(owner.runApprovedDag(ownerInput,ownerExec),
+        /already attempted/);
+    }
     assert.deepEqual(done.completed_task_ids,
       ["branch","backend","frontend","tests"]);
     assert.deepEqual(checkedTaskIds,done.completed_task_ids);
@@ -404,4 +447,10 @@ test("R2 denied Engineer subset never starts any provider Task",async()=>{
 });
 test("R2 canceled GitHub run prevents Frontend and Test Gateway effects",async()=>{
   await exercise(SCENARIOS[0]!,false,true);
+});
+test("R5 owner-only lifecycle executes signed Engineer DAG with actual Gateway corroboration",async()=>{
+  await exercise(SCENARIOS[0]!,false,false,true);
+});
+test("R5 owner-only lifecycle denies canceled run and revokes native root before rerun",async()=>{
+  await exercise(SCENARIOS[1]!,false,true,true);
 });
