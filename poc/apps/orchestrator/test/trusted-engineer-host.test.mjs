@@ -17,6 +17,8 @@ import {TrustedOperationalRecoveryStore}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {TrustedPlanningRecoveryStore}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
+import {TrustedExecutionCoordinator}
+  from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {startTrustedEngineerLocalHost}
   from "../src/trusted-engineer-host.mjs";
 import {SignedEngineerApprovalFileStore}
@@ -735,4 +737,121 @@ test("Engineer cold startup requires Gateway Planning retirement and Rust revoca
     TrustedPlanningRecoveryStore,true);
   assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
   await host.close();
+});
+
+test("same-process live Planning host preserves provisional root for review then revokes on shutdown",async t=>{
+  const f=await fixture(t);
+  const dir=join((await import("node:path")).dirname(f.receipts),"live-planning-intents");
+  const operational=join((await import("node:path")).dirname(f.receipts),"live-operational");
+  const checkpoints=join((await import("node:path")).dirname(f.receipts),"live-checkpoints");
+  for(const path of [dir,operational,checkpoints])
+    await mkdir(path,{mode:0o700});
+  const journal=new TrustedPlanningRecoveryStore(dir);
+  const session=f.plan.session_id,rootId="urn:offline:live-planning-root";
+  const backend=generateKeyPairSync("ed25519");
+  const backendKeyId="trusted-live-planning-backend";
+  const store=new SignedPlanningCheckpointFileStore({
+    directory:checkpoints,trust:{
+      trustedKeys:{[backendKeyId]:{
+        public_key_pem:backend.publicKey.export({format:"pem",type:"spki"}).toString()
+      }},
+      expectedSessionId:session,expectedRepository:f.plan.repository,
+      expectedBaseRevision:f.plan.base_revision,
+      expectedWorkBranch:"feature/account-suspension"
+    }
+  });
+  const now=Date.now();
+  await store.persistVerified(signTrustedPlanningCheckpoint({
+    snapshot:{session_id:session,repository:f.plan.repository,
+      base_revision:f.plan.base_revision,directories:[""],files:[]},
+    expectedWorkBranch:"feature/account-suspension",
+    proposal:{status:"unapproved_proposal",plan:f.plan,
+      digest:planDigest(f.plan),verified_source_reads:1},
+    keyId:backendKeyId,
+    privateKeyPem:backend.privateKey.export({format:"pem",type:"pkcs8"}).toString(),
+    issuedAt:new Date(now).toISOString(),
+    expiresAt:new Date(now+600000).toISOString()
+  }));
+  let gatewayRetired=0,nativeRevoked=0;
+  const gateway={
+    retirePlanning:async()=>{gatewayRetired++;},
+    retireSession:async()=>{},
+    activate:async()=>{throw Error("Execution must not be activated");}
+  };
+  const credentials={
+    revokeRoot:async(id)=>{
+      assert.equal(id,rootId);
+      nativeRevoked++;
+    }
+  };
+  const coordinator=new TrustedExecutionCoordinator({
+    sessionId:session,baseRevision:f.plan.base_revision,
+    planningRecovery:journal,
+    credentials,
+    approvedGatewayPlans:gateway,
+    authority:{
+      startPlanning:async(root)=>({
+        phase:"planning",credential_id:root.credential_id,permissions:[]
+      }),
+      cancelPlanning:async()=>{
+        await gateway.retirePlanning(session);
+        await credentials.revokeRoot(rootId);
+      }
+    }
+  });
+  await coordinator.beginPlanning({credential_id:rootId});
+  assert.equal(coordinator.phase,"planning");
+  assert.equal((await journal.pending()).length,1);
+  const config={...f.config,
+    approval:{...f.config.approval,planningCheckpointStore:store},
+    activePlanning:{coordinator,planningRecovery:journal,checkpointStore:store},
+    recovery:{directory:operational,gateway,credentials,
+      planning:{directory:dir,gateway,credentials}}
+  };
+  const host=await startTrustedEngineerLocalHost(config);
+  t.after(()=>host.close());
+  assert.equal(host.planningRecoveryStore,journal);
+  assert.equal(coordinator.phase,"planning");
+  assert.equal(gatewayRetired,0);
+  assert.equal(nativeRevoked,0);
+  assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+  assert.throws(()=>host.startReviewedHandoff({
+    runId,coordinator:new Object()
+  }),/original active Planning Coordinator/);
+  await host.close();
+  assert.equal(coordinator.phase,"closed");
+  assert.equal(gatewayRetired,1);
+  assert.equal(nativeRevoked,1);
+  await journal.assertClean();
+  await assert.rejects(journal.assertFreshSession(session),
+    /retired session cannot be reused/);
+  await host.close();
+  assert.equal(nativeRevoked,1);
+  // A different process cannot recover the same root as an active session.
+  await assert.rejects(startTrustedEngineerLocalHost(config),
+    /Active verified Planning root is required|retired session cannot be reused/);
+});
+
+test("live Planning host rejects spoofed recovery journal without closing real root",async t=>{
+  const f=await fixture(t);
+  const dir=join((await import("node:path")).dirname(f.receipts),"wrong-active-journal");
+  const other=join((await import("node:path")).dirname(f.receipts),"unrelated-journal");
+  for(const path of [dir,other])await mkdir(path,{mode:0o700});
+  const a=new TrustedPlanningRecoveryStore(dir);
+  const b=new TrustedPlanningRecoveryStore(other);
+  const coordinator=new TrustedExecutionCoordinator({
+    sessionId:f.plan.session_id,baseRevision:f.plan.base_revision,
+    planningRecovery:a,credentials:{async revokeRoot(){}},
+    approvedGatewayPlans:{async activate(){throw Error("not needed");}},
+    authority:{}
+  });
+  await assert.rejects(startTrustedEngineerLocalHost({
+    ...f.config,
+    recovery:{directory:other,
+      planning:{directory:dir,gateway:{retirePlanning:async()=>{}},
+        credentials:{revokeRoot:async()=>{}}}},
+    activePlanning:{coordinator,planningRecovery:b,
+      checkpointStore:undefined}
+  }),/same-process Coordinator, journal and signed checkpoint/);
+  assert.equal(coordinator.phase,"idle");
 });

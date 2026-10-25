@@ -19,6 +19,8 @@ import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {TrustedPlanningRecoveryStore,reconcileOrphanedPlanningRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
+import {TrustedExecutionCoordinator}
+  from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {TrustedPlanIpcClient}
   from "../../gateway/src/trusted-plan-ipc.ts";
 import {SoftwareEngineerAuthorityBootstrap}
@@ -83,6 +85,14 @@ export async function startTrustedEngineerLocalHost(config){
   // In particular, Gitea Planning base SHA and GitHub workflow source SHA
   // have different identities; neither is derived from the other.
   const recovery=config?.recovery;
+  const active=config?.activePlanning;
+  if(active!==undefined&&(
+     !(active.coordinator instanceof TrustedExecutionCoordinator)||
+     !(active.planningRecovery instanceof TrustedPlanningRecoveryStore)||
+     !(active.checkpointStore instanceof SignedPlanningCheckpointFileStore)||
+     active.checkpointStore!==approval.planningCheckpointStore||
+     !recovery?.planning?.directory))
+    deny("live Planning requires same-process Coordinator, journal and signed checkpoint");
   const directories=[
     oidc.replayDirectory,oidc.admissionDirectory,approval.receiptDirectory,
     ...(recovery?[recovery.directory]:[]),
@@ -99,14 +109,39 @@ export async function startTrustedEngineerLocalHost(config){
     if(typeof recovery.planning.gateway?.retirePlanning!=="function"||
        typeof recovery.planning.credentials?.revokeRoot!=="function")
       deny("trusted Gateway Planning retirement and Rust revocation required");
-    planningRecoveryStore=new TrustedPlanningRecoveryStore(recovery.planning.directory);
-    // Cold restart never resumes old provisional authority or consent.
-    await reconcileOrphanedPlanningRoots({
-      store:planningRecoveryStore,
-      gateway:recovery.planning.gateway,
-      credentials:recovery.planning.credentials
-    });
-    await planningRecoveryStore.assertFreshSession(approval.expectedSessionId);
+    if(active){
+      // This path is ONLY for the actual still-active Coordinator in the
+      // same process, not a restart. An orphan from a previous process
+      // cannot be promoted to active by replaying its journal contents.
+      active.coordinator.assertPlanningRecoveryStore(active.planningRecovery);
+      active.planningRecovery.assertDirectory(recovery.planning.directory);
+      const root=active.coordinator.trustedPlanningAuthority();
+      const pending=await active.planningRecovery.pending();
+      if(root.session_id!==approval.expectedSessionId||
+         root.base_revision!==approval.expectedBaseRevision||
+         pending.length!==1||
+         pending[0].session_id!==root.session_id||
+         pending[0].base_revision!==root.base_revision||
+         pending[0].credential_id!==root.credential_id)
+        deny("live Planning Coordinator does not match exclusive durable intent");
+      // Independently verify the backend signature one more time before UI.
+      const signed=await active.checkpointStore.load();
+      if(signed.snapshot.session_id!==root.session_id||
+         signed.snapshot.base_revision!==root.base_revision||
+         JSON.stringify(signed.snapshot.repository)!==
+           JSON.stringify(approval.repository))
+        deny("active Planning checkpoint disagrees with owner-pinned session");
+      planningRecoveryStore=active.planningRecovery;
+    }else{
+      planningRecoveryStore=new TrustedPlanningRecoveryStore(recovery.planning.directory);
+      // Cold restart never resumes old provisional authority or consent.
+      await reconcileOrphanedPlanningRoots({
+        store:planningRecoveryStore,
+        gateway:recovery.planning.gateway,
+        credentials:recovery.planning.credentials
+      });
+      await planningRecoveryStore.assertFreshSession(approval.expectedSessionId);
+    }
   }
   if(recovery){
     if(typeof recovery.gateway?.retireSession!=="function"||
@@ -168,6 +203,9 @@ export async function startTrustedEngineerLocalHost(config){
     /** Trusted in-process call ONLY: never registered as an HTTP endpoint. */
     startReviewedHandoff({runId,...trusted}){
       if(closed)deny("host closed");
+      if(active&&(trusted.coordinator!==active.coordinator||
+         active.coordinator.phase!=="planning"))
+        deny("reviewed Execution must use original active Planning Coordinator");
       // Legacy test-only Engineer hosts can accept local OIDC, but cannot
       // activate an operational DC without startup crash reconciliation.
       if(!operationalRecoveryStore)
@@ -193,8 +231,24 @@ export async function startTrustedEngineerLocalHost(config){
         const results=await Promise.allSettled([
           handoff.close(),oidcIntake.close(),shutdown(engineerServer)
         ]);
+        // The signed plan may have been reviewed without an admitted
+        // Execution. Closing the host must not leave that read-only root
+        // alive. Wait until any concurrently starting handoff finishes
+        // before attempting Planning cancellation, avoiding phase races.
+        if(active){
+          const phase=active.coordinator.phase;
+          if(phase==="planning"){
+            const result=await Promise.allSettled([
+              active.coordinator.closePlanning()
+            ]);
+            results.push(...result);
+          }else if(phase!=="closed"){
+            results.push({status:"rejected",reason:Error(
+              "live Planning/Execution authority has no confirmed closure")});
+          }
+        }
         if(results.some(r=>r.status==="rejected"))
-          deny("Engineer shutdown incomplete: operational root revocation or listener teardown unconfirmed; manual reconciliation required");
+          deny("Engineer shutdown incomplete: operational or preliminary root revocation or listener teardown unconfirmed; manual reconciliation required");
       })();
       return shutdownPromise;
     }

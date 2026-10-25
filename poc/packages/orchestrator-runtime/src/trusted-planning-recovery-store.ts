@@ -38,6 +38,12 @@ export class TrustedPlanningRecoveryStore{
     this.#dir=directory;
   }
   #path(id:string,part:"pending"|"retired"){return join(this.#dir,hash(id)+"."+part+".json");}
+  /** Bind in-memory trusted Coordinator to the same owner-private durable
+   * journal configured for the Engineer host. No separate lookalike file. */
+  assertDirectory(directory:string):void{
+    if(typeof directory!=="string"||resolve(directory)!==this.#dir)
+      fail("active Planning journal differs from configured host directory");
+  }
   async #check(){
     const m=await lstat(this.#dir);
     if(!m.isDirectory()||m.isSymbolicLink()||!owner(m))

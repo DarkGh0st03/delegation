@@ -621,3 +621,36 @@ coordinator without treating its own live provisional root as an
 orphan on startup, and cleanly cancel it if the Engineer rejects/closes
 the review. This increment does not authenticate an Engineer signature
 or activate Execution. R5 stays NO-GO; no paid Gemini calls or main merge.
+
+### R5 same-process live Planning authority owned by authenticated Engineer host
+
+`startTrustedEngineerLocalHost` now has an explicit trusted
+*same-process-only* `activePlanning` option. The host
+requires an actual `TrustedExecutionCoordinator`,
+the **identical** owner-provisioned Planning recovery-store object bound
+at root issuance, the same owner-only journal directory, the exact
+one pending root ID/session/Gitea SHA, and the identical independently
+pinned, backend-Ed25519 checkpoint store used by the Engineer UI.
+Only after all these validations does it skip **cold-restart** cleanup
+of its own still-live provisional root. An orphan from a restarted
+process is NEVER restored by reconstructing only a journal or file.
+
+During startup the operational-root recovery journal is reconciled as
+before. An authenticated GitHub handoff, if later attempted, must use
+this same Coordinator (not a lookalike instance). On shutdown, the
+host waits for in-flight handoff closure, then calls
+`coordinator.closePlanning()` if no operational handoff
+was performed. Gateway Planning retirement, native Rust/Adapter root
+revocation and Planning journal tombstoning must all succeed before
+clean closure is reported. A failed closure remains terminal for
+manual reconciliation. New offline host integration tests cover
+retention through review, protected UI access, one-shot shutdown,
+session tombstones and mismatched journal/coordinator denials.
+
+**Remaining:** the strict deployed host must be invoked by an
+owner-controlled process **after** calling the real Planning bootstrap
+and providing its actual Coordinator reference. The separate signed
+Engineer approval and admission must still precede operational root
+activation; none occurs automatically. Real/native Rust/EVM full-path
+test and spending authorization are outstanding. Do not claim R5 GO,
+run Gemini or merge main; certify on exact-SHA 5/5 offline CI.
