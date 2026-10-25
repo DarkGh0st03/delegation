@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createHash,generateKeyPairSync,sign} from "node:crypto";
+import {generateKeyPairSync,sign} from "node:crypto";
 import {mkdtemp,rm,readdir,readFile,writeFile,chmod} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
@@ -165,6 +165,11 @@ test("R5 offline admission rejects forged GitHub signature or REST run before pe
       replayStore:new GithubOidcReplayFileStore(replay),
       receiptStore:store
     };
+    const original=token(claims());
+    const altered=original.slice(0,-8)+"AAAAAAAA";
+    await assert.rejects(authenticateScriptedGithubRun(admission({
+      ...base,oidcJwt:altered
+    })),/invalid OIDC signature/);
     await assert.rejects(authenticateScriptedGithubRun(admission({
       ...base,
       oidcJwt:token({...claims(),workflow_ref:
