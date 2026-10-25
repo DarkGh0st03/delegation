@@ -67,7 +67,8 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
   catch{denied();}
   if(!record(source)||
      Object.keys(source).some(k=>![
-       "approval","oidc","recovery","approvalPort","oidcPort"
+       "approval","oidc","recovery","approvalPort","oidcPort",
+       "scriptedOidc","scriptedOidcPort"
      ].includes(k))||
      !record(source.approval)||!record(source.oidc)||
      !record(source.recovery)||!record(source.approval.checkpoint)||
@@ -84,6 +85,29 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
     denied();
   const pending=options.pendingPlanningOutput===true;
   const approval=source.approval,oidc=source.oidc,recovery=source.recovery;
+  const scripted=source.scriptedOidc;
+  if(scripted&&(
+     !allowedKeys(scripted,[
+       "pinned","trust","replayDirectory","admissionDirectory",
+       "bindAddress","githubApiTokenFile","hmacSecretHexFile","tls"
+     ])||
+     !allowedKeys(scripted.tls,[
+       "caFile","certFile","keyFile","expectedClientFingerprint256"
+     ])||
+     !allowedKeys(scripted.pinned,[
+       "repository","ref","workflowPath","sourceSha"
+     ])||
+     !allowedKeys(scripted.trust,[
+       "expectedAudience","expectedSubject",
+       "expectedRepositoryId","expectedOwnerId"
+     ])||
+     scripted.pinned.workflowPath!==
+       ".github/workflows/trusted-scripted-offline-session-hold.yml"||
+     scripted.pinned.repository!==oidc.pinned.repository||
+     scripted.pinned.ref!==oidc.pinned.ref||
+     scripted.pinned.sourceSha!==oidc.pinned.sourceSha||
+     scripted.trust.expectedAudience===oidc.trust.expectedAudience))
+    denied();
   if(!allowedKeys(approval,[
        "engineerDid","keyId","expectedSessionId","expectedBaseRevision",
        "repository","receiptDirectory","trustedPlanFile","privateKeyFile",
@@ -118,21 +142,22 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
     approval.checkpoint.backendPublicKeyPemFile,oidc.githubApiTokenFile,
     oidc.hmacSecretHexFile,oidc.tls.caFile,
     oidc.tls.certFile,oidc.tls.keyFile,
-    recovery.adapterTokenFile,recovery.gatewaySecretFile
+    recovery.adapterTokenFile,recovery.gatewaySecretFile,
+    ...(scripted?[scripted.githubApiTokenFile,
+      scripted.hmacSecretHexFile,scripted.tls.caFile,
+      scripted.tls.certFile,scripted.tls.keyFile]:[])
   ];
   if(requiredPaths.some(v=>typeof v!=="string"))denied();
   // Local signing key, plan, approval and recovery journal cannot be
   // replaced by external workflow inputs or a model.
-  for(const p of [
+  const directories=[
     approval.receiptDirectory,approval.checkpoint.directory,
     oidc.replayDirectory,oidc.admissionDirectory,
-    recovery.directory,recovery.planningDirectory
-  ])await ownedPrivateDir(p);
-  if(new Set([
-    approval.receiptDirectory,approval.checkpoint.directory,
-    oidc.replayDirectory,oidc.admissionDirectory,
-    recovery.directory,recovery.planningDirectory
-  ]).size!==6)denied();
+    recovery.directory,recovery.planningDirectory,
+    ...(scripted?[scripted.replayDirectory,scripted.admissionDirectory]:[])
+  ];
+  for(const p of directories)await ownedPrivateDir(p);
+  if(new Set(directories).size!==directories.length)denied();
   // Planning's immutable reviewed plan is created using O_EXCL by
   // TrustedReviewedPlanFile.persist AFTER the backend signs the snapshot.
   // Reject even a valid preexisting plan in fresh-start mode, so this
@@ -152,7 +177,22 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
   }
   const reads=await Promise.all(requiredPaths.map(p=>protectedText(p)));
   const [signingKey,publicKey,backendPublicKey,
-    githubApiToken,hmacHex,ca,cert,key,adapterToken,gatewaySecret]=reads;
+    githubApiToken,hmacHex,ca,cert,key,adapterToken,gatewaySecret,
+    scriptedGithubToken,scriptedMacHex,scriptedCa,scriptedCert,
+    scriptedKey]=reads;
+  if(scripted&&(
+     typeof scriptedGithubToken!=="string"||
+     scriptedGithubToken.trim().length<8||
+     scriptedGithubToken.trim().length>4096||
+     !/^[a-f0-9]{64,256}$/iu.test(scriptedMacHex?.trim()??"")||
+     scriptedMacHex.trim().length%2!==0||
+     scriptedMacHex.trim().toLowerCase()===hmacHex.trim().toLowerCase()||
+     !scriptedCa.includes("BEGIN CERTIFICATE")||
+     !scriptedCert.includes("BEGIN CERTIFICATE")||
+     !scriptedKey.includes("BEGIN")||
+     !/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/u
+       .test(scripted.tls.expectedClientFingerprint256??"")))
+    denied();
   // Verify sensitive path ownership before the host opens them itself.
   if((!pending&&!trustedPlan.trim())||!signingKey.trim()||!gatewaySecret.trim()||
      !publicKey.includes("BEGIN PUBLIC KEY")||
@@ -203,7 +243,23 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
     recovery:{...recoverySettings,gatewaySecretFile:
       path(recovery.gatewaySecretFile),adapterToken:adapterToken.trim()},
     approvalPort:source.approvalPort??0,
-    oidcPort:source.oidcPort??0
+    oidcPort:source.oidcPort??0,
+    ...(scripted?{
+      scriptedOidc:{
+        pinned:scripted.pinned,trust:scripted.trust,
+        replayDirectory:scripted.replayDirectory,
+        admissionDirectory:scripted.admissionDirectory,
+        ...(scripted.bindAddress?{bindAddress:scripted.bindAddress}:{}),
+        githubApiToken:scriptedGithubToken.trim(),
+        hmacSecret:Buffer.from(scriptedMacHex.trim(),"hex"),
+        tls:{
+          ca:scriptedCa,cert:scriptedCert,key:scriptedKey,
+          expectedClientFingerprint256:
+            scripted.tls.expectedClientFingerprint256
+        }
+      },
+      scriptedOidcPort:source.scriptedOidcPort??0
+    }:{})
   });
 }
 export async function startConfiguredTrustedEngineerService(configPath){
