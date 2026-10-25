@@ -863,3 +863,25 @@ pending entry cannot overwrite an existing retirement tombstone.
 These are deterministic offline trusted-port fixtures, not live EVM or
 proof of multi-replica filesystem consistency. Single-owner deployment
 remains required. R5 is still NO-GO; no paid Gemini call and no merge.
+
+### R5 cold restart: operational authority must be revoked before preliminary authority
+
+The persistent Engineer host now reconciles the **operational root and
+Gateway execution session first**, before any preliminary Planning root.
+If operational revocation is ambiguous, startup fails before it touches
+the Planning journal or starts the Engineer UI / OIDC listener. Only a
+confirmed Gateway operational retirement and native Rust status
+revocation permit subsequent Planning registry retirement and
+provisional root revocation.
+
+The new Engineer-host offline regression simulates a previously signed
+session that crashed immediately after an uncertain operational
+credential issuance, with BOTH durable intents pending. A failed
+operational Rust status confirmation blocks all further startup. A
+subsequent verified retirement allows Planning cleanup; both
+credential sessions remain non-reusable, while a distinct fresh
+Engineer session can start. No new credential is issued by recovery.
+
+This is a recovery-ordering and fail-closed proof using explicit
+Gateway/Adapter mocks. It does not replace real EVM/native status proof
+or constitute an R5 GO decision. No paid Gemini invocation or main merge.

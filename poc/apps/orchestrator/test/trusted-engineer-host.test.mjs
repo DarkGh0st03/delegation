@@ -1044,3 +1044,71 @@ test("live Engineer UI rejection revokes original root and fences concurrent Ed2
     await host?.close();
   }
 });
+
+
+test("cold restart retires ambiguous operational root BEFORE preliminary root or any Engineer listener",async t=>{
+  const f=await fixture(t);
+  const home=await mkdtemp(join(tmpdir(),"engineer-dual-root-restart-"));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  const operationalDir=join(home,"operational"),planningDir=join(home,"planning");
+  for(const dir of [operationalDir,planningDir])
+    await mkdir(dir,{mode:0o700});
+  const operational=new TrustedOperationalRecoveryStore(operationalDir);
+  const planning=new TrustedPlanningRecoveryStore(planningDir);
+  // The previous approved session has crashed after a potentially
+  // successful operational issuance, but this Engineer boot owns a
+  // DIFFERENT fresh session. Old receipts cannot authorize a retry.
+  const orphan="previous-signed-engineer-session";
+  const pinned=f.plan.base_revision;
+  const operation="urn:offline:operational-possibly-issued";
+  const preliminary="urn:offline:planning-possibly-issued";
+  await operational.recordIntent({
+    sessionId:orphan,baseRevision:pinned,credentialId:operation
+  });
+  await planning.recordIntent({
+    sessionId:orphan,baseRevision:pinned,credentialId:preliminary
+  });
+  const events=[];
+  let rustOperationalConfirmed=false;
+  const gateway={
+    async retireSession(id){events.push("gateway-operational:"+id);},
+    async retirePlanning(id){events.push("gateway-planning:"+id);}
+  };
+  const credentials={
+    async revokeRoot(id){
+      events.push("rust:"+id);
+      if(id===operation&&!rustOperationalConfirmed)
+        throw Error("native operational status inconclusive");
+    }
+  };
+  const config={...f.config,recovery:{
+    directory:operationalDir,gateway,credentials,
+    planning:{directory:planningDir,gateway,credentials}
+  }};
+  await assert.rejects(startTrustedEngineerLocalHost(config),
+    /manual reconciliation required/);
+  assert.deepEqual(events,[
+    "gateway-operational:"+orphan,"rust:"+operation
+  ]);
+  assert.equal((await operational.pending()).length,1);
+  assert.equal((await planning.pending()).length,1);
+  // Never attempt provisional retirement while an operational credential
+  // might still be live. Cold retry only cancels, never issues another root.
+  rustOperationalConfirmed=true;
+  const host=await startTrustedEngineerLocalHost(config);
+  t.after(()=>host.close());
+  assert.deepEqual(events,[
+    "gateway-operational:"+orphan,"rust:"+operation,
+    "gateway-operational:"+orphan,"rust:"+operation,
+    "gateway-planning:"+orphan,"rust:"+preliminary
+  ]);
+  await operational.assertClean();
+  await planning.assertClean();
+  await assert.rejects(operational.assertFreshSession(orphan),
+    /reconciled session cannot be reused/);
+  await assert.rejects(planning.assertFreshSession(orphan),
+    /retired session cannot be reused/);
+  assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
+  await host.close();
+  assert.equal(events.length,6);
+});

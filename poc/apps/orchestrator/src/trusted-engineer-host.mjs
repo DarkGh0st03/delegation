@@ -115,6 +115,29 @@ export async function startTrustedEngineerLocalHost(config){
   // Reconcile BEFORE creating/listening on the Engineer UI or GitHub OIDC
   // intake. No old approval may be served while an orphan root is uncertain.
   let operationalRecoveryStore,planningRecoveryStore;
+  // An incomplete operational issue may have granted write authority.
+  // Cancel that root and tombstone its Gateway session FIRST. Only then
+  // retire read-only preliminary authority. In particular, a failure to
+  // confirm operational revocation prevents all listeners AND prevents any
+  // misleading Planning-only "recovered" state.
+  if(recovery){
+    if(active?.operationalRecovery){
+      active.coordinator.assertOperationalRecoveryStore(active.operationalRecovery);
+      active.operationalRecovery.assertDirectory(recovery.directory);
+    }
+    if(typeof recovery.gateway?.retireSession!=="function"||
+       typeof recovery.credentials?.revokeRoot!=="function")
+      deny("trusted Gateway retirement and Rust Adapter revocation required");
+    // An active Coordinator must keep ITS original operational journal:
+    // allocating a second instance makes later handoff impossible.
+    operationalRecoveryStore=active?.operationalRecovery??
+      new TrustedOperationalRecoveryStore(recovery.directory);
+    await reconcileOrphanedOperationalRoots({
+      store:operationalRecoveryStore,gateway:recovery.gateway,
+      credentials:recovery.credentials
+    });
+    await operationalRecoveryStore.assertFreshSession(approval.expectedSessionId);
+  }
   if(recovery?.planning){
     if(typeof recovery.planning.gateway?.retirePlanning!=="function"||
        typeof recovery.planning.credentials?.revokeRoot!=="function")
@@ -152,24 +175,6 @@ export async function startTrustedEngineerLocalHost(config){
       });
       await planningRecoveryStore.assertFreshSession(approval.expectedSessionId);
     }
-  }
-  if(recovery){
-    if(active?.operationalRecovery){
-      active.coordinator.assertOperationalRecoveryStore(active.operationalRecovery);
-      active.operationalRecovery.assertDirectory(recovery.directory);
-    }
-    if(typeof recovery.gateway?.retireSession!=="function"||
-       typeof recovery.credentials?.revokeRoot!=="function")
-      deny("trusted Gateway retirement and Rust Adapter revocation required");
-    // An active Coordinator must keep ITS original operational journal:
-    // allocating a second instance makes later handoff impossible.
-    operationalRecoveryStore=active?.operationalRecovery??
-      new TrustedOperationalRecoveryStore(recovery.directory);
-    await reconcileOrphanedOperationalRoots({
-      store:operationalRecoveryStore,gateway:recovery.gateway,
-      credentials:recovery.credentials
-    });
-    await operationalRecoveryStore.assertFreshSession(approval.expectedSessionId);
   }
   const replayStore=new GithubOidcReplayFileStore(oidc.replayDirectory);
   const admissionStore=new TrustedGithubAdmissionReceiptStore({
