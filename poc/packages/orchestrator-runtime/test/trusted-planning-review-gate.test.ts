@@ -1983,12 +1983,39 @@ test("R5 missing offline OIDC receipt or canceled job cannot issue the operation
         startAdmittedGithubReviewedScriptedHandoff(f.input),
         /ENOENT|GitHub API does not corroborate/i
       );
-      assert.equal(f.coordinator.phase,"planning");
-      assert.deepEqual(f.revoked,[]);
+      if(mode==="missing"){
+        // No authenticated receipt consumed, so no authority transition.
+        assert.equal(f.coordinator.phase,"planning");
+        assert.deepEqual(f.revoked,[]);
+        await f.coordinator.closePlanning();
+      }else{
+        // A consumed receipt whose GitHub run was canceled must retire
+        // the preliminary root, not leave it readable behind a 403.
+        assert.equal(f.coordinator.phase,"closed");
+        assert.deepEqual(f.revoked,["urn:preliminary"]);
+      }
       assert.equal(f.issued.length,1);
-      await f.coordinator.closePlanning();
     }finally{await f.dispose();}
   }
+});
+
+test("R5 consumed offline OIDC denies missing Engineer signature and retires preliminary root",async()=>{
+  const f=await admittedScriptedFixture();
+  try{
+    // Deliberately do not issue an Engineer signature.
+    await f.emitReceipt();
+    await assert.rejects(
+      startAdmittedGithubReviewedScriptedHandoff(f.input),
+      /ENOENT|signed|receipt|approval/i
+    );
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary"]);
+    assert.equal(f.issued.length,1);
+    await assert.rejects(
+      startAdmittedGithubReviewedScriptedHandoff(f.input),
+      /already consumed/
+    );
+  }finally{await f.dispose();}
 });
 
 
