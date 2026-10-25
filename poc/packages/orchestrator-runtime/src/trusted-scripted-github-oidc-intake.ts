@@ -31,7 +31,7 @@ const MAX_BYTES=48*1024;
  */
 // Independent address validator: the offline listener must never import
 // the paid-mode intake or consent schema even transitively.
-function verifiedPrivateOidcBindAddress(
+export function verifiedPrivateOidcBindAddress(
   value:string|undefined,tlsConfigured:boolean
 ):string{
   const address=value??"127.0.0.1";
