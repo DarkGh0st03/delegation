@@ -393,3 +393,78 @@ test("pending Planning output cannot override cold-recovery verification via con
       /configuration denied/);
   }finally{await f.close();}
 });
+
+
+test("R5 persistent Engineer service loads separate protected scripted-only OIDC without paid secrets",async()=>{
+  const f=await fixture();
+  try{
+    const replay=join(f.home,"scripted-replays");
+    const admission=join(f.home,"scripted-admissions");
+    await mkdir(replay,{mode:0o700});
+    await mkdir(admission,{mode:0o700});
+    const mac=join(f.home,"scripted.hmac.hex");
+    const github=join(f.home,"scripted.github.read-token");
+    await writeFile(mac,"cd".repeat(32),{mode:0o600});
+    await writeFile(github,"offline-scripted-rest-token",{mode:0o600});
+    f.config.scriptedOidc={
+      pinned:{...f.config.oidc.pinned,
+        workflowPath:".github/workflows/trusted-scripted-offline-session-hold.yml"},
+      trust:{...f.config.oidc.trust,
+        expectedAudience:"urn:scripted-no-charge-owner"},
+      replayDirectory:replay,admissionDirectory:admission,
+      bindAddress:"127.0.0.1",
+      githubApiTokenFile:github,hmacSecretHexFile:mac,
+      tls:{...f.config.oidc.tls}
+    };
+    f.config.scriptedOidcPort=0;
+    await f.save();
+    const prepared=await loadTrustedEngineerServiceConfig(f.files.config);
+    assert.equal(prepared.scriptedOidc.pinned.workflowPath,
+      ".github/workflows/trusted-scripted-offline-session-hold.yml");
+    assert.equal(prepared.scriptedOidc.hmacSecret.toString("hex"),
+      "cd".repeat(32));
+    assert.equal(prepared.oidc.hmacSecret.toString("hex"),
+      "ab".repeat(32));
+    assert.equal(prepared.scriptedOidc.githubApiToken,
+      "offline-scripted-rest-token");
+    assert.equal("hmacSecretHexFile" in prepared.scriptedOidc,false);
+    assert.equal("model" in prepared.scriptedOidc,false);
+    assert.equal("authorization" in prepared.scriptedOidc,false);
+    assert.equal(prepared.scriptedOidcPort,0);
+  }finally{await f.close();}
+});
+
+test("R5 strict service rejects paid and scripted profiles sharing credentials, directories or workflow",async()=>{
+  const f=await fixture();
+  try{
+    const replay=join(f.home,"offline-replays");
+    const admission=join(f.home,"offline-admissions");
+    await mkdir(replay,{mode:0o700});
+    await mkdir(admission,{mode:0o700});
+    const mac=join(f.home,"offline.hmac");
+    await writeFile(mac,"cd".repeat(32),{mode:0o600});
+    const base={
+      pinned:{...f.config.oidc.pinned,
+        workflowPath:".github/workflows/trusted-scripted-offline-session-hold.yml"},
+      trust:{...f.config.oidc.trust,
+        expectedAudience:"urn:trusted-scripted-no-charge"},
+      replayDirectory:replay,admissionDirectory:admission,
+      githubApiTokenFile:f.files.github,hmacSecretHexFile:mac,
+      tls:{...f.config.oidc.tls}
+    };
+    for(const bad of [
+      {pinned:{...base.pinned,workflowPath:f.config.oidc.pinned.workflowPath}},
+      {pinned:{...base.pinned,sourceSha:"e".repeat(40)}},
+      {trust:{...base.trust,expectedAudience:f.config.oidc.trust.expectedAudience}},
+      {replayDirectory:f.dirs.replays},
+      {admissionDirectory:f.dirs.admissions},
+      {hmacSecretHexFile:f.files.hmac},
+      {extraModelSecret:"forbidden"}
+    ]){
+      f.config.scriptedOidc={...base,...bad};
+      await f.save();
+      await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
+        /configuration denied/);
+    }
+  }finally{await f.close();}
+});
