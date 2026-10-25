@@ -212,7 +212,21 @@ export async function startTrustedEngineerLocalHost(config){
       githubApiFetchFn:oidc.githubApiFetchFn,
       oidcJwksFetchFn:oidc.oidcJwksFetchFn,
       port:config.oidcPort??0,tls:oidc.tls,
-      bindAddress:oidc.bindAddress
+      bindAddress:oidc.bindAddress,
+      // Read-only runner rendezvous: the trusted in-process operator
+      // still exclusively controls the original signed DAG and DC root.
+      // Never equate an OIDC status query with Engineer approval.
+      statusForAdmittedRun:()=>{
+        if(closed)return "terminated";
+        if(handoff.verifiedOutcome==="verified_complete")
+          return "completed_verified";
+        if(handoff.verifiedOutcome==="failed"||
+           ["failed","closing","closed"].includes(handoff.status))
+          return "terminated";
+        if(active?.coordinator.phase==="closed")return "terminated";
+        return ["starting","active"].includes(handoff.status)
+          ?"execution_active":"waiting_for_owner";
+      }
     });
   }catch(error){
     await shutdown(engineerServer);
