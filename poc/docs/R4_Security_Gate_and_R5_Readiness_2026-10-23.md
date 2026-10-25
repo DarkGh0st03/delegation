@@ -1725,3 +1725,82 @@ Keep paid consent and Gemini secrets entirely unavailable to this path.
 
 R5 remains **NO-GO** until the new same-SHA CI is green and the physical
 single-run private host/runner/Gateway/A2A/Gitea proof is observed.
+
+
+### R5 — Distinct scripted-only private mTLS listener and runner hold (25 October 2026)
+
+A real, separate **non-billable** transport is now implemented in source
+with the following owner-controlled modules (none is a Gemini workflow):
+
+- `trusted-scripted-github-oidc-intake.ts`: independently pinned mTLS
+  HTTP listener on `/v1/trusted/github/scripted-offline-oidc-admission`
+  plus read-only status endpoint
+  `/v1/trusted/github/scripted-offline-admission-status`. The listener
+  checks the **exact pinned runner certificate**, real GitHub RS256
+  OIDC/JWKS signature and active REST workflow job, then writes only a
+  non-billable HMAC admission receipt. It refuses paid workflow inputs
+  and cannot sign Engineer approval, create credentials or start tasks.
+  The paid listener and its endpoints remain unchanged.
+- `trusted-scripted-github-oidc-submit.ts`: a separate runner-side
+  GitHub JWT submission and mTLS-status hold client. Its response schema
+  explicitly includes `execution_profile=scripted_offline` and
+  `model_inference_allowed=false`; paid responses are incompatible.
+  TLS CA, server leaf SHA256, client certificate and private key come
+  from independently pinned runner-owned files.
+- `trusted-private-scripted-runner-oidc.mjs` and
+  `hold-private-scripted-github-session.mjs`: load a locked local
+  `DELEGATION_SCRIPTED_RUNNER_OIDC_CONFIG`, reject any other workflow,
+  branch, source SHA, event inputs, public HTTP target or unprotected
+  mTLS secret, then submit a one-shot OIDC proof and keep the SAME
+  GitHub run active until the host can attest successful DAG/root
+  closure. Ambiguous, canceled, terminated or expired sessions fail
+  the GitHub job.
+- `.github/workflows/trusted-scripted-offline-session-hold.yml`:
+  manual first-run workflow with exactly `execution_profile` and
+  `authorization=I AUTHORIZE A SCRIPTED OFFLINE TEST ONLY`.
+  Requires isolated self-hosted `delegation-private` runner and
+  `r5-private-scripted-admission` protected environment. Runs
+  **only** the preinstalled, immutable operator-reviewed entrypoint:
+  no `actions/checkout`, no install of mutable dependencies, no Gemini
+  model, API key or model-budget parameter.
+- `trusted-engineer-host.mjs`: optional second OIDC listener in the
+  **same original trusted Engineer process**, using an independent
+  HMAC receipt store, replay ledger, pinned audience and TLS interface.
+  It exposes an **in-process** single-use
+  `consumeAuthenticatedScriptedRun`, not a remote authority API.
+  It keeps offline status **terminated/fail closed** until an actual
+  trusted DAG execution and root teardown callback is connected.
+  Merely authenticating a no-charge runner can never report GitHub
+  Success or grant any operational DC.
+- `trusted-engineer-service.mjs`: persistent protected service
+  configuration may now optionally supply `scriptedOidc` and its
+  listener port. It reads separate 0600 secrets and 0700 replay/admission
+  directories, requires a distinct HMAC key and OIDC audience, and
+  independently pins the same source/repository/ref but the separate
+  scripted workflow. Existing strict paid/cold-recovery schema remains
+  unchanged if the optional configuration is absent.
+
+Offline regressions check the actual localhost listener, signed OIDC
+identity and REST corroboration, mTLS submission and polling, separate
+receipt/replay persistence, isolated runner config, workflow invariants
+and a single Engineer process with BOTH paid and scripted endpoints.
+The same-SHA R5 gate requires explicit tests for the new components.
+
+**IMPORTANT — still R5 NO-GO:** the protected runner and host have
+NOT been physically deployed and the scripted admission has NOT YET
+been wired to the host-owned
+`startPersistedReviewedScriptedHandoff` plus the complete reviewed
+A2A/Docker/Gitea DAG and native verified root retirement. Consequently
+the host currently deliberately answers `terminated` rather than
+`completed_verified` to a no-charge runner's status request. This is
+a security feature while the trusted completion bridge is missing,
+not a passing E2E. Never work around it by writing a synthetic status,
+accepting a paid receipt, skipping live GitHub checks, or declaring a
+success just because three Agent Card GET requests succeeded.
+
+Next: implement the private owner-run **one-shot reviewed scripted DAG
+completion** callback bound to the original Coordinator, authenticated
+Engineer review and durable scripted GitHub receipt, live GitHub run,
+Gateway/Rust verified root closure and all approved Tasks. Then deploy
+the independent runner/host network and exercise one complete free
+E2E; only then consider paid-run readiness after fresh user consent.
