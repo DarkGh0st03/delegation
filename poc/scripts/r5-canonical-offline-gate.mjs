@@ -27,6 +27,21 @@ const SUITES=Object.freeze([
     title:"strict LIVE Engineer Host joins authenticated Unix IPC with durable Gateway planning and operational fences"
   },
   {
+    id:"scripted_offline_private_oidc_intake",
+    path:"poc/packages/orchestrator-runtime/test/trusted-scripted-github-oidc-intake.test.ts",
+    title:"loopback trusted admission independently validates OIDC and run, consumes replay, never authorizes Gemini"
+  },
+  {
+    id:"scripted_offline_same_engineer_mtls",
+    path:"poc/apps/orchestrator/test/trusted-engineer-host.test.mjs",
+    title:"same Engineer process isolates paid and offline OIDC HTTPS listeners and never promotes offline identity into authority"
+  },
+  {
+    id:"scripted_offline_pinned_private_runner",
+    path:"poc/packages/orchestrator-runtime/test/trusted-private-scripted-runner-oidc.test.ts",
+    title:"private runner binds all local trust pins and emits only nonauthorization"
+  },
+  {
     id:"scripted_offline_oidc_no_billing",
     path:"poc/packages/orchestrator-runtime/test/trusted-scripted-github-admission.test.ts",
     title:"R5 signed offline GitHub OIDC and REST corroboration produce one-use HMAC receipt only"
