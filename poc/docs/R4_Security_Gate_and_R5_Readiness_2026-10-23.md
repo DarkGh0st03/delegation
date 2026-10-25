@@ -1666,3 +1666,62 @@ session be exercised in one live no-cost run. A green scripted role
 server test is NOT an authenticated real GitHub runner proof.
 
 No paid inference was triggered and main remains unchanged.
+
+
+### R5 — Signed offline GitHub manual identity, distinct from paid consent (25 October 2026)
+
+A dedicated non-billable *authentication-only* boundary now lives in
+`trusted-scripted-github-admission.ts`. It is an intentional separate
+schema from the existing Gemini-paid `TrustedGithubAdmissionReceiptStore`:
+
+- The host independently pins the exact
+  `.github/workflows/trusted-scripted-offline-session-hold.yml` workflow
+  path, repository, branch and 40-hex source SHA. A first-attempt manual
+  GitHub dispatch must contain **exactly** two inputs:
+  `execution_profile=scripted_offline` and
+  `authorization=I AUTHORIZE A SCRIPTED OFFLINE TEST ONLY`.
+  Any model name, API charge consent, model budget or extra input
+  rejects the job before the host authenticates it.
+- The offline OIDC verifier reuses the independently pinned GitHub
+  issuer's **real RS256/JWKS signature and identity checks** (audience,
+  subject, numeric repo/owner IDs, workflow ref, source SHA, run ID,
+  attempt and expiry). The host also reads GitHub's authoritative
+  `in_progress` run through its own Actions:read REST token.
+  A forged/mismatched JWT, completed job, replaced workflow or invalid
+  ref never yields a receipt.
+- `TrustedScriptedGithubAdmissionStore` records a 5-minute, HMAC-
+  authenticated, protected 0600/0700, uniquely named
+  `scripted-admission-v1` receipt bound to the independent session,
+  run and source. Its schema explicitly says
+  `model_inference_allowed:false` and `engineer_approved:false`.
+  It stores **no Gemini model, API secret, charge consent or budgets**.
+  O_EXCL replay/consumption markers block reuse after failures or restarts.
+  Paid receipts use an unrelated record-name domain and require their
+  original *paid-specific* fields.
+- `authenticateScriptedGithubRun` verifies workflow inputs, the
+  signed OIDC assertion and GitHub REST job status in order, then
+  consumes the signed JWT replay and persists the offline-only record.
+  No root issuance, Engineer signing, approval, Gateway provider call,
+  model instantiation or paid workflow is performed.
+- A new offline test suite exercises actual signed RSA JWT fixtures,
+  mismatched and tampered claims, GitHub REST status, exact offline
+  input schema, paid-path rejection, HMAC modification, wrong
+  secret, durable consumption and directory permissions.
+  The fixed R5 same-SHA gate now includes dedicated tests for the
+  OIDC+receipt path and the cross-profile denial.
+
+**Critical deployment boundary:** this module is NOT YET an available
+runner-to-host route. The checked-in scripted workflow path is a pinned
+future deployment contract; no active self-hosted scripted
+`workflow_dispatch`/runner-side mTLS submitter or separate host intake
+listener has been installed or demonstrated. The new offline admission
+receipt must never be passed to the existing Gemini-paid
+`startAdmittedGithubReviewedGeminiHandoff` function. The next task is
+to implement a **separate** mTLS submission route and locked runner
+workflow, then connect its one-shot receipt to the existing
+`startPersistedReviewedScriptedHandoff` on the same Engineer Host with
+an independently signed human approval and Gateway lease/root closure.
+Keep paid consent and Gemini secrets entirely unavailable to this path.
+
+R5 remains **NO-GO** until the new same-SHA CI is green and the physical
+single-run private host/runner/Gateway/A2A/Gitea proof is observed.
