@@ -57,6 +57,19 @@ import {consumePinnedGithubAdmission,startAdmittedGithubReviewedGeminiHandoff}
   from "../../../packages/orchestrator-runtime/src/trusted-admitted-github-handoff.ts";
 
 function deny(reason){throw Error("Trusted Engineer local host: "+reason);}
+/**
+ * An authenticated human can approve or reject a signed Planning proposal
+ * only BEFORE either one-shot paid or zero-charge handoff starts. Both
+ * start attempts reserve their state synchronously, before any REST/Adapter
+ * promise resolves. In-flight GitHub admission must not expose editable
+ * Planning permissions merely because the root has not yet switched.
+ */
+export function canReviewOriginalEngineerPlan({
+  closed,coordinatorPhase,paidHandoffStatus,scriptedHandoffStatus
+}){
+  return closed===false&&coordinatorPhase==="planning"&&
+    paidHandoffStatus==="idle"&&scriptedHandoffStatus==="idle";
+}
 async function privateDirectory(path){
   if(typeof path!=="string"||!path.trim())deny("missing persistent directory");
   const stat=await lstat(path);
@@ -226,6 +239,10 @@ export async function startTrustedEngineerLocalHost(config){
     startAdmittedGithubReviewedScriptedHandoff(trusted));
   // Only a private in-process owner selects the run tied to this DAG.
   let selectedRunId,selectedScriptedRunId;
+  const planReviewOpen=()=>!!active&&canReviewOriginalEngineerPlan({
+    closed,coordinatorPhase:active.coordinator.phase,
+    paidHandoffStatus:handoff.status,scriptedHandoffStatus:scriptedHandoff.status
+  });
   // Only the trusted host selects the real Coordinator and revocation port.
   const {
     rejectPlanning:ignoredRejectPlanning,
@@ -235,13 +252,9 @@ export async function startTrustedEngineerLocalHost(config){
   const engineerServer=await createAuthenticatedEngineerServer({
     ...fixedApproval,host:"127.0.0.1",
     ...(active?{
-      planningIsActive:()=>!closed&&
-        active.coordinator.phase==="planning"&&
-        handoff.status==="idle"&&scriptedHandoff.status==="idle",
+      planningIsActive:planReviewOpen,
       rejectPlanning:async()=>{
-      if(closed||handoff.status!=="idle"||
-         scriptedHandoff.status!=="idle"||
-         active.coordinator.phase!=="planning")
+      if(!planReviewOpen())
         deny("Planning rejection unavailable after handoff or shutdown");
       await active.coordinator.closePlanning();
     }}:{})
