@@ -135,9 +135,15 @@ if(git.status!==0||!/^[a-f0-9]{40}$/u.test(git.stdout.trim())){
     suites:[]
   };
   for(const suite of SUITES){
+    // --test-name-pattern is a REGULAR EXPRESSION, not a literal name.
+    // Escape metacharacters (e.g. the '+' in 'OIDC + signed Engineer')
+    // and anchor the exact test to avoid false passes from a sibling.
+    const literal=suite.title.split("").map(char=>
+      "*+?^${}()|.[]\\".includes(char)?"\\"+char:char
+    ).join("");
     const child=spawnSync(process.execPath,[
       "--experimental-strip-types","--test",
-      "--test-name-pattern="+suite.title,
+      "--test-name-pattern=^"+literal+"$",
       suite.path
     ],{
       cwd:root,env,encoding:"utf8",timeout:180_000,
