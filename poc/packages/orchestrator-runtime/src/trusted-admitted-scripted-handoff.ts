@@ -73,13 +73,6 @@ export async function startAdmittedGithubReviewedScriptedHandoff(input:{
     expectedRunId:p.runId,expectedSourceSha:p.sourceSha,
     expectedSessionId:p.sessionId
   });
-  if(receipt.workflow_path!==WORKFLOW||
-     receipt.source_repository!==p.repository||
-     receipt.source_ref!==p.ref||
-     receipt.execution_profile!=="scripted_offline"||
-     receipt.engineer_approved!==false||
-     receipt.model_inference_allowed!==false)
-    deny("signed offline receipt does not match protected owner source");
   const verifyRest=()=>verifyGithubManualRunViaApi({
     dispatch:{run_id:p.runId,source_sha:p.sourceSha},
     pinned:{repository:p.repository,ref:p.ref,
@@ -87,15 +80,39 @@ export async function startAdmittedGithubReviewedScriptedHandoff(input:{
     githubApiToken:input.githubApiToken,
     fetchFn:input.githubApiFetchFn
   });
-  await verifyRest();
-  // Backend-signed checkpoint and Engineer-signed permission subset are
-  // independently validated by the scripted handoff itself.
-  const running=await startPersistedReviewedScriptedHandoff({
-    coordinator:input.coordinator,reviewGate:input.reviewGate,
-    checkpointStore:input.checkpointStore,
-    operationalRoot:input.operationalRoot,
-    ports:input.ports,handlers:input.handlers
-  });
+  let running:Awaited<ReturnType<typeof startPersistedReviewedScriptedHandoff>>;
+  try{
+    if(receipt.workflow_path!==WORKFLOW||
+       receipt.source_repository!==p.repository||
+       receipt.source_ref!==p.ref||
+       receipt.execution_profile!=="scripted_offline"||
+       receipt.engineer_approved!==false||
+       receipt.model_inference_allowed!==false)
+      deny("signed offline receipt does not match protected owner source");
+    await verifyRest();
+    // The backend-signed checkpoint, independent Engineer Ed25519 receipt
+    // and approved root are checked by the scripted handoff itself.
+    running=await startPersistedReviewedScriptedHandoff({
+      coordinator:input.coordinator,reviewGate:input.reviewGate,
+      checkpointStore:input.checkpointStore,
+      operationalRoot:input.operationalRoot,
+      ports:input.ports,handlers:input.handlers
+    });
+  }catch(error){
+    // After an authenticated OIDC receipt has been CONSUMED, the same
+    // Engineer session cannot be resumed using the old preliminary root.
+    // This matters if REST says the job was canceled, the Engineer
+    // signature is missing, or the approved root fails before issuance.
+    // Never retain live read authority behind a terminal runner status.
+    if(input.coordinator.phase==="planning"){
+      try{await input.coordinator.closePlanning();}
+      catch{
+        throw Error("Consumed scripted GitHub admission failed; preliminary root revocation unconfirmed; manual reconciliation required",
+          {cause:error});
+      }
+    }
+    throw error;
+  }
   type WatchStatus="active"|"closing"|"closed"|"revocation_unconfirmed";
   let status:WatchStatus="active";
   let pending:Promise<void>|undefined;
