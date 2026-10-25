@@ -184,6 +184,8 @@ export async function startTrustedEngineerLocalHost(config){
   let closed=false,shutdownPromise;
   const handoff=createTrustedReviewedHandoffLifecycle(trusted=>
     startAdmittedGithubReviewedGeminiHandoff(trusted));
+  // Only a private in-process owner selects the run tied to this DAG.
+  let selectedRunId;
   // Only the trusted host selects the real Coordinator and revocation port.
   const {
     rejectPlanning:ignoredRejectPlanning,
@@ -216,8 +218,15 @@ export async function startTrustedEngineerLocalHost(config){
       // Read-only runner rendezvous: the trusted in-process operator
       // still exclusively controls the original signed DAG and DC root.
       // Never equate an OIDC status query with Engineer approval.
-      statusForAdmittedRun:()=>{
+      statusForAdmittedRun:(runId)=>{
         if(closed)return "terminated";
+        // An unrelated admitted GitHub run can never inherit another
+        // run's signed Engineer DAG completion or verified root closure.
+        if(selectedRunId&&runId!==selectedRunId)return "terminated";
+        if(!selectedRunId){
+          return active?.coordinator.phase==="closed"
+            ?"terminated":"waiting_for_owner";
+        }
         if(handoff.verifiedOutcome==="verified_complete")
           return "completed_verified";
         if(handoff.verifiedOutcome==="failed"||
@@ -281,7 +290,11 @@ export async function startTrustedEngineerLocalHost(config){
     /** Trusted in-process call ONLY: never registered as an HTTP endpoint. */
     /** Owner-only split phase for callers which need explicit dispatch. */
     startReviewedHandoff(input){
-      return handoff.start(pinnedHandoffInput(input));
+      const trusted=pinnedHandoffInput(input);
+      if(selectedRunId&&selectedRunId!==input.runId)
+        deny("different manual run already selected for Engineer handoff");
+      selectedRunId=input.runId;
+      return handoff.start(trusted);
     },
     /**
      * Canonical owner-only single invocation: admitted GitHub run, signed
@@ -296,7 +309,11 @@ export async function startTrustedEngineerLocalHost(config){
          typeof execution.authorityForTask!=="function"||
          !execution.adapter||!execution.a2a)
         deny("owner-provisioned approved DAG executor required");
-      return handoff.runApprovedDag(pinnedHandoffInput(input),execution);
+      const trusted=pinnedHandoffInput(input);
+      if(selectedRunId&&selectedRunId!==input.runId)
+        deny("different manual run already selected for Engineer execution");
+      selectedRunId=input.runId;
+      return handoff.runApprovedDag(trusted,execution);
     },
     close(){
       if(shutdownPromise)return shutdownPromise;
