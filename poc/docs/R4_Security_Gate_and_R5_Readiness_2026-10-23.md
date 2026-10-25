@@ -1226,3 +1226,58 @@ supply them automatically.
 No Gemini inference, paid workflow run, protected `main` merge or
 destructive cleanup was performed. **R5 remains NO-GO pending same-SHA
 CI and deployed E2E.**
+
+
+### R5 — Persisted child VC Status List allocation for the owner DAG (25 October 2026)
+
+The canonical in-process Engineer Host path
+`runReviewedApprovedDagWithGateway` now requires an explicit owner-only
+`childStatusProvisioning` object, instead of accepting an arbitrary
+`execution.authorityForTask` callback or `invokeOrchestratorTask`
+callback from the caller. Both privileged functions are constructed by
+trusted modules **after** the authenticated Engineer handoff has issued
+the operational root.
+
+`createTrustedApprovedTaskAuthorityAllocator` verifies the original
+active `TrustedExecutionCoordinator`, the authenticated Ed25519 review,
+the operational root digest and all specialized Task/role bindings. Its
+status index mapping must cover **exactly** the signed Backend/Frontend/
+Test Task IDs, with unique canonical decimal indices, a canonical HTTPS
+Status List URI, bounded child validity and a mandatory nonempty
+operator-pinned set of externally reserved indices (e.g. the preliminary
+and operational parent roots).
+
+Before returning the parent root, new child credential ID and
+`BitstringStatusListEntry` for an approved Task, the allocator:
+
+- synchronously reserves that Task's **one attempt** (no in-process retry);
+- atomically writes a 0600 `O_EXCL|O_NOFOLLOW` reservation into a
+  pre-existing owner-owned 0700 persistent directory;
+- calls `fsync` on the record and containing directory;
+- refuses any collision or uncertain persistence without returning a
+  credential request;
+- checks that the operational root has not been shut down before
+  allowing child issuance to proceed.
+
+The reservation is keyed by the SHA-256 of the exact Status List URI and
+decimal index, so all runs using the **same shared reservation directory**
+cannot reuse that index. Old reservations are intentionally never
+deleted or retried automatically, including after a crash. The Rust
+Adapter still independently enforces exact child permission attenuation
+and credential status.
+
+The dedicated offline suite now checks active-plan allocation, foreign
+Task/role denial, immutable parent bindings, duplicate/replayed indices,
+index collision with parent root, rejected malformed Status List,
+concurrent two-allocator `O_EXCL` races, and terminal root closure.
+This is one more required owner-deployment component, NOT a substitute
+for real EVM/Status List coordination across separate deployments that
+do not share this reservation directory.
+
+**Deployment prerequisite:** the operator must provision the exact
+global Status List URI/indices and protected on-disk reservation path;
+neither the GitHub workflow nor an AI agent is authorized to choose or
+allocate them. The configured Engineer service bootstrap remains
+separate from the already live owner-controlled Planning process. R5
+continues **NO-GO** pending real non-billable host↔runner↔A2A
+demonstration, latest exact-SHA CI, and fresh explicit paid consent.
