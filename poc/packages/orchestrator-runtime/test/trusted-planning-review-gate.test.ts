@@ -1780,6 +1780,21 @@ test("R5 scripted_offline rejects model-like and missing role handlers BEFORE co
         handlers:handlers as any
       }),/three distinct bound scripted role ports and handlers/);
     }
+    for(const forbidden of [
+      {geminiApiKey:"fake-test-secret"},
+      {modelName:"gemini-irrelevant"},
+      {authorizationInput:"I AUTHORIZE GEMINI API CHARGES"},
+      {githubEventName:"workflow_dispatch"}
+    ]){
+      await assert.rejects(startPersistedReviewedScriptedHandoff({
+        coordinator:f.coordinator,reviewGate:f.gate,
+        checkpointStore:f.store,
+        operationalRoot:root("urn:operational","102"),
+        ports:{backend:port,frontend:port+1,test:port+2},
+        handlers:noModelHandlers,
+        ...forbidden
+      } as any),/unexpected model, billing or workflow configuration/);
+    }
     assert.equal(f.coordinator.phase,"planning");
     assert.deepEqual(f.revoked,[]);
     await f.coordinator.closePlanning();
