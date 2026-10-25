@@ -1545,3 +1545,55 @@ a single physical host+runner+Gitea+Gemini deployment.
 cumulative CI is green and a non-billable private runner/Engineer Host
 deployment exercises the actual handoff end-to-end. No paid Gemini
 workflow, merge to main, or automatic PR merge was triggered.
+
+
+### R5 — One-command zero-billing canonical offline contract gate (25 October 2026)
+
+**A practical handoff gap remains**: today's
+`startAdmittedGithubReviewedGeminiHandoff` deliberately requires an
+independently authenticated manual GitHub dispatch, actual explicit
+Gemini-charge consent, a nonempty provider secret and real Gemini ADK
+role servers. It would be wrong to sneak a scripted provider through
+that paid route using a fake API key or forged billing consent. Until a
+separate, equally authenticated and explicitly **scripted-only**
+rendezvous is implemented and deployed, the complete non-billable
+physical GitHub→Engineer→A2A demonstration CANNOT be claimed.
+
+To make current progress measurable and avoid presenting six separately
+executed tests as one physical deployment, the repository now contains
+`poc/scripts/r5-canonical-offline-gate.mjs`, executed by the
+`Cumulative Offline Refactoring Validation` workflow on the **same
+checked-out commit SHA**. Run it directly from the repository root:
+
+```bash
+node poc/scripts/r5-canonical-offline-gate.mjs
+```
+
+It executes six fixed, named tests covering: protected ADK Planning
+and backend-signed persistence, real private HMAC Gateway Unix IPC
+with the authenticated Engineer review and GitHub OIDC mTLS,
+three live role Agent Cards, a signed five-task DAG with real localhost
+A2A HTTP and accepted PR, a denied PR without independent Runner
+acceptance, and an interrupted GitHub run that never reaches Frontend
+or Test. Provider test effects and non-billable credentials remain
+offline fixtures as explicitly indicated in each test.
+
+The command strips API key/secret variables from its test subprocess
+environment, never requests Gemini or OpenAI inference, stops on the
+first failure and emits a machine-readable
+`R5_OFFLINE_GATE_EVIDENCE` JSON record with the immutable SHA, each
+test outcome and a hash of each test log. Its schema explicitly
+declares `one_physical_host_full_e2e:false` and
+`real_runner_github_job:false`. It does not create a real GitHub
+OIDC token, authenticate a physical private runner, exercise remote
+Gitea on the same runtime, replace Rust native EVM verification or
+grant final paid-run readiness. Green evidence of all six contracted
+subsystems MUST NOT be mislabeled as a deployed one-run E2E.
+
+**Next real-world tasks:** independently deploy private self-hosted
+runner routing, the HMAC Gateway IPC and actual owner-controlled
+Engineer Host; add a non-billable **scripted-only** OIDC execution
+profile with an authority capability that cannot instantiate Gemini;
+then attest the entire DAG and revocation in a single process/run,
+followed by R6 cleanup and R7 freeze. The paid path must remain
+untouched and disabled until fresh user consent. **R5 remains NO-GO.**
