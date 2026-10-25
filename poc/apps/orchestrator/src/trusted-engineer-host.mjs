@@ -14,6 +14,8 @@
 import {lstat} from "node:fs/promises";
 import {createTrustedReviewedHandoffLifecycle}
   from "./trusted-reviewed-handoff-lifecycle.mjs";
+import {trustedEngineerRunStatus}
+  from "./trusted-engineer-run-status.mjs";
 import {createTrustedApprovedBranchGateway}
   from "../../../packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts";
 import {createTrustedApprovedTaskAuthorityAllocator}
@@ -273,29 +275,12 @@ export async function startTrustedEngineerLocalHost(config){
       // Read-only runner rendezvous: the trusted in-process operator
       // still exclusively controls the original signed DAG and DC root.
       // Never equate an OIDC status query with Engineer approval.
-      statusForAdmittedRun:(runId)=>{
-        if(closed)return "terminated";
-        // An unrelated admitted GitHub run can never inherit another
-        // run's signed Engineer DAG completion or verified root closure.
-        if(selectedRunId&&runId!==selectedRunId)return "terminated";
-        if(!selectedRunId){
-          return active?.coordinator.phase==="closed"
-            ?"terminated":"waiting_for_owner";
-        }
-        if(handoff.verifiedOutcome==="verified_complete")
-          return "completed_verified";
-        if(handoff.verifiedOutcome==="failed"||
-           ["failed","closed"].includes(handoff.status))
-          return "terminated";
-        // Running a signed DAG may already have closed its root while
-        // A2A listeners finish draining. A runner must not treat this
-        // non-atomic teardown interval as failed Execution. The lifecycle
-        // declares verified_complete only AFTER every closure succeeds.
-        if(["starting","active","closing"].includes(handoff.status))
-          return "execution_active";
-        if(active?.coordinator.phase==="closed")return "terminated";
-        return "waiting_for_owner";
-      }
+      statusForAdmittedRun:(runId)=>trustedEngineerRunStatus({
+        hostClosed:closed,selectedRunId,queriedRunId:runId,
+        coordinatorPhase:active?.coordinator.phase,
+        handoffStatus:handoff.status,
+        verifiedOutcome:handoff.verifiedOutcome
+      })
     });
     if(scripted){
       scriptedIntake=await startTrustedScriptedGithubOidcIntakeServer({
@@ -310,24 +295,13 @@ export async function startTrustedEngineerLocalHost(config){
         // A signed JWT / consumed receipt is NOT completed Engineering.
         // No private status can report success until a genuine reviewed
         // DAG and all roots have been independently confirmed retired.
-        statusForAdmittedRun:(runId)=>{
-          if(closed)return "terminated";
-          if(selectedScriptedRunId&&runId!==selectedScriptedRunId)
-            return "terminated";
-          if(!selectedScriptedRunId){
-            return active?.coordinator.phase==="planning"&&
-              scriptedHandoff.status==="idle"
-              ?"waiting_for_owner":"terminated";
-          }
-          if(scriptedHandoff.verifiedOutcome==="verified_complete")
-            return "completed_verified";
-          if(scriptedHandoff.verifiedOutcome==="failed"||
-             ["failed","closed"].includes(scriptedHandoff.status))
-            return "terminated";
-          if(["starting","active","closing"].includes(scriptedHandoff.status))
-            return "execution_active";
-          return "terminated";
-        }
+        statusForAdmittedRun:(runId)=>trustedEngineerRunStatus({
+          hostClosed:closed,selectedRunId:selectedScriptedRunId,
+          queriedRunId:runId,
+          coordinatorPhase:active?.coordinator.phase,
+          handoffStatus:scriptedHandoff.status,
+          verifiedOutcome:scriptedHandoff.verifiedOutcome
+        })
       });
     }
   }catch(error){
