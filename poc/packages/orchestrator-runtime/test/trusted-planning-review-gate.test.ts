@@ -31,6 +31,11 @@ import {startPersistedReviewedGeminiHandoff}
   from "../src/trusted-manual-gemini-handoff.ts";
 import {startPersistedReviewedScriptedHandoff}
   from "../src/trusted-scripted-offline-handoff.ts";
+import {startAdmittedGithubReviewedScriptedHandoff}
+  from "../src/trusted-admitted-scripted-handoff.ts";
+import {TrustedScriptedGithubAdmissionStore,
+  verifyScriptedGithubManualDispatch}
+  from "../src/trusted-scripted-github-admission.ts";
 import type {DeterministicTaskHandler}
   from "../../agent-runtime/src/executor.ts";
 import {startAdmittedGithubReviewedGeminiHandoff}
@@ -1644,8 +1649,8 @@ test("R5 simultaneous Task-status claims cannot issue duplicate VC indices",asyn
 });
 
 
-async function signedScriptedFixture(){
-  const f=await fixture();
+async function signedScriptedFixture(recovery=false){
+  const f=await fixture(recovery);
   const directory=await mkdtemp(join(tmpdir(),"signed-scripted-r5-"));
   const backend=generateKeyPairSync("ed25519");
   const keyId="scripted-backend-key";
@@ -1828,5 +1833,160 @@ test("R5 scripted_offline role-bind error revokes operational root before return
   }finally{
     await new Promise<void>(resolve=>reserved.close(()=>resolve()));
     await f.dispose();
+  }
+});
+
+
+const SCRIPTED_GITHUB_SHA="b".repeat(40);
+const SCRIPTED_GITHUB_RUN="40198765432";
+const SCRIPTED_GITHUB_FLOW=
+  ".github/workflows/trusted-scripted-offline-session-hold.yml";
+const SCRIPTED_GITHUB_REPO="DarkGh0st03/delegation";
+const SCRIPTED_GITHUB_REF=
+  "refs/heads/refactor/post-prof-plan-contracts-20261021";
+async function admittedScriptedFixture(){
+  const f=await signedScriptedFixture(true);
+  const directory=await mkdtemp(join(tmpdir(),"reviewed-scripted-github-"));
+  const secret=Buffer.alloc(32,49);
+  const admissionStore=new TrustedScriptedGithubAdmissionStore({
+    directory,hmacSecret:secret,expectedSessionId:SNAPSHOT.session_id
+  });
+  const pinned={
+    repository:SCRIPTED_GITHUB_REPO,ref:SCRIPTED_GITHUB_REF,
+    workflowPath:SCRIPTED_GITHUB_FLOW,sourceSha:SCRIPTED_GITHUB_SHA
+  };
+  const runId=SCRIPTED_GITHUB_RUN;
+  const dispatch=verifyScriptedGithubManualDispatch({
+    pinned,
+    env:{
+      GITHUB_ACTIONS:"true",GITHUB_EVENT_NAME:"workflow_dispatch",
+      GITHUB_RUN_ATTEMPT:"1",GITHUB_REPOSITORY:SCRIPTED_GITHUB_REPO,
+      GITHUB_REF:SCRIPTED_GITHUB_REF,
+      GITHUB_WORKFLOW_REF:SCRIPTED_GITHUB_REPO+"/"+
+        SCRIPTED_GITHUB_FLOW+"@"+SCRIPTED_GITHUB_REF,
+      GITHUB_SHA:SCRIPTED_GITHUB_SHA,GITHUB_RUN_ID:runId
+    },
+    event:{repository:{full_name:SCRIPTED_GITHUB_REPO},
+      ref:SCRIPTED_GITHUB_REF,
+      inputs:{execution_profile:"scripted_offline",
+        authorization:"I AUTHORIZE A SCRIPTED OFFLINE TEST ONLY"}}
+  });
+  const signedJob={
+    kind:"github_actions_oidc_verified" as const,
+    run_id:runId,workflow_sha:SCRIPTED_GITHUB_SHA,
+    jti:"offline-signed-run-fixture",
+    repository_id:"101",repository_owner_id:"303",
+    audience:"urn:r5-scripted"
+  };
+  const emitReceipt=()=>admissionStore.record({
+    dispatch,job:signedJob
+  });
+  let live=true;
+  let checks=0;
+  const githubApiFetchFn=async()=>{
+    checks++;
+    return new Response(JSON.stringify({
+      id:Number(runId),event:"workflow_dispatch",run_attempt:1,
+      status:live?"in_progress":"completed",
+      head_sha:SCRIPTED_GITHUB_SHA,
+      head_branch:SCRIPTED_GITHUB_REF.slice("refs/heads/".length),
+      path:SCRIPTED_GITHUB_FLOW,
+      head_repository:{full_name:SCRIPTED_GITHUB_REPO},
+      created_at:new Date().toISOString()
+    }),{status:200});
+  };
+  const input={
+    coordinator:f.coordinator,reviewGate:f.gate,
+    checkpointStore:f.store,
+    admissionStore,
+    pins:{sessionId:SNAPSHOT.session_id,
+      runId,sourceSha:SCRIPTED_GITHUB_SHA,
+      repository:SCRIPTED_GITHUB_REPO,ref:SCRIPTED_GITHUB_REF},
+    operationalRoot:root("urn:operational","102"),
+    ports:{backend:23000+randomInt(0,9000),
+      frontend:0,test:0},
+    handlers:noModelHandlers,
+    githubApiToken:"read-only-offline-github",
+    githubApiFetchFn
+  };
+  input.ports.frontend=input.ports.backend+1;
+  input.ports.test=input.ports.backend+2;
+  return {...f,input,emitReceipt,
+    get checkCount(){return checks;},
+    cancelGithubRun(){live=false;},
+    dispose:async()=>{
+      await f.close();
+      await rm(f.backendDirectory,{recursive:true,force:true});
+      await rm(directory,{recursive:true,force:true});
+    }
+  };
+}
+
+test("R5 admitted scripted OIDC + signed Engineer activates exactly one root and watches live GitHub run",async()=>{
+  const f=await admittedScriptedFixture();
+  let running:Awaited<ReturnType<typeof startAdmittedGithubReviewedScriptedHandoff>>|undefined;
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    await f.emitReceipt();
+    running=await startAdmittedGithubReviewedScriptedHandoff(f.input);
+    assert.equal(running.readiness.status,
+      "scripted_offline_no_model_or_charge_consent");
+    assert.ok(running.approvedDag);
+    assert.equal(f.coordinator.phase,"execution");
+    assert.equal(running.githubRunWatch.status,"active");
+    assert.ok(f.checkCount>=2);
+    assert.deepEqual(running.servers.map(x=>x.role),
+      ["backend","frontend","test"]);
+    await assert.rejects(f.input.admissionStore.consume({
+      expectedRunId:SCRIPTED_GITHUB_RUN,
+      expectedSourceSha:SCRIPTED_GITHUB_SHA,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
+    await running.githubRunWatch.checkNow();
+    await running.close();
+    assert.equal(running.githubRunWatch.status,"closed");
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{await running?.close();await f.dispose();}
+});
+
+test("R5 canceled scripted GitHub run retires real operational root and all three A2A servers",async()=>{
+  const f=await admittedScriptedFixture();
+  let running:Awaited<ReturnType<typeof startAdmittedGithubReviewedScriptedHandoff>>|undefined;
+  try{
+    await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+    await f.emitReceipt();
+    running=await startAdmittedGithubReviewedScriptedHandoff(f.input);
+    f.cancelGithubRun();
+    await assert.rejects(running.githubRunWatch.checkNow(),
+      /scripted GitHub job lost/);
+    assert.equal(running.githubRunWatch.status,"closed");
+    assert.equal(f.coordinator.phase,"closed");
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+    await assert.rejects(running.githubRunWatch.checkNow(),
+      /no longer active/);
+    assert.deepEqual(running.servers.map(x=>x.executor.executionCount),
+      [0,0,0]);
+  }finally{await running?.close();await f.dispose();}
+});
+
+test("R5 missing offline OIDC receipt or canceled job cannot issue the operational root",async()=>{
+  for(const mode of ["missing","cancelled_before_root"]){
+    const f=await admittedScriptedFixture();
+    try{
+      await f.sign(f.proposal.plan,["permission-1","permission-3"]);
+      if(mode==="cancelled_before_root"){
+        await f.emitReceipt();
+        f.cancelGithubRun();
+      }
+      await assert.rejects(
+        startAdmittedGithubReviewedScriptedHandoff(f.input),
+        /ENOENT|GitHub API does not corroborate/i
+      );
+      assert.equal(f.coordinator.phase,"planning");
+      assert.deepEqual(f.revoked,[]);
+      assert.equal(f.issued.length,1);
+      await f.coordinator.closePlanning();
+    }finally{await f.dispose();}
   }
 });
