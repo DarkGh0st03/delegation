@@ -103,12 +103,23 @@ export function createReviewedApprovedDagExecution(input:{
           a2a:config.a2a,adapter:config.adapter,
           authorityForTask:config.authorityForTask
         });
-        return await dispatcher.executeApprovedDag({
+        const completed=await dispatcher.executeApprovedDag({
           invokeOrchestratorTask:config.invokeOrchestratorTask,
           // The trusted host owns this callback; neither the model nor
           // the operator-supplied task executor can replace it.
           beforeTask:async()=>{await input.verifyLiveRun();}
         });
+        // The last Task may have run longer than the GitHub cancellation
+        // interval. Checking only BEFORE each Task admits an already-dead
+        // GitHub job if it was canceled during the final A2A/Runner effect.
+        // Re-correlate the SAME manual run after the dispatcher returns and
+        // BEFORE root shutdown can mark the reviewed DAG verified_complete.
+        // A failed check enters finally, revokes authority, and never
+        // reports a successful signed DAG to the runner.
+        await input.verifyLiveRun();
+        if(input.coordinator.phase!=="execution")
+          fail("operational authority closed before final signed DAG receipt");
+        return completed;
       } finally {
         // Closing the host's session is mandatory even when a plan mismatch,
         // run cancellation, broken Adapter or A2A error prevents dispatch.
