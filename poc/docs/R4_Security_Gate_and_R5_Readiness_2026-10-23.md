@@ -837,3 +837,29 @@ terminal; a fresh session and independent Engineering approval are
 required for further work. Tests cover completed rejection, ambiguous
 native revocation and partially written tombstone after simulated crash.
 The marker is never cleared automatically. R5 remains NO-GO.
+
+### R5 combined two-root crash replay and immutable operational retirement (25 October 2026)
+
+The operational-root journal now makes terminal retirement **non-overwriting**:
+`markReconciled` creates the immutable .retired
+entry using exclusive hard-link creation and synchronizes the directory
+BEFORE removing its pending intent. If interrupted between these durable
+steps, the journal sees both entries for one session and **fails closed**
+instead of incorrectly treating the record as retired or replacing a
+prior tombstone. Startup also rejects non-owner-owned journal files and
+uses no-follow directory sync.
+
+Offline tests now persist BOTH provisional and operational root intents
+for one signed Engineer session before simulating host loss. An
+unconfirmed native Rust operational revocation leaves the operational
+intent pending and prevents any second credential issuance. A later
+trusted cold-start first retires the operational Gateway plan and
+revokes its Rust credential, then independently retires the Planning
+Gateway registry and revokes the preliminary credential. Both sessions
+remain permanently non-reusable; a subsequent recovery performs zero
+external calls. A separate test verifies that a forged duplicate
+pending entry cannot overwrite an existing retirement tombstone.
+
+These are deterministic offline trusted-port fixtures, not live EVM or
+proof of multi-replica filesystem consistency. Single-owner deployment
+remains required. R5 is still NO-GO; no paid Gemini call and no merge.

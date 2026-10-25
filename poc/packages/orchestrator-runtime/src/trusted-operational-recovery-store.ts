@@ -8,7 +8,7 @@
  */
 import {createHash} from "node:crypto";
 import {constants} from "node:fs";
-import {lstat,open,readdir,rename} from "node:fs/promises";
+import {lstat,open,readdir,link,unlink} from "node:fs/promises";
 import {join,resolve} from "node:path";
 
 const SESSION=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -63,13 +63,16 @@ export class TrustedOperationalRecoveryStore{
     const fd=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
     try{
       const m=await fd.stat();
-      if(!m.isFile()||(m.mode&0o077)!==0||m.size<20||m.size>2048)
+      if(!m.isFile()||(m.mode&0o077)!==0||
+         (typeof process.getuid==="function"&&m.uid!==process.getuid())||
+         m.size<20||m.size>2048)
         fail("unsafe or incomplete recovery record");
       return validate(JSON.parse(await fd.readFile("utf8")));
     }finally{await fd.close();}
   }
   async #syncDir(){
-    const d=await open(this.#dir,constants.O_RDONLY|constants.O_DIRECTORY);
+    const d=await open(this.#dir,
+      constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
     try{await d.sync();}finally{await d.close();}
   }
   /** Any outstanding/incomplete record blocks another paid run. */
@@ -77,12 +80,17 @@ export class TrustedOperationalRecoveryStore{
     await this.#checkDir();
     const entries=(await readdir(this.#dir)).sort();
     const result:Intent[]=[];
+    const seen=new Set<string>();
     for(const name of entries){
       if(!/^[0-9a-f]{64}\.(?:pending|retired)\.json$/u.test(name))
         fail("unexpected journal file; operator reconciliation required");
       const record=await this.#read(join(this.#dir,name));
-      if(key(record.session_id)!==name.slice(0,64))
+      const id=key(record.session_id);
+      if(id!==name.slice(0,64))
         fail("journal record does not match immutable session filename");
+      if(seen.has(id))
+        fail("duplicate retired and pending root for one session; manual reconciliation required");
+      seen.add(id);
       if(name.endsWith(".pending.json"))result.push(record);
     }
     return Object.freeze(result);
@@ -137,7 +145,14 @@ export class TrustedOperationalRecoveryStore{
     if(row.session_id!==input.sessionId||row.base_revision!==input.baseRevision||
        row.credential_id!==input.credentialId)
       fail("reconciliation does not match immutable issued-root intent");
-    await rename(path,this.#name(input.sessionId,"retired"));
+    // LINK fails if a retired name already exists, unlike rename() which
+    // would overwrite the immutable retirement tombstone. Fsync the
+    // durable tombstone BEFORE unlinking the pending record. If the host
+    // crashes between these steps, both files remain and pending()
+    // deliberately fails closed for manual reconciliation.
+    await link(path,this.#name(input.sessionId,"retired"));
+    await this.#syncDir();
+    await unlink(path);
     await this.#syncDir();
   }
 }
