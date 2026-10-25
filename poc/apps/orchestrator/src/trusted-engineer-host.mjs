@@ -176,8 +176,19 @@ export async function startTrustedEngineerLocalHost(config){
     directory:oidc.admissionDirectory,hmacSecret:oidc.hmacSecret,
     expectedSessionId:approval.expectedSessionId
   });
+  let closed=false,shutdownPromise;
+  const handoff=createTrustedReviewedHandoffLifecycle(trusted=>
+    startAdmittedGithubReviewedGeminiHandoff(trusted));
+  // Only the trusted host selects the real Coordinator and revocation port.
+  const {rejectPlanning:ignoredRejectPlanning,...fixedApproval}=approval;
   const engineerServer=await createAuthenticatedEngineerServer({
-    ...approval,host:"127.0.0.1"
+    ...fixedApproval,host:"127.0.0.1",
+    ...(active?{rejectPlanning:async()=>{
+      if(closed||handoff.status!=="idle"||
+         active.coordinator.phase!=="planning")
+        deny("Planning rejection unavailable after handoff or shutdown");
+      await active.coordinator.closePlanning();
+    }}:{})
   });
   let engineerUrl,oidcIntake;
   try{
@@ -201,9 +212,6 @@ export async function startTrustedEngineerLocalHost(config){
     repository:oidc.pinned.repository,
     ref:oidc.pinned.ref
   });
-  let closed=false,shutdownPromise;
-  const handoff=createTrustedReviewedHandoffLifecycle(trusted=>
-    startAdmittedGithubReviewedGeminiHandoff(trusted));
   return Object.freeze({
     engineerUrl,
     oidcAdmissionEndpoint:oidcIntake.endpoint,

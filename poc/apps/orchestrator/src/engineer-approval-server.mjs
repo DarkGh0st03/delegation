@@ -96,7 +96,9 @@ export async function createAuthenticatedEngineerServer(config){
      !config.trustedPlanFile||!config.privateKeyFile||!config.receiptDirectory||
      typeof config.publicKeyPem!=="string"||!config.publicKeyPem.trim()||
      !hex.test(config.passwordSaltHex||"")||!hex.test(config.passwordScryptHex||"")||
-     config.passwordSaltHex.length<32||config.passwordScryptHex.length!==128){
+     config.passwordSaltHex.length<32||config.passwordScryptHex.length!==128||
+     (config.rejectPlanning!==undefined&&
+      typeof config.rejectPlanning!=="function")){
     throw new Error("Invalid local trusted Engineer configuration");
   }
   const planFile=resolve(config.trustedPlanFile);
@@ -158,6 +160,7 @@ export async function createAuthenticatedEngineerServer(config){
 
   const sessions=new Map();
   let loginAttempts=0,loginWindow=Date.now(),approvalInProgress=false;
+  let decision="reviewing"; // rejection and uncertain revocation are terminal
 
   const server=createServer(async(req,res)=>{
     res.setHeader("X-Content-Type-Options","nosniff");
@@ -213,10 +216,12 @@ export async function createAuthenticatedEngineerServer(config){
         invalid("Engineer authentication required",401);
       }
       if(req.method==="GET"&&url.pathname==="/api/plan"){
+        if(decision!=="reviewing")invalid("Engineer decision already final",409);
         await verifyCheckpoint();
         respond(res,200,{
           plan:initial,plan_digest:pinnedDigest,
-          engineer_did:config.engineerDid,csrf_token:session.csrf
+          engineer_did:config.engineerDid,csrf_token:session.csrf,
+          reject_enabled:typeof config.rejectPlanning==="function"
         });
         return;
       }
@@ -225,6 +230,48 @@ export async function createAuthenticatedEngineerServer(config){
         sessions.delete(token);
         respond(res,200,{signed_out:true},{"Set-Cookie":clearCookie()});
         return;
+      }
+      if(req.method==="POST"&&url.pathname==="/api/reject"){
+        if(typeof config.rejectPlanning!=="function")
+          invalid("Trusted Planning rejection is not configured",404);
+        if(req.headers["x-csrf-token"]!==session.csrf)
+          invalid("CSRF rejected",403);
+        const body=await readJson(req);
+        if(!exact(body,["plan_digest","confirmation"])||
+           body.plan_digest!==pinnedDigest||
+           body.confirmation!=="REJECT "+pinnedDigest)
+          invalid("Invalid Engineer rejection confirmation",403);
+        if(decision!=="reviewing"||approvalInProgress)
+          invalid("Engineer decision already final or in progress",409);
+        // A preexisting signed receipt (including from a different host)
+        // is a final decision that cannot be overwritten by a rejection.
+        try{
+          await lstat(join(receiptDir,initial.session_id+".json"));
+          invalid("Signed Engineer approval already exists",409);
+        }catch(error){
+          if(error.code!=="ENOENT")throw error;
+        }
+        // Reserve terminal action SYNCHRONOUSLY before async validation.
+        decision="rejecting";
+        try{
+          await verifyCheckpoint();
+          const latest=JSON.parse(await privateText(planFile));
+          validatePlan(latest,{allowedOperations:OPERATIONS});
+          if(planDigest(latest)!==pinnedDigest)
+            invalid("Trusted plan changed before rejection",409);
+          await config.rejectPlanning();
+          decision="rejected";
+          sessions.clear();
+          respond(res,200,{
+            rejected:true,provisional_credential_revoked:true,
+            operational_credential_issued:false,plan_digest:pinnedDigest
+          },{"Set-Cookie":clearCookie()});
+          return;
+        }catch(error){
+          // Rust or Gateway retirement may be incomplete. Never reapprove.
+          decision="rejection_unconfirmed";
+          throw error;
+        }
       }
       if(req.method==="POST"&&url.pathname==="/api/approve"){
         if(req.headers["x-csrf-token"]!==session.csrf)invalid("CSRF rejected",403);
@@ -238,7 +285,8 @@ export async function createAuthenticatedEngineerServer(config){
            new Set(body.approved_permission_ids).size!==body.approved_permission_ids.length){
           invalid("Invalid Engineer confirmation or plan digest",403);
         }
-        if(approvalInProgress)invalid("Approval already in progress",409);
+        if(decision!=="reviewing"||approvalInProgress)
+          invalid("Engineer decision already final or in progress",409);
         approvalInProgress=true;
         try{
           // A valid check at startup cannot outlive checkpoint expiry,
@@ -275,6 +323,7 @@ export async function createAuthenticatedEngineerServer(config){
           await protectedDirectory(receiptDir);
           await writeFile(join(receiptDir,latest.session_id+".json"),
             JSON.stringify(signed,null,2)+"\n",{mode:0o600,flag:"wx"});
+          decision="approved";
           sessions.clear();
           respond(res,201,{
             decision_id:approval.decision_id,plan_digest:pinnedDigest,

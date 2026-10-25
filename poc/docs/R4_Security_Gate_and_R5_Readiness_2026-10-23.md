@@ -751,3 +751,21 @@ owner-provided LLM when called: production usage must first obtain
 independent cost authorization. NO paid Gemini inference has been
 triggered here. The separate human approval/OIDC-verified Execution
 and fully deployed network transport are still unproven; R5 is NO-GO.
+
+### R5 authenticated Engineer rejection terminates the provisional root
+
+The trusted Engineer review console now has an authenticated, same-origin,
+CSRF-guarded `/api/reject` decision. It requires the literal
+`REJECT <exact pinned SHA-256 digest>` confirmation and
+does not accept a credential ID, DID, key, or alternative plan from HTTP.
+Only a same-process active Coordinator receives a trusted host-owned
+callback. If Execution has started or shutdown is underway, rejection
+is denied. The original Coordinator must confirm Gateway Planning
+retirement, native Rust revocation and durable journal tombstone before
+the API reports success.
+
+Rejection, approval and failed/unconfirmed retirement are all terminal
+for this Engineer server; they cannot race or override an existing signed
+Engineer approval receipt. The test-only local Engineer server retains
+its no-rejection mode. No model call is performed by the reject route.
+R5 remains NO-GO pending exact-SHA CI, UI tests and deployment proof.
