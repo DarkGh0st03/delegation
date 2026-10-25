@@ -95,7 +95,7 @@ test("retired root tombstone cannot be overwritten by a duplicate pending record
     const original=await readFile(retiredPath,"utf8");
     // Even deliberate presence of both names is an integrity failure.
     const pending=join(f.operationalDir,retired.replace(".retired.",".pending."));
-    await writeFile(pending,JSON.stringify({...operational,
+    await writeFile(pending,JSON.stringify({
       schema_version:1,
       session_id:sessionId,base_revision:baseRevision,
       credential_id:"urn:test:forged-new-root"})+"\n",{mode:0o600});
