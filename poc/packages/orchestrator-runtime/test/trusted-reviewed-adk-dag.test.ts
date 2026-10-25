@@ -396,9 +396,26 @@ async function exercise(
             };
           }
         },
-        a2a:new DeterministicA2AOrchestrator({
-          deadlineMs:7000,initialIntervalMs:20,maxIntervalMs:80
-        })
+        a2a:{
+          async sendProtectedTask(request){
+            const client=new DeterministicA2AOrchestrator({
+              deadlineMs:7000,initialIntervalMs:20,maxIntervalMs:80
+            });
+            const response=await client.sendProtectedTask(request);
+            // Credential evidence and private preallocated Gateway IDs
+            // stay server-side. The returned SDK Task must not carry them
+            // in history, artifacts or A2A metadata.
+            const serialized=JSON.stringify(response.task);
+            assert.equal(serialized.includes(
+              request.delegation_evidence.credential_id),false);
+            assert.equal(serialized.includes(
+              request.delegation_evidence.credential),false);
+            assert.equal(serialized.includes(
+              request.trusted_gateway_task_id??"must-not-occur"),false);
+            assert.deepEqual(response.task.history,[]);
+            return response;
+          }
+        }
       }):undefined;
     const dispatcher=await TrustedApprovedA2ADispatcher.load({
       approvals:gate,coordinator,sessionId:snapshot.session_id,
