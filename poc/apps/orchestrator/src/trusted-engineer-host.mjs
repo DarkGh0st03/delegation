@@ -300,8 +300,9 @@ export async function startTrustedEngineerLocalHost(config){
           if(selectedScriptedRunId&&runId!==selectedScriptedRunId)
             return "terminated";
           if(!selectedScriptedRunId){
-            return active?.coordinator.phase==="closed"
-              ?"terminated":"waiting_for_owner";
+            return active?.coordinator.phase==="planning"&&
+              scriptedHandoff.status==="idle"
+              ?"waiting_for_owner":"terminated";
           }
           if(scriptedHandoff.verifiedOutcome==="verified_complete")
             return "completed_verified";
@@ -377,6 +378,8 @@ export async function startTrustedEngineerLocalHost(config){
     /** Trusted in-process call ONLY: never registered as an HTTP endpoint. */
     /** Owner-only split phase for callers which need explicit dispatch. */
     startReviewedHandoff(input){
+      if(selectedScriptedRunId||scriptedHandoff.status!=="idle")
+        deny("scripted offline handoff already selected");
       const trusted=pinnedHandoffInput(input);
       if(selectedRunId&&selectedRunId!==input.runId)
         deny("different manual run already selected for Engineer handoff");
@@ -390,6 +393,8 @@ export async function startTrustedEngineerLocalHost(config){
      */
     runReviewedApprovedDag({execution,...input}){
       if(closed)deny("host closed");
+      if(selectedScriptedRunId||scriptedHandoff.status!=="idle")
+        deny("scripted offline handoff already selected");
       // Validate before consuming the HMAC admission or issuing a root.
       if(!execution||typeof execution!=="object"||
          typeof execution.invokeOrchestratorTask!=="function"||
@@ -414,6 +419,8 @@ export async function startTrustedEngineerLocalHost(config){
       execution,privateGatewayTransport,childStatusProvisioning,...input
     }){
       if(closed)deny("host closed");
+      if(selectedScriptedRunId||scriptedHandoff.status!=="idle")
+        deny("scripted offline handoff already selected");
       if(!active?.reviewGate||
          active.coordinator.phase!=="planning")
         deny("original live signed Planning session required");
