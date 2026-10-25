@@ -175,6 +175,14 @@ test("SIGKILL Engineer PID after signed operational issuance; independent PIDs r
   assert.equal(repeat.data.phase,"replay-blocked");
   assert.deepEqual(repeat.data.events,[]);
   await assert.rejects(ipc.activate(SESSION,SHA),/Gateway trusted control denied/);
+  // Original Gateway instance already has an in-memory retired session.
   await assert.rejects(revisions.begin(SESSION,5000),
+    /Planning session already registered/);
+  // A genuinely fresh registry must still deny the session from the
+  // fsynced Planning retirement tombstone, not from the old Map.
+  const restartedRevisions=new TrustedPlanningRevisions({
+    async readRepository(){return {default_branch:"main",revision:SHA};}
+  },{retirementStore:new TrustedPlanningRetirementStore(retirementDir)});
+  await assert.rejects(restartedRevisions.begin(SESSION,5000),
     /retired Planning session cannot be registered/);
 });
