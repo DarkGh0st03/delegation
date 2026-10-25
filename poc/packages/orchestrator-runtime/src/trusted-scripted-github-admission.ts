@@ -21,8 +21,10 @@ import {verifyGithubOidcScriptedManualJob,
   from "./trusted-github-oidc.ts";
 import {GithubOidcReplayFileStore}
   from "./trusted-github-oidc-replay-store.ts";
-import {verifyGithubManualRunViaApi,
-  type PinnedGithubDispatch} from "./trusted-manual-github-dispatch.ts";
+import {verifyGithubManualRunViaApi}
+  from "./trusted-github-run-identity.ts";
+import type {PinnedGithubDispatch}
+  from "./trusted-manual-github-dispatch.ts";
 
 const WORKFLOW=".github/workflows/trusted-scripted-offline-session-hold.yml";
 const ACK="I AUTHORIZE A SCRIPTED OFFLINE TEST ONLY";
