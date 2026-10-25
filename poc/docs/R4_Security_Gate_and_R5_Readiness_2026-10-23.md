@@ -950,3 +950,15 @@ SIGKILL or a proof of distributed-replica recovery. The disposable
 Gateway provider is mocked, while Rust/Adapter/EVM, signed Engineer
 receipt and private IPC are real. R5 remains NO-GO until exact-SHA
 native CI, real deployed recovery and separate paid-run authorization.
+
+### Independent native Rust revocation attempt on Gateway recovery failure
+
+Operational cold-restart reconciliation now attempts Gateway session
+retirement and Rust/Adapter credential revocation independently.
+Previously an unavailable Gateway prevented even attempting real EVM
+revocation. An error from either side still leaves the root intent
+pending; only confirmed results from BOTH sides permit writing the
+terminal tombstone. The regression exercises failed Gateway retirement,
+an attempted independent Rust revocation, preserved pending intent
+and later full reconciliation. No second credential issue is permitted.
+This is offline port testing and not a paid model execution.

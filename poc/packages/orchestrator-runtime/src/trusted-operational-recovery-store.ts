@@ -171,17 +171,26 @@ export async function reconcileOrphanedOperationalRoots(input:{
   for(const row of await input.store.pending()){
     // Terminal Gateway tombstone also blocks a late activation from an
     // in-flight old Coordinator after this recovery has started.
+    // A broken Gateway must NOT prevent an independent attempt to revoke
+    // the actual EVM/Rust credential. Try BOTH terminal operations even
+    // when the first rejects; never mark an intent retired until both are
+    // independently confirmed.
+    let gatewayRetired=false,rustRevoked=false;
     try{
       await input.gateway.retireSession(row.session_id);
+      gatewayRetired=true;
+    }catch{}
+    try{
       await input.credentials.revokeRoot(row.credential_id);
-      await input.store.markReconciled({
-        sessionId:row.session_id,baseRevision:row.base_revision,
-        credentialId:row.credential_id
-      });
-      reconciled++;
-    }catch{
+      rustRevoked=true;
+    }catch{}
+    if(!gatewayRetired||!rustRevoked)
       fail("root revocation or Gateway retirement NOT confirmed; manual reconciliation required");
-    }
+    await input.store.markReconciled({
+      sessionId:row.session_id,baseRevision:row.base_revision,
+      credentialId:row.credential_id
+    });
+    reconciled++;
   }
   return reconciled;
 }

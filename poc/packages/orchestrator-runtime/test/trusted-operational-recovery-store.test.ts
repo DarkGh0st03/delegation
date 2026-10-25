@@ -210,3 +210,40 @@ test("uncertain preliminary revocation after failed operational reservation reta
       /reconciled session cannot be reused/);
   }finally{await f.close();}
 });
+
+test("failed Gateway retirement still attempts REAL Rust port and keeps operational intent",async()=>{
+  const f=await setup();
+  try{
+    await f.operational.recordIntent(operational);
+    const calls:string[]=[];
+    await assert.rejects(reconcileOrphanedOperationalRoots({
+      store:f.operational,
+      gateway:{async retireSession(id){
+        calls.push("gateway:"+id);
+        throw Error("Gateway unavailable");
+      }},
+      credentials:{async revokeRoot(id){
+        calls.push("rust:"+id);
+      }}
+    }),/manual reconciliation required/);
+    assert.deepEqual(calls,[
+      "gateway:"+sessionId,"rust:"+operational.credentialId
+    ]);
+    assert.equal((await f.operational.pending()).length,1);
+    await assert.rejects(f.operational.assertFreshSession(sessionId),
+      /orphaned root intent/);
+    // Both confirmations are required on a new attempt. Even when Rust
+    // already revoked, the original journal cannot claim completion from
+    // its own speculation.
+    assert.equal(await reconcileOrphanedOperationalRoots({
+      store:new TrustedOperationalRecoveryStore(f.operationalDir),
+      gateway:{async retireSession(id){calls.push("gateway:"+id);}},
+      credentials:{async revokeRoot(id){calls.push("rust:"+id);}}
+    }),1);
+    await f.operational.assertClean();
+    assert.deepEqual(calls,[
+      "gateway:"+sessionId,"rust:"+operational.credentialId,
+      "gateway:"+sessionId,"rust:"+operational.credentialId
+    ]);
+  }finally{await f.close();}
+});
