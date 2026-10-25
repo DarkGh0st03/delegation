@@ -72,6 +72,11 @@ const SUITES=Object.freeze([
     title:"R5 canceled scripted GitHub run retires real operational root and all three A2A servers"
   },
   {
+    id:"scripted_cancellation_before_first_dag_task",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
+    title:"R5 scripted signed DAG cannot start any Task when GitHub run is canceled after root activation"
+  },
+  {
     id:"scripted_missing_oidc_denies_root",
     path:"poc/packages/orchestrator-runtime/test/trusted-planning-review-gate.test.ts",
     title:"R5 missing offline OIDC receipt or canceled job cannot issue the operational root"
