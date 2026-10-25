@@ -674,3 +674,78 @@ The Engineer host now owns one **tracked, one-shot** admitted handoff per proces
 ### R5 offline — cancellation after protected A2A dispatch
 
 The trusted DAG dispatcher rechecks the Coordinator Execution phase after the protected A2A result and after Gateway task confirmation, before recording completion or enabling DAG dependents. The Orchestrator branch task follows the same post-confirmation rule. Negative tests simulate shutdown (1) while Backend A2A is in flight, (2) immediately after Backend Gateway confirmation, and (3) after Orchestrator branch confirmation. No subsequent Task may begin. This is deterministic offline race testing, not rollback of external effects. Gateway and Rust revocation remain the enforcement boundaries.
+
+
+## R5 private runner bounded rendezvous — 25 October 2026
+
+The earlier `.github/workflows/trusted-private-github-admission.yml`
+**authenticates and exits immediately**. It remains an isolated,
+non-billable OIDC proof, NOT a full signed-DAG run: the trusted backend
+requires the GitHub Actions job to remain `in_progress` while the
+Engineer-controlled operational execution is active.
+
+The new separate manual
+`.github/workflows/trusted-private-github-session-hold.yml` instead runs
+an **operator-installed immutable**
+`/opt/delegation/r5/poc/apps/orchestrator/src/hold-private-github-session.mjs`
+on the existing isolated `delegation-private` self-hosted runner.
+No checkout, arbitrary third-party GitHub action, paid model key or
+A2A/tool invocation is permitted in this workflow. It submits a genuine
+GitHub OIDC assertion over the pinned private mTLS channel, then
+polls the **same** Engineer Host on
+`GET /v1/trusted/github/admission-status?run_id=...&source_sha=...`.
+Both endpoint handlers require the independently pinned runner client
+certificate; the status path is unavailable without mTLS and admits
+only the one verified run/source SHA stored by that host. Its data is
+a small nonauthorizing state, never an Engineer signature, credential,
+approved plan, model prompt, or provider command.
+
+The host reports `completed_verified` only after its private
+`runReviewedApprovedDag` returns successfully and
+`TrustedReviewedHandoffLifecycle` confirms root/Gateway closure.
+Rejection, uncertain revocation, lost mTLS, cancellation, invalid state
+or the bounded runner deadline result in **job failure**. The status
+endpoint cannot start Execution. A GitHub job status alone does not
+verify any model output or software artifact.
+
+**Operator constraints before even attempting this non-billable workflow:**
+
+1. Install and review the exact immutable runner build. Configure the
+   protected local `DELEGATION_RUNNER_OIDC_CONFIG` with the **new**
+   workflow path and its exact GitHub commit SHA; independently pin the
+   **same** workflow, source SHA, repository/ref and private client leaf
+   in the trusted Engineer host. Keep the pinned Gitea base SHA distinct.
+2. Provision actual private RFC1918 routing, firewall, mTLS CA/leaf,
+   protected file ownership (0700 directories, 0600 secrets), real
+   Gateway IPC and Rust Adapter. The workflow does not deploy these.
+3. Establish an active read-only Planning root, trusted backend signed
+   checkpoint and separate authenticated **human** Engineer review.
+   Align the owner-controlled handoff closely with OIDC submission:
+   admission receipts have a **five-minute** consume window.
+4. A separate trusted **in-process operator** must explicitly call the
+   existing owner-only approved DAG entry with real signed Agent A2A,
+   Adapter and task-authority ports. The runner status GET never invokes
+   this method and never grants permission to make model calls.
+5. Verify account-level Gemini spend controls and require fresh
+   explicit approval of any billable run. Creating, testing or
+   manually dispatching the non-billable runner workflow is **NOT**
+   a substitute for that economic consent.
+
+The hold is bounded to 60 minutes inside a 75-minute GitHub job, with
+read-only polls every five seconds. The workflow's default-branch
+visibility and the manually configured private self-hosted runner
+remain separate deployment prerequisites. A `terminated` status is
+not success, and a clean OIDC admission alone cannot complete the job.
+
+**Security correction found by regression:** the Node HTTPS client now
+sets `agent:false` for the authenticated POST and status GET, requiring
+a fresh TLS handshake for each independently pinned server certificate
+fingerprint check. A shared HTTPS Agent's TLS resumption could otherwise
+skip the expected hostname/leaf verification callback. The fix retains
+both the CA chain check and the explicit fingerprint pin.
+
+This adds an authenticated non-billable *rendezvous* to the owner-host
+code, not a remotely deployed system or full real-model E2E. Until
+exact-SHA CI is complete and the live operator/network path demonstrated,
+**R5 remains NO-GO**. Do not run the old paid workflow, enable automatic
+Gemini calls, or merge `main` based on this work.
