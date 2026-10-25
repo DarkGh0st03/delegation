@@ -1,0 +1,114 @@
+#!/usr/bin/env node
+/**
+ * R5 reproducible, ZERO-BILLING contract evidence in one command.
+ *
+ * This aggregates distinct, independently meaningful tests on ONE checked-out
+ * Git SHA. It is NOT yet a single deployed host/runner/real-Gitea/EVM end-to-end
+ * and MUST NOT be represented as such. The real paid route is never invoked.
+ *
+ * Deliberately a fixed allowlist of existing tests, not arbitrary workflow
+ * inputs or an operator-selectable shell command.
+ */
+import {spawnSync} from "node:child_process";
+import {dirname,resolve} from "node:path";
+import {fileURLToPath} from "node:url";
+import {createHash} from "node:crypto";
+
+const root=resolve(dirname(fileURLToPath(import.meta.url)),"../..");
+const SUITES=Object.freeze([
+  {
+    id:"signed_planning_and_strict_host_bootstrap",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts",
+    title:"R5 protected owner service composes signed ADK Planning with strict host and revokes when IPC unavailable"
+  },
+  {
+    id:"real_private_ipc_human_approval_and_oidc",
+    path:"poc/apps/orchestrator/test/trusted-engineer-host.test.mjs",
+    title:"strict LIVE Engineer Host joins authenticated Unix IPC with durable Gateway planning and operational fences"
+  },
+  {
+    id:"live_agent_card_roles",
+    path:"poc/packages/orchestrator-runtime/test/trusted-a2a-startup-probe.test.ts",
+    title:"R5 only genuine, distinct localhost delegated A2A HTTP Agent Cards are ready"
+  },
+  {
+    id:"signed_dag_with_pr_and_acceptance",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
+    title:"R5 approved full HTTP A2A workflow creates signed PR only AFTER Gateway-correlated Runner acceptance"
+  },
+  {
+    id:"signed_dag_pr_denial",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
+    title:"R5 signed PR is denied without independently accepted exact-SHA Runner output"
+  },
+  {
+    id:"live_http_a2a_cancellation",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
+    title:"R5 real HTTP A2A cancels after Backend without contacting Frontend/Test"
+  }
+]);
+
+function fatal(message){
+  process.stderr.write("R5 offline canonical gate: "+message+"\n");
+  process.exitCode=1;
+}
+const env={...process.env};
+// Invariant: even if CI or a local shell has billable credentials configured,
+// no provider/model secret is made visible to ANY child process.
+for(const k of Object.keys(env)){
+  if(/(?:GEMINI|OPENAI|ANTHROPIC|GOOGLE)_.*(?:KEY|TOKEN|CREDENTIAL|SECRET)/i.test(k)||
+     /^(?:GOOGLE_API_KEY|GEMINI_API_KEY|OPENAI_API_KEY|GOOGLE_APPLICATION_CREDENTIALS)$/i.test(k))
+    delete env[k];
+}
+env.NO_PAID_PROVIDER_CALLS="1";
+
+const git=spawnSync("git",["rev-parse","HEAD"],{
+  cwd:root,encoding:"utf8",timeout:10_000,env
+});
+if(git.status!==0||!/^[a-f0-9]{40}$/u.test(git.stdout.trim())){
+  fatal("exact repository SHA is unavailable; no R5 evidence generated");
+}else{
+  const sha=git.stdout.trim();
+  const result={
+    schema_version:1,
+    status:"offline_contract_only_not_deployed_end_to_end",
+    git_sha:sha,
+    model_api_calls:0,
+    actual_model_inference:false,
+    real_runner_github_job:false,
+    one_physical_host_full_e2e:false,
+    suites:[]
+  };
+  for(const suite of SUITES){
+    const child=spawnSync(process.execPath,[
+      "--experimental-strip-types","--test",
+      "--test-name-pattern="+suite.title,
+      suite.path
+    ],{
+      cwd:root,env,encoding:"utf8",timeout:180_000,
+      maxBuffer:8*1024*1024
+    });
+    const log=(child.stdout??"")+"\n"+(child.stderr??"");
+    const ran=log.split("\n").some(x=>
+      /^ok \d+ - /u.test(x)&&x.includes(suite.title));
+    const passed=child.status===0&&!child.error&&ran&&
+      /^# fail 0\s*$/mu.test(log)&&
+      !/^# pass 0\s*$/mu.test(log);
+    result.suites.push({
+      id:suite.id,passed,
+      log_sha256:createHash("sha256").update(log).digest("hex"),
+      ...(passed?{}:{error:child.error?.message??"offline test failed"})
+    });
+    process.stdout.write(
+      (passed?"PASS ":"FAIL ")+suite.id+" @ "+sha.slice(0,8)+"\n");
+    if(!passed){
+      process.stderr.write(log.slice(-12000)+"\n");
+      break;
+    }
+  }
+  const passed=result.suites.length===SUITES.length&&
+    result.suites.every(x=>x.passed);
+  process.stdout.write("R5_OFFLINE_GATE_EVIDENCE "+
+    JSON.stringify({...result,passed})+"\n");
+  if(!passed)fatal("one or more required same-SHA contract checks failed");
+}
