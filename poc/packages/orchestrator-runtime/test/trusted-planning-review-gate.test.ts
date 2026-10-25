@@ -2011,10 +2011,11 @@ test("R5 consumed offline OIDC denies missing Engineer signature and retires pre
     assert.equal(f.coordinator.phase,"closed");
     assert.deepEqual(f.revoked,["urn:preliminary"]);
     assert.equal(f.issued.length,1);
-    await assert.rejects(
-      startAdmittedGithubReviewedScriptedHandoff(f.input),
-      /already consumed/
-    );
+    await assert.rejects(f.input.admissionStore.consume({
+      expectedRunId:SCRIPTED_GITHUB_RUN,
+      expectedSourceSha:SCRIPTED_GITHUB_SHA,
+      expectedSessionId:SNAPSHOT.session_id
+    }),/already consumed/);
   }finally{await f.dispose();}
 });
 
