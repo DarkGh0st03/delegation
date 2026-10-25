@@ -5,7 +5,8 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
-import {loadTrustedEngineerServiceConfig}
+import {loadTrustedEngineerServiceConfig,
+  prepareConfiguredOwnerEngineerBootstrap}
   from "../src/trusted-engineer-service.mjs";
 async function fixture(){
   const home=await mkdtemp(join(tmpdir(),"engineer-service-config-"));
@@ -275,6 +276,78 @@ test("strict operational host config rejects missing, untrusted or shared checkp
     await f.save();
     await chmod(f.files.backendPublicKey,0o644);
     await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
+      /configuration denied/);
+  }finally{await f.close();}
+});
+
+
+test("configured owner bootstrap prepares exact protected checkpoint/recovery identity without issuing a root",async()=>{
+  const f=await fixture();
+  try{
+    const bootstrap=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
+    assert.equal(typeof bootstrap.start,"function");
+    assert.equal(typeof bootstrap.planningCheckpointStore.load,"function");
+    assert.equal(typeof bootstrap.operationalRecovery.assertDirectory,"function");
+    bootstrap.operationalRecovery.assertDirectory(f.dirs.recovery);
+    assert.equal((await (await import("node:fs/promises")).readdir(f.dirs.recovery)).length,0);
+    assert.equal((await (await import("node:fs/promises")).readdir(f.dirs.checkpoints)).length,0);
+    assert.equal((await (await import("node:fs/promises")).readdir(f.dirs.approval)).length,0);
+    assert.equal("oidc" in bootstrap,false);
+    assert.equal("privateKeyFile" in bootstrap,false);
+    await assert.rejects(bootstrap.start({
+      checkpointStore:bootstrap.planningCheckpointStore,
+      coordinator:{phase:"idle"}
+    }),/owner Planning and Engineer session pins must be identical/);
+    await assert.rejects(bootstrap.start({
+      checkpointStore:bootstrap.planningCheckpointStore,
+      coordinator:{phase:"idle"}
+    }),/single-use/);
+    assert.equal((await (await import("node:fs/promises")).readdir(f.dirs.recovery)).length,0);
+  }finally{await f.close();}
+});
+
+test("configured owner bootstrap rejects a separately constructed checkpoint identity before any Planning",async()=>{
+  const f=await fixture();
+  try{
+    const first=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
+    const second=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
+    assert.notEqual(first.planningCheckpointStore,second.planningCheckpointStore);
+    await assert.rejects(first.start({
+      checkpointStore:second.planningCheckpointStore,
+      coordinator:{phase:"idle"}
+    }),/original idle Planning and checkpoint identity/);
+    assert.equal((await (await import("node:fs/promises")).readdir(f.dirs.checkpoints)).length,0);
+  }finally{await f.close();}
+});
+
+test("configured owner bootstrap rejects unsigned Plan override and active Coordinator before dispatch",async()=>{
+  const f=await fixture();
+  try{
+    const owner=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
+    await assert.rejects(owner.start({
+      checkpointStore:owner.planningCheckpointStore,
+      coordinator:{phase:"execution"}
+    }),/original idle Planning and checkpoint identity/);
+    const other=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
+    await assert.rejects(other.start({
+      checkpointStore:other.planningCheckpointStore,
+      coordinator:{phase:"idle"},
+      reviewPlanFile:{persist:async()=>{}}
+    }),/original idle Planning and checkpoint identity/);
+    assert.equal((await (await import("node:fs/promises")).readdir(f.dirs.approval)).length,0);
+  }finally{await f.close();}
+});
+
+test("bad protected service config cannot be prepared as an owner bootstrap",async()=>{
+  const f=await fixture();
+  try{
+    await chmod(f.files.config,0o644);
+    await assert.rejects(prepareConfiguredOwnerEngineerBootstrap(f.files.config),
+      /configuration denied/);
+    await chmod(f.files.config,0o600);
+    f.config.recovery.unknownOwnerCallback="permissionEscalation";
+    await f.save();
+    await assert.rejects(prepareConfiguredOwnerEngineerBootstrap(f.files.config),
       /configuration denied/);
   }finally{await f.close();}
 });
