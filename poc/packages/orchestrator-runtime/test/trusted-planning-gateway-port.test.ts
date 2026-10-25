@@ -5,7 +5,7 @@
  * No Gemini call or production credential material.
  */
 import {generateKeyPairSync} from "node:crypto";
-import {mkdtemp,rm} from "node:fs/promises";
+import {mkdtemp,rm,readFile,writeFile,chmod} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import assert from "node:assert/strict";
@@ -40,6 +40,8 @@ import {TrustedActivePlanningCheckpoint}
   from "../src/trusted-active-planning-checkpoint.ts";
 import {TrustedPlanningRecoveryStore}
   from "../src/trusted-planning-recovery-store.ts";
+import {TrustedReviewedPlanFile}
+  from "../src/trusted-reviewed-plan-file.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
 const SECOND_FILE="src/billing/tax.ts";
@@ -525,6 +527,7 @@ async function makeOwnerReviewFixture(options:{
   const f=fixture({...options,planningRecovery});
   const receipts=await mkdtemp(join(tmpdir(),"owner-planning-approvals-"));
   const checkpoints=await mkdtemp(join(tmpdir(),"owner-planning-checkpoints-"));
+  const plans=await mkdtemp(join(tmpdir(),"owner-planning-ui-plan-"));
   const engineer=generateKeyPairSync("ed25519");
   const backend=generateKeyPairSync("ed25519");
   const backendKeyId="owner-planning-backend";
@@ -552,6 +555,10 @@ async function makeOwnerReviewFixture(options:{
       expectedWorkBranch:"feature/invoice-sort"
     }
   });
+  const planFilePath=join(plans,snapshot.session_id+".json");
+  const planFile=new TrustedReviewedPlanFile({
+    filePath:planFilePath,checkpointStore:store
+  });
   const makeConfig=()=>({
     coordinator:f.coordinator,snapshot,preliminaryRoot:f.root(),
     planner:{model:new ScriptedPlanner(),snapshot,
@@ -560,15 +567,18 @@ async function makeOwnerReviewFixture(options:{
     gateway:{gatewayBaseUrl:"http://trusted-gateway",
       adapterBaseUrl:"http://trusted-adapter",
       adapterToken:"trusted-orchestrator-token",fetchFn:f.fetchFn},
-    reviewGate:gate,checkpointStore:store,planningRecovery,backendKeyId,
+    reviewGate:gate,checkpointStore:store,reviewPlanFile:planFile,
+    planningRecovery,backendKeyId,
     backendPrivateKeyPem:backend.privateKey.export({
       format:"pem",type:"pkcs8"
     }).toString()
   });
-  return {...f,store,gate,planningRecovery,makeConfig,async cleanup(){
+  return {...f,store,gate,planningRecovery,planFilePath,
+    planFile,makeConfig,async cleanup(){
     await rm(planningDir,{recursive:true,force:true});
     await rm(receipts,{recursive:true,force:true});
     await rm(checkpoints,{recursive:true,force:true});
+    await rm(plans,{recursive:true,force:true});
   }};
 }
 
@@ -580,6 +590,10 @@ test("owner bootstrap issues one read-only root, traverses Gateway and persists 
     assert.equal(packet.verified_source_reads,1);
     assert.equal(packet.base_revision,SHA);
     assert.equal((await f.store.load()).proposal.digest,packet.plan_digest);
+    const ownerReviewPlan=JSON.parse(await readFile(f.planFilePath,"utf8"));
+    assert.equal(ownerReviewPlan.session_id,snapshot.session_id);
+    assert.equal(ownerReviewPlan.base_revision,SHA);
+    assert.deepEqual(ownerReviewPlan,packet.plan);
     assert.equal(f.gate.reviewPacket().plan_digest,packet.plan_digest);
     assert.equal(f.coordinator.phase,"planning");
     assert.deepEqual({issued:f.observed.issued,revoked:f.observed.revoked,
@@ -613,6 +627,8 @@ test("failed owner Planning read cancels root and denies any signed checkpoint",
     assert.equal(f.observed.execute,0);
     await assert.rejects(f.store.load(),
       (e:any)=>e.code==="ENOENT");
+    await assert.rejects(readFile(f.planFilePath),
+      (e:any)=>e.code==="ENOENT");
     await assert.rejects(startOwnerControlledPlanningReview(f.makeConfig()),
       /idle Coordinator required/);
   }finally{await f.cleanup();}
@@ -632,5 +648,39 @@ test("uncertain native revocation after failed Planning remains terminal",async(
       /cancellation not confirmed/);
     assert.equal(f.observed.revoked,1);
     await assert.rejects(f.store.load(),(e:any)=>e.code==="ENOENT");
+  }finally{await f.cleanup();}
+});
+
+test("signed Planning materializer denies overwriting untrusted Engineer plan",async()=>{
+  const f=await makeOwnerReviewFixture();
+  try{
+    await writeFile(f.planFilePath,"{\"untrusted\":true}",{mode:0o600});
+    await assert.rejects(startOwnerControlledPlanningReview(f.makeConfig()),
+      (e:any)=>e.code==="EEXIST");
+    assert.equal(await readFile(f.planFilePath,"utf8"),
+      "{\"untrusted\":true}");
+    assert.equal(f.coordinator.phase,"closed");
+    assert.equal(f.observed.revoked,1);
+    await f.planningRecovery.assertClean();
+  }finally{await f.cleanup();}
+});
+
+test("review plan file requires the identical independently pinned checkpoint store",async()=>{
+  const f=await makeOwnerReviewFixture();
+  try{
+    const config=f.makeConfig();
+    const alienStore=new SignedPlanningCheckpointFileStore({
+      directory:join("/tmp","other-checkpoints"),
+      trust:{trustedKeys:{},expectedSessionId:snapshot.session_id,
+        expectedRepository:snapshot.repository,
+        expectedBaseRevision:SHA,
+        expectedWorkBranch:"feature/invoice-sort"}
+    });
+    assert.throws(()=>f.planFile.assertCheckpointStore(alienStore),
+      /checkpoint store identity differs/);
+    await assert.rejects(startOwnerControlledPlanningReview({
+      ...config,checkpointStore:alienStore
+    }),/checkpoint store identity differs/);
+    assert.equal(f.observed.issued,0);
   }finally{await f.cleanup();}
 });

@@ -27,6 +27,8 @@ import {SignedPlanningCheckpointFileStore}
   from "./trusted-planning-checkpoint-store.ts";
 import {TrustedActivePlanningCheckpoint}
   from "./trusted-active-planning-checkpoint.ts";
+import {TrustedReviewedPlanFile}
+  from "./trusted-reviewed-plan-file.ts";
 import {preliminaryReadPermissions,type RootParameters,
   type TrustedPlanningSnapshot} from "./trusted-engineer-authority.ts";
 
@@ -38,6 +40,8 @@ export interface OwnerControlledPlanningConfig {
   gateway:Omit<TrustedPlanningGatewayPortConfig,"coordinator"|"snapshot">;
   reviewGate:TrustedPlanningReviewGate;
   checkpointStore:SignedPlanningCheckpointFileStore;
+  /** Optional owner-only Engineer UI file derived from the signed checkpoint. */
+  reviewPlanFile?:TrustedReviewedPlanFile;
   planningRecovery:TrustedPlanningRecoveryStore;
   backendKeyId:string;
   backendPrivateKeyPem:string;
@@ -59,6 +63,8 @@ export async function startOwnerControlledPlanningReview(
      !(config.reviewGate instanceof TrustedPlanningReviewGate)||
      !(config.checkpointStore instanceof SignedPlanningCheckpointFileStore)||
      !(config.planningRecovery instanceof TrustedPlanningRecoveryStore)||
+     (config.reviewPlanFile!==undefined&&
+       !(config.reviewPlanFile instanceof TrustedReviewedPlanFile))||
      config.coordinator.phase!=="idle"||
      !isDeepStrictEqual(config.planner?.snapshot,config.snapshot)||
      !config.gateway?.gatewayBaseUrl||!config.gateway?.adapterBaseUrl||
@@ -66,6 +72,7 @@ export async function startOwnerControlledPlanningReview(
      !config.backendPrivateKeyPem||!config.backendKeyId)
     refuse("independent Planning components and idle Coordinator required");
   preliminaryReadPermissions(config.snapshot);
+  config.reviewPlanFile?.assertCheckpointStore(config.checkpointStore);
   config.coordinator.assertPlanningRecoveryStore(config.planningRecovery);
   await config.coordinator.beginPlanning(config.preliminaryRoot);
   try{
@@ -88,7 +95,15 @@ export async function startOwnerControlledPlanningReview(
         checkpointLifetimeMs:config.checkpointLifetimeMs
       })
     });
-    return await bridge.proposePersistAndStage();
+    const packet=await bridge.proposePersistAndStage();
+    if(config.reviewPlanFile){
+      await config.reviewPlanFile.persist(packet);
+      // File operations are asynchronous: never return an unsigned review
+      // if the preliminary authority ended while writing to disk.
+      if(config.coordinator.phase!=="planning")
+        refuse("provisional authority ended while preparing Engineer plan");
+    }
+    return packet;
   }catch(error){
     // A failed model, source read, signature or disk write must NEVER
     // leave an unreviewable provisional root running as if accepted.

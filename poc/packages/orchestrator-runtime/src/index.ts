@@ -34,6 +34,7 @@ export * from "./trusted-planning-checkpoint.ts";
 export * from "./trusted-planning-checkpoint-store.ts";
 export * from "./trusted-active-planning-checkpoint.ts";
 export * from "./trusted-owner-planning-bootstrap.ts";
+export * from "./trusted-reviewed-plan-file.ts";
 export * from "./trusted-manual-gemini-handoff.ts";
 export * from "./trusted-manual-github-dispatch.ts";
 export * from "./trusted-github-oidc.ts";

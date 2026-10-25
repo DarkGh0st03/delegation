@@ -594,3 +594,30 @@ storage locking across multiple active Gateway replicas.
 
 R5 remains NO-GO until full exact-SHA CI, authentic human review and
 the paid canonical Planning/3-agent path are separately authorized.
+
+### R5 backend-signed Planning becomes the immutable Engineer UI plan file
+
+`TrustedReviewedPlanFile` now materializes the Engineer
+console's JSON plan **directly** from the already persisted
+backend-Ed25519-signed Planning checkpoint, not a separately authored
+mock or operator-submitted draft. The one-shot owner Planning bootstrap
+can pass an optional instance bound by object identity to the same
+independently pinned checkpoint store. It compares the packet's session,
+SHA, digest and exact plan structure against the verified signed envelope
+before writing. The destination must be in an owner-only directory;
+file creation is exclusive and no-follow with 0600 permissions; file and
+directory are fsynced. Any preexisting raw/partial plan is refused and
+the provisional Planning root is revoked (or left in the persistent
+recovery journal if revocation cannot be confirmed).
+
+Offline regression tests assert the actual Gateway-grounded Planning
+result is materialized, that a foreign plan cannot be overwritten,
+that wrong checkpoint-store identity fails before credential issuance,
+and that failed model reads never produce an Engineer file.
+
+**Still to implement:** an authenticated persistent Engineer host must
+consume this newly generated file, retain the exact in-memory Planning
+coordinator without treating its own live provisional root as an
+orphan on startup, and cleanly cancel it if the Engineer rejects/closes
+the review. This increment does not authenticate an Engineer signature
+or activate Execution. R5 stays NO-GO; no paid Gemini calls or main merge.
