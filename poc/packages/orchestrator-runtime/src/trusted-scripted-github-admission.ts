@@ -145,6 +145,16 @@ export class TrustedScriptedGithubAdmissionStore {
        (typeof process.getuid==="function"&&stat.uid!==process.getuid()))
       deny("owner-only 0700 durable receipt directory required");
   }
+  async #syncDirectory(){
+    let directory;
+    try{
+      directory=await open(this.#directory,
+        constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
+      await directory.sync();
+    }catch{
+      deny("scripted receipt directory persistence uncertain");
+    }finally{await directory?.close();}
+  }
   #filename(id:string){
     if(!RUN.test(id))deny("invalid run ID");
     return createHash("sha256").update("scripted-admission-v1|"+id)
@@ -193,6 +203,7 @@ export class TrustedScriptedGithubAdmissionStore {
     }
     try{await file.writeFile(serialized);await file.sync();}
     finally{await file.close();}
+    await this.#syncDirectory();
   }
   async consume(input:{expectedRunId:string;expectedSourceSha:string;
                        expectedSessionId:string;nowMs?:number}):
@@ -255,6 +266,7 @@ export class TrustedScriptedGithubAdmissionStore {
     }
     try{await handle.writeFile("consumed\n");await handle.sync();}
     finally{await handle.close();}
+    await this.#syncDirectory();
     return Object.freeze(structuredClone(record));
   }
 }
