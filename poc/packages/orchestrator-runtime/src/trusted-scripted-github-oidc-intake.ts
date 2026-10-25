@@ -17,8 +17,7 @@ import type {GithubOidcTrustPolicy}
   from "./trusted-github-oidc.ts";
 import type {PinnedGithubDispatch}
   from "./trusted-manual-github-dispatch.ts";
-import {verifiedPrivateOidcBindAddress}
-  from "./trusted-github-oidc-intake.ts";
+import {isIP} from "node:net";
 
 const PATH="/v1/trusted/github/scripted-offline-oidc-admission";
 const STATUS_PATH="/v1/trusted/github/scripted-offline-admission-status";
@@ -30,6 +29,23 @@ const MAX_BYTES=48*1024;
  * must be independently configured. This is NOT a deployment mechanism.
  * No DNS name, 0.0.0.0, public IP, IPv6, or arbitrary loopback alias.
  */
+// Independent address validator: the offline listener must never import
+// the paid-mode intake or consent schema even transitively.
+function verifiedPrivateOidcBindAddress(
+  value:string|undefined,tlsConfigured:boolean
+):string{
+  const address=value??"127.0.0.1";
+  if(address==="127.0.0.1")return address;
+  if(isIP(address)!==4)
+    throw Error("Trusted scripted intake: invalid private interface address");
+  const [first,second]=address.split(".").map(Number);
+  if(!(first===10||(first===172&&second>=16&&second<=31)||
+       (first===192&&second===168)))
+    throw Error("Trusted scripted intake: public interface prohibited");
+  if(!tlsConfigured)
+    throw Error("Trusted scripted intake: private interface requires mTLS");
+  return address;
+}
 const ENV_KEYS=[
   "GITHUB_ACTIONS","GITHUB_EVENT_NAME","GITHUB_RUN_ATTEMPT",
   "GITHUB_REPOSITORY","GITHUB_REF","GITHUB_WORKFLOW_REF",
