@@ -37,6 +37,8 @@ import {TrustedApprovedA2ADispatcher}
   from "../src/trusted-approved-a2a-dispatcher.ts";
 import {createTrustedReviewedHandoffLifecycle}
   from "../../../apps/orchestrator/src/trusted-reviewed-handoff-lifecycle.mjs";
+import {createTrustedApprovedBranchGateway}
+  from "../src/trusted-approved-branch-gateway.ts";
 
 const SHA="a".repeat(40),ENGINEER="did:thesis:engineer";
 const REPO={authority:"gitea.local",owner:"thesis",repository:"projects"};
@@ -370,15 +372,54 @@ async function exercise(
         close:()=>coordinator.closeExecution()
       };
     }):undefined;
+    // Production-style branch write: derive the branch from the signed
+    // review store, issue a scoped VP through the private Adapter transport,
+    // then cross the ACTUAL Gateway prepare/OPA/execute boundary.
+    // Only HTTP transport and cryptographic services are scripted here.
+    let branchVpRequests=0;
+    const branchProvider=owner?await createTrustedApprovedBranchGateway({
+      coordinator,reviewGate:gate,sessionId:snapshot.session_id,
+      baseRevision:SHA,engineerDid:ENGINEER,
+      transport:{
+        gatewayBaseUrl:"http://127.0.0.1:8080",
+        adapterBaseUrl:"http://127.0.0.1:8090",
+        adapterToken:"owner-offline-r2",timeoutMs:1000,
+        fetchFn:async(request,options)=>{
+          const url=String(request);
+          const body=JSON.parse(String(options?.body));
+          if(url.endsWith("/v1/authorization/prepare")){
+            const p=runtime.prepare(body);
+            return new Response(JSON.stringify(p),{status:200});
+          }
+          if(url.endsWith("/v1/presentations")){
+            branchVpRequests++;
+            assert.equal(options?.headers?.authorization,
+              "Bearer owner-offline-r2");
+            assert.equal(body.credential_id,"urn:execution:"+x.name);
+            assert.equal(body.disclosed_permissions[0]?.operation,
+              "create_branch");
+            return new Response(JSON.stringify({signed_vp:"offline-r2-vp"}),
+              {status:200});
+          }
+          if(url.endsWith("/v1/authorization/execute")){
+            const result=await runtime.execute(body);
+            return new Response(JSON.stringify(result),{status:200});
+          }
+          throw Error("unapproved offline Gateway endpoint");
+        }
+      }
+    }):undefined;
     const ownerInput={session_id:snapshot.session_id};
     const ownerExec={
       a2a:{},adapter:{},
       async authorityForTask(){throw Error("owner-only scoped issuer controls children");},
-      async invokeOrchestratorTask(_task:string,id:string){
-        await invoke(id,"orchestrator","create_branch",{
-          base_branch:"main",branch:x.branch
-        });
-      }
+      invokeOrchestratorTask:branchProvider
+        ?branchProvider.invokeOrchestratorTask
+        :async (_task:string,id:string)=>{
+          await invoke(id,"orchestrator","create_branch",{
+            base_branch:"main",branch:x.branch
+          });
+        }
     };
     if(cancelBeforeFrontend){
       if(owner){
@@ -398,6 +439,13 @@ async function exercise(
         }),/offline GitHub run canceled before Frontend/);
       }
       assert.deepEqual(checkedTaskIds,["branch","backend","frontend"]);
+      if(owner){
+        assert.equal(branchProvider?.approvedBranch,x.branch);
+        assert.equal(branchVpRequests,1);
+        await assert.rejects(ownerExec.invokeOrchestratorTask(
+          "branch","dispatch_"+"a".repeat(22)
+        ),/one-shot/);
+      }
       // Only branch and Backend may have touched the real Gateway fixture.
       assert.equal(providerCalls,2);
       assert.equal(opaCalls,2);
@@ -418,8 +466,14 @@ async function exercise(
     if(owner){
       assert.equal(owner.status,"closed");
       assert.equal(owner.verifiedOutcome,"verified_complete");
+      assert.equal(branchProvider?.approvedTaskId,"branch");
+      assert.equal(branchProvider.approvedBranch,x.branch);
+      assert.equal(branchVpRequests,1);
       await assert.rejects(owner.runApprovedDag(ownerInput,ownerExec),
         /already attempted/);
+      await assert.rejects(ownerExec.invokeOrchestratorTask(
+        "branch","dispatch_"+"a".repeat(22)
+      ),/one-shot/);
     }
     assert.deepEqual(done.completed_task_ids,
       ["branch","backend","frontend","tests"]);
