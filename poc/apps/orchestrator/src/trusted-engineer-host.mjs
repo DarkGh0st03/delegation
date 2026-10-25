@@ -224,7 +224,7 @@ export async function startTrustedEngineerLocalHost(config){
          active.coordinator.phase!=="planning"||
          (active.reviewGate&&trusted.reviewGate!==active.reviewGate)||
          trusted.checkpointStore!==active.checkpointStore))
-        deny("reviewed Execution must use original Planning Coordinator, review gate and checkpoint");
+        deny("reviewed Execution must use original active Planning Coordinator, review gate and checkpoint");
       // Legacy test-only Engineer hosts can accept local OIDC, but cannot
       // activate an operational DC without startup crash reconciliation.
       if(!operationalRecoveryStore)
