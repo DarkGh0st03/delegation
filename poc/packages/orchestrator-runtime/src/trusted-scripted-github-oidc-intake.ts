@@ -41,9 +41,9 @@ export function verifiedPrivateOidcBindAddress(
   const [first,second]=address.split(".").map(Number);
   if(!(first===10||(first===172&&second>=16&&second<=31)||
        (first===192&&second===168)))
-    throw Error("Trusted scripted intake: public interface prohibited");
+    throw Error("Trusted scripted intake: public/wildcard interface prohibited");
   if(!tlsConfigured)
-    throw Error("Trusted scripted intake: private interface requires mTLS");
+    throw Error("Trusted scripted intake: private interface requires pinned mTLS");
   return address;
 }
 const ENV_KEYS=[
