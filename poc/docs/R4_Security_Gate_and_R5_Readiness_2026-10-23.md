@@ -769,3 +769,18 @@ for this Engineer server; they cannot race or override an existing signed
 Engineer approval receipt. The test-only local Engineer server retains
 its no-rejection mode. No model call is performed by the reject route.
 R5 remains NO-GO pending exact-SHA CI, UI tests and deployment proof.
+
+### Authenticated rejection UI and offline regression coverage
+
+The private Engineer GUI now displays a separate Reject control ONLY
+when the backend's review API reports a trusted live-Planning revocation
+callback. The Engineer must explicitly type `REJECT` and
+the exact SHA-256 digest and then pass authentication, origin and CSRF
+checks. The callback cannot be supplied by the browser.
+
+Offline tests verify invalid digest, wrong confirmation, missing CSRF,
+successful one-shot rejection, failed Rust/Gateway retirement causing
+terminal unavailability, signed-approval replay rejection, and the
+legacy UI's inability to claim a revocation it cannot perform.
+
+No automated Engineer consent or Gemini call is present. R5 is NO-GO.

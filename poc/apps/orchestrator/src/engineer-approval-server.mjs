@@ -216,7 +216,8 @@ export async function createAuthenticatedEngineerServer(config){
         invalid("Engineer authentication required",401);
       }
       if(req.method==="GET"&&url.pathname==="/api/plan"){
-        if(decision!=="reviewing")invalid("Engineer decision already final",409);
+        if(decision==="rejected"||decision==="rejection_unconfirmed")
+          invalid("Engineer decision already final",409);
         await verifyCheckpoint();
         respond(res,200,{
           plan:initial,plan_digest:pinnedDigest,

@@ -24,6 +24,8 @@
   function display(data){
     plan=data.plan;digest=data.plan_digest;csrf=data.csrf_token;
     $("login").hidden=true;$("approval").hidden=false;
+    $("rejection-actions").hidden=data.reject_enabled!==true;
+    $("reject-confirmation").value="";
     $("identity").textContent=data.engineer_did;
     $("repository").textContent=
       plan.repository.owner+"/"+plan.repository.repository+" @ "+plan.base_revision;
@@ -78,6 +80,23 @@
       $("approval").hidden=true;plan=null;csrf=null;digest=null;
       status("Ricevuta Ed25519 firmata: "+response.decision_id+
         ". Nessuna root DC emessa.");
+    }catch(e){status(e.message,true);}
+    finally{lock=false;}
+  });
+  $("reject-button").addEventListener("click",async()=>{
+    if(lock||!plan)return;lock=true;
+    try{
+      const result=await api("/api/reject",{
+        method:"POST",headers:{"X-CSRF-Token":csrf},
+        body:JSON.stringify({
+          plan_digest:digest,confirmation:$("reject-confirmation").value
+        })
+      });
+      $("approval").hidden=true;plan=null;csrf=null;digest=null;
+      status(result.provisional_credential_revoked?
+        "Piano rifiutato. Credenziale preliminare revocata.":
+        "Revoca non confermata: riconciliazione manuale obbligatoria.",
+        !result.provisional_credential_revoked);
     }catch(e){status(e.message,true);}
     finally{lock=false;}
   });

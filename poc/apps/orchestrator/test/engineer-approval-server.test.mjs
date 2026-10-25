@@ -25,7 +25,7 @@ function plan(){
 const DID="did:thesis:software-engineer",PASSWORD="a-local-operator-test-password";
 const KEYID="engineer-test-key";
 
-async function environment(t,withCheckpoint=false){
+async function environment(t,withCheckpoint=false,rejectPlanning){
   const home=await mkdtemp(join(tmpdir(),"engineer-ui-"));
   t.after(()=>rm(home,{recursive:true,force:true}));
   const dir=join(home,"protected"),receipts=join(home,"receipts");
@@ -83,6 +83,7 @@ async function environment(t,withCheckpoint=false){
     checkpointFile=join(folder,p.session_id+".json");
     config.planningCheckpointStore=store;
   }
+  if(rejectPlanning!==undefined)config.rejectPlanning=rejectPlanning;
   const server=await createAuthenticatedEngineerServer(config);
   await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
   t.after(()=>new Promise(resolve=>server.close(resolve)));
@@ -227,4 +228,96 @@ test("Engineer UI startup rejects raw plan differing from signed backend plan",a
     createAuthenticatedEngineerServer(e.config),
     /checkpoint differs from pinned Engineer plan/
   );
+});
+
+test("authenticated Engineer rejection is CSRF-bound, terminal and revokes once",async t=>{
+  let revoked=0;
+  const e=await environment(t,true,async()=>{revoked++;});
+  const cookie=await e.login();
+  const plan=await (await fetch(e.root+"/api/plan",{
+    headers:{Cookie:cookie}
+  })).json();
+  assert.equal(plan.reject_enabled,true);
+  const payload={plan_digest:plan.plan_digest,
+    confirmation:"REJECT "+plan.plan_digest};
+  assert.equal((await e.post("/api/reject",payload,cookie)).status,403);
+  assert.equal((await e.post("/api/reject",{...payload,
+    confirmation:"APPROVE "+plan.plan_digest},cookie,plan.csrf_token)).status,403);
+  assert.equal((await e.post("/api/reject",{...payload,
+    plan_digest:"0".repeat(64)},cookie,plan.csrf_token)).status,403);
+  assert.equal(revoked,0);
+  const rejected=await e.post("/api/reject",payload,cookie,plan.csrf_token);
+  assert.equal(rejected.status,200);
+  assert.deepEqual(await rejected.json(),{
+    rejected:true,provisional_credential_revoked:true,
+    operational_credential_issued:false,plan_digest:plan.plan_digest
+  });
+  assert.equal(revoked,1);
+  assert.equal((await e.post("/api/approve",{
+    plan_digest:plan.plan_digest,approved_permission_ids:["p1"],
+    confirmation:"APPROVE "+plan.plan_digest
+  },cookie,plan.csrf_token)).status,401);
+  const fresh=await e.login();
+  assert.equal((await fetch(e.root+"/api/plan",{
+    headers:{Cookie:fresh}
+  })).status,409);
+  await assert.rejects(readFile(join(e.receipts,e.p.session_id+".json")),
+    error=>error.code==="ENOENT");
+});
+
+test("unconfirmed root retirement permanently blocks Engineer signature",async t=>{
+  let attempts=0;
+  const e=await environment(t,true,async()=>{
+    attempts++;
+    throw Error("Rust status revocation unavailable");
+  });
+  const cookie=await e.login();
+  const p=await (await fetch(e.root+"/api/plan",{
+    headers:{Cookie:cookie}
+  })).json();
+  const payload={plan_digest:p.plan_digest,
+    confirmation:"REJECT "+p.plan_digest};
+  assert.equal((await e.post("/api/reject",payload,cookie,p.csrf_token)).status,500);
+  assert.equal(attempts,1);
+  assert.equal((await e.post("/api/reject",payload,cookie,p.csrf_token)).status,409);
+  assert.equal((await e.post("/api/approve",{
+    plan_digest:p.plan_digest,approved_permission_ids:["p1"],
+    confirmation:"APPROVE "+p.plan_digest
+  },cookie,p.csrf_token)).status,409);
+  await assert.rejects(readFile(join(e.receipts,e.p.session_id+".json")),
+    error=>error.code==="ENOENT");
+});
+
+test("signed Engineer approval cannot be undone by retroactive rejection",async t=>{
+  let attempts=0;
+  const e=await environment(t,true,async()=>{attempts++;});
+  const cookie=await e.login();
+  const p=await (await fetch(e.root+"/api/plan",{
+    headers:{Cookie:cookie}
+  })).json();
+  const approved=await e.post("/api/approve",{
+    plan_digest:p.plan_digest,approved_permission_ids:["p1"],
+    confirmation:"APPROVE "+p.plan_digest
+  },cookie,p.csrf_token);
+  assert.equal(approved.status,201);
+  const fresh=await e.login();
+  const next=await (await fetch(e.root+"/api/plan",{
+    headers:{Cookie:fresh}
+  })).json();
+  assert.equal((await e.post("/api/reject",{
+    plan_digest:p.plan_digest,confirmation:"REJECT "+p.plan_digest
+  },fresh,next.csrf_token)).status,409);
+  assert.equal(attempts,0);
+});
+
+test("unbound historical Engineer UI cannot claim to revoke a root",async t=>{
+  const e=await environment(t,true);
+  const cookie=await e.login();
+  const p=await (await fetch(e.root+"/api/plan",{
+    headers:{Cookie:cookie}
+  })).json();
+  assert.equal(p.reject_enabled,false);
+  assert.equal((await e.post("/api/reject",{
+    plan_digest:p.plan_digest,confirmation:"REJECT "+p.plan_digest
+  },cookie,p.csrf_token)).status,404);
 });

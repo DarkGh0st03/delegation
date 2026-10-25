@@ -32,6 +32,12 @@
 <input id="confirmation" type="text" autocomplete="off" spellcheck="false">
 </label>
 <button id="approve-button" class="primary-button" type="button">Firma la decisione Ed25519</button>
+<div id="rejection-actions" hidden>
+<label>Per rifiutare e revocare la credenziale preliminare, digita REJECT seguito da spazio e SHA-256 completo
+<input id="reject-confirmation" type="text" autocomplete="off" spellcheck="false">
+</label>
+<button id="reject-button" class="secondary" type="button">Rifiuta piano e revoca credenziale preliminare</button>
+</div>
 <button id="logout-button" class="secondary" type="button">Esci senza approvare</button>
 </section>
 <p id="status" role="status" aria-live="polite"></p>
