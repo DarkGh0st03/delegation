@@ -32,6 +32,8 @@ import {startAdmittedGithubReviewedGeminiHandoff}
   from "../src/trusted-admitted-github-handoff.ts";
 import {createReviewedApprovedDagExecution}
   from "../src/trusted-reviewed-approved-dag.ts";
+import {createTrustedApprovedTaskAuthorityAllocator}
+  from "../src/trusted-approved-task-authority.ts";
 import {TrustedGithubAdmissionReceiptStore}
   from "../src/trusted-github-admission-store.ts";
 import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
@@ -1509,6 +1511,129 @@ test("real Engineer login and signed UI permission choice activates only the sta
     }
     await rm(uiDir,{recursive:true,force:true});
     await rm(checkpointDir,{recursive:true,force:true});
+    await f.close();
+  }
+});
+
+
+test("R5 child statuses derive from signed Task IDs, reserve durably and cannot replay",async()=>{
+  const f=await fixture();
+  const dir=await mkdtemp(join(tmpdir(),"reviewed-child-status-"));
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    const settings={
+      coordinator:f.coordinator,reviewGate:f.gate,
+      sessionId:SNAPSHOT.session_id,engineerDid:ENGINEER,
+      reservationDirectory:dir,
+      statusListCredential:"https://example.test/status/review",
+      excludedIndices:["101","102"],
+      indexByTask:{backend:"8042"},
+      validitySeconds:300
+    };
+    const allocator=await createTrustedApprovedTaskAuthorityAllocator(settings);
+    assert.deepEqual(allocator.approvedTaskIds,["backend"]);
+    await assert.rejects(allocator.authorityForTask("frontend","frontend"),
+      /Task and role do not match/);
+    await assert.rejects(allocator.authorityForTask("backend","test"),
+      /Task and role do not match/);
+    assert.deepEqual(await readdir(dir),[]);
+    const first=await allocator.authorityForTask("backend","backend");
+    assert.equal(first.parent_credential_id,"urn:operational");
+    assert.match(first.credential_id,/^urn:task-child:[a-f0-9]{32}$/u);
+    assert.equal(first.credential_status.statusListIndex,"8042");
+    assert.equal(first.credential_status.statusPurpose,"revocation");
+    assert.equal(first.validity_seconds,300);
+    assert.equal((await readdir(dir)).length,1);
+    await assert.rejects(allocator.authorityForTask("backend","backend"),
+      /already attempted/);
+    // A new allocator cannot steal this same list:index even if the
+    // Engineer Plan and the operational Coordinator are unchanged.
+    const later=await createTrustedApprovedTaskAuthorityAllocator(settings);
+    await assert.rejects(later.authorityForTask("backend","backend"),
+      /already reserved or persistence unconfirmed/);
+    assert.equal((await readdir(dir)).length,1);
+    await f.coordinator.closeExecution();
+    await assert.rejects(allocator.authorityForTask("backend","backend"),
+      /already attempted/);
+    assert.deepEqual(f.revoked,["urn:preliminary","urn:operational"]);
+  }finally{
+    await rm(dir,{recursive:true,force:true});
+    await f.close();
+  }
+});
+
+test("R5 rejects unapproved child indices, parent collision and stale root",async()=>{
+  const f=await fixture();
+  const dir=await mkdtemp(join(tmpdir(),"reviewed-child-negative-"));
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    const base={
+      coordinator:f.coordinator,reviewGate:f.gate,
+      sessionId:SNAPSHOT.session_id,engineerDid:ENGINEER,
+      reservationDirectory:dir,statusListCredential:
+        "https://example.test/status/review",
+      excludedIndices:["101","102"],
+      indexByTask:{backend:"8043"}
+    };
+    await assert.rejects(createTrustedApprovedTaskAuthorityAllocator(base),
+      /active reviewed Coordinator/);
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    for(const bad of [
+      {indexByTask:{backend:"102"}},
+      {indexByTask:{backend:"8043",attacker:"9000"}},
+      {indexByTask:{}},
+      {statusListCredential:"http://example.test/status/review"},
+      {excludedIndices:[]},
+      {validitySeconds:7200}
+    ]){
+      await assert.rejects(createTrustedApprovedTaskAuthorityAllocator({
+        ...base,...bad
+      }),/status|Status|bounded|Task|validity/i);
+    }
+    assert.deepEqual(await readdir(dir),[]);
+    await f.coordinator.closeExecution();
+    await assert.rejects(createTrustedApprovedTaskAuthorityAllocator(base),
+      /active reviewed Coordinator/);
+  }finally{
+    await rm(dir,{recursive:true,force:true});
+    await f.close();
+  }
+});
+
+test("R5 simultaneous Task-status claims cannot issue duplicate VC indices",async()=>{
+  const f=await fixture();
+  const dir=await mkdtemp(join(tmpdir(),"reviewed-child-race-"));
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const proposal=f.proposal();
+    f.gate.stageTrustedProposal(proposal);
+    await f.sign(proposal.plan,["permission-1","permission-3"]);
+    await f.coordinator.beginExecution(root("urn:operational","102"));
+    const config={
+      coordinator:f.coordinator,reviewGate:f.gate,
+      sessionId:SNAPSHOT.session_id,engineerDid:ENGINEER,
+      reservationDirectory:dir,statusListCredential:
+        "https://example.test/status/review",
+      excludedIndices:["101","102"],indexByTask:{backend:"8044"}
+    };
+    const left=await createTrustedApprovedTaskAuthorityAllocator(config);
+    const right=await createTrustedApprovedTaskAuthorityAllocator(config);
+    const answers=await Promise.allSettled([
+      left.authorityForTask("backend","backend"),
+      right.authorityForTask("backend","backend")
+    ]);
+    assert.deepEqual(answers.map(x=>x.status).sort(),["fulfilled","rejected"]);
+    assert.equal((await readdir(dir)).length,1);
+    await f.coordinator.closeExecution();
+  }finally{
+    await rm(dir,{recursive:true,force:true});
     await f.close();
   }
 });
