@@ -116,7 +116,7 @@ export function verifyGithubManualGeminiDispatch(input:{
  * sufficient on its own to authenticate consent.
  */
 export async function verifyGithubManualRunViaApi(input:{
-  dispatch:ReviewedGithubDispatchRequest;
+  dispatch:Pick<ReviewedGithubDispatchRequest,"run_id"|"source_sha">;
   pinned:PinnedGithubDispatch;
   githubApiToken:string|undefined;
   fetchFn?:typeof fetch;
