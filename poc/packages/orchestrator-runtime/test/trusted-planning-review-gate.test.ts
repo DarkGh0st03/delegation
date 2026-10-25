@@ -31,6 +31,8 @@ import {startPersistedReviewedGeminiHandoff}
   from "../src/trusted-manual-gemini-handoff.ts";
 import {startPersistedReviewedScriptedHandoff}
   from "../src/trusted-scripted-offline-handoff.ts";
+import type {DeterministicTaskHandler}
+  from "../../agent-runtime/src/executor.ts";
 import {startAdmittedGithubReviewedGeminiHandoff}
   from "../src/trusted-admitted-github-handoff.ts";
 import {createReviewedApprovedDagExecution}
@@ -1682,7 +1684,8 @@ async function signedScriptedFixture(){
   };
 }
 
-const noModelHandlers={
+const noModelHandlers:Readonly<Record<"backend"|"frontend"|"test",
+  DeterministicTaskHandler>>={
   backend:async(context:any)=>{
     assert.equal(context.role,"backend");
     return {role:"backend",test_outcome:"not_run",files_modified:[],
@@ -1800,8 +1803,8 @@ test("R5 scripted_offline role-bind error revokes operational root before return
       coordinator:f.coordinator,reviewGate:f.gate,
       checkpointStore:f.store,
       operationalRoot:root("urn:operational","102"),
-      ports:{backend:port,frontend:port===65535?1025:port+1,
-        test:port===65535?1026:port+2},
+      ports:{backend:port,frontend:port>63000?20481:port+1,
+        test:port>63000?20482:port+2},
       handlers:noModelHandlers
     }),/EADDRINUSE|listen|address already in use/iu);
     assert.equal(f.coordinator.phase,"closed");
