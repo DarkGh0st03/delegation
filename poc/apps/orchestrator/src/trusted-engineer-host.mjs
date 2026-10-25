@@ -16,6 +16,8 @@ import {createTrustedReviewedHandoffLifecycle}
   from "./trusted-reviewed-handoff-lifecycle.mjs";
 import {createTrustedApprovedBranchGateway}
   from "../../../packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts";
+import {createTrustedApprovedTaskAuthorityAllocator}
+  from "../../../packages/orchestrator-runtime/src/trusted-approved-task-authority.ts";
 import {resolve} from "node:path";
 import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
@@ -326,21 +328,28 @@ export async function startTrustedEngineerLocalHost(config){
      * ports and scoped task allocation stay outside HTTP, ADK and MCP.
      */
     runReviewedApprovedDagWithGateway({
-      execution,privateGatewayTransport,...input
+      execution,privateGatewayTransport,childStatusProvisioning,...input
     }){
       if(closed)deny("host closed");
       if(!active?.reviewGate||
          active.coordinator.phase!=="planning")
         deny("original live signed Planning session required");
       if(!execution||typeof execution!=="object"||
-         typeof execution.authorityForTask!=="function"||
+         // Neither caller nor model may choose a new branch operation or
+         // assign a child index after the signed execution has started.
+         Object.hasOwn(execution,"authorityForTask")||
+         Object.hasOwn(execution,"invokeOrchestratorTask")||
          typeof execution.a2a?.sendProtectedTask!=="function"||
          !execution.adapter?.adapterBaseUrl||
          !execution.adapter?.bearerToken||
          !privateGatewayTransport?.gatewayBaseUrl||
          !privateGatewayTransport?.adapterBaseUrl||
-         !privateGatewayTransport?.adapterToken)
-        deny("private reviewed A2A/Adapter and Gateway transport required");
+         !privateGatewayTransport?.adapterToken||
+         !childStatusProvisioning?.reservationDirectory||
+         !childStatusProvisioning?.statusListCredential||
+         !childStatusProvisioning?.indexByTask||
+         !Array.isArray(childStatusProvisioning?.excludedIndices))
+        deny("private reviewed A2A/Adapter, Gateway and durable child status provisioning required");
       // The entire approved DAG is localhost-bound. Do not let an
       // operator-selected URL turn the private Adapter bearer into an
       // accidental outbound credential to an arbitrary host.
@@ -366,9 +375,14 @@ export async function startTrustedEngineerLocalHost(config){
           engineerDid:approval.engineerDid,
           transport:privateGatewayTransport
         });
+        const children=await createTrustedApprovedTaskAuthorityAllocator({
+          coordinator:active.coordinator,reviewGate:active.reviewGate,
+          sessionId:approval.expectedSessionId,
+          engineerDid:approval.engineerDid,...childStatusProvisioning
+        });
         return {
           a2a:execution.a2a,adapter:execution.adapter,
-          authorityForTask:execution.authorityForTask,
+          authorityForTask:children.authorityForTask,
           invokeOrchestratorTask:branch.invokeOrchestratorTask
         };
       });
