@@ -1439,3 +1439,95 @@ test("cold restart retires ambiguous operational root BEFORE preliminary root or
   await host.close();
   assert.equal(events.length,6);
 });
+
+test("same Engineer process isolates paid and offline OIDC HTTPS listeners and never promotes offline identity into authority",async t=>{
+  const f=await fixture(t);
+  const base=await mkdtemp(join(tmpdir(),"scripted-oidc-host-"));
+  t.after(()=>rm(base,{recursive:true,force:true}));
+  const scriptedReplays=join(base,"replays");
+  const scriptedReceipts=join(base,"admissions");
+  await mkdir(scriptedReplays,{mode:0o700});
+  await mkdir(scriptedReceipts,{mode:0o700});
+  const {tls,serverTls}=await disposableMtls(join(base,"mtls"));
+  const flow=".github/workflows/trusted-scripted-offline-session-hold.yml";
+  const scriptedAudience="urn:thesis:r5:scripted-private-mtls";
+  const runFetch=async()=>new Response(JSON.stringify({
+    id:Number(runId),event:"workflow_dispatch",run_attempt:1,
+    status:"in_progress",head_sha:sha,
+    head_branch:ref.slice("refs/heads/".length),
+    path:flow,head_repository:{full_name:repository},
+    created_at:new Date().toISOString()
+  }),{status:200});
+  const host=await startTrustedEngineerLocalHost({
+    ...f.config,
+    scriptedOidc:{
+      pinned:{...f.config.oidc.pinned,workflowPath:flow},
+      trust:{...f.config.oidc.trust,
+        expectedAudience:scriptedAudience},
+      githubApiToken:"offline-gh-read-token",
+      replayDirectory:scriptedReplays,
+      admissionDirectory:scriptedReceipts,
+      hmacSecret:randomBytes(32),
+      githubApiFetchFn:runFetch,
+      oidcJwksFetchFn:issuer,
+      tls:serverTls
+    },
+    scriptedOidcPort:0
+  });
+  t.after(()=>host.close());
+  assert.match(host.oidcAdmissionEndpoint,
+    /^http:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/oidc-admission$/u);
+  assert.match(host.scriptedOidcAdmissionEndpoint,
+    /^https:\/\/127\.0\.0\.1:\d+\/v1\/trusted\/github\/scripted-offline-oidc-admission$/u);
+  const {submitTrustedScriptedGithubOidcFromRunner,
+    readTrustedScriptedPrivateRunState}=await import(
+    "../../../packages/orchestrator-runtime/src/trusted-scripted-github-oidc-submit.ts");
+  const offlineEnv={...env,
+    GITHUB_WORKFLOW_REF:repository+"/"+flow+"@"+ref};
+  const offlineEvent={repository:{full_name:repository},ref,
+    inputs:{
+      execution_profile:"scripted_offline",
+      authorization:"I AUTHORIZE A SCRIPTED OFFLINE TEST ONLY"
+    }};
+  const proof=()=>jwt({
+    aud:scriptedAudience,
+    workflow_ref:repository+"/"+flow+"@"+ref
+  });
+  await assert.rejects(submitTrustedScriptedGithubOidcFromRunner({
+    tokenRequestUrl:"https://pipelines.actions.githubusercontent.com/oidc",
+    tokenRequestBearer:"offline-runner-token",
+    audience:scriptedAudience,
+    intakeUrl:host.scriptedOidcAdmissionEndpoint,tls,
+    env:offlineEnv,event,
+    oidcFetchFn:async()=>new Response(JSON.stringify({value:proof()}),
+      {status:200})
+  }),/admission denied/);
+  assert.deepEqual(await readdir(scriptedReceipts),[]);
+  const authenticated=await submitTrustedScriptedGithubOidcFromRunner({
+    tokenRequestUrl:"https://pipelines.actions.githubusercontent.com/oidc",
+    tokenRequestBearer:"offline-runner-token",
+    audience:scriptedAudience,
+    intakeUrl:host.scriptedOidcAdmissionEndpoint,tls,
+    env:offlineEnv,event:offlineEvent,
+    oidcFetchFn:async()=>new Response(JSON.stringify({value:proof()}),
+      {status:200})
+  });
+  assert.deepEqual(authenticated,{
+    status:"scripted_authenticated_only_not_engineer_approved",
+    run_id:runId,source_sha:sha
+  });
+  assert.equal(await readTrustedScriptedPrivateRunState({
+    intakeUrl:host.scriptedOidcAdmissionEndpoint,tls,
+    runId,sourceSha:sha
+  }),"terminated");
+  const receipt=await host.consumeAuthenticatedScriptedRun(runId);
+  assert.equal(receipt.execution_profile,"scripted_offline");
+  assert.equal(receipt.model_inference_allowed,false);
+  assert.equal(receipt.engineer_approved,false);
+  await assert.rejects(host.consumeAuthenticatedScriptedRun(runId),
+    /already consumed/);
+  await assert.rejects(host.consumeAuthenticatedRun(runId),/ENOENT|admission/);
+  assert.deepEqual(await readdir(f.admissions),[]);
+  assert.equal((await readdir(scriptedReceipts)).length,2);
+  await host.close();
+});
