@@ -204,13 +204,19 @@ export function unexpectedHistoricalGatewayCallers(
 /**
  * R6 SECURITY-SENSITIVE INVENTORY TARGET (not obsolete/deletion candidate).
  * The internal Gateway transport can request arbitrary tools and holds a
- * private Adapter bearer. Only two deliberately reviewed clients may import
- * it: the read-only Planning wrapper and the historical write wrapper.
+ * private Adapter bearer. Imports are forbidden except for deliberately
+ * reviewed, small-scope trusted clients: the read-only Planning wrapper,
+ * the historical write wrapper, and the NEW signed Engineer-approved branch
+ * executor. The third caller may invoke ONLY the exact signed create_branch
+ * Task, using the currently issued operational root; it may not expose an
+ * arbitrary tool, branch, Adapter bearer or Gateway transport to a model.
+ * Do not extend this allowlist for ADK, MCP, A2A or model-driven modules.
  * This static safety net does NOT replace Gateway/Core Rust/OPA enforcement.
  */
 export const R6_ALLOWED_PRIVATE_GATEWAY_TRANSPORT_CALLERS=Object.freeze([
   "poc/packages/orchestrator-runtime/src/orchestrator-gateway-client.ts",
-  "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts"
+  "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts",
+  "poc/packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts"
 ]);
 export function unexpectedPrivateGatewayTransportCallers(
   inventory,allowed=R6_ALLOWED_PRIVATE_GATEWAY_TRANSPORT_CALLERS
