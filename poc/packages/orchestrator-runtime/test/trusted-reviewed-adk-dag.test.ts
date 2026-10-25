@@ -617,10 +617,15 @@ async function exercise(
       assert.deepEqual(servers.map(s=>s.executor.executionCount),[1,1,1]);
       assert.equal(done.specialized_results.length,3);
       for(const server of servers){
-        for(const context of server.executor.taskContexts.values()){
-          assert.match(context.trusted_gateway_task_id,
-            /^dispatch_[A-Za-z0-9_-]{22}$/u);
-        }
+        const taskId=done.specialized_results.find(r=>r.role===server.role)?.task_id;
+        assert.ok(taskId);
+        const context=server.executor.taskContexts.get(taskId);
+        assert.ok(context);
+        assert.match(context.trusted_gateway_task_id,
+          /^dispatch_[A-Za-z0-9_-]{22}$/u);
+        assert.equal(context.role,server.role);
+        // The A2A client must not leak DC evidence into the Task artifact.
+        assert.notEqual(context.task_id,context.trusted_gateway_task_id);
       }
     }
     assert.ok(events.indexOf("provider:create_branch:"+(
