@@ -110,7 +110,9 @@ class MultiReadScriptedPlanner extends BaseLlm {
     AsyncGenerator<LlmResponse,void>{
     this.requests.push(request);
     const calls=[
-      {name:"read_repository",args:{}},
+      // The model must supply the Gemini-compatible repository selector.
+      // The trusted read port still invokes read_repository with no arguments.
+      {name:"read_repository",args:{repository:"invoices"}},
       {name:"list_directory",args:{branch:"main",path:"src"}},
       {name:"list_directory",args:{branch:"main",path:"src/billing"}},
       {name:"read_file",args:{branch:"main",path:FILE}},
