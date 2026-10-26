@@ -218,3 +218,25 @@ test("owner cannot assemble paid Gemini Planning without explicit opt-in and exa
     );
   }
 });
+
+test("consented Gemini owner assembly still fails closed on unpinned Engineer or Gateway authority",async t=>{
+  const f=await fixture(t);
+  const consent={
+    geminiApiKey:"offline-not-a-provider-key",
+    authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+    modelName:"gemini-3.8-flash"
+  };
+  for(const patch of [
+    {snapshot:{...SNAPSHOT,base_revision:"b".repeat(40)}},
+    {snapshot:{...SNAPSHOT,repository:{...REPO,repository:"other"}}},
+    {backendPrivateKeyPem:f.engineerPrivate},
+    {gatewayBaseUrl:"https://example.test"},
+    {agents:{...AGENTS,backend:{did:"bad",card_ref:"trusted:backend"}}}
+  ]){
+    await assert.rejects(
+      assembleProtectedOwnerGeminiPlanning({...f.input,...consent,...patch}),
+      /R5 owner Planning assembly denied/
+    );
+  }
+  assert.equal(f.revision.durableRetirementConfigured(),true);
+});
