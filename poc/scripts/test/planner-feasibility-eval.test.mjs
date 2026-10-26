@@ -92,3 +92,14 @@ test("denied reads or an inconsistent final digest prevent a positive result",()
   y.observations[y.observations.length-1].digest="e".repeat(64);
   assert.equal(evaluate(y).technical_preflight_pass,false);
 });
+
+test("actual trusted-owner review packet can be scored without treating it as approval",()=>{
+  const x=example();
+  x.proposal.status="awaiting_engineer_signature";
+  x.proposal.plan_digest=x.proposal.digest;
+  delete x.proposal.digest;
+  const report=evaluate(x);
+  assert.equal(report.technical_preflight_pass,true);
+  assert.equal(report.evaluated_artifact,"engineer_review_packet");
+  assert.equal(report.limitations.signed_engineer_approval,"not_tested");
+});
