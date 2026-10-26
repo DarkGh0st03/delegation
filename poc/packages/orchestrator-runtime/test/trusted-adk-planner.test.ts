@@ -374,3 +374,42 @@ test("R5 Planner concurrent calls cannot generate two independent drafts",async(
   assert.equal((await first).status,"unapproved_proposal");
   assert.equal(runs,1);
 });
+
+test("trusted Planner observations expose bounded metadata but not source or prompts",async()=>{
+  const events:Array<Record<string,unknown>>=[];
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  const result=await new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,
+    onObservation(event){events.push({...event});},
+    readPort:{async invoke(tool:string){
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"PRIVATE_TEST_SOURCE_PAYLOAD"};
+    }}
+  }).propose();
+  assert.equal(result.status,"unapproved_proposal");
+  assert.deepEqual(events.filter(e=>e.kind==="model_turn"&&e.status==="started")
+    .map(e=>e.turn),[1,2]);
+  assert.deepEqual(events.filter(e=>e.kind==="read"&&e.status==="verified")
+    .map(e=>({tool:e.tool,path:e.path})),[{tool:"read_file",path:FILE}]);
+  const proposalEvents=events.filter(e=>e.kind==="proposal");
+  assert.equal(proposalEvents.length,1);
+  assert.equal(proposalEvents[0].digest,result.digest);
+  assert.equal(proposalEvents[0].verified_source_reads,1);
+  assert.ok(!JSON.stringify(events).includes("PRIVATE_TEST_SOURCE_PAYLOAD"));
+  assert.ok(!JSON.stringify(events).includes(cfg.requirement));
+});
+
+test("denied Planning reads are observable but never passed to the provider",async()=>{
+  const events:Array<Record<string,unknown>>=[];
+  let providerCalls=0;
+  const model=new Scripted({branch:"main",path:"private/secret.env"},draft());
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,onObservation(event){events.push({...event});},
+    readPort:{async invoke(){providerCalls++;return {};}}
+  }).propose(),/no verified read-only grounded proposal/);
+  assert.equal(providerCalls,0);
+  assert.ok(events.some(e=>e.kind==="read"&&e.status==="denied"&&
+    e.reason==="outside_planning_scope"));
+  assert.ok(!JSON.stringify(events).includes("private/secret.env"));
+  assert.ok(!events.some(e=>e.kind==="proposal"));
+});
