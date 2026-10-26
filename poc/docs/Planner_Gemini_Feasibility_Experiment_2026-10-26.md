@@ -352,3 +352,52 @@ All CI for this assembly **must remain offline**; its tests deliberately
 instantiate a Google ADK Gemini model with a synthetic nonworking key
 without calling `generateContentAsync` or any provider. A subsequent
 paid inference experiment requires a separate explicit user authorization.
+
+
+## R5D — Protected standalone Gemini owner launcher (not executed)
+
+The protected launcher is
+`poc/apps/orchestrator/src/run-trusted-gemini-owner.mjs`.
+It can be launched **only by the operator on the separately owned
+trusted host**, never from GitHub-hosted Actions, the public OIDC
+callback, A2A, an MCP tool or a model response.
+
+The explicit owner JSON (mode 0600 in a private directory) uses
+`profile: "gemini_planning"`, the Gitea-pinned inventory and base SHA,
+a distinct 45-minute preliminary credential identifier and status-list
+entry, a requirement, plan ID, exactly three trusted agent identities,
+local Gateway address, the fixed `gemini-3.8-flash` model identifier,
+and *paths only* to separately protected Backend Ed25519 and Gemini
+API key files. Both secret files must be private mode 0600, not
+symlinks and not shared with the input file. No API key or private key
+is copied into JSON.
+
+At invocation the operator must separately provide:
+`DELEGATION_ENGINEER_SERVICE_CONFIG`,
+`DELEGATION_GEMINI_EXPECTED_SOURCE_SHA`,
+`DELEGATION_GEMINI_OWNER_INPUT_FILE`, and
+`DELEGATION_GEMINI_CHARGE_CONFIRMATION` with the exact text
+`I AUTHORIZE GEMINI API CHARGES`.
+The protected source SHA must match BOTH the operator's clean local
+Git HEAD and the exact GitHub Actions/OIDC source SHA pinned in the
+protected Engineer Host configuration. It is **not** the same as the
+separate Gitea target repository revision.
+
+The launcher first prepares a consented Gemini Planning model, the
+original Coordinator and durable Gateway/Engineer IPC without inference.
+Only its subsequent explicit owner `start` call is potentially
+billable: it issues the original read-only preliminary delegation,
+performs bounded ADK tool reads through Gateway/Adapter/Rust/OPA/Gitea,
+persists the backend-signed checkpoint and starts the authenticated
+Engineer review UI. Rejected Planning and shutdown require confirmed
+native root retirement. It NEVER automatically approves the plan,
+requests GitHub OIDC, starts operational delegated agents, merges a PR
+or claims an end-to-end run.
+
+This implementation has **not** been launched with a real Gemini key
+or a live privately configured Engineer Host. CI exercises only
+offline negative cases and non-billable model construction. The next
+authorized infrastructure experiment must explicitly verify the live
+Gateway IPC, real Rust credential issuance/revocation, independently
+signed Engineer review, authorized DAG and three-role Gitea/Docker
+effects before claiming complete feasibility.
