@@ -272,6 +272,21 @@ const SUITES=Object.freeze([
     title:"R5 SIGTERM fences original run and waits for in-flight DAG retirement and evidence writer"
   },
   {
+    id:"r5_completed_github_private_job_crosscheck",
+    path:"poc/scripts/test/r5-post-run-github-crosscheck.test.mjs",
+    title:"R5 independent GitHub completed private-run cross-check has no authority, billing or native revocation attestation"
+  },
+  {
+    id:"r5_crosscheck_denies_changed_owner_receipt",
+    path:"poc/scripts/test/r5-post-run-github-crosscheck.test.mjs",
+    title:"R5 rejects forged, modified, partial or mismatched local owner witness before network calls"
+  },
+  {
+    id:"r5_crosscheck_denies_skipped_private_hold",
+    path:"poc/scripts/test/r5-post-run-github-crosscheck.test.mjs",
+    title:"R5 rejects non-private, failed or ambiguous GitHub job and any skipped hold step"
+  },
+  {
     id:"r5_completion_receipt_requires_unforgeable_witness",
     path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
     title:"R5 fabricated owner completion objects and clones cannot be persisted without native verification"

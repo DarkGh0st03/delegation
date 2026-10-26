@@ -810,3 +810,53 @@ phase to investigate. **Do not** relax any signed Task, Gateway
 corroboration, exact-SHA, root revocation, or researcher acceptance
 check to mask this failure. All suites continue to use scripted
 models only: no Gemini billing and no actual distributed R5 claim.
+
+## R5 — Independent GitHub-completed-run cross-check (26 October 2026)
+
+A new *read-only*, **post-run** operator command now correlates the
+owner's exclusive local completion receipt with separately fetched
+GitHub Actions run and job metadata. It is intentionally a distinct
+step from the in-progress `verifyGithubManualRunViaApi` check used
+during active authority. A completed job must NOT pass that liveness
+check, and an in-progress job must NOT pass this new post-run audit.
+
+Run this **after** the operator-observed private job has finished and
+the original owner wrote its durable local receipt:
+
+```bash
+export DELEGATION_R5_EXPECTED_SOURCE_SHA=<reviewed-40-character-feature-commit>
+export DELEGATION_R5_EXPECTED_RUN_ID=<independently-recorded-manual-run-id>
+export DELEGATION_R5_EVIDENCE_DIRECTORY=/private/engineer/evidence
+export DELEGATION_R5_OPERATOR_GITHUB_TOKEN_FILE=/private/engineer/github-admin-read.token
+node --experimental-strip-types poc/scripts/r5-post-run-github-crosscheck.mjs
+```
+
+The operator controls the reviewed source SHA and manual run ID
+separately from the local receipt. The audit loads only the matching
+`r5-scripted-run-<id>.json` file with owner-only permissions and
+`O_NOFOLLOW`, then sends only two fixed **GET** requests: the exact
+GitHub run and the complete one-page job list. It demands the manually
+dispatched first attempt, exact repository/source SHA/branch/workflow,
+`completed/success` for the run and its one job, a populated runner ID
+and name with all four required private labels, and a successful,
+ordered result for each of the four reviewed workflow steps (immutable
+installation check, mTLS probe, OIDC hold, and final no-model report).
+Unexpected or paginated job results are denied. The protected operator
+token is never copied into the result or printed.
+
+A positive outcome is labelled
+`github_completed_private_job_correlated_owner_claim_only`.
+This combines an independently fetched GitHub completion status with
+the *contents* of an owner-local claim; it **does not** cryptographically
+prove that the local receipt was issued by the original Coordinator,
+that the physical host running the job was inspected, that native
+Rust/EVM and child DC status were independently revoked, or that zero
+billable API traffic occurred. Its result permanently sets
+`external_r5_go:false`; it is **not an R5 acceptance certificate**.
+The operator must retain independent Gateway/Adapter/Rust status
+evidence, Gitea/Docker evidence, original Engineer Ed25519 approval,
+and a real private runner deployment review before a dissertation claim.
+
+The separate tests use fabricated offline GitHub GET responses; they
+never dispatch GitHub Actions, request OIDC, approve a plan, issue any
+root, access Gemini or claim an actual distributed R5 execution.
