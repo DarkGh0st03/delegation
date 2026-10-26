@@ -232,6 +232,16 @@ const SUITES=Object.freeze([
     title:"R5 refuses unexpected installed SHA and dirty worktree"
   },
   {
+    id:"r5_one_file_default_workflow_registration_pr_review",
+    path:"poc/scripts/test/r5-scripted-registration-pr-audit.test.mjs",
+    title:"R5 one-file draft registration PR audit verifies exact blob/base/source without merge, token or dispatch"
+  },
+  {
+    id:"r5_registration_review_denies_unreviewed_changes",
+    path:"poc/scripts/test/r5-scripted-registration-pr-audit.test.mjs",
+    title:"R5 registration review denies any unexpected diff, base/head change, merge, or default-branch file"
+  },
+  {
     id:"r5_private_operator_reviewed_environment_and_runner",
     path:"poc/scripts/test/r5-private-github-readiness.test.mjs",
     title:"R5 confirms exactly one idle private runner, independent Engineer reviewer and same-SHA registered workflow without dispatch"

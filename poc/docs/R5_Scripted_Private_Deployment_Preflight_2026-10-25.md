@@ -565,3 +565,35 @@ mTLS, human Ed25519 approval, operational root, A2A DAG or revocation.
 PR #37 remains a one-file draft review against `main`: **no merge or
 dispatch** was performed. Merging or running it requires independent
 owner authorization.
+
+## R5 — Exact one-file registration PR #37 owner review
+
+The registration proposal stays separate from the R5 functional branch.
+A new **public, read-only** audit command checks the draft PR #37 before
+any owner authorization to register the workflow:
+
+```bash
+export DELEGATION_R5_EXPECTED_SOURCE_SHA=<independently-pinned-current-feature-HEAD>
+export DELEGATION_R5_EXPECTED_MAIN_SHA=<independently-pinned-current-main-HEAD>
+node poc/scripts/r5-scripted-registration-pr-audit.mjs
+```
+
+The audit verifies repository/default branch, expected source and main
+SHAs, exact same-repository PR source and target, the independently
+reviewed registration commit, draft/open/unmerged state, **exactly one**
+added workflow file with 50 lines, and Git blob
+`ff11137db63ade2806387537f5fd87c37e1a2285` on both the PR and
+development branch. It also insists the workflow is still absent on
+`main`. It performs only seven public GitHub API GET requests.
+
+This audit will fail after an authorized merge, as intended: it verifies
+the **pre-merge proposal**, not the post-merge workflow registration.
+After approval, use the distinct owner-only environment/runner
+and registration preflights. The PR audit never makes a merge request,
+changes GitHub permissions, signs an Engineer plan, starts a workflow,
+requests OIDC, or claims an R5 pass.
+
+All reviewed pins must be reconfirmed if the default branch or source
+branch moves. A green offline mocked test cannot itself verify that
+the real PR is ready, nor can public repository access attest protected
+environment settings, runner integrity, or administrator bypass rules.
