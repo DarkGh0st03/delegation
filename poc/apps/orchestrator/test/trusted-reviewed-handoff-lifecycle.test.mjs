@@ -342,3 +342,43 @@ test("failed native retirement after DAG and listener close terminates runner wi
     readState:async()=>state,async sleep(){}
   }),/terminated without verified closure/);
 });
+
+test("Engineer SIGTERM during pending native closure proof cannot promote a late DAG success",async()=>{
+  let resolveEntered,resolveProof;
+  const entered=new Promise(r=>{resolveEntered=r;});
+  const proof=new Promise(r=>{resolveProof=r;});
+  let closeCount=0,proofChecks=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){closeCount++;},
+    approvedDag:{async executeApprovedDag(){
+      return {completed_task_ids:["backend","frontend","test"]};
+    }}
+  }),{
+    async verifyTerminalClosure(){
+      proofChecks++;
+      resolveEntered();
+      await proof;
+    }
+  });
+  const completing=lifecycle.runApprovedDag({},executor());
+  await entered;
+  assert.equal(lifecycle.status,"closed");
+  assert.equal(lifecycle.verifiedOutcome,"pending");
+  // The operational root may already be physically retired, but Owner
+  // shutdown must take priority over a delayed positive terminal proof.
+  await lifecycle.close();
+  assert.equal(closeCount,1);
+  resolveProof();
+  await assert.rejects(completing,
+    /owner shutdown raced verified terminal closure/);
+  assert.equal(proofChecks,1);
+  assert.equal(lifecycle.verifiedOutcome,"failed");
+  assert.equal(trustedEngineerRunStatus({
+    hostClosed:false,selectedRunId:"40123456789",
+    queriedRunId:"40123456789",coordinatorPhase:"closed",
+    handoffStatus:lifecycle.status,
+    verifiedOutcome:lifecycle.verifiedOutcome
+  }),"terminated");
+  await assert.rejects(lifecycle.runApprovedDag({},executor()),
+    /already attempted/);
+});
