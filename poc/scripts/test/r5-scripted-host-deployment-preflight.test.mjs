@@ -140,7 +140,7 @@ test("R5 rejects expired, wrong-IP, untrusted and mismatched server TLS material
 test("R5 standalone host preflight never starts listeners without operator config",()=>{
   const script=new URL("../r5-scripted-host-deployment-preflight.mjs",import.meta.url);
   const env={PATH:process.env.PATH};
-  const child=spawnSync(process.execPath,[script.pathname],{
+  const child=spawnSync(process.execPath,["--experimental-strip-types",script.pathname],{
     env,encoding:"utf8",timeout:12000
   });
   assert.equal(child.status,1);
