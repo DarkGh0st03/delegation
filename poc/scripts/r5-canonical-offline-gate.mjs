@@ -117,6 +117,11 @@ const SUITES=Object.freeze([
     title:"R5 final GitHub revalidation accepts a still-active job before root retirement"
   },
   {
+    id:"scripted_immutable_local_source_guard",
+    path:"poc/scripts/test/r5-scripted-install-integrity.test.mjs",
+    title:"R5 refuses unexpected installed SHA and dirty worktree"
+  },
+  {
     id:"scripted_default_workflow_registration_guard",
     path:"poc/scripts/test/r5-scripted-dispatch-registration.test.mjs",
     title:"R5 refuses missing default-branch manual workflow, without dispatching"

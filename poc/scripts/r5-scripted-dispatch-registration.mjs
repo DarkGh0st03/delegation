@@ -87,6 +87,14 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
       "../apps/orchestrator/src/trusted-private-scripted-runner-oidc.mjs");
     const pins=await loadProtectedScriptedRunnerOidcConfig(
       process.env.DELEGATION_SCRIPTED_RUNNER_OIDC_CONFIG);
+    // Remote GitHub SHA cannot establish which bytes the runner executes.
+    // Verify protected, root-owned local source before any GitHub REST call,
+    // OIDC token request or authenticated admission.
+    const {verifyProtectedScriptedInstallation}=await import(
+      "./r5-scripted-install-integrity.mjs");
+    await verifyProtectedScriptedInstallation({
+      expectedSourceSha:pins.expectedSourceSha
+    });
     const result=await verifyR5ScriptedDispatchRegistration({pins});
     process.stdout.write("R5 scripted workflow registration verified for "+
       result.source_sha+"; deployment and R5 GO NOT established\n");
