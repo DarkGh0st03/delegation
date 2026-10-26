@@ -129,3 +129,28 @@ test("new test files in an existing directory are valid diagnostic scope",()=>{
   });
   assert.equal(evaluate(duplicate).technical_preflight_pass,false);
 });
+
+test("provider-reported tokens are measured separately from billing, missing means unknown",()=>{
+  const x=example();
+  const baseline=evaluate(x).evidence.provider_token_usage;
+  assert.equal(baseline.source,"not_available");
+  assert.equal(baseline.total_tokens,null);
+  assert.equal(baseline.actual_billed_cost,"not_measured");
+  x.observations.push(
+    {kind:"model_usage",turn:1,source:"provider_reported",
+      input_tokens:10,output_tokens:5,total_tokens:15,thought_tokens:0},
+    {kind:"model_usage",turn:2,source:"provider_reported",
+      input_tokens:20,output_tokens:8,total_tokens:28,thought_tokens:2},
+    {kind:"model_usage",turn:3,source:"provider_reported",
+      input_tokens:30,output_tokens:9,total_tokens:39,thought_tokens:0}
+  );
+  const used=evaluate(x);
+  assert.equal(used.technical_preflight_pass,true);
+  assert.equal(used.evidence.provider_token_usage.input_tokens,60);
+  assert.equal(used.evidence.provider_token_usage.output_tokens,22);
+  assert.equal(used.evidence.provider_token_usage.total_tokens,82);
+  assert.equal(used.evidence.provider_token_usage.thought_tokens,2);
+  assert.equal(used.evidence.provider_token_usage.actual_billed_cost,"not_measured");
+  x.observations.pop();
+  assert.equal(evaluate(x).evidence.provider_token_usage.total_tokens,null);
+});
