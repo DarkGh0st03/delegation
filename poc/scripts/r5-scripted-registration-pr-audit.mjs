@@ -92,7 +92,7 @@ export async function verifyR5OneFileRegistrationPr({
       read("/branches/"+MAIN),
       read("/branches/"+encodeURIComponent(DEV)),
       read("/pulls/37"),
-      read("/pulls/37/files?per_page=100"),
+      read("/pulls/37/files?per_page=100",{array:true}),
       read("/contents/"+WORKFLOW+"?ref="+encodeURIComponent(DEV)),
       read("/contents/"+WORKFLOW+"?ref="+MAIN,{allowMissing:true})
     ]);
