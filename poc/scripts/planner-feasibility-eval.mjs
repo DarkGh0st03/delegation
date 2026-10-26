@@ -93,6 +93,24 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
     e.status==="unapproved");
   const denied=events.filter(e=>e.kind==="read"&&e.status==="denied");
   const claimed=proposal.verified_source_reads;
+  const usage=events.filter(e=>e.kind==="model_usage"&&
+    e.source==="provider_reported"&&Number.isSafeInteger(e.turn)&&
+    e.turn>=1&&e.turn<=12);
+  // Usage is OPTIONAL provider telemetry. Missing counts are unknown, not 0.
+  // A total over calls is reported only when ALL observed calls include it.
+  const sumIfComplete=field=>
+    usage.length===modelTurns.length&&
+      usage.every(e=>Number.isSafeInteger(e[field])&&e[field]>=0)?
+      usage.reduce((total,e)=>total+e[field],0):null;
+  const usageEvidence={
+    source:usage.length?"provider_reported":"not_available",
+    call_reports:usage.length,
+    input_tokens:sumIfComplete("input_tokens"),
+    output_tokens:sumIfComplete("output_tokens"),
+    total_tokens:sumIfComplete("total_tokens"),
+    thought_tokens:sumIfComplete("thought_tokens"),
+    actual_billed_cost:"not_measured"
+  };
   const scopeValid=grants.every(p=>safeRecord(p)&&ALLOWED.has(p.operation)&&
     ROLES.has(p.agent_id)&&typeof p.resource==="string"&&
     (p.operation==="create_file"?
@@ -152,7 +170,8 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
       verified_file_reads:reads.length,
       unique_files_read:new Set(reads.map(e=>e.path)).size,
       task_count:tasks.length,permission_count:grants.length,
-      missing_reference_anchors:missing},
+      missing_reference_anchors:missing,
+      provider_token_usage:usageEvidence},
     limitations:{
       model_is_real_gemini:"not_established_by_this_artifact",
       native_authorized_gitea_reads:"not_established_by_this_artifact",
