@@ -235,10 +235,22 @@ export async function startTrustedEngineerLocalHost(config){
       expectedSessionId:approval.expectedSessionId
     }):undefined;
   let closed=false,shutdownPromise;
+  // Both paid and scripted GitHub run status rely on the SAME original
+  // Coordinator's retained terminal Gateway/Rust/journal shutdown promise.
+  // A finished A2A DAG or resolved HTTP listener is not sufficient proof.
+  const verifyOriginalOperationalRetirement=async()=>{
+    if(!active?.coordinator)
+      deny("original Coordinator missing at runner terminal verification");
+    await active.coordinator.assertOperationalClosureConfirmed();
+  };
   const handoff=createTrustedReviewedHandoffLifecycle(trusted=>
-    startAdmittedGithubReviewedGeminiHandoff(trusted));
+    startAdmittedGithubReviewedGeminiHandoff(trusted),{
+      verifyTerminalClosure:verifyOriginalOperationalRetirement
+    });
   const scriptedHandoff=createTrustedReviewedHandoffLifecycle(trusted=>
-    startAdmittedGithubReviewedScriptedHandoff(trusted));
+    startAdmittedGithubReviewedScriptedHandoff(trusted),{
+      verifyTerminalClosure:verifyOriginalOperationalRetirement
+    });
   // Only a private in-process owner selects the run tied to this DAG.
   let selectedRunId,selectedScriptedRunId;
   const planReviewOpen=()=>!!active&&canReviewOriginalEngineerPlan({
