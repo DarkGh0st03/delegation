@@ -49,7 +49,7 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
   if(!safeRecord(proposal)||!safeRecord(proposal.plan)||
      !Array.isArray(proposal.plan.tasks)||
      !Array.isArray(proposal.plan.requested_permissions)||
-     !Array.isArray(observations)||observations.length>128)
+     !Array.isArray(observations)||observations.length>512)
     throw Error("invalid or absent proposal/observation artifact");
   // Feedback enhancement uses the original already-suspended baseline, not
   // the independently scripted department-directory solved fixture.
@@ -95,7 +95,7 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
   const claimed=proposal.verified_source_reads;
   const usage=events.filter(e=>e.kind==="model_usage"&&
     e.source==="provider_reported"&&Number.isSafeInteger(e.turn)&&
-    e.turn>=1&&e.turn<=12);
+    e.turn>=1&&e.turn<=96);
   // Usage is OPTIONAL provider telemetry. Missing counts are unknown, not 0.
   // A total over calls is reported only when ALL observed calls include it.
   const sumIfComplete=field=>
