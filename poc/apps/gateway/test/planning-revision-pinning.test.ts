@@ -120,6 +120,18 @@ test("one trusted Gitea main SHA is reused for repository, directory and file af
     .every(e=>e.pinned_revision===A));
 });
 
+test("Gateway uses the same nonrenewable 45-minute provisional maximum as the Rust issuer",async()=>{
+  const f=fixture();
+  await assert.rejects(f.revisions.begin(taskId,2700001),
+    (e:unknown)=>e instanceof GatewayError&&e.code==="invalid_planning_session");
+  const pinned=await f.revisions.begin(taskId,2700000);
+  assert.equal(pinned.base_revision,A);
+  f.advance(2700000);
+  assert.throws(()=>f.prepare("read_repository",{}),
+    (e:unknown)=>e instanceof GatewayError&&e.code==="planning_session_required");
+  assert.equal(f.store.size(),0);
+});
+
 test("without registered trusted session, main Planning reads fail before preparing challenges",()=>{
   const f=fixture();
   for(const [tool,arguments_]of [
