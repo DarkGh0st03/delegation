@@ -157,6 +157,21 @@ const SUITES=Object.freeze([
     title:"R5 denied second Gateway Planning read never stages a partial signed Engineer plan"
   },
   {
+    id:"r5_independent_human_backend_signers",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-owner-assembly.test.mjs",
+    title:"R5 forbids using the Engineer signing identity as the Backend checkpoint key"
+  },
+  {
+    id:"r5_private_foreground_owner_input",
+    path:"poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs",
+    title:"R5 protected owner loads exact original signed Planning input from 0600, without exposing signer path"
+  },
+  {
+    id:"r5_owner_cli_no_github_runner_execution",
+    path:"poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs",
+    title:"R5 privileged owner refuses GitHub Actions and missing source SHA before any root"
+  },
+  {
     id:"r5_real_owner_gateway_ipc_planning_assembly",
     path:"poc/apps/orchestrator/test/trusted-r5-scripted-owner-assembly.test.mjs",
     title:"R5 original owner assembles SAME Coordinator with real durable Gateway IPC, no Planning root or approval"

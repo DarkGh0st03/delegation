@@ -103,7 +103,10 @@ async function fixture(t,{durable=true}={}){
     agents:AGENTS,gatewayBaseUrl:"http://127.0.0.1:9999",
     backendPrivateKeyPem:backendPrivate
   };
-  return {input,backendPrivate,config,revision,checkpoint};
+  return {input,backendPrivate,config,revision,checkpoint,
+    engineerPrivate:engineer.privateKey.export({
+      format:"pem",type:"pkcs8"
+    }).toString()};
 }
 test("R5 original owner assembles SAME Coordinator with real durable Gateway IPC, no Planning root or approval",async t=>{
   const f=await fixture(t);
@@ -147,6 +150,24 @@ test("R5 assembly refuses changed original session and backend Ed25519 public pi
     );
   }
 });
+test("R5 forbids using the Engineer signing identity as the Backend checkpoint key",async t=>{
+  const f=await fixture(t);
+  const sameSigner={
+    ...f.input,
+    backendPrivateKeyPem:f.engineerPrivate,
+    config:{
+      ...f.config,
+      ownerPlanning:{
+        ...f.config.ownerPlanning,
+        backendPublicKeyPem:f.config.approval.publicKeyPem
+      }
+    }
+  };
+  await assert.rejects(assembleProtectedR5ScriptedOwnerPlanning(sameSigner),
+    /R5 owner Planning assembly denied/);
+  assert.equal(f.revision.durableRetirementConfigured(),true);
+});
+
 test("R5 owner assembly rejects non-durable actual Gateway capabilities",async t=>{
   const f=await fixture(t,{durable:false});
   await assert.rejects(assembleProtectedR5ScriptedOwnerPlanning(f.input),

@@ -43,6 +43,17 @@ function sameEd25519Key(privatePem,publicPem){
     return actual.equals(expected);
   }catch{return false;}
 }
+function separateHumanEngineerSigner(backendPublicPem,engineerPublicPem){
+  try{
+    const backend=createPublicKey(backendPublicPem);
+    const engineer=createPublicKey(engineerPublicPem);
+    if(backend.asymmetricKeyType!=="ed25519"||
+       engineer.asymmetricKeyType!=="ed25519")return false;
+    const a=backend.export({type:"spki",format:"der"});
+    const b=engineer.export({type:"spki",format:"der"});
+    return !a.equals(b);
+  }catch{return false;}
+}
 function freezeDeep(value){
   if(value&&typeof value==="object"&&!Object.isFrozen(value)){
     for(const child of Object.values(value))freezeDeep(child);
@@ -71,7 +82,9 @@ export async function assembleProtectedR5ScriptedOwnerPlanning({
        !a.did.startsWith("did:")||typeof a.card_ref!=="string"||
        !a.card_ref.trim())||!localGateway(gatewayBaseUrl)||
      !preliminaryRoot||typeof preliminaryRoot!=="object"||
-     !sameEd25519Key(backendPrivateKeyPem,pins.backendPublicKeyPem))
+     !sameEd25519Key(backendPrivateKeyPem,pins.backendPublicKeyPem)||
+     !separateHumanEngineerSigner(pins.backendPublicKeyPem,
+       approval.publicKeyPem))
     deny("original protected snapshot, source and backend signer required");
   // Protected copies cannot be mutated while the human reviews the
   // original plan or before the one-shot Planning bootstrap.

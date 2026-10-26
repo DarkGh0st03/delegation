@@ -396,3 +396,50 @@ physical host, actual on-chain revocation, human Ed25519 approval
 or an authenticated GitHub runner. Operator acceptance still needs
 the full externally provisioned real transport, signed approval and
 real A2A DAG in the same persistent host session.
+
+## R5 — Owner service foreground launcher
+
+The operator may now launch the *original* protected R5 Planning process
+without constructing ad-hoc JavaScript callback glue:
+
+```bash
+export DELEGATION_ENGINEER_SERVICE_CONFIG=/private/engineer/engineer-service.json
+export DELEGATION_R5_EXPECTED_SOURCE_SHA=<40-char independently reviewed branch HEAD>
+export DELEGATION_R5_OWNER_INPUT_FILE=/private/engineer/scripted-planning.json
+node --experimental-strip-types poc/apps/orchestrator/src/run-trusted-r5-scripted-owner.mjs
+```
+
+The separate owner input file must be 0600 inside a 0700 directory,
+owned by the SAME service UID. Required JSON top-level fields are
+`profile:"scripted_offline"`, `snapshot` (session ID, Gitea repository,
+exact current base SHA, verified file/directory inventory),
+`preliminaryRoot` (fresh owner-reserved revocable DC parameters),
+`edits` (Backend/Frontend existing source files),
+`newTestFile`, `requirement`, `planId`, `agents` (Backend,
+Frontend, Test DID and private Agent Card reference), `gatewayBaseUrl`
+(loopback), and `backendPrivateKeyFile` (independent signer key path).
+The Backend private key is itself a separate 0600 file under a 0700
+directory; it must NOT appear inline in this JSON or in an Action secret.
+
+The foreground entrypoint loads the protected host and independently
+pinned SHA, reads the owner input only locally, assembles the actual
+durable-IPC Coordinator, and calls its original single-use Planning
+startup. Planning reads still pass Gateway → Adapter VP → Rust → OPA
+→ pinned Gitea, and it must materialize a valid Backend-signed review
+packet before the Engineer review UI is exposed. Any failure aborts;
+there is no automatic retry after uncertain credential issuance.
+SIGTERM/SIGINT signal handlers await in-flight startup and root
+retirement; an unconfirmed closure reports an explicit NO-GO.
+
+Neither GitHub Actions nor any external A2A/MCP/HTTP client may invoke
+this launcher. It never chooses a paid model, issues a fabricated human
+signature, starts Execution, merges a PR, or claims R5 E2E success.
+Its startup success message means only original live Planning is ready
+for **independent human review**. Next the operator must acquire an
+authentic Engineer Ed25519 approval and select an independently verified
+private GitHub job; the explicit owner-only signed DAG handoff remains
+a separate step. The backend checkpoint key and Engineer signing key
+must be cryptographically distinct (even if supplied under different PEM
+text or aliases); R5 rejects the same Ed25519 identity before a root is
+issued. A credential or private key for a real operator/Engineer must
+never be placed in this Git repository.
