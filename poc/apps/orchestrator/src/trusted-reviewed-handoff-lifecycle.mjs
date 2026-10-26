@@ -4,8 +4,13 @@
  * The private operator supplies the real A2A/Adapter ports, while the
  * approved dispatcher loads authority from the signed Engineer receipt.
  */
-export function createTrustedReviewedHandoffLifecycle(start){
-  if(typeof start!=="function")throw Error("Trusted handoff start required");
+export function createTrustedReviewedHandoffLifecycle(start,{
+  verifyTerminalClosure
+}={}){
+  if(typeof start!=="function"||
+     (verifyTerminalClosure!==undefined&&
+      typeof verifyTerminalClosure!=="function"))
+    throw Error("Trusted handoff start and terminal closure verifier required");
   let state="idle",attempt,active,shutdown,verifiedOutcome="pending";
   const startAttempt=input=>{
     if(state!=="idle")
@@ -78,6 +83,13 @@ export function createTrustedReviewedHandoffLifecycle(start){
       // DAG and independently verified root/Gateway revocation.
       try{
         await closeAttempt();
+        // Host-side defense in depth: the original Coordinator has a
+        // retained Gateway + native Rust + journal shutdown promise. A
+        // resolved A2A/listener close ALONE cannot certify native retirement.
+        // The strict Engineer Host supplies this verifier for paid AND
+        // scripted admitted runs; only then may the runner see completion.
+        if(completed&&verifyTerminalClosure)
+          await verifyTerminalClosure();
         verifiedOutcome=completed?"verified_complete":"failed";
       }catch(error){
         verifiedOutcome="failed";
