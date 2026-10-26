@@ -108,3 +108,24 @@ test("actual trusted-owner review packet can be scored without treating it as ap
   assert.equal(report.evaluated_artifact,"engineer_review_packet");
   assert.equal(report.limitations.signed_engineer_approval,"not_tested");
 });
+
+test("new test files in an existing directory are valid diagnostic scope",()=>{
+  const x=example();
+  x.proposal.plan.requested_permissions.push({
+    agent_id:"test",operation:"create_file",
+    resource:file("tests/e2e/planner-regression.spec.ts")
+  });
+  assert.equal(evaluate(x).technical_preflight_pass,true);
+  const unsafe=example();
+  unsafe.proposal.plan.requested_permissions.push({
+    agent_id:"test",operation:"create_file",
+    resource:file("private/secret.env")
+  });
+  const failed=evaluate(unsafe);
+  assert.equal(failed.criteria.find(c=>c.key==="known_tools_and_baseline_files").pass,false);
+  const duplicate=example();
+  duplicate.proposal.plan.requested_permissions.push({
+    agent_id:"test",operation:"create_file",resource:file(anchors.backend[0])
+  });
+  assert.equal(evaluate(duplicate).technical_preflight_pass,false);
+});
