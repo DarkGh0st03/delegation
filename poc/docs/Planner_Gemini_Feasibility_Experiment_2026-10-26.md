@@ -223,3 +223,52 @@ that the experiment completed, not that the proposal is technically good;
 consult `evaluation.json`. A red job may already have consumed tokens.
 The provider is responsible for the actual invoice; the telemetry is not
 an invoice or a spend ceiling. The workflow never edits the source repository.
+
+## R5A — Larger bounded Planning budget and model fallback (26 October 2026)
+
+Following the failed 8-turn experiment (#40350899503), the Planner
+successfully made eight Gemini calls and eight scoped file reads but did not
+produce a proposal before its 8-model-turn ceiling. This is evidence of
+a **premature orchestration ceiling**, not evidence that Flash is too weak.
+
+Keep **`gemini-3.8-flash`** for the next separately authorized experiment,
+with explicit **MEDIUM thinking** and these fail-safe ceilings:
+
+| Boundary | Previous isolated run | New isolated run |
+| --- | ---: | ---: |
+| Model delegate turns | 8 | 96 |
+| Read-port invocations | 16 | 64 |
+| Aggregate source bytes | 96,000 | 524,288 |
+| Per-file bytes | 24,000 | 24,000 (unchanged) |
+| Planning session duration | 300,000 ms | 900,000 ms |
+| Per-model-call duration | 60,000 ms | 120,000 ms |
+| Max output including thought tokens | 8,192 | 16,384 |
+| Thinking level | provider default | MEDIUM (explicit) |
+
+The 96-turn ceiling is a **last-resort** guard, not a requirement to use
+all 96 calls. The normal stopping condition is a **complete validated
+unapproved JSON proposal**. Once the model has sufficient evidence it
+should stop reading. Do not set an unbounded inference allowance: beyond
+provider costs, unbounded tool loops can prevent a useful conclusion.
+The trusted read allowlist, revision checks, non-main write protection,
+human approval requirement and absence of actual write tools are UNCHANGED.
+
+The protected read-permission snapshot remains limited to 128 entries.
+The old failure-trace grader limit of 128 observations and usage turn filter
+of 12 were raised to 512 and 96 so the evaluator cannot reject a valid
+longer trace. The GitHub manual job timeout now allows the full 15-minute
+Planner session plus installation and test overhead. None of these caps
+guarantee a monetary ceiling; check the real provider billing limits.
+
+**Fallback only if improved Flash still fails:** compare
+`gemini-3.1-pro-preview` (Pro reasoning) against the same independently
+frozen baseline and rubric. There is no released `gemini-3.8-pro` API
+identifier in the current model catalog. Pro is a paid Preview and requires
+a fresh explicit billing authorization, model access verification and
+compatible thinking options. Do not switch the default or incur any
+additional API charges automatically. If Flash returns a valid proposal,
+do not switch just because a stronger model exists.
+
+The isolated fixture experiment is not a real Rust/OPA/Gitea authorized
+Planning test. A green offline preflight does not establish the behavior
+of paid Gemini inference or an approved execution DAG.
