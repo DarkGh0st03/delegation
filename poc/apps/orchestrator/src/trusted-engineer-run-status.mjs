@@ -24,8 +24,16 @@ export function trustedEngineerRunStatus(input){
     return handoffStatus==="closed"&&coordinatorPhase==="closed"
       ?"completed_verified":"terminated";
   }
-  if(verifiedOutcome==="failed"||
-     handoffStatus==="failed"||handoffStatus==="closed")
+  if(verifiedOutcome==="failed"||handoffStatus==="failed")
+    return "terminated";
+  // The DAG and A2A listeners may already be CLOSED while a separate,
+  // host-owned original Coordinator verification is still awaiting the
+  // durable Rust revocation/Gateway tombstone. The runner must continue
+  // polling, NOT incorrectly fail or accept a positive result.
+  if(handoffStatus==="closed"&&verifiedOutcome==="pending"&&
+     coordinatorPhase==="closed")
+    return "execution_active";
+  if(handoffStatus==="closed")
     return "terminated";
   if(["starting","active","closing"].includes(handoffStatus))
     return "execution_active";
