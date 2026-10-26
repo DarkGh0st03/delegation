@@ -2,8 +2,8 @@ use crate::auth::CallerRecord;
 use crate::config::AdapterConfig;
 use crate::crypto::{
     CreatePresentationRequest, CryptoRuntime, IssueChildRequest, IssueRootRequest,
-    ReadCredentialStatusRequest, UpdateCredentialStatusRequest,
-    VerifyMultiplePresentationRequest, VerifyPresentationRequest,
+    ReadCredentialStatusRequest, UpdateCredentialStatusRequest, VerifyMultiplePresentationRequest,
+    VerifyPresentationRequest,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;

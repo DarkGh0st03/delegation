@@ -521,17 +521,22 @@ impl CryptoRuntime {
     ) -> Result<CredentialStatusReadResponse, String> {
         require_capability(caller, CallerCapability::VerifyPresentation)?;
         if caller.role() != CallerRole::Gateway {
-            return Err(String::from("Only the authenticated Gateway can inspect credential status"));
+            return Err(String::from(
+                "Only the authenticated Gateway can inspect credential status",
+            ));
         }
         if request.credential_id.trim().is_empty() || request.credential_id.len() > 256 {
-            return Err(String::from("Credential status inspection requires a bounded ID"));
+            return Err(String::from(
+                "Credential status inspection requires a bounded ID",
+            ));
         }
-        let credential = self.credentials.get(&request.credential_id).ok_or_else(|| {
-            String::from("Credential is not present in this Adapter runtime")
-        })?;
-        let entry = credential.credential_status().ok_or_else(|| {
-            String::from("Credential has no status entry")
-        })?;
+        let credential = self
+            .credentials
+            .get(&request.credential_id)
+            .ok_or_else(|| String::from("Credential is not present in this Adapter runtime"))?;
+        let entry = credential
+            .credential_status()
+            .ok_or_else(|| String::from("Credential has no status entry"))?;
         if entry.status_purpose() != StatusPurpose::Revocation {
             return Err(String::from("R5 inspection accepts revocation status only"));
         }
@@ -541,14 +546,17 @@ impl CryptoRuntime {
                 .into_iter()
                 .find(|role| callers.identity_for_role(*role).ok() == Some(issuer_id))
                 .ok_or_else(|| String::from("Unrecognized root/child issuer"))?;
-            let verification_jwk = self.issuers.get(&role)
+            let verification_jwk = self
+                .issuers
+                .get(&role)
                 .ok_or_else(|| String::from("Missing issuer verification material"))?
                 .public_verification_key();
             let (set, version) =
                 profile.observe_anchored_status(issuer_id, entry, verification_jwk)?;
             (set, "evm_anchored_signed_jwt", Some(version))
         } else {
-            let set = self.status_resolver
+            let set = self
+                .status_resolver
                 .as_ref()
                 .ok_or_else(|| String::from("Missing in-memory status resolver"))?
                 .is_status_set(issuer_id, entry)?;
@@ -811,21 +819,34 @@ mod tests {
         let mut runtime = CryptoRuntime::new(&registry).unwrap();
         issue_root(&mut runtime, &registry);
         let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
-        runtime.issue_child(orchestrator, &registry, IssueChildRequest {
-            parent_credential_id: String::from("urn:credential:root"),
-            credential_id: String::from("urn:credential:audited-child"),
-            delegatee: CallerRole::Backend,
-            valid_from: String::from("2026-10-05T00:00:00Z"),
-            validity_seconds: 1800,
-            credential_status: status(101),
-            permissions: vec![permission(Operation::ReadFile)],
-        }).unwrap();
+        runtime
+            .issue_child(
+                orchestrator,
+                &registry,
+                IssueChildRequest {
+                    parent_credential_id: String::from("urn:credential:root"),
+                    credential_id: String::from("urn:credential:audited-child"),
+                    delegatee: CallerRole::Backend,
+                    valid_from: String::from("2026-10-05T00:00:00Z"),
+                    validity_seconds: 1800,
+                    credential_status: status(101),
+                    permissions: vec![permission(Operation::ReadFile)],
+                },
+            )
+            .unwrap();
 
         let gateway = registry.record_for_role(CallerRole::Gateway).unwrap();
         let engineer = registry.record_for_role(CallerRole::Engineer).unwrap();
         let read = |runtime: &CryptoRuntime, id: &str| {
-            runtime.read_credential_status(gateway, &registry,
-                ReadCredentialStatusRequest{credential_id:id.to_string()}).unwrap()
+            runtime
+                .read_credential_status(
+                    gateway,
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: id.to_string(),
+                    },
+                )
+                .unwrap()
         };
         for id in ["urn:credential:root", "urn:credential:audited-child"] {
             let observed = read(&runtime, id);
@@ -836,31 +857,60 @@ mod tests {
         }
         // The *owner* caller performs the already-authorized irreversible
         // revocation; the new Gateway observation does not perform writes.
-        runtime.update_credential_status(engineer,
-            UpdateCredentialStatusRequest {
-                credential_id:String::from("urn:credential:root"),
-                status_set:true
-            }).unwrap();
-        runtime.update_credential_status(orchestrator,
-            UpdateCredentialStatusRequest {
-                credential_id:String::from("urn:credential:audited-child"),
-                status_set:true
-            }).unwrap();
+        runtime
+            .update_credential_status(
+                engineer,
+                UpdateCredentialStatusRequest {
+                    credential_id: String::from("urn:credential:root"),
+                    status_set: true,
+                },
+            )
+            .unwrap();
+        runtime
+            .update_credential_status(
+                orchestrator,
+                UpdateCredentialStatusRequest {
+                    credential_id: String::from("urn:credential:audited-child"),
+                    status_set: true,
+                },
+            )
+            .unwrap();
         assert!(read(&runtime, "urn:credential:root").status_set);
         assert!(read(&runtime, "urn:credential:audited-child").status_set);
 
-        assert!(runtime.read_credential_status(engineer, &registry,
-            ReadCredentialStatusRequest{
-                credential_id:String::from("urn:credential:root")
-            }).is_err());
-        assert!(runtime.read_credential_status(gateway, &registry,
-            ReadCredentialStatusRequest{
-                credential_id:String::from("urn:credential:missing")
-            }).is_err());
-        assert!(runtime.read_credential_status(gateway, &registry,
-            ReadCredentialStatusRequest{
-                credential_id:" ".repeat(3)
-            }).is_err());
+        assert!(
+            runtime
+                .read_credential_status(
+                    engineer,
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: String::from("urn:credential:root")
+                    }
+                )
+                .is_err()
+        );
+        assert!(
+            runtime
+                .read_credential_status(
+                    gateway,
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: String::from("urn:credential:missing")
+                    }
+                )
+                .is_err()
+        );
+        assert!(
+            runtime
+                .read_credential_status(
+                    gateway,
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: " ".repeat(3)
+                    }
+                )
+                .is_err()
+        );
     }
 
     #[test]

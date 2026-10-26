@@ -311,7 +311,9 @@ impl EvmAdapterProfile {
             .chain_reader
             .status_list_anchor(issuer_id, entry.status_list_credential())?;
         if !anchor.exists || anchor.purpose != purpose_code || anchor.current_version == 0 {
-            return Err(String::from("Current EVM status anchor missing or mismatched"));
+            return Err(String::from(
+                "Current EVM status anchor missing or mismatched",
+            ));
         }
         let artifact = self
             .status_source
@@ -319,11 +321,12 @@ impl EvmAdapterProfile {
         if EvmAnchoredStatusListResolver::artifact_commitment(&artifact.document)
             != anchor.current_artifact_hash
         {
-            return Err(String::from("EVM status artifact no longer matches chain commitment"));
+            return Err(String::from(
+                "EVM status artifact no longer matches chain commitment",
+            ));
         }
-        let document = verify_status_list_credential_jwt(
-            &artifact.document, verification_jwk, issuer_id
-        )?;
+        let document =
+            verify_status_list_credential_jwt(&artifact.document, verification_jwk, issuer_id)?;
         let status_set = BitstringStatusListParser::read_status(entry, &document)?;
         Ok((status_set, anchor.current_version))
     }
