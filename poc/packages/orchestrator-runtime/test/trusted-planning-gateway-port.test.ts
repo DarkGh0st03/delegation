@@ -133,7 +133,7 @@ class MultiReadScriptedPlanner extends BaseLlm {
 function response(value:unknown,status=200){
   return new Response(JSON.stringify(value),{status,headers:{"content-type":"application/json"}});
 }
-function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean;
+function fixture(options:{tamperPermission?:boolean;tamperPermissionOnCall?:number;policyAllow?:boolean;
   revocationFails?:boolean;planningRecovery?:TrustedPlanningRecoveryStore;
   operationalRecovery?:TrustedOperationalRecoveryStore}={}){
   const observed={adapter:0,verification:0,policy:0,provider:0,
@@ -244,7 +244,8 @@ function fixture(options:{tamperPermission?:boolean;policyAllow?:boolean;
       observed.prepare++;
       try{
         const prepared=runtime.prepare(body);
-        return response(options.tamperPermission?{
+        return response((options.tamperPermission||
+          observed.prepare===options.tamperPermissionOnCall)?{
           ...prepared,required_permission:{
             resource:"gitea://attacker.invalid/other",
             operation:prepared.required_permission.operation}
@@ -533,7 +534,8 @@ test("backend signing key must be valid before any model read",async()=>{
 });
 
 async function makeOwnerReviewFixture(options:{
-  tamperPermission?:boolean;revocationFails?:boolean
+  tamperPermission?:boolean;tamperPermissionOnCall?:number;
+  revocationFails?:boolean
 }={}){
   const planningDir=await mkdtemp(join(tmpdir(),"owner-planning-intents-"));
   const planningRecovery=new TrustedPlanningRecoveryStore(planningDir);
@@ -659,7 +661,7 @@ test("R5 zero-provider Planning issues original read-only root, performs two Gat
 });
 
 test("R5 denied second Gateway Planning read never stages a partial signed Engineer plan",async()=>{
-  const f=await makeOwnerReviewFixture({tamperPermission:true});
+  const f=await makeOwnerReviewFixture({tamperPermissionOnCall:2});
   try{
     const model=new R5ScriptedNoProviderPlanningModel({
       snapshot,workBranch:"feature/invoice-sort",
@@ -673,6 +675,12 @@ test("R5 denied second Gateway Planning read never stages a partial signed Engin
     assert.equal(f.coordinator.phase,"closed");
     assert.equal(f.observed.issued,1);
     assert.equal(f.observed.revoked,1);
+    // The first read DID pass VP/OPA/Gitea; the second was denied by
+    // the canonical Gateway permission binding before minting another VP.
+    assert.equal(f.observed.prepare,2);
+    assert.equal(f.observed.adapter,1);
+    assert.equal(f.observed.verification,1);
+    assert.equal(f.observed.execute,1);
     await assert.rejects(f.store.load(),(error:any)=>error.code==="ENOENT");
     await assert.rejects(readFile(f.planFilePath,"utf8"),
       (error:any)=>error.code==="ENOENT");
