@@ -8,6 +8,7 @@
  * Both roots are issued by the Engineer in Rust. The operational root is
  * independent of the revoked preliminary root (never its child).
  */
+import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../plan-contracts/src/planning-limits.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TOOL_NAMES} from "../../../apps/gateway/src/types.ts";
 import {
@@ -248,7 +249,7 @@ export class TrustedEngineerAuthoritySession {
     credential_id:string;phase:"planning";permissions:DelegatedPermission[]
   }> {
     if(this.#state!=="not_started")fail("planning root already requested");
-    validateRoot(root,900);
+    validateRoot(root,MAX_PRELIMINARY_ROOT_SECONDS);
     const permissions=preliminaryReadPermissions(this.#snapshot);
     this.#state="failed_closed"; // reserve before awaiting external network
     let registered=false;
