@@ -1,4 +1,5 @@
 import { GatewayError } from "./errors.ts";
+import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../../packages/plan-contracts/src/planning-limits.mjs";
 import {TrustedPlanningRetirementStore} from "./trusted-planning-retirement-store.ts";
 import type { GiteaClient } from "./gitea-client.ts";
 import type { AgentRole, NormalizedToolRequest, PreparedRequestRecord } from "./types.ts";
@@ -15,7 +16,7 @@ import type { AgentRole, NormalizedToolRequest, PreparedRequestRecord } from "./
  * a separate owner-only durable retirement store and authenticated bootstrap.
  */
 const COMMIT_SHA = /^[a-f0-9]{40}$/u;
-const MAX_PLANNING_TTL_MS = 15 * 60 * 1000;
+const MAX_PLANNING_TTL_MS = MAX_PRELIMINARY_ROOT_SECONDS * 1000;
 
 interface Session {
   readonly taskId: string;
