@@ -537,7 +537,7 @@ impl CryptoRuntime {
         let entry = credential
             .credential_status()
             .ok_or_else(|| String::from("Credential has no status entry"))?;
-        if entry.status_purpose() != StatusPurpose::Revocation {
+        if *entry.status_purpose() != StatusPurpose::Revocation {
             return Err(String::from("R5 inspection accepts revocation status only"));
         }
         let issuer_id = credential.issuer();
