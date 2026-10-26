@@ -125,16 +125,22 @@ cost outside the model output; redact secrets.
 
 This is a **preliminary** capability experiment, intentionally separate from
 the trusted R5A private-host/Gitea test above. The new
-\`poc/scripts/run-gemini-planner-fixture.mjs\` runs the EXISTING
-\`TrustedAdkReadOnlyPlanner\` against a frozen in-memory IAM Console
+`poc/scripts/run-gemini-planner-fixture.mjs` runs the EXISTING
+`TrustedAdkReadOnlyPlanner` against a frozen in-memory IAM Console
 baseline. The read port returns **Gitea-shaped mock responses**, not
 authenticated Gitea, Gateway VP, Core Rust, OPA or an authorized session.
 
 Two initially absent enhancements are defined independently:
 
-- \`department-directory\`: admin-only department filtering in API/UI and tests.
-- \`suspension-feedback\`: accessibility feedback for an EXISTING
-  suspend/reactivate workflow, not reimplementation of Account Suspension.
+- `department-directory`: admin-only department filtering in API/UI and tests.
+- `suspension-feedback`: add accessible live-region semantics to
+  ALREADY visible suspend/reactivate success and error messages. The missing
+  behavior is assistive-technology announcement, not a new message.
+
+Source inspection confirmed the initial baseline already displays success
+and error messages but does not provide status/alert notification semantics.
+The earlier "display feedback" experiment was therefore not novel and was
+corrected BEFORE any Gemini API request.
 
 The model sees the requirement and ordinary permitted source tools, NOT
 the offline golden edits, reference file anchors or expected task DAG.
@@ -143,11 +149,11 @@ NOT be reported as an actual Git commit/Gitea SHA.
 
 **Safe default:** one no-network/no-model dry run per case:
 
-\`\`\`sh
+```sh
 node poc/scripts/run-gemini-planner-fixture.mjs --dry-run department-directory
 node poc/scripts/run-gemini-planner-fixture.mjs --dry-run suspension-feedback
 node --test poc/scripts/test/run-gemini-planner-fixture.test.mjs
-\`\`\`
+```
 
 The CLI rejects all other command forms. GitHub CI runs only tests and
 never supplies the execute switch, consent phrase or Gemini API key.
@@ -156,18 +162,18 @@ never supplies the execute switch, consent phrase or Gemini API key.
 If and ONLY if the operator later chooses to pay, the exact separate
 manual command on a private machine is:
 
-\`\`\`sh
+```sh
 export DELEGATION_PLANNER_BILLING_CONSENT='I AUTHORIZE GEMINI API CHARGES'
 export DELEGATION_PLANNER_OUTPUT_DIR='/absolute/private/path/new-unique-dir'
 export GEMINI_API_KEY='<provided privately, never committed>'
 node --experimental-strip-types poc/scripts/run-gemini-planner-fixture.mjs \
   --execute department-directory
-\`\`\`
+```
 
 Choose a **new, nonexistent** absolute evidence directory each time; the
 program creates it 0700 with exclusive 0600 evidence files. It creates
-\`proposal.json\`, \`observations.json\`, \`evaluation.json\` on success
-and a local \`fixture-run.json\` with the synthetic-boundary warning.
+`proposal.json`, `observations.json`, `evaluation.json` on success
+and a local `fixture-run.json` with the synthetic-boundary warning.
 One invocation may incur charges even when the model rejects the
 requirement or a model deadline is exceeded; limits are 8 model turns,
 8192 output tokens per call, 60s per model call, 300s total local
