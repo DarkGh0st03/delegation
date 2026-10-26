@@ -444,3 +444,37 @@ revocation, or authenticated live GitHub/A2A/Gitea effects in one trial.
 An independent operator must establish those in a separately approved
 integration experiment. No additional Gemini charges are authorized
 by the existence of this module.
+
+
+## R5F — Single-flight Engineer signature and interruption-safe Gemini Execution
+
+A genuine Planner proposal may be available before the Engineer signs it.
+The private owner continuation now separates an **in-progress human-signature
+preflight** from a **one-use operational dispatch**, instead of consuming the
+run attempt merely because the Engineer has not signed yet.
+
+The same-process `createProtectedGeminiOwnerDispatch` is constructed only
+from the original frozen protected Planning assembly, the original
+Coordinator, the authenticated Engineer Host, a private host-held Gemini key,
+and the genuine signature verifier. The callable continuation is never
+attached to HTTP, OIDC intake, A2A, MCP, CI inputs or LLM tools.
+
+* An invalid owner Execution request is refused **before** checking an
+  Engineer receipt or consuming one-use GitHub admission.
+* A missing/unsigned human receipt denies dispatch but does not burn the
+  original approval attempt. A later real Engineer signature can be checked
+  again, provided the original read-only Planning authority is still active.
+* Once a verified signature allows the host's GitHub-OIDC/root handoff to
+  start, the dispatch is one-shot, even if an exception or cancellation
+  occurs. No automatic retries or new operational roots are issued.
+* Concurrent calls, cancellation during signed-review validation and
+  late successful A2A results after owner shutdown all fail closed.
+* Shutdown fences new authorization synchronously, invokes the Host's
+  credential retirement path **before** awaiting any in-flight dispatch,
+  and waits for that dispatch to settle. Failure to confirm root closure is
+  propagated; a late result may never become a falsely verified completion.
+* The private offline tests verify retry semantics, concurrency, late
+  responses, unknown authority fields and failed retirement. They do not
+  call Gemini or grant operational authority. Real signed UI, crypto root
+  and GitHub A2A integration remain independently exercised in the
+  existing tests; a full privately operated paid execution is still pending.
