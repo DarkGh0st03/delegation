@@ -78,7 +78,7 @@ function validateScope(
   preliminaryReadPermissions(snapshot);
   if(!proposal||proposal.status!=="unapproved_proposal"||
      !Number.isSafeInteger(proposal.verified_source_reads)||
-     proposal.verified_source_reads<1||proposal.verified_source_reads>16)
+     proposal.verified_source_reads<1||proposal.verified_source_reads>64)
     refuse("no authentic grounded read-only proposal");
   const plan=validatePlan(proposal.plan,{allowedOperations:OPERATIONS});
   if(plan.session_id!==snapshot.session_id||
