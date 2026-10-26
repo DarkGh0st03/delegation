@@ -275,6 +275,11 @@ test("R5 operator token and local evidence require owner-only 0600 files and no 
 test("R5 owner post-run cross-check consumes ONLY the original protected pre-dispatch runner pin",async()=>{
   const home=await mkdtemp(join(tmpdir(),"r5-crosscheck-pre-dispatch-"));
   const pins=join(home,"pins"),receipts=join(home,"receipts");
+  // In GitHub Actions, owner-only operations are correctly forbidden.
+  // This *offline fixture* simulates only the non-Actions Engineer
+  // process, without weakening that production guard or dispatching.
+  const originalGithubActions=process.env.GITHUB_ACTIONS;
+  delete process.env.GITHUB_ACTIONS;
   try{
     await mkdir(pins,{mode:0o700});
     await mkdir(receipts,{mode:0o700});
@@ -301,7 +306,12 @@ test("R5 owner post-run cross-check consumes ONLY the original protected pre-dis
       expectedSourceSha:SHA,expectedRunId:RUN,
       operatorTokenFile:token,fetchFn:fetcher(run(),altered,[])
     }),/NO-GO/);
-  }finally{await rm(home,{recursive:true,force:true});}
+  }finally{
+    if(originalGithubActions===undefined)
+      delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS=originalGithubActions;
+    await rm(home,{recursive:true,force:true});
+  }
 });
 test("R5 standalone post-run cross-check denies missing config without leaking secrets",()=>{
   const script=new URL("../r5-post-run-github-crosscheck.mjs",import.meta.url);
