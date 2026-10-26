@@ -325,3 +325,51 @@ additional tests assert that asynchronous Gateway retirement finishes
 before native root revocation and that a rejected retirement cannot
 report a clean shutdown. Physical runner/Engineer deployment and the
 complete real signed DAG remain separate R5 acceptance evidence.
+
+## R5 — Original Coordinator and trusted service assembly (26 October)
+
+The protected `prepareConfiguredR5ScriptedEngineerBootstrap()` now
+returns one owner-only `assemblePlanning(options)` method. It uses the
+**same owner-verified service object** as `start(planning)`, not an
+independently reloaded mutable JSON file. The assembly validates the
+session, Gitea repository, exact base SHA, selected Backend/Frontend
+paths, test destination, bounded zero-provider ADK model, original
+checkpoint signer Ed25519 public/private correspondence and fixed
+loopback Gateway URL **before** issuing any authority.
+
+On that operator-only path, the code authenticates to the *real*
+private Gateway Unix socket and requires the Gateway itself to attest
+a functional operational lease, durable operational session,
+Planning retirement and durable Planning tombstones. It constructs:
+- the genuine `TrustedExecutionCoordinator`, with the **same**
+  operational journal instance as the prepared Engineer Host;
+- `TrustedEngineerAuthoritySession` with the actual remote Gateway
+  Planning revision port and native Rust Adapter credential client;
+- `TrustedPlanningRecoveryStore` and independent signed-approval
+  verification keyed to the protected Engineer DID;
+- `TrustedPlanningReviewGate`, backend-signed checkpoint store and
+  deterministic, no-provider Google ADK Planner;
+- the scoped read-only Gateway Planning transport, to be opened only
+  by the existing original Planning bootstrap after the real preliminary
+  root is issued.
+
+The owner must call `const a = await prepared.assemblePlanning(options)`
+then `await prepared.start(a.planning)`, in that order and exactly
+once. **Only the specific assembled Planning object is accepted.**
+Any handwritten lookalike Coordinator, swapped model or a second
+startup attempt is rejected before root issuance. The operator supplies
+the independently protected backend Ed25519 signing key in memory;
+it must not be copied to GitHub Actions, ADK, A2A or MCP.
+
+Assembly performs a read-only local IPC capability handshake. It
+does NOT issue either root, run a plan, create human consent, sign
+approval, request GitHub OIDC, invoke Gemini or establish an E2E.
+The existing start invokes the original Planning and exposes the
+loopback-only Engineer review UI; Execution must separately use the
+signed Engineer receipt plus authenticated private runner admission.
+
+A new offline integration fixture verifies that an actual HMAC Unix
+socket and real durable Gateway Planning registry are connected to
+the original idle Coordinator, and denies missing durable capabilities,
+mismatched Gitea SHA/repository, mismatched backend signer and malformed
+paths. This fixture uses no paid model and does not start a Planning root.

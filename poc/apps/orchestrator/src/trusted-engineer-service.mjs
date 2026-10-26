@@ -233,6 +233,13 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
   const {githubApiTokenFile,hmacSecretHexFile,tls,...oidcSettings}=oidc;
   const {adapterTokenFile,...recoverySettings}=recovery;
   return Object.freeze({
+    // Private owner bootstrap only: signer PUBLIC key and the exact
+    // work branch must come from the same 0600 config read as the Host.
+    ownerPlanning:{
+      backendKeyId:checkpoint.backendKeyId,
+      backendPublicKeyPem:backendPublicKey,
+      expectedWorkBranch:checkpoint.expectedWorkBranch
+    },
     approval:{...review,privateKeyFile:path(approval.privateKeyFile),
       trustedPlanFile:path(approval.trustedPlanFile),
       publicKeyPem:publicKey,planningCheckpointStore:checkpointStore},
@@ -318,6 +325,16 @@ export async function prepareConfiguredOwnerEngineerBootstrap(
   return Object.freeze({
     planningCheckpointStore:checkpoints,
     operationalRecovery,
+    ...(expectedScriptedSourceSha===undefined?{}:{
+      assembleR5Planning:async input=>{
+        const {assembleProtectedR5ScriptedOwnerPlanning}=await import(
+          "./trusted-r5-scripted-owner-assembly.mjs");
+        return assembleProtectedR5ScriptedOwnerPlanning({
+          ...input,config,planningCheckpointStore:checkpoints,
+          operationalRecovery
+        });
+      }
+    }),
     /**
      * Owner provisions the Coordinator, reviewGate, Gitea snapshot,
      * scoped preliminary root, read-only ADK Planner, Gateway and journals.
@@ -373,14 +390,26 @@ export async function prepareConfiguredR5ScriptedEngineerBootstrap(
   // Admit only the dedicated bounded, owner-intent scripted ADK model.
   const {isBoundR5NoProviderPlanningModel}=await import(
     "../../../packages/orchestrator-runtime/src/trusted-r5-scripted-planning-model.ts");
-  let attempted=false;
+  let attempted=false,assembled=false,assembledPlanning;
   return Object.freeze({
     planningCheckpointStore:prepared.planningCheckpointStore,
     operationalRecovery:prepared.operationalRecovery,
+    /** One attempt to assemble the real original Coordinator. No authority
+     * is issued; only the authenticated local Gateway capabilities are read. */
+    assemblePlanning:async input=>{
+      if(assembled||attempted)
+        throw Error("R5 scripted owner assembly is single-use");
+      assembled=true;
+      const bound=await prepared.assembleR5Planning(input);
+      assembledPlanning=bound.planning;
+      return bound;
+    },
     start:async planning=>{
       if(attempted)
         throw Error("R5 scripted owner Planning is single-use");
       attempted=true; // reserve before any possible provider/root effect
+      if(!assembledPlanning||planning!==assembledPlanning)
+        throw Error("R5 scripted owner requires its original assembled Planning input");
       if(!planning||typeof planning!=="object"||
          !isBoundR5NoProviderPlanningModel(
            planning.planner?.model,planning.snapshot,

@@ -147,6 +147,16 @@ const SUITES=Object.freeze([
     title:"R5 bounded no-provider ADK model produces original-snapshot scoped plan after genuine Gateway-shaped reads"
   },
   {
+    id:"r5_real_owner_gateway_ipc_planning_assembly",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-owner-assembly.test.mjs",
+    title:"R5 original owner assembles SAME Coordinator with real durable Gateway IPC, no Planning root or approval"
+  },
+  {
+    id:"r5_owner_rejects_undurable_gateway",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-owner-assembly.test.mjs",
+    title:"R5 owner assembly rejects non-durable actual Gateway capabilities"
+  },
+  {
     id:"r5_real_private_planning_registration",
     path:"poc/apps/gateway/test/trusted-plan-ipc.test.ts",
     title:"R5 private IPC pins real Gitea Planning SHA and awaits durable remote retirement"

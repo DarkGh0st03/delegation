@@ -244,10 +244,13 @@ test("R5 pre-Planning host preflight requires absent plan and real owner-protect
       expectedSourceSha:SHA
     });
     assert.equal(typeof owner.start,"function");
+    assert.equal(typeof owner.assemblePlanning,"function");
     assert.equal(typeof owner.planningCheckpointStore.load,"function");
+    // No arbitrary constructed Planner/Coordinator, including a paid
+    // provider, may skip the protected SAME-INSTANCE assembly.
     await assert.rejects(owner.start({
       planner:{model:{model:"gemini-paid"}}
-    }),/requires bounded no-provider Planning model/);
+    }),/requires its original assembled Planning input/);
     await assert.rejects(owner.start({
       planner:{model:{model:"gemini-paid"}}
     }),/single-use/);
@@ -268,7 +271,7 @@ test("R5 pre-Planning host preflight requires absent plan and real owner-protect
       snapshot,checkpointStore:ownerValid.planningCheckpointStore,
       planner:{model,snapshot,workBranch:"feature/scripted-test"},
       coordinator:{phase:"idle"}
-    }),/owner Planning and Engineer session pins must be identical/);
+    }),/requires its original assembled Planning input/);
     await assert.rejects(prepareConfiguredR5ScriptedEngineerBootstrap(configPath,{
       expectedSourceSha:"invalid"
     }),/R5 scripted owner source SHA pin required/);
