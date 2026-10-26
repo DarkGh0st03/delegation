@@ -187,8 +187,10 @@ test("service rejects unknown nested host authorities and untrusted runtime over
 
 
 test("trusted handoff lifecycle refuses second approval/run and closes authority exactly once",async()=>{
-  const {createTrustedReviewedHandoffLifecycle}=await import(
+  const {createTrustedReviewedHandoffLifecycle:originalLifecycle}=await import(
     "../src/trusted-reviewed-handoff-lifecycle.mjs");
+  const createTrustedReviewedHandoffLifecycle=start=>
+    originalLifecycle(start,{verifyTerminalClosure:async()=>{}});
   let started=0,revoked=0;
   const owner=createTrustedReviewedHandoffLifecycle(async input=>{
     started++;
@@ -206,8 +208,10 @@ test("trusted handoff lifecycle refuses second approval/run and closes authority
   assert.throws(()=>owner.start({session:"replayed"}),/already attempted/);
 });
 test("SIGTERM racing an unfinished approved handoff still revokes its root",async()=>{
-  const {createTrustedReviewedHandoffLifecycle}=await import(
+  const {createTrustedReviewedHandoffLifecycle:originalLifecycle}=await import(
     "../src/trusted-reviewed-handoff-lifecycle.mjs");
+  const createTrustedReviewedHandoffLifecycle=start=>
+    originalLifecycle(start,{verifyTerminalClosure:async()=>{}});
   let unblock;
   const pending=new Promise(resolve=>{unblock=resolve;});
   let revoked=0;
@@ -224,8 +228,10 @@ test("SIGTERM racing an unfinished approved handoff still revokes its root",asyn
   assert.equal(owner.status,"closed");
 });
 test("unconfirmed delegated-root revocation blocks clean host shutdown",async()=>{
-  const {createTrustedReviewedHandoffLifecycle}=await import(
+  const {createTrustedReviewedHandoffLifecycle:originalLifecycle}=await import(
     "../src/trusted-reviewed-handoff-lifecycle.mjs");
+  const createTrustedReviewedHandoffLifecycle=start=>
+    originalLifecycle(start,{verifyTerminalClosure:async()=>{}});
   let attempts=0;
   const owner=createTrustedReviewedHandoffLifecycle(async()=>({
     async close(){
@@ -243,8 +249,10 @@ test("unconfirmed delegated-root revocation blocks clean host shutdown",async()=
 
 
 test("rejected trusted handoff start cannot be misreported as clean shutdown",async()=>{
-  const {createTrustedReviewedHandoffLifecycle}=await import(
+  const {createTrustedReviewedHandoffLifecycle:originalLifecycle}=await import(
     "../src/trusted-reviewed-handoff-lifecycle.mjs");
+  const createTrustedReviewedHandoffLifecycle=start=>
+    originalLifecycle(start,{verifyTerminalClosure:async()=>{}});
   const owner=createTrustedReviewedHandoffLifecycle(async()=>{
     throw Error("operational root revocation unconfirmed");
   });
