@@ -99,6 +99,29 @@ test("R5 refuses offline, busy, unlabeled, ambiguous or paged self-hosted runner
     assert.throws(()=>check(f),/R5 private GitHub deployment NO-GO/);
   }
 });
+test("R5 runner label exclusivity rejects busy/offline duplicate candidates that may later be scheduled",()=>{
+  for(const [status,busy] of [
+    ["online",true],["offline",false],["offline",true],
+    ["online",false]
+  ]){
+    const snapshot=fixture();
+    snapshot.runners.runners.push({
+      id:12,name:"other-private-runner",status,busy,
+      labels:snapshot.runners.runners[0].labels.map(x=>({...x}))
+    });
+    snapshot.runners.total_count=2;
+    assert.throws(()=>check(snapshot),
+      /R5 private GitHub deployment NO-GO/);
+  }
+  const reused=fixture();
+  reused.runners.runners.push({
+    id:11,name:"misconfigured-runner",status:"offline",busy:true,
+    labels:[{name:"self-hosted"}]
+  });
+  reused.runners.total_count=2;
+  assert.throws(()=>check(reused),
+    /R5 private GitHub deployment NO-GO/);
+});
 test("R5 admin operator fails closed on absent default registration without dispatch",async()=>{
   const f=api({missingWorkflow:true});
   await assert.rejects(verify({expectedSourceSha:SOURCE,

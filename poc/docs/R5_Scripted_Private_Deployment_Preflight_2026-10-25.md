@@ -537,11 +537,14 @@ GitHub administrative prerequisites with **GET requests only**:
 - The deployment-branch policy is unrestricted. Custom restrictions
   require separate review; the script does not guess their glob semantics.
 - Exactly one private runner is idle and online, labelled `self-hosted`,
-  `linux`, `x64` and `delegation-private`. Multiple eligible runners,
-  unavailable runners or incomplete paginated listings fail closed. The
-  matching runner must expose a positive, numeric GitHub runner ID. This
-  ID is returned and printed by the owner-only pre-dispatch CLI so the
-  operator can independently pin it for the later post-run comparison.
+  `linux`, `x64` and `delegation-private`. **Exclusivity counts all
+  matching runners, including busy or offline runners**: otherwise a
+  second runner could become available after the preflight and receive
+  the dispatch. Duplicate private labels on a second runner, even one
+  currently offline, fail closed. Incomplete paginated listings and
+  duplicate numeric runner IDs also fail. The sole candidate must be
+  available and have a positive, unambiguous GitHub runner ID. This ID
+  is recorded before dispatch and checked against the completed job.
 - The reviewed workflow exists and is active on `main`, with the exact
   same Git blob SHA on the feature branch.
 

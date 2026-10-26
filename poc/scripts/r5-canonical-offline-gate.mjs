@@ -347,6 +347,11 @@ const SUITES=Object.freeze([
     title:"R5 confirms exactly one idle private runner, independent Engineer reviewer and same-SHA registered workflow without dispatch"
   },
   {
+    id:"r5_private_runner_labels_unique_even_busy",
+    path:"poc/scripts/test/r5-private-github-readiness.test.mjs",
+    title:"R5 runner label exclusivity rejects busy/offline duplicate candidates that may later be scheduled"
+  },
+  {
     id:"r5_preflight_pins_unique_runner_id",
     path:"poc/scripts/test/r5-private-github-readiness.test.mjs",
     title:"R5 rejects runner inventory without an independently pinnable numeric ID"

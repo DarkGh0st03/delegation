@@ -58,23 +58,28 @@ export function verifyR5PrivateGithubControlsSnapshot({
      runners.total_count!==runners.runners.length||
      runners.total_count>100)
     deny("runner listing is missing, paged, or ambiguous");
-  const eligible=runners.runners.filter(r=>
-    r?.status==="online"&&r.busy===false&&
-    Array.isArray(r.labels)&&
+  // Runner scheduling labels are not a lease: a currently busy/offline
+  // runner can become eligible between our inspection and dispatch. Count
+  // EVERY runner matching the private labels before checking availability.
+  const candidates=runners.runners.filter(r=>
+    Array.isArray(r?.labels)&&
     LABELS.every(label=>r.labels.some(x=>
       typeof x?.name==="string"&&x.name.toLowerCase()===label)));
-  if(eligible.length!==1)
-    deny("exactly one idle, online, correctly labelled private runner required");
-  // Record the runner identifier DURING the independent, owner-only
-  // pre-dispatch inventory. The post-run verifier must refuse a completed
-  // job with a different runner_id, even when all labels still match.
-  if(!Number.isSafeInteger(eligible[0].id)||eligible[0].id<=0)
-    deny("private runner has no independently pinnable numeric ID");
+  if(candidates.length!==1)
+    deny("private runner labels are absent or shared by multiple runners");
+  const candidate=candidates[0];
+  if(candidate.status!=="online"||candidate.busy!==false)
+    deny("the only privately labelled runner must be online and idle");
+  // Pin an independently discoverable positive identifier; duplicated
+  // identifiers across the entire visible inventory are never safe.
+  if(!Number.isSafeInteger(candidate.id)||candidate.id<=0||
+     runners.runners.some(r=>r!==candidate&&r?.id===candidate.id))
+    deny("private runner has no unambiguous numeric ID");
   return Object.freeze({
     status:"private_controls_visible_only_not_r5_go",
     source_sha:sourceSha,environment_name:ENVIRONMENT,
     eligible_private_runners:1,
-    eligible_private_runner_id:eligible[0].id,
+    eligible_private_runner_id:candidate.id,
     independent_review_configured:true,
     admin_bypass_independently_verified:false,
     runner_execution_observed:false,engineer_approval_observed:false,
