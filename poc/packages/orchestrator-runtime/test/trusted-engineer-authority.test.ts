@@ -236,9 +236,9 @@ test("failed or ambiguous provisional revocation cannot create operational autho
 
 test("issuer rejects reused root ids, statuses, excessive lifetimes and double planning",async()=>{
   const {session,adapter}=fixture();
-  await assert.rejects(()=>session.startPlanning(root(PREP_ID,"100",901)),/time budget/);
+  await assert.rejects(()=>session.startPlanning(root(PREP_ID,"100",2701)),/time budget/);
   assert.equal(adapter.calls.length,0);
-  await session.startPlanning(root(PREP_ID,"100",900));
+  await session.startPlanning(root(PREP_ID,"100",2700));
   await assert.rejects(()=>session.startPlanning(root("another","102",600)));
   for(const invalid of [
     root(PREP_ID,"101",3600),
