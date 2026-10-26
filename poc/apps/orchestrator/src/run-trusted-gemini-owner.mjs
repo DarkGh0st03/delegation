@@ -15,8 +15,8 @@ import {dirname,isAbsolute,normalize,resolve} from "node:path";
 import {pathToFileURL,fileURLToPath} from "node:url";
 import {prepareConfiguredOwnerEngineerBootstrap}
   from "./trusted-engineer-service.mjs";
-import {bindProtectedGeminiApprovedExecution}
-  from "./trusted-gemini-execution-binding.mjs";
+import {createProtectedGeminiOwnerDispatch}
+  from "./trusted-gemini-owner-dispatch.mjs";
 import {assertR5AuthenticSignedReviewReady}
   from "./trusted-r5-scripted-review-readiness.mjs";
 import {
@@ -129,59 +129,24 @@ export async function startProtectedGeminiOwnerSession({
   const assembly=await prepared.assembleGeminiPlanning(params);
   // ONLY this owner action can invoke Gemini; no inference during assembly.
   const host=await prepared.start(assembly.planning);
-  let shutdown,closed=false,dispatchAttempted=false;
-  // The owner retains identity-bound Coordinator and private API credentials
-  // in closure, NEVER in public server routes, A2A, MCP or JSON.
-  const signedReviewReady=()=>assertR5AuthenticSignedReviewReady({
-    coordinator:assembly.coordinator,
-    reviewGate:assembly.planning.reviewGate,
-    checkpointStore:assembly.planning.checkpointStore,
-    expectedSessionId:assembly.planning.snapshot.session_id,
-    expectedBaseRevision:assembly.planning.snapshot.base_revision
+  const dispatch=createProtectedGeminiOwnerDispatch({
+    assembly,host,geminiApiKey:params.geminiApiKey,
+    verifySignedReview:()=>assertR5AuthenticSignedReviewReady({
+      coordinator:assembly.coordinator,
+      reviewGate:assembly.planning.reviewGate,
+      checkpointStore:assembly.planning.checkpointStore,
+      expectedSessionId:assembly.planning.snapshot.session_id,
+      expectedBaseRevision:assembly.planning.snapshot.base_revision
+    })
   });
   return Object.freeze({
     engineerUrl:host.engineerUrl,
     oidcAdmissionEndpoint:host.oidcAdmissionEndpoint,
     status:"real_gemini_planning_staged_for_human_review_not_authorized_execution",
     get coordinatorPhase(){return assembly.coordinator.phase;},
-    /** Read-only precheck; does NOT consume GitHub admission or mint a root. */
-    async reviewReadiness(){
-      if(closed||dispatchAttempted||
-         assembly.coordinator.phase!=="planning")
-        throw Error("Gemini owner signed review unavailable");
-      return signedReviewReady();
-    },
-    /** OWNER-ONLY after genuine Engineer Ed25519 approval AND OIDC admission.
-     * No caller can inject a Coordinator, review gate, provider key, Gateway
-     * bearer, Engineer DID, source SHA, DAG callback or additional authority.
-     * Signed permission subsets and exact roles are rechecked by the host.
-     */
-    runApprovedGeminiDag(input){
-      if(closed||dispatchAttempted||
-         assembly.coordinator.phase!=="planning")
-        throw Error("Gemini owner DAG already attempted or Planning inactive");
-      const bound=bindProtectedGeminiApprovedExecution(
-        assembly.planning,input);
-      dispatchAttempted=true; // one-use BEFORE asynchronous consent/admission
-      return (async()=>{
-        await signedReviewReady();
-        if(closed||assembly.coordinator.phase!=="planning")
-          throw Error("Gemini owner signed review changed before admission");
-        return host.runReviewedApprovedDagWithGateway({
-          ...bound,coordinator:assembly.coordinator,
-          reviewGate:assembly.planning.reviewGate,
-          checkpointStore:assembly.planning.checkpointStore,
-          geminiApiKey:params.geminiApiKey,
-          transports:bound.transports
-        });
-      })();
-    },
-    close(){
-      if(shutdown)return shutdown;
-      closed=true;
-      shutdown=host.close();
-      return shutdown;
-    }
+    reviewReadiness:dispatch.reviewReadiness,
+    runApprovedGeminiDag:dispatch.runApprovedGeminiDag,
+    close:dispatch.close
   });
 }
 
