@@ -256,7 +256,12 @@ test("signed Planning and Engineer review accept up to 64 verified reads but ref
       expiresAt:new Date(now+300000).toISOString()
     });
     const verified=verifyTrustedPlanningCheckpoint(signed,{
-      trustedKeys:{"long-discovery":{public_key_pem:publicKeyPem}}
+      trustedKeys:{"long-discovery":{public_key_pem:publicKeyPem}},
+      expectedSessionId:SNAPSHOT.session_id,
+      expectedRepository:REPO,
+      expectedBaseRevision:SHA,
+      expectedWorkBranch:CFG.workBranch,
+      nowMs:now
     });
     assert.equal(verified.proposal.verified_source_reads,64);
     assert.throws(()=>signTrustedPlanningCheckpoint({
