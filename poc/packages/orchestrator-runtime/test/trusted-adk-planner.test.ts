@@ -465,3 +465,56 @@ test("optional ADK provider token reports are captured once per call without sou
   assert.ok(!JSON.stringify(events).includes("PRIVATE_SOURCE_NEVER_EXPORTED"));
   assert.ok(!JSON.stringify(events).includes(cfg.requirement));
 });
+
+
+test("failed Gemini delegate preserves only HTTP classification before ADK collapses error",async()=>{
+  class ProviderErrorModel extends BaseLlm{
+    constructor(){super({model:"offline-provider-error"});}
+    override async *generateContentAsync():AsyncGenerator<LlmResponse,void>{
+      const error=Object.assign(
+        new Error("PROVIDER_MESSAGE_CONTAINS_PRIVATE_PROMPT_AND_KEY"),{
+          status:400,request:{prompt:"PRIVATE_SOURCE"},key:"SENSITIVE_KEY"
+        });
+      throw error;
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("No network"));
+    }
+  }
+  const trace:Array<Record<string,unknown>>=[];
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model:new ProviderErrorModel(),
+    onObservation(event){trace.push({...event});},
+    readPort:{async invoke(){throw Error("unexpected source read");}}
+  }).propose());
+  const failures=trace.filter(e=>e.kind==="model_failure");
+  assert.ok(failures.some(e=>e.phase==="delegate_exception"&&
+    e.http_status===400&&e.category==="invalid_request_or_tool_schema"));
+  const safe=JSON.stringify(trace);
+  assert.ok(!safe.includes("PROVIDER_MESSAGE_CONTAINS_PRIVATE_PROMPT_AND_KEY"));
+  assert.ok(!safe.includes("PRIVATE_SOURCE"));
+  assert.ok(!safe.includes("SENSITIVE_KEY"));
+  assert.equal(trace.filter(e=>e.kind==="model_turn"&&e.status==="started").length,1);
+});
+
+test("ADK returned structured model error is observed without raw provider text",async()=>{
+  class ModelErrorResponse extends BaseLlm{
+    constructor(){super({model:"offline-returned-error"});}
+    override async *generateContentAsync():AsyncGenerator<LlmResponse,void>{
+      yield {errorCode:"RESOURCE_EXHAUSTED",
+        errorMessage:"ERROR_MESSAGE_CONTAINS_PRIVATE_PROMPT"};
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("No network"));
+    }
+  }
+  const trace:Array<Record<string,unknown>>=[];
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model:new ModelErrorResponse(),
+    onObservation(event){trace.push({...event});},
+    readPort:{async invoke(){throw Error("unexpected provider call");}}
+  }).propose());
+  assert.ok(trace.some(e=>e.kind==="model_failure"&&
+    e.category==="quota_or_rate_limit"&&e.phase==="model_error_response"));
+  assert.ok(!JSON.stringify(trace).includes("ERROR_MESSAGE_CONTAINS_PRIVATE_PROMPT"));
+});
