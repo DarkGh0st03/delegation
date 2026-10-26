@@ -321,10 +321,26 @@ export async function prepareConfiguredOwnerEngineerBootstrap(
     filePath:config.approval.trustedPlanFile,
     checkpointStore:checkpoints
   });
-  let attempted=false;
+  let attempted=false,geminiAssembled=false;
   return Object.freeze({
     planningCheckpointStore:checkpoints,
     operationalRecovery,
+    ...(expectedScriptedSourceSha===undefined?{
+      // Owner-selected, zero-inference assembly. Only the explicit
+      // subsequent start(planning) may invoke a potentially billable model.
+      // This never consumes a GitHub event or authenticates human approval.
+      assembleGeminiPlanning:async input=>{
+        if(attempted||geminiAssembled)
+          throw Error("Configured Gemini owner Planning assembly is single-use");
+        geminiAssembled=true;
+        const {assembleProtectedOwnerGeminiPlanning}=await import(
+          "./trusted-r5-scripted-owner-assembly.mjs");
+        return assembleProtectedOwnerGeminiPlanning({
+          ...input,config,planningCheckpointStore:checkpoints,
+          operationalRecovery
+        });
+      }
+    }:{}),
     ...(expectedScriptedSourceSha===undefined?{}:{
       assembleR5Planning:async input=>{
         const {assembleProtectedR5ScriptedOwnerPlanning}=await import(
