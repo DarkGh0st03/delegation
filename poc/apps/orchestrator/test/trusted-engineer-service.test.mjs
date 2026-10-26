@@ -328,6 +328,12 @@ test("protected Engineer service exposes only a single-use, explicitly consented
       modelName:"gemini-3.8-flash",geminiApiKey:"offline-dummy-no-call",
       authorizationInput:"I AUTHORIZE GEMINI API CHARGES"
     }),/single-use/);
+    // No fallback to a different Owner model/Coordinator once a protected
+    // Gemini assembly was attempted, even if consent verification failed.
+    await assert.rejects(prepared.start({
+      checkpointStore:prepared.planningCheckpointStore,
+      coordinator:{phase:"idle"}
+    }),/original idle Planning and checkpoint identity/);
   }finally{await f.close();}
 });
 
