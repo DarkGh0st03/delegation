@@ -25,6 +25,10 @@ const ANCHORS=Object.freeze({
     frontend:["apps/frontend/src/api/users-api.ts",
       "apps/frontend/src/pages/UserDetailPage.tsx"],
     test:["tests/backend/user.routes.test.ts"]
+  }),
+  "suspension-feedback":Object.freeze({
+    frontend:["apps/frontend/src/pages/UserDetailPage.tsx"],
+    test:["tests/frontend/UserDetailPage.test.tsx"]
   })
 });
 const ALLOWED=new Set(["create_branch","create_pull_request","read_file",
@@ -47,7 +51,10 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
      !Array.isArray(proposal.plan.requested_permissions)||
      !Array.isArray(observations)||observations.length>128)
     throw Error("invalid or absent proposal/observation artifact");
-  const reference=getApprovedOfflineScenario(scenario);
+  // Feedback enhancement uses the original already-suspended baseline, not
+  // the independently scripted department-directory solved fixture.
+  const reference=getApprovedOfflineScenario(
+    scenario==="suspension-feedback"?"account-suspension":scenario);
   const baseline=new Set(Object.keys(reference.files));
   const baselineDirs=new Set([""]);
   for(const name of baseline) {
