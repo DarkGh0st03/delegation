@@ -399,7 +399,7 @@ test("trusted Planner observations expose bounded metadata but not source or pro
   assert.ok(!JSON.stringify(events).includes(cfg.requirement));
 });
 
-test("denied Planning reads are observable but never passed to the provider",async()=>{
+test("ADK rejects out-of-scope arguments before invoking the trusted provider",async()=>{
   const events:Array<Record<string,unknown>>=[];
   let providerCalls=0;
   const model=new Scripted({branch:"main",path:"private/secret.env"},draft());
@@ -408,8 +408,27 @@ test("denied Planning reads are observable but never passed to the provider",asy
     readPort:{async invoke(){providerCalls++;return {};}}
   }).propose(),/no verified read-only grounded proposal/);
   assert.equal(providerCalls,0);
-  assert.ok(events.some(e=>e.kind==="read"&&e.status==="denied"&&
-    e.reason==="outside_planning_scope"));
+  // The ADK FunctionTool schema rejects invalid path enums before our read()
+  // callback is invoked. Absence of a read event is correct, not a bypass.
+  assert.ok(!events.some(e=>e.kind==="read"&&e.status==="verified"));
   assert.ok(!JSON.stringify(events).includes("private/secret.env"));
+  assert.ok(!events.some(e=>e.kind==="proposal"));
+});
+
+test("trusted provider denial emits metadata-only failure without a draft",async()=>{
+  const events:Array<Record<string,unknown>>=[];
+  let providerCalls=0;
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,onObservation(event){events.push({...event});},
+    readPort:{async invoke(){providerCalls++;return {
+      provider:"gitea",performed:true,tool:"read_file",path:FILE,
+      branch:"main",revision:"b".repeat(40),content:"PRIVATE_PROVIDER_BYTES"
+    };}}
+  }).propose(),/no verified read-only grounded proposal/);
+  assert.equal(providerCalls,1);
+  assert.ok(events.some(e=>e.kind==="read"&&e.status==="denied"&&
+    e.reason==="trusted_planning_read_failed"));
+  assert.ok(!JSON.stringify(events).includes("PRIVATE_PROVIDER_BYTES"));
   assert.ok(!events.some(e=>e.kind==="proposal"));
 });
