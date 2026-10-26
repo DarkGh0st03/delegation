@@ -145,7 +145,8 @@ class ScriptedPlanningModel extends BaseLlm{
 async function exercise(
   x:Scenario,partial=false,cancelBeforeFrontend=false,
   ownerLifecycle=false,realHttpA2A=false,withPullRequest=false,
-  missingRunnerAcceptance=false,planningReads=1
+  missingRunnerAcceptance=false,planningReads=1,
+  cancelDuringBackend=false
 ){
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
   const servers:Array<{role:string;baseUrl:string;close:()=>Promise<void>;executor:any}>=[];
@@ -389,6 +390,15 @@ async function exercise(
             assert.equal(context.delegation_evidence.credential_id.startsWith(
               "urn:task-child:"),true);
             events.push("a2a:"+role+":"+sub.subtask_id);
+            if(cancelDuringBackend&&role==="backend"){
+              // The operational DC is already issued and Backend has
+              // received its real signed HTTP A2A request. The trusted
+              // owner now terminates Gateway authority mid-flight.
+              events.push("owner-shutdown:backend-in-flight");
+              await coordinator.closeExecution();
+              events.push("native-operational-root-retired");
+              throw Error("trusted Engineer interrupted Backend A2A");
+            }
             for(const grant of sub.approved_file_permissions??[]){
               if(grant.operation==="update_file"||grant.operation==="create_file"){
                 await invoke(context.trusted_gateway_task_id!,role,
@@ -612,6 +622,32 @@ async function exercise(
       assert.equal(branchVpRequests,0);
       assert.equal(providerCalls,0);
     }
+    if(cancelDuringBackend){
+      assert.ok(owner&&realHttpA2A);
+      await assert.rejects(owner!.runApprovedDag(ownerInput,ownerExec));
+      assert.equal(owner!.status,"closed");
+      assert.equal(owner!.verifiedOutcome,"failed");
+      assert.equal(coordinator.phase,"closed");
+      await coordinator.assertOperationalClosureConfirmed();
+      assert.deepEqual(revoked.slice(-2),[
+        "urn:planning:"+x.name,"urn:execution:"+x.name
+      ]);
+      // Only creation of the approved feature branch succeeded before
+      // Backend was interrupted; Frontend/Test/PR never reach Gateway.
+      assert.equal(providerCalls,1);
+      assert.equal(opaCalls,1);
+      assert.equal(branchVpRequests,1);
+      assert.deepEqual(servers.map(server=>server.executor.executionCount),
+        [1,0,0]);
+      assert.ok(events.includes("owner-shutdown:backend-in-flight"));
+      assert.ok(events.includes("native-operational-root-retired"));
+      assert.ok(!events.includes("trusted-pr-created"));
+      assert.ok(!events.some(event=>event.startsWith("a2a:frontend")||
+        event.startsWith("a2a:test")));
+      await assert.rejects(owner!.runApprovedDag(ownerInput,ownerExec),
+        /already attempted/);
+      return;
+    }
     if(cancelBeforeFrontend){
       if(owner){
         await assert.rejects(owner.runApprovedDag(ownerInput,ownerExec),
@@ -775,4 +811,8 @@ test("R5 long-horizon offline Gemini-style ADK reads 11 distinct files then auth
   // The normal completion criterion is the fully validated final proposal
   // (model turn 12), not exhausting a 96-turn emergency ceiling.
   await exercise(SCENARIOS[0]!,false,false,true,true,true,false,11);
+});
+
+test("R5 owner interrupts an in-flight signed Backend HTTP A2A after operational root issuance; Gateway/Rust close and block Frontend, Test and PR",async()=>{
+  await exercise(SCENARIOS[0]!,false,false,true,true,true,false,11,true);
 });
