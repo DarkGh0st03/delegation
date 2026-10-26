@@ -134,6 +134,12 @@ export class R5ScriptedNoProviderPlanningModel extends BaseLlm {
     return Promise.reject(Error("R5 scripted model has no network provider"));
   }
 }
+// Capture original code references once. Instance checks alone are unsafe:
+// a subclass or an overwritten generateContentAsync() could call a paid API
+// while retaining a valid WeakMap entry created by super(intent).
+const ORIGINAL_GENERATOR=R5ScriptedNoProviderPlanningModel.prototype.generateContentAsync;
+const ORIGINAL_CONNECTION=R5ScriptedNoProviderPlanningModel.prototype.connect;
+
 /**
  * An in-process owner check; model output is still NEVER trusted for approval.
  * A paid BaseLlm or caller-created model-like object cannot satisfy it.
@@ -141,7 +147,13 @@ export class R5ScriptedNoProviderPlanningModel extends BaseLlm {
 export function isBoundR5NoProviderPlanningModel(
   model:unknown,snapshot:TrustedPlanningSnapshot,workBranch:string
 ):boolean{
-  if(!(model instanceof R5ScriptedNoProviderPlanningModel))
+  if(!(model instanceof R5ScriptedNoProviderPlanningModel)||
+     Object.getPrototypeOf(model)!==
+       R5ScriptedNoProviderPlanningModel.prototype||
+     model.generateContentAsync!==ORIGINAL_GENERATOR||
+     model.connect!==ORIGINAL_CONNECTION||
+     Object.hasOwn(model,"generateContentAsync")||
+     Object.hasOwn(model,"connect"))
     return false;
   const state=models.get(model);
   return !!state&&state.workBranch===workBranch&&

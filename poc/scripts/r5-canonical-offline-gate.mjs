@@ -147,6 +147,11 @@ const SUITES=Object.freeze([
     title:"R5 bounded no-provider ADK model produces original-snapshot scoped plan after genuine Gateway-shaped reads"
   },
   {
+    id:"scripted_no_provider_model_cannot_be_subclassed",
+    path:"poc/packages/orchestrator-runtime/test/trusted-r5-scripted-planning-model.test.ts",
+    title:"R5 rejects paid-capable subclasses and method replacement after original model construction"
+  },
+  {
     id:"scripted_paid_model_refused",
     path:"poc/packages/orchestrator-runtime/test/trusted-r5-scripted-planning-model.test.ts",
     title:"R5 rejects fee-capable BaseLlm and altered snapshot/branch binding"

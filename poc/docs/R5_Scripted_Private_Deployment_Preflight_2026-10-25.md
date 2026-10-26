@@ -270,3 +270,15 @@ Gemini BaseLlm, fake model-like object, or Planner bound to a different
 Gitea snapshot fails closed. Start remains a one-use operation. The
 non-R5 general owner bootstrap is unchanged, and cannot be used as
 evidence that the scripted R5 run is free of model charges.
+
+### No-provider model identity must remain immutable
+
+The R5 bootstrap rejects a subclass of the scripted model, an instance
+whose `connect` or `generateContentAsync` was shadowed/replaced, and
+a model bound to another Gitea snapshot. An `instanceof` test alone
+would not provide this guarantee: `super(intent)` also initializes the
+parent's private WeakMap binding for a potentially fee-capable subclass.
+The model guard requires the **exact original prototype and both original
+method implementations** before any Planning root is issued. It cannot
+attest a machine compromised with owner-level code execution; such a
+machine remains outside the trust boundary.

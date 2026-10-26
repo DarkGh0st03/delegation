@@ -97,6 +97,31 @@ test("R5 rejects fee-capable BaseLlm and altered snapshot/branch binding",()=>{
     Object.create(R5ScriptedNoProviderPlanningModel.prototype),
     SNAPSHOT,intent.workBranch),false);
 });
+test("R5 rejects paid-capable subclasses and method replacement after original model construction",()=>{
+  class PaidSubclass extends R5ScriptedNoProviderPlanningModel{
+    override async *generateContentAsync():AsyncGenerator<LlmResponse,void>{
+      throw Error("unexpected paid provider call");
+    }
+  }
+  const subclass=new PaidSubclass(intent);
+  assert.equal(isBoundR5NoProviderPlanningModel(
+    subclass,SNAPSHOT,intent.workBranch),false);
+  const modified=new R5ScriptedNoProviderPlanningModel(intent);
+  assert.equal(isBoundR5NoProviderPlanningModel(
+    modified,SNAPSHOT,intent.workBranch),true);
+  Object.defineProperty(modified,"generateContentAsync",{
+    configurable:true,value:async function*(){yield {content:{parts:[]}};}
+  });
+  assert.equal(isBoundR5NoProviderPlanningModel(
+    modified,SNAPSHOT,intent.workBranch),false);
+  const modifiedConnection=new R5ScriptedNoProviderPlanningModel(intent);
+  Object.defineProperty(modifiedConnection,"connect",{
+    configurable:true,value:async()=>({send:()=>{}})
+  });
+  assert.equal(isBoundR5NoProviderPlanningModel(
+    modifiedConnection,SNAPSHOT,intent.workBranch),false);
+});
+
 test("R5 refuses unauthorized files, overlapping writes, invalid test target and branch",()=>{
   const mutate=[
     x=>x.edits.backend=["src/unknown.ts"],
