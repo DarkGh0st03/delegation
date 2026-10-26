@@ -1164,6 +1164,17 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
   assert.equal((await readdir(f.admissions)).length,1);
   assert.equal((await readdir(f.replays)).length,1);
   assert.equal((await operational.pending()).length,0);
+  // A copied Coordinator/extra capability is denied synchronously by the
+  // owner before the genuine OIDC receipt can be consumed.
+  assert.throws(()=>signedOwner.runApprovedGeminiDag({
+    runId,coordinator:{phase:"execution"},
+    operationalRoot:{credential_id:"urn:forged"}
+  }),/Protected Gemini Execution binding denied/);
+  assert.equal(signedOwner.status,"awaiting_human_review");
+  assert.equal(await readTrustedPrivateRunState({
+    intakeUrl:host.oidcAdmissionEndpoint,tls,runId,sourceSha:sha
+  }),"waiting_for_owner");
+  assert.equal((await operational.pending()).length,0);
   const noEffectA2A={
     a2a:{async sendProtectedTask(){throw Error("A2A must never run");}},
     adapter:{adapterBaseUrl:"http://127.0.0.1:8090",
