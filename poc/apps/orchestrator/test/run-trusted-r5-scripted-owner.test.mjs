@@ -30,7 +30,7 @@ const fixture=async()=>{
     preliminaryRoot:{
       credential_id:"urn:r5:preliminary",
       valid_from:new Date().toISOString(),
-      validity_seconds:300,
+      validity_seconds:2700,
       credential_status:{
         type:"BitstringStatusListEntry",statusPurpose:"revocation",
         statusListIndex:"401",
@@ -86,6 +86,27 @@ test("R5 owner rejects altered profile, untrusted keys and shared signer input",
     }
   }finally{await f.close();}
 });
+test("R5 privileged input fails closed before reading signer for short, stale or overlong provisional roots",async()=>{
+  const f=await fixture();
+  try{
+    for(const change of [
+      x=>{x.preliminaryRoot.validity_seconds=300;},
+      x=>{x.preliminaryRoot.validity_seconds=2701;},
+      x=>{x.preliminaryRoot.validity_seconds=2220;
+        x.preliminaryRoot.valid_from=new Date(Date.now()-2000).toISOString();},
+      x=>{x.preliminaryRoot.valid_from=new Date(Date.now()-3600000).toISOString();},
+      x=>{x.preliminaryRoot.valid_from="invalid";},
+      x=>{x.preliminaryRoot.valid_from=new Date(Date.now()+120000).toISOString();}
+    ]){
+      const modified=structuredClone(f.input);
+      change(modified);
+      await f.rewrite(modified);
+      await assert.rejects(loadProtectedR5ScriptedOwnerInput(f.inputFile),
+        /R5 protected live owner input denied/);
+    }
+  }finally{await f.close();}
+});
+
 test("R5 owner refuses writable signer, writable input and symbolic link",async()=>{
   const f=await fixture();try{
     await chmod(f.signer,0o644);
