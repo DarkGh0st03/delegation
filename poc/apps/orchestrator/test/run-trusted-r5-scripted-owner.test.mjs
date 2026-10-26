@@ -7,6 +7,8 @@ import {spawnSync} from "node:child_process";
 import {loadProtectedR5ScriptedOwnerInput,
   startProtectedR5ScriptedOwnerSession}
   from "../src/run-trusted-r5-scripted-owner.mjs";
+import {bindProtectedR5ScriptedExecution}
+  from "../src/trusted-r5-scripted-execution-binding.mjs";
 
 const fixture=async()=>{
   const dir=await mkdtemp(join(tmpdir(),"r5-private-owner-input-"));
@@ -130,4 +132,115 @@ test("R5 foreground owner CLI never reads a key or starts a listener with missin
   assert.equal(p.stdout,"");
   assert.match(p.stderr,/R5 owner startup denied/);
   assert.doesNotMatch(p.stderr,/PRIVATE KEY|token|Bearer|BEGIN CERTIFICATE/);
+});
+
+function reviewedExecutionFixture(){
+  const planning=Object.freeze({
+    gateway:Object.freeze({
+      gatewayBaseUrl:"http://127.0.0.1:8091",
+      adapterBaseUrl:"http://127.0.0.1:8092",
+      adapterToken:"owner-protected-adapter-token"
+    })
+  });
+  const noop=async()=>({status:"completed"});
+  const payload={
+    runId:"40287572654",
+    operationalRoot:{
+      credential_id:"urn:offline:operational-root",
+      valid_from:new Date().toISOString(),
+      validity_seconds:180,
+      credential_status:{
+        type:"BitstringStatusListEntry",
+        statusPurpose:"revocation",
+        statusListIndex:"7",
+        statusListCredential:"https://status.example/roots"
+      }
+    },
+    ports:{backend:8103,frontend:8104,test:8105},
+    handlers:{backend:noop,frontend:noop,test:noop},
+    sendProtectedTask:noop,
+    childStatusProvisioning:{
+      reservationDirectory:"/opt/delegation/private-status",
+      statusListCredential:"https://status.example/children",
+      indexByTask:{branch:11,backend:12,frontend:13,test:14,pr:15},
+      excludedIndices:[1,2,3]
+    }
+  };
+  return {planning,payload};
+}
+test("R5 owner binds approved GitHub run exclusively to original protected Gateway and Adapter",()=>{
+  const f=reviewedExecutionFixture();
+  const bound=bindProtectedR5ScriptedExecution(f.planning,f.payload);
+  assert.equal(bound.runId,f.payload.runId);
+  assert.equal(bound.privateGatewayTransport.adapterToken,
+    "owner-protected-adapter-token");
+  assert.equal(bound.privateGatewayTransport.gatewayBaseUrl,
+    "http://127.0.0.1:8091");
+  assert.equal(bound.execution.adapter.bearerToken,
+    "owner-protected-adapter-token");
+  assert.equal(bound.execution.adapter.adapterBaseUrl,
+    "http://127.0.0.1:8092");
+  assert.equal(typeof bound.execution.a2a.sendProtectedTask,"function");
+  assert.equal(Object.isFrozen(bound.operationalRoot),true);
+  assert.equal(Object.isFrozen(bound.operationalRoot.credential_status),true);
+  assert.equal(Object.isFrozen(bound.childStatusProvisioning.indexByTask),true);
+  f.payload.operationalRoot.credential_status.statusListIndex="999";
+  f.payload.childStatusProvisioning.indexByTask.backend=100;
+  assert.equal(bound.operationalRoot.credential_status.statusListIndex,"7");
+  assert.equal(bound.childStatusProvisioning.indexByTask.backend,12);
+});
+test("R5 owner rejects arbitrary execution transport, fee-capable config or mismatched protected origin",()=>{
+  const f=reviewedExecutionFixture();
+  for(const change of [
+    ({payload})=>payload.privateGatewayTransport={
+      gatewayBaseUrl:"https://evil.example"
+    },
+    ({payload})=>payload.geminiApiKey="paid-key",
+    ({payload})=>payload.execution={authorityForTask:()=>true},
+    ({payload})=>payload.runId="0",
+    ({payload})=>payload.ports.test=payload.ports.frontend,
+    ({payload})=>payload.handlers.backend="a model prompt",
+    ({payload})=>payload.sendProtectedTask="user-supplied-URL",
+    ({payload})=>payload.childStatusProvisioning.extra="external-run",
+    ({planning})=>planning.gateway.adapterBaseUrl="https://evil.example"
+  ]){
+    const snapshot=reviewedExecutionFixture();
+    const mutable={planning:{
+      gateway:{...snapshot.planning.gateway}
+    },payload:structuredClone({
+      ...snapshot.payload,
+      handlers:{backend:null,frontend:null,test:null},
+      sendProtectedTask:null
+    })};
+    mutable.payload.handlers={...snapshot.payload.handlers};
+    mutable.payload.sendProtectedTask=snapshot.payload.sendProtectedTask;
+    change(mutable);
+    mutable.planning.gateway=Object.freeze(mutable.planning.gateway);
+    mutable.planning=Object.freeze(mutable.planning);
+    assert.throws(()=>bindProtectedR5ScriptedExecution(
+      mutable.planning,mutable.payload),
+      /R5 protected scripted Execution binding denied/);
+  }
+});
+test("R5 operator callback cannot inject forged role fields or unauthorized authority indexes",()=>{
+  const f=reviewedExecutionFixture();
+  for(const change of [
+    p=>p.ports.orchestrator=8009,
+    p=>p.handlers.admin=()=>true,
+    p=>p.childStatusProvisioning.indexByTask.constructor=99,
+    p=>p.childStatusProvisioning.indexByTask.backend={value:5},
+    p=>p.childStatusProvisioning.excludedIndices.push({index:12})
+  ]){
+    const p={...f.payload,
+      ports:{...f.payload.ports},
+      handlers:{...f.payload.handlers},
+      childStatusProvisioning:{
+        ...f.payload.childStatusProvisioning,
+        indexByTask:{...f.payload.childStatusProvisioning.indexByTask},
+        excludedIndices:[...f.payload.childStatusProvisioning.excludedIndices]
+      }};
+    change(p);
+    assert.throws(()=>bindProtectedR5ScriptedExecution(
+      f.planning,p),/R5 protected scripted Execution binding denied/);
+  }
 });

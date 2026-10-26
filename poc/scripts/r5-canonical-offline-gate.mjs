@@ -162,6 +162,16 @@ const SUITES=Object.freeze([
     title:"R5 forbids using the Engineer signing identity as the Backend checkpoint key"
   },
   {
+    id:"r5_protected_owner_execution_transport_binding",
+    path:"poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs",
+    title:"R5 owner binds approved GitHub run exclusively to original protected Gateway and Adapter"
+  },
+  {
+    id:"r5_reject_untrusted_owner_execution_overrides",
+    path:"poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs",
+    title:"R5 owner rejects arbitrary execution transport, fee-capable config or mismatched protected origin"
+  },
+  {
     id:"r5_private_foreground_owner_input",
     path:"poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs",
     title:"R5 protected owner loads exact original signed Planning input from 0600, without exposing signer path"

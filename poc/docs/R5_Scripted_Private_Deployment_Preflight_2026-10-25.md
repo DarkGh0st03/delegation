@@ -443,3 +443,51 @@ must be cryptographically distinct (even if supplied under different PEM
 text or aliases); R5 rejects the same Ed25519 identity before a root is
 issued. A credential or private key for a real operator/Engineer must
 never be placed in this Git repository.
+
+## R5 — Explicit owner-only admission-to-Execution bridge
+
+The live R5 session object now exposes a **private in-process**
+`runApprovedScriptedDag({...})` method. It does NOT accept or return the
+raw Coordinator or Engineer Host. This method is available only to
+trusted operator code that receives the original session object from
+`startProtectedR5ScriptedOwnerSession()`; it is NOT a GitHub Action,
+HTTP handler, ADK FunctionTool, A2A method or MCP route.
+
+Once the Software Engineer has independently reviewed and signed the
+immutable plan using the loopback Engineer UI, and once an actual
+private GitHub workflow job has acquired its one-use mTLS+OIDC admission
+receipt, the owner supplies these *data and already-approved-code*
+fields: `runId`, fresh `operationalRoot`, three distinct bound
+`ports`, the three trusted deterministic `handlers`, the protected
+`sendProtectedTask` function, and durable
+`childStatusProvisioning` metadata. All trusted Gateway/Adapter
+URLs and the Adapter bearer are derived **only** from the same
+original protected Planning assembly, never accepted from this input.
+
+The binder rejects extra keys including externally supplied
+`execution`, `authorityForTask`, `privateGatewayTransport`,
+`geminiApiKey`, and other attempts to override trusted authority.
+It requires exactly the Backend/Frontend/Test role ports and handlers,
+canonical GitHub run ID and compatible child Status List metadata,
+then freezes independent copies of the candidate root and allocator
+data before passing them to the existing
+`host.runReviewedScriptedApprovedDagWithGateway` pathway.
+
+**The host remains the sole authority:** it independently consumes
+a real single-use `scripted_offline` OIDC receipt, checks the
+currently active GitHub job and the Engineer's real Ed25519 signature
+against the Backend-signed checkpoint, issues the scoped root,
+starts real A2A role servers, executes the signed DAG through
+Gateway/Rust/OPA and Gitea/Docker, then retires the operational
+authority. The owner facade itself NEVER fabricates a signature,
+receipt or task result. It is one-shot even on failure and cannot
+promote a prematurely closed or unapproved Planning session.
+
+The standalone foreground CLI stages Planning and displays only the
+login-protected loopback Engineer UI URL. It intentionally provides
+no unauthenticated remote way to trigger Execution. A separately
+reviewed local owner-process driver must call the in-process method
+once all external human and runner prerequisites are fulfilled.
+The offline tests only verify protected argument binding; they are
+not evidence that external admission, task effects or revocation
+have occurred. R5 remains NO-GO until those real observations exist.

@@ -8,6 +8,8 @@ import {dirname,isAbsolute,normalize,resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {prepareConfiguredR5ScriptedEngineerBootstrap}
   from "./trusted-engineer-service.mjs";
+import {bindProtectedR5ScriptedExecution}
+  from "./trusted-r5-scripted-execution-binding.mjs";
 
 const SHA=/^[a-f0-9]{40}$/u;
 function deny(){throw Error("R5 protected live owner input denied");}
@@ -90,10 +92,33 @@ export async function startProtectedR5ScriptedOwnerSession({
   const params=await loadProtectedR5ScriptedOwnerInput(inputFile);
   const assembly=await prepared.assemblePlanning(params);
   const host=await prepared.start(assembly.planning);
+  let dispatchAttempted=false,closed=false;
+  // Deliberately do NOT expose the raw Host/Coordinator to external
+  // consumers: arbitrary callbacks must not bypass approved DAG binding.
   return Object.freeze({
-    host,coordinator:assembly.coordinator,
+    engineerUrl:host.engineerUrl,
+    scriptedOidcAdmissionEndpoint:host.scriptedOidcAdmissionEndpoint,
     status:"live_original_planning_for_human_review_not_r5_go",
-    async close(){await host.close();}
+    get coordinatorPhase(){return assembly.coordinator.phase;},
+    /**
+     * OWNER PROCESS ONLY. Never wired to Engineer HTTP, A2A, MCP, ADK,
+     * Actions inputs or the JWT endpoint. The host independently checks
+     * an authenticated manual runner, real Ed25519 human signature,
+     * approved DAG, root issuance and complete authority retirement.
+     */
+    runApprovedScriptedDag(input){
+      if(closed||dispatchAttempted||
+         assembly.coordinator.phase!=="planning")
+        throw Error("R5 owner scripted DAG already attempted or inactive");
+      const bound=bindProtectedR5ScriptedExecution(
+        assembly.planning,input);
+      dispatchAttempted=true; // reserve before consumed GitHub admission
+      return host.runReviewedScriptedApprovedDagWithGateway(bound);
+    },
+    async close(){
+      closed=true;
+      await host.close();
+    }
   });
 }
 
@@ -128,8 +153,8 @@ if(process.argv[1]&&import.meta.url===
     active=await startPromise;
     if(interrupted)await stop();
     else process.stdout.write(
-      "R5 original Planning staged for genuine Engineer review; "+
-      "no GitHub OIDC, approved DAG or R5 GO established\n");
+      "R5 original Planning staged for genuine Engineer review at "+
+      active.engineerUrl+"; no GitHub OIDC, approved DAG or R5 GO established\n");
   }catch{
     process.stderr.write(
       "R5 owner startup denied; reconcile durable Gateway/Adapter before retry\n");
