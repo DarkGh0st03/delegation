@@ -9,6 +9,7 @@
  * Persistence and review staging never authorize Execution, create a DC,
  * sign for the Engineer or trigger Gemini automatically.
  */
+import {DEFAULT_ENGINEER_REVIEW_MS,MAX_ENGINEER_REVIEW_MS} from "../../plan-contracts/src/planning-limits.mjs";
 import {createPrivateKey} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {TrustedAdkReadOnlyPlanner} from "./trusted-adk-planner.ts";
@@ -56,9 +57,9 @@ export class TrustedActivePlanningCheckpoint {
        !(config.planner.config.readPort instanceof TrustedPlanningGatewayReadPort)||
        typeof config.expectedWorkBranch!=="string"||
        config.expectedWorkBranch!==config.planner.config.workBranch||
-       !Number.isSafeInteger(config.checkpointLifetimeMs??300000)||
-       (config.checkpointLifetimeMs??300000)<1000||
-       (config.checkpointLifetimeMs??300000)>600000||
+       !Number.isSafeInteger(config.checkpointLifetimeMs??DEFAULT_ENGINEER_REVIEW_MS)||
+       (config.checkpointLifetimeMs??DEFAULT_ENGINEER_REVIEW_MS)<1000||
+       (config.checkpointLifetimeMs??DEFAULT_ENGINEER_REVIEW_MS)>MAX_ENGINEER_REVIEW_MS||
        !isDeepStrictEqual(config.snapshot,config.planner.config.snapshot))
       deny();
     // Reject invalid trusted backend keys before any potentially paid model
@@ -104,7 +105,7 @@ export class TrustedActivePlanningCheckpoint {
       keyId:this.#config.backendKeyId,
       privateKeyPem:this.#config.backendPrivateKeyPem,
       issuedAt:new Date(now).toISOString(),
-      expiresAt:new Date(now+(this.#config.checkpointLifetimeMs??300000))
+      expiresAt:new Date(now+(this.#config.checkpointLifetimeMs??DEFAULT_ENGINEER_REVIEW_MS))
         .toISOString()
     });
     this.#active();
