@@ -171,3 +171,37 @@ reachability, issue a GitHub OIDC token, complete a signed DAG or confer
 execution authorization. The real mTLS handshake and independently
 pinned Engineer host remain mandatory. Do not copy the runner's client
 private key into an Engineer host process for cross-host verification.
+
+## Real private-network mTLS negative challenge (no OIDC, no authority)
+
+After the *original live* Engineer Host starts its separately pinned
+`scripted_offline` mTLS intake on the chosen RFC1918 interface, the
+isolated private runner can verify **actual reachability** over mTLS
+without submitting a workflow token:
+
+```bash
+export DELEGATION_SCRIPTED_RUNNER_OIDC_CONFIG=/path/to/owner-protected/scripted-runner.json
+export DELEGATION_R5_EXPECTED_SOURCE_SHA=<40-character-reviewed-commit>
+node --experimental-strip-types poc/scripts/r5-scripted-mtls-network-probe.mjs
+```
+
+The operator command loads the existing 0600 runner configuration and
+performs the local client certificate checks, then makes one genuine TLS
+`GET` to the dedicated status endpoint using an intentionally invalid
+`run_id=0`, alongside the reviewed source SHA. It verifies the server
+certificate IP SAN, trusted CA, independently pinned exact leaf SHA-256,
+mutual TLS client key, and the expected `404 {"status":"denied"}` response.
+An invalid client certificate, TLS mismatch, REST error, unexpected
+response or inaccessible host is NO-GO; it sends **no** GitHub OIDC,
+Engineer Ed25519 signature, root parameters or model prompts.
+
+The installed private GitHub workflow now performs the negative mTLS
+challenge **after** the immutable-source/registration preflight and
+**before** the GitHub OIDC submission. In the workflow, the independently
+pinned source is checked against `GITHUB_SHA`. When run manually outside
+GitHub Actions, use the explicit owner-reviewed SHA environment variable.
+
+A positive negative-challenge proves a live pinned HTTPS/mTLS endpoint
+returned the expected denial for that request. It does **not** prove
+an authenticated GitHub job, an Engineer signature, a completed DAG or
+credential revocation, and must never be reported as `completed_verified`.

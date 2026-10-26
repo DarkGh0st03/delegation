@@ -35,6 +35,11 @@ jobs:
       - name: Validate default-branch registration and immutable runner source
         shell: bash
         run: node --experimental-strip-types /opt/delegation/r5/poc/scripts/r5-scripted-dispatch-registration.mjs
+      # Read-only negative authorization check against the real, pinned
+      # Engineer TLS endpoint. It never requests a GitHub OIDC JWT.
+      - name: Probe pinned private Engineer mTLS before GitHub OIDC
+        shell: bash
+        run: node --experimental-strip-types /opt/delegation/r5/poc/scripts/r5-scripted-mtls-network-probe.mjs
       - name: Submit signed OIDC then wait for offline root revocation
         shell: bash
         run: node --experimental-strip-types /opt/delegation/r5/poc/apps/orchestrator/src/hold-private-scripted-github-session.mjs

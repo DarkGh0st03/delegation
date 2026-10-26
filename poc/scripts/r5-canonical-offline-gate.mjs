@@ -117,6 +117,11 @@ const SUITES=Object.freeze([
     title:"R5 final GitHub revalidation accepts a still-active job before root retirement"
   },
   {
+    id:"private_engineer_actual_mtls_negative_status",
+    path:"poc/scripts/test/r5-scripted-mtls-network-probe.test.mjs",
+    title:"R5 REAL local mTLS HTTP negative probe accepts pinned host and client without granting authority"
+  },
+  {
     id:"scripted_runner_mtls_client_leaf",
     path:"poc/scripts/test/r5-scripted-runner-tls-preflight.test.mjs",
     title:"R5 protected private runner accepts valid clientAuth TLS config but never declares connected"
