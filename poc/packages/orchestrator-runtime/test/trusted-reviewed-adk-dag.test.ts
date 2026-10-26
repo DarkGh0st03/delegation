@@ -146,7 +146,7 @@ async function exercise(
   x:Scenario,partial=false,cancelBeforeFrontend=false,
   ownerLifecycle=false,realHttpA2A=false,withPullRequest=false,
   missingRunnerAcceptance=false,planningReads=1,
-  cancelDuringBackend=false
+  cancelDuringBackend=false,failOperationalRevocation=false
 ){
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
   const servers:Array<{role:string;baseUrl:string;close:()=>Promise<void>;executor:any}>=[];
@@ -174,7 +174,11 @@ async function exercise(
           per:structuredClone(input.permissions)
         }};
       },
-      async revokeRoot(id:string){revoked.push(id);}
+      async revokeRoot(id:string){
+        revoked.push(id);
+        if(failOperationalRevocation&&id==="urn:execution:"+x.name)
+          throw Error("offline native operational revocation unconfirmed");
+      }
     };
     let coordinator!:TrustedExecutionCoordinator;
     const gate=new TrustedPlanningReviewGate({
@@ -395,8 +399,13 @@ async function exercise(
               // received its real signed HTTP A2A request. The trusted
               // owner now terminates Gateway authority mid-flight.
               events.push("owner-shutdown:backend-in-flight");
-              await coordinator.closeExecution();
-              events.push("native-operational-root-retired");
+              try{
+                await coordinator.closeExecution();
+                events.push("native-operational-root-retired");
+              }catch{
+                events.push("native-operational-root-unconfirmed");
+                throw Error("offline native operational revocation unconfirmed");
+              }
               throw Error("trusted Engineer interrupted Backend A2A");
             }
             for(const grant of sub.approved_file_permissions??[]){
@@ -625,10 +634,20 @@ async function exercise(
     if(cancelDuringBackend){
       assert.ok(owner&&realHttpA2A);
       await assert.rejects(owner!.runApprovedDag(ownerInput,ownerExec));
-      assert.equal(owner!.status,"closed");
+      assert.equal(owner!.status,
+        failOperationalRevocation?"closing":"closed");
       assert.equal(owner!.verifiedOutcome,"failed");
       assert.equal(coordinator.phase,"closed");
-      await coordinator.assertOperationalClosureConfirmed();
+      if(failOperationalRevocation){
+        await assert.rejects(
+          coordinator.assertOperationalClosureConfirmed(),
+          /native operational revocation unconfirmed/);
+        assert.ok(events.includes("native-operational-root-unconfirmed"));
+        assert.equal(events.includes("native-operational-root-retired"),false);
+      }else{
+        await coordinator.assertOperationalClosureConfirmed();
+        assert.ok(events.includes("native-operational-root-retired"));
+      }
       assert.deepEqual(revoked.slice(-2),[
         "urn:planning:"+x.name,"urn:execution:"+x.name
       ]);
@@ -640,7 +659,6 @@ async function exercise(
       assert.deepEqual(servers.map(server=>server.executor.executionCount),
         [1,0,0]);
       assert.ok(events.includes("owner-shutdown:backend-in-flight"));
-      assert.ok(events.includes("native-operational-root-retired"));
       assert.ok(!events.includes("trusted-pr-created"));
       assert.ok(!events.some(event=>event.startsWith("a2a:frontend")||
         event.startsWith("a2a:test")));
@@ -815,4 +833,8 @@ test("R5 long-horizon offline Gemini-style ADK reads 11 distinct files then auth
 
 test("R5 owner interrupts an in-flight signed Backend HTTP A2A after operational root issuance; Gateway/Rust close and block Frontend, Test and PR",async()=>{
   await exercise(SCENARIOS[0]!,false,false,true,true,true,false,11,true);
+});
+
+test("R5 unconfirmed native Rust revocation during in-flight signed Backend A2A stays FAILED and cannot dispatch Frontend, Test or PR",async()=>{
+  await exercise(SCENARIOS[1]!,false,false,true,true,true,false,11,true,true);
 });
