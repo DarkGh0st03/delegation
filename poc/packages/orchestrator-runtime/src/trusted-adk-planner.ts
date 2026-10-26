@@ -41,6 +41,9 @@ export type PlanningObservation =
   | {kind:"model_turn";status:"started"|"completed";turn:number}
   | {kind:"read";status:"verified"|"denied";tool:ReadTool;
      path?:string;reason?:string}
+  | {kind:"model_usage";turn:number;source:"provider_reported";
+     input_tokens?:number;output_tokens?:number;total_tokens?:number;
+     thought_tokens?:number}
   | {kind:"proposal";status:"unapproved";digest:string;
      task_count:number;permission_count:number;verified_source_reads:number};
 export interface TrustedAdkPlannerConfig {
@@ -259,13 +262,42 @@ class BudgetedModel extends BaseLlm {
         [timeout,this.planningSignal]
     );
     if(bounded.aborted)fail("model call timed out or cancelled");
+    let lastUsage:Extract<PlanningObservation,{kind:"model_usage"}>|undefined;
+    const count=(value:unknown):number|undefined=>
+      typeof value==="number"&&Number.isSafeInteger(value)&&
+      value>=0&&value<=1_000_000_000?value:undefined;
     for await(const response of this.delegate.generateContentAsync(
       request,stream,bounded
     )){
       if(bounded.aborted)fail("model call timed out or cancelled");
+      // Token fields are optional provider reports, never raw prompt text.
+      // Streaming chunks can repeat cumulative counts: keep the LAST
+      // reported metadata for each model call, never sum per chunk.
+      const usage=response.usageMetadata;
+      if(usage){
+        const counts={
+          input_tokens:count(usage.promptTokenCount),
+          output_tokens:count(usage.candidatesTokenCount),
+          total_tokens:count(usage.totalTokenCount),
+          thought_tokens:count(usage.thoughtsTokenCount)
+        };
+        if(Object.values(counts).some(value=>value!==undefined)){
+          lastUsage={kind:"model_usage",turn,source:"provider_reported",
+            ...(counts.input_tokens===undefined?{}:{
+              input_tokens:counts.input_tokens}),
+            ...(counts.output_tokens===undefined?{}:{
+              output_tokens:counts.output_tokens}),
+            ...(counts.total_tokens===undefined?{}:{
+              total_tokens:counts.total_tokens}),
+            ...(counts.thought_tokens===undefined?{}:{
+              thought_tokens:counts.thought_tokens})
+          };
+        }
+      }
       yield response;
     }
     if(bounded.aborted)fail("model call timed out or cancelled");
+    if(lastUsage)this.onObservation?.(Object.freeze(lastUsage));
     this.onObservation?.(Object.freeze({kind:"model_turn",status:"completed",turn}));
   }
   override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
