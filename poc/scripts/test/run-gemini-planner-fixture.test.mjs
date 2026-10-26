@@ -4,7 +4,8 @@ import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {resolve,dirname} from "node:path";
 import {makeIsolatedPlanningFixture,assertBillableFixtureOptIn,
-  FIXTURE_SCENARIOS,CONSENT} from "../run-gemini-planner-fixture.mjs";
+  runIsolatedGeminiFixture,FIXTURE_SCENARIOS,CONSENT}
+  from "../run-gemini-planner-fixture.mjs";
 
 const script=resolve(dirname(fileURLToPath(import.meta.url)),
   "../run-gemini-planner-fixture.mjs");
@@ -63,4 +64,12 @@ test("no paid execute action without exact operator phrase and fresh evidence lo
 test("unknown or satisfied scenario cannot be silently substituted",()=>{
   assert.throws(()=>makeIsolatedPlanningFixture("account-suspension"),/unsupported/);
   assert.throws(()=>makeIsolatedPlanningFixture("__proto__"),/unsupported/);
+});
+
+test("exported billed runner also denies missing consent before touching the disk",async()=>{
+  await assert.rejects(()=>runIsolatedGeminiFixture({
+    scenario:"department-directory",apiKey:"dummy",
+    modelName:"gemini-3.8-flash",
+    outputDir:"/tmp/never-created-evidence-dir"
+  }),/billable Gemini probe denied/);
 });
