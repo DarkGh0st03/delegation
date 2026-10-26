@@ -252,11 +252,13 @@ test("Planner validates per-call and output-token bounds before any model reques
   const model=new Scripted({branch:"main",path:FILE},draft());
   const port={async invoke(){return {};}};
   for(const budget of [
+    {maxModelTurns:0},{maxModelTurns:97},{maxModelTurns:NaN},
     {maxModelCallMs:999},{maxModelCallMs:360001},
     {maxModelCallMs:NaN},{maxOutputTokens:0},
     {maxOutputTokens:32001},{maxOutputTokens:1.5},
     {maxPlanningMs:999},{maxPlanningMs:900001},
-    {maxPlanningMs:Infinity},{maxPlanningMs:1.5}
+    {maxPlanningMs:Infinity},{maxPlanningMs:1.5},
+    {thinkingLevel:"MINIMAL"}
   ])assert.throws(()=>new TrustedAdkReadOnlyPlanner({
     ...cfg,model,readPort:port,...budget
   }),/invalid trusted Planning config/);
@@ -552,4 +554,50 @@ test("Gemini function declarations avoid empty objects and empty-string enum",as
     };
     walk(parameters);
   }
+});
+
+test("long-horizon Planner handles >12 real ADK model turns with MEDIUM thinking and stops on a valid draft",async()=>{
+  class LongHorizonScripted extends BaseLlm{
+    turns=0;requests:LlmRequest[]=[];
+    constructor(){super({model:"offline-long-horizon-fixture"});}
+    override async *generateContentAsync(
+      request:LlmRequest
+    ):AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      this.turns++;
+      if(this.turns<=14){
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"long-horizon-read-"+this.turns,name:"read_file",
+          args:{branch:"main",path:FILE}
+        }}]}};
+        return;
+      }
+      yield {content:{role:"model",parts:[{text:JSON.stringify(draft())}]}};
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("scripted test uses no network"));
+    }
+  }
+  const model=new LongHorizonScripted();
+  let readCalls=0;
+  const observations:Array<Record<string,unknown>>=[];
+  const output=await new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,maxModelTurns:96,thinkingLevel:"MEDIUM",
+    maxPlanningMs:900000,maxOutputTokens:16384,
+    onObservation(e){observations.push({...e});},
+    readPort:{async invoke(tool:string){
+      readCalls++;
+      return {provider:"gitea",performed:true,tool,branch:"main",
+        path:FILE,revision:SNAPSHOT.base_revision,
+        content:"export const invoices=[];"};
+    }}
+  }).propose();
+  assert.equal(output.status,"unapproved_proposal");
+  assert.equal(readCalls,14);
+  assert.equal(model.turns,15);
+  assert.equal(model.requests.length,15);
+  assert.equal((model.requests[0].config as any)?.maxOutputTokens,16384);
+  assert.equal((model.requests[0].config as any)?.thinkingConfig?.thinkingLevel,"MEDIUM");
+  assert.equal(observations.filter(e=>e.kind==="model_turn"&&e.status==="started").length,15);
+  assert.equal(observations.filter(e=>e.kind==="proposal").length,1);
 });
