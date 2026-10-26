@@ -272,3 +272,40 @@ do not switch just because a stronger model exists.
 The isolated fixture experiment is not a real Rust/OPA/Gitea authorized
 Planning test. A green offline preflight does not establish the behavior
 of paid Gemini inference or an approved execution DAG.
+
+
+## R5B — Independent human review lifetime after Planning
+
+The paid synthetic Planner succeeded (#40357039122). Its success is ONLY a
+read-only, in-memory model feasibility result; it does not authorize a real
+Gitea/Rust/OPA execution. A subsequent 5/5 offline integration CI passed at
+`027a5d3b` (#40358606880).
+
+The trusted live owner bootstrap now verifies the requested preliminary
+credential duration BEFORE any provisional DC is issued or a Gitea Planning
+session is registered. Maximum bounded lifetime: **45 minutes**, shared
+between the Rust/Adapter owner authority and the Gateway's revision registry.
+A 15-minute maximum Planner session no longer automatically consumes the
+whole credential lifetime. The backend-signed, pinned Planning checkpoint
+has a separate **20-minute** human-review validity period, plus a required
+two-minute minimum handoff margin. The bootstrap rejects short or stale
+provisional roots before changing state.
+
+* These maxima are *not* automatic extensions or revocation confirmations.
+  Production issuer validity and status verification, trusted clock skew,
+  persistent service availability, and confirmed retirement remain required.
+* All Planning authority remains **read_repository, list_directory and
+  read_file**, pinned to Gitea main's exact SHA. No writing, code execution,
+  permission escalation, automatic signing, merge or auto-approval.
+* The Engineer can reject and close Planning. Without an authentic, matching,
+  unexpired Ed25519-approved permission subset, no operational root may issue.
+* The existing Architect-approved execution path still needs private runner,
+  live Engineer Host, signed OIDC admission and verified Gitea/Runner evidence.
+* An alternative future design can revoke the provisional read DC
+  immediately after Planning and separate the human review into a no-root
+  phase; this requires redesigning the existing trusted Coordinator state
+  machine, not silently skipping the current revocation-before-issuance gate.
+
+Tests now check rejection of undersized preliminary lifetime *before*
+issuance, 45-minute Gateway TTL expiry, excessive TTL refusal, and the
+existing negative security cases. No Gemini API calls are made by these tests.
