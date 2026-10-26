@@ -11,6 +11,8 @@ import {dirname,isAbsolute,resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {verifyR5ScriptedDispatchRegistration}
   from "./r5-scripted-dispatch-registration.mjs";
+import {persistR5PreDispatchRunnerPin}
+  from "./r5-private-pre-dispatch-pin.mjs";
 
 const REPO="DarkGh0st03/delegation";
 const BRANCH="refactor/post-prof-plan-contracts-20261021";
@@ -173,6 +175,15 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
       expectedSourceSha:process.env.DELEGATION_R5_EXPECTED_SOURCE_SHA,
       githubToken:token
     });
+    // Commit the observed candidate BEFORE owner authorizes dispatch.
+    // A stale/existing pin fails closed; never overwrite it after the job.
+    const pinned=await persistR5PreDispatchRunnerPin(
+      process.env.DELEGATION_R5_PREFLIGHT_PIN_DIRECTORY,{
+        sourceSha:r.source_sha,runnerId:r.eligible_private_runner_id
+      });
+    process.stdout.write("R5 pre-dispatch runner pin written "+
+      pinned.source_sha+" at "+pinned.observed_at+"; runner ID "+
+      pinned.runner_id+"; no R5 GO\n");
     process.stdout.write("R5 private environment and registration checked at "+
       r.source_sha+"; independently reviewed private runner ID "+
       r.eligible_private_runner_id+

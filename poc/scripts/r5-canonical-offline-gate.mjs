@@ -352,6 +352,26 @@ const SUITES=Object.freeze([
     title:"R5 runner label exclusivity rejects busy/offline duplicate candidates that may later be scheduled"
   },
   {
+    id:"r5_predispatch_owner_inventory_is_one_use",
+    path:"poc/scripts/test/r5-private-pre-dispatch-pin.test.mjs",
+    title:"R5 independent pre-dispatch runner pin NEVER overwrites already observed source"
+  },
+  {
+    id:"r5_predispatch_owner_pin_durable_0600",
+    path:"poc/scripts/test/r5-private-pre-dispatch-pin.test.mjs",
+    title:"R5 pre-dispatch independent runner pin creates exclusive durable 0600 no-GO record"
+  },
+  {
+    id:"r5_protected_predispatch_runner_pin_used",
+    path:"poc/scripts/test/r5-post-run-github-crosscheck.test.mjs",
+    title:"R5 owner post-run cross-check consumes ONLY the original protected pre-dispatch runner pin"
+  },
+  {
+    id:"r5_postrun_deny_retroactive_pin",
+    path:"poc/scripts/test/r5-post-run-github-crosscheck.test.mjs",
+    title:"R5 GitHub post-run evidence rejects after-the-fact runner observation before reading job metadata"
+  },
+  {
     id:"r5_preflight_pins_unique_runner_id",
     path:"poc/scripts/test/r5-private-github-readiness.test.mjs",
     title:"R5 rejects runner inventory without an independently pinnable numeric ID"

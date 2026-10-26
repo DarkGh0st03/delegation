@@ -12,6 +12,8 @@ import {dirname,isAbsolute,resolve,join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {assertR5EvidenceDirectory}
   from "../apps/orchestrator/src/trusted-r5-scripted-completion-evidence.mjs";
+import {loadR5PreDispatchRunnerPin}
+  from "./r5-private-pre-dispatch-pin.mjs";
 
 const REPO="DarkGh0st03/delegation";
 const BRANCH="refactor/post-prof-plan-contracts-20261021";
@@ -27,7 +29,6 @@ const STEPS=Object.freeze([
 const LABELS=Object.freeze(["self-hosted","linux","x64","delegation-private"]);
 const SHA=/^[a-f0-9]{40}$/u;
 const RUN=/^[1-9][0-9]{0,19}$/u;
-const RUNNER=/^[1-9][0-9]{0,14}$/u;
 const DIGEST=/^[a-f0-9]{64}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const LIMIT=65536;
@@ -75,7 +76,14 @@ export function validateR5OwnerCompletionClaim(evidence,{
   });
 }
 function matchGitHubRun(run,pins){
-  return run&&String(run.id)===pins.run_id&&
+  // A host-local 0600 pre-dispatch observation must predate the manual
+  // GitHub run. The run creation timestamp comes from GitHub, not from
+  // the owner receipt. Short freshness bound limits stale label snapshots.
+  const observed=Date.parse(pins.observed_at);
+  const created=Date.parse(run?.created_at);
+  return Number.isFinite(observed)&&Number.isFinite(created)&&
+    observed<=created&&created-observed<=60*60*1000&&
+    run&&String(run.id)===pins.run_id&&
     run.event==="workflow_dispatch"&&run.run_attempt===1&&
     run.status==="completed"&&run.conclusion==="success"&&
     run.head_sha===pins.source_sha&&
@@ -122,15 +130,19 @@ function matchPrivateJob(page,pins){
 /** Injectable fetch is for offline tests, NOT trusted network substitution. */
 export async function corroborateR5PostRunGithub({
   evidence,expectedSourceSha,expectedRunId,expectedRunnerId,
-  githubToken,fetchFn=fetch
+  expectedPreDispatchObservedAt,githubToken,fetchFn=fetch
 }={}){
   const pins=validateR5OwnerCompletionClaim(evidence,{
     expectedSourceSha,expectedRunId
   });
   // The runner ID must come from an independently recorded protected
   // operator inventory, not from the owner completion JSON or fetched job.
-  if(!Number.isSafeInteger(expectedRunnerId)||expectedRunnerId<=0)
-    deny("independently pinned private runner ID required");
+  if(!Number.isSafeInteger(expectedRunnerId)||expectedRunnerId<=0||
+     typeof expectedPreDispatchObservedAt!=="string"||
+     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
+       .test(expectedPreDispatchObservedAt)||
+     !Number.isFinite(Date.parse(expectedPreDispatchObservedAt)))
+    deny("independently pinned pre-dispatch runner identity and time required");
   if(typeof githubToken!=="string"||githubToken.length<16||
      githubToken.length>512||/\s/u.test(githubToken)||
      typeof fetchFn!=="function")
@@ -160,7 +172,9 @@ export async function corroborateR5PostRunGithub({
   // One fixed run and its complete one-page job list; an unexpected
   // pagination count is terminal, never interpreted as absent work.
   const run=await read(base);
-  if(!matchGitHubRun(run,pins))
+  if(!matchGitHubRun(run,{
+    ...pins,observed_at:expectedPreDispatchObservedAt
+  }))
     deny("GitHub manual run does not match exact reviewed completed source");
   const page=await read(base+"/jobs?per_page=100");
   if(!matchPrivateJob(page,{...pins,runner_id:expectedRunnerId}))
@@ -172,6 +186,7 @@ export async function corroborateR5PostRunGithub({
     observed_github_run_conclusion:"success",
     observed_private_job_steps:STEPS.length,
     observed_pinned_runner_id:expectedRunnerId,
+    pre_dispatch_runner_pin_checked:true,
     owner_receipt_provenance_independently_verified:false,
     physical_runner_identity_independently_verified:false,
     native_rust_evm_revocation_independently_verified:false,
@@ -204,12 +219,12 @@ async function protectedText(path,maxBytes){
 }
 /** Only owner-controlled CLI calls this with its independent pins. */
 export async function corroborateProtectedR5PostRunGithub({
-  evidenceDirectory,expectedRunId,expectedSourceSha,
-  expectedRunnerId,operatorTokenFile
+  evidenceDirectory,preDispatchPinDirectory,
+  expectedRunId,expectedSourceSha,operatorTokenFile,
+  fetchFn=fetch // owner-only test seam; production CLI always uses native fetch
 }={}){
   if(process.env.GITHUB_ACTIONS==="true"||
-     !RUN.test(expectedRunId??"")||!SHA.test(expectedSourceSha??"")||
-     !Number.isSafeInteger(expectedRunnerId)||expectedRunnerId<=0)
+     !RUN.test(expectedRunId??"")||!SHA.test(expectedSourceSha??""))
     deny("owner-only pinned post-run audit required");
   await assertR5EvidenceDirectory(evidenceDirectory);
   const evidenceFile=join(evidenceDirectory,
@@ -217,10 +232,17 @@ export async function corroborateProtectedR5PostRunGithub({
   let evidence;
   try{evidence=JSON.parse(await protectedText(evidenceFile,LIMIT));}
   catch{deny("protected local owner receipt unavailable");}
+  // Read the ONLY pre-dispatch source-bound owner pin; a post-run
+  // operator may not invent or update runnerId via environment input.
+  const pin=await loadR5PreDispatchRunnerPin(
+    preDispatchPinDirectory,expectedSourceSha
+  );
   const githubToken=(await protectedText(operatorTokenFile,512)).trim();
   return corroborateR5PostRunGithub({
-    evidence,expectedRunId,expectedSourceSha,expectedRunnerId,
-    githubToken
+    evidence,expectedRunId,expectedSourceSha,
+    expectedRunnerId:pin.runner_id,
+    expectedPreDispatchObservedAt:pin.observed_at,
+    githubToken,fetchFn
   });
 }
 if(process.argv[1]&&import.meta.url===
@@ -230,9 +252,7 @@ if(process.argv[1]&&import.meta.url===
       evidenceDirectory:process.env.DELEGATION_R5_EVIDENCE_DIRECTORY,
       expectedRunId:process.env.DELEGATION_R5_EXPECTED_RUN_ID,
       expectedSourceSha:process.env.DELEGATION_R5_EXPECTED_SOURCE_SHA,
-      expectedRunnerId:RUNNER.test(
-        process.env.DELEGATION_R5_EXPECTED_RUNNER_ID??"")
-        ?Number(process.env.DELEGATION_R5_EXPECTED_RUNNER_ID):undefined,
+      preDispatchPinDirectory:process.env.DELEGATION_R5_PREFLIGHT_PIN_DIRECTORY,
       operatorTokenFile:process.env.DELEGATION_R5_OPERATOR_GITHUB_TOKEN_FILE
     });
     process.stdout.write("R5 read-only GitHub/private-job completed cross-check "+

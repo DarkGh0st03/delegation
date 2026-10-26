@@ -553,6 +553,7 @@ Run only from an operator-controlled host, **not from GitHub Actions**:
 ```bash
 export DELEGATION_R5_OPERATOR_GITHUB_TOKEN_FILE=/private/engineer/github-admin-read.token
 export DELEGATION_R5_EXPECTED_SOURCE_SHA=<independently-reviewed-40-character-commit>
+export DELEGATION_R5_PREFLIGHT_PIN_DIRECTORY=/private/engineer/pre-dispatch-pins
 node poc/scripts/r5-private-github-readiness.mjs
 ```
 
@@ -832,7 +833,7 @@ the original owner wrote its durable local receipt:
 ```bash
 export DELEGATION_R5_EXPECTED_SOURCE_SHA=<reviewed-40-character-feature-commit>
 export DELEGATION_R5_EXPECTED_RUN_ID=<independently-recorded-manual-run-id>
-export DELEGATION_R5_EXPECTED_RUNNER_ID=<owner-recorded-private-runner-numeric-id>
+export DELEGATION_R5_PREFLIGHT_PIN_DIRECTORY=/private/engineer/pre-dispatch-pins
 export DELEGATION_R5_EVIDENCE_DIRECTORY=/private/engineer/evidence
 export DELEGATION_R5_OPERATOR_GITHUB_TOKEN_FILE=/private/engineer/github-admin-read.token
 node --experimental-strip-types poc/scripts/r5-post-run-github-crosscheck.mjs
@@ -874,9 +875,9 @@ The post-run operator check now also requires the numeric runner ID
 independently recorded by the owner **before** the workflow dispatch,
 through the protected GitHub runner inventory. Do not copy this value
 from the returned completed job itself: it must remain a separate
-owner-controlled pin, provided as
-`DELEGATION_R5_EXPECTED_RUNNER_ID`. Missing, zero, malformed or
-different IDs are NO-GO.
+owner-controlled pin, stored as a source-SHA-bound 0600
+`r5-pre-dispatch-<sha>.json` file **before dispatch**. A missing pin,
+a mismatched runner ID or a stale observation is NO-GO.
 
 The GitHub jobs API exposes `run_id`, `run_attempt`, `head_sha`,
 `head_branch`, `workflow_name`, job timestamps and numbered steps.
@@ -897,9 +898,45 @@ installed configuration are uncompromised.
 
 The owner-only GitHub readiness output now includes
 `eligible_private_runner_id` and prints it before dispatch. Record
-that numeric ID in the operator's independently protected run worksheet
-as `DELEGATION_R5_EXPECTED_RUNNER_ID`. Do **not** choose this value
-from the completed GitHub job or the owner-local completion JSON.
+that numeric ID in the operator's independently protected run worksheet.
+The code no longer accepts an environment-provided runner ID in the
+post-run CLI. Do **not** choose this value
+from the completed GitHub job or the owner-local completion JSON. The
+owner preflight now **atomically writes** the 0600 source-bound runner ID
+observation inside `DELEGATION_R5_PREFLIGHT_PIN_DIRECTORY`; the post-run
+script reads that already-existing, one-use observation instead of
+accepting any manually typed runner ID.
 A malformed/missing ID fails the initial readiness check and an
 unexpected ID fails the subsequent post-run verification. This compares
 GitHub registration identity; it is not hardware attestation.
+
+### Immutable owner pre-dispatch runner observation (R5)
+
+The owner GitHub preflight now requires an existing operator-only 0700
+directory at `DELEGATION_R5_PREFLIGHT_PIN_DIRECTORY`. After completing
+the read-only GitHub administrative checks, it creates
+`r5-pre-dispatch-<source-sha>.json` in that directory with an atomic
+hard-link, no-overwrite publication and filesystem synchronization.
+The record contains only the reviewed SHA, GitHub's uniquely observed
+private runner ID, the owner observation timestamp and explicit
+`independent_physical_attestation:false` /
+`external_r5_go:false` flags. It contains no API token, private key,
+workflow input or Engineer approval.
+
+Only ONE record can be created per source SHA; retries or attempts to
+replace a runner after its dispatch are NO-GO. A new independently
+reviewed commit is required for a new observation. Group/world-readable
+directories or records and symlinks are rejected. The record is an
+owner-local claim, NOT a tamper-proof independently signed assertion.
+
+The post-run audit **must** read that same file and check both the
+pinned runner ID and timestamp against GitHub's recorded manual run
+creation time. An observation after the run was created, or more than
+one hour before, is rejected. Clocks must be synchronized: GitHub
+records run creation times with coarse precision, so operators should
+complete preflight well before manually dispatching the job rather than
+at the exact same second. A later owner cannot manufacture successful
+R5 evidence by merely changing an environment variable to match the
+completed job. This protects against that specific workflow error,
+but owner-level filesystem compromise or deliberate timestamp forgery
+still requires a separate trust and audit boundary.
