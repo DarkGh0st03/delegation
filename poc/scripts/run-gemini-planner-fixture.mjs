@@ -200,8 +200,11 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       workBranch:fixture.spec.workBranch,
       agents:fixture.agents,readPort:fixture.readPort,
       onObservation(e){observations.push(e);},
-      maxModelTurns:8,maxModelCallMs:60000,
-      maxPlanningMs:300000,maxOutputTokens:8192
+      // High limits are failsafes, not normal stopping targets.
+      // The model should stop as soon as its complete proposal is ready.
+      maxModelTurns:96,maxModelCallMs:120000,
+      maxPlanningMs:900000,maxOutputTokens:16384,
+      thinkingLevel:"MEDIUM"
     });
     const proposal=await planner.propose();
     // This benchmark checks model feasibility only. The in-memory port
@@ -248,6 +251,10 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       engineer_approval:"not_requested",
       operational_delegations:"not_issued",
       can_authorize_execution:false,
+      planner_safety_budgets:{max_model_turns:96,max_read_calls:64,
+        max_total_read_bytes:524288,max_planning_ms:900000,
+        max_model_call_ms:120000,max_output_tokens:16384,
+        thinking_level:"MEDIUM"},
       provider_tokens_and_cost:"not_measured"
     });
   }
