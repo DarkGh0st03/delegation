@@ -57,6 +57,7 @@ test("R5 confirms exactly one idle private runner, independent Engineer reviewer
   assert.equal(result.status,
     "private_admin_and_registration_preflight_only_not_r5_go");
   assert.equal(result.eligible_private_runners,1);
+  assert.equal(result.eligible_private_runner_id,11);
   assert.equal(result.git_registration_verified,true);
   assert.equal(result.model_api_calls,0);
   assert.equal(result.engineer_approval_observed,false);
@@ -75,6 +76,13 @@ test("R5 refuses absent reviewer protection, bypassable owner or unsafe deployme
   ]){
     const f=fixture();modify(f);
     assert.throws(()=>check(f),/R5 private GitHub deployment NO-GO/);
+  }
+});
+test("R5 rejects runner inventory without an independently pinnable numeric ID",()=>{
+  for(const badId of [0,-1,"11",null,undefined,Number.MAX_SAFE_INTEGER+1]){
+    const f=fixture();
+    f.runners.runners[0].id=badId;
+    assert.throws(()=>check(f),/NO-GO/);
   }
 });
 test("R5 refuses offline, busy, unlabeled, ambiguous or paged self-hosted runners",()=>{

@@ -65,10 +65,17 @@ export function verifyR5PrivateGithubControlsSnapshot({
       typeof x?.name==="string"&&x.name.toLowerCase()===label)));
   if(eligible.length!==1)
     deny("exactly one idle, online, correctly labelled private runner required");
+  // Record the runner identifier DURING the independent, owner-only
+  // pre-dispatch inventory. The post-run verifier must refuse a completed
+  // job with a different runner_id, even when all labels still match.
+  if(!Number.isSafeInteger(eligible[0].id)||eligible[0].id<=0)
+    deny("private runner has no independently pinnable numeric ID");
   return Object.freeze({
     status:"private_controls_visible_only_not_r5_go",
     source_sha:sourceSha,environment_name:ENVIRONMENT,
-    eligible_private_runners:1,independent_review_configured:true,
+    eligible_private_runners:1,
+    eligible_private_runner_id:eligible[0].id,
+    independent_review_configured:true,
     admin_bypass_independently_verified:false,
     runner_execution_observed:false,engineer_approval_observed:false,
     git_registration_verified:false,model_api_calls:0
@@ -162,7 +169,9 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
       githubToken:token
     });
     process.stdout.write("R5 private environment and registration checked at "+
-      r.source_sha+"; no dispatch, approval, deployment or R5 GO\n");
+      r.source_sha+"; independently reviewed private runner ID "+
+      r.eligible_private_runner_id+
+      " (record BEFORE manual dispatch); no R5 GO\n");
   }catch{
     process.stderr.write("R5 protected GitHub administration NO-GO\n");
     process.exitCode=1;

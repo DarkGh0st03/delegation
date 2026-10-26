@@ -347,6 +347,11 @@ const SUITES=Object.freeze([
     title:"R5 confirms exactly one idle private runner, independent Engineer reviewer and same-SHA registered workflow without dispatch"
   },
   {
+    id:"r5_preflight_pins_unique_runner_id",
+    path:"poc/scripts/test/r5-private-github-readiness.test.mjs",
+    title:"R5 rejects runner inventory without an independently pinnable numeric ID"
+  },
+  {
     id:"r5_private_environment_review_bypass_denied",
     path:"poc/scripts/test/r5-private-github-readiness.test.mjs",
     title:"R5 refuses absent reviewer protection, bypassable owner or unsafe deployment branch restrictions"

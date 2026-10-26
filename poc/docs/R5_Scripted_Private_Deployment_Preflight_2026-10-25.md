@@ -538,7 +538,10 @@ GitHub administrative prerequisites with **GET requests only**:
   require separate review; the script does not guess their glob semantics.
 - Exactly one private runner is idle and online, labelled `self-hosted`,
   `linux`, `x64` and `delegation-private`. Multiple eligible runners,
-  unavailable runners or incomplete paginated listings fail closed.
+  unavailable runners or incomplete paginated listings fail closed. The
+  matching runner must expose a positive, numeric GitHub runner ID. This
+  ID is returned and printed by the owner-only pre-dispatch CLI so the
+  operator can independently pin it for the later post-run comparison.
 - The reviewed workflow exists and is active on `main`, with the exact
   same Git blob SHA on the feature branch.
 
@@ -886,3 +889,14 @@ The owner must confirm runner identity and environment restrictions
 independently. A successful REST response alone cannot establish
 that administrator bypass is disabled or that the server hardware and
 installed configuration are uncompromised.
+
+### Link between pre-dispatch and post-run runner identity
+
+The owner-only GitHub readiness output now includes
+`eligible_private_runner_id` and prints it before dispatch. Record
+that numeric ID in the operator's independently protected run worksheet
+as `DELEGATION_R5_EXPECTED_RUNNER_ID`. Do **not** choose this value
+from the completed GitHub job or the owner-local completion JSON.
+A malformed/missing ID fails the initial readiness check and an
+unexpected ID fails the subsequent post-run verification. This compares
+GitHub registration identity; it is not hardware attestation.
