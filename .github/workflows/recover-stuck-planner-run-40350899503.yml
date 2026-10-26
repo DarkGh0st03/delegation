@@ -1,0 +1,98 @@
+# ONE-TIME operator-triggered recovery of a single stuck GitHub Actions run.
+# Does NOT checkout source, call Gemini, create a new Planner run, or consume API tokens.
+name: Recover Stuck Gemini Planner Run 40350899503 (No Gemini)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  force-cancel:
+    name: Verify target then invoke official GitHub force-cancel
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'DarkGh0st03/delegation' &&
+      github.ref == 'refs/heads/main' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_RUN_ID: "40350899503"
+      TARGET_SHA: "8e05d3cc7a89911e12378dab882c7735a43b45b6"
+      API: https://api.github.com/repos/DarkGh0st03/delegation
+    steps:
+      - name: Confirm run identity, QUEUED state, and zero jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_get() {
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$API/$1"
+          }
+          api_get "actions/runs/$TARGET_RUN_ID" > /tmp/stuck-run.json
+          if ! jq -e --argjson id "$TARGET_RUN_ID" --arg sha "$TARGET_SHA" \
+            '.id == $id and .head_sha == $sha and
+             .name == "Gemini Planner — Manual Feasibility Experiment" and
+             .head_branch == "refactor/post-prof-plan-contracts-20261021" and
+             .event == "workflow_dispatch" and
+             .status == "queued" and .run_attempt == 1' \
+            /tmp/stuck-run.json > /dev/null; then
+            echo "::error::Target no longer matches the known stuck, queued manual run. No cancellation attempted."
+            exit 1
+          fi
+          api_get "actions/runs/$TARGET_RUN_ID/jobs?per_page=1" > /tmp/stuck-jobs.json
+          if [[ "$(jq -r '.total_count' /tmp/stuck-jobs.json)" != "0" ]]; then
+            echo "::error::Target now has jobs. No force cancellation attempted; inspect the original run."
+            exit 1
+          fi
+          echo "Exact stuck run identity confirmed; zero jobs. No Gemini is requested."
+
+      - name: Force cancel ONLY the verified stuck run
+        shell: bash
+        run: |
+          set -euo pipefail
+          http_code="$(curl --silent --show-error \
+            -o /tmp/cancel-response.json -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API/actions/runs/$TARGET_RUN_ID/force-cancel")"
+          echo "GitHub force-cancel HTTP status: $http_code"
+          {
+            echo "### Force-cancel result"
+            echo "- Target run: $TARGET_RUN_ID"
+            echo "- API status: $http_code"
+            echo "- No Gemini API requests."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$http_code" != 202 ]]; then
+            echo "::error::Force cancel was not accepted. GitHub Support may need to reconcile the stuck run."
+            exit 1
+          fi
+
+      - name: Confirm whether GitHub has marked the target cancelled
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 3
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API/actions/runs/$TARGET_RUN_ID" > /tmp/stuck-after.json
+          status="$(jq -r '.status' /tmp/stuck-after.json)"
+          conclusion="$(jq -r '.conclusion // "none"' /tmp/stuck-after.json)"
+          {
+            echo "- Post-cancel state: $status / $conclusion"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$status" != completed || "$conclusion" != cancelled ]]; then
+            echo "::warning::GitHub accepted force cancel but the target is not yet confirmed cancelled."
+            echo "Do NOT launch another paid Gemini run until the old run is conclusively cancelled."
+          fi
