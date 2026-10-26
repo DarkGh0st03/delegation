@@ -152,6 +152,11 @@ jobs:
             if [[ -f "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json" ]]; then
               echo "- Evaluator technical preflight: $(jq -r '.technical_preflight_pass' "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json")"
               echo "- Provider tokens (if supplied): evidence artifact only"
+            elif [[ -f "$DELEGATION_PLANNER_OUTPUT_DIR/failure-diagnostics.json" ]]; then
+              echo "- Outcome: no completed Planner proposal"
+              echo "- Model/ADK phase: $(jq -r '.phase' "$DELEGATION_PLANNER_OUTPUT_DIR/failure-diagnostics.json")"
+              echo "- Error category (sanitized): $(jq -r '.cause' "$DELEGATION_PLANNER_OUTPUT_DIR/failure-diagnostics.json")"
+              echo "- HTTP status (if available): $(jq -r '.http_status // "unknown"' "$DELEGATION_PLANNER_OUTPUT_DIR/failure-diagnostics.json")"
             else
               echo "- Evaluation: no completed proposal artifact (or dry run)"
             fi
