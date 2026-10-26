@@ -400,6 +400,44 @@ const SUITES=Object.freeze([
     id:"live_http_a2a_cancellation",
     path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
     title:"R5 real HTTP A2A cancels after Backend without contacting Frontend/Test"
+  },
+  // These checks explicitly join the 11-read Gemini-shaped Planning
+  // preflight, signed owner/Engineer DAG, task-bound shutdown and the GitHub
+  // completion fence. Their exact test names are deliberately pinned here.
+  {
+    id:"long_discovery_signed_three_role_dag",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
+    title:"R5 long-horizon offline Gemini-style ADK reads 11 distinct files then authentic Ed25519 review, scoped three-role HTTP A2A, Gateway and signed PR"
+  },
+  {
+    id:"in_flight_a2a_native_revocation_blocks_downstream",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
+    title:"R5 owner interrupts an in-flight signed Backend HTTP A2A after operational root issuance; Gateway/Rust close and block Frontend, Test and PR"
+  },
+  {
+    id:"unconfirmed_native_revocation_never_approves_runner",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
+    title:"R5 unconfirmed native Rust revocation during in-flight signed Backend A2A stays FAILED and cannot dispatch Frontend, Test or PR"
+  },
+  {
+    id:"post_revocation_journal_failure_never_approves_runner",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-adk-dag.test.ts",
+    title:"R5 native root revoked but durable operational journal cannot reconcile: signed Backend A2A never signals GitHub success"
+  },
+  {
+    id:"runner_waits_for_original_native_closure_proof",
+    path:"poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs",
+    title:"runner state remains execution_active until original Rust/Gateway closure verifier settles"
+  },
+  {
+    id:"runner_fails_on_native_retirement_uncertainty",
+    path:"poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs",
+    title:"failed native retirement after DAG and listener close terminates runner without verified receipt"
+  },
+  {
+    id:"owner_shutdown_blocks_late_verified_success",
+    path:"poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs",
+    title:"Engineer SIGTERM during pending native closure proof cannot promote a late DAG success"
   }
 ]);
 
