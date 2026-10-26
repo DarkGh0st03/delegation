@@ -16,6 +16,7 @@ test("authenticated Engineer review shows exact trusted plan details and uncerta
     assert.ok(html.includes('id="'+id+'"'),"Missing review UI field "+id);
   }
   assert.match(script,/task\.description/);
+  assert.match(script,/input\.checked=false/);
   assert.match(script,/task\.depends_on/);
   assert.match(script,/plan\.assumptions/);
   assert.match(script,/plan\.uncertainties/);
