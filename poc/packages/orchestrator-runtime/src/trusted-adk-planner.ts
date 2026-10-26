@@ -36,6 +36,13 @@ export interface PlanningReadPort {
   invoke(tool:ReadTool,args:Record<string,unknown>,
     signal?:AbortSignal):Promise<unknown>;
 }
+/** Evidence metadata only. No model prompts, tool contents or credentials. */
+export type PlanningObservation =
+  | {kind:"model_turn";status:"started"|"completed";turn:number}
+  | {kind:"read";status:"verified"|"denied";tool:ReadTool;
+     path?:string;reason?:string}
+  | {kind:"proposal";status:"unapproved";digest:string;
+     task_count:number;permission_count:number;verified_source_reads:number};
 export interface TrustedAdkPlannerConfig {
   model:BaseLlm;
   snapshot:TrustedPlanningSnapshot;
@@ -45,6 +52,9 @@ export interface TrustedAdkPlannerConfig {
   agents:Readonly<Record<Role,{did:string;card_ref:string}>>;
   /** Trusted Gateway-backed read port; never a direct model-controlled provider. */
   readPort:PlanningReadPort;
+  /** Trusted-host-owned evidence sink. Must NOT log model text or credentials.
+   * An observer failure fails the Planning attempt closed. */
+  onObservation?:(event:Readonly<PlanningObservation>)=>void;
   maxModelTurns?:number;
   /** Per-inference cancellation bound; does not itself guarantee a provider stops billing. */
   maxModelCallMs?:number;
@@ -225,17 +235,22 @@ class BudgetedModel extends BaseLlm {
   readonly limit:number;
   readonly maxCallMs:number;
   readonly planningSignal:AbortSignal;
+  readonly onObservation?:TrustedAdkPlannerConfig["onObservation"];
   constructor(model:BaseLlm,limit:number,maxCallMs:number,
-    planningSignal:AbortSignal){
+    planningSignal:AbortSignal,
+    onObservation?:TrustedAdkPlannerConfig["onObservation"]){
     super({model:model.model});
     this.delegate=model;this.limit=limit;this.maxCallMs=maxCallMs;
-    this.planningSignal=planningSignal;
+    this.planningSignal=planningSignal;this.onObservation=onObservation;
   }
   override async *generateContentAsync(request:LlmRequest,stream?:boolean,
     signal?:AbortSignal):AsyncGenerator<LlmResponse,void>{
     if(this.planningSignal.aborted)
       fail("Planning session deadline exceeded");
-    if(this.turns++>=this.limit)fail("model turn budget exceeded");
+    const turn=++this.turns;
+    if(turn>this.limit)fail("model turn budget exceeded");
+    // Counts actual delegate invocation attempts, not provider-billed usage.
+    this.onObservation?.(Object.freeze({kind:"model_turn",status:"started",turn}));
     // Per-call and session budgets are independent and both must hold.
     // Signal delivery is cooperative: late responses still fail closed.
     const timeout=AbortSignal.timeout(this.maxCallMs);
@@ -251,6 +266,7 @@ class BudgetedModel extends BaseLlm {
       yield response;
     }
     if(bounded.aborted)fail("model call timed out or cancelled");
+    this.onObservation?.(Object.freeze({kind:"model_turn",status:"completed",turn}));
   }
   override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
     return Promise.reject(Error("Planning streaming is disabled"));
@@ -291,18 +307,28 @@ export class TrustedAdkReadOnlyPlanner {
     // Late responses are never accepted even when an upstream ignores abort.
     const planningDeadline=AbortSignal.timeout(cfg.maxPlanningMs??300000);
     const model=new BudgetedModel(cfg.model,cfg.maxModelTurns??8,
-      cfg.maxModelCallMs??60000,planningDeadline);
+      cfg.maxModelCallMs??60000,planningDeadline,cfg.onObservation);
     const files=new Set(sp.files),directories=new Set(sp.directories);
     let calls=0,bytes=0,readCount=0,denied=false;
     const read=async(tool:ReadTool,args:Record<string,unknown>)=>{
+      const refuse=(reason:string)=>{
+        denied=true;
+        cfg.onObservation?.(Object.freeze({
+          kind:"read",status:"denied",tool,reason
+        }));
+        return {ok:false,error:reason};
+      };
+      const verified=(path?:string)=>cfg.onObservation?.(Object.freeze({
+        kind:"read",status:"verified",tool,...(path===undefined?{}:{path})
+      }));
       if(planningDeadline.aborted){
-        denied=true;return {ok:false,error:"planning_deadline"};
+        return refuse("planning_deadline");
       }
-      if(++calls>16){denied=true;return {ok:false,error:"read_budget"};}
+      if(++calls>16)return refuse("read_budget");
       if((tool==="read_file"&&(!files.has(args.path as string)||args.branch!=="main"))||
          (tool==="list_directory"&&(!directories.has(args.path as string)||args.branch!=="main"))||
          (tool==="read_repository"&&Object.keys(args).length!==0)){
-        denied=true;return {ok:false,error:"outside_planning_scope"};
+        return refuse("outside_planning_scope");
       }
       try{
         const result=obj(await cfg.readPort.invoke(tool,args,planningDeadline));
@@ -315,6 +341,7 @@ export class TrustedAdkReadOnlyPlanner {
           if(result.default_branch!=="main"||
              result.full_name!==sp.repository.owner+"/"+sp.repository.repository)
             throw Error("repository identity mismatched");
+          verified();
           return {ok:true,revision:result.revision,default_branch:"main"};
         }
         if(result.path!==args.path||result.branch!=="main")
@@ -331,6 +358,7 @@ export class TrustedAdkReadOnlyPlanner {
               throw Error("unexpected directory entry");
             return {path:e.path,type:e.type};
           });
+          verified(args.path as string);
           return {ok:true,revision:result.revision,entries};
         }
         if(typeof result.content!=="string")throw Error("missing read content");
@@ -338,9 +366,10 @@ export class TrustedAdkReadOnlyPlanner {
         bytes+=size;
         if(size>24000||bytes>96000)throw Error("read content too large");
         readCount++;
+        verified(args.path as string);
         return {ok:true,revision:result.revision,path:args.path,content:result.content};
       }catch{
-        denied=true;return {ok:false,error:"trusted_planning_read_failed"};
+        return refuse("trusted_planning_read_failed");
       }
     };
     const tools=[
@@ -420,6 +449,12 @@ export class TrustedAdkReadOnlyPlanner {
     const result=compilePlanningProposal(proposed,cfg);
     if(planningDeadline.aborted)
       fail("no verified read-only grounded proposal");
+    cfg.onObservation?.(Object.freeze({
+      kind:"proposal",status:"unapproved",digest:result.digest,
+      task_count:result.plan.tasks.length,
+      permission_count:result.plan.requested_permissions.length,
+      verified_source_reads:readCount
+    }));
     return {...result,verified_source_reads:readCount};
   }
 }
