@@ -13,9 +13,9 @@ const TOKEN="read-only-operator-fixture-token";
 function fixture(){
   return {sourceSha:SOURCE,
     branch:{name:BRANCH,commit:{sha:SOURCE}},
-    environment:{name:ENV,can_admins_bypass:false,
-      prevent_self_review:true,deployment_branch_policy:null,
-      protection_rules:[{type:"required_reviewers",reviewers:[{
+    environment:{name:ENV,deployment_branch_policy:null,
+      protection_rules:[{type:"required_reviewers",
+        prevent_self_review:true,reviewers:[{
         type:"User",reviewer:{login:"independent-operator"}}]}]},
     runners:{total_count:1,runners:[{id:11,name:"private-r5",
       status:"online",busy:false,labels:["self-hosted","Linux","X64",
@@ -60,6 +60,7 @@ test("R5 confirms exactly one idle private runner, independent Engineer reviewer
   assert.equal(result.git_registration_verified,true);
   assert.equal(result.model_api_calls,0);
   assert.equal(result.engineer_approval_observed,false);
+  assert.equal(result.admin_bypass_independently_verified,false);
   assert.equal(f.calls.length,8);
   assert.equal(f.calls.some(c=>/dispatches|jobs\/\d+/.test(c.url)),false);
   assert.equal(f.calls.some(c=>c.opts.method!=="GET"),false);
@@ -67,7 +68,7 @@ test("R5 confirms exactly one idle private runner, independent Engineer reviewer
 test("R5 refuses absent reviewer protection, bypassable owner or unsafe deployment branch restrictions",()=>{
   for(const modify of [
     f=>f.environment.protection_rules=[],
-    f=>f.environment.prevent_self_review=false,
+    f=>f.environment.protection_rules[0].prevent_self_review=false,
     f=>f.environment.can_admins_bypass=true,
     f=>f.environment.deployment_branch_policy={protected_branches:true},
     f=>f.environment.name="production"

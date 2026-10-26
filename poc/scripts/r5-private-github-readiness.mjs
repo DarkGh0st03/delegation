@@ -27,6 +27,7 @@ function validToken(token){
 }
 function validReviewRule(rule){
   return rule?.type==="required_reviewers"&&
+    rule.prevent_self_review===true&&
     Array.isArray(rule.reviewers)&&rule.reviewers.length>=1&&
     rule.reviewers.every(r=>["User","Team"].includes(r?.type)&&
       r.reviewer&&typeof r.reviewer==="object"&&
@@ -40,9 +41,11 @@ export function verifyR5PrivateGithubControlsSnapshot({
   if(!SHA.test(sourceSha??"")||
      branch?.name!==BRANCH||branch?.commit?.sha!==sourceSha)
     deny("reviewed development branch SHA differs from GitHub");
+  // GET /environments places prevent_self_review on the reviewers
+  // protection RULE, not a top-level field. The REST response cannot
+  // reliably prove that admins cannot bypass environment protection.
   if(environment?.name!==ENVIRONMENT||
-     environment?.can_admins_bypass!==false||
-     environment?.prevent_self_review!==true||
+     environment?.can_admins_bypass===true||
      !Array.isArray(environment.protection_rules)||
      !environment.protection_rules.some(validReviewRule))
     deny("private environment lacks independent, non-bypassable manual reviewers");
@@ -66,6 +69,7 @@ export function verifyR5PrivateGithubControlsSnapshot({
     status:"private_controls_visible_only_not_r5_go",
     source_sha:sourceSha,environment_name:ENVIRONMENT,
     eligible_private_runners:1,independent_review_configured:true,
+    admin_bypass_independently_verified:false,
     runner_execution_observed:false,engineer_approval_observed:false,
     git_registration_verified:false,model_api_calls:0
   });

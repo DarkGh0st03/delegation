@@ -530,7 +530,10 @@ GitHub administrative prerequisites with **GET requests only**:
 
 - The reviewed development branch still equals the independent source SHA pin.
 - `r5-private-scripted-admission` has required human reviewers,
-  `prevent_self_review: true` and `can_admins_bypass: false`.
+  `prevent_self_review: true` INSIDE the `required_reviewers`
+  protection rule. The GET response does not guarantee that administrative
+  bypass is disabled; verify that independently before authorizing dispatch.
+  The script denies any explicitly reported `can_admins_bypass: true`.
 - The deployment-branch policy is unrestricted. Custom restrictions
   require separate review; the script does not guess their glob semantics.
 - Exactly one private runner is idle and online, labelled `self-hosted`,
@@ -555,6 +558,8 @@ Insufficient permission means NO-GO, not a guessed success.
 
 The result `private_admin_and_registration_preflight_only_not_r5_go`
 proves only GitHub configuration *visible at inspection time*.
+Administrative bypass is NOT independently attested by this REST
+response and remains a manual deployment authorization requirement.
 It does not attest the physical runner, installed dependencies, real
 mTLS, human Ed25519 approval, operational root, A2A DAG or revocation.
 PR #37 remains a one-file draft review against `main`: **no merge or
