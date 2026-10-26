@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createTrustedReviewedHandoffLifecycle}
+import {createTrustedReviewedHandoffLifecycle as originalLifecycle}
   from "../src/trusted-reviewed-handoff-lifecycle.mjs";
+// These offline unit cases deliberately mock native Rust/Gateway settlement.
+// The production constructor now REQUIRES the original Coordinator verifier.
+const createTrustedReviewedHandoffLifecycle=(start,options={})=>
+  originalLifecycle(start,{
+    verifyTerminalClosure:async()=>{},...options
+  });
 import {trustedEngineerRunStatus}
   from "../src/trusted-engineer-run-status.mjs";
 import {awaitTrustedPrivateRunCompletion}
@@ -381,4 +387,12 @@ test("Engineer SIGTERM during pending native closure proof cannot promote a late
   }),"terminated");
   await assert.rejects(lifecycle.runApprovedDag({},executor()),
     /already attempted/);
+});
+
+test("cannot construct trusted production handoff without a native terminal closure verifier",()=>{
+  assert.throws(()=>originalLifecycle(async()=>({async close(){}})),
+    /terminal closure verifier required/);
+  assert.throws(()=>originalLifecycle(async()=>{},{
+    verifyTerminalClosure:"signed-completion-placeholder"
+  }),/terminal closure verifier required/);
 });
