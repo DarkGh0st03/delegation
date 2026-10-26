@@ -98,6 +98,8 @@ export async function startProtectedR5ScriptedOwnerSession({
   const assembly=await prepared.assemblePlanning(params);
   const host=await prepared.start(assembly.planning);
   let dispatchAttempted=false,dispatchPreparing=false,closed=false;
+  let dispatchPromise,shutdownPromise;
+  const shutdownAbort=new AbortController();
   // Verification reads the original Backend-signed checkpoint AND human
   // Ed25519 receipt. It is not itself operational authorization.
   const signedReviewReady=()=>assertR5AuthenticSignedReviewReady({
@@ -142,7 +144,7 @@ export async function startProtectedR5ScriptedOwnerSession({
       const bound=bindProtectedR5ScriptedExecution(
         assembly.planning,input);
       dispatchPreparing=true; // serialize across all awaits
-      try{
+      const execution=(async()=>{
         const review=await signedReviewReady();
         // R5 verified-complete evidence MUST have a protected durable
         // destination BEFORE consuming a one-shot GitHub receipt.
@@ -153,6 +155,8 @@ export async function startProtectedR5ScriptedOwnerSession({
           throw Error("R5 owner Planning closed during signature verification");
         dispatchAttempted=true; // reserve BEFORE consuming GitHub admission
         const completed=await host.runReviewedScriptedApprovedDagWithGateway(bound);
+        if(closed||shutdownAbort.signal.aborted)
+          throw Error("R5 owner shutdown requested during approved DAG");
         // This occurs only when the original host returned after the
         // approved DAG and its native root/Gateway close() succeeded.
         const witness=await verifyR5PostRunEvidence({
@@ -161,19 +165,43 @@ export async function startProtectedR5ScriptedOwnerSession({
           review,approvedTaskIds:taskIds,dagResult:completed,
           coordinator:assembly.coordinator
         });
+        if(closed||shutdownAbort.signal.aborted)
+          throw Error("R5 owner shutdown requested before receipt publication");
         const receipt=await persistR5PostRunEvidence(
-          evidenceDirectory,witness);
+          evidenceDirectory,witness,{signal:shutdownAbort.signal});
+        if(closed||shutdownAbort.signal.aborted)
+          throw Error("R5 owner shutdown raced completion publication");
         return Object.freeze({
           ...completed,owner_completion_evidence:witness,
           owner_completion_receipt:receipt
         });
+      })();
+      // Retain this promise until completion/rejection, so shutdown never
+      // abandons a pending DAG or evidence writer.
+      dispatchPromise=execution;
+      try{
+        return await execution;
       }finally{
         dispatchPreparing=false;
+        if(dispatchPromise===execution)dispatchPromise=undefined;
       }
     },
-    async close(){
-      closed=true;
-      await host.close();
+    close(){
+      if(shutdownPromise)return shutdownPromise;
+      closed=true; // deny new dispatch BEFORE any async cleanup
+      shutdownAbort.abort(); // cancel any pending proof publication
+      shutdownPromise=(async()=>{
+        let failure;
+        // A running DAG must be told to retire its native authority NOW;
+        // waiting for its completion before host.close could deadlock.
+        try{await host.close();}catch(error){failure=error;}
+        // Then wait for any in-flight dispatch/evidence writer to unwind.
+        if(dispatchPromise){
+          try{await dispatchPromise;}catch{/* original error is private */}
+        }
+        if(failure)throw failure;
+      })();
+      return shutdownPromise;
     }
   });
 }

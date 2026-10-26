@@ -267,3 +267,18 @@ test("R5 owner verifies real Engineer approval BEFORE consuming scripted GitHub 
   assert.match(body,/finally\s*{\s*dispatchPreparing=false/);
   assert.match(source,/async reviewReadiness\(\)/);
 });
+
+test("R5 SIGTERM fences original run and waits for in-flight DAG retirement and evidence writer",async()=>{
+  const source=await readFile(new URL(
+    "../src/run-trusted-r5-scripted-owner.mjs",import.meta.url),"utf8");
+  const run=source.slice(source.indexOf("async runApprovedScriptedDag(input){"));
+  const close=run.slice(run.indexOf("    close(){"));
+  assert.match(run,/dispatchPromise=execution/);
+  assert.match(run,/if\(closed\|\|shutdownAbort\.signal\.aborted\)[\s\S]*?witness=await verifyR5PostRunEvidence/);
+  assert.match(run,/persistR5PostRunEvidence\(\s*evidenceDirectory,witness,\{signal:shutdownAbort\.signal\}/);
+  assert.ok(close.indexOf("closed=true")>=0);
+  assert.ok(close.indexOf("shutdownAbort.abort()")>close.indexOf("closed=true"));
+  assert.ok(close.indexOf("await host.close()")>close.indexOf("shutdownAbort.abort()"));
+  assert.ok(close.indexOf("await dispatchPromise")>close.indexOf("await host.close()"));
+  assert.match(close,/if\(shutdownPromise\)return shutdownPromise/);
+});

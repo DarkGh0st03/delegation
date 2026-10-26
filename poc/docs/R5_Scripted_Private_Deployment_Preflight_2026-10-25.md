@@ -732,3 +732,38 @@ than accidentally passing on the one-use guard alone. The resulting
 file is still only a local owner-process observation; verified EVM
 revocation and the independently pinned distributed runner require
 external evidence before anyone may declare R5 GO.
+
+## R5 — SIGTERM/SIGINT concurrency hardening on original owner (26 Oct 2026)
+
+The protected owner process no longer treats a shutdown request as
+independent of a currently running approved DAG. As soon as
+`close()` is requested, it synchronously fences new callbacks and
+aborts completion evidence publication, then asks the original
+Engineer Host to terminate its active authority. It does **not**
+wait for the DAG *before* asking the Host to close, because doing so
+could deadlock if a hung A2A operation needs forced root retirement.
+After the Host's original shutdown resolves, it awaits the retained
+in-flight run/evidence promise before returning to the foreground
+signal handler. SIGINT/SIGTERM remain one-shot and idempotent.
+
+The owner checks the shutdown fence both after the original
+`runReviewedScriptedApprovedDagWithGateway` returns and again after
+the trusted native closure witness is obtained, and requires the
+evidence writer to receive the same `AbortSignal`.
+
+The atomic completion writer checks cancellation *before* any file
+creation, after writing/fsyncing the private temporary file and after
+atomically linking/fsyncing the completed run name. If cancellation
+races the final link, the writer removes only its own newly linked
+receipt and fsyncs the directory; it never removes a previously
+existing run's receipt. If publication durability or rollback fails,
+the operation returns NO-GO and requires manual inspection of the
+owner-only evidence directory.
+
+Offline regressions exercise early cancellation, deterministic
+cancellation after hard-link publication and structural ordering of
+Host closure versus run settlement. These tests are not an external
+signed attestation or a distributed runner execution. R5 remains
+NO-GO until explicit owner approval of deployment, independent
+review of PR #37, authentic human Engineer consent and witnessed
+real root/child revocation.

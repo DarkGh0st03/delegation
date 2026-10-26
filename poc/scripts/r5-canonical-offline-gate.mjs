@@ -252,6 +252,21 @@ const SUITES=Object.freeze([
     title:"R5 refuses unexpected installed SHA and dirty worktree"
   },
   {
+    id:"r5_sigterm_aborts_proof_publication",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
+    title:"R5 SIGTERM cancels witness publication before any final receipt is visible"
+  },
+  {
+    id:"r5_shutdown_after_link_rolls_back_receipt",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
+    title:"R5 SIGTERM after atomic link rolls back the final receipt and synchronizes the directory"
+  },
+  {
+    id:"r5_shutdown_serializes_original_run",
+    path:"poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs",
+    title:"R5 SIGTERM fences original run and waits for in-flight DAG retirement and evidence writer"
+  },
+  {
     id:"r5_completion_receipt_requires_unforgeable_witness",
     path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
     title:"R5 fabricated owner completion objects and clones cannot be persisted without native verification"

@@ -207,6 +207,36 @@ test("R5 atomic publication never replaces an existing completed-run file",async
   }finally{await f.close();}
 });
 
+test("R5 SIGTERM cancels witness publication before any final receipt is visible",async()=>{
+  const f=await dirFixture();
+  try{
+    const evidence=await verifyR5PostRunEvidence(await fixture());
+    const stop=new AbortController();
+    stop.abort();
+    await assert.rejects(persistR5PostRunEvidence(
+      f.dir,evidence,{signal:stop.signal}),/owner shutdown requested/);
+    assert.deepEqual(await readdir(f.dir),[]);
+  }finally{await f.close();}
+});
+
+test("R5 SIGTERM after atomic link rolls back the final receipt and synchronizes the directory",async()=>{
+  const f=await dirFixture();
+  try{
+    const evidence=await verifyR5PostRunEvidence(await fixture());
+    let checks=0;
+    // Simulates the exact shutdown check ordering across await points;
+    // the third read occurs AFTER link and the first directory fsync.
+    const signal={
+      get aborted(){checks++;return checks>=3;}
+    };
+    await assert.rejects(persistR5PostRunEvidence(
+      f.dir,evidence,{signal}),/atomic receipt publication unconfirmed/);
+    assert.equal(checks,3);
+    assert.deepEqual(await readdir(f.dir),[],
+      "a canceled run must leave neither a positive receipt nor temp files");
+  }finally{await f.close();}
+});
+
 test("R5 owner evidence rejects unprotected directory, symlink and unverified status",async()=>{
   const f=await dirFixture();
   try{

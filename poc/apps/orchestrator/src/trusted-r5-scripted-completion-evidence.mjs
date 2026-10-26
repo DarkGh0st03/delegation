@@ -110,7 +110,11 @@ export async function assertR5EvidenceDirectory(directory){
  * ONLY after the full verified JSON has been fsynced to a temporary inode.
  * Hard-link publication uses EEXIST/NO-REPLACE and is atomic on one FS.
  */
-export async function persistR5PostRunEvidence(directory,evidence){
+export async function persistR5PostRunEvidence(
+  directory,evidence,{signal}={}
+){
+  if(signal?.aborted)
+    deny("owner shutdown requested before evidence publication");
   if(!evidence||typeof evidence!=="object"||
      !issuedEvidence.has(evidence)||reservedEvidence.has(evidence))
     deny("only one genuine, unused Coordinator-verified witness may be published");
@@ -138,6 +142,8 @@ export async function persistR5PostRunEvidence(directory,evidence){
     await file.sync();
     await file.close();
     file=undefined;
+    if(signal?.aborted)
+      deny("owner shutdown requested before receipt publication");
     // POSIX hard-link creation rejects existing destination names. This
     // avoids exposing a partial JSON receipt and prevents overwrites.
     await link(temporary,filename);
@@ -147,7 +153,21 @@ export async function persistR5PostRunEvidence(directory,evidence){
     const dirfd=await open(directory,constants.O_RDONLY|
       constants.O_DIRECTORY|constants.O_NOFOLLOW);
     try{await dirfd.sync();}finally{await dirfd.close();}
+    if(signal?.aborted)
+      deny("owner shutdown raced the final receipt durability check");
   }catch{
+    // A shutdown may race a successful atomic link. Do not leave an
+    // authoritative-looking positive marker when the writer rejected.
+    // Never remove a preexisting run's file: linked is true ONLY when
+    // this call created the final hard-link itself.
+    if(linked){
+      try{
+        await unlink(filename);
+        const dirfd=await open(directory,constants.O_RDONLY|
+          constants.O_DIRECTORY|constants.O_NOFOLLOW);
+        try{await dirfd.sync();}finally{await dirfd.close();}
+      }catch{/* manual reconciliation required; never claim success */}
+    }
     deny("atomic receipt publication unconfirmed; no retry or overwrite");
   }finally{
     if(file)await file.close();
