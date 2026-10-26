@@ -119,3 +119,64 @@ cost outside the model output; redact secrets.
 - No operational DC, delegated agent Execution or code write during R5A.
 - If R5A is satisfactory, validate the same approved pipeline offline
   end to end, then request separate approval for the full Gemini E2E.
+
+
+## R5A.0 — Isolated model-capability probe (no R5 host needed)
+
+This is a **preliminary** capability experiment, intentionally separate from
+the trusted R5A private-host/Gitea test above. The new
+\`poc/scripts/run-gemini-planner-fixture.mjs\` runs the EXISTING
+\`TrustedAdkReadOnlyPlanner\` against a frozen in-memory IAM Console
+baseline. The read port returns **Gitea-shaped mock responses**, not
+authenticated Gitea, Gateway VP, Core Rust, OPA or an authorized session.
+
+Two initially absent enhancements are defined independently:
+
+- \`department-directory\`: admin-only department filtering in API/UI and tests.
+- \`suspension-feedback\`: accessibility feedback for an EXISTING
+  suspend/reactivate workflow, not reimplementation of Account Suspension.
+
+The model sees the requirement and ordinary permitted source tools, NOT
+the offline golden edits, reference file anchors or expected task DAG.
+The fixture's 40-hex revision is a synthetic source fingerprint and MUST
+NOT be reported as an actual Git commit/Gitea SHA.
+
+**Safe default:** one no-network/no-model dry run per case:
+
+\`\`\`sh
+node poc/scripts/run-gemini-planner-fixture.mjs --dry-run department-directory
+node poc/scripts/run-gemini-planner-fixture.mjs --dry-run suspension-feedback
+node --test poc/scripts/test/run-gemini-planner-fixture.test.mjs
+\`\`\`
+
+The CLI rejects all other command forms. GitHub CI runs only tests and
+never supplies the execute switch, consent phrase or Gemini API key.
+
+**Billable experiment is NOT authorized by this document or a green CI.**
+If and ONLY if the operator later chooses to pay, the exact separate
+manual command on a private machine is:
+
+\`\`\`sh
+export DELEGATION_PLANNER_BILLING_CONSENT='I AUTHORIZE GEMINI API CHARGES'
+export DELEGATION_PLANNER_OUTPUT_DIR='/absolute/private/path/new-unique-dir'
+export GEMINI_API_KEY='<provided privately, never committed>'
+node --experimental-strip-types poc/scripts/run-gemini-planner-fixture.mjs \
+  --execute department-directory
+\`\`\`
+
+Choose a **new, nonexistent** absolute evidence directory each time; the
+program creates it 0700 with exclusive 0600 evidence files. It creates
+\`proposal.json\`, \`observations.json\`, \`evaluation.json\` on success
+and a local \`fixture-run.json\` with the synthetic-boundary warning.
+One invocation may incur charges even when the model rejects the
+requirement or a model deadline is exceeded; limits are 8 model turns,
+8192 output tokens per call, 60s per model call, 300s total local
+Planning budget. These are bounds, NOT a provider-enforced spending cap
+or proof that a remote model stops billing after cancellation.
+
+The result is **only** a candidate plan for manual scientific assessment.
+No Engineer signature, Delegation Credential, tool write, GitHub PR or
+authorized E2E can be produced by this probe. Do not use its synthetic
+proposal as a signed human-review checkpoint in the real R5 pipeline.
+A successful isolated capability probe is followed by authenticated,
+native Gateway/Rust/OPA-backed Planning against a real pinned Gitea SHA.
