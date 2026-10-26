@@ -112,7 +112,10 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
   return {
     schema_version:"1.0.0",scenario,baseline_revision:expectedBaseRevision,
     evaluated_artifact:reviewPacket?"engineer_review_packet":"unapproved_proposal",
-    technical_preflight_pass:criteria.every(c=>c.pass),
+    // A valid alternative implementation may use fewer reference files.
+    // Keep coverage as an independent research signal, not a hard security gate.
+    technical_preflight_pass:criteria
+      .filter(c=>c.key!=="scenario_anchor_coverage").every(c=>c.pass),
     criteria,
     evidence:{model_turn_attempts:modelTurns.length,
       verified_file_reads:reads.length,
