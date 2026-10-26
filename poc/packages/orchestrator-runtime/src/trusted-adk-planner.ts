@@ -462,20 +462,28 @@ export class TrustedAdkReadOnlyPlanner {
       new FunctionTool({
         name:"read_repository",
         description:"Read only pinned trusted repository metadata.",
-        parameters:z.object({}).strict(),
+        // Google Gemini FunctionDeclaration forbids an OBJECT with empty
+        // properties. The nonempty repository selector is schema-validated,
+        // but never forwarded to the trusted provider (no authority change).
+        parameters:z.object({
+          repository:z.enum([sp.repository.repository])
+        }).strict(),
         execute:async()=>read("read_repository",{})
       }),
       new FunctionTool({
         name:"list_directory",
         description:"List only approved main directories at the trusted SHA.",
-        parameters:z.object({branch:z.literal("main"),
-          path:z.enum(sp.directories as [string,...string[]])}).strict(),
+        // The trusted root directory is the empty string. Gemini rejects
+        // enum entries equal to "", so validate the directory at the
+        // trusted read boundary instead of encoding that enum in the model.
+        parameters:z.object({branch:z.enum(["main"]),
+          path:z.string()}).strict(),
         execute:async(args)=>read("list_directory",args)
       }),
       ...(sp.files.length?[new FunctionTool({
         name:"read_file",
         description:"Read an explicitly authorized main file at the trusted SHA.",
-        parameters:z.object({branch:z.literal("main"),
+        parameters:z.object({branch:z.enum(["main"]),
           path:z.enum(sp.files as [string,...string[]])}).strict(),
         execute:async(args)=>read("read_file",args)
       })]:[])
