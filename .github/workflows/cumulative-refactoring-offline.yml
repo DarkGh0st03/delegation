@@ -53,7 +53,7 @@ jobs:
         run: |
           node --test poc/packages/plan-contracts/test/*.test.mjs
           npm --prefix poc run orchestrator-runtime:test
-          node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-engineer-service.test.mjs poc/apps/orchestrator/test/trusted-r5-scripted-owner-assembly.test.mjs poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs poc/apps/orchestrator/test/run-trusted-gemini-owner.test.mjs poc/apps/orchestrator/test/trusted-gemini-execution-binding.test.mjs poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs
+          node --experimental-strip-types --test poc/apps/orchestrator/test/trusted-engineer-service.test.mjs poc/apps/orchestrator/test/trusted-r5-scripted-owner-assembly.test.mjs poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs poc/apps/orchestrator/test/run-trusted-gemini-owner.test.mjs poc/apps/orchestrator/test/trusted-gemini-execution-binding.test.mjs poc/apps/orchestrator/test/trusted-gemini-owner-dispatch.test.mjs poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs
       - name: R5 canonical offline control-plane gate (no paid models)
         run: node poc/scripts/r5-canonical-offline-gate.mjs
       - name: ADK/A2A agent and MCP (legacy plus crypto profile)
