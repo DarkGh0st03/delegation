@@ -4,7 +4,7 @@ import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {resolve,dirname} from "node:path";
 import {makeIsolatedPlanningFixture,assertBillableFixtureOptIn,
-  runIsolatedGeminiFixture,FIXTURE_SCENARIOS,CONSENT}
+  runIsolatedGeminiFixture,classifyPlannerProbeFailure,FIXTURE_SCENARIOS,CONSENT}
   from "../run-gemini-planner-fixture.mjs";
 
 const script=resolve(dirname(fileURLToPath(import.meta.url)),
@@ -72,4 +72,21 @@ test("exported billed runner also denies missing consent before touching the dis
     modelName:"gemini-3.8-flash",
     outputDir:"/tmp/never-created-evidence-dir"
   }),/billable Gemini probe denied/);
+});
+
+
+test("API failure evidence uses a closed classification and never copies raw secrets",()=>{
+  const issue=Object.assign(new Error("Provider failed on API key SECRET-DO-NOT-LOG or user source"),{
+    status:400,request:{source:"PRIVATE_SOURCE"},apiKey:"PRIVATE_SECRET"
+  });
+  const result=classifyPlannerProbeFailure(issue);
+  assert.equal(result.http_status,400);
+  assert.equal(result.cause,"invalid_request_or_function_schema");
+  assert.ok(!JSON.stringify(result).includes("SECRET-DO-NOT-LOG"));
+  assert.ok(!JSON.stringify(result).includes("PRIVATE_SOURCE"));
+  assert.ok(!JSON.stringify(result).includes("PRIVATE_SECRET"));
+  assert.equal(classifyPlannerProbeFailure({status:429}).cause,"quota_or_rate_limit");
+  assert.equal(classifyPlannerProbeFailure({response:{status:401}}).cause,"authentication");
+  assert.equal(classifyPlannerProbeFailure({code:404}).cause,"model_or_endpoint_not_found");
+  assert.equal(classifyPlannerProbeFailure(new Error("Unknown")).cause,"unknown");
 });
