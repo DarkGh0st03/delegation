@@ -569,6 +569,10 @@ async function exercise(
         },
         close:()=>coordinator.closeExecution()
       };
+    },{
+      // The offline fixture still uses the real Coordinator's retained
+      // Gateway + Rust + recovery promise, not a synthetic "closed" flag.
+      verifyTerminalClosure:()=>coordinator.assertOperationalClosureConfirmed()
     }):undefined;
     // Production-style branch write: derive the branch from the signed
     // review store, issue a scoped VP through the private Adapter transport,
