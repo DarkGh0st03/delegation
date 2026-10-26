@@ -34,10 +34,32 @@
     $("digest").textContent=digest;
     $("confirmation").value="";
     $("tasks").replaceChildren();$("permissions").replaceChildren();
+    $("assumptions").replaceChildren();$("uncertainties").replaceChildren();
     for(const task of plan.tasks){
-      const p=node("p",task.id+" · "+task.agent_id+" · "+task.title);
-      $("tasks").append(p);
+      const entry=node("div");
+      entry.append(
+        node("strong",task.id+" · "+task.agent_id+" · "+task.title),
+        node("p",task.description),
+        node("p","Dipende da: "+
+          (task.depends_on.length?task.depends_on.join(", "):"nessun task"))
+      );
+      $("tasks").append(entry);
     }
+    function renderNotes(target,notes,emptyMessage){
+      if(!notes.length){
+        $(target).append(node("p",emptyMessage));
+        return;
+      }
+      const list=node("ul");
+      for(const note of notes){
+        list.append(node("li",note));
+      }
+      $(target).append(list);
+    }
+    // Use only textContent, never HTML parsing of model-authored strings.
+    renderNotes("assumptions",plan.assumptions,"Nessuna assunzione dichiarata.");
+    renderNotes("uncertainties",plan.uncertainties,
+      "Nessuna incertezza dichiarata dal Planner.");
     for(const p of plan.requested_permissions){
       const label=node("label");
       const input=node("input");
