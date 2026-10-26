@@ -29,6 +29,13 @@ const RUN=/^[1-9][0-9]{0,19}$/u;
 const DIGEST=/^[a-f0-9]{64}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const LIMIT=65536;
+const OWNER_RECEIPT_FIELDS=Object.freeze([
+  "schema","status","source_sha","github_run_id","session_id",
+  "approved_plan_digest","approved_task_ids","completed_task_ids",
+  "authenticated_engineer_did","coordinator_terminal_phase",
+  "original_runtime_returned_success","independently_attested",
+  "provider_model_calls_verified_here","external_r5_go"
+].sort());
 function deny(reason){throw Error("R5 post-run GitHub cross-check NO-GO: "+reason);}
 function eqSet(a,b){
   return Array.isArray(a)&&Array.isArray(b)&&a.length>=1&&a.length<=128&&
@@ -43,6 +50,8 @@ export function validateR5OwnerCompletionClaim(evidence,{
 }={}){
   if(!SHA.test(expectedSourceSha??"")||!RUN.test(expectedRunId??"")||
      !evidence||typeof evidence!=="object"||Array.isArray(evidence)||
+     Object.getPrototypeOf(evidence)!==Object.prototype||
+     Object.keys(evidence).sort().join(",")!==OWNER_RECEIPT_FIELDS.join(",")||
      evidence.schema!=="r5-scripted-owner-completion-v1"||
      evidence.status!=="verified_complete_local_owner_observation"||
      evidence.source_sha!==expectedSourceSha||
@@ -55,6 +64,7 @@ export function validateR5OwnerCompletionClaim(evidence,{
      evidence.coordinator_terminal_phase!=="closed"||
      evidence.original_runtime_returned_success!==true||
      evidence.independently_attested!==false||
+     evidence.provider_model_calls_verified_here!==false||
      evidence.external_r5_go!==false)
     deny("local owner claim absent, partial or not pinned to this run");
   return Object.freeze({
