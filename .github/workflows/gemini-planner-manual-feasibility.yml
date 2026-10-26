@@ -32,15 +32,16 @@ on:
 permissions:
   contents: read
 
-# No automatic cancel/retry of already-billable work, and no overlapping
-# manual paid Planner probes for the same repository.
-concurrency:
-  group: manual-gemini-planner-feasibility-${{ github.repository }}
-  cancel-in-progress: false
-
+# Do not hold a workflow-level concurrency lock before any job exists.
+# A stuck workflow scheduler may otherwise strand all future manual tests.
 jobs:
   read-only-planner:
     name: Gemini planning proposal only — no Engineer approval/execution
+    # Preserve mutual exclusion for new paid probes AT THE JOB LEVEL.
+    # This is not a workaround for global GitHub Actions outages.
+    concurrency:
+      group: manual-gemini-planner-feasibility-v2-${{ github.repository }}
+      cancel-in-progress: false
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.repository == 'DarkGh0st03/delegation' &&
