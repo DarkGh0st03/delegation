@@ -118,17 +118,19 @@ class ScriptedPlanningModel extends BaseLlm{
   turns=0;
   readonly x:Scenario;
   readonly withPullRequest:boolean;
-  constructor(x:Scenario,withPullRequest=false){
+  readonly readSteps:number;
+  constructor(x:Scenario,withPullRequest=false,readSteps=1){
     super({model:"scripted-r2-planning-only"});
     this.x=x;
     this.withPullRequest=withPullRequest;
+    this.readSteps=readSteps;
   }
   override async *generateContentAsync(_req:LlmRequest):
     AsyncGenerator<LlmResponse,void>{
     this.turns++;
-    if(this.turns===1){
+    if(this.turns<=this.readSteps){
       yield {content:{role:"model",parts:[{functionCall:{
-        id:"read-approved-source",name:"read_file",
+        id:"read-approved-source-"+this.turns,name:"read_file",
         args:{branch:"main",path:this.x.backend}
       }}]}};
       return;
@@ -142,7 +144,7 @@ class ScriptedPlanningModel extends BaseLlm{
 async function exercise(
   x:Scenario,partial=false,cancelBeforeFrontend=false,
   ownerLifecycle=false,realHttpA2A=false,withPullRequest=false,
-  missingRunnerAcceptance=false
+  missingRunnerAcceptance=false,planningReads=1
 ){
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
   const servers:Array<{role:string;baseUrl:string;close:()=>Promise<void>;executor:any}>=[];
@@ -194,10 +196,12 @@ async function exercise(
     // Before Planning, neither model nor A2A can activate authority.
     assert.throws(()=>gate.reviewPacket(),/no staged proposal/);
     await coordinator.beginPlanning(root("urn:planning:"+x.name,"701"));
-    const model=new ScriptedPlanningModel(x,withPullRequest);
+    const model=new ScriptedPlanningModel(x,withPullRequest,planningReads);
     const proposal=await new TrustedAdkReadOnlyPlanner({
       model,snapshot,requirement:x.requirement,
       planId:"plan-"+x.name,workBranch:x.branch,agents:AGENTS,
+      maxModelTurns:96,maxOutputTokens:16384,maxPlanningMs:900000,
+      thinkingLevel:"MEDIUM",
       readPort:{
         async invoke(tool,args){
           assert.equal(tool,"read_file");
@@ -209,8 +213,8 @@ async function exercise(
         }
       }
     }).propose();
-    assert.equal(proposal.verified_source_reads,1);
-    assert.equal(model.turns,2);
+    assert.equal(proposal.verified_source_reads,planningReads);
+    assert.equal(model.turns,planningReads+1);
     assert.equal(proposal.plan.tasks.length,withPullRequest?5:4);
     assert.equal(proposal.plan.requirement,x.requirement);
 
@@ -752,4 +756,12 @@ test("R5 approved full HTTP A2A workflow creates signed PR only AFTER Gateway-co
 
 test("R5 signed PR is denied without independently accepted exact-SHA Runner output",async()=>{
   await exercise(SCENARIOS[1]!,false,false,true,true,true,true);
+});
+
+test("R5 long-horizon offline Gemini-style ADK reads 11 files then authentic Ed25519 review, scoped three-role HTTP A2A, Gateway and signed PR",async()=>{
+  // Mirror the successful paid isolated Planner's eleven read steps, but
+  // deliberately NEVER contact a model provider or authorize paid billing.
+  // The normal completion criterion is the fully validated final proposal
+  // (model turn 12), not exhausting a 96-turn emergency ceiling.
+  await exercise(SCENARIOS[0]!,false,false,true,true,true,false,11);
 });
