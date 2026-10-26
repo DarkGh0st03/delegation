@@ -7,9 +7,11 @@ on:
     paths:
       - ".github/workflows/planner-feasibility-offline.yml"
       - "poc/scripts/run-gemini-planner-fixture.mjs"
+      - "poc/scripts/check-gemini-planner-model-access.mjs"
       - "poc/scripts/planner-feasibility-eval.mjs"
       - "poc/scripts/test/planner-feasibility-eval.test.mjs"
       - "poc/scripts/test/run-gemini-planner-fixture.test.mjs"
+      - "poc/scripts/test/check-gemini-planner-model-access.test.mjs"
       - "poc/packages/orchestrator-runtime/src/trusted-adk-planner.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts"
       - "poc/apps/test-runner-controller/fixtures/**"
@@ -37,7 +39,7 @@ jobs:
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
       - name: Validate offline benchmark and cost-control tests
         run: |
-          node --test poc/scripts/test/planner-feasibility-eval.test.mjs poc/scripts/test/run-gemini-planner-fixture.test.mjs
+          node --test poc/scripts/test/planner-feasibility-eval.test.mjs poc/scripts/test/run-gemini-planner-fixture.test.mjs poc/scripts/test/check-gemini-planner-model-access.test.mjs
       - name: Validate actual ADK read-only Planner contract using scripted model
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts
       - name: Assert no Gemini API key or manual billable execution in this workflow
