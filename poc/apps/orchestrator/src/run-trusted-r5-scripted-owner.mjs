@@ -8,6 +8,10 @@ import {dirname,isAbsolute,normalize,resolve} from "node:path";
 import {pathToFileURL} from "node:url";
 import {prepareConfiguredR5ScriptedEngineerBootstrap}
   from "./trusted-engineer-service.mjs";
+import {
+  MAX_PRELIMINARY_ROOT_SECONDS,DEFAULT_PLANNER_SESSION_MS,
+  DEFAULT_ENGINEER_REVIEW_MS,TRUSTED_PLANNING_HANDOFF_MARGIN_MS
+} from "../../../packages/plan-contracts/src/planning-limits.mjs";
 import {bindProtectedR5ScriptedExecution}
   from "./trusted-r5-scripted-execution-binding.mjs";
 import {assertR5AuthenticSignedReviewReady}
@@ -74,6 +78,20 @@ export async function loadProtectedR5ScriptedOwnerInput(inputFile){
      typeof input.planId!=="string"||
      typeof input.gatewayBaseUrl!=="string"||
      input.backendPrivateKeyFile===inputFile)
+    deny();
+  // The offline R5 model may complete quickly, but we deliberately reserve
+  // the SAME owner-authorized 15m Planning + 20m Engineer review + 2m handoff
+  // window as the real Gemini path. A stale 300-second R5 fixture must never
+  // reach the Adapter or the persistent host.
+  const since=Date.parse(input.preliminaryRoot.valid_from);
+  const age=Date.now()-since;
+  const ttl=input.preliminaryRoot.validity_seconds;
+  const minimum=DEFAULT_PLANNER_SESSION_MS+DEFAULT_ENGINEER_REVIEW_MS+
+    TRUSTED_PLANNING_HANDOFF_MARGIN_MS;
+  if(!Number.isSafeInteger(ttl)||ttl<1||
+     ttl>MAX_PRELIMINARY_ROOT_SECONDS||
+     !Number.isFinite(since)||age< -60_000||
+     ttl*1000-Math.max(0,age)<minimum)
     deny();
   const signer=await ownerText(input.backendPrivateKeyFile,8192);
   if(!signer.includes("BEGIN PRIVATE KEY"))deny();
