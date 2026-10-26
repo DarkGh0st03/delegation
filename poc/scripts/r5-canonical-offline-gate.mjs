@@ -282,6 +282,16 @@ const SUITES=Object.freeze([
     title:"R5 rejects forged, modified, partial or mismatched local owner witness before network calls"
   },
   {
+    id:"r5_crosscheck_job_exact_identity_and_runner",
+    path:"poc/scripts/test/r5-post-run-github-crosscheck.test.mjs",
+    title:"R5 rejects non-private, failed or ambiguous GitHub job and any skipped hold step"
+  },
+  {
+    id:"r5_crosscheck_requires_owner_pinned_runner",
+    path:"poc/scripts/test/r5-post-run-github-crosscheck.test.mjs",
+    title:"R5 denies missing or incorrect independently pinned runner ID before any GitHub metadata acceptance"
+  },
+  {
     id:"r5_crosscheck_denies_skipped_private_hold",
     path:"poc/scripts/test/r5-post-run-github-crosscheck.test.mjs",
     title:"R5 rejects non-private, failed or ambiguous GitHub job and any skipped hold step"

@@ -826,6 +826,7 @@ the original owner wrote its durable local receipt:
 ```bash
 export DELEGATION_R5_EXPECTED_SOURCE_SHA=<reviewed-40-character-feature-commit>
 export DELEGATION_R5_EXPECTED_RUN_ID=<independently-recorded-manual-run-id>
+export DELEGATION_R5_EXPECTED_RUNNER_ID=<owner-recorded-private-runner-numeric-id>
 export DELEGATION_R5_EVIDENCE_DIRECTORY=/private/engineer/evidence
 export DELEGATION_R5_OPERATOR_GITHUB_TOKEN_FILE=/private/engineer/github-admin-read.token
 node --experimental-strip-types poc/scripts/r5-post-run-github-crosscheck.mjs
@@ -860,3 +861,28 @@ and a real private runner deployment review before a dissertation claim.
 The separate tests use fabricated offline GitHub GET responses; they
 never dispatch GitHub Actions, request OIDC, approve a plan, issue any
 root, access Gemini or claim an actual distributed R5 execution.
+
+### Additional exact private-job binding
+
+The post-run operator check now also requires the numeric runner ID
+independently recorded by the owner **before** the workflow dispatch,
+through the protected GitHub runner inventory. Do not copy this value
+from the returned completed job itself: it must remain a separate
+owner-controlled pin, provided as
+`DELEGATION_R5_EXPECTED_RUNNER_ID`. Missing, zero, malformed or
+different IDs are NO-GO.
+
+The GitHub jobs API exposes `run_id`, `run_attempt`, `head_sha`,
+`head_branch`, `workflow_name`, job timestamps and numbered steps.
+The verifier matches all these fields to the independently pinned run,
+rejects additional or missing steps, and requires the exact ordered
+six-step sequence consisting of GitHub setup, the four reviewed private
+shell commands and GitHub completion. Every step must have a successful
+terminal status, expected sequence number, and bounded timestamps.
+This is stronger metadata corroboration, **not an assertion of
+independent physical runner attestation or native DC revocation**.
+
+The owner must confirm runner identity and environment restrictions
+independently. A successful REST response alone cannot establish
+that administrator bypass is disabled or that the server hardware and
+installed configuration are uncompromised.

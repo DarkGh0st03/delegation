@@ -17,6 +17,7 @@ const REPO="DarkGh0st03/delegation";
 const BRANCH="refactor/post-prof-plan-contracts-20261021";
 const WORKFLOW=".github/workflows/trusted-scripted-offline-session-hold.yml";
 const JOB="Authenticated OIDC then host-verified signed DAG closure, no models";
+const WORKFLOW_NAME="R5 Scripted Offline Private Runner Authenticated Hold";
 const STEPS=Object.freeze([
   "Validate default-branch registration and immutable runner source",
   "Probe pinned private Engineer mTLS before GitHub OIDC",
@@ -26,6 +27,7 @@ const STEPS=Object.freeze([
 const LABELS=Object.freeze(["self-hosted","linux","x64","delegation-private"]);
 const SHA=/^[a-f0-9]{40}$/u;
 const RUN=/^[1-9][0-9]{0,19}$/u;
+const RUNNER=/^[1-9][0-9]{0,14}$/u;
 const DIGEST=/^[a-f0-9]{64}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const LIMIT=65536;
@@ -85,33 +87,50 @@ function matchPrivateJob(page,pins){
   if(!page||page.total_count!==1||
      !Array.isArray(page.jobs)||page.jobs.length!==1)return false;
   const j=page.jobs[0];
-  if(j.name!==JOB||j.status!=="completed"||
+  // GitHub lists run_id, SHA, workflow name and attempt on EVERY job.
+  // Correlate those values with the separately fetched run, rather than
+  // inferring membership merely from the job's name and labels.
+  if(String(j.run_id)!==pins.run_id||
+     j.run_attempt!==1||j.head_sha!==pins.source_sha||
+     j.head_branch!==BRANCH||j.workflow_name!==WORKFLOW_NAME||
+     j.name!==JOB||j.status!=="completed"||
      j.conclusion!=="success"||
-     !Number.isSafeInteger(j.runner_id)||j.runner_id<=0||
+     j.runner_id!==pins.runner_id||
      typeof j.runner_name!=="string"||!j.runner_name.trim()||
      !Array.isArray(j.labels)||
      !LABELS.every(label=>j.labels.includes(label))||
      !Array.isArray(j.steps))return false;
-  // GitHub can add setup/cleanup steps; the reviewed 4 actual run steps
-  // must be present in the exact order with successful conclusions.
-  let lastIndex=-1;
-  for(const name of STEPS){
-    const matches=j.steps.map((step,i)=>({step,i}))
-      .filter(x=>x.step?.name===name);
-    if(matches.length!==1||matches[0].i<=lastIndex||
-       matches[0].step.status!=="completed"||
-       matches[0].step.conclusion!=="success")return false;
-    lastIndex=matches[0].i;
+  const started=Date.parse(j.started_at),ended=Date.parse(j.completed_at);
+  if(!Number.isFinite(started)||!Number.isFinite(ended)||ended<started)
+    return false;
+  // No third-party steps or arbitrary extra shell commands are part of
+  // this reviewed workflow. The two GitHub runner lifecycle steps are
+  // allowed ONLY in their exact expected positions.
+  const ordered=["Set up job",...STEPS,"Complete job"];
+  if(j.steps.length!==ordered.length)return false;
+  for(let i=0;i<ordered.length;i++){
+    const s=j.steps[i];
+    const begin=Date.parse(s?.started_at),end=Date.parse(s?.completed_at);
+    if(s?.name!==ordered[i]||s.number!==i+1||
+       s.status!=="completed"||s.conclusion!=="success"||
+       !Number.isFinite(begin)||!Number.isFinite(end)||
+       begin>end||begin<started-5000||end>ended+5000)
+      return false;
   }
   return true;
 }
 /** Injectable fetch is for offline tests, NOT trusted network substitution. */
 export async function corroborateR5PostRunGithub({
-  evidence,expectedSourceSha,expectedRunId,githubToken,fetchFn=fetch
+  evidence,expectedSourceSha,expectedRunId,expectedRunnerId,
+  githubToken,fetchFn=fetch
 }={}){
   const pins=validateR5OwnerCompletionClaim(evidence,{
     expectedSourceSha,expectedRunId
   });
+  // The runner ID must come from an independently recorded protected
+  // operator inventory, not from the owner completion JSON or fetched job.
+  if(!Number.isSafeInteger(expectedRunnerId)||expectedRunnerId<=0)
+    deny("independently pinned private runner ID required");
   if(typeof githubToken!=="string"||githubToken.length<16||
      githubToken.length>512||/\s/u.test(githubToken)||
      typeof fetchFn!=="function")
@@ -144,7 +163,7 @@ export async function corroborateR5PostRunGithub({
   if(!matchGitHubRun(run,pins))
     deny("GitHub manual run does not match exact reviewed completed source");
   const page=await read(base+"/jobs?per_page=100");
-  if(!matchPrivateJob(page,pins))
+  if(!matchPrivateJob(page,{...pins,runner_id:expectedRunnerId}))
     deny("GitHub private job, runner labels or four hold steps not corroborated");
   return Object.freeze({
     status:"github_completed_private_job_correlated_owner_claim_only",
@@ -152,6 +171,7 @@ export async function corroborateR5PostRunGithub({
     session_id:pins.session_id,approved_plan_digest:pins.plan_digest,
     observed_github_run_conclusion:"success",
     observed_private_job_steps:STEPS.length,
+    observed_pinned_runner_id:expectedRunnerId,
     owner_receipt_provenance_independently_verified:false,
     physical_runner_identity_independently_verified:false,
     native_rust_evm_revocation_independently_verified:false,
@@ -184,10 +204,12 @@ async function protectedText(path,maxBytes){
 }
 /** Only owner-controlled CLI calls this with its independent pins. */
 export async function corroborateProtectedR5PostRunGithub({
-  evidenceDirectory,expectedRunId,expectedSourceSha,operatorTokenFile
+  evidenceDirectory,expectedRunId,expectedSourceSha,
+  expectedRunnerId,operatorTokenFile
 }={}){
   if(process.env.GITHUB_ACTIONS==="true"||
-     !RUN.test(expectedRunId??"")||!SHA.test(expectedSourceSha??""))
+     !RUN.test(expectedRunId??"")||!SHA.test(expectedSourceSha??"")||
+     !Number.isSafeInteger(expectedRunnerId)||expectedRunnerId<=0)
     deny("owner-only pinned post-run audit required");
   await assertR5EvidenceDirectory(evidenceDirectory);
   const evidenceFile=join(evidenceDirectory,
@@ -197,7 +219,8 @@ export async function corroborateProtectedR5PostRunGithub({
   catch{deny("protected local owner receipt unavailable");}
   const githubToken=(await protectedText(operatorTokenFile,512)).trim();
   return corroborateR5PostRunGithub({
-    evidence,expectedRunId,expectedSourceSha,githubToken
+    evidence,expectedRunId,expectedSourceSha,expectedRunnerId,
+    githubToken
   });
 }
 if(process.argv[1]&&import.meta.url===
@@ -207,6 +230,9 @@ if(process.argv[1]&&import.meta.url===
       evidenceDirectory:process.env.DELEGATION_R5_EVIDENCE_DIRECTORY,
       expectedRunId:process.env.DELEGATION_R5_EXPECTED_RUN_ID,
       expectedSourceSha:process.env.DELEGATION_R5_EXPECTED_SOURCE_SHA,
+      expectedRunnerId:RUNNER.test(
+        process.env.DELEGATION_R5_EXPECTED_RUNNER_ID??"")
+        ?Number(process.env.DELEGATION_R5_EXPECTED_RUNNER_ID):undefined,
       operatorTokenFile:process.env.DELEGATION_R5_OPERATOR_GITHUB_TOKEN_FILE
     });
     process.stdout.write("R5 read-only GitHub/private-job completed cross-check "+

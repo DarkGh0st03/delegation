@@ -45,13 +45,20 @@ function run(){
   };
 }
 function page(){
+  const steps=["Set up job",...names,"Complete job"].map((name,i)=>({
+    name,number:i+1,status:"completed",conclusion:"success",
+    started_at:"2026-10-26T12:00:0"+(i+1)+"Z",
+    completed_at:"2026-10-26T12:00:0"+(i+1)+"Z"
+  }));
   return {total_count:1,jobs:[{
+    run_id:Number(RUN),run_attempt:1,head_sha:SHA,
+    head_branch:"refactor/post-prof-plan-contracts-20261021",
+    workflow_name:"R5 Scripted Offline Private Runner Authenticated Hold",
     name:JOB,status:"completed",conclusion:"success",
+    started_at:"2026-10-26T12:00:00Z",
+    completed_at:"2026-10-26T12:00:20Z",
     runner_id:17,runner_name:"owner-priv-runner",
-    labels:LABELS,
-    steps:[{name:"Set up job",status:"completed",conclusion:"success"},
-      ...names.map(name=>({name,status:"completed",conclusion:"success"})),
-      {name:"Complete job",status:"completed",conclusion:"success"}]
+    labels:LABELS,steps
   }]};
 }
 function fetcher(actualRun,actualJobs,seen){
@@ -63,7 +70,8 @@ function fetcher(actualRun,actualJobs,seen){
   };
 }
 const params=()=>({evidence:evidence(),expectedSourceSha:SHA,
-  expectedRunId:RUN,githubToken:"owner-private-github-token"});
+  expectedRunId:RUN,expectedRunnerId:17,
+  githubToken:"owner-private-github-token"});
 test("R5 independent GitHub completed private-run cross-check has no authority, billing or native revocation attestation",async()=>{
   const seen=[];
   const outcome=await corroborateR5PostRunGithub({
@@ -72,6 +80,7 @@ test("R5 independent GitHub completed private-run cross-check has no authority, 
   assert.equal(outcome.status,
     "github_completed_private_job_correlated_owner_claim_only");
   assert.equal(outcome.observed_private_job_steps,4);
+  assert.equal(outcome.observed_pinned_runner_id,17);
   assert.equal(outcome.external_r5_go,false);
   assert.equal(outcome.native_rust_evm_revocation_independently_verified,false);
   assert.equal(outcome.owner_receipt_provenance_independently_verified,false);
@@ -137,6 +146,20 @@ test("R5 rejects workflow rerun, canceled or failed conclusion, other repository
 test("R5 rejects non-private, failed or ambiguous GitHub job and any skipped hold step",async()=>{
   const changes=[
     p=>p.total_count=2,
+    p=>p.jobs[0].run_id=12345,
+    p=>p.jobs[0].run_attempt=2,
+    p=>p.jobs[0].head_sha="f".repeat(40),
+    p=>p.jobs[0].head_branch="main",
+    p=>p.jobs[0].workflow_name="Unreviewed Workflow",
+    p=>p.jobs[0].started_at="not-a-timestamp",
+    p=>p.jobs[0].completed_at="2026-10-26T11:00:00Z",
+    p=>p.jobs[0].steps[1].started_at="not-a-timestamp",
+    p=>p.jobs[0].steps[1].number=999,
+    p=>p.jobs[0].steps.push({
+      name:"unreviewed shell action",number:7,status:"completed",
+      conclusion:"success",started_at:"2026-10-26T12:00:10Z",
+      completed_at:"2026-10-26T12:00:10Z"
+    }),
     p=>p.jobs.push({...p.jobs[0]}),
     p=>p.jobs[0].runner_id=0,
     p=>p.jobs[0].runner_name="",
@@ -157,6 +180,19 @@ test("R5 rejects non-private, failed or ambiguous GitHub job and any skipped hol
     }),/NO-GO/);
   }
 });
+test("R5 denies missing or incorrect independently pinned runner ID before any GitHub metadata acceptance",async()=>{
+  const seen=[];
+  await assert.rejects(corroborateR5PostRunGithub({
+    ...params(),expectedRunnerId:undefined,
+    fetchFn:async()=>{seen.push("unexpected");throw Error("untrusted");}
+  }),/NO-GO/);
+  assert.deepEqual(seen,[]);
+  await assert.rejects(corroborateR5PostRunGithub({
+    ...params(),expectedRunnerId:18,
+    fetchFn:fetcher(run(),page(),seen)
+  }),/NO-GO/);
+});
+
 test("R5 rejects untrusted HTTP response, missing owner token and malformed job pagination",async()=>{
   await assert.rejects(corroborateR5PostRunGithub({
     ...params(),githubToken:"",
@@ -185,7 +221,7 @@ test("R5 operator token and local evidence require owner-only 0600 files and no 
     try{
       await assert.rejects(corroborateProtectedR5PostRunGithub({
         evidenceDirectory:dir,expectedRunId:RUN,expectedSourceSha:SHA,
-        operatorTokenFile:token
+        operatorTokenFile:token,expectedRunnerId:17
       }),/NO-GO/);
     }finally{
       if(old===undefined)delete process.env.GITHUB_ACTIONS;
@@ -194,7 +230,7 @@ test("R5 operator token and local evidence require owner-only 0600 files and no 
     await chmod(receipt,0o644);
     await assert.rejects(corroborateProtectedR5PostRunGithub({
       evidenceDirectory:dir,expectedRunId:RUN,expectedSourceSha:SHA,
-      operatorTokenFile:token
+      operatorTokenFile:token,expectedRunnerId:17
     }),/NO-GO/);
     await chmod(receipt,0o600);
     const symlinkPath=join(dir,"link.token");
@@ -202,7 +238,7 @@ test("R5 operator token and local evidence require owner-only 0600 files and no 
     try{
       await assert.rejects(corroborateProtectedR5PostRunGithub({
         evidenceDirectory:dir,expectedRunId:RUN,expectedSourceSha:SHA,
-        operatorTokenFile:symlinkPath
+        operatorTokenFile:symlinkPath,expectedRunnerId:17
       }),/NO-GO/);
     }finally{await rm(symlinkPath);}
   }finally{await rm(dir,{recursive:true,force:true});}
