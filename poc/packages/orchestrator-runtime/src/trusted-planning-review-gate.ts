@@ -85,7 +85,7 @@ export class TrustedPlanningReviewGate implements TrustedApprovalStore {
     if(this.#packet)refuse("one immutable proposal per Planning session");
     if(result?.status!=="unapproved_proposal"||
        !Number.isSafeInteger(result.verified_source_reads)||
-       result.verified_source_reads<1||result.verified_source_reads>16||
+       result.verified_source_reads<1||result.verified_source_reads>64||
        typeof result.digest!=="string")
       refuse("no grounded, unapproved Planner result");
     const plan=structuredClone(result.plan);
