@@ -345,6 +345,25 @@ export class TrustedExecutionCoordinator {
   }
 
   /**
+   * OWNER-ONLY positive completion assertion. The synchronous transition
+   * to phase "closed" fences future effects, but cannot attest durable
+   * Gateway retirement or native Rust revocation: both happen later.
+   *
+   * Await the SAME retained shutdown promise used by closeExecution().
+   * Rejected revocation/journal writes remain permanently rejected; a
+   * Planning-only cancellation does not qualify as operational closure.
+   */
+  async assertOperationalClosureConfirmed():Promise<void>{
+    if(this.#phase!=="closed"||!this.#operationalId||
+       !this.#shutdown)
+      throw Error("Operational root has no verified terminal closure");
+    await this.#shutdown;
+    if(this.#phase!=="closed"||this.#operationalPermissions||
+       this.#approvedDigest)
+      throw Error("Operational authority is not terminally retired");
+  }
+
+  /**
    * This ends new Gateway effects. Ending/revoking the operational root
    * remains a separate necessary action and is always attempted.
    */

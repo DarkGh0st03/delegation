@@ -252,6 +252,16 @@ const SUITES=Object.freeze([
     title:"R5 refuses unexpected installed SHA and dirty worktree"
   },
   {
+    id:"r5_terminal_phase_not_native_revocation_evidence",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
+    title:"R5 CLOSED Coordinator during in-flight Gateway retirement cannot create positive owner evidence"
+  },
+  {
+    id:"r5_failed_native_revocation_denies_owner_evidence",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
+    title:"R5 rejected native Rust revocation forbids positive evidence even with CLOSED phase"
+  },
+  {
     id:"r5_verified_closure_only_after_exact_dag",
     path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
     title:"R5 post-run evidence is only available after exact original signed DAG and CLOSED Coordinator"

@@ -7,6 +7,8 @@
  * No artifact bodies, credentials, bearer, VP, Engineer private key,
  * model input, or GitHub OIDC token are serialized.
  */
+import {TrustedExecutionCoordinator}
+  from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {constants} from "node:fs";
 import {open,lstat} from "node:fs/promises";
 import {join,resolve} from "node:path";
@@ -37,7 +39,7 @@ function safeDirectory(dir){
  * evidence: only original owner process code may invoke this on the actual
  * Coordinator after awaiting host.runReviewedScriptedApprovedDagWithGateway.
  */
-export function verifyR5PostRunEvidence({
+export async function verifyR5PostRunEvidence({
   runId,sourceSha,sessionId,review,
   approvedTaskIds,dagResult,coordinator
 }={}){
@@ -48,8 +50,19 @@ export function verifyR5PostRunEvidence({
      !review.authenticated_engineer_did?.startsWith("did:")||
      dagResult?.plan_digest!==review.plan_digest||
      !sameTaskSet(approvedTaskIds,dagResult?.completed_task_ids)||
-     !coordinator||coordinator.phase!=="closed")
+     !(coordinator instanceof TrustedExecutionCoordinator)||
+     coordinator.phase!=="closed")
     deny("original Engineer review, DAG Tasks and retired Coordinator do not agree");
+  // A CLOSED phase is set synchronously before Gateway/Rust retirement.
+  // Only the real Coordinator's original shutdown promise can prove that
+  // the revocation AND durable recovery journal have both completed.
+  try{
+    await coordinator.assertOperationalClosureConfirmed();
+  }catch{
+    deny("native operational root or Gateway retirement unconfirmed");
+  }
+  if(coordinator.phase!=="closed")
+    deny("original Coordinator left its verified terminal phase");
   // Specialized artifacts remain inside the host; they must not be copied
   // into the evidence receipt (which is deliberately small and inspectable).
   return Object.freeze({

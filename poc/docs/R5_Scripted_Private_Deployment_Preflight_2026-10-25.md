@@ -669,3 +669,31 @@ The CI remains an offline integration test, not a substitute for a
 real distributed private runner/Engineer Host. R5 is still NO-GO until
 the independently authorized deployment, genuine signature and native
 end-to-end closure have been observed.
+
+## R5 — Awaited operational revocation before positive owner evidence
+
+Security audit after commit `948cb1b` found an important second edge
+case: the real Coordinator's `closeExecution()` sets its public phase
+to `closed` synchronously to fence new operations, **before** its
+asynchronous Gateway shutdown, Rust/EVM root revocation and durable
+journal reconciliation have all completed. A check of `phase ===
+"closed"` alone is therefore insufficient evidence of revoked
+authority.
+
+`TrustedExecutionCoordinator.assertOperationalClosureConfirmed()`
+now requires a real operational root, the original one-shot
+`#shutdown` promise and terminal phase, then **awaits that same
+promise**. Any rejected Gateway, native revocation or durable journal
+action rejects the owner evidence; Planning-only cancellation is not
+misclassified as operational success. The owner witness uses a real
+`TrustedExecutionCoordinator` instance, cannot accept a forged
+`{phase:"closed"}` object, and awaits the revocation assertion before
+serializing its local completion file.
+
+Regression tests use the **actual Coordinator**, with an artificially
+held Gateway retirement to show that the phase is already `closed`
+while the witness is still pending, then assert success only after
+release and native revocation; a failed native revocation must deny a
+positive receipt even though the Coordinator remains `closed`.
+These tests do not prove a physical deployment or on-chain third-party
+attestation; the original private end-to-end R5 remains NO-GO.

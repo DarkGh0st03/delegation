@@ -155,7 +155,7 @@ export async function startProtectedR5ScriptedOwnerSession({
         const completed=await host.runReviewedScriptedApprovedDagWithGateway(bound);
         // This occurs only when the original host returned after the
         // approved DAG and its native root/Gateway close() succeeded.
-        const witness=verifyR5PostRunEvidence({
+        const witness=await verifyR5PostRunEvidence({
           runId:bound.runId,sourceSha:expectedSourceSha,
           sessionId:assembly.planning.snapshot.session_id,
           review,approvedTaskIds:taskIds,dagResult:completed,
