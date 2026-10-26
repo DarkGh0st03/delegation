@@ -16,7 +16,7 @@ import {SignedPlanningCheckpointFileStore}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
 import {R5ScriptedNoProviderPlanningModel}
   from "../../../packages/orchestrator-runtime/src/trusted-r5-scripted-planning-model.ts";
-import {assembleProtectedR5ScriptedOwnerPlanning}
+import {assembleProtectedR5ScriptedOwnerPlanning,assembleProtectedOwnerGeminiPlanning}
   from "../src/trusted-r5-scripted-owner-assembly.mjs";
 
 const SHA="a".repeat(40),ENGINEER="did:example:engineer";
@@ -172,4 +172,49 @@ test("R5 owner assembly rejects non-durable actual Gateway capabilities",async t
   const f=await fixture(t,{durable:false});
   await assert.rejects(assembleProtectedR5ScriptedOwnerPlanning(f.input),
     /Gateway has no durable operational\/Planning recovery and lease/);
+});
+
+test("owner constructs trusted Gemini Flash Planning with original Coordinator and zero provider calls",async t=>{
+  const f=await fixture(t);
+  const assembly=await assembleProtectedOwnerGeminiPlanning({
+    ...f.input,geminiApiKey:"offline-constructor-only",
+    authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+    modelName:"gemini-3.8-flash"
+  });
+  assert.equal(assembly.status,"owner_gemini_planning_assembled_not_started");
+  assert.equal(assembly.coordinator,assembly.planning.coordinator);
+  assert.equal(assembly.coordinator.phase,"idle");
+  assert.equal(assembly.planning.checkpointStore,f.checkpoint);
+  assert.equal(assembly.planning.planner.model.model,"gemini-3.8-flash");
+  assert.equal(assembly.planning.planner.thinkingLevel,"MEDIUM");
+  assert.equal(assembly.planning.planner.maxModelTurns,96);
+  assert.equal(assembly.planning.planner.maxModelCallMs,120000);
+  assert.equal(assembly.planning.planner.maxOutputTokens,16384);
+  assert.equal(assembly.planning.planner.maxPlanningMs,900000);
+  assert.ok(Object.isFrozen(assembly.planning.planner));
+  assert.ok(!("geminiApiKey" in assembly.planning));
+  assert.ok(!("authorizationInput" in assembly.planning));
+  assert.ok(!("geminiApiKey" in assembly.planning.planner));
+  // Assembly MUST NOT bootstrap a Planning root, sign an Engineer decision,
+  // contact the Gemini API or request a real Gitea read from the Gateway.
+  assert.equal(f.revision.durableRetirementConfigured(),true);
+});
+
+test("owner cannot assemble paid Gemini Planning without explicit opt-in and exact Flash model",async t=>{
+  const f=await fixture(t);
+  for(const replacement of [
+    {authorizationInput:""},
+    {authorizationInput:"I AUTHORIZE GEMINI API CHARGE"},
+    {modelName:"gemini-3.1-pro-preview"},
+    {modelName:"gemini-3.8-flash-high"},
+    {geminiApiKey:""}
+  ]){
+    await assert.rejects(
+      assembleProtectedOwnerGeminiPlanning({
+        ...f.input,geminiApiKey:"offline-not-a-provider-key",
+        authorizationInput:"I AUTHORIZE GEMINI API CHARGES",
+        modelName:"gemini-3.8-flash",...replacement
+      }),/owner-selected Gemini Planning requires explicit paid consent/
+    );
+  }
 });
