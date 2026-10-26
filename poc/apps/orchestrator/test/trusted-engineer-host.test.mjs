@@ -37,6 +37,10 @@ import {SignedPlanningCheckpointFileStore}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-checkpoint-store.ts";
 import {TrustedPlanningReviewGate}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
+import {createProtectedGeminiOwnerDispatch}
+  from "../src/trusted-gemini-owner-dispatch.mjs";
+import {assertR5AuthenticSignedReviewReady}
+  from "../src/trusted-r5-scripted-review-readiness.mjs";
 
 const repository="DarkGh0st03/delegation";
 const ref="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -1070,6 +1074,30 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
   assert.equal((await fetch(host.engineerUrl+"/api/plan")).status,401);
   assert.equal((await operational.pending()).length,0);
   assert.equal((await preliminary.pending()).length,1);
+  // Use the ACTUAL persistent loopback Engineer Host, Unix Gateway IPC,
+  // Backend-signed checkpoint and later independently signed human receipt
+  // through the same private Gemini continuation used by the owner CLI.
+  // No provider or operational root can run from this readiness-only gate.
+  const ownerPlanning=Object.freeze({
+    coordinator,reviewGate,checkpointStore,
+    gateway:Object.freeze({
+      gatewayBaseUrl:"http://127.0.0.1:8080",
+      adapterBaseUrl:"http://127.0.0.1:8090",
+      adapterToken:"offline-private-adapter"
+    })
+  });
+  const signedOwner=createProtectedGeminiOwnerDispatch({
+    assembly:Object.freeze({planning:ownerPlanning,coordinator}),
+    host,geminiApiKey:"offline-key-never-used",
+    verifySignedReview:()=>assertR5AuthenticSignedReviewReady({
+      coordinator,reviewGate,checkpointStore,
+      expectedSessionId:session,expectedBaseRevision:f.plan.base_revision
+    })
+  });
+  await assert.rejects(signedOwner.reviewReadiness());
+  assert.equal(signedOwner.status,"awaiting_human_review");
+  assert.equal(coordinator.phase,"planning");
+  assert.equal((await operational.pending()).length,0);
   // Actual authenticated human UI flow on this strict live-IPC host:
   // independent login, CSRF binding, canonical digest, Ed25519 signing,
   // and read-back from the authenticated receipt store. This does NOT
@@ -1106,6 +1134,11 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
     }}
   }).loadAuthenticatedApproval(session);
   assert.deepEqual(verified.approval.approved_permission_ids,["p1"]);
+  const signedReady=await signedOwner.reviewReadiness();
+  assert.equal(signedReady.authenticated_engineer_did,f.did);
+  assert.equal(signedReady.operational_root_issued,false);
+  assert.equal(signedReady.dag_executed,false);
+  assert.equal(signedOwner.status,"awaiting_human_review");
   assert.equal((await operational.pending()).length,0);
   // The separately authenticated private runner can now present a real
   // signed GitHub OIDC assertion over mTLS, while the ORIGINAL Planning
@@ -1173,7 +1206,11 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
   assert.equal((await preliminary.pending()).length,1);
   // HTTP read does not mint an approval, authenticate a GitHub run,
   // activate the signed DAG or issue any operational credential.
-  await host.close();
+  await signedOwner.close();
+  assert.equal(signedOwner.status,"closing_or_closed");
+  await assert.rejects(signedOwner.reviewReadiness(),
+    /signed Engineer review unavailable/);
+  await signedOwner.close();
   assert.equal(coordinator.phase,"closed");
   assert.equal(provisionalRevoked,1);
   assert.equal((await preliminary.pending()).length,0);
