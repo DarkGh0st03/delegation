@@ -309,6 +309,25 @@ test("configured owner bootstrap prepares exact protected checkpoint/recovery id
   }finally{await f.close();}
 });
 
+test("protected Engineer service exposes only a single-use, explicitly consented Gemini Planning assembly",async()=>{
+  const f=await fixture();
+  try{
+    const prepared=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
+    assert.equal(typeof prepared.assembleGeminiPlanning,"function");
+    assert.equal(prepared.planningCheckpointStore instanceof Object,true);
+    // Missing consent is rejected even before any owner Gateway IPC or
+    // potential provider/model effects. This is an offline-only test.
+    await assert.rejects(prepared.assembleGeminiPlanning({
+      modelName:"gemini-3.8-flash",geminiApiKey:"offline-dummy-no-call",
+      authorizationInput:""
+    }),/requires explicit paid consent/);
+    await assert.rejects(prepared.assembleGeminiPlanning({
+      modelName:"gemini-3.8-flash",geminiApiKey:"offline-dummy-no-call",
+      authorizationInput:"I AUTHORIZE GEMINI API CHARGES"
+    }),/single-use/);
+  }finally{await f.close();}
+});
+
 test("configured owner bootstrap rejects a separately constructed checkpoint identity before any Planning",async()=>{
   const f=await fixture();
   try{
