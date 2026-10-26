@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {createTrustedReviewedHandoffLifecycle}
   from "../src/trusted-reviewed-handoff-lifecycle.mjs";
+import {trustedEngineerRunStatus}
+  from "../src/trusted-engineer-run-status.mjs";
+import {awaitTrustedPrivateRunCompletion}
+  from "../../../packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts";
 
 // No real model, JWT, Rust root or external API is used by these tests.
 // They verify that the host-owned bridge always closes its delegated
@@ -259,4 +263,82 @@ test("late nominal DAG result cannot certify canceled Engineer host",async()=>{
   await assert.rejects(executing,/shutdown raced approved DAG completion/);
   assert.equal(lifecycle.verifiedOutcome,"failed");
   assert.equal(revoked,1);
+});
+
+test("runner state remains execution_active until original Rust/Gateway closure verifier settles",async()=>{
+  let enterVerify,releaseProof;
+  const verifying=new Promise(resolve=>{enterVerify=resolve;});
+  const proof=new Promise(resolve=>{releaseProof=resolve;});
+  let revocations=0,proofCalls=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){revocations++;},
+    approvedDag:{async executeApprovedDag(){
+      return {completed_task_ids:["backend","frontend","test"]};
+    }}
+  }),{
+    async verifyTerminalClosure(){
+      proofCalls++;
+      enterVerify();
+      await proof;
+    }
+  });
+  const input={runId:"40123456789",sourceSha:"a".repeat(40),
+    intakeUrl:"https://127.0.0.1:14430/v1/trusted/github/oidc-admission",
+    tls:{ca:"offline-test-ca",cert:"offline-test-cert",
+      key:"offline-test-key",
+      expectedServerFingerprint256:"AA:".repeat(31)+"AA"},
+    maxWaitMs:5000,pollEveryMs:1000};
+  const state=()=>trustedEngineerRunStatus({
+    hostClosed:false,selectedRunId:input.runId,queriedRunId:input.runId,
+    coordinatorPhase:"closed",handoffStatus:lifecycle.status,
+    verifiedOutcome:lifecycle.verifiedOutcome
+  });
+  const executed=lifecycle.runApprovedDag({},executor());
+  await verifying;
+  assert.equal(revocations,1);
+  assert.equal(proofCalls,1);
+  assert.equal(lifecycle.status,"closed");
+  assert.equal(lifecycle.verifiedOutcome,"pending");
+  assert.equal(state(),"execution_active");
+  let checked=0;
+  const worker=awaitTrustedPrivateRunCompletion({
+    ...input,readState:async()=>{checked++;return state();},
+    async sleep(){releaseProof();await new Promise(r=>setImmediate(r));}
+  });
+  const [dag,completed]=await Promise.all([executed,worker]);
+  assert.equal(dag.completed_task_ids.length,3);
+  assert.equal(completed.status,"verified_closed_no_runner_authority");
+  assert.ok(checked>=2);
+  assert.equal(state(),"completed_verified");
+  assert.equal(lifecycle.verifiedOutcome,"verified_complete");
+});
+
+test("failed native retirement after DAG and listener close terminates runner without verified receipt",async()=>{
+  let closes=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){closes++;},
+    approvedDag:{async executeApprovedDag(){return {completed:true};}}
+  }),{
+    async verifyTerminalClosure(){
+      throw Error("native operational root revocation unconfirmed");
+    }
+  });
+  await assert.rejects(lifecycle.runApprovedDag({},executor()),
+    /native operational root revocation unconfirmed/);
+  assert.equal(closes,1);
+  assert.equal(lifecycle.status,"closed");
+  assert.equal(lifecycle.verifiedOutcome,"failed");
+  const state=trustedEngineerRunStatus({
+    hostClosed:false,
+    selectedRunId:"40123456789",queriedRunId:"40123456789",
+    coordinatorPhase:"closed",handoffStatus:lifecycle.status,
+    verifiedOutcome:lifecycle.verifiedOutcome
+  });
+  assert.equal(state,"terminated");
+  await assert.rejects(awaitTrustedPrivateRunCompletion({
+    intakeUrl:"https://127.0.0.1:14430/v1/trusted/github/oidc-admission",
+    runId:"40123456789",sourceSha:"a".repeat(40),
+    maxWaitMs:5000,pollEveryMs:1000,
+    readState:async()=>state,async sleep(){}
+  }),/terminated without verified closure/);
 });
