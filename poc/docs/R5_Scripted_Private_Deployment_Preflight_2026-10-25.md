@@ -92,3 +92,11 @@ or unsafe ownership/perms is denied. No automatic remediation or mutation
 occurs. Even after this preflight passes, the real private mTLS network,
 original live Planning host, approved DAG, Gitea/Docker effects and root
 revocation remain unproven until an independent operational E2E run.
+
+The actual `hold-private-scripted-github-session.mjs` independently invokes
+the same local check **again, in the process that will request OIDC**.
+A direct manual invocation or skipped workflow step therefore cannot bypass
+the local installed-source guard. It reads protected runner pins first,
+checks local install, and only then submits the OIDC admission. The real
+GitHub job, signed Engineer review and scope-constrained execution are still
+separate authorization requirements.

@@ -7,13 +7,20 @@
  */
 import {loadProtectedScriptedRunnerOidcConfig,submitProtectedPrivateScriptedRunnerAdmission}
   from "./trusted-private-scripted-runner-oidc.mjs";
+import {verifyProtectedScriptedInstallation}
+  from "../../../scripts/r5-scripted-install-integrity.mjs";
 import {awaitTrustedScriptedPrivateRunCompletion}
   from "../../../packages/orchestrator-runtime/src/trusted-scripted-github-oidc-submit.ts";
 
 try{
-  const admitted=await submitProtectedPrivateScriptedRunnerAdmission();
+  // Re-check within THIS process, not just an earlier workflow step:
+  // a direct invocation of the hold must not bypass installation proof.
   const trusted=await loadProtectedScriptedRunnerOidcConfig(
     process.env.DELEGATION_SCRIPTED_RUNNER_OIDC_CONFIG);
+  await verifyProtectedScriptedInstallation({
+    expectedSourceSha:trusted.expectedSourceSha
+  });
+  const admitted=await submitProtectedPrivateScriptedRunnerAdmission();
   if(trusted.expectedSourceSha!==admitted.source_sha||
      trusted.expectedRepository!==process.env.GITHUB_REPOSITORY||
      trusted.expectedRef!==process.env.GITHUB_REF||

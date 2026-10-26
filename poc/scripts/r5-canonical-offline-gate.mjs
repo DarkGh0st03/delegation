@@ -117,6 +117,11 @@ const SUITES=Object.freeze([
     title:"R5 final GitHub revalidation accepts a still-active job before root retirement"
   },
   {
+    id:"scripted_runner_inline_install_check_before_oidc",
+    path:"poc/packages/orchestrator-runtime/test/trusted-private-scripted-runner-oidc.test.ts",
+    title:"scripted runner hold rejects unverified local source before OIDC"
+  },
+  {
     id:"scripted_immutable_local_source_guard",
     path:"poc/scripts/test/r5-scripted-install-integrity.test.mjs",
     title:"R5 refuses unexpected installed SHA and dirty worktree"
