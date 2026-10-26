@@ -312,6 +312,9 @@ test("configured owner bootstrap prepares exact protected checkpoint/recovery id
 test("protected Engineer service exposes only a single-use, explicitly consented Gemini Planning assembly",async()=>{
   const f=await fixture();
   try{
+    // The trusted owner prepares BEFORE plan.json is created. Reusing the
+    // stale cold-recovery fixture is intentionally denied by production.
+    await rm(f.files.plan);
     const prepared=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
     assert.equal(typeof prepared.assembleGeminiPlanning,"function");
     assert.equal(prepared.planningCheckpointStore instanceof Object,true);
