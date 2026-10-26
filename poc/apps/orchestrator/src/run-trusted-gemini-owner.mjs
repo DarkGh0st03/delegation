@@ -9,9 +9,10 @@
  * Importing this module NEVER invokes a model, provider or DC issuer.
  */
 import {constants} from "node:fs";
+import {execFileSync} from "node:child_process";
 import {open,lstat} from "node:fs/promises";
 import {dirname,isAbsolute,normalize,resolve} from "node:path";
-import {pathToFileURL} from "node:url";
+import {pathToFileURL,fileURLToPath} from "node:url";
 import {prepareConfiguredOwnerEngineerBootstrap}
   from "./trusted-engineer-service.mjs";
 import {
@@ -20,6 +21,20 @@ import {
 } from "../../../packages/plan-contracts/src/planning-limits.mjs";
 
 const SOURCE_SHA=/^[a-f0-9]{40}$/u;
+const SOURCE_ROOT=resolve(dirname(fileURLToPath(import.meta.url)),"../../../..");
+function checkLocalSourceSha(expected){
+  try{
+    const head=execFileSync("git",["rev-parse","--verify","HEAD"],{
+      cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+      stdio:["ignore","pipe","ignore"]
+    }).trim();
+    const dirty=execFileSync("git",["status","--porcelain","--untracked-files=all"],{
+      cwd:SOURCE_ROOT,encoding:"utf8",timeout:3000,
+      stdio:["ignore","pipe","ignore"]
+    }).trim();
+    if(head!==expected||dirty)deny();
+  }catch{deny();}
+}
 const CONFIRMATION="I AUTHORIZE GEMINI API CHARGES";
 const FIELDS=["profile","snapshot","preliminaryRoot","requirement",
   "planId","agents","gatewayBaseUrl","backendPrivateKeyFile",
@@ -98,6 +113,9 @@ export async function startProtectedGeminiOwnerSession({
   if(process.env.GITHUB_ACTIONS==="true"||
      !SOURCE_SHA.test(expectedSourceSha??"")||
      chargeAuthorization!==CONFIRMATION)deny();
+  // Exact locally deployed GitHub source MUST agree with the protected
+  // OIDC pin; a user-entered SHA alone is not authoritative.
+  checkLocalSourceSha(expectedSourceSha);
   const prepared=await prepareConfiguredOwnerEngineerBootstrap(configPath,{
     expectedLiveSourceSha:expectedSourceSha
   });
