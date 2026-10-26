@@ -174,7 +174,7 @@ test("generic multi-read Planning permits independent disjoint edits and exact-S
     ],assumptions:[],uncertainties:[]
   };
   const readSequence=[
-    {name:"read_repository",args:{}},
+    {name:"read_repository",args:{repository:"invoices"}},
     {name:"list_directory",args:{branch:"main",path:""}},
     {name:"read_file",args:{branch:"main",path:FILE}},
     {name:"read_file",args:{branch:"main",path:UI}}
@@ -517,4 +517,39 @@ test("ADK returned structured model error is observed without raw provider text"
   assert.ok(trace.some(e=>e.kind==="model_failure"&&
     e.category==="quota_or_rate_limit"&&e.phase==="model_error_response"));
   assert.ok(!JSON.stringify(trace).includes("ERROR_MESSAGE_CONTAINS_PRIVATE_PROMPT"));
+});
+
+
+test("Gemini function declarations avoid empty objects and empty-string enum",async()=>{
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  const result=await new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,readPort:{async invoke(tool:string){
+      return {provider:"gitea",performed:true,tool,
+        branch:"main",path:FILE,revision:SNAPSHOT.base_revision,
+        content:"export const invoices=[];"};
+    }}
+  }).propose();
+  assert.equal(result.status,"unapproved_proposal");
+  const tools=(model.requests[0].config as any)?.tools;
+  assert.ok(Array.isArray(tools)&&tools.length>0,"ADK function schemas exist");
+  const declarations=tools.flatMap((t:any)=>t.functionDeclarations??[]);
+  assert.ok(declarations.some((x:any)=>x.name==="read_repository"));
+  for(const declaration of declarations){
+    const parameters=declaration.parameters;
+    if(parameters?.type?.toString().toLowerCase()==="object"){
+      assert.ok(parameters.properties&&
+        Object.keys(parameters.properties).length>0,
+        "Gemini rejects zero-property OBJECT for "+declaration.name);
+    }
+    const walk=(value:any)=>{
+      if(!value||typeof value!=="object")return;
+      if(Array.isArray(value)){for(const v of value)walk(v);return;}
+      for(const [key,item] of Object.entries(value)){
+        if(key==="enum"&&Array.isArray(item))
+          assert.ok(!item.includes(""),"Gemini rejects empty-string enum values");
+        walk(item);
+      }
+    };
+    walk(parameters);
+  }
 });
