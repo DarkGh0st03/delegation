@@ -940,3 +940,40 @@ R5 evidence by merely changing an environment variable to match the
 completed job. This protects against that specific workflow error,
 but owner-level filesystem compromise or deliberate timestamp forgery
 still requires a separate trust and audit boundary.
+
+## Adapter read-only native revocation observation — new R5 audit primitive
+
+To audit native revocation after the trusted Coordinator has closed, the
+Rust Adapter now exposes the authenticated, non-mutating
+`POST /v1/credentials/status/inspect` endpoint. The body has only
+`credential_id`. **Only the existing Gateway verifier role** may query
+it; Engineer, Orchestrator, Agents and unknown callers are denied.
+A missing or unknown credential ID fails closed. The query does not
+issue a credential, update a Status List, send an EVM transaction, renew
+a lease or alter a delegation.
+
+With `ADAPTER_TRUST_PROFILE=evm`, the Adapter checks the **current**
+on-chain Status List anchor, the exact compact JWT commitment,
+Ed25519 signature and credential's revocation bit. The JSON response
+reports `status_purpose:"revocation"`,
+`source:"evm_anchored_signed_jwt"`, an anchor version and
+`status_set:true/false`. With the deterministic in-memory profile the
+source is explicitly `adapter_memory_only`, without an anchor version.
+The latter must never count as EVM revocation evidence.
+
+The security procedure must require `status_set:true` for **each**
+previously issued preliminary/operational root and scoped child whose
+revocation is part of the R5 acceptance contract. The list of required
+IDs must be derived separately from actual signed authorization and
+issuance records; supplying only a subset would invalidate the audit.
+Never infer revoked child credentials from the operational root alone.
+
+This is a **live Adapter observation**, not independent attestation:
+the Adapter retains its issued credential-ID mapping in memory, and
+must still be running after the session. A fresh Adapter process cannot
+reconstruct that mapping from a guessed credential ID. The separate
+Rust verification process and current public status JWT/EVM hash still
+need to be checked independently before the thesis may claim an
+externally attested completed R5. An unrecognized credential, missing
+anchor, stale JWT or unavailable service is NO-GO. This feature does not
+alter the historical R5 NO-GO status or authorize a paid run.
