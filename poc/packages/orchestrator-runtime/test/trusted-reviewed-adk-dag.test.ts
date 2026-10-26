@@ -131,7 +131,8 @@ class ScriptedPlanningModel extends BaseLlm{
     if(this.turns<=this.readSteps){
       yield {content:{role:"model",parts:[{functionCall:{
         id:"read-approved-source-"+this.turns,name:"read_file",
-        args:{branch:"main",path:this.x.backend}
+        args:{branch:"main",path:this.turns===1?this.x.backend:
+          this.turns===2?this.x.frontend:"src/planning-context-"+this.turns+".ts"}
       }}]}};
       return;
     }
@@ -149,9 +150,14 @@ async function exercise(
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
   const servers:Array<{role:string;baseUrl:string;close:()=>Promise<void>;executor:any}>=[];
   try{
+    const discoveryPaths=[
+      x.backend,x.frontend,
+      ...Array.from({length:Math.max(0,planningReads-2)},
+        (_,i)=>"src/planning-context-"+(i+3)+".ts")
+    ];
     const snapshot={session_id:"r2-"+x.name+(partial?"-partial":""),
       repository:REPO,base_revision:SHA,
-      directories:["","src"],files:[x.backend,x.frontend]};
+      directories:["","src"],files:discoveryPaths};
     const engineerKeys=keypair(),backendKeys=keypair();
     const engineerStore=new SignedEngineerApprovalFileStore({
       directory,engineerDid:ENGINEER,
@@ -205,16 +211,21 @@ async function exercise(
       readPort:{
         async invoke(tool,args){
           assert.equal(tool,"read_file");
-          assert.deepEqual(args,{branch:"main",path:x.backend});
-          events.push("planning-read:"+x.backend);
+          assert.equal(args.branch,"main");
+          assert.equal(args.path,discoveryPaths[events.filter(e=>
+            e.startsWith("planning-read:")).length]);
+          events.push("planning-read:"+args.path);
           return {provider:"gitea",performed:true,tool,
-            path:x.backend,branch:"main",revision:SHA,
+            path:args.path,branch:"main",revision:SHA,
             content:"export const state = [];"};
         }
       }
     }).propose();
     assert.equal(proposal.verified_source_reads,planningReads);
     assert.equal(model.turns,planningReads+1);
+    const pathsRead=events.filter(e=>e.startsWith("planning-read:"));
+    assert.equal(pathsRead.length,planningReads);
+    assert.equal(new Set(pathsRead).size,planningReads);
     assert.equal(proposal.plan.tasks.length,withPullRequest?5:4);
     assert.equal(proposal.plan.requirement,x.requirement);
 
@@ -758,7 +769,7 @@ test("R5 signed PR is denied without independently accepted exact-SHA Runner out
   await exercise(SCENARIOS[1]!,false,false,true,true,true,true);
 });
 
-test("R5 long-horizon offline Gemini-style ADK reads 11 files then authentic Ed25519 review, scoped three-role HTTP A2A, Gateway and signed PR",async()=>{
+test("R5 long-horizon offline Gemini-style ADK reads 11 distinct files then authentic Ed25519 review, scoped three-role HTTP A2A, Gateway and signed PR",async()=>{
   // Mirror the successful paid isolated Planner's eleven read steps, but
   // deliberately NEVER contact a model provider or authorize paid billing.
   // The normal completion criterion is the fully validated final proposal
