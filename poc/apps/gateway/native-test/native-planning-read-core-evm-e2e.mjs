@@ -170,7 +170,9 @@ class ScriptedReadPlanner extends BaseLlm{
     // a real Planner may use. No scripted source write or approval occurs.
     // The original negative/handoff fixture keeps its single pinned read.
     const exploration=positiveDag?[
-      {name:"read_repository",args:{}},
+      // Gemini requires the repository selector in its tool declaration.
+      // Runtime still authorizes an argument-free, pinned read_repository.
+      {name:"read_repository",args:{repository:repo.repository}},
       {name:"list_directory",args:{branch:"main",path:""}},
       {name:"read_file",args:{branch:"main",path:file}},
       {name:"read_file",args:{branch:"main",path:frontendFile}}
