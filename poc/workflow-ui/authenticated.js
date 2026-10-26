@@ -63,7 +63,8 @@
     for(const p of plan.requested_permissions){
       const label=node("label");
       const input=node("input");
-      input.type="checkbox";input.checked=true;input.value=p.id;
+      // Explicit opt-in: no requested permission is pre-approved by the UI.
+      input.type="checkbox";input.checked=false;input.value=p.id;
       input.className="approval-permission";
       label.append(input,node("span"," "+p.id+" · "+p.agent_id+
         " · "+p.operation+" · "+p.resource+" ("+p.reason+")"));
