@@ -767,3 +767,46 @@ signed attestation or a distributed runner execution. R5 remains
 NO-GO until explicit owner approval of deployment, independent
 review of PR #37, authentic human Engineer consent and witnessed
 real root/child revocation.
+
+## R5 — CI native EVM/Gitea Docker false-positive prevention and phase diagnosis (26 October 2026)
+
+The cumulative offline run **40303264621** failed its EVM job while
+the other four jobs and the **65/65** canonical R5 checks passed.
+The *first* native signed scenario was blocked at the Test Agent
+after the real Docker Runner returned `runner_status: fail`,
+`runner_project_tests_status: fail`,
+`runner_researcher_acceptance_status: skipped`.
+The live, signed VP, Gateway, Rust and OPA enforcement rejected DAG
+completion, exactly as required. The A2A client's "task ended
+without completion" was a consequence of that rejection, **not** a
+request-deadline exception: the visible polling interval was about
+59 seconds, while the approved A2A execution budget was substantially
+longer.
+
+The failure details were not present in the parent CI diagnostic
+because the nested native positive DAG runs through
+`execFileSync()` and a thrown child process prevented the parent
+from relaying the already structured safe
+`[native-dag-adk] docker_phase_status` event. This made it
+impossible to distinguish a failed dependency install from
+typecheck, backend tests, frontend tests, build, or Playwright,
+without inaccessible ephemeral runner logs. The precise root cause
+of that run must **not be guessed** from the generic A2A error.
+
+The new `native-dag-result-diagnostic.mjs` parses only a fixed list
+of seven Runner phase names and the enums `pass/fail/skipped`.
+On child exit failure, the parent emits a restricted
+`native_dag_failure` event containing the first failed phase and
+the known project/acceptance statuses; it **never prints arbitrary
+child stderr, stdout, source code, secrets, private bearer, or
+repository artifacts**, and cannot turn a denied DAG into a pass.
+An unknown/malformed event reports
+`no_structured_phase_status`, not speculative success.
+
+A focused offline test checks the diagnostic against sensitive
+untrusted stderr and malformed/fabricated events. A future
+automatic native CI failure will therefore identify the Docker
+phase to investigate. **Do not** relax any signed Task, Gateway
+corroboration, exact-SHA, root revocation, or researcher acceptance
+check to mask this failure. All suites continue to use scripted
+models only: no Gemini billing and no actual distributed R5 claim.

@@ -252,6 +252,11 @@ const SUITES=Object.freeze([
     title:"R5 refuses unexpected installed SHA and dirty worktree"
   },
   {
+    id:"r5_docker_failure_structured_no_secrets",
+    path:"poc/apps/test-runner-controller/test/native-dag-result-diagnostic.test.mjs",
+    title:"R5 native Docker CI surfaces only failed phase name from untrusted child stderr"
+  },
+  {
     id:"r5_sigterm_aborts_proof_publication",
     path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
     title:"R5 SIGTERM cancels witness publication before any final receipt is visible"

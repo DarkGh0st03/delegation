@@ -30,6 +30,8 @@ import {getApprovedOfflineScenario} from
   "../fixtures/approved-scenarios.mjs";
 import {beginApprovedRealRunnerSession} from
   "./approved-gateway-runner-session.mjs";
+import {safeNativeDockerFailureDiagnostic}
+  from "./native-dag-result-diagnostic.mjs";
 
 const baseline="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const baselineSource="https://github.com/DarkGh0st03/iam-console-poc.git";
@@ -442,9 +444,11 @@ async function main(){
         assert.equal(result?.child_dc_issued,0);
         assert.equal(result?.real_provider_mutations,0);
         assert.equal(result?.provider_writes,0);
-        const positiveOutput=execFileSync(process.execPath,[
-          "--experimental-strip-types",planningScript
-        ],{
+        let positiveOutput;
+        try{
+          positiveOutput=execFileSync(process.execPath,[
+            "--experimental-strip-types",planningScript
+          ],{
           cwd:process.cwd(),encoding:"utf8",timeout:980000,
           maxBuffer:2*1024*1024,
           env:{...process.env,
@@ -460,7 +464,23 @@ async function main(){
             APPROVED_RUNNER_NATIVE_MCP:"1",
             APPROVED_RUNNER_SCENARIO:scenario.id
           }
-        });
+          });
+        }catch(error){
+          // The child may report a real Docker project-test failure and
+          // then the A2A handler correctly denies signed DAG completion.
+          // NEVER echo raw child stderr/stdout: source, tokens and model
+          // inputs may be present in untrusted logs. Only fixed phase
+          // names and success/failure enums may cross this CI boundary.
+          const evidence=safeNativeDockerFailureDiagnostic(error?.stderr);
+          process.stderr.write("[trusted-positive-ci] native_dag_failure "+
+            JSON.stringify({
+              stage:"signed_dag_disposable_docker_acceptance",
+              ...(evidence??{diagnosis:"no_structured_phase_status"}),
+              signed_dag_completed:false,
+              permissions_bypassed:false
+            })+"\n");
+          throw Error("Native signed DAG failed; Docker phase evidence required");
+        }
         const positive=positiveOutput.split(/\r?\n/u).filter(Boolean)
           .map(line=>{try{return JSON.parse(line);}catch{return null;}})
           .find(event=>event?.event==="native_preliminary_adk_planning");
