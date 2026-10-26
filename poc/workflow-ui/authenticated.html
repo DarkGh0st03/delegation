@@ -26,7 +26,11 @@
 <div class="stat"><span>ID piano/versione</span><strong id="plan"></strong></div>
 <div class="stat"><span>Requisito</span><span id="requirement-view"></span></div>
 <div class="digest"><span>SHA-256 esatto del piano da approvare</span><code id="digest"></code></div>
-<h3>Task approvati nel piano</h3><div id="tasks"></div>
+<h3>Task proposti e dipendenze</h3><div id="tasks"></div>
+<h3>Assunzioni del Planner</h3><div id="assumptions"></div>
+<h3>Incertezze da risolvere prima di approvare</h3>
+<p>Se un'incertezza cambia il requisito, l'ambito dei file o le permission, rifiuta il piano e richiedi una nuova proposta. La firma non risolve automaticamente ambiguità funzionali.</p>
+<div id="uncertainties" role="status"></div>
 <h3>Seleziona le permission consentite</h3><div id="permissions"></div>
 <label>Conferma digitando APPROVE seguito da spazio e SHA-256 completo
 <input id="confirmation" type="text" autocomplete="off" spellcheck="false">
