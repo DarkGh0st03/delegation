@@ -125,10 +125,11 @@ test("R5 GitHub cancellation during the LAST signed Task denies terminal success
   // provider, model, Adapter or GitHub API is invoked by the fixture.
   t.mock.method(TrustedApprovedA2ADispatcher,
     "loadWithScopedChildAuthority",async()=>({
-      async executeApprovedDag({beforeTask}:any){
+      async executeApprovedDag({beforeTask,beforeCompletion}:any){
         await beforeTask("last-test");
         lastTaskEffects++;
         githubActive=false; // cancellation occurs DURING final provider effect
+        await beforeCompletion(); // must reject before root retirement
         return {completed_task_ids:["last-test"]};
       }
     } as any));
@@ -167,17 +168,20 @@ test("R5 GitHub cancellation during the LAST signed Task denies terminal success
 
 test("R5 final GitHub revalidation accepts a still-active job before root retirement",async t=>{
   const f=await fixture();
-  let checks=0,closed=0;
+  let checks=0,closed=0,phase="execution",preClose=0;
   t.mock.method(TrustedApprovedA2ADispatcher,
     "loadWithScopedChildAuthority",async()=>({
-      async executeApprovedDag({beforeTask}:any){
+      async executeApprovedDag({beforeTask,beforeCompletion}:any){
         await beforeTask("last-test");
+        await beforeCompletion();
+        preClose++;
+        phase="closed"; // mirrors actual awaited closeExecution()
         return {completed_task_ids:["last-test"]};
       }
     } as any));
   try{
     Object.defineProperty(f.coordinator,"phase",{
-      configurable:true,get:()=>"execution"
+      configurable:true,get:()=>phase
     });
     Object.defineProperty(f.coordinator,"trustedOperationalAuthority",{
       configurable:true,value:()=>({
@@ -196,7 +200,90 @@ test("R5 final GitHub revalidation accepts a still-active job before root retire
       invokeOrchestratorTask:async()=>{throw Error("not used");}
     } as any);
     assert.deepEqual(result,{completed_task_ids:["last-test"]});
-    assert.equal(checks,3);
+    assert.equal(checks,4,
+      "initial, last Task, pre-retirement and post-retirement GitHub checks");
+    assert.equal(preClose,1);
+    assert.equal(phase,"closed");
     assert.equal(closed,1);
+  }finally{await f.close();}
+});
+
+
+test("R5 cannot accept a successful Task reply if native root closure was skipped",async t=>{
+  const f=await fixture();
+  let checked=0,hostClosed=0,phase="execution";
+  t.mock.method(TrustedApprovedA2ADispatcher,
+    "loadWithScopedChildAuthority",async()=>({
+      async executeApprovedDag({beforeTask,beforeCompletion}:any){
+        await beforeTask("last-test");
+        await beforeCompletion();
+        // A fabricated dispatcher outcome must NOT bypass the actual
+        // Coordinator's durable closeExecution() contract.
+        return {completed_task_ids:["last-test"]};
+      }
+    } as any));
+  try{
+    Object.defineProperty(f.coordinator,"phase",{
+      configurable:true,get:()=>phase
+    });
+    Object.defineProperty(f.coordinator,"trustedOperationalAuthority",{
+      configurable:true,value:()=>({
+        credential_id:f.running.operational_root_id,
+        plan_digest:f.running.readiness.plan_digest,permissions:[]
+      })
+    });
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,running:f.running as any,
+      async verifyLiveRun(){checked++;},
+      async close(){hostClosed++;phase="closed";}
+    });
+    await assert.rejects(bridge.executeApprovedDag({
+      a2a:{},adapter:{},
+      authorityForTask:async()=>{throw Error("not used");},
+      invokeOrchestratorTask:async()=>{throw Error("not used");}
+    } as any),/operational root not closed after signed DAG completion/);
+    assert.equal(checked,3);
+    assert.equal(hostClosed,1);
+  }finally{await f.close();}
+});
+
+test("R5 GitHub cancellation during durable root retirement denies success",async t=>{
+  const f=await fixture();
+  let checked=0,hostClosed=0,phase="execution",active=true;
+  t.mock.method(TrustedApprovedA2ADispatcher,
+    "loadWithScopedChildAuthority",async()=>({
+      async executeApprovedDag({beforeTask,beforeCompletion}:any){
+        await beforeTask("last-test");
+        await beforeCompletion();
+        phase="closed";
+        active=false; // canceled while awaiting durable Gateway/Rust closure
+        return {completed_task_ids:["last-test"]};
+      }
+    } as any));
+  try{
+    Object.defineProperty(f.coordinator,"phase",{
+      configurable:true,get:()=>phase
+    });
+    Object.defineProperty(f.coordinator,"trustedOperationalAuthority",{
+      configurable:true,value:()=>({
+        credential_id:f.running.operational_root_id,
+        plan_digest:f.running.readiness.plan_digest,permissions:[]
+      })
+    });
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,running:f.running as any,
+      async verifyLiveRun(){
+        checked++;
+        if(!active)throw Error("GitHub canceled during root retirement");
+      },
+      async close(){hostClosed++;}
+    });
+    await assert.rejects(bridge.executeApprovedDag({
+      a2a:{},adapter:{},
+      authorityForTask:async()=>{throw Error("not used");},
+      invokeOrchestratorTask:async()=>{throw Error("not used");}
+    } as any),/GitHub canceled during root retirement/);
+    assert.equal(checked,4);
+    assert.equal(hostClosed,1);
   }finally{await f.close();}
 });

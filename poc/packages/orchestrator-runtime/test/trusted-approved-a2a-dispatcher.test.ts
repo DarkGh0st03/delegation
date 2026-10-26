@@ -309,6 +309,56 @@ test("trusted GitHub liveness is rechecked before EVERY signed Task",async()=>{
  assert.equal(h.coordinator.phase,"closed");
 });
 
+test("R5 final job check runs after ALL signed Tasks but BEFORE verified Gateway/Rust root close",async()=>{
+ const h=harness();
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ let terminalChecks=0;
+ const done=await d.executeApprovedDag({
+   async invokeOrchestratorTask(_id,gatewayTaskId){
+     h.log.push("provider:"+gatewayTaskId);
+   },
+   async beforeCompletion(){
+     terminalChecks++;
+     assert.equal(h.coordinator.phase,"execution");
+     assert.equal(d.completedTaskIds.length,4);
+     h.log.push("github-final");
+   }
+ });
+ assert.equal(terminalChecks,1);
+ assert.deepEqual(done.completed_task_ids,["branch",
+   "backend-task","frontend-task","tests"]);
+ assert.equal(h.coordinator.phase,"closed");
+ const lastTask=h.log.findIndex(x=>x.startsWith("confirm:")&&
+   x.endsWith(":test"));
+ const finalCheck=h.log.indexOf("github-final");
+ const rootClose=h.log.lastIndexOf("close");
+ assert.ok(lastTask>=0&&lastTask<finalCheck&&finalCheck<rootClose);
+});
+
+test("R5 rejected final GitHub job check still closes root and never reports successful DAG",async()=>{
+ const h=harness();
+ const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ let checks=0;
+ await assert.rejects(d.executeApprovedDag({
+   async invokeOrchestratorTask(_id,gatewayTaskId){
+     h.log.push("provider:"+gatewayTaskId);
+   },
+   async beforeCompletion(){
+     checks++;
+     assert.equal(h.coordinator.phase,"execution");
+     throw Error("GitHub run canceled after final A2A Task");
+   }
+ }),/GitHub run canceled after final A2A Task/);
+ assert.equal(checks,1);
+ assert.deepEqual(d.completedTaskIds,
+   ["branch","backend-task","frontend-task","tests"]);
+ assert.equal(h.coordinator.phase,"closed");
+ assert.equal(h.log.at(-1),"close");
+ await assert.rejects(d.executeApprovedDag({
+   invokeOrchestratorTask:async()=>{}
+ }),/fresh approved Execution session/);
+});
+
 test("lost GitHub run after Backend forbids Frontend and Test before side effects",async()=>{
  const h=harness();
  const d=await TrustedApprovedA2ADispatcher.load(h.config as any);

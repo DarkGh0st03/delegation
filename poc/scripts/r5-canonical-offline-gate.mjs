@@ -107,6 +107,26 @@ const SUITES=Object.freeze([
     title:"R5 only genuine, distinct localhost delegated A2A HTTP Agent Cards are ready"
   },
   {
+    id:"r5_final_check_before_native_root_revocation",
+    path:"poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts",
+    title:"R5 final job check runs after ALL signed Tasks but BEFORE verified Gateway/Rust root close"
+  },
+  {
+    id:"r5_final_cancellation_retires_native_root",
+    path:"poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts",
+    title:"R5 rejected final GitHub job check still closes root and never reports successful DAG"
+  },
+  {
+    id:"r5_success_requires_verified_native_closure",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-approved-dag.test.ts",
+    title:"R5 cannot accept a successful Task reply if native root closure was skipped"
+  },
+  {
+    id:"r5_job_cancellation_during_revocation_denied",
+    path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-approved-dag.test.ts",
+    title:"R5 GitHub cancellation during durable root retirement denies success"
+  },
+  {
     id:"final_task_github_cancellation_denied",
     path:"poc/packages/orchestrator-runtime/test/trusted-reviewed-approved-dag.test.ts",
     title:"R5 GitHub cancellation during the LAST signed Task denies terminal success and still retires root"

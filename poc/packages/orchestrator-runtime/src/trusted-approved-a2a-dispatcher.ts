@@ -164,6 +164,10 @@ export class TrustedApprovedA2ADispatcher {
     invokeOrchestratorTask?:(planTaskId:string,gatewayTaskId:string)=>Promise<unknown>;
     /** Trusted host-owned liveness check before EACH Task, including branch. */
     beforeTask?:(planTaskId:string)=>Promise<void>;
+    /** Final independent live-run check after ALL verified Tasks but
+     * BEFORE Gateway closure and native operational root revocation.
+     * A rejected check must fail closed, never report completed DAG. */
+    beforeCompletion?:()=>Promise<void>;
   }={}):Promise<{
     plan_digest:string;
     completed_task_ids:string[];
@@ -206,6 +210,12 @@ export class TrustedApprovedA2ADispatcher {
         }
         remaining.delete(task.id);
       }
+      // The final Task may have completed AFTER the GitHub job was
+      // canceled. Re-check its authenticated liveness before retiring
+      // authority; a rejection enters catch and still closes the root.
+      await config.beforeCompletion?.();
+      if(this.#config.coordinator.phase!=="execution")
+        throw Error("Operational session closed before final DAG attestation");
       // Completion is durable only once the trusted Gateway is closed and
       // the operational root revocation has been independently confirmed.
       await this.#config.coordinator.closeExecution();

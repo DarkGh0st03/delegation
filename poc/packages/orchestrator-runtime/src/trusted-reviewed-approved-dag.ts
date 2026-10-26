@@ -107,18 +107,23 @@ export function createReviewedApprovedDagExecution(input:{
           invokeOrchestratorTask:config.invokeOrchestratorTask,
           // The trusted host owns this callback; neither the model nor
           // the operator-supplied task executor can replace it.
-          beforeTask:async()=>{await input.verifyLiveRun();}
+          beforeTask:async()=>{await input.verifyLiveRun();},
+          // The dispatcher itself awaits Gateway closure, native Rust root
+          // revocation and durable reconciliation BEFORE returning.
+          // Therefore the last post-Task liveness check MUST occur via
+          // this hook while the trusted operational session is still live.
+          beforeCompletion:async()=>{await input.verifyLiveRun();}
         });
-        // The last Task may have run longer than the GitHub cancellation
-        // interval. Checking only BEFORE each Task admits an already-dead
-        // GitHub job if it was canceled during the final A2A/Runner effect.
-        // Re-correlate the SAME manual run after the dispatcher returns and
-        // BEFORE root shutdown can mark the reviewed DAG verified_complete.
-        // A failed check enters finally, revokes authority, and never
-        // reports a successful signed DAG to the runner.
+        // CLOSED is the only valid successful terminal phase here.
+        // Requiring execution would reject EVERY actual successful DAG:
+        // executeApprovedDag() already awaited closeExecution().
+        if(input.coordinator.phase!=="closed")
+          fail("operational root not closed after signed DAG completion");
+        // Verify the SAME GitHub job again after durable closure. If a
+        // cancellation raced revocation, never return verified success.
         await input.verifyLiveRun();
-        if(input.coordinator.phase!=="execution")
-          fail("operational authority closed before final signed DAG receipt");
+        if(input.coordinator.phase!=="closed")
+          fail("operational root terminal phase changed after closure");
         return completed;
       } finally {
         // Closing the host's session is mandatory even when a plan mismatch,

@@ -628,3 +628,44 @@ Engineer signature, Gateway/Rust/OPA traces and Gitea/Docker change
 evidence for the final dissertation appendix. Any missing or partial
 post-run receipt is **NO-GO** and requires manual reconciliation;
 never rerun the original admission or silently overwrite an artifact.
+
+## R5 — Fix verified terminal phase and liveness at durable close (26 October 2026)
+
+A security-sensitive control-flow regression was found by reading the
+real dispatcher/bridge contracts: `TrustedApprovedA2ADispatcher.executeApprovedDag()`
+**always awaits** `TrustedExecutionCoordinator.closeExecution()`
+after every signed Task. That method transitions the Coordinator
+to `closed`, retires the Gateway plan, requests native Rust root
+revocation and reconciles the durable record. The reviewed-DAG bridge
+previously demanded the phase still be `execution` *after* that
+successful awaited call. Consequently, a genuine successful Execution
+could not return a verified positive result, even if all tasks completed
+and revocations were confirmed. A mocked test did not notice, because
+its fake dispatcher never closed the Coordinator.
+
+The repaired path has **three distinct checks**:
+
+1. During Execution, the host independently checks live GitHub OIDC/REST
+   identity before each signed Task.
+2. After the final Task and **before** Gateway and root retirement, a
+   new trusted `beforeCompletion` hook rechecks that same live job.
+   If it is canceled during the last A2A/Docker effect, the dispatcher
+   closes the operational root in the fail-closed path.
+3. After the real dispatcher returns from awaited native retirement,
+   the reviewed bridge now **requires `closed`**, not `execution`.
+   It independently checks the same GitHub job once more. Cancellation
+   during root retirement still prevents the owner from reporting a
+   successful signed DAG, even though authorization is already closed.
+
+No test/model data can supply these liveness callbacks: they belong to
+the authenticated Engineer Host; no new OIDC scope or paid model path
+is created. The tests now cover proper callback ordering against the
+real approved Dispatcher, failure before retirement, falsely completed
+Tasks without actual closure, cancellation during retirement, and a
+genuine terminal success path. The isolated bridge unit fixture is
+explicitly made to mirror the Coordinator's real `closed` phase.
+
+The CI remains an offline integration test, not a substitute for a
+real distributed private runner/Engineer Host. R5 is still NO-GO until
+the independently authorized deployment, genuine signature and native
+end-to-end closure have been observed.
