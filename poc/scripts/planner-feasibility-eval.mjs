@@ -49,6 +49,29 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
     throw Error("invalid or absent proposal/observation artifact");
   const reference=getApprovedOfflineScenario(scenario);
   const baseline=new Set(Object.keys(reference.files));
+  const baselineDirs=new Set([""]);
+  for(const name of baseline) {
+    const parts=name.split("/");
+    for(let i=1;i<parts.length;i++)
+      baselineDirs.add(parts.slice(0,i).join("/"));
+  }
+  // Independently check newly proposed file paths without assuming the new
+  // file must already exist in the reference repository.
+  const safeNewTestFile=resource=>{
+    if(typeof resource!=="string"||!resource.startsWith(
+      "gitea://gitea.local/thesis/iam-console-poc/branches/"))return false;
+    const split=resource.split("/files/");
+    if(split.length!==2||split[0].endsWith("/branches/main"))return false;
+    try {
+      const parts=split[1].split("/").map(x=>decodeURIComponent(x));
+      const candidate=parts.join("/");
+      return parts.length>0&&parts.every(x=>x&&x!=="."&&x!==".."&&
+        !x.includes("/")&&!x.includes("\\")&&
+        !/[\x00-\x1f\x7f]/u.test(x))&&
+        encodedPath(candidate)===split[1]&&!baseline.has(candidate)&&
+        baselineDirs.has(parts.slice(0,-1).join("/"));
+    }catch{return false;}
+  };
   // The real trusted-owner bootstrap returns an Engineer review packet,
   // whereas direct propose() returns an unsigned proposal.
   const reviewPacket=proposal.status==="awaiting_engineer_signature";
@@ -65,8 +88,9 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
   const claimed=proposal.verified_source_reads;
   const scopeValid=grants.every(p=>safeRecord(p)&&ALLOWED.has(p.operation)&&
     ROLES.has(p.agent_id)&&typeof p.resource==="string"&&
-    (p.operation!=="read_file"&&p.operation!=="update_file"&&
-      p.operation!=="create_file" ||
+    (p.operation==="create_file"?
+      p.agent_id==="test"&&safeNewTestFile(p.resource):
+      (p.operation!=="read_file"&&p.operation!=="update_file")||
       [...baseline].some(path=>hasPath(p.resource,path)&&
         p.resource.includes("/branches/")&&
         !p.resource.includes("/branches/main/"))));
