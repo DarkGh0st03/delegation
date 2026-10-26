@@ -12,6 +12,9 @@ export function createTrustedReviewedHandoffLifecycle(start,{
       typeof verifyTerminalClosure!=="function"))
     throw Error("Trusted handoff start and terminal closure verifier required");
   let state="idle",attempt,active,shutdown,verifiedOutcome="pending";
+  // Distinguished from internal normal closeAttempt(): a separate owner
+  // shutdown racing terminal proof must never certify a successful run.
+  let externalCloseRequested=false;
   const startAttempt=input=>{
     if(state!=="idle")
       throw Error("Trusted handoff already attempted or host closing");
@@ -90,6 +93,11 @@ export function createTrustedReviewedHandoffLifecycle(start,{
         // scripted admitted runs; only then may the runner see completion.
         if(completed&&verifyTerminalClosure)
           await verifyTerminalClosure();
+        // The original operational root may be fully revoked while a
+        // concurrent host SIGTERM is closing the whole review session.
+        // A stale success after owner shutdown may not certify GitHub.
+        if(completed&&externalCloseRequested)
+          throw Error("Trusted handoff owner shutdown raced verified terminal closure");
         verifiedOutcome=completed?"verified_complete":"failed";
       }catch(error){
         verifiedOutcome="failed";
@@ -119,7 +127,12 @@ export function createTrustedReviewedHandoffLifecycle(start,{
         throw Error("Trusted handoff requires owner-provisioned execution factory");
       return executeOnce(input,createExecution);
     },
-    close:closeAttempt,
+    close:()=>{
+      // Fence a successful DAG outcome even if internal final revocation
+      // has already transitioned the lifecycle state to "closed".
+      externalCloseRequested=true;
+      return closeAttempt();
+    },
     get status(){return state;},
     /** Status only: not an Engineer approval or model execution receipt. */
     get verifiedOutcome(){return verifiedOutcome;}
