@@ -137,7 +137,10 @@ async function persistJson(directory,name,value){
 }
 
 export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
-  outputDir}){
+  outputDir,billingConsent}){
+  // Enforce charge consent at the exported API boundary too, not just CLI.
+  assertBillableFixtureOptIn({flag:"--execute",consent:billingConsent,
+    apiKey,outputDir});
   const fixture=makeIsolatedPlanningFixture(scenario);
   // Own a private evidence directory before consuming a model budget.
   await createPrivateDirectory(outputDir);
@@ -214,6 +217,7 @@ async function main(){
   const out=await runIsolatedGeminiFixture({
     scenario,apiKey:process.env.GEMINI_API_KEY,
     modelName:process.env.DELEGATION_PLANNER_MODEL||"gemini-3.8-flash",
+    billingConsent:process.env.DELEGATION_PLANNER_BILLING_CONSENT,
     outputDir:dir
   });
   process.stdout.write(JSON.stringify({
