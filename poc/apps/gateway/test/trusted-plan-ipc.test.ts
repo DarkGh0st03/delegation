@@ -720,6 +720,76 @@ test("private IPC retires the actual Gateway Planning registry and reserves unkn
   // No operational activation or model invocation is triggered.
 });
 
+test("R5 private IPC pins real Gitea Planning SHA and awaits durable remote retirement",async t=>{
+  const home=await mkdtemp(join(tmpdir(),"r5-remote-planning-ipc-"));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  const privateDir=join(home,"private"),tombstones=join(home,"retirement");
+  await mkdir(privateDir,{mode:0o700});
+  await mkdir(tombstones,{mode:0o700});
+  const socketPath=join(privateDir,"control.sock");
+  const secretFile=join(privateDir,"ipc.secret.hex");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+  let calls=0;
+  const retirement=new TrustedPlanningRetirementStore(tombstones);
+  await retirement.assertReady();
+  const registry=new TrustedPlanningRevisions({
+    async readRepository(){
+      calls++;
+      return {default_branch:"main",revision:SHA};
+    }
+  } as any,{retirementStore:retirement});
+  const server=await createTrustedPlanIpcServer({
+    socketPath,secretFile,planningRevisions:registry,
+    plans:{operationalLeaseConfigured:()=>true} as any
+  });
+  await server.start();
+  t.after(()=>server.close());
+  const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+  assert.equal(client.planningRetirementDurableConfigured(),true);
+  const original=await client.begin("r5-private-planning",60_000);
+  assert.equal(original.task_id,"r5-private-planning");
+  assert.equal(original.base_revision,SHA);
+  assert.equal(Number.isFinite(Date.parse(original.expires_at)),true);
+  assert.equal(calls,1);
+  await assert.rejects(client.begin("r5-private-planning",60_000),
+    /Gateway trusted control denied/);
+  await client.end("r5-private-planning");
+  await assert.rejects(client.begin("r5-private-planning",60_000),
+    /Gateway trusted control denied/);
+  await assert.rejects(registry.begin("r5-private-planning",60_000),
+    /already registered/);
+  // Operator may never choose the Gitea SHA in the remote begin payload.
+  assert.equal(await rawSocket(socketPath,
+    JSON.stringify({action:"begin_planning",session_id:"other",
+      base_revision:"b".repeat(40),ttl_ms:60000}),{}),403);
+});
+
+test("R5 private Planning begin refuses a Gateway without durable retirement",async t=>{
+  const home=await mkdtemp(join(tmpdir(),"r5-unstable-planning-"));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  const privateDir=join(home,"private");
+  await mkdir(privateDir,{mode:0o700});
+  const socketPath=join(privateDir,"control.sock");
+  const secretFile=join(privateDir,"secret.hex");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+    {mode:0o600});
+  let calls=0;
+  const registry=new TrustedPlanningRevisions({
+    async readRepository(){calls++;return {default_branch:"main",revision:SHA};}
+  } as any);
+  const listener=await createTrustedPlanIpcServer({
+    socketPath,secretFile,planningRevisions:registry,
+    plans:{operationalLeaseConfigured:()=>true} as any
+  });
+  await listener.start();
+  t.after(()=>listener.close());
+  const trusted=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+  assert.equal(trusted.planningRetirementDurableConfigured(),false);
+  await assert.rejects(trusted.begin("must-not-start",60_000),
+    /durable Gateway retirement/);
+  assert.equal(calls,0);
+});
+
 test("private Planning retirement is denied without actual Gateway registry",async t=>{
   const home=await mkdtemp(join(tmpdir(),"planning-ipc-no-registry-"));
   t.after(()=>rm(home,{recursive:true,force:true}));

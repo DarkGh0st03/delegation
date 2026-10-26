@@ -147,6 +147,16 @@ const SUITES=Object.freeze([
     title:"R5 bounded no-provider ADK model produces original-snapshot scoped plan after genuine Gateway-shaped reads"
   },
   {
+    id:"r5_real_private_planning_registration",
+    path:"poc/apps/gateway/test/trusted-plan-ipc.test.ts",
+    title:"R5 private IPC pins real Gitea Planning SHA and awaits durable remote retirement"
+  },
+  {
+    id:"r5_async_gateway_retirement_before_rust_revoke",
+    path:"poc/packages/orchestrator-runtime/test/trusted-r5-remote-planning-retirement.test.ts",
+    title:"R5 async Gateway Planning retirement must be confirmed before native root revocation"
+  },
+  {
     id:"scripted_no_provider_model_cannot_be_subclassed",
     path:"poc/packages/orchestrator-runtime/test/trusted-r5-scripted-planning-model.test.ts",
     title:"R5 rejects paid-capable subclasses and method replacement after original model construction"

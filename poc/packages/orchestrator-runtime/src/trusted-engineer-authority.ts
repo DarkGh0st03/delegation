@@ -56,7 +56,7 @@ export interface TrustedPlanningRevisionPort {
   begin(taskId:string,ttlMs:number):Promise<{
     task_id:string;base_revision:string;expires_at:string
   }>;
-  end(taskId:string):void;
+  end(taskId:string):void|Promise<void>;
 }
 
 export interface EngineerCredentialPort {
@@ -277,7 +277,12 @@ export class TrustedEngineerAuthoritySession {
       return {credential_id:issued.id,phase:"planning",permissions};
     } catch(error) {
       if(registered) {
-        try {this.#planningRevisions?.end(this.#snapshot.session_id);} catch {/* fail closed */}
+        try {await this.#planningRevisions?.end(this.#snapshot.session_id);}
+        catch(error){
+          // Unknown Gateway retirement state blocks a new Planner/Root.
+          throw Error("Planning registration failed and Gateway retirement unconfirmed; manual reconciliation required",
+            {cause:error});
+        }
       }
       throw error;
     }
@@ -295,7 +300,7 @@ export class TrustedEngineerAuthoritySession {
     this.#planningClosure=(async()=>{
       let registryEnded=false,rootRevoked=false;
       try{
-        this.#planningRevisions?.end(this.#snapshot.session_id);
+        await this.#planningRevisions?.end(this.#snapshot.session_id);
         registryEnded=true;
       }catch{/* Still attempt native root revocation. */}
       try{
@@ -363,7 +368,9 @@ export class TrustedEngineerAuthoritySession {
     try{
       // Stop outstanding read challenges before attempting on-chain revocation.
       // If the registry is unreachable or fails, NEVER issue operational DC.
-      this.#planningRevisions?.end(this.#snapshot.session_id);
+      // A remote async retirement must be confirmed before Rust revokes
+      // the preliminary DC, and before independent operational issuance.
+      await this.#planningRevisions?.end(this.#snapshot.session_id);
       await this.#client.revokeRoot(this.#provisionalId);
     }catch{
       // Ambiguous failure means the old credential may still be active;

@@ -26,6 +26,7 @@ type Command=
   |{action:"close";session_id:string}
   |{action:"retire";session_id:string}
   |{action:"retire_planning";session_id:string}
+  |{action:"begin_planning";session_id:string;ttl_ms:number}
   |{action:"lease_status"}
   |{action:"renew_lease";session_id:string;plan_digest:string}
   |{action:"complete";runtime_task_id:string;observation:TrustedCompletionObservation};
@@ -54,6 +55,11 @@ function validate(x:unknown):Command{
   if((o.action==="close"||o.action==="retire"||
       o.action==="retire_planning")&&
      exact(o,["action","session_id"]))return o as Command;
+  if(o.action==="begin_planning"&&
+     exact(o,["action","session_id","ttl_ms"])&&
+     Number.isSafeInteger(o.ttl_ms)&&
+     (o.ttl_ms as number)>=1&&(o.ttl_ms as number)<=900_000)
+    return o as Command;
   if(o.action==="renew_lease"&&exact(o,["action","session_id","plan_digest"])&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest))
     return o as Command;
@@ -162,6 +168,16 @@ export async function createTrustedPlanIpcServer(config:{
       }else if(command.action==="retire"){
         await config.plans.retireSession(command.session_id);
         response(res,200,{ok:true});
+      }else if(command.action==="begin_planning"){
+        // Private transport is the ONLY remote way to register read-only
+        // Planning. Require durable retirement *before* querying Gitea:
+        // a process crash must not resurrect a formerly authorized root.
+        if(!(config.planningRevisions instanceof TrustedPlanningRevisions)||
+           !config.planningRevisions.durableRetirementConfigured())
+          fail("durable Gateway Planning registry required before remote begin");
+        const pinned=await config.planningRevisions.begin(
+          command.session_id,command.ttl_ms);
+        response(res,200,{ok:true,...pinned});
       }else if(command.action==="retire_planning"){
         if(!(config.planningRevisions instanceof TrustedPlanningRevisions))
           fail("actual Gateway Planning revision registry missing");
@@ -319,6 +335,36 @@ export class TrustedPlanIpcClient{
   }
   async retireSession(sessionId:string){
     await this.#send({action:"retire",session_id:sessionId});
+  }
+  /**
+   * Authenticated remote Planning registration from the REAL Gateway
+   * Gitea revision. No caller may supply the SHA or authorize a root.
+   * The durable-retirement capability is mandatory for this remote path.
+   */
+  async begin(taskId:string,ttlMs:number):Promise<{
+    task_id:string;base_revision:string;expires_at:string
+  }>{
+    if(!this.#planningRetirementEnabled||!this.#planningRetirementDurable)
+      fail("remote Planning needs durable Gateway retirement");
+    const result=await this.#send({
+      action:"begin_planning",session_id:taskId,ttl_ms:ttlMs
+    });
+    if(result.task_id!==taskId||
+       typeof result.base_revision!=="string"||
+       !SHA.test(result.base_revision)||
+       typeof result.expires_at!=="string"||
+       !Number.isFinite(Date.parse(result.expires_at)))
+      fail("Gateway returned invalid source-pinned Planning receipt");
+    return Object.freeze({task_id:taskId,
+      base_revision:result.base_revision,expires_at:result.expires_at});
+  }
+  /**
+   * Treat end() as a durable terminal retirement, not a fire-and-forget
+   * in-memory close. The Engineer must AWAIT the signed IPC ACK before
+   * revoking the read-only root or issuing a write-scoped root.
+   */
+  async end(taskId:string):Promise<void>{
+    await this.retirePlanning(taskId);
   }
   /** Private, one-use HMAC operation: never the operational plan tombstone. */
   async retirePlanning(sessionId:string):Promise<void>{

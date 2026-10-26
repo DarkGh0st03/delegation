@@ -282,3 +282,46 @@ The model guard requires the **exact original prototype and both original
 method implementations** before any Planning root is issued. It cannot
 attest a machine compromised with owner-level code execution; such a
 machine remains outside the trust boundary.
+
+## R5 — Actual private Gateway Planning registration (26 October 2026)
+
+The persistent Engineer Host and the Gateway can run in separate
+processes. Before this change, the authenticated HMAC Unix-socket API
+could retire a Planning session but could not register it; constructing
+the original Coordinator with a remote Gateway could not start the
+pinned read-only Planning lease over this transport.
+
+The `TrustedPlanIpcClient` now implements `begin(sessionId,ttlMs)`
+as a signed private `begin_planning` command. **Only** the Gateway's
+existing `TrustedPlanningRevisions` registry reads the actual Gitea
+main commit SHA, and the response returns its pinned revision and
+deadline. The Engineer cannot supply that SHA in a request. Remote
+registration is denied if the Gateway does not advertise a durable
+Planning retirement journal. The Unix socket remains strictly private,
+with owner-only secret, nonce, timestamp and HMAC validation; no public
+Gateway, ADK, A2A or MCP route exposes this command.
+
+The corresponding private client `end(sessionId)` calls the durable
+`retire_planning` command, rather than an in-memory close. The
+`TrustedEngineerAuthoritySession` now **awaits** this result on
+Planning cancellation, authorization transition and partial-startup
+cleanup. In particular, an unresolved or rejected Gateway retirement
+must never silently precede a new independent write root. Its failure
+remains terminal and requires manual reconciliation, even if Adapter
+revocation succeeds.
+
+To use it, the operator must construct the original Coordinator's
+`TrustedEngineerAuthoritySession` with the **actual authenticated**
+`TrustedPlanIpcClient` as `planningRevisions`, and pass that same
+client as `approvedGatewayPlans` to the Coordinator. The service
+already checks its lease and retirement capabilities at startup.
+The existing durable Planning/operational root journals and real
+Adapter credential port remain mandatory. A new private IPC transport
+does not authenticate an Engineer signature or bypass OPA.
+
+The offline regression starts a real HMAC IPC listener around an
+actual `TrustedPlanningRevisions` and durable retirement store;
+additional tests assert that asynchronous Gateway retirement finishes
+before native root revocation and that a rejected retirement cannot
+report a clean shutdown. Physical runner/Engineer deployment and the
+complete real signed DAG remain separate R5 acceptance evidence.
