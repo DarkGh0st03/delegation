@@ -7,7 +7,7 @@
 import {createPrivateKey,createPublicKey} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {TrustedPlanIpcClient}
-  from "../gateway/src/trusted-plan-ipc.ts";
+  from "../../gateway/src/trusted-plan-ipc.ts";
 import {TrustedEngineerAuthoritySession,preliminaryReadPermissions}
   from "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
