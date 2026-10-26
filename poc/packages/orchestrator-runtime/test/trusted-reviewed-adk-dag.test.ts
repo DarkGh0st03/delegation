@@ -33,6 +33,8 @@ import {
 import {TrustedEngineerAuthoritySession} from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
   from "../src/trusted-execution-coordinator.ts";
+import {TrustedOperationalRecoveryStore}
+  from "../src/trusted-operational-recovery-store.ts";
 import {TrustedApprovedA2ADispatcher}
   from "../src/trusted-approved-a2a-dispatcher.ts";
 import {createTrustedReviewedHandoffLifecycle}
@@ -165,7 +167,8 @@ async function exercise(
   x:Scenario,partial=false,cancelBeforeFrontend=false,
   ownerLifecycle=false,realHttpA2A=false,withPullRequest=false,
   missingRunnerAcceptance=false,planningReads=1,
-  cancelDuringBackend=false,failOperationalRevocation=false
+  cancelDuringBackend=false,failOperationalRevocation=false,
+  failOperationalJournal=false
 ){
   const directory=await mkdtemp(join(tmpdir(),"trusted-r2-engineer-"));
   const servers:Array<{role:string;baseUrl:string;close:()=>Promise<void>;executor:any}>=[];
@@ -219,9 +222,21 @@ async function exercise(
         return true;
       }}
     });
+    const journalDir=join(directory,"operational-intent");
+    let recovery:TrustedOperationalRecoveryStore|undefined;
+    if(failOperationalJournal){
+      await mkdir(journalDir,{mode:0o700});
+      recovery=new TrustedOperationalRecoveryStore(journalDir);
+      // Simulate an actual post-revocation durable journal failure,
+      // not a credential issuer error or early Gateway failure.
+      recovery.markReconciled=async()=>{
+        throw Error("offline operational recovery tombstone unconfirmed");
+      };
+    }
     coordinator=new TrustedExecutionCoordinator({
       authority,approvedGatewayPlans:approved,credentials,
-      sessionId:snapshot.session_id,baseRevision:SHA
+      sessionId:snapshot.session_id,baseRevision:SHA,
+      ...(recovery?{operationalRecovery:recovery}:{})
     });
     // Before Planning, neither model nor A2A can activate authority.
     assert.throws(()=>gate.reviewPacket(),/no staged proposal/);
@@ -421,6 +436,10 @@ async function exercise(
                 await coordinator.closeExecution();
                 events.push("native-operational-root-retired");
               }catch{
+                if(failOperationalJournal){
+                  events.push("operational-journal-unconfirmed");
+                  throw Error("offline operational recovery tombstone unconfirmed");
+                }
                 events.push("native-operational-root-unconfirmed");
                 throw Error("offline native operational revocation unconfirmed");
               }
@@ -657,14 +676,23 @@ async function exercise(
       assert.ok(owner&&realHttpA2A);
       await assert.rejects(owner!.runApprovedDag(ownerInput,ownerExec));
       assert.equal(owner!.status,
-        failOperationalRevocation?"closing":"closed");
+        failOperationalRevocation||failOperationalJournal?"closing":"closed");
       assert.equal(owner!.verifiedOutcome,"failed");
       assert.equal(coordinator.phase,"closed");
-      if(failOperationalRevocation){
+      if(failOperationalRevocation||failOperationalJournal){
         await assert.rejects(
           coordinator.assertOperationalClosureConfirmed(),
-          /native operational revocation unconfirmed/);
-        assert.ok(events.includes("native-operational-root-unconfirmed"));
+          failOperationalJournal
+            ?/offline operational recovery tombstone unconfirmed/
+            :/native operational revocation unconfirmed/);
+        if(failOperationalJournal){
+          assert.deepEqual((await recovery!.pending()).map(x=>x.credential_id),
+            ["urn:execution:"+x.name]);
+          assert.ok(events.includes("operational-journal-unconfirmed"));
+          assert.ok(!events.includes("native-operational-root-unconfirmed"));
+        }else{
+          assert.ok(events.includes("native-operational-root-unconfirmed"));
+        }
         assert.equal(events.includes("native-operational-root-retired"),false);
       }else{
         await coordinator.assertOperationalClosureConfirmed();
@@ -689,7 +717,9 @@ async function exercise(
       // over the ordinary "already attempted" error: never imply that
       // the old Rust credential is safely retired.
       await assert.rejects(owner!.runApprovedDag(ownerInput,ownerExec),
-        failOperationalRevocation
+        failOperationalJournal
+          ?/offline operational recovery tombstone unconfirmed/
+          :failOperationalRevocation
           ?/native operational revocation unconfirmed/
           :/already attempted/);
       assert.equal(providerCalls,1);
@@ -866,4 +896,11 @@ test("R5 owner interrupts an in-flight signed Backend HTTP A2A after operational
 
 test("R5 unconfirmed native Rust revocation during in-flight signed Backend A2A stays FAILED and cannot dispatch Frontend, Test or PR",async()=>{
   await exercise(SCENARIOS[1]!,false,false,true,true,true,false,11,true,true);
+});
+
+test("R5 native root revoked but durable operational journal cannot reconcile: signed Backend A2A never signals GitHub success",async()=>{
+  // Proves that revocation alone cannot certify the terminal workflow:
+  // a pending recovery intent remains on disk and blocks a fresh approval.
+  await exercise(SCENARIOS[0]!,false,false,true,true,true,false,11,
+    true,false,true);
 });
