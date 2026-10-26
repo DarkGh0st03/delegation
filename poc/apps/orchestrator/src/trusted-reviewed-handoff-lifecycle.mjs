@@ -7,9 +7,10 @@
 export function createTrustedReviewedHandoffLifecycle(start,{
   verifyTerminalClosure
 }={}){
-  if(typeof start!=="function"||
-     (verifyTerminalClosure!==undefined&&
-      typeof verifyTerminalClosure!=="function"))
+  // A positive GitHub terminal status is a security assertion, not merely
+  // an A2A promise resolving. Always require an independently bound
+  // verifier for the original Coordinator's Rust/Gateway/journal shutdown.
+  if(typeof start!=="function"||typeof verifyTerminalClosure!=="function")
     throw Error("Trusted handoff start and terminal closure verifier required");
   let state="idle",attempt,active,shutdown,verifiedOutcome="pending";
   // Distinguished from internal normal closeAttempt(): a separate owner
@@ -91,7 +92,7 @@ export function createTrustedReviewedHandoffLifecycle(start,{
         // resolved A2A/listener close ALONE cannot certify native retirement.
         // The strict Engineer Host supplies this verifier for paid AND
         // scripted admitted runs; only then may the runner see completion.
-        if(completed&&verifyTerminalClosure)
+        if(completed)
           await verifyTerminalClosure();
         // The original operational root may be fully revoked while a
         // concurrent host SIGTERM is closing the whole review session.
