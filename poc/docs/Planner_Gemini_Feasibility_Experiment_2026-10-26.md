@@ -186,3 +186,40 @@ authorized E2E can be produced by this probe. Do not use its synthetic
 proposal as a signed human-review checkpoint in the real R5 pipeline.
 A successful isolated capability probe is followed by authenticated,
 native Gateway/Rust/OPA-backed Planning against a real pinned Gitea SHA.
+
+
+## GitHub Actions manual run — preferred operator workflow
+
+The workflow `.github/workflows/gemini-planner-manual-feasibility.yml`
+is published in **both** the protected research branch and default `main`.
+Only the **workflow registration file**, not the R5 refactoring/code, was
+added to `main` so GitHub can show **Run workflow**. The paid job refuses
+to run unless the selected ref is
+`refactor/post-prof-plan-contracts-20261021`. This is a manual workflow:
+it has NO push/schedule/PR triggers and no automatic Gemini inference.
+
+1. Go to GitHub **Actions → Gemini Planner — Manual Feasibility Experiment**.
+2. Click **Run workflow** and select
+   `refactor/post-prof-plan-contracts-20261021` from the **branch** dropdown.
+3. Choose `department-directory` and `dry-run` for a no-cost check,
+   or explicitly select `gemini-paid` for one read-only model planning attempt.
+4. For `gemini-paid`, type the exact consent phrase
+   `I AUTHORIZE GEMINI API CHARGES`. The workflow uses the existing
+   repository **Actions Secret** `Delegation_Thesis_Gemini`, as does the
+   historical paid three-agent workflow. Never input the API key into a
+   dispatch field, code, artifact or log.
+5. Examine the job summary and download the `planner-isolated-evidence-*`
+   artifact. On successful planning it contains `proposal.json`,
+   `observations.json`, `evaluation.json` and `fixture-run.json`.
+   On a refused proposal it contains `failed-observations.json` and
+   `fixture-run.json` (where available). Do not re-run a paid job:
+   request a new separately authorized attempt if needed.
+
+The workflow performs offline validations and a no-model dry run BEFORE
+injecting the Gemini key into the single billable step. The baseline is
+**synthetic**; the outcome is not Gitea/Rust/OPA authorization, functional
+correctness or executed development. An apparently green job means only
+that the experiment completed, not that the proposal is technically good;
+consult `evaluation.json`. A red job may already have consumed tokens.
+The provider is responsible for the actual invoice; the telemetry is not
+an invoice or a spend ceiling. The workflow never edits the source repository.
