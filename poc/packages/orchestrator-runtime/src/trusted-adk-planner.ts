@@ -44,6 +44,13 @@ export type PlanningObservation =
   | {kind:"model_usage";turn:number;source:"provider_reported";
      input_tokens?:number;output_tokens?:number;total_tokens?:number;
      thought_tokens?:number}
+  | {kind:"model_failure";turn:number;
+     phase:"delegate_exception"|"model_error_response"|"adk_runner_error";
+     category:"authentication"|"permission_or_billing"|
+       "quota_or_rate_limit"|"model_or_endpoint_not_found"|
+       "invalid_request_or_tool_schema"|"provider_server_error"|
+       "transport_or_timeout"|"unknown";
+     http_status:number|null}
   | {kind:"proposal";status:"unapproved";digest:string;
      task_count:number;permission_count:number;verified_source_reads:number};
 export interface TrustedAdkPlannerConfig {
@@ -232,6 +239,41 @@ export function compilePlanningProposal(
     verified_source_reads:0};
 }
 
+/** Provider failure categories ONLY; never return API/SDK text or prompts. */
+function sanitizedModelFailure(error:unknown,
+  phase:"delegate_exception"|"model_error_response"|"adk_runner_error"):{
+  phase:"delegate_exception"|"model_error_response"|"adk_runner_error";
+  category:Extract<PlanningObservation,{kind:"model_failure"}>["category"];
+  http_status:number|null
+}{
+  const e=error&&typeof error==="object"?error as Record<string,unknown>:{};
+  const response=e.response&&typeof e.response==="object"?
+    e.response as Record<string,unknown>:{};
+  const nested=e.error&&typeof e.error==="object"?
+    e.error as Record<string,unknown>:{};
+  const numeric=[e.status,e.code,response.status,nested.code]
+    .filter(x=>Number.isInteger(x)&&Number(x)>=400&&Number(x)<=599);
+  const http_status=numeric.length?Number(numeric[0]):null;
+  const code=[e.errorCode,e.code,e.status,nested.status]
+    .filter(x=>typeof x==="string").join("|").slice(0,128).toUpperCase();
+  let category:Extract<PlanningObservation,{kind:"model_failure"}>["category"]="unknown";
+  if(http_status===401||code.includes("UNAUTHENTICATED"))category="authentication";
+  else if(http_status===403||code.includes("PERMISSION_DENIED"))
+    category="permission_or_billing";
+  else if(http_status===429||code.includes("RESOURCE_EXHAUSTED"))
+    category="quota_or_rate_limit";
+  else if(http_status===404||code.includes("NOT_FOUND"))
+    category="model_or_endpoint_not_found";
+  else if(http_status===400||code.includes("INVALID_ARGUMENT"))
+    category="invalid_request_or_tool_schema";
+  else if(http_status!==null&&http_status>=500)
+    category="provider_server_error";
+  else if(code.includes("DEADLINE")||code.includes("UNAVAILABLE")||
+          code.includes("TIMEOUT"))
+    category="transport_or_timeout";
+  return {phase,category,http_status};
+}
+
 class BudgetedModel extends BaseLlm {
   turns=0;
   readonly delegate:BaseLlm;
@@ -266,11 +308,16 @@ class BudgetedModel extends BaseLlm {
     const count=(value:unknown):number|undefined=>
       typeof value==="number"&&Number.isSafeInteger(value)&&
       value>=0&&value<=1_000_000_000?value:undefined;
-    for await(const response of this.delegate.generateContentAsync(
-      request,stream,bounded
-    )){
-      if(bounded.aborted)fail("model call timed out or cancelled");
-      // Token fields are optional provider reports, never raw prompt text.
+    try{
+      for await(const response of this.delegate.generateContentAsync(
+        request,stream,bounded
+      )){
+        if(bounded.aborted)fail("model call timed out or cancelled");
+        if(response.errorCode||response.errorMessage){
+          this.onObservation?.(Object.freeze({kind:"model_failure",turn,
+            ...sanitizedModelFailure(response,"model_error_response")}));
+        }
+        // Token fields are optional provider reports, never raw prompt text.
       // Streaming chunks can repeat cumulative counts: keep the LAST
       // reported metadata for each model call, never sum per chunk.
       const usage=response.usageMetadata;
@@ -294,7 +341,14 @@ class BudgetedModel extends BaseLlm {
           };
         }
       }
-      yield response;
+        yield response;
+      }
+    }catch(error){
+      // Even if ADK later collapses this exception into its generic error
+      // event, record the provider HTTP/code classification at the boundary.
+      this.onObservation?.(Object.freeze({kind:"model_failure",turn,
+        ...sanitizedModelFailure(error,"delegate_exception")}));
+      throw error;
     }
     if(bounded.aborted)fail("model call timed out or cancelled");
     if(lastUsage)this.onObservation?.(Object.freeze(lastUsage));
@@ -455,7 +509,7 @@ export class TrustedAdkReadOnlyPlanner {
     const sessions=new InMemorySessionService();
     const runner=new Runner({agent,appName,sessionService:sessions});
     await sessions.createSession({appName,userId,sessionId});
-    let finalText:string|undefined,error=false;
+    let finalText:string|undefined,error=false,errorLoggedByDelegate=false;
     for await(const event of runner.runAsync({
       userId,sessionId,newMessage:{role:"user",parts:[{text:JSON.stringify({
         requirement:cfg.requirement,repository:sp.repository,
@@ -465,7 +519,18 @@ export class TrustedAdkReadOnlyPlanner {
       })}]}
     })){
       if(planningDeadline.aborted){error=true;break;}
-      if(event.errorCode||event.errorMessage)error=true;
+      if(event.errorCode||event.errorMessage){
+        error=true;
+        // ADK may swallow and rewrite the original model error. This label
+        // documents only ADK's reported code, not a new provider request.
+        if(!errorLoggedByDelegate){
+          errorLoggedByDelegate=true;
+          cfg.onObservation?.(Object.freeze({
+            kind:"model_failure",turn:model.turns||1,
+            ...sanitizedModelFailure(event,"adk_runner_error")
+          }));
+        }
+      }
       if(event.author===agent.name&&event.content?.role==="model"){
         for(const part of event.content.parts??[]){
           if(typeof part.text==="string"&&part.text.trim())
