@@ -232,6 +232,16 @@ const SUITES=Object.freeze([
     title:"R5 refuses unexpected installed SHA and dirty worktree"
   },
   {
+    id:"r5_private_operator_reviewed_environment_and_runner",
+    path:"poc/scripts/test/r5-private-github-readiness.test.mjs",
+    title:"R5 confirms exactly one idle private runner, independent Engineer reviewer and same-SHA registered workflow without dispatch"
+  },
+  {
+    id:"r5_private_environment_review_bypass_denied",
+    path:"poc/scripts/test/r5-private-github-readiness.test.mjs",
+    title:"R5 refuses absent reviewer protection, bypassable owner or unsafe deployment branch restrictions"
+  },
+  {
     id:"scripted_default_workflow_registration_guard",
     path:"poc/scripts/test/r5-scripted-dispatch-registration.test.mjs",
     title:"R5 refuses missing default-branch manual workflow, without dispatching"

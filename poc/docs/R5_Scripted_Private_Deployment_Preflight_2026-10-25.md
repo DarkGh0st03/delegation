@@ -522,3 +522,41 @@ checks trust-store verification and rejects a modified signature;
 other unit cases cover mismatched Backend digest, retired Coordinator,
 no approval and a shutdown race. Tests do **not** constitute real
 human consent: fixture keys are generated inside isolated tests.
+
+## R5 — Owner read-only GitHub private-environment preflight (26 October 2026)
+
+The new owner-only `poc/scripts/r5-private-github-readiness.mjs` checks
+GitHub administrative prerequisites with **GET requests only**:
+
+- The reviewed development branch still equals the independent source SHA pin.
+- `r5-private-scripted-admission` has required human reviewers,
+  `prevent_self_review: true` and `can_admins_bypass: false`.
+- The deployment-branch policy is unrestricted. Custom restrictions
+  require separate review; the script does not guess their glob semantics.
+- Exactly one private runner is idle and online, labelled `self-hosted`,
+  `linux`, `x64` and `delegation-private`. Multiple eligible runners,
+  unavailable runners or incomplete paginated listings fail closed.
+- The reviewed workflow exists and is active on `main`, with the exact
+  same Git blob SHA on the feature branch.
+
+Run only from an operator-controlled host, **not from GitHub Actions**:
+
+```bash
+export DELEGATION_R5_OPERATOR_GITHUB_TOKEN_FILE=/private/engineer/github-admin-read.token
+export DELEGATION_R5_EXPECTED_SOURCE_SHA=<independently-reviewed-40-character-commit>
+node poc/scripts/r5-private-github-readiness.mjs
+```
+
+The GitHub token must have sufficient permissions to read environment
+protection and self-hosted runner registrations. Keep it in a separate
+owner-only 0600 file under an owner-only 0700 directory. Never copy
+this token onto the runner, into Action inputs, model prompts or Git.
+Insufficient permission means NO-GO, not a guessed success.
+
+The result `private_admin_and_registration_preflight_only_not_r5_go`
+proves only GitHub configuration *visible at inspection time*.
+It does not attest the physical runner, installed dependencies, real
+mTLS, human Ed25519 approval, operational root, A2A DAG or revocation.
+PR #37 remains a one-file draft review against `main`: **no merge or
+dispatch** was performed. Merging or running it requires independent
+owner authorization.
