@@ -321,7 +321,7 @@ export async function prepareConfiguredOwnerEngineerBootstrap(
     filePath:config.approval.trustedPlanFile,
     checkpointStore:checkpoints
   });
-  let attempted=false,geminiAssembled=false;
+  let attempted=false,geminiAssembled=false,geminiPlanning;
   return Object.freeze({
     planningCheckpointStore:checkpoints,
     operationalRecovery,
@@ -335,10 +335,14 @@ export async function prepareConfiguredOwnerEngineerBootstrap(
         geminiAssembled=true;
         const {assembleProtectedOwnerGeminiPlanning}=await import(
           "./trusted-r5-scripted-owner-assembly.mjs");
-        return assembleProtectedOwnerGeminiPlanning({
+        const assembly=await assembleProtectedOwnerGeminiPlanning({
           ...input,config,planningCheckpointStore:checkpoints,
           operationalRecovery
         });
+        // Original trusted Coordinator + model provenance cannot be
+        // substituted between consented assembly and Planning execution.
+        geminiPlanning=assembly.planning;
+        return assembly;
       }
     }:{}),
     ...(expectedScriptedSourceSha===undefined?{}:{
@@ -362,7 +366,8 @@ export async function prepareConfiguredOwnerEngineerBootstrap(
       if(attempted)
         throw Error("Configured Engineer owner bootstrap is single-use");
       attempted=true; // reserve before any async Planning or root effect
-      if(!planning||typeof planning!=="object"||
+      if((geminiAssembled&&planning!==geminiPlanning)||
+         !planning||typeof planning!=="object"||
          planning.checkpointStore!==checkpoints||
          planning.coordinator?.phase!=="idle"||
          planning.reviewPlanFile!==undefined&&
