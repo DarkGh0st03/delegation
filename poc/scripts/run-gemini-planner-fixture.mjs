@@ -127,6 +127,42 @@ export function assertBillableFixtureOptIn({flag,consent,apiKey,outputDir}){
   return outputDir;
 }
 
+/**
+ * Keep only allowlisted error categories. Never persist raw provider errors:
+ * SDK messages can include request contents, source code or API keys.
+ */
+export function classifyPlannerProbeFailure(error){
+  const obj=error&&typeof error==="object"?error:{};
+  const statusCandidates=[obj.status,obj.code,obj.response?.status];
+  const http_status=statusCandidates.find(n=>Number.isInteger(n)&&n>=400&&n<=599)??null;
+  const message=typeof obj.message==="string"?obj.message:"";
+  let cause="unknown";
+  if(http_status===401||/API_KEY_INVALID|UNAUTHENTICATED/i.test(message))
+    cause="authentication";
+  else if(http_status===403||/PERMISSION_DENIED/i.test(message))
+    cause="permission_or_billing";
+  else if(http_status===429||/RESOURCE_EXHAUSTED|quota|rate.?limit/i.test(message))
+    cause="quota_or_rate_limit";
+  else if(http_status===404||/NOT_FOUND/i.test(message))
+    cause="model_or_endpoint_not_found";
+  else if(http_status===400||/INVALID_ARGUMENT|tool.*schema|function.*declaration/i.test(message))
+    cause="invalid_request_or_function_schema";
+  else if(http_status!==null&&http_status>=500)
+    cause="provider_server_failure";
+  else if(/abort|deadline|timeout/i.test(message))
+    cause="timeout_or_cancellation";
+  else if(/fetch failed|ECONN|ENOTFOUND|network/i.test(message))
+    cause="transport";
+  return Object.freeze({
+    schema_version:"1.0.0",
+    phase:"planning_inference_or_validation",
+    cause,http_status,
+    raw_exception_message_recorded:false,
+    api_key_or_source_recorded:false,
+    provider_cost:"unknown"
+  });
+}
+
 async function createPrivateDirectory(directory){
   await mkdir(directory,{recursive:false,mode:0o700});
   const stat=await lstat(directory);
@@ -180,6 +216,10 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
     await persistJson(outputDir,"evaluation.json",report);
     status="unapproved_isolated_proposal";
     return {status,report};
+  }catch(error){
+    await persistJson(outputDir,"failure-diagnostics.json",
+      classifyPlannerProbeFailure(error));
+    throw error;
   }finally{
     // Preserve ONLY bounded observer metadata even when Gemini is unable to
     // produce a valid plan. This evidence has no prompts, source or API key.
