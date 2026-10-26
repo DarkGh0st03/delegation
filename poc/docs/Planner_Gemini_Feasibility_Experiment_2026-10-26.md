@@ -478,3 +478,31 @@ attached to HTTP, OIDC intake, A2A, MCP, CI inputs or LLM tools.
   call Gemini or grant operational authority. Real signed UI, crypto root
   and GitHub A2A integration remain independently exercised in the
   existing tests; a full privately operated paid execution is still pending.
+
+
+## R5G — Verified real Engineer Host and signed-review readiness before GitHub admission
+
+The R5F single-flight owner continuation is now connected in the **strict
+live-host offline integration test**, not only in mocked handoff tests.
+The test exercises the real private Unix Gateway IPC, durable Planning and
+operational recovery journals, the backend-signed immutable checkpoint,
+an authenticated Engineer web login and CSRF-protected selection, the
+independent Engineer Ed25519 receipt, and the mTLS GitHub OIDC intake.
+
+The owner's `reviewReadiness()` fails before the Engineer signs, then
+authenticates the exact subsequently signed receipt against the original
+Planning Coordinator/session/target Gitea SHA and checkpoint digest.
+The result explicitly reports no operational root issuance and no DAG
+execution. An owner-injected Coordinator/Execution authority is rejected
+*before* consuming the real authenticated OIDC admission, which remains
+`waiting_for_owner`. The owner shutdown closes the host, retires the
+original provisional root, reconciles its pending journal and rejects any
+review attempt after closure. A second shutdown remains idempotent.
+
+**Scope remains deliberately limited:** live private-node Gemini inference,
+native issuance of an operational root from this paid host, non-scripted
+three-role task execution, independently attested external Gitea/Docker
+effects, and a real GitHub OIDC job all in the same owner-controlled run
+have **not** been demonstrated by this offline test. Test fixtures provide
+simulated cryptographic GitHub/OIDC assertions and nonworking Gemini
+secrets; no billing consent or provider API request is used.
