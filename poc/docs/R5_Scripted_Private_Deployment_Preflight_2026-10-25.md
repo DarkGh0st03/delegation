@@ -100,3 +100,39 @@ the local installed-source guard. It reads protected runner pins first,
 checks local install, and only then submits the OIDC admission. The real
 GitHub job, signed Engineer review and scope-constrained execution are still
 separate authorization requirements.
+
+## Independent Engineer Host configuration preflight (read-only)
+
+The private operator must independently provision the Engineer service's
+existing strict owner-only configuration file and its 0600 keys/0700 journals.
+Before opening any listener or beginning the original Planning session, run
+**on the Engineer machine**, as its protected service owner:
+
+```bash
+export DELEGATION_ENGINEER_SERVICE_CONFIG=/path/to/owner-protected/engineer-service.json
+export DELEGATION_R5_EXPECTED_SOURCE_SHA=<40-character-reviewed-commit>
+node --experimental-strip-types poc/scripts/r5-scripted-host-deployment-preflight.mjs
+```
+
+This command only loads the already-supported protected service config and
+validates the scripted OIDC repository/branch/workflow/SHA, exact immutable
+GitHub repository/owner identity and subject, separate paid/offline audiences
+and client certificate pins, explicitly private IPv4 scripted binding, fixed
+distinct ports, and the scripted HTTPS leaf/issuing-CA certificate validity,
+CA signature, private IPv4 SAN and matching protected server private key.
+It must **not** be connected to the public Internet. The paid listener stays
+loopback-only during scripted R5. CA and server certificate must be valid and
+the leaf directly issued by the pinned local CA for this conservative
+one-hop PoC preflight. A different PKI chain requires separate review, not a
+silent reduction in authentication checks.
+
+The preflight never creates, resumes or approves a plan; never starts
+`startConfiguredTrustedEngineerService`; never opens ports, invokes
+Gateway/Rust, contacts GitHub, requests OIDC, dispatches a DAG or calls Gemini.
+All failures are NO-GO with sanitized output; success is
+`scripted_host_config_verified_only_not_deployed`, **not** live-host proof.
+Operator still needs the original in-process
+`prepareConfiguredOwnerEngineerBootstrap(...).start(planning)` plus a
+reviewed owner-only execution driver, independently authenticated Engineer
+Ed25519 approval, real runner admission and verified root retirement.
+Simply launching the existing cold-recovery CLI does not establish that.

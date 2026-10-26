@@ -122,6 +122,11 @@ const SUITES=Object.freeze([
     title:"scripted runner hold rejects unverified local source before OIDC"
   },
   {
+    id:"scripted_owner_host_pinned_tls_preflight",
+    path:"poc/scripts/test/r5-scripted-host-deployment-preflight.test.mjs",
+    title:"R5 valid pinned scripted Engineer deployment is configuration-only, never operational GO"
+  },
+  {
     id:"scripted_immutable_local_source_guard",
     path:"poc/scripts/test/r5-scripted-install-integrity.test.mjs",
     title:"R5 refuses unexpected installed SHA and dirty worktree"
