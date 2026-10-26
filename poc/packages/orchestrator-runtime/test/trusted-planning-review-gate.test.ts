@@ -224,6 +224,51 @@ test("signed Engineer review exactly binds Planner digest and approved subset to
   }finally{await f.close();}
 });
 
+test("signed Planning and Engineer review accept up to 64 verified reads but refuse 65",async()=>{
+  const f=await fixture();
+  try{
+    await f.coordinator.beginPlanning(root("urn:preliminary","101"));
+    const base=f.proposal();
+    // These are offline boundary fixtures; the model is never contacted.
+    // Neither passing a count nor a signature is proof of actual Gitea reads.
+    assert.throws(()=>f.gate.stageTrustedProposal({
+      ...base,verified_source_reads:65
+    }),/no grounded, unapproved Planner result/);
+    const packet=f.gate.stageTrustedProposal({
+      ...base,verified_source_reads:64
+    });
+    assert.equal(packet.verified_source_reads,64);
+    assert.equal(packet.status,"awaiting_engineer_signature");
+
+    const signer=generateKeyPairSync("ed25519");
+    const privateKeyPem=signer.privateKey.export({
+      type:"pkcs8",format:"pem"
+    }).toString();
+    const publicKeyPem=signer.publicKey.export({
+      type:"spki",format:"pem"
+    }).toString();
+    const now=Date.now();
+    const signed=signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:{...base,verified_source_reads:64},
+      keyId:"long-discovery",privateKeyPem,
+      issuedAt:new Date(now-1000).toISOString(),
+      expiresAt:new Date(now+300000).toISOString()
+    });
+    const verified=verifyTrustedPlanningCheckpoint(signed,{
+      trustedKeys:{"long-discovery":{public_key_pem:publicKeyPem}}
+    });
+    assert.equal(verified.proposal.verified_source_reads,64);
+    assert.throws(()=>signTrustedPlanningCheckpoint({
+      snapshot:SNAPSHOT,expectedWorkBranch:CFG.workBranch,
+      proposal:{...base,verified_source_reads:65},
+      keyId:"long-discovery",privateKeyPem,
+      issuedAt:new Date(now-1000).toISOString(),
+      expiresAt:new Date(now+300000).toISOString()
+    }),/no authentic grounded read-only proposal/);
+  }finally{await f.close();}
+});
+
 test("without a persisted signed receipt, Execution fails closed before revocation",async()=>{
   const f=await fixture();
   try{
