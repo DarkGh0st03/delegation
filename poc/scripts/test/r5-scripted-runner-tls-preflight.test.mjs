@@ -90,7 +90,7 @@ test("R5 runner TLS preflight denies invalid, expired, mismatched and reused lea
     assert.throws(()=>verify(malformed,{expectedSourceSha:SHA}),
       /invalid protected runner certificate/);
     const wrongKey=structuredClone(f.pins);
-    const alternate=f("alternate.key");
+    const alternate=f.f("alternate.key");
     openssl(["genpkey","-algorithm","EC","-pkeyopt",
       "ec_paramgen_curve:P-256","-out",alternate]);
     wrongKey.tls.key=await readFile(alternate,"utf8");
@@ -110,17 +110,17 @@ test("R5 runner TLS preflight denies invalid, expired, mismatched and reused lea
 });
 test("R5 runner TLS preflight denies leaf without clientAuth",async()=>{
   const f=await fixture();try{
-    await writeFile(f("wrong.ext"),[
+    await writeFile(f.f("wrong.ext"),[
       "basicConstraints=critical,CA:FALSE",
       "keyUsage=critical,digitalSignature",
       "extendedKeyUsage=serverAuth",""
     ].join("\n"));
-    openssl(["x509","-req","-in",f("client.csr"),
-      "-CA",f("ca.crt"),"-CAkey",f("ca.key"),
-      "-CAcreateserial","-out",f("wrong.crt"),
-      "-days","2","-extfile",f("wrong.ext")]);
+    openssl(["x509","-req","-in",f.f("client.csr"),
+      "-CA",f.f("ca.crt"),"-CAkey",f.f("ca.key"),
+      "-CAcreateserial","-out",f.f("wrong.crt"),
+      "-days","2","-extfile",f.f("wrong.ext")]);
     const changed=structuredClone(f.pins);
-    changed.tls.cert=await readFile(f("wrong.crt"),"utf8");
+    changed.tls.cert=await readFile(f.f("wrong.crt"),"utf8");
     assert.throws(()=>verify(changed,{expectedSourceSha:SHA}),
       /lacks clientAuth/);
   }finally{await f.close();}
