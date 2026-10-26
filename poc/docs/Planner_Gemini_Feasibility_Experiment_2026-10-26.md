@@ -309,3 +309,46 @@ provisional roots before changing state.
 Tests now check rejection of undersized preliminary lifetime *before*
 issuance, 45-minute Gateway TTL expiry, excessive TTL refusal, and the
 existing negative security cases. No Gemini API calls are made by these tests.
+
+
+## R5C — Single-use Gemini Planning assembly in the real Engineer Host
+
+The 26 October isolated Gemini feasibility result remains **read-only and
+synthetic**. It must never be copied into an Engineer approval directory or
+used as authenticated Gitea evidence.
+
+The protected Engineer service now exposes an **owner-only** assembly function
+`prepareConfiguredOwnerEngineerBootstrap(...).assembleGeminiPlanning(...)`.
+Assembly independently uses the existing strict, protected host config and
+the same hardened Coordinator/Gateway IPC, pinned backend Ed25519 signer,
+recovery journals, original session ID, base revision, Engineer DID and
+approved branch as the zero-provider R5 assembly. The R5 test pathway
+retains its independently bound non-provider ADK model and cannot select
+a billable model.
+
+The new real-model assembly requires exact owner-supplied
+`authorizationInput: "I AUTHORIZE GEMINI API CHARGES"`, privately supplied
+`geminiApiKey`, and `modelName: "gemini-3.8-flash"`. Its limits are fixed:
+MEDIUM thinking, 96 model turns as an emergency stop, 64 scoped read
+invocations, 16,384 output tokens per call, 120-second individual call
+timeout, and 15-minute entire Planning timeout. **Constructing** the
+Google ADK model and original Coordinator makes no model-provider request.
+Only a separate explicit, potentially billable `start(planning)` action
+can invoke Planning inference. The API secret is never placed in the
+Planning result, GitHub workflow inputs, signed checkpoint or A2A payload.
+
+This is **not** the approved end-to-end experiment: the owner must still
+provision the original 45-minute preliminary DC, genuine independently
+pinned Gitea base revision, operational and Planning retirement journals,
+authenticated Gateway IPC, protected backend signer, and live Engineer
+service. Gemini cannot sign an Engineer receipt. User-triggered
+`workflow_dispatch` consent alone does not authenticate the Engineer or
+grant execution authority. A private runner, fresh OIDC/mTLS admission,
+signed Engineer decision, confirmed preliminary revocation, new scoped
+operational authority, approved A2A DAG and real Gitea/Docker evidence
+remain required before claiming complete end-to-end success.
+
+All CI for this assembly **must remain offline**; its tests deliberately
+instantiate a Google ADK Gemini model with a synthetic nonworking key
+without calling `generateContentAsync` or any provider. A subsequent
+paid inference experiment requires a separate explicit user authorization.
