@@ -162,6 +162,16 @@ const SUITES=Object.freeze([
     title:"R5 forbids using the Engineer signing identity as the Backend checkpoint key"
   },
   {
+    id:"r5_genuine_ed25519_review_before_oidc",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-review-readiness.test.mjs",
+    title:"R5 review readiness verifies a REAL Ed25519 receipt against pinned Engineer public key"
+  },
+  {
+    id:"r5_signed_human_approval_precedes_one_use_oidc",
+    path:"poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs",
+    title:"R5 owner verifies real Engineer approval BEFORE consuming scripted GitHub OIDC admission"
+  },
+  {
     id:"r5_protected_owner_execution_transport_binding",
     path:"poc/apps/orchestrator/test/run-trusted-r5-scripted-owner.test.mjs",
     title:"R5 owner binds approved GitHub run exclusively to original protected Gateway and Adapter"

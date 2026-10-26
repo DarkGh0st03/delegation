@@ -10,6 +10,8 @@ import {prepareConfiguredR5ScriptedEngineerBootstrap}
   from "./trusted-engineer-service.mjs";
 import {bindProtectedR5ScriptedExecution}
   from "./trusted-r5-scripted-execution-binding.mjs";
+import {assertR5AuthenticSignedReviewReady}
+  from "./trusted-r5-scripted-review-readiness.mjs";
 
 const SHA=/^[a-f0-9]{40}$/u;
 function deny(){throw Error("R5 protected live owner input denied");}
@@ -92,7 +94,16 @@ export async function startProtectedR5ScriptedOwnerSession({
   const params=await loadProtectedR5ScriptedOwnerInput(inputFile);
   const assembly=await prepared.assemblePlanning(params);
   const host=await prepared.start(assembly.planning);
-  let dispatchAttempted=false,closed=false;
+  let dispatchAttempted=false,dispatchPreparing=false,closed=false;
+  // Verification reads the original Backend-signed checkpoint AND human
+  // Ed25519 receipt. It is not itself operational authorization.
+  const signedReviewReady=()=>assertR5AuthenticSignedReviewReady({
+    coordinator:assembly.coordinator,
+    reviewGate:assembly.planning.reviewGate,
+    checkpointStore:assembly.planning.checkpointStore,
+    expectedSessionId:assembly.planning.snapshot.session_id,
+    expectedBaseRevision:assembly.planning.snapshot.base_revision
+  });
   // Deliberately do NOT expose the raw Host/Coordinator to external
   // consumers: arbitrary callbacks must not bypass approved DAG binding.
   return Object.freeze({
@@ -106,14 +117,37 @@ export async function startProtectedR5ScriptedOwnerSession({
      * an authenticated manual runner, real Ed25519 human signature,
      * approved DAG, root issuance and complete authority retirement.
      */
-    runApprovedScriptedDag(input){
-      if(closed||dispatchAttempted||
+    /**
+     * Owner-side PRE-ADMISSION readiness. A Backend checkpoint is not
+     * consent: independently verify the exact authentic human signature.
+     * This does not request OIDC or issue any operational root.
+     */
+    async reviewReadiness(){
+      if(closed||dispatchPreparing||dispatchAttempted||
+         assembly.coordinator.phase!=="planning")
+        throw Error("R5 owner signed review unavailable");
+      return signedReviewReady();
+    },
+    /**
+     * Must not consume a ONE-USE GitHub HMAC receipt before the genuine
+     * human-signed plan exists. Concurrent attempts are not permitted.
+     */
+    async runApprovedScriptedDag(input){
+      if(closed||dispatchPreparing||dispatchAttempted||
          assembly.coordinator.phase!=="planning")
         throw Error("R5 owner scripted DAG already attempted or inactive");
       const bound=bindProtectedR5ScriptedExecution(
         assembly.planning,input);
-      dispatchAttempted=true; // reserve before consumed GitHub admission
-      return host.runReviewedScriptedApprovedDagWithGateway(bound);
+      dispatchPreparing=true; // serialize across all awaits
+      try{
+        await signedReviewReady();
+        if(closed||assembly.coordinator.phase!=="planning")
+          throw Error("R5 owner Planning closed during signature verification");
+        dispatchAttempted=true; // reserve BEFORE consuming GitHub admission
+        return await host.runReviewedScriptedApprovedDagWithGateway(bound);
+      }finally{
+        dispatchPreparing=false;
+      }
     },
     async close(){
       closed=true;

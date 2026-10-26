@@ -491,3 +491,34 @@ once all external human and runner prerequisites are fulfilled.
 The offline tests only verify protected argument binding; they are
 not evidence that external admission, task effects or revocation
 have occurred. R5 remains NO-GO until those real observations exist.
+
+## R5 — Real signed Engineer review preflight before one-time OIDC admission
+
+The protected, original owner session now exposes
+`reviewReadiness()` as a **non-authoritative, read-only check** of
+its exact active Coordinator, Backend-signed checkpoint, original
+staged proposal and independently authenticated Engineer Ed25519
+approval. The returned receipt contains only the session ID, source
+revision, signed plan digest and trusted Engineer DID. Its explicit
+status is `signed_human_review_verified_only_not_oidc_admitted`.
+
+The in-process `runApprovedScriptedDag(input)` verifies the same
+signed review **after validating the owner-only Execution transport**
+but **before** marking its one-shot GitHub selection and consuming an
+admission receipt. Missing, altered or expired Engineer approvals do
+not consume the one-use GitHub receipt, and the owner may retry
+readiness after the Engineer authenticates and signs. An in-flight
+readiness/dispatch attempt is serialized: no concurrent caller may
+consume a second admission or race host shutdown. Once the real
+Execution handoff starts, its one-shot selection remains irrevocable
+even if a later root, A2A, GitHub or Gateway step fails.
+
+The Host independently verifies the Engineer Ed25519 approval and
+GitHub OIDC admission *again* at actual root issuance and during DAG
+execution. The early check is only a usability and safety gate, not
+a substitute for those security boundaries. The offline fixture
+includes one real independently signed Ed25519 approval receipt,
+checks trust-store verification and rejects a modified signature;
+other unit cases cover mismatched Backend digest, retired Coordinator,
+no approval and a shutdown race. Tests do **not** constitute real
+human consent: fixture keys are generated inside isolated tests.

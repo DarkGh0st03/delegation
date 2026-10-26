@@ -4,6 +4,7 @@ import {mkdtemp,writeFile,chmod,symlink,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {spawnSync} from "node:child_process";
+import {readFile} from "node:fs/promises";
 import {loadProtectedR5ScriptedOwnerInput,
   startProtectedR5ScriptedOwnerSession}
   from "../src/run-trusted-r5-scripted-owner.mjs";
@@ -243,4 +244,18 @@ test("R5 operator callback cannot inject forged role fields or unauthorized auth
     assert.throws(()=>bindProtectedR5ScriptedExecution(
       f.planning,p),/R5 protected scripted Execution binding denied/);
   }
+});
+
+test("R5 owner verifies real Engineer approval BEFORE consuming scripted GitHub OIDC admission",async()=>{
+  const source=await readFile(new URL(
+    "../src/run-trusted-r5-scripted-owner.mjs",import.meta.url),"utf8");
+  const body=source.slice(source.indexOf("async runApprovedScriptedDag(input){"));
+  const signed=body.indexOf("await signedReviewReady()");
+  const reserve=body.indexOf("dispatchAttempted=true");
+  const consume=body.indexOf("host.runReviewedScriptedApprovedDagWithGateway(bound)");
+  assert.ok(signed>=0&&reserve>signed&&consume>reserve,
+    "valid human Ed25519 review must precede one-shot admission consumption");
+  assert.match(body,/dispatchPreparing=true/);
+  assert.match(body,/finally\s*{\s*dispatchPreparing=false/);
+  assert.match(source,/async reviewReadiness\(\)/);
 });
