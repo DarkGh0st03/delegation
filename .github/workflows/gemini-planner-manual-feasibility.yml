@@ -52,7 +52,7 @@ jobs:
       PLANNER_EXECUTION_MODE: ${{ inputs.execution_mode }}
       PLANNER_AUTHORIZATION: ${{ inputs.authorization }}
       DELEGATION_PLANNER_MODEL: gemini-3.8-flash
-      DELEGATION_PLANNER_OUTPUT_DIR: ${{ runner.temp }}/planner-${{ github.run_id }}-${{ github.run_attempt }}
+      DELEGATION_PLANNER_OUTPUT_DIR: /tmp/planner-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout selected development branch without persisted credentials
         uses: actions/checkout@v4
@@ -135,12 +135,12 @@ jobs:
           {
             echo "### R5A — Isolated Gemini Planner feasibility"
             echo ""
-            echo "- Scenario: `$PLANNER_SCENARIO`"
-            echo "- Execution mode: `$PLANNER_EXECUTION_MODE`"
+            echo "- Scenario: $PLANNER_SCENARIO"
+            echo "- Execution mode: $PLANNER_EXECUTION_MODE"
             echo "- Baseline: synthetic in-memory IAM fixture, NOT a real Gitea SHA"
             echo "- No code writes, Engineer approval or delegated Execution"
             if [[ -f "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json" ]]; then
-              echo "- Evaluator technical preflight: `$(jq -r '.technical_preflight_pass' "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json")`"
+              echo "- Evaluator technical preflight: $(jq -r '.technical_preflight_pass' "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json")"
               echo "- Provider tokens (if supplied): evidence artifact only"
             else
               echo "- Evaluation: no completed proposal artifact (or dry run)"
@@ -153,6 +153,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: planner-isolated-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/planner-${{ github.run_id }}-${{ github.run_attempt }}/
+          path: /tmp/planner-${{ github.run_id }}-${{ github.run_attempt }}/
           if-no-files-found: warn
           retention-days: 7
