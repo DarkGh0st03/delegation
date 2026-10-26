@@ -49,6 +49,10 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
     throw Error("invalid or absent proposal/observation artifact");
   const reference=getApprovedOfflineScenario(scenario);
   const baseline=new Set(Object.keys(reference.files));
+  // The real trusted-owner bootstrap returns an Engineer review packet,
+  // whereas direct propose() returns an unsigned proposal.
+  const reviewPacket=proposal.status==="awaiting_engineer_signature";
+  const proposalDigest=reviewPacket?proposal.plan_digest:proposal.digest;
   const plan=proposal.plan,grants=plan.requested_permissions,tasks=plan.tasks;
   const events=observations.filter(safeRecord);
   const reads=events.filter(e=>e.kind==="read"&&e.status==="verified"&&
@@ -78,7 +82,8 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
       plan.repository?.owner==="thesis"&&
       plan.repository?.repository==="iam-console-poc",
       "Compare independent Gitea SHA and repository"),
-    add("unapproved_only",proposal.status==="unapproved_proposal"&&
+    add("unapproved_only",
+      (proposal.status==="unapproved_proposal"||reviewPacket)&&
       !Object.hasOwn(proposal,"approval")&&
       !Object.hasOwn(proposal,"credential"),
       "No approval or credential in the proposal"),
@@ -90,7 +95,7 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
       reads.every(e=>baseline.has(e.path))&&claimed===reads.length,
       "Two distinct approved file reads; provider authenticity checked separately"),
     add("observation_consistency",denied.length===0&&accepted.length===1&&
-      accepted[0].digest===proposal.digest&&
+      accepted[0].digest===proposalDigest&&
       accepted[0].verified_source_reads===claimed,
       "One accepted proposal and no denied reads"),
     add("known_tools_and_baseline_files",scopeValid&&
@@ -106,6 +111,7 @@ export function evaluatePlannerFeasibility({scenario,expectedBaseRevision,
   ];
   return {
     schema_version:"1.0.0",scenario,baseline_revision:expectedBaseRevision,
+    evaluated_artifact:reviewPacket?"engineer_review_packet":"unapproved_proposal",
     technical_preflight_pass:criteria.every(c=>c.pass),
     criteria,
     evidence:{model_turn_attempts:modelTurns.length,
