@@ -17,6 +17,16 @@ test("R5 paid and scripted runner status requires selected run AND fully closed 
     ...live,coordinatorPhase:"closed",handoffStatus:"closed",
     verifiedOutcome:"verified_complete"
   }),"completed_verified");
+  // Closing HTTP/A2A before the original Coordinator's retained native
+  // revocation+journal verifier settles is neither failure NOR completion.
+  assert.equal(trustedEngineerRunStatus({
+    ...live,coordinatorPhase:"closed",handoffStatus:"closed",
+    verifiedOutcome:"pending"
+  }),"execution_active");
+  assert.equal(trustedEngineerRunStatus({
+    ...live,coordinatorPhase:"closed",handoffStatus:"closed",
+    verifiedOutcome:"failed"
+  }),"terminated");
   for(const phase of ["planning","execution","failed_closed",undefined]){
     assert.equal(trustedEngineerRunStatus({
       ...live,coordinatorPhase:phase,handoffStatus:"closed",
