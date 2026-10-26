@@ -126,6 +126,13 @@ test("Gemini owner session refuses GitHub runners and missing source pin before 
     }),/Protected Gemini owner input denied/);
     const previous=process.env.GITHUB_ACTIONS;
     try{
+      // Even an explicitly consented run cannot use a source SHA different
+      // from the real local Git checkout. This check precedes config/keys.
+      process.env.GITHUB_ACTIONS="false";
+      await assert.rejects(startProtectedGeminiOwnerSession({
+        configPath:"/untrusted",expectedSourceSha:"f".repeat(40),
+        inputFile:f.ownerFile,chargeAuthorization:CONFIRMATION
+      }),/Protected Gemini owner input denied/);
       process.env.GITHUB_ACTIONS="true";
       await assert.rejects(startProtectedGeminiOwnerSession({
         configPath:"/untrusted",expectedSourceSha:"a".repeat(40),
