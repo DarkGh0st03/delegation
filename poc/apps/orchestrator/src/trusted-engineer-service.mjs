@@ -283,11 +283,23 @@ export async function startConfiguredTrustedEngineerService(configPath){
  * calls the existing read-only Planning and recovering Engineer bootstrap.
  */
 export async function prepareConfiguredOwnerEngineerBootstrap(
-  configPath,{operationalRecovery:originalRecovery}={}
+  configPath,{operationalRecovery:originalRecovery,
+    expectedScriptedSourceSha}={}
 ){
   const config=await loadTrustedEngineerServiceConfig(configPath,{
     pendingPlanningOutput:true
   });
+  // R5 must validate the SAME protected config object that this bootstrap
+  // hands to the original Coordinator and persistent Engineer Host. An
+  // earlier external preflight could have checked a different file version.
+  // This is still read-only and happens BEFORE Planning/root issuance.
+  if(expectedScriptedSourceSha!==undefined){
+    const {verifyR5ScriptedEngineerHostReadiness}=await import(
+      "../../../scripts/r5-scripted-host-deployment-preflight.mjs");
+    verifyR5ScriptedEngineerHostReadiness(config,{
+      expectedSourceSha:expectedScriptedSourceSha
+    });
+  }
   const checkpoints=config.approval.planningCheckpointStore;
   // When the owner already constructed a Coordinator with a recovery
   // journal, reuse THAT EXACT INSTANCE. A second object pointed at the
@@ -331,5 +343,28 @@ export async function prepareConfiguredOwnerEngineerBootstrap(
         host:{...config,operationalRecovery}
       });
     }
+  });
+}
+
+
+/**
+ * Dedicated R5 source-pinned owner Planning entrypoint.
+ *
+ * Unlike the general owner bootstrap, the R5 variant cannot silently omit
+ * matching the protected scripted OIDC profile, mTLS and GitHub source SHA.
+ * It still does not create a Coordinator, execute Planning, select a model
+ * or approve an Engineer plan. The owner must construct the original
+ * read-only Planning dependencies and explicitly invoke the returned
+ * single-use start(planning) with a non-billable scripted model for R5.
+ */
+export async function prepareConfiguredR5ScriptedEngineerBootstrap(
+  configPath,{expectedSourceSha,operationalRecovery}={}
+){
+  if(typeof expectedSourceSha!=="string"||
+     !/^[a-f0-9]{40}$/u.test(expectedSourceSha))
+    throw Error("R5 scripted owner source SHA pin required");
+  return prepareConfiguredOwnerEngineerBootstrap(configPath,{
+    expectedScriptedSourceSha:expectedSourceSha,
+    ...(operationalRecovery===undefined?{}:{operationalRecovery})
   });
 }

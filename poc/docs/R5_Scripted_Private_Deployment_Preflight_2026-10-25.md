@@ -205,3 +205,43 @@ A positive negative-challenge proves a live pinned HTTPS/mTLS endpoint
 returned the expected denial for that request. It does **not** prove
 an authenticated GitHub job, an Engineer signature, a completed DAG or
 credential revocation, and must never be reported as `completed_verified`.
+
+## Same-configuration, original-Coordinator Planning bootstrap (R5)
+
+The operator's protected Engineering process must now call
+`prepareConfiguredR5ScriptedEngineerBootstrap(configPath,
+{expectedSourceSha})` from `poc/apps/orchestrator/src/trusted-engineer-service.mjs`,
+rather than calling the more general bootstrap without R5 pins.
+The R5 API is read-only: it loads the **pending Planning** service config
+once, checks the exact source SHA and the offline workflow identity,
+private scripted mTLS configuration and certificate material on **that
+same loaded config object**, and returns a single-use preparation object.
+
+The operator constructs the real `TrustedExecutionCoordinator`,
+`TrustedPlanningReviewGate`, a genuine Gitea-pinned snapshot, the
+read-only ADK Planner with a **locally approved non-billable scripted
+model**, a preliminary scoped root, Gateway/Adapter transports and the
+original journal. It must attach
+`planning.checkpointStore = prepared.planningCheckpointStore` and the
+same Coordinator/journal identities; otherwise the immutable
+`prepared.start(planning)` denies BEFORE Planning/root effects.
+Only that explicit start invokes the original
+`startOwnerControlledPlanningReview` and subsequently starts the
+authenticated persistent Engineer Host with the **same Coordinator**
+instance. It cannot automatically sign the Engineer's Ed25519 receipt,
+authenticate a GitHub runner or execute the A2A DAG.
+
+An external standalone preflight is NOT sufficient to authorize the
+owner's later startup: the owner API rechecks the protected config during
+the actual bootstrap and does not accept network/model-selected overrides.
+Existing cold recovery remains a separate mode, not a reconstructed
+Planning Coordinator.
+
+These API assertions are covered by
+`r5-scripted-host-deployment-preflight.test.mjs`, including a valid
+protected pending configuration, wrong independent SHA, mismatched
+paid/offline pins and refusal of an existing unsigned review plan.
+The tests do NOT deploy or start the owner process. The operator still
+must supply and manually authorize the genuine Engineered-approved DAG
+and the real private runner/Gateway/Gitea environment. Running an ADK
+paid provider is still forbidden for this no-charge R5 profile.

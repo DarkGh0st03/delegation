@@ -7,7 +7,9 @@ import {execFileSync,spawnSync} from "node:child_process";
 import {verifyR5ScriptedEngineerHostReadiness as check,
   verifyProtectedR5EngineerHostConfig}
   from "../r5-scripted-host-deployment-preflight.mjs";
-import {loadTrustedEngineerServiceConfig}
+import {loadTrustedEngineerServiceConfig,
+  prepareConfiguredOwnerEngineerBootstrap,
+  prepareConfiguredR5ScriptedEngineerBootstrap}
   from "../../apps/orchestrator/src/trusted-engineer-service.mjs";
 
 const SHA="a".repeat(40);
@@ -234,6 +236,29 @@ test("R5 pre-Planning host preflight requires absent plan and real owner-protect
     assert.equal(verified.status,
       "scripted_host_config_verified_only_not_deployed");
     assert.equal(verified.active_planning_proven,false);
+    // Crucially, the SAME protected config must be revalidated while the
+    // real owner bootstrap is prepared, not only in a separate CLI probe.
+    const owner=await prepareConfiguredR5ScriptedEngineerBootstrap(configPath,{
+      expectedSourceSha:SHA
+    });
+    assert.equal(typeof owner.start,"function");
+    assert.equal(typeof owner.planningCheckpointStore.load,"function");
+    await assert.rejects(prepareConfiguredR5ScriptedEngineerBootstrap(configPath,{
+      expectedSourceSha:"invalid"
+    }),/R5 scripted owner source SHA pin required/);
+    await assert.rejects(prepareConfiguredR5ScriptedEngineerBootstrap(configPath,{
+      expectedSourceSha:"b".repeat(40)
+    }),/R5 scripted host deployment NO-GO/);
+    const oldSha=cfg.scriptedOidc.pinned.sourceSha;
+    cfg.scriptedOidc.pinned.sourceSha="b".repeat(40);
+    cfg.oidc.pinned.sourceSha="b".repeat(40);
+    await writeFile(configPath,JSON.stringify(cfg),{mode:0o600});
+    await assert.rejects(prepareConfiguredR5ScriptedEngineerBootstrap(configPath,{
+      expectedSourceSha:SHA
+    }),/R5 scripted host deployment NO-GO/);
+    cfg.scriptedOidc.pinned.sourceSha=oldSha;
+    cfg.oidc.pinned.sourceSha=oldSha;
+    await writeFile(configPath,JSON.stringify(cfg),{mode:0o600});
     await writeFile(plan,'{"stale":"unsigned"}',{mode:0o600});
     await assert.rejects(verifyProtectedR5EngineerHostConfig({
       configPath,expectedSourceSha:SHA
