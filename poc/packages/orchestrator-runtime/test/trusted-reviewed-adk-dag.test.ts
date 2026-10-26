@@ -662,8 +662,15 @@ async function exercise(
       assert.ok(!events.includes("trusted-pr-created"));
       assert.ok(!events.some(event=>event.startsWith("a2a:frontend")||
         event.startsWith("a2a:test")));
+      // A second call is still forbidden. When revocation failed, the
+      // retained rejected shutdown promise deliberately takes precedence
+      // over the ordinary "already attempted" error: never imply that
+      // the old Rust credential is safely retired.
       await assert.rejects(owner!.runApprovedDag(ownerInput,ownerExec),
-        /already attempted/);
+        failOperationalRevocation
+          ?/native operational revocation unconfirmed/
+          :/already attempted/);
+      assert.equal(providerCalls,1);
       return;
     }
     if(cancelBeforeFrontend){
