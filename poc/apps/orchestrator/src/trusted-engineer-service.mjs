@@ -291,11 +291,20 @@ export async function startConfiguredTrustedEngineerService(configPath){
  */
 export async function prepareConfiguredOwnerEngineerBootstrap(
   configPath,{operationalRecovery:originalRecovery,
-    expectedScriptedSourceSha}={}
+    expectedScriptedSourceSha,expectedLiveSourceSha}={}
 ){
   const config=await loadTrustedEngineerServiceConfig(configPath,{
     pendingPlanningOutput:true
   });
+  // Live-owner source identity must match the same protected settings
+  // passed to the Engineer Host, not a separate untrusted preflight read.
+  if(expectedLiveSourceSha!==undefined){
+    if(expectedScriptedSourceSha!==undefined||
+       typeof expectedLiveSourceSha!=="string"||
+       !/^[a-f0-9]{40}$/u.test(expectedLiveSourceSha)||
+       config.oidc.pinned.sourceSha!==expectedLiveSourceSha)
+      throw Error("Configured Gemini owner source SHA does not match protected OIDC pin");
+  }
   // R5 must validate the SAME protected config object that this bootstrap
   // hands to the original Coordinator and persistent Engineer Host. An
   // earlier external preflight could have checked a different file version.
