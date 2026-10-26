@@ -11,6 +11,7 @@ The service provides:
 - `POST /v1/credentials/root`;
 - `POST /v1/credentials/child`;
 - `POST /v1/credentials/status`;
+- `POST /v1/credentials/status/inspect` (Gateway-only, read-only check of the current revocation bit);
 - `POST /v1/presentations`;
 - `POST /v1/verify`;
 - `POST /v1/verify-multiple` (Gateway-only composite verification);
@@ -170,3 +171,32 @@ The reference test uses a scripted A2A agent and mock Git provider.
 No remote LLM is called; it cannot be cited as real Gitea/Runner
 end-to-end task completion. It intentionally verifies that the Gateway
 does NOT mark that mock Task as completed.
+
+## Read-only authenticated revocation observation (R5)
+
+The Gateway verifier can use `POST /v1/credentials/status/inspect`
+with an exact `{"credential_id":"<issued-root-or-child-id>"}` JSON body
+and its own existing authenticated Adapter caller. Only the Gateway
+role with the `verify_presentation` capability is allowed to inspect
+an issued root or child DC. Engineer, Orchestrator, Agent and unknown
+credentials are denied by this observation route. It is a *query* even
+though the HTTP method is POST: it does not call the status mutation
+routine, write a status artifact or submit an EVM transaction. The
+credential ID is kept out of access-log query parameters.
+
+For the `evm` profile, the Adapter rereads the **current** EVM Status
+List anchor and the exact compact signed JWT retained by the Adapter.
+It rejects absent anchors, mismatched purposes, stale JWT commitments
+and invalid signing credentials, then reports the *current* revocation
+bit with `source: "evm_anchored_signed_jwt"` and the anchor version.
+This yields a stronger post-execution observation than treating a prior
+successful revocation POST response as sufficient.
+
+For `in_memory`, the response explicitly says
+`source: "adapter_memory_only"` and does not provide an anchor version.
+Neither case is a separate independent verifier process. Issued-ID
+lookups are intentionally scoped to the same live Adapter process: an
+Adapter restart does not reconstruct the credential-to-status mapping.
+A missing credential or an unavailable chain/JWT is **NO-GO**, not a
+presumed successful revocation. This endpoint must never be presented
+as sufficient proof of the whole signed DAG or as external R5 GO.

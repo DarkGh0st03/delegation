@@ -295,6 +295,39 @@ impl EvmAdapterProfile {
         Ok(())
     }
 
+    /// Non-mutating observation of an EVM-anchored signed JWT status bit.
+    /// Fail closed on stale JWT, mismatched chain hash/purpose, invalid
+    /// Ed25519 verification or missing anchor. The public Status List
+    /// remains independently verifiable by a separate Rust verifier;
+    /// this endpoint alone is not that independent process.
+    pub fn observe_anchored_status(
+        &self,
+        issuer_id: &str,
+        entry: &BitstringStatusListEntry,
+        verification_jwk: &Jwk,
+    ) -> Result<(bool, u64), String> {
+        let (purpose_code, _) = status_purpose(entry.status_purpose())?;
+        let anchor = self
+            .chain_reader
+            .status_list_anchor(issuer_id, entry.status_list_credential())?;
+        if !anchor.exists || anchor.purpose != purpose_code || anchor.current_version == 0 {
+            return Err(String::from("Current EVM status anchor missing or mismatched"));
+        }
+        let artifact = self
+            .status_source
+            .get_status_list_credential(issuer_id, entry.status_list_credential())?;
+        if EvmAnchoredStatusListResolver::artifact_commitment(&artifact.document)
+            != anchor.current_artifact_hash
+        {
+            return Err(String::from("EVM status artifact no longer matches chain commitment"));
+        }
+        let document = verify_status_list_credential_jwt(
+            &artifact.document, verification_jwk, issuer_id
+        )?;
+        let status_set = BitstringStatusListParser::read_status(entry, &document)?;
+        Ok((status_set, anchor.current_version))
+    }
+
     pub fn update_status(
         &self,
         issuer_role: CallerRole,

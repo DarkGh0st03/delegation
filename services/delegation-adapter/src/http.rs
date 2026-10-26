@@ -2,7 +2,8 @@ use crate::auth::CallerRecord;
 use crate::config::AdapterConfig;
 use crate::crypto::{
     CreatePresentationRequest, CryptoRuntime, IssueChildRequest, IssueRootRequest,
-    UpdateCredentialStatusRequest, VerifyMultiplePresentationRequest, VerifyPresentationRequest,
+    ReadCredentialStatusRequest, UpdateCredentialStatusRequest,
+    VerifyMultiplePresentationRequest, VerifyPresentationRequest,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -118,6 +119,22 @@ fn handle_request(mut request: Request, config: &AdapterConfig, crypto: &mut Cry
                 }
             };
             match crypto.update_credential_status(&caller, body) {
+                Ok(status) => respond_json(request, StatusCode(200), &status),
+                Err(error) => respond_error(request, StatusCode(400), &error),
+            }
+        }
+        (Method::Post, "/v1/credentials/status/inspect") => {
+            // Read-only despite POST (the credential id is not a URL
+            // query parameter, protecting it from access logs).
+            // CryptoRuntime restricts this to the Gateway verifier identity.
+            let body = match read_json::<ReadCredentialStatusRequest>(&mut request) {
+                Ok(body) => body,
+                Err(error) => {
+                    respond_error(request, StatusCode(400), &error);
+                    return;
+                }
+            };
+            match crypto.read_credential_status(&caller, &config.callers, body) {
                 Ok(status) => respond_json(request, StatusCode(200), &status),
                 Err(error) => respond_error(request, StatusCode(400), &error),
             }
