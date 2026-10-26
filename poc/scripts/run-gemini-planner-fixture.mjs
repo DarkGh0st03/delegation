@@ -181,6 +181,10 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
     status="unapproved_isolated_proposal";
     return {status,report};
   }finally{
+    // Preserve ONLY bounded observer metadata even when Gemini is unable to
+    // produce a valid plan. This evidence has no prompts, source or API key.
+    if(status==="failed_closed")
+      await persistJson(outputDir,"failed-observations.json",observations);
     // The local marker is not a provider usage receipt; invoices/tokens
     // must be checked separately with the API provider.
     await persistJson(outputDir,"fixture-run.json",{
