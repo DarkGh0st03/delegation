@@ -1,0 +1,158 @@
+# ONE-SHOT MANUAL ONLY — no push, schedule, PR or automatic paid inference.
+# Scientific Planning-only probe over the isolated IAM source fixture.
+# NO operational DCs, no actual Gateway/OPA/Gitea authority, no code writes.
+name: Gemini Planner — Manual Feasibility Experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Requirement to plan (Department Directory first)"
+        type: choice
+        required: true
+        default: department-directory
+        options:
+          - department-directory
+          - suspension-feedback
+      execution_mode:
+        description: "dry-run = free; gemini-paid = one Gemini Planner attempt"
+        type: choice
+        required: true
+        default: dry-run
+        options:
+          - dry-run
+          - gemini-paid
+      authorization:
+        description: "For gemini-paid type exactly I AUTHORIZE GEMINI API CHARGES"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# No automatic cancel/retry of already-billable work, and no overlapping
+# manual paid Planner probes for the same repository.
+concurrency:
+  group: manual-gemini-planner-feasibility-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  read-only-planner:
+    name: Gemini planning proposal only — no Engineer approval/execution
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'DarkGh0st03/delegation' &&
+      github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PLANNER_SCENARIO: ${{ inputs.scenario }}
+      PLANNER_EXECUTION_MODE: ${{ inputs.execution_mode }}
+      PLANNER_AUTHORIZATION: ${{ inputs.authorization }}
+      DELEGATION_PLANNER_MODEL: gemini-3.8-flash
+      DELEGATION_PLANNER_OUTPUT_DIR: ${{ runner.temp }}/planner-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout selected development branch without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify manual dispatch and refuse wrong or missing consent
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
+          [[ "$GITHUB_RUN_ATTEMPT" == 1 ]]
+          [[ "$GITHUB_REF" == refs/heads/refactor/post-prof-plan-contracts-20261021 ]]
+          [[ "$PLANNER_SCENARIO" == department-directory ||
+             "$PLANNER_SCENARIO" == suspension-feedback ]]
+          case "$PLANNER_EXECUTION_MODE" in
+            dry-run)
+              echo "Free fixture inspection; no provider key will be injected."
+              ;;
+            gemini-paid)
+              if [[ "$PLANNER_AUTHORIZATION" != 'I AUTHORIZE GEMINI API CHARGES' ]]; then
+                echo "::error::Exact manual Gemini billing consent is required."
+                exit 1
+              fi
+              echo "One authorized Planner inference attempt; no tool writes."
+              ;;
+            *)
+              echo "::error::Unknown execution mode."
+              exit 1
+              ;;
+          esac
+
+      - name: Node 22.15.0 (pinned PoC runtime)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+
+      - name: Install pinned dependencies without lifecycle scripts
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run non-billable Planner and experiment safety regressions
+        run: |
+          node --test poc/scripts/test/planner-feasibility-eval.test.mjs poc/scripts/test/run-gemini-planner-fixture.test.mjs
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts
+
+      - name: Check unsolved requirement fixture (no Gemini)
+        shell: bash
+        run: node poc/scripts/run-gemini-planner-fixture.mjs --dry-run "$PLANNER_SCENARIO"
+
+      - name: Check Gemini Secret is present BEFORE any paid request
+        if: inputs.execution_mode == 'gemini-paid'
+        env:
+          GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${GEMINI_API_KEY:-}" ]]; then
+            echo "::error::Missing repository Actions Secret Delegation_Thesis_Gemini."
+            exit 1
+          fi
+          echo "Gemini Secret present; value never printed."
+
+      - name: ONE paid ADK Gemini Planning attempt (read-only fixture)
+        if: inputs.execution_mode == 'gemini-paid'
+        env:
+          GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+          DELEGATION_PLANNER_BILLING_CONSENT: ${{ inputs.authorization }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types poc/scripts/run-gemini-planner-fixture.mjs \
+            --execute "$PLANNER_SCENARIO"
+
+      - name: Publish offline or model evaluation status
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### R5A — Isolated Gemini Planner feasibility"
+            echo ""
+            echo "- Scenario: `$PLANNER_SCENARIO`"
+            echo "- Execution mode: `$PLANNER_EXECUTION_MODE`"
+            echo "- Baseline: synthetic in-memory IAM fixture, NOT a real Gitea SHA"
+            echo "- No code writes, Engineer approval or delegated Execution"
+            if [[ -f "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json" ]]; then
+              echo "- Evaluator technical preflight: `$(jq -r '.technical_preflight_pass' "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json")`"
+              echo "- Provider tokens (if supplied): evidence artifact only"
+            else
+              echo "- Evaluation: no completed proposal artifact (or dry run)"
+            fi
+            echo "- Provider invoice/cost: not measured; check billing separately"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve private experiment evidence even when model rejects a draft
+        if: always() && inputs.execution_mode == 'gemini-paid'
+        uses: actions/upload-artifact@v4
+        with:
+          name: planner-isolated-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/planner-${{ github.run_id }}-${{ github.run_attempt }}/
+          if-no-files-found: warn
+          retention-days: 7
