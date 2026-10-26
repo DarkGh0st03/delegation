@@ -697,3 +697,38 @@ release and native revocation; a failed native revocation must deny a
 positive receipt even though the Coordinator remains `closed`.
 These tests do not prove a physical deployment or on-chain third-party
 attestation; the original private end-to-end R5 remains NO-GO.
+
+## R5 — Evidence provenance and atomic publication fix (26 October 2026)
+
+An owner evidence audit found two independent weaknesses in the earlier
+receipt helper. First, the write function accepted *any JSON-shaped*
+`verified_complete_local_owner_observation` object, which could be
+constructed without having awaited the actual Coordinator closure.
+Second, direct `O_EXCL` creation at the final path exposed a partially
+written JSON receipt during an interrupted write, despite the old
+documentation calling the operation atomic.
+
+The verifier now privately records the **exact frozen object identity**
+it emitted after awaiting the real Coordinator's operational shutdown.
+Only that same in-memory object is accepted by the writer. Clones,
+object literals and altered proof envelopes fail closed. Each valid
+object is also reserved synchronously, before any filesystem awaits,
+so concurrent callers cannot publish it twice. This is in-process
+provenance, **not a digital signature or remote attestation**.
+
+The writer now creates a unique owner-only 0600 temporary file in the
+same 0700 evidence directory, writes and `fsync`s its entire JSON,
+then atomically hard-links the finished inode to the final run-specific
+path with **no replace**. It removes the temporary name and syncs the
+directory. A pre-existing completed-run file is never overwritten.
+Publication errors, incomplete writes, permissions failures or
+unknown durability produce NO-GO, require manual reconciliation, and
+do not reuse the original verified observation.
+
+New tests reject fabricated or cloned evidence, exercise concurrent
+writers, verify atomic no-overwrite and temporary cleanup, and ensure
+unsafe-directory/symlink tests use distinct genuine observations rather
+than accidentally passing on the one-use guard alone. The resulting
+file is still only a local owner-process observation; verified EVM
+revocation and the independently pinned distributed runner require
+external evidence before anyone may declare R5 GO.

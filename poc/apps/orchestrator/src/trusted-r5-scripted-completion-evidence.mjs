@@ -10,13 +10,18 @@
 import {TrustedExecutionCoordinator}
   from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {constants} from "node:fs";
-import {open,lstat} from "node:fs/promises";
+import {randomBytes} from "node:crypto";
+import {open,lstat,link,unlink} from "node:fs/promises";
 import {join,resolve} from "node:path";
 const RUN=/^[1-9][0-9]{0,19}$/u;
 const SHA=/^[a-f0-9]{40}$/u;
 const DIGEST=/^[a-f0-9]{64}$/u;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const MAX_TASKS=128;
+/** Module-local provenance: a matching JSON shape is NOT a real witness. */
+const issuedEvidence=new WeakSet();
+const reservedEvidence=new WeakSet();
+const MAX_RECEIPT_BYTES=65536;
 function deny(reason){
   throw Error("R5 verified completion evidence NO-GO: "+reason);
 }
@@ -65,7 +70,7 @@ export async function verifyR5PostRunEvidence({
     deny("original Coordinator left its verified terminal phase");
   // Specialized artifacts remain inside the host; they must not be copied
   // into the evidence receipt (which is deliberately small and inspectable).
-  return Object.freeze({
+  const evidence=Object.freeze({
     schema:"r5-scripted-owner-completion-v1",
     status:"verified_complete_local_owner_observation",
     source_sha:sourceSha,
@@ -83,6 +88,11 @@ export async function verifyR5PostRunEvidence({
     provider_model_calls_verified_here:false,
     external_r5_go:false
   });
+  // Only the SAME object returned by this verifier is authorized to be
+  // persisted. A cloned/hand-authored object cannot spoof the verified
+  // closed Coordinator and original awaited native retirement.
+  issuedEvidence.add(evidence);
+  return evidence;
 }
 /** Validate an owner-only 0700 directory BEFORE consuming GitHub admission. */
 export async function assertR5EvidenceDirectory(directory){
@@ -96,28 +106,55 @@ export async function assertR5EvidenceDirectory(directory){
   }catch{deny("evidence directory unavailable or unsafe");}
 }
 /**
- * Atomic one-run, one-file witness, never overwrite a prior trial.
- * A failed or uncertain trial writes NO verified-complete marker.
+ * Durable atomic one-run evidence publication. A proper final path appears
+ * ONLY after the full verified JSON has been fsynced to a temporary inode.
+ * Hard-link publication uses EEXIST/NO-REPLACE and is atomic on one FS.
  */
 export async function persistR5PostRunEvidence(directory,evidence){
+  if(!evidence||typeof evidence!=="object"||
+     !issuedEvidence.has(evidence)||reservedEvidence.has(evidence))
+    deny("only one genuine, unused Coordinator-verified witness may be published");
+  // Reserve BEFORE the first await, so concurrent callers cannot both
+  // publish the same observation under a reused admission or run identity.
+  reservedEvidence.add(evidence);
   await assertR5EvidenceDirectory(directory);
-  if(evidence?.schema!=="r5-scripted-owner-completion-v1"||
-     evidence?.status!=="verified_complete_local_owner_observation"||
-     evidence?.external_r5_go!==false||
+  if(evidence.schema!=="r5-scripted-owner-completion-v1"||
+     evidence.status!=="verified_complete_local_owner_observation"||
+     evidence.external_r5_go!==false||
      !RUN.test(evidence.github_run_id??""))
     deny("unverified completion cannot be persisted");
   const filename=join(directory,"r5-scripted-run-"+evidence.github_run_id+".json");
+  const temporary=join(directory,".r5-"+evidence.github_run_id+"-"+
+    randomBytes(16).toString("hex")+".tmp");
+  const json=JSON.stringify(evidence,null,2)+"\n";
+  if(Buffer.byteLength(json,"utf8")>MAX_RECEIPT_BYTES)
+    deny("verified receipt exceeds owner storage limit");
   let file;
+  let linked=false;
   try{
-    file=await open(filename,constants.O_WRONLY|constants.O_CREAT|
+    file=await open(temporary,constants.O_WRONLY|constants.O_CREAT|
       constants.O_EXCL|constants.O_NOFOLLOW,0o600);
-    await file.writeFile(JSON.stringify(evidence,null,2)+"\n","utf8");
+    await file.writeFile(json,"utf8");
     await file.sync();
+    await file.close();
+    file=undefined;
+    // POSIX hard-link creation rejects existing destination names. This
+    // avoids exposing a partial JSON receipt and prevents overwrites.
+    await link(temporary,filename);
+    linked=true;
+    await unlink(temporary);
+    // Make the completed name durable after inode fsync and unlink.
+    const dirfd=await open(directory,constants.O_RDONLY|
+      constants.O_DIRECTORY|constants.O_NOFOLLOW);
+    try{await dirfd.sync();}finally{await dirfd.close();}
   }catch{
-    deny("receipt write not confirmed, no overwrite or retry permitted");
+    deny("atomic receipt publication unconfirmed; no retry or overwrite");
   }finally{
     if(file)await file.close();
+    try{await unlink(temporary);}catch{/* absent after clean publish */}
   }
+  if(!linked)
+    deny("verified receipt was not published");
   return Object.freeze({status:"verified_local_receipt_written",
     filename,github_run_id:evidence.github_run_id});
 }

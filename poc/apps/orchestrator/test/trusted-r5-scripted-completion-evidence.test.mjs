@@ -152,22 +152,83 @@ test("R5 local owner receipt is exclusive, 0600, no secrets and cannot overwrite
     assert.deepEqual(await readdir(f.dir),["r5-scripted-run-40299999991.json"]);
   }finally{await f.close();}
 });
-test("R5 owner evidence rejects unprotected directory, symlink and unverified status",async()=>{
+test("R5 fabricated owner completion objects and clones cannot be persisted without native verification",async()=>{
+  const f=await dirFixture();
+  try{
+    const valid=await verifyR5PostRunEvidence(await fixture());
+    const forged=Object.freeze({...valid});
+    const clone=structuredClone(valid);
+    await assert.rejects(persistR5PostRunEvidence(f.dir,forged),
+      /genuine, unused Coordinator-verified witness/);
+    await assert.rejects(persistR5PostRunEvidence(f.dir,clone),
+      /genuine, unused Coordinator-verified witness/);
+    await assert.rejects(persistR5PostRunEvidence(f.dir,{
+      schema:"r5-scripted-owner-completion-v1",
+      status:"verified_complete_local_owner_observation",
+      github_run_id:"40299999991",external_r5_go:false
+    }),/genuine, unused Coordinator-verified witness/);
+    assert.deepEqual(await readdir(f.dir),[]);
+    await persistR5PostRunEvidence(f.dir,valid);
+  }finally{await f.close();}
+});
+
+test("R5 cannot publish same verified observation twice under simultaneous callers",async()=>{
   const f=await dirFixture();
   try{
     const evidence=await verifyR5PostRunEvidence(await fixture());
+    const attempts=await Promise.allSettled([
+      persistR5PostRunEvidence(f.dir,evidence),
+      persistR5PostRunEvidence(f.dir,evidence)
+    ]);
+    assert.equal(attempts.filter(r=>r.status==="fulfilled").length,1);
+    assert.equal(attempts.filter(r=>r.status==="rejected").length,1);
+    const files=await readdir(f.dir);
+    assert.deepEqual(files,["r5-scripted-run-40299999991.json"]);
+    const parsed=JSON.parse(await readFile(join(f.dir,files[0]),"utf8"));
+    assert.equal(parsed.approved_plan_digest,DIGEST);
+    assert.equal(parsed.coordinator_terminal_phase,"closed");
+  }finally{await f.close();}
+});
+
+test("R5 atomic publication never replaces an existing completed-run file",async()=>{
+  const f=await dirFixture();
+  try{
+    const filename=join(f.dir,"r5-scripted-run-40299999991.json");
+    await (await import("node:fs/promises")).writeFile(filename,
+      "previous-independent-trial",{mode:0o600});
+    const evidence=await verifyR5PostRunEvidence(await fixture());
+    await assert.rejects(persistR5PostRunEvidence(f.dir,evidence),
+      /atomic receipt publication unconfirmed/);
+    assert.equal(await readFile(filename,"utf8"),
+      "previous-independent-trial");
+    assert.deepEqual(await readdir(f.dir),
+      ["r5-scripted-run-40299999991.json"],
+      "all exclusive temporary files must be cleaned on failure");
+  }finally{await f.close();}
+});
+
+test("R5 owner evidence rejects unprotected directory, symlink and unverified status",async()=>{
+  const f=await dirFixture();
+  try{
+    const unsafeDirectoryEvidence=await verifyR5PostRunEvidence(await fixture());
     await chmod(f.dir,0o755);
     await assert.rejects(assertR5EvidenceDirectory(f.dir),/NO-GO/);
-    await assert.rejects(persistR5PostRunEvidence(f.dir,evidence),/NO-GO/);
+    await assert.rejects(persistR5PostRunEvidence(
+      f.dir,unsafeDirectoryEvidence),/NO-GO/);
     await chmod(f.dir,0o700);
     const link=f.dir+"-link";
     await symlink(f.dir,link);
     try{
-      await assert.rejects(persistR5PostRunEvidence(link,evidence),/NO-GO/);
+      // This is a DISTINCT verified observation. The denial must be
+      // about the symlink itself, not the preceding one-use rejection.
+      const symlinkEvidence=await verifyR5PostRunEvidence(await fixture());
+      await assert.rejects(
+        persistR5PostRunEvidence(link,symlinkEvidence),/NO-GO/);
     }finally{await rm(link,{force:true});}
+    const valid=await verifyR5PostRunEvidence(await fixture());
     await assert.rejects(persistR5PostRunEvidence(f.dir,{
-      ...evidence,status:"unverified"
-    }),/NO-GO/);
+      ...valid,status:"unverified"
+    }),/genuine, unused Coordinator-verified witness/);
     assert.deepEqual(await readdir(f.dir),[]);
   }finally{await f.close();}
 });

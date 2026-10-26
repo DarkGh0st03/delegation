@@ -252,6 +252,21 @@ const SUITES=Object.freeze([
     title:"R5 refuses unexpected installed SHA and dirty worktree"
   },
   {
+    id:"r5_completion_receipt_requires_unforgeable_witness",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
+    title:"R5 fabricated owner completion objects and clones cannot be persisted without native verification"
+  },
+  {
+    id:"r5_owner_receipt_one_shot_under_concurrency",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
+    title:"R5 cannot publish same verified observation twice under simultaneous callers"
+  },
+  {
+    id:"r5_owner_receipt_atomic_no_replace",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
+    title:"R5 atomic publication never replaces an existing completed-run file"
+  },
+  {
     id:"r5_terminal_phase_not_native_revocation_evidence",
     path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
     title:"R5 CLOSED Coordinator during in-flight Gateway retirement cannot create positive owner evidence"
