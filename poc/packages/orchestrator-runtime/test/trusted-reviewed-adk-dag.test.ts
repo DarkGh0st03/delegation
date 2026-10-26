@@ -48,6 +48,25 @@ import {startSpecializedAgentServer}
 import {DeterministicA2AOrchestrator}
   from "../../agent-runtime/src/orchestrator.ts";
 
+// Tests run concurrently with other Node suites. A random, unreserved TCP
+// port is not exclusive: retry only EADDRINUSE rather than declaring an
+// authorization/Gateway regression because another test bound it first.
+async function startIsolatedTestA2AServer(
+  options:Omit<Parameters<typeof startSpecializedAgentServer>[0],"port">
+){
+  for(let attempt=0;attempt<12;attempt++){
+    try{
+      return await startSpecializedAgentServer({
+        ...options,port:40000+randomInt(0,22000)
+      });
+    }catch(error){
+      if((error as NodeJS.ErrnoException)?.code!=="EADDRINUSE"||
+         attempt===11)throw error;
+    }
+  }
+  throw Error("Unable to reserve isolated A2A test port");
+}
+
 const SHA="a".repeat(40),ENGINEER="did:thesis:engineer";
 const REPO={authority:"gitea.local",owner:"thesis",repository:"projects"};
 const AGENTS={
@@ -378,11 +397,10 @@ async function exercise(
       // Genuine A2A HTTP+JSON / agent-card + protected REST endpoints:
       // scripted PROVIDER effects only, no external Gemini or Gitea calls.
       const roles=["backend","frontend","test"] as const;
-      const firstPort=43000+randomInt(100,3000)*3;
       for(let i=0;i<roles.length;i++){
         const role=roles[i]!;
-        servers.push(await startSpecializedAgentServer({
-          role,host:"127.0.0.1",port:firstPort+i,
+        servers.push(await startIsolatedTestA2AServer({
+          role,host:"127.0.0.1",
           delegatedAuthorization:true,
           capabilityProfile:"approved-plan",
           taskHandler:async context=>{
