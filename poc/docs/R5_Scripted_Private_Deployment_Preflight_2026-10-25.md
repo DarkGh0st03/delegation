@@ -126,6 +126,14 @@ the leaf directly issued by the pinned local CA for this conservative
 one-hop PoC preflight. A different PKI chain requires separate review, not a
 silent reduction in authentication checks.
 
+**Stage isolation:** the host preflight uses the strict
+`pendingPlanningOutput:true` loader. It is run BEFORE the preliminary
+Planning root, when the reviewed-plan file MUST be absent. A stale file
+fails closed. The separate cold-recovery loader requires that file to
+exist, but does not reconstruct an active Coordinator; its signed
+checkpoint and native root recovery are verified during startup.
+Never run the pre-Planning check as proof that an approved plan exists.
+
 The preflight never creates, resumes or approves a plan; never starts
 `startConfiguredTrustedEngineerService`; never opens ports, invokes
 Gateway/Rust, contacts GitHub, requests OIDC, dispatches a DAG or calls Gemini.

@@ -112,7 +112,14 @@ export function verifyR5ScriptedEngineerHostReadiness(config,{
 export async function verifyProtectedR5EngineerHostConfig({
   configPath,expectedSourceSha
 }={}){
-  const config=await loadTrustedEngineerServiceConfig(configPath);
+  // This preflight is expressly PRE-Planning. The review plan MUST NOT
+  // exist yet: the original Coordinator and backend signer will produce
+  // that file exclusively after the read-only Planning checkpoint.
+  // Cold-recovery uses the default loader mode, which instead REQUIRES
+  // an already signed plan. Never conflate the two stages.
+  const config=await loadTrustedEngineerServiceConfig(configPath,{
+    pendingPlanningOutput:true
+  });
   return verifyR5ScriptedEngineerHostReadiness(config,{expectedSourceSha});
 }
 

@@ -132,6 +132,11 @@ const SUITES=Object.freeze([
     title:"scripted runner hold rejects unverified local source before OIDC"
   },
   {
+    id:"scripted_host_preplanning_requires_absent_plan",
+    path:"poc/scripts/test/r5-scripted-host-deployment-preflight.test.mjs",
+    title:"R5 pre-Planning host preflight requires absent plan and real owner-protected settings"
+  },
+  {
     id:"scripted_owner_host_pinned_tls_preflight",
     path:"poc/scripts/test/r5-scripted-host-deployment-preflight.test.mjs",
     title:"R5 valid pinned scripted Engineer deployment is configuration-only, never operational GO"

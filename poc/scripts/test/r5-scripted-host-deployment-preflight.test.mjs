@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {mkdtemp,readFile,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,readFile,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {execFileSync,spawnSync} from "node:child_process";
-import {verifyR5ScriptedEngineerHostReadiness as check}
+import {verifyR5ScriptedEngineerHostReadiness as check,
+  verifyProtectedR5EngineerHostConfig}
   from "../r5-scripted-host-deployment-preflight.mjs";
+import {loadTrustedEngineerServiceConfig}
+  from "../../apps/orchestrator/src/trusted-engineer-service.mjs";
 
 const SHA="a".repeat(40);
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -137,6 +140,110 @@ test("R5 rejects expired, wrong-IP, untrusted and mismatched server TLS material
       /invalid protected mTLS certificate or private key/);
   }finally{await f.close();}
 });
+
+test("R5 pre-Planning host preflight requires absent plan and real owner-protected settings",async()=>{
+  const f=await fixture();
+  try{
+    const directories={};
+    for(const item of [
+      "approval","checkpoint","oidc-replay","oidc-admission",
+      "scripted-replay","scripted-admission","recovery","planning"
+    ]){
+      directories[item]=join(f.dir,item);
+      await mkdir(directories[item],{mode:0o700});
+    }
+    const file=async(name,value)=>{
+      const p=join(f.dir,name);
+      await writeFile(p,value,{mode:0o600});
+      return p;
+    };
+    const privateKey=await file("engineer.key","test-private-signer");
+    const publicKey=await file("engineer.pub",
+      "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----");
+    const backend=await file("backend.pub",
+      "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----");
+    const paidToken=await file("paid.token","test-readonly-token");
+    const scriptedToken=await file("scripted.token","test-scripted-token");
+    const paidMac=await file("paid.mac","ab".repeat(32));
+    const scriptedMac=await file("scripted.mac","cd".repeat(32));
+    const adapterToken=await file("adapter.token","test-adapter-token");
+    const gatewaySecret=await file("gateway.secret","ef".repeat(32));
+    const ca=await file("host.ca",f.config.scriptedOidc.tls.ca);
+    const cert=await file("host.cert",f.config.scriptedOidc.tls.cert);
+    const key=await file("host.key",f.config.scriptedOidc.tls.key);
+    const plan=join(f.dir,"reviewed-plan.json");
+    const configPath=join(f.dir,"engineer-service.json");
+    const scripted=f.config.scriptedOidc;
+    const cfg={
+      approval:{
+        engineerDid:"did:example:engineer",keyId:"owner-key",
+        expectedSessionId:"r5-pending-session",
+        expectedBaseRevision:"c".repeat(40),
+        repository:{authority:"gitea.local",owner:"demo",repository:"repo"},
+        receiptDirectory:directories.approval,
+        trustedPlanFile:plan,privateKeyFile:privateKey,
+        publicKeyPemFile:publicKey,
+        passwordSaltHex:"ab".repeat(16),
+        passwordScryptHex:"ab".repeat(64),
+        checkpoint:{
+          directory:directories.checkpoint,backendKeyId:"backend-key",
+          backendPublicKeyPemFile:backend,
+          expectedWorkBranch:"feature/scripted-test"
+        }
+      },
+      oidc:{
+        pinned:{repository:REPO,ref:REF,sourceSha:SHA,
+          workflowPath:".github/workflows/trusted-private-github-admission.yml"},
+        trust:{expectedAudience:"urn:paid-r5-test-audience",
+          expectedSubject:scripted.trust.expectedSubject,
+          expectedRepositoryId:"1374168963",
+          expectedOwnerId:"150908952"},
+        replayDirectory:directories["oidc-replay"],
+        admissionDirectory:directories["oidc-admission"],
+        bindAddress:"127.0.0.1",githubApiTokenFile:paidToken,
+        hmacSecretHexFile:paidMac,
+        tls:{caFile:ca,certFile:cert,keyFile:key,
+          expectedClientFingerprint256:FP2}
+      },
+      scriptedOidc:{
+        pinned:scripted.pinned,trust:scripted.trust,
+        replayDirectory:directories["scripted-replay"],
+        admissionDirectory:directories["scripted-admission"],
+        bindAddress:scripted.bindAddress,
+        githubApiTokenFile:scriptedToken,hmacSecretHexFile:scriptedMac,
+        tls:{caFile:ca,certFile:cert,keyFile:key,
+          expectedClientFingerprint256:FP1}
+      },
+      recovery:{
+        directory:directories.recovery,
+        planningDirectory:directories.planning,
+        gatewaySocketPath:join(f.dir,"gateway.sock"),
+        gatewaySecretFile:gatewaySecret,
+        adapterBaseUrl:"http://127.0.0.1:8090",
+        adapterTokenFile:adapterToken
+      },
+      approvalPort:8101,oidcPort:8102,scriptedOidcPort:8103
+    };
+    await writeFile(configPath,JSON.stringify(cfg),{mode:0o600});
+    await assert.rejects(loadTrustedEngineerServiceConfig(configPath),
+      /configuration denied/,
+      "cold-recovery mode must refuse missing signed plan");
+    const verified=await verifyProtectedR5EngineerHostConfig({
+      configPath,expectedSourceSha:SHA
+    });
+    assert.equal(verified.status,
+      "scripted_host_config_verified_only_not_deployed");
+    assert.equal(verified.active_planning_proven,false);
+    await writeFile(plan,'{"stale":"unsigned"}',{mode:0o600});
+    await assert.rejects(verifyProtectedR5EngineerHostConfig({
+      configPath,expectedSourceSha:SHA
+    }),/configuration denied/,
+    "pre-Planning mode must reject existing unsigned/stale review plan");
+    const cold=await loadTrustedEngineerServiceConfig(configPath);
+    assert.equal(typeof cold.approval.planningCheckpointStore.load,"function");
+  }finally{await f.close();}
+});
+
 test("R5 standalone host preflight never starts listeners without operator config",()=>{
   const script=new URL("../r5-scripted-host-deployment-preflight.mjs",import.meta.url);
   const env={PATH:process.env.PATH};
