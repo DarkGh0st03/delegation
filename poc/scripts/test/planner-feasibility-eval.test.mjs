@@ -74,8 +74,13 @@ test("the second software requirement has a distinct reference test anchor",()=>
   const x=example();
   const grant=x.proposal.plan.requested_permissions.find(p=>p.agent_id==="test");
   grant.resource=file("tests/backend/user.routes.test.ts");
-  assert.equal(evaluate(x,"department-directory").technical_preflight_pass,true);
-  assert.equal(evaluate(x,"account-suspension").technical_preflight_pass,false);
+  assert.equal(evaluate(x,"department-directory").criteria.find(c=>
+    c.key==="scenario_anchor_coverage").pass,true);
+  assert.equal(evaluate(x,"account-suspension").criteria.find(c=>
+    c.key==="scenario_anchor_coverage").pass,false);
+  // A different valid file strategy must not be misclassified as an
+  // authorization/preflight failure solely because of reference anchors.
+  assert.equal(evaluate(x,"account-suspension").technical_preflight_pass,true);
 });
 
 test("missing trace or unrecognized scenario fails explicitly",()=>{
