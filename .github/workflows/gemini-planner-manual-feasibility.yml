@@ -48,12 +48,14 @@ jobs:
       github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' &&
       github.run_attempt == 1
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # 15-minute Planner budget plus installation, tests and artifact upload.
+    timeout-minutes: 25
     env:
       PLANNER_SCENARIO: ${{ inputs.scenario }}
       PLANNER_EXECUTION_MODE: ${{ inputs.execution_mode }}
       PLANNER_AUTHORIZATION: ${{ inputs.authorization }}
       DELEGATION_PLANNER_MODEL: gemini-3.8-flash
+      # Planner fixture pins MEDIUM and bounded 96 turns, 64 reads, 15 minutes.
       DELEGATION_PLANNER_OUTPUT_DIR: /tmp/planner-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout selected development branch without persisted credentials
