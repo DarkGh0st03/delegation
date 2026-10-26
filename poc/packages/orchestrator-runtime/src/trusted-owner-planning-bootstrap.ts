@@ -11,6 +11,11 @@
  * fence its read-only phase and attempt native revocation. A rejected
  * retirement is MANUAL RECONCILIATION, never an automatic retry.
  */
+import {
+  DEFAULT_PLANNER_SESSION_MS,DEFAULT_ENGINEER_REVIEW_MS,
+  MAX_PRELIMINARY_ROOT_SECONDS,MAX_ENGINEER_REVIEW_MS,
+  TRUSTED_PLANNING_HANDOFF_MARGIN_MS
+} from "../../plan-contracts/src/planning-limits.mjs";
 import {isDeepStrictEqual} from "node:util";
 import {TrustedPlanningRecoveryStore}
   from "./trusted-planning-recovery-store.ts";
@@ -71,6 +76,26 @@ export async function startOwnerControlledPlanningReview(
      !config.gateway?.adapterToken||
      !config.backendPrivateKeyPem||!config.backendKeyId)
     refuse("independent Planning components and idle Coordinator required");
+  // A 15-minute inference ceiling cannot consume the entire provisional
+  // credential's lifetime: Engineer review and signed handoff need their
+  // OWN bounded time after a proposal. Reject undersized or stale roots
+  // BEFORE beginning Gitea Planning or issuing any preliminary DC.
+  const modelBudget=config.planner.maxPlanningMs??DEFAULT_PLANNER_SESSION_MS;
+  const reviewBudget=config.checkpointLifetimeMs??DEFAULT_ENGINEER_REVIEW_MS;
+  const root=config.preliminaryRoot;
+  const notBefore=Date.parse(root?.valid_from??"");
+  const elapsed=Date.now()-notBefore;
+  if(!Number.isSafeInteger(modelBudget)||modelBudget<1000||
+     modelBudget>DEFAULT_PLANNER_SESSION_MS||
+     !Number.isSafeInteger(reviewBudget)||reviewBudget<1000||
+     reviewBudget>MAX_ENGINEER_REVIEW_MS||
+     !Number.isSafeInteger(root?.validity_seconds)||
+     root.validity_seconds<1||
+     root.validity_seconds>MAX_PRELIMINARY_ROOT_SECONDS||
+     !Number.isFinite(notBefore)||elapsed< -60_000||
+     root.validity_seconds*1000-Math.max(0,elapsed)<
+       modelBudget+reviewBudget+TRUSTED_PLANNING_HANDOFF_MARGIN_MS)
+    refuse("preliminary credential lacks independent Planning, Engineer review and handoff time");
   preliminaryReadPermissions(config.snapshot);
   config.reviewPlanFile?.assertCheckpointStore(config.checkpointStore);
   config.coordinator.assertPlanningRecoveryStore(config.planningRecovery);
