@@ -401,3 +401,46 @@ authorized infrastructure experiment must explicitly verify the live
 Gateway IPC, real Rust credential issuance/revocation, independently
 signed Engineer review, authorized DAG and three-role Gitea/Docker
 effects before claiming complete feasibility.
+
+
+## R5E — Owner-only continuation from human approval to paid signed Execution
+
+The protected Gemini owner launcher now offers an **explicit, separate**
+`runApprovedGeminiDag(input)` method after it has produced a persisted
+backend-signed Planning checkpoint and started the Engineer review host.
+
+* The original same-process Coordinator, planning checkpoint store, review
+  gate, protected Gemini API key, original Gateway base URL and Adapter
+  bearer are **not owner-overridable**. They are taken from the private
+  original Planning assembly.
+* The owner can supply only a one-use candidate GitHub run ID, candidate
+  operational credential, three distinct localhost A2A ports, three
+  separately scoped local role tokens, a private Task transport and
+  bounded Status List allocation data. Unknown fields, shared role tokens,
+  mismatched Gateway URLs, model-selected identities and non-loopback
+  destination URLs are rejected before starting the handoff.
+* Before consuming GitHub admission, the launcher reloads the exact
+  backend-signed checkpoint and verifies the genuine independently signed
+  Engineer decision against the original plan digest and permission set.
+  If the Engineer has not approved the plan, paid DAG execution is denied.
+* The existing `runReviewedApprovedDagWithGateway` then enforces fresh
+  one-use GitHub OIDC/HMAC and REST corroboration, exact protected model
+  budgets, operational root issuance only after confirmed read-root
+  retirement, signed task mapping, native delegated child credentials,
+  Gateway/Rust/OPA tool enforcement, real three-role ADK/A2A transport,
+  Gitea/Docker evidence and confirmed terminal root retirement.
+* Neither starting the owner host nor loading this bridge signs a plan,
+  consumes the OIDC receipt, issues an operational credential or invokes
+  any paid Agent model. Paid inference can occur only when separately
+  authorized and the actual trusted runtime executes.
+* The gateway origin, source SHA, Engineer DID, plan digest and Coordinator
+  cannot be accepted from remote JSON, A2A, MCP, GitHub workflow inputs,
+  or model-generated arguments.
+
+**Verification boundary:** CI for R5E uses zero-provider, pure binding
+and denied-start tests. It does **not** prove a successful paid model
+end-to-end run, a privately deployed Engineer Host, external EVM
+revocation, or authenticated live GitHub/A2A/Gitea effects in one trial.
+An independent operator must establish those in a separately approved
+integration experiment. No additional Gemini charges are authorized
+by the existence of this module.
