@@ -11,6 +11,8 @@ import {loadTrustedEngineerServiceConfig,
   prepareConfiguredOwnerEngineerBootstrap,
   prepareConfiguredR5ScriptedEngineerBootstrap}
   from "../../apps/orchestrator/src/trusted-engineer-service.mjs";
+import {R5ScriptedNoProviderPlanningModel}
+  from "../../packages/orchestrator-runtime/src/trusted-r5-scripted-planning-model.ts";
 
 const SHA="a".repeat(40);
 const REF="refs/heads/refactor/post-prof-plan-contracts-20261021";
@@ -243,6 +245,30 @@ test("R5 pre-Planning host preflight requires absent plan and real owner-protect
     });
     assert.equal(typeof owner.start,"function");
     assert.equal(typeof owner.planningCheckpointStore.load,"function");
+    await assert.rejects(owner.start({
+      planner:{model:{model:"gemini-paid"}}
+    }),/requires bounded no-provider Planning model/);
+    await assert.rejects(owner.start({
+      planner:{model:{model:"gemini-paid"}}
+    }),/single-use/);
+    const ownerValid=await prepareConfiguredR5ScriptedEngineerBootstrap(configPath,{
+      expectedSourceSha:SHA
+    });
+    const snapshot={session_id:"r5-pending-session",
+      repository:cfg.approval.repository,
+      base_revision:cfg.approval.expectedBaseRevision,
+      directories:["","src","tests"],
+      files:["src/backend.ts","src/frontend.ts"]};
+    const model=new R5ScriptedNoProviderPlanningModel({
+      snapshot,workBranch:"feature/scripted-test",
+      edits:{backend:["src/backend.ts"],frontend:["src/frontend.ts"]},
+      newTestFile:"tests/status.test.ts"
+    });
+    await assert.rejects(ownerValid.start({
+      snapshot,checkpointStore:ownerValid.planningCheckpointStore,
+      planner:{model,snapshot,workBranch:"feature/scripted-test"},
+      coordinator:{phase:"idle"}
+    }),/owner Planning and Engineer session pins must be identical/);
     await assert.rejects(prepareConfiguredR5ScriptedEngineerBootstrap(configPath,{
       expectedSourceSha:"invalid"
     }),/R5 scripted owner source SHA pin required/);

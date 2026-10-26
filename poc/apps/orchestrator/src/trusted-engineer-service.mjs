@@ -363,8 +363,31 @@ export async function prepareConfiguredR5ScriptedEngineerBootstrap(
   if(typeof expectedSourceSha!=="string"||
      !/^[a-f0-9]{40}$/u.test(expectedSourceSha))
     throw Error("R5 scripted owner source SHA pin required");
-  return prepareConfiguredOwnerEngineerBootstrap(configPath,{
+  const prepared=await prepareConfiguredOwnerEngineerBootstrap(configPath,{
     expectedScriptedSourceSha:expectedSourceSha,
     ...(operationalRecovery===undefined?{}:{operationalRecovery})
+  });
+  // R5 is a ZERO-BILLING infrastructure exercise, not an unrestricted
+  // operator-model selection. An arbitrary BaseLlm may silently reach a
+  // paid endpoint during Planning BEFORE the Engineer can approve anything.
+  // Admit only the dedicated bounded, owner-intent scripted ADK model.
+  const {isBoundR5NoProviderPlanningModel}=await import(
+    "../../../packages/orchestrator-runtime/src/trusted-r5-scripted-planning-model.ts");
+  let attempted=false;
+  return Object.freeze({
+    planningCheckpointStore:prepared.planningCheckpointStore,
+    operationalRecovery:prepared.operationalRecovery,
+    start:async planning=>{
+      if(attempted)
+        throw Error("R5 scripted owner Planning is single-use");
+      attempted=true; // reserve before any possible provider/root effect
+      if(!planning||typeof planning!=="object"||
+         !isBoundR5NoProviderPlanningModel(
+           planning.planner?.model,planning.snapshot,
+           planning.planner?.workBranch
+         )||planning.planner?.snapshot!==planning.snapshot)
+        throw Error("R5 scripted owner requires bounded no-provider Planning model tied to the original snapshot");
+      return prepared.start(planning);
+    }
   });
 }

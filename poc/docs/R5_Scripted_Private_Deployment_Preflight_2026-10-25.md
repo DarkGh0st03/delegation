@@ -245,3 +245,28 @@ The tests do NOT deploy or start the owner process. The operator still
 must supply and manually authorize the genuine Engineered-approved DAG
 and the real private runner/Gateway/Gitea environment. Running an ADK
 paid provider is still forbidden for this no-charge R5 profile.
+
+## Bounded ADK Planning without model-provider charges
+
+R5 now requires a locally constructed **R5ScriptedNoProviderPlanningModel**
+at the original owner-controlled Planning startup. This is a real Google
+ADK BaseLlm class, but has no outbound model connection. It emits two
+read_file FunctionTool requests against the original Gitea snapshot using
+the ordinary pinned Gateway/Rust/OPA Planning read port, followed by a
+deterministic, reviewable five-Task proposal:
+branch → backend/frontend → test → Pull Request.
+
+The owner supplies the signed Gitea inventory, reviewed feature branch,
+two separate existing source paths, and one new regression test path in a
+known directory. Unsupported source paths, overlapping writes and unsafe
+test paths are refused. Plan compilation, DID identity, authorization,
+the Engineer's independent Ed25519 signature and final execution are
+still verified separately. This is an infrastructure workflow test, not
+evidence that an LLM autonomously created a plan.
+
+The R5 owner bootstrap now enforces this model's in-process identity and
+snapshot/branch binding BEFORE any preliminary root issuance. A paid
+Gemini BaseLlm, fake model-like object, or Planner bound to a different
+Gitea snapshot fails closed. Start remains a one-use operation. The
+non-R5 general owner bootstrap is unchanged, and cannot be used as
+evidence that the scripted R5 run is free of model charges.

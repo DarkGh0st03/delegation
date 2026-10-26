@@ -142,6 +142,16 @@ const SUITES=Object.freeze([
     title:"R5 pre-Planning host preflight requires absent plan and real owner-protected settings"
   },
   {
+    id:"scripted_zero_billing_planning_model",
+    path:"poc/packages/orchestrator-runtime/test/trusted-r5-scripted-planning-model.test.ts",
+    title:"R5 bounded no-provider ADK model produces original-snapshot scoped plan after genuine Gateway-shaped reads"
+  },
+  {
+    id:"scripted_paid_model_refused",
+    path:"poc/packages/orchestrator-runtime/test/trusted-r5-scripted-planning-model.test.ts",
+    title:"R5 rejects fee-capable BaseLlm and altered snapshot/branch binding"
+  },
+  {
     id:"scripted_owner_host_pinned_tls_preflight",
     path:"poc/scripts/test/r5-scripted-host-deployment-preflight.test.mjs",
     title:"R5 valid pinned scripted Engineer deployment is configuration-only, never operational GO"
