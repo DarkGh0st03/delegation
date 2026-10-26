@@ -117,6 +117,16 @@ const SUITES=Object.freeze([
     title:"R5 final GitHub revalidation accepts a still-active job before root retirement"
   },
   {
+    id:"scripted_runner_mtls_client_leaf",
+    path:"poc/scripts/test/r5-scripted-runner-tls-preflight.test.mjs",
+    title:"R5 protected private runner accepts valid clientAuth TLS config but never declares connected"
+  },
+  {
+    id:"scripted_runner_client_tls_before_oidc",
+    path:"poc/packages/orchestrator-runtime/test/trusted-private-scripted-runner-oidc.test.ts",
+    title:"R5 private hold verifies protected client TLS BEFORE requesting OIDC"
+  },
+  {
     id:"scripted_runner_inline_install_check_before_oidc",
     path:"poc/packages/orchestrator-runtime/test/trusted-private-scripted-runner-oidc.test.ts",
     title:"scripted runner hold rejects unverified local source before OIDC"

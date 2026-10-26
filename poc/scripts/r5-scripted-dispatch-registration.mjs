@@ -95,6 +95,11 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
     await verifyProtectedScriptedInstallation({
       expectedSourceSha:pins.expectedSourceSha
     });
+    const {verifyR5ScriptedRunnerTlsReadiness}=await import(
+      "./r5-scripted-runner-tls-preflight.mjs");
+    verifyR5ScriptedRunnerTlsReadiness(pins,{
+      expectedSourceSha:pins.expectedSourceSha
+    });
     const result=await verifyR5ScriptedDispatchRegistration({pins});
     process.stdout.write("R5 scripted workflow registration verified for "+
       result.source_sha+"; deployment and R5 GO NOT established\n");

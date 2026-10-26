@@ -136,3 +136,30 @@ Operator still needs the original in-process
 reviewed owner-only execution driver, independently authenticated Engineer
 Ed25519 approval, real runner admission and verified root retirement.
 Simply launching the existing cold-recovery CLI does not establish that.
+
+## Independently pinned scripted runner TLS preflight
+
+The separate private runner now also verifies its own protected mTLS client
+identity, in both the registration-preflight command and the final hold
+process before any OIDC request. It validates the protected runner key
+matches its certificate, the leaf is directly issued by the configured
+client CA, the leaf and CA are valid on the test date, the leaf has explicit
+clientAuth EKU, the host's pinned server fingerprint is syntactically valid
+and does not reuse the client leaf, and the fixed private Engineer endpoint
+and exact source/repository/workflow pins match the reviewed profile.
+
+It is possible to test these local checks separately on the protected
+private runner, without connecting to GitHub or the Engineer Host:
+
+```bash
+export DELEGATION_SCRIPTED_RUNNER_OIDC_CONFIG=/path/to/owner-protected/scripted-runner.json
+export DELEGATION_R5_EXPECTED_SOURCE_SHA=<40-character-reviewed-commit>
+node --experimental-strip-types poc/scripts/r5-scripted-runner-tls-preflight.mjs
+```
+
+This command returns only a sanitized readiness marker. It does not prove
+the remote host's identity or certificate fingerprint, test actual mTLS
+reachability, issue a GitHub OIDC token, complete a signed DAG or confer
+execution authorization. The real mTLS handshake and independently
+pinned Engineer host remain mandatory. Do not copy the runner's client
+private key into an Engineer host process for cross-host verification.

@@ -162,6 +162,17 @@ test("scripted runner hold rejects unverified local source before OIDC",async()=
     "same-process installed SHA guard must precede any OIDC token submission");
 });
 
+test("R5 private hold verifies protected client TLS BEFORE requesting OIDC",async()=>{
+  const {readFile}=await import("node:fs/promises");
+  const code=await readFile(new URL(
+    "../../../apps/orchestrator/src/hold-private-scripted-github-session.mjs",
+    import.meta.url),"utf8");
+  const tls=code.indexOf("verifyR5ScriptedRunnerTlsReadiness(trusted,");
+  const submit=code.indexOf("await submitProtectedPrivateScriptedRunnerAdmission(");
+  assert.ok(tls>=0&&submit>tls,
+    "verified runner certificate and mTLS key must precede OIDC submission");
+});
+
 test("privileged self-hosted workflow never checks out mutable branch code",async()=>{
   const {readFile}=await import("node:fs/promises");
   const yaml=await readFile(new URL(

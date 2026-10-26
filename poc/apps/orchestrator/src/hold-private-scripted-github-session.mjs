@@ -9,6 +9,8 @@ import {loadProtectedScriptedRunnerOidcConfig,submitProtectedPrivateScriptedRunn
   from "./trusted-private-scripted-runner-oidc.mjs";
 import {verifyProtectedScriptedInstallation}
   from "../../../scripts/r5-scripted-install-integrity.mjs";
+import {verifyR5ScriptedRunnerTlsReadiness}
+  from "../../../scripts/r5-scripted-runner-tls-preflight.mjs";
 import {awaitTrustedScriptedPrivateRunCompletion}
   from "../../../packages/orchestrator-runtime/src/trusted-scripted-github-oidc-submit.ts";
 
@@ -18,6 +20,9 @@ try{
   const trusted=await loadProtectedScriptedRunnerOidcConfig(
     process.env.DELEGATION_SCRIPTED_RUNNER_OIDC_CONFIG);
   await verifyProtectedScriptedInstallation({
+    expectedSourceSha:trusted.expectedSourceSha
+  });
+  verifyR5ScriptedRunnerTlsReadiness(trusted,{
     expectedSourceSha:trusted.expectedSourceSha
   });
   const admitted=await submitProtectedPrivateScriptedRunnerAdmission();
