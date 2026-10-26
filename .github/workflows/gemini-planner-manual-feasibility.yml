@@ -15,12 +15,13 @@ on:
           - department-directory
           - suspension-feedback
       execution_mode:
-        description: "dry-run = free; gemini-paid = one Gemini Planner attempt"
+        description: "dry-run = free; api-check = metadata GET (no generation); gemini-paid = one planning attempt"
         type: choice
         required: true
         default: dry-run
         options:
           - dry-run
+          - api-check
           - gemini-paid
       authorization:
         description: "For gemini-paid type exactly I AUTHORIZE GEMINI API CHARGES"
@@ -72,6 +73,9 @@ jobs:
             dry-run)
               echo "Free fixture inspection; no provider key will be injected."
               ;;
+            api-check)
+              echo "Read-only Google model metadata GET; no content generation."
+              ;;
             gemini-paid)
               if [[ "$PLANNER_AUTHORIZATION" != 'I AUTHORIZE GEMINI API CHARGES' ]]; then
                 echo "::error::Exact manual Gemini billing consent is required."
@@ -105,7 +109,7 @@ jobs:
         run: node poc/scripts/run-gemini-planner-fixture.mjs --dry-run "$PLANNER_SCENARIO"
 
       - name: Check Gemini Secret is present BEFORE any paid request
-        if: inputs.execution_mode == 'gemini-paid'
+        if: inputs.execution_mode != 'dry-run'
         env:
           GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
         shell: bash
@@ -116,6 +120,12 @@ jobs:
             exit 1
           fi
           echo "Gemini Secret present; value never printed."
+
+      - name: Verify model metadata and key WITHOUT generation
+        if: inputs.execution_mode == 'api-check' || inputs.execution_mode == 'gemini-paid'
+        env:
+          GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+        run: node poc/scripts/check-gemini-planner-model-access.mjs --check-model-access
 
       - name: ONE paid ADK Gemini Planning attempt (read-only fixture)
         if: inputs.execution_mode == 'gemini-paid'
