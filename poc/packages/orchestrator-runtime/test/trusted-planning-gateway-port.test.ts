@@ -49,6 +49,8 @@ import {prepareConfiguredOwnerEngineerBootstrap}
   from "../../../apps/orchestrator/src/trusted-engineer-service.mjs";
 import {TrustedReviewedPlanFile}
   from "../src/trusted-reviewed-plan-file.ts";
+import {R5ScriptedNoProviderPlanningModel}
+  from "../src/trusted-r5-scripted-planning-model.ts";
 
 const SHA="a".repeat(40),FILE="src/billing/invoice.ts";
 const SECOND_FILE="src/billing/tax.ts";
@@ -607,6 +609,76 @@ async function makeOwnerReviewFixture(options:{
     await rm(plans,{recursive:true,force:true});
   }};
 }
+
+test("R5 zero-provider Planning issues original read-only root, performs two Gateway VP/OPA Gitea reads and persists signed human-review checkpoint",async()=>{
+  const f=await makeOwnerReviewFixture();
+  try{
+    const model=new R5ScriptedNoProviderPlanningModel({
+      snapshot,workBranch:"feature/invoice-sort",
+      edits:{backend:[FILE],frontend:[SECOND_FILE]},
+      newTestFile:"src/billing/status.spec.ts"
+    });
+    const cfg=f.makeConfig();
+    const packet=await startOwnerControlledPlanningReview({
+      ...cfg,planner:{...cfg.planner,model}
+    });
+    assert.equal(packet.status,"awaiting_engineer_signature");
+    assert.equal(packet.verified_source_reads,2);
+    assert.equal(packet.base_revision,SHA);
+    assert.deepEqual(packet.plan.tasks.map(t=>t.id),
+      ["branch","backend","frontend","test","pr"]);
+    assert.deepEqual(packet.plan.requested_permissions
+      .filter(p=>p.operation==="update_file").map(p=>p.agent_id),
+      ["backend","frontend"]);
+    const saved=await f.store.load();
+    assert.equal(saved.proposal.digest,packet.plan_digest);
+    assert.deepEqual(saved.proposal.plan,packet.plan);
+    assert.deepEqual(JSON.parse(await readFile(f.planFilePath,"utf8")),
+      packet.plan);
+    assert.equal(f.gate.reviewPacket().plan_digest,packet.plan_digest);
+    assert.deepEqual({
+      issued:f.observed.issued,revoked:f.observed.revoked,
+      prepared:f.observed.prepare,adapter:f.observed.adapter,
+      verified:f.observed.verification,opa:f.observed.policy,
+      executed:f.observed.execute
+    },{
+      issued:1,revoked:0,prepared:2,adapter:2,verified:2,opa:2,
+      executed:2
+    });
+    // No mock Engineer signature is created. A correct digest is not
+    // sufficient to activate independent operational credentials.
+    await assert.rejects(
+      f.gate.loadAuthenticatedApproval(snapshot.session_id),
+      (error:any)=>error.code==="ENOENT");
+    assert.equal(f.coordinator.phase,"planning");
+    await f.coordinator.closePlanning();
+    assert.equal(f.coordinator.phase,"closed");
+    assert.equal(f.observed.revoked,1);
+    await f.planningRecovery.assertClean();
+  }finally{await f.cleanup();}
+});
+
+test("R5 denied second Gateway Planning read never stages a partial signed Engineer plan",async()=>{
+  const f=await makeOwnerReviewFixture({tamperPermission:true});
+  try{
+    const model=new R5ScriptedNoProviderPlanningModel({
+      snapshot,workBranch:"feature/invoice-sort",
+      edits:{backend:[FILE],frontend:[SECOND_FILE]},
+      newTestFile:"src/billing/status.spec.ts"
+    });
+    const cfg=f.makeConfig();
+    await assert.rejects(startOwnerControlledPlanningReview({
+      ...cfg,planner:{...cfg.planner,model}
+    }));
+    assert.equal(f.coordinator.phase,"closed");
+    assert.equal(f.observed.issued,1);
+    assert.equal(f.observed.revoked,1);
+    await assert.rejects(f.store.load(),(error:any)=>error.code==="ENOENT");
+    await assert.rejects(readFile(f.planFilePath,"utf8"),
+      (error:any)=>error.code==="ENOENT");
+    await f.planningRecovery.assertClean();
+  }finally{await f.cleanup();}
+});
 
 test("owner bootstrap issues one read-only root, traverses Gateway and persists signed review",async()=>{
   const f=await makeOwnerReviewFixture();

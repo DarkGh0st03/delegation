@@ -373,3 +373,26 @@ socket and real durable Gateway Planning registry are connected to
 the original idle Coordinator, and denies missing durable capabilities,
 mismatched Gitea SHA/repository, mismatched backend signer and malformed
 paths. This fixture uses no paid model and does not start a Planning root.
+
+## R5 — Offline original Planning: source reads and signed checkpoint
+
+A new regression uses the **real owner-controlled Planning bootstrap**
+and original Coordinator with the new bounded, no-provider Google ADK
+model. It exercises two distinct scoped `read_file` calls through the
+existing Gateway prepare/execute implementation, pinned Gitea read
+executor, VP verification and OPA interfaces, then validates the
+immutable five-task plan, backend Ed25519-signed checkpoint, replay-safe
+checkpoint store and owner-only Engineer review file. It checks that
+no Engineer approval receipt exists and confirms provisional root
+revocation on closure. A separate denial test requires native revocation
+and absence of both signed checkpoint and review file after failed
+Gateway proof binding.
+
+**Evidence boundary:** these integration tests explicitly stub the
+Rust Adapter, VP verifier, OPA and Gitea transport using deterministic
+offline fixtures, as indicated in the suite source. They prove the
+original Planning/checkpoint control flow, **not** a deployed
+physical host, actual on-chain revocation, human Ed25519 approval
+or an authenticated GitHub runner. Operator acceptance still needs
+the full externally provisioned real transport, signed approval and
+real A2A DAG in the same persistent host session.

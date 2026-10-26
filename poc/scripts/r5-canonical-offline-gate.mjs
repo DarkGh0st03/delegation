@@ -147,6 +147,16 @@ const SUITES=Object.freeze([
     title:"R5 bounded no-provider ADK model produces original-snapshot scoped plan after genuine Gateway-shaped reads"
   },
   {
+    id:"r5_original_gateway_to_backend_signed_checkpoint",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts",
+    title:"R5 zero-provider Planning issues original read-only root, performs two Gateway VP/OPA Gitea reads and persists signed human-review checkpoint"
+  },
+  {
+    id:"r5_gateway_denial_never_materializes_review",
+    path:"poc/packages/orchestrator-runtime/test/trusted-planning-gateway-port.test.ts",
+    title:"R5 denied second Gateway Planning read never stages a partial signed Engineer plan"
+  },
+  {
     id:"r5_real_owner_gateway_ipc_planning_assembly",
     path:"poc/apps/orchestrator/test/trusted-r5-scripted-owner-assembly.test.mjs",
     title:"R5 original owner assembles SAME Coordinator with real durable Gateway IPC, no Planning root or approval"
