@@ -579,7 +579,8 @@ async function makeOwnerReviewFixture(options:{
     filePath:planFilePath,checkpointStore:store
   });
   const makeConfig=()=>({
-    coordinator:f.coordinator,snapshot,preliminaryRoot:f.root(),
+    coordinator:f.coordinator,snapshot,
+    preliminaryRoot:{...f.root(),validity_seconds:2700},
     planner:{model:new ScriptedPlanner(),snapshot,
       requirement:"Sort invoices by due date",planId:"invoice-proposal-v1",
       workBranch:"feature/invoice-sort",agents},
@@ -659,6 +660,20 @@ test("R5 zero-provider Planning issues original read-only root, performs two Gat
     assert.equal(f.coordinator.phase,"closed");
     assert.equal(f.observed.revoked,1);
     await f.planningRecovery.assertClean();
+  }finally{await f.cleanup();}
+});
+
+test("owner refuses a provisional root that cannot cover both long Planning and human review",async()=>{
+  const f=await makeOwnerReviewFixture();
+  try{
+    const cfg=f.makeConfig();
+    await assert.rejects(startOwnerControlledPlanningReview({
+      ...cfg,preliminaryRoot:{...cfg.preliminaryRoot,validity_seconds:900}
+    }),/lacks independent Planning, Engineer review and handoff time/);
+    assert.equal(f.coordinator.phase,"idle");
+    assert.equal(f.observed.issued,0);
+    assert.equal(f.observed.adapter,0);
+    assert.equal(f.observed.prepare,0);
   }finally{await f.cleanup();}
 });
 
