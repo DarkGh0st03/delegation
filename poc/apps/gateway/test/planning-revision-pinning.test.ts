@@ -176,7 +176,7 @@ test("stopped/expired sessions block prepared requests before provider I/O",asyn
 
 test("Gitea registration rejects malformed SHA, duplicate sessions and long TTL",async()=>{
   const a=fixture();
-  await assert.rejects(a.revisions.begin(taskId,900_001),/Invalid trusted Planning session/);
+  await assert.rejects(a.revisions.begin(taskId,2_700_001),/Invalid trusted Planning session/);
   const promise=a.revisions.begin(taskId,1000);
   await assert.rejects(a.revisions.begin(taskId,1000),
     (e:unknown)=>e instanceof GatewayError&&e.code==="planning_session_exists");
