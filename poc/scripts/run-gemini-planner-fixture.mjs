@@ -217,8 +217,21 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
     status="unapproved_isolated_proposal";
     return {status,report};
   }catch(error){
-    await persistJson(outputDir,"failure-diagnostics.json",
-      classifyPlannerProbeFailure(error));
+    const classified=classifyPlannerProbeFailure(error);
+    // Prefer the provider/ADK boundary's sanitized status over the generic
+    // "no verified read-only grounded proposal" exception after Runner.runAsync.
+    const signal=observations.find(e=>e.kind==="model_failure"&&
+      e.phase==="delegate_exception")??
+      observations.find(e=>e.kind==="model_failure"&&
+      e.phase==="model_error_response")??
+      observations.find(e=>e.kind==="model_failure"&&
+      e.phase==="adk_runner_error");
+    const diagnostics=signal?{
+      ...classified,phase:signal.phase,
+      cause:signal.category,http_status:signal.http_status,
+      failure_from:"model_boundary"
+    }:{...classified,failure_from:"planner_outer_boundary"};
+    await persistJson(outputDir,"failure-diagnostics.json",diagnostics);
     throw error;
   }finally{
     // Preserve ONLY bounded observer metadata even when Gemini is unable to
