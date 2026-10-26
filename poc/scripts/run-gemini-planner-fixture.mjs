@@ -23,7 +23,7 @@ export const FIXTURE_SCENARIOS=Object.freeze({
     gradeAs:"department-directory"
   },
   "suspension-feedback":{
-    requirement:"Improve the existing IAM Console suspension and reactivation user experience: display accessible success and error feedback after these actions while preserving the current backend lifecycle contract and adding regression tests.",
+    requirement:"Improve the accessibility of IAM Console suspension and reactivation feedback: the existing success message must be announced non-interruptively to assistive technology, and an action failure must be announced assertively. Keep the existing visible messages and backend lifecycle/API unchanged, with frontend regression tests.",
     workBranch:"feature/experiment-suspension-feedback",
     gradeAs:"suspension-feedback"
   }
@@ -50,10 +50,16 @@ export function makeIsolatedPlanningFixture(scenario){
   if(scenario==="department-directory"&&
       files["apps/backend/src/users/user.service.ts"].includes("listUsersByDepartment("))
     throw Error("baseline already implements the department feature");
-  if(scenario==="suspension-feedback"&&
-      files["apps/frontend/src/pages/UserDetailPage.tsx"].includes(
-        'className="success-message"'))
-    throw Error("baseline already includes the tested feedback feature");
+  if(scenario==="suspension-feedback"){
+    const page=files["apps/frontend/src/pages/UserDetailPage.tsx"];
+    if(!page.includes('className="success-message"')||
+       !page.includes('className="error-message"'))
+      throw Error("accessibility fixture requires existing visible feedback");
+    // Status/alert semantic roles are ABSENT, though visible text already
+    // exists. Avoid giving the model any specific file-path solution.
+    if(/\brole\s*=\s*["'](?:status|alert)["']/u.test(page))
+      throw Error("baseline already includes the requested accessibility semantics");
+  }
 
   const paths=entries.map(([p])=>p);
   const dirs=new Set([""]);
