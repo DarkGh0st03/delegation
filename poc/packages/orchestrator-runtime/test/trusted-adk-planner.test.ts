@@ -432,3 +432,36 @@ test("trusted provider denial emits metadata-only failure without a draft",async
   assert.ok(!JSON.stringify(events).includes("PRIVATE_PROVIDER_BYTES"));
   assert.ok(!events.some(e=>e.kind==="proposal"));
 });
+
+test("optional ADK provider token reports are captured once per call without source text",async()=>{
+  class UsageScripted extends Scripted {
+    override async *generateContentAsync(r:LlmRequest):AsyncGenerator<LlmResponse,void>{
+      for await(const response of super.generateContentAsync(r)){
+        yield {...response,usageMetadata:{
+          promptTokenCount:20,candidatesTokenCount:8,
+          thoughtsTokenCount:2,totalTokenCount:30
+        }};
+      }
+    }
+  }
+  const model=new UsageScripted({branch:"main",path:FILE},draft());
+  const events:Array<Record<string,unknown>>=[];
+  const result=await new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,onObservation(event){events.push({...event});},
+    readPort:{async invoke(tool:string){
+      return {provider:"gitea",performed:true,tool,branch:"main",
+        path:FILE,revision:SNAPSHOT.base_revision,
+        content:"PRIVATE_SOURCE_NEVER_EXPORTED"};
+    }}
+  }).propose();
+  assert.equal(result.status,"unapproved_proposal");
+  const usages=events.filter(e=>e.kind==="model_usage");
+  assert.deepEqual(usages.map(x=>({turn:x.turn,input:x.input_tokens,
+    output:x.output_tokens,total:x.total_tokens,thought:x.thought_tokens})),[
+      {turn:1,input:20,output:8,total:30,thought:2},
+      {turn:2,input:20,output:8,total:30,thought:2}
+    ]);
+  assert.ok(usages.every(x=>x.source==="provider_reported"));
+  assert.ok(!JSON.stringify(events).includes("PRIVATE_SOURCE_NEVER_EXPORTED"));
+  assert.ok(!JSON.stringify(events).includes(cfg.requirement));
+});
