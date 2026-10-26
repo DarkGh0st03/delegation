@@ -5,6 +5,8 @@
  * A2A tasks or model-provider calls are issued during assembly.
  */
 import {createPrivateKey,createPublicKey} from "node:crypto";
+import {BaseLlm} from "@google/adk";
+import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
 import {isDeepStrictEqual} from "node:util";
 import {TrustedPlanIpcClient}
   from "../../gateway/src/trusted-plan-ipc.ts";
@@ -61,11 +63,13 @@ function freezeDeep(value){
   }
   return value;
 }
-/** Read-only network handshake with actual owner-only Gateway socket. */
-export async function assembleProtectedR5ScriptedOwnerPlanning({
+/** Reusable SAME Coordinator/Gateway/approval assembly. No model inference here.
+ * Only trusted owner entrypoints can select the model and fixed budgets. */
+async function assembleProtectedOwnerPlanningCore({
   config,planningCheckpointStore,operationalRecovery,
-  snapshot,preliminaryRoot,edits,newTestFile,
-  requirement,planId,agents,gatewayBaseUrl,backendPrivateKeyPem
+  snapshot,preliminaryRoot,model,plannerLimits={},
+  requirement,planId,agents,gatewayBaseUrl,backendPrivateKeyPem,
+  status="owner_original_planning_assembled_not_started"
 }={}){
   const approval=config?.approval,recovery=config?.recovery,
     pins=config?.ownerPlanning;
@@ -82,6 +86,7 @@ export async function assembleProtectedR5ScriptedOwnerPlanning({
        !a.did.startsWith("did:")||typeof a.card_ref!=="string"||
        !a.card_ref.trim())||!localGateway(gatewayBaseUrl)||
      !preliminaryRoot||typeof preliminaryRoot!=="object"||
+     !(model instanceof BaseLlm)||
      !sameEd25519Key(backendPrivateKeyPem,pins.backendPublicKeyPem)||
      !separateHumanEngineerSigner(pins.backendPublicKeyPem,
        approval.publicKeyPem))
@@ -91,13 +96,9 @@ export async function assembleProtectedR5ScriptedOwnerPlanning({
   snapshot=freezeDeep(structuredClone(snapshot));
   agents=freezeDeep(structuredClone(agents));
   preliminaryRoot=freezeDeep(structuredClone(preliminaryRoot));
-  edits=freezeDeep(structuredClone(edits));
-  // Validate canonical Gitea inventory and role file intentions BEFORE
-  // touching a socket or issuing a preliminary root.
+  // The bound model gets a private frozen copy of the reviewed inventory,
+  // but never a credential, API bearer token or Engineer signing key.
   preliminaryReadPermissions(snapshot);
-  const model=new R5ScriptedNoProviderPlanningModel({
-    snapshot,workBranch:pins.expectedWorkBranch,edits,newTestFile
-  });
   const client=await TrustedPlanIpcClient.connect({
     socketPath:recovery.gatewaySocketPath,
     secretFile:recovery.gatewaySecretFile
@@ -146,11 +147,53 @@ export async function assembleProtectedR5ScriptedOwnerPlanning({
     planningRecovery,checkpointStore:planningCheckpointStore,
     backendKeyId:pins.backendKeyId,backendPrivateKeyPem,
     planner:Object.freeze({snapshot,requirement,planId,
-      workBranch:pins.expectedWorkBranch,agents,model}),
+      workBranch:pins.expectedWorkBranch,agents,model,...plannerLimits}),
     gateway:Object.freeze({gatewayBaseUrl,
       adapterBaseUrl:recovery.adapterBaseUrl,
       adapterToken:recovery.adapterToken})
   });
-  return Object.freeze({planning,coordinator,gateway:client,
-    status:"owner_r5_original_planning_assembled_not_started"});
+  return Object.freeze({planning,coordinator,gateway:client,status});
+}
+
+/** Zero-billing R5 selection is PINNED to an ADK model with no provider.
+ * Never accept an arbitrary BaseLlm from the R5 runner.
+ */
+export async function assembleProtectedR5ScriptedOwnerPlanning(input={}){
+  const {snapshot,config,edits,newTestFile}=input;
+  // Early fail-closed validation and source-path checks happen BEFORE IPC.
+  preliminaryReadPermissions(snapshot);
+  const model=new R5ScriptedNoProviderPlanningModel({
+    snapshot,workBranch:config?.ownerPlanning?.expectedWorkBranch,
+    edits,newTestFile
+  });
+  return assembleProtectedOwnerPlanningCore({
+    ...input,model,status:"owner_r5_original_planning_assembled_not_started"
+  });
+}
+
+/** Owner-selected real Gemini PLANNING assembly (NOT Execution).
+ * Model construction itself is non-billable; start(planning) is the
+ * separate, explicit and potentially billable owner action.
+ * This input is NEVER populated by GitHub workflow_dispatch, A2A, MCP or UI.
+ * The original signed Engineer review remains mandatory after Planning.
+ */
+export async function assembleProtectedOwnerGeminiPlanning(input={}){
+  if(input?.authorizationInput!=="I AUTHORIZE GEMINI API CHARGES"||
+     input?.modelName!=="gemini-3.8-flash"||
+     typeof input?.geminiApiKey!=="string"||
+     !input.geminiApiKey.trim())
+    deny("owner-selected Gemini Planning requires explicit paid consent, pinned model and private API key");
+  // No inference, source reads or API request during constructor/assembly.
+  // Fixed budgets match the successful isolated Gemini Planner feasibility.
+  const model=createGeminiAdkModel({
+    apiKey:input.geminiApiKey,model:input.modelName
+  });
+  return assembleProtectedOwnerPlanningCore({
+    ...input,model,
+    plannerLimits:{
+      maxModelTurns:96,maxModelCallMs:120000,maxOutputTokens:16384,
+      maxPlanningMs:900000,thinkingLevel:"MEDIUM"
+    },
+    status:"owner_gemini_planning_assembled_not_started"
+  });
 }
