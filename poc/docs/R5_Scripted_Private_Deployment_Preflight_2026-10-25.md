@@ -597,3 +597,34 @@ All reviewed pins must be reconfirmed if the default branch or source
 branch moves. A green offline mocked test cannot itself verify that
 the real PR is ready, nor can public repository access attest protected
 environment settings, runner integrity, or administrator bypass rules.
+
+## R5 — Durable, non-authoritative post-run evidence receipt
+
+The owner process now requires a dedicated 0700 evidence directory
+before it may use the **single-use** approved scripted DAG handoff.
+Set `DELEGATION_R5_EVIDENCE_DIRECTORY=/private/engineer/evidence`
+for the foreground owner launcher. It must exist and belong to the
+same service UID. Nothing is written at Planning time and no receipt
+is created for missing approval, aborted execution, incomplete Tasks,
+unconfirmed operational root retirement or a cancelled GitHub run.
+
+Only after `host.runReviewedScriptedApprovedDagWithGateway()` resolves,
+the owner checks the *same* session and signed Engineer plan digest,
+an exact one-to-one set of approved/completed task IDs and the
+original Coordinator's `closed` phase. It then atomically creates
+an exclusive 0600 `r5-scripted-run-<github-run-id>.json` file,
+refusing to overwrite another run's evidence. The payload carries
+the source SHA, manual GitHub run ID, signed-plan digest, authenticated
+Engineer DID and task IDs. It deliberately omits credential bodies,
+private keys, JWT, bearer tokens, model prompts and A2A artifact data.
+
+The receipt says `verified_complete_local_owner_observation` only:
+it is a *local owner-process observation*, not an independent signed
+third-party attestation and never an external R5 GO. This file alone
+cannot establish a remote runner's physical identity or provide
+cryptographic evidence that the on-chain revocation was witnessed
+outside the original trusted host. Keep the corresponding GitHub logs,
+Engineer signature, Gateway/Rust/OPA traces and Gitea/Docker change
+evidence for the final dissertation appendix. Any missing or partial
+post-run receipt is **NO-GO** and requires manual reconciliation;
+never rerun the original admission or silently overwrite an artifact.

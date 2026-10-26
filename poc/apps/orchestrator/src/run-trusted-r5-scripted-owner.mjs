@@ -12,6 +12,9 @@ import {bindProtectedR5ScriptedExecution}
   from "./trusted-r5-scripted-execution-binding.mjs";
 import {assertR5AuthenticSignedReviewReady}
   from "./trusted-r5-scripted-review-readiness.mjs";
+import {assertR5EvidenceDirectory,verifyR5PostRunEvidence,
+  persistR5PostRunEvidence}
+  from "./trusted-r5-scripted-completion-evidence.mjs";
 
 const SHA=/^[a-f0-9]{40}$/u;
 function deny(){throw Error("R5 protected live owner input denied");}
@@ -83,7 +86,7 @@ export async function loadProtectedR5ScriptedOwnerInput(inputFile){
  * Gateway and native Adapter reconciliation; never simply retry the root.
  */
 export async function startProtectedR5ScriptedOwnerSession({
-  configPath,expectedSourceSha,inputFile
+  configPath,expectedSourceSha,inputFile,evidenceDirectory
 }={}){
   // Never start an Engineer signer, Coordinator or privileged listener
   // from a hosted/runner workflow; this is the separately owned host only.
@@ -140,11 +143,30 @@ export async function startProtectedR5ScriptedOwnerSession({
         assembly.planning,input);
       dispatchPreparing=true; // serialize across all awaits
       try{
-        await signedReviewReady();
+        const review=await signedReviewReady();
+        // R5 verified-complete evidence MUST have a protected durable
+        // destination BEFORE consuming a one-shot GitHub receipt.
+        await assertR5EvidenceDirectory(evidenceDirectory);
+        const staged=assembly.planning.reviewGate.reviewPacket();
+        const taskIds=staged.plan.tasks.map(task=>task.id);
         if(closed||assembly.coordinator.phase!=="planning")
           throw Error("R5 owner Planning closed during signature verification");
         dispatchAttempted=true; // reserve BEFORE consuming GitHub admission
-        return await host.runReviewedScriptedApprovedDagWithGateway(bound);
+        const completed=await host.runReviewedScriptedApprovedDagWithGateway(bound);
+        // This occurs only when the original host returned after the
+        // approved DAG and its native root/Gateway close() succeeded.
+        const witness=verifyR5PostRunEvidence({
+          runId:bound.runId,sourceSha:expectedSourceSha,
+          sessionId:assembly.planning.snapshot.session_id,
+          review,approvedTaskIds:taskIds,dagResult:completed,
+          coordinator:assembly.coordinator
+        });
+        const receipt=await persistR5PostRunEvidence(
+          evidenceDirectory,witness);
+        return Object.freeze({
+          ...completed,owner_completion_evidence:witness,
+          owner_completion_receipt:receipt
+        });
       }finally{
         dispatchPreparing=false;
       }
@@ -181,7 +203,8 @@ if(process.argv[1]&&import.meta.url===
   startPromise=startProtectedR5ScriptedOwnerSession({
     configPath:process.env.DELEGATION_ENGINEER_SERVICE_CONFIG,
     expectedSourceSha:process.env.DELEGATION_R5_EXPECTED_SOURCE_SHA,
-    inputFile:process.env.DELEGATION_R5_OWNER_INPUT_FILE
+    inputFile:process.env.DELEGATION_R5_OWNER_INPUT_FILE,
+    evidenceDirectory:process.env.DELEGATION_R5_EVIDENCE_DIRECTORY
   });
   try{
     active=await startPromise;

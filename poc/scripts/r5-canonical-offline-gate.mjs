@@ -232,6 +232,16 @@ const SUITES=Object.freeze([
     title:"R5 refuses unexpected installed SHA and dirty worktree"
   },
   {
+    id:"r5_verified_closure_only_after_exact_dag",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
+    title:"R5 post-run evidence is only available after exact original signed DAG and CLOSED Coordinator"
+  },
+  {
+    id:"r5_atomic_no_overwrite_owner_receipt",
+    path:"poc/apps/orchestrator/test/trusted-r5-scripted-completion-evidence.test.mjs",
+    title:"R5 local owner receipt is exclusive, 0600, no secrets and cannot overwrite same run"
+  },
+  {
     id:"r5_one_file_default_workflow_registration_pr_review",
     path:"poc/scripts/test/r5-scripted-registration-pr-audit.test.mjs",
     title:"R5 one-file draft registration PR audit verifies exact blob/base/source without merge, token or dispatch"

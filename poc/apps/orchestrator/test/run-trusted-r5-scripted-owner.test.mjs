@@ -256,6 +256,14 @@ test("R5 owner verifies real Engineer approval BEFORE consuming scripted GitHub 
   assert.ok(signed>=0&&reserve>signed&&consume>reserve,
     "valid human Ed25519 review must precede one-shot admission consumption");
   assert.match(body,/dispatchPreparing=true/);
+  const actual=body.indexOf("host.runReviewedScriptedApprovedDagWithGateway(bound)");
+  const check=body.indexOf("verifyR5PostRunEvidence({");
+  const persist=body.indexOf("persistR5PostRunEvidence(");
+  assert.ok(actual>0&&check>actual&&persist>check,
+    "a local verified-complete record must follow the real DAG and host close");
+  const protectedDir=body.indexOf("assertR5EvidenceDirectory(evidenceDirectory)");
+  assert.ok(protectedDir>=0&&protectedDir<reserve,
+    "pre-authorize durable evidence directory before consuming GitHub admission");
   assert.match(body,/finally\s*{\s*dispatchPreparing=false/);
   assert.match(source,/async reviewReadiness\(\)/);
 });
