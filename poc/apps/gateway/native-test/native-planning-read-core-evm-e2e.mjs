@@ -357,6 +357,7 @@ const root={
 };
 let issued=false,revoked=false;
 let pilotStage="setup",pilotModelTurns=0,pilotModelFailure="none";
+let pilotPlanningRejection=null;
 try{
   const started=await coordinator.beginPlanning(root);
   issued=true;
@@ -395,6 +396,10 @@ try{
       maxModelTurns:20,maxOutputTokens:8192,thinkingLevel:"LOW",
       maxModelCallMs:120000,maxPlanningMs:480000,
       onObservation:observation=>{
+        if(observation?.kind==="plan_rejection"){
+          pilotPlanningRejection={stage:observation.stage,
+            reason:observation.reason};
+        }
         if(observation?.kind==="model_turn"&&
            observation.status==="started")pilotModelTurns++;
         if(observation?.kind==="model_failure"&&
@@ -844,6 +849,8 @@ try{
       stage:pilotStage,category,
       ...(assertionLocation?{assertion_location:assertionLocation}:{}),
       model_failure:pilotModelFailure,
+      ...(pilotPlanningRejection
+        ?{planning_rejection:pilotPlanningRejection}:{}),
       model_turns_started:pilotModelTurns,
       signature_type:"ed25519_test_fixture_not_human",
       completed:false

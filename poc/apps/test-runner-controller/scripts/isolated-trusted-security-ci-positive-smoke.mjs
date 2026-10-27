@@ -597,11 +597,30 @@ async function main(){
                     Number.isSafeInteger(site.line)&&
                     site.line>0&&site.line<2000
                       ?{module:site.module,line:site.line}:null;
+                  const safePlanningReasons=[
+                      "ungrounded_or_missing_output","invalid_json",
+                      "invalid_proposal_shape","invalid_task_count",
+                      "invalid_task_identity","unsupported_agent_role",
+                      "unsupported_tool_for_role","unauthorized_existing_file",
+                      "unauthorized_new_file","invalid_path",
+                      "invalid_permission_path","missing_branch_task",
+                      "missing_branch_dependency","conflicting_unordered_writes",
+                      "duplicate_task_permission","incorrect_work_branch",
+                      "invalid_dependencies","invalid_permissions",
+                      "contract_validation_other"
+                    ];
+                  const rejection=item.planning_rejection;
+                  const planningRejection=rejection&&
+                    ["grounding","json","contract"].includes(rejection.stage)&&
+                    safePlanningReasons.includes(rejection.reason)
+                      ?{stage:rejection.stage,reason:rejection.reason}:null;
                   geminiDiagnostic={
                     stage:item.stage,category:item.category,
                     model_failure:item.model_failure,
                     model_turns_started:item.model_turns_started,
-                    ...(location?{assertion_location:location}:{})
+                    ...(location?{assertion_location:location}:{}),
+                    ...(planningRejection
+                      ?{planning_rejection:planningRejection}:{})
                   };
                   break;
                 }

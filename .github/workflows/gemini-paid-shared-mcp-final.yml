@@ -215,11 +215,30 @@ jobs:
                        .includes(item.stage)&&
                      Number.isSafeInteger(item.model_turns_started)){
                     const site=item.assertion_location;
+                    const safePlanningReasons=[
+                      "ungrounded_or_missing_output","invalid_json",
+                      "invalid_proposal_shape","invalid_task_count",
+                      "invalid_task_identity","unsupported_agent_role",
+                      "unsupported_tool_for_role","unauthorized_existing_file",
+                      "unauthorized_new_file","invalid_path",
+                      "invalid_permission_path","missing_branch_task",
+                      "missing_branch_dependency","conflicting_unordered_writes",
+                      "duplicate_task_permission","incorrect_work_branch",
+                      "invalid_dependencies","invalid_permissions",
+                      "contract_validation_other"
+                    ];
+                    const rejection=item.planning_rejection;
+                    const planningRejection=rejection&&
+                      ["grounding","json","contract"].includes(rejection.stage)&&
+                      safePlanningReasons.includes(rejection.reason)
+                        ?{stage:rejection.stage,reason:rejection.reason}:null;
                     diagnostic={
                       stage:item.stage,
                       category:item.category,
                       model_failure:item.model_failure,
                       model_turns_started:item.model_turns_started,
+                      ...(planningRejection
+                        ?{planning_rejection:planningRejection}:{}),
                       ...(site&&
                         ["signed_dag_harness","planning_harness"].includes(site.module)&&
                         Number.isSafeInteger(site.line)&&
