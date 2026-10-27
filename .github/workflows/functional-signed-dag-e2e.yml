@@ -12,6 +12,8 @@ on:
       - 'poc/scripts/test/f1-gitea-research-planning-port.test.mjs'
       - 'poc/scripts/f1-real-gitea-planner-readiness.mjs'
       - 'poc/scripts/test/f1-real-gitea-planner-readiness.test.mjs'
+      - 'poc/scripts/f1-real-gitea-gemini-probe.mjs'
+      - 'poc/scripts/test/f1-real-gitea-gemini-probe.test.mjs'
       - 'poc/apps/gateway/native-test/native-positive-approved-dag.mjs'
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
@@ -77,6 +79,8 @@ jobs:
         run: node --experimental-strip-types --test poc/scripts/test/f1-real-gitea-planner-readiness.test.mjs
       - name: F1 real Gitea research Planning snapshot read-port tests (no model calls)
         run: node --experimental-strip-types --test poc/scripts/test/f1-gitea-research-planning-port.test.mjs
+      - name: Real Gemini research consent and zero-billing dry-run gates
+        run: node --experimental-strip-types --test poc/scripts/test/f1-real-gitea-gemini-probe.test.mjs
       - name: Offline Gemini Planning-to-Execution bridge regression (zero model calls)
         run: |
           node --experimental-strip-types --test \

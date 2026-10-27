@@ -17,6 +17,12 @@ function fixture(){
     engineer_approval_verified_by_this_check:false,
     executable_gemini_plan_produced:false,external_r5_go:false
   };
+  const port={
+    status:"PASS",base_revision:gitea,
+    discovered_files:44,discovered_directories:21,
+    pinned_source_read:true,model_calls:0,
+    native_gateway_attested_by_this_port:false
+  };
   const native={
     status:"PASS",real_gitea_sha:gitea,native_rust:true,live_opa:true,
     signed_handoff:true,operational_root:true,dispatcher_fail_closed:true,
@@ -40,12 +46,14 @@ function fixture(){
     native_rust_signed_child_and_vp:true,runner_via_gateway_http:true,
     exact_provider_sha_correlated:true,approval_created:true
   };
-  return {native,positive,f1};
+  return {native,positive,f1,port};
 }
-function log({native,positive,f1}){
+function log({native,positive,f1,port}){
   return "npm prefix noisy log\n"+
     "[trusted-positive-ci] f1_real_gitea_baseline "+
     JSON.stringify(f1)+"\n"+
+    "[trusted-positive-ci] f1_real_gitea_read_port "+
+    JSON.stringify(port)+"\n"+
     "[trusted-positive-ci] native_disposable_planning "+
     JSON.stringify(native)+"\n"+JSON.stringify(positive)+"\n";
 }
@@ -55,6 +63,8 @@ test("functional E2E extracts only fixed observed fields without R5 or human cla
   assert.equal(evidence.framework_source_sha,sha);
   assert.equal(evidence.isolated_main_sha,gitea);
   assert.equal(evidence.f1_real_gitea_unsolved_baseline_verified,true);
+  assert.equal(evidence.f1_actual_full_repo_snapshot_readonly_verified,true);
+  assert.equal(evidence.f1_discovered_files,44);
   assert.equal(evidence.f1_genuine_gemini_proposal_produced,false);
   assert.equal(evidence.tested_feature_commit_sha,head);
   assert.equal(evidence.live_gemini_tested,false);
@@ -74,6 +84,9 @@ test("functional checkpoint rejects missing or duplicate observed stages",()=>{
 });
 test("functional checkpoint rejects fake provider effects, missing signed DAG and merged PR",()=>{
   for(const mutate of [
+    x=>{x.port.base_revision=sha;},
+    x=>{x.port.model_calls=1;},
+    x=>{x.port.pinned_source_read=false;},
     x=>{x.f1.base_revision=sha;},
     x=>{x.f1.novel_unsolved_requirement=false;},
     x=>{x.f1.provider_model_inference_calls=1;},
