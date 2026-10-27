@@ -43,6 +43,7 @@ import {getApprovedOfflineScenario} from
 import {makeOfflineReviewableDag} from
   "../../../packages/orchestrator-runtime/test/fixtures/offline-planning-dag.mjs";
 import {BaseLlm} from "@google/adk";
+import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
 import {GiteaReadOnlyExecutor} from "../src/gitea-read-executor.ts";
@@ -70,6 +71,22 @@ const engineerDid=process.env.ADAPTER_ID_ENGINEER;
 for(const v of [token,engineerToken,engineerDid]){
   if(typeof v!=="string"||!v)throw Error("Missing trusted EVM fixture setting");
 }
+// Strict opt-in: normal signed-DAG CI stays zero-billing and byte-identical.
+const geminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
+if(geminiPilot&&(
+  process.env.GITHUB_ACTIONS!=="true"||
+  process.env.GITHUB_EVENT_NAME!=="workflow_dispatch"||
+  process.env.GITHUB_RUN_ATTEMPT!=="1"||
+  process.env.GITHUB_REF!=="refs/heads/refactor/post-prof-plan-contracts-20261021"||
+  process.env.DELEGATION_GEMINI_CHARGE_CONFIRMATION!==
+    "I AUTHORIZE GEMINI API CHARGES"||
+  process.env.DELEGATION_GEMINI_MODEL!=="gemini-3.8-flash"||
+  typeof process.env.GEMINI_API_KEY!=="string"||
+  process.env.GEMINI_API_KEY.trim().length<10||
+  process.env.APPROVED_RUNNER_SCENARIO!=="account-suspension"||
+  process.env.PLANNING_NATIVE_SIGNED_HANDOFF!=="1"&&
+    process.env.PLANNING_NATIVE_POSITIVE_DAG==="1"
+))throw Error("One-use signed Account Suspension Gemini pilot not authorized");
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const scenario=getApprovedOfflineScenario(process.env.APPROVED_RUNNER_SCENARIO);
 const referenceFiles=scenario.files;
@@ -360,22 +377,44 @@ try{
     branch:"main",path:"private/credentials.env"
   }));
   assert.equal(log.adapterPresentations,noWrite);
-  const model=new ScriptedReadPlanner();
+  // Gemini receives the SAME trusted Gitea-backed read-only Gateway tools.
+  // No offline planSketch is passed to the model in the consented pilot.
+  const model=geminiPilot
+    ?createGeminiAdkModel({
+      apiKey:process.env.GEMINI_API_KEY,
+      model:process.env.DELEGATION_GEMINI_MODEL
+    })
+    :new ScriptedReadPlanner();
   const proposed=await new TrustedAdkReadOnlyPlanner({
     model,snapshot,workBranch,
     requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
-    planId:"native-planning-proposal",agents,readPort:port
+    planId:"native-planning-proposal",agents,readPort:port,
+    ...(geminiPilot?{
+      maxModelTurns:24,maxOutputTokens:16000,thinkingLevel:"LOW",
+      maxModelCallMs:120000,maxPlanningMs:600000
+    }:{})
   }).propose();
   assert.equal(proposed.status,"unapproved_proposal");
-  assert.equal(proposed.verified_source_reads,positiveDag?2:1);
+  if(geminiPilot){
+    assert.ok(proposed.verified_source_reads>=2,
+      "Real Gemini must use at least two confirmed repository source reads");
+  }else assert.equal(proposed.verified_source_reads,positiveDag?2:1);
   assert.equal(proposed.plan.base_revision,baseSha);
   assert.equal(proposed.plan.repository.repository,"iam-console-poc");
-  assert.equal(proposed.plan.requested_permissions.length,
-    positiveDag?(2*existingFiles.length+4):5); // read+write per file; branch, create, tests, PR
-  assert.equal(log.adapterPresentations,positiveDag?4:1);
-  assert.equal(log.prepares,positiveDag?4:1);
-  assert.equal(log.executions,positiveDag?4:1);
-  assert.equal(log.giteaReads,positiveDag?5:2);
+  if(geminiPilot){
+    assert.ok(proposed.plan.requested_permissions.length>4);
+  }else assert.equal(proposed.plan.requested_permissions.length,
+    positiveDag?(2*existingFiles.length+4):5); // scripted only
+  if(geminiPilot){
+    assert.ok(log.adapterPresentations>=2);
+    assert.equal(log.prepares,log.adapterPresentations);
+    assert.equal(log.executions,log.adapterPresentations);
+  }else{
+    assert.equal(log.adapterPresentations,positiveDag?4:1);
+    assert.equal(log.prepares,positiveDag?4:1);
+    assert.equal(log.executions,positiveDag?4:1);
+    assert.equal(log.giteaReads,positiveDag?5:2);
+  }
   // Trusted SHA bootstrap plus bounded real read-only model discovery.
   if(liveClient){
     // Read-only PAT and the provider are backed by the disposable Gitea,
@@ -385,14 +424,15 @@ try{
     assert.equal(fileAtSha.revision,baseSha);
   }
   const executed=audit.events.filter(e=>e.event==="authorization_executed");
-  assert.equal(executed.length,positiveDag?4:1);
+  assert.equal(executed.length,geminiPilot
+    ?log.adapterPresentations:(positiveDag?4:1));
   for(const effect of executed){
     assert.equal(effect.decision,"allow");
     assert.equal(effect.policy_decision,"allow");
     assert.equal(effect.pinned_revision,baseSha);
     assert.equal(effect.provider_result,"success");
   }
-  if(positiveDag){
+  if(positiveDag&&!geminiPilot){
     assert.deepEqual(executed.map(e=>e.tool),[
       "read_repository","list_directory","read_file","read_file"
     ]);
@@ -401,10 +441,12 @@ try{
     assert.deepEqual(proposed.plan.tasks.find(t=>t.id==="test")?.depends_on,
       ["backend","frontend"]);
   }
-  const visible=JSON.stringify(model.requests);
-  for(const secret of [rootId,token,engineerToken,
-    "signed_vp","delegation_evidence","credential_status"]){
-    assert.ok(!visible.includes(secret),"Planner leaked private authority");
+  if(!geminiPilot){
+    const visible=JSON.stringify(model.requests);
+    for(const secret of [rootId,token,engineerToken,
+      "signed_vp","delegation_evidence","credential_status"]){
+      assert.ok(!visible.includes(secret),"Planner leaked private authority");
+    }
   }
   // Obtain a second bounded challenge and JWT BEFORE revocation, so the
   // post-revocation failure exercises the native Rust verifier directly,
@@ -487,7 +529,8 @@ try{
         ["create_branch","update_file","update_file"]);
     if(positiveDag){
       let approvedAgentModelFactory;
-      if(process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS==="1"){
+      if(geminiPilot||
+         process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS==="1"){
         // The MODEL FACTORY is now separate from the signed native runner.
         // This CI producer still uses deterministic implementation fixtures,
         // but only inside this owner test host, NOT as an agent permission
@@ -502,21 +545,23 @@ try{
         // enter the script compiler OR the Backend model constructor.
         // In the signed-DAG source-witness CI profile, also require a
         // real source-derived functional Backend route (not a mere comment).
-        const deriveRoutes=
+        const deriveRoutes=!geminiPilot&&(
           process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
-          process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
+          process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1");
         const derivedPaths=deriveRoutes
           ?selectSourceDerivedTargetsFromApprovedPlan({
             plan:reviewed.plan,approvedRows,repo,branch:workBranch
           }):[];
         const otherImplementations={...referenceFiles};
         for(const path of derivedPaths)delete otherImplementations[path];
-        const offlineCalls=buildOfflineAdkScriptsFromApprovedPlan({
-          plan:reviewed.plan,approvedRows,repo,branch:workBranch,
-          implementationContents:derivedPaths.length
-            ?otherImplementations:referenceFiles,
-          ...(derivedPaths.length?{sourceDerivedPaths:derivedPaths}:{})
-        });
+        // Not even the scripted call compiler is invoked for real Gemini.
+        const offlineCalls=geminiPilot?null:
+          buildOfflineAdkScriptsFromApprovedPlan({
+            plan:reviewed.plan,approvedRows,repo,branch:workBranch,
+            implementationContents:derivedPaths.length
+              ?otherImplementations:referenceFiles,
+            ...(derivedPaths.length?{sourceDerivedPaths:derivedPaths}:{})
+          });
         approvedAgentModelFactory=context=>{
           const expected=approvedRows.filter(g=>
             g.agent_id===context.role).map(g=>({
@@ -524,6 +569,11 @@ try{
             }));
           assert.deepEqual(context.approved_permissions,expected);
           assert.equal(Object.hasOwn(context,"implementationContents"),false);
+          if(geminiPilot)
+            return createGeminiAdkModel({
+              apiKey:process.env.GEMINI_API_KEY,
+              model:process.env.DELEGATION_GEMINI_MODEL
+            });
           if(context.role==="backend"&&deriveRoutes)
             return new SourceDerivedRouteOfflineAdkModel({
               context,calls:offlineCalls[context.role]
@@ -543,6 +593,7 @@ try{
         sessionId:session,planDigest:packet.plan_digest,baseSha,
         operationalRootId,branch:workBranch,
         referenceFiles:approvedAgentModelFactory?undefined:referenceFiles,
+        realGeminiPilot:geminiPilot,
         scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
         writerToken,opaUrl,engineerDid,orchestratorToken:token,
@@ -559,6 +610,7 @@ try{
         process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
         sourceWitnessMode;
       assert.equal(globalThis.__nativeDagPositive.model_source,
+        geminiPilot?"real_gemini_four_models_signed_test_approval":
         derivedRoutesMode
           ? "host_supplied_source_derived_routes_with_remaining_fixtures"
           : sourceWitnessMode
@@ -566,9 +618,10 @@ try{
             : approvedAgentModelFactory
               ? "host_supplied_scripted_tool_calls"
               : "inline_scripted_tool_calls");
-      assert.equal(globalThis.__nativeDagPositive
-        .source_derived_functional_route_verified,derivedRoutesMode);
-      assert.equal(globalThis.__nativeDagPositive
+      if(!geminiPilot)
+        assert.equal(globalThis.__nativeDagPositive
+          .source_derived_functional_route_verified,derivedRoutesMode);
+      if(!geminiPilot)assert.equal(globalThis.__nativeDagPositive
         .source_derived_functional_file_count,derivedRoutesMode
           ? (scenario.id==="account-suspension"?4:1):0);
       if(derivedRoutesMode&&scenario.id==="account-suspension"){
@@ -583,11 +636,12 @@ try{
         .source_witnessed_native_dag_verified,sourceWitnessMode);
       // A host-selected BaseLlm can still encapsulate golden implementation
       // bytes. Do not let a provider-green E2E claim model independence.
-      assert.equal(globalThis.__nativeDagPositive.scripted_adk_no_paid_model,true);
+      assert.equal(globalThis.__nativeDagPositive.scripted_adk_no_paid_model,
+        !geminiPilot);
       assert.equal(globalThis.__nativeDagPositive
-        .fixture_scripted_payloads_reach_adk_runner,true);
+        .fixture_scripted_payloads_reach_adk_runner,!geminiPilot);
       assert.equal(globalThis.__nativeDagPositive
-        .independent_model_software_output_verified,false);
+        .independent_model_software_output_verified,geminiPilot);
       assert.equal(globalThis.__nativeDagPositive.source_writes,
         existingFiles.length);
       assert.equal(globalThis.__nativeDagPositive.manifest_source,
@@ -721,7 +775,9 @@ try{
     rust_evm_root_issued:true,
     native_rust_vp_verified:true,
     live_opa:true,
-    model_calls_paid:false,
+    model_calls_paid:geminiPilot,
+    model_source:geminiPilot?"real_gemini_four_models":"offline_scripted",
+    engineer_review_type:geminiPilot?"signed_test_fixture_not_human":"signed_test_fixture",
     pinned_gitea_fixture:!realGitea,
     real_disposable_gitea_pinned_reads:realGitea,
     real_gitea_main_unchanged:realGitea,
