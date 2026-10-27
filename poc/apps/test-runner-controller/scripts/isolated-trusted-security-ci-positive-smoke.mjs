@@ -32,6 +32,8 @@ import {beginApprovedRealRunnerSession} from
   "./approved-gateway-runner-session.mjs";
 import {safeNativeDockerFailureDiagnostic}
   from "./native-dag-result-diagnostic.mjs";
+import {inspectF1RealGiteaPlannerReadiness}
+  from "../../../scripts/f1-real-gitea-planner-readiness.mjs";
 
 const baseline="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const baselineSource="https://github.com/DarkGh0st03/iam-console-poc.git";
@@ -404,6 +406,18 @@ async function main(){
     const fixture=await stage("commit_reference_implementation",
       ()=>pushReferenceApp(base,workingDir,
         basic(adminUser,adminPassword)),300000);
+    if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"&&
+       scenario.id==="department-directory"){
+      const f1=await stage("f1_gitea_pinned_unsolved_main",
+        ()=>inspectF1RealGiteaPlannerReadiness({
+          baseUrl:base,readToken:creds.readToken,
+          expectedMainSha:fixture.mainSha
+        }),60000);
+      assert.equal(f1.verified_source_files,4);
+      assert.equal(f1.provider_model_inference_calls,0);
+      process.stderr.write("[trusted-positive-ci] f1_real_gitea_baseline "+
+        JSON.stringify(f1)+"\n");
+    }
     if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
       // Reuse this same disposable Gitea. Read-only PAT, actual main SHA,
       // real Rust/EVM root, native Core verifier, and independent OPA.
