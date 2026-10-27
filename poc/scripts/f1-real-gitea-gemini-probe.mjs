@@ -139,6 +139,7 @@ export async function runF1RealGiteaGeminiResearch({
     return Object.freeze({status,technical_preflight_pass:
       report.technical_preflight_pass,
       functional_design_plausible:functional.functional_design_plausible,
+      functional_review_failed_checks:Object.freeze([...functional.failed_checks]),
       functional_review_required:true,
       source_revision:expectedMainSha,
       execution_permitted:false,

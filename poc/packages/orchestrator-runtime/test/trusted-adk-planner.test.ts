@@ -5,7 +5,8 @@ import {
 } from "@google/adk";
 import {validatePlan} from "../../plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
-import {compilePlanningProposal,TrustedAdkReadOnlyPlanner}
+import {compilePlanningProposal,TrustedAdkReadOnlyPlanner,
+  TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE}
   from "../src/trusted-adk-planner.ts";
 
 const FILE="src/billing/invoice.ts";
@@ -99,7 +100,23 @@ test("ADK Planner reads real Gateway-shaped pinned source, returning only a draf
     assert.ok(!exposed.includes(forbidden),forbidden);
   }
   assert.ok(exposed.includes("read_file"));
+  // Regression-test implementation must be part of the ACTUAL ADK system
+  // instruction, not merely a separate post-hoc diagnostic after Gemini.
+  const system=JSON.stringify(model.requests[0]?.config?.systemInstruction??{});
+  assert.ok(system.includes("concrete regression tests"));
+  assert.ok(system.includes("merely calling run_tests"));
+  assert.ok(system.includes("Pull Request creation"));
 });
+test("Planner guidance encourages source-grounded tests without granting new tools",()=>{
+  assert.ok(Object.isFrozen(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE));
+  assert.equal(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE.length,6);
+  const text=TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE.join("\n");
+  assert.match(text,/discovered directory/);
+  assert.match(text,/uncertainty rather than invent/);
+  assert.match(text,/authorization cases/);
+  assert.doesNotMatch(text,/apps\/backend\/src\/users|by-department|golden/i);
+});
+
 test("out-of-scope Planning read is denied before the trusted provider",async()=>{
   let calls=0;
   const model=new Scripted({branch:"main",path:"secrets/production.env"},draft());

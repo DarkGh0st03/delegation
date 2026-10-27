@@ -109,6 +109,20 @@ function uniqueStrings(x:unknown,max:number):string[] {
   return x;
 }
 
+/**
+ * Generic, scenario-independent Planner QUALITY guidance. The model may
+ * request only already-authorized paths; these instructions cannot authorize
+ * tools, expand discovered paths or substitute Engineer review.
+ */
+export const TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE=Object.freeze([
+  "Plan the requested implementation AND concrete regression tests when behavior changes; merely calling run_tests is not a regression-test implementation.",
+  "Use a Test Agent task to read and update an existing discovered test file, or create a new test only inside a discovered directory, then run tests on the resulting feature branch.",
+  "Inspect relevant existing test conventions before proposing new test-file paths; if the test directory is unavailable, report uncertainty rather than invent a resource.",
+  "Specify test cases derived from the requirement, including positive, negative and authorization cases where relevant; never copy a prewritten solution.",
+  "Make the Test Agent task depend on every implementation Task whose changes it validates; make Pull Request creation depend on the completed Test Agent task.",
+  "Verify the proposed Task dependency graph includes implementation, tests and review; keep all permissions minimal and within discovered source."
+] as const);
+
 /** Model controls task proposal only. Canonical resources and identity come
  * exclusively from the trusted session/snapshot and trusted Agent registry.
  */
@@ -512,6 +526,7 @@ export class TrustedAdkReadOnlyPlanner {
         "File operations need a path string; repository/test operations use path:null.",
         "Only orchestrator can create_branch/create_pull_request.",
         "Backend/Frontend: read_file/update_file. Test: read_file/update_file/create_file/run_tests.",
+        ...TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE,
         "Use existing files from the supplied list for read/update.",
         "Create files only in the supplied directories; no other operations.",
         "The first Task creates a branch; every later Task depends on it.",
