@@ -579,9 +579,11 @@ async function main(){
         assert.equal(positive?.positive_dag?.adk_agents_executed,3);
         assert.equal(positive?.positive_dag?.scripted_adk_no_paid_model,true);
         assert.equal(positive?.positive_dag?.model_source,
-          "host_supplied_models_not_fixture");
+          "host_supplied_scripted_tool_calls");
         assert.equal(positive?.positive_dag
-          ?.fixture_source_bytes_supplied_to_native_runner,false);
+          ?.fixture_scripted_payloads_reach_adk_runner,true);
+        assert.equal(positive?.positive_dag
+          ?.independent_model_software_output_verified,false);
         assert.deepEqual(positive?.positive_dag?.adk_model_turns,
           {backend:13,frontend:9,test:3});
         assert.equal(positive?.positive_dag?.main_unchanged,true);
@@ -608,7 +610,8 @@ async function main(){
             test_agent_created_e2e:1,
             signed_generic_adk_agents:3,
             host_supplied_adk_models:true,
-            fixture_implementation_not_passed_to_native_runner:true,
+            fixture_scripted_payloads_reach_adk_runner:true,
+            independent_model_software_output_verified:false,
             same_signed_dag_docker_acceptance:true,
             a2a_before_branch:0,main_mutations:0})+"\n");
       },1020000);

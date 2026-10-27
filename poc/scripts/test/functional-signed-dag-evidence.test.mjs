@@ -48,7 +48,8 @@ function fixture(){
     signed_dag_positive:true,backend_frontend_a2a_updates:10,
     test_agent_created_e2e:1,signed_generic_adk_agents:3,
     host_supplied_adk_models:true,
-    fixture_implementation_not_passed_to_native_runner:true,
+    fixture_scripted_payloads_reach_adk_runner:true,
+    independent_model_software_output_verified:false,
     same_signed_dag_docker_acceptance:true,a2a_before_branch:0,
     main_mutations:0
   };
@@ -88,8 +89,11 @@ test("functional E2E extracts only fixed observed fields without R5 or human cla
   assert.equal(evidence.framework_source_sha,sha);
   assert.equal(evidence.isolated_main_sha,gitea);
   assert.equal(evidence.f1_real_gitea_unsolved_baseline_verified,true);
-  assert.equal(evidence.block_b_host_selected_adk_models_without_fixture_bytes,
+  assert.equal(
+    evidence.block_b_host_selected_scripted_adk_models_with_fixture_payloads,
     true);
+  assert.equal(evidence.block_b_independent_model_software_output_verified,
+    false);
   assert.equal(evidence.f1_actual_full_repo_snapshot_readonly_verified,true);
   assert.equal(evidence.f1_gemini_operator_dry_run_real_gitea_verified,true);
   assert.equal(evidence.f1_actual_adk_scripted_planner_real_gitea_verified,true);
@@ -135,6 +139,9 @@ test("functional checkpoint rejects fake provider effects, missing signed DAG an
     x=>{x.f1.novel_unsolved_requirement=false;},
     x=>{x.f1.provider_model_inference_calls=1;},
     x=>{x.native.signed_dag_positive=false;},
+    x=>{x.native.fixture_scripted_payloads_reach_adk_runner=false;},
+    x=>{x.native.independent_model_software_output_verified=true;},
+    x=>{delete x.native.independent_model_software_output_verified;},
     x=>{x.native.operational_root=false;},
     x=>{x.native.a2a_before_branch=1;},
     x=>{x.native.main_mutations=1;},

@@ -624,11 +624,20 @@ export async function runNativePositiveApprovedDag({
       pr_created:true,pull_request_number:createdPr.pull_request_number,
       pull_request_url:createdPr.url??null,merge_calls:0,
       adk_agents_executed:3,
+      // Model injection alone does not establish independent code generation.
+      // Scripted ADK instances carry source bytes in their tool-call payloads,
+      // even when the native runner did not receive a referenceFiles argument.
       scripted_adk_no_paid_model:Object.values(models).every(
         model=>model instanceof OfflineApprovedAdkModel),
-      model_source:hostModels?"host_supplied_models_not_fixture":
-        "offline_fixture_scripts",
-      fixture_source_bytes_supplied_to_native_runner:!hostModels,
+      model_source:hostModels
+        ? (Object.values(models).every(model=>
+            model instanceof OfflineApprovedAdkModel)
+            ? "host_supplied_scripted_tool_calls"
+            : "host_supplied_unclassified_adk_models")
+        : "inline_scripted_tool_calls",
+      fixture_scripted_payloads_reach_adk_runner:Object.values(models).some(
+        model=>model instanceof OfflineApprovedAdkModel),
+      independent_model_software_output_verified:false,
       approved_shared_mcp_enabled:sharedMcpEnabled,
       shared_mcp_http_requests:normalMcpCalls,
       private_crypto_mcp_http_requests:privateCryptoMcpCalls,
