@@ -114,15 +114,6 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     if(!ID.test(root.credential_id)||!/^[a-f0-9]{64}$/u.test(root.plan_digest)){
       reject("operational root identity or digest not verified");
     }
-    if(config.issuanceJournal!==undefined){
-      if(!(config.issuanceJournal instanceof TrustedChildIssuanceJournal))
-        reject("real protected child issuance journal required");
-      config.issuanceJournal.assertBound({
-        sessionId:config.sessionId,baseRevision:
-          (await config.approvals.loadAuthenticatedApproval(config.sessionId)).plan.base_revision,
-        planDigest:root.plan_digest,parentCredentialId:root.credential_id
-      });
-    }
     const parentKeys=allUnique(root.permissions,"operational root");
     if(parentKeys.size===0)reject("operational parent grants no permissions");
     const signed=await config.approvals.loadAuthenticatedApproval(config.sessionId);
@@ -133,6 +124,14 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     }) as {task_id:string;agent_id:string;operation:string;resource:string}[];
     if(plan.session_id!==config.sessionId||planDigest(plan)!==root.plan_digest){
       reject("signed plan does not match active operational root");
+    }
+    if(config.issuanceJournal!==undefined){
+      if(!(config.issuanceJournal instanceof TrustedChildIssuanceJournal))
+        reject("real protected child issuance journal required");
+      config.issuanceJournal.assertBound({
+        sessionId:config.sessionId,baseRevision:plan.base_revision,
+        planDigest:root.plan_digest,parentCredentialId:root.credential_id
+      });
     }
     const mapping=new Map<string,{role:Role;permissions:DelegatedPermission[]}>();
     for(const row of rows){

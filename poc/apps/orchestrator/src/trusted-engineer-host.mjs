@@ -510,6 +510,11 @@ export async function startTrustedEngineerLocalHost(config){
           planDigest:running.readiness.plan_digest,
           parentCredentialId:running.operational_root_id
         });
+        // Reject a missing or reused directory BEFORE any protected
+        // branch/A2A task effects. No automatic replay of old intents.
+        const prior=await journal.records();
+        if(prior.length!==0)
+          deny("R5 child issuance journal must be fresh and empty");
         return {
           a2a:execution.a2a,
           adapter:{...execution.adapter,issuanceJournal:journal},
@@ -637,6 +642,11 @@ export async function startTrustedEngineerLocalHost(config){
           planDigest:running.readiness.plan_digest,
           parentCredentialId:running.operational_root_id
         });
+        // Reject a missing or reused directory BEFORE any protected
+        // branch/A2A task effects. No automatic replay of old intents.
+        const prior=await journal.records();
+        if(prior.length!==0)
+          deny("R5 child issuance journal must be fresh and empty");
         return {
           a2a:execution.a2a,
           adapter:{...execution.adapter,issuanceJournal:journal},
