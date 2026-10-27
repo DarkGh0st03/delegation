@@ -734,8 +734,12 @@ test("a rejected Planner draft gets one signed-scope correction in its existing 
     kind:"plan_rejection",stage:"contract",reason:"unauthorized_existing_file"
   }]);
   assert.equal(events.filter(e=>e.kind==="proposal").length,1);
-  assert.ok(JSON.stringify(model.requests[2]).includes("unauthorized_existing_file"));
-  assert.ok(!JSON.stringify(model.requests[2]).includes("PRIVATE_UNDISCOVERED"));
+  // The same ADK session contains earlier model output by design.
+  // Only the newly authored trusted feedback message must omit draft data.
+  const latestUserMessage=model.requests[2].contents.at(-1);
+  assert.equal(latestUserMessage?.role,"user");
+  assert.ok(JSON.stringify(latestUserMessage).includes("unauthorized_existing_file"));
+  assert.ok(!JSON.stringify(latestUserMessage).includes("PRIVATE_UNDISCOVERED"));
   assert.ok(!JSON.stringify(events).includes("PRIVATE_UNDISCOVERED"));
   assert.ok(!JSON.stringify(events).includes("PRIVATE_SOURCE_CONTENT"));
 });
