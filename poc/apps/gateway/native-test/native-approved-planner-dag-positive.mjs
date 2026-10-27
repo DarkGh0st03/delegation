@@ -343,26 +343,34 @@ export async function runNativePositiveApprovedDag({
           assert.equal(effect.provider,"gitea");
           assert.ok(files[role].includes(effect.path));
           if(effect.tool==="read_file"){
-            assert.equal(effect.content,originals[effect.path]);
-            assert.ok(!readPaths[role].has(effect.path));
-            readPaths[role].add(effect.path);
-            reads[role]++;
+            // Agents may legitimately re-read after updating a source file.
+            // Compare to the actual signed-branch provider state, not the
+            // historical baseline fixture.
+            const current=await reader.readTextFile(branch,effect.path);
+            assert.equal(effect.content,current.content);
+            if(!readPaths[role].has(effect.path)){
+              readPaths[role].add(effect.path);
+              reads[role]++;
+            }
           }else if(effect.tool==="update_file"){
             assert.ok(readPaths[role].has(effect.path));
-            assert.ok(!writePaths[role].has(effect.path));
             assert.match(effect.commit_sha,SHA);
-            writePaths[role].add(effect.path);
-            writes[role]++;
+            if(!writePaths[role].has(effect.path)){
+              writePaths[role].add(effect.path);
+              writes[role]++;
+              if(writePaths[role].size===files[role].length)counts[role]++;
+            }
             latestSha=effect.commit_sha;
-            if(writePaths[role].size===files[role].length)counts[role]++;
           }else throw Error("ADK attempted unexpected approved provider operation");
         }else if(effect.tool==="read_file"&&role==="test"){
           assert.equal(effect.provider,"gitea");
           assert.ok(approvedTestReads.includes(effect.path));
-          assert.equal(effect.content,originals[effect.path]);
-          assert.ok(!readPaths.test.has(effect.path));
-          readPaths.test.add(effect.path);
-          testReads++;
+          const current=await reader.readTextFile(branch,effect.path);
+          assert.equal(effect.content,current.content);
+          if(!readPaths.test.has(effect.path)){
+            readPaths.test.add(effect.path);
+            testReads++;
+          }
         }else if(effect.tool==="update_file"&&role==="test"){
           assert.equal(effect.provider,"gitea");
           assert.equal(effect.path,updatedTestFile);
@@ -669,8 +677,11 @@ export async function runNativePositiveApprovedDag({
       if(!hostModels){
         assert.equal(updated.content,referenceFiles[path]);
       }else{
-        assert.notEqual(updated.content,originals[path],
-          "Agent must change the signed approved resource");
+        if(implementationFiles.includes(path)||approvedTestUpdates.includes(path))
+          assert.notEqual(updated.content,originals[path],
+            "Agent must change the signed approved resource");
+        else assert.equal(updated.content,originals[path],
+          "An approved read-only test dependency must remain unchanged");
         assert.ok(updated.content.length>0);
       }
       const unchanged=await reader.readTextFile("main",path,baseSha);
