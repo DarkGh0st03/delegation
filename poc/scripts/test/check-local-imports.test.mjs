@@ -1018,7 +1018,7 @@ test("R6 Account Suspension 11-file scope checker rejects new launchers or sourc
   ].sort());
 });
 
-test("R6 11-file historical reference checker retains its six audited CI callers",async()=>{
+test("R6 historical reference checker stays in five legacy callers; Gemini signed pilot is separate",async()=>{
   const {readFileSync}=await import("node:fs");
   const {join}=await import("node:path");
   const {fileURLToPath}=await import("node:url");
@@ -1035,18 +1035,28 @@ test("R6 11-file historical reference checker retains its six audited CI callers
   assert.ok(checker.includes("DELEGATION_TEMPLATES[role]"));
   assert.ok(checker.includes("ENGINEER_TO_ORCHESTRATOR_ROOT_AUTHORITY"));
   assert.ok(checker.includes("verified,11"));
-  const expected=[...R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS].sort();
-  assert.equal(expected.length,6);
+  const allowed=[...R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS].sort();
+  assert.equal(allowed.length,6);
+  const pilot=".github/workflows/gemini-paid-shared-mcp-final.yml";
+  assert.ok(allowed.includes(pilot));
+  const expected=allowed.filter(name=>name!==pilot);
   for(const workflow of expected){
     const content=readFileSync(join(root,workflow),"utf8");
     assert.ok(content.includes(target),
-      "Preserve reference-scope check in known workflow "+workflow);
+      "Preserve reference-scope check in historical workflow "+workflow);
   }
+  const pilotContent=readFileSync(join(root,pilot),"utf8");
+  assert.match(pilotContent,
+    /name: Gemini Real - Refactor Signed DAG Account Suspension Pilot/);
+  assert.match(pilotContent,/DELEGATION_SIGNED_GEMINI_PILOT: "1"/);
+  assert.match(pilotContent,/APPROVED_RUNNER_SCENARIO: account-suspension/);
+  assert.ok(!pilotContent.includes(target),
+    "Real Gemini signed DAG must not use legacy prepackaged 11-file checker");
   const inventory=collectLegacyReferences(root,tracked);
   const observed=inventory.candidates.find(c=>c.target===target);
   assert.ok(observed);
   assert.deepEqual([...new Set(observed.configuredCallers.map(x=>x.source))].sort(),
-    expected,"Scope check is limited to previously reviewed workflow commands");
+    expected,"Legacy reference scope checker only in five unchanged legacy workflows");
   assert.deepEqual(unexpectedHistoricalReferenceScopeCallers(inventory),[],
     "Historical 11-file scope checker must not migrate to approved DAG/ADK code");
 });

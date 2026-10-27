@@ -19,6 +19,22 @@ for(const name of workflows){
   test(name+" uses a single fresh Compose-managed Gitea",async()=>{
     const workflow=await readFile(
       new URL("../../../.github/workflows/"+name,import.meta.url),"utf8");
+    if(name==="gemini-paid-shared-mcp-final.yml"&&
+       workflow.includes("name: Gemini Real - Refactor Signed DAG Account Suspension Pilot")){
+      // The refactored manual pilot reuses the disposable Gitea created by
+      // isolated-positive-smoke instead of the old production Coordinator's
+      // Compose bootstrap. Assert the selected mode explicitly.
+      assert.match(workflow,/workflow_dispatch:/);
+      assert.match(workflow,/APPROVED_RUNNER_SCENARIO: account-suspension/);
+      assert.match(workflow,/DELEGATION_SIGNED_GEMINI_PILOT: "1"/);
+      assert.match(workflow,/APPROVED_RUNNER_NATIVE_EVM: "1"/);
+      assert.match(workflow,/APPROVED_RUNNER_THREE_AGENT_DAG: "1"/);
+      assert.match(workflow,/security-ci:isolated-positive-smoke/);
+      assert.match(workflow,/run_attempt == 1/);
+      assert.match(workflow,/signed DC VP Gitea Docker - TEST approval/);
+      assert.doesNotMatch(workflow,/on:\\n  push:/);
+      return;
+    }
     assert.match(workflow,/bash poc\/scripts\/ci-compose-lifecycle\.sh start/);
     assert.match(workflow,/GITEA_E2E_COMPOSE_READY: "1"/);
     assert.match(workflow,/127\.0\.0\.1:3000\/api\/healthz/);
