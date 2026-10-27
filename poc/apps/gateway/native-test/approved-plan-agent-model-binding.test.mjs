@@ -46,18 +46,18 @@ function reviewed(alternate=false){
     update("ui","frontend","api","src/list.tsx"),
     check("ui"),review("verify")
   ];
-  const {plan}=compilePlanningProposal({
-    tasks,assumptions:[],uncertainties:[]
-  },{
-    snapshot,agents,requirement:"A requirement with differing agent roles",
-    planId:alternate?"access-plan":"search-plan",workBranch
-  });
   // Two different Engineer-reviewable functional objectives. The local
   // source-driven model does not receive either file's implementation.
   const frontend=tasks.find(t=>t.agent_id==="frontend");
   frontend.description=alternate
     ? "Rename exported function showAccess to showPermissions"
     : "Rename exported function renderList to renderDirectory";
+  const {plan}=compilePlanningProposal({
+    tasks,assumptions:[],uncertainties:[]
+  },{
+    snapshot,agents,requirement:"A requirement with differing agent roles",
+    planId:alternate?"access-plan":"search-plan",workBranch
+  });
   const approval=makeApproval(plan,{
     allowedOperations:new Set(RUST_OPERATIONS),
     decision_id:"decision",approved_by:"did:thesis:engineer",
