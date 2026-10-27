@@ -18,7 +18,7 @@ import {tmpdir} from "node:os";
 import {setTimeout as sleep} from "node:timers/promises";
 import {pathToFileURL} from "node:url";
 import {runF1RealGiteaGeminiResearch,
-  assertF1RealGeminiOperatorConsent}
+  assertF1RealGeminiOperatorConsent,isApprovedF1OneTimeCI}
   from "./f1-real-gitea-gemini-probe.mjs";
 
 export const F1_ORIGINAL_SHA="405748b1e77992b6bd8630a3ab6f990658d32f6b";
@@ -223,15 +223,16 @@ async function createSession(dir){
 }
 export async function runF1OwnerGiteaSession({
   mode,sessionDirectory,
-  apiKey,modelName,outputDir,consent,
+  apiKey,modelName,outputDir,consent,ciPermit=false,
   githubActions=process.env.GITHUB_ACTIONS
 }={}){
-  if(githubActions==="true"&&mode==="--execute")deny();
+  if(mode==="--execute"&&
+     !isApprovedF1OneTimeCI({githubActions,ciPermit}))deny();
   // Auth is checked FIRST. An unapproved --execute must never read local
   // session secrets, make a Gitea request or contact Gemini.
   if(mode==="--execute"){
     assertF1RealGeminiOperatorConsent({
-      flag:mode,apiKey,modelName,outputDir,consent,githubActions
+      flag:mode,apiKey,modelName,outputDir,consent,githubActions,ciPermit
     });
   }
   if(mode==="--start")return createSession(sessionDirectory);
@@ -250,7 +251,7 @@ export async function runF1OwnerGiteaSession({
     return runF1RealGiteaGeminiResearch({
       flag:"--execute",baseUrl:record.url,
       readToken:record.read_token,expectedMainSha:record.source_sha,
-      apiKey,modelName,outputDir,consent,githubActions
+      apiKey,modelName,outputDir,consent,githubActions,ciPermit
     });
   }
   const dry=await runF1RealGiteaGeminiResearch({
