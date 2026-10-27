@@ -597,7 +597,8 @@ async function main(){
         const witnessMode=
           process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
         const routeMode=
-          process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1";
+          process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
+          witnessMode;
         assert.equal(positive?.positive_dag?.model_source,routeMode
           ? "host_supplied_source_derived_routes_with_remaining_fixtures"
           : witnessMode

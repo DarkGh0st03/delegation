@@ -498,8 +498,11 @@ try{
           });
         // In route mode, no final implementation bytes for user.routes.ts
         // enter the script compiler OR the Backend model constructor.
+        // In the signed-DAG source-witness CI profile, also require a
+        // real source-derived functional Backend route (not a mere comment).
         const deriveRoutes=
-          process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1";
+          process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
+          process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
         const targetRoute="apps/backend/src/users/user.routes.ts";
         const otherImplementations={...referenceFiles};
         if(deriveRoutes)delete otherImplementations[targetRoute];
@@ -547,7 +550,8 @@ try{
       const sourceWitnessMode=
         process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
       const derivedRoutesMode=
-        process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1";
+        process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
+        sourceWitnessMode;
       assert.equal(globalThis.__nativeDagPositive.model_source,
         derivedRoutesMode
           ? "host_supplied_source_derived_routes_with_remaining_fixtures"
