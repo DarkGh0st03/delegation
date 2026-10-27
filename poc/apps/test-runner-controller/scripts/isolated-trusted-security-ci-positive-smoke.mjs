@@ -596,9 +596,19 @@ async function main(){
         assert.equal(positive?.positive_dag?.scripted_adk_no_paid_model,true);
         const witnessMode=
           process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
-        assert.equal(positive?.positive_dag?.model_source,witnessMode
-          ? "host_supplied_hybrid_source_witness_and_fixture"
-          : "host_supplied_scripted_tool_calls");
+        const routeMode=
+          process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1";
+        assert.equal(positive?.positive_dag?.model_source,routeMode
+          ? "host_supplied_source_derived_routes_with_remaining_fixtures"
+          : witnessMode
+            ? "host_supplied_hybrid_source_witness_and_fixture"
+            : "host_supplied_scripted_tool_calls");
+        assert.equal(positive?.positive_dag
+          ?.source_derived_functional_route_verified,routeMode);
+        assert.equal(positive?.positive_dag
+          ?.source_derived_functional_file_count,routeMode?1:0);
+        assert.equal(positive?.positive_dag
+          ?.remaining_prepackaged_application_file_count,routeMode?10:11);
         assert.equal(positive?.positive_dag
           ?.source_witnessed_native_dag_verified,witnessMode);
         assert.equal(positive?.positive_dag
@@ -636,6 +646,12 @@ async function main(){
             fixture_scripted_payloads_reach_adk_runner:true,
             independent_model_software_output_verified:false,
             same_signed_dag_docker_acceptance:true,
+            source_derived_functional_route_verified:positive.positive_dag
+              .source_derived_functional_route_verified,
+            source_derived_functional_file_count:positive.positive_dag
+              .source_derived_functional_file_count,
+            remaining_prepackaged_application_file_count:positive.positive_dag
+              .remaining_prepackaged_application_file_count,
             source_witnessed_native_dag:positive.positive_dag
               .source_witnessed_native_dag_verified,
             source_witnessed_still_uses_fixture_code:positive.positive_dag

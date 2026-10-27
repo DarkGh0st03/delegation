@@ -32,6 +32,8 @@ import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positi
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
 import {SourceWitnessedOfflineAdkModel}
   from "./source-witnessed-offline-adk-model.mjs";
+import {SourceDerivedRouteOfflineAdkModel}
+  from "./source-derived-route-offline-adk-model.mjs";
 import {buildOfflineAdkScriptsFromApprovedPlan}
   from "./approved-plan-offline-adk-call-scripts.mjs";
 import {getApprovedOfflineScenario} from
@@ -165,7 +167,8 @@ const legacyPlanSketch={
 };
 const planSketch=positiveDag?
   makeOfflineReviewableDag({
-    snapshot,edits:roleFiles,newTestFile
+    snapshot,edits:roleFiles,newTestFile,
+    taskInstructions:scenario.planning_intent.taskInstructions
   }):legacyPlanSketch;
 class ScriptedReadPlanner extends BaseLlm{
   turns=0; requests=[];
@@ -493,9 +496,17 @@ try{
             allowedOperations:new Set(RUST_OPERATIONS),
             expectedEngineerDid:engineerDid
           });
+        // In route mode, no final implementation bytes for user.routes.ts
+        // enter the script compiler OR the Backend model constructor.
+        const deriveRoutes=
+          process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1";
+        const targetRoute="apps/backend/src/users/user.routes.ts";
+        const otherImplementations={...referenceFiles};
+        if(deriveRoutes)delete otherImplementations[targetRoute];
         const offlineCalls=buildOfflineAdkScriptsFromApprovedPlan({
           plan:reviewed.plan,approvedRows,repo,branch:workBranch,
-          implementationContents:referenceFiles
+          implementationContents:deriveRoutes?otherImplementations:referenceFiles,
+          ...(deriveRoutes?{sourceDerivedPaths:[targetRoute]}:{})
         });
         approvedAgentModelFactory=context=>{
           const expected=approvedRows.filter(g=>
@@ -504,6 +515,10 @@ try{
             }));
           assert.deepEqual(context.approved_permissions,expected);
           assert.equal(Object.hasOwn(context,"implementationContents"),false);
+          if(context.role==="backend"&&deriveRoutes)
+            return new SourceDerivedRouteOfflineAdkModel({
+              context,calls:offlineCalls[context.role]
+            });
           if(context.role==="frontend"&&
              process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1")
             return new SourceWitnessedOfflineAdkModel({
@@ -531,12 +546,20 @@ try{
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
       const sourceWitnessMode=
         process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
+      const derivedRoutesMode=
+        process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1";
       assert.equal(globalThis.__nativeDagPositive.model_source,
-        sourceWitnessMode
-          ? "host_supplied_hybrid_source_witness_and_fixture"
-          : approvedAgentModelFactory
-            ? "host_supplied_scripted_tool_calls"
-            : "inline_scripted_tool_calls");
+        derivedRoutesMode
+          ? "host_supplied_source_derived_routes_with_remaining_fixtures"
+          : sourceWitnessMode
+            ? "host_supplied_hybrid_source_witness_and_fixture"
+            : approvedAgentModelFactory
+              ? "host_supplied_scripted_tool_calls"
+              : "inline_scripted_tool_calls");
+      assert.equal(globalThis.__nativeDagPositive
+        .source_derived_functional_route_verified,derivedRoutesMode);
+      assert.equal(globalThis.__nativeDagPositive
+        .source_derived_functional_file_count,derivedRoutesMode?1:0);
       assert.equal(globalThis.__nativeDagPositive
         .source_witnessed_native_dag_verified,sourceWitnessMode);
       // A host-selected BaseLlm can still encapsulate golden implementation

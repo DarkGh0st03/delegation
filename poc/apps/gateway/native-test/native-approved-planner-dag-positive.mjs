@@ -33,6 +33,8 @@ import {DeterministicA2AOrchestrator} from
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
 import {SourceWitnessedOfflineAdkModel}
   from "./source-witnessed-offline-adk-model.mjs";
+import {SourceDerivedRouteOfflineAdkModel}
+  from "./source-derived-route-offline-adk-model.mjs";
 import {buildOfflineAdkScriptsFromApprovedPlan}
   from "./approved-plan-offline-adk-call-scripts.mjs";
 import {bindModelsToApprovedRoleTasks}
@@ -614,6 +616,21 @@ export async function runNativePositiveApprovedDag({
       assert.ok(readPaths.frontend.has(witness.path));
       assert.ok(writePaths.frontend.has(witness.path));
     }
+    const derivedRoutes=models.backend instanceof SourceDerivedRouteOfflineAdkModel
+      ? models.backend : null;
+    if(derivedRoutes){
+      const proof=derivedRoutes.derivedRouteProof;
+      assert.ok(proof,"Route change must originate from a real ADK read");
+      assert.equal(proof.branch,branch);
+      assert.ok(files.backend.includes(proof.path));
+      assert.equal(proof.source_sha256,createHash("sha256")
+        .update(originals[proof.path],"utf8").digest("hex"));
+      const committed=await reader.readTextFile(branch,proof.path);
+      assert.ok(committed.content!==originals[proof.path]);
+      assert.ok(readPaths.backend.has(proof.path));
+      assert.ok(writePaths.backend.has(proof.path));
+      assert.ok(proof.directive_count>=1);
+    }
     const head=await reader.getBranchMetadata(branch);
     assert.equal(head.commit_sha,runnerOutcome.tested_commit_sha);
     assert.equal(createdPr.revision,head.commit_sha);
@@ -648,15 +665,21 @@ export async function runNativePositiveApprovedDag({
       // even when the native runner did not receive a referenceFiles argument.
       scripted_adk_no_paid_model:Object.values(models).every(
         model=>model instanceof OfflineApprovedAdkModel||
-          model instanceof SourceWitnessedOfflineAdkModel),
-      model_source:witnessModel
-        ? "host_supplied_hybrid_source_witness_and_fixture"
+          model instanceof SourceWitnessedOfflineAdkModel||
+          model instanceof SourceDerivedRouteOfflineAdkModel),
+      model_source:derivedRoutes
+        ? "host_supplied_source_derived_routes_with_remaining_fixtures"
+        : witnessModel
+          ? "host_supplied_hybrid_source_witness_and_fixture"
         : hostModels
           ? (Object.values(models).every(model=>
               model instanceof OfflineApprovedAdkModel)
               ? "host_supplied_scripted_tool_calls"
               : "host_supplied_unclassified_adk_models")
           : "inline_scripted_tool_calls",
+      source_derived_functional_route_verified:derivedRoutes!==null,
+      source_derived_functional_file_count:derivedRoutes?1:0,
+      remaining_prepackaged_application_file_count:derivedRoutes?10:11,
       source_witnessed_native_dag_verified:witnessModel!==null,
       source_witnessed_model_still_uses_fixture_code:witnessModel!==null,
       fixture_scripted_payloads_reach_adk_runner:Object.values(models).some(
@@ -666,7 +689,8 @@ export async function runNativePositiveApprovedDag({
       shared_mcp_http_requests:normalMcpCalls,
       private_crypto_mcp_http_requests:privateCryptoMcpCalls,
       adk_model_turns:{
-        backend:models.backend instanceof OfflineApprovedAdkModel
+        backend:models.backend instanceof OfflineApprovedAdkModel||
+          models.backend instanceof SourceDerivedRouteOfflineAdkModel
           ?models.backend.calls:null,
         frontend:models.frontend instanceof OfflineApprovedAdkModel||
           models.frontend instanceof SourceWitnessedOfflineAdkModel
