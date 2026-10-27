@@ -69,6 +69,8 @@ export interface TrustedAdkPlannerConfig {
    * An observer failure fails the Planning attempt closed. */
   onObservation?:(event:Readonly<PlanningObservation>)=>void;
   maxModelTurns?:number;
+  /** One optional bounded proposal repair within the same Planning session. */
+  maxProposalRevisions?:0|1;
   /** Explicit Gemini thinking level; unset for scripted/non-Gemini models. */
   thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
   /** Per-inference cancellation bound; does not itself guarantee a provider stops billing. */
@@ -433,6 +435,7 @@ export class TrustedAdkReadOnlyPlanner {
        !id.test(config.planId)||
        !Number.isSafeInteger(config.maxModelTurns??96)||
        (config.maxModelTurns??96)<1||(config.maxModelTurns??96)>96||
+       ![0,1].includes(config.maxProposalRevisions??0)||
        !Number.isSafeInteger(config.maxModelCallMs??120000)||
        (config.maxModelCallMs??120000)<1000||
        (config.maxModelCallMs??60000)>360000||
@@ -586,66 +589,85 @@ export class TrustedAdkReadOnlyPlanner {
     const sessions=new InMemorySessionService();
     const runner=new Runner({agent,appName,sessionService:sessions});
     await sessions.createSession({appName,userId,sessionId});
-    let finalText:string|undefined,error=false,errorLoggedByDelegate=false;
-    for await(const event of runner.runAsync({
-      userId,sessionId,newMessage:{role:"user",parts:[{text:JSON.stringify({
-        requirement:cfg.requirement,repository:sp.repository,
-        base_revision:sp.base_revision,work_branch:cfg.workBranch,
-        roles:["backend","frontend","test"],
-        directories:sp.directories,files:sp.files
-      })}]}
-    })){
-      if(planningDeadline.aborted){error=true;break;}
-      if(event.errorCode||event.errorMessage){
-        error=true;
-        // ADK may swallow and rewrite the original model error. This label
-        // documents only ADK's reported code, not a new provider request.
-        if(!errorLoggedByDelegate){
-          errorLoggedByDelegate=true;
-          cfg.onObservation?.(Object.freeze({
-            kind:"model_failure",turn:model.turns||1,
-            ...sanitizedModelFailure(event,"adk_runner_error")
-          }));
+    const firstMessage={role:"user" as const,parts:[{text:JSON.stringify({
+      requirement:cfg.requirement,repository:sp.repository,
+      base_revision:sp.base_revision,work_branch:cfg.workBranch,
+      roles:["backend","frontend","test"],
+      directories:sp.directories,files:sp.files
+    })}]};
+    const maxRevisions=cfg.maxProposalRevisions??0;
+    let revisions=0;
+    let feedback:{stage:"json"|"contract";reason:TrustedPlanningRejectionReason}|null=null;
+    // All drafts share this one Planner session, model budget and deadline.
+    // No failed draft is approved, persisted or sent to Execution.
+    for(;;){
+      let finalText:string|undefined,error=false,errorLoggedByDelegate=false;
+      const newMessage=feedback===null?firstMessage:{
+        role:"user" as const,parts:[{text:[
+          "Your preceding UNAPPROVED draft failed trusted contract validation.",
+          "Rejected stage: "+feedback.stage,
+          "Rejected category: "+feedback.reason,
+          "Return the COMPLETE corrected JSON plan with exact required keys.",
+          "Use only the approved read-only snapshot and authorized role operations.",
+          "Never expand permissions or use undiscovered file paths.",
+          "The previous draft has NOT been approved or executed."
+        ].join("\n")}]};
+      for await(const event of runner.runAsync({
+        userId,sessionId,newMessage
+      })){
+        if(planningDeadline.aborted){error=true;break;}
+        if(event.errorCode||event.errorMessage){
+          error=true;
+          if(!errorLoggedByDelegate){
+            errorLoggedByDelegate=true;
+            cfg.onObservation?.(Object.freeze({
+              kind:"model_failure",turn:model.turns||1,
+              ...sanitizedModelFailure(event,"adk_runner_error")
+            }));
+          }
+        }
+        if(event.author===agent.name&&event.content?.role==="model"){
+          for(const part of event.content.parts??[]){
+            if(typeof part.text==="string"&&part.text.trim())
+              finalText=part.text.trim();
+          }
         }
       }
-      if(event.author===agent.name&&event.content?.role==="model"){
-        for(const part of event.content.parts??[]){
-          if(typeof part.text==="string"&&part.text.trim())
-            finalText=part.text.trim();
-        }
+      if(planningDeadline.aborted||error||denied||
+         readCount===0||!finalText||finalText.length>65000){
+        cfg.onObservation?.(Object.freeze({
+          kind:"plan_rejection",stage:"grounding",
+          reason:"ungrounded_or_missing_output"
+        }));
+        fail("no verified read-only grounded proposal");
       }
-    }
-    if(planningDeadline.aborted||error||denied||
-       readCount===0||!finalText||finalText.length>65000){
+      let proposed:unknown;
+      try{proposed=JSON.parse(finalText);}catch{
+        const rejection={stage:"json" as const,reason:"invalid_json" as const};
+        cfg.onObservation?.(Object.freeze({kind:"plan_rejection",...rejection}));
+        if(revisions<maxRevisions&&model.turns<model.limit&&!planningDeadline.aborted){
+          feedback=rejection;revisions++;continue;
+        }
+        fail("model output was not strict JSON");
+      }
+      let result:UnapprovedPlanProposal;
+      try{result=compilePlanningProposal(proposed,cfg);}catch(error){
+        const rejection={stage:"contract" as const,
+          reason:safePlanningRejection(error)};
+        cfg.onObservation?.(Object.freeze({kind:"plan_rejection",...rejection}));
+        if(revisions<maxRevisions&&model.turns<model.limit&&!planningDeadline.aborted){
+          feedback=rejection;revisions++;continue;
+        }
+        throw error;
+      }
+      if(planningDeadline.aborted)fail("no verified read-only grounded proposal");
       cfg.onObservation?.(Object.freeze({
-        kind:"plan_rejection",stage:"grounding",
-        reason:"ungrounded_or_missing_output"
+        kind:"proposal",status:"unapproved",digest:result.digest,
+        task_count:result.plan.tasks.length,
+        permission_count:result.plan.requested_permissions.length,
+        verified_source_reads:readCount
       }));
-      fail("no verified read-only grounded proposal");
+      return {...result,verified_source_reads:readCount};
     }
-    let proposed:unknown;
-    try{proposed=JSON.parse(finalText);}catch{
-      cfg.onObservation?.(Object.freeze({
-        kind:"plan_rejection",stage:"json",reason:"invalid_json"
-      }));
-      fail("model output was not strict JSON");
-    }
-    let result:UnapprovedPlanProposal;
-    try{result=compilePlanningProposal(proposed,cfg);}catch(error){
-      cfg.onObservation?.(Object.freeze({
-        kind:"plan_rejection",stage:"contract",
-        reason:safePlanningRejection(error)
-      }));
-      throw error;
-    }
-    if(planningDeadline.aborted)
-      fail("no verified read-only grounded proposal");
-    cfg.onObservation?.(Object.freeze({
-      kind:"proposal",status:"unapproved",digest:result.digest,
-      task_count:result.plan.tasks.length,
-      permission_count:result.plan.requested_permissions.length,
-      verified_source_reads:readCount
-    }));
-    return {...result,verified_source_reads:readCount};
   }
 }
