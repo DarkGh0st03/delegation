@@ -71,6 +71,8 @@ jobs:
           node poc/scripts/init-local-env.mjs --force
       - name: F1 real Gitea unsolved baseline contract tests (no model calls)
         run: node --experimental-strip-types --test poc/scripts/test/f1-real-gitea-planner-readiness.test.mjs
+      - name: F1 real Gitea research Planning snapshot read-port tests (no model calls)
+        run: node --experimental-strip-types --test poc/scripts/test/f1-gitea-research-planning-port.test.mjs
       - name: Offline Gemini Planning-to-Execution bridge regression (zero model calls)
         run: |
           node --experimental-strip-types --test \
