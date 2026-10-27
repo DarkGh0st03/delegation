@@ -64,17 +64,17 @@ jobs:
           version: v1.8.4
       - name: Validate functional checkpoint parser on checked-out source
         run: node --test poc/scripts/test/functional-signed-dag-evidence.test.mjs
+      - name: Install pinned local Node and DID dependencies
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+          node poc/scripts/init-local-env.mjs --force
       - name: Offline Gemini Planning-to-Execution bridge regression (zero model calls)
         run: |
           node --experimental-strip-types --test \
             poc/apps/orchestrator/test/trusted-gemini-execution-binding.test.mjs \
             poc/apps/orchestrator/test/trusted-gemini-owner-dispatch.test.mjs \
             poc/apps/orchestrator/test/run-trusted-gemini-owner.test.mjs
-      - name: Install pinned local Node and DID dependencies
-        run: |
-          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
-          npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
-          node poc/scripts/init-local-env.mjs --force
       - name: Start only disposable Anvil and OPA
         run: |
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
