@@ -1293,3 +1293,69 @@ evidence of prior reconciliation; they do NOT cryptographically prove the
 original root DC signatures, current on-chain state or independent
 Ethereum finality. The public JWT/EVM checks still verify each revoked bit
 in one block. The existing external R5 GO remains **false**.
+
+## R5 — Owner-protected full signed-DAG EVM observer (27 October 2026)
+
+`poc/scripts/r5-protected-full-dag-evm-audit.mjs` now exposes a *read-only,
+owner-side command* for the complete approved Task inventory, instead of a
+single manually selected Status List index. It reads protected records from
+the **original** signed Engineer approval directory, the original
+closed-Coordinator post-run evidence, a separately maintained credential
+inventory, the Planning and operational-root retirement ledgers, and
+the original fsynced child-issuance journal. The command refuses GitHub
+Actions execution and never reads a Gateway bearer, invokes the Adapter
+status endpoint, issues/revokes credentials or calls an AI provider.
+
+A protected 0700 directory contains the 0600
+`DELEGATION_R5_FULL_DAG_EVM_CONFIG` JSON file (schema
+`r5-owner-full-dag-public-evm-v1`). Its exact required keys are:
+`schema`, `source_sha`, `github_run_id`, `evidence_directory`,
+`inventory_directory`, `approval_directory`, `engineer_did`,
+`engineer_key_id`, `engineer_public_key_file`,
+`planning_recovery_directory`, `operational_recovery_directory`,
+`issuance_journal_directory`, `root_status_entries_file`,
+`public_artifact_root`, `rpc_url`, `expected_chain_id`,
+`registry_address`, `issuer_address`, `issuer_did`,
+`issuer_public_jwk_file`. Root Status List entries are an owner-only
+0600 JSON array containing exactly the two known root credential IDs
+and their `status_list_credential` URLs and
+`status_list_index` strings. All child status slots are taken
+**exclusively** from the original Host's intent ledger, including
+unacknowledged `issuance_uncertain` attempts.
+
+The independently configured issuer public Ed25519 JWK must be 0600.
+Public JWTs are loaded as exact unmodified bytes from the Rust
+`FilePublicArtifactStore` directory, using its deterministic filename
+derivation. Every public Status List referenced by either root or any
+approved Task child must be present. The same-block independent
+Ed25519/Keccak/EVM verifier then checks **each** bit and commitment
+and refuses inconsistent block hashes.
+
+The operator must provision **independent pins** outside the config:
+`DELEGATION_R5_EXPECTED_SOURCE_SHA`,
+`DELEGATION_R5_EXPECTED_RUN_ID`,
+`DELEGATION_R5_EXPECTED_CHAIN_ID`,
+`DELEGATION_R5_EXPECTED_REGISTRY_ADDRESS`,
+and `DELEGATION_R5_EXPECTED_ISSUER_DID`. Launch only from the trusted
+Engineer/operator machine:
+
+```bash
+node --experimental-strip-types poc/scripts/r5-protected-full-dag-evm-audit.mjs
+```
+
+The test
+`poc/scripts/test/r5-protected-full-dag-evm-audit.test.mjs`
+includes a positive fixture with a real Ed25519 Engineer approval, two
+durably retired owner-root intents, three child intents (including an
+unacknowledged one), a separately signed W3C Status List JWT with five
+revoked bits, and simulated pinned Ethereum JSON-RPC replies. Negative
+tests confirm independent pins, signatures and read-only CI isolation.
+
+**Evidentiary limitations remain unchanged:** operator-provided
+root Status List slot metadata and the original Host's local tombstones
+do not independently authenticate both original root DCs; the protected
+file storage is not a tamper-proof issuance ledger; a local JSON-RPC
+node is not independently established as honest or final; and a
+five-bit offline test is not a physical deployed system. A full R5
+GO requires separate on-chain infrastructure and runner acceptance.
+The result cannot assert `external_r5_go:true`.
