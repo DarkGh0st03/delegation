@@ -67,3 +67,36 @@ The billable real-Gemini research probe writes a separate
 \`functional-review.json\` for an Engineer to consider. No automatic
 signature, operational delegation or merge follows a good score.
 
+## F1 offline comparison of saved Planner attempts
+
+The repository now includes
+\`poc/scripts/f1-planner-offline-comparison.mjs\`: a **zero-inference**
+comparison of *saved* F1 \`unapproved-proposal.json\` and
+\`observations.json\` pairs for the *same independently pinned original SHA*.
+It recomputes the SHA-bound plan digest, technical feasibility and functional
+completeness instead of trusting the model's or operator's claim of success.
+
+Example **only after separately authorizing and running real provider probes**
+on the same original source revision:
+
+\`\`\`bash
+node --experimental-strip-types poc/scripts/f1-planner-offline-comparison.mjs \
+  "$PINNED_SOURCE_SHA" medium=/private/research/medium high=/private/research/high \
+  > /private/research/offline-comparison.json
+\`\`\`
+
+The comparison command **never imports a Gemini model, contacts an API,
+reads a Gemini API key, grants a credential or executes approved Tasks**.
+Its output includes only bounded quality counters, unsatisfied functional
+check identifiers, saved plan digests, and any *optional* provider-reported
+token counters. It does not include source files, prompts, full model output
+or secrets. Labels \`medium\` and \`high\` are **operator-provided aliases**,
+not authenticated model identities; true billing and model provenance still
+require separate provider records. The ranking is diagnostic, not Engineer
+approval.
+
+A plan with a valid schema but without Test Agent implementation of regression
+tests is correctly recorded as functionally incomplete, even if run_tests
+would have succeeded on pre-existing tests. No offline ranking changes
+\`F1 real Gemini: not yet executed\`, \`F2: not executed\`, or \`R5: NO-GO\`.
+

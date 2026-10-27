@@ -9,6 +9,8 @@ on:
       - "poc/scripts/run-gemini-planner-fixture.mjs"
       - "poc/scripts/check-gemini-planner-model-access.mjs"
       - "poc/scripts/planner-feasibility-eval.mjs"
+      - "poc/scripts/f1-planner-offline-comparison.mjs"
+      - "poc/scripts/test/f1-planner-offline-comparison.test.mjs"
       - "poc/scripts/test/planner-feasibility-eval.test.mjs"
       - "poc/scripts/test/run-gemini-planner-fixture.test.mjs"
       - "poc/scripts/test/check-gemini-planner-model-access.test.mjs"
@@ -40,6 +42,8 @@ jobs:
       - name: Validate offline benchmark and cost-control tests
         run: |
           node --test poc/scripts/test/planner-feasibility-eval.test.mjs poc/scripts/test/run-gemini-planner-fixture.test.mjs poc/scripts/test/check-gemini-planner-model-access.test.mjs
+      - name: Compare saved Planner quality offline without any model call
+        run: node --experimental-strip-types --test poc/scripts/test/f1-planner-offline-comparison.test.mjs
       - name: Validate actual ADK read-only Planner contract using scripted model
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts
       - name: Assert no Gemini API key or manual billable execution in this workflow
