@@ -100,6 +100,26 @@ export class TrustedPlanningRecoveryStore{
     finally{await fd.close();}
     await this.#sync();
   }
+  /**
+   * Read the original Host's immutable, durable RETIRED root intent.
+   * Reject any still-pending or half-transitioned issuance: a tombstone
+   * records local reconciliation, NOT independent EVM finality.
+   */
+  async retiredForSession(sessionId:string,baseRevision:string,credentialId:string):Promise<void>{
+    if(!ID.test(sessionId)||!SHA.test(baseRevision)||!ID.test(credentialId))
+      fail("retired Planning pins invalid");
+    await this.#check();
+    const row=await this.#read(this.#path(sessionId,"retired"));
+    if(row.session_id!==sessionId||row.base_revision!==baseRevision||
+       row.credential_id!==credentialId)
+      fail("retired Planning root not the original approved root");
+    try{
+      await lstat(this.#path(sessionId,"pending"));
+      fail("Planning root remains pending during audit");
+    }catch(e){
+      if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;
+    }
+  }
   /** Caller must have independently confirmed Gateway retirement and
    * native Rust/Adapter revocation. Never overwrite a retired tombstone. */
   async markReconciled(input:{sessionId:string;baseRevision:string;credentialId:string}){

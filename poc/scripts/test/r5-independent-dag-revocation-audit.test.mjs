@@ -13,6 +13,10 @@ import {SignedEngineerApprovalFileStore}
   from "../../packages/orchestrator-runtime/src/signed-approval-store.ts";
 import {TrustedChildIssuanceJournal}
   from "../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
+import {TrustedPlanningRecoveryStore}
+  from "../../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
+import {TrustedOperationalRecoveryStore}
+  from "../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {observeR5IndependentDagRevocations}
   from "../r5-independent-dag-revocation-audit.mjs";
 
@@ -31,9 +35,10 @@ const STEPS=[
 ];
 async function fixture(){
   const root=await mkdtemp(join(tmpdir(),"r5-whole-dag-block-"));
-  const approvalDir=join(root,"approvals"),issueDir=join(root,"issuance");
-  await mkdir(approvalDir,{mode:0o700});
-  await mkdir(issueDir,{mode:0o700});
+  const approvalDir=join(root,"approvals"),issueDir=join(root,"issuance"),
+    planningDir=join(root,"planning"),operDir=join(root,"operational");
+  await Promise.all([approvalDir,issueDir,planningDir,operDir].map(dir=>
+    mkdir(dir,{mode:0o700})));
   const plan={
     schema_version:PLAN_SCHEMA_VERSION,plan_id:"r5-all-status",
     session_id:"r5-full-dag-review",version:1,
@@ -73,6 +78,20 @@ async function fixture(){
     }}
   });
   const rootPlanning="urn:root:planning",rootOperational="urn:root:execution";
+  const planningRecoveryStore=new TrustedPlanningRecoveryStore(planningDir);
+  const operationalRecoveryStore=new TrustedOperationalRecoveryStore(operDir);
+  await planningRecoveryStore.recordIntent({
+    sessionId:plan.session_id,baseRevision:SHA,credentialId:rootPlanning
+  });
+  await operationalRecoveryStore.recordIntent({
+    sessionId:plan.session_id,baseRevision:SHA,credentialId:rootOperational
+  });
+  await planningRecoveryStore.markReconciled({
+    sessionId:plan.session_id,baseRevision:SHA,credentialId:rootPlanning
+  });
+  await operationalRecoveryStore.markReconciled({
+    sessionId:plan.session_id,baseRevision:SHA,credentialId:rootOperational
+  });
   const inventory={
     schema:"r5-credential-issuance-inventory-v1",
     source_sha:SHA,github_run_id:"40470099125",session_id:plan.session_id,
@@ -135,14 +154,16 @@ async function fixture(){
     };
   };
   const args={ownerEvidence,inventory,approvalStore,issuanceJournal,
+    planningRecoveryStore,operationalRecoveryStore,
     rootStatusEntries,publicStatusLists,chainPins,verifyEntry};
-  return {root,issueDir,args,events,
+  return {root,issueDir,planningDir,operDir,args,events,
     close:()=>rm(root,{force:true,recursive:true})};
 }
 test("R5 verifies two roots and every original Host child on one block without promoting uncertain issuance",async()=>{
   const f=await fixture();try{
     const r=await observeR5IndependentDagRevocations(f.args);
     assert.equal(r.observed_root_count,2);
+    assert.equal(r.original_host_root_tombstones_matched,true);
     assert.equal(r.observed_specialized_child_count,3);
     assert.equal(r.uncertain_child_issuance_count,1);
     assert.equal(r.observed_block_number,BLOCK);
@@ -151,7 +172,9 @@ test("R5 verifies two roots and every original Host child on one block without p
     assert.equal(r.safe_to_retry_child_issuance,false);
     assert.equal(r.complete_issuer_issuance_ledger_independently_verified,false);
     assert.equal(r.external_r5_go,false);
-    assert.deepEqual(f.events.map(x=>x.statusListIndex),[101,102,103,104,105]);
+    assert.deepEqual(f.events.slice(0,2).map(x=>x.statusListIndex),[101,102]);
+    assert.deepEqual(f.events.slice(2).map(x=>x.statusListIndex)
+      .sort((a,b)=>a-b),[103,104,105]);
     assert.equal(f.events[0].expectedBlockNumber,undefined);
     for(const call of f.events.slice(1)){
       assert.equal(call.expectedBlockNumber,BLOCK);
@@ -178,6 +201,36 @@ test("R5 missing or duplicated roots, child, slot or public artifact deny before
       assert.equal(f.events.length,0);
     }finally{await f.close();}
   }
+});
+test("R5 missing or substituted original Host root tombstones deny before RPC",async()=>{
+  for(const kind of ["planning","operational"]){
+    const f=await fixture();try{
+      const {readdir,rm:remove}=await import("node:fs/promises");
+      const directory=kind==="planning"?f.planningDir:f.operDir;
+      const file=(await readdir(directory)).find(name=>name.endsWith(".retired.json"));
+      assert.ok(file);
+      await remove(join(directory,file));
+      await assert.rejects(observeR5IndependentDagRevocations(f.args),/recovery|Planning|operational|root/i);
+      assert.equal(f.events.length,0);
+    }finally{await f.close();}
+  }
+});
+test("R5 a root retirement journal changing during Ethereum RPC aborts the audit",async()=>{
+  const f=await fixture();try{
+    const {readdir,rm:remove}=await import("node:fs/promises");
+    let observed=false;
+    await assert.rejects(observeR5IndependentDagRevocations({
+      ...f.args,verifyEntry:async opts=>{
+        if(!observed){
+          observed=true;
+          const name=(await readdir(f.operDir)).find(x=>x.endsWith(".retired.json"));
+          await remove(join(f.operDir,name));
+        }
+        return f.args.verifyEntry(opts);
+      }
+    }),/recovery|operational|root/i);
+    assert.equal(observed,true);
+  }finally{await f.close();}
 });
 test("R5 a mismatched block hash across independently checked Status Lists is NO-GO",async()=>{
   const f=await fixture();try{

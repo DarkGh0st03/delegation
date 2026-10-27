@@ -1272,3 +1272,24 @@ provenance, ledger completeness outside this Host, chain finality, physical
 runner identity or R5 GO. Its output always has
 `external_r5_go:false` and
 `safe_to_retry_child_issuance:false`.
+
+## R5 — Original retired root journals and whole-DAG consistency
+
+The full-DAG public-status observer now requires **both** genuine original
+Engineer Host recovery stores in addition to the signed plan and original
+child issuance journal: `TrustedPlanningRecoveryStore` and
+`TrustedOperationalRecoveryStore`. Each has a fail-closed
+`retiredForSession(sessionId, baseRevision, credentialId)` read
+that checks the immutable owner-only retirement record for the exact
+session, source SHA and credential ID. A missing or malformed retirement
+record, or a concurrent pending issuance copy, is NO-GO before any EVM
+RPC is considered. The observer rechecks both tombstones after all
+Ethereum calls to reject roots retired/modified during the snapshot.
+
+This binds the two operator-provided Status List entries to the original
+Host's **known root IDs**, rather than permitting an arbitrary pair of
+unrelated root identifiers. The root recovery tombstones are local Host
+evidence of prior reconciliation; they do NOT cryptographically prove the
+original root DC signatures, current on-chain state or independent
+Ethereum finality. The public JWT/EVM checks still verify each revoked bit
+in one block. The existing external R5 GO remains **false**.

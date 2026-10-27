@@ -135,6 +135,25 @@ export class TrustedOperationalRecoveryStore{
     }finally{await fd.close();}
     await this.#syncDir();
   }
+  /**
+   * Match exact retired operational root from the original owner journal.
+   * Never accept an outstanding pending copy or infer finality from a file.
+   */
+  async retiredForSession(sessionId:string,baseRevision:string,credentialId:string):Promise<void>{
+    if(!SESSION.test(sessionId)||!SHA.test(baseRevision)||!ROOT.test(credentialId))
+      fail("retired operational root pins invalid");
+    await this.#checkDir();
+    const row=await this.#read(this.#name(sessionId,"retired"));
+    if(row.session_id!==sessionId||row.base_revision!==baseRevision||
+       row.credential_id!==credentialId)
+      fail("retired operational root differs from original issuance");
+    try{
+      await lstat(this.#name(sessionId,"pending"));
+      fail("operational root is still pending during audit");
+    }catch(e){
+      if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;
+    }
+  }
   /** A journal can be retired ONLY after confirmed Gateway tombstone + DC revocation. */
   async markReconciled(input:{
     sessionId:string;baseRevision:string;credentialId:string

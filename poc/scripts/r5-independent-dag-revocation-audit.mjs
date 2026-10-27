@@ -15,6 +15,10 @@ import {SignedEngineerApprovalFileStore}
   from "../packages/orchestrator-runtime/src/signed-approval-store.ts";
 import {TrustedChildIssuanceJournal}
   from "../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
+import {TrustedPlanningRecoveryStore}
+  from "../packages/orchestrator-runtime/src/trusted-planning-recovery-store.ts";
+import {TrustedOperationalRecoveryStore}
+  from "../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {validateR5SignedRevocationInventory}
   from "./r5-signed-revocation-inventory.mjs";
 import {observeR5IndependentEvmStatus}
@@ -51,11 +55,14 @@ function statusRow(value){
  */
 export async function observeR5IndependentDagRevocations({
   ownerEvidence,inventory,approvalStore,issuanceJournal,
+  planningRecoveryStore,operationalRecoveryStore,
   rootStatusEntries,publicStatusLists,chainPins,
   fetchFn=fetch,verifyEntry=observeR5IndependentEvmStatus
 }={}){
   if(!(approvalStore instanceof SignedEngineerApprovalFileStore)||
      !(issuanceJournal instanceof TrustedChildIssuanceJournal)||
+     !(planningRecoveryStore instanceof TrustedPlanningRecoveryStore)||
+     !(operationalRecoveryStore instanceof TrustedOperationalRecoveryStore)||
      !fields(chainPins,PINS)||typeof fetchFn!=="function"||
      typeof verifyEntry!=="function")
     deny("independent signed review and read-only EVM trust pins required");
@@ -72,6 +79,15 @@ export async function observeR5IndependentDagRevocations({
     planDigest:inventory.approved_plan_digest,
     parentCredentialId:inventory.operational_root_id
   });
+  // The original Host's dedicated Planning and operational root recovery
+  // ledgers are checked BEFORE EVM observation. Operator-supplied root IDs
+  // alone could otherwise bind unrelated root slots to a signed Task DAG.
+  await Promise.all([
+    planningRecoveryStore.retiredForSession(
+      inventory.session_id,inventory.source_sha,inventory.preliminary_root_id),
+    operationalRecoveryStore.retiredForSession(
+      inventory.session_id,inventory.source_sha,inventory.operational_root_id)
+  ]);
   if(!Array.isArray(rootStatusEntries)||rootStatusEntries.length!==2||
      !Array.isArray(publicStatusLists)||publicStatusLists.length<1||
      publicStatusLists.length>130)
@@ -155,6 +171,14 @@ export async function observeR5IndependentDagRevocations({
   if(JSON.stringify(await issuanceJournal.records())!==
      JSON.stringify(journalBefore))
     deny("original issuance ledger changed during public EVM audit");
+  // Never accept a retired root that has disappeared or regained a pending
+  // issuer record while waiting on the externally operated EVM RPC.
+  await Promise.all([
+    planningRecoveryStore.retiredForSession(
+      inventory.session_id,inventory.source_sha,inventory.preliminary_root_id),
+    operationalRecoveryStore.retiredForSession(
+      inventory.session_id,inventory.source_sha,inventory.operational_root_id)
+  ]);
   const uncertain=journalBefore.filter(x=>
     x.observation==="issuance_uncertain").length;
   return Object.freeze({
@@ -165,6 +189,7 @@ export async function observeR5IndependentDagRevocations({
     observed_block_number:pinnedBlockNumber,
     observed_block_hash:pinnedBlockHash,
     one_block_consistent:true,
+    original_host_root_tombstones_matched:true,
     roots_externally_authenticated_as_issued:false,
     complete_issuer_issuance_ledger_independently_verified:false,
     independent_chain_finality_verified:false,
