@@ -1,0 +1,55 @@
+# Model-free local-operator rehearsal. NOT DC/Gateway authenticated and
+# never real Gemini inference, Engineer consent, credentials or R5 GO.
+name: F1 Owner Disposable Real Gitea Startup (Zero Gemini Cost)
+on:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/workflows/f1-disposable-real-gitea.yml'
+      - 'poc/scripts/f1-local-gitea-session.mjs'
+      - 'poc/scripts/test/f1-local-gitea-session.test.mjs'
+      - 'poc/scripts/f1-real-gitea-gemini-probe.mjs'
+      - 'poc/scripts/f1-real-gitea-planner-readiness.mjs'
+      - 'poc/scripts/f1-gitea-research-planning-port.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: f1-disposable-gitea-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  local-operator-session:
+    name: Standalone real Gitea pin, read-only check and teardown
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      F1_SESSION: /tmp/delegation-f1-disposable-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install pinned dependencies without lifecycle scripts
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Validate no-Gemini modes and owner session contracts
+        run: node --experimental-strip-types --test poc/scripts/test/f1-local-gitea-session.test.mjs
+      - name: Preload pinned disposable Gitea image
+        run: docker pull docker.gitea.com/gitea:28.0.0
+      - name: Start real original-source Gitea and verify F1 readiness
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types poc/scripts/f1-local-gitea-session.mjs --start "$F1_SESSION"
+          node --experimental-strip-types poc/scripts/f1-local-gitea-session.mjs --check "$F1_SESSION"
+      - name: Tear down owner Gitea on any completion outcome
+        if: always()
+        run: |
+          if [[ -d "$F1_SESSION" ]]; then
+            node --experimental-strip-types poc/scripts/f1-local-gitea-session.mjs --stop "$F1_SESSION" || true
+          fi
+      - name: No provider key injected
+        if: always()
+        run: test -z "${GEMINI_API_KEY:-}"
