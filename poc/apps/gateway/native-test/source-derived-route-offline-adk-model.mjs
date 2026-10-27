@@ -5,6 +5,8 @@
  */
 import {BaseLlm} from "@google/adk";
 import {createHash} from "node:crypto";
+import {applyApprovedControllerInstructions,parseApprovedControllerInstructions}
+  from "./source-derived-controller-edits.mjs";
 const ROUTE=/^ROUTE (GET|POST|PATCH|PUT|DELETE) (\/[a-z0-9:_/-]+) ([A-Za-z_$][\w$]*) (BEFORE|AFTER) (GET|POST|PATCH|PUT|DELETE) (\/[a-z0-9:_/-]+)$/u;
 const EXISTING=/^(\s*)router\.(get|post|patch|put|delete)\("([^"]+)",\s*controller\.([A-Za-z_$][\w$]*)\);\s*$/u;
 const SHA=/^[a-f0-9]{40}$/u;
@@ -78,7 +80,8 @@ function confirmedRead(request,branch,path){
   return data.content;
 }
 export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
-  #script;#index=0;#target;#rules;#proof=null;
+  #script;#index=0;#targets;#rules;#controllerRules=null;
+  #proof=null;#controllerProof=null;
   constructor({context,calls}={}){
     super({model:"offline-source-derived-routes-no-provider"});
     if(context?.role!=="backend"||!Array.isArray(calls)||
@@ -86,22 +89,42 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
     const script=structuredClone(calls);
     const derived=script.map((call,index)=>({call,index})).filter(({call})=>
       call.name==="update_file"&&!Object.hasOwn(call.args??{},"content"));
-    if(derived.length!==1)deny("exactly one content-free update required");
-    const {call,index}=derived[0],previous=script[index-1];
-    if(previous?.name!=="read_file"||
-       previous.args?.branch!==call.args?.branch||
-       previous.args?.path!==call.args?.path||
-       typeof call.args.path!=="string"||
-       typeof call.args.branch!=="string"||
-       !grant(context,"read_file",call.args.branch,call.args.path)||
-       !grant(context,"update_file",call.args.branch,call.args.path))
-      deny("content-free update needs approved matching read");
+    if(derived.length<1||derived.length>2)
+      deny("one or two source-derived updates required");
+    this.#targets=new Map();
+    for(const {call,index} of derived){
+      const previous=script[index-1];
+      if(previous?.name!=="read_file"||
+         previous.args?.branch!==call.args?.branch||
+         previous.args?.path!==call.args?.path||
+         typeof call.args.path!=="string"||
+         typeof call.args.branch!=="string"||
+         !grant(context,"read_file",call.args.branch,call.args.path)||
+         !grant(context,"update_file",call.args.branch,call.args.path))
+        deny("content-free update needs approved matching read");
+      // Routing and controller edits are selected by the approved task
+      // directives AND the recognized file type, not by scenario ID.
+      const type=call.args.path.endsWith(".routes.ts")?"route":
+        call.args.path.endsWith(".controller.ts")?"controller":null;
+      if(!type||[...this.#targets.values()].some(v=>v.type===type))
+        deny("unrecognized or duplicate source-derived edit type");
+      this.#targets.set(index,{branch:call.args.branch,
+        path:call.args.path,type});
+    }
     this.#rules=routeRules(context.tasks);
+    if([...this.#targets.values()].some(x=>x.type==="controller"))
+      this.#controllerRules=parseApprovedControllerInstructions(
+        context.tasks[0].description);
     this.#script=script;
-    this.#target={branch:call.args.branch,path:call.args.path,index};
   }
   get calls(){return this.#index;}
   get derivedRouteProof(){return this.#proof?Object.freeze({...this.#proof}):null;}
+  get derivedControllerProof(){
+    return this.#controllerProof?Object.freeze({...this.#controllerProof}):null;
+  }
+  get derivedFileCount(){
+    return Number(this.#proof!==null)+Number(this.#controllerProof!==null);
+  }
   async *generateContentAsync(request){
     const index=this.#index++,call=this.#script[index];
     if(!call){
@@ -111,16 +134,25 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
       return;
     }
     let selected=call;
-    if(index===this.#target.index){
-      const read=confirmedRead(request,this.#target.branch,this.#target.path);
-      const content=applyApprovedRouteRules(read,this.#rules);
-      this.#proof=Object.freeze({
-        branch:this.#target.branch,path:this.#target.path,
+    const target=this.#targets.get(index);
+    if(target){
+      const read=confirmedRead(request,target.branch,target.path);
+      const content=target.type==="route"
+        ?applyApprovedRouteRules(read,this.#rules)
+        :applyApprovedControllerInstructions(read,this.#controllerRules);
+      const proof=Object.freeze({
+        branch:target.branch,path:target.path,
         source_sha256:createHash("sha256").update(read,"utf8").digest("hex"),
-        directive_count:this.#rules.length,source_derived:true
+        directive_count:target.type==="route"
+          ?this.#rules.length
+          :this.#controllerRules.handlers.length+
+            this.#controllerRules.errors.length,
+        source_derived:true
       });
+      if(target.type==="route")this.#proof=proof;
+      else this.#controllerProof=proof;
       selected={name:"update_file",args:{
-        branch:this.#target.branch,path:this.#target.path,content
+        branch:target.branch,path:target.path,content
       }};
     }
     yield {content:{role:"model",parts:[{functionCall:{

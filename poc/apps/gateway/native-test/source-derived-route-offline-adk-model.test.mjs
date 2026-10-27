@@ -112,3 +112,66 @@ test("unknown permission, malformed source and spoofed provider read fail closed
     anchorMethod:"patch",anchorPath:"/does-not-exist"
   }]),/NO-GO/);
 });
+
+test("Account Suspension: two source-derived Backend writes from approved controller and route reads",async()=>{
+  const ctrlPath="apps/backend/src/users/user.controller.ts";
+  const ctrlResource="gitea://gitea.local/thesis/iam/branches/"+
+    encodeURIComponent(branch)+"/files/"+ctrlPath;
+  const extended={...context,
+    tasks:[{...context.tasks[0],description:description+"\n"+
+      "CONTROLLER HANDLER suspendUser CALL suspendUser\n"+
+      "CONTROLLER HANDLER reactivateUser CALL reactivateUser\n"+
+      "CONTROLLER ERROR AccountStatusConflictError STATUS 409 CODE ACCOUNT_STATUS_CONFLICT"}],
+    approved_permissions:[...context.approved_permissions,
+      {task_id:"backend",operation:"read_file",resource:ctrlResource},
+      {task_id:"backend",operation:"update_file",resource:ctrlResource}]
+  };
+  const ctrlSource=[
+    'import type { NextFunction, Request, Response } from "express";',
+    'import { z } from "zod";',
+    'import { UserNotFoundError, UserService } from "./user.service.js";',
+    'export function createUserController(service: UserService) {',
+    '  return {',
+    '    updateProfile(request: Request, response: Response, next: NextFunction): void {',
+    '      try {',
+    '        response.json(service.updateProfile(String(request.params.id), request.body));',
+    '      } catch (error) { next(error); }',
+    '    }',
+    '  };',
+    '}',
+    'export function userErrorHandler(error: unknown, _request: Request,',
+    '  response: Response, _next: NextFunction): void {',
+    '  if (error instanceof z.ZodError) {',
+    '    response.status(400).json({code: "INVALID_INPUT"});',
+    '  }',
+    '}',
+    ''
+  ].join("\n");
+  const scripts=[
+    {name:"read_file",args:{branch,path:ctrlPath}},
+    {name:"update_file",args:{branch,path:ctrlPath}},
+    ...script
+  ];
+  const m=new SourceDerivedRouteOfflineAdkModel({
+    context:extended,calls:scripts
+  });
+  assert.equal((await next(m,{})).functionCall.name,"read_file");
+  const ctrl=(await next(m,input({ok:true,result:{
+    ...data,path:ctrlPath,content:ctrlSource
+  }}))).functionCall;
+  assert.equal(ctrl.name,"update_file");
+  assert.ok(ctrl.args.content.includes("service.suspendUser"));
+  assert.ok(ctrl.args.content.includes("AccountStatusConflictError"));
+  assert.equal((await next(m,{})).functionCall.name,"read_file");
+  const route=(await next(m,input({ok:true,result:data}))).functionCall;
+  assert.ok(route.args.content.includes('router.post("/:id/suspend"'));
+  assert.equal(m.derivedFileCount,2);
+  assert.equal(m.derivedControllerProof.path,ctrlPath);
+  assert.equal(m.derivedRouteProof.path,path);
+  const reduced={...extended,approved_permissions:
+    extended.approved_permissions.filter(p=>p.resource!==ctrlResource||
+      p.operation!=="update_file")};
+  assert.throws(()=>new SourceDerivedRouteOfflineAdkModel({
+    context:reduced,calls:scripts
+  }),/NO-GO/);
+});
