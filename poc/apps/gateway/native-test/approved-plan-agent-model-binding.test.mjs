@@ -10,6 +10,8 @@ import {makeApproval,assertApprovedPlanScope}
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {bindModelsToApprovedRoleTasks}
   from "./approved-plan-agent-model-binding.mjs";
+import {getApprovedOfflineScenario}
+  from "../../test-runner-controller/fixtures/approved-scenarios.mjs";
 
 const snapshot={
   session_id:"independent-approved-roles",base_revision:"b".repeat(40),
@@ -321,4 +323,18 @@ test("Block B: source-driven offline ADK refuses to write when actual source dis
   assert.equal(model.sourceSeen,true);
   assert.deepEqual(calls,["read_file"]);
   assert.equal(current,source);
+});
+
+test("Block B: functional route directives preserve baseline account lifecycle across requirements",()=>{
+  for(const id of ["account-suspension","department-directory"]){
+    const task=getApprovedOfflineScenario(id)
+      .planning_intent.taskInstructions.backend;
+    assert.ok(task.includes(
+      "ROUTE POST /:id/suspend suspendUser AFTER PATCH /:id/profile"));
+    assert.ok(task.includes(
+      "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend"));
+    if(id==="department-directory")
+      assert.ok(task.includes(
+        "ROUTE GET /by-department/:department listUsersByDepartment BEFORE GET /:id"));
+  }
 });
