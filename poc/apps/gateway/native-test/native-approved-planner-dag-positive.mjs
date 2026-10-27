@@ -31,6 +31,8 @@ import {startSpecializedAgentServer} from
 import {DeterministicA2AOrchestrator} from
   "../../../packages/agent-runtime/src/orchestrator.ts";
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
+import {buildOfflineAdkScriptsFromApprovedPlan}
+  from "./approved-plan-offline-adk-call-scripts.mjs";
 import {assertApprovedPlanScope,planDigest as hashApprovedPlan} from
   "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
@@ -90,6 +92,13 @@ export async function runNativePositiveApprovedDag({
   const grants=assertApprovedPlanScope(signed.plan,signed.approval,{
     allowedOperations:new Set(RUST_OPERATIONS),
     expectedEngineerDid:engineerDid
+  });
+  // A single generic compiler selects tool calls from the AUTHENTICATED
+  // Engineer-signed plan. Only the resulting code bytes remain test fixtures.
+  // No reference fixture chooses the resources, roles or permissions.
+  const offlineScripts=buildOfflineAdkScriptsFromApprovedPlan({
+    plan:signed.plan,approvedRows:grants,repo,branch,
+    implementationContents:referenceFiles
   });
   const root=canonicalRepositoryUri(repo);
   const scopedBranch=canonicalBranchUri(repo,branch);
@@ -361,12 +370,10 @@ export async function runNativePositiveApprovedDag({
     }
     for(const role of EDIT_ROLES){
       const targets=files[role];
-      const scripted=targets.flatMap(path=>[
-        {name:"read_file",args:{branch,path}},
-        {name:"update_file",args:{
-          branch,path,content:referenceFiles[path]
-        }}
-      ]);
+      const scripted=offlineScripts[role];
+      assert.deepEqual(scripted.flatMap(c=>
+        c.name==="update_file"?[c.args.path]:[]).sort(),[...targets].sort(),
+        "Signed plan must determine all scripted ADK writes");
       const model=new OfflineApprovedAdkModel(role,scripted);
       models[role]=model;
       const server=await startSpecializedAgentServer({
@@ -386,13 +393,11 @@ export async function runNativePositiveApprovedDag({
       });
       servers.push(server);urls[role]=server.baseUrl;
     }
-    const testScript=[
-      {name:"create_file",args:{
-        branch,path:createdTestFile,
-        content:referenceFiles[createdTestFile]
-      }},
-      {name:"run_tests",args:{branch,profile:"poc-default"}}
-    ];
+    const testScript=offlineScripts.test;
+    assert.deepEqual(testScript.map(c=>c.name),
+      ["create_file","run_tests"],
+      "Signed test permissions must determine ADK test sequence");
+    assert.equal(testScript[0].args.path,createdTestFile);
     const testModel=new OfflineApprovedAdkModel("test",testScript);
     models.test=testModel;
     const testAgent=await startSpecializedAgentServer({
