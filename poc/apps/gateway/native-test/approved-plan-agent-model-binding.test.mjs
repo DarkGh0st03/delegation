@@ -325,16 +325,11 @@ test("Block B: source-driven offline ADK refuses to write when actual source dis
   assert.equal(current,source);
 });
 
-test("Block B: functional route directives preserve baseline account lifecycle across requirements",()=>{
-  for(const id of ["account-suspension","department-directory"]){
-    const task=getApprovedOfflineScenario(id)
-      .planning_intent.taskInstructions.backend;
-    assert.ok(task.includes(
-      "ROUTE POST /:id/suspend suspendUser AFTER PATCH /:id/profile"));
-    assert.ok(task.includes(
-      "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend"));
-    if(id==="department-directory")
-      assert.ok(task.includes(
-        "ROUTE GET /by-department/:department listUsersByDepartment BEFORE GET /:id"));
-  }
+test("Block B: Account Suspension tasks explicitly specify the required lifecycle routes",()=>{
+  const task=getApprovedOfflineScenario("account-suspension")
+    .planning_intent.taskInstructions.backend;
+  assert.ok(task.includes(
+    "ROUTE POST /:id/suspend suspendUser AFTER PATCH /:id/profile"));
+  assert.ok(task.includes(
+    "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend"));
 });

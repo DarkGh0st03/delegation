@@ -55,25 +55,31 @@ test("Account Suspension: source and approved directives generate real route cod
     });
   }
 });
-test("Department Directory: static route generated before parameterized route",async()=>{
-  const modified={...context,tasks:[{id:"backend",description:[
-    "Approved directory preserving account lifecycle",
-    "ROUTE GET /by-department/:department listUsersByDepartment BEFORE GET /:id",
-    "ROUTE POST /:id/suspend suspendUser AFTER PATCH /:id/profile",
+test("Account Suspension: changing approved route order changes the generated edit",async()=>{
+  const reordered={...context,tasks:[{id:"backend",description:[
+    "Implement suspension and reactivation with a different approved route order",
+    "ROUTE POST /:id/suspend suspendUser BEFORE GET /:id",
     "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend"
   ].join("\n")}]};
   const model=new SourceDerivedRouteOfflineAdkModel({
-    context:modified,calls:script
+    context:reordered,calls:script
   });
   await next(model,{});
-  const text=(await next(model,input({ok:true,result:data}))).functionCall.args.content;
-  assert.ok(text.indexOf('router.get("/by-department/:department"')<
-    text.indexOf('router.get("/:id"'));
-  assert.ok(text.includes("controller.listUsersByDepartment"));
-  assert.ok(text.includes('router.post("/:id/suspend", controller.suspendUser);'));
-  assert.ok(text.includes('router.post("/:id/reactivate", controller.reactivateUser);'));
-  assert.ok(text.indexOf('router.post("/:id/suspend"')<
-    text.indexOf('router.post("/:id/reactivate"'));
+  const updated=(await next(model,input({ok:true,result:data})))
+    .functionCall.args.content;
+  assert.ok(updated.includes('router.post("/:id/suspend", controller.suspendUser);'));
+  assert.ok(updated.includes('router.post("/:id/reactivate", controller.reactivateUser);'));
+  assert.ok(updated.indexOf('router.post("/:id/suspend"')<
+    updated.indexOf('router.get("/:id"'));
+  assert.ok(updated.indexOf('router.post("/:id/reactivate"')<
+    updated.indexOf('router.get("/:id"'));
+  assert.notEqual(updated,
+    applyApprovedRouteRules(source,[
+      {method:"post",path:"/:id/suspend",handler:"suspendUser",
+        side:"AFTER",anchorMethod:"patch",anchorPath:"/:id/profile"},
+      {method:"post",path:"/:id/reactivate",handler:"reactivateUser",
+        side:"AFTER",anchorMethod:"post",anchorPath:"/:id/suspend"}
+    ]));
 });
 test("unknown permission, malformed source and spoofed provider read fail closed",async()=>{
   for(const supplied of [

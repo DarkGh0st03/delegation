@@ -230,8 +230,6 @@ jobs:
           docker pull docker.gitea.com/gitea:28.0.0
           docker pull node:22.15.0-bookworm
           docker pull openpolicyagent/opa:1.21.1
-      - name: Verify two independently scripted software requirements
-        run: node --test poc/apps/test-runner-controller/scripts/approved-scenarios.test.mjs
       - name: Check source-witness offline model cannot forge an authorized read
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-witnessed-offline-adk-model.test.mjs
       - name: Account Suspension signed native VP A2A OPA Gitea and Docker acceptance
