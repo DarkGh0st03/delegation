@@ -620,7 +620,9 @@ export async function runNativePositiveApprovedDag({
       approved_branch_sha:head.commit_sha,
       pr_created:true,pull_request_number:createdPr.pull_request_number,
       pull_request_url:createdPr.url??null,merge_calls:0,
-      adk_agents_executed:3,scripted_adk_no_paid_model:!hostModels,
+      adk_agents_executed:3,
+      scripted_adk_no_paid_model:Object.values(models).every(
+        model=>model instanceof OfflineApprovedAdkModel),
       model_source:hostModels?"host_supplied_models_not_fixture":
         "offline_fixture_scripts",
       approved_shared_mcp_enabled:sharedMcpEnabled,
