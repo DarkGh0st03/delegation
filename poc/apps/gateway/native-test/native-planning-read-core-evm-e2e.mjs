@@ -15,7 +15,8 @@ import {randomBytes,randomInt,generateKeyPairSync} from "node:crypto";
 import {mkdtemp,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {makeApproval} from "../../../packages/plan-contracts/src/plan.mjs";
+import {makeApproval,assertApprovedPlanScope}
+  from "../../../packages/plan-contracts/src/plan.mjs";
 import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {SignedEngineerApprovalFileStore} from
@@ -28,6 +29,9 @@ import {TrustedApprovedA2ADispatcher} from
 import {GatewayCorroboratedTaskAttestor} from
   "../src/trusted-task-observation.ts";
 import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
+import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
+import {buildOfflineAdkScriptsFromApprovedPlan}
+  from "./approved-plan-offline-adk-call-scripts.mjs";
 import {getApprovedOfflineScenario} from
   "../../test-runner-controller/fixtures/approved-scenarios.mjs";
 import {makeOfflineReviewableDag} from
@@ -475,8 +479,36 @@ try{
       positiveDag?proposed.plan.requested_permissions.map(p=>p.operation):
         ["create_branch","update_file","update_file"]);
     if(positiveDag){
+      let approvedAgentModelFactory;
+      if(process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS==="1"){
+        // The MODEL FACTORY is now separate from the signed native runner.
+        // This CI producer still uses deterministic implementation fixtures,
+        // but only inside this owner test host, NOT as an agent permission
+        // source or as data supplied to the model binding.
+        const reviewed=await reviewGate.loadAuthenticatedApproval(session);
+        const approvedRows=assertApprovedPlanScope(
+          reviewed.plan,reviewed.approval,{
+            allowedOperations:new Set(RUST_OPERATIONS),
+            expectedEngineerDid:engineerDid
+          });
+        const offlineCalls=buildOfflineAdkScriptsFromApprovedPlan({
+          plan:reviewed.plan,approvedRows,repo,branch:workBranch,
+          implementationContents:referenceFiles
+        });
+        approvedAgentModelFactory=context=>{
+          const expected=approvedRows.filter(g=>
+            g.agent_id===context.role).map(g=>({
+              task_id:g.task_id,operation:g.operation,resource:g.resource
+            }));
+          assert.deepEqual(context.approved_permissions,expected);
+          assert.equal(Object.hasOwn(context,"implementationContents"),false);
+          return new OfflineApprovedAdkModel(
+            context.role,offlineCalls[context.role]);
+        };
+      }
       globalThis.__nativeDagPositive=await runNativePositiveApprovedDag({
         coordinator,reviewGate,approvedPlans,
+        ...(approvedAgentModelFactory?{approvedAgentModelFactory}:{}),
         sessionId:session,planDigest:packet.plan_digest,baseSha,
         operationalRootId,branch:workBranch,
         referenceFiles,scenarioId:scenario.id,repo,
@@ -489,6 +521,9 @@ try{
         }
       });
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
+      if(approvedAgentModelFactory)
+        assert.equal(globalThis.__nativeDagPositive.model_source,
+          "host_supplied_models_not_fixture");
       assert.equal(globalThis.__nativeDagPositive.source_writes,
         existingFiles.length);
       assert.equal(globalThis.__nativeDagPositive.manifest_source,
