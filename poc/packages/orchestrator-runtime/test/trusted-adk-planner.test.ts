@@ -618,3 +618,81 @@ test("long-horizon Planner handles >12 real ADK model turns with MEDIUM thinking
   assert.equal(observations.filter(e=>e.kind==="model_turn"&&e.status==="started").length,15);
   assert.equal(observations.filter(e=>e.kind==="proposal").length,1);
 });
+
+
+test("Planner classifies out-of-scope update without exposing model-selected path",async()=>{
+  const events:Array<Record<string,unknown>>=[];
+  const bad=draft();
+  bad.tasks[1].permissions[1].path="PRIVATE_MODEL_SELECTED_FILE.ts";
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model:new Scripted({branch:"main",path:FILE},bad),
+    onObservation(e){events.push({...e});},
+    readPort:{async invoke(tool:string){
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"PRIVATE_GITEA_SOURCE"};
+    }}
+  }).propose(),/file absent from trusted Planning snapshot/);
+  assert.deepEqual(events.filter(e=>e.kind==="plan_rejection"),[{
+    kind:"plan_rejection",stage:"contract",reason:"unauthorized_existing_file"
+  }]);
+  const serialized=JSON.stringify(events);
+  for(const sensitive of ["PRIVATE_MODEL_SELECTED_FILE","PRIVATE_GITEA_SOURCE",
+    cfg.requirement])assert.ok(!serialized.includes(sensitive));
+});
+
+test("Planner reports unordered overlapping source edits without leaking task IDs",async()=>{
+  const events:Array<Record<string,unknown>>=[];
+  const bad=draft();
+  bad.tasks.push({
+    id:"SECRET_MODEL_TASK",agent_id:"frontend",
+    title:"Concurrent writer",description:"Write same file independently",
+    depends_on:["branch"],
+    permissions:[{operation:"update_file",path:FILE,reason:"Write"}]
+  });
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model:new Scripted({branch:"main",path:FILE},bad),
+    onObservation(e){events.push({...e});},
+    readPort:{async invoke(tool:string){
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"PRIVATE_GITEA_SOURCE"};
+    }}
+  }).propose(),/independent Tasks cannot modify the same file/);
+  assert.deepEqual(events.filter(e=>e.kind==="plan_rejection"),[{
+    kind:"plan_rejection",stage:"contract",
+    reason:"conflicting_unordered_writes"
+  }]);
+  assert.ok(!JSON.stringify(events).includes("SECRET_MODEL_TASK"));
+  assert.ok(!JSON.stringify(events).includes("PRIVATE_GITEA_SOURCE"));
+});
+
+test("Planner reports invalid JSON with a fixed non-content-bearing code",async()=>{
+  class InvalidJsonModel extends BaseLlm {
+    turns=0;
+    constructor(){super({model:"offline-invalid-json"});}
+    override async *generateContentAsync():AsyncGenerator<LlmResponse,void>{
+      this.turns++;
+      if(this.turns===1)
+        yield {content:{role:"model",parts:[{functionCall:{
+          name:"read_file",id:"source",args:{branch:"main",path:FILE}
+        }}]}};
+      else yield {content:{role:"model",parts:[{text:"PRIVATE_NOT_JSON{"}]}};
+    }
+    override connect():Promise<BaseLlmConnection>{
+      throw Error("Provider forbidden");
+    }
+  }
+  const observations:Array<Record<string,unknown>>=[];
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model:new InvalidJsonModel(),
+    onObservation(e){observations.push({...e});},
+    readPort:{async invoke(tool:string){
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"PRIVATE_GITEA_SOURCE"};
+    }}
+  }).propose(),/model output was not strict JSON/);
+  assert.deepEqual(observations.filter(e=>e.kind==="plan_rejection"),[{
+    kind:"plan_rejection",stage:"json",reason:"invalid_json"
+  }]);
+  assert.ok(!JSON.stringify(observations).includes("PRIVATE_NOT_JSON"));
+  assert.ok(!JSON.stringify(observations).includes("PRIVATE_GITEA_SOURCE"));
+});
