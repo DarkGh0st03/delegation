@@ -170,7 +170,9 @@ export function extractSignedFunctionalE2EEvidence(text,{
     "dispatcher_fail_closed","signed_dag_positive",
     "host_supplied_adk_models",
     "fixture_scripted_payloads_reach_adk_runner",
-    "same_signed_dag_docker_acceptance"
+    "same_signed_dag_docker_acceptance",
+    "source_witnessed_native_dag",
+    "source_witnessed_still_uses_fixture_code"
   ],"original signed-DAG process");
   if(native.independent_model_software_output_verified!==false)
     deny("offline scripted run cannot claim independent model-produced code");
@@ -231,6 +233,8 @@ export function extractSignedFunctionalE2EEvidence(text,{
     block_b_source_derived_approved_plan_preflight_denials:4,
     block_b_source_derived_external_model_calls:0,
     block_b_source_derived_native_dc_vp_e2e:false,
+    block_b_hybrid_source_witness_native_dc_vp_e2e_verified:true,
+    block_b_hybrid_still_uses_prepackaged_implementation:true,
     created_pull_request_unmerged:true,
     isolated_docker_project_tests:"pass",
     isolated_researcher_acceptance:"pass",

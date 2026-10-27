@@ -232,11 +232,14 @@ jobs:
           docker pull openpolicyagent/opa:1.21.1
       - name: Verify two independently scripted software requirements
         run: node --test poc/apps/test-runner-controller/scripts/approved-scenarios.test.mjs
+      - name: Check source-witness offline model cannot forge an authorized read
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-witnessed-offline-adk-model.test.mjs
       - name: Single signed native VP plus real A2A OPA Gitea and Docker acceptance
         env:
           APPROVED_RUNNER_NATIVE_EVM: "1"
           APPROVED_RUNNER_THREE_AGENT_DAG: "1"
           APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
+          APPROVED_RUNNER_NATIVE_SOURCE_WITNESS: "1"
           GITEA_ADMIN_USER: isolated_admin
           GITEA_ADMIN_PASSWORD: local-native-ci-fixture-${{ github.run_id }}-${{ github.run_attempt }}
           GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
@@ -248,6 +251,7 @@ jobs:
           APPROVED_RUNNER_NATIVE_EVM: "1"
           APPROVED_RUNNER_THREE_AGENT_DAG: "1"
           APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
+          APPROVED_RUNNER_NATIVE_SOURCE_WITNESS: "1"
           APPROVED_RUNNER_SCENARIO: department-directory
           GITEA_ADMIN_USER: isolated_admin
           GITEA_ADMIN_PASSWORD: local-native-ci-fixture-${{ github.run_id }}-${{ github.run_attempt }}
