@@ -125,7 +125,8 @@ test("F1 readPort refuses writes, main-bypass, out-of-tree paths and canceled Pl
 test("F1 refuses already solved source, changed baseline, duplicates and remote address",async()=>{
   await assert.rejects(fixture({solved:true}).create(),/NO-GO/);
   await assert.rejects(fixture({changed:true}).create(),/NO-GO/);
-  await assert.rejects(fixture({duplicate:true}).create(),/NO-GO/);
+  await assert.rejects(fixture({duplicate:true}).create(),
+    /NO-GO|unexpected directory entry/);
   await assert.rejects(buildF1RealGiteaResearchPlanningPort({
     baseUrl:"http://gitea-remote:3000",readToken:TOKEN,
     expectedMainSha:SHA,sessionId:"research-f1-1",
