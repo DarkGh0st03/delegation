@@ -1193,3 +1193,51 @@ recorded credential is revoked. The Adapter cannot detect IDs omitted
 from the local original-host journal or independently prove its own
 on-chain anchor. This helper does not establish R5 GO, human reapproval
 or the completed distributed experiment. Tests are offline.
+
+## R5 — Separate public Status List / Ethereum anchor verification
+
+A new read-only library, poc/scripts/r5-independent-status-evm-verifier.mjs,
+compares independently pinned public W3C Status List material to a direct
+Ethereum JSON-RPC eth_call against IssuerRegistry.getStatusList(address,bytes32).
+The exact compact JWT bytes are verified with the issuer's independently pinned
+Ed25519 public key and hashed using Ethereum Keccak-256 (not SHA3-256). The
+W3C gzip / multibase status bit must be set for revocation. The current contract
+anchor must match the JWT hash, purpose, positive version and issuer; the
+chain ID, DID chain ID, contract address, list URL and status index are pinned.
+The result uses one block number and rechecks that block hash after the call.
+
+The private operator CLI is poc/scripts/r5-protected-independent-evm-audit.mjs.
+It requires a 0600 JSON config in a 0700 owner-only directory with exactly:
+
+    schema: r5-independent-evm-public-status-v1
+    rpc_url: http://127.0.0.1:<pinned-port>
+    expected_chain_id: 0x7a69
+    registry_address: <independently pinned IssuerRegistry address>
+    issuer_address: <independently pinned DID identity address>
+    issuer_did: <independently pinned did:ethr:<chain>:<address>>
+    status_list_credential: <pinned public Status List URL>
+    status_list_index: <numeric index>
+    public_artifact_root: <existing public Rust artifact store directory>
+    issuer_public_jwk_file: <existing protected 0600 issuer public JWK>
+
+The public JWT is read as exact bytes from Rust FilePublicArtifactStore:
+status-lists/<sha256(u64be len + issuer + u64be len + list URL)>.jwt.
+It is treated as untrusted public data until signature + chain commitment
+validation succeed. Out-of-band environment pins must be supplied independently
+from the config: DELEGATION_R5_EXPECTED_CHAIN_ID,
+DELEGATION_R5_EXPECTED_REGISTRY_ADDRESS,
+DELEGATION_R5_EXPECTED_ISSUER_DID,
+DELEGATION_R5_EXPECTED_STATUS_LIST_ID and
+DELEGATION_R5_EXPECTED_STATUS_INDEX; the config path is
+DELEGATION_R5_INDEPENDENT_EVM_CONFIG.
+
+The operator then invokes:
+
+    node --experimental-strip-types poc/scripts/r5-protected-independent-evm-audit.mjs
+
+There is no Adapter inspection, Gateway bearer, model inference or write call.
+The CLI is denied in GitHub Actions; its tests use signed local fixtures and
+a simulated RPC without secrets. One valid bit observation is NOT equivalent
+to verifying every Planning, operational and task child, nor to independent
+RPC node identity, chain finality, complete issuance inventory or completed
+private runner. R5 GO remains false.
