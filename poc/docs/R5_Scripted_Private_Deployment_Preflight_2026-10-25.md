@@ -977,3 +977,44 @@ need to be checked independently before the thesis may claim an
 externally attested completed R5. An unrecognized credential, missing
 anchor, stale JWT or unavailable service is NO-GO. This feature does not
 alter the historical R5 NO-GO status or authorize a paid run.
+
+## R5 — Adapter EVM revocation inventory observer (27 October 2026)
+
+`poc/scripts/r5-native-revocation-observer.mjs` now provides a **read-only,
+owner-side library** for an additional post-run observation. It consumes the
+existing locally validated original-owner completion receipt and a separately
+prepared credential issuance inventory, both pinned to the same source SHA,
+GitHub run, session and approved-plan digest. The inventory must identify the
+preliminary root, operational root and at least the distinct Backend,
+Frontend and Test children associated with approved Task IDs. Extra issued
+task children may be included. Duplicate roots/children, unknown Tasks,
+missing specialized children and mismatched planning identity fail closed.
+
+The verifier sequentially sends a `POST /v1/credentials/status/inspect`
+request **only** to the pinned `127.0.0.1` Adapter port with the protected
+Gateway verifier bearer. It does **not** update a Status List, dispatch
+GitHub, launch Gemini, grant authority or request a delegated credential.
+Every response must exactly echo the expected credential ID and report
+`status_purpose:"revocation"`, `status_set:true`,
+`source:"evm_anchored_signed_jwt"` and a positive integer
+`anchor_version`. In-memory responses, unknown IDs, missing or uncleared
+roots/children, unsolicited fields, mismatched identities and HTTP failures
+are rejected. The bearer and full Adapter responses are not included in the
+result. Offline adversarial tests are collected by the existing
+`poc/scripts/test/*.test.mjs` cumulative CI step.
+
+**Critical evidentiary limits:** the supplied inventory is an **owner
+assertion**, not an independently authenticated issuance ledger. This
+observer can verify the listed IDs only; it cannot discover an omitted
+credential. The endpoint's results are provided by the running Adapter;
+the library does not independently query Ethereum, authenticate a remote
+physical runner, reconstruct compact Status List JWTs from chain state,
+verify an external signed issuance journal or attest that all issued
+children have been retired. Its result explicitly retains
+`issuance_inventory_completeness_independently_verified:false`,
+`adapter_and_chain_independently_attested:false` and
+`external_r5_go:false`. The operator must independently collect original
+root/child issuance records, public chain commitments, signed status JWT
+verification and runner/network evidence before making a full-R5 claim.
+This library is not wired to the private-runner workflow and is not itself
+a successful distributed execution.
