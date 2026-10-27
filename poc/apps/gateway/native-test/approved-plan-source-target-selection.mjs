@@ -57,15 +57,20 @@ export function selectSourceDerivedTargetsFromApprovedPlan({
   }
   const output=[],usedPaths=new Set();
   for(const task of plan.tasks){
-    if(task.agent_id!=="backend"||
+    if(!["backend","frontend"].includes(task.agent_id)||
        !byTask.has(task.id))continue;
     if(typeof task.description!=="string")deny("missing Task objective");
     // These declarative test-only directives select the needed categories;
     // filenames and locations must still come from approved grants.
-    const wantsRoutes=/^ROUTE /mu.test(task.description);
-    const wantsController=/^CONTROLLER HANDLER /mu.test(task.description);
-    const wantsStatus=/^STATUS TYPE /mu.test(task.description);
-    if(!wantsRoutes&&!wantsController&&!wantsStatus)continue;
+    const wantsRoutes=task.agent_id==="backend"&&
+      /^ROUTE /mu.test(task.description);
+    const wantsController=task.agent_id==="backend"&&
+      /^CONTROLLER HANDLER /mu.test(task.description);
+    const wantsStatus=task.agent_id==="backend"&&
+      /^STATUS TYPE /mu.test(task.description);
+    const wantsApi=task.agent_id==="frontend"&&
+      /^API ACTION /mu.test(task.description);
+    if(!wantsRoutes&&!wantsController&&!wantsStatus&&!wantsApi)continue;
     const operations=new Map();
     for(const g of byTask.get(task.id)){
       if(!permitted.has(g.operation))
@@ -78,7 +83,8 @@ export function selectSourceDerivedTargetsFromApprovedPlan({
     for(const [needed,suffix] of [
       [wantsRoutes,".routes.ts"],
       [wantsController,".controller.ts"],
-      [wantsStatus,"status.ts"]
+      [wantsStatus,"status.ts"],
+      [wantsApi,"-api.ts"]
     ]){
       if(!needed)continue;
       const matched=[...operations].filter(([path,ops])=>

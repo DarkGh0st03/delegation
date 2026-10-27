@@ -76,3 +76,56 @@ test("source-witness model cannot access files missing either approved grant",()
     context:{...context,approved_permissions},calls
   }),/NO-GO/);
 });
+
+test("host-injected Frontend ADK model derives API code and preserves independent page witness",async()=>{
+  const api="apps/frontend/src/api/users-api.ts";
+  const apiUri="gitea://gitea.local/thesis/iam-console-poc/branches/"+
+    encodeURIComponent(branch)+"/files/"+api;
+  const frontendContext={...context,
+    tasks:[{id:"frontend",description:"Account Suspension.\n"+
+      "API ACTION suspendUser POST /suspend\n"+
+      "API ACTION reactivateUser POST /reactivate"}],
+    approved_permissions:[
+      {task_id:"frontend",operation:"read_file",resource:apiUri},
+      {task_id:"frontend",operation:"update_file",resource:apiUri},
+      ...context.approved_permissions
+    ]};
+  const tick=String.fromCharCode(96);
+  const interpolation=String.fromCharCode(36)+"{encodeURIComponent(id)}";
+  const original=[
+    'import type { ApiError, UserDetails } from "@iam/shared";',
+    "const ADMIN_HEADERS = {",
+    '  "x-demo-role": "admin"',
+    "};",
+    "async function parseResponse<T>(response: Response): Promise<T> {",
+    "  return (await response.json()) as T;",
+    "}",
+    "export async function getUser(id: string): Promise<UserDetails> {",
+    "  return parseResponse<UserDetails>(",
+    "    await fetch("+tick+"/api/users/"+interpolation+tick+", { headers: ADMIN_HEADERS })",
+    "  );",
+    "}",
+    ""
+  ].join("\n");
+  const script=[
+    {name:"read_file",args:{branch,path:api}},
+    {name:"update_file",args:{branch,path:api}},
+    ...calls
+  ];
+  const model=new SourceWitnessedOfflineAdkModel({
+    context:frontendContext,calls:script
+  });
+  assert.equal((await response(model,{contents:[]})).functionCall.name,"read_file");
+  const first=(await response(model,readRequest({ok:true,result:{
+    ...result,path:api,content:original
+  }}))).functionCall;
+  assert.equal(first.name,"update_file");
+  assert.ok(first.args.content.includes("export async function suspendUser("));
+  assert.ok(first.args.content.includes("export async function reactivateUser("));
+  assert.equal(model.derivedApiProof.path,api);
+  assert.equal((await response(model,{contents:[]})).functionCall.name,"read_file");
+  const final=(await response(model,readRequest({ok:true,result}))).functionCall;
+  assert.equal(final.name,"update_file");
+  assert.ok(final.args.content.includes("// block-b-source-read-sha256:"));
+  assert.equal(model.sourceWitness.path,path);
+});

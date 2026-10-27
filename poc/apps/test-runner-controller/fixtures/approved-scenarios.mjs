@@ -154,6 +154,11 @@ const ROUTE_TASK_INTENT=Object.freeze({
     "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend"
   ].join("\n")
 });
+const FRONTEND_API_TASK_INTENT=[
+  "Implement Account Suspension API actions from inspected source.",
+  "API ACTION suspendUser POST /suspend",
+  "API ACTION reactivateUser POST /reactivate"
+].join("\n");
 const IAM_EDIT_INTENT=Object.freeze({
   backend:Object.freeze([
     "packages/shared/src/account-status.ts",
@@ -178,7 +183,10 @@ export const APPROVED_OFFLINE_SCENARIOS=Object.freeze({
     statusIndexBase:18071,
     files:ACCOUNT_SUSPENSION_REFERENCE_FILES,
     planning_intent:Object.freeze({edits:IAM_EDIT_INTENT,newTestFile:IAM_TEST_FILE,
-      taskInstructions:{backend:ROUTE_TASK_INTENT["account-suspension"]}})
+      taskInstructions:{
+        backend:ROUTE_TASK_INTENT["account-suspension"],
+        frontend:FRONTEND_API_TASK_INTENT
+      }})
   }),
   "department-directory":Object.freeze({
     id:"department-directory",

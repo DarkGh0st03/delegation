@@ -81,3 +81,28 @@ test("ambiguity and traversal in signed permissions fail closed",()=>{
   const traversal=input({routesPath:"services/../evil.routes.ts"});
   assert.throws(()=>select(traversal),/NO-GO/);
 });
+
+test("Frontend API path moves with approved exact read/update grants, no fixed full path",()=>{
+  const first=input();
+  const apiA="web/src/api/users-api.ts";
+  const apiB="another/location/client-api.ts";
+  const fTask={id:"frontend",agent_id:"frontend",
+    description:"Frontend API actions\nAPI ACTION suspendUser POST /suspend"};
+  first.plan.tasks.push(fTask);
+  for(const [i,path] of [apiA].entries())
+    for(const operation of ["read_file","update_file"]){
+      const p={id:"frontend-"+operation+"-"+i,task_id:"frontend",
+        agent_id:"frontend",operation,resource:uri(path)};
+      first.plan.requested_permissions.push(p);
+      first.approvedRows.push({...p});
+    }
+  assert.deepEqual(select(first),[routes,controller,status,apiA]);
+  const moved=structuredClone(first);
+  for(const rows of [moved.plan.requested_permissions,moved.approvedRows])
+    for(const g of rows)if(g.task_id==="frontend")
+      g.resource=uri(apiB);
+  assert.deepEqual(select(moved),[routes,controller,status,apiB]);
+  moved.approvedRows=moved.approvedRows.filter(g=>!(
+    g.agent_id==="frontend"&&g.operation==="read_file"));
+  assert.throws(()=>select(moved),/NO-GO/);
+});
