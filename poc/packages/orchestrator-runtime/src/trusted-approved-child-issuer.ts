@@ -11,6 +11,7 @@
 import {assertApprovedPlanScope,planDigest} from
   "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+import {TrustedChildIssuanceJournal} from "./trusted-child-issuance-journal.mjs";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
 import type {AuthenticatedPlanStore} from
   "../../../apps/gateway/src/approved-execution-plans.ts";
@@ -68,6 +69,8 @@ export interface ApprovedChildIssuerConfig{
   bearerToken:string;
   fetchFn?:FetchLike;
   timeoutMs?:number;
+  /** Optional in legacy tests; trusted R5 host provisions a durable journal. */
+  issuanceJournal?:TrustedChildIssuanceJournal;
 }
 export class TrustedApprovedPlanChildAuthorityIssuer {
   readonly #sessionId:string;
@@ -79,6 +82,7 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
   readonly #timeoutMs:number;
   readonly #rootId:string;
   readonly #digest:string;
+  readonly #journal?:TrustedChildIssuanceJournal;
   readonly #approved=new Map<string,{role:Role;permissions:DelegatedPermission[]}>();
   readonly #attempted=new Set<string>();
 
@@ -94,6 +98,7 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     this.#timeoutMs=c.timeoutMs??5000;
     this.#rootId=root.credential_id;
     this.#digest=root.plan_digest;
+    this.#journal=c.issuanceJournal;
     this.#approved=tasks;
   }
 
@@ -108,6 +113,15 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     const root=config.coordinator.trustedOperationalAuthority();
     if(!ID.test(root.credential_id)||!/^[a-f0-9]{64}$/u.test(root.plan_digest)){
       reject("operational root identity or digest not verified");
+    }
+    if(config.issuanceJournal!==undefined){
+      if(!(config.issuanceJournal instanceof TrustedChildIssuanceJournal))
+        reject("real protected child issuance journal required");
+      config.issuanceJournal.assertBound({
+        sessionId:config.sessionId,baseRevision:
+          (await config.approvals.loadAuthenticatedApproval(config.sessionId)).plan.base_revision,
+        planDigest:root.plan_digest,parentCredentialId:root.credential_id
+      });
     }
     const parentKeys=allUnique(root.permissions,"operational root");
     if(parentKeys.size===0)reject("operational parent grants no permissions");
@@ -187,6 +201,18 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     // never cause a second, silently repeated credential issuance.
     this.#attempted.add(issueKey);
     const permissions=task.permissions.map(x=>({...x}));
+    // Persist the exact issued-child identity BEFORE the first side-effecting
+    // HTTP request. A crash, timeout or malformed reply leaves an UNCERTAIN
+    // durable intent that cannot be silently retried on host restart.
+    if(this.#journal){
+      await this.#journal.recordIntent({
+        taskId:input.approved_task_id,role,
+        credentialId:input.credential_id,
+        statusListCredential:input.credential_status.statusListCredential,
+        statusListIndex:input.credential_status.statusListIndex
+      });
+      this.assertActiveBeforeA2ASend();
+    }
     const response=await this.#fetch(
       this.#adapterBaseUrl+"/v1/credentials/child",{
         method:"POST",
@@ -212,6 +238,11 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
        !exactCredentialPermissions(credential,permissions)){
       reject("Adapter child response differs from exact approved permissions");
     }
+    // Acknowledgement records an exact verified Adapter response, not an
+    // independently attested chain event or completed A2A Task.
+    if(this.#journal)await this.#journal.recordVerifiedResponse({
+      taskId:input.approved_task_id,credentialId:input.credential_id
+    });
     // A successful HTTP response may arrive AFTER human-initiated root
     // revocation. Never hand an Agent a formerly valid child on that path.
     this.assertActiveBeforeA2ASend();

@@ -6,6 +6,11 @@ import {TrustedApprovedPlanChildAuthorityIssuer} from "../src/trusted-approved-c
 import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
 import {DelegatedA2ARoleRunner} from "../src/a2a-workflow.ts";
 import {TaskState} from "@a2a-js/sdk";
+import {mkdtemp,chmod,rm} from "node:fs/promises";
+import {join} from "node:path";
+import {tmpdir} from "node:os";
+import {TrustedChildIssuanceJournal}
+  from "../src/trusted-child-issuance-journal.mjs";
 
 const repository={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const URI="gitea://gitea.local/thesis/iam-console-poc";
@@ -380,4 +385,53 @@ test("root revoked AFTER child return but BEFORE protected A2A send is refused",
  // Revocation in the issuance gap must be observed by the second check.
  assert.equal(guarded,2);
  assert.equal(sent,0);
+});
+
+test("trusted child issuer durably records issuance BEFORE Adapter and ACKs only authenticated exact response",async()=>{
+ const e=fixture();
+ const directory=await mkdtemp(join(tmpdir(),"r5-real-issuer-intent-"));
+ await chmod(directory,0o700);
+ try{
+  const journal=new TrustedChildIssuanceJournal({
+    directory,sessionId:e.p.session_id,baseRevision:e.p.base_revision,
+    planDigest:planDigest(e.p),parentCredentialId:"urn:issued:operational-root"
+  });
+  const send=e.config.fetchFn;
+  const issuer=await TrustedApprovedPlanChildAuthorityIssuer.create({
+    ...e.config,issuanceJournal:journal,
+    fetchFn:(async(url,init)=>{
+      const before=await journal.records();
+      assert.equal(before.length,1);
+      assert.equal(before[0].task_id,"backend");
+      assert.equal(before[0].observation,"issuance_uncertain");
+      return send(url,init);
+    }) as typeof fetch
+  } as any);
+  const response=await issuer.issueSpecializedChild(child());
+  assert.equal(response.credential.id,"urn:issued:backend-child");
+  assert.equal(e.calls.length,1);
+  const recorded=await journal.records();
+  assert.equal(recorded.length,1);
+  assert.equal(recorded[0].observation,"adapter_response_verified");
+  assert.equal(recorded[0].credential_id,"urn:issued:backend-child");
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+test("R5 failed Adapter response leaves durable may-have-issued intent and cannot retry from a new issuer",async()=>{
+ const e=fixture();
+ const directory=await mkdtemp(join(tmpdir(),"r5-real-issuer-denied-"));
+ await chmod(directory,0o700);
+ try{
+  const journal=new TrustedChildIssuanceJournal({
+    directory,sessionId:e.p.session_id,baseRevision:e.p.base_revision,
+    planDigest:planDigest(e.p),parentCredentialId:"urn:issued:operational-root"
+  });
+  const config={...e.config,issuanceJournal:journal,
+    fetchFn:async()=>{throw Error("Adapter request timed out after send");}};
+  const first=await TrustedApprovedPlanChildAuthorityIssuer.create(config as any);
+  await assert.rejects(first.issueSpecializedChild(child()),/timed out/);
+  assert.equal((await journal.records())[0].observation,"issuance_uncertain");
+  const second=await TrustedApprovedPlanChildAuthorityIssuer.create(config as any);
+  await assert.rejects(second.issueSpecializedChild(child()),/NO-GO/);
+  assert.equal((await journal.records()).length,1);
+ }finally{await rm(directory,{recursive:true,force:true});}
 });
