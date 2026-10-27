@@ -1241,3 +1241,34 @@ a simulated RPC without secrets. One valid bit observation is NOT equivalent
 to verifying every Planning, operational and task child, nor to independent
 RPC node identity, chain finality, complete issuance inventory or completed
 private runner. R5 GO remains false.
+ 
+## R5 — Full DAG same-block public EVM revocation audit (27 October 2026)
+
+The new `poc/scripts/r5-independent-dag-revocation-audit.mjs` validates
+the complete original signed specialized Task inventory (not merely one
+child per role) using a `SignedEngineerApprovalFileStore` instance with
+out-of-band pinned Ed25519 verification keys, the operator-pinned two
+root identifiers and the original Host's protected issuance journal.
+
+The caller supplies exactly two registered root Status List slots, one for
+each root; every specialized child slot comes **only from the original
+fsynced Host journal**. Root slot provenance remains an operator assertion
+until checked against independently authenticated root issuance records.
+Every child intent is included, even if its Adapter response ACK is missing.
+Root/child IDs and Status List slots must be globally distinct and all
+referenced public Status List JWTs must be supplied exactly once.
+
+The independent verifier runs each signed JWT/Keccak/EVM anchor/bit check
+against the **same pinned block number and hash**, refusing differences
+or changes to the journal during the audit. This guards against combining
+valid but inconsistent observations from different Ethereum blocks.
+No Gateway bearer, Adapter inspection, credential issuance, revocation
+mutation, model call or autonomous retry is involved.
+
+Important limits: this library is now code-reviewed/offline-testable but
+not yet exposed by an owner-protected batch CLI nor proven on a separately
+operated physical Ethereum node. It does not establish root issuance
+provenance, ledger completeness outside this Host, chain finality, physical
+runner identity or R5 GO. Its output always has
+`external_r5_go:false` and
+`safe_to_retry_child_issuance:false`.

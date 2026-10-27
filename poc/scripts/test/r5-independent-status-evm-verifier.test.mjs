@@ -103,6 +103,24 @@ test("R5 validates real Ed25519 JWT, revoked W3C bit and exact raw JWT hash from
     "eth_call","eth_getBlockByNumber"
   ]);
 });
+test("R5 subsequent same-block verifier locks the original block and rejects alternate hash",async()=>{
+  const f=fixture();
+  const result=await observeR5IndependentEvmStatus({
+    ...f.args,expectedBlockNumber:"0x9",expectedBlockHash:SHA
+  });
+  assert.equal(result.block_number,"0x9");
+  assert.equal(result.block_hash,SHA);
+  assert.deepEqual(f.requests.map(x=>x.method),[
+    "eth_chainId","eth_getBlockByNumber","eth_call","eth_getBlockByNumber"
+  ]);
+  const changed=fixture();
+  await assert.rejects(observeR5IndependentEvmStatus({
+    ...changed.args,expectedBlockNumber:"0x9",
+    expectedBlockHash:"0x"+"ee".repeat(32)
+  }),/NO-GO/);
+  assert.deepEqual(changed.requests.map(x=>x.method),
+    ["eth_chainId","eth_getBlockByNumber"]);
+});
 test("R5 status bit clear denies before any Ethereum RPC access",async()=>{
   const f=fixture(false);
   await assert.rejects(observeR5IndependentEvmStatus(f.args),/NO-GO/);
