@@ -393,7 +393,8 @@ try{
     requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
     planId:"native-planning-proposal",agents,readPort:port,
     ...(geminiPilot?{
-      maxModelTurns:20,maxOutputTokens:8192,thinkingLevel:"LOW",
+      maxModelTurns:20,maxProposalRevisions:1,
+      maxOutputTokens:8192,thinkingLevel:"LOW",
       maxModelCallMs:120000,maxPlanningMs:480000,
       onObservation:observation=>{
         if(observation?.kind==="plan_rejection"){

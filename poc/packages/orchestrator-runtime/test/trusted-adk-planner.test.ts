@@ -696,3 +696,94 @@ test("Planner reports invalid JSON with a fixed non-content-bearing code",async(
   assert.ok(!JSON.stringify(observations).includes("PRIVATE_NOT_JSON"));
   assert.ok(!JSON.stringify(observations).includes("PRIVATE_GITEA_SOURCE"));
 });
+
+
+test("a rejected Planner draft gets one signed-scope correction in its existing session",async()=>{
+  class CorrectionModel extends BaseLlm{
+    turns=0; requests:LlmRequest[]=[];
+    constructor(){super({model:"offline-correct-draft"});}
+    override async *generateContentAsync(req:LlmRequest):AsyncGenerator<LlmResponse,void>{
+      this.requests.push(req);
+      this.turns++;
+      if(this.turns===1){
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"pinned",name:"read_file",args:{branch:"main",path:FILE}
+        }}]}};return;
+      }
+      const plan=draft();
+      if(this.turns===2)plan.tasks[1].permissions[1].path="PRIVATE_UNDISCOVERED.ts";
+      yield {content:{role:"model",parts:[{text:JSON.stringify(plan)}]}};
+    }
+    override connect():Promise<BaseLlmConnection>{throw Error("Offline only");}
+  }
+  const model=new CorrectionModel(),events:Array<Record<string,unknown>>=[];
+  let reads=0;
+  const outcome=await new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,maxProposalRevisions:1,maxModelTurns:3,
+    onObservation(e){events.push({...e});},
+    readPort:{async invoke(tool:string){
+      reads++;
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"PRIVATE_SOURCE_CONTENT"};
+    }}
+  }).propose();
+  assert.equal(outcome.status,"unapproved_proposal");
+  assert.equal(model.turns,3);
+  assert.equal(reads,1);
+  assert.deepEqual(events.filter(e=>e.kind==="plan_rejection"),[{
+    kind:"plan_rejection",stage:"contract",reason:"unauthorized_existing_file"
+  }]);
+  assert.equal(events.filter(e=>e.kind==="proposal").length,1);
+  assert.ok(JSON.stringify(model.requests[2]).includes("unauthorized_existing_file"));
+  assert.ok(!JSON.stringify(model.requests[2]).includes("PRIVATE_UNDISCOVERED"));
+  assert.ok(!JSON.stringify(events).includes("PRIVATE_UNDISCOVERED"));
+  assert.ok(!JSON.stringify(events).includes("PRIVATE_SOURCE_CONTENT"));
+});
+
+test("Planner correction fails closed after one rejected revision",async()=>{
+  class TwoBadDrafts extends BaseLlm{
+    turns=0;
+    constructor(){super({model:"offline-two-bad-drafts"});}
+    override async *generateContentAsync():AsyncGenerator<LlmResponse,void>{
+      this.turns++;
+      if(this.turns===1){
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"pinned",name:"read_file",args:{branch:"main",path:FILE}
+        }}]}};return;
+      }
+      const bad=draft();
+      bad.tasks[1].permissions[1].path="UNAUTHORIZED.ts";
+      yield {content:{role:"model",parts:[{text:JSON.stringify(bad)}]}};
+    }
+    override connect():Promise<BaseLlmConnection>{throw Error("No paid provider");}
+  }
+  const model=new TwoBadDrafts(),events:Array<Record<string,unknown>>=[];
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,maxProposalRevisions:1,maxModelTurns:5,
+    onObservation(e){events.push({...e});},
+    readPort:{async invoke(tool:string){
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"source"};
+    }}
+  }).propose(),/file absent from trusted Planning snapshot/);
+  assert.equal(model.turns,3);
+  assert.equal(events.filter(e=>e.kind==="plan_rejection").length,2);
+  assert.ok(!events.some(e=>e.kind==="proposal"));
+});
+
+test("Planner never uses an extra repair turn beyond the original model budget",async()=>{
+  const bad=draft();bad.tasks[1].permissions[1].path="OTHER.ts";
+  const model=new Scripted({branch:"main",path:FILE},bad);
+  await assert.rejects(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,maxModelTurns:2,maxProposalRevisions:1,
+    readPort:{async invoke(tool:string){
+      return {provider:"gitea",performed:true,tool,branch:"main",path:FILE,
+        revision:SNAPSHOT.base_revision,content:"source"};
+    }}
+  }).propose(),/file absent from trusted Planning snapshot/);
+  assert.equal(model.requests.length,2);
+  assert.throws(()=>new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,maxProposalRevisions:2 as 1,
+    readPort:{async invoke(){throw Error("unexpected");}}
+  }),/invalid trusted Planning config/);
+});
