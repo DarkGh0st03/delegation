@@ -33,6 +33,8 @@ import {DeterministicA2AOrchestrator} from
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
 import {buildOfflineAdkScriptsFromApprovedPlan}
   from "./approved-plan-offline-adk-call-scripts.mjs";
+import {bindModelsToApprovedRoleTasks}
+  from "./approved-plan-agent-model-binding.mjs";
 import {assertApprovedPlanScope,planDigest as hashApprovedPlan} from
   "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
@@ -74,8 +76,13 @@ export async function runNativePositiveApprovedDag({
   coordinator,reviewGate,approvedPlans,sessionId,planDigest,baseSha,
   operationalRootId,branch,
   referenceFiles,scenarioId,repo,giteaBase,
-  readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens
+  readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens,
+  /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
+  approvedAgentModelFactory
 }){
+  if(approvedAgentModelFactory!==undefined&&
+     typeof approvedAgentModelFactory!=="function")
+    throw Error("Approved model factory must be host-owned");
   assert.match(giteaBase,/^http:\/\/127\.0\.0\.1:\d+$/u);
   assert.match(baseSha,SHA);
   for(const token of [readerToken,writerToken,orchestratorToken,
@@ -96,10 +103,22 @@ export async function runNativePositiveApprovedDag({
   // A single generic compiler selects tool calls from the AUTHENTICATED
   // Engineer-signed plan. Only the resulting code bytes remain test fixtures.
   // No reference fixture chooses the resources, roles or permissions.
-  const offlineScripts=buildOfflineAdkScriptsFromApprovedPlan({
+  const hostModels=approvedAgentModelFactory
+    ? bindModelsToApprovedRoleTasks({
+        plan:signed.plan,approvedRows:grants,
+        modelFactory:approvedAgentModelFactory
+      })
+    : null;
+  // In the zero-billing CI, script contents are supplied by independent
+  // offline acceptance fixtures. With host-selected ADK models, NO fixture
+  // payload is supplied to the model factory or the ADK worker.
+  const offlineScripts=hostModels?null:buildOfflineAdkScriptsFromApprovedPlan({
     plan:signed.plan,approvedRows:grants,repo,branch,
     implementationContents:referenceFiles
   });
+  if(hostModels)
+    assert.deepEqual(hostModels.selected_roles,[...ROLES],
+      "This existing three-role native acceptance harness requires all roles");
   const root=canonicalRepositoryUri(repo);
   const scopedBranch=canonicalBranchUri(repo,branch);
   const filePrefix=scopedBranch+"/files/";
@@ -247,8 +266,15 @@ export async function runNativePositiveApprovedDag({
           assert.equal(request.arguments.branch,branch);
           if(request.tool==="update_file"){
             assert.ok(readPaths[role].has(request.arguments.path));
-            assert.equal(request.arguments.content,
-              referenceFiles[request.arguments.path]);
+            if(hostModels){
+              assert.equal(typeof request.arguments.content,"string");
+              assert.ok(request.arguments.content.length>0&&
+                request.arguments.content.length<=250000,
+                "Host-selected model must supply bounded complete file text");
+            }else{
+              assert.equal(request.arguments.content,
+                referenceFiles[request.arguments.path]);
+            }
           }
         }
         return reply(gateway.prepare(request),201);
@@ -370,11 +396,11 @@ export async function runNativePositiveApprovedDag({
     }
     for(const role of EDIT_ROLES){
       const targets=files[role];
-      const scripted=offlineScripts[role];
-      assert.deepEqual(scripted.flatMap(c=>
+      const scripted=offlineScripts?.[role];
+      if(scripted)assert.deepEqual(scripted.flatMap(c=>
         c.name==="update_file"?[c.args.path]:[]).sort(),[...targets].sort(),
         "Signed plan must determine all scripted ADK writes");
-      const model=new OfflineApprovedAdkModel(role,scripted);
+      const model=hostModels?.models[role]??new OfflineApprovedAdkModel(role,scripted);
       models[role]=model;
       const server=await startSpecializedAgentServer({
         role,host:"127.0.0.1",
@@ -387,18 +413,22 @@ export async function runNativePositiveApprovedDag({
           ...(sharedMcpEnabled?{
             mcpSharedUrl,mcpCryptoUrl,mcpUpdateFile:true
           }:{}),
-          maxModelTurns:scripted.length+2,maxModelCallMs:30000,
+          maxModelTurns:scripted?scripted.length+2:24,
+          maxModelCallMs:hostModels?90000:30000,
           gatewayTimeoutMs:30000
         }
       });
       servers.push(server);urls[role]=server.baseUrl;
     }
-    const testScript=offlineScripts.test;
-    assert.deepEqual(testScript.map(c=>c.name),
-      ["create_file","run_tests"],
-      "Signed test permissions must determine ADK test sequence");
-    assert.equal(testScript[0].args.path,createdTestFile);
-    const testModel=new OfflineApprovedAdkModel("test",testScript);
+    const testScript=offlineScripts?.test;
+    if(testScript){
+      assert.deepEqual(testScript.map(c=>c.name),
+        ["create_file","run_tests"],
+        "Signed test permissions must determine ADK test sequence");
+      assert.equal(testScript[0].args.path,createdTestFile);
+    }
+    const testModel=hostModels?.models.test??
+      new OfflineApprovedAdkModel("test",testScript);
     models.test=testModel;
     const testAgent=await startSpecializedAgentServer({
       role:"test",host:"127.0.0.1",
@@ -411,7 +441,8 @@ export async function runNativePositiveApprovedDag({
         ...(sharedMcpEnabled?{
           mcpSharedUrl,mcpCryptoUrl,mcpCreateFile:true,mcpRunTests:true
         }:{}),
-        maxModelTurns:4,maxModelCallMs:30000,
+        maxModelTurns:hostModels?24:4,
+        maxModelCallMs:hostModels?90000:30000,
         gatewayTimeoutMs:30000
       }
     });
@@ -525,9 +556,11 @@ export async function runNativePositiveApprovedDag({
     assert.equal(testCalls,1);
     assert.equal(testCreates,1);
     assert.equal(runnerRuns,1);
-    assert.equal(models.backend.calls,2*files.backend.length+1);
-    assert.equal(models.frontend.calls,2*files.frontend.length+1);
-    assert.equal(models.test.calls,3);
+    if(!hostModels){
+      assert.equal(models.backend.calls,2*files.backend.length+1);
+      assert.equal(models.frontend.calls,2*files.frontend.length+1);
+      assert.equal(models.test.calls,3);
+    }
     // This is the proof that the same signed DAG actually used both the
     // normal shared MCP and separate private cryptographic MCP. A green
     // FunctionTool fallback alone cannot satisfy this gate.
@@ -537,7 +570,7 @@ export async function runNativePositiveApprovedDag({
       assert.ok(privateCryptoMcpCalls>=2*expectedExisting.length+2,
         "Adapter VP generation must traverse the crypto MCP boundary");
     }
-    assert.ok(result.specialized_results.every(x=>
+    if(!hostModels)assert.ok(result.specialized_results.every(x=>
       x.artifact.model_id?.startsWith("offline-signed-approved-plan-")));
     assert.ok(new Set(Object.values(childIds)).size===3);
     assert.equal(result.specialized_results[2].artifact.test_outcome,"pass");
@@ -545,13 +578,20 @@ export async function runNativePositiveApprovedDag({
       runnerOutcome.tested_commit_sha);
     for(const path of expectedExisting){
       const updated=await reader.readTextFile(branch,path);
-      assert.equal(updated.content,referenceFiles[path]);
+      if(!hostModels){
+        assert.equal(updated.content,referenceFiles[path]);
+      }else{
+        assert.notEqual(updated.content,originals[path],
+          "Agent must change the signed approved resource");
+        assert.ok(updated.content.length>0);
+      }
       const unchanged=await reader.readTextFile("main",path,baseSha);
       assert.equal(unchanged.content,originals[path]);
     }
     const savedTest=await reader.readTextFile(branch,createdTestFile);
-    assert.equal(savedTest.content,
-      referenceFiles[createdTestFile]);
+    if(!hostModels)
+      assert.equal(savedTest.content,referenceFiles[createdTestFile]);
+    else assert.ok(savedTest.content.length>0);
     const head=await reader.getBranchMetadata(branch);
     assert.equal(head.commit_sha,runnerOutcome.tested_commit_sha);
     assert.equal(createdPr.revision,head.commit_sha);
@@ -580,14 +620,16 @@ export async function runNativePositiveApprovedDag({
       approved_branch_sha:head.commit_sha,
       pr_created:true,pull_request_number:createdPr.pull_request_number,
       pull_request_url:createdPr.url??null,merge_calls:0,
-      adk_agents_executed:3,scripted_adk_no_paid_model:true,
+      adk_agents_executed:3,scripted_adk_no_paid_model:!hostModels,
+      model_source:hostModels?"host_supplied_models_not_fixture":
+        "offline_fixture_scripts",
       approved_shared_mcp_enabled:sharedMcpEnabled,
       shared_mcp_http_requests:normalMcpCalls,
       private_crypto_mcp_http_requests:privateCryptoMcpCalls,
       adk_model_turns:{
-        backend:models.backend.calls,
-        frontend:models.frontend.calls,
-        test:models.test.calls
+        backend:hostModels?null:models.backend.calls,
+        frontend:hostModels?null:models.frontend.calls,
+        test:hostModels?null:models.test.calls
       }
     };
   }finally{
