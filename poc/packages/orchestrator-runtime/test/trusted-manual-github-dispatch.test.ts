@@ -134,3 +134,30 @@ test("paid bridge rejects missing API attestation and tampered run metadata",asy
   }
   await assert.rejects(run(good,401),/metadata rejected/);
 });
+
+test("private self-hosted Gemini hold uses separate exact workflow OIDC identity and explicit bill consent",()=>{
+  const privateWorkflow=".github/workflows/trusted-gemini-private-session-hold.yml";
+  const ownEnv={...env,GITHUB_WORKFLOW_REF:REPO+"/"+privateWorkflow+"@"+REF};
+  const ownPinned={...pinned,workflowPath:privateWorkflow};
+  const verified=verifyGithubManualGeminiDispatch({
+    env:ownEnv,event,pinned:ownPinned
+  });
+  assert.equal(verified.model_name,"gemini-3.8-flash");
+  assert.equal(verified.status,"manual_workflow_input_only_not_authorized");
+  assert.equal(verified.source_sha,SHA);
+  // The public input-only workflow and the scripted private runner cannot
+  // borrow this separate paid job's signed OIDC identity.
+  for(const wrong of [
+    {...ownPinned,workflowPath:PATH},
+    {...ownPinned,workflowPath:".github/workflows/trusted-scripted-offline-session-hold.yml"}
+  ])assert.throws(()=>verifyGithubManualGeminiDispatch({
+    env:ownEnv,event,pinned:wrong
+  }),/workflow, repository or branch not independently pinned/);
+  for(const malicious of [
+    {...event,inputs:{...event.inputs,authorization:"I AUTHORIZE A SCRIPTED OFFLINE TEST ONLY"}},
+    {...event,inputs:{...event.inputs,model:"gemini-3.1-pro-preview",
+      max_model_turns:"33"}}
+  ])assert.throws(()=>verifyGithubManualGeminiDispatch({
+    env:ownEnv,event:malicious,pinned:ownPinned
+  }),/Trusted Github manual dispatch:/);
+});
