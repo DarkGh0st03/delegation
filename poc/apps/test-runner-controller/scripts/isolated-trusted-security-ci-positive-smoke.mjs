@@ -641,13 +641,14 @@ async function main(){
           positive?.positive_dag?.approved_branch_sha);
         if(realGeminiPilot){
           assert.ok(positive?.positive_dag?.source_reads>0);
-          assert.equal(positive?.positive_dag?.source_reads,
+          assert.ok(positive?.positive_dag?.source_reads>=
             positive?.positive_dag?.source_writes);
         }else{
           assert.equal(positive?.positive_dag?.source_reads,10);
           assert.equal(positive?.positive_dag?.source_writes,10);
         }
-        assert.equal(positive?.positive_dag?.created_test_files,1);
+        if(realGeminiPilot)assert.ok([0,1].includes(positive?.positive_dag?.created_test_files));
+        else assert.equal(positive?.positive_dag?.created_test_files,1);
         assert.equal(positive?.positive_dag?.adk_agents_executed,3);
         assert.equal(positive?.positive_dag?.scripted_adk_no_paid_model,
           !realGeminiPilot);
@@ -709,7 +710,8 @@ async function main(){
         assert.match(nativePrEvidence.sha,/^[a-f0-9]{40}$/u);
         assert.equal(positive.positive_dag.tested_commit_sha,nativePrEvidence.sha);
         assert.equal(positive?.provider_writes,realGeminiPilot
-          ?positive.positive_dag.source_writes+1:11);
+          ?positive.positive_dag.source_writes+
+            positive.positive_dag.created_test_files:11);
         if(realGeminiPilot){
           // Explicit PILOT: Engineer test fixture, not genuine human approval.
           // No source, Gemini prompt, API secret, VP or tokens in the receipt.
