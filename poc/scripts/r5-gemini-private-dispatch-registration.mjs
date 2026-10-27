@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * R5 zero-billing, READ-ONLY pre-deployment gate for the private
- * private Gemini GitHub workflow. A passing registration check is NOT
+ * R5 zero-billing, READ-ONLY pre-deployment gate for the
+ * dedicated private Gemini GitHub workflow. A passing registration check is NOT
  * a deployed Engineer Host, a live runner, a signed DAG, or R5 GO.
  *
  * Run on the independently provisioned private runner with
