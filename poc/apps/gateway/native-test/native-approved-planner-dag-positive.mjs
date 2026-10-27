@@ -127,6 +127,21 @@ export async function runNativePositiveApprovedDag({
   if(hostModels)
     assert.deepEqual(hostModels.selected_roles,[...ROLES],
       "This existing three-role native acceptance harness requires all roles");
+  // Real Planner may choose its own Task IDs. Identity must come from the
+  // authenticated signed plan, never from fixed demo strings.
+  const idsByRole=Object.fromEntries(ROLES.map(role=>{
+    const tasks=signed.plan.tasks.filter(t=>t.agent_id===role);
+    assert.equal(tasks.length,1,"Pilot requires exactly one approved Task per role");
+    return [role,tasks[0].id];
+  }));
+  const orchestratorTaskFor=operation=>{
+    const tasks=signed.plan.tasks.filter(t=>t.agent_id==="orchestrator"&&
+      t.permissions?.some(p=>p.operation===operation));
+    assert.equal(tasks.length,1,"Pilot needs one signed orchestrator "+operation);
+    return tasks[0].id;
+  };
+  const branchTaskId=orchestratorTaskFor("create_branch");
+  const reviewTaskId=orchestratorTaskFor("create_pull_request");
   const root=canonicalRepositoryUri(repo);
   const scopedBranch=canonicalBranchUri(repo,branch);
   const filePrefix=scopedBranch+"/files/";
@@ -466,7 +481,7 @@ export async function runNativePositiveApprovedDag({
       adapter:{adapterBaseUrl:adapterUrl,
         bearerToken:orchestratorToken,timeoutMs:30000},
       async authorityForTask(taskId,role){
-        assert.equal(taskId,role);
+        assert.equal(taskId,idsByRole[role]);
         assert.ok(ROLES.includes(role));
         assert.equal(childIds[role],undefined);
         childIds[role]="urn:native:approved-dag-"+role+"-"+
@@ -484,11 +499,11 @@ export async function runNativePositiveApprovedDag({
       }
     });
     for(const role of ROLES)await assert.rejects(
-      dispatcher.dispatch(role),/dependencies/);
+      dispatcher.dispatch(idsByRole[role]),/dependencies/);
     assert.deepEqual(counts,{backend:0,frontend:0});
     const result=await dispatcher.executeApprovedDag({
       async invokeOrchestratorTask(planId,runtimeTaskId){
-        if(planId==="pr"){
+        if(planId===reviewTaskId){
           // Approval of the repository operation is a separate signed Task.
           // It may run only after the Test Agent's provider-corroborated
           // exact-SHA Docker and independent researcher acceptance.
@@ -530,7 +545,7 @@ export async function runNativePositiveApprovedDag({
           createdPr=executed.execution;
           return;
         }
-        assert.equal(planId,"branch");
+        assert.equal(planId,branchTaskId);
         assert.throws(()=>gateway.prepare({
           task_id:runtimeTaskId,agent_role:"orchestrator",
           tool:"create_branch",arguments:{
@@ -552,7 +567,10 @@ export async function runNativePositiveApprovedDag({
     });
     assert.equal(coordinator.phase,"closed");
     assert.equal(result.plan_digest,planDigest);
-    assert.deepEqual(result.completed_task_ids,["branch",...ROLES,"pr"]);
+    assert.deepEqual(
+      new Set(result.completed_task_ids),
+      new Set([branchTaskId,...Object.values(idsByRole),reviewTaskId])
+    );
     assert.ok(createdPr,"A signed, provider-confirmed PR must be opened");
     assert.deepEqual(result.specialized_results.map(x=>x.role),ROLES);
     assert.deepEqual(counts,{backend:1,frontend:1});
