@@ -121,6 +121,11 @@ export function extractSignedFunctionalE2EEvidence(text,{
      !Number.isSafeInteger(adk.compiled_permission_count)||
      adk.compiled_permission_count<9||
      adk.technical_preflight_pass!==true||
+     adk.functional_design_plausible!==false||
+     !Array.isArray(adk.functional_review_failed_checks)||
+     JSON.stringify(adk.functional_review_failed_checks)!==
+       JSON.stringify(["explicit_test_implementation"])||
+     adk.human_engineer_review_still_required!==true||
      adk.proposal_digest_verified!==true||
      adk.no_approval_or_credential!==true||
      adk.scripted_model_only!==true||adk.real_gemini_calls!==0||
@@ -178,6 +183,9 @@ export function extractSignedFunctionalE2EEvidence(text,{
     f1_actual_adk_scripted_planner_real_gitea_verified:true,
     f1_scripted_model_turns:adk.model_turns,
     f1_adk_compiled_task_count:adk.compiled_task_count,
+    f1_scripted_proposal_functionally_complete:false,
+    f1_scripted_plan_missing_concrete_test_implementation:true,
+    f1_real_gemini_plan_quality_not_yet_measured:true,
     f1_actual_full_repo_snapshot_readonly_verified:true,
     f1_discovered_files:port.discovered_files,
     f1_discovered_directories:port.discovered_directories,

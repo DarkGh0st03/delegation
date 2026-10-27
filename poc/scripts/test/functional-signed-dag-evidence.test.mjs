@@ -32,6 +32,9 @@ function fixture(){
     scenario_id:"department-directory",base_revision:gitea,
     discovered_files:44,verified_source_reads:4,model_turns:7,
     compiled_task_count:5,compiled_permission_count:9,
+    functional_design_plausible:false,
+    functional_review_failed_checks:["explicit_test_implementation"],
+    human_engineer_review_still_required:true,
     technical_preflight_pass:true,proposal_digest_verified:true,
     no_approval_or_credential:true,scripted_model_only:true,
     real_gemini_calls:0,gemini_billing_incurred:false,
@@ -87,6 +90,10 @@ test("functional E2E extracts only fixed observed fields without R5 or human cla
   assert.equal(evidence.f1_gemini_operator_dry_run_real_gitea_verified,true);
   assert.equal(evidence.f1_actual_adk_scripted_planner_real_gitea_verified,true);
   assert.equal(evidence.f1_scripted_model_turns,7);
+  assert.equal(evidence.f1_scripted_proposal_functionally_complete,false);
+  assert.equal(evidence.f1_scripted_plan_missing_concrete_test_implementation,
+    true);
+  assert.equal(evidence.f1_real_gemini_plan_quality_not_yet_measured,true);
   assert.equal(evidence.f1_discovered_files,44);
   assert.equal(evidence.f1_genuine_gemini_proposal_produced,false);
   assert.equal(evidence.tested_feature_commit_sha,head);
@@ -110,6 +117,8 @@ test("functional checkpoint rejects fake provider effects, missing signed DAG an
     x=>{x.adk.base_revision=sha;},
     x=>{x.adk.real_gemini_calls=1;},
     x=>{x.adk.technical_preflight_pass=false;},
+    x=>{x.adk.functional_design_plausible=true;},
+    x=>{x.adk.functional_review_failed_checks=[];},
     x=>{x.adk.scripted_model_only=false;},
     x=>{x.dry.base_revision=sha;},
     x=>{x.dry.model_calls=1;},

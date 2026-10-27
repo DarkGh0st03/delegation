@@ -167,6 +167,12 @@ test("F1 full Google ADK scripted rehearsal proposes an unsigned DAG after genui
   assert.equal(r.compiled_task_count,5);
   assert.equal(r.model_turns,7);
   assert.equal(r.technical_preflight_pass,true);
+  // "run_tests" is NOT equivalent to an explicit Test Agent implementation.
+  // The scripted plan is still insufficient for a real Engineer sign-off.
+  assert.equal(r.functional_design_plausible,false);
+  assert.deepEqual(r.functional_review_failed_checks,
+    ["explicit_test_implementation"]);
+  assert.equal(r.human_engineer_review_still_required,true);
   assert.equal(r.proposal_digest_verified,true);
   assert.equal(r.scripted_model_only,true);
   assert.equal(r.real_gemini_calls,0);

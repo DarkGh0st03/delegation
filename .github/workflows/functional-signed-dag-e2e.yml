@@ -13,6 +13,8 @@ on:
       - 'poc/scripts/f1-real-gitea-planner-readiness.mjs'
       - 'poc/scripts/test/f1-real-gitea-planner-readiness.test.mjs'
       - 'poc/scripts/f1-real-gitea-adk-planner-rehearsal.mjs'
+      - 'poc/scripts/f1-department-directory-functional-review.mjs'
+      - 'poc/scripts/test/f1-department-directory-functional-review.test.mjs'
       - 'poc/scripts/f1-real-gitea-gemini-probe.mjs'
       - 'poc/scripts/test/f1-real-gitea-gemini-probe.test.mjs'
       - 'poc/apps/gateway/native-test/native-positive-approved-dag.mjs'

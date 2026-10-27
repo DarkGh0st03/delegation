@@ -42,3 +42,28 @@ No new OIDC/mTLS/private-runner deployment, advanced recovery, or independent bl
 - **R5** external private distributed trust and independent attestation: NO-GO, separately tracked.
 
 Do not equate any F0/F1 fixture or an earlier legacy Gemini workflow with F2.
+
+## F1 functional-quality gap explicitly recorded (27 October 2026)
+
+The scripted Google ADK/Gitea Planning rehearsal is a **technical integration**
+test, not evidence that the model produced a complete feature implementation
+plan. Its fixed unsigned proposal requests \`run_tests\` but has **no Test Agent
+task permission to write or create regression tests**. Therefore its
+independently assessed functional completeness is **false**, despite a
+successful schema/role/source technical preflight and a working deterministic
+Gitea/Docker reference implementation.
+
+The functional workflow publishes this distinction as sanitized evidence:
+\`f1_scripted_proposal_functionally_complete:false\`,
+\`f1_scripted_plan_missing_concrete_test_implementation:true\`, and
+\`f1_real_gemini_plan_quality_not_yet_measured:true\`. Changing the scripted
+test to silently claim completeness is a fail-closed regression.
+
+The separate \`poc/scripts/f1-department-directory-functional-review.mjs\`
+checks backend service/API, frontend API/UI, explicit regression-test
+implementation, real test execution, DAG dependencies and PR ordering.
+It is **diagnostic**, not Engineer consent or proof that generated code works.
+The billable real-Gemini research probe writes a separate
+\`functional-review.json\` for an Engineer to consider. No automatic
+signature, operational delegation or merge follows a good score.
+
