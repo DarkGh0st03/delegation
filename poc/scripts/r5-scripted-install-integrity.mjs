@@ -29,7 +29,11 @@ const TRUSTED_ENTRYPOINTS=Object.freeze([
   "poc/scripts/r5-scripted-install-integrity.mjs",
   "poc/scripts/r5-scripted-dispatch-registration.mjs",
   "poc/apps/orchestrator/src/hold-private-scripted-github-session.mjs",
-  "poc/apps/orchestrator/src/trusted-private-scripted-runner-oidc.mjs"
+  "poc/apps/orchestrator/src/trusted-private-scripted-runner-oidc.mjs",
+  // The paid private runner has the same immutable-source requirement:
+  // no OIDC JWT, model billing or operational authority before local pins.
+  "poc/apps/orchestrator/src/hold-private-github-session.mjs",
+  "poc/apps/orchestrator/src/trusted-private-runner-oidc.mjs"
 ]);
 function deny(reason){
   throw Error("R5 protected scripted install denied: "+reason);
