@@ -5,6 +5,8 @@ import {buildF1RealGiteaResearchPlanningPort}
   from "../f1-gitea-research-planning-port.mjs";
 import {runF1RealGiteaGeminiResearch}
   from "../f1-real-gitea-gemini-probe.mjs";
+import {rehearseF1RealGiteaAdkPlanning}
+  from "../f1-real-gitea-adk-planner-rehearsal.mjs";
 
 const SHA="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const URL="http://127.0.0.1:31315";
@@ -152,4 +154,32 @@ test("F1 real-Gitea operator --dry-run uses authentic pinned source with no mode
   assert.equal(r.trusted_gateway_vp_opa_planning,false);
   assert.ok(f.seen.length>8);
   assert.equal(JSON.stringify(r).includes(TOKEN),false);
+});
+
+test("F1 full Google ADK scripted rehearsal proposes an unsigned DAG after genuine pinned Gitea reads",async()=>{
+  const f=fixture();
+  const r=await rehearseF1RealGiteaAdkPlanning({
+    baseUrl:URL,readToken:TOKEN,expectedMainSha:SHA,
+    sessionId:"f1-scripted-real-gitea",fetchFn:f.fetchFn
+  });
+  assert.equal(r.status,"actual_adk_planner_scripted_proposal_on_real_gitea_pass");
+  assert.equal(r.verified_source_reads,4);
+  assert.equal(r.compiled_task_count,5);
+  assert.equal(r.model_turns,7);
+  assert.equal(r.technical_preflight_pass,true);
+  assert.equal(r.proposal_digest_verified,true);
+  assert.equal(r.scripted_model_only,true);
+  assert.equal(r.real_gemini_calls,0);
+  assert.equal(r.no_approval_or_credential,true);
+  assert.equal(r.execution_permitted,false);
+  assert.equal(r.external_r5_go,false);
+  assert.equal(JSON.stringify(r).includes(TOKEN),false);
+});
+test("F1 full ADK rehearsal refuses changed or already solved source, never substitutes golden plan",async()=>{
+  for(const f of [fixture({changed:true}),fixture({solved:true})]){
+    await assert.rejects(rehearseF1RealGiteaAdkPlanning({
+      baseUrl:URL,readToken:TOKEN,expectedMainSha:SHA,
+      sessionId:"f1-scripted-reject",fetchFn:f.fetchFn
+    }));
+  }
 });

@@ -38,6 +38,8 @@ import {buildF1RealGiteaResearchPlanningPort}
   from "../../../scripts/f1-gitea-research-planning-port.mjs";
 import {runF1RealGiteaGeminiResearch}
   from "../../../scripts/f1-real-gitea-gemini-probe.mjs";
+import {rehearseF1RealGiteaAdkPlanning}
+  from "../../../scripts/f1-real-gitea-adk-planner-rehearsal.mjs";
 
 const baseline="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const baselineSource="https://github.com/DarkGh0st03/iam-console-poc.git";
@@ -459,6 +461,20 @@ async function main(){
           discovered_files:dry.files_available,
           model_calls:0,billable_model_inference:false,
           execution_permitted:false})+"\n");
+      // The REAL ADK Runner, proposal compiler, and feasibility rubric
+      // use actual Gitea reads. The BaseLlm is a SCRIPTED TEST MODEL.
+      // No paid Gemini inference, credential or auto-approval occurs.
+      const adk=await stage("f1_actual_adk_planner_scripted_on_real_gitea",
+        ()=>rehearseF1RealGiteaAdkPlanning({
+          baseUrl:base,readToken:creds.readToken,
+          expectedMainSha:fixture.mainSha,
+          sessionId:"f1_adk_"+fixture.mainSha.slice(0,12)
+        }),120000);
+      assert.equal(adk.scripted_model_only,true);
+      assert.equal(adk.real_gemini_calls,0);
+      assert.equal(adk.technical_preflight_pass,true);
+      process.stderr.write("[trusted-positive-ci] f1_real_gitea_adk_rehearsal "+
+        JSON.stringify(adk)+"\n");
     }
     if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
       // Reuse this same disposable Gitea. Read-only PAT, actual main SHA,

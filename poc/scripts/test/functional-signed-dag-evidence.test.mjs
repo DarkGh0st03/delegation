@@ -26,6 +26,19 @@ function fixture(){
   const dry={status:"PASS",base_revision:gitea,
     source_kind:"real_disposable_gitea",discovered_files:44,
     model_calls:0,billable_model_inference:false,execution_permitted:false};
+  const adk={
+    schema:"f1-scripted-adk-real-gitea-rehearsal-v1",
+    status:"actual_adk_planner_scripted_proposal_on_real_gitea_pass",
+    scenario_id:"department-directory",base_revision:gitea,
+    discovered_files:44,verified_source_reads:4,model_turns:7,
+    compiled_task_count:5,compiled_permission_count:9,
+    technical_preflight_pass:true,proposal_digest_verified:true,
+    no_approval_or_credential:true,scripted_model_only:true,
+    real_gemini_calls:0,gemini_billing_incurred:false,
+    direct_gitea_research_only:true,
+    gateway_vp_opa_attested_by_this_rehearsal:false,
+    execution_permitted:false,external_r5_go:false
+  };
   const native={
     status:"PASS",real_gitea_sha:gitea,native_rust:true,live_opa:true,
     signed_handoff:true,operational_root:true,dispatcher_fail_closed:true,
@@ -49,9 +62,9 @@ function fixture(){
     native_rust_signed_child_and_vp:true,runner_via_gateway_http:true,
     exact_provider_sha_correlated:true,approval_created:true
   };
-  return {native,positive,f1,port,dry};
+  return {native,positive,f1,port,dry,adk};
 }
-function log({native,positive,f1,port,dry}){
+function log({native,positive,f1,port,dry,adk}){
   return "npm prefix noisy log\n"+
     "[trusted-positive-ci] f1_real_gitea_baseline "+
     JSON.stringify(f1)+"\n"+
@@ -59,6 +72,8 @@ function log({native,positive,f1,port,dry}){
     JSON.stringify(port)+"\n"+
     "[trusted-positive-ci] f1_gemini_probe_dry_run "+
     JSON.stringify(dry)+"\n"+
+    "[trusted-positive-ci] f1_real_gitea_adk_rehearsal "+
+    JSON.stringify(adk)+"\n"+
     "[trusted-positive-ci] native_disposable_planning "+
     JSON.stringify(native)+"\n"+JSON.stringify(positive)+"\n";
 }
@@ -70,6 +85,8 @@ test("functional E2E extracts only fixed observed fields without R5 or human cla
   assert.equal(evidence.f1_real_gitea_unsolved_baseline_verified,true);
   assert.equal(evidence.f1_actual_full_repo_snapshot_readonly_verified,true);
   assert.equal(evidence.f1_gemini_operator_dry_run_real_gitea_verified,true);
+  assert.equal(evidence.f1_actual_adk_scripted_planner_real_gitea_verified,true);
+  assert.equal(evidence.f1_scripted_model_turns,7);
   assert.equal(evidence.f1_discovered_files,44);
   assert.equal(evidence.f1_genuine_gemini_proposal_produced,false);
   assert.equal(evidence.tested_feature_commit_sha,head);
@@ -90,6 +107,10 @@ test("functional checkpoint rejects missing or duplicate observed stages",()=>{
 });
 test("functional checkpoint rejects fake provider effects, missing signed DAG and merged PR",()=>{
   for(const mutate of [
+    x=>{x.adk.base_revision=sha;},
+    x=>{x.adk.real_gemini_calls=1;},
+    x=>{x.adk.technical_preflight_pass=false;},
+    x=>{x.adk.scripted_model_only=false;},
     x=>{x.dry.base_revision=sha;},
     x=>{x.dry.model_calls=1;},
     x=>{x.dry.billable_model_inference=true;},
