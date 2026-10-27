@@ -1134,3 +1134,62 @@ Status List, the physical runner, root issuance/revocation or unknown
 credential emissions outside the registered path. The claim remains
 `external_r5_go:false`. Existing tests use fabricated Adapter responses
 and temporary owner directories only.
+
+## R5 — Child issuance uncertainty: protected recovery triage
+
+The original Engineer Host now has an additional **read-only** owner-side
+recovery library, `poc/scripts/r5-child-uncertain-reconciliation.mjs`.
+A crashed or timed-out Adapter request leaves a durable
+`issuance_uncertain` intent; absence of an ACK is **not** evidence that a
+child was never issued. This check loads the actual Ed25519 Engineer
+signature from the protected approval store, verifies original
+session/source/plan/root pins, compares every *recorded* child to an approved
+specialized Task (including its role and distinct Status List slot), then
+asks the local Gateway-authenticated Adapter for EVM-anchored **revoked**
+status. It observes **both ACKed and uncertain** attempts. Any unreachable,
+unknown, active, in-memory-only or malformed credential status, or a journal
+changed during the remote checks, is NO-GO. It makes no status mutations and
+never adds an ACK, clears an intent or retries an issuance.
+
+The owner-side CLI is `poc/scripts/r5-protected-child-recovery.mjs`.
+Its protected `DELEGATION_R5_CHILD_RECOVERY_CONFIG` (0600 in a 0700
+owner directory) must have exactly the following properties:
+
+```json
+{
+  "schema": "r5-owner-uncertain-child-recovery-v1",
+  "source_sha": "<40-hex-commit>",
+  "session_id": "<original-session>",
+  "plan_digest": "<64-hex-digest>",
+  "operational_root_id": "<original-operational-root-id>",
+  "issuance_journal_directory": "/absolute/owner-only/issuance",
+  "engineer_approval_directory": "/absolute/owner-only/approvals",
+  "engineer_public_key_file": "/absolute/owner-only/engineer.pub",
+  "engineer_did": "did:example:engineer",
+  "engineer_key_id": "<pinned-ed25519-key-id>",
+  "adapter_base_url": "http://127.0.0.1:8092",
+  "gateway_verifier_bearer_file": "/absolute/owner-only/verifier.token"
+}
+```
+
+The operator separately pins `DELEGATION_R5_EXPECTED_SESSION_ID`,
+`DELEGATION_R5_EXPECTED_SOURCE_SHA`,
+`DELEGATION_R5_EXPECTED_PLAN_DIGEST` and
+`DELEGATION_R5_EXPECTED_OPERATIONAL_ROOT_ID` before running:
+
+```bash
+node --experimental-strip-types poc/scripts/r5-protected-child-recovery.mjs
+```
+
+The original approval must still pass the signed receipt's validity check.
+An expired Engineer signature **must not** be bypassed or silently
+reapproved in recovery; an authorized manual reconciliation procedure is
+then required. The result intentionally says
+`safe_to_retry_child_issuance:false`,
+`independent_evm_attestation:false`,
+`all_possible_issuance_intents_automatically_reconciled:false` and
+`external_r5_go:false`, even when the Adapter reports that each
+recorded credential is revoked. The Adapter cannot detect IDs omitted
+from the local original-host journal or independently prove its own
+on-chain anchor. This helper does not establish R5 GO, human reapproval
+or the completed distributed experiment. Tests are offline.
