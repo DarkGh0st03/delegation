@@ -11,6 +11,8 @@ import {BaseLlm} from "@google/adk";
 import {TrustedAdkReadOnlyPlanner}
   from "../packages/orchestrator-runtime/src/trusted-adk-planner.ts";
 import {evaluatePlannerFeasibility} from "./planner-feasibility-eval.mjs";
+import {assessF1DepartmentDirectoryPlan}
+  from "./f1-department-directory-functional-review.mjs";
 import {buildF1RealGiteaResearchPlanningPort}
   from "./f1-gitea-research-planning-port.mjs";
 
@@ -107,6 +109,9 @@ export async function rehearseF1RealGiteaAdkPlanning({
     scenario:"department-directory",expectedBaseRevision:expectedMainSha,
     proposal,observations
   });
+  const functional=assessF1DepartmentDirectoryPlan({
+    proposal,expectedBaseRevision:expectedMainSha
+  });
   const taskRoles=proposal.plan.tasks.map(x=>x.agent_id);
   if(!grade.technical_preflight_pass||model.turns!==7||
      proposal.status!=="unapproved_proposal"||
@@ -127,6 +132,9 @@ export async function rehearseF1RealGiteaAdkPlanning({
     compiled_task_count:proposal.plan.tasks.length,
     compiled_permission_count:proposal.plan.requested_permissions.length,
     technical_preflight_pass:grade.technical_preflight_pass,
+    functional_design_plausible:functional.functional_design_plausible,
+    functional_review_failed_checks:Object.freeze([...functional.failed_checks]),
+    human_engineer_review_still_required:true,
     proposal_digest_verified:typeof proposal.digest==="string"&&
       /^[0-9a-f]{64}$/u.test(proposal.digest),
     no_approval_or_credential:true,

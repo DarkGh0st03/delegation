@@ -22,6 +22,8 @@ import {buildF1RealGiteaResearchPlanningPort}
 import {CONSENT,classifyPlannerProbeFailure}
   from "./run-gemini-planner-fixture.mjs";
 import {evaluatePlannerFeasibility} from "./planner-feasibility-eval.mjs";
+import {assessF1DepartmentDirectoryPlan}
+  from "./f1-department-directory-functional-review.mjs";
 
 const SHA=/^[a-f0-9]{40}$/u;
 const LOCAL=/^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/u;
@@ -124,14 +126,20 @@ export async function runF1RealGiteaGeminiResearch({
       scenario:"department-directory",
       expectedBaseRevision:expectedMainSha,proposal,observations:events
     });
+    const functional=assessF1DepartmentDirectoryPlan({
+      proposal,expectedBaseRevision:expectedMainSha
+    });
     // The generated plan is saved for ENGINEER review ONLY. Never sign,
     // issue child credentials, merge, or execute in this probe.
     await persist(outputDir,"unapproved-proposal.json",proposal);
     await persist(outputDir,"observations.json",events);
     await persist(outputDir,"evaluation.json",report);
+    await persist(outputDir,"functional-review.json",functional);
     status="unapproved_proposal_observed";
     return Object.freeze({status,technical_preflight_pass:
       report.technical_preflight_pass,
+      functional_design_plausible:functional.functional_design_plausible,
+      functional_review_required:true,
       source_revision:expectedMainSha,
       execution_permitted:false,
       reported_provider_cost:"not_measured"});

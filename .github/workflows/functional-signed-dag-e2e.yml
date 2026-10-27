@@ -82,6 +82,8 @@ jobs:
         run: node --experimental-strip-types --test poc/scripts/test/f1-gitea-research-planning-port.test.mjs
       - name: Real Gemini research consent and zero-billing dry-run gates
         run: node --experimental-strip-types --test poc/scripts/test/f1-real-gitea-gemini-probe.test.mjs
+      - name: F1 independent functional-plan completeness rubric (no model calls)
+        run: node --test poc/scripts/test/f1-department-directory-functional-review.test.mjs
       - name: Offline Gemini Planning-to-Execution bridge regression (zero model calls)
         run: |
           node --experimental-strip-types --test \
