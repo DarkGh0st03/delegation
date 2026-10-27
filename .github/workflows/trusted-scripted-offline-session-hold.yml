@@ -1,0 +1,50 @@
+# R5 ZERO-BILLING: separate private GitHub job identity/profile.
+# Manual offline only; NEVER run model code or checkout mutable source.
+# Owner must independently install reviewed immutable /opt/delegation/r5
+# and the pinned CA, runner leaf, Engineer host fingerprint, and config.
+name: R5 Scripted Offline Private Runner Authenticated Hold
+on:
+  workflow_dispatch:
+    inputs:
+      execution_profile:
+        description: "Scripted deterministic providers only, NO model calls"
+        required: true
+        type: choice
+        options:
+          - scripted_offline
+      authorization:
+        description: "Type exactly I AUTHORIZE A SCRIPTED OFFLINE TEST ONLY"
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: r5-scripted-private-runner-session
+  cancel-in-progress: false
+jobs:
+  authenticated-scripted-hold:
+    name: Authenticated OIDC then host-verified signed DAG closure, no models
+    environment: r5-private-scripted-admission
+    runs-on: [self-hosted, linux, x64, delegation-private]
+    if: ${{ github.repository == 'DarkGh0st03/delegation' && github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && inputs.execution_profile == 'scripted_offline' && inputs.authorization == 'I AUTHORIZE A SCRIPTED OFFLINE TEST ONLY' }}
+    timeout-minutes: 75
+    steps:
+      # Immutable, independently installed, already reviewed code.
+      # NO actions/checkout, external action, npm install or code from PRs.
+      - name: Validate default-branch registration and immutable runner source
+        shell: bash
+        run: node --experimental-strip-types /opt/delegation/r5/poc/scripts/r5-scripted-dispatch-registration.mjs
+      # Read-only negative authorization check against the real, pinned
+      # Engineer TLS endpoint. It never requests a GitHub OIDC JWT.
+      - name: Probe pinned private Engineer mTLS before GitHub OIDC
+        shell: bash
+        run: node --experimental-strip-types /opt/delegation/r5/poc/scripts/r5-scripted-mtls-network-probe.mjs
+      - name: Submit signed OIDC then wait for offline root revocation
+        shell: bash
+        run: node --experimental-strip-types /opt/delegation/r5/poc/apps/orchestrator/src/hold-private-scripted-github-session.mjs
+      - name: Report zero-cost authenticated role only
+        shell: bash
+        run: |
+          echo "Scripted-only DAG closed and authority retired; no model calls were authorized."
+          echo "OIDC is GitHub job identity, not Engineer Ed25519 approval."
