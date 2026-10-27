@@ -54,6 +54,23 @@ export async function assertR5AuthenticSignedReviewReady({
      verified.approval?.approved_by!==verified.authenticated_engineer_did||
      coordinator.phase!=="planning")
     deny("human-approved Ed25519 plan changed or Planning authority retired");
+  // Human Ed25519 verification awaits disk I/O. Re-read the ORIGINAL
+  // authority, staged packet and signed Backend checkpoint afterwards:
+  // a concurrent replacement must not make an old signature appear ready.
+  // This is a pre-admission observation, NOT a substitute for the Host's
+  // serialized handoff and independent Execution checks.
+  const [finalCheckpoint,finalPacket]=await Promise.all([
+    checkpointStore.load(),
+    Promise.resolve().then(()=>reviewGate.reviewPacket())
+  ]);
+  let finalRoot;
+  try{finalRoot=coordinator.trustedPlanningAuthority();}
+  catch{deny("original Planning retired during Engineer signature check");}
+  if(coordinator.phase!=="planning"||
+     !isDeepStrictEqual(finalRoot,root)||
+     !isDeepStrictEqual(finalPacket,packet)||
+     !isDeepStrictEqual(finalCheckpoint,checkpoint))
+    deny("original Planning or signed review drifted during signature check");
   return Object.freeze({
     status:"signed_human_review_verified_only_not_oidc_admitted",
     session_id:expectedSessionId,

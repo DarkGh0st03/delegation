@@ -24,21 +24,23 @@ function fake({
   onRead
 }={}){
   const counts={checkpoint:0,packet:0,approval:0};
+  let liveRootSha=rootSha,livePacketDigest=packetDigest,
+    liveCheckpointDigest=checkpointDigest;
   const coordinator={phase,trustedPlanningAuthority:()=>({
-    session_id:SID,base_revision:rootSha
+    session_id:SID,base_revision:liveRootSha
   })};
   const checkpointStore={async load(){
     counts.checkpoint++;
     onRead?.("checkpoint");
     return {snapshot:{session_id:SID,base_revision:SHA},
-      proposal:{digest:checkpointDigest,plan},
+      proposal:{digest:liveCheckpointDigest,plan},
       expected_work_branch:"feature/account-suspension"};
   }};
   const reviewGate={
     reviewPacket(){
       counts.packet++;
       onRead?.("packet");
-      return {session_id:SID,base_revision:SHA,plan_digest:packetDigest,
+      return {session_id:SID,base_revision:SHA,plan_digest:livePacketDigest,
         work_branch:"feature/account-suspension",plan};
     },
     async loadAuthenticatedApproval(){
@@ -51,7 +53,10 @@ function fake({
     }
   };
   return {coordinator,checkpointStore,reviewGate,
-    expectedSessionId:SID,expectedBaseRevision:SHA,counts};
+    expectedSessionId:SID,expectedBaseRevision:SHA,counts,
+    changeRootSha:value=>{liveRootSha=value;},
+    changePacketDigest:value=>{livePacketDigest=value;},
+    changeCheckpointDigest:value=>{liveCheckpointDigest=value;}};
 }
 test("R5 signed review readiness has no authority; never treats checkpoint as human consent",async()=>{
   const obj=fake();
@@ -61,7 +66,7 @@ test("R5 signed review readiness has no authority; never treats checkpoint as hu
   assert.equal(verified.plan_digest,DIGEST);
   assert.equal(verified.operational_root_issued,false);
   assert.equal(verified.dag_executed,false);
-  assert.deepEqual(obj.counts,{checkpoint:1,packet:1,approval:1});
+  assert.deepEqual(obj.counts,{checkpoint:2,packet:2,approval:1});
   assert.equal(Object.isFrozen(verified),true);
 });
 test("R5 missing human signature refuses before any single-use GitHub receipt consumption",async()=>{
@@ -92,6 +97,31 @@ test("R5 cannot accept a different human-approved plan or a dead Coordinator",as
     await assert.rejects(assertR5AuthenticSignedReviewReady(inactive),
       /original active Planning/);
     assert.equal(inactive.counts.approval,0);
+  }
+});
+test("R5 refuses a root replacement while genuine Engineer approval is loading",async()=>{
+  let current;
+  const value=fake({onRead:step=>{
+    if(step==="approval")current.changeRootSha("c".repeat(40));
+  }});
+  current=value;
+  await assert.rejects(assertR5AuthenticSignedReviewReady(value),
+    /signed review drifted/);
+  assert.deepEqual(value.counts,{checkpoint:2,packet:2,approval:1});
+});
+test("R5 refuses a swapped staged packet or signed Backend checkpoint during approval",async()=>{
+  for(const change of [
+    x=>x.changePacketDigest("c".repeat(64)),
+    x=>x.changeCheckpointDigest("c".repeat(64))
+  ]){
+    let current;
+    const value=fake({onRead:step=>{
+      if(step==="approval")change(current);
+    }});
+    current=value;
+    await assert.rejects(assertR5AuthenticSignedReviewReady(value),
+      /signed review drifted/);
+    assert.deepEqual(value.counts,{checkpoint:2,packet:2,approval:1});
   }
 });
 test("R5 retirement racing signature verification denies promotion",async()=>{
