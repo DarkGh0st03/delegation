@@ -185,7 +185,8 @@ async function rpc(fetchFn,url,method,params){
 export async function observeR5IndependentEvmStatus({
   rpcUrl,expectedChainId,registryAddress,issuerAddress,issuerDid,
   statusListCredential,statusListIndex,signedStatusJwt,
-  issuerPublicJwk,fetchFn=fetch
+  issuerPublicJwk,fetchFn=fetch,
+  expectedBlockNumber,expectedBlockHash
 }={}){
   const match=typeof rpcUrl==="string"?RPC_LOCAL.exec(rpcUrl):null;
   const didParts=typeof issuerDid==="string"&&
@@ -206,7 +207,10 @@ export async function observeR5IndependentEvmStatus({
      !/^https:\/\//u.test(statusListCredential)||
      statusListCredential.length>512||
      !Number.isSafeInteger(statusListIndex)||statusListIndex<0||
-     typeof fetchFn!=="function")
+     typeof fetchFn!=="function"||
+     (expectedBlockNumber!==undefined&&
+       (!HEX.test(expectedBlockNumber)||BigInt(expectedBlockNumber)<1n))||
+     (expectedBlockHash!==undefined&&!HASH.test(expectedBlockHash)))
     deny("out-of-band EVM trust pins are missing");
   const doc=verifyPublicJwt(signedStatusJwt,issuerDid,issuerPublicJwk,
     statusListCredential);
@@ -214,12 +218,16 @@ export async function observeR5IndependentEvmStatus({
     deny("signed public Status List bit is NOT revoked");
   const chain=await rpc(fetchFn,rpcUrl,"eth_chainId",[]);
   if(chain!==expectedChainId)deny("untrusted Ethereum chain identity");
-  const block=await rpc(fetchFn,rpcUrl,"eth_blockNumber",[]);
+  // For a DAG-wide audit, lock every subsequent read to the SAME
+  // initially observed block rather than mixing later chain heads.
+  const block=expectedBlockNumber??await rpc(fetchFn,rpcUrl,"eth_blockNumber",[]);
   if(!HEX.test(block)||BigInt(block)<1n)
     deny("Ethereum block snapshot unavailable");
   const observedBlock=await rpc(fetchFn,rpcUrl,"eth_getBlockByNumber",
     [block,false]);
-  if(!plain(observedBlock)||!HASH.test(observedBlock.hash??""))
+  if(!plain(observedBlock)||!HASH.test(observedBlock.hash??"")||
+     (expectedBlockHash!==undefined&&
+       observedBlock.hash.toLowerCase()!==expectedBlockHash.toLowerCase()))
     deny("Ethereum block identity unavailable");
   const selector=keccakHex(Buffer.from("getStatusList(address,bytes32)")).slice(2,10);
   const listId=keccakHex(Buffer.from(statusListCredential,"utf8")).slice(2);
@@ -236,7 +244,7 @@ export async function observeR5IndependentEvmStatus({
   return Object.freeze({
     status:"public_jwt_signature_evm_anchor_and_revoked_bit_verified",
     anchor_version:anchor.anchor_version,
-    chain_id:chain,block_hash:observedBlock.hash,
+    chain_id:chain,block_number:block,block_hash:observedBlock.hash,
     adapter_status_endpoint_used:false,
     gateway_bearer_used:false,
     independent_chain_finality_verified:false,
