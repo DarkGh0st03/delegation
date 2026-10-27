@@ -6,6 +6,7 @@ on:
     branches: [refactor/post-prof-plan-contracts-20261021]
     paths:
       - '.github/workflows/functional-signed-dag-e2e.yml'
+      - '.github/workflows/gemini-paid-shared-mcp-final.yml'
       - 'poc/scripts/functional-signed-dag-evidence.mjs'
       - 'poc/scripts/test/functional-signed-dag-evidence.test.mjs'
       - 'poc/apps/gateway/native-test/native-positive-approved-dag.mjs'

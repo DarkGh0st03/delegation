@@ -192,7 +192,25 @@ jobs:
           test -n "${GEMINI_API_KEY:-}"
           # Never publish raw model prompts, source or credential-bearing logs.
           npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller > /tmp/real-four-gemini-pilot.log 2>&1 || {
-            echo "::error::Gemini signed-DAG pilot failed. No success or human-approval claim."
+            # Never copy raw model/provider/GitHub/VP logs into artifacts.
+            node --input-type=module -e '
+              import {readFileSync,writeFileSync} from "node:fs";
+              let data="";
+              try{data=readFileSync("/tmp/real-four-gemini-pilot.log","utf8");}catch{}
+              const phases=["native_preliminary_planning_real_disposable_gitea",
+                "native_dag_failure","controlled_denial","docker_phase_status"];
+              const matching=phases.filter(x=>data.includes(x));
+              writeFileSync("/tmp/four-gemini-pilot-failure.json",
+                JSON.stringify({status:"FAIL",
+                  framework_sha:process.env.GITHUB_SHA,
+                  run_id:process.env.GITHUB_RUN_ID,
+                  verified_signals:matching,
+                  stage:"gemini_planning_or_delegated_execution",
+                  root_revocation:"not_confirmed_by_this_report",
+                  model_usage:"unknown_check_provider_console",
+                  human_approval:false},null,2)+"\n",{flag:"wx",mode:0o600});
+            '
+            echo "::error::Gemini signed-DAG pilot failed; sanitized failure artifact only."
             exit 1
           }
           node --input-type=module -e '
@@ -212,13 +230,15 @@ jobs:
             writeFileSync("/tmp/four-gemini-signed-pilot.json",
               JSON.stringify(receipt,null,2)+"\n",{flag:"wx",mode:0o600});
           '
-      - name: Upload sanitized four-Gemini pilot evidence
-        if: success()
+      - name: Upload only sanitized pilot success or failure evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: four-gemini-signed-account-suspension-${{ github.run_id }}
-          path: /tmp/four-gemini-signed-pilot.json
-          if-no-files-found: error
+          path: |
+            /tmp/four-gemini-signed-pilot.json
+            /tmp/four-gemini-pilot-failure.json
+          if-no-files-found: warn
           retention-days: 14
       - name: Report strictly limited service status on failure
         if: failure()
