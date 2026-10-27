@@ -5,6 +5,18 @@ import {extractSignedFunctionalE2EEvidence}
 const sha="a".repeat(40),gitea="b".repeat(40),head="c".repeat(40);
 const pin={scenarioId:"department-directory",sourceSha:sha,runId:"40470012345"};
 function fixture(){
+  const f1={
+    schema:"f1-real-disposable-gitea-readonly-baseline-v1",
+    status:"unsolved_pinned_real_gitea_baseline_verified",
+    scenario_id:"department-directory",repository:"thesis/iam-console-poc",
+    base_revision:gitea,verified_source_files:4,
+    main_unchanged:true,novel_unsolved_requirement:true,
+    read_only_api_operations:true,actual_gitea_source_contents_excluded:true,
+    golden_solution_excluded:true,provider_model_inference_calls:0,
+    native_vp_opa_authorization_attested_by_this_check:false,
+    engineer_approval_verified_by_this_check:false,
+    executable_gemini_plan_produced:false,external_r5_go:false
+  };
   const native={
     status:"PASS",real_gitea_sha:gitea,native_rust:true,live_opa:true,
     signed_handoff:true,operational_root:true,dispatcher_fail_closed:true,
@@ -28,10 +40,12 @@ function fixture(){
     native_rust_signed_child_and_vp:true,runner_via_gateway_http:true,
     exact_provider_sha_correlated:true,approval_created:true
   };
-  return {native,positive};
+  return {native,positive,f1};
 }
-function log({native,positive}){
+function log({native,positive,f1}){
   return "npm prefix noisy log\n"+
+    "[trusted-positive-ci] f1_real_gitea_baseline "+
+    JSON.stringify(f1)+"\n"+
     "[trusted-positive-ci] native_disposable_planning "+
     JSON.stringify(native)+"\n"+JSON.stringify(positive)+"\n";
 }
@@ -40,6 +54,8 @@ test("functional E2E extracts only fixed observed fields without R5 or human cla
   assert.equal(evidence.status,"functional_scripted_real_gitea_docker_pass");
   assert.equal(evidence.framework_source_sha,sha);
   assert.equal(evidence.isolated_main_sha,gitea);
+  assert.equal(evidence.f1_real_gitea_unsolved_baseline_verified,true);
+  assert.equal(evidence.f1_genuine_gemini_proposal_produced,false);
   assert.equal(evidence.tested_feature_commit_sha,head);
   assert.equal(evidence.live_gemini_tested,false);
   assert.equal(evidence.genuine_human_engineer_approval_tested,false);
@@ -58,6 +74,9 @@ test("functional checkpoint rejects missing or duplicate observed stages",()=>{
 });
 test("functional checkpoint rejects fake provider effects, missing signed DAG and merged PR",()=>{
   for(const mutate of [
+    x=>{x.f1.base_revision=sha;},
+    x=>{x.f1.novel_unsolved_requirement=false;},
+    x=>{x.f1.provider_model_inference_calls=1;},
     x=>{x.native.signed_dag_positive=false;},
     x=>{x.native.operational_root=false;},
     x=>{x.native.a2a_before_branch=1;},
