@@ -234,6 +234,8 @@ jobs:
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-witnessed-offline-adk-model.test.mjs
       - name: Account Suspension controller source-derivation and denial tests
         run: node --test poc/apps/gateway/native-test/source-derived-controller-edits.test.mjs
+      - name: Source-derived targets selected from reviewed permissions, never fixed file names
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-source-target-selection.test.mjs
       - name: Account Suspension signed native VP A2A OPA Gitea and Docker acceptance
         env:
           APPROVED_RUNNER_NATIVE_EVM: "1"

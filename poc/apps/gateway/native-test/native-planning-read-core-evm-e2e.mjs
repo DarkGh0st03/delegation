@@ -34,6 +34,8 @@ import {SourceWitnessedOfflineAdkModel}
   from "./source-witnessed-offline-adk-model.mjs";
 import {SourceDerivedRouteOfflineAdkModel}
   from "./source-derived-route-offline-adk-model.mjs";
+import {selectSourceDerivedTargetsFromApprovedPlan}
+  from "./approved-plan-source-target-selection.mjs";
 import {buildOfflineAdkScriptsFromApprovedPlan}
   from "./approved-plan-offline-adk-call-scripts.mjs";
 import {getApprovedOfflineScenario} from
@@ -503,13 +505,10 @@ try{
         const deriveRoutes=
           process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
           process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
-        const targetRoute="apps/backend/src/users/user.routes.ts";
-        const targetController="apps/backend/src/users/user.controller.ts";
-        const controllerRequested=deriveRoutes&&reviewed.plan.tasks.some(t=>
-          t.agent_id==="backend"&&
-          t.description.includes("CONTROLLER HANDLER "));
         const derivedPaths=deriveRoutes
-          ?[targetRoute,...(controllerRequested?[targetController]:[])]:[];
+          ?selectSourceDerivedTargetsFromApprovedPlan({
+            plan:reviewed.plan,approvedRows,repo,branch:workBranch
+          }):[];
         const otherImplementations={...referenceFiles};
         for(const path of derivedPaths)delete otherImplementations[path];
         const offlineCalls=buildOfflineAdkScriptsFromApprovedPlan({
