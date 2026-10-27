@@ -11,7 +11,7 @@ const required={
   flag:"--execute",consent:CONSENT,apiKey:"test-not-a-real-gemini-key",
   modelName:"gemini-3.8-flash",
   outputDir:"/tmp/new-private-F1-result",
-  githubActions:undefined
+  githubActions:"false"
 };
 test("F1 real Gemini requires independently supplied paid consent, model, key and new private path",()=>{
   assert.equal(assertF1RealGeminiOperatorConsent(required).modelName,
@@ -34,7 +34,7 @@ test("F1 execution cannot reach Gitea or Gemini without consent",async()=>{
     modelName:"gemini-3.8-flash",
     outputDir:"/tmp/a-fresh-f1-research",
     consent:"not approved",
-    githubActions:undefined,
+    githubActions:"false",
     fetchFn:async()=>{invoked++;throw Error("MUST NOT CONTACT");}
   };
   await assert.rejects(runF1RealGiteaGeminiResearch(base),/refused/);

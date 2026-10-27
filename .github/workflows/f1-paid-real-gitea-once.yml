@@ -1,4 +1,7 @@
 # User-authorized ONE paid Gemini F1 proposal attempt (27 October 2026).
+# First run #40496756089 stopped BEFORE any inference: unit test mistakenly
+# inherited GITHUB_ACTIONS=true. This retries the still-unconsumed authorized
+# attempt after explicitly setting the test's local-mode parameter.
 # Uses pre-existing Actions Secret Delegation_Thesis_Gemini. No rerun,
 # no human auto-approval, no credentials issued, no code mutation or PR merge.
 name: F1 Gemini Real Gitea Single Authorized Planner Attempt
