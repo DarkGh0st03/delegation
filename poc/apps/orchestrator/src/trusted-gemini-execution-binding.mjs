@@ -16,7 +16,9 @@ const ROOT_FIELDS=["credential_id","valid_from",
 const ARG_FIELDS=["runId","operationalRoot","ports","transports",
   "sendProtectedTask","childStatusProvisioning"];
 const STATUS_FIELDS=["reservationDirectory","statusListCredential",
-  "indexByTask","excludedIndices","validitySeconds"];
+  "indexByTask","excludedIndices","issuanceJournalDirectory","validitySeconds"];
+const REQUIRED_STATUS=["reservationDirectory","statusListCredential",
+  "indexByTask","excludedIndices","issuanceJournalDirectory"];
 const TRANSPORT_FIELDS=["gatewayBaseUrl","adapterBaseUrl","adapterToken"];
 function deny(){throw Error("Protected Gemini Execution binding denied");}
 function plain(x){
@@ -51,7 +53,7 @@ export function bindProtectedGeminiApprovedExecution(planning,input){
      !keys(input.transports,ROLES)||
      typeof input.sendProtectedTask!=="function"||
      !keys(input.childStatusProvisioning,STATUS_FIELDS,
-       STATUS_FIELDS.slice(0,4))||
+       REQUIRED_STATUS)||
      ROLES.some(role=>!Number.isSafeInteger(input.ports[role])||
        input.ports[role]<1024||input.ports[role]>65535)||
      new Set(ROLES.map(role=>input.ports[role])).size!==3)
@@ -73,6 +75,9 @@ export function bindProtectedGeminiApprovedExecution(planning,input){
   const status=input.childStatusProvisioning;
   if(typeof status.reservationDirectory!=="string"||
      !status.reservationDirectory.startsWith("/")||
+     typeof status.issuanceJournalDirectory!=="string"||
+     !status.issuanceJournalDirectory.startsWith("/")||
+     status.issuanceJournalDirectory===status.reservationDirectory||
      typeof status.statusListCredential!=="string"||
      !keys(status.indexByTask,Object.keys(status.indexByTask??{}),[])||
      Object.keys(status.indexByTask).some(k=>[

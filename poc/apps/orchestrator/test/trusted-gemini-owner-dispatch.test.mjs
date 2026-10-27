@@ -28,6 +28,8 @@ function fixture({verifySignedReview,runReviewedApprovedDagWithGateway,close}={}
       assert.equal(args.checkpointStore,checkpointStore);
       assert.equal(args.privateGatewayTransport.adapterToken,gateway.adapterToken);
       assert.equal(args.geminiApiKey,"fixture-private-api-key");
+      assert.equal(args.childStatusProvisioning.issuanceJournalDirectory,
+        "/private/child-issuance-journal");
       return runReviewedApprovedDagWithGateway?.(args)??Promise.resolve({
         plan_digest:"a".repeat(64),completed_task_ids:["backend","frontend","test"]
       });
@@ -59,6 +61,7 @@ function fixture({verifySignedReview,runReviewedApprovedDagWithGateway,close}={}
     sendProtectedTask:async()=>({role:"test",status:"not-used"}),
     childStatusProvisioning:{
       reservationDirectory:"/private/child-allocations",
+      issuanceJournalDirectory:"/private/child-issuance-journal",
       statusListCredential:"https://example.test/status",
       indexByTask:{backend:202,frontend:203,test:204},
       excludedIndices:[201]

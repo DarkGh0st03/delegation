@@ -35,6 +35,7 @@ function fixture(){
     sendProtectedTask:async()=>({status:"not_called"}),
     childStatusProvisioning:{
       reservationDirectory:"/home/private/child-index",
+      issuanceJournalDirectory:"/home/private/child-issuance-journal",
       statusListCredential:"https://example.invalid/children",
       indexByTask:{branch:11,backend:12,frontend:13,test:14,pr:15},
       excludedIndices:[1,2,3]
@@ -67,6 +68,9 @@ test("paid Gemini owner binding copies only original localhost Gateway and uniqu
   assert.equal(bound.ports.backend,8101);
   assert.equal(bound.transports.backend.adapterToken,"original-role-only-token-0");
   assert.equal(bound.childStatusProvisioning.indexByTask.backend,12);
+  assert.equal(bound.childStatusProvisioning.issuanceJournalDirectory,
+    "/home/private/child-issuance-journal");
+  assert.equal(Object.isFrozen(bound.childStatusProvisioning),true);
 });
 test("paid Gemini binding denies caller-supplied authority and off-host role transports",()=>{
   for(const mutation of [
@@ -84,6 +88,11 @@ test("paid Gemini binding denies caller-supplied authority and off-host role tra
     x=>{x.transports.test.adapterToken=x.transports.backend.adapterToken;},
     x=>{x.childStatusProvisioning.extraPermission="merge";},
     x=>{x.childStatusProvisioning.reservationDirectory="relative";},
+    x=>{delete x.childStatusProvisioning.issuanceJournalDirectory;},
+    x=>{x.childStatusProvisioning.issuanceJournalDirectory="relative";},
+    x=>{x.childStatusProvisioning.issuanceJournalDirectory=
+      x.childStatusProvisioning.reservationDirectory;},
+    x=>{x.childStatusProvisioning.issuanceJournalDirectory=null;},
     x=>{x.sendProtectedTask=null;}
   ]){
     const {planning,input}=fixture();
