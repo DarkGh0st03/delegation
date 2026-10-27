@@ -135,6 +135,19 @@ const department=departmentDirectoryFiles();
 const previous=Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES).sort();
 const current=Object.keys(department).sort();
 if(JSON.stringify(previous)!==JSON.stringify(current))throw Error("Fixture key mismatch");
+// Offline signed Task descriptions; executable changes still must originate
+// from the agent's actual read_file result, never a complete reference file.
+const ROUTE_TASK_INTENT=Object.freeze({
+  "account-suspension":[
+    "Implement approved backend account suspension and reactivation.",
+    "ROUTE POST /:id/suspend suspendUser AFTER PATCH /:id/profile",
+    "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend"
+  ].join("\n"),
+  "department-directory":[
+    "Implement approved backend department directory.",
+    "ROUTE GET /by-department/:department listUsersByDepartment BEFORE GET /:id"
+  ].join("\n")
+});
 const IAM_EDIT_INTENT=Object.freeze({
   backend:Object.freeze([
     "packages/shared/src/account-status.ts",
@@ -158,7 +171,8 @@ export const APPROVED_OFFLINE_SCENARIOS=Object.freeze({
     fixtureBranch:"feature/account-suspension",workBranch:"feature/native-planning-read",
     statusIndexBase:18071,
     files:ACCOUNT_SUSPENSION_REFERENCE_FILES,
-    planning_intent:Object.freeze({edits:IAM_EDIT_INTENT,newTestFile:IAM_TEST_FILE})
+    planning_intent:Object.freeze({edits:IAM_EDIT_INTENT,newTestFile:IAM_TEST_FILE,
+      taskInstructions:{backend:ROUTE_TASK_INTENT["account-suspension"]}})
   }),
   "department-directory":Object.freeze({
     id:"department-directory",
@@ -167,7 +181,8 @@ export const APPROVED_OFFLINE_SCENARIOS=Object.freeze({
     workBranch:"feature/native-department-directory",
     statusIndexBase:18171,
     files:department,
-    planning_intent:Object.freeze({edits:IAM_EDIT_INTENT,newTestFile:IAM_TEST_FILE})
+    planning_intent:Object.freeze({edits:IAM_EDIT_INTENT,newTestFile:IAM_TEST_FILE,
+      taskInstructions:{backend:ROUTE_TASK_INTENT["department-directory"]}})
   })
 });
 export function getApprovedOfflineScenario(id="account-suspension"){

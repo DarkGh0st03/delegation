@@ -147,3 +147,31 @@ test("Block B: wrong branch, missing payload and unapproved tools fail closed",(
     }]
   }),/NO-GO/);
 });
+
+test("Block B: source-derived mode omits complete golden code for approved writable path",()=>{
+  for(const alternate of [false,true]){
+    const d=planned({alternate});
+    const selected=alternate?"apps/frontend/settings.tsx":"apps/backend/user.ts";
+    const implementations={...content};
+    delete implementations[selected];
+    const scripts=buildOfflineAdkScriptsFromApprovedPlan({
+      plan:d.plan,approvedRows:d.approvedRows,repo,branch:d.workBranch,
+      implementationContents:implementations,sourceDerivedPaths:[selected]
+    });
+    const role=alternate?"frontend":"backend";
+    const update=scripts[role].find(c=>c.name==="update_file"&&
+      c.args.path===selected);
+    assert.ok(update);
+    assert.deepEqual(Object.keys(update.args).sort(),["branch","path"]);
+    assert.equal(JSON.stringify(scripts).includes(content[selected]),false);
+    assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+      plan:d.plan,approvedRows:d.approvedRows,repo,branch:d.workBranch,
+      implementationContents:content,sourceDerivedPaths:[selected]
+    }),/NO-GO/,"golden bytes must not enter source-derived model calls");
+    assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+      plan:d.plan,approvedRows:d.approvedRows,repo,branch:d.workBranch,
+      implementationContents:implementations,
+      sourceDerivedPaths:["src/not-in-approved-plan.ts"]
+    }),/NO-GO/);
+  }
+});

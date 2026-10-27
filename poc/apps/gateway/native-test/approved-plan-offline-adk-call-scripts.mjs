@@ -48,11 +48,18 @@ function decodeFile(repo,branch,resource){
  * It does not authenticate Engineer signatures or execute a credential.
  */
 export function buildOfflineAdkScriptsFromApprovedPlan({
-  plan,approvedRows,repo,branch,implementationContents
+  plan,approvedRows,repo,branch,implementationContents,
+  sourceDerivedPaths=[]
 }={}){
   if(!plain(plan)||!plain(repo)||typeof branch!=="string"||
      !Array.isArray(approvedRows)||approvedRows.length>256||
-     !plain(implementationContents))deny("missing reviewed input");
+     !plain(implementationContents)||
+     !Array.isArray(sourceDerivedPaths)||sourceDerivedPaths.length>8||
+     sourceDerivedPaths.some(p=>typeof p!=="string"||!p||
+       p.startsWith("/")||p.includes("..")||p.includes("\\"))||
+     new Set(sourceDerivedPaths).size!==sourceDerivedPaths.length)
+    deny("missing or malformed reviewed input");
+  const derived=new Set(sourceDerivedPaths),consumed=new Set();
   const tasks=topo(plan),ids=new Set(tasks.map(t=>t.id));
   const scripts=Object.fromEntries(ROLES.map(role=>[role,[]]));
   const accounted=new Set();
@@ -96,10 +103,18 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
         scripts[role].push({name:"read_file",args:{branch,path}});
       for(const operation of ["update_file","create_file"]){
         if(!ops.has(operation))continue;
-        const content=implementationContents[path];
-        if(typeof content!=="string"||content.length>250000)
-          deny("missing test-only implementation payload");
-        scripts[role].push({name:operation,args:{branch,path,content}});
+        if(derived.has(path)){
+          if(operation!=="update_file"||!ops.has("read_file")||
+             Object.hasOwn(implementationContents,path))
+            deny("source-derived edit cannot receive golden content");
+          consumed.add(path);
+          scripts[role].push({name:operation,args:{branch,path}});
+        }else{
+          const content=implementationContents[path];
+          if(typeof content!=="string"||content.length>250000)
+            deny("missing test-only implementation payload");
+          scripts[role].push({name:operation,args:{branch,path,content}});
+        }
       }
     }
     if(runners.length>1)deny("duplicate test execution grant");
@@ -109,6 +124,8 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
   }
   if(approvedRows.some(p=>!ids.has(p.task_id)||!accounted.has(p.id)))
     deny("orphaned approved grant");
+  if(consumed.size!==derived.size)
+    deny("source-derived path not present in approved read/update grants");
   const output={};
   for(const role of ROLES){
     if(scripts[role].length>30)deny("offline ADK turn cap exceeded");

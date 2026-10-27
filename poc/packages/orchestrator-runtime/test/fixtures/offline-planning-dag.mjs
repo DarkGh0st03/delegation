@@ -24,11 +24,19 @@ function requirePath(path){
   if(!canonical(path))throw Error("Offline Planning intent: unsafe path");
   return path;
 }
-export function makeOfflineReviewableDag({snapshot,edits,newTestFile}){
+export function makeOfflineReviewableDag({
+  snapshot,edits,newTestFile,taskInstructions={}
+}){
   if(!snapshot||!Array.isArray(snapshot.files)||
      !Array.isArray(snapshot.directories)||
      !edits||Object.keys(edits).sort().join(",")!=="backend,frontend")
     throw Error("Offline Planning intent: invalid trusted inventory");
+  if(taskInstructions===null||typeof taskInstructions!=="object"||
+     Array.isArray(taskInstructions)||
+     Object.keys(taskInstructions).some(role=>!ROLES.includes(role)||
+       typeof taskInstructions[role]!=="string"||
+       taskInstructions[role].length>1800))
+    throw Error("Offline Planning intent: invalid Task instruction");
   const discovered=new Set(snapshot.files);
   const directories=new Set(snapshot.directories);
   const all=[];
@@ -58,7 +66,8 @@ export function makeOfflineReviewableDag({snapshot,edits,newTestFile}){
         reason:"Create a separate approved workspace"}]},
     ...ROLES.map(role=>({
       id:role,agent_id:role,title:"Implement approved "+role+" task",
-      description:"Update the inspected source files within this Task's scope",
+      description:taskInstructions[role]??
+        "Update the inspected source files within this Task's scope",
       depends_on:["branch"],
       permissions:edits[role].flatMap(path=>[
         {operation:"read_file",path,reason:"Inspect pinned existing source"},
