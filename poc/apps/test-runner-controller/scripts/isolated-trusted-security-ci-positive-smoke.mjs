@@ -34,6 +34,8 @@ import {safeNativeDockerFailureDiagnostic}
   from "./native-dag-result-diagnostic.mjs";
 import {inspectF1RealGiteaPlannerReadiness}
   from "../../../scripts/f1-real-gitea-planner-readiness.mjs";
+import {buildF1RealGiteaResearchPlanningPort}
+  from "../../../scripts/f1-gitea-research-planning-port.mjs";
 
 const baseline="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const baselineSource="https://github.com/DarkGh0st03/iam-console-poc.git";
@@ -417,6 +419,26 @@ async function main(){
       assert.equal(f1.provider_model_inference_calls,0);
       process.stderr.write("[trusted-positive-ci] f1_real_gitea_baseline "+
         JSON.stringify(f1)+"\n");
+      const port=await stage("f1_gitea_full_readonly_research_snapshot",
+        ()=>buildF1RealGiteaResearchPlanningPort({
+          baseUrl:base,readToken:creds.readToken,
+          expectedMainSha:fixture.mainSha,
+          sessionId:"f1_readonly_"+fixture.mainSha.slice(0,12)
+        }),75000);
+      assert.equal(port.production_gateway_vp_opa_verification,false);
+      assert.equal(port.snapshot.base_revision,fixture.mainSha);
+      assert.ok(port.snapshot.files.length>=4);
+      const observed=await port.readPort.invoke("read_file",{
+        branch:"main",path:"apps/backend/src/users/user.routes.ts"
+      });
+      assert.equal(observed.revision,fixture.mainSha);
+      assert.ok(observed.content.includes('router.get("/:id"'));
+      process.stderr.write("[trusted-positive-ci] f1_real_gitea_read_port "+
+        JSON.stringify({status:"PASS",base_revision:fixture.mainSha,
+          discovered_files:port.snapshot.files.length,
+          discovered_directories:port.snapshot.directories.length,
+          pinned_source_read:true,model_calls:0,
+          native_gateway_attested_by_this_port:false})+"\n");
     }
     if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
       // Reuse this same disposable Gitea. Read-only PAT, actual main SHA,
