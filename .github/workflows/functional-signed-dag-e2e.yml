@@ -178,6 +178,9 @@ jobs:
         env:
           APPROVED_RUNNER_NATIVE_EVM: "1"
           APPROVED_RUNNER_THREE_AGENT_DAG: "1"
+          # Factory is host-owned, receives only signed Task metadata.
+          # Model remains SCRIPTED in this no-billing test.
+          APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
           APPROVED_RUNNER_SCENARIO: department-directory
           GITEA_ADMIN_USER: isolated_admin
           GITEA_ADMIN_PASSWORD: local-native-ci-fixture-${{ github.run_id }}-${{ github.run_attempt }}
