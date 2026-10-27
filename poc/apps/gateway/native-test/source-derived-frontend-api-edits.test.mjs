@@ -30,6 +30,26 @@ test("API functions originate from approved Task and inspected source",()=>{
   assert.ok(next.includes("/api/users/"+expr+"/suspend"));
   assert.ok(next.includes("/api/users/"+expr+"/reactivate"));
 });
+test("real IAM baseline concatenation derives API calls without golden files",()=>{
+  const original=source.replace(
+    "await fetch("+template+"/api/users/"+expr+template+",",
+    'await fetch("/api/users/" + encodeURIComponent(id),'
+  );
+  assert.notEqual(original,source);
+  const next=applyApprovedApiActions(original,
+    parseApprovedApiActions(directives));
+  assert.ok(next.startsWith(original));
+  assert.ok(next.includes(
+    'await fetch("/api/users/" + encodeURIComponent(id) + "/suspend", {'));
+  assert.ok(next.includes(
+    'await fetch("/api/users/" + encodeURIComponent(id) + "/reactivate", {'));
+  assert.ok(next.includes('method: "POST"'));
+  const shifted=original.replaceAll("/api/users/","/identity/members/");
+  const altered=applyApprovedApiActions(shifted,
+    parseApprovedApiActions("API ACTION disableUser PATCH /disable"));
+  assert.ok(altered.includes(
+    'await fetch("/identity/members/" + encodeURIComponent(id) + "/disable", {'));
+});
 test("same code handles alternate file routing and rules",()=>{
   const original=source.replaceAll("/api/users/","/identity/members/");
   const next=applyApprovedApiActions(original,
