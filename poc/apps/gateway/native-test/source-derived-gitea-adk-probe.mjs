@@ -12,10 +12,12 @@ import {createHash,randomBytes} from "node:crypto";
 import {BaseLlm,InMemorySessionService,Runner} from "@google/adk";
 import {compilePlanningProposal}
   from "../../../packages/orchestrator-runtime/src/trusted-adk-planner.ts";
-import {makeApproval,assertApprovedPlanScope}
+import {makeApproval,assertApprovedPlanScope,assertApprovedExecution}
   from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
+import {canonicalFileUri,canonicalRepositoryUri}
+  from "../src/canonical.ts";
 import {createAdkSpecializedAgent}
   from "../../../packages/agent-runtime/src/adk-specialized-agents.ts";
 import {bindModelsToApprovedRoleTasks}
@@ -138,6 +140,27 @@ export async function runSourceDerivedGiteaAdkProbe({
   assert.deepEqual(bound.selected_roles,["frontend"]);
   const model=bound.models.frontend;
   assert.ok(model instanceof SourceDerivedModel);
+  // Independent plan-compliance preflight. This is deliberately NOT a
+  // substitute for a signed Engineer receipt, Rust DC/VP or OPA policy.
+  const allowedOperations=new Set(RUST_OPERATIONS);
+  const sourceUri=canonicalFileUri(snapshot.repository,workBranch,FILE);
+  const check=(task_id,agent_id,operation,resource,completedTaskIds)=> 
+    assertApprovedExecution(plan,approval,{
+      task_id,agent_id,operation,resource
+    },{allowedOperations,completedTaskIds});
+  // No model request may skip DAG dependencies or expand the approved
+  // file, operation or agent. All these denials occur before Gitea I/O.
+  assert.throws(()=>check("edit","frontend","read_file",sourceUri,[]),
+    /task dependency not completed/u);
+  assert.throws(()=>check("edit","frontend","update_file",
+    canonicalFileUri(snapshot.repository,workBranch,"src/not-approved.ts"),
+    ["branch"]),/operation not approved/u);
+  assert.throws(()=>check("edit","backend","read_file",sourceUri,
+    ["branch"]),/task is not assigned/u);
+  assert.throws(()=>check("edit","frontend","create_file",sourceUri,
+    ["branch"]),/operation not approved/u);
+  assert.equal(check("branch","orchestrator","create_branch",
+    canonicalRepositoryUri(snapshot.repository),[]),true);
   const created=await writer.createBranch("main",workBranch);
   assert.equal(created.base_revision,pinnedMainSha);
   let sourceSeen=null;const calls=[];
@@ -152,6 +175,9 @@ export async function runSourceDerivedGiteaAdkProbe({
       calls.push(name);
       assert.equal(args.branch,workBranch);
       assert.equal(args.path,FILE);
+      assert.equal(check("edit","frontend",name,
+        canonicalFileUri(snapshot.repository,args.branch,args.path),
+        ["branch"]),true);
       if(name==="read_file"){
         const result=await reader.readTextFile(workBranch,FILE);
         assert.equal(result.revision,pinnedMainSha);
@@ -200,6 +226,8 @@ export async function runSourceDerivedGiteaAdkProbe({
     gitea_provider_committed:true,main_unchanged:true,
     external_model_calls:0,signed_gateway_credential_e2e:false,
     review_fixture_not_human_signed:true,
+    approved_plan_preflight_denials:4,
+    model_operations_preflight_checked:true,
     source_sha:pinnedMainSha,feature_sha:head.commit_sha,
     controlled_calls:2,files_modified:1
   });
