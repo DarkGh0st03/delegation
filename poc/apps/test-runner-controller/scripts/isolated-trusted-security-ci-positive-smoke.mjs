@@ -493,6 +493,7 @@ async function main(){
         JSON.stringify(adk)+"\n");
     }
     if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
+      const realGeminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
       // Reuse this same disposable Gitea. Read-only PAT, actual main SHA,
       // real Rust/EVM root, native Core verifier, and independent OPA.
       // Running before A2A file writes makes the immutable feature SHA
@@ -511,7 +512,9 @@ async function main(){
             PLANNING_DISPOSABLE_GITEA_URL:base,
             PLANNING_DISPOSABLE_GITEA_READ_TOKEN:creds.readToken,
             PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha,
-            PLANNING_NATIVE_SIGNED_HANDOFF:"1"
+            PLANNING_NATIVE_SIGNED_HANDOFF:"1",
+            // The earlier denial-only rehearsal NEVER consumes Gemini calls.
+            DELEGATION_SIGNED_GEMINI_PILOT:"0"
           }
         });
         const result=output.split(/\r?\n/u).filter(Boolean)
@@ -537,7 +540,8 @@ async function main(){
           positiveOutput=execFileSync(process.execPath,[
             "--experimental-strip-types",planningScript
           ],{
-          cwd:process.cwd(),encoding:"utf8",timeout:980000,
+          cwd:process.cwd(),encoding:"utf8",
+          timeout:realGeminiPilot?3600000:980000,
           maxBuffer:2*1024*1024,
           env:{...process.env,
             OPA_URL:opaBaseUrl,
@@ -582,7 +586,8 @@ async function main(){
         assert.ok(positive?.positive_dag?.private_crypto_mcp_http_requests>=21);
         assert.equal(positive?.positive_dag?.real_a2a_sdk,true);
         assert.equal(positive?.positive_dag?.native_rust_child_credentials,3);
-        assert.deepEqual(positive?.positive_dag?.completed_task_ids,
+        if(!realGeminiPilot)assert.deepEqual(
+          positive?.positive_dag?.completed_task_ids,
           ["branch","backend","frontend","test","pr"]);
         assert.equal(positive?.positive_dag?.test_runner_runs,1);
         assert.equal(positive?.positive_dag?.project_tests,"pass");
@@ -593,43 +598,49 @@ async function main(){
         assert.equal(positive?.positive_dag?.source_writes,10);
         assert.equal(positive?.positive_dag?.created_test_files,1);
         assert.equal(positive?.positive_dag?.adk_agents_executed,3);
-        assert.equal(positive?.positive_dag?.scripted_adk_no_paid_model,true);
+        assert.equal(positive?.positive_dag?.scripted_adk_no_paid_model,
+          !realGeminiPilot);
         const witnessMode=
           process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
         const routeMode=
           process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
           witnessMode;
-        assert.equal(positive?.positive_dag?.model_source,routeMode
-          ? "host_supplied_source_derived_routes_with_remaining_fixtures"
-          : witnessMode
-            ? "host_supplied_hybrid_source_witness_and_fixture"
-            : "host_supplied_scripted_tool_calls");
-        assert.equal(positive?.positive_dag
+        assert.equal(positive?.positive_dag?.model_source,realGeminiPilot
+          ? "real_gemini_four_models_signed_test_approval"
+          : routeMode
+            ? "host_supplied_source_derived_routes_with_remaining_fixtures"
+            : witnessMode
+              ? "host_supplied_hybrid_source_witness_and_fixture"
+              : "host_supplied_scripted_tool_calls");
+        if(!realGeminiPilot)assert.equal(positive?.positive_dag
           ?.source_derived_functional_route_verified,routeMode);
         const expectedDerived=routeMode
           ?(scenario.id==="account-suspension"?4:1):0;
-        assert.equal(positive?.positive_dag
-          ?.source_derived_functional_file_count,expectedDerived);
-        assert.equal(positive?.positive_dag
-          ?.remaining_prepackaged_application_file_count,11-expectedDerived);
-        assert.equal(positive?.positive_dag
+        if(!realGeminiPilot){
+          assert.equal(positive?.positive_dag
+            ?.source_derived_functional_file_count,expectedDerived);
+          assert.equal(positive?.positive_dag
+            ?.remaining_prepackaged_application_file_count,11-expectedDerived);
+        }
+        if(!realGeminiPilot)assert.equal(positive?.positive_dag
           ?.source_derived_controller_verified,
           routeMode&&scenario.id==="account-suspension");
-        assert.equal(positive?.positive_dag
+        if(!realGeminiPilot)assert.equal(positive?.positive_dag
           ?.source_derived_status_verified,
           routeMode&&scenario.id==="account-suspension");
-        assert.equal(positive?.positive_dag
+        if(!realGeminiPilot)assert.equal(positive?.positive_dag
           ?.source_derived_frontend_api_verified,
           routeMode&&scenario.id==="account-suspension");
-        assert.equal(positive?.positive_dag
+        if(!realGeminiPilot)assert.equal(positive?.positive_dag
           ?.source_witnessed_native_dag_verified,witnessMode);
-        assert.equal(positive?.positive_dag
+        if(!realGeminiPilot)assert.equal(positive?.positive_dag
           ?.source_witnessed_model_still_uses_fixture_code,witnessMode);
         assert.equal(positive?.positive_dag
-          ?.fixture_scripted_payloads_reach_adk_runner,true);
+          ?.fixture_scripted_payloads_reach_adk_runner,!realGeminiPilot);
         assert.equal(positive?.positive_dag
-          ?.independent_model_software_output_verified,false);
-        assert.deepEqual(positive?.positive_dag?.adk_model_turns,
+          ?.independent_model_software_output_verified,realGeminiPilot);
+        if(!realGeminiPilot)assert.deepEqual(
+          positive?.positive_dag?.adk_model_turns,
           {backend:13,frontend:9,test:3});
         assert.equal(positive?.positive_dag?.main_unchanged,true);
         assert.equal(positive?.positive_dag?.operational_root_revoked,true);
@@ -647,6 +658,22 @@ async function main(){
         assert.match(nativePrEvidence.sha,/^[a-f0-9]{40}$/u);
         assert.equal(positive.positive_dag.tested_commit_sha,nativePrEvidence.sha);
         assert.equal(positive?.provider_writes,11);
+        if(realGeminiPilot){
+          // Explicit PILOT: Engineer test fixture, not genuine human approval.
+          // No source, Gemini prompt, API secret, VP or tokens in the receipt.
+          process.stdout.write(JSON.stringify({
+            event:"gemini_signed_dag_pilot",status:"PASS",
+            scenario_id:"account-suspension",
+            model:"gemini-3.8-flash",four_real_models:true,
+            approval:"signed_test_fixture_not_human",
+            native_rust_and_opa:true,shared_mcp_crypto:true,
+            gitea_commit_sha:positive.positive_dag.tested_commit_sha,
+            docker_acceptance:positive.positive_dag.researcher_acceptance,
+            pull_request:positive.positive_dag.pr_created,
+            merged:false,main_unchanged:true,operational_root_revoked:true
+          })+"\n");
+          return;
+        }
         process.stderr.write("[trusted-positive-ci] native_disposable_planning "+
           JSON.stringify({status:"PASS",real_gitea_sha:fixture.mainSha,
             native_rust:true,live_opa:true,signed_handoff:true,
@@ -675,7 +702,8 @@ async function main(){
             source_witnessed_still_uses_fixture_code:positive.positive_dag
               .source_witnessed_model_still_uses_fixture_code,
             a2a_before_branch:0,main_mutations:0})+"\n");
-      },1020000);
+      },realGeminiPilot?3700000:1020000);
+      if(realGeminiPilot)return; // One Gemini E2E; skip additional scripted CI.
     }
     logs=await mkdtemp(join(tmpdir(),"thesis-positive-runner-"));
     const executor=new IsolatedDockerRunnerExecutor({
