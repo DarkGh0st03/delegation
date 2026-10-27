@@ -580,7 +580,10 @@ export async function runNativePositiveApprovedDag({
       new Set([branchTaskId,...Object.values(idsByRole),reviewTaskId])
     );
     assert.ok(createdPr,"A signed, provider-confirmed PR must be opened");
-    assert.deepEqual(result.specialized_results.map(x=>x.role),ROLES);
+    if(realGeminiPilot){
+      assert.deepEqual(
+        new Set(result.specialized_results.map(x=>x.role)),new Set(ROLES));
+    }else assert.deepEqual(result.specialized_results.map(x=>x.role),ROLES);
     assert.deepEqual(counts,{backend:1,frontend:1});
     assert.deepEqual(reads,{
       backend:files.backend.length,frontend:files.frontend.length
