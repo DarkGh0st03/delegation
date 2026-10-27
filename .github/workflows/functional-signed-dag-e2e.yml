@@ -19,6 +19,9 @@ on:
       - 'poc/scripts/test/f1-real-gitea-gemini-probe.test.mjs'
       - 'poc/apps/gateway/native-test/native-positive-approved-dag.mjs'
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
+      - 'poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs'
+      - 'poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.mjs'
+      - 'poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts'
   workflow_dispatch:
@@ -78,6 +81,8 @@ jobs:
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
           node poc/scripts/init-local-env.mjs --force
+      - name: Block B independent approved-DAG action selection (zero Gemini cost)
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs
       - name: F1 real Gitea unsolved baseline contract tests (no model calls)
         run: node --experimental-strip-types --test poc/scripts/test/f1-real-gitea-planner-readiness.test.mjs
       - name: F1 real Gitea research Planning snapshot read-port tests (no model calls)
