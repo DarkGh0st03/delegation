@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
+import {compilePlanningProposal}
+  from "../src/trusted-adk-planner.ts";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
 
@@ -55,8 +57,10 @@ function harness(options:{
   approvedReadContext?:boolean;
   closeDuringA2A?:boolean;closeAfterGatewayConfirmation?:boolean;
   closeAfterBranchConfirmation?:boolean;failGatewayConfirmation?:boolean;
+  /** Test-only plan source; the Dispatcher receives a compiled, signed plan. */
+  alternativeApprovedPlan?:any;
 }={}){
-  const p=plan(options.workBranch);
+  const p=options.alternativeApprovedPlan??plan(options.workBranch);
   if(options.unapprovedCandidate){
     const extra=uri+"/branches/"+
       encodeURIComponent(options.workBranch??branch)+
@@ -491,4 +495,102 @@ test("Gateway attestation rejection revokes root and cannot release Frontend or 
  assert.ok(h.log.some(x=>x.startsWith("confirm:")&&x.endsWith(":backend")));
  assert.ok(!h.log.some(x=>x.startsWith("bind:frontend-task:")||
    x.startsWith("bind:tests:")));
+});
+
+
+test("Blocco A: two distinct Planner-compiled DAGs reach the SAME signed approval and dispatcher without file or Task rewrites",async()=>{
+ const branchTask=(id:string)=>({id,agent_id:"orchestrator",
+   title:"Isolate repository",description:"Create approved branch",
+   depends_on:[],permissions:[
+     {operation:"create_branch",path:null,reason:"Separate work from main"}]});
+ const feature=(id:string,role:"backend"|"frontend",parent:string,path:string)=>({
+   id,agent_id:role,title:"Implement new requirement",
+   description:"Modify the requested component using approved source",
+   depends_on:[parent],permissions:[
+     {operation:"read_file",path,reason:"Understand the code"},
+     {operation:"update_file",path,reason:"Implement the requested change"}
+   ]
+ });
+ const testTask=(depends_on:string[])=>({
+   id:"verify",agent_id:"test",title:"Regression tests",
+   description:"Write and run independent functionality tests",
+   depends_on,permissions:[
+     {operation:"create_file",path:"tests/feature.spec.ts",
+       reason:"Add specific regression coverage"},
+     {operation:"run_tests",path:null,
+       reason:"Run reproducible acceptance tests"}
+   ]
+ });
+ const prTask=()=>({id:"request-review",agent_id:"orchestrator",
+   title:"Human review",description:"Create PR without merging",
+   depends_on:["verify"],permissions:[
+     {operation:"create_pull_request",path:null,reason:"Engineer review"}]});
+ const snapshot={
+   session_id:"signed-session",repository:repo,
+   base_revision:sha,
+   directories:["","apps","apps/backend","apps/frontend","tests"],
+   files:["apps/backend/user.ts","apps/frontend/page.tsx",
+     "apps/frontend/account-list.tsx"]
+ };
+ const agents={
+   backend:{did:"did:thesis:backend",card_ref:"trusted:backend"},
+   frontend:{did:"did:thesis:frontend",card_ref:"trusted:frontend"},
+   test:{did:"did:thesis:test",card_ref:"trusted:test"}
+ };
+ const definitions=[
+   {requirement:"Add an authenticated account search endpoint and visible filter",
+    workBranch:"feature/account-search",raw:{
+      tasks:[
+        branchTask("open-work"),
+        feature("backend-search","backend","open-work","apps/backend/user.ts"),
+        feature("frontend-filter","frontend","backend-search","apps/frontend/page.tsx"),
+        testTask(["frontend-filter"]),prTask()
+      ],assumptions:[],uncertainties:[]},
+    order:["open-work","backend-search","frontend-filter","verify","request-review"],
+    roles:["backend","frontend","test"]},
+   {requirement:"Improve account-list accessibility with regression coverage",
+    workBranch:"feature/accessibility",raw:{
+      tasks:[
+        branchTask("open-work"),
+        feature("accessible-list","frontend","open-work",
+          "apps/frontend/account-list.tsx"),
+        testTask(["accessible-list"]),prTask()
+      ],assumptions:[],uncertainties:[]},
+    order:["open-work","accessible-list","verify","request-review"],
+    roles:["frontend","test"]}
+ ];
+ const digests=[];
+ for(const [i,d] of definitions.entries()){
+   // SAME compiler, approval, trusted dispatcher and role-runner binding.
+   // The only differences are the operator's requirement and MODEL-like
+   // proposal data: resources, Task identities, role selection, DAG and branch.
+   const compiled=compilePlanningProposal(d.raw,{
+     snapshot,requirement:d.requirement,
+     planId:"independent-model-plan-"+i,
+     workBranch:d.workBranch,agents
+   });
+   assert.equal(compiled.status,"unapproved_proposal");
+   assert.ok(!Object.hasOwn(compiled,"approval"));
+   const h=harness({
+     workBranch:d.workBranch,
+     alternativeApprovedPlan:compiled.plan
+   });
+   const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
+   const executed=await dispatcher.executeApprovedDag({
+     async invokeOrchestratorTask(planTaskId:string,gatewayTaskId:string){
+       assert.ok(["open-work","request-review"].includes(planTaskId));
+       h.log.push("provider:"+planTaskId+":"+gatewayTaskId);
+     }
+   });
+   assert.deepEqual(executed.completed_task_ids,d.order);
+   assert.deepEqual(executed.specialized_results.map(x=>x.role),d.roles);
+   assert.equal(executed.plan_digest,compiled.digest);
+   assert.equal(h.coordinator.phase,"closed");
+   assert.equal(h.log.filter(x=>x.startsWith("allocate:")).length,
+     d.roles.length);
+   assert.equal(h.log.filter(x=>x.startsWith("run:")).length,d.roles.length);
+   assert.equal(h.log.filter(x=>x.startsWith("provider:")).length,2);
+   digests.push(executed.plan_digest);
+ }
+ assert.notEqual(digests[0],digests[1]);
 });
