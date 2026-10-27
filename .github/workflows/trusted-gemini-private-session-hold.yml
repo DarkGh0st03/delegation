@@ -47,7 +47,7 @@ jobs:
     if: ${{ github.repository == 'DarkGh0st03/delegation' && github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && inputs.authorization == 'I AUTHORIZE GEMINI API CHARGES' && inputs.model == 'gemini-3.8-flash' }}
     timeout-minutes: 75
     steps:
-      # No checkout, actions from third parties, npm install, provider key,
+      # No checkout, third-party actions, dependency installation, provider key,
       # model code, GitHub-hosted runner or model-defined capabilities.
       # The installed /opt tree is independently reviewed and immutable.
       - name: Refuse unregistered workflow or modified private code
