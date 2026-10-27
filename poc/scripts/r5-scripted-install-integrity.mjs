@@ -113,3 +113,8 @@ export async function verifyProtectedScriptedInstallation({
   return Object.freeze({status:"local_install_checked_not_r5_go",
     source_sha:expectedSourceSha});
 }
+
+/** The paid and scripted private runners intentionally share the exact
+ * immutable local-source verifier. Model consent never weakens source pins. */
+export const verifyProtectedPrivateRunnerInstallation=
+  verifyProtectedScriptedInstallation;
