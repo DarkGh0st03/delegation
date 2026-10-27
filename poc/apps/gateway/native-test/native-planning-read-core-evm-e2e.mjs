@@ -522,9 +522,17 @@ try{
         }
       });
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
-      if(approvedAgentModelFactory)
-        assert.equal(globalThis.__nativeDagPositive.model_source,
-          "host_supplied_models_not_fixture");
+      assert.equal(globalThis.__nativeDagPositive.model_source,
+        approvedAgentModelFactory
+          ? "host_supplied_scripted_tool_calls"
+          : "inline_scripted_tool_calls");
+      // A host-selected BaseLlm can still encapsulate golden implementation
+      // bytes. Do not let a provider-green E2E claim model independence.
+      assert.equal(globalThis.__nativeDagPositive.scripted_adk_no_paid_model,true);
+      assert.equal(globalThis.__nativeDagPositive
+        .fixture_scripted_payloads_reach_adk_runner,true);
+      assert.equal(globalThis.__nativeDagPositive
+        .independent_model_software_output_verified,false);
       assert.equal(globalThis.__nativeDagPositive.source_writes,
         existingFiles.length);
       assert.equal(globalThis.__nativeDagPositive.manifest_source,
