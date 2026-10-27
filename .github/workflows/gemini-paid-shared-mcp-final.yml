@@ -1,204 +1,236 @@
-# MANUAL, BILLED GEMINI DEVELOPER API ONLY. No push/schedule trigger.
-# No retry by rerunning this job (first attempt only).
-# The key is injected ONLY in the inference step; other steps are offline.
-# PR remains open; synthetic reviewer/merge are forbidden.
-# Requires activation on GitHub default branch before workflow_dispatch appears.
-name: Gemini Paid - Shared MCP Full E2E (Manual Only)
-
-# Actual Gemini agents (not scripted output) use the EXISTING A2A,
-# shared Streamable HTTP MCP, Rust/OPA/Gateway, real Docker Runner,
-# independent researcher acceptance and separate trusted Security CI.
-# Only job-local Compose Gitea is used; its volume is removed on teardown. PR stays open without review/merge.
-# This costs Gemini Developer API credits when and only when manually dispatched.
+# Manual and potentially BILLED: refactor pilot with FOUR genuine Gemini models.
+# Original authenticated Engineer service is NOT represented here.
+# This pilot uses a clearly identified signed ENGINEER TEST fixture and may
+# FAIL if Gemini proposes a DAG shape the existing acceptance harness rejects.
+# The default-branch workflow of this same filename remains legacy; select
+# refactor/post-prof-plan-contracts-20261021 explicitly in GitHub Actions.
+name: Gemini Real - Refactor Signed DAG Account Suspension Pilot (Manual Only)
 on:
   workflow_dispatch:
     inputs:
       authorization:
-        description: 'Type exactly I AUTHORIZE GEMINI API CHARGES'
+        description: 'For a billed run type exactly I AUTHORIZE GEMINI API CHARGES'
         type: string
         required: true
       model:
-        description: 'Exact Gemini Developer API model identifier'
+        description: 'Model selected for Planning, Backend, Frontend, Test'
         type: string
         required: true
         default: 'gemini-3.8-flash'
       thinking_level:
-        description: 'Gemini thinking level for all three ADK roles'
+        description: 'Fixed LOW thinking for this bounded pilot'
         type: choice
         required: true
-        default: LOW
         options: [LOW]
-
 permissions:
   contents: read
-
 concurrency:
-  group: manual-paid-shared-mcp-${{ github.ref }}
+  group: refactor-one-use-four-gemini-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
-  isolated-coordinator:
-    name: User-authorized Gemini Backend Frontend Test and exact-SHA acceptance
-    if: ${{ github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && inputs.authorization == 'I AUTHORIZE GEMINI API CHARGES' }}
+  account-suspension:
+    name: Four Gemini models - real signed DC VP Gitea Docker - TEST approval
+    if: ${{ github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.repository == 'DarkGh0st03/delegation' && github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' && inputs.authorization == 'I AUTHORIZE GEMINI API CHARGES' && inputs.model == 'gemini-3.8-flash' && inputs.thinking_level == 'LOW' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      THESIS_PAID_GEMINI_CONFIRM: ${{ inputs.authorization }}
-      THESIS_GEMINI_MODEL: ${{ inputs.model }}
-      THESIS_GEMINI_THINKING: ${{ inputs.thinking_level }}
       ADAPTER_TRUST_PROFILE: evm
-      ADAPTER_CALLER_ENGINEER: engineer-scripted-ci-fixture
-      ADAPTER_CALLER_GATEWAY: gateway-scripted-ci-fixture
-      ADAPTER_CALLER_ORCHESTRATOR: orchestrator-scripted-ci-fixture
-      ADAPTER_CALLER_BACKEND: backend-scripted-ci-fixture
-      ADAPTER_CALLER_FRONTEND: frontend-scripted-ci-fixture
-      ADAPTER_CALLER_TEST: test-scripted-ci-fixture
+      ADAPTER_CALLER_ENGINEER: local-native-engineer-ci
+      ADAPTER_CALLER_GATEWAY: local-native-gateway-ci
+      ADAPTER_CALLER_ORCHESTRATOR: local-native-orchestrator-ci
+      ADAPTER_CALLER_BACKEND: local-native-backend-ci
+      ADAPTER_CALLER_FRONTEND: local-native-frontend-ci
+      ADAPTER_CALLER_TEST: local-native-test-ci
       ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
       ADAPTER_BIND_ADDR: 127.0.0.1:8090
-      ADAPTER_SMOKE_URL: http://127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_VERIFIER_MODE: core-rust
+      GATEWAY_PROVIDER_MODE: mock
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: "120000"
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
       OPA_URL: http://127.0.0.1:8181
-      GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
-      GITEA_E2E_COMPOSE_READY: "1"
-      ANVIL_DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-      GOVERNANCE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-      ADAPTER_EVM_PRIVATE_KEY_ENGINEER: "0x0000000000000000000000000000000000000000000000000000000000000001"
-      ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR: "0x0000000000000000000000000000000000000000000000000000000000000002"
-      ADAPTER_EVM_PRIVATE_KEY_BACKEND: "0x0000000000000000000000000000000000000000000000000000000000000003"
-      ADAPTER_EVM_PRIVATE_KEY_FRONTEND: "0x0000000000000000000000000000000000000000000000000000000000000004"
-      ADAPTER_EVM_PRIVATE_KEY_TEST: "0x0000000000000000000000000000000000000000000000000000000000000005"
+      OPA_TIMEOUT_MS: "2000"
+      RPC_URL: http://127.0.0.1:8545
+      CHAIN_ID: "31337"
+      ADAPTER_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_RPC_URL: http://127.0.0.1:8545
+      CORE_RUST_CHAIN_ID: "31337"
     steps:
-      - name: Checkout without persisted credentials
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      - name: Confirm paid workflow is first manual attempt
-        shell: bash
-        run: |
-          test "$GITHUB_EVENT_NAME" = workflow_dispatch
-          test "$GITHUB_RUN_ATTEMPT" = 1
-          test "$THESIS_PAID_GEMINI_CONFIRM" = 'I AUTHORIZE GEMINI API CHARGES'
-          echo "Manual paid workflow authorized; no model calls have been made"
-
-      - name: Install Rust 1.99
-        uses: dtolnay/rust-toolchain@1.99.0
-
-      - name: Install Node 22.15
-        uses: actions/setup-node@v4
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22.15.0
+          node-version: "22.15.0"
           cache: npm
           cache-dependency-path: poc/package-lock.json
-
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+      - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.8.4
-
-      - name: Install offline PoC dependencies
+      - name: Install pinned local Node and DID dependencies
         run: |
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
-
-      - name: Check generated real positive script syntax
-        run: node --check poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs
-
-      - name: Run MCP, A2A and coordinator unit regressions
+          node poc/scripts/init-local-env.mjs --force
+      - name: Verify one-use manual charge consent and source identity (no Gemini call)
         run: |
-          npm --prefix poc run agent-runtime:test
-          npm --prefix poc run orchestrator-runtime:test
-
-      - name: Verify exact 11-file Account Suspension delegation scopes
-        run: node --experimental-strip-types poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs
-
-      - name: Generate job-local development fixtures
-        run: node poc/scripts/init-local-env.mjs --force
-
-      - name: Start fresh Compose Gitea, OPA and Anvil
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          test "$GITHUB_REF" = refs/heads/refactor/post-prof-plan-contracts-20261021
+          echo "Refactor signed-Gemini PILOT: TEST Engineer approval, no human signing claim"
+          echo "Budget: Planner <=20 turns; Backend <=17; Frontend <=11; Test <=6"
+          echo "Each model call <=8192 output tokens, thinking LOW; cost is provider-dependent"
+          node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
+          node --check poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs
+          node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
+          node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-agent-model-binding.test.mjs
+      - name: Start only disposable Anvil and OPA
         run: |
-          bash poc/scripts/ci-compose-lifecycle.sh start
-          docker pull node:22.15.0-bookworm
-          for i in {1..100}; do
-            if curl -fsS http://127.0.0.1:3000/api/healthz >/dev/null 2>&1 &&
-               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1 &&
-               cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 0.5
-          done
-          exit 1
-
-
-      - name: Deploy local EVM trust contracts
-        run: |
-          RPC_URL=http://127.0.0.1:8545 \
-          CHAIN_ID=31337 \
-          ANVIL_DEPLOYER_PRIVATE_KEY="$ANVIL_DEPLOYER_PRIVATE_KEY" \
-            bash poc/scripts/bootstrap-trust.sh
-          set -a
-          source poc/infra/runtime/trust.env
-          set +a
-          for name in RPC_URL CHAIN_ID DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
-            echo "$name=${!name}" >> "$GITHUB_ENV"
-          done
-
-      - name: Prepare deterministic development DID identities
-        run: |
-          chain_hex="$(printf '0x%x' "$CHAIN_ID")"
-          configure_identity() {
-            role="$1"
-            private_key="$2"
-            address="$(cast wallet address --private-key "$private_key")"
-            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
-            echo "ADAPTER_ID_${role}=did:ethr:${chain_hex}:${address}" >> "$GITHUB_ENV"
-          }
-          configure_identity ENGINEER "$ADAPTER_EVM_PRIVATE_KEY_ENGINEER"
-          configure_identity ORCHESTRATOR "$ADAPTER_EVM_PRIVATE_KEY_ORCHESTRATOR"
-          configure_identity BACKEND "$ADAPTER_EVM_PRIVATE_KEY_BACKEND"
-          configure_identity FRONTEND "$ADAPTER_EVM_PRIVATE_KEY_FRONTEND"
-          configure_identity TEST "$ADAPTER_EVM_PRIVATE_KEY_TEST"
-
-      - name: Build real Rust Delegation Adapter
-        run: cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
-
-      - name: Start real Rust Delegation Adapter
-        run: |
-          # Same ephemeral caller secrets must reach both Adapter and agents.
-          set -a
-          source poc/infra/.env
-          source poc/infra/runtime/trust.env
-          set +a
-          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/shared-mcp-adapter.log 2>&1 &
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
           for i in {1..90}; do
-            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then
+            if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 &&
+               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1; then
               exit 0
             fi
             sleep 0.5
           done
-          tail -n 35 /tmp/shared-mcp-adapter.log
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
           exit 1
-
-      - name: Run real Gemini roles through shared MCP and real Docker acceptance
+      - name: Generate disposable public test identities
+        run: |
+          local_key() { printf '0x%064x' "$1"; }
+          deployer_key="$(local_key 1)"
+          deployer_address="$(cast wallet address --private-key "$deployer_key")"
+          cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$deployer_address" 0x56BC75E2D63100000 >/dev/null
+          echo "ANVIL_DEPLOYER_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          echo "GOVERNANCE_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+          for entry in ENGINEER:2 ORCHESTRATOR:3 BACKEND:4 FRONTEND:5 TEST:6; do
+            role="${entry%%:*}"
+            n="${entry##*:}"
+            key="$(local_key "$n")"
+            address="$(cast wallet address --private-key "$key")"
+            cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+            echo "ADAPTER_EVM_PRIVATE_KEY_${role}=$key" >> "$GITHUB_ENV"
+            echo "ADAPTER_ID_${role}=did:ethr:0x7a69:${address}" >> "$GITHUB_ENV"
+          done
+      - name: Deploy public DID and EVM trust registries
+        run: |
+          bash poc/scripts/bootstrap-trust.sh
+          set -a
+          source poc/infra/runtime/trust.env
+          set +a
+          for key in DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+            echo "$key=${!key}" >> "$GITHUB_ENV"
+          done
+          echo "CORE_RUST_DID_REGISTRY_ADDRESS=$DID_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+          echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
+      - name: Build signed-credential Adapter and native Core Rust addon
+        run: |
+          cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
+          cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
+          mkdir -p poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
+          cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
+      - name: Start Adapter with public-only shared verification artifacts
+        run: |
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
+          echo $! > /tmp/native-evm-adapter.pid
+          for i in {1..100}; do
+            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then exit 0; fi
+            sleep 0.5
+          done
+          cat /tmp/native-evm-adapter.log
+          exit 1
+      - name: Start Gateway using only the native Rust Core verifier
+        run: |
+          npm --prefix poc run gateway:start > /tmp/native-evm-gateway.log 2>&1 &
+          echo $! > /tmp/native-evm-gateway.pid
+          for i in {1..100}; do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then exit 0; fi
+            sleep 0.5
+          done
+          cat /tmp/native-evm-gateway.log
+          exit 1
+      - name: Preload disposable Gitea, OPA and Docker acceptance images
+        run: |
+          docker pull docker.gitea.com/gitea:28.0.0
+          docker pull node:22.15.0-bookworm
+          docker pull openpolicyagent/opa:1.21.1
+      - name: Verify configured Gemini key and model metadata (NO generation)
         env:
           GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
         run: |
-          set -a
-          source poc/infra/.env
-          source poc/infra/runtime/trust.env
-          set +a
-          test -n "$GEMINI_API_KEY" || { echo 'Missing configured Gemini API key; no billed requests made' >&2; exit 1; }
-          node --experimental-strip-types poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs
-
-      - name: Preserve generated files and independent test evidence
-        if: always()
+          set -euo pipefail
+          test -n "${GEMINI_API_KEY:-}" || { echo "Missing Gemini secret; no model call"; exit 1; }
+          node poc/scripts/check-gemini-planner-model-access.mjs --check-model-access
+      - name: ONE explicitly authorized real Gemini signed-DAG Account Suspension pilot
+        env:
+          GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+          DELEGATION_GEMINI_MODEL: ${{ inputs.model }}
+          DELEGATION_GEMINI_CHARGE_CONFIRMATION: ${{ inputs.authorization }}
+          DELEGATION_SIGNED_GEMINI_PILOT: "1"
+          APPROVED_RUNNER_NATIVE_EVM: "1"
+          APPROVED_RUNNER_THREE_AGENT_DAG: "1"
+          APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
+          APPROVED_RUNNER_SCENARIO: account-suspension
+          GITEA_ADMIN_USER: isolated_admin
+          GITEA_ADMIN_PASSWORD: local-gemini-pilot-${{ github.run_id }}-${{ github.run_attempt }}
+          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+          OPA_IMAGE: openpolicyagent/opa:1.21.1
+        run: |
+          set -euo pipefail
+          test "$DELEGATION_GEMINI_CHARGE_CONFIRMATION" = 'I AUTHORIZE GEMINI API CHARGES'
+          test "$DELEGATION_GEMINI_MODEL" = 'gemini-3.8-flash'
+          test -n "${GEMINI_API_KEY:-}"
+          # Never publish raw model prompts, source or credential-bearing logs.
+          npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller > /tmp/real-four-gemini-pilot.log 2>&1 || {
+            echo "::error::Gemini signed-DAG pilot failed. No success or human-approval claim."
+            exit 1
+          }
+          node --input-type=module -e '
+            import {readFileSync,writeFileSync} from "node:fs";
+            const lines=readFileSync("/tmp/real-four-gemini-pilot.log","utf8").split(/\r?\n/);
+            const events=lines.map(x=>{try{return JSON.parse(x);}catch{return null;}})
+              .filter(x=>x?.event==="gemini_signed_dag_pilot");
+            if(events.length!==1||events[0].status!=="PASS"||
+               events[0].four_real_models!==true||
+               events[0].approval!=="signed_test_fixture_not_human"||
+               events[0].docker_acceptance!=="pass"||
+               events[0].merged!==false)process.exit(1);
+            const receipt={...events[0],
+              framework_sha:process.env.GITHUB_SHA,run_id:process.env.GITHUB_RUN_ID,
+              billing_cost:"not_measured_check_provider_console",
+              genuine_human_approval:false,r5_demo_pass:false};
+            writeFileSync("/tmp/four-gemini-signed-pilot.json",
+              JSON.stringify(receipt,null,2)+"\n",{flag:"wx",mode:0o600});
+          '
+      - name: Upload sanitized four-Gemini pilot evidence
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: gemini-shared-mcp-evidence-${{ github.run_id }}
-          path: /tmp/shared-mcp-gemini-evidence/
-          if-no-files-found: warn
+          name: four-gemini-signed-account-suspension-${{ github.run_id }}
+          path: /tmp/four-gemini-signed-pilot.json
+          if-no-files-found: error
           retention-days: 14
-
-      - name: Teardown hosted-runner-only services
+      - name: Report strictly limited service status on failure
+        if: failure()
+        run: |
+          echo "E2E failed; raw model and provider logs are intentionally not published."
+          docker ps --format '{{.Names}} {{.Status}}' || true
+      - name: Stop disposable services without deleting unrelated volumes
         if: always()
         run: |
-          bash poc/scripts/ci-compose-lifecycle.sh cleanup
+          kill "$(cat /tmp/native-evm-gateway.pid)" 2>/dev/null || true
+          kill "$(cat /tmp/native-evm-adapter.pid)" 2>/dev/null || true
+          if [[ -f poc/infra/.env ]]; then
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
+          fi
+
