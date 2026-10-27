@@ -17,8 +17,9 @@ const native=()=>({
   source_witnessed_still_uses_fixture_code:true,
   source_derived_functional_route_verified:true,
   source_derived_controller_verified:true,
-  source_derived_functional_file_count:2,
-  remaining_prepackaged_application_file_count:9,
+  source_derived_status_verified:true,
+  source_derived_functional_file_count:3,
+  remaining_prepackaged_application_file_count:8,
   independent_model_software_output_verified:false,
   backend_frontend_a2a_updates:10,test_agent_created_e2e:1,
   signed_generic_adk_agents:3,a2a_before_branch:0,main_mutations:0
@@ -58,9 +59,10 @@ test("Account Suspension offline E2E reports actual signed DAG without Gemini or
   const evidence=extractSignedFunctionalE2EEvidence(log(fixture()),source);
   assert.equal(evidence.scenario_id,"account-suspension");
   assert.equal(evidence.account_suspension_source_derived_backend_routes,true);
-  assert.equal(evidence.source_derived_functional_file_count,2);
-  assert.equal(evidence.remaining_prepackaged_application_file_count,9);
+  assert.equal(evidence.source_derived_functional_file_count,3);
+  assert.equal(evidence.remaining_prepackaged_application_file_count,8);
   assert.equal(evidence.source_derived_controller_verified,true);
+  assert.equal(evidence.source_derived_status_verified,true);
   assert.equal(evidence.source_witnessed_native_dc_vp_e2e,true);
   assert.equal(evidence.independent_model_software_output_verified,false);
   assert.equal(evidence.standalone_gitea_probe_uses_native_dc_vp,false);
@@ -92,6 +94,7 @@ test("Account Suspension checkpoint fail-closed on fabricated approvals, provide
     x=>{x.native.dispatcher_fail_closed=false;},
     x=>{x.native.source_derived_functional_route_verified=false;},
     x=>{x.native.source_derived_controller_verified=false;},
+    x=>{x.native.source_derived_status_verified=false;},
     x=>{x.native.source_derived_functional_file_count=0;},
     x=>{x.native.remaining_prepackaged_application_file_count=11;},
     x=>{x.native.source_witnessed_native_dag=false;},

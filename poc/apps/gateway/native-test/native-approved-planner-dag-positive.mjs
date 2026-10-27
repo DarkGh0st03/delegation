@@ -646,6 +646,19 @@ export async function runNativePositiveApprovedDag({
         assert.ok(readPaths.backend.has(ctrl.path));
         assert.ok(writePaths.backend.has(ctrl.path));
       }
+      const status=derivedRoutes.derivedStatusProof;
+      if(status){
+        assert.equal(status.branch,branch);
+        assert.ok(files.backend.includes(status.path));
+        assert.equal(status.source_sha256,createHash("sha256")
+          .update(originals[status.path],"utf8").digest("hex"));
+        const actual=await reader.readTextFile(branch,status.path);
+        assert.ok(actual.content.includes(
+          'export type AccountStatus = "ACTIVE" | "SUSPENDED";'));
+        assert.ok(actual.content.includes('  SUSPENDED: "SUSPENDED"'));
+        assert.ok(readPaths.backend.has(status.path));
+        assert.ok(writePaths.backend.has(status.path));
+      }
     }
     const head=await reader.getBranchMetadata(branch);
     assert.equal(head.commit_sha,runnerOutcome.tested_commit_sha);
@@ -696,6 +709,8 @@ export async function runNativePositiveApprovedDag({
       source_derived_functional_route_verified:derivedRoutes!==null,
       source_derived_controller_verified:derivedRoutes?.derivedControllerProof!==null&&
         derivedRoutes?.derivedControllerProof!==undefined,
+      source_derived_status_verified:derivedRoutes?.derivedStatusProof!==null&&
+        derivedRoutes?.derivedStatusProof!==undefined,
       source_derived_functional_file_count:derivedRoutes?.derivedFileCount??0,
       remaining_prepackaged_application_file_count:
         11-(derivedRoutes?.derivedFileCount??0),

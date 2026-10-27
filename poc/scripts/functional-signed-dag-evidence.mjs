@@ -61,10 +61,11 @@ export function extractSignedFunctionalE2EEvidence(log,{
     "source_witnessed_native_dag",
     "source_witnessed_still_uses_fixture_code",
     "source_derived_functional_route_verified",
-    "source_derived_controller_verified"
+    "source_derived_controller_verified",
+    "source_derived_status_verified"
   ],"native signed-DAG");
-  if(native.source_derived_functional_file_count!==2||
-     native.remaining_prepackaged_application_file_count!==9||
+  if(native.source_derived_functional_file_count!==3||
+     native.remaining_prepackaged_application_file_count!==8||
      native.independent_model_software_output_verified!==false||
      native.backend_frontend_a2a_updates!==10||
      native.test_agent_created_e2e!==1||
@@ -121,9 +122,10 @@ export function extractSignedFunctionalE2EEvidence(log,{
     native_rust_vp_and_opa:true,
     three_scripted_adk_a2a_agents:true,
     account_suspension_source_derived_backend_routes:true,
-    source_derived_functional_file_count:2,
-    remaining_prepackaged_application_file_count:9,
+    source_derived_functional_file_count:3,
+    remaining_prepackaged_application_file_count:8,
     source_derived_controller_verified:true,
+    source_derived_status_verified:true,
     source_witnessed_native_dc_vp_e2e:true,
     independent_model_software_output_verified:false,
     standalone_gitea_probe_uses_native_dc_vp:false,

@@ -24,6 +24,8 @@ on:
       - 'poc/apps/gateway/native-test/source-derived-controller-edits.test.mjs'
       - 'poc/apps/gateway/native-test/approved-plan-source-target-selection.mjs'
       - 'poc/apps/gateway/native-test/approved-plan-source-target-selection.test.mjs'
+      - 'poc/apps/gateway/native-test/source-derived-status-edits.mjs'
+      - 'poc/apps/gateway/native-test/source-derived-status-edits.test.mjs'
       - 'poc/apps/test-runner-controller/fixtures/approved-scenarios.mjs'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts'
@@ -92,6 +94,8 @@ jobs:
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs
       - name: Account Suspension controller source-derivation and denial tests
         run: node --test poc/apps/gateway/native-test/source-derived-controller-edits.test.mjs
+      - name: Account Suspension status model source-derivation tests
+        run: node --test poc/apps/gateway/native-test/source-derived-status-edits.test.mjs
       - name: Source-derived file selection only from actual approved DAG grants
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-source-target-selection.test.mjs
       - name: Offline Gemini Planning-to-Execution bridge regression (zero model calls)
