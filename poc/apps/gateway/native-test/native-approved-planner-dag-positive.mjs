@@ -498,7 +498,7 @@ export async function runNativePositiveApprovedDag({
           parent_credential_id:operationalRootId,
           credential_id:childIds[role],
           valid_from:new Date(Date.now()-1000).toISOString(),
-          validity_seconds:realGeminiPilot?1200:300,
+          validity_seconds:realGeminiPilot?1800:300,
           credential_status:{type:"BitstringStatusListEntry",
             statusPurpose:"revocation",
             statusListIndex:String(randomInt(66001,69000)),

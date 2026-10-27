@@ -499,7 +499,7 @@ try{
     const active=await coordinator.beginExecution({
       credential_id:opId,
       valid_from:new Date(Date.now()-1000).toISOString(),
-      validity_seconds:600,
+      validity_seconds:geminiPilot?2700:600,
       credential_status:{
         type:"BitstringStatusListEntry",
         statusPurpose:"revocation",
