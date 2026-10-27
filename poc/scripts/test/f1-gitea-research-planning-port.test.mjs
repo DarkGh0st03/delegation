@@ -1,3 +1,4 @@
+import {URL as NodeURL} from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {buildF1RealGiteaResearchPlanningPort}
@@ -49,7 +50,7 @@ function fixture({changed=false,solved=false,duplicate=false}={}){
     status,ok:status===200,text:async()=>JSON.stringify(value)
   });
   const fetchFn=async(url,options)=>{
-    const u=new URL(url);
+    const u=new NodeURL(url);
     assert.equal(u.origin,URL);
     assert.equal(options.method,"GET");
     assert.equal(options.headers.authorization,"token "+TOKEN);
