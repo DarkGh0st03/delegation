@@ -6,7 +6,7 @@ name: Shared MCP Real Docker Acceptance E2E (Scripted, No AI Billing)
 # Jobs run automatically when relevant architecture code changes.
 on:
   push:
-    branches: [feat/shared-mcp-spike, main]
+    branches: [feat/shared-mcp-spike, main, refactor/post-prof-plan-contracts-20261021]
     paths:
       - '.github/workflows/shared-mcp-real-positive-e2e.yml'
       - 'src/**'
