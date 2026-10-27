@@ -1,0 +1,63 @@
+# R5: private, manually authorized GitHub job identity for a future
+# owner-operated Gemini execution. THIS WORKFLOW NEVER CALLS GEMINI.
+# Requires independent protected-environment reviewers, root-owned code,
+# 0600 TLS/OIDC inputs and a separately running original Engineer Host.
+# A completed job is not proof that any provider charge occurred.
+name: R5 Gemini Private Authenticated Hold (No Model on Runner)
+on:
+  workflow_dispatch:
+    inputs:
+      authorization:
+        description: "Exact, explicit operator consent for later HOST-side API charges"
+        required: true
+        type: string
+      model:
+        description: "Pinned Gemini API model"
+        type: choice
+        required: true
+        options:
+          - gemini-3.8-flash
+      max_model_turns:
+        description: "Maximum turns for each role (1-32)"
+        required: true
+        type: string
+        default: "12"
+      max_output_tokens:
+        description: "Maximum output tokens (1-32000)"
+        required: true
+        type: string
+        default: "16000"
+      max_model_call_ms:
+        description: "Maximum model-call duration in ms (1000-360000)"
+        required: true
+        type: string
+        default: "120000"
+
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: r5-gemini-private-runner-session
+  cancel-in-progress: false
+jobs:
+  authenticated-private-hold:
+    name: OIDC identity and independently verified Host DAG/root closure
+    environment: r5-private-gemini-admission
+    runs-on: [self-hosted, linux, x64, delegation-private]
+    if: ${{ github.repository == 'DarkGh0st03/delegation' && github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && inputs.authorization == 'I AUTHORIZE GEMINI API CHARGES' && inputs.model == 'gemini-3.8-flash' }}
+    timeout-minutes: 75
+    steps:
+      # No checkout, actions from third parties, npm install, provider key,
+      # model code, GitHub-hosted runner or model-defined capabilities.
+      # The installed /opt tree is independently reviewed and immutable.
+      - name: Refuse unregistered workflow or modified private code
+        shell: bash
+        run: node --experimental-strip-types /opt/delegation/r5/poc/scripts/r5-gemini-private-dispatch-registration.mjs
+      - name: Submit one OIDC receipt and hold until signed DAG/native closure
+        shell: bash
+        run: node --experimental-strip-types /opt/delegation/r5/poc/apps/orchestrator/src/hold-private-github-session.mjs
+      - name: Report runner-only status
+        shell: bash
+        run: |
+          echo "Original Engineer Host independently confirmed approved DAG and root closure."
+          echo "This runner had no model key, no Engineer signing key and no authority to merge."
