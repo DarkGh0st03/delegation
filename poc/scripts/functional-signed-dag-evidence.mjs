@@ -172,8 +172,12 @@ export function extractSignedFunctionalE2EEvidence(text,{
     "fixture_scripted_payloads_reach_adk_runner",
     "same_signed_dag_docker_acceptance",
     "source_witnessed_native_dag",
-    "source_witnessed_still_uses_fixture_code"
+    "source_witnessed_still_uses_fixture_code",
+    "source_derived_functional_route_verified"
   ],"original signed-DAG process");
+  if(native.source_derived_functional_file_count!==1||
+     native.remaining_prepackaged_application_file_count!==10)
+    deny("source-derived file count or fixture count differs");
   if(native.independent_model_software_output_verified!==false)
     deny("offline scripted run cannot claim independent model-produced code");
   if(native.backend_frontend_a2a_updates!==10||
@@ -235,6 +239,9 @@ export function extractSignedFunctionalE2EEvidence(text,{
     block_b_source_derived_native_dc_vp_e2e:false,
     block_b_hybrid_source_witness_native_dc_vp_e2e_verified:true,
     block_b_hybrid_still_uses_prepackaged_implementation:true,
+    block_b_functional_backend_route_derived_from_real_source:true,
+    block_b_source_derived_functional_file_count:1,
+    block_b_remaining_prepackaged_application_file_count:10,
     created_pull_request_unmerged:true,
     isolated_docker_project_tests:"pass",
     isolated_researcher_acceptance:"pass",
