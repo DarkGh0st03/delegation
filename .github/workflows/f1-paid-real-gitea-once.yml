@@ -1,0 +1,105 @@
+# User-authorized ONE paid Gemini F1 proposal attempt (27 October 2026).
+# Uses pre-existing Actions Secret Delegation_Thesis_Gemini. No rerun,
+# no human auto-approval, no credentials issued, no code mutation or PR merge.
+name: F1 Gemini Real Gitea Single Authorized Planner Attempt
+
+on:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/workflows/f1-paid-real-gitea-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: f1-one-time-paid-gemini-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  f1-real-planning:
+    if: >-
+      github.event_name == 'push' &&
+      github.run_attempt == 1 &&
+      github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021'
+    name: Original Gitea source - Gemini ADK - unsigned plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    env:
+      F1_SESSION: /tmp/delegation-f1-paid-${{ github.run_id }}
+      DELEGATION_F1_OUTPUT_DIR: /tmp/delegation-f1-paid-${{ github.run_id }}-report
+      DELEGATION_F1_BILLING_CONSENT: I AUTHORIZE GEMINI API CHARGES
+      DELEGATION_F1_GEMINI_MODEL: gemini-3.8-flash
+    steps:
+      - name: Checkout exact feature SHA without GitHub write credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Pinned Node runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+
+      - name: Install lockfile dependencies without lifecycle scripts
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify no-billing paths and first-attempt authorization
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --test \
+            poc/scripts/test/f1-one-time-ci-gemini.test.mjs \
+            poc/scripts/test/f1-local-gitea-session.test.mjs \
+            poc/scripts/test/f1-real-gitea-gemini-probe.test.mjs \
+            poc/scripts/test/f1-gitea-research-planning-port.test.mjs \
+            poc/scripts/test/f1-department-directory-functional-review.test.mjs
+
+      - name: Start private real Gitea with pinned original unsolved source
+        run: |
+          set -euo pipefail
+          docker pull docker.gitea.com/gitea:28.0.0
+          node --experimental-strip-types poc/scripts/f1-local-gitea-session.mjs --start "$F1_SESSION"
+          node --experimental-strip-types poc/scripts/f1-local-gitea-session.mjs --check "$F1_SESSION"
+
+      - name: Verify previously configured Gemini secret without logging it
+        env:
+          GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+        run: |
+          set -euo pipefail
+          test -n "${GEMINI_API_KEY:-}"
+          echo "Previously configured thesis Gemini secret is present."
+
+      - name: Check real Gemini model metadata without generation
+        env:
+          GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+        run: node poc/scripts/check-gemini-planner-model-access.mjs --check-model-access
+
+      - name: ONE authorized Gemini Planning run, at most 12 model turns
+        env:
+          GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types poc/scripts/f1-one-time-ci-gemini.mjs
+
+      - name: Upload unsigned plan and sanitized independent evaluations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: f1-real-gemini-unapproved-planning-${{ github.run_id }}
+          path: |
+            ${{ env.DELEGATION_F1_OUTPUT_DIR }}/unapproved-proposal.json
+            ${{ env.DELEGATION_F1_OUTPUT_DIR }}/evaluation.json
+            ${{ env.DELEGATION_F1_OUTPUT_DIR }}/functional-review.json
+            ${{ env.DELEGATION_F1_OUTPUT_DIR }}/failure-diagnostics.json
+            ${{ env.DELEGATION_F1_OUTPUT_DIR }}/research-run.json
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Stop only this owner-pinned Gitea container
+        if: always()
+        run: |
+          if [[ -d "$F1_SESSION" ]]; then
+            node --experimental-strip-types poc/scripts/f1-local-gitea-session.mjs --stop "$F1_SESSION" || true
+          fi
