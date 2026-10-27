@@ -52,7 +52,10 @@ export type PlanningObservation =
        "transport_or_timeout"|"unknown";
      http_status:number|null}
   | {kind:"proposal";status:"unapproved";digest:string;
-     task_count:number;permission_count:number;verified_source_reads:number};
+     task_count:number;permission_count:number;verified_source_reads:number}
+  /** Only static diagnostic categories: never model output, file paths or source. */
+  | {kind:"plan_rejection";stage:"grounding"|"json"|"contract";
+     reason:TrustedPlanningRejectionReason};
 export interface TrustedAdkPlannerConfig {
   model:BaseLlm;
   snapshot:TrustedPlanningSnapshot;
@@ -82,6 +85,49 @@ export interface UnapprovedPlanProposal {
   verified_source_reads:number;
 }
 
+export const TRUSTED_PLANNING_REJECTION_REASONS=Object.freeze([
+  "ungrounded_or_missing_output","invalid_json","invalid_proposal_shape",
+  "invalid_task_count","invalid_task_identity","unsupported_agent_role",
+  "unsupported_tool_for_role","unauthorized_existing_file",
+  "unauthorized_new_file","invalid_path","invalid_permission_path",
+  "missing_branch_task","missing_branch_dependency",
+  "conflicting_unordered_writes","duplicate_task_permission",
+  "incorrect_work_branch","invalid_dependencies","invalid_permissions",
+  "contract_validation_other"
+] as const);
+export type TrustedPlanningRejectionReason=
+  typeof TRUSTED_PLANNING_REJECTION_REASONS[number];
+const SAFE_REJECTIONS:Readonly<Record<string,TrustedPlanningRejectionReason>>=
+  Object.freeze({
+    "unexpected/missing fields":"invalid_proposal_shape",
+    "expected object":"invalid_proposal_shape",
+    "invalid list":"invalid_proposal_shape",
+    "invalid string":"invalid_proposal_shape",
+    "Task count outside bounds":"invalid_task_count",
+    "invalid Task id":"invalid_task_identity",
+    "unsupported Agent role":"unsupported_agent_role",
+    "tool is not supported for proposed Agent role":"unsupported_tool_for_role",
+    "file absent from trusted Planning snapshot":"unauthorized_existing_file",
+    "create_file outside authorized discovery directories":"unauthorized_new_file",
+    "noncanonical path":"invalid_path",
+    "repository operation requires null path":"invalid_permission_path",
+    "test operation requires null path":"invalid_permission_path",
+    "first Task must create the single work branch":"missing_branch_task",
+    "every later Task must depend on branch creation":"missing_branch_dependency",
+    "independent Tasks cannot modify the same file":"conflicting_unordered_writes",
+    "duplicate Task permission":"duplicate_task_permission",
+    "proposal does not encode the exact trusted work branch":"incorrect_work_branch",
+    "invalid dependency":"invalid_dependencies",
+    "permission count outside bounds":"invalid_permissions",
+    "too many permission requests":"invalid_permissions"
+  });
+function safePlanningRejection(error:unknown):TrustedPlanningRejectionReason {
+  const msg=error instanceof Error?error.message:"";
+  const prefix="Unapproved Planning: ";
+  return msg.startsWith(prefix)
+    ?SAFE_REJECTIONS[msg.slice(prefix.length)]??"contract_validation_other"
+    :"contract_validation_other";
+}
 function fail(reason:string):never {throw Error("Unapproved Planning: "+reason);}
 function obj(x:unknown):Record<string,unknown> {
   if(!x||typeof x!=="object"||Array.isArray(x))fail("expected object");
@@ -570,11 +616,28 @@ export class TrustedAdkReadOnlyPlanner {
       }
     }
     if(planningDeadline.aborted||error||denied||
-       readCount===0||!finalText||finalText.length>65000)
+       readCount===0||!finalText||finalText.length>65000){
+      cfg.onObservation?.(Object.freeze({
+        kind:"plan_rejection",stage:"grounding",
+        reason:"ungrounded_or_missing_output"
+      }));
       fail("no verified read-only grounded proposal");
+    }
     let proposed:unknown;
-    try{proposed=JSON.parse(finalText);}catch{fail("model output was not strict JSON");}
-    const result=compilePlanningProposal(proposed,cfg);
+    try{proposed=JSON.parse(finalText);}catch{
+      cfg.onObservation?.(Object.freeze({
+        kind:"plan_rejection",stage:"json",reason:"invalid_json"
+      }));
+      fail("model output was not strict JSON");
+    }
+    let result:UnapprovedPlanProposal;
+    try{result=compilePlanningProposal(proposed,cfg);}catch(error){
+      cfg.onObservation?.(Object.freeze({
+        kind:"plan_rejection",stage:"contract",
+        reason:safePlanningRejection(error)
+      }));
+      throw error;
+    }
     if(planningDeadline.aborted)
       fail("no verified read-only grounded proposal");
     cfg.onObservation?.(Object.freeze({
