@@ -633,9 +633,12 @@ export async function runNativePositiveApprovedDag({
       shared_mcp_http_requests:normalMcpCalls,
       private_crypto_mcp_http_requests:privateCryptoMcpCalls,
       adk_model_turns:{
-        backend:hostModels?null:models.backend.calls,
-        frontend:hostModels?null:models.frontend.calls,
-        test:hostModels?null:models.test.calls
+        backend:models.backend instanceof OfflineApprovedAdkModel
+          ?models.backend.calls:null,
+        frontend:models.frontend instanceof OfflineApprovedAdkModel
+          ?models.frontend.calls:null,
+        test:models.test instanceof OfflineApprovedAdkModel
+          ?models.test.calls:null
       }
     };
   }finally{
