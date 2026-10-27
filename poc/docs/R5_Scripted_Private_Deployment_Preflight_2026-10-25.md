@@ -1018,3 +1018,49 @@ root/child issuance records, public chain commitments, signed status JWT
 verification and runner/network evidence before making a full-R5 claim.
 This library is not wired to the private-runner workflow and is not itself
 a successful distributed execution.
+
+## R5 — Operator-protected Adapter EVM status check (27 October 2026)
+
+A new owner-side entrypoint, \`poc/scripts/r5-protected-native-revocation-audit.mjs\`,
+wraps the previously reviewed read-only Adapter observation. It is **not**
+available to GitHub Actions, models, A2A agents or MCP tools, and it never
+issues credentials or changes Status Lists. The command requires independently
+pinned \`DELEGATION_R5_EXPECTED_SOURCE_SHA\` and
+\`DELEGATION_R5_EXPECTED_RUN_ID\`, matching a completed original-owner claim,
+a separately maintained credential inventory, and an owner-private config.
+A different run, SHA, plan digest or incomplete Backend/Frontend/Test child
+inventory fails closed before reading the Gateway bearer.
+
+The operator provisions three owner-only 0700 directories and these 0600
+regular files (no symlinks or hardlinks):
+
+- \`DELEGATION_R5_EVIDENCE_DIRECTORY/r5-scripted-run-<run>.json\`:
+  the already-produced original-owner completion observation.
+- \`DELEGATION_R5_ISSUANCE_INVENTORY_DIRECTORY/r5-issued-credentials-<run>.json\`:
+  a separate issuance inventory manually reconciled against original
+  Coordinator/Adapter records, using the exact
+  \`r5-credential-issuance-inventory-v1\` schema.
+- \`DELEGATION_R5_REVOCATION_CONFIG\`:
+  \`{"schema":"r5-native-revocation-audit-config-v1","source_sha":"<sha>","github_run_id":"<run>","adapter_base_url":"http://127.0.0.1:<port>","gateway_verifier_bearer_file":"/absolute/private/gateway.token"}\`.
+  The bearer file must also be owner-only 0600. These are **operator
+  configuration paths**, not workflow inputs.
+
+Launch only on the independently reviewed Engineer/operator machine:
+
+\`\`\`bash
+node --experimental-strip-types poc/scripts/r5-protected-native-revocation-audit.mjs
+\`\`\`
+
+The output reports only root/child counts and explicit \`R5 GO: NO\`.
+The command refuses \`GITHUB_ACTIONS=true\`, missing pins, unexpected
+configuration fields, insecure owners/permissions, a non-loopback Adapter
+and any non-EVM-anchored or unrevoked status. Tests reside in
+\`poc/scripts/test/r5-protected-native-revocation-audit.test.mjs\` and are
+included by the cumulative Node scripts wildcard.
+
+**Evidence remains limited:** an owner-supplied inventory can omit issued
+credentials, and Adapter status responses are not independent blockchain
+attestations. A 0600 file and local bearer do not prove the deployment,
+signed Engineer review, physical runner identity or absence of paid
+model traffic. This tool must not set \`external_r5_go:true\` or replace
+the independently reviewed, full distributed R5 acceptance procedure.
