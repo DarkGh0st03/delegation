@@ -14,11 +14,19 @@ import {loadProtectedRunnerOidcConfig,submitProtectedPrivateRunnerAdmission}
   from "./trusted-private-runner-oidc.mjs";
 import {awaitTrustedPrivateRunCompletion}
   from "../../../packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts";
+import {verifyProtectedScriptedInstallation}
+  from "../../../scripts/r5-scripted-install-integrity.mjs";
 
 try{
-  const admitted=await submitProtectedPrivateRunnerAdmission();
+  // Both paid and scripted runners verify the exact locally installed
+  // root-owned, non-runner-writable source SHA INSIDE the OIDC process.
+  // A previous check or a GitHub-approved dispatch is not sufficient.
   const trusted=await loadProtectedRunnerOidcConfig(
     process.env.DELEGATION_RUNNER_OIDC_CONFIG);
+  await verifyProtectedScriptedInstallation({
+    expectedSourceSha:trusted.expectedSourceSha
+  });
+  const admitted=await submitProtectedPrivateRunnerAdmission();
   if(trusted.expectedSourceSha!==admitted.source_sha||
      trusted.expectedRepository!==process.env.GITHUB_REPOSITORY||
      trusted.expectedRef!==process.env.GITHUB_REF||
