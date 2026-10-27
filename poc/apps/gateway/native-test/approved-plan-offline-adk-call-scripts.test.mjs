@@ -7,6 +7,9 @@ import {makeApproval,assertApprovedPlanScope}
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {buildOfflineAdkScriptsFromApprovedPlan}
   from "./approved-plan-offline-adk-call-scripts.mjs";
+// Share the existing nonbillable planner test gate with the source-derived
+// route compiler; no additional CI permissions or provider calls.
+import "./source-derived-route-offline-adk-model.test.mjs";
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"proof"};
 const sha="a".repeat(40),eng="did:thesis:engineer";
