@@ -630,6 +630,22 @@ export async function runNativePositiveApprovedDag({
       assert.ok(readPaths.backend.has(proof.path));
       assert.ok(writePaths.backend.has(proof.path));
       assert.ok(proof.directive_count>=1);
+      const ctrl=derivedRoutes.derivedControllerProof;
+      if(ctrl){
+        assert.equal(ctrl.branch,branch);
+        assert.ok(files.backend.includes(ctrl.path));
+        assert.equal(ctrl.source_sha256,createHash("sha256")
+          .update(originals[ctrl.path],"utf8").digest("hex"));
+        const saved=await reader.readTextFile(branch,ctrl.path);
+        assert.ok(saved.content.includes(
+          "response.json(service.suspendUser(String(request.params.id)))"));
+        assert.ok(saved.content.includes(
+          "response.json(service.reactivateUser(String(request.params.id)))"));
+        assert.ok(saved.content.includes("AccountStatusConflictError"));
+        assert.ok(saved.content.includes('code: "ACCOUNT_STATUS_CONFLICT"'));
+        assert.ok(readPaths.backend.has(ctrl.path));
+        assert.ok(writePaths.backend.has(ctrl.path));
+      }
     }
     const head=await reader.getBranchMetadata(branch);
     assert.equal(head.commit_sha,runnerOutcome.tested_commit_sha);
@@ -678,8 +694,11 @@ export async function runNativePositiveApprovedDag({
               : "host_supplied_unclassified_adk_models")
           : "inline_scripted_tool_calls",
       source_derived_functional_route_verified:derivedRoutes!==null,
-      source_derived_functional_file_count:derivedRoutes?1:0,
-      remaining_prepackaged_application_file_count:derivedRoutes?10:11,
+      source_derived_controller_verified:derivedRoutes?.derivedControllerProof!==null&&
+        derivedRoutes?.derivedControllerProof!==undefined,
+      source_derived_functional_file_count:derivedRoutes?.derivedFileCount??0,
+      remaining_prepackaged_application_file_count:
+        11-(derivedRoutes?.derivedFileCount??0),
       source_witnessed_native_dag_verified:witnessModel!==null,
       source_witnessed_model_still_uses_fixture_code:witnessModel!==null,
       fixture_scripted_payloads_reach_adk_runner:Object.values(models).some(

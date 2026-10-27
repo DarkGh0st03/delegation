@@ -232,6 +232,8 @@ jobs:
           docker pull openpolicyagent/opa:1.21.1
       - name: Check source-witness offline model cannot forge an authorized read
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-witnessed-offline-adk-model.test.mjs
+      - name: Account Suspension controller source-derivation and denial tests
+        run: node --test poc/apps/gateway/native-test/source-derived-controller-edits.test.mjs
       - name: Account Suspension signed native VP A2A OPA Gitea and Docker acceptance
         env:
           APPROVED_RUNNER_NATIVE_EVM: "1"

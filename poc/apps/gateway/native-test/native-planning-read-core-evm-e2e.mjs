@@ -504,12 +504,19 @@ try{
           process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
           process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
         const targetRoute="apps/backend/src/users/user.routes.ts";
+        const targetController="apps/backend/src/users/user.controller.ts";
+        const controllerRequested=deriveRoutes&&reviewed.plan.tasks.some(t=>
+          t.agent_id==="backend"&&
+          t.description.includes("CONTROLLER HANDLER "));
+        const derivedPaths=deriveRoutes
+          ?[targetRoute,...(controllerRequested?[targetController]:[])]:[];
         const otherImplementations={...referenceFiles};
-        if(deriveRoutes)delete otherImplementations[targetRoute];
+        for(const path of derivedPaths)delete otherImplementations[path];
         const offlineCalls=buildOfflineAdkScriptsFromApprovedPlan({
           plan:reviewed.plan,approvedRows,repo,branch:workBranch,
-          implementationContents:deriveRoutes?otherImplementations:referenceFiles,
-          ...(deriveRoutes?{sourceDerivedPaths:[targetRoute]}:{})
+          implementationContents:derivedPaths.length
+            ?otherImplementations:referenceFiles,
+          ...(derivedPaths.length?{sourceDerivedPaths:derivedPaths}:{})
         });
         approvedAgentModelFactory=context=>{
           const expected=approvedRows.filter(g=>
@@ -563,7 +570,11 @@ try{
       assert.equal(globalThis.__nativeDagPositive
         .source_derived_functional_route_verified,derivedRoutesMode);
       assert.equal(globalThis.__nativeDagPositive
-        .source_derived_functional_file_count,derivedRoutesMode?1:0);
+        .source_derived_functional_file_count,derivedRoutesMode
+          ? (scenario.id==="account-suspension"?2:1):0);
+      if(derivedRoutesMode&&scenario.id==="account-suspension")
+        assert.equal(globalThis.__nativeDagPositive
+          .source_derived_controller_verified,true);
       assert.equal(globalThis.__nativeDagPositive
         .source_witnessed_native_dag_verified,sourceWitnessMode);
       // A host-selected BaseLlm can still encapsulate golden implementation
