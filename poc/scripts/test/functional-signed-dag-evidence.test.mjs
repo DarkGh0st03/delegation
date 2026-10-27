@@ -42,6 +42,16 @@ function fixture(){
     gateway_vp_opa_attested_by_this_rehearsal:false,
     execution_permitted:false,external_r5_go:false
   };
+  const sourceProbe={
+    status:"PASS",source_derived_tool_output:true,
+    gitea_provider_committed:true,main_unchanged:true,
+    external_model_calls:0,signed_gateway_credential_e2e:false,
+    review_fixture_not_human_signed:true,
+    approved_plan_preflight_denials:4,
+    model_operations_preflight_checked:true,
+    source_sha:gitea,feature_sha:"d".repeat(40),
+    controlled_calls:2,files_modified:1
+  };
   const native={
     status:"PASS",real_gitea_sha:gitea,native_rust:true,live_opa:true,
     signed_handoff:true,operational_root:true,dispatcher_fail_closed:true,
@@ -68,9 +78,9 @@ function fixture(){
     native_rust_signed_child_and_vp:true,runner_via_gateway_http:true,
     exact_provider_sha_correlated:true,approval_created:true
   };
-  return {native,positive,f1,port,dry,adk};
+  return {native,positive,f1,port,dry,adk,sourceProbe};
 }
-function log({native,positive,f1,port,dry,adk}){
+function log({native,positive,f1,port,dry,adk,sourceProbe}){
   return "npm prefix noisy log\n"+
     "[trusted-positive-ci] f1_real_gitea_baseline "+
     JSON.stringify(f1)+"\n"+
@@ -80,6 +90,8 @@ function log({native,positive,f1,port,dry,adk}){
     JSON.stringify(dry)+"\n"+
     "[trusted-positive-ci] f1_real_gitea_adk_rehearsal "+
     JSON.stringify(adk)+"\n"+
+    "[trusted-positive-ci] source_derived_probe "+
+    JSON.stringify(sourceProbe)+"\n"+
     "[trusted-positive-ci] native_disposable_planning "+
     JSON.stringify(native)+"\n"+JSON.stringify(positive)+"\n";
 }
@@ -94,6 +106,10 @@ test("functional E2E extracts only fixed observed fields without R5 or human cla
     true);
   assert.equal(evidence.block_b_independent_model_software_output_verified,
     false);
+  assert.equal(evidence.block_b_source_derived_real_gitea_probe_verified,true);
+  assert.equal(evidence.block_b_source_derived_approved_plan_preflight_denials,4);
+  assert.equal(evidence.block_b_source_derived_external_model_calls,0);
+  assert.equal(evidence.block_b_source_derived_native_dc_vp_e2e,false);
   assert.equal(evidence.f1_actual_full_repo_snapshot_readonly_verified,true);
   assert.equal(evidence.f1_gemini_operator_dry_run_real_gitea_verified,true);
   assert.equal(evidence.f1_actual_adk_scripted_planner_real_gitea_verified,true);
@@ -119,6 +135,14 @@ test("functional checkpoint rejects missing or duplicate observed stages",()=>{
   assert.throws(()=>extractSignedFunctionalE2EEvidence(
     log(f)+"\n[trusted-positive-ci] native_disposable_planning "+
     JSON.stringify(f.native),pin),/NO-GO/);
+  assert.throws(()=>extractSignedFunctionalE2EEvidence(
+    log(f)+"\n[trusted-positive-ci] source_derived_probe "+
+    JSON.stringify(f.sourceProbe),pin),/NO-GO/);
+  const missing={...f,sourceProbe:undefined};
+  assert.throws(()=>extractSignedFunctionalE2EEvidence(
+    log(missing).replace(
+      "[trusted-positive-ci] source_derived_probe undefined\n",""
+    ),pin),/NO-GO/);
 });
 test("functional checkpoint rejects fake provider effects, missing signed DAG and merged PR",()=>{
   for(const mutate of [
@@ -138,6 +162,18 @@ test("functional checkpoint rejects fake provider effects, missing signed DAG an
     x=>{x.f1.base_revision=sha;},
     x=>{x.f1.novel_unsolved_requirement=false;},
     x=>{x.f1.provider_model_inference_calls=1;},
+    x=>{x.sourceProbe.source_derived_tool_output=false;},
+    x=>{x.sourceProbe.gitea_provider_committed=false;},
+    x=>{x.sourceProbe.main_unchanged=false;},
+    x=>{x.sourceProbe.external_model_calls=1;},
+    x=>{x.sourceProbe.signed_gateway_credential_e2e=true;},
+    x=>{x.sourceProbe.review_fixture_not_human_signed=false;},
+    x=>{x.sourceProbe.approved_plan_preflight_denials=3;},
+    x=>{x.sourceProbe.model_operations_preflight_checked=false;},
+    x=>{x.sourceProbe.controlled_calls=1;},
+    x=>{x.sourceProbe.source_sha=sha;},
+    x=>{x.sourceProbe.feature_sha=gitea;},
+    x=>{x.sourceProbe.feature_sha=head;},
     x=>{x.native.signed_dag_positive=false;},
     x=>{x.native.fixture_scripted_payloads_reach_adk_runner=false;},
     x=>{x.native.independent_model_software_output_verified=true;},

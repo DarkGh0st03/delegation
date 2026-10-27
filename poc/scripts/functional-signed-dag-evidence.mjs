@@ -18,6 +18,7 @@ const F1_PREFIX="[trusted-positive-ci] f1_real_gitea_baseline ";
 const F1_PORT_PREFIX="[trusted-positive-ci] f1_real_gitea_read_port ";
 const F1_DRY_PREFIX="[trusted-positive-ci] f1_gemini_probe_dry_run ";
 const F1_ADK_PREFIX="[trusted-positive-ci] f1_real_gitea_adk_rehearsal ";
+const SOURCE_PROBE_PREFIX="[trusted-positive-ci] source_derived_probe ";
 function deny(message){
   throw Error("Functional signed-DAG E2E NO-GO: "+message);
 }
@@ -41,13 +42,17 @@ export function extractSignedFunctionalE2EEvidence(text,{
      scenarioId!=="department-directory")
     deny("one fixed scenario, exact checked-out SHA and GitHub run required");
   const positives=[],natives=[],f1Events=[],f1PortEvents=[],f1DryEvents=[],
-    f1AdkEvents=[];
+    f1AdkEvents=[],sourceProbes=[];
   for(const line of text.split(/\r?\n/u)){
     let data;
     if(line.startsWith(NATIVE_PREFIX)){
       try{data=JSON.parse(line.slice(NATIVE_PREFIX.length));}
       catch{deny("malformed original signed-DAG summary");}
       natives.push(data);
+    }else if(line.startsWith(SOURCE_PROBE_PREFIX)){
+      try{data=JSON.parse(line.slice(SOURCE_PROBE_PREFIX.length));}
+      catch{deny("malformed source-derived real Gitea ADK summary");}
+      sourceProbes.push(data);
     }else if(line.startsWith(F1_ADK_PREFIX)){
       try{data=JSON.parse(line.slice(F1_ADK_PREFIX.length));}
       catch{deny("malformed F1 scripted ADK Planning summary");}
@@ -74,6 +79,8 @@ export function extractSignedFunctionalE2EEvidence(text,{
   const port=exactlyOne(f1PortEvents,"real Gitea F1 read-only Planning port");
   const dry=exactlyOne(f1DryEvents,"real Gitea Gemini operator dry-run");
   const adk=exactlyOne(f1AdkEvents,"real Gitea scripted ADK Planner");
+  const sourceProbe=exactlyOne(sourceProbes,
+    "source-derived real Gitea ADK observation");
   const native=exactlyOne(natives,"original signed-DAG observation");
   const acceptance=exactlyOne(positives,"real Docker/Gitea acceptance");
   if(!record(f1)||
@@ -134,12 +141,30 @@ export function extractSignedFunctionalE2EEvidence(text,{
      adk.gateway_vp_opa_attested_by_this_rehearsal!==false||
      adk.execution_permitted!==false||adk.external_r5_go!==false)
     deny("actual ADK proposal compilation on pinned real Gitea missing");
+  if(!record(sourceProbe)||sourceProbe.status!=="PASS"||
+     sourceProbe.source_derived_tool_output!==true||
+     sourceProbe.gitea_provider_committed!==true||
+     sourceProbe.main_unchanged!==true||
+     sourceProbe.external_model_calls!==0||
+     sourceProbe.signed_gateway_credential_e2e!==false||
+     sourceProbe.review_fixture_not_human_signed!==true||
+     sourceProbe.model_operations_preflight_checked!==true||
+     sourceProbe.approved_plan_preflight_denials!==4||
+     sourceProbe.controlled_calls!==2||
+     sourceProbe.files_modified!==1||
+     !SHA.test(sourceProbe.source_sha??"")||
+     !SHA.test(sourceProbe.feature_sha??"")||
+     sourceProbe.source_sha!==f1.base_revision||
+     sourceProbe.feature_sha===f1.base_revision)
+    deny("independent source-derived Gitea ADK preflight evidence missing");
   if(!record(native)||native.status!=="PASS"||
      !SHA.test(native.real_gitea_sha??"")||
      native.real_gitea_sha===acceptance.tested_commit_sha)
     deny("original signed plan baseline SHA unavailable");
   if(f1.base_revision!==native.real_gitea_sha)
     deny("F1 pinned main differs from signed DAG source");
+  if(sourceProbe.feature_sha===acceptance.tested_commit_sha)
+    deny("source-derived probe branch incorrectly shares signed DAG commit");
   requireTrue(native,[
     "native_rust","live_opa","signed_handoff","operational_root",
     "dispatcher_fail_closed","signed_dag_positive",
@@ -202,6 +227,10 @@ export function extractSignedFunctionalE2EEvidence(text,{
     three_scripted_adk_a2a_agents:true,
     block_b_host_selected_scripted_adk_models_with_fixture_payloads:true,
     block_b_independent_model_software_output_verified:false,
+    block_b_source_derived_real_gitea_probe_verified:true,
+    block_b_source_derived_approved_plan_preflight_denials:4,
+    block_b_source_derived_external_model_calls:0,
+    block_b_source_derived_native_dc_vp_e2e:false,
     created_pull_request_unmerged:true,
     isolated_docker_project_tests:"pass",
     isolated_researcher_acceptance:"pass",

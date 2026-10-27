@@ -24,6 +24,7 @@ on:
       - 'poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs'
       - 'poc/apps/gateway/native-test/approved-plan-agent-model-binding.mjs'
       - 'poc/apps/gateway/native-test/approved-plan-agent-model-binding.test.mjs'
+      - 'poc/apps/gateway/native-test/source-derived-gitea-adk-probe.mjs'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts'
   workflow_dispatch:
