@@ -37,3 +37,26 @@ test("private paid hold rechecks the pinned immutable install in the OIDC proces
   assert.match(registration,/trusted-gemini-private-session-hold\.yml/);
   assert.doesNotMatch(registration,/startAdmittedGithubReviewedGeminiHandoff|generateContentAsync|createGeminiAdkModel/);
 });
+
+test("paid Gemini hold executes only pinned reviewed commands and fixed runner-only receipt",async()=>{
+  const y=await readFile(workflowUrl,"utf8");
+  // No marketplace action, container image or new executable shell step may
+  // acquire the paid job identity. This is a deliberately narrow contract.
+  assert.doesNotMatch(y,/^\s*(?:-\s*)?(?:uses|container)\s*:/mu);
+  const runLines=y.split(/\r?\n/u)
+    .filter(line=>/^\s+run:\s*/u.test(line))
+    .map(line=>line.trim());
+  assert.deepEqual(runLines,[
+    "run: node --experimental-strip-types /opt/delegation/r5/poc/scripts/r5-gemini-private-dispatch-registration.mjs",
+    "run: node --experimental-strip-types /opt/delegation/r5/poc/apps/orchestrator/src/hold-private-github-session.mjs",
+    "run: |"
+  ]);
+  // Disallow a future unreviewed multiline command even when it is placed
+  // under the already permitted final reporting step.
+  const reportingMarker="        run: |\n";
+  assert.equal(y.split(reportingMarker).length,2);
+  assert.deepEqual(y.split(reportingMarker)[1].trimEnd().split(/\r?\n/u),[
+    '          echo "Original Engineer Host independently confirmed approved DAG and root closure."',
+    '          echo "This runner had no model key, no Engineer signing key and no authority to merge."'
+  ]);
+});
