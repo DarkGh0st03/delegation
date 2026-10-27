@@ -144,7 +144,8 @@ const ROUTE_TASK_INTENT=Object.freeze({
     "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend",
     "CONTROLLER HANDLER suspendUser CALL suspendUser",
     "CONTROLLER HANDLER reactivateUser CALL reactivateUser",
-    "CONTROLLER ERROR AccountStatusConflictError STATUS 409 CODE ACCOUNT_STATUS_CONFLICT"
+    "CONTROLLER ERROR AccountStatusConflictError STATUS 409 CODE ACCOUNT_STATUS_CONFLICT",
+    "STATUS TYPE AccountStatus CONST ACCOUNT_STATUS ADD SUSPENDED"
   ].join("\n"),
   "department-directory":[
     "Implement approved backend directory while preserving account lifecycle.",

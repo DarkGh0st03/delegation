@@ -64,7 +64,8 @@ export function selectSourceDerivedTargetsFromApprovedPlan({
     // filenames and locations must still come from approved grants.
     const wantsRoutes=/^ROUTE /mu.test(task.description);
     const wantsController=/^CONTROLLER HANDLER /mu.test(task.description);
-    if(!wantsRoutes&&!wantsController)continue;
+    const wantsStatus=/^STATUS TYPE /mu.test(task.description);
+    if(!wantsRoutes&&!wantsController&&!wantsStatus)continue;
     const operations=new Map();
     for(const g of byTask.get(task.id)){
       if(!permitted.has(g.operation))
@@ -76,7 +77,8 @@ export function selectSourceDerivedTargetsFromApprovedPlan({
     }
     for(const [needed,suffix] of [
       [wantsRoutes,".routes.ts"],
-      [wantsController,".controller.ts"]
+      [wantsController,".controller.ts"],
+      [wantsStatus,"status.ts"]
     ]){
       if(!needed)continue;
       const matched=[...operations].filter(([path,ops])=>

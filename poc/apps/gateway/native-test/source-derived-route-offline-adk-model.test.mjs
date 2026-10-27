@@ -175,3 +175,31 @@ test("Account Suspension: two source-derived Backend writes from approved contro
     context:reduced,calls:scripts
   }),/NO-GO/);
 });
+
+test("Account Suspension source-derived Backend model handles approved status union as third edit",async()=>{
+  const statusPath="packages/shared/src/account-status.ts";
+  const statusUri="gitea://gitea.local/thesis/iam/branches/"+
+    encodeURIComponent(branch)+"/files/"+statusPath;
+  const approved={...context,tasks:[{id:"backend",description:description+"\n"+
+    "STATUS TYPE AccountStatus CONST ACCOUNT_STATUS ADD SUSPENDED"}],
+    approved_permissions:[...context.approved_permissions,
+      {task_id:"backend",operation:"read_file",resource:statusUri},
+      {task_id:"backend",operation:"update_file",resource:statusUri}]
+  };
+  const statusSource='export type AccountStatus = "ACTIVE";\n\n'+
+    'export const ACCOUNT_STATUS = {\n  ACTIVE: "ACTIVE"\n} as const satisfies Record<string, AccountStatus>;\n';
+  const calls=[{name:"read_file",args:{branch,path:statusPath}},
+    {name:"update_file",args:{branch,path:statusPath}},...script];
+  const m=new SourceDerivedRouteOfflineAdkModel({context:approved,calls});
+  assert.equal((await next(m,{})).functionCall.name,"read_file");
+  const updated=(await next(m,input({ok:true,result:{
+    ...data,path:statusPath,content:statusSource
+  }}))).functionCall;
+  assert.equal(updated.name,"update_file");
+  assert.ok(updated.args.content.includes('"ACTIVE" | "SUSPENDED"'));
+  assert.ok(updated.args.content.includes('  SUSPENDED: "SUSPENDED"'));
+  assert.equal(m.derivedStatusProof.path,statusPath);
+  assert.equal((await next(m,{})).functionCall.name,"read_file");
+  await next(m,input({ok:true,result:data}));
+  assert.equal(m.derivedFileCount,2);
+});

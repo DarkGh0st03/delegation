@@ -9,9 +9,10 @@ const branch="feature/account-suspension-ci";
 const routes="services/identity/routes/user.routes.ts";
 const controller="services/identity/handlers/user.controller.ts";
 const other="services/identity/user.service.ts";
+const status="shared/models/account-status.ts";
 const uri=path=>canonicalFileUri(repo,branch,path);
 function input({routesPath=routes,controllerPath=controller,
-  includeController=true}={}){
+  statusPath=status,includeController=true}={}){
   const description=[
     "Account Suspension is the sole tested functional requirement",
     "ROUTE POST /:id/suspend suspendUser AFTER PATCH /:id/profile",
@@ -20,11 +21,12 @@ function input({routesPath=routes,controllerPath=controller,
       "CONTROLLER HANDLER suspendUser CALL suspendUser",
       "CONTROLLER HANDLER reactivateUser CALL reactivateUser",
       "CONTROLLER ERROR AccountStatusConflictError STATUS 409 CODE ACCOUNT_STATUS_CONFLICT"
-    ]:[])
+    ]:[]),
+    "STATUS TYPE AccountStatus CONST ACCOUNT_STATUS ADD SUSPENDED"
   ].join("\n");
   const task={id:"implement",agent_id:"backend",description};
   const tasks=[task,{id:"review",agent_id:"test",description:"Test Account Suspension"}];
-  const grants=[routesPath,controllerPath,other].flatMap((path,i)=>[
+  const grants=[routesPath,controllerPath,statusPath,other].flatMap((path,i)=>[
     {id:"r"+i,task_id:"implement",agent_id:"backend",
       operation:"read_file",resource:uri(path)},
     {id:"w"+i,task_id:"implement",agent_id:"backend",
@@ -35,15 +37,17 @@ function input({routesPath=routes,controllerPath=controller,
 }
 test("Account Suspension source targets come only from dynamic approved URIs",()=>{
   const first=input();
-  assert.deepEqual(select(first),[routes,controller]);
+  assert.deepEqual(select(first),[routes,controller,status]);
   const second=input({
     routesPath:"modules/iam/http/accounts.routes.ts",
-    controllerPath:"modules/iam/http/accounts.controller.ts"
+    controllerPath:"modules/iam/http/accounts.controller.ts",
+    statusPath:"modules/iam/shared/membership-status.ts"
   });
   assert.deepEqual(select(second),
     ["modules/iam/http/accounts.routes.ts",
-     "modules/iam/http/accounts.controller.ts"]);
-  assert.deepEqual(select(input({includeController:false})),[routes]);
+     "modules/iam/http/accounts.controller.ts",
+     "modules/iam/shared/membership-status.ts"]);
+  assert.deepEqual(select(input({includeController:false})),[routes,status]);
   assert.equal(select(first).includes(other),false);
 });
 test("signed Task cannot select an unapproved path, other branch or a rewritten grant",()=>{
