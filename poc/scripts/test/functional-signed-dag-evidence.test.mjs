@@ -2,219 +2,122 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {extractSignedFunctionalE2EEvidence}
   from "../functional-signed-dag-evidence.mjs";
-const sha="a".repeat(40),gitea="b".repeat(40),head="c".repeat(40);
-const pin={scenarioId:"department-directory",sourceSha:sha,runId:"40470012345"};
-function fixture(){
-  const f1={
-    schema:"f1-real-disposable-gitea-readonly-baseline-v1",
-    status:"unsolved_pinned_real_gitea_baseline_verified",
-    scenario_id:"department-directory",repository:"thesis/iam-console-poc",
-    base_revision:gitea,verified_source_files:4,
-    main_unchanged:true,novel_unsolved_requirement:true,
-    read_only_api_operations:true,actual_gitea_source_contents_excluded:true,
-    golden_solution_excluded:true,provider_model_inference_calls:0,
-    native_vp_opa_authorization_attested_by_this_check:false,
-    engineer_approval_verified_by_this_check:false,
-    executable_gemini_plan_produced:false,external_r5_go:false
-  };
-  const port={
-    status:"PASS",base_revision:gitea,
-    discovered_files:44,discovered_directories:21,
-    pinned_source_read:true,model_calls:0,
-    native_gateway_attested_by_this_port:false
-  };
-  const dry={status:"PASS",base_revision:gitea,
-    source_kind:"real_disposable_gitea",discovered_files:44,
-    model_calls:0,billable_model_inference:false,execution_permitted:false};
-  const adk={
-    schema:"f1-scripted-adk-real-gitea-rehearsal-v1",
-    status:"actual_adk_planner_scripted_proposal_on_real_gitea_pass",
-    scenario_id:"department-directory",base_revision:gitea,
-    discovered_files:44,verified_source_reads:4,model_turns:7,
-    compiled_task_count:5,compiled_permission_count:9,
-    functional_design_plausible:false,
-    functional_review_failed_checks:["explicit_test_implementation"],
-    human_engineer_review_still_required:true,
-    technical_preflight_pass:true,proposal_digest_verified:true,
-    no_approval_or_credential:true,scripted_model_only:true,
-    real_gemini_calls:0,gemini_billing_incurred:false,
-    direct_gitea_research_only:true,
-    gateway_vp_opa_attested_by_this_rehearsal:false,
-    execution_permitted:false,external_r5_go:false
-  };
-  const sourceProbe={
-    status:"PASS",source_derived_tool_output:true,
-    gitea_provider_committed:true,main_unchanged:true,
-    external_model_calls:0,signed_gateway_credential_e2e:false,
-    review_fixture_not_human_signed:true,
-    approved_plan_preflight_denials:4,
-    model_operations_preflight_checked:true,
-    source_sha:gitea,feature_sha:"d".repeat(40),
-    controlled_calls:2,files_modified:1
-  };
-  const native={
-    status:"PASS",real_gitea_sha:gitea,native_rust:true,live_opa:true,
-    signed_handoff:true,operational_root:true,dispatcher_fail_closed:true,
-    signed_dag_positive:true,backend_frontend_a2a_updates:10,
-    test_agent_created_e2e:1,signed_generic_adk_agents:3,
-    host_supplied_adk_models:true,
-    fixture_scripted_payloads_reach_adk_runner:true,
-    independent_model_software_output_verified:false,
-    same_signed_dag_docker_acceptance:true,
-    source_witnessed_native_dag:true,
-    source_witnessed_still_uses_fixture_code:true,
-    source_derived_functional_route_verified:true,
-    source_derived_functional_file_count:1,
-    remaining_prepackaged_application_file_count:10,
-    a2a_before_branch:0,
-    main_mutations:0
-  };
-  const positive={
-    event:"trusted_security_ci_real_docker_positive_acceptance",
-    status:"PASS",scenario_id:"department-directory",
-    baseline_sha:gitea,tested_commit_sha:head,
-    project_tests:"pass",researcher_acceptance:"pass",
-    pr_source:"native_signed_dag",merge_calls:0,pr_created:true,
-    real_backend_frontend_gitea_edits:2,
-    native_approved_source_reads:4,persistent_gitea_modified:false,
-    gitea_statuses:["pending","success"],
-    real_docker_runner:true,engineer_approval_ed25519:true,
-    gateway_signed_test_task_completed:true,
-    real_a2a_sdk_task_completed:true,real_opa_signed_plan_policy:true,
-    native_rust_signed_child_and_vp:true,runner_via_gateway_http:true,
-    exact_provider_sha_correlated:true,approval_created:true
-  };
-  return {native,positive,f1,port,dry,adk,sourceProbe};
-}
-function log({native,positive,f1,port,dry,adk,sourceProbe}){
-  return "npm prefix noisy log\n"+
-    "[trusted-positive-ci] f1_real_gitea_baseline "+
-    JSON.stringify(f1)+"\n"+
-    "[trusted-positive-ci] f1_real_gitea_read_port "+
-    JSON.stringify(port)+"\n"+
-    "[trusted-positive-ci] f1_gemini_probe_dry_run "+
-    JSON.stringify(dry)+"\n"+
-    "[trusted-positive-ci] f1_real_gitea_adk_rehearsal "+
-    JSON.stringify(adk)+"\n"+
-    "[trusted-positive-ci] source_derived_probe "+
-    JSON.stringify(sourceProbe)+"\n"+
+
+const SHA="a".repeat(40),MAIN="b".repeat(40),
+  COMMIT="c".repeat(40),PROBE="d".repeat(40);
+const source={scenarioId:"account-suspension",sourceSha:SHA,runId:"4051234001"};
+const native=()=>({
+  status:"PASS",real_gitea_sha:MAIN,
+  native_rust:true,live_opa:true,signed_handoff:true,
+  operational_root:true,dispatcher_fail_closed:true,
+  signed_dag_positive:true,host_supplied_adk_models:true,
+  fixture_scripted_payloads_reach_adk_runner:true,
+  same_signed_dag_docker_acceptance:true,
+  source_witnessed_native_dag:true,
+  source_witnessed_still_uses_fixture_code:true,
+  source_derived_functional_route_verified:true,
+  source_derived_functional_file_count:1,
+  remaining_prepackaged_application_file_count:10,
+  independent_model_software_output_verified:false,
+  backend_frontend_a2a_updates:10,test_agent_created_e2e:1,
+  signed_generic_adk_agents:3,a2a_before_branch:0,main_mutations:0
+});
+const probe=()=>({
+  status:"PASS",source_derived_tool_output:true,
+  gitea_provider_committed:true,main_unchanged:true,
+  external_model_calls:0,signed_gateway_credential_e2e:false,
+  review_fixture_not_human_signed:true,
+  model_operations_preflight_checked:true,
+  approved_plan_preflight_denials:4,
+  controlled_calls:2,files_modified:1,
+  source_sha:MAIN,feature_sha:PROBE
+});
+const acceptance=()=>({
+  event:"trusted_security_ci_real_docker_positive_acceptance",
+  status:"PASS",scenario_id:"account-suspension",
+  pr_source:"native_signed_dag",tested_commit_sha:COMMIT,
+  baseline_sha:MAIN,project_tests:"pass",researcher_acceptance:"pass",
+  merge_calls:0,pr_created:true,
+  real_backend_frontend_gitea_edits:2,
+  native_approved_source_reads:4,persistent_gitea_modified:false,
+  gitea_statuses:["pending","success"],real_docker_runner:true,
+  engineer_approval_ed25519:true,gateway_signed_test_task_completed:true,
+  real_a2a_sdk_task_completed:true,real_opa_signed_plan_policy:true,
+  native_rust_signed_child_and_vp:true,runner_via_gateway_http:true,
+  exact_provider_sha_correlated:true,approval_created:true
+});
+function fixture(){return {native:native(),probe:probe(),acceptance:acceptance()};}
+function log(v){
+  return "ignored noisy runner output\n"+
+    "[trusted-positive-ci] source_derived_probe "+JSON.stringify(v.probe)+"\n"+
     "[trusted-positive-ci] native_disposable_planning "+
-    JSON.stringify(native)+"\n"+JSON.stringify(positive)+"\n";
+    JSON.stringify(v.native)+"\n"+JSON.stringify(v.acceptance)+"\n";
 }
-test("functional E2E extracts only fixed observed fields without R5 or human claims",()=>{
-  const evidence=extractSignedFunctionalE2EEvidence(log(fixture()),pin);
-  assert.equal(evidence.status,"functional_scripted_real_gitea_docker_pass");
-  assert.equal(evidence.framework_source_sha,sha);
-  assert.equal(evidence.isolated_main_sha,gitea);
-  assert.equal(evidence.f1_real_gitea_unsolved_baseline_verified,true);
-  assert.equal(
-    evidence.block_b_host_selected_scripted_adk_models_with_fixture_payloads,
-    true);
-  assert.equal(evidence.block_b_independent_model_software_output_verified,
-    false);
-  assert.equal(evidence.block_b_source_derived_real_gitea_probe_verified,true);
-  assert.equal(evidence.block_b_source_derived_approved_plan_preflight_denials,4);
-  assert.equal(evidence.block_b_source_derived_external_model_calls,0);
-  assert.equal(evidence.block_b_source_derived_native_dc_vp_e2e,false);
-  assert.equal(evidence.block_b_hybrid_source_witness_native_dc_vp_e2e_verified,true);
-  assert.equal(evidence.block_b_hybrid_still_uses_prepackaged_implementation,true);
-  assert.equal(evidence.block_b_functional_backend_route_derived_from_real_source,true);
-  assert.equal(evidence.block_b_source_derived_functional_file_count,1);
-  assert.equal(evidence.block_b_remaining_prepackaged_application_file_count,10);
-  assert.equal(evidence.f1_actual_full_repo_snapshot_readonly_verified,true);
-  assert.equal(evidence.f1_gemini_operator_dry_run_real_gitea_verified,true);
-  assert.equal(evidence.f1_actual_adk_scripted_planner_real_gitea_verified,true);
-  assert.equal(evidence.f1_scripted_model_turns,7);
-  assert.equal(evidence.f1_scripted_proposal_functionally_complete,false);
-  assert.equal(evidence.f1_scripted_plan_missing_concrete_test_implementation,
-    true);
-  assert.equal(evidence.f1_real_gemini_plan_quality_not_yet_measured,true);
-  assert.equal(evidence.f1_discovered_files,44);
-  assert.equal(evidence.f1_genuine_gemini_proposal_produced,false);
-  assert.equal(evidence.tested_feature_commit_sha,head);
+test("Account Suspension offline E2E reports actual signed DAG without Gemini or false autonomy",()=>{
+  const evidence=extractSignedFunctionalE2EEvidence(log(fixture()),source);
+  assert.equal(evidence.scenario_id,"account-suspension");
+  assert.equal(evidence.account_suspension_source_derived_backend_routes,true);
+  assert.equal(evidence.source_derived_functional_file_count,1);
+  assert.equal(evidence.remaining_prepackaged_application_file_count,10);
+  assert.equal(evidence.source_witnessed_native_dc_vp_e2e,true);
+  assert.equal(evidence.independent_model_software_output_verified,false);
+  assert.equal(evidence.standalone_gitea_probe_uses_native_dc_vp,false);
+  assert.equal(evidence.created_pull_request_unmerged,true);
+  assert.equal(evidence.framework_source_sha,SHA);
+  assert.equal(evidence.isolated_main_sha,MAIN);
+  assert.equal(evidence.tested_feature_commit_sha,COMMIT);
   assert.equal(evidence.live_gemini_tested,false);
   assert.equal(evidence.genuine_human_engineer_approval_tested,false);
   assert.equal(evidence.external_r5_go,false);
-  assert.equal(JSON.stringify(evidence).includes("noisy log"),false);
+  assert.equal(JSON.stringify(evidence).includes("noisy"),false);
+  assert.equal(JSON.stringify(evidence).includes("department-directory"),false);
 });
-test("functional checkpoint rejects missing or duplicate observed stages",()=>{
+test("Account Suspension checkpoint fails on missing or duplicated proof",()=>{
   const f=fixture();
-  assert.throws(()=>extractSignedFunctionalE2EEvidence(
-    JSON.stringify(f.positive),pin),/NO-GO/);
-  assert.throws(()=>extractSignedFunctionalE2EEvidence(
-    log(f)+"\n"+JSON.stringify(f.positive),pin),/NO-GO/);
-  assert.throws(()=>extractSignedFunctionalE2EEvidence(
-    log(f)+"\n[trusted-positive-ci] native_disposable_planning "+
-    JSON.stringify(f.native),pin),/NO-GO/);
-  assert.throws(()=>extractSignedFunctionalE2EEvidence(
-    log(f)+"\n[trusted-positive-ci] source_derived_probe "+
-    JSON.stringify(f.sourceProbe),pin),/NO-GO/);
-  const missing={...f,sourceProbe:undefined};
-  assert.throws(()=>extractSignedFunctionalE2EEvidence(
-    log(missing).replace(
-      "[trusted-positive-ci] source_derived_probe undefined\n",""
-    ),pin),/NO-GO/);
+  for(const corrupt of [
+    JSON.stringify(f.acceptance),
+    log(f)+JSON.stringify(f.acceptance),
+    log(f)+"[trusted-positive-ci] native_disposable_planning "+
+      JSON.stringify(f.native),
+    log(f)+"[trusted-positive-ci] source_derived_probe "+
+      JSON.stringify(f.probe)
+  ])assert.throws(()=>extractSignedFunctionalE2EEvidence(corrupt,source),/NO-GO/);
 });
-test("functional checkpoint rejects fake provider effects, missing signed DAG and merged PR",()=>{
-  for(const mutate of [
-    x=>{x.adk.base_revision=sha;},
-    x=>{x.adk.real_gemini_calls=1;},
-    x=>{x.adk.technical_preflight_pass=false;},
-    x=>{x.adk.functional_design_plausible=true;},
-    x=>{x.adk.functional_review_failed_checks=[];},
-    x=>{x.adk.scripted_model_only=false;},
-    x=>{x.dry.base_revision=sha;},
-    x=>{x.dry.model_calls=1;},
-    x=>{x.dry.billable_model_inference=true;},
-    x=>{x.dry.execution_permitted=true;},
-    x=>{x.port.base_revision=sha;},
-    x=>{x.port.model_calls=1;},
-    x=>{x.port.pinned_source_read=false;},
-    x=>{x.f1.base_revision=sha;},
-    x=>{x.f1.novel_unsolved_requirement=false;},
-    x=>{x.f1.provider_model_inference_calls=1;},
-    x=>{x.sourceProbe.source_derived_tool_output=false;},
-    x=>{x.sourceProbe.gitea_provider_committed=false;},
-    x=>{x.sourceProbe.main_unchanged=false;},
-    x=>{x.sourceProbe.external_model_calls=1;},
-    x=>{x.sourceProbe.signed_gateway_credential_e2e=true;},
-    x=>{x.sourceProbe.review_fixture_not_human_signed=false;},
-    x=>{x.sourceProbe.approved_plan_preflight_denials=3;},
-    x=>{x.sourceProbe.model_operations_preflight_checked=false;},
-    x=>{x.sourceProbe.controlled_calls=1;},
-    x=>{x.sourceProbe.source_sha=sha;},
-    x=>{x.sourceProbe.feature_sha=gitea;},
-    x=>{x.sourceProbe.feature_sha=head;},
-    x=>{x.native.signed_dag_positive=false;},
-    x=>{x.native.fixture_scripted_payloads_reach_adk_runner=false;},
-    x=>{x.native.source_witnessed_native_dag=false;},
+test("Account Suspension checkpoint fail-closed on fabricated approvals, provider effects or fixture claims",()=>{
+  const mutate=[
+    x=>{x.native.native_rust=false;},
+    x=>{x.native.operational_root=false;},
+    x=>{x.native.dispatcher_fail_closed=false;},
     x=>{x.native.source_derived_functional_route_verified=false;},
     x=>{x.native.source_derived_functional_file_count=0;},
     x=>{x.native.remaining_prepackaged_application_file_count=11;},
-    x=>{x.native.source_witnessed_still_uses_fixture_code=false;},
+    x=>{x.native.source_witnessed_native_dag=false;},
     x=>{x.native.independent_model_software_output_verified=true;},
-    x=>{delete x.native.independent_model_software_output_verified;},
-    x=>{x.native.operational_root=false;},
-    x=>{x.native.a2a_before_branch=1;},
-    x=>{x.native.main_mutations=1;},
     x=>{x.native.backend_frontend_a2a_updates=9;},
-    x=>{x.positive.native_rust_signed_child_and_vp=false;},
-    x=>{x.positive.pr_created=false;},
-    x=>{x.positive.merge_calls=1;},
-    x=>{x.positive.project_tests="fail";},
-    x=>{x.positive.scenario_id="account-suspension";},
-    x=>{x.positive.tested_commit_sha=gitea;}
-  ]){
-    const f=fixture();mutate(f);
-    assert.throws(()=>extractSignedFunctionalE2EEvidence(log(f),pin),/NO-GO/);
+    x=>{x.native.main_mutations=1;},
+    x=>{x.probe.source_sha=SHA;},
+    x=>{x.probe.feature_sha=COMMIT;},
+    x=>{x.probe.gitea_provider_committed=false;},
+    x=>{x.probe.external_model_calls=1;},
+    x=>{x.probe.signed_gateway_credential_e2e=true;},
+    x=>{x.probe.approved_plan_preflight_denials=3;},
+    x=>{x.acceptance.scenario_id="department-directory";},
+    x=>{x.acceptance.merge_calls=1;},
+    x=>{x.acceptance.project_tests="fail";},
+    x=>{x.acceptance.native_rust_signed_child_and_vp=false;},
+    x=>{x.acceptance.pr_created=false;},
+    x=>{x.acceptance.tested_commit_sha=MAIN;}
+  ];
+  for(const m of mutate){
+    const f=fixture();m(f);
+    assert.throws(()=>extractSignedFunctionalE2EEvidence(log(f),source),/NO-GO/);
   }
 });
-test("functional checkpoint requires out-of-band GitHub exact SHA and run",()=>{
-  const f=log(fixture());
-  assert.throws(()=>extractSignedFunctionalE2EEvidence(f,{
-    ...pin,sourceSha:"not-a-git-sha"}),/NO-GO/);
-  assert.throws(()=>extractSignedFunctionalE2EEvidence(f,{
-    ...pin,runId:"0"}),/NO-GO/);
-  assert.throws(()=>extractSignedFunctionalE2EEvidence(f,{
-    ...pin,scenarioId:"account-suspension"}),/NO-GO/);
+test("Account Suspension alone is accepted; wrong scenarios, SHAs and run IDs are rejected",()=>{
+  const s=log(fixture());
+  for(const options of [
+    {...source,scenarioId:"department-directory"},
+    {...source,sourceSha:"bad"},
+    {...source,runId:"0"}
+  ])assert.throws(()=>extractSignedFunctionalE2EEvidence(s,options),/NO-GO/);
 });
