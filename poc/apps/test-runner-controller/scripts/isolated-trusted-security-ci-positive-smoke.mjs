@@ -40,6 +40,8 @@ import {runF1RealGiteaGeminiResearch}
   from "../../../scripts/f1-real-gitea-gemini-probe.mjs";
 import {rehearseF1RealGiteaAdkPlanning}
   from "../../../scripts/f1-real-gitea-adk-planner-rehearsal.mjs";
+import {runSourceDerivedGiteaAdkProbe}
+  from "../../gateway/native-test/source-derived-gitea-adk-probe.mjs";
 
 const baseline="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const baselineSource="https://github.com/DarkGh0st03/iam-console-poc.git";
@@ -412,6 +414,20 @@ async function main(){
     const fixture=await stage("commit_reference_implementation",
       ()=>pushReferenceApp(base,workingDir,
         basic(adminUser,adminPassword)),300000);
+    if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
+      // Additional ADK+Gitea probe, strictly NOT a Rust/Gateway authority test.
+      const receipt=await stage("source_derived_adk_real_gitea_no_golden",
+        ()=>runSourceDerivedGiteaAdkProbe({
+          baseUrl:base,readToken:creds.readToken,
+          writeToken:creds.statusToken,pinnedMainSha:fixture.mainSha
+        }),90000);
+      assert.equal(receipt.gitea_provider_committed,true);
+      assert.equal(receipt.source_derived_tool_output,true);
+      assert.equal(receipt.main_unchanged,true);
+      assert.equal(receipt.signed_gateway_credential_e2e,false);
+      process.stderr.write("[trusted-positive-ci] source_derived_probe "+
+        JSON.stringify(receipt)+"\n");
+    }
     if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"&&
        scenario.id==="department-directory"){
       const f1=await stage("f1_gitea_pinned_unsolved_main",
