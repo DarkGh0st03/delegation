@@ -6,11 +6,11 @@
 # no human auto-approval, no credentials issued, no code mutation or PR merge.
 name: F1 Gemini Real Gitea Single Authorized Planner Attempt
 
+# Historical record only. The previously granted consent was consumed.
+# No workflow edit or push may re-use that authorization.
+# A new separately authorized manual full-E2E workflow must replace this gate.
 on:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/workflows/f1-paid-real-gitea-once.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,17 +21,15 @@ concurrency:
 
 jobs:
   f1-real-planning:
-    if: >-
-      github.event_name == 'push' &&
-      github.run_attempt == 1 &&
-      github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021'
+    # DISABLED: F1's one-time paid run already happened. Always skip.
+    # Intentionally remains non-runnable even via workflow_dispatch.
+    if: ${{ false }}
     name: Original Gitea source - Gemini ADK - unsigned plan
     runs-on: ubuntu-latest
     timeout-minutes: 28
     env:
       F1_SESSION: /tmp/delegation-f1-paid-${{ github.run_id }}
       DELEGATION_F1_OUTPUT_DIR: /tmp/delegation-f1-paid-${{ github.run_id }}-report
-      DELEGATION_F1_BILLING_CONSENT: I AUTHORIZE GEMINI API CHARGES
       DELEGATION_F1_GEMINI_MODEL: gemini-3.8-flash
     steps:
       - name: Checkout exact feature SHA without GitHub write credentials
