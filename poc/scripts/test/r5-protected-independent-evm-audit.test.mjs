@@ -5,6 +5,7 @@ import {generateKeyPairSync,createHash,sign} from "node:crypto";
 import {gzipSync} from "node:zlib";
 import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
+import {URL as NodeURL} from "node:url";
 import {tmpdir} from "node:os";
 import {keccak256Bytes} from "../r5-independent-status-evm-verifier.mjs";
 import {observeProtectedR5PublicEvmStatus}
@@ -120,7 +121,7 @@ test("R5 edited public artifact or mismatched signing key fails before EVM netwo
   }finally{await f.close();}
 });
 test("R5 GitHub Actions cannot use protected CLI and secret paths never reach logs",()=>{
-  const url=new URL("../r5-protected-independent-evm-audit.mjs",import.meta.url);
+  const url=new NodeURL("../r5-protected-independent-evm-audit.mjs",import.meta.url);
   const child=spawnSync(process.execPath,[
     "--experimental-strip-types",url.pathname
   ],{encoding:"utf8",timeout:12000,env:{

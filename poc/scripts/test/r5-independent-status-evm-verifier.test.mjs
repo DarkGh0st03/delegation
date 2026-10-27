@@ -6,7 +6,7 @@ import {keccak256Bytes,observeR5IndependentEvmStatus}
   from "../r5-independent-status-evm-verifier.mjs";
 
 const hex=bytes=>"0x"+keccak256Bytes(bytes).toString("hex");
-const SHA="ab".repeat(32);
+const SHA="0x"+"ab".repeat(32);
 const ADDR="0x1234567890abcdef1234567890abcdef12345678";
 const REG="0x1111111111111111111111111111111111111111";
 const DID="did:ethr:0x7a69:"+ADDR;
