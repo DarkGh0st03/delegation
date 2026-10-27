@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * R5 zero-billing, READ-ONLY pre-deployment gate for the private
- * Gemini-private GitHub workflow. A passing registration check is NOT
+ * private Gemini GitHub workflow. A passing registration check is NOT
  * a deployed Engineer Host, a live runner, a signed DAG, or R5 GO.
  *
  * Run on the independently provisioned private runner with
- * DELEGATION_GEMINI_PRIVATE_RUNNER_OIDC_CONFIG set to its protected 0600 config.
+ * DELEGATION_RUNNER_OIDC_CONFIG set to its protected 0600 config.
  * This command never requests an OIDC token or calls any model.
  */
 import {resolve} from "node:path";
@@ -86,7 +86,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
     const {loadProtectedRunnerOidcConfig}=await import(
       "../apps/orchestrator/src/trusted-private-runner-oidc.mjs");
     const pins=await loadProtectedRunnerOidcConfig(
-      process.env.DELEGATION_GEMINI_PRIVATE_RUNNER_OIDC_CONFIG);
+      process.env.DELEGATION_RUNNER_OIDC_CONFIG);
     // Remote GitHub SHA cannot establish which bytes the runner executes.
     // Verify protected, root-owned local source before any GitHub REST call,
     // OIDC token request or authenticated admission.
