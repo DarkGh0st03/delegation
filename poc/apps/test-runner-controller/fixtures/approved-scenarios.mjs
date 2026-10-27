@@ -144,8 +144,10 @@ const ROUTE_TASK_INTENT=Object.freeze({
     "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend"
   ].join("\n"),
   "department-directory":[
-    "Implement approved backend department directory.",
-    "ROUTE GET /by-department/:department listUsersByDepartment BEFORE GET /:id"
+    "Implement approved backend directory while preserving account lifecycle.",
+    "ROUTE GET /by-department/:department listUsersByDepartment BEFORE GET /:id",
+    "ROUTE POST /:id/suspend suspendUser AFTER PATCH /:id/profile",
+    "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend"
   ].join("\n")
 });
 const IAM_EDIT_INTENT=Object.freeze({

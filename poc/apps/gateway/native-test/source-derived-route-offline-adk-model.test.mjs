@@ -56,8 +56,12 @@ test("Account Suspension: source and approved directives generate real route cod
   }
 });
 test("Department Directory: static route generated before parameterized route",async()=>{
-  const modified={...context,tasks:[{id:"backend",description:
-    "Approved directory\nROUTE GET /by-department/:department listUsersByDepartment BEFORE GET /:id"}]};
+  const modified={...context,tasks:[{id:"backend",description:[
+    "Approved directory preserving account lifecycle",
+    "ROUTE GET /by-department/:department listUsersByDepartment BEFORE GET /:id",
+    "ROUTE POST /:id/suspend suspendUser AFTER PATCH /:id/profile",
+    "ROUTE POST /:id/reactivate reactivateUser AFTER POST /:id/suspend"
+  ].join("\n")}]};
   const model=new SourceDerivedRouteOfflineAdkModel({
     context:modified,calls:script
   });
@@ -66,7 +70,10 @@ test("Department Directory: static route generated before parameterized route",a
   assert.ok(text.indexOf('router.get("/by-department/:department"')<
     text.indexOf('router.get("/:id"'));
   assert.ok(text.includes("controller.listUsersByDepartment"));
-  assert.ok(!text.includes("router.post("));
+  assert.ok(text.includes('router.post("/:id/suspend", controller.suspendUser);'));
+  assert.ok(text.includes('router.post("/:id/reactivate", controller.reactivateUser);'));
+  assert.ok(text.indexOf('router.post("/:id/suspend"')<
+    text.indexOf('router.post("/:id/reactivate"'));
 });
 test("unknown permission, malformed source and spoofed provider read fail closed",async()=>{
   for(const supplied of [
