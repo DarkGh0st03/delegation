@@ -28,10 +28,30 @@ import {assessF1DepartmentDirectoryPlan}
 const SHA=/^[a-f0-9]{40}$/u;
 const LOCAL=/^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/u;
 function reject(reason){throw Error("F1 real Gemini Planning refused: "+reason);}
-export function assertF1RealGeminiOperatorConsent({
-  flag,consent,apiKey,modelName,outputDir,githubActions
+// This exception applies ONLY to the first attempt of a narrowly pinned,
+// single-use workflow. Every other GitHub Actions run stays denied.
+export const F1_ONE_TIME_CI_WORKFLOW=
+  "F1 Gemini Real Gitea Single Authorized Planner Attempt";
+export function isApprovedF1OneTimeCI({
+  githubActions=process.env.GITHUB_ACTIONS,ciPermit=false,
+  runnerEnv=process.env
 }={}){
-  if(githubActions==="true")reject("no billable inference in GitHub Actions");
+  if(githubActions!=="true")return true;
+  return ciPermit===true&&runnerEnv.GITHUB_ACTIONS==="true"&&
+    runnerEnv.GITHUB_WORKFLOW===F1_ONE_TIME_CI_WORKFLOW&&
+    runnerEnv.GITHUB_REPOSITORY==="DarkGh0st03/delegation"&&
+    runnerEnv.GITHUB_REF===
+      "refs/heads/refactor/post-prof-plan-contracts-20261021"&&
+    runnerEnv.GITHUB_EVENT_NAME==="push"&&
+    runnerEnv.GITHUB_RUN_ATTEMPT==="1"&&
+    /^[1-9][0-9]{0,19}$/u.test(runnerEnv.GITHUB_RUN_ID??"");
+}
+
+export function assertF1RealGeminiOperatorConsent({
+  flag,consent,apiKey,modelName,outputDir,githubActions,ciPermit=false
+}={}){
+  if(!isApprovedF1OneTimeCI({githubActions,ciPermit}))
+    reject("only the approved single-use F1 CI can infer");
   if(flag!=="--execute"||consent!==CONSENT||
      typeof apiKey!=="string"||apiKey.trim().length<10||
      typeof modelName!=="string"||
@@ -65,16 +85,17 @@ function hostPins({baseUrl,readToken,expectedMainSha}={}){
 export async function runF1RealGiteaGeminiResearch({
   flag,baseUrl,readToken,expectedMainSha,apiKey,
   modelName,outputDir,consent,githubActions=process.env.GITHUB_ACTIONS,
-  fetchFn=fetch
+  ciPermit=false,fetchFn=fetch
 }={}){
   if(flag!=="--dry-run"&&flag!=="--execute")
     reject("explicit --dry-run or --execute required");
-  if(githubActions==="true"&&flag==="--execute")
-    reject("no paid Gemini inside GitHub Actions");
+  if(flag==="--execute"&&
+     !isApprovedF1OneTimeCI({githubActions,ciPermit}))
+    reject("no unapproved Gemini inference inside GitHub Actions");
   const host=hostPins({baseUrl,readToken,expectedMainSha});
   if(flag==="--execute")
     assertF1RealGeminiOperatorConsent({
-      flag,consent,apiKey,modelName,outputDir,githubActions
+      flag,consent,apiKey,modelName,outputDir,githubActions,ciPermit
     });
   // A REAL repository read and discovery, even on --dry-run, never writes.
   const binding=await buildF1RealGiteaResearchPlanningPort({
