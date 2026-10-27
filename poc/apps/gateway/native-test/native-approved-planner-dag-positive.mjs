@@ -89,9 +89,12 @@ export async function runNativePositiveApprovedDag({
     ...ROLES.map(role=>agentTokens[role])])
     assert.ok(typeof token==="string"&&token.length>10);
   assert.equal(coordinator.phase,"execution");
-  assert.ok(["account-suspension","department-directory"].includes(scenarioId));
-  if(!referenceFiles||typeof referenceFiles!=="object"||
-     Array.isArray(referenceFiles))throw Error("Invalid scenario fixture");
+  assert.match(scenarioId,/^[a-z][a-z0-9-]{0,63}$/u);
+  if(!approvedAgentModelFactory&&
+     (!["account-suspension","department-directory"].includes(scenarioId)||
+     !referenceFiles||typeof referenceFiles!=="object"||
+     Array.isArray(referenceFiles)))
+    throw Error("Invalid offline implementation fixture");
   // The signed, authenticated Engineer receipt determines every file/operation.
   // Reference payloads remain scripted test inputs, NEVER a grant of authority.
   const signed=await reviewGate.loadAuthenticatedApproval(sessionId);
@@ -163,7 +166,7 @@ export async function runNativePositiveApprovedDag({
   const expectedExisting=[...files.backend,...files.frontend];
   assert.equal(new Set([...expectedExisting,createdTestFile]).size,
     expectedExisting.length+1);
-  assert.deepEqual([...expectedExisting,createdTestFile].sort(),
+  if(!hostModels)assert.deepEqual([...expectedExisting,createdTestFile].sort(),
     Object.keys(referenceFiles).sort());
   const reader=new GiteaClient({
     baseUrl:giteaBase,token:readerToken,owner:repo.owner,
@@ -178,8 +181,8 @@ export async function runNativePositiveApprovedDag({
     const result=await reader.readTextFile("main",path,baseSha);
     assert.equal(result.revision,baseSha);
     originals[path]=result.content;
-    assert.notEqual(result.content,referenceFiles[path],
-      "Native reference fixture must actually change the approved baseline");
+    if(!hostModels)assert.notEqual(result.content,referenceFiles[path],
+      "Native offline fixture must actually change approved baseline");
   }
   await assert.rejects(()=>reader.getBranchMetadata(branch));
   const repositoryUri="gitea://"+repo.authority+"/"+repo.owner+"/"+repo.repository;
@@ -625,6 +628,7 @@ export async function runNativePositiveApprovedDag({
         model=>model instanceof OfflineApprovedAdkModel),
       model_source:hostModels?"host_supplied_models_not_fixture":
         "offline_fixture_scripts",
+      fixture_source_bytes_supplied_to_native_runner:!hostModels,
       approved_shared_mcp_enabled:sharedMcpEnabled,
       shared_mcp_http_requests:normalMcpCalls,
       private_crypto_mcp_http_requests:privateCryptoMcpCalls,

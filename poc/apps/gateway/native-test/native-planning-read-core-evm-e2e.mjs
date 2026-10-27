@@ -511,7 +511,8 @@ try{
         ...(approvedAgentModelFactory?{approvedAgentModelFactory}:{}),
         sessionId:session,planDigest:packet.plan_digest,baseSha,
         operationalRootId,branch:workBranch,
-        referenceFiles,scenarioId:scenario.id,repo,
+        referenceFiles:approvedAgentModelFactory?undefined:referenceFiles,
+        scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
         writerToken,opaUrl,engineerDid,orchestratorToken:token,
         agentTokens:{
