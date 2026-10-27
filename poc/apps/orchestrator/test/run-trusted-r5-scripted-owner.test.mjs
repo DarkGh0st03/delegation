@@ -183,6 +183,7 @@ function reviewedExecutionFixture(){
     sendProtectedTask:noop,
     childStatusProvisioning:{
       reservationDirectory:"/opt/delegation/private-status",
+      issuanceJournalDirectory:"/opt/delegation/private-issued-child-journal",
       statusListCredential:"https://status.example/children",
       indexByTask:{branch:11,backend:12,frontend:13,test:14,pr:15},
       excludedIndices:[1,2,3]
@@ -206,6 +207,8 @@ test("R5 owner binds approved GitHub run exclusively to original protected Gatew
   assert.equal(Object.isFrozen(bound.operationalRoot),true);
   assert.equal(Object.isFrozen(bound.operationalRoot.credential_status),true);
   assert.equal(Object.isFrozen(bound.childStatusProvisioning.indexByTask),true);
+  assert.equal(bound.childStatusProvisioning.issuanceJournalDirectory,
+    "/opt/delegation/private-issued-child-journal");
   f.payload.operationalRoot.credential_status.statusListIndex="999";
   f.payload.childStatusProvisioning.indexByTask.backend=100;
   assert.equal(bound.operationalRoot.credential_status.statusListIndex,"7");
@@ -251,7 +254,8 @@ test("R5 operator callback cannot inject forged role fields or unauthorized auth
     p=>p.handlers.admin=()=>true,
     p=>p.childStatusProvisioning.indexByTask.constructor=99,
     p=>p.childStatusProvisioning.indexByTask.backend={value:5},
-    p=>p.childStatusProvisioning.excludedIndices.push({index:12})
+    p=>p.childStatusProvisioning.excludedIndices.push({index:12}),
+    p=>{delete p.childStatusProvisioning.issuanceJournalDirectory;}
   ]){
     const p={...f.payload,
       ports:{...f.payload.ports},

@@ -15,7 +15,9 @@ const ROOT_FIELDS=["credential_id","valid_from",
 const ARG_FIELDS=["runId","operationalRoot","ports","handlers",
   "sendProtectedTask","childStatusProvisioning"];
 const STATUS_FIELDS=["reservationDirectory","statusListCredential",
-  "indexByTask","excludedIndices","validitySeconds"];
+  "indexByTask","excludedIndices","issuanceJournalDirectory","validitySeconds"];
+const REQUIRED_STATUS=["reservationDirectory","statusListCredential",
+  "indexByTask","excludedIndices","issuanceJournalDirectory"];
 function deny(){throw Error("R5 protected scripted Execution binding denied");}
 function plain(value){
   return value!==null&&typeof value==="object"&&!Array.isArray(value)&&
@@ -55,12 +57,14 @@ export function bindProtectedR5ScriptedExecution(planning,input){
      !keys(input.handlers,ROLES,ROLES)||
      typeof input.sendProtectedTask!=="function"||
      !keys(input.childStatusProvisioning,STATUS_FIELDS,
-       STATUS_FIELDS.slice(0,4))||
+       REQUIRED_STATUS)||
      ROLES.some(role=>typeof input.handlers[role]!=="function"||
        !Number.isSafeInteger(input.ports[role])||
        input.ports[role]<1024||input.ports[role]>65535)||
      new Set(ROLES.map(role=>input.ports[role])).size!==3||
      typeof input.childStatusProvisioning.reservationDirectory!=="string"||
+     typeof input.childStatusProvisioning.issuanceJournalDirectory!=="string"||
+     !input.childStatusProvisioning.issuanceJournalDirectory.startsWith("/")||
      typeof input.childStatusProvisioning.statusListCredential!=="string"||
      !plain(input.childStatusProvisioning.indexByTask)||
      !Array.isArray(input.childStatusProvisioning.excludedIndices)||

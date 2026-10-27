@@ -20,6 +20,8 @@ import {createTrustedApprovedBranchGateway}
   from "../../../packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts";
 import {createTrustedApprovedTaskAuthorityAllocator}
   from "../../../packages/orchestrator-runtime/src/trusted-approved-task-authority.ts";
+import {TrustedChildIssuanceJournal}
+  from "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {assertTrustedApprovedA2AStartup}
   from "../../../packages/orchestrator-runtime/src/trusted-a2a-startup-probe.ts";
 import {resolve} from "node:path";
@@ -433,10 +435,12 @@ export async function startTrustedEngineerLocalHost(config){
          typeof execution.a2a?.sendProtectedTask!=="function"||
          !execution.adapter?.adapterBaseUrl||
          !execution.adapter?.bearerToken||
+         Object.hasOwn(execution.adapter,"issuanceJournal")||
          !privateGatewayTransport?.gatewayBaseUrl||
          !privateGatewayTransport?.adapterBaseUrl||
          !privateGatewayTransport?.adapterToken||
          !childStatusProvisioning?.reservationDirectory||
+         !childStatusProvisioning?.issuanceJournalDirectory||
          !childStatusProvisioning?.statusListCredential||
          !childStatusProvisioning?.indexByTask||
          !Array.isArray(childStatusProvisioning?.excludedIndices))
@@ -457,7 +461,7 @@ export async function startTrustedEngineerLocalHost(config){
       // before the one-use OIDC admission can be consumed.
       const statusKeys=new Set([
         "reservationDirectory","statusListCredential","indexByTask",
-        "excludedIndices","validitySeconds"
+        "excludedIndices","validitySeconds","issuanceJournalDirectory"
       ]);
       if(Object.getPrototypeOf(childStatusProvisioning)!==Object.prototype||
          Object.keys(childStatusProvisioning).some(k=>!statusKeys.has(k))||
@@ -499,8 +503,16 @@ export async function startTrustedEngineerLocalHost(config){
           ...(childStatusProvisioning.validitySeconds===undefined?{}:
             {validitySeconds:childStatusProvisioning.validitySeconds})
         });
+        const journal=new TrustedChildIssuanceJournal({
+          directory:childStatusProvisioning.issuanceJournalDirectory,
+          sessionId:approval.expectedSessionId,
+          baseRevision:approval.expectedBaseRevision,
+          planDigest:running.readiness.plan_digest,
+          parentCredentialId:running.operational_root_id
+        });
         return {
-          a2a:execution.a2a,adapter:execution.adapter,
+          a2a:execution.a2a,
+          adapter:{...execution.adapter,issuanceJournal:journal},
           authorityForTask:children.authorityForTask,
           invokeOrchestratorTask:branch.invokeOrchestratorTask
         };
@@ -530,10 +542,12 @@ export async function startTrustedEngineerLocalHost(config){
          typeof execution.a2a?.sendProtectedTask!=="function"||
          !execution.adapter?.adapterBaseUrl||
          !execution.adapter?.bearerToken||
+         Object.hasOwn(execution.adapter,"issuanceJournal")||
          !privateGatewayTransport?.gatewayBaseUrl||
          !privateGatewayTransport?.adapterBaseUrl||
          !privateGatewayTransport?.adapterToken||
          !childStatusProvisioning?.reservationDirectory||
+         !childStatusProvisioning?.issuanceJournalDirectory||
          !childStatusProvisioning?.statusListCredential||
          !childStatusProvisioning?.indexByTask||
          !Array.isArray(childStatusProvisioning?.excludedIndices))
@@ -554,7 +568,7 @@ export async function startTrustedEngineerLocalHost(config){
       // before the one-use OIDC admission can be consumed.
       const statusKeys=new Set([
         "reservationDirectory","statusListCredential","indexByTask",
-        "excludedIndices","validitySeconds"
+        "excludedIndices","validitySeconds","issuanceJournalDirectory"
       ]);
       if(Object.getPrototypeOf(childStatusProvisioning)!==Object.prototype||
          Object.keys(childStatusProvisioning).some(k=>!statusKeys.has(k))||
@@ -616,8 +630,16 @@ export async function startTrustedEngineerLocalHost(config){
           ...(childStatusProvisioning.validitySeconds===undefined?{}:
             {validitySeconds:childStatusProvisioning.validitySeconds})
         });
+        const journal=new TrustedChildIssuanceJournal({
+          directory:childStatusProvisioning.issuanceJournalDirectory,
+          sessionId:approval.expectedSessionId,
+          baseRevision:approval.expectedBaseRevision,
+          planDigest:running.readiness.plan_digest,
+          parentCredentialId:running.operational_root_id
+        });
         return {
-          a2a:execution.a2a,adapter:execution.adapter,
+          a2a:execution.a2a,
+          adapter:{...execution.adapter,issuanceJournal:journal},
           authorityForTask:children.authorityForTask,
           invokeOrchestratorTask:branch.invokeOrchestratorTask
         };

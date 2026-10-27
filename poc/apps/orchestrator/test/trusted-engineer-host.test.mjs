@@ -1187,6 +1187,7 @@ test("strict LIVE Engineer Host joins authenticated Unix IPC with durable Gatewa
   };
   const childProvision={
     reservationDirectory:dirs.operational,
+    issuanceJournalDirectory:dirs.operational,
     statusListCredential:"https://example.test/status/review",
     indexByTask:{backend:"8101",frontend:"8102",tests:"8103"},
     excludedIndices:["100","101"]

@@ -1089,3 +1089,28 @@ and all listed Adapter revocation observations pass.
 but does not prove that all Adapter-issued credentials are represented in
 the owner-created inventory. A durable issuance journal, EVM independent
 observation and real distributed R5 session are still needed.
+
+## R5 — Original Host durable child issuance journal (27 October 2026)
+
+The original trusted Engineer Host now requires
+`childStatusProvisioning.issuanceJournalDirectory` when invoking the
+canonical approved DAG for either private scripted or manually approved paid
+execution. An independently provisioned dedicated **0700 owner-only empty
+directory** must be used, separate from Status List reservations.
+
+The trusted Host creates `TrustedChildIssuanceJournal` pinned to its real
+session, Git SHA, Engineer-approved plan digest and operational root. Before
+each potentially side-effecting Adapter child issuance, the original signed
+child issuer atomically writes an exclusive owner-only `*.intent.json` and
+fsyncs the inode and directory. After validating the returned Adapter DC,
+it writes an exclusive `*.ack.json`. Missing or uncertain responses remain
+`issuance_uncertain`, **not proof of non-issuance**. A restart cannot
+silently reuse the same Task identity. Failed durable writes abort before
+the next A2A call. These are local original-Host records, not independently
+attested EVM events.
+
+Important: this step does **not** turn the earlier owner-supplied inventory
+into a trusted complete ledger. Preliminary and operational root records
+remain in separate recovery journals. Issuance must still be reconciled
+against Adapter/Rust/EVM and every outstanding child, including uncertain
+intents. No live R5 GO or Gemini charge is implied.
