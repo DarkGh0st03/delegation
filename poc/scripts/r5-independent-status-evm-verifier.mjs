@@ -188,12 +188,20 @@ export async function observeR5IndependentEvmStatus({
   issuerPublicJwk,fetchFn=fetch
 }={}){
   const match=typeof rpcUrl==="string"?RPC_LOCAL.exec(rpcUrl):null;
-  const last=typeof issuerDid==="string"?issuerDid.split(":").at(-1):"";
+  const didParts=typeof issuerDid==="string"&&
+    issuerDid.startsWith("did:ethr:")?
+    issuerDid.slice("did:ethr:".length).split(":"):[];
+  let didChain;
+  try{
+    if(didParts.length===2&&
+       /^(?:0x[a-fA-F0-9]+|[0-9]+)$/u.test(didParts[0]))
+      didChain=BigInt(didParts[0]);
+  }catch{/* invalid DID chain */}
   if(!match||Number(match[1])>65535||
      !HEX.test(expectedChainId??"")||
      !ADDRESS.test(registryAddress??"")||!ADDRESS.test(issuerAddress??"")||
-     last?.toLowerCase()!==issuerAddress.toLowerCase()||
-     !/^did:ethr:/u.test(issuerDid??"")||
+     didParts.length!==2||didChain!==BigInt(expectedChainId)||
+     didParts[1]?.toLowerCase()!==issuerAddress.toLowerCase()||
      typeof statusListCredential!=="string"||
      !/^https:\/\//u.test(statusListCredential)||
      statusListCredential.length>512||

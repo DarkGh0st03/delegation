@@ -110,12 +110,14 @@ test("R5 status bit clear denies before any Ethereum RPC access",async()=>{
 });
 test("R5 forged JWT, unknown Ed25519 public key, or payload swap denies before RPC",async()=>{
   const f=fixture();
-  const badJwt=f.args.signedStatusJwt.slice(0,-1)+"a";
+  const jwt=f.args.signedStatusJwt;
+  const badJwt=jwt.slice(0,-1)+(jwt.at(-1)==="a"?"b":"a");
   const another=generateKeyPairSync("ed25519").publicKey.export({format:"jwk"});
   const cases=[
     {signedStatusJwt:badJwt},
     {issuerPublicJwk:another},
     {issuerDid:"did:ethr:0x7a69:"+ADDR.slice(0,-1)+"9"},
+    {issuerDid:"did:ethr:0x1:"+ADDR},
     {statusListCredential:"https://status.example/lists/wrong"}
   ];
   for(const bad of cases){
