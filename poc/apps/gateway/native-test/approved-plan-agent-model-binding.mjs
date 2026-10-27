@@ -16,18 +16,31 @@ export function bindModelsToApprovedRoleTasks({
   plan,approvedRows,modelFactory
 }={}){
   if(!plain(plan)||!Array.isArray(plan.tasks)||plan.tasks.length>64||
+     !Array.isArray(plan.requested_permissions)||
+     plan.requested_permissions.length>256||
      !Array.isArray(approvedRows)||approvedRows.length>256||
      typeof modelFactory!=="function")deny("reviewed context missing");
   const tasks=new Map(plan.tasks.map(t=>[t.id,t]));
   if(tasks.size!==plan.tasks.length)deny("duplicate Task identities");
+  // The caller must authenticate the Engineer approval first. Even after
+  // that gate, never present a rewritten approved row as a model capability.
+  const requested=new Map();
+  for(const p of plan.requested_permissions){
+    if(!plain(p)||typeof p.id!=="string"||!p.id||
+       requested.has(p.id))deny("invalid plan permission identity");
+    requested.set(p.id,p);
+  }
   const grantIds=new Set();
   for(const g of approvedRows){
     const t=tasks.get(g?.task_id);
+    const original=requested.get(g?.id);
     if(!plain(g)||typeof g.id!=="string"||grantIds.has(g.id)||
-       !t||t.agent_id!==g.agent_id||
-       typeof g.operation!=="string"||
-       typeof g.resource!=="string")
-      deny("unbound or duplicated grant");
+       !original||!t||t.agent_id!==g.agent_id||
+       original.task_id!==g.task_id||
+       original.agent_id!==g.agent_id||
+       original.operation!==g.operation||
+       original.resource!==g.resource)
+      deny("unbound, rewritten or duplicated grant");
     grantIds.add(g.id);
   }
   const models={},contexts={};

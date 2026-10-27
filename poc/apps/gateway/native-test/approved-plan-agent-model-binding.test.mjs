@@ -121,3 +121,40 @@ test("Block B: forged permissions and non-ADK models are rejected before startin
     ...input,modelFactory:()=>({model:"text-only-not-a-BaseLlm"})
   }),/NO-GO/);
 });
+
+test("Block B: model factory never sees substituted grant operation, path or identity",()=>{
+  const input=reviewed();
+  const read=input.approvedRows.find(g=>
+    g.agent_id==="backend"&&g.operation==="read_file");
+  assert.ok(read);
+  // A different operation on the same Task and resource can also be a
+  // legitimate *separate* permission: preserving the original ID matters.
+  for(const mutate of [
+    g=>({...g,operation:"update_file"}),
+    g=>({...g,resource:g.resource+"/unapproved"}),
+    g=>({...g,id:"new-unapproved-grant"})
+  ]){
+    let factoryCalls=0;
+    assert.throws(()=>bindModelsToApprovedRoleTasks({
+      ...input,
+      approvedRows:input.approvedRows.map(g=>g===read?mutate(g):g),
+      modelFactory:context=>{
+        factoryCalls++;
+        return new DummyModel(context.role);
+      }
+    }),/NO-GO/);
+    assert.equal(factoryCalls,0,"all grants must be checked before model creation");
+  }
+  let factoryCalls=0;
+  assert.throws(()=>bindModelsToApprovedRoleTasks({
+    ...input,
+    plan:{...input.plan,requested_permissions:[
+      ...input.plan.requested_permissions,input.plan.requested_permissions[0]
+    ]},
+    modelFactory:context=>{
+      factoryCalls++;
+      return new DummyModel(context.role);
+    }
+  }),/NO-GO/);
+  assert.equal(factoryCalls,0);
+});
