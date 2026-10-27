@@ -570,12 +570,14 @@ try{
         .source_derived_functional_route_verified,derivedRoutesMode);
       assert.equal(globalThis.__nativeDagPositive
         .source_derived_functional_file_count,derivedRoutesMode
-          ? (scenario.id==="account-suspension"?3:1):0);
+          ? (scenario.id==="account-suspension"?4:1):0);
       if(derivedRoutesMode&&scenario.id==="account-suspension"){
         assert.equal(globalThis.__nativeDagPositive
           .source_derived_controller_verified,true);
         assert.equal(globalThis.__nativeDagPositive
           .source_derived_status_verified,true);
+        assert.equal(globalThis.__nativeDagPositive
+          .source_derived_frontend_api_verified,true);
       }
       assert.equal(globalThis.__nativeDagPositive
         .source_witnessed_native_dag_verified,sourceWitnessMode);

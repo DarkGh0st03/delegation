@@ -615,6 +615,21 @@ export async function runNativePositiveApprovedDag({
       ),"Signed, VP-authorized Gitea update must preserve source witness");
       assert.ok(readPaths.frontend.has(witness.path));
       assert.ok(writePaths.frontend.has(witness.path));
+      const api=witnessModel.derivedApiProof;
+      if(api){
+        assert.equal(api.branch,branch);
+        assert.ok(files.frontend.includes(api.path));
+        assert.equal(api.source_sha256,createHash("sha256")
+          .update(originals[api.path],"utf8").digest("hex"));
+        const updated=await reader.readTextFile(branch,api.path);
+        assert.ok(updated.content.includes(
+          "export async function suspendUser(id: string)"));
+        assert.ok(updated.content.includes(
+          "export async function reactivateUser(id: string)"));
+        assert.ok(readPaths.frontend.has(api.path));
+        assert.ok(writePaths.frontend.has(api.path));
+        assert.equal(api.action_count,2);
+      }
     }
     const derivedRoutes=models.backend instanceof SourceDerivedRouteOfflineAdkModel
       ? models.backend : null;
@@ -707,13 +722,21 @@ export async function runNativePositiveApprovedDag({
               : "host_supplied_unclassified_adk_models")
           : "inline_scripted_tool_calls",
       source_derived_functional_route_verified:derivedRoutes!==null,
+      source_derived_frontend_api_verified:
+        witnessModel?.derivedApiProof!==null&&
+        witnessModel?.derivedApiProof!==undefined,
       source_derived_controller_verified:derivedRoutes?.derivedControllerProof!==null&&
         derivedRoutes?.derivedControllerProof!==undefined,
       source_derived_status_verified:derivedRoutes?.derivedStatusProof!==null&&
         derivedRoutes?.derivedStatusProof!==undefined,
-      source_derived_functional_file_count:derivedRoutes?.derivedFileCount??0,
+      source_derived_functional_file_count:
+        (derivedRoutes?.derivedFileCount??0)+
+        Number(witnessModel?.derivedApiProof!==null&&
+          witnessModel?.derivedApiProof!==undefined),
       remaining_prepackaged_application_file_count:
-        11-(derivedRoutes?.derivedFileCount??0),
+        11-(derivedRoutes?.derivedFileCount??0)-
+          Number(witnessModel?.derivedApiProof!==null&&
+            witnessModel?.derivedApiProof!==undefined),
       source_witnessed_native_dag_verified:witnessModel!==null,
       source_witnessed_model_still_uses_fixture_code:witnessModel!==null,
       fixture_scripted_payloads_reach_adk_runner:Object.values(models).some(

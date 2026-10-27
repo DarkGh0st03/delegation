@@ -607,7 +607,7 @@ async function main(){
         assert.equal(positive?.positive_dag
           ?.source_derived_functional_route_verified,routeMode);
         const expectedDerived=routeMode
-          ?(scenario.id==="account-suspension"?3:1):0;
+          ?(scenario.id==="account-suspension"?4:1):0;
         assert.equal(positive?.positive_dag
           ?.source_derived_functional_file_count,expectedDerived);
         assert.equal(positive?.positive_dag
@@ -617,6 +617,9 @@ async function main(){
           routeMode&&scenario.id==="account-suspension");
         assert.equal(positive?.positive_dag
           ?.source_derived_status_verified,
+          routeMode&&scenario.id==="account-suspension");
+        assert.equal(positive?.positive_dag
+          ?.source_derived_frontend_api_verified,
           routeMode&&scenario.id==="account-suspension");
         assert.equal(positive?.positive_dag
           ?.source_witnessed_native_dag_verified,witnessMode);
@@ -663,6 +666,8 @@ async function main(){
               .source_derived_controller_verified,
             source_derived_status_verified:positive.positive_dag
               .source_derived_status_verified,
+            source_derived_frontend_api_verified:positive.positive_dag
+              .source_derived_frontend_api_verified,
             remaining_prepackaged_application_file_count:positive.positive_dag
               .remaining_prepackaged_application_file_count,
             source_witnessed_native_dag:positive.positive_dag
