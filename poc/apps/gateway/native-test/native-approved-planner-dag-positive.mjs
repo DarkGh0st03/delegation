@@ -136,7 +136,7 @@ export async function runNativePositiveApprovedDag({
   }));
   const orchestratorTaskFor=operation=>{
     const tasks=signed.plan.tasks.filter(t=>t.agent_id==="orchestrator"&&
-      t.permissions?.some(p=>p.operation===operation));
+      grants.some(g=>g.task_id===t.id&&g.operation===operation));
     assert.equal(tasks.length,1,"Pilot needs one signed orchestrator "+operation);
     return tasks[0].id;
   };
