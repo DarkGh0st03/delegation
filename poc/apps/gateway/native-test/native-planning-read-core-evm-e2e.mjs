@@ -84,8 +84,8 @@ if(geminiPilot&&(
   typeof process.env.GEMINI_API_KEY!=="string"||
   process.env.GEMINI_API_KEY.trim().length<10||
   process.env.APPROVED_RUNNER_SCENARIO!=="account-suspension"||
-  process.env.PLANNING_NATIVE_SIGNED_HANDOFF!=="1"&&
-    process.env.PLANNING_NATIVE_POSITIVE_DAG==="1"
+  process.env.PLANNING_NATIVE_SIGNED_HANDOFF!=="1"||
+  process.env.PLANNING_NATIVE_POSITIVE_DAG!=="1"
 ))throw Error("One-use signed Account Suspension Gemini pilot not authorized");
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const scenario=getApprovedOfflineScenario(process.env.APPROVED_RUNNER_SCENARIO);
@@ -390,8 +390,8 @@ try{
     requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
     planId:"native-planning-proposal",agents,readPort:port,
     ...(geminiPilot?{
-      maxModelTurns:24,maxOutputTokens:16000,thinkingLevel:"LOW",
-      maxModelCallMs:120000,maxPlanningMs:600000
+      maxModelTurns:20,maxOutputTokens:8192,thinkingLevel:"LOW",
+      maxModelCallMs:120000,maxPlanningMs:480000
     }:{})
   }).propose();
   assert.equal(proposed.status,"unapproved_proposal");

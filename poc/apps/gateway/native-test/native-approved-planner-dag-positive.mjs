@@ -436,8 +436,13 @@ export async function runNativePositiveApprovedDag({
           ...(sharedMcpEnabled?{
             mcpSharedUrl,mcpCryptoUrl,mcpUpdateFile:true
           }:{}),
-          maxModelTurns:scripted?scripted.length+2:24,
+          maxModelTurns:realGeminiPilot
+            ?(role==="backend"?17:11)
+            :scripted?scripted.length+2:24,
           maxModelCallMs:realGeminiPilot?120000:hostModels?90000:30000,
+          ...(realGeminiPilot?{generateContentConfig:{
+            maxOutputTokens:8192,thinkingConfig:{thinkingLevel:"LOW"}
+          }}:{}),
           gatewayTimeoutMs:30000
         }
       });
@@ -464,8 +469,11 @@ export async function runNativePositiveApprovedDag({
         ...(sharedMcpEnabled?{
           mcpSharedUrl,mcpCryptoUrl,mcpCreateFile:true,mcpRunTests:true
         }:{}),
-        maxModelTurns:hostModels?24:4,
+        maxModelTurns:realGeminiPilot?6:hostModels?24:4,
         maxModelCallMs:realGeminiPilot?120000:hostModels?90000:30000,
+        ...(realGeminiPilot?{generateContentConfig:{
+          maxOutputTokens:8192,thinkingConfig:{thinkingLevel:"LOW"}
+        }}:{}),
         gatewayTimeoutMs:30000
       }
     });
@@ -490,7 +498,7 @@ export async function runNativePositiveApprovedDag({
           parent_credential_id:operationalRootId,
           credential_id:childIds[role],
           valid_from:new Date(Date.now()-1000).toISOString(),
-          validity_seconds:300,
+          validity_seconds:realGeminiPilot?1200:300,
           credential_status:{type:"BitstringStatusListEntry",
             statusPurpose:"revocation",
             statusListIndex:String(randomInt(66001,69000)),
