@@ -591,10 +591,17 @@ async function main(){
                    Number.isSafeInteger(item.model_turns_started)&&
                    item.model_turns_started>=0&&
                    item.model_turns_started<=20){
+                  const site=item.assertion_location;
+                  const location=site&&
+                    ["signed_dag_harness","planning_harness"].includes(site.module)&&
+                    Number.isSafeInteger(site.line)&&
+                    site.line>0&&site.line<2000
+                      ?{module:site.module,line:site.line}:null;
                   geminiDiagnostic={
                     stage:item.stage,category:item.category,
                     model_failure:item.model_failure,
-                    model_turns_started:item.model_turns_started
+                    model_turns_started:item.model_turns_started,
+                    ...(location?{assertion_location:location}:{})
                   };
                   break;
                 }

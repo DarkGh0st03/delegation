@@ -32,7 +32,7 @@ for(const name of workflows){
       assert.match(workflow,/security-ci:isolated-positive-smoke/);
       assert.match(workflow,/run_attempt == 1/);
       assert.match(workflow,/signed DC VP Gitea Docker - TEST approval/);
-      assert.doesNotMatch(workflow,/on:\\n  push:/);
+      assert.doesNotMatch(workflow,/on:\s*\n\s*push:/);
       return;
     }
     assert.match(workflow,/bash poc\/scripts\/ci-compose-lifecycle\.sh start/);

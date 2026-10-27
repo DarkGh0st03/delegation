@@ -824,8 +824,23 @@ try{
         "planner_contract_rejected":
         pilotModelFailure!=="none"?"model_provider_failure":
           "unclassified_failure";
+    // The only stack information permitted outside the private child is a
+    // numeric line of OUR public harness, never the exception message or
+    // stack text (which could contain source or credentials).
+    const location=error?.code==="ERR_ASSERTION"&&
+      typeof error.stack==="string"
+        ?error.stack.match(/(?:native-approved-planner-dag-positive|native-planning-read-core-evm-e2e)\.mjs:(\d+):\d+/u)
+        :null;
+    const at=location?Number(location[1]):null;
+    const assertionLocation=Number.isSafeInteger(at)&&at>0&&at<2000
+      ?Object.freeze({
+        module:location[0].startsWith("native-approved")
+          ?"signed_dag_harness":"planning_harness",
+        line:at
+      }):null;
     process.stderr.write("[signed-gemini-pilot] "+JSON.stringify({
       stage:pilotStage,category,
+      ...(assertionLocation?{assertion_location:assertionLocation}:{}),
       model_failure:pilotModelFailure,
       model_turns_started:pilotModelTurns,
       signature_type:"ed25519_test_fixture_not_human",

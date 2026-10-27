@@ -214,11 +214,17 @@ jobs:
                        "delegated_agents_gitea_docker","complete"]
                        .includes(item.stage)&&
                      Number.isSafeInteger(item.model_turns_started)){
+                    const site=item.assertion_location;
                     diagnostic={
                       stage:item.stage,
                       category:item.category,
                       model_failure:item.model_failure,
-                      model_turns_started:item.model_turns_started
+                      model_turns_started:item.model_turns_started,
+                      ...(site&&
+                        ["signed_dag_harness","planning_harness"].includes(site.module)&&
+                        Number.isSafeInteger(site.line)&&
+                        site.line>0&&site.line<2000
+                        ?{assertion_location:{module:site.module,line:site.line}}:{})
                     };
                     break;
                   }
