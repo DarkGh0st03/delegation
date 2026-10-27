@@ -36,6 +36,8 @@ import {inspectF1RealGiteaPlannerReadiness}
   from "../../../scripts/f1-real-gitea-planner-readiness.mjs";
 import {buildF1RealGiteaResearchPlanningPort}
   from "../../../scripts/f1-gitea-research-planning-port.mjs";
+import {runF1RealGiteaGeminiResearch}
+  from "../../../scripts/f1-real-gitea-gemini-probe.mjs";
 
 const baseline="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const baselineSource="https://github.com/DarkGh0st03/iam-console-poc.git";
@@ -439,6 +441,24 @@ async function main(){
           discovered_directories:port.snapshot.directories.length,
           pinned_source_read:true,model_calls:0,
           native_gateway_attested_by_this_port:false})+"\n");
+      // Exercise the ACTUAL operator probe code without Gemini inference,
+      // writing a plan, exporting credentials or provider billing.
+      const dry=await stage("f1_real_gitea_gemini_probe_dry_run",
+        ()=>runF1RealGiteaGeminiResearch({
+          flag:"--dry-run",baseUrl:base,readToken:creds.readToken,
+          expectedMainSha:fixture.mainSha,githubActions:"true"
+        }),90000);
+      assert.equal(dry.status,"f1_ready_without_inference");
+      assert.equal(dry.source_revision,fixture.mainSha);
+      assert.equal(dry.billable_model_inference,false);
+      assert.equal(dry.execution_permitted,false);
+      process.stderr.write("[trusted-positive-ci] f1_gemini_probe_dry_run "+
+        JSON.stringify({status:"PASS",
+          base_revision:dry.source_revision,
+          source_kind:dry.source_kind,
+          discovered_files:dry.files_available,
+          model_calls:0,billable_model_inference:false,
+          execution_permitted:false})+"\n");
     }
     if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
       // Reuse this same disposable Gitea. Read-only PAT, actual main SHA,

@@ -3,6 +3,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {buildF1RealGiteaResearchPlanningPort}
   from "../f1-gitea-research-planning-port.mjs";
+import {runF1RealGiteaGeminiResearch}
+  from "../f1-real-gitea-gemini-probe.mjs";
 
 const SHA="405748b1e77992b6bd8630a3ab6f990658d32f6b";
 const URL="http://127.0.0.1:31315";
@@ -80,7 +82,7 @@ function fixture({changed=false,solved=false,duplicate=false}={}){
     baseUrl:URL,readToken:TOKEN,expectedMainSha:SHA,
     sessionId:"research-f1-1",fetchFn
   });
-  return {create,seen};
+  return {create,seen,fetchFn};
 }
 test("F1 Gitea host independently discovers directories and files without model or golden answer",async()=>{
   const f=fixture();
@@ -132,4 +134,22 @@ test("F1 refuses already solved source, changed baseline, duplicates and remote 
     expectedMainSha:SHA,sessionId:"research-f1-1",
     fetchFn:async()=>{throw Error("MUST NOT CONNECT");}
   }),/NO-GO/);
+});
+
+test("F1 real-Gitea operator --dry-run uses authentic pinned source with no model, approval or execution",async()=>{
+  const f=fixture();
+  const r=await runF1RealGiteaGeminiResearch({
+    flag:"--dry-run",baseUrl:URL,readToken:TOKEN,
+    expectedMainSha:SHA,githubActions:"true",
+    fetchFn:f.fetchFn
+  });
+  assert.equal(r.status,"f1_ready_without_inference");
+  assert.equal(r.source_revision,SHA);
+  assert.equal(r.source_kind,"real_disposable_gitea");
+  assert.equal(r.files_available,Object.keys(SOURCES).length);
+  assert.equal(r.billable_model_inference,false);
+  assert.equal(r.execution_permitted,false);
+  assert.equal(r.trusted_gateway_vp_opa_planning,false);
+  assert.ok(f.seen.length>8);
+  assert.equal(JSON.stringify(r).includes(TOKEN),false);
 });
