@@ -69,6 +69,8 @@ jobs:
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
           node poc/scripts/init-local-env.mjs --force
+      - name: F1 real Gitea unsolved baseline contract tests (no model calls)
+        run: node --experimental-strip-types --test poc/scripts/test/f1-real-gitea-planner-readiness.test.mjs
       - name: Offline Gemini Planning-to-Execution bridge regression (zero model calls)
         run: |
           node --experimental-strip-types --test \

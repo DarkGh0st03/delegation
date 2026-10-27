@@ -90,9 +90,9 @@ test("F1 rejects source already containing department search, even when SHA is c
   }
 });
 test("F1 refuses unknown file, remote origin and missing out-of-band Gitea SHA",async()=>{
-  await assert.rejects(fixture({sources:{
-    ...FILES,"apps/frontend/src/api/users-api.ts":undefined
-  }}).read(),/NO-GO|unbounded/);
+  const missing={...FILES};
+  delete missing["apps/frontend/src/api/users-api.ts"];
+  await assert.rejects(fixture({sources:missing}).read());
   for(const invalid of [
     {baseUrl:"https://gitea.example.org"},
     {baseUrl:"http://127.0.0.1:0"},
