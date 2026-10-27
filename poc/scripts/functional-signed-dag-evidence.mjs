@@ -15,6 +15,7 @@ const RUN=/^[1-9][0-9]{0,19}$/u;
 const EVENT="trusted_security_ci_real_docker_positive_acceptance";
 const NATIVE_PREFIX="[trusted-positive-ci] native_disposable_planning ";
 const F1_PREFIX="[trusted-positive-ci] f1_real_gitea_baseline ";
+const F1_PORT_PREFIX="[trusted-positive-ci] f1_real_gitea_read_port ";
 function deny(message){
   throw Error("Functional signed-DAG E2E NO-GO: "+message);
 }
@@ -37,13 +38,17 @@ export function extractSignedFunctionalE2EEvidence(text,{
      !SHA.test(sourceSha??"")||!RUN.test(String(runId??""))||
      scenarioId!=="department-directory")
     deny("one fixed scenario, exact checked-out SHA and GitHub run required");
-  const positives=[],natives=[],f1Events=[];
+  const positives=[],natives=[],f1Events=[],f1PortEvents=[];
   for(const line of text.split(/\r?\n/u)){
     let data;
     if(line.startsWith(NATIVE_PREFIX)){
       try{data=JSON.parse(line.slice(NATIVE_PREFIX.length));}
       catch{deny("malformed original signed-DAG summary");}
       natives.push(data);
+    }else if(line.startsWith(F1_PORT_PREFIX)){
+      try{data=JSON.parse(line.slice(F1_PORT_PREFIX.length));}
+      catch{deny("malformed real Gitea planning port summary");}
+      f1PortEvents.push(data);
     }else if(line.startsWith(F1_PREFIX)){
       try{data=JSON.parse(line.slice(F1_PREFIX.length));}
       catch{deny("malformed real Gitea F1 summary");}
@@ -55,6 +60,7 @@ export function extractSignedFunctionalE2EEvidence(text,{
     }
   }
   const f1=exactlyOne(f1Events,"real Gitea F1 readiness");
+  const port=exactlyOne(f1PortEvents,"real Gitea F1 read-only Planning port");
   const native=exactlyOne(natives,"original signed-DAG observation");
   const acceptance=exactlyOne(positives,"real Docker/Gitea acceptance");
   if(!record(f1)||
@@ -71,6 +77,15 @@ export function extractSignedFunctionalE2EEvidence(text,{
   requireTrue(f1,["main_unchanged","novel_unsolved_requirement",
     "read_only_api_operations","actual_gitea_source_contents_excluded",
     "golden_solution_excluded"],"real Gitea F1 baseline");
+  if(!record(port)||port.status!=="PASS"||
+     !SHA.test(port.base_revision??"")||
+     port.base_revision!==f1.base_revision||
+     !Number.isSafeInteger(port.discovered_files)||port.discovered_files<4||
+     !Number.isSafeInteger(port.discovered_directories)||
+     port.discovered_directories<1||
+     port.pinned_source_read!==true||port.model_calls!==0||
+     port.native_gateway_attested_by_this_port!==false)
+    deny("complete real Gitea read-only Planning port not observed");
   if(!record(native)||native.status!=="PASS"||
      !SHA.test(native.real_gitea_sha??"")||
      native.real_gitea_sha===acceptance.tested_commit_sha)
@@ -116,6 +131,9 @@ export function extractSignedFunctionalE2EEvidence(text,{
     framework_source_sha:sourceSha,github_run_id:String(runId),
     isolated_main_sha:native.real_gitea_sha,
     f1_real_gitea_unsolved_baseline_verified:true,
+    f1_actual_full_repo_snapshot_readonly_verified:true,
+    f1_discovered_files:port.discovered_files,
+    f1_discovered_directories:port.discovered_directories,
     f1_source_revision:f1.base_revision,
     f1_genuine_gemini_proposal_produced:false,
     tested_feature_commit_sha:acceptance.tested_commit_sha,
