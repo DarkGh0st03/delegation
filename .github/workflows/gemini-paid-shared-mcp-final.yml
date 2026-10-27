@@ -200,8 +200,33 @@ jobs:
               const phases=["native_preliminary_planning_real_disposable_gitea",
                 "native_dag_failure","controlled_denial","docker_phase_status"];
               const matching=phases.filter(x=>data.includes(x));
+              const prefix="[trusted-positive-ci] native_dag_failure ";
+              let diagnostic=null;
+              for(const line of data.split(/\r?\n/).reverse()){
+                const at=line.indexOf(prefix);
+                if(at<0)continue;
+                try{
+                  const value=JSON.parse(line.slice(at+prefix.length));
+                  const item=value.gemini_pilot_diagnostic;
+                  if(item&&typeof item==="object"&&
+                     ["setup","gemini_planning","gemini_plan_proposed",
+                       "signed_test_review","activation_dc_vp",
+                       "delegated_agents_gitea_docker","complete"]
+                       .includes(item.stage)&&
+                     Number.isSafeInteger(item.model_turns_started)){
+                    diagnostic={
+                      stage:item.stage,
+                      category:item.category,
+                      model_failure:item.model_failure,
+                      model_turns_started:item.model_turns_started
+                    };
+                    break;
+                  }
+                }catch{}
+              }
               writeFileSync("/tmp/four-gemini-pilot-failure.json",
                 JSON.stringify({status:"FAIL",
+                  ...(diagnostic?{gemini_pilot_diagnostic:diagnostic}:{}),
                   framework_sha:process.env.GITHUB_SHA,
                   run_id:process.env.GITHUB_RUN_ID,
                   verified_signals:matching,

@@ -564,10 +564,48 @@ async function main(){
           // inputs may be present in untrusted logs. Only fixed phase
           // names and success/failure enums may cross this CI boundary.
           const evidence=safeNativeDockerFailureDiagnostic(error?.stderr);
+          // Child errors are untrusted. Only known enum fields and integers
+          // from our own signed-gemini-pilot marker may cross this boundary.
+          let geminiDiagnostic=null;
+          if(realGeminiPilot){
+            const raw=Buffer.isBuffer(error?.stderr)?
+              error.stderr.toString("utf8"):
+              typeof error?.stderr==="string"?error.stderr:"";
+            const prefix="[signed-gemini-pilot] ";
+            const matches=raw.slice(-262144).split(/\r?\n/u)
+              .filter(line=>line.startsWith(prefix)&&line.length<1024);
+            for(const line of matches.reverse()){
+              try{
+                const item=JSON.parse(line.slice(prefix.length));
+                if(["setup","gemini_planning","gemini_plan_proposed",
+                  "signed_test_review","activation_dc_vp",
+                  "delegated_agents_gitea_docker","complete"].includes(item.stage)&&
+                   ["test_assertion","planner_contract_rejected",
+                    "model_provider_failure","unclassified_failure"]
+                    .includes(item.category)&&
+                   ["none","authentication","permission_or_billing",
+                    "quota_or_rate_limit","model_or_endpoint_not_found",
+                    "invalid_request_or_tool_schema","provider_server_error",
+                    "transport_or_timeout","unknown"]
+                    .includes(item.model_failure)&&
+                   Number.isSafeInteger(item.model_turns_started)&&
+                   item.model_turns_started>=0&&
+                   item.model_turns_started<=20){
+                  geminiDiagnostic={
+                    stage:item.stage,category:item.category,
+                    model_failure:item.model_failure,
+                    model_turns_started:item.model_turns_started
+                  };
+                  break;
+                }
+              }catch{/* never print untrusted child stderr */}
+            }
+          }
           process.stderr.write("[trusted-positive-ci] native_dag_failure "+
             JSON.stringify({
               stage:"signed_dag_disposable_docker_acceptance",
               ...(evidence??{diagnosis:"no_structured_phase_status"}),
+              ...(geminiDiagnostic?{gemini_pilot_diagnostic:geminiDiagnostic}:{}),
               signed_dag_completed:false,
               permissions_bypassed:false
             })+"\n");

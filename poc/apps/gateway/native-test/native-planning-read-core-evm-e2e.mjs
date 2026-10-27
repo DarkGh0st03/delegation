@@ -356,6 +356,7 @@ const root={
     statusListCredential:"https://status.example/lists/native-planning-read"}
 };
 let issued=false,revoked=false;
+let pilotStage="setup",pilotModelTurns=0,pilotModelFailure="none";
 try{
   const started=await coordinator.beginPlanning(root);
   issued=true;
@@ -385,15 +386,27 @@ try{
       model:process.env.DELEGATION_GEMINI_MODEL
     })
     :new ScriptedReadPlanner();
+  if(geminiPilot)pilotStage="gemini_planning";
   const proposed=await new TrustedAdkReadOnlyPlanner({
     model,snapshot,workBranch,
     requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
     planId:"native-planning-proposal",agents,readPort:port,
     ...(geminiPilot?{
       maxModelTurns:20,maxOutputTokens:8192,thinkingLevel:"LOW",
-      maxModelCallMs:120000,maxPlanningMs:480000
+      maxModelCallMs:120000,maxPlanningMs:480000,
+      onObservation:observation=>{
+        if(observation?.kind==="model_turn"&&
+           observation.status==="started")pilotModelTurns++;
+        if(observation?.kind==="model_failure"&&
+           ["authentication","permission_or_billing","quota_or_rate_limit",
+             "model_or_endpoint_not_found","invalid_request_or_tool_schema",
+             "provider_server_error","transport_or_timeout","unknown"]
+            .includes(observation.category))
+          pilotModelFailure=observation.category;
+      }
     }:{})
   }).propose();
+  if(geminiPilot)pilotStage="gemini_plan_proposed";
   assert.equal(proposed.status,"unapproved_proposal");
   if(geminiPilot){
     assert.ok(proposed.verified_source_reads>=2,
@@ -467,6 +480,7 @@ try{
   assert.ok(typeof signedBeforeRevoke==="string"&&signedBeforeRevoke.length>100);
   let operationalRootId,revocationChecked=false;
   if(signedHandoff){
+    if(geminiPilot)pilotStage="signed_test_review";
     const packet=reviewGate.stageTrustedProposal(proposed);
     assert.equal(packet.status,"awaiting_engineer_signature");
     assert.equal(packet.plan_digest,proposed.digest);
@@ -496,6 +510,7 @@ try{
     assert.deepEqual(trustedReceipt.approval.approved_permission_ids,selected);
     assert.equal(trustedReceipt.authenticated_engineer_did,engineerDid);
     const opId="urn:native:operational-"+randomBytes(7).toString("hex");
+    if(geminiPilot)pilotStage="activation_dc_vp";
     const active=await coordinator.beginExecution({
       credential_id:opId,
       valid_from:new Date(Date.now()-1000).toISOString(),
@@ -587,6 +602,7 @@ try{
             context.role,offlineCalls[context.role]);
         };
       }
+      if(geminiPilot)pilotStage="delegated_agents_gitea_docker";
       globalThis.__nativeDagPositive=await runNativePositiveApprovedDag({
         coordinator,reviewGate,approvedPlans,
         ...(approvedAgentModelFactory?{approvedAgentModelFactory}:{}),
@@ -643,7 +659,8 @@ try{
       assert.equal(globalThis.__nativeDagPositive
         .independent_model_software_output_verified,geminiPilot);
       assert.equal(globalThis.__nativeDagPositive.source_writes,
-        existingFiles.length);
+        geminiPilot?proposed.plan.requested_permissions.filter(p=>
+          p.operation==="update_file").length:existingFiles.length);
       assert.equal(globalThis.__nativeDagPositive.manifest_source,
         "engineer_signed_approved_plan");
       assert.equal(globalThis.__nativeDagPositive.created_test_files,1);
@@ -769,6 +786,7 @@ try{
     assert.equal((await liveClient.getBranchMetadata(scenario.fixtureBranch)).commit_sha,
       originalFeature);
   }
+  if(geminiPilot)pilotStage="complete";
   console.log(JSON.stringify({
     event:"native_preliminary_adk_planning",
     status:"pass",
@@ -796,6 +814,25 @@ try{
     provider_writes:positiveDag?11:0,
     ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{})
   }));
+}catch(error){
+  if(geminiPilot){
+    // A fixed-vocabulary diagnostic only; never forward provider exception
+    // text, model prompts, repository source, tool args, or authorization.
+    const category=error?.code==="ERR_ASSERTION"?"test_assertion":
+      typeof error?.message==="string"&&
+      error.message.startsWith("Unapproved Planning:")?
+        "planner_contract_rejected":
+        pilotModelFailure!=="none"?"model_provider_failure":
+          "unclassified_failure";
+    process.stderr.write("[signed-gemini-pilot] "+JSON.stringify({
+      stage:pilotStage,category,
+      model_failure:pilotModelFailure,
+      model_turns_started:pilotModelTurns,
+      signature_type:"ed25519_test_fixture_not_human",
+      completed:false
+    })+"\n");
+  }
+  throw error;
 }finally{
   try{
     if(issued&&!revoked)await authorityClient.revokeRoot(rootId);
