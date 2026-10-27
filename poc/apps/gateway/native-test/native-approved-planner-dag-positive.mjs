@@ -82,10 +82,11 @@ export async function runNativePositiveApprovedDag({
   referenceFiles,scenarioId,repo,giteaBase,
   readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens,
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
-  approvedAgentModelFactory
+  approvedAgentModelFactory,realGeminiPilot=false
 }){
-  if(approvedAgentModelFactory!==undefined&&
-     typeof approvedAgentModelFactory!=="function")
+  if((realGeminiPilot&&typeof approvedAgentModelFactory!=="function")||
+     (approvedAgentModelFactory!==undefined&&
+      typeof approvedAgentModelFactory!=="function"))
     throw Error("Approved model factory must be host-owned");
   assert.match(giteaBase,/^http:\/\/127\.0\.0\.1:\d+$/u);
   assert.match(baseSha,SHA);
@@ -421,7 +422,7 @@ export async function runNativePositiveApprovedDag({
             mcpSharedUrl,mcpCryptoUrl,mcpUpdateFile:true
           }:{}),
           maxModelTurns:scripted?scripted.length+2:24,
-          maxModelCallMs:hostModels?90000:30000,
+          maxModelCallMs:realGeminiPilot?120000:hostModels?90000:30000,
           gatewayTimeoutMs:30000
         }
       });
@@ -449,7 +450,7 @@ export async function runNativePositiveApprovedDag({
           mcpSharedUrl,mcpCryptoUrl,mcpCreateFile:true,mcpRunTests:true
         }:{}),
         maxModelTurns:hostModels?24:4,
-        maxModelCallMs:hostModels?90000:30000,
+        maxModelCallMs:realGeminiPilot?120000:hostModels?90000:30000,
         gatewayTimeoutMs:30000
       }
     });
@@ -459,7 +460,8 @@ export async function runNativePositiveApprovedDag({
       expectedPlanDigest:planDigest,baseRevision:baseSha,
       expectedEngineerDid:engineerDid,agentBaseUrls:urls,
       a2a:new DeterministicA2AOrchestrator({
-        deadlineMs:500000,initialIntervalMs:50,maxIntervalMs:250
+        deadlineMs:realGeminiPilot?1200000:500000,
+        initialIntervalMs:50,maxIntervalMs:250
       }),
       adapter:{adapterBaseUrl:adapterUrl,
         bearerToken:orchestratorToken,timeoutMs:30000},
@@ -711,8 +713,10 @@ export async function runNativePositiveApprovedDag({
         model=>model instanceof OfflineApprovedAdkModel||
           model instanceof SourceWitnessedOfflineAdkModel||
           model instanceof SourceDerivedRouteOfflineAdkModel),
-      model_source:derivedRoutes
-        ? "host_supplied_source_derived_routes_with_remaining_fixtures"
+      model_source:realGeminiPilot
+        ? "real_gemini_four_models_signed_test_approval"
+        : derivedRoutes
+          ? "host_supplied_source_derived_routes_with_remaining_fixtures"
         : witnessModel
           ? "host_supplied_hybrid_source_witness_and_fixture"
         : hostModels
@@ -741,7 +745,10 @@ export async function runNativePositiveApprovedDag({
       source_witnessed_model_still_uses_fixture_code:witnessModel!==null,
       fixture_scripted_payloads_reach_adk_runner:Object.values(models).some(
         model=>model instanceof OfflineApprovedAdkModel),
-      independent_model_software_output_verified:false,
+      independent_model_software_output_verified:realGeminiPilot,
+      real_gemini_pilot:realGeminiPilot,
+      engineer_review_type:realGeminiPilot
+        ? "signed_test_fixture_not_human":"offline_fixture",
       approved_shared_mcp_enabled:sharedMcpEnabled,
       shared_mcp_http_requests:normalMcpCalls,
       private_crypto_mcp_http_requests:privateCryptoMcpCalls,
