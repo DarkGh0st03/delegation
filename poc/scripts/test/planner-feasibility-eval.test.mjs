@@ -154,3 +154,65 @@ test("provider-reported tokens are measured separately from billing, missing mea
   x.observations.pop();
   assert.equal(evaluate(x).evidence.provider_token_usage.total_tokens,null);
 });
+
+test("independently pinned Gitea inventory accepts different valid plans without golden-file bias",()=>{
+  const candidate=example();
+  const other="apps/frontend/src/pages/UserListPage.tsx";
+  const backendAlternate="apps/backend/src/users/user.repository.ts";
+  const files=[...Object.values(anchors).flat(),other,backendAlternate];
+  const directories=["","apps","apps/backend","apps/backend/src",
+    "apps/backend/src/users","apps/frontend","apps/frontend/src",
+    "apps/frontend/src/api","apps/frontend/src/pages",
+    "tests","tests/backend"];
+  const trustedSnapshot={base_revision:SHA,
+    repository:{authority:"gitea.local",owner:"thesis",
+      repository:"iam-console-poc"},files,directories};
+  // Neither alternate file appears in the static offline golden reference.
+  const updates=candidate.proposal.plan.requested_permissions;
+  updates.find(p=>p.agent_id==="backend").resource=file(backendAlternate);
+  updates.find(p=>p.agent_id==="frontend").resource=file(other);
+  candidate.observations.find(x=>x.kind==="read").path=backendAlternate;
+  const second=candidate.observations.filter(x=>x.kind==="read")[1];
+  second.path=other;
+  for(const name of ["department-directory","second-independent-requirement"]){
+    const report=evaluatePlannerFeasibility({
+      scenario:name,expectedBaseRevision:SHA,
+      ...candidate,trustedSnapshot
+    });
+    assert.equal(report.inventory_source,"trusted_pinned_gitea_snapshot");
+    assert.equal(report.technical_preflight_pass,true);
+    assert.equal(report.criteria.find(c=>
+      c.key==="known_tools_and_baseline_files").pass,true);
+    assert.equal(report.criteria.find(c=>
+      c.key==="independent_source_discovery").pass,true);
+  }
+  const withoutLive=evaluate(candidate);
+  assert.equal(withoutLive.technical_preflight_pass,false);
+});
+test("trusted Gitea inventory rejects forgery, missing paths and unapproved writes",()=>{
+  const x=example();
+  const snapshot={base_revision:SHA,
+    repository:{authority:"gitea.local",owner:"thesis",
+      repository:"iam-console-poc"},
+    files:Object.values(anchors).flat(),
+    directories:["","apps","apps/backend","apps/backend/src",
+      "apps/backend/src/users","apps/frontend","apps/frontend/src",
+      "apps/frontend/src/api","apps/frontend/src/pages",
+      "tests","tests/backend"]};
+  const evaluateLive=()=>evaluatePlannerFeasibility({
+    scenario:"independent-requirement",expectedBaseRevision:SHA,
+    ...x,trustedSnapshot:snapshot
+  });
+  assert.equal(evaluateLive().technical_preflight_pass,true);
+  x.proposal.plan.requested_permissions.push({
+    agent_id:"backend",operation:"update_file",
+    resource:file(".env.production")
+  });
+  assert.equal(evaluateLive().technical_preflight_pass,false);
+  x.proposal.plan.requested_permissions.pop();
+  snapshot.base_revision="c".repeat(40);
+  assert.throws(evaluateLive,/invalid trusted source inventory/);
+  snapshot.base_revision=SHA;
+  snapshot.files.push("../unsafe");
+  assert.throws(evaluateLive,/invalid trusted source inventory/);
+});

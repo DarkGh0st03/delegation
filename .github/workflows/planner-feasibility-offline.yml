@@ -9,6 +9,7 @@ on:
       - "poc/scripts/run-gemini-planner-fixture.mjs"
       - "poc/scripts/check-gemini-planner-model-access.mjs"
       - "poc/scripts/planner-feasibility-eval.mjs"
+      - "poc/scripts/f1-real-gitea-gemini-probe.mjs"
       - "poc/scripts/f1-planner-offline-comparison.mjs"
       - "poc/scripts/test/f1-planner-offline-comparison.test.mjs"
       - "poc/scripts/test/planner-feasibility-eval.test.mjs"

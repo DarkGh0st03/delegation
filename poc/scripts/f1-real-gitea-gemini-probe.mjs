@@ -147,7 +147,8 @@ export async function runF1RealGiteaGeminiResearch({
     const proposal=await planner.propose();
     const report=evaluatePlannerFeasibility({
       scenario:"department-directory",
-      expectedBaseRevision:expectedMainSha,proposal,observations:events
+      expectedBaseRevision:expectedMainSha,proposal,observations:events,
+      trustedSnapshot:binding.snapshot
     });
     const functional=assessF1DepartmentDirectoryPlan({
       proposal,expectedBaseRevision:expectedMainSha
