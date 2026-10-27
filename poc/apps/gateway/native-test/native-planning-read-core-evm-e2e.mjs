@@ -30,6 +30,8 @@ import {GatewayCorroboratedTaskAttestor} from
   "../src/trusted-task-observation.ts";
 import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
+import {SourceWitnessedOfflineAdkModel}
+  from "./source-witnessed-offline-adk-model.mjs";
 import {buildOfflineAdkScriptsFromApprovedPlan}
   from "./approved-plan-offline-adk-call-scripts.mjs";
 import {getApprovedOfflineScenario} from
@@ -502,6 +504,11 @@ try{
             }));
           assert.deepEqual(context.approved_permissions,expected);
           assert.equal(Object.hasOwn(context,"implementationContents"),false);
+          if(context.role==="frontend"&&
+             process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1")
+            return new SourceWitnessedOfflineAdkModel({
+              context,calls:offlineCalls[context.role]
+            });
           return new OfflineApprovedAdkModel(
             context.role,offlineCalls[context.role]);
         };
@@ -522,10 +529,16 @@ try{
         }
       });
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
+      const sourceWitnessMode=
+        process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
       assert.equal(globalThis.__nativeDagPositive.model_source,
-        approvedAgentModelFactory
-          ? "host_supplied_scripted_tool_calls"
-          : "inline_scripted_tool_calls");
+        sourceWitnessMode
+          ? "host_supplied_hybrid_source_witness_and_fixture"
+          : approvedAgentModelFactory
+            ? "host_supplied_scripted_tool_calls"
+            : "inline_scripted_tool_calls");
+      assert.equal(globalThis.__nativeDagPositive
+        .source_witnessed_native_dag_verified,sourceWitnessMode);
       // A host-selected BaseLlm can still encapsulate golden implementation
       // bytes. Do not let a provider-green E2E claim model independence.
       assert.equal(globalThis.__nativeDagPositive.scripted_adk_no_paid_model,true);

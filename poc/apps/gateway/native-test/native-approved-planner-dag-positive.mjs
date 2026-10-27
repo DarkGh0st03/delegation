@@ -7,7 +7,7 @@
  * out-of-band bootstrap. This is deterministic test code, NOT Gemini output.
  */
 import assert from "node:assert/strict";
-import {randomBytes,randomInt,generateKeyPairSync} from "node:crypto";
+import {randomBytes,randomInt,generateKeyPairSync,createHash} from "node:crypto";
 import {createServer} from "node:net";
 import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
@@ -31,6 +31,8 @@ import {startSpecializedAgentServer} from
 import {DeterministicA2AOrchestrator} from
   "../../../packages/agent-runtime/src/orchestrator.ts";
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
+import {SourceWitnessedOfflineAdkModel}
+  from "./source-witnessed-offline-adk-model.mjs";
 import {buildOfflineAdkScriptsFromApprovedPlan}
   from "./approved-plan-offline-adk-call-scripts.mjs";
 import {bindModelsToApprovedRoleTasks}
@@ -595,6 +597,23 @@ export async function runNativePositiveApprovedDag({
     if(!hostModels)
       assert.equal(savedTest.content,referenceFiles[createdTestFile]);
     else assert.ok(savedTest.content.length>0);
+    const witnessModel=models.frontend instanceof SourceWitnessedOfflineAdkModel
+      ? models.frontend : null;
+    if(witnessModel){
+      const witness=witnessModel.sourceWitness;
+      assert.ok(witness,"Model must have read actual Gitea source before update");
+      assert.equal(witness.branch,branch);
+      assert.ok(files.frontend.includes(witness.path));
+      const sourceDigest=createHash("sha256")
+        .update(originals[witness.path],"utf8").digest("hex");
+      assert.equal(witness.source_sha256,sourceDigest);
+      const stored=await reader.readTextFile(branch,witness.path);
+      assert.ok(stored.content.endsWith(
+        "// block-b-source-read-sha256:"+sourceDigest+"\n"
+      ),"Signed, VP-authorized Gitea update must preserve source witness");
+      assert.ok(readPaths.frontend.has(witness.path));
+      assert.ok(writePaths.frontend.has(witness.path));
+    }
     const head=await reader.getBranchMetadata(branch);
     assert.equal(head.commit_sha,runnerOutcome.tested_commit_sha);
     assert.equal(createdPr.revision,head.commit_sha);
@@ -628,13 +647,18 @@ export async function runNativePositiveApprovedDag({
       // Scripted ADK instances carry source bytes in their tool-call payloads,
       // even when the native runner did not receive a referenceFiles argument.
       scripted_adk_no_paid_model:Object.values(models).every(
-        model=>model instanceof OfflineApprovedAdkModel),
-      model_source:hostModels
-        ? (Object.values(models).every(model=>
-            model instanceof OfflineApprovedAdkModel)
-            ? "host_supplied_scripted_tool_calls"
-            : "host_supplied_unclassified_adk_models")
-        : "inline_scripted_tool_calls",
+        model=>model instanceof OfflineApprovedAdkModel||
+          model instanceof SourceWitnessedOfflineAdkModel),
+      model_source:witnessModel
+        ? "host_supplied_hybrid_source_witness_and_fixture"
+        : hostModels
+          ? (Object.values(models).every(model=>
+              model instanceof OfflineApprovedAdkModel)
+              ? "host_supplied_scripted_tool_calls"
+              : "host_supplied_unclassified_adk_models")
+          : "inline_scripted_tool_calls",
+      source_witnessed_native_dag_verified:witnessModel!==null,
+      source_witnessed_model_still_uses_fixture_code:witnessModel!==null,
       fixture_scripted_payloads_reach_adk_runner:Object.values(models).some(
         model=>model instanceof OfflineApprovedAdkModel),
       independent_model_software_output_verified:false,
@@ -644,7 +668,8 @@ export async function runNativePositiveApprovedDag({
       adk_model_turns:{
         backend:models.backend instanceof OfflineApprovedAdkModel
           ?models.backend.calls:null,
-        frontend:models.frontend instanceof OfflineApprovedAdkModel
+        frontend:models.frontend instanceof OfflineApprovedAdkModel||
+          models.frontend instanceof SourceWitnessedOfflineAdkModel
           ?models.frontend.calls:null,
         test:models.test instanceof OfflineApprovedAdkModel
           ?models.test.calls:null

@@ -594,8 +594,15 @@ async function main(){
         assert.equal(positive?.positive_dag?.created_test_files,1);
         assert.equal(positive?.positive_dag?.adk_agents_executed,3);
         assert.equal(positive?.positive_dag?.scripted_adk_no_paid_model,true);
-        assert.equal(positive?.positive_dag?.model_source,
-          "host_supplied_scripted_tool_calls");
+        const witnessMode=
+          process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
+        assert.equal(positive?.positive_dag?.model_source,witnessMode
+          ? "host_supplied_hybrid_source_witness_and_fixture"
+          : "host_supplied_scripted_tool_calls");
+        assert.equal(positive?.positive_dag
+          ?.source_witnessed_native_dag_verified,witnessMode);
+        assert.equal(positive?.positive_dag
+          ?.source_witnessed_model_still_uses_fixture_code,witnessMode);
         assert.equal(positive?.positive_dag
           ?.fixture_scripted_payloads_reach_adk_runner,true);
         assert.equal(positive?.positive_dag
@@ -629,6 +636,10 @@ async function main(){
             fixture_scripted_payloads_reach_adk_runner:true,
             independent_model_software_output_verified:false,
             same_signed_dag_docker_acceptance:true,
+            source_witnessed_native_dag:positive.positive_dag
+              .source_witnessed_native_dag_verified,
+            source_witnessed_still_uses_fixture_code:positive.positive_dag
+              .source_witnessed_model_still_uses_fixture_code,
             a2a_before_branch:0,main_mutations:0})+"\n");
       },1020000);
     }
