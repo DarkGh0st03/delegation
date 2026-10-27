@@ -47,6 +47,8 @@ function fixture(){
     signed_handoff:true,operational_root:true,dispatcher_fail_closed:true,
     signed_dag_positive:true,backend_frontend_a2a_updates:10,
     test_agent_created_e2e:1,signed_generic_adk_agents:3,
+    host_supplied_adk_models:true,
+    fixture_implementation_not_passed_to_native_runner:true,
     same_signed_dag_docker_acceptance:true,a2a_before_branch:0,
     main_mutations:0
   };
@@ -86,6 +88,8 @@ test("functional E2E extracts only fixed observed fields without R5 or human cla
   assert.equal(evidence.framework_source_sha,sha);
   assert.equal(evidence.isolated_main_sha,gitea);
   assert.equal(evidence.f1_real_gitea_unsolved_baseline_verified,true);
+  assert.equal(evidence.block_b_host_selected_adk_models_without_fixture_bytes,
+    true);
   assert.equal(evidence.f1_actual_full_repo_snapshot_readonly_verified,true);
   assert.equal(evidence.f1_gemini_operator_dry_run_real_gitea_verified,true);
   assert.equal(evidence.f1_actual_adk_scripted_planner_real_gitea_verified,true);

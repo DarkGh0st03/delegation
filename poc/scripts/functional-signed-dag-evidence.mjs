@@ -143,6 +143,8 @@ export function extractSignedFunctionalE2EEvidence(text,{
   requireTrue(native,[
     "native_rust","live_opa","signed_handoff","operational_root",
     "dispatcher_fail_closed","signed_dag_positive",
+    "host_supplied_adk_models",
+    "fixture_implementation_not_passed_to_native_runner",
     "same_signed_dag_docker_acceptance"
   ],"original signed-DAG process");
   if(native.backend_frontend_a2a_updates!==10||
@@ -196,6 +198,7 @@ export function extractSignedFunctionalE2EEvidence(text,{
     signed_test_fixture_ed25519:true,
     native_rust_vp_and_opa:true,
     three_scripted_adk_a2a_agents:true,
+    block_b_host_selected_adk_models_without_fixture_bytes:true,
     created_pull_request_unmerged:true,
     isolated_docker_project_tests:"pass",
     isolated_researcher_acceptance:"pass",
