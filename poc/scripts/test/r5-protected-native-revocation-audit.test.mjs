@@ -3,23 +3,72 @@ import assert from "node:assert/strict";
 import {mkdtemp,mkdir,writeFile,chmod,symlink,link,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {generateKeyPairSync} from "node:crypto";
+import {makeApproval,planDigest,PLAN_SCHEMA_VERSION}
+  from "../../packages/plan-contracts/src/plan.mjs";
+import {signEngineerApproval}
+  from "../../packages/plan-contracts/src/signed-approval.mjs";
+import {RUST_OPERATIONS} from "../../apps/gateway/src/operation-catalog.ts";
 import {spawnSync} from "node:child_process";
 import {observeProtectedR5NativeRevocations}
   from "../r5-protected-native-revocation-audit.mjs";
 
-const SHA="a".repeat(40),RUN="40470000098",DIGEST="b".repeat(64);
+const SHA="a".repeat(40),RUN="40470000098",DID="did:example:engineer";
 async function setup(){
   const root=await mkdtemp(join(tmpdir(),"r5-protected-native-audit-"));
   const evidenceDir=join(root,"evidence"),inventoryDir=join(root,"inventory"),
-    configDir=join(root,"config");
-  await Promise.all([evidenceDir,inventoryDir,configDir].map(
+    configDir=join(root,"config"),
+    approvalsDir=join(root,"approvals");
+  await Promise.all([evidenceDir,inventoryDir,configDir,approvalsDir].map(
     p=>mkdir(p,{mode:0o700})));
   const paths={
     receipt:join(evidenceDir,"r5-scripted-run-"+RUN+".json"),
     manifest:join(inventoryDir,"r5-issued-credentials-"+RUN+".json"),
     config:join(configDir,"config.json"),
-    token:join(configDir,"gateway.token")
+    token:join(configDir,"gateway.token"),
+    publicKey:join(configDir,"engineer.pub"),
+    approval:join(approvalsDir,"r5-private-original.json")
   };
+  const repo={authority:"gitea.local",owner:"thesis",repository:"iam"};
+  const rootUri="gitea://gitea.local/thesis/iam";
+  const branchUri=rootUri+"/branches/feature%2Fapproved-r5";
+  const fileUri=branchUri+"/files/src/main.ts";
+  const rows=[
+    ["branch","orchestrator","create_branch",rootUri],
+    ["backend","backend","read_file",fileUri],
+    ["frontend","frontend","read_file",fileUri],
+    ["test","test","run_tests",branchUri],
+    ["pr","orchestrator","create_pull_request",rootUri]
+  ];
+  const signedPlan={
+    schema_version:PLAN_SCHEMA_VERSION,plan_id:"r5-original-approval",
+    session_id:"r5-private-original",version:1,repository:repo,
+    base_revision:SHA,requirement:"Verify originally approved Task credentials",
+    candidate_agents:["backend","frontend","test"].map(role=>({
+      agent_id:role,did:"did:example:"+role,card_ref:"private:"+role
+    })),
+    tasks:rows.map(([id,agent_id,,resource],i)=>({
+      id,agent_id,title:id,description:"Approved "+id,
+      depends_on:i?[rows[i-1][0]]:[],resources:[resource]
+    })),
+    requested_permissions:rows.map(([task_id,agent_id,operation,resource])=>({
+      id:"permit-"+task_id,task_id,agent_id,operation,resource,
+      reason:"Signed "+task_id
+    })),assumptions:[],uncertainties:[]
+  };
+  const DIGEST=planDigest(signedPlan);
+  const keys=generateKeyPairSync("ed25519");
+  const now=new Date().toISOString();
+  const approval=makeApproval(signedPlan,{
+    allowedOperations:new Set(RUST_OPERATIONS),
+    decision_id:"r5-review",approved_by:DID,approved_at:now,
+    approved_permission_ids:rows.map(([id])=>"permit-"+id)
+  });
+  const envelope=signEngineerApproval({
+    plan:signedPlan,approval,engineerDid:DID,keyId:"owner-key",
+    privateKeyPem:keys.privateKey.export({type:"pkcs8",format:"pem"}).toString(),
+    issuedAt:now,expiresAt:new Date(Date.now()+15*60_000).toISOString()
+  });
   const evidence={
     schema:"r5-scripted-owner-completion-v1",
     status:"verified_complete_local_owner_observation",
@@ -27,7 +76,7 @@ async function setup(){
     session_id:"r5-private-original",approved_plan_digest:DIGEST,
     approved_task_ids:["branch","backend","frontend","test","pr"],
     completed_task_ids:["branch","frontend","backend","test","pr"],
-    authenticated_engineer_did:"did:example:engineer",
+    authenticated_engineer_did:DID,
     coordinator_terminal_phase:"closed",
     original_runtime_returned_success:true,
     independently_attested:false,provider_model_calls_verified_here:false,
@@ -46,7 +95,10 @@ async function setup(){
     schema:"r5-native-revocation-audit-config-v1",
     source_sha:SHA,github_run_id:RUN,
     adapter_base_url:"http://127.0.0.1:8123",
-    gateway_verifier_bearer_file:paths.token
+    gateway_verifier_bearer_file:paths.token,
+    engineer_approval_directory:approvalsDir,
+    engineer_public_key_file:paths.publicKey,
+    engineer_did:DID,engineer_key_id:"owner-key"
   };
   async function save(path,value){
     await writeFile(path,typeof value==="string"?value:JSON.stringify(value),
@@ -54,10 +106,13 @@ async function setup(){
   }
   await Promise.all([
     save(paths.receipt,evidence),save(paths.manifest,inventory),
-    save(paths.config,config),save(paths.token,"only-private-gateway-verifier-token")
+    save(paths.config,config),save(paths.token,"only-private-gateway-verifier-token"),
+    save(paths.publicKey,keys.publicKey.export({type:"spki",format:"pem"}).toString()),
+    save(paths.approval,envelope)
   ]);
   return {
-    root,evidenceDir,inventoryDir,configDir,paths,evidence,inventory,config,save,
+    root,evidenceDir,inventoryDir,configDir,approvalsDir,paths,
+    evidence,inventory,config,save,
     args:{configPath:paths.config,evidenceDirectory:evidenceDir,
       inventoryDirectory:inventoryDir,expectedSourceSha:SHA,expectedRunId:RUN},
     cleanup:()=>rm(root,{recursive:true,force:true})
@@ -96,6 +151,7 @@ test("R5 owner-only command reads 0600 original evidence, inventory and bearer t
     assert.equal(r.observed_root_count,2);
     assert.equal(r.observed_task_child_count,3);
     assert.equal(r.external_r5_go,false);
+    assert.equal(r.signed_engineer_task_coverage_checked,true);
     assert.equal(network.seen.length,5);
     assert.deepEqual(network.seen.map(x=>JSON.parse(x.options.body).credential_id),
       ["urn:root:planning","urn:root:work",
@@ -150,6 +206,30 @@ test("R5 rejects unsafe config, symlink, hardlink, directories and wrong bearer 
     await chmod(f.paths.receipt,0o600);
     f.config.extra="unreviewed";
     await f.save(f.paths.config,f.config);await failed({});
+  }finally{await f.cleanup();}
+});
+test("R5 requires a real valid Engineer Ed25519 signature before touching Gateway bearer",async()=>{
+  const f=await setup();
+  try{
+    const fakeNetwork=fake();
+    const denied=async()=>{
+      await assert.rejects(ownerCall({...f.args,fetchFn:fakeNetwork.fetchFn}),
+        /NO-GO/);
+      assert.equal(fakeNetwork.seen.length,0);
+    };
+    const {readFile}=await import("node:fs/promises");
+    const valid=JSON.parse(await readFile(f.paths.approval,"utf8"));
+    const tampered=structuredClone(valid);
+    tampered.approval.approved_permission_ids.pop();
+    await f.save(f.paths.approval,tampered);
+    await denied();
+    await f.save(f.paths.approval,valid);
+    await chmod(f.paths.publicKey,0o644);
+    await denied();
+    await chmod(f.paths.publicKey,0o600);
+    f.inventory.task_children[0].task_id="branch";
+    await f.save(f.paths.manifest,f.inventory);
+    await denied();
   }finally{await f.cleanup();}
 });
 test("R5 CLI on GitHub job cannot inspect anything and never prints secrets",async()=>{

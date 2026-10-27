@@ -11,15 +11,20 @@ import {constants} from "node:fs";
 import {open,lstat,realpath} from "node:fs/promises";
 import {dirname,isAbsolute,join,resolve} from "node:path";
 import {pathToFileURL} from "node:url";
-import {observeR5AdapterEvmRevocations,validateR5RevocationInventory}
+import {observeR5AdapterEvmRevocations}
   from "./r5-native-revocation-observer.mjs";
+import {validateR5SignedRevocationInventory}
+  from "./r5-signed-revocation-inventory.mjs";
+import {SignedEngineerApprovalFileStore}
+  from "../packages/orchestrator-runtime/src/signed-approval-store.ts";
 
 const SHA=/^[a-f0-9]{40}$/u;
 const RUN=/^[1-9][0-9]{0,19}$/u;
 const MAX_JSON=65536;
 const CONFIG_FIELDS=[
   "schema","source_sha","github_run_id","adapter_base_url",
-  "gateway_verifier_bearer_file"
+  "gateway_verifier_bearer_file","engineer_approval_directory",
+  "engineer_public_key_file","engineer_did","engineer_key_id"
 ].sort().join(",");
 function deny(){throw Error("R5 protected native revocation audit NO-GO");}
 function plain(x){return !!x&&typeof x==="object"&&!Array.isArray(x)&&
@@ -91,15 +96,38 @@ export async function observeProtectedR5NativeRevocations({
     "r5-issued-credentials-"+expectedRunId+".json"));
   if(inventory.source_sha!==expectedSourceSha||
      inventory.github_run_id!==expectedRunId)deny();
-  // Validation happens BEFORE opening the high-value Gateway verifier bearer.
-  validateR5RevocationInventory({ownerEvidence:evidence,inventory});
+  // Signature verification and exact signed specialized-Task coverage
+  // are mandatory, BEFORE opening the Gateway verifier bearer.
+  if(typeof config.engineer_did!=="string"||
+     !config.engineer_did.startsWith("did:")||
+     typeof config.engineer_key_id!=="string"||
+     !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(config.engineer_key_id))
+    deny();
+  await assertOwnedDirectory(config.engineer_approval_directory);
+  const publicKey=await protectedText(config.engineer_public_key_file,8192);
+  try{
+    const store=new SignedEngineerApprovalFileStore({
+      directory:config.engineer_approval_directory,
+      engineerDid:config.engineer_did,
+      trustedKeys:{[config.engineer_key_id]:{
+        engineer_did:config.engineer_did,public_key_pem:publicKey
+      }}
+    });
+    const authenticatedReview=await store.loadAuthenticatedApproval(
+      evidence.session_id);
+    validateR5SignedRevocationInventory({
+      ownerEvidence:evidence,inventory,authenticatedReview
+    });
+  }catch{deny();}
   const token=(await protectedText(
     config.gateway_verifier_bearer_file,512)).trim();
-  return observeR5AdapterEvmRevocations({
+  const result=await observeR5AdapterEvmRevocations({
     ownerEvidence:evidence,inventory,
     adapterBaseUrl:config.adapter_base_url,
     gatewayVerifierToken:token,fetchFn
   });
+  return Object.freeze({...result,
+    signed_engineer_task_coverage_checked:true});
 }
 if(process.argv[1]&&import.meta.url===
     pathToFileURL(resolve(process.argv[1])).href){

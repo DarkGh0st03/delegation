@@ -1064,3 +1064,28 @@ attestations. A 0600 file and local bearer do not prove the deployment,
 signed Engineer review, physical runner identity or absence of paid
 model traffic. This tool must not set `external_r5_go:true` or replace
 the independently reviewed, full distributed R5 acceptance procedure.
+
+## R5 — Signed Engineer Task inventory prerequisite (27 October 2026)
+
+The protected revocation audit now requires a real Ed25519 Engineer
+approval before inspecting any live Adapter status. The owner config includes
+`engineer_approval_directory`, `engineer_public_key_file`,
+`engineer_did` and `engineer_key_id`; these are independently pinned,
+owner-protected paths and identifiers. `SignedEngineerApprovalFileStore`
+checks the actual signature and expiry and loads the original approved
+permission subset.
+
+The new `r5-signed-revocation-inventory.mjs` compares all originally
+approved/completed Task IDs with the signed plan. It then demands a unique
+inventory child **for every specialized signed Task**, even when there are
+multiple tasks for the same Backend/Frontend/Test role. A missing child,
+unapproved specialized Task, substituted plan, different SHA, missing real
+Engineer receipt or malformed signature fails before reading the Gateway
+bearer. The result includes
+`signed_engineer_task_coverage_checked:true` only after both checks
+and all listed Adapter revocation observations pass.
+
+**Limit:** this verifies task coverage against authentic human approval,
+but does not prove that all Adapter-issued credentials are represented in
+the owner-created inventory. A durable issuance journal, EVM independent
+observation and real distributed R5 session are still needed.
