@@ -53,6 +53,8 @@ test("R5 only root-owned local immutable installed SHA is eligible for further a
   assert.equal(got.source_sha,sha);
   assert.equal(f.commands.length,4);
   assert.equal(f.checked.includes(ROOT+"/poc/scripts/r5-scripted-dispatch-registration.mjs"),true);
+  assert.equal(f.checked.includes(ROOT+"/poc/apps/orchestrator/src/hold-private-github-session.mjs"),true);
+  assert.equal(f.checked.includes(ROOT+"/poc/apps/orchestrator/src/trusted-private-runner-oidc.mjs"),true);
 });
 test("R5 refuses unexpected installed SHA and dirty worktree",async()=>{
   for(const overrides of [{head:"b".repeat(40)},{dirty:true},{badRoot:true}])
@@ -69,4 +71,21 @@ test("R5 refuses external gitlink/symlink, malformed SHA and missing Git",async(
   for(const overrides of [{indexSymlink:true},{escapeIndex:true},{gitUnavailable:true}])
     await assert.rejects(check({expectedSourceSha:sha,...fixture(overrides)}));
   await assert.rejects(check({expectedSourceSha:"X",...fixture()}),/pinned Git SHA/);
+});
+
+test("paid private runner hold script is guarded by shared immutable-source check before OIDC",async()=>{
+  const {verifyProtectedPrivateRunnerInstallation}=await import(
+    "../r5-scripted-install-integrity.mjs");
+  const f=fixture();
+  const r=await verifyProtectedPrivateRunnerInstallation({
+    expectedSourceSha:sha,...f
+  });
+  assert.equal(r.status,"local_install_checked_not_r5_go");
+  for(const relative of [
+    "/poc/apps/orchestrator/src/hold-private-github-session.mjs",
+    "/poc/apps/orchestrator/src/trusted-private-runner-oidc.mjs"
+  ])assert.ok(f.checked.includes(ROOT+relative));
+  await assert.rejects(verifyProtectedPrivateRunnerInstallation({
+    expectedSourceSha:sha,...fixture({dirty:true})
+  }),/protected scripted install denied/);
 });
