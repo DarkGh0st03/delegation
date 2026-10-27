@@ -14,7 +14,7 @@ import {loadProtectedRunnerOidcConfig,submitProtectedPrivateRunnerAdmission}
   from "./trusted-private-runner-oidc.mjs";
 import {awaitTrustedPrivateRunCompletion}
   from "../../../packages/orchestrator-runtime/src/trusted-github-oidc-submit.ts";
-import {verifyProtectedScriptedInstallation}
+import {verifyProtectedPrivateRunnerInstallation}
   from "../../../scripts/r5-scripted-install-integrity.mjs";
 
 try{
@@ -23,9 +23,14 @@ try{
   // A previous check or a GitHub-approved dispatch is not sufficient.
   const trusted=await loadProtectedRunnerOidcConfig(
     process.env.DELEGATION_RUNNER_OIDC_CONFIG);
-  await verifyProtectedScriptedInstallation({
+  await verifyProtectedPrivateRunnerInstallation({
     expectedSourceSha:trusted.expectedSourceSha
   });
+  // The private paid profile may never borrow the public input-check
+  // workflow's OIDC identity or the scripted no-charge runner's receipt.
+  if(trusted.expectedWorkflowPath!==
+     ".github/workflows/trusted-gemini-private-session-hold.yml")
+    throw Error("Runner workflow identity is not the private Gemini profile");
   const admitted=await submitProtectedPrivateRunnerAdmission();
   if(trusted.expectedSourceSha!==admitted.source_sha||
      trusted.expectedRepository!==process.env.GITHUB_REPOSITORY||
