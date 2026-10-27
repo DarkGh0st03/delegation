@@ -117,8 +117,10 @@ export async function runF1RealGiteaGeminiResearch({
       },
       readPort:binding.readPort,
       onObservation:e=>{events.push(e);},
-      maxModelTurns:24,maxModelCallMs:90000,
-      maxPlanningMs:600000,maxOutputTokens:16000,
+      // Bounded first live research probe. These are request ceilings,
+      // NOT a money-denominated cost guarantee.
+      maxModelTurns:12,maxModelCallMs:90000,
+      maxPlanningMs:360000,maxOutputTokens:8192,
       thinkingLevel:"MEDIUM"
     });
     const proposal=await planner.propose();
@@ -153,8 +155,8 @@ export async function runF1RealGiteaGeminiResearch({
       ...meta,status,
       provider_model_name:modelName,
       billable_model_inference:true,
-      model_calls_maximum:24,
-      token_output_limit_per_call:16000,
+      model_calls_maximum:12,
+      token_output_limit_per_call:8192,
       provider_cost:"not_measured",
       human_review_required:true,
       source_file_contents_not_in_summary:true,

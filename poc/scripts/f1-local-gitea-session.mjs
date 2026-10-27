@@ -17,7 +17,8 @@ import {join,resolve,isAbsolute,normalize} from "node:path";
 import {tmpdir} from "node:os";
 import {setTimeout as sleep} from "node:timers/promises";
 import {pathToFileURL} from "node:url";
-import {runF1RealGiteaGeminiResearch}
+import {runF1RealGiteaGeminiResearch,
+  assertF1RealGeminiOperatorConsent}
   from "./f1-real-gitea-gemini-probe.mjs";
 
 export const F1_ORIGINAL_SHA="405748b1e77992b6bd8630a3ab6f990658d32f6b";
@@ -220,17 +221,37 @@ async function createSession(dir){
     if(work)await rm(work,{recursive:true,force:true}).catch(()=>{});
   }
 }
-export async function runF1OwnerGiteaSession({mode,sessionDirectory}={}){
-  if(process.env.GITHUB_ACTIONS==="true"&&mode!=="--start"&&
-     mode!=="--check"&&mode!=="--stop")deny();
+export async function runF1OwnerGiteaSession({
+  mode,sessionDirectory,
+  apiKey,modelName,outputDir,consent,
+  githubActions=process.env.GITHUB_ACTIONS
+}={}){
+  if(githubActions==="true"&&mode==="--execute")deny();
+  // Auth is checked FIRST. An unapproved --execute must never read local
+  // session secrets, make a Gitea request or contact Gemini.
+  if(mode==="--execute"){
+    assertF1RealGeminiOperatorConsent({
+      flag:mode,apiKey,modelName,outputDir,consent,githubActions
+    });
+  }
   if(mode==="--start")return createSession(sessionDirectory);
-  if(mode!=="--check"&&mode!=="--stop")deny();
+  if(!["--check","--stop","--execute"].includes(mode))deny();
   const record=await inspectSession(sessionDirectory);
   if(mode==="--stop"){
     command("docker",["stop","--time","5",record.container_id],30000);
     await rm(sessionDirectory,{recursive:true,force:true});
     return {status:"f1_disposable_gitea_stopped",
       model_calls:0,external_r5_go:false};
+  }
+  if(mode==="--execute"){
+    // The Gitea reader token stays in this owner-only process and is never
+    // passed on the command line. This operation may incur charges ONLY
+    // after a separately supplied literal billing consent.
+    return runF1RealGiteaGeminiResearch({
+      flag:"--execute",baseUrl:record.url,
+      readToken:record.read_token,expectedMainSha:record.source_sha,
+      apiKey,modelName,outputDir,consent,githubActions
+    });
   }
   const dry=await runF1RealGiteaGeminiResearch({
     flag:"--dry-run",baseUrl:record.url,
@@ -247,7 +268,11 @@ if(process.argv[1]&&import.meta.url===
   pathToFileURL(resolve(process.argv[1])).href){
   if(process.argv.length!==4)deny();
   runF1OwnerGiteaSession({
-    mode:process.argv[2],sessionDirectory:process.argv[3]
+    mode:process.argv[2],sessionDirectory:process.argv[3],
+    apiKey:process.env.GEMINI_API_KEY,
+    modelName:process.env.DELEGATION_F1_GEMINI_MODEL,
+    outputDir:process.env.DELEGATION_F1_OUTPUT_DIR,
+    consent:process.env.DELEGATION_F1_BILLING_CONSENT
   }).then(report=>{
     process.stdout.write(JSON.stringify(report)+"\n");
   }).catch(()=>{

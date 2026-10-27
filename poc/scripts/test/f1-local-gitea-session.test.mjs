@@ -13,7 +13,7 @@ test("F1 disposable source must be exact original unsolved commit",()=>{
 });
 test("F1 owner CLI rejects invalid session modes and paths before Docker or Gitea",async()=>{
   for(const [mode,path] of [
-    ["--execute","/tmp/not-allowed"],
+    ["--unknown","/tmp/not-allowed"],
     ["--start","relative/session"],
     ["--check","/tmp/nonexistent-unguarded-f1"],
     ["--stop","/tmp/nonexistent-unguarded-f1"],
@@ -45,4 +45,21 @@ test("F1 owner CLI denies unknown commands and redacts supplied secrets",()=>{
   assert.notEqual(child.status,0);
   assert.equal(child.stdout,"");
   assert.doesNotMatch(child.stderr,/secret-must-never-leak/);
+});
+
+test("F1 paid execution rejects missing consent BEFORE reading owner Gitea session",async()=>{
+  for(const mutation of [
+    {consent:"not-authorized"},
+    {apiKey:""},
+    {modelName:"wrong"},
+    {githubActions:"true"}
+  ])await assert.rejects(runF1OwnerGiteaSession({
+    mode:"--execute",
+    sessionDirectory:"/tmp/does-not-exist-do-not-access",
+    apiKey:"test-gemini-secret-that-is-not-real",
+    modelName:"gemini-3.8-flash",
+    outputDir:"/tmp/new-owner-f1-run-do-not-create",
+    consent:"I AUTHORIZE GEMINI API CHARGES",
+    ...mutation
+  }),/NO-GO|refused/);
 });
