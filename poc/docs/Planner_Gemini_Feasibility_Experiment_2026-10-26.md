@@ -506,3 +506,41 @@ effects, and a real GitHub OIDC job all in the same owner-controlled run
 have **not** been demonstrated by this offline test. Test fixtures provide
 simulated cryptographic GitHub/OIDC assertions and nonworking Gemini
 secrets; no billing consent or provider API request is used.
+
+
+## R5H — Private Gemini GitHub runner job (source only, no launch)
+
+The project now includes a **dedicated** private Gemini hold workflow,
+`.github/workflows/trusted-gemini-private-session-hold.yml`.
+Unlike the isolated public input-check workflow, it uses the private
+`delegation-private` self-hosted runner labels, requires the independently
+protected `r5-private-gemini-admission` environment, demands the exact
+`I AUTHORIZE GEMINI API CHARGES` input, and grants only
+`contents: read` plus `id-token: write` to obtain a genuine GitHub-issued
+OIDC identity. The job performs **no model inference**, handles no provider
+API key, invokes no Engineer-signature method, and cannot approve/merge a PR.
+
+Its first step runs the **non-billable**
+`poc/scripts/r5-gemini-private-dispatch-registration.mjs`, which checks a
+clean root-owned source installation, original SHA and the byte-identical
+workflow registration on both `main` and the reviewed feature branch.
+The paid `hold-private-github-session.mjs` repeats the immutable
+installation test IN THE SAME PROCESS, pins the dedicated paid-workflow path,
+then submits the OIDC token through the private mTLS endpoint and awaits
+only the Engineer Host's independently verified `completed_verified`
+status. The separate scripted-only OIDC profile, audience, workflow path
+and admission store remain different; it cannot borrow their receipt.
+
+**Current state is NO-GO.** On 27 October 2026, the new paid hold workflow
+exists only on the development branch; it does not exist on GitHub's default
+`main` branch. GitHub cannot register it for `workflow_dispatch` until
+there is an independently approved default-branch registration. This work
+MUST NOT silently merge to `main`, disable the protected environment,
+add workflow secrets, impersonate a runner or invoke paid Gemini.
+
+The private runner, mTLS certificates and remote Engineer Host still
+require independent provisioning and live validation. A green offline CI
+checks code contracts and mocks, NOT the existence of an actual self-hosted
+runner, a paid Gemini run or an approved execution. Default-branch
+registration and operator-verified infrastructure are prerequisites before
+proposing a separately consented integration trial.
