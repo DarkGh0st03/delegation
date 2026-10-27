@@ -245,10 +245,10 @@ export async function runF1OwnerGiteaSession({mode,sessionDirectory}={}){
 }
 if(process.argv[1]&&import.meta.url===
   pathToFileURL(resolve(process.argv[1])).href){
+  if(process.argv.length!==4)deny();
   runF1OwnerGiteaSession({
     mode:process.argv[2],sessionDirectory:process.argv[3]
   }).then(report=>{
-    if(process.argv.length!==4)deny();
     process.stdout.write(JSON.stringify(report)+"\n");
   }).catch(()=>{
     // No passwords, bearer headers, source, paths or Docker diagnostics.
