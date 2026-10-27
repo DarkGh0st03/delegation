@@ -168,8 +168,17 @@ export async function runNativePositiveApprovedDag({
     assert.equal(new Set(files[role]).size,files[role].length);
   }
   const approvedTestCreates=approvedFiles("test","create_file");
-  assert.equal(approvedTestCreates.length,1,"Only one exact approved Test creation");
-  const createdTestFile=approvedTestCreates[0];
+  const approvedTestUpdates=approvedFiles("test","update_file");
+  const approvedTestReads=approvedFiles("test","read_file");
+  // The Planner is allowed to create a regression test OR update an existing
+  // discovered test. Only the authenticated approved grants choose the mode.
+  assert.equal(approvedTestCreates.length+approvedTestUpdates.length,1,
+    "Pilot requires one signed Test regression-file edit");
+  if(approvedTestUpdates.length)
+    assert.ok(approvedTestReads.includes(approvedTestUpdates[0]),
+      "Test update requires approved read_file");
+  const createdTestFile=approvedTestCreates[0]??null;
+  const updatedTestFile=approvedTestUpdates[0]??null;
   const allowedNonFile=[
     ["orchestrator","create_branch",root],
     ["orchestrator","create_pull_request",root],
@@ -180,13 +189,20 @@ export async function runNativePositiveApprovedDag({
       g.operation===operation&&g.resource===resource).length,1);
   }
   const approvedCount=files.backend.length*2+files.frontend.length*2+
-    approvedTestCreates.length+allowedNonFile.length;
+    approvedTestCreates.length+approvedTestUpdates.length+
+    approvedTestReads.length+allowedNonFile.length;
   assert.equal(grants.length,approvedCount,
     "Signed plan contains unexpected extra tool grants");
-  const expectedExisting=[...files.backend,...files.frontend];
-  assert.equal(new Set([...expectedExisting,createdTestFile]).size,
+  const implementationFiles=[...files.backend,...files.frontend];
+  const expectedExisting=[...new Set([...implementationFiles,...approvedTestReads])];
+  assert.equal(new Set([...implementationFiles,...approvedTestUpdates]).size,
+    implementationFiles.length+approvedTestUpdates.length,
+    "Test writes must not conflict with implementation roles");
+  if(createdTestFile)assert.equal(
+    new Set([...expectedExisting,createdTestFile]).size,
     expectedExisting.length+1);
-  if(!hostModels)assert.deepEqual([...expectedExisting,createdTestFile].sort(),
+  if(!hostModels)assert.deepEqual(
+    [...implementationFiles,...approvedTestCreates].sort(),
     Object.keys(referenceFiles).sort());
   const reader=new GiteaClient({
     baseUrl:giteaBase,token:readerToken,owner:repo.owner,
@@ -241,7 +257,8 @@ export async function runNativePositiveApprovedDag({
   });
   const counts={backend:0,frontend:0},reads={backend:0,frontend:0},
     writes={backend:0,frontend:0};
-  let testCalls=0,testCreates=0,runnerRuns=0,runnerOutcome=null,latestSha=baseSha;
+  let testCalls=0,testCreates=0,testUpdates=0,testReads=0,
+    runnerRuns=0,runnerOutcome=null,latestSha=baseSha;
   let createdPr=null;
   const childIds={},servers=[],urls={},models={};
   // Explicit opt-in makes the SAME real-provider test exercise the
@@ -252,8 +269,8 @@ export async function runNativePositiveApprovedDag({
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
-  const readPaths={backend:new Set(),frontend:new Set()};
-  const writePaths={backend:new Set(),frontend:new Set()};
+  const readPaths={backend:new Set(),frontend:new Set(),test:new Set()};
+  const writePaths={backend:new Set(),frontend:new Set(),test:new Set()};
   const adkGatewayBase="http://approved-native-gateway.invalid";
   const reply=(body,status=200)=>new Response(JSON.stringify(body),{
     status,headers:{"content-type":"application/json"}
@@ -274,14 +291,25 @@ export async function runNativePositiveApprovedDag({
         assert.equal(request.agent_role,role);
         assert.match(request.task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
         if(role==="test"){
-          assert.ok(["create_file","run_tests"].includes(request.tool));
-          if(request.tool==="create_file"){
+          const op=request.tool;
+          assert.ok(["create_file","read_file","update_file","run_tests"].includes(op));
+          if(op==="create_file"){
             assert.equal(request.arguments.path,createdTestFile);
             assert.equal(request.arguments.branch,branch);
+          }else if(op==="read_file"){
+            assert.ok(approvedTestReads.includes(request.arguments.path));
+            assert.equal(request.arguments.branch,branch);
+          }else if(op==="update_file"){
+            assert.equal(request.arguments.path,updatedTestFile);
+            assert.equal(request.arguments.branch,branch);
+            assert.ok(readPaths.test.has(updatedTestFile));
+            assert.equal(typeof request.arguments.content,"string");
+            assert.ok(request.arguments.content.length>0&&
+              request.arguments.content.length<=250000);
           }else{
             assert.equal(request.arguments.branch,branch);
             assert.equal(request.arguments.profile,"poc-default");
-            assert.equal(testCreates,1);
+            assert.equal(testCalls,1);
           }
         }else{
           assert.ok(["read_file","update_file"].includes(request.tool));
@@ -328,6 +356,24 @@ export async function runNativePositiveApprovedDag({
             latestSha=effect.commit_sha;
             if(writePaths[role].size===files[role].length)counts[role]++;
           }else throw Error("ADK attempted unexpected approved provider operation");
+        }else if(effect.tool==="read_file"&&role==="test"){
+          assert.equal(effect.provider,"gitea");
+          assert.ok(approvedTestReads.includes(effect.path));
+          assert.equal(effect.content,originals[effect.path]);
+          assert.ok(!readPaths.test.has(effect.path));
+          readPaths.test.add(effect.path);
+          testReads++;
+        }else if(effect.tool==="update_file"&&role==="test"){
+          assert.equal(effect.provider,"gitea");
+          assert.equal(effect.path,updatedTestFile);
+          assert.ok(readPaths.test.has(effect.path));
+          assert.ok(!writePaths.test.has(effect.path));
+          assert.match(effect.commit_sha,SHA);
+          assert.deepEqual(counts,{backend:1,frontend:1});
+          writePaths.test.add(effect.path);
+          const head=await reader.getBranchMetadata(branch);
+          assert.equal(head.commit_sha,effect.commit_sha);
+          testCalls++;testUpdates++;
         }else if(effect.tool==="create_file"){
           assert.equal(testCreates,0);
           assert.equal(effect.provider,"gitea");
@@ -338,7 +384,7 @@ export async function runNativePositiveApprovedDag({
           assert.equal(head.commit_sha,effect.commit_sha);
           testCalls++;testCreates++;
         }else if(effect.tool==="run_tests"){
-          assert.equal(testCreates,1);
+          assert.equal(testCalls,1);
           const pinned=await reader.getBranchMetadata(branch);
           assert.equal(effect.provider,"runner");
           assert.equal(effect.tested_commit_sha,pinned.commit_sha);
@@ -467,7 +513,9 @@ export async function runNativePositiveApprovedDag({
         model:testModel,gatewayBaseUrl:adkGatewayBase,adapterBaseUrl:adapterUrl,
         adapterToken:agentTokens.test,fetchFn:adkFetchFor("test"),
         ...(sharedMcpEnabled?{
-          mcpSharedUrl,mcpCryptoUrl,mcpCreateFile:true,mcpRunTests:true
+          mcpSharedUrl,mcpCryptoUrl,
+          mcpUpdateFile:updatedTestFile!==null,
+          mcpCreateFile:createdTestFile!==null,mcpRunTests:true
         }:{}),
         maxModelTurns:realGeminiPilot?6:hostModels?24:4,
         maxModelCallMs:realGeminiPilot?120000:hostModels?90000:30000,
@@ -592,7 +640,9 @@ export async function runNativePositiveApprovedDag({
       backend:files.backend.length,frontend:files.frontend.length
     });
     assert.equal(testCalls,1);
-    assert.equal(testCreates,1);
+    assert.equal(testCreates,approvedTestCreates.length);
+    assert.equal(testUpdates,approvedTestUpdates.length);
+    assert.ok(testReads<=approvedTestReads.length);
     assert.equal(runnerRuns,1);
     if(!hostModels){
       assert.equal(models.backend.calls,2*files.backend.length+1);
@@ -626,10 +676,15 @@ export async function runNativePositiveApprovedDag({
       const unchanged=await reader.readTextFile("main",path,baseSha);
       assert.equal(unchanged.content,originals[path]);
     }
-    const savedTest=await reader.readTextFile(branch,createdTestFile);
+    const savedTest=await reader.readTextFile(branch,
+      createdTestFile??updatedTestFile);
     if(!hostModels)
       assert.equal(savedTest.content,referenceFiles[createdTestFile]);
-    else assert.ok(savedTest.content.length>0);
+    else{
+      assert.ok(savedTest.content.length>0);
+      if(updatedTestFile)assert.notEqual(savedTest.content,
+        originals[updatedTestFile],"Signed Test update must change actual source");
+    }
     const witnessModel=models.frontend instanceof SourceWitnessedOfflineAdkModel
       ? models.frontend : null;
     if(witnessModel){
@@ -722,8 +777,9 @@ export async function runNativePositiveApprovedDag({
       completed_task_ids:result.completed_task_ids,
       real_a2a_sdk:true,native_rust_child_credentials:3,
       native_verifier:true,live_opa:true,real_gitea:true,
-      source_reads:expectedExisting.length,
-      source_writes:expectedExisting.length,created_test_files:1,
+      source_reads:implementationFiles.length+testReads,
+      source_writes:implementationFiles.length+testUpdates,
+      created_test_files:testCreates,
       manifest_source:"engineer_signed_approved_plan",
       test_runner_runs:runnerRuns,
       test_runner_phases:runnerOutcome.phases.map(x=>x.phase),
