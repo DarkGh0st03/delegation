@@ -9,6 +9,8 @@ import {makeApproval,planDigest,PLAN_SCHEMA_VERSION}
 import {signEngineerApproval}
   from "../../packages/plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../../apps/gateway/src/operation-catalog.ts";
+import {TrustedChildIssuanceJournal}
+  from "../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {spawnSync} from "node:child_process";
 import {observeProtectedR5NativeRevocations}
   from "../r5-protected-native-revocation-audit.mjs";
@@ -18,8 +20,9 @@ async function setup(){
   const root=await mkdtemp(join(tmpdir(),"r5-protected-native-audit-"));
   const evidenceDir=join(root,"evidence"),inventoryDir=join(root,"inventory"),
     configDir=join(root,"config"),
-    approvalsDir=join(root,"approvals");
-  await Promise.all([evidenceDir,inventoryDir,configDir,approvalsDir].map(
+    approvalsDir=join(root,"approvals"),
+    issuanceDir=join(root,"issuance");
+  await Promise.all([evidenceDir,inventoryDir,configDir,approvalsDir,issuanceDir].map(
     p=>mkdir(p,{mode:0o700})));
   const paths={
     receipt:join(evidenceDir,"r5-scripted-run-"+RUN+".json"),
@@ -98,7 +101,8 @@ async function setup(){
     gateway_verifier_bearer_file:paths.token,
     engineer_approval_directory:approvalsDir,
     engineer_public_key_file:paths.publicKey,
-    engineer_did:DID,engineer_key_id:"owner-key"
+    engineer_did:DID,engineer_key_id:"owner-key",
+    issuance_journal_directory:issuanceDir
   };
   async function save(path,value){
     await writeFile(path,typeof value==="string"?value:JSON.stringify(value),
@@ -110,9 +114,25 @@ async function setup(){
     save(paths.publicKey,keys.publicKey.export({type:"spki",format:"pem"}).toString()),
     save(paths.approval,envelope)
   ]);
+  const issuanceJournal=new TrustedChildIssuanceJournal({
+    directory:issuanceDir,sessionId:evidence.session_id,baseRevision:SHA,
+    planDigest:DIGEST,parentCredentialId:inventory.operational_root_id
+  });
+  for(let i=0;i<inventory.task_children.length;i++){
+    const child=inventory.task_children[i];
+    const role=child.task_id;
+    await issuanceJournal.recordIntent({
+      taskId:child.task_id,role,credentialId:child.credential_id,
+      statusListCredential:"https://status.example/children",
+      statusListIndex:String(1700+i)
+    });
+    await issuanceJournal.recordVerifiedResponse({
+      taskId:child.task_id,credentialId:child.credential_id
+    });
+  }
   return {
-    root,evidenceDir,inventoryDir,configDir,approvalsDir,paths,
-    evidence,inventory,config,save,
+    root,evidenceDir,inventoryDir,configDir,approvalsDir,issuanceDir,
+    issuanceJournal,paths,evidence,inventory,config,save,
     args:{configPath:paths.config,evidenceDirectory:evidenceDir,
       inventoryDirectory:inventoryDir,expectedSourceSha:SHA,expectedRunId:RUN},
     cleanup:()=>rm(root,{recursive:true,force:true})
@@ -152,6 +172,7 @@ test("R5 owner-only command reads 0600 original evidence, inventory and bearer t
     assert.equal(r.observed_task_child_count,3);
     assert.equal(r.external_r5_go,false);
     assert.equal(r.signed_engineer_task_coverage_checked,true);
+    assert.equal(r.original_host_child_intents_and_acks_matched,true);
     assert.equal(network.seen.length,5);
     assert.deepEqual(network.seen.map(x=>JSON.parse(x.options.body).credential_id),
       ["urn:root:planning","urn:root:work",
@@ -231,6 +252,26 @@ test("R5 requires a real valid Engineer Ed25519 signature before touching Gatewa
     await f.save(f.paths.manifest,f.inventory);
     await denied();
   }finally{await f.cleanup();}
+});
+test("R5 orphaned, uncertain or mismatched original Host child issuance ledger denies audit before bearer",async()=>{
+ const f=await setup();try{
+  const fail=async()=>{
+    const fakes=fake();
+    await assert.rejects(ownerCall({...f.args,fetchFn:fakes.fetchFn}),/NO-GO/);
+    assert.equal(fakes.seen.length,0);
+  };
+  f.inventory.task_children[0].credential_id="urn:forged:backend";
+  await f.save(f.paths.manifest,f.inventory);
+  await fail();
+  f.inventory.task_children[0].credential_id="urn:child:backend";
+  await f.save(f.paths.manifest,f.inventory);
+  const {readdir,rm:remove}=await import("node:fs/promises");
+  const files=await readdir(f.issuanceDir);
+  const ack=files.find(x=>x.endsWith(".ack.json"));
+  assert.ok(ack);
+  await remove(join(f.issuanceDir,ack));
+  await fail();
+ }finally{await f.cleanup();}
 });
 test("R5 CLI on GitHub job cannot inspect anything and never prints secrets",async()=>{
   const f=await setup();

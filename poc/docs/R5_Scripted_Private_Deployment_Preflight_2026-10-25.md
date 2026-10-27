@@ -1114,3 +1114,23 @@ into a trusted complete ledger. Preliminary and operational root records
 remain in separate recovery journals. Issuance must still be reconciled
 against Adapter/Rust/EVM and every outstanding child, including uncertain
 intents. No live R5 GO or Gemini charge is implied.
+
+## R5 — Correlate original child issuance records to the post-run EVM audit
+
+The owner-only post-run command now reads the **original Host's**
+`TrustedChildIssuanceJournal` from the separately protected
+`issuance_journal_directory` configured in the private audit JSON.
+Only after authenticating the genuine Engineer Ed25519 receipt does the
+auditor compare every supplied credential ID and signed specialized Task
+to the owner-host fsynced pre-issuance intent **and** acknowledged exact
+Adapter response. Unexpected, missing, duplicated, uncertain or mismatched
+Task credentials are NO-GO **before reading the Gateway bearer or performing
+any Adapter inspection**.
+
+This closes the most important local provenance gap between the signed
+task inventory and the actual original issuer code path. It does **not**
+make the owner-held files tamper-proof or independently attest the EVM
+Status List, the physical runner, root issuance/revocation or unknown
+credential emissions outside the registered path. The claim remains
+`external_r5_go:false`. Existing tests use fabricated Adapter responses
+and temporary owner directories only.

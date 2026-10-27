@@ -17,6 +17,8 @@ import {validateR5SignedRevocationInventory}
   from "./r5-signed-revocation-inventory.mjs";
 import {SignedEngineerApprovalFileStore}
   from "../packages/orchestrator-runtime/src/signed-approval-store.ts";
+import {TrustedChildIssuanceJournal}
+  from "../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 
 const SHA=/^[a-f0-9]{40}$/u;
 const RUN=/^[1-9][0-9]{0,19}$/u;
@@ -24,7 +26,8 @@ const MAX_JSON=65536;
 const CONFIG_FIELDS=[
   "schema","source_sha","github_run_id","adapter_base_url",
   "gateway_verifier_bearer_file","engineer_approval_directory",
-  "engineer_public_key_file","engineer_did","engineer_key_id"
+  "engineer_public_key_file","engineer_did","engineer_key_id",
+  "issuance_journal_directory"
 ].sort().join(",");
 function deny(){throw Error("R5 protected native revocation audit NO-GO");}
 function plain(x){return !!x&&typeof x==="object"&&!Array.isArray(x)&&
@@ -119,6 +122,28 @@ export async function observeProtectedR5NativeRevocations({
       ownerEvidence:evidence,inventory,authenticatedReview
     });
   }catch{deny();}
+  // Require every supposedly issued child to have an original Host
+  // fsynced intent AND a verified Adapter-response acknowledgement.
+  // This owner-held ledger still cannot attest physical host integrity,
+  // external EVM state, or previously omitted Adapter-issued credentials.
+  let observed;
+  try{
+    const journal=new TrustedChildIssuanceJournal({
+      directory:config.issuance_journal_directory,
+      sessionId:inventory.session_id,
+      baseRevision:inventory.source_sha,
+      planDigest:inventory.approved_plan_digest,
+      parentCredentialId:inventory.operational_root_id
+    });
+    observed=await journal.records();
+  }catch{deny();}
+  if(observed.length!==inventory.task_children.length||
+     observed.some(row=>
+       row.observation!=="adapter_response_verified"||
+       !inventory.task_children.some(child=>
+         child.task_id===row.task_id&&
+         child.credential_id===row.credential_id)))
+    deny();
   const token=(await protectedText(
     config.gateway_verifier_bearer_file,512)).trim();
   const result=await observeR5AdapterEvmRevocations({
@@ -127,7 +152,8 @@ export async function observeProtectedR5NativeRevocations({
     gatewayVerifierToken:token,fetchFn
   });
   return Object.freeze({...result,
-    signed_engineer_task_coverage_checked:true});
+    signed_engineer_task_coverage_checked:true,
+    original_host_child_intents_and_acks_matched:true});
 }
 if(process.argv[1]&&import.meta.url===
     pathToFileURL(resolve(process.argv[1])).href){
