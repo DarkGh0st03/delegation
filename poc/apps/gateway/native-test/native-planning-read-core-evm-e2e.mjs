@@ -73,7 +73,8 @@ for(const v of [token,engineerToken,engineerDid]){
 }
 // Strict opt-in: normal signed-DAG CI stays zero-billing and byte-identical.
 const geminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
-const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1";
+const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1"&&
+  process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
 if(signedOfflineRecovery&&geminiPilot)
   throw Error("Offline scripted recovery must never use a paid Gemini model");
 if(geminiPilot&&(
