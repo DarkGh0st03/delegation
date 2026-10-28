@@ -357,7 +357,7 @@ const root={
 };
 let issued=false,revoked=false;
 let pilotStage="setup",pilotModelTurns=0,pilotModelFailure="none";
-let pilotPlanningRejection=null;
+let pilotPlanningRejection=null,pilotTaskCounts=null;
 try{
   const started=await coordinator.beginPlanning(root);
   issued=true;
@@ -414,6 +414,15 @@ try{
   }).propose();
   if(geminiPilot)pilotStage="gemini_plan_proposed";
   assert.equal(proposed.status,"unapproved_proposal");
+  if(geminiPilot){
+    // Aggregated role counts only; no Task text, file paths, approval IDs
+    // or model content may escape the private child on a failed pilot.
+    pilotTaskCounts=Object.fromEntries(
+      ["orchestrator","backend","frontend","test"].map(role=>[
+        role,proposed.plan.tasks.filter(t=>t.agent_id===role).length
+      ])
+    );
+  }
   if(geminiPilot){
     assert.ok(proposed.verified_source_reads>=2,
       "Real Gemini must use at least two confirmed repository source reads");
@@ -868,6 +877,7 @@ try{
       ...(pilotPlanningRejection
         ?{planning_rejection:pilotPlanningRejection}:{}),
       model_turns_started:pilotModelTurns,
+      ...(pilotTaskCounts?{approved_task_counts:pilotTaskCounts}:{}),
       signature_type:"ed25519_test_fixture_not_human",
       completed:false
     })+"\n");

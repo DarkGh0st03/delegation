@@ -614,8 +614,19 @@ async function main(){
                     ["grounding","json","contract"].includes(rejection.stage)&&
                     safePlanningReasons.includes(rejection.reason)
                       ?{stage:rejection.stage,reason:rejection.reason}:null;
+                  const taskCounts=item.approved_task_counts;
+                  const roles=["orchestrator","backend","frontend","test"];
+                  const validCounts=taskCounts&&
+                    typeof taskCounts==="object"&&!Array.isArray(taskCounts)&&
+                    Object.keys(taskCounts).length===roles.length&&
+                    roles.every(role=>Number.isSafeInteger(taskCounts[role])&&
+                      taskCounts[role]>=0&&taskCounts[role]<=12)&&
+                    roles.reduce((n,role)=>n+taskCounts[role],0)<=12;
                   geminiDiagnostic={
                     stage:item.stage,category:item.category,
+                    ...(validCounts?{approved_task_counts:Object.fromEntries(
+                      roles.map(role=>[role,taskCounts[role]])
+                    )}:{}),
                     model_failure:item.model_failure,
                     model_turns_started:item.model_turns_started,
                     ...(location?{assertion_location:location}:{}),
