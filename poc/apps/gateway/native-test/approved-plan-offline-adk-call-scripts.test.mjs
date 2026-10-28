@@ -178,3 +178,61 @@ test("Block B: source-derived mode omits complete golden code for approved writa
     }),/NO-GO/);
   }
 });
+
+test("Signed Test recovery script: real failure must precede a same-task approved repair and final test",()=>{
+  const d=planned({alternate:true});
+  const path="tests/accessibility.test.tsx";
+  const failedContent=content[path]+"\nthrow new Error('offline forced regression');\n";
+  const scripts=buildOfflineAdkScriptsFromApprovedPlan({
+    plan:d.plan,approvedRows:d.approvedRows,repo,branch:d.workBranch,
+    implementationContents:content,recoveryFixture:{path,failedContent}
+  });
+  assert.deepEqual(scripts.test.map(x=>x.name),[
+    "read_file","update_file","run_tests",
+    "read_file","update_file","run_tests"
+  ]);
+  assert.equal(scripts.test[1].args.content,failedContent);
+  assert.equal(scripts.test[4].args.content,content[path]);
+  assert.deepEqual(scripts.test[2].args,scripts.test[5].args);
+  assert.equal(Object.isFrozen(scripts.test[4].args),true);
+  assert.equal(scripts.frontend[1].args.content,content["apps/frontend/settings.tsx"]);
+});
+test("Signed Test recovery cannot add missing authority or pass fixture content as authorization",()=>{
+  const d=planned({alternate:true});
+  const input={plan:d.plan,approvedRows:d.approvedRows,repo,branch:d.workBranch,
+    implementationContents:content};
+  const path="tests/accessibility.test.tsx";
+  const recoveryFixture={path,failedContent:content[path]+"\nthrow Error('regression');"};
+  assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+    ...input,recoveryFixture:{path:"apps/frontend/settings.tsx",
+      failedContent:"unexpected"}
+  }),/NO-GO/u,"Frontend permission is not a Test repair grant");
+  assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+    ...input,recoveryFixture:{path,failedContent:content[path]}
+  }),/NO-GO/u,"The initial test must actually change content");
+  const withoutWrite=d.approvedRows.filter(x=>
+    !(x.agent_id==="test"&&x.operation==="update_file"));
+  assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+    ...input,approvedRows:withoutWrite,recoveryFixture
+  }),/NO-GO/u,"A read grant cannot imply update authority");
+  const withoutRead=d.approvedRows.filter(x=>
+    !(x.agent_id==="test"&&x.operation==="read_file"));
+  assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+    ...input,approvedRows:withoutRead,recoveryFixture
+  }),/NO-GO/u,"A write grant cannot imply read authority");
+  const withoutRunner=d.approvedRows.filter(x=>
+    !(x.agent_id==="test"&&x.operation==="run_tests"));
+  assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+    ...input,approvedRows:withoutRunner,recoveryFixture
+  }),/NO-GO/u,"No retry without a signed runner operation");
+  assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+    ...input,recoveryFixture,sourceDerivedPaths:[path],
+    implementationContents:Object.fromEntries(Object.entries(content)
+      .filter(([p])=>p!==path))
+  }),/NO-GO/u,"Golden payload cannot be smuggled through source-derived mode");
+  const separate=planned();
+  assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+    plan:separate.plan,approvedRows:separate.approvedRows,repo,
+    branch:separate.workBranch,implementationContents:content,recoveryFixture
+  }),/NO-GO/u,"Test Task may only create tests when no read/update was approved");
+});
