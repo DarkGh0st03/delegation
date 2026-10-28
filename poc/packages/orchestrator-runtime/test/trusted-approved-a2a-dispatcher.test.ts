@@ -232,6 +232,59 @@ test("Planner-approved Backend subtasks dispatch independently with task-specifi
   assert.equal(h.coordinator.phase,"closed");
 });
 
+test("Seven signed Tasks (2 Orchestrator, 2 Backend, 1 Frontend, 2 Test) execute the full reviewed DAG",async()=>{
+  const p=plan();
+  const backendPath=p.tasks.find(t=>t.id==="backend-task")!.resources[0]!;
+  const testFile=uri+"/branches/feature%2Faccount-suspension/files/tests/regression.test.ts";
+  p.tasks.splice(2,0,{
+    id:"backend-followup",agent_id:"backend",title:"Second backend change",
+    description:"Separate signed follow-up",depends_on:["backend-task"],
+    resources:[backendPath]
+  });
+  p.tasks.find(t=>t.id==="frontend-task")!.depends_on=["backend-followup"];
+  p.tasks.splice(p.tasks.findIndex(t=>t.id==="tests"),0,{
+    id:"test-preparation",agent_id:"test",title:"Prepare regression test",
+    description:"Create one test before acceptance",depends_on:["frontend-task"],
+    resources:[testFile]
+  });
+  p.tasks.find(t=>t.id==="tests")!.depends_on=["test-preparation"];
+  p.tasks.push({
+    id:"pr",agent_id:"orchestrator",title:"Open reviewed PR",
+    description:"Only after final Docker acceptance",depends_on:["tests"],
+    resources:[uri]
+  });
+  p.requested_permissions.push(
+    {id:"backend-followup-write",task_id:"backend-followup",
+     agent_id:"backend",resource:backendPath,operation:"update_file",
+     reason:"Same file is allowed only with approved dependency"},
+    {id:"test-prep-write",task_id:"test-preparation",
+     agent_id:"test",resource:testFile,operation:"create_file",
+     reason:"Signed Test preparation"},
+    {id:"pr-perm",task_id:"pr",agent_id:"orchestrator",
+     resource:uri,operation:"create_pull_request",
+     reason:"Verified final review"}
+  );
+  const h=harness({alternativeApprovedPlan:p});
+  const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+  const approvedProviderTasks:string[]=[];
+  const done=await d.executeApprovedDag({
+    async invokeOrchestratorTask(taskId,gatewayTaskId){
+      approvedProviderTasks.push(taskId);
+      h.log.push("provider:"+gatewayTaskId);
+    }
+  });
+  assert.deepEqual(done.completed_task_ids,[
+    "branch","backend-task","backend-followup","frontend-task",
+    "test-preparation","tests","pr"
+  ]);
+  assert.deepEqual(done.specialized_results.map(result=>result.role),[
+    "backend","backend","frontend","test","test"
+  ]);
+  assert.deepEqual(approvedProviderTasks,["branch","pr"]);
+  assert.equal(h.log.filter(x=>x.startsWith("allocate:")).length,5);
+  assert.equal(h.coordinator.phase,"closed");
+});
+
 test("unapproved second Backend Task fails closed before any DAG provider effect",async()=>{
   const p=plan();
   const nextFile=p.tasks[1]!.resources[0]!;

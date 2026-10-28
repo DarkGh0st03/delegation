@@ -217,10 +217,14 @@ export async function runNativePositiveApprovedDag({
   assert.equal(grants.length,approvedCount,
     "Signed plan contains unexpected extra tool grants");
   const implementationFiles=[...files.backend,...files.frontend];
+  // A later approved Test Task may read the regression source written by
+  // an earlier Test Task. That new path is NOT present on main and must not
+  // be fetched during baseline capture; the Gateway still enforces each
+  // task's actual signed read and checks Gitea state when invoked.
   const expectedExisting=[...new Set([
     ...implementationFiles,...readableFiles.backend,
     ...readableFiles.frontend,...approvedTestReads
-  ])];
+  ])].filter(path=>path!==createdTestFile);
   assert.equal(new Set([...implementationFiles,...approvedTestUpdates]).size,
     implementationFiles.length+approvedTestUpdates.length,
     "Test writes must not conflict with implementation roles");
