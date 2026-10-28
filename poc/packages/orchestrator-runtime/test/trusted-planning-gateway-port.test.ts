@@ -8,6 +8,8 @@ import {generateKeyPairSync} from "node:crypto";
 import {mkdtemp,mkdir,rm,readFile,writeFile,chmod,readdir} from "node:fs/promises";
 import {join} from "node:path";
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
+import {makeApproval} from "../../plan-contracts/src/plan.mjs";
+import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {tmpdir} from "node:os";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -21,14 +23,20 @@ import {TrustedPlanningRevisions}
 import {InMemoryAuditSink} from "../../../apps/gateway/src/prepare.ts";
 import type {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {
-  TrustedEngineerAuthoritySession
+  TrustedEngineerAuthoritySession,
+  type EngineerCredentialPort,type RootParameters
 } from "../src/trusted-engineer-authority.ts";
+import type {IssuedDelegationCredential}
+  from "../src/authority-client.ts";
 import {TrustedExecutionCoordinator}
   from "../src/trusted-execution-coordinator.ts";
 import {TrustedPlanningGatewayReadPort}
   from "../src/trusted-planning-gateway-port.ts";
 import {TrustedAdkReadOnlyPlanner}
   from "../src/trusted-adk-planner.ts";
+import {compilePlanningProposal} from "../src/trusted-adk-planner.ts";
+import {startTrustedFreshRepairPlanningReview}
+  from "../src/trusted-fresh-planning-intake.ts";
 import {startOwnerControlledPlanningReview}
   from "../src/trusted-owner-planning-bootstrap.ts";
 import {SignedPlanningCheckpointFileStore}
@@ -1011,4 +1019,135 @@ test("R5 protected owner service composes signed ADK Planning with strict host a
     await rm(home,{recursive:true,force:true});
     await f.cleanup();
   }
+});
+
+
+test("closed prior DAG -> fresh pinned Gitea -> offline ADK repair proposal -> signed checkpoint -> independent Engineer review",async()=>{
+  const f=await makeOwnerReviewFixture();
+  const oldSnapshot={...snapshot,session_id:"previous-invoice-session"};
+  const previous=compilePlanningProposal(proposal,{
+    snapshot:oldSnapshot,requirement:"Original invoice improvement",
+    planId:"previous-invoice-plan",workBranch:"feature/invoice-sort",agents
+  });
+  const priorApproval=makeApproval(previous.plan,{
+    allowedOperations:new Set<string>(RUST_OPERATIONS),
+    decision_id:"previous-invoice-approval",
+    approved_by:"did:thesis:engineer",
+    approved_at:new Date().toISOString(),
+    approved_permission_ids:previous.plan.requested_permissions.map(p=>p.id)
+  });
+  const revocations:string[]=[];
+  const rootCredentials:EngineerCredentialPort={
+    async issueScopedOrchestratorRoot(input):Promise<IssuedDelegationCredential>{
+      return {
+        "@context":["https://www.w3.org/ns/credentials/v2"],
+        type:["VerifiableCredential","DelegationCredential"],
+        id:input.credential_id,issuer:"did:thesis:engineer",
+        validFrom:input.valid_from,credentialSubject:{
+          sub:"did:thesis:orchestrator",
+          per:structuredClone(input.permissions)
+        }
+      };
+    },
+    async revokeRoot(id:string){revocations.push(id);}
+  };
+  const oldAuthority=new TrustedEngineerAuthoritySession({
+    snapshot:oldSnapshot,credentials:rootCredentials,
+    approvals:{async loadAuthenticatedApproval(sessionId){
+      assert.equal(sessionId,oldSnapshot.session_id);
+      return {plan:previous.plan,approval:priorApproval,
+        authenticated_engineer_did:"did:thesis:engineer"};
+    }},
+    authenticatedEngineerDid:"did:thesis:engineer"
+  });
+  let retired=false;
+  const prior=new TrustedExecutionCoordinator({
+    authority:oldAuthority,credentials:rootCredentials,
+    sessionId:oldSnapshot.session_id,baseRevision:oldSnapshot.base_revision,
+    approvedGatewayPlans:{
+      async activate(){return planDigest(previous.plan);},
+      bindTask(){},
+      async confirmTaskCompletion(){},
+      async closeSession(){retired=true;}
+    }
+  });
+  const root=(id:string,index:string,ttl:number):RootParameters=>({
+    credential_id:id,valid_from:new Date().toISOString(),
+    validity_seconds:ttl,
+    credential_status:{
+      type:"BitstringStatusListEntry" as const,
+      statusPurpose:"revocation" as const,
+      statusListIndex:index,
+      statusListCredential:"https://example.test/previous-invoice-revocation"
+    }
+  });
+  try{
+    await prior.beginPlanning(root("urn:prior:planning","77",600));
+    await prior.beginExecution(root("urn:prior:operational","78",3600));
+    // An active old operational root must NOT allow new Gitea reads or a model.
+    let freshDiscoveryReads=0;
+    const trustedGitea={async readPinnedMainSnapshot(){
+      freshDiscoveryReads++;
+      return {repository:snapshot.repository,base_revision:SHA,
+        directories:[...snapshot.directories],files:[...snapshot.files]};
+    }};
+    const config=f.makeConfig();
+    const offlineModel=new R5ScriptedNoProviderPlanningModel({
+      snapshot,workBranch:"feature/invoice-sort",
+      edits:{backend:[FILE],frontend:[SECOND_FILE]},
+      newTestFile:"src/billing/repair.spec.ts"
+    });
+    const planning={
+      ...config,
+      planner:{...config.planner,model:offlineModel,
+        requirement:"Repair the reported invoice TypeScript regression",
+        planId:"new-approved-only-after-review"}
+    };
+    await assert.rejects(startTrustedFreshRepairPlanningReview({
+      previousCoordinator:prior,nextCoordinator:f.coordinator,
+      nextSessionId:snapshot.session_id,trustedGitea,
+      planning
+    }),/terminal closure/);
+    assert.equal(freshDiscoveryReads,0);
+    assert.equal(f.observed.issued,0);
+    assert.equal(f.coordinator.phase,"idle");
+
+    await prior.closeExecution();
+    assert.equal(retired,true);
+    assert.deepEqual(revocations,[
+      "urn:prior:planning","urn:prior:operational"
+    ]);
+    const packet=await startTrustedFreshRepairPlanningReview({
+      previousCoordinator:prior,nextCoordinator:f.coordinator,
+      nextSessionId:snapshot.session_id,trustedGitea,
+      planning
+    });
+    assert.equal(freshDiscoveryReads,1);
+    assert.equal(packet.status,"awaiting_engineer_signature");
+    assert.equal(packet.base_revision,SHA);
+    assert.equal(packet.session_id,snapshot.session_id);
+    assert.equal(packet.plan.requirement,
+      "Repair the reported invoice TypeScript regression");
+    assert.deepEqual(packet.plan.tasks.map(t=>t.id),
+      ["branch","backend","frontend","test","pr"]);
+    assert.equal(packet.verified_source_reads,2);
+    assert.equal(packet.plan_digest,(await f.store.load()).proposal.digest);
+    assert.deepEqual(packet.plan,(await f.store.load()).proposal.plan);
+    assert.equal(f.gate.reviewPacket().plan_digest,packet.plan_digest);
+    assert.deepEqual({
+      issued:f.observed.issued,adapter:f.observed.adapter,
+      verified:f.observed.verification,opa:f.observed.policy,
+      executed:f.observed.execute
+    },{issued:1,adapter:2,verified:2,opa:2,executed:2});
+    assert.equal(f.coordinator.phase,"planning");
+    assert.throws(()=>f.coordinator.trustedOperationalAuthority(),
+      /Verified operational root is not active/);
+    await assert.rejects(f.gate.loadAuthenticatedApproval(snapshot.session_id),
+      (e:unknown)=>!!e&&typeof e==="object"&&"code" in e&&e.code==="ENOENT");
+    assert.equal(prior.phase,"closed");
+    await f.coordinator.closePlanning();
+    assert.equal(f.coordinator.phase,"closed");
+    await f.planningRecovery.assertClean();
+    assert.equal(f.observed.revoked,1);
+  }finally{await f.cleanup();}
 });
