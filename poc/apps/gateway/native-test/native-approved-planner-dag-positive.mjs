@@ -726,6 +726,42 @@ export async function runNativePositiveApprovedDag({
         assert.equal(created.execution.commit_sha,baseSha);
         assert.equal((await reader.getBranchMetadata(branch)).commit_sha,baseSha);
       }
+    }).catch(error=>{
+      if(offlineMultiTest){
+        // Only plan-generated Task IDs and fixed diagnostic categories enter
+        // logs. NEVER publish exception text, provider payloads, DCs or VPs.
+        const classify=e=>{
+          const message=typeof e?.message==="string"?e.message:"";
+          if(message.startsWith("Trusted dispatch failed;"))return "a2a_dispatch_failed";
+          if(message.startsWith("Trusted Orchestrator Task failed;"))
+            return "orchestrator_task_failed";
+          if(message.startsWith("Trusted DAG termination or revocation not confirmed"))
+            return "root_revocation_unconfirmed";
+          if(message.startsWith("Approved Task dependencies not verified"))
+            return "dependency_denied";
+          if(message.startsWith("ADK protected model failure:"))
+            return "adk_model_failure";
+          if(message.startsWith("Protected A2A result does not match"))
+            return "a2a_result_mismatch";
+          if(message.startsWith("Gateway provider effects changed"))
+            return "attestation_effect_race";
+          if(e?.code==="approved_plan_denied")return "approved_plan_denied";
+          if(e?.code==="ERR_ASSERTION")return "test_assertion";
+          return "unclassified";
+        };
+        process.stderr.write("[native-dag-adk] multi_test_safe_diagnostic "+
+          JSON.stringify({
+            completed_task_ids:dispatcher.completedTaskIds.filter(id=>
+              signed.plan.tasks.some(task=>task.id===id)),
+            issued_task_ids:Object.keys(childIds).filter(id=>
+              signed.plan.tasks.some(task=>task.id===id)),
+            category:classify(error),
+            cause_category:classify(error?.cause),
+            runner_runs:runnerRuns,
+            signed_test_write_count:testCalls
+          })+"\n");
+      }
+      throw error;
     });
     assert.equal(coordinator.phase,"closed");
     assert.equal(result.plan_digest,planDigest);
