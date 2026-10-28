@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {MCP_AUDIENCE,type TaskClaims} from "../src/task-token.ts";
-import {TaskRouter} from "../src/task-router.ts";
+import {TaskRouter,WorkerTestsFailedError} from "../src/task-router.ts";
 const workers={backend:{baseUrl:"http://backend.internal:9000"},
   frontend:{baseUrl:"http://frontend.internal:9001"},test:{baseUrl:"http://test.internal:9002"}};
 const claims:TaskClaims={role:"backend",task_id:"task-A",iss:"thesis-agent-backend",
@@ -67,4 +67,29 @@ test("Runner phase error transport keeps the phase enum but never arbitrary deta
   }),{status:422}));
   await assert.rejects(invalid.runTests(testClaims,"token",args),
     (e:unknown)=>e instanceof Error&&e.message==="tests_failed");
+});
+
+test("Runner phase transports only compiler locations already whitelisted by the worker",async()=>{
+  const args={branch:"feature/account-suspension",profile:"poc-default"};
+  const testClaims={...claims,role:"test" as const};
+  const bad="PRIVATE_TS_SOURCE";
+  const router=new TaskRouter(workers,async()=>new Response(JSON.stringify({
+    ok:false,error:{kind:"tests_failed",details:{
+      first_failed_phase:"typecheck",raw_text:bad,
+      typecheck_diagnostics:[
+        {path:"tests/backend/fix.test.ts",line:14,column:7,code:"TS2304"},
+        {path:"/private/secret.ts",line:1,column:2,code:"TS2345"},
+        {path:"tests/backend/fix.test.ts",line:1,column:1,code:"TS2304",code_text:bad}
+      ]
+    }}
+  }),{status:422}));
+  await assert.rejects(router.runTests(testClaims,"signed",args),(error:unknown)=>{
+    if(!(error instanceof WorkerTestsFailedError))return false;
+    assert.equal(error.message,"tests_failed:typecheck");
+    assert.deepEqual(error.typecheck_diagnostics,[{
+      path:"tests/backend/fix.test.ts",line:14,column:7,code:"TS2304"
+    }]);
+    assert.ok(!JSON.stringify(error).includes(bad));
+    return true;
+  });
 });

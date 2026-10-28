@@ -1,4 +1,17 @@
 import {parseCreatePresentationArgs,type CreatePresentationArgs} from "./crypto-catalog.ts";
+import {sanitizeTypecheckLocations,type TypecheckLocation}
+  from "../../apps/test-runner-controller/src/typecheck-diagnostics.ts";
+/** Only whitelisted failure metadata, no arbitrary untrusted error message. */
+export class WorkerTestsFailedError extends Error {
+  readonly phase:string|null;
+  readonly typecheck_diagnostics:TypecheckLocation[];
+  constructor(phase:string|null,diagnostics:TypecheckLocation[]){
+    super("tests_failed"+(phase?":"+phase:""));
+    this.name="WorkerTestsFailedError";
+    this.phase=phase;
+    this.typecheck_diagnostics=diagnostics;
+  }
+}
 import type {AgentRole, TaskClaims} from "./task-token.ts";
 import {parseReadFileArgs,parseUpdateFileArgs,parseCreateFileArgs,parseRunTestsArgs,type ReadFileArgs,type UpdateFileArgs,type CreateFileArgs,type RunTestsArgs} from "./catalog.ts";
 export type WorkerEndpoints = Readonly<Record<AgentRole,{baseUrl:string}>>;
@@ -75,8 +88,12 @@ export class TaskRouter {
         const phases=new Set(["dependency_install","typecheck","backend_tests",
           "frontend_tests","build","playwright_e2e","researcher_acceptance"]);
         // Only a fixed enum crosses to shared MCP; no free-form exception.
-        if(typeof phase==="string"&&phases.has(phase))
-          throw new Error("tests_failed:"+phase);
+        const validPhase=typeof phase==="string"&&phases.has(phase)?phase:null;
+        const diagnostics=validPhase==="typecheck"&&details&&
+          typeof details==="object"&&!Array.isArray(details)
+          ?sanitizeTypecheckLocations((details as {typecheck_diagnostics?:unknown})
+            .typecheck_diagnostics):[];
+        throw new WorkerTestsFailedError(validPhase,diagnostics);
       }
       throw new Error(typeof candidate==="string"&&safe.includes(candidate)
         ?candidate:"task_worker_rejected");

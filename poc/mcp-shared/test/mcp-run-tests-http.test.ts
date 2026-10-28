@@ -50,7 +50,10 @@ test("one shared MCP run_tests routes only opted-in active Test role through pri
     assert.deepEqual(input,args);
     if(fail)throw new ControlledToolError("tests_failed",
       "private runner failure details",{details:{
-        first_failed_phase:"typecheck",privateLog:"PRIVATE_TS_SOURCE_CODE"
+        first_failed_phase:"typecheck",privateLog:"PRIVATE_TS_SOURCE_CODE",
+        typecheck_diagnostics:[{
+          path:"tests/backend/fix.test.ts",line:14,column:7,code:"TS2304"
+        }]
       }});
     return result;
   }};
@@ -87,11 +90,16 @@ test("one shared MCP run_tests routes only opted-in active Test role through pri
     assert.equal(JSON.stringify(denied).includes("PRIVATE_TS_SOURCE_CODE"),false);
     assert.deepEqual(
       (denied.structuredContent as {error:{details:unknown}}).error.details,
-      {first_failed_phase:"typecheck"});
-    const normalized=normalizeMcpRunTestsOutcome(denied,args);
+      {first_failed_phase:"typecheck",
+        typecheck_diagnostics:[{path:"tests/backend/fix.test.ts",
+          line:14,column:7,code:"TS2304"}]});
+    const normalized=normalizeMcpRunTestsOutcome(denied,args,
+      ["tests/backend/fix.test.ts"]);
     assert.equal(normalized.ok,false);
     if(!normalized.ok)assert.deepEqual(normalized.error.details,
-      {first_failed_phase:"typecheck"});
+      {first_failed_phase:"typecheck",
+        typecheck_diagnostics:[{path:"tests/backend/fix.test.ts",
+          line:14,column:7,code:"TS2304"}]});
     assert.equal(attempted,2);
     const wrongProfile=await active.callTool({name:"run_tests",
       arguments:{...args,profile:"shell-command"}});

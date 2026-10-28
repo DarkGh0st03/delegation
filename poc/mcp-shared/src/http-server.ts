@@ -4,7 +4,7 @@ import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {StreamableHTTPServerTransport} from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {z} from "zod";
 import {bearerToken, verifyTaskToken, type VerificationKeys} from "./task-token.ts";
-import {TaskRouter} from "./task-router.ts";
+import {TaskRouter,WorkerTestsFailedError} from "./task-router.ts";
 import {MCP_READ_FILE,MCP_UPDATE_FILE,MCP_CREATE_FILE,MCP_RUN_TESTS,MAX_MCP_UPDATE_BYTES,MAX_MCP_CREATE_BYTES,isMcpFeatureBranch} from "./catalog.ts";
 
 export interface SharedMcpConfig {
@@ -146,19 +146,21 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
         return {content:[{type:"text" as const,text:JSON.stringify(payload)}],structuredContent:payload};
       }catch(e){
         const candidate=e instanceof Error?e.message:"tool_unavailable";
-        const phases=new Set(["dependency_install","typecheck","backend_tests",
-          "frontend_tests","build","playwright_e2e","researcher_acceptance"]);
-        const tagged=/^tests_failed:([a-z_]+)$/u.exec(candidate);
-        const phase=tagged&&phases.has(tagged[1])?tagged[1]:null;
-        const kind=[
+        const bounded=e instanceof WorkerTestsFailedError?e:null;
+        const allowed=[
           "invalid_tool_arguments","task_worker_unavailable",
           "task_worker_rejected","task_worker_invalid_result",
           "authorization_denied","invalid_tool_call","inactive_task",
           "unauthorized","tool_unavailable","tests_failed"
-        ].includes(candidate)||phase?"tests_failed"===candidate||phase
-          ?"tests_failed":candidate:"tool_unavailable";
-        const payload={ok:false,error:{kind,
-          ...(phase?{details:{first_failed_phase:phase}}:{})}};
+        ];
+        const kind=bounded?"tests_failed":allowed.includes(candidate)
+          ?candidate:"tool_unavailable";
+        const details=bounded?.phase?{
+          first_failed_phase:bounded.phase,
+          ...(bounded.typecheck_diagnostics.length
+            ?{typecheck_diagnostics:bounded.typecheck_diagnostics}:{})
+        }:undefined;
+        const payload={ok:false,error:{kind,...(details?{details}:{})}};
         return {isError:true,
           content:[{type:"text" as const,text:JSON.stringify(payload)}],
           structuredContent:payload};
