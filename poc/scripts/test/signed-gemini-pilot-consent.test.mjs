@@ -2,13 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
-import {SIGNED_GEMINI_PILOT,verifySignedGeminiPilotConsent}
+import {SIGNED_GEMINI_PILOT,BILLING_ACK,verifySignedGeminiPilotConsent}
   from "../signed-gemini-pilot-consent.mjs";
 const valid=()=>({
   GITHUB_ACTIONS:"true",GITHUB_EVENT_NAME:"workflow_dispatch",
   GITHUB_RUN_ATTEMPT:"1",GITHUB_REPOSITORY:"DarkGh0st03/delegation",
   GITHUB_REF:"refs/heads/refactor/post-prof-plan-contracts-20261021",
   GITHUB_SHA:"a".repeat(40),GITHUB_RUN_ID:"40699999999",
+  DELEGATION_PINNED_COMMIT_SHA:"a".repeat(40),
+  DELEGATION_BILLING_CAP_ACK:BILLING_ACK,
   DELEGATION_SIGNED_GEMINI_PILOT:"1",
   DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
   DELEGATION_GEMINI_MODEL:"gemini-3.8-flash"
@@ -17,6 +19,10 @@ test("manual pilot produces ONLY a redacted zero-inference receipt",()=>{
   const env={...valid(),GEMINI_API_KEY:"SECRET_NEVER_TO_APPEAR"};
   const receipt=verifySignedGeminiPilotConsent(env,{requireApiKey:true});
   assert.equal(receipt.generation_calls,0);
+  assert.equal(receipt.pinned_commit_sha,"a".repeat(40));
+  assert.equal(receipt.billing_cap_configuration,
+    "user_attested_not_programmatically_verified");
+  assert.equal(receipt.billing_cap_overage_risk_acknowledged,true);
   assert.equal(receipt.actual_api_access_verified,false);
   assert.equal(receipt.spending_cap_enforced_by_this_check,false);
   assert.equal(receipt.paid_execution_authorized_by_this_receipt,false);
@@ -36,6 +42,9 @@ test("manual consent is fail closed for wrong event, branch, run or model",()=>{
     GITHUB_RUN_ATTEMPT:["2","0"],GITHUB_REPOSITORY:["example/delegation"],
     GITHUB_REF:["refs/heads/main","refs/tags/v1"],
     GITHUB_SHA:["invalid","A".repeat(40)],GITHUB_RUN_ID:["0","x"],
+    DELEGATION_PINNED_COMMIT_SHA:["b".repeat(40),undefined,""],
+    DELEGATION_BILLING_CAP_ACK:["I CONFIRM",undefined,
+      "I VERIFIED PROJECT SPEND CAP"],
     DELEGATION_SIGNED_GEMINI_PILOT:["0",undefined],
     DELEGATION_GEMINI_CHARGE_CONFIRMATION:["yes","I AUTHORIZE"],
     DELEGATION_GEMINI_MODEL:["gemini-3.8-live","gemini-4-argon"]
@@ -85,6 +94,9 @@ test("actual relative-path CLI cannot bypass manual consent (zero provider calls
   assert.equal(JSON.parse(paid.stdout).actual_api_access_verified,false);
   for(const [args,env] of [
     [["--preflight-no-inference"],{GITHUB_RUN_ATTEMPT:"2"}],
+    [["--preflight-no-inference"],{
+      DELEGATION_PINNED_COMMIT_SHA:"b".repeat(40)}],
+    [["--preflight-no-inference"],{DELEGATION_BILLING_CAP_ACK:""}],
     [["--preflight-no-inference"],{GITHUB_EVENT_NAME:"push"}],
     [["--require-key-no-inference"],{GEMINI_API_KEY:""}],
     [[],{}],

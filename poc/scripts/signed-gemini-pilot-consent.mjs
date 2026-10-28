@@ -21,6 +21,8 @@ export const SIGNED_GEMINI_PILOT = Object.freeze({
 const SHA=/^[0-9a-f]{40}$/u;
 const ID=/^[1-9][0-9]{0,19}$/u;
 const CONSENT="I AUTHORIZE GEMINI API CHARGES";
+export const BILLING_ACK=
+  "I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES";
 function deny(){throw Error("Signed Gemini pilot preflight NO-GO");}
 export function verifySignedGeminiPilotConsent(env,{requireApiKey=false}={}){
   if(!env||typeof env!=="object"||Array.isArray(env)||
@@ -30,6 +32,8 @@ export function verifySignedGeminiPilotConsent(env,{requireApiKey=false}={}){
      env.GITHUB_REPOSITORY!==SIGNED_GEMINI_PILOT.repository||
      env.GITHUB_REF!==SIGNED_GEMINI_PILOT.branch||
      !SHA.test(env.GITHUB_SHA??"")||
+     env.DELEGATION_PINNED_COMMIT_SHA!==env.GITHUB_SHA||
+     env.DELEGATION_BILLING_CAP_ACK!==BILLING_ACK||
      !ID.test(env.GITHUB_RUN_ID??"")||
      env.DELEGATION_SIGNED_GEMINI_PILOT!=="1"||
      env.DELEGATION_GEMINI_CHARGE_CONFIRMATION!==CONSENT||
@@ -44,6 +48,9 @@ export function verifySignedGeminiPilotConsent(env,{requireApiKey=false}={}){
   return Object.freeze({
     status:"manual_pilot_configuration_verified_no_inference",
     model:SIGNED_GEMINI_PILOT.model,
+    pinned_commit_sha:env.GITHUB_SHA,
+    billing_cap_configuration:"user_attested_not_programmatically_verified",
+    billing_cap_overage_risk_acknowledged:true,
     thinking_level:SIGNED_GEMINI_PILOT.thinkingLevel,
     max_output_tokens_per_call:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
     max_model_turns_per_task:SIGNED_GEMINI_PILOT.maxTurnsPerTask,

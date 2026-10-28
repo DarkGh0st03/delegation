@@ -17,6 +17,14 @@ on:
         type: string
         required: true
         default: 'gemini-3.8-flash'
+      pinned_commit_sha:
+        description: 'Paste the exact 40-character commit SHA verified by all three offline CIs'
+        type: string
+        required: true
+      billing_cap_acknowledgement:
+        description: 'Type exactly I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES'
+        type: string
+        required: true
       thinking_level:
         description: 'Fixed LOW thinking for this bounded pilot'
         type: choice
@@ -84,6 +92,8 @@ jobs:
           DELEGATION_GEMINI_MODEL: ${{ inputs.model }}
           DELEGATION_GEMINI_CHARGE_CONFIRMATION: ${{ inputs.authorization }}
           DELEGATION_SIGNED_GEMINI_PILOT: "1"
+          DELEGATION_PINNED_COMMIT_SHA: ${{ inputs.pinned_commit_sha }}
+          DELEGATION_BILLING_CAP_ACK: ${{ inputs.billing_cap_acknowledgement }}
         run: |
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = workflow_dispatch
@@ -103,6 +113,8 @@ jobs:
           DELEGATION_GEMINI_MODEL: ${{ inputs.model }}
           DELEGATION_GEMINI_CHARGE_CONFIRMATION: ${{ inputs.authorization }}
           DELEGATION_SIGNED_GEMINI_PILOT: "1"
+          DELEGATION_PINNED_COMMIT_SHA: ${{ inputs.pinned_commit_sha }}
+          DELEGATION_BILLING_CAP_ACK: ${{ inputs.billing_cap_acknowledgement }}
         run: |
           set -euo pipefail
           node --test poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
@@ -193,6 +205,8 @@ jobs:
           DELEGATION_GEMINI_MODEL: ${{ inputs.model }}
           DELEGATION_GEMINI_CHARGE_CONFIRMATION: ${{ inputs.authorization }}
           DELEGATION_SIGNED_GEMINI_PILOT: "1"
+          DELEGATION_PINNED_COMMIT_SHA: ${{ inputs.pinned_commit_sha }}
+          DELEGATION_BILLING_CAP_ACK: ${{ inputs.billing_cap_acknowledgement }}
           APPROVED_RUNNER_NATIVE_EVM: "1"
           APPROVED_RUNNER_THREE_AGENT_DAG: "1"
           APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
@@ -295,7 +309,7 @@ jobs:
                   verified_signals:matching,
                   stage:"gemini_planning_or_delegated_execution",
                   root_revocation:"not_confirmed_by_this_report",
-                  model_usage:"unknown_check_provider_console",
+                  provider_invoice_cost:"unknown_check_provider_console",
                   human_approval:false},null,2)+"\n",{flag:"wx",mode:0o600});
             '
             echo "::error::Gemini signed-DAG pilot failed; sanitized failure artifact only."
