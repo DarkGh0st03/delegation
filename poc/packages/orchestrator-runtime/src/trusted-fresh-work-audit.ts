@@ -16,8 +16,11 @@ import {TrustedExecutionCoordinator}
   from "./trusted-execution-coordinator.ts";
 import {SignedEngineerApprovalFileStore}
   from "./signed-approval-store.ts";
-import {startTrustedFreshRepairPlanningReview,
+import {prepareTrustedFreshPlanningIntake,
   type TrustedFreshMainDiscovery} from "./trusted-fresh-planning-intake.ts";
+import {startOwnerControlledPlanningReview}
+  from "./trusted-owner-planning-bootstrap.ts";
+import {isDeepStrictEqual} from "node:util";
 import type {OwnerControlledPlanningConfig}
   from "./trusted-owner-planning-bootstrap.ts";
 import {TrustedFreshWorkDecisionStore,type FreshWorkDisposition}
@@ -173,7 +176,24 @@ export async function startAuditedFreshRepairPlanning(input:{
       planning_authorized:false as const
     });
   }
-  // Re-check terminal old authority and the new independent main SHA in
-  // the existing trusted path. Old changed-file metadata is never a grant.
-  return startTrustedFreshRepairPlanningReview(input);
+  // This is now the ONLY executable fresh repair Planning entry. The legacy
+  // startTrustedFreshRepairPlanningReview() rejects unconditionally.
+  // Recheck old-root retirement, fetch independently pinned main, and refuse
+  // any attempted use of the failed feature-branch source as planning state.
+  if(!input.planning||typeof input.planning!=="object")
+    fail("owner-controlled fresh repair Planning configuration required");
+  const intake=await prepareTrustedFreshPlanningIntake(input);
+  const cfg=input.planning;
+  if(!isDeepStrictEqual(cfg.planner?.snapshot,intake.snapshot))
+    fail("new Planner must use independently pinned Gitea snapshot");
+  if(typeof cfg.planner?.requirement!=="string"||
+     !cfg.planner.requirement.trim()||
+     cfg.planner.requirement.length>4000)
+    fail("fresh repair requirement must be explicitly supplied by the owner");
+  // Existing signed checkpoint, Gateway reads and read-only provisional root;
+  // the audit itself cannot issue new execution credentials.
+  return startOwnerControlledPlanningReview({
+    ...cfg,coordinator:input.nextCoordinator,
+    snapshot:structuredClone(intake.snapshot)
+  });
 }
