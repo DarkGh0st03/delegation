@@ -220,6 +220,7 @@ export class TrustedEngineerAuthoritySession {
   #provisionalId?:string;
   #provisionalStatus?:CredentialStatusInput;
   #operationalId?:string;
+  #operationalStatus?:CredentialStatusInput;
   #approvedPlanDigest?:string;
   #planningClosure?:Promise<void>;
 
@@ -244,6 +245,22 @@ export class TrustedEngineerAuthoritySession {
 
   get phase():State {return this.#state;}
   get approvedPlanDigest():string|undefined{return this.#approvedPlanDigest;}
+
+  /** Never use a revoked session's root identity or Status List entry
+   * as the authority for a fresh independently reviewed Execution. */
+  assertFreshOperationalRootIndependent(root:RootParameters):void{
+    if(this.#state!=="operational"||!this.#operationalId||
+       !this.#operationalStatus||!this.#provisionalId||!this.#provisionalStatus)
+      fail("prior operational root identities are unavailable");
+    validateRoot(root,7200);
+    if([this.#provisionalId,this.#operationalId].includes(root.credential_id))
+      fail("prior session credential ID cannot be reused");
+    for(const entry of [this.#provisionalStatus,this.#operationalStatus]){
+      if(root.credential_status.statusListCredential===entry.statusListCredential &&
+         root.credential_status.statusListIndex===entry.statusListIndex)
+        fail("prior session revocation Status List entry cannot be reused");
+    }
+  }
 
   /** Private trusted host comparison, NOT a way to change an existing pin. */
   assertPinnedRepository(repo:TrustedPlanningSnapshot["repository"]):void{
@@ -406,6 +423,7 @@ export class TrustedEngineerAuthoritySession {
     if(issued.id!==root.credential_id || !equality(issued.credentialSubject?.per,selected))
       fail("Adapter returned inconsistent operational root");
     this.#operationalId=issued.id;
+    this.#operationalStatus=structuredClone(root.credential_status);
     this.#approvedPlanDigest=planDigest(plan);
     this.#state="operational";
     return {

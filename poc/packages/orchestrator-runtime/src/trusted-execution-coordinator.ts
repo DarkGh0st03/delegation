@@ -395,6 +395,13 @@ export class TrustedExecutionCoordinator {
     });
   }
 
+  /** Require independently confirmed old-root retirement before a new
+   * session may issue a non-reused operational credential. Owner-only. */
+  async assertIndependentFreshOperationalRoot(root:RootParameters):Promise<void>{
+    await this.assertOperationalClosureConfirmed();
+    this.#authority.assertFreshOperationalRootIndependent(root);
+  }
+
   /** A host-only assertion: the next session must still be unstarted and
    * bind to the exact new trusted Gitea snapshot. No preliminary root,
    * delegation, approval or operational capability is generated here. */

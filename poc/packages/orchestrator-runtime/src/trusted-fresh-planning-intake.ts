@@ -8,7 +8,7 @@
  * signed review of a fresh proposal afterward.
  */
 import {isDeepStrictEqual} from "node:util";
-import {preliminaryReadPermissions,type TrustedPlanningSnapshot}
+import {preliminaryReadPermissions,type RootParameters,type TrustedPlanningSnapshot}
   from "./trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
   from "./trusted-execution-coordinator.ts";
@@ -177,5 +177,46 @@ export async function verifyTrustedFreshRepairEngineerApproval(input:{
     approval_decision_id:(signed.approval as {decision_id:string}).decision_id,
     planning_authority_only:true as const,
     operational_credentials_issued:false as const
+  });
+}
+
+
+/** Private owner-only repair transition, reusing beginExecution's signed
+ * Engineer approval reload, preliminary revocation and Gateway activation.
+ * This does not call Gemini, dispatch agents, or sign a new approval. */
+export async function beginTrustedFreshRepairApprovedExecution(input:{
+  previousCoordinator:TrustedExecutionCoordinator;
+  nextCoordinator:TrustedExecutionCoordinator;
+  nextSessionId:string;
+  reviewGate:TrustedPlanningReviewGate;
+  operationalRoot:RootParameters;
+}):Promise<Readonly<{
+  status:"fresh_execution_activated";
+  session_id:string;
+  base_revision:string;
+  plan_digest:string;
+  approval_decision_id:string;
+  operational_root_id:string;
+}>>{
+  if(!input?.operationalRoot)fail("independent operational root required");
+  const reviewed=await verifyTrustedFreshRepairEngineerApproval(input);
+  await input.previousCoordinator.assertIndependentFreshOperationalRoot(input.operationalRoot);
+  const active=await input.nextCoordinator.beginExecution(
+    structuredClone(input.operationalRoot));
+  if(active.plan_digest!==reviewed.plan_digest){
+    try{await input.nextCoordinator.closeExecution();}
+    catch(error){
+      throw Error("Fresh repair operational digest mismatch; retirement unconfirmed",
+        {cause:error});
+    }
+    fail("fresh operational plan digest changed during signed handoff");
+  }
+  return Object.freeze({
+    status:"fresh_execution_activated" as const,
+    session_id:reviewed.session_id,
+    base_revision:reviewed.base_revision,
+    plan_digest:active.plan_digest,
+    approval_decision_id:reviewed.approval_decision_id,
+    operational_root_id:active.credential_id
   });
 }

@@ -13,8 +13,10 @@ import {InMemoryAuditSink} from "../../../apps/gateway/src/prepare.ts";
 import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
 import {TrustedEngineerAuthoritySession} from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from "../src/trusted-execution-coordinator.ts";
+import {TrustedPlanningReviewGate} from "../src/trusted-planning-review-gate.ts";
 import {prepareTrustedFreshPlanningIntake,
-  startTrustedFreshRepairPlanningReview}
+  startTrustedFreshRepairPlanningReview,
+  beginTrustedFreshRepairApprovedExecution}
   from "../src/trusted-fresh-planning-intake.ts";
 import type {EngineerCredentialPort,RootParameters} from "../src/trusted-engineer-authority.ts";
 import type {IssuedDelegationCredential} from "../src/authority-client.ts";
@@ -486,4 +488,121 @@ test("if Gateway cannot activate a matching signed plan, independently issued op
     "issue:urn:signed:read-root","revoke:urn:signed:read-root",
     "issue:urn:signed:work-root","revoke:urn:signed:work-root"
   ]);
+});
+
+
+test("R36: fresh signed repair uses existing trusted execution, not revoked credentials",async(t)=>{
+  const oldDir=await mkdtemp(join(tmpdir(),"r36-old-"));
+  const freshDir=await mkdtemp(join(tmpdir(),"r36-fresh-"));
+  t.after(async()=>{
+    await rm(oldDir,{recursive:true,force:true});
+    await rm(freshDir,{recursive:true,force:true});
+  });
+  const oldKeys=fakeKeys(),newKeys=fakeKeys();
+  await writeFile(join(oldDir,"session-signed-1.json"),
+    JSON.stringify(receipt(oldKeys.priv)),{mode:0o600});
+  const oldStore=new SignedEngineerApprovalFileStore({
+    directory:oldDir,engineerDid:ENGINEER,nowMs:()=>NOW,
+    trustedKeys:{"engineer-signing-key-1":{
+      engineer_did:ENGINEER,public_key_pem:oldKeys.pub}}
+  });
+  const oldCredentials=new CredentialPort();
+  const oldAuthority=new TrustedEngineerAuthoritySession({
+    snapshot:{session_id:"session-signed-1",repository:REPO,
+      base_revision:SHA,directories:[""],files:[]},
+    credentials:oldCredentials,approvals:oldStore,authenticatedEngineerDid:ENGINEER
+  });
+  const oldPlans=new TrustedApprovedExecutionPlans({
+    repository:REPO,engineerDid:ENGINEER,approvals:oldStore,
+    completionAttestor:{async confirmCompleted(){return false;}}
+  });
+  const previousCoordinator=new TrustedExecutionCoordinator({
+    authority:oldAuthority,approvedGatewayPlans:oldPlans,
+    credentials:oldCredentials,sessionId:"session-signed-1",baseRevision:SHA
+  });
+  await previousCoordinator.beginPlanning(root("urn:r36:old-read","100",600));
+  await previousCoordinator.beginExecution(root("urn:r36:old-work","101",3600));
+
+  const nextId="session-signed-2";
+  const nextPlan={...fixturePlan(),session_id:nextId,plan_id:"plan-r36"};
+  const nextSnapshot={session_id:nextId,repository:REPO,base_revision:SHA,
+    directories:[""],files:["apps/backend/user.ts"]};
+  const newStore=new SignedEngineerApprovalFileStore({
+    directory:freshDir,engineerDid:ENGINEER,nowMs:()=>NOW,
+    trustedKeys:{"engineer-signing-key-1":{
+      engineer_did:ENGINEER,public_key_pem:newKeys.pub}}
+  });
+  let nextCoordinator:TrustedExecutionCoordinator;
+  const reviewGate=new TrustedPlanningReviewGate({
+    snapshot:nextSnapshot,expectedWorkBranch:"feature/approved",
+    authenticatedEngineerDid:ENGINEER,signedApprovals:newStore,
+    planningIsActive:()=>nextCoordinator?.phase==="planning"
+  });
+  const nextCredentials=new CredentialPort();
+  const nextAuthority=new TrustedEngineerAuthoritySession({
+    snapshot:nextSnapshot,credentials:nextCredentials,
+    approvals:reviewGate,authenticatedEngineerDid:ENGINEER
+  });
+  const nextPlans=new TrustedApprovedExecutionPlans({
+    repository:REPO,engineerDid:ENGINEER,approvals:reviewGate,
+    completionAttestor:{async confirmCompleted(){return false;}}
+  });
+  nextCoordinator=new TrustedExecutionCoordinator({
+    authority:nextAuthority,approvedGatewayPlans:nextPlans,
+    credentials:nextCredentials,sessionId:nextId,baseRevision:SHA
+  });
+  await nextCoordinator.beginPlanning(root("urn:r36:fresh-read","110",600));
+  const packet=reviewGate.stageTrustedProposal({
+    status:"unapproved_proposal",plan:nextPlan,
+    digest:planDigest(nextPlan),verified_source_reads:1
+  });
+  const attempt=(operationalRoot:RootParameters)=>
+    beginTrustedFreshRepairApprovedExecution({
+      previousCoordinator,nextCoordinator,nextSessionId:nextId,
+      reviewGate,operationalRoot
+    });
+  const newRoot=root("urn:r36:fresh-work","111",3600);
+  await assert.rejects(attempt(newRoot),/terminal closure/);
+  await previousCoordinator.closeExecution();
+  await assert.rejects(attempt(newRoot),(e:any)=>e.code==="ENOENT");
+  const approved=makeApproval(nextPlan,{
+    allowedOperations:OPERATIONS,decision_id:"decision-r36",
+    approved_by:ENGINEER,approved_at:ISSUED,
+    approved_permission_ids:nextPlan.requested_permissions.map(p=>p.id)
+  });
+  const signed=signEngineerApproval({
+    plan:nextPlan,approval:approved,engineerDid:ENGINEER,
+    keyId:"engineer-signing-key-1",privateKeyPem:newKeys.priv,
+    issuedAt:ISSUED,expiresAt:EXPIRES
+  });
+  const receiptPath=join(freshDir,nextId+".json");
+  const tampered=structuredClone(signed);
+  (tampered.plan as any).tasks[0].title="unapproved change";
+  await writeFile(receiptPath,JSON.stringify(tampered),{mode:0o600});
+  await assert.rejects(attempt(newRoot),/signature|digest|signed/i);
+  await writeFile(receiptPath,JSON.stringify(signed),{mode:0o600});
+  await assert.rejects(attempt(root("urn:r36:old-work","111",3600)),
+    /credential ID cannot be reused/);
+  await assert.rejects(attempt(root("urn:r36:old-read","111",3600)),
+    /credential ID cannot be reused/);
+  await assert.rejects(attempt(root("urn:r36:fresh-work","101",3600)),
+    /Status List entry cannot be reused/);
+  assert.deepEqual(nextCredentials.calls,["issue:urn:r36:fresh-read"]);
+  const active=await attempt(newRoot);
+  assert.deepEqual(active,{
+    status:"fresh_execution_activated",session_id:nextId,
+    base_revision:SHA,plan_digest:packet.plan_digest,
+    approval_decision_id:"decision-r36",
+    operational_root_id:"urn:r36:fresh-work"
+  });
+  assert.ok(Object.isFrozen(active));
+  assert.equal(nextCoordinator.phase,"execution");
+  assert.deepEqual(nextCredentials.calls,[
+    "issue:urn:r36:fresh-read","revoke:urn:r36:fresh-read",
+    "issue:urn:r36:fresh-work"
+  ]);
+  await nextCoordinator.closeExecution();
+  assert.equal(nextCoordinator.phase,"closed");
+  assert.equal(previousCoordinator.phase,"closed");
+  assert.equal(nextCredentials.calls.at(-1),"revoke:urn:r36:fresh-work");
 });
