@@ -195,6 +195,8 @@ jobs:
             # Never copy raw model/provider/GitHub/VP logs into artifacts.
             node --input-type=module -e '
               import {readFileSync,writeFileSync} from "node:fs";
+              import {extractSafeGeminiPilotDockerEvidence}
+                from "./poc/apps/test-runner-controller/scripts/gemini-pilot-safe-docker-evidence.mjs";
               let data="";
               try{data=readFileSync("/tmp/real-four-gemini-pilot.log","utf8");}catch{}
               const phases=["native_preliminary_planning_real_disposable_gitea",
@@ -263,6 +265,10 @@ jobs:
               writeFileSync("/tmp/four-gemini-pilot-failure.json",
                 JSON.stringify({status:"FAIL",
                   ...(diagnostic?{gemini_pilot_diagnostic:diagnostic}:{}),
+                  // The native wrapper already redacts all other child data.
+                  // Report only fixed phase/status enums; no raw model logs.
+                  ...(extractSafeGeminiPilotDockerEvidence(data)
+                    ?{docker_phase_evidence:extractSafeGeminiPilotDockerEvidence(data)}:{}),
                   framework_sha:process.env.GITHUB_SHA,
                   run_id:process.env.GITHUB_RUN_ID,
                   verified_signals:matching,
