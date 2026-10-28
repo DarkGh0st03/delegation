@@ -10,6 +10,7 @@ import {PrivateMcpTaskRegistry} from "../src/private-mcp-task-registry.ts";
 import {attachPrivateMcpWorker} from "../src/private-mcp-worker-http.ts";
 import {createSharedMcpHttpServer} from "../../../mcp-shared/src/http-server.ts";
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
+import {ControlledToolError} from "../src/controlled-errors.ts";
 
 const args={branch:"feature/account-suspension",profile:"poc-default"};
 const sha="f".repeat(40);
@@ -99,6 +100,92 @@ test("native ADK Test Agent calls run_tests via shared MCP and verifies Runner P
   }finally{
     await built?.mcpToolset?.close();
     tasks.end("mcp-runner-task");
+    await close(shared);
+    await close(worker);
+  }
+});
+
+/** A repeat tool call after an out-of-scope repair cannot execute Docker again.
+ * The signed Test task must end and receive a NEW Engineer approval. */
+test("ADK cannot replay Docker run_tests after fresh-review referral",async()=>{
+  class RetryModel extends BaseLlm{
+    requests:LlmRequest[]=[];
+    constructor(){super({model:"scripted-offline-referral"});}
+    override async *generateContentAsync(r:LlmRequest):AsyncGenerator<LlmResponse,void>{
+      this.requests.push(r);
+      if(this.requests.length<=2){
+        yield {content:{role:"model",parts:[{
+          functionCall:{id:"retry-"+this.requests.length,name:"run_tests",args}
+        }]}};
+      }else yield {content:{role:"model",parts:[{text:"done"}]}};
+    }
+    override connect(_r:LlmRequest):Promise<BaseLlmConnection>{
+      throw Error("No paid models in offline test");
+    }
+  }
+  const b=keys(),f=keys(),t=keys();
+  const registry=new PrivateMcpTaskRegistry({role:"test",
+    signingPrivateKeyPem:t.privateKey,signingPublicKeyPem:t.publicKey});
+  const secret="DO_NOT_EXPOSE_RUNNER_PRIVATE_SOURCE";
+  let dockerInvocations=0;
+  registry.begin("repair-referral-task",{
+    invoke:async(tool,payload)=>{
+      assert.equal(tool,"run_tests");
+      assert.deepEqual(payload,args);
+      dockerInvocations++;
+      throw new ControlledToolError("tests_failed","private Runner failure",{
+        details:{first_failed_phase:"typecheck",
+          repair_requires_new_approval:true,private_source:secret}
+      });
+    }
+  },undefined,{allowRunTests:true});
+  const app=express();
+  attachPrivateMcpWorker(app,registry);
+  const worker=app.listen(0,"127.0.0.1");
+  await new Promise<void>(res=>worker.once("listening",res));
+  const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
+  const shared=createSharedMcpHttpServer({
+    verificationKeys:{backend:b.publicKey,frontend:f.publicKey,test:t.publicKey},
+    router:new TaskRouter({backend:{baseUrl:url},frontend:{baseUrl:url},test:{baseUrl:url}})
+  });
+  await new Promise<void>(res=>shared.listen(0,"127.0.0.1",res));
+  const endpoint="http://127.0.0.1:"+(shared.address() as AddressInfo).port+"/mcp";
+  let built:ReturnType<typeof createAdkSpecializedAgent>|undefined;
+  try{
+    const model=new RetryModel();
+    const outcomes:unknown[]=[];
+    built=createAdkSpecializedAgent({role:"test",model,
+      gatewayClient:{invoke:async()=>{throw Error("legacy Runner bypass");}} as never,
+      mcpReadFile:{endpoint,bearerForRequest:()=>registry.bearerFor("repair-referral-task")},
+      mcpRunTests:true,
+      onToolOutcome:x=>outcomes.push(x)
+    });
+    const sessions=new InMemorySessionService();
+    const runner=new Runner({appName:"safe_referral_replay",agent:built.agent,
+      sessionService:sessions});
+    await sessions.createSession({appName:"safe_referral_replay",
+      userId:"offline",sessionId:"repair-referral-task"});
+    for await(const _ of runner.runAsync({
+      userId:"offline",sessionId:"repair-referral-task",
+      newMessage:{role:"user",parts:[{text:"Run controlled tests"}]}
+    })){}
+    assert.equal(model.requests.length,3);
+    assert.equal(dockerInvocations,1,
+      "Second model request must NOT invoke the approved Docker Runner again");
+    assert.equal(outcomes.length,2);
+    for(const o of outcomes){
+      const event=o as {payload:{ok:boolean;error?:{
+        kind:string;details?:{repair_requires_new_approval?:boolean}
+      }}};
+      assert.equal(event.payload.ok,false);
+      assert.equal(event.payload.error?.kind,"tests_failed");
+      assert.equal(event.payload.error?.details?.repair_requires_new_approval,true);
+    }
+    assert.ok(!JSON.stringify(outcomes).includes(secret));
+    assert.ok(!JSON.stringify(model.requests).includes(secret));
+  }finally{
+    await built?.mcpToolset?.close();
+    registry.end("repair-referral-task");
     await close(shared);
     await close(worker);
   }
