@@ -20,6 +20,8 @@ import {startTrustedFreshRepairPlanningReview,
   type TrustedFreshMainDiscovery} from "./trusted-fresh-planning-intake.ts";
 import type {OwnerControlledPlanningConfig}
   from "./trusted-owner-planning-bootstrap.ts";
+import {TrustedFreshWorkDecisionStore,type FreshWorkDisposition}
+  from "./trusted-fresh-work-decision-store.ts";
 
 const SHA=/^[a-f0-9]{40}$/u;
 const PATH=/^[A-Za-z0-9_@.-]+(?:\/[A-Za-z0-9_@.-]+)*$/u;
@@ -140,11 +142,8 @@ export async function auditTrustedRetiredFeatureWork(input:{
  */
 export async function startAuditedFreshRepairPlanning(input:{
   audit:TrustedPriorWorkAudit;
-  disposition:"quarantine_prior_branch"|"start_from_pinned_main";
-  recordDecision:(record:Readonly<{
-    audit:TrustedPriorWorkAudit;
-    disposition:"quarantine_prior_branch"|"start_from_pinned_main";
-  }>)=>Promise<void>;
+  disposition:FreshWorkDisposition;
+  decisionStore:TrustedFreshWorkDecisionStore;
   previousCoordinator:TrustedExecutionCoordinator;
   nextCoordinator:TrustedExecutionCoordinator;
   nextSessionId:string;
@@ -156,12 +155,16 @@ export async function startAuditedFreshRepairPlanning(input:{
      state.nextSessionId!==input.nextSessionId||
      !["quarantine_prior_branch","start_from_pinned_main"]
        .includes(input.disposition)||
-     typeof input.recordDecision!=="function")
+     !(input.decisionStore instanceof TrustedFreshWorkDecisionStore))
     fail("fresh audited owner decision must be bound and single-use");
   state.used=true; // reserve synchronously before any external audit write
-  await input.recordDecision(Object.freeze({
+  await input.decisionStore.recordDecision({
     audit:input.audit,disposition:input.disposition
-  }));
+  });
+  // Never trust an in-memory callback as evidence of persistence.
+  await input.decisionStore.assertRecorded({
+    audit:input.audit,disposition:input.disposition
+  });
   if(input.disposition==="quarantine_prior_branch"){
     return Object.freeze({
       status:"manual_reconciliation_required" as const,
