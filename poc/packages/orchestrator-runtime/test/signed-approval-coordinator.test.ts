@@ -13,6 +13,10 @@ import {InMemoryAuditSink} from "../../../apps/gateway/src/prepare.ts";
 import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
 import {TrustedEngineerAuthoritySession} from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from "../src/trusted-execution-coordinator.ts";
+import {auditTrustedRetiredFeatureWork,startAuditedFreshRepairPlanning}
+  from "../src/trusted-fresh-work-audit.ts";
+import {approvedWorkBranch}
+  from "../../../packages/plan-contracts/src/approved-work-branch.mjs";
 import {armTrustedFreshRepairReviewedDag}
   from "../src/trusted-fresh-repair-reviewed-dag.ts";
 import {TrustedApprovedA2ADispatcher}
@@ -591,6 +595,74 @@ test("R36: fresh signed repair uses existing trusted execution, not revoked cred
     /credential ID cannot be reused/);
   await assert.rejects(attempt(root("urn:r36:fresh-work","101",3600)),
     /Status List entry cannot be reused/);
+  assert.deepEqual(nextCredentials.calls,["issue:urn:r36:fresh-read"]);
+  // R41: old, signed feature-branch changes are audited as metadata only.
+  // Neither a signed old receipt nor an observed Git SHA grants a new read,
+  // write, cherry-pick or planning authority.
+  const previousBranch=approvedWorkBranch(fixturePlan());
+  const previousFeatureSha="d".repeat(40);
+  let diffReads=0,recorded=0;
+  const oldDiff={
+    branch:previousBranch,base_revision:SHA,
+    head_revision:previousFeatureSha,changes:[
+      {path:"apps/backend/user.ts",change:"modified" as const},
+      {path:"apps/frontend/old.tsx",change:"added" as const}
+    ]
+  };
+  const auditInput={
+    previousCoordinator,nextSessionId:nextId,
+    previousSignedApprovals:oldStore,
+    trustedFinalFeatureSha:previousFeatureSha,
+    trustedGitea:{async readPinnedFeatureDiff(query:any){
+      diffReads++;
+      assert.equal(query.branch,previousBranch);
+      assert.equal(query.base_revision,SHA);
+      assert.equal(query.head_revision,previousFeatureSha);
+      return oldDiff;
+    }}
+  };
+  const audit=await auditTrustedRetiredFeatureWork(auditInput);
+  assert.equal(diffReads,1);
+  assert.equal(audit.previous_branch,previousBranch);
+  assert.equal(audit.previous_feature_head_sha,previousFeatureSha);
+  assert.deepEqual(audit.changed_files,oldDiff.changes);
+  assert.equal(audit.planning_authorized,false);
+  assert.equal(audit.prior_changes_imported,false);
+  assert.ok(Object.isFrozen(audit));
+  await assert.rejects(auditTrustedRetiredFeatureWork({
+    ...auditInput,trustedGitea:{
+      async readPinnedFeatureDiff(){return {...oldDiff,head_revision:"e".repeat(40)};}
+    }
+  }),/untrusted branch diff/);
+  await assert.rejects(auditTrustedRetiredFeatureWork({
+    ...auditInput,trustedGitea:{
+      async readPinnedFeatureDiff(){return {...oldDiff,changes:[
+        {path:"../private/key.ts",change:"modified"}
+      ]};}
+    }
+  }),/unsanitized prior changed-file/);
+  const quarantined=await startAuditedFreshRepairPlanning({
+    audit,disposition:"quarantine_prior_branch",
+    previousCoordinator,nextCoordinator,nextSessionId:nextId,
+    trustedGitea:{async readPinnedMainSnapshot(){
+      throw Error("Quarantine must not read main or start Planning");
+    }},
+    planning:{} as any,
+    async recordDecision(record){
+      recorded++;
+      assert.equal(record.disposition,"quarantine_prior_branch");
+      assert.equal(record.audit,audit);
+    }
+  });
+  assert.equal(recorded,1);
+  assert.equal(quarantined.status,"manual_reconciliation_required");
+  assert.equal(quarantined.planning_authorized,false);
+  await assert.rejects(startAuditedFreshRepairPlanning({
+    audit,disposition:"start_from_pinned_main",
+    previousCoordinator,nextCoordinator,nextSessionId:nextId,
+    trustedGitea:{async readPinnedMainSnapshot(){throw Error("no replay");}},
+    planning:{} as any,async recordDecision(){throw Error("must not retry");}
+  }),/single-use/);
   assert.deepEqual(nextCredentials.calls,["issue:urn:r36:fresh-read"]);
   // The fresh repair bridge must refuse a canceled GitHub job BEFORE root
   // issuance, then reuse the SAME approved DAG dispatcher without issuing
