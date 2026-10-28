@@ -68,7 +68,7 @@ export async function prepareTrustedFreshPlanningIntake(input:{
       .includes(p.operation)))fail("new Planning snapshot is not read-only");
   input.previousCoordinator.assertOriginalRepository(snapshot.repository);
   input.nextCoordinator.assertUnstartedFreshPlanningSnapshot(snapshot);
-  if(!isDeepStrictEqual(snapshot.session_id,referral.proposed_next_session_id))
+  if(snapshot.session_id!==referral.proposed_next_session_id)
     fail("fresh session mismatch");
   const pinned=Object.freeze({
     session_id:snapshot.session_id,
