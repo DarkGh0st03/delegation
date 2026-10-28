@@ -787,7 +787,31 @@ test("Planner never uses an extra repair turn beyond the original model budget",
   }).propose(),/file absent from trusted Planning snapshot/);
   assert.equal(model.requests.length,2);
   assert.throws(()=>new TrustedAdkReadOnlyPlanner({
-    ...cfg,model,maxProposalRevisions:2 as 1,
+    ...cfg,model,maxProposalRevisions:3 as 1,
     readPort:{async invoke(){throw Error("unexpected");}}
   }),/invalid trusted Planning config/);
+});
+
+test("trusted host-owned execution preflight rejects a model DAG before approval",async()=>{
+  const observations:any[]=[];
+  const model=new Scripted({branch:"main",path:FILE},draft());
+  const port={async invoke(tool:string){
+    return {provider:"gitea",performed:true,tool,branch:"main",
+      path:FILE,revision:SNAPSHOT.base_revision,content:"safe source"};
+  }};
+  let invoked=0;
+  const planner=new TrustedAdkReadOnlyPlanner({
+    ...cfg,model,readPort:port,maxProposalRevisions:0,
+    validateProposedPlan:()=>{
+      invoked++;
+      throw Error("private untrusted diagnostic must not escape");
+    },
+    onObservation:e=>observations.push(e)
+  });
+  await assert.rejects(planner.propose(),
+    /trusted execution DAG preflight rejected proposal/);
+  assert.equal(invoked,1);
+  assert.ok(observations.some(e=>e.kind==="plan_rejection"&&
+    e.stage==="contract"&&e.reason==="execution_dag_incompatible"));
+  assert.ok(!JSON.stringify(observations).includes("private untrusted"));
 });

@@ -69,8 +69,11 @@ export interface TrustedAdkPlannerConfig {
    * An observer failure fails the Planning attempt closed. */
   onObservation?:(event:Readonly<PlanningObservation>)=>void;
   maxModelTurns?:number;
-  /** One optional bounded proposal repair within the same Planning session. */
-  maxProposalRevisions?:0|1;
+  /** At most two bounded, unapproved proposal repairs in one Planning session. */
+  maxProposalRevisions?:0|1|2;
+  /** Host-owned, pure execution-shape check before proposal acceptance.
+   * It cannot approve, sign, delegate or grant authority. */
+  validateProposedPlan?:(proposal:UnapprovedPlanProposal)=>void;
   /** Explicit Gemini thinking level; unset for scripted/non-Gemini models. */
   thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
   /** Per-inference cancellation bound; does not itself guarantee a provider stops billing. */
@@ -95,7 +98,7 @@ export const TRUSTED_PLANNING_REJECTION_REASONS=Object.freeze([
   "missing_branch_task","missing_branch_dependency",
   "conflicting_unordered_writes","duplicate_task_permission",
   "incorrect_work_branch","invalid_dependencies","invalid_permissions",
-  "contract_validation_other"
+  "execution_dag_incompatible","contract_validation_other"
 ] as const);
 export type TrustedPlanningRejectionReason=
   typeof TRUSTED_PLANNING_REJECTION_REASONS[number];
@@ -435,7 +438,9 @@ export class TrustedAdkReadOnlyPlanner {
        !id.test(config.planId)||
        !Number.isSafeInteger(config.maxModelTurns??96)||
        (config.maxModelTurns??96)<1||(config.maxModelTurns??96)>96||
-       ![0,1].includes(config.maxProposalRevisions??0)||
+       ![0,1,2].includes(config.maxProposalRevisions??0)||
+       (config.validateProposedPlan!==undefined&&
+         typeof config.validateProposedPlan!=="function")||
        !Number.isSafeInteger(config.maxModelCallMs??120000)||
        (config.maxModelCallMs??120000)<1000||
        (config.maxModelCallMs??60000)>360000||
@@ -651,13 +656,24 @@ export class TrustedAdkReadOnlyPlanner {
         fail("model output was not strict JSON");
       }
       let result:UnapprovedPlanProposal;
-      try{result=compilePlanningProposal(proposed,cfg);}catch(error){
+      let executionValidationStarted=false;
+      try{
+        result=compilePlanningProposal(proposed,cfg);
+        executionValidationStarted=true;
+        // No approval exists yet. This is a pure structural cross-check
+        // supplied by the trusted host, never the model or a tool response.
+        cfg.validateProposedPlan?.(result);
+      }catch(error){
         const rejection={stage:"contract" as const,
-          reason:safePlanningRejection(error)};
+          reason:executionValidationStarted
+            ? "execution_dag_incompatible" as const
+            : safePlanningRejection(error)};
         cfg.onObservation?.(Object.freeze({kind:"plan_rejection",...rejection}));
         if(revisions<maxRevisions&&model.turns<model.limit&&!planningDeadline.aborted){
           feedback=rejection;revisions++;continue;
         }
+        if(executionValidationStarted)
+          fail("trusted execution DAG preflight rejected proposal");
         throw error;
       }
       if(planningDeadline.aborted)fail("no verified read-only grounded proposal");

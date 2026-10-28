@@ -29,6 +29,7 @@ import {TrustedApprovedA2ADispatcher} from
 import {GatewayCorroboratedTaskAttestor} from
   "../src/trusted-task-observation.ts";
 import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
+import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
 import {SourceWitnessedOfflineAdkModel}
   from "./source-witnessed-offline-adk-model.mjs";
@@ -407,7 +408,16 @@ try{
     planId:"native-planning-proposal",agents,readPort:port,
     ...(geminiPilot?{
       maxModelTurns:SIGNED_GEMINI_PILOT.maxTurnsPerTask.planner,
-      maxProposalRevisions:1,
+      // Reserve a bounded second revision after invalid JSON for DAG shape.
+      maxProposalRevisions:2,
+      validateProposedPlan:proposal=>{
+        // These proposed rows are NOT signed grants or execution authority.
+        preflightApprovedPilotDag({
+          plan:proposal.plan,
+          grants:proposal.plan.requested_permissions,
+          repo,branch:workBranch
+        });
+      },
       maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
       thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
       maxModelCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
@@ -748,7 +758,11 @@ try{
               p.operation==="create_file"&&p.agent_id==="test").length,
           "Actual Test creations must be within signed grant scope");
       }else assert.equal(globalThis.__nativeDagPositive.created_test_files,1);
-      assert.equal(globalThis.__nativeDagPositive.test_runner_runs,
+      if(geminiPilot){
+        const runs=globalThis.__nativeDagPositive.test_runner_runs;
+        assert.ok(Number.isSafeInteger(runs)&&runs>=1&&runs<=6,
+          "Live signed Test may repair after a failed Docker run");
+      }else assert.equal(globalThis.__nativeDagPositive.test_runner_runs,
         signedOfflineRecovery?2:1);
       if(signedOfflineRecovery){
         assert.equal(globalThis.__nativeDagPositive.recovery_verified,true);
