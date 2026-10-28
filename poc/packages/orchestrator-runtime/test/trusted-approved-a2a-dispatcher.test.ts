@@ -183,6 +183,87 @@ test("DAG verifies predecessor and Gateway binding precedes child issue/A2A send
  assert.equal(front.role,"frontend");
  assert.deepEqual(dispatcher.completedTaskIds,["branch","backend-task","frontend-task"]);
 });
+test("Planner-approved Backend subtasks dispatch independently with task-specific authority and Gateway confirmation",async()=>{
+  // The test host must NOT collapse two signed Backend Tasks into one
+  // Backend role dispatch. The follow-up is allowed to edit the same file
+  // only after the first Task completed and was independently corroborated.
+  const p=plan();
+  const nextFile=p.tasks[1]!.resources[0]!;
+  p.tasks.splice(2,0,{
+    id:"backend-followup",agent_id:"backend",title:"Second Backend operation",
+    description:"Independently approved follow-up on the same source file",
+    depends_on:["backend-task"],resources:[nextFile]
+  });
+  p.tasks.find(t=>t.id==="frontend-task")!.depends_on=["backend-followup"];
+  p.requested_permissions.push({
+    id:"backend-followup-perm",task_id:"backend-followup",agent_id:"backend",
+    operation:"update_file",resource:nextFile,
+    reason:"Separate, scoped follow-up change"
+  });
+  const h=harness({alternativeApprovedPlan:p});
+  const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
+  await assert.rejects(dispatcher.dispatch("backend-followup"),/dependencies/);
+  const done=await dispatcher.executeApprovedDag({
+    async invokeOrchestratorTask(taskId,gatewayTaskId){
+      assert.equal(taskId,"branch");
+      h.log.push("provider:"+gatewayTaskId);
+    }
+  });
+  assert.deepEqual(done.completed_task_ids,[
+    "branch","backend-task","backend-followup","frontend-task","tests"
+  ]);
+  assert.deepEqual(done.specialized_results.map(x=>x.role),[
+    "backend","backend","frontend","test"
+  ]);
+  const firstRun=h.log.findIndex(x=>x.startsWith("run:backend-task:"));
+  const secondAllocation=h.log.findIndex(x=>x==="allocate:backend-followup");
+  const secondRun=h.log.findIndex(x=>x.startsWith("run:backend-followup:"));
+  const firstConfirmation=h.log.findIndex(x=>
+    x.startsWith("confirm:")&&x.endsWith(":backend"));
+  const frontendRun=h.log.findIndex(x=>x.startsWith("run:frontend-task:"));
+  assert.ok(firstRun>=0&&firstRun<firstConfirmation&&
+    firstConfirmation<secondAllocation&&secondAllocation<secondRun&&
+    secondRun<frontendRun,"Each Backend Task must have its own signed dispatch");
+  assert.equal(h.log.filter(x=>x.startsWith("allocate:backend-")).length,2);
+  const binds=h.log.filter(x=>x.startsWith("bind:backend-"));
+  assert.equal(binds.length,2);
+  assert.notEqual(binds[0]!.split(":").at(-1),binds[1]!.split(":").at(-1),
+    "Independent Backend Task dispatch IDs must be different");
+  assert.equal(h.coordinator.phase,"closed");
+});
+
+test("unapproved second Backend Task fails closed before any DAG provider effect",async()=>{
+  const p=plan();
+  const nextFile=p.tasks[1]!.resources[0]!;
+  p.tasks.splice(2,0,{
+    id:"backend-followup",agent_id:"backend",title:"Unapproved follow-up",
+    description:"Must not run without an Engineer-granted permission",
+    depends_on:["backend-task"],resources:[nextFile]
+  });
+  p.tasks.find(t=>t.id==="frontend-task")!.depends_on=["backend-followup"];
+  p.requested_permissions.push({
+    id:"backend-followup-perm",task_id:"backend-followup",
+    agent_id:"backend",operation:"update_file",resource:nextFile,
+    reason:"Not selected by Engineer"
+  });
+  const h=harness({alternativeApprovedPlan:p});
+  h.config.approvals.loadAuthenticatedApproval=async()=>({
+    plan:p,
+    approval:makeApproval(p,{
+      allowedOperations:new Set(RUST_OPERATIONS),
+      decision_id:"partial-approval",approved_by:did,
+      approved_at:"2026-10-21T17:00:00Z",
+      approved_permission_ids:p.requested_permissions.map(x=>x.id)
+        .filter(id=>id!=="backend-followup-perm")
+    }),
+    authenticated_engineer_did:did
+  });
+  const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
+  await assert.rejects(dispatcher.executeApprovedDag({
+    invokeOrchestratorTask:async()=>{h.log.push("unexpected-provider-call");}
+  }),/Task without Engineer-granted permissions/);
+  assert.deepEqual(h.log,[]);
+});
 test("failed Gateway binding never reaches the A2A network, and ends Execution",async()=>{
  const h=harness({denyBinding:true});
  const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
