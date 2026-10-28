@@ -37,7 +37,7 @@ import {TrustedAdkReadOnlyPlanner}
   from "../src/trusted-adk-planner.ts";
 import {compilePlanningProposal} from "../src/trusted-adk-planner.ts";
 import {startTrustedFreshRepairPlanningReview,
-  verifyTrustedFreshRepairEngineerApproval}
+  prepareTrustedFreshPlanningIntake,verifyTrustedFreshRepairEngineerApproval}
   from "../src/trusted-fresh-planning-intake.ts";
 import {auditTrustedRetiredFeatureWork,startAuditedFreshRepairPlanning}
   from "../src/trusted-fresh-work-audit.ts";
@@ -1113,10 +1113,17 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
         requirement:"Repair the reported invoice TypeScript regression",
         planId:"new-approved-only-after-review"}
     };
+    // Even with an otherwise valid Planner, the legacy direct entry is
+    // terminally blocked before any provider read or root issuance.
     await assert.rejects(startTrustedFreshRepairPlanningReview({
       previousCoordinator:prior,nextCoordinator:f.coordinator,
-      nextSessionId:snapshot.session_id,trustedGitea,
-      planning
+      nextSessionId:snapshot.session_id,trustedGitea,planning
+    }),/audited durable owner disposition required/);
+    // The read-only snapshot preflight still independently refuses an
+    // active previous execution before any Gitea/main read.
+    await assert.rejects(prepareTrustedFreshPlanningIntake({
+      previousCoordinator:prior,nextCoordinator:f.coordinator,
+      nextSessionId:snapshot.session_id,trustedGitea
     }),/terminal closure/);
     assert.equal(freshDiscoveryReads,0);
     assert.equal(f.observed.issued,0);
