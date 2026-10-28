@@ -9,6 +9,9 @@ on:
     branches: [feat/shared-mcp-spike, main, refactor/post-prof-plan-contracts-20261021]
     paths:
       - '.github/workflows/shared-mcp-real-positive-e2e.yml'
+      - '.github/workflows/functional-signed-dag-e2e.yml'
+      - '.github/workflows/cumulative-refactoring-offline.yml'
+      - '.github/workflows/gemini-paid-shared-mcp-final.yml'
       - 'src/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -18,6 +21,9 @@ on:
   pull_request:
     paths:
       - '.github/workflows/shared-mcp-real-positive-e2e.yml'
+      - '.github/workflows/functional-signed-dag-e2e.yml'
+      - '.github/workflows/cumulative-refactoring-offline.yml'
+      - '.github/workflows/gemini-paid-shared-mcp-final.yml'
       - 'src/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
