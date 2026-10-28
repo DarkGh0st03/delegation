@@ -545,9 +545,22 @@ try{
     assert.equal(coordinator.phase,"execution");
     const operational=coordinator.trustedOperationalAuthority();
     assert.equal(operational.credential_id,opId);
-    assert.deepEqual(operational.permissions.map(p=>p.operation),
-      positiveDag?proposed.plan.requested_permissions.map(p=>p.operation):
-        ["create_branch","update_file","update_file"]);
+    // One operational root holds an authorization SET, not a per-task
+    // multiset: independent approved Tasks may legitimately require the
+    // same (resource,operation). Compare EXACT canonical grants, while
+    // rejecting unexpected, missing or duplicate operational permissions.
+    const reviewedRows=assertApprovedPlanScope(
+      trustedReceipt.plan,trustedReceipt.approval,{
+        allowedOperations:new Set(RUST_OPERATIONS),
+        expectedEngineerDid:engineerDid
+      });
+    const grantKey=p=>JSON.stringify([p.resource,p.operation]);
+    const expectedGrants=[...new Set(reviewedRows.map(grantKey))].sort();
+    const actualGrants=operational.permissions.map(grantKey).sort();
+    assert.equal(new Set(actualGrants).size,actualGrants.length,
+      "Operational root contains duplicate permission grants");
+    assert.deepEqual(actualGrants,expectedGrants,
+      "Operational root must match the exact approved resource/operation set");
     if(positiveDag){
       let approvedAgentModelFactory;
       if(geminiPilot||
