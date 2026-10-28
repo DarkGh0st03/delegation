@@ -132,6 +132,21 @@ test("Signed sequential Backend and Test edits may target the same resource",()=
   assert.equal(accepted.expectedTestWriteKeys.size,1);
 });
 
+test("Final signed Test Task may repair a file and run Docker under its own grants",()=>{
+  const draft=makeDraft({b:1,f:1,t:1,edits:0,mode:"update",early:false});
+  const final=draft.find(x=>x.id==="test-0");
+  final.permissions=[
+    perm("read_file","tests/existing-1.test.ts"),
+    perm("update_file","tests/existing-1.test.ts"),
+    perm("run_tests",null)
+  ];
+  const reviewed=fullReview(draft);
+  assert.equal(reviewed.runnerTaskId,"test-0");
+  assert.deepEqual(reviewed.updatedTestFiles,["tests/existing-1.test.ts"]);
+  assert.equal(reviewed.expectedTestWriteKeys.size,1);
+  assert.equal(reviewed.approvedTaskCount,5);
+});
+
 test("Mutation suite rejects unsafe DAGs without any billed model",()=>{
   const base:Shape={b:2,f:2,t:2,edits:2,mode:"mixed",early:true};
   const mutations:Array<[string,(tasks:any[])=>void,RegExp]>=[

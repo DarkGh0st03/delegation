@@ -24,7 +24,20 @@ export function normalizeMcpRunTestsOutcome(
   const payload=record(envelope?.structuredContent);
   if(envelope?.isError===true || payload?.ok!==true){
     const kind=record(payload?.error)?.kind;
-    if(kind==="tests_failed")return controlled("tests_failed");
+    if(kind==="tests_failed"){
+      // The worker may include a provider-corrobated failed phase in its
+      // controlled error. Accept only the existing fixed enum, never logs.
+      const hint=record(record(payload?.error)?.details);
+      const reason=hint?.first_failed_phase;
+      const allowed=new Set(["dependency_install","typecheck",
+        "backend_tests","frontend_tests","build","playwright_e2e",
+        "researcher_acceptance"]);
+      if(typeof reason==="string"&&allowed.has(reason))
+        return controlled("tests_failed",{
+          phases:[{phase:reason,status:"fail"}]
+        });
+      return controlled("tests_failed");
+    }
     if(kind==="authorization_denied")return controlled("authorization_denied");
     if(kind==="invalid_tool_call")return controlled("invalid_tool_call");
     return controlled("tool_unavailable");

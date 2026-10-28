@@ -229,6 +229,87 @@ test("Protected A2A Test Agent cannot complete with only failed Docker evidence"
   assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
 });
 
+
+class RepairWorkflowModel extends BaseLlm{
+  readonly requests:LlmRequest[]=[];
+  constructor(){super({model:"offline-adk-realistic-repair"});}
+  override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+    this.requests.push(request);
+    const calls=[
+      {name:"run_tests",args:{branch:BRANCH,profile:"poc-default"}},
+      {name:"read_file",args:{branch:BRANCH,path:PATHS.test}},
+      {name:"update_file",args:{branch:BRANCH,path:PATHS.test,
+        content:"approved test repair"}},
+      {name:"run_tests",args:{branch:BRANCH,profile:"poc-default"}}
+    ];
+    const next=calls[this.requests.length-1];
+    yield {content:{role:"model",parts:next?[{
+      functionCall:{id:"repair_"+this.requests.length,...next}
+    }]:[{text:"Completed verified repair"}]}};
+  }
+  override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+    return Promise.reject(Error("No provider API in offline repair test"));
+  }
+}
+test("Protected A2A Test task: failed Runner -> same-task read and edit -> passing exact-SHA Runner",async()=>{
+  const calls:string[]=[];
+  const initialSha="a".repeat(40),fixedSha="b".repeat(40);
+  let pending="",revision=initialSha;
+  const respond=(status:number,value:object)=>new Response(JSON.stringify(value),{
+    status,headers:{"content-type":"application/json"}
+  });
+  const fetchFn=async(url:URL|RequestInfo,init?:RequestInit):Promise<Response>=>{
+    const target=String(url);
+    const payload=JSON.parse(String(init?.body??"{}"));
+    if(target.endsWith("/v1/authorization/prepare")){
+      pending=payload.tool;
+      return respond(201,{request_id:"repair-"+calls.length,
+        audience:"cloud-access-gateway",challenge:"challenge",
+        required_permission:{operation:pending,resource:"approved-task"},
+        expires_at:"2026-12-01T00:00:00Z"});
+    }
+    if(target.endsWith("/v1/presentations"))
+      return respond(200,{signed_vp:"fixture-only-signed-vp"});
+    if(!target.endsWith("/v1/authorization/execute"))
+      throw Error("Unexpected trusted endpoint");
+    calls.push(pending);
+    switch(pending){
+      case "read_file":return respond(200,{execution:{
+        provider:"gitea",performed:true,tool:"read_file",branch:BRANCH,
+        path:PATHS.test,revision,content:"pre-repair source"
+      }});
+      case "update_file":
+        revision=fixedSha;
+        return respond(200,{execution:{provider:"gitea",performed:true,
+          tool:"update_file",branch:BRANCH,path:PATHS.test,commit_sha:revision}});
+      case "run_tests":{
+        const passed=revision===fixedSha;
+        return respond(200,{execution:{provider:"runner",performed:true,
+          tool:"run_tests",branch:BRANCH,revision,
+          status:passed?"pass":"fail",tested_commit_sha:revision,
+          runner_profile:"poc-default",
+          phases:[{phase:"backend_tests",status:passed?"pass":"fail"}],
+          project_tests:{status:passed?"pass":"fail"},
+          researcher_acceptance:{status:passed?"pass":"skipped"}
+        }});
+      }
+    }
+    throw Error("Unapproved tool");
+  };
+  const model=new RepairWorkflowModel();
+  const {response}=await send("test",model,fetchFn as typeof fetch,43381);
+  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.deepEqual(calls,["run_tests","read_file","update_file","run_tests"]);
+  const part=response.task.artifacts[0]?.parts[0]?.content;
+  assert.equal(part?.$case,"data");
+  if(part?.$case==="data"){
+    assert.equal(part.value.test_outcome,"pass");
+    assert.equal(part.value.commit_sha,fixedSha);
+    assert.equal(part.value.tested_commit_sha,fixedSha);
+    assert.deepEqual(part.value.files_modified,[PATHS.test]);
+  }
+});
+
 test("Phase 3 Gateway denial never becomes a completed authorized A2A Artifact",async()=>{
   const role="backend";
   const boundary=fakeBoundary(role,true);

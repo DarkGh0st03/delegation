@@ -107,6 +107,10 @@ export function preflightApprovedPilotDag({plan,grants,repo,branch}){
          !ancestor(write.task_id,other.task_id)))
         deny("unordered or overlapping file writes");
     }
+    // The final Test Task can own both a scoped file edit and run_tests.
+    // Its ADK tool sequence is verified by the exact-SHA Runtime attestor:
+    // no file changes after the last successful Runner are accepted.
+    // For all OTHER Tasks the final Runner must remain downstream.
     if(write.task_id!==runnerTaskId&&!ancestor(write.task_id,runnerTaskId))
       deny("Runner must follow every file edit");
     if(!ancestor(write.task_id,reviewTaskId))

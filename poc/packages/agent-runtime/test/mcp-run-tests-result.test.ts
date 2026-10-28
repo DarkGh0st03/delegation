@@ -72,3 +72,30 @@ test("MCP reports only whitelisted failing phase and never private Runner diagno
   assert.equal(unknown.ok,false);
   if(!unknown.ok)assert.equal(unknown.error.details,undefined);
 });
+
+test("MCP preserves only a whitelisted failure hint from a prior controlled Gateway error",()=>{
+  const call=(details:unknown)=>normalizeMcpRunTestsOutcome({
+    isError:true,
+    structuredContent:{ok:false,error:{kind:"tests_failed",details}}
+  },args);
+  const safe=call({first_failed_phase:"playwright_e2e",
+    tokens:"FORBIDDEN_SIGNED_DELEGATION_DATA",log:"PRIVATE_RUNNER_OUTPUT"});
+  assert.equal(safe.ok,false);
+  if(!safe.ok){
+    assert.deepEqual(safe.error.details,{first_failed_phase:"playwright_e2e"});
+    assert.doesNotMatch(JSON.stringify(safe),/FORBIDDEN_SIGNED_DELEGATION_DATA|PRIVATE_RUNNER_OUTPUT/u);
+  }
+  for(const bogus of [
+    {first_failed_phase:"../../private/keys"},
+    {first_failed_phase:"typecheck",extra:"ignored"},
+    {first_failed_phase:17}
+  ]){
+    const outcome=call(bogus);
+    assert.equal(outcome.ok,false);
+    if(!outcome.ok){
+      if(bogus.first_failed_phase==="typecheck")
+        assert.deepEqual(outcome.error.details,{first_failed_phase:"typecheck"});
+      else assert.equal(outcome.error.details,undefined);
+    }
+  }
+});
