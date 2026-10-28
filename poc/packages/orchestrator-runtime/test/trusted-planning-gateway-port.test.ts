@@ -59,7 +59,8 @@ import {TrustedPlanningRecoveryStore}
   from "../src/trusted-planning-recovery-store.ts";
 import {TrustedOperationalRecoveryStore}
   from "../src/trusted-operational-recovery-store.ts";
-import {startOwnerControlledEngineerReviewHost}
+import {startOwnerControlledEngineerReviewHost,
+  startOwnerControlledFreshRepairEngineerReviewHost}
   from "../../../apps/orchestrator/src/trusted-engineer-host.mjs";
 import {prepareConfiguredOwnerEngineerBootstrap}
   from "../../../apps/orchestrator/src/trusted-engineer-service.mjs";
@@ -1259,6 +1260,63 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
   }finally{
     await rm(auditDir,{recursive:true,force:true});
     await rm(decisionDir,{recursive:true,force:true});
+    await f.cleanup();
+  }
+});
+
+test("R46 persistent Engineer recovery refuses unaudited owner intake before any root or Gitea read",async()=>{
+  const f=await makeOwnerReviewFixture();
+  const dir=await mkdtemp(join(tmpdir(),"r46-decision-"));
+  try{
+    const planning=f.makeConfig();
+    const host={
+      approval:{
+        expectedSessionId:snapshot.session_id,
+        expectedBaseRevision:SHA,repository:snapshot.repository,
+        trustedPlanFile:f.planFilePath,
+        planningCheckpointStore:f.store
+      },
+      recovery:{planningDirectory:f.planningDir,directory:f.operationalDir},
+      operationalRecovery:f.operationalRecovery
+    };
+    let giteaReads=0;
+    const prior=new TrustedExecutionCoordinator({
+      sessionId:"r46-retired-session",baseRevision:SHA,
+      authority:{} as any,credentials:{} as any,
+      approvedGatewayPlans:{} as any
+    });
+    const input={
+      previousCoordinator:prior,nextCoordinator:f.coordinator,
+      nextSessionId:snapshot.session_id,
+      disposition:"start_from_pinned_main" as const,
+      decisionStore:new TrustedFreshWorkDecisionStore(dir),
+      audit:undefined,
+      trustedGitea:{async readPinnedMainSnapshot(){
+        giteaReads++;
+        throw Error("unaudited Gitea read is forbidden");
+      }},
+      planning,host
+    };
+    await assert.rejects(startOwnerControlledFreshRepairEngineerReviewHost(
+      input),/fresh audited owner decision must be bound and single-use/);
+    assert.equal(giteaReads,0);
+    assert.equal(f.observed.issued,0);
+    assert.equal(f.coordinator.phase,"idle");
+    assert.equal((await f.planningRecovery.pending()).length,0);
+    assert.deepEqual(await readdir(dir),[],
+      "invalid audit cannot persist a decision or start Planning");
+    await assert.rejects(startOwnerControlledFreshRepairEngineerReviewHost({
+      ...input,nextSessionId:"different-session"
+    }),/same new idle Coordinator/);
+    await assert.rejects(startOwnerControlledFreshRepairEngineerReviewHost({
+      ...input,host:{...host,approval:{
+        ...host.approval,expectedBaseRevision:"f".repeat(40)
+      }}
+    }),/owner Planning and Engineer session pins must be identical/);
+    assert.equal(f.observed.issued,0);
+    assert.equal(giteaReads,0);
+  }finally{
+    await rm(dir,{recursive:true,force:true});
     await f.cleanup();
   }
 });
