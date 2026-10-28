@@ -59,3 +59,87 @@ test("real A2A transport retains a prebound Gateway ID privately, distinct from 
    );
  }finally{await server.close();}
 });
+
+test("real A2A transport preserves signed Test no-Runner hint across separate Tasks",async()=>{
+  const contexts:any[]=[];
+  const server=await startSpecializedAgentServer({
+    role:"test",host:"127.0.0.1",port:43609,
+    taskHandler:async ctx=>{
+      contexts.push(structuredClone(ctx));
+      const prep=ctx.subtask.approved_run_tests===false;
+      return {
+        role:"test",summary:"Test Task completed under signed scope",
+        branch:ctx.subtask.branch,
+        revision:"b".repeat(40),commit_sha:"b".repeat(40),
+        files_modified:[],
+        files_created:prep?["tests/e2e/signed.spec.ts"]:[],
+        test_outcome:prep?"not_run":"pass",
+        errors:[],
+        ...(!prep?{
+          tested_commit_sha:"b".repeat(40),
+          runner_profile:"poc-default" as const,
+          project_tests:"pass" as const,
+          researcher_acceptance:"pass" as const
+        }:{})
+      };
+    }
+  });
+  try{
+    const client=new DeterministicA2AOrchestrator({
+      deadlineMs:5000,initialIntervalMs:20,maxIntervalMs:100
+    });
+    const common={
+      agent_base_url:server.baseUrl,
+      delegation_evidence:{
+        credential:"PRIVATE_SIGNED_TEST_CREDENTIAL",
+        credential_id:"urn:trusted:test",presenter_id:"did:thesis:test"
+      }
+    };
+    const prep=await client.sendProtectedTask({
+      ...common,trusted_gateway_task_id:"dispatch_"+"C".repeat(22),
+      subtask:{
+        subtask_id:"test-preparation",instruction:"Create only signed regression",
+        branch:"feature/engineer-approved-42",
+        relevant_paths:["tests/e2e/signed.spec.ts"],
+        approved_file_permissions:[{
+          operation:"create_file" as const,path:"tests/e2e/signed.spec.ts"
+        }],
+        approved_run_tests:false
+      }
+    });
+    const final=await client.sendProtectedTask({
+      ...common,trusted_gateway_task_id:"dispatch_"+"D".repeat(22),
+      subtask:{
+        subtask_id:"test",instruction:"Run final signed acceptance",
+        branch:"feature/engineer-approved-42",
+        relevant_paths:[],
+        approved_file_permissions:[],
+        approved_run_tests:true
+      }
+    });
+    assert.equal(prep.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+    assert.equal(final.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+    assert.equal(contexts.length,2);
+    assert.equal(contexts[0].subtask.approved_run_tests,false,
+      "A false Runner hint MUST survive the private A2A parsing boundary");
+    assert.equal(contexts[1].subtask.approved_run_tests,true);
+    assert.notEqual(contexts[0].trusted_gateway_task_id,
+      contexts[1].trusted_gateway_task_id);
+    for(const task of [prep.task,final.task]){
+      assert.equal(JSON.stringify(task).includes("approved_run_tests"),false);
+      assert.equal(JSON.stringify(task).includes("PRIVATE_SIGNED_TEST_CREDENTIAL"),false);
+    }
+    await assert.rejects(client.sendProtectedTask({
+      ...common,trusted_gateway_task_id:"dispatch_"+"E".repeat(22),
+      subtask:{
+        subtask_id:"bad-test",instruction:"Malformed signed Runner hint",
+        branch:"feature/engineer-approved-42",
+        relevant_paths:[],
+        approved_file_permissions:[],
+        approved_run_tests:"false" as never
+      }
+    }),/without completion/u);
+    assert.equal(contexts.length,2,
+      "Malformed Runner hints must be rejected before Task handler");
+  }finally{await server.close();}
+});

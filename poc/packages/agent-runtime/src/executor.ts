@@ -120,13 +120,25 @@ function subtask(message: Message): DeterministicSubtask {
       return {operation:row.operation,path:row.path} as ApprovedTaskFilePermission;
     });
   }
+  // Preserve the exact signed Test Task Runner hint. False is significant:
+  // a separate Test preparation Task may write authorized tests but MUST
+  // NOT gain a Runner capability from its role or from another Test Task.
+  // This metadata is never itself an authorization; Gateway checks the plan.
+  const approvedRunTests=raw.approved_run_tests;
+  if(approvedRunTests!==undefined&&
+     (!privateId||approvedFilePermissions===undefined||
+      typeof approvedRunTests!=="boolean")){
+    throw new Error("Runner task hint requires trusted signed Task metadata");
+  }
   return {
     subtask_id: string(raw.subtask_id, "subtask.subtask_id"),
     instruction: string(raw.instruction, "subtask.instruction"),
     branch:branch as string,
     relevant_paths: raw.relevant_paths as string[],
     ...(approvedFilePermissions!==undefined
-       ? {approved_file_permissions:approvedFilePermissions}:{})
+       ? {approved_file_permissions:approvedFilePermissions}:{}),
+    ...(approvedRunTests!==undefined
+       ?{approved_run_tests:approvedRunTests as boolean}:{})
   };
 }
 
