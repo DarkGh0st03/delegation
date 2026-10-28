@@ -207,10 +207,10 @@ export async function runNativePositiveApprovedDag({
     ...implementationFiles,...readableFiles.backend,
     ...readableFiles.frontend,...approvedTestReads
   ])].filter(path=>!createdTestFiles.includes(path));
-  for(const path of [...createdTestFiles,...updatedTestFiles]){
-    assert.ok(!implementationFiles.includes(path),
-      "Test writes must not conflict with implementation roles");
-  }
+  // Task-level permissions determine who may edit a file. An approved
+  // Test Task can legitimately update a source file previously edited by
+  // Backend when the DAG orders the two writes. The shared plan compiler
+  // and pilot preflight reject unordered competing writers.
   for(const path of createdTestFiles)
     assert.ok(!expectedExisting.includes(path),
       "New Test files must not be read from main");

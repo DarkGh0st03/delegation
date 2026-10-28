@@ -118,6 +118,20 @@ test("Read-only specialist is valid in a signed dynamic DAG",()=>{
   assert.equal(shape.runnerTaskId,"test-1");
 });
 
+test("Signed sequential Backend and Test edits may target the same resource",()=>{
+  const draft=makeDraft({b:1,f:1,t:2,edits:1,mode:"update",early:false});
+  const testPrep=draft.find(t=>t.id==="test-0");
+  testPrep.permissions=[
+    perm("read_file","apps/backend/service-0.ts"),
+    perm("update_file","apps/backend/service-0.ts")
+  ];
+  const accepted=fullReview(draft);
+  assert.equal(accepted.taskIdsByRole.backend.length,1);
+  assert.equal(accepted.taskIdsByRole.test.length,2);
+  assert.deepEqual(accepted.updatedTestFiles,["apps/backend/service-0.ts"]);
+  assert.equal(accepted.expectedTestWriteKeys.size,1);
+});
+
 test("Mutation suite rejects unsafe DAGs without any billed model",()=>{
   const base:Shape={b:2,f:2,t:2,edits:2,mode:"mixed",early:true};
   const mutations:Array<[string,(tasks:any[])=>void,RegExp]>=[
