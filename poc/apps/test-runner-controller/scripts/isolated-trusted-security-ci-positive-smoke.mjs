@@ -32,7 +32,8 @@ import {beginApprovedRealRunnerSession} from
   "./approved-gateway-runner-session.mjs";
 import {safeNativeDockerFailureDiagnostic}
   from "./native-dag-result-diagnostic.mjs";
-import {safeGeminiPilotChildObservations}
+import {safeGeminiPilotChildObservations,
+  safeGeminiPilotAgentObservations}
   from "../../../scripts/signed-gemini-pilot-usage.mjs";
 import {inspectF1RealGiteaPlannerReadiness}
   from "../../../scripts/f1-real-gitea-planner-readiness.mjs";
@@ -577,6 +578,12 @@ async function main(){
             for(const event of safeGeminiPilotChildObservations(error?.stdout))
               process.stderr.write((event.event==="adk_llm_timing"
                 ?"":"[signed-gemini-pilot] ")+JSON.stringify(event)+"\n");
+            // Strict, fixed-category tool and model failures only.
+            for(const part of [error?.stdout,error?.stderr])
+              for(const event of safeGeminiPilotAgentObservations(part))
+                process.stderr.write(
+                  "[trusted-positive-ci] gemini_agent_observation "+
+                  JSON.stringify(event)+"\n");
           }
           const locationMatch=childStderr.slice(-262144).match(
             /(?:^|[\\/])(native-approved-planner-dag-positive|native-planning-read-core-evm-e2e)\.mjs:(\d{1,4}):\d{1,4}/u);

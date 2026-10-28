@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {extractSafeGeminiPilotUsage as extract,
-  safeGeminiPilotChildObservations as sanitizeChild} from
+  safeGeminiPilotChildObservations as sanitizeChild,
+  safeGeminiPilotAgentObservations as agentObservations,
+  extractSafeGeminiPilotAgentSummary as agentSummary} from
   "../signed-gemini-pilot-usage.mjs";
 const event=obj=>JSON.stringify(obj);
 const planner=(kind,turn,more={})=>"[signed-gemini-pilot] "+
@@ -106,4 +108,46 @@ test("failed child stdout forwards numeric usage, not private source",()=>{
   assert.equal(report.role_usage.backend.provider_reported_output_tokens,7);
   assert.equal(report.provider_invoice_usd,null);
   assert.deepEqual(sanitizeChild("x".repeat(2_200_001)),[]);
+});
+
+test("failed Agent tool diagnostic is whitelisted and source-free",()=>{
+  const secret="PRIVATE_VP_OR_REPOSITORY_SOURCE";
+  const progress={successful_reads:1,distinct_read_paths:1,
+    duplicate_reads:0,failed_reads:0,successful_writes:0,failed_writes:1};
+  const child=[
+    event({event:"adk_tool_timing",role:"backend",tool:"update_file",
+      success:false,error_kind:"authorization_denied",path:secret}),
+    event({event:"adk_task_outcome",role:"backend",
+      category:"controlled_tool_failures",model_turns:6,...progress,
+      message:secret}),
+    event({event:"adk_task_outcome",role:"bad_role",
+      category:"controlled_tool_failures",model_turns:6,...progress}),
+    event({event:"adk_tool_timing",role:"backend",tool:"update_file",
+      success:false,error_kind:secret})
+  ].join("\n");
+  const safe=agentObservations(Buffer.from(child));
+  assert.equal(safe.length,2);
+  assert.ok(!JSON.stringify(safe).includes(secret));
+  const log=safe.map(x=>
+    "[trusted-positive-ci] gemini_agent_observation "+event(x)).join("\n");
+  const result=agentSummary(log);
+  assert.equal(result.role_evidence.backend.last_function_tool_error.error_kind,
+    "authorization_denied");
+  assert.equal(result.role_evidence.backend.agent_failure.category,
+    "controlled_tool_failures");
+  assert.equal(result.role_evidence.backend.agent_failure.progress.failed_writes,1);
+  assert.ok(!JSON.stringify(result).includes(secret));
+  assert.equal(agentSummary("spoofed "+log),null);
+  assert.deepEqual(agentObservations("x".repeat(2_200_001)),[]);
+});
+test("missing repository evidence is not misreported as a denied tool",()=>{
+  const progress={successful_reads:0,distinct_read_paths:0,
+    duplicate_reads:0,failed_reads:0,successful_writes:0,failed_writes:0};
+  const log="[trusted-positive-ci] gemini_agent_observation "+event({
+    event:"adk_task_outcome",role:"backend",
+    category:"no_confirmed_revision",model_turns:6,...progress
+  });
+  const observed=agentSummary(log).role_evidence.backend;
+  assert.equal(observed.agent_failure.category,"no_confirmed_revision");
+  assert.equal(observed.observed_function_tool_failures,0);
 });

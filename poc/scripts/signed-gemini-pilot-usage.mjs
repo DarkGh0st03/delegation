@@ -134,3 +134,92 @@ export function safeGeminiPilotChildObservations(raw){
   }
   return Object.freeze(events);
 }
+
+/** Reconstruct ONLY fixed-category Agent observations from a failed child.
+ * Raw errors, paths, tool arguments, prompt text and credentials are dropped. */
+const AGENT_ROLES=["backend","frontend","test"];
+const AGENT_TYPES=["adk_task_outcome","adk_safe_diagnostic","adk_tool_timing"];
+const AGENT_ERRORS=["controlled_tool_failures","no_confirmed_revision"];
+const MODEL_ERRORS=["model_turn_budget","api_rate_limit_or_quota",
+  "api_authentication","api_permission_denied","api_model_not_found",
+  "api_invalid_request","api_service_unavailable","api_inference_timeout",
+  "api_network_failure","tool_schema_or_validation",
+  "sdk_model_exception","adk_event_error"];
+const TOOL_ERRORS=["authorization_denied","tests_failed",
+  "tool_unavailable","invalid_tool_call","iteration_limit"];
+const AGENT_TOOLS=["read_file","update_file","create_file","run_tests"];
+const AGENT_METRICS=["successful_reads","distinct_read_paths",
+  "duplicate_reads","failed_reads","successful_writes","failed_writes"];
+const AGENT_PREFIX="[trusted-positive-ci] gemini_agent_observation ";
+function safeAgentObservation(x){
+  if(!x||typeof x!=="object"||Array.isArray(x)||
+     !AGENT_ROLES.includes(x.role)||!AGENT_TYPES.includes(x.event))
+    return null;
+  if(x.event==="adk_tool_timing"){
+    if(!AGENT_TOOLS.includes(x.tool)||typeof x.success!=="boolean"||
+       (x.error_kind!==null&&!TOOL_ERRORS.includes(x.error_kind)))
+      return null;
+    return {event:x.event,role:x.role,tool:x.tool,
+      success:x.success,error_kind:x.error_kind};
+  }
+  if(!valid(x.model_turns,SIGNED_GEMINI_PILOT.maxTurnsPerTask[x.role])||
+     !(x.event==="adk_task_outcome"?AGENT_ERRORS:MODEL_ERRORS)
+       .includes(x.category))return null;
+  const y={event:x.event,role:x.role,category:x.category,
+    model_turns:x.model_turns};
+  for(const key of AGENT_METRICS){
+    if(!valid(x[key],300))return null;
+    y[key]=x[key];
+  }
+  if(x.event==="adk_safe_diagnostic")
+    y.http_status=valid(x.http_status,599)&&x.http_status>=100
+      ?x.http_status:null;
+  return y;
+}
+export function safeGeminiPilotAgentObservations(raw,{reported=false}={}){
+  const data=Buffer.isBuffer(raw)?raw.toString("utf8"):
+    typeof raw==="string"?raw:"";
+  if(Buffer.byteLength(data,"utf8")>2_200_000)return Object.freeze([]);
+  const observations=[];
+  for(const line of data.split(/\r?\n/u)){
+    if(observations.length>=300)break;
+    const payload=reported
+      ?line.startsWith(AGENT_PREFIX)?line.slice(AGENT_PREFIX.length):null
+      :line.startsWith("{")?line:null;
+    if(!payload||payload.length>4096)continue;
+    try{
+      const observation=safeAgentObservation(JSON.parse(payload));
+      if(observation)observations.push(Object.freeze(observation));
+    }catch{/* Fail closed; never log private child data. */}
+  }
+  return Object.freeze(observations);
+}
+export function extractSafeGeminiPilotAgentSummary(log){
+  const observations=safeGeminiPilotAgentObservations(log,{reported:true});
+  if(!observations.length)return null;
+  const roles={};
+  for(const role of AGENT_ROLES){
+    const own=observations.filter(x=>x.role===role);
+    if(!own.length)continue;
+    const failedTools=own.filter(x=>x.event==="adk_tool_timing"&&!x.success);
+    const successfulTools=own.filter(x=>x.event==="adk_tool_timing"&&x.success);
+    const failures=own.filter(x=>x.event!=="adk_tool_timing");
+    const latest=failures.at(-1);
+    roles[role]={
+      observed_function_tool_successes:successfulTools.length,
+      observed_function_tool_failures:failedTools.length,
+      last_function_tool_error:failedTools.length
+        ?{tool:failedTools.at(-1).tool,
+          error_kind:failedTools.at(-1).error_kind}:null,
+      ...(latest?{agent_failure:{
+        category:latest.category,
+        model_turns:latest.model_turns,
+        ...(latest.http_status!==undefined
+          ?{http_status:latest.http_status}:{}),
+        progress:Object.fromEntries(AGENT_METRICS.map(k=>[k,latest[k]]))
+      }}:{})
+    };
+  }
+  return Object.freeze({schema:"signed-gemini-agent-failure-v1",
+    observations:observations.length,role_evidence:Object.freeze(roles)});
+}

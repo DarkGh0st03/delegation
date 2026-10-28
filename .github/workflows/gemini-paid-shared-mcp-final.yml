@@ -229,7 +229,8 @@ jobs:
               import {readFileSync,writeFileSync} from "node:fs";
               import {extractSafeGeminiPilotDockerEvidence}
                 from "./poc/apps/test-runner-controller/scripts/gemini-pilot-safe-docker-evidence.mjs";
-              import {extractSafeGeminiPilotUsage}
+              import {extractSafeGeminiPilotUsage,
+                extractSafeGeminiPilotAgentSummary}
                 from "./poc/scripts/signed-gemini-pilot-usage.mjs";
               let data="";
               try{data=readFileSync("/tmp/real-four-gemini-pilot.log","utf8");}catch{}
@@ -311,6 +312,7 @@ jobs:
                   framework_sha:process.env.GITHUB_SHA,
                   run_id:process.env.GITHUB_RUN_ID,
                   model_usage:extractSafeGeminiPilotUsage(data),
+                  agent_failure_evidence:extractSafeGeminiPilotAgentSummary(data),
                   verified_signals:matching,
                   stage:"gemini_planning_or_delegated_execution",
                   root_revocation:"not_confirmed_by_this_report",
