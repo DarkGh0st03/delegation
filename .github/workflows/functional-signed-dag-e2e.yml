@@ -42,6 +42,16 @@ on:
       - 'poc/apps/test-runner-controller/src/**'
       - 'poc/apps/test-runner-controller/test/**'
       - 'poc/apps/gateway/src/**'
+      # The billed signed-DAG pilot's exact-SHA gate requires this workflow
+      # for ALL owner/Planner/recovery, plan-contract and A2A changes.
+      # Otherwise two CIs can be green while this required third CI never
+      # ran on the commit, forcing an avoidable pre-inference NO-GO.
+      - 'poc/apps/orchestrator/src/**'
+      - 'poc/apps/orchestrator/test/**'
+      - 'poc/packages/orchestrator-runtime/src/**'
+      - 'poc/packages/orchestrator-runtime/test/**'
+      - 'poc/packages/plan-contracts/src/**'
+      - 'poc/packages/plan-contracts/test/**'
       - 'poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts'
       - 'poc/packages/orchestrator-runtime/src/a2a-workflow.ts'
       - 'poc/packages/orchestrator-runtime/src/artifact-validation.ts'

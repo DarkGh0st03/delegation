@@ -1,4 +1,5 @@
 import test from "node:test";
+import {readFileSync} from "node:fs";
 import assert from "node:assert/strict";
 import {verifyExactShaOfflineCiRuns,checkSignedGeminiCiGate} from
   "../signed-gemini-pilot-ci-gate.mjs";
@@ -27,6 +28,25 @@ const valid=()=>({
   DELEGATION_GEMINI_MODEL:"gemini-3.8-flash",
   DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES"
 });
+test("required signed-DAG CI automatically covers all live Gemini execution and recovery paths",()=>{
+  const yaml=readFileSync(new URL(
+    "../../../.github/workflows/functional-signed-dag-e2e.yml",
+    import.meta.url),"utf8");
+  for(const path of [
+    "poc/apps/orchestrator/src/**",
+    "poc/apps/orchestrator/test/**",
+    "poc/packages/orchestrator-runtime/src/**",
+    "poc/packages/orchestrator-runtime/test/**",
+    "poc/packages/plan-contracts/src/**",
+    "poc/packages/plan-contracts/test/**"
+  ]){
+    assert.ok(yaml.includes("'"+path+"'"),
+      "Signed DAG exact-SHA CI must run on "+path);
+  }
+  assert.ok(yaml.includes("workflow_dispatch:"),
+    "An independent free manual rerun must remain available");
+});
+
 test("three independent offline green workflows on same SHA allow a NO-INFERENCE readiness report",()=>{
   const r=verifyExactShaOfflineCiRuns(paths.map(green),sha);
   assert.equal(r.gemini_generation_calls,0);
