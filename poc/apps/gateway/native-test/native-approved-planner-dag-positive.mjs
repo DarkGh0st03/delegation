@@ -132,14 +132,16 @@ export async function runNativePositiveApprovedDag({
   // never collapse the immutable DAG into one synthetic Task per role.
   const taskIdsByRole=Object.fromEntries(ROLES.map(role=>{
     const selected=signed.plan.tasks.filter(t=>t.agent_id===role);
+    assert.ok(selected.length>=1,
+      "Account Suspension pilot requires at least one signed Task per role");
     if(role==="test"){
-      // This bounded Docker acceptance profile performs one final regression
-      // edit and one exact-SHA run_tests; splitting that into multiple Test
-      // Tasks needs a separate acceptance profile.
-      assert.equal(selected.length,1,
-        "Account Suspension pilot requires one signed final Test Task");
-    }else assert.ok(selected.length>=1,
-      "Account Suspension pilot requires a signed implementation Task per role");
+      // Multiple Test Tasks are valid: e.g., one changes test source and a
+      // later, independently approved Task runs exact-SHA Docker acceptance.
+      const runTasks=selected.filter(t=>grants.some(g=>
+        g.task_id===t.id&&g.operation==="run_tests"));
+      assert.equal(runTasks.length,1,
+        "This bounded pilot requires one final signed Docker acceptance Task");
+    }
     return [role,selected.map(t=>t.id)];
   }));
   const allSpecialistTaskIds=ROLES.flatMap(role=>taskIdsByRole[role]);
@@ -726,7 +728,8 @@ export async function runNativePositiveApprovedDag({
     assert.equal(new Set(Object.values(childIds)).size,
       allSpecialistTaskIds.length,
       "Every signed specialist Task must receive an independent child DC");
-    const finalTestResult=result.specialized_results.find(x=>x.role==="test");
+    const finalTestResult=result.specialized_results.find(x=>
+      x.role==="test"&&x.artifact.test_outcome==="pass");
     assert.ok(finalTestResult,"Approved final Test Task was not dispatched");
     assert.equal(finalTestResult.artifact.test_outcome,"pass");
     assert.equal(finalTestResult.artifact.tested_commit_sha,

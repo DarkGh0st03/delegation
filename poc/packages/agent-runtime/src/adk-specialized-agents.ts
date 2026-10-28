@@ -80,6 +80,8 @@ export interface AdkSpecializedAgentConfig {
   mcpCreateFile?: boolean;
   /** Test Agent only; use the same MCP server for the controlled Runner. */
   mcpRunTests?: boolean;
+  /** Trusted prebound Test Task hint, not a grant: Gateway enforces it. */
+  trustedRunTestsAllowed?: boolean;
 }
 
 export interface AdkSpecializedAgent {
@@ -107,6 +109,9 @@ export function createAdkSpecializedAgent(
   if(config.mcpCreateFile && (!config.mcpReadFile || config.role!=="test")){
     throw new Error("MCP create_file requires shared MCP and Test Agent role");
   }
+  if(config.trustedRunTestsAllowed!==undefined&&
+     (config.role!=="test"||config.trustedFilePermissions===undefined))
+    throw Error("Runner task hint requires signed Test file permissions");
   if(config.mcpRunTests && (!config.mcpReadFile || config.role!=="test")){
     throw new Error("MCP run_tests requires shared MCP and Test Agent role");
   }
@@ -189,9 +194,11 @@ export function createAdkSpecializedAgent(
       "For update_file provide the complete UTF-8 replacement file, not a patch or fragment.",
       "Never claim a commit or successful test without a confirmed controlled tool result.",
       "If the approved Task cannot be completed within these exact grants, report the limitation.",
-      ...(config.role==="test"
-        ? ["Use run_tests only for the approved Task and controlled profile; report failing tests."]
-        : ["Do not claim that tests were executed unless a trusted test result is provided."])
+      ...(config.role==="test"&&config.trustedRunTestsAllowed===false
+        ? ["This Task may prepare test files but cannot invoke run_tests; do not claim tests passed."]
+        : config.role==="test"
+          ? ["Use run_tests only for the approved Task and controlled profile; report failing tests."]
+          : ["Do not claim that tests were executed unless a trusted test result is provided."])
     ].join("\n");
   } else if(scoped){
     // Keep the original role-specific engineering rules, while replacing
@@ -236,7 +243,8 @@ export function createAdkSpecializedAgent(
     // A signed Test-only Task advertises run_tests, not unrelated repo
     // reads/writes. No empty enum can turn into a broad string schema.
     .filter(definition=>!scoped ||
-      definition.name==="run_tests" ||
+      (definition.name==="run_tests"&&
+        config.trustedRunTestsAllowed!==false) ||
       (definition.name==="read_file"&&readablePaths.length>0) ||
       (definition.name==="update_file"&&writable.length>0) ||
       (definition.name==="create_file"&&creatable.length>0))
@@ -339,7 +347,8 @@ export function createAdkSpecializedAgent(
     }
   }
 
-  const timedMcpRunTests = config.mcpRunTests && config.mcpReadFile
+  const timedMcpRunTests = config.mcpRunTests &&
+    config.trustedRunTestsAllowed!==false && config.mcpReadFile
     ? new FunctionTool({
         name:"run_tests",
         description: registry.modelTools.find(tool=>tool.name==="run_tests")?.description

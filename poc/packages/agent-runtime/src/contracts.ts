@@ -22,6 +22,8 @@ export interface DeterministicSubtask {
   relevant_paths: string[];
   /** Present only on trusted approved-plan A2A dispatch. */
   approved_file_permissions?: ApprovedTaskFilePermission[];
+  /** Trusted signed-plan Task permission hint, never supplied by the model. */
+  approved_run_tests?: boolean;
 }
 
 export interface AgentTaskContext {

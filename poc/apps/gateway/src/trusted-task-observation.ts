@@ -76,7 +76,12 @@ export class GatewayCorroboratedTaskAttestor implements TrustedTaskCompletionAtt
     if(claims.some(c=>!files.some(x=>
       x.tool===c.tool&&"path" in x.execution&&
       x.execution.path===c.path&&matchingPath(x,a))))return false;
-    if(e.role==="test"){
+    // The trusted Gateway has an immutable, per-Task record of actual
+    // provider effects. A Test preparation Task without a Runner effect
+    // is a verified file edit, NOT an accepted test result. Only a Test
+    // Task with a real Runner effect can mark the feature SHA tested.
+    const hasRunner=e.provider_effects.some(x=>x.tool==="run_tests");
+    if(e.role==="test"&&hasRunner){
       if(a.test_outcome!=="pass"||a.tested_commit_sha!==a.commit_sha||
          a.runner_profile!=="poc-default"||a.project_tests!=="pass"||
          a.researcher_acceptance!=="pass")return false;

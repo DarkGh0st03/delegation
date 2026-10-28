@@ -323,7 +323,9 @@ export class TrustedApprovedA2ADispatcher {
           relevant_paths:[...new Set(paths)],
           // Operation-specific, non-authoritative hints: reading a context
           // file NEVER makes it writable in the ADK or MCP tool surface.
-          approved_file_permissions:approvedFilePermissions
+          approved_file_permissions:approvedFilePermissions,
+          ...(role==="test"?{approved_run_tests:approvedRows.some(row=>
+            row.operation==="run_tests"&&row.resource===branchRoot)}:{})
         }
       });
       // The signed root may be revoked while protected A2A is in flight.

@@ -205,6 +205,13 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
 
   return async (context: AgentTaskContext, signal?: AbortSignal): Promise<AgentArtifactPayload> => {
     const taskStart = performance.now();
+    // A signed Test preparation Task may create/update tests without owning
+    // the separate final Docker run_tests grant. Never infer the runner
+    // capability from its Test role or from another Task's permission.
+    const signedTask=context.trusted_gateway_task_id!==undefined&&
+      context.subtask.approved_file_permissions!==undefined;
+    const mayRunTests=context.role==="test"&&
+      (!signedTask||context.subtask.approved_run_tests===true);
     const model = new BoundedModel(config.model, turnLimit, maxModelCallMs, signal,
       (durationMs, inputTokens, outputTokens, thinkingTokens, turn, responseShape) => {
         process.stdout.write(JSON.stringify({
@@ -252,7 +259,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal,
       {allowUpdateFile: config.mcpUpdateFile === true,
        allowCreateFile: config.mcpCreateFile === true && context.role==="test",
-       allowRunTests: config.mcpRunTests === true && context.role==="test",
+       allowRunTests: config.mcpRunTests === true && mayRunTests,
        ...(context.trusted_gateway_task_id
          ? {
              allowedPaths:context.subtask.relevant_paths,
@@ -266,7 +273,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       role: context.role, model, gatewayClient, signal,
       ...(config.mcpUpdateFile ? {mcpUpdateFile:true} : {}),
       ...(config.mcpCreateFile ? {mcpCreateFile:true} : {}),
-      ...(config.mcpRunTests ? {mcpRunTests:true} : {}),
+      ...(config.mcpRunTests && mayRunTests ? {mcpRunTests:true} : {}),
+      ...(signedTask&&context.role==="test"
+        ?{trustedRunTestsAllowed:mayRunTests}:{}),
       ...(config.mcpSharedUrl && config.mcpTaskRegistry ? {mcpReadFile:{
         endpoint:config.mcpSharedUrl,
         bearerForRequest: () => config.mcpTaskRegistry!.bearerFor(context.task_id)
@@ -411,8 +420,12 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
 
     const testOutcome = projectTests === "pass" && researcherAcceptance === "pass"
       ? "pass" : (projectTests === "fail" || researcherAcceptance === "fail") ? "fail" : "not_run";
-    if (context.role === "test" && testOutcome !== "pass") {
-      throw new Error("ADK Test Agent requires passing controlled test evidence");
+    if (context.role === "test") {
+      if(mayRunTests && testOutcome !== "pass")
+        throw new Error("ADK signed Test run requires passing controlled test evidence");
+      if(!mayRunTests && (testOutcome!=="not_run"||
+         filesModified.size+filesCreated.size===0))
+        throw new Error("ADK Test preparation Task requires verified file edits without Runner");
     }
     process.stdout.write(JSON.stringify({
       event:"adk_role_timing",role:context.role,
