@@ -2,7 +2,9 @@
  * Three real protected A2A Agents -> ONE shared MCP -> private task workers ->
  * real Gateway -> Rust Verifier/Adapter -> OPA -> disposable Gitea.
  *
- * Backend and Frontend: read_file + update_file. Test: create_file + run_tests.
+ * Backend and Frontend: read_file + update_file. Test: create_file, a real
+ * Docker FAIL on an intentionally broken authorized test, then a same-task
+ * read/update repair, real Docker PASS and an exact-final-SHA PR.
  * This variant uses the ACTUAL AccountSuspensionSequentialCoordinator,
  * production Orchestrator Gateway client, root DC bootstrap, role templates,
  * real delegated A2A Role Runner, and A2A/ADK/MCP/Gateway stack.
@@ -83,12 +85,23 @@ const readThenUpdate=path=>[
   {name:"read_file",args:{branch,path}},
   {name:"update_file",args:{branch,path,content:reference[path]}}
 ];
+// An offline fixture intentionally introduces a genuine failing test on a
+// Test-Agent-authorized path; recovery must use the same signed task rights.
+const repairPath=filesByRole.test[0];
+const brokenTestContent=reference[repairPath]+
+  '\nthrow new Error("offline recovery regression fixture");\n';
 const expectedActions={
   backend:filesByRole.backend.flatMap(readThenUpdate),
   frontend:filesByRole.frontend.flatMap(readThenUpdate),
-  test:[...filesByRole.test.slice(0,-1).flatMap(readThenUpdate),
+  test:[...filesByRole.test.slice(0,-1).flatMap(path=>
+      path===repairPath?[
+        {name:"read_file",args:{branch,path}},
+        {name:"update_file",args:{branch,path,content:brokenTestContent}}
+      ]:readThenUpdate(path)),
     {name:"create_file",args:{branch,path:filesByRole.test.at(-1),
       content:reference[filesByRole.test.at(-1)]}},
+    {name:"run_tests",args:{branch,profile:"poc-default"}},
+    ...readThenUpdate(repairPath),
     {name:"run_tests",args:{branch,profile:"poc-default"}}]
 };
 const tokens={
@@ -333,6 +346,7 @@ async function main(){
     await waitGitea(giteaUrl);
     const fixture=await bootstrapGitea(giteaUrl);
     const runnerRequests=[];
+    const runnerResults=[];
     runnerLogs=await mkdtemp(join(tmpdir(),"shared-mcp-positive-runner-"));
     const executor=new IsolatedDockerRunnerExecutor({
       gitea_base_url:giteaUrl,gitea_owner:"thesis",
@@ -350,6 +364,7 @@ async function main(){
       run:async request=>{
         runnerRequests.push(request);
         const result=await executor.run(request);
+        runnerResults.push(result);
         realRunnerResult=result;
         process.stderr.write(JSON.stringify({
           event:"shared_mcp_real_runner",
@@ -451,7 +466,7 @@ async function main(){
         completed.push(role);
         const a=delegated.artifact;
         assert.equal(a.role,role);
-        assert.deepEqual([...(a.files_modified??[])].sort(),
+        assert.deepEqual([...new Set(a.files_modified??[])].sort(),
           [...(role==="test"?filesByRole.test.slice(0,-1):
             filesByRole[role])].sort());
         assert.deepEqual([...(a.files_created??[])].sort(),
@@ -508,9 +523,20 @@ async function main(){
     const feature=await api(giteaUrl,fixture.repo+
       "/branches/feature%2Faccount-suspension",{auth:fixture.adminAuth});
     const testedCommit=feature.commit.id;
-    assert.equal(runnerRequests.length,1,"Test Runner was not invoked exactly once");
-    assert.equal(runnerRequests[0].commit_sha,testedCommit,
-      "Runner was not bound to the final actual Gitea revision");
+    assert.equal(runnerRequests.length,2,
+      "Recovery must execute real Docker once before and once after repair");
+    assert.equal(runnerResults.length,2);
+    const failedRevision=runnerRequests[0].commit_sha;
+    assert.match(failedRevision,/^[0-9a-f]{40}$/u);
+    assert.notEqual(failedRevision,testedCommit,
+      "Repair must create a different actual Gitea commit");
+    assert.equal(runnerResults[0].tested_commit_sha,failedRevision);
+    assert.equal(runnerResults[0].status,"fail",
+      "The first real Docker run must detect the injected test regression");
+    assert.ok(runnerResults[0].phases.some(p=>p.status==="fail"),
+      "A real Docker phase must fail, not merely a synthetic model verdict");
+    assert.equal(runnerRequests[1].commit_sha,testedCommit,
+      "Final Runner must test the repaired actual Gitea revision");
     assert.notEqual(testedCommit,committed.frontend,
       "Test Agent did not produce a separate Gitea commit");
     assert.equal(testedCommit,committed.test);
@@ -539,6 +565,9 @@ async function main(){
     assert.equal(agents.test.executor.executionCount,1);
     for(const role of roles)assert.equal(models[role].requests.length,
       expectedActions[role].length+1,"Incorrect scripted ADK tool sequence");
+    const testModelContext=JSON.stringify(models.test.requests);
+    assert.ok(testModelContext.includes("tests_failed"),
+      "The scripted Test Agent must receive a controlled failure before repair");
     const lastModel=JSON.stringify(models.test.requests.at(-1)?.contents??[]);
     assert.ok(lastModel.includes("researcher_acceptance"),
       "Test Agent did not receive structured real acceptance verdict");
@@ -740,7 +769,11 @@ async function main(){
       backend_revision:committed.backend,
       frontend_revision:committed.frontend,
       test_create_revision:testedCommit,
-      runner:"real_docker_six_phases_and_independent_acceptance",
+      runner:"real_docker_fail_authorized_repair_pass_and_independent_acceptance",
+      failed_revision:failedRevision,
+      recovered_revision:testedCommit,
+      docker_invocations:runnerResults.length,
+      first_failed_phase:runnerResults[0].phases.find(p=>p.status==="fail")?.phase,
       coordinator_result:"PR_CREATED_PENDING_HUMAN_APPROVAL",
       pull_request_number:coordinated.pull_request.pull_request_number,
       attempted_pr_calls:prCalls,merge_calls:positiveMerge?1:0,
@@ -758,7 +791,9 @@ async function main(){
         "six_real_role_authority_denials_and_unrelated_proof_rejections",
         "backend_real_a2a_mcp_update","frontend_real_a2a_mcp_update",
         "test_real_mcp_create","all_11_files_written_by_role_scoped_mcp_tools",
-        "real_docker_all_project_phases_and_acceptance_pass",
+        "real_docker_first_run_fails_on_actual_test_regression",
+        "same_signed_test_task_read_update_repairs_failed_revision",
+        "real_docker_retests_new_sha_all_phases_and_acceptance_pass",
         "baseline_project_pass_independent_researcher_acceptance_fail",
         "production_coordinator_positive_gate",
         "pr_open_no_reviews_no_merge",
