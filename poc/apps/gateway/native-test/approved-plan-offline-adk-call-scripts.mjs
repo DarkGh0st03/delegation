@@ -62,6 +62,13 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
   const derived=new Set(sourceDerivedPaths),consumed=new Set();
   const tasks=topo(plan),ids=new Set(tasks.map(t=>t.id));
   const scripts=Object.fromEntries(ROLES.map(role=>[role,[]]));
+  // Keep Task ownership of every scripted call, even when the same role
+  // performs multiple signed Tasks that update the SAME resource.
+  const callTaskIds=Object.fromEntries(ROLES.map(role=>[role,[]]));
+  const emit=(role,taskId,call)=>{
+    scripts[role].push(call);
+    callTaskIds[role].push(taskId);
+  };
   const accounted=new Set();
   for(const task of tasks){
     const permissions=approvedRows.filter(p=>p.task_id===task.id);
@@ -100,7 +107,7 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
       if(ops.has("update_file")&&!ops.has("read_file"))
         deny("offline update requires approved source read");
       if(ops.has("read_file"))
-        scripts[role].push({name:"read_file",args:{branch,path}});
+        emit(role,task.id,{name:"read_file",args:{branch,path}});
       for(const operation of ["update_file","create_file"]){
         if(!ops.has(operation))continue;
         if(derived.has(path)){
@@ -108,18 +115,18 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
              Object.hasOwn(implementationContents,path))
             deny("source-derived edit cannot receive golden content");
           consumed.add(path);
-          scripts[role].push({name:operation,args:{branch,path}});
+          emit(role,task.id,{name:operation,args:{branch,path}});
         }else{
           const content=implementationContents[path];
           if(typeof content!=="string"||content.length>250000)
             deny("missing test-only implementation payload");
-          scripts[role].push({name:operation,args:{branch,path,content}});
+          emit(role,task.id,{name:operation,args:{branch,path,content}});
         }
       }
     }
     if(runners.length>1)deny("duplicate test execution grant");
     if(runners.length)
-      scripts[role].push({name:"run_tests",
+      emit(role,task.id,{name:"run_tests",
         args:{branch,profile:"poc-default"}});
   }
   if(approvedRows.some(p=>!ids.has(p.task_id)||!accounted.has(p.id)))
@@ -150,12 +157,15 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
            g.task_id===runners[0].task_id&&g.operation===operation&&
            g.resource===sameFile)))
       deny("recovery requires same signed Test Task read/update/run grants");
+    const runnerTaskId=runners[0].task_id;
     const matches=scripts.test
-      .map((call,index)=>({call,index}))
-      .filter(x=>x.call.name==="update_file"&&x.call.args.path===path);
-    const runnerIndex=scripts.test.findIndex(c=>c.name==="run_tests");
+      .map((call,index)=>({call,index,taskId:callTaskIds.test[index]}))
+      .filter(x=>x.taskId===runnerTaskId&&
+        x.call.name==="update_file"&&x.call.args.path===path);
+    const runnerIndex=scripts.test.findIndex((call,index)=>
+      call.name==="run_tests"&&callTaskIds.test[index]===runnerTaskId);
     if(matches.length!==1||runnerIndex<=matches[0].index)
-      deny("unsupported recovery ordering");
+      deny("unsupported same-Task recovery ordering");
     const repaired={...matches[0].call,args:{
       ...matches[0].call.args,content:recoveryFixture.failedContent}};
     scripts.test[matches[0].index]=repaired;
@@ -163,6 +173,8 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
       {name:"read_file",args:{branch,path}},
       {name:"update_file",args:{branch,path,content:original}},
       {name:"run_tests",args:{branch,profile:"poc-default"}});
+    callTaskIds.test.splice(runnerIndex+1,0,
+      runnerTaskId,runnerTaskId,runnerTaskId);
   }
   const output={};
   for(const role of ROLES){

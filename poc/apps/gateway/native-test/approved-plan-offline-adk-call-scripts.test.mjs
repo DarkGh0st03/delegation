@@ -39,7 +39,7 @@ const edit=(id,role,after,path)=>({
     {operation:"update_file",path,reason:"Implement"}
   ]
 });
-function planned({alternate=false}={}){
+function planned({alternate=false,priorTestWrite=false}={}){
   const workBranch=alternate?"feature/accessibility":"feature/search";
   const tasks=alternate?[
     branch("prepare"),
@@ -66,6 +66,21 @@ function planned({alternate=false}={}){
       description:"PR",depends_on:["checks"],
       permissions:[{operation:"create_pull_request",path:null,reason:"Review"}]}
   ];
+  if(priorTestWrite){
+    if(!alternate)throw Error("Two signed Test Tasks require alternate fixture");
+    tasks.splice(2,0,{
+      id:"prepare-regression",agent_id:"test",title:"Prepare test",
+      description:"First signed Test Task edits existing regression",
+      depends_on:["accessible-list"],
+      permissions:[
+        {operation:"read_file",path:"tests/accessibility.test.tsx",
+          reason:"Read earlier approved regression"},
+        {operation:"update_file",path:"tests/accessibility.test.tsx",
+          reason:"First authorized Test edit"}
+      ]
+    });
+    tasks.find(t=>t.id==="checks").depends_on=["prepare-regression"];
+  }
   const proposed=compilePlanningProposal({
     tasks,assumptions:[],uncertainties:[]
   },{
@@ -235,4 +250,34 @@ test("Signed Test recovery cannot add missing authority or pass fixture content 
     plan:separate.plan,approvedRows:separate.approvedRows,repo,
     branch:separate.workBranch,implementationContents:content,recoveryFixture
   }),/NO-GO/u,"Test Task may only create tests when no read/update was approved");
+});
+
+test("Signed recovery selects the final Runner Task's write after an earlier Test Task edited the SAME file",()=>{
+  const d=planned({alternate:true,priorTestWrite:true});
+  const path="tests/accessibility.test.tsx";
+  const failedContent=content[path]+"\nthrow Error('offline regression');";
+  const input={plan:d.plan,approvedRows:d.approvedRows,
+    repo,branch:d.workBranch,implementationContents:content,
+    recoveryFixture:{path,failedContent}};
+  const scripts=buildOfflineAdkScriptsFromApprovedPlan(input);
+  assert.deepEqual(scripts.test.map(c=>c.name),[
+    "read_file","update_file",
+    "read_file","update_file","run_tests",
+    "read_file","update_file","run_tests"
+  ]);
+  assert.equal(scripts.test[1].args.content,content[path]);
+  assert.equal(scripts.test[3].args.content,failedContent);
+  assert.equal(scripts.test[6].args.content,content[path]);
+  assert.deepEqual(scripts.test[4].args,scripts.test[7].args);
+  assert.ok(Object.isFrozen(scripts.test[6].args));
+  const finalNoRepair=d.approvedRows.filter(g=>
+    !(g.task_id==="checks"&&g.operation==="update_file"));
+  assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+    ...input,approvedRows:finalNoRepair
+  }),/NO-GO/u,"Prior Task grant cannot be borrowed for later recovery");
+  const finalNoRead=d.approvedRows.filter(g=>
+    !(g.task_id==="checks"&&g.operation==="read_file"));
+  assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+    ...input,approvedRows:finalNoRead
+  }),/NO-GO/u,"The final Task needs its own source read grant");
 });
