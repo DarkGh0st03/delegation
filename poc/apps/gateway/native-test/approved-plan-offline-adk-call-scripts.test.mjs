@@ -9,6 +9,9 @@ import {buildOfflineAdkScriptsFromApprovedPlan}
   from "./approved-plan-offline-adk-call-scripts.mjs";
 import {OfflineApprovedAdkModel}
   from "./offline-approved-adk-model.mjs";
+import {InMemorySessionService,Runner} from "@google/adk";
+import {createAdkSpecializedAgent}
+  from "../../../packages/agent-runtime/src/adk-specialized-agents.ts";
 // Share the existing nonbillable planner test gate with the source-derived
 // route compiler; no additional CI permissions or provider calls.
 import "./source-derived-route-offline-adk-model.test.mjs";
@@ -335,4 +338,79 @@ test("Offline task-group metadata cannot silently alter its signed call count",(
   ]});
   assert.throws(()=>new OfflineApprovedAdkModel("test",calls),
     /Invalid signed offline ADK Task boundaries/u);
+});
+
+test("Real Google ADK Runner executes two signed Test Tasks on one role model without crossing Task boundaries",async()=>{
+  const d=planned({alternate:true,priorTestWrite:true});
+  const path="tests/accessibility.test.tsx";
+  const scripts=buildOfflineAdkScriptsFromApprovedPlan({
+    plan:d.plan,approvedRows:d.approvedRows,repo,branch:d.workBranch,
+    implementationContents:content,
+    recoveryFixture:{path,
+      failedContent:content[path]+"\nthrow Error('offline simulated failure');"}
+  });
+  const model=new OfflineApprovedAdkModel("test",scripts.test);
+  const effects=[];
+  let runnerCount=0;
+  const runTask=async(taskId,runnerAllowed)=>{
+    const calls=[];
+    const gatewayClient={async invoke(name,args){
+      calls.push(name);
+      effects.push({taskId,name,path:args.path??null});
+      assert.equal(args.branch,d.workBranch);
+      if(name==="read_file"){
+        assert.equal(args.path,path);
+        return {content:content[path]};
+      }
+      if(name==="update_file"){
+        assert.equal(args.path,path);
+        return {revision:"a".repeat(40),commit_sha:"a".repeat(40)};
+      }
+      if(name==="run_tests"){
+        assert.equal(runnerAllowed,true,
+          "A Test preparation Task must not borrow final Runner authority");
+        runnerCount++;
+        const pass=runnerCount===2;
+        return {provider:"runner",performed:true,tool:"run_tests",
+          branch:d.workBranch,revision:"a".repeat(40),
+          tested_commit_sha:"a".repeat(40),runner_profile:"poc-default",
+          status:pass?"pass":"fail",phases:[],
+          project_tests:{status:pass?"pass":"fail",phases:[]},
+          researcher_acceptance:{status:pass?"pass":"skipped"}};
+      }
+      throw Error("Unexpected controlled operation");
+    }};
+    const configured=createAdkSpecializedAgent({
+      role:"test",model,trustedBranch:d.workBranch,
+      trustedTaskPaths:[path],
+      trustedFilePermissions:[
+        {operation:"read_file",path},{operation:"update_file",path}
+      ],trustedRunTestsAllowed:runnerAllowed,gatewayClient
+    });
+    const appName="same_role_signed_"+taskId.replaceAll("-","_");
+    const service=new InMemorySessionService();
+    const runner=new Runner({appName,agent:configured.agent,sessionService:service});
+    await service.createSession({appName,userId:"offline",sessionId:"one"});
+    for await(const event of runner.runAsync({
+      userId:"offline",sessionId:"one",newMessage:{
+        role:"user",parts:[{text:"Execute signed Task "+taskId}]
+      }
+    })){
+      assert.equal(event.errorCode,undefined);
+    }
+    return calls;
+  };
+  const first=await runTask("prepare-regression",false);
+  assert.deepEqual(first,["read_file","update_file"],
+    "First real ADK Task must stop before later run_tests");
+  assert.equal(runnerCount,0);
+  const second=await runTask("checks",true);
+  assert.deepEqual(second,[
+    "read_file","update_file","run_tests",
+    "read_file","update_file","run_tests"
+  ]);
+  assert.equal(runnerCount,2);
+  assert.equal(effects.filter(x=>x.taskId==="prepare-regression").length,2);
+  assert.equal(effects.filter(x=>x.taskId==="checks").length,6);
+  assert.equal(model.calls,10);
 });
