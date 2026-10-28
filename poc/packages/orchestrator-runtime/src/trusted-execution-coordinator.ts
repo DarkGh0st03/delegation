@@ -407,6 +407,20 @@ export class TrustedExecutionCoordinator {
     this.#authority.assertUnstartedPinnedSnapshot(snapshot);
   }
 
+  /** Check the fresh Engineer review against THIS Coordinator's immutable
+   * active Planning pins. This does not load/sign a receipt or issue a root. */
+  assertActiveFreshEngineerReviewPins(input:{
+    session_id:string;
+    base_revision:string;
+    repository:import("./trusted-engineer-authority.ts").TrustedPlanningSnapshot["repository"];
+  }):void{
+    if(this.#phase!=="planning"||!input||
+       input.session_id!==this.#sessionId||
+       input.base_revision!==this.#baseRevision)
+      throw Error("Fresh Engineer review requires active matching Planning pins");
+    this.#authority.assertPinnedRepository(input.repository);
+  }
+
   /** Compare the old immutable Engineer repository pin; do not accept a
    * repo chosen by the next model, a new Task, or the caller. */
   assertOriginalRepository(repository:

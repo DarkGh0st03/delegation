@@ -15,7 +15,8 @@ import {TrustedExecutionCoordinator}
 import {startOwnerControlledPlanningReview,
   type OwnerControlledPlanningConfig}
   from "./trusted-owner-planning-bootstrap.ts";
-import type {PlanningReviewPacket} from "./trusted-planning-review-gate.ts";
+import {TrustedPlanningReviewGate,
+  type PlanningReviewPacket} from "./trusted-planning-review-gate.ts";
 
 type PinnedMainSnapshot=Omit<TrustedPlanningSnapshot,"session_id">;
 export interface TrustedFreshMainDiscovery {
@@ -126,5 +127,55 @@ export async function startTrustedFreshRepairPlanningReview(input:{
   return startOwnerControlledPlanningReview({
     ...cfg,coordinator:input.nextCoordinator,
     snapshot:structuredClone(intake.snapshot)
+  });
+}
+
+/**
+ * Explicit owner-only verification gate AFTER a fresh, signed Planning
+ * checkpoint is staged and an independent Engineer has signed a NEW receipt.
+ * This NEVER issues a root or launches any DAG: beginExecution() must still
+ * independently reload the signed receipt and activate the Gateway.
+ *
+ * A receipt from the prior session is not approval for a fresh repair.
+ */
+export async function verifyTrustedFreshRepairEngineerApproval(input:{
+  previousCoordinator:TrustedExecutionCoordinator;
+  nextCoordinator:TrustedExecutionCoordinator;
+  nextSessionId:string;
+  reviewGate:import("./trusted-planning-review-gate.ts").TrustedPlanningReviewGate;
+}):Promise<Readonly<{
+  status:"fresh_engineer_review_verified";
+  session_id:string;
+  base_revision:string;
+  plan_digest:string;
+  approval_decision_id:string;
+  planning_authority_only:true;
+  operational_credentials_issued:false;
+}>>{
+  if(!(input?.previousCoordinator instanceof TrustedExecutionCoordinator)||
+     !(input.nextCoordinator instanceof TrustedExecutionCoordinator)||
+     input.previousCoordinator===input.nextCoordinator||
+     !(input.reviewGate instanceof TrustedPlanningReviewGate))
+    fail("separate trusted Coordinators and authenticated review gate required");
+  const referral=await input.previousCoordinator
+    .freshPlanningIntakeAfterClosure(input.nextSessionId);
+  const packet=input.reviewGate.reviewPacket();
+  input.nextCoordinator.assertActiveFreshEngineerReviewPins({
+    session_id:packet.session_id,base_revision:packet.base_revision,
+    repository:packet.plan.repository
+  });
+  if(packet.session_id!==referral.proposed_next_session_id)
+    fail("new Engineer review is not bound to the proposed distinct session");
+  // The file store must authenticate the NEW Engineer signature using its
+  // independent pinned key. Digest/permission equality is checked again.
+  const signed=await input.reviewGate.loadAuthenticatedApproval(packet.session_id);
+  return Object.freeze({
+    status:"fresh_engineer_review_verified" as const,
+    session_id:packet.session_id,
+    base_revision:packet.base_revision,
+    plan_digest:packet.plan_digest,
+    approval_decision_id:(signed.approval as {decision_id:string}).decision_id,
+    planning_authority_only:true as const,
+    operational_credentials_issued:false as const
   });
 }

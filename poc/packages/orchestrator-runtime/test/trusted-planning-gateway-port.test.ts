@@ -10,6 +10,7 @@ import {join} from "node:path";
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
 import {makeApproval} from "../../plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+import {signEngineerApproval} from "../../plan-contracts/src/signed-approval.mjs";
 import {tmpdir} from "node:os";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -35,7 +36,8 @@ import {TrustedPlanningGatewayReadPort}
 import {TrustedAdkReadOnlyPlanner}
   from "../src/trusted-adk-planner.ts";
 import {compilePlanningProposal} from "../src/trusted-adk-planner.ts";
-import {startTrustedFreshRepairPlanningReview}
+import {startTrustedFreshRepairPlanningReview,
+  verifyTrustedFreshRepairEngineerApproval}
   from "../src/trusted-fresh-planning-intake.ts";
 import {startOwnerControlledPlanningReview}
   from "../src/trusted-owner-planning-bootstrap.ts";
@@ -1142,8 +1144,53 @@ test("closed prior DAG -> fresh pinned Gitea -> offline ADK repair proposal -> s
     assert.equal(f.coordinator.phase,"planning");
     assert.throws(()=>f.coordinator.trustedOperationalAuthority(),
       /Verified operational root is not active/);
-    await assert.rejects(f.gate.loadAuthenticatedApproval(snapshot.session_id),
-      (e:unknown)=>!!e&&typeof e==="object"&&"code" in e&&e.code==="ENOENT");
+    await assert.rejects(verifyTrustedFreshRepairEngineerApproval({
+      previousCoordinator:prior,nextCoordinator:f.coordinator,
+      nextSessionId:snapshot.session_id,reviewGate:f.gate
+    }),(e:unknown)=>!!e&&typeof e==="object"&&"code" in e&&e.code==="ENOENT");
+    const now=new Date(),expiry=new Date(now.getTime()+600_000);
+    const signForEngineer=(plan:typeof packet.plan,decision_id:string)=>
+      signEngineerApproval({plan,
+        approval:makeApproval(plan,{
+          allowedOperations:new Set<string>(RUST_OPERATIONS),
+          decision_id,
+          approved_by:"did:thesis:engineer",
+          approved_at:now.toISOString(),
+          approved_permission_ids:plan.requested_permissions.map(p=>p.id)
+        }),
+        engineerDid:"did:thesis:engineer",
+        keyId:"engineer",privateKeyPem:f.engineerPrivateKeyPem,
+        issuedAt:now.toISOString(),expiresAt:expiry.toISOString()
+      });
+    const receiptFile=join(f.approvalDir,snapshot.session_id+".json");
+    // Even a valid signature for the PRIOR session cannot approve the
+    // new task/plan, despite the same Engineer DID and repository.
+    await writeFile(receiptFile,
+      JSON.stringify(signForEngineer(previous.plan,"old-session-approval")),
+      {mode:0o600});
+    await assert.rejects(verifyTrustedFreshRepairEngineerApproval({
+      previousCoordinator:prior,nextCoordinator:f.coordinator,
+      nextSessionId:snapshot.session_id,reviewGate:f.gate
+    }),/Signed approval session ID does not match requested file/);
+    await writeFile(receiptFile,
+      JSON.stringify(signForEngineer(packet.plan,"new-session-review")),
+      {mode:0o600});
+    const approved=await verifyTrustedFreshRepairEngineerApproval({
+      previousCoordinator:prior,nextCoordinator:f.coordinator,
+      nextSessionId:snapshot.session_id,reviewGate:f.gate
+    });
+    assert.deepEqual(approved,{
+      status:"fresh_engineer_review_verified",
+      session_id:snapshot.session_id,base_revision:SHA,
+      plan_digest:packet.plan_digest,
+      approval_decision_id:"new-session-review",
+      planning_authority_only:true,
+      operational_credentials_issued:false
+    });
+    assert.ok(Object.isFrozen(approved));
+    assert.equal(f.coordinator.phase,"planning");
+    assert.equal(f.observed.issued,1,
+      "Verifier must NOT issue an operational root or dispatch new Agents");
     assert.equal(prior.phase,"closed");
     await f.coordinator.closePlanning();
     assert.equal(f.coordinator.phase,"closed");
