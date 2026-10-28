@@ -49,7 +49,7 @@ function decodeFile(repo,branch,resource){
  */
 export function buildOfflineAdkScriptsFromApprovedPlan({
   plan,approvedRows,repo,branch,implementationContents,
-  sourceDerivedPaths=[]
+  sourceDerivedPaths=[],recoveryFixture
 }={}){
   if(!plain(plan)||!plain(repo)||typeof branch!=="string"||
      !Array.isArray(approvedRows)||approvedRows.length>256||
@@ -126,6 +126,44 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
     deny("orphaned approved grant");
   if(consumed.size!==derived.size)
     deny("source-derived path not present in approved read/update grants");
+  // An optional, explicitly simulated functional failure is a TEST FIXTURE,
+  // never an additional authority grant. Both repair writes use the same
+  // signed Test Task's existing read/update permissions.
+  if(recoveryFixture!==undefined){
+    if(!plain(recoveryFixture)||
+       typeof recoveryFixture.path!=="string"||
+       typeof recoveryFixture.failedContent!=="string"||
+       recoveryFixture.failedContent.length===0||
+       recoveryFixture.failedContent.length>250000||
+       derived.has(recoveryFixture.path))
+      deny("invalid offline recovery fixture");
+    const path=recoveryFixture.path;
+    const original=implementationContents[path];
+    if(typeof original!=="string"||original===recoveryFixture.failedContent)
+      deny("recovery needs distinct approved final content");
+    const sameFile=canonicalFileUri(repo,branch,path);
+    const runners=approvedRows.filter(g=>
+      g.agent_id==="test"&&g.operation==="run_tests");
+    if(runners.length!==1 ||
+       !["read_file","update_file"].every(operation=>
+         approvedRows.some(g=>g.agent_id==="test"&&
+           g.task_id===runners[0].task_id&&g.operation===operation&&
+           g.resource===sameFile)))
+      deny("recovery requires same signed Test Task read/update/run grants");
+    const matches=scripts.test
+      .map((call,index)=>({call,index}))
+      .filter(x=>x.call.name==="update_file"&&x.call.args.path===path);
+    const runnerIndex=scripts.test.findIndex(c=>c.name==="run_tests");
+    if(matches.length!==1||runnerIndex<=matches[0].index)
+      deny("unsupported recovery ordering");
+    const repaired={...matches[0].call,args:{
+      ...matches[0].call.args,content:recoveryFixture.failedContent}};
+    scripts.test[matches[0].index]=repaired;
+    scripts.test.splice(runnerIndex+1,0,
+      {name:"read_file",args:{branch,path}},
+      {name:"update_file",args:{branch,path,content:original}},
+      {name:"run_tests",args:{branch,profile:"poc-default"}});
+  }
   const output={};
   for(const role of ROLES){
     if(scripts[role].length>30)deny("offline ADK turn cap exceeded");
