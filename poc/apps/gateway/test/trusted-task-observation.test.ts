@@ -169,6 +169,25 @@ test("Signed Test preparation is a corroborated file edit, not a fabricated pass
   assert.equal(await attestor.confirmCompleted(evidence("test",[written],claimedTests)),false);
 });
 
+test("Test Runner evidence never hides unreported file mutations in the same Task",async()=>{
+  const runner=effect("run_tests","req-regression-runner");
+  const write=effect("update_file","req-regression-write");
+  const obs=observation("test");
+  assert.equal(await attestor.confirmCompleted(evidence("test",[runner],obs)),true);
+  assert.equal(await attestor.confirmCompleted(
+    evidence("test",[write,runner],obs)),false,
+    "A passing Runner does not excuse an unreported Gitea edit");
+  const correct=structuredClone(obs);
+  correct.artifact.files_modified=[FILE];
+  assert.equal(await attestor.confirmCompleted(
+    evidence("test",[write,runner],correct)),true,
+    "Signed Test edits and exact-SHA passing Runner both count as evidence");
+  const fabricated=structuredClone(correct);
+  fabricated.artifact.files_created=["tests/never-created.ts"];
+  assert.equal(await attestor.confirmCompleted(
+    evidence("test",[write,runner],fabricated)),false);
+});
+
 test("Test Agent must have Runner pass for exact reported commit and acceptance",async()=>{
   const effectRunner=effect("run_tests","req-3");
   const valid=observation("test");

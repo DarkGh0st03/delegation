@@ -76,6 +76,17 @@ export class GatewayCorroboratedTaskAttestor implements TrustedTaskCompletionAtt
     if(claims.some(c=>!files.some(x=>
       x.tool===c.tool&&"path" in x.execution&&
       x.execution.path===c.path&&matchingPath(x,a))))return false;
+    // Completion must describe EVERY actual mutation, even when the same
+    // Test Task also runs Docker. Previously a valid Runner result alone
+    // could conceal an unreported source edit.
+    if(files.some(x=>!matchingPath(x,a)))return false;
+    if(e.provider_effects.some(x=>{
+      if(x.tool==="update_file"||x.tool==="create_file")return false;
+      if(x.tool==="run_tests")return e.role!=="test";
+      const r=x.execution;
+      return x.tool!=="read_file"||r.provider!=="gitea"||
+        r.tool!=="read_file"||!("branch" in r)||r.branch!==a.branch;
+    }))return false;
     // The trusted Gateway has an immutable, per-Task record of actual
     // provider effects. A Test preparation Task without a Runner effect
     // is a verified file edit, NOT an accepted test result. Only a Test
@@ -114,14 +125,7 @@ export class GatewayCorroboratedTaskAttestor implements TrustedTaskCompletionAtt
     // all claims correspond to a real write (above), and every real write
     // appears in the claimed file sets. Multiple writes to the same path
     // remain valid within a Task.
-    if(claims.length===0||files.length===0||
-       files.some(x=>!matchingPath(x,a)))return false;
-    if(e.provider_effects.some(x=>{
-      if(x.tool==="update_file"||x.tool==="create_file")return false;
-      const r=x.execution;
-      return x.tool!=="read_file"||r.provider!=="gitea"||
-        r.tool!=="read_file"||!("branch" in r)||r.branch!==a.branch;
-    }))return false;
+    if(claims.length===0||files.length===0)return false;
     return files.some(x=>x.execution.provider==="gitea"&&
       "commit_sha" in x.execution&&x.execution.commit_sha===a.commit_sha);
   }
