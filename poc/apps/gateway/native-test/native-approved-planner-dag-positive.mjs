@@ -46,6 +46,7 @@ import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
   from "../src/canonical.ts";
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
 import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
+import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {createSharedMcpHttpServer}
   from "../../../mcp-shared/src/http-server.ts";
 
@@ -128,32 +129,9 @@ export async function runNativePositiveApprovedDag({
   if(hostModels)
     assert.deepEqual(hostModels.selected_roles,[...ROLES],
       "This existing three-role native acceptance harness requires all roles");
-  // A real Planner may assign MULTIPLE approved Tasks to a specialist.
-  // Keep Task identity (and its independently scoped child DC) per Task,
-  // never collapse the immutable DAG into one synthetic Task per role.
-  const taskIdsByRole=Object.fromEntries(ROLES.map(role=>{
-    const selected=signed.plan.tasks.filter(t=>t.agent_id===role);
-    assert.ok(selected.length>=1,
-      "Account Suspension pilot requires at least one signed Task per role");
-    if(role==="test"){
-      // Multiple Test Tasks are valid: e.g., one changes test source and a
-      // later, independently approved Task runs exact-SHA Docker acceptance.
-      const runTasks=selected.filter(t=>grants.some(g=>
-        g.task_id===t.id&&g.operation==="run_tests"));
-      assert.equal(runTasks.length,1,
-        "This bounded pilot requires one final signed Docker acceptance Task");
-    }
-    return [role,selected.map(t=>t.id)];
-  }));
+  const ready=preflightApprovedPilotDag({plan:signed.plan,grants,repo,branch});
+  const {taskIdsByRole,branchTaskId,reviewTaskId}=ready;
   const allSpecialistTaskIds=ROLES.flatMap(role=>taskIdsByRole[role]);
-  const orchestratorTaskFor=operation=>{
-    const tasks=signed.plan.tasks.filter(t=>t.agent_id==="orchestrator"&&
-      grants.some(g=>g.task_id===t.id&&g.operation===operation));
-    assert.equal(tasks.length,1,"Pilot needs one signed orchestrator "+operation);
-    return tasks[0].id;
-  };
-  const branchTaskId=orchestratorTaskFor("create_branch");
-  const reviewTaskId=orchestratorTaskFor("create_pull_request");
   const root=canonicalRepositoryUri(repo);
   const scopedBranch=canonicalBranchUri(repo,branch);
   const filePrefix=scopedBranch+"/files/";
