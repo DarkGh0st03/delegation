@@ -877,7 +877,9 @@ try{
     child_dc_issued:positiveDag
       ?globalThis.__nativeDagPositive.native_rust_child_credentials:0,
     real_provider_mutations:positiveDag?(geminiPilot?globalThis.__nativeDagPositive.source_writes+globalThis.__nativeDagPositive.created_test_files:11):0,
-    provider_writes:positiveDag?(geminiPilot?globalThis.__nativeDagPositive.source_writes+globalThis.__nativeDagPositive.created_test_files:11):0,
+    provider_writes:positiveDag?
+      globalThis.__nativeDagPositive.source_writes+
+      globalThis.__nativeDagPositive.created_test_files:0,
     ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{})
   }));
 }catch(error){
