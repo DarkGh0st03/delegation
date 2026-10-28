@@ -418,7 +418,19 @@ try{
             reason:observation.reason};
         }
         if(observation?.kind==="model_turn"&&
-           observation.status==="started")pilotModelTurns++;
+           observation.status==="started"){
+          pilotModelTurns++;
+          process.stdout.write("[signed-gemini-pilot] "+JSON.stringify({
+            event:"gemini_pilot_planner_turn",turn:observation.turn
+          })+"\n");
+        }
+        if(observation?.kind==="model_usage")
+          process.stdout.write("[signed-gemini-pilot] "+JSON.stringify({
+            event:"gemini_pilot_planner_usage",turn:observation.turn,
+            input_tokens:observation.input_tokens??null,
+            output_tokens:observation.output_tokens??null,
+            thinking_tokens:observation.thought_tokens??null
+          })+"\n");
         if(observation?.kind==="model_failure"&&
            ["authentication","permission_or_billing","quota_or_rate_limit",
              "model_or_endpoint_not_found","invalid_request_or_tool_schema",

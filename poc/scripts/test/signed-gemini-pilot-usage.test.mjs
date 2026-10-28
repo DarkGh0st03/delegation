@@ -1,0 +1,83 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {extractSafeGeminiPilotUsage as extract} from
+  "../signed-gemini-pilot-usage.mjs";
+const event=obj=>JSON.stringify(obj);
+const planner=(kind,turn,more={})=>"[signed-gemini-pilot] "+
+  event({event:kind,turn,...more});
+const role=(r,t,more={})=>event({
+  event:"adk_llm_timing",role:r,turn:t,...more
+});
+test("host-observed provider usage is sanitized and distinct from cost",()=>{
+  const secret="DO_NOT_ECHO_PRIVATE_API_KEY";
+  const result=extract([
+    planner("gemini_pilot_planner_turn",1),
+    planner("gemini_pilot_planner_usage",1,{
+      input_tokens:100,output_tokens:11,thinking_tokens:3
+    }),
+    role("backend",1,{input_tokens:200,output_tokens:20,thinking_tokens:7}),
+    role("frontend",1,{input_tokens:300,output_tokens:30,thinking_tokens:5}),
+    role("test",1,{input_tokens:400,output_tokens:40,thinking_tokens:2}),
+    "irrelevant model text "+secret,
+    event({event:"not_recognized",secret})
+  ].join("\n"));
+  assert.equal(result.observation_integrity,"valid");
+  assert.equal(result.observed_delegate_calls,4);
+  assert.equal(result.input_output_metadata_complete,true);
+  assert.equal(result.provider_reported_input_tokens,1000);
+  assert.equal(result.provider_reported_output_tokens,101);
+  assert.equal(result.provider_reported_thinking_tokens,17);
+  assert.equal(result.provider_billed_request_count,null);
+  assert.equal(result.provider_invoice_usd,null);
+  assert.equal(result.provider_project_spend_cap_verified,false);
+  assert.equal(result.hard_monetary_spend_cap_enforced,false);
+  assert.ok(!JSON.stringify(result).includes(secret));
+  assert.ok(Object.isFrozen(result));
+});
+test("missing usage is unknown, never free; zero counts are valid",()=>{
+  const result=extract([
+    planner("gemini_pilot_planner_turn",1),
+    role("backend",1,{input_tokens:null,output_tokens:21}),
+    role("frontend",1,{input_tokens:3,output_tokens:5}),
+    role("test",1,{input_tokens:0,output_tokens:0})
+  ].join("\n"));
+  assert.equal(result.input_output_metadata_complete,false);
+  assert.equal(result.provider_reported_input_tokens,null);
+  assert.equal(result.provider_reported_output_tokens,null);
+  assert.equal(result.role_usage.backend.provider_reported_input_tokens,null);
+  assert.equal(result.role_usage.test.provider_reported_input_tokens,0);
+});
+test("same role-turn after new signed Task is a distinct model call",()=>{
+  const result=extract([
+    role("test",1,{input_tokens:10,output_tokens:1}),
+    role("test",1,{input_tokens:20,output_tokens:2}),
+    role("test",2,{input_tokens:30,output_tokens:3})
+  ].join("\n"));
+  assert.equal(result.observation_integrity,"valid");
+  assert.equal(result.role_usage.test.observed_delegate_calls,3);
+  assert.equal(result.role_usage.test.provider_reported_input_tokens,60);
+});
+test("bad counters, duplicate Planner evidence and spoofed lines fail closed",()=>{
+  const cases=[
+    [[planner("gemini_pilot_planner_turn",1),
+      planner("gemini_pilot_planner_turn",1)],"duplicate_planner_turn"],
+    [[planner("gemini_pilot_planner_turn",1),
+      planner("gemini_pilot_planner_usage",1,{input_tokens:1,output_tokens:1}),
+      planner("gemini_pilot_planner_usage",1,{input_tokens:1,output_tokens:1})],
+      "duplicate_planner_usage"],
+    [[role("backend",18,{input_tokens:1,output_tokens:1})],
+      "invalid_role_or_turn"],
+    [[role("backend",1,{input_tokens:-1,output_tokens:1})],
+      "invalid_provider_counter"]
+  ];
+  for(const [lines,reason] of cases){
+    const x=extract(lines.join("\n"));
+    assert.equal(x.observation_integrity,reason);
+    assert.equal(x.input_output_metadata_complete,false);
+  }
+  assert.equal(extract("untrusted "+role("backend",1,{input_tokens:1}))
+    .observed_delegate_calls,0);
+  const huge=extract("a".repeat(16_000_001));
+  assert.equal(huge.observation_integrity,"log_unavailable_or_oversized");
+  assert.equal(huge.provider_invoice_usd,null);
+});
