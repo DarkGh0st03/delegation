@@ -49,6 +49,7 @@ import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
 import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
+import {classifyApprovedDagFailure} from "./native-approved-dag-failure-category.mjs";
 import {verifyPilotRunnerOutcome} from "./verified-pilot-runner-outcome.mjs";
 import {createSharedMcpHttpServer}
   from "../../../mcp-shared/src/http-server.ts";
@@ -747,45 +748,12 @@ export async function runNativePositiveApprovedDag({
       }
     }).catch(error=>{
       if(realGeminiPilot){
-        const message=typeof error?.message==="string"?error.message:"";
-        const category=
-          message.startsWith("Trusted dispatch failed;")?"a2a_dispatch_failed":
-          message.startsWith("Trusted Orchestrator Task failed;")?"orchestrator_task_failed":
-          message.startsWith("Trusted DAG termination or revocation not confirmed")
-            ?"root_revocation_unconfirmed":
-          message.startsWith("Approved Task dependencies not verified")
-            ?"dependency_denied":
-          message.startsWith("ADK protected model failure:")?"adk_model_failure":
-          message.startsWith("Protected A2A result does not match")
-            ?"a2a_result_mismatch":
-          message.startsWith("Gateway provider effects changed")
-            ?"attestation_effect_race":
-          error?.code==="approved_plan_denied"?"approved_plan_denied":
-          error?.code==="ERR_ASSERTION"?"test_assertion":"unclassified";
-        onPilotError?.(category);
+        onPilotError?.(classifyApprovedDagFailure(error));
       }
       if(offlineMultiTest){
         // Only plan-generated Task IDs and fixed diagnostic categories enter
         // logs. NEVER publish exception text, provider payloads, DCs or VPs.
-        const classify=e=>{
-          const message=typeof e?.message==="string"?e.message:"";
-          if(message.startsWith("Trusted dispatch failed;"))return "a2a_dispatch_failed";
-          if(message.startsWith("Trusted Orchestrator Task failed;"))
-            return "orchestrator_task_failed";
-          if(message.startsWith("Trusted DAG termination or revocation not confirmed"))
-            return "root_revocation_unconfirmed";
-          if(message.startsWith("Approved Task dependencies not verified"))
-            return "dependency_denied";
-          if(message.startsWith("ADK protected model failure:"))
-            return "adk_model_failure";
-          if(message.startsWith("Protected A2A result does not match"))
-            return "a2a_result_mismatch";
-          if(message.startsWith("Gateway provider effects changed"))
-            return "attestation_effect_race";
-          if(e?.code==="approved_plan_denied")return "approved_plan_denied";
-          if(e?.code==="ERR_ASSERTION")return "test_assertion";
-          return "unclassified";
-        };
+        const classify=classifyApprovedDagFailure;
         process.stderr.write("[native-dag-adk] multi_test_safe_diagnostic "+
           JSON.stringify({
             completed_task_ids:dispatcher.completedTaskIds.filter(id=>

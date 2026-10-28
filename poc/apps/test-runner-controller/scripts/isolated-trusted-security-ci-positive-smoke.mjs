@@ -602,7 +602,7 @@ async function main(){
               const event=JSON.parse(line.slice(diagnosticPrefix.length));
               const ids=["branch","backend","frontend","test-preparation","test","pr"];
               const categories=[
-                "a2a_dispatch_failed","orchestrator_task_failed",
+                "a2a_task_not_completed","a2a_artifact_invalid","controlled_tool_failure","no_confirmed_revision","a2a_dispatch_failed","orchestrator_task_failed",
                 "root_revocation_unconfirmed","dependency_denied",
                 "adk_model_failure","a2a_result_mismatch",
                 "attestation_effect_race","approved_plan_denied",
@@ -698,7 +698,7 @@ async function main(){
                     model_turns_started:item.model_turns_started,
                     ...(["not_started","model_binding","dag_preflight","baseline_reads","agent_bootstrap","dispatcher_setup","a2a_dispatch","result_verification"].includes(item.delegated_phase)
                       ?{delegated_phase:item.delegated_phase}:{}),
-                    ...(["none","a2a_dispatch_failed","orchestrator_task_failed","root_revocation_unconfirmed","dependency_denied","adk_model_failure","a2a_result_mismatch","attestation_effect_race","approved_plan_denied","test_assertion","unclassified"].includes(item.delegated_failure)
+                    ...(["none","a2a_task_not_completed","a2a_artifact_invalid","controlled_tool_failure","no_confirmed_revision","a2a_dispatch_failed","orchestrator_task_failed","root_revocation_unconfirmed","dependency_denied","adk_model_failure","a2a_result_mismatch","attestation_effect_race","approved_plan_denied","test_assertion","unclassified"].includes(item.delegated_failure)
                       ?{delegated_failure:item.delegated_failure}:{}),
                     ...(location?{assertion_location:location}:{}),
                     ...(planningRejection
