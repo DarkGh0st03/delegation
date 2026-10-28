@@ -41,8 +41,9 @@ on:
       - 'poc/packages/orchestrator-runtime/src/a2a-workflow.ts'
       - 'poc/packages/orchestrator-runtime/src/artifact-validation.ts'
       - 'poc/packages/orchestrator-runtime/test/a2a-workflow.test.ts'
-      - 'poc/packages/agent-runtime/src/executor.ts'
-      - 'poc/packages/agent-runtime/test/trusted-a2a-dispatch-id.test.ts'
+      # All live ADK/MCP Agent changes need the exact-SHA signed E2E gate.
+      - 'poc/packages/agent-runtime/src/**'
+      - 'poc/packages/agent-runtime/test/**'
   workflow_dispatch:
 permissions:
   contents: read
