@@ -1064,7 +1064,7 @@ test("R5 protected owner service composes signed ADK Planning with strict host a
     await assert.rejects(prepared.start(planning),/single-use/);
     await assert.rejects(prepared.startFreshRepair({
       planning,audit:undefined
-    }),/single-use/);
+    }),/fresh repair requires protected recovery mode/);
     await assert.rejects(f.planningRecovery.assertFreshSession(
       snapshot.session_id),/retired session cannot be reused/);
   }finally{
