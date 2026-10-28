@@ -379,21 +379,23 @@ test("actual signed file connects Engineer two-root handoff to Gateway plan enfo
       ...noRootPlanning.planner,snapshot:{...nextSnapshot,
         base_revision:"b".repeat(40)}
     }} as never
-  }),/independently pinned Gitea snapshot/);
+  }),/audited durable owner disposition required/);
   await assert.rejects(startTrustedFreshRepairPlanningReview({
     previousCoordinator:coordinator,nextCoordinator,
     nextSessionId:nextSnapshot.session_id,trustedGitea:discovery,
     planning:{...noRootPlanning,planner:{
       ...noRootPlanning.planner,requirement:""}
     } as never
-  }),/explicitly supplied by the owner/);
+  }),/audited durable owner disposition required/);
   // Valid fresh snapshot reaches the existing authenticated owner
   // bootstrap, which then rejects absent signing/recovery components.
   await assert.rejects(startTrustedFreshRepairPlanningReview({
     previousCoordinator:coordinator,nextCoordinator,
     nextSessionId:nextSnapshot.session_id,trustedGitea:discovery,
     planning:noRootPlanning as never
-  }),/independent Planning components and idle Coordinator required/);
+  }),/audited durable owner disposition required/);
+  assert.equal(trustedReads,1,
+    "Legacy entry must fail before ANY additional Gitea snapshot request");
   assert.deepEqual(nextCredentials.calls,[],
     "Preflight and missing owner services cannot issue a fresh root");
   await assert.rejects(prepareTrustedFreshPlanningIntake({
