@@ -7,6 +7,8 @@
  * permission grant, or a successful Gemini generation. Each Task can consume
  * its own bounded turns and the provider still meters INPUT tokens.
  */
+import {pathToFileURL} from "node:url";
+import {resolve} from "node:path";
 export const SIGNED_GEMINI_PILOT = Object.freeze({
   model:"gemini-3.8-flash",thinkingLevel:"LOW",
   maxOutputTokensPerCall:8192,maxModelCallMs:120000,
@@ -54,7 +56,7 @@ export function verifySignedGeminiPilotConsent(env,{requireApiKey=false}={}){
   });
 }
 if(process.argv[1]&&
-   import.meta.url===new URL("file://"+process.argv[1]).href){
+   import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   if(!["--preflight-no-inference","--require-key-no-inference"]
        .includes(process.argv[2])||process.argv.length!==3)deny();
   const result=verifySignedGeminiPilotConsent(process.env,{

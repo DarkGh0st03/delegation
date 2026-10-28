@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {spawnSync} from "node:child_process";
+import {fileURLToPath} from "node:url";
 import {SIGNED_GEMINI_PILOT,verifySignedGeminiPilotConsent}
   from "../signed-gemini-pilot-consent.mjs";
 const valid=()=>({
@@ -61,5 +63,36 @@ test("dry preflight never requires a key, charged path requires a nonempty key",
     assert.throws(()=>verifySignedGeminiPilotConsent({
       ...valid(),GEMINI_API_KEY:key
     },{requireApiKey:true}),/NO-GO/u);
+  }
+});
+
+test("actual relative-path CLI cannot bypass manual consent (zero provider calls)",()=>{
+  // Exercise the exact GitHub Actions invocation, not just the exported
+  // preflight function. Node commonly passes a resolved relative entrypoint.
+  const script=fileURLToPath(new URL("../signed-gemini-pilot-consent.mjs",
+    import.meta.url));
+  const run=(args,overrides={})=>spawnSync(process.execPath,
+    [script,...args],{encoding:"utf8",
+      env:{...process.env,...valid(),...overrides},
+      timeout:5000});
+  const good=run(["--preflight-no-inference"]);
+  assert.equal(good.status,0,good.stderr);
+  assert.equal(JSON.parse(good.stdout).generation_calls,0);
+  const paid=run(["--require-key-no-inference"],{
+    GEMINI_API_KEY:"LOCAL_TEST_ONLY_NOT_REAL_KEY"
+  });
+  assert.equal(paid.status,0,paid.stderr);
+  assert.equal(JSON.parse(paid.stdout).actual_api_access_verified,false);
+  for(const [args,env] of [
+    [["--preflight-no-inference"],{GITHUB_RUN_ATTEMPT:"2"}],
+    [["--preflight-no-inference"],{GITHUB_EVENT_NAME:"push"}],
+    [["--require-key-no-inference"],{GEMINI_API_KEY:""}],
+    [[],{}],
+    [["--unknown"],{}]
+  ]){
+    const result=run(args,env);
+    assert.notEqual(result.status,0,
+      "CLI must reject invalid configuration instead of silently exiting");
+    assert.equal(result.stdout,"");
   }
 });
