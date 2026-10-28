@@ -61,7 +61,8 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
 
         let vp: VerifiablePresentation<DelegationCredential> =
             VerifiablePresentation::<DelegationCredential>::from_signed_jwt(signed_jwt, &ecc_pk)?;
-        let dc = vp.credential();
+        let vc = vp.verifiable_credential()?;
+        let dc = vc.credential();
 
         if vp.holder() != presenter_id {
             return Err(format!(
@@ -115,7 +116,7 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
         //  - every timing constraint is respected
         let hierarchy = dc.hierarchy();
         let mut previous: &String;
-        let mut current: &String = vp.issuer();
+        let mut current: &String = vc.issuer();
         // !!! It's in reverse order !!!
         for delegator in hierarchy.iter().rev() {
             previous = delegator.delegatee_id();
@@ -137,13 +138,13 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
             )?;
             current = delegator.id();
         }
-        let credential_status = vp.credential_status().ok_or_else(|| {
+        let credential_status = vc.credential_status().ok_or_else(|| {
             String::from("Presented Delegation Credential has no credentialStatus")
         })?;
         self.verify_delegation(
             dc,
-            vp.issuer(),
-            vp.id(),
+            vc.issuer(),
+            vc.id(),
             credential_status,
             &permissions,
             now_ns,
@@ -154,7 +155,7 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
         let root_issuer = hierarchy
             .first()
             .map(|delegator| delegator.id())
-            .unwrap_or(vp.issuer());
+            .unwrap_or(vc.issuer());
         self.trust_resolver.ensure_trust_anchor(root_issuer)?;
 
         let expiration = match u128::from_str(dc.exp()) {
@@ -169,8 +170,8 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
 
         Ok(VerifiedDelegation::new(
             presenter_id.clone(),
-            vp.id().clone(),
-            vp.issuer().clone(),
+            vc.id().clone(),
+            vc.issuer().clone(),
             permissions,
             hierarchy.len(),
             expiration,
