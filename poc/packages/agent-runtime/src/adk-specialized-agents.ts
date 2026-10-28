@@ -376,6 +376,10 @@ export function createAdkSpecializedAgent(
     }
   }
 
+  // An out-of-grant compiler failure is terminal for this Task. The model
+  // may retry a tool call, but it must never trigger another billable Docker
+  // run using the same approval. Only a new signed session can proceed.
+  let terminalRepairReferral:AdkControlledToolOutcome["payload"]|null=null;
   const timedMcpRunTests = config.mcpRunTests &&
     config.trustedRunTestsAllowed!==false && config.mcpReadFile
     ? new FunctionTool({
@@ -388,6 +392,11 @@ export function createAdkSpecializedAgent(
           const argumentsRecord=args as Record<string,unknown>;
           let outcome:AdkControlledToolOutcome["payload"] | undefined;
           try {
+            if(terminalRepairReferral){
+              outcome=terminalRepairReferral;
+              return {isError:true,structuredContent:outcome,
+                content:[{type:"text",text:JSON.stringify(outcome)}]};
+            }
             const response=await callTimedMcpRunTests({
               endpoint:config.mcpReadFile!.endpoint,
               bearerForRequest:config.mcpReadFile!.bearerForRequest,
@@ -400,6 +409,13 @@ export function createAdkSpecializedAgent(
               config.trustedFilePermissions?.filter(p=>p.operation==="update_file")
                 .map(p=>p.path)??[]);
             if(outcome.ok)return response;
+            if(outcome.error.kind==="tests_failed"){
+              const d=outcome.error.details;
+              if(d!==null&&typeof d==="object"&&!Array.isArray(d)&&
+                 (d as {repair_requires_new_approval?:unknown})
+                   .repair_requires_new_approval===true)
+                terminalRepairReferral=outcome;
+            }
             // MCP tool-call errors must be visible as safe, fixed-vocabulary
             // feedback to the model, not as raw Runner/Gateway responses.
             // ADK can then repair with separately approved file tools and

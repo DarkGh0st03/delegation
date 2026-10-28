@@ -180,3 +180,20 @@ test("redacted model response shapes distinguish empty, tool and exhausted resul
   });
   assert.equal(shape.agent_failure,undefined);
 });
+
+test("fresh Engineer review is a fixed safe failure category",()=>{
+  const privateSource="NEVER_LOG_UNAPPROVED_FILE_PATH";
+  const progress={successful_reads:0,distinct_read_paths:0,
+    duplicate_reads:0,failed_reads:0,successful_writes:0,failed_writes:0};
+  const raw=JSON.stringify({event:"adk_task_outcome",role:"test",
+    category:"repair_requires_new_approval",model_turns:5,...progress,
+    file_path:privateSource,model_text:privateSource});
+  const safe=agentObservations(raw);
+  assert.equal(safe.length,1);
+  assert.equal(safe[0].category,"repair_requires_new_approval");
+  assert.ok(!JSON.stringify(safe).includes(privateSource));
+  const report=agentSummary("[trusted-positive-ci] gemini_agent_observation "+
+    JSON.stringify(safe[0]));
+  assert.equal(report.role_evidence.test.agent_failure.category,
+    "repair_requires_new_approval");
+});

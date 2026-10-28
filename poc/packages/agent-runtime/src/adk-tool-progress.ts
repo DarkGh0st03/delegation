@@ -11,8 +11,22 @@ export class AdkToolProgress {
   #duplicateReads = 0;
   #successfulWrites = 0;
   #failedWrites = 0;
+  #requiresFreshEngineerApproval = false;
+
+  /** Sticky trusted control-plane referral. This never creates a permission. */
+  get requiresFreshEngineerApproval(): boolean {
+    return this.#requiresFreshEngineerApproval;
+  }
 
   observe(event: AdkControlledToolOutcome): void {
+    if(event.name === "run_tests" && !event.payload.ok &&
+       event.payload.error.kind==="tests_failed"){
+      const details=event.payload.error.details;
+      if(details!==null&&typeof details==="object"&&!Array.isArray(details)&&
+         (details as {repair_requires_new_approval?:unknown})
+           .repair_requires_new_approval===true)
+        this.#requiresFreshEngineerApproval=true;
+    }
     if (event.name === "read_file") {
       if (!event.payload.ok) {
         this.#failedReads++;

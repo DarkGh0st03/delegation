@@ -38,3 +38,26 @@ test("all ADK role prompts encourage bounded investigation and safe full-file wr
     assert.match(prompt,/Never attempt to bypass an authorization denial/i);
   }
 });
+
+test("A trusted out-of-scope Runner repair remains terminal even after other tools",()=>{
+  const progress=new AdkToolProgress();
+  const secret="PRIVATE_FILE_DO_NOT_LOG";
+  progress.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:false,error:{kind:"tests_failed",message:"controlled error",
+      details:{first_failed_phase:"typecheck",repair_requires_new_approval:true,
+        untrusted:secret}}}});
+  assert.equal(progress.requiresFreshEngineerApproval,true);
+  progress.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:true,result:{status:"pass"}}});
+  assert.equal(progress.requiresFreshEngineerApproval,true);
+  assert.ok(!JSON.stringify(progress.snapshot()).includes(secret));
+  const ordinary=new AdkToolProgress();
+  ordinary.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:false,error:{kind:"tests_failed",message:"failed",
+      details:{first_failed_phase:"typecheck"}}}});
+  assert.equal(ordinary.requiresFreshEngineerApproval,false);
+  ordinary.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:false,error:{kind:"tests_failed",message:"failed",
+      details:{repair_requires_new_approval:"true"}}}});
+  assert.equal(ordinary.requiresFreshEngineerApproval,false);
+});

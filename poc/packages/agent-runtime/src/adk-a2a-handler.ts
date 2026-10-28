@@ -315,6 +315,16 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const visible = modelVisibleTaskContext(context);
     let eventErrorCategory: AdkFailureCategory | null = null;
     let eventErrorDiagnostic: AdkSafeFailureDiagnostic | null = null;
+    const failForFreshReview=():never=>{
+      // A failure to repair within signed file grants is never a completed
+      // A2A Task, even if the model later emits "done" or tests "passed".
+      process.stderr.write(JSON.stringify({
+        event:"adk_task_outcome",role:context.role,
+        category:"repair_requires_new_approval",model_turns:model.turns,
+        ...progress.snapshot()
+      })+"\n");
+      throw new Error("ADK Test repair requires fresh Engineer approval");
+    };
     const reportFailure = (category: AdkFailureCategory, diagnostic: AdkSafeFailureDiagnostic | null): void => {
       // Static labels/counters only. Never log raw error messages, file paths,
       // untrusted LLM text, DC/VP material, task metadata or Gateway tokens.
@@ -349,6 +359,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         }
       }
     } catch (error) {
+      if(context.role==="test"&&progress.requiresFreshEngineerApproval)
+        failForFreshReview();
       const diagnostic = model.providerErrorDiagnostic ?? inspectAdkFailure(error);
       const category = model.budgetExceeded ? "model_turn_budget" :
         model.providerErrorCategory ?? diagnostic.category;
@@ -358,6 +370,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       // ADK holds MCP sessions; release them on success, denial or model failure.
       await mcpToolset?.close();
     }
+    if(context.role==="test"&&progress.requiresFreshEngineerApproval)
+      failForFreshReview();
     if (model.budgetExceeded || model.providerErrorCategory || eventErrorCategory) {
       const category = model.budgetExceeded ? "model_turn_budget" :
         model.providerErrorCategory ?? eventErrorCategory ?? "adk_event_error";
