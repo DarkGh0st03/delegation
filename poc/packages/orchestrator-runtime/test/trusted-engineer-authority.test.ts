@@ -161,6 +161,37 @@ test("approval revokes preliminary root before independent operational root issu
     /active preliminary authority missing/);
 });
 
+test("two approved sequential Tasks sharing one URI/operation receive one operational root grant",async()=>{
+  // A plan grants authority per Task, but an operational DC is a set of
+  // resource/operation pairs. A repeated Task request cannot duplicate or
+  // broaden the credential.
+  const p=plan();
+  p.tasks.splice(2,0,{
+    id:"backend-followup",agent_id:"backend",title:"Review implementation",
+    description:"Perform the approved follow-up edit",depends_on:["backend"],
+    resources:[featureFile]
+  });
+  p.tasks[3].depends_on=["backend-followup"];
+  p.requested_permissions.push({
+    id:"p-backend-followup",task_id:"backend-followup",agent_id:"backend",
+    operation:"update_file",resource:featureFile,reason:"Review same file"
+  });
+  const approved=trustedApproval(p,[
+    "p-branch","p-backend","p-backend-followup","p-pr"
+  ]);
+  assert.equal(approved.approval.approved_permission_ids.length,4);
+  const {session,adapter}=fixture(approved);
+  await session.startPlanning(root(PREP_ID,"100",600));
+  const issued=await session.approveAndIssueOperationalRoot(root(OPER_ID,"101",3600));
+  assert.deepEqual(issued.permissions,[
+    {resource:rootUri,operation:"create_branch"},
+    {resource:featureFile,operation:"update_file"},
+    {resource:rootUri,operation:"create_pull_request"}
+  ]);
+  assert.deepEqual(adapter.calls[2].permissions,issued.permissions);
+  assert.deepEqual(adapter.calls.map(x=>x.operation),["issue","revoke","issue"]);
+});
+
 test("approval is sourced from trusted store, not caller-supplied plan",async()=>{
   const {session,adapter}=fixture();
   await session.startPlanning(root(PREP_ID,"100",600));
