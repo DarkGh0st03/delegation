@@ -285,8 +285,8 @@ export class TrustedApprovedExecutionPlans {
     { plan_digest:string; plan_task_id:string; work_branch:string;
       tested_head_sha?:string } {
     const {session,binding}=this.#activeBinding(runtimeTaskId);
-    if(binding.agent!==role || binding.completed) {
-      denied("Runtime role or completed task is outside approved plan");
+    if(binding.agent!==role || binding.completed || binding.completing) {
+      denied("Runtime role or completing/completed task is outside approved plan");
     }
     this.#checkAction(session,binding,required,request);
     const approvedTestedSha=request?.tool==="create_pull_request"
@@ -373,6 +373,11 @@ export class TrustedApprovedExecutionPlans {
       denied("Cannot complete a task without confirmed provider effects");
     }
     this.#assertDependencies(session,binding);
+    // Freeze the exact Gateway effects about to be independently attested.
+    // A previously prepared operation can finish while the asynchronous
+    // attestor is awaiting evidence. Such a late provider effect must never
+    // be silently added to the set of effects used for task completion.
+    const attestedRequests=[...binding.successfulRequests.entries()];
     binding.completing=true;
     let confirmed=false;
     try {
@@ -380,9 +385,10 @@ export class TrustedApprovedExecutionPlans {
         session_id:session.sessionId,plan_digest:session.digest,
         plan_task_id:binding.planTaskId,runtime_task_id:runtimeTaskId,
         role:binding.agent,
-        successful_gateway_request_ids:Object.freeze([...binding.successfulRequests.keys()]),
+        successful_gateway_request_ids:Object.freeze(
+          attestedRequests.map(([id])=>id)),
         provider_effects:Object.freeze(
-          [...binding.successfulRequests.values()].map(v=>structuredClone(v))),
+          attestedRequests.map(([,effect])=>structuredClone(effect))),
         ...(observation?{observation:structuredClone(observation)}:{})
       }));
     } catch {
@@ -392,6 +398,15 @@ export class TrustedApprovedExecutionPlans {
     }
     if(!confirmed || !session.active) {
       denied("No verified A2A task completion attestation");
+    }
+    // Comparing the whole ordered registry matters even for a second Runner
+    // PASS on the *same* SHA: the attestor did not approve that new request.
+    const currentRequests=[...binding.successfulRequests.entries()];
+    if(currentRequests.length!==attestedRequests.length||
+       currentRequests.some(([id,effect],i)=>
+         id!==attestedRequests[i][0]||
+         effect!==attestedRequests[i][1])) {
+      denied("Gateway provider effects changed during Task attestation");
     }
     this.#ensureUnexpired(session);
     this.#assertDependencies(session,binding);
