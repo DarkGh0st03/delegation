@@ -285,6 +285,45 @@ test("Seven signed Tasks (2 Orchestrator, 2 Backend, 1 Frontend, 2 Test) execute
   assert.equal(h.coordinator.phase,"closed");
 });
 
+
+test("Approved Test preparation may precede Backend, but final Test still depends on implementation",async()=>{
+  const p=plan();
+  const testFile=uri+"/branches/feature%2Faccount-suspension/files/tests/early.test.ts";
+  p.tasks.splice(1,0,{
+    id:"test-preparation",agent_id:"test",title:"Prepare regression early",
+    description:"Create the approved test before implementation",
+    depends_on:["branch"],resources:[testFile]
+  });
+  p.tasks.find(t=>t.id==="tests")!.depends_on=[
+    "frontend-task","test-preparation"
+  ];
+  p.requested_permissions.push({
+    id:"early-test-create",task_id:"test-preparation",agent_id:"test",
+    operation:"create_file",resource:testFile,
+    reason:"Independent signed preparation before Backend"
+  });
+  const h=harness({alternativeApprovedPlan:p});
+  const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+  const done=await d.executeApprovedDag({
+    async invokeOrchestratorTask(_id,gatewayTaskId){
+      h.log.push("provider:"+gatewayTaskId);
+    }
+  });
+  assert.deepEqual(done.completed_task_ids,[
+    "branch","test-preparation","backend-task","frontend-task","tests"
+  ]);
+  assert.deepEqual(done.specialized_results.map(x=>x.role),[
+    "test","backend","frontend","test"
+  ]);
+  const preparation=h.log.findIndex(x=>x.startsWith("run:test-preparation:"));
+  const backend=h.log.findIndex(x=>x.startsWith("run:backend-task:"));
+  const front=h.log.findIndex(x=>x.startsWith("run:frontend-task:"));
+  const finalTest=h.log.findIndex(x=>x.startsWith("run:tests:"));
+  assert.ok(preparation>=0&&preparation<backend&&backend<front&&front<finalTest,
+    "The approved DAG may prepare tests early but verifies only after changes");
+  assert.equal(h.coordinator.phase,"closed");
+});
+
 test("unapproved second Backend Task fails closed before any DAG provider effect",async()=>{
   const p=plan();
   const nextFile=p.tasks[1]!.resources[0]!;

@@ -334,7 +334,9 @@ export async function runNativePositiveApprovedDag({
           }else if(op==="update_file"){
             assert.equal(request.arguments.path,updatedTestFile);
             assert.equal(request.arguments.branch,branch);
-            assert.ok(readPaths.test.has(updatedTestFile));
+            assert.ok(readPathsPerTask.get(activeTaskByRole.test)
+              ?.has(updatedTestFile),
+              "Test edit must read its approved source in this same Task");
             assert.equal(typeof request.arguments.content,"string");
             assert.ok(request.arguments.content.length>0&&
               request.arguments.content.length<=250000);
@@ -414,6 +416,11 @@ export async function runNativePositiveApprovedDag({
           assert.ok(approvedTestReads.includes(effect.path));
           const current=await reader.readTextFile(branch,effect.path);
           assert.equal(effect.content,current.content);
+          const activeTestTask=activeTaskByRole.test;
+          assert.ok(taskIdsByRole.test.includes(activeTestTask));
+          if(!readPathsPerTask.has(activeTestTask))
+            readPathsPerTask.set(activeTestTask,new Set());
+          readPathsPerTask.get(activeTestTask).add(effect.path);
           if(!readPaths.test.has(effect.path)){
             readPaths.test.add(effect.path);
             testReads++;
@@ -421,10 +428,13 @@ export async function runNativePositiveApprovedDag({
         }else if(effect.tool==="update_file"&&role==="test"){
           assert.equal(effect.provider,"gitea");
           assert.equal(effect.path,updatedTestFile);
-          assert.ok(readPaths.test.has(effect.path));
+          assert.ok(readPathsPerTask.get(activeTaskByRole.test)
+            ?.has(effect.path),
+            "A Test edit cannot reuse a separate Task's prior source read");
           assert.ok(!writePaths.test.has(effect.path));
           assert.match(effect.commit_sha,SHA);
-          assert.deepEqual(counts,{backend:1,frontend:1});
+          // A signed Test preparation Task may execute before implementation.
+          // Only the final run_tests must wait for all implementation edits.
           writePaths.test.add(effect.path);
           const head=await reader.getBranchMetadata(branch);
           assert.equal(head.commit_sha,effect.commit_sha);
@@ -434,11 +444,14 @@ export async function runNativePositiveApprovedDag({
           assert.equal(effect.provider,"gitea");
           assert.equal(effect.path,createdTestFile);
           assert.match(effect.commit_sha,SHA);
-          assert.deepEqual(counts,{backend:1,frontend:1});
+          // A signed Test preparation Task may execute before implementation.
+          // Only the final run_tests must wait for all implementation edits.
           const head=await reader.getBranchMetadata(branch);
           assert.equal(head.commit_sha,effect.commit_sha);
           testCalls++;testCreates++;
         }else if(effect.tool==="run_tests"){
+          assert.deepEqual(counts,{backend:1,frontend:1},
+            "Final Docker acceptance must run after all approved implementation edits");
           assert.equal(testCalls,1);
           const pinned=await reader.getBranchMetadata(branch);
           assert.equal(effect.provider,"runner");
