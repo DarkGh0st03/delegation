@@ -671,7 +671,14 @@ async function main(){
         if(!realGeminiPilot)assert.deepEqual(
           positive?.positive_dag?.completed_task_ids,
           ["branch","backend","frontend","test","pr"]);
-        assert.equal(positive?.positive_dag?.test_runner_runs,1);
+        const recovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1";
+        assert.equal(positive?.positive_dag?.test_runner_runs,recovery?2:1);
+        assert.equal(positive?.positive_dag?.recovery_verified,recovery);
+        if(recovery){
+          assert.match(positive.positive_dag.failed_test_sha,/^[a-f0-9]{40}$/u);
+          assert.notEqual(positive.positive_dag.failed_test_sha,
+            positive.positive_dag.tested_commit_sha);
+        }
         assert.equal(positive?.positive_dag?.project_tests,"pass");
         assert.equal(positive?.positive_dag?.researcher_acceptance,"pass");
         assert.equal(positive?.positive_dag?.tested_commit_sha,
@@ -681,8 +688,8 @@ async function main(){
           assert.ok(positive?.positive_dag?.source_reads>=
             positive?.positive_dag?.source_writes);
         }else{
-          assert.equal(positive?.positive_dag?.source_reads,10);
-          assert.equal(positive?.positive_dag?.source_writes,10);
+          assert.equal(positive?.positive_dag?.source_reads,recovery?11:10);
+          assert.equal(positive?.positive_dag?.source_writes,recovery?11:10);
         }
         if(realGeminiPilot)assert.ok([0,1].includes(positive?.positive_dag?.created_test_files));
         else assert.equal(positive?.positive_dag?.created_test_files,1);
@@ -730,7 +737,7 @@ async function main(){
           ?.independent_model_software_output_verified,realGeminiPilot);
         if(!realGeminiPilot)assert.deepEqual(
           positive?.positive_dag?.adk_model_turns,
-          {backend:13,frontend:9,test:3});
+          {backend:13,frontend:9,test:recovery?8:3});
         assert.equal(positive?.positive_dag?.main_unchanged,true);
         assert.equal(positive?.positive_dag?.operational_root_revoked,true);
         assert.equal(positive?.positive_dag?.pr_created,true);
@@ -748,7 +755,7 @@ async function main(){
         assert.equal(positive.positive_dag.tested_commit_sha,nativePrEvidence.sha);
         assert.equal(positive?.provider_writes,realGeminiPilot
           ?positive.positive_dag.source_writes+
-            positive.positive_dag.created_test_files:11);
+            positive.positive_dag.created_test_files:recovery?12:11);
         if(realGeminiPilot){
           // Explicit PILOT: Engineer test fixture, not genuine human approval.
           // No source, Gemini prompt, API secret, VP or tokens in the receipt.
