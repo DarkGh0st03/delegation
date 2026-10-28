@@ -55,3 +55,20 @@ test("MCP run_tests rejects failed project tests and failed researcher acceptanc
   assert.equal(unknown.ok,false);
   if(!unknown.ok)assert.equal(unknown.error.kind,"tool_unavailable");
 });
+
+test("MCP reports only whitelisted failing phase and never private Runner diagnostics",()=>{
+  const raw={...result,status:"fail",phases:[
+    {phase:"backend_tests",status:"fail",raw_error:"PRIVATE_TEST_LOG",
+      source:"NEVER_EXPOSE_SOURCE"}
+  ],project_tests:{status:"fail",phases:[]}};
+  const outcome=success(raw);
+  assert.equal(outcome.ok,false);
+  if(outcome.ok)return;
+  assert.equal(outcome.error.kind,"tests_failed");
+  assert.deepEqual(outcome.error.details,{first_failed_phase:"backend_tests"});
+  assert.doesNotMatch(JSON.stringify(outcome),/PRIVATE_TEST_LOG|NEVER_EXPOSE_SOURCE/u);
+  const wrong={...raw,phases:[{phase:"/etc/secrets",status:"fail"}]};
+  const unknown=success(wrong);
+  assert.equal(unknown.ok,false);
+  if(!unknown.ok)assert.equal(unknown.error.details,undefined);
+});

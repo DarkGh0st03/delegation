@@ -1,8 +1,13 @@
 import {ControlledToolError,controlledToolErrorPayload} from "./controlled-errors.ts";
+import {safeRunnerFailureDetails} from "./safe-runner-failure.ts";
 
 type ErrorKind="authorization_denied"|"invalid_tool_call"|"tool_unavailable"|"tests_failed";
-function controlled(kind:ErrorKind){
-  return controlledToolErrorPayload(new ControlledToolError(kind,"MCP "+kind));
+function controlled(kind:ErrorKind,execution?:unknown){
+  const details=kind==="tests_failed"
+    ?safeRunnerFailureDetails(execution):undefined;
+  return controlledToolErrorPayload(new ControlledToolError(
+    kind,"MCP "+kind,details?{details}:{}
+  ));
 }
 function record(value:unknown):Record<string,unknown>|null{
   return value!==null&&typeof value==="object"&&!Array.isArray(value)
@@ -43,7 +48,7 @@ export function normalizeMcpRunTestsOutcome(
     return controlled("tool_unavailable");
   }
   if(result.status!=="pass"||project?.status!=="pass"||acceptance?.status!=="pass"){
-    return controlled("tests_failed");
+    return controlled("tests_failed",result);
   }
   return {ok:true,result:payload.result};
 }

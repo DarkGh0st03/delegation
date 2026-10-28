@@ -50,7 +50,8 @@ class OneToolModel extends BaseLlm {
   }
 }
 
-function fakeBoundary(role: SpecializedAgentRole, deny = false, readOnly = false) {
+function fakeBoundary(role: SpecializedAgentRole, deny = false,
+  readOnly = false, failedFirstTest = false) {
   const requests: Array<{url:string;body:Record<string,unknown>}> = [];
   let prepareCalls = 0;
   let executeCalls = 0;
@@ -88,7 +89,16 @@ function fakeBoundary(role: SpecializedAgentRole, deny = false, readOnly = false
            content:"authenticated file contents",blob_sha:"b",
            last_commit_sha:SHA,size:27,encoding:"utf-8"}
         :role==="test"
-          ? {tested_commit_sha:SHA,runner_profile:"poc-default",project_tests:{status:"pass"},researcher_acceptance:{status:"pass"}}
+          ? {tested_commit_sha:SHA,runner_profile:"poc-default",
+            ...(failedFirstTest&&executeCalls===1?{
+              status:"fail",
+              phases:[{phase:"backend_tests",status:"fail",
+                private_log:"SECRET_FAILING_TEST_LOG"}],
+              project_tests:{status:"fail"},researcher_acceptance:{status:"skipped"}
+            }:{
+              status:"pass",
+              project_tests:{status:"pass"},researcher_acceptance:{status:"pass"}
+            })}
           : {provider:"gitea",commit_sha:SHA}});
     }
     throw new Error("Unexpected HTTP endpoint " + text);
@@ -172,6 +182,50 @@ test("ADK read-only specialist completes from a Gateway-pinned revision",async()
   const model=new OneToolModel("read_file",{branch:BRANCH,path:PATHS.backend});
   const {response}=await send("backend",model,boundary.fetchFn as typeof fetch,43378);
   assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+});
+
+
+class TwoRunsModel extends BaseLlm {
+  readonly requests:LlmRequest[]=[];
+  constructor(){super({model:"phase3-offline-recoverable-tests"});}
+  override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+    this.requests.push(request);
+    if(this.requests.length<=2){
+      yield {content:{role:"model",parts:[{
+        functionCall:{id:"run_"+this.requests.length,name:"run_tests",
+          args:{branch:BRANCH,profile:"poc-default"}}
+      }]}};
+    }else yield {content:{role:"model",parts:[{text:"Done"}]}};
+  }
+  override connect():Promise<BaseLlmConnection>{
+    return Promise.reject(Error("Live model prohibited"));
+  }
+}
+
+test("Protected A2A Test Agent can recover failed Docker with later verified PASS",async()=>{
+  const boundary=fakeBoundary("test",false,false,true);
+  const model=new TwoRunsModel();
+  const {response}=await send("test",model,boundary.fetchFn as typeof fetch,43379);
+  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.deepEqual(boundary.counts(),{prepareCalls:2,executeCalls:2});
+  assert.equal(model.requests.length,3);
+  const artifacts=JSON.stringify(response.task.artifacts);
+  assert.equal(artifacts.includes("SECRET_FAILING_TEST_LOG"),false);
+  const part=response.task.artifacts[0]?.parts[0]?.content;
+  assert.equal(part?.$case,"data");
+  if(part?.$case==="data")assert.equal(part.value.test_outcome,"pass");
+});
+
+test("Protected A2A Test Agent cannot complete with only failed Docker evidence",async()=>{
+  const boundary=fakeBoundary("test",false,false,true);
+  const model=new OneToolModel("run_tests",{branch:BRANCH,profile:"poc-default"});
+  let completed=false;
+  try{
+    const {response}=await send("test",model,boundary.fetchFn as typeof fetch,43380);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+  }catch{}
+  assert.equal(completed,false);
   assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
 });
 

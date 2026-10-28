@@ -366,7 +366,13 @@ export function createAdkSpecializedAgent(
               ...(config.signal ? {signal:config.signal} : {})
             });
             outcome=normalizeMcpRunTestsOutcome(response,argumentsRecord);
-            return response;
+            if(outcome.ok)return response;
+            // MCP tool-call errors must be visible as safe, fixed-vocabulary
+            // feedback to the model, not as raw Runner/Gateway responses.
+            // ADK can then repair with separately approved file tools and
+            // issue a NEW run_tests call. No secrets or source are forwarded.
+            return {isError:true,structuredContent:outcome,
+              content:[{type:"text",text:JSON.stringify(outcome)}]};
           }catch{
             // Only a fixed classification reaches the LLM; never expose
             // raw SDK errors, URLs, tokens or HTTP transport diagnostics.

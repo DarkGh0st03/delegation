@@ -363,6 +363,10 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const filesModified = new Set<string>();
     const filesCreated = new Set<string>();
     const errors: string[] = [];
+    // tests_failed is recoverable INSIDE the same approved Test Task only
+    // when a later Gateway-corroborated run_tests actually passes. Other
+    // errors, notably denials, remain terminal regardless of later actions.
+    let outstandingTestFailure = false;
     let revision: string | null = null;
     let readRevision: string | null = null;
     let conflictingReadRevisions = false;
@@ -373,7 +377,15 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     let researcherAcceptance: "pass" | "fail" | "skipped" | undefined;
     for (const event of events) {
       if (!event.payload.ok) {
-        errors.push(event.payload.error.kind);
+        if(event.name==="run_tests"&&
+           event.payload.error.kind==="tests_failed"&&
+           context.role==="test"&&mayRunTests){
+          outstandingTestFailure=true;
+          testedCommitSha=undefined;
+          runnerProfile=undefined;
+          projectTests=undefined;
+          researcherAcceptance=undefined;
+        }else errors.push(event.payload.error.kind);
         continue;
       }
       const result = object(event.payload.result);
@@ -417,8 +429,11 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         runnerProfile = "poc-default";
         projectTests = pt;
         researcherAcceptance = ra;
+        if(pt==="pass"&&ra==="pass")
+          outstandingTestFailure=false;
       }
     }
+    if(outstandingTestFailure)errors.push("tests_failed");
     // Unlike a file mutation, read-only work does not produce a new commit.
     // It must still return one consistent provider-authenticated revision.
     if (revision === null && conflictingReadRevisions)
@@ -443,6 +458,11 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const testOutcome = projectTests === "pass" && researcherAcceptance === "pass"
       ? "pass" : (projectTests === "fail" || researcherAcceptance === "fail") ? "fail" : "not_run";
     if (context.role === "test") {
+      // A write following successful tests invalidates the tested SHA;
+      // functional success cannot attest a newer, untested revision.
+      if(mayRunTests&&testedCommitSha!==undefined&&
+         revision!==testedCommitSha)
+        throw new Error("ADK Test Task changed repository after final Runner");
       if(mayRunTests && testOutcome !== "pass")
         throw new Error("ADK signed Test run requires passing controlled test evidence");
       if(!mayRunTests && (testOutcome!=="not_run"||

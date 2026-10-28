@@ -151,6 +151,8 @@ test("Gateway wrapper converts Runner failure into a controlled tests_failed out
     (error: unknown) =>
       error instanceof ControlledToolError &&
       error.kind === "tests_failed" &&
-      typeof error.details === "object"
+      typeof error.details === "object" &&
+      JSON.stringify(error.details).includes("researcher_acceptance") &&
+      !JSON.stringify(error.details).includes("acceptance failed")
   );
 });

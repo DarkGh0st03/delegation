@@ -1,6 +1,7 @@
 import type { SpecializedAgentRole } from "./contracts.ts";
 import type { CryptoPresentationPort } from "./trusted-crypto-mcp-bridge.ts";
 import { ControlledToolError } from "./controlled-errors.ts";
+import { safeRunnerFailureDetails } from "./safe-runner-failure.ts";
 import {
   DelegationEvidenceHandler,
   type PreparedGatewayAuthorization
@@ -227,7 +228,7 @@ export class GatewayControlledToolClient {
       throw new ControlledToolError(
         "tests_failed",
         "Controlled Test Runner reported a failing test outcome",
-        { details: execution }
+        { details: safeRunnerFailureDetails(execution) }
       );
     }
 
