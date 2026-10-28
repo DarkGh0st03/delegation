@@ -364,6 +364,38 @@ export class TrustedExecutionCoordinator {
   }
 
   /**
+   * Host-only, non-authoritative handoff after VERIFIED shutdown. This
+   * packet is deliberately NOT a Planning root, signed Engineer approval,
+   * Task, permission grant, or permission to restart the failed DAG.
+   * The new session must obtain its own independently verified Gitea
+   * snapshot, preliminary Planning authority and separate Engineer receipt.
+   */
+  async freshPlanningIntakeAfterClosure(nextSessionId:string):Promise<Readonly<{
+    state:"needs_fresh_planning";
+    previous_session_id:string;
+    previous_base_revision:string;
+    proposed_next_session_id:string;
+    planning_authorized:false;
+    engineer_approved:false;
+    operational_credentials_issued:false;
+  }>>{
+    await this.assertOperationalClosureConfirmed();
+    if(typeof nextSessionId!=="string"||
+       !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(nextSessionId)||
+       nextSessionId===this.#sessionId)
+      throw new Error("Fresh Planning intake requires a distinct valid session ID");
+    return Object.freeze({
+      state:"needs_fresh_planning" as const,
+      previous_session_id:this.#sessionId,
+      previous_base_revision:this.#baseRevision,
+      proposed_next_session_id:nextSessionId,
+      planning_authorized:false as const,
+      engineer_approved:false as const,
+      operational_credentials_issued:false as const
+    });
+  }
+
+  /**
    * This ends new Gateway effects. Ending/revoking the operational root
    * remains a separate necessary action and is always attempted.
    */

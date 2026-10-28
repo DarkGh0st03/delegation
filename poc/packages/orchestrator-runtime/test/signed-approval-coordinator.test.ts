@@ -229,6 +229,11 @@ test("actual signed file connects Engineer two-root handoff to Gateway plan enfo
     "issue:urn:signed:work-root"
   ]);
 
+  await assert.rejects(
+    coordinator.freshPlanningIntakeAfterClosure("session-signed-2"),
+    /terminal closure/,
+    "A still-active execution cannot stage even an unapproved next-session packet"
+  );
   coordinator.bindDispatchedTask("branch","task-create-branch","orchestrator");
   coordinator.bindDispatchedTask("backend","task-edit-backend","backend");
   let calls=0;
@@ -286,6 +291,28 @@ test("actual signed file connects Engineer two-root handoff to Gateway plan enfo
   await coordinator.closeExecution();
   assert.equal(coordinator.phase,"closed");
   assert.equal(trace.at(-1),"revoke:urn:signed:work-root");
+  const referral=await coordinator.freshPlanningIntakeAfterClosure("session-signed-2");
+  assert.deepEqual(referral,{
+    state:"needs_fresh_planning",
+    previous_session_id:"session-signed-1",
+    previous_base_revision:SHA,
+    proposed_next_session_id:"session-signed-2",
+    planning_authorized:false,
+    engineer_approved:false,
+    operational_credentials_issued:false
+  });
+  assert.ok(Object.isFrozen(referral));
+  await assert.rejects(
+    coordinator.freshPlanningIntakeAfterClosure("session-signed-1"),
+    /distinct valid session ID/);
+  await assert.rejects(
+    coordinator.freshPlanningIntakeAfterClosure("../another-session"),
+    /distinct valid session ID/);
+  await assert.rejects(
+    coordinator.beginPlanning(root("urn:signed:reuse-old-root","104",600)),
+    /phase|closed|Planning/i,
+    "A referral is NOT authority to re-enter the old Coordinator"
+  );
   assert.throws(()=>runtime.prepare({
     task_id:"task-create-branch",agent_role:"orchestrator",
     tool:"create_branch",arguments:{base_branch:"main",branch:"feature/approved"}
