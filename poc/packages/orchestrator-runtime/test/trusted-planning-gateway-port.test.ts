@@ -1000,6 +1000,35 @@ test("R5 protected owner service composes signed ADK Planning with strict host a
     assert.equal(f.observed.issued,0);
     assert.equal(prepared.operationalRecovery,f.operationalRecovery);
     assert.notEqual(prepared.planningCheckpointStore,f.store);
+    const second=await prepareConfiguredOwnerEngineerBootstrap(configPath,{
+      operationalRecovery:f.operationalRecovery
+    });
+    const repairPlanning=f.makeConfig();
+    repairPlanning.checkpointStore=second.planningCheckpointStore;
+    delete (repairPlanning as any).reviewPlanFile;
+    const repairDir=join(home,"decisions");
+    await mkdir(repairDir,{mode:0o700});
+    const oldCoordinator=new TrustedExecutionCoordinator({
+      sessionId:"r46-old-bootstrap",baseRevision:SHA,
+      authority:{} as any,credentials:{} as any,
+      approvedGatewayPlans:{} as any
+    });
+    let unauthorizedReads=0;
+    await assert.rejects(second.startFreshRepair({
+      planning:repairPlanning,audit:undefined,
+      previousCoordinator:oldCoordinator,
+      nextSessionId:snapshot.session_id,
+      disposition:"start_from_pinned_main",
+      decisionStore:new TrustedFreshWorkDecisionStore(repairDir),
+      trustedGitea:{async readPinnedMainSnapshot(){
+        unauthorizedReads++;
+        throw Error("unapproved recovery requested main read");
+      }}
+    }),/fresh audited owner decision must be bound and single-use/);
+    assert.equal(unauthorizedReads,0);
+    assert.equal(f.observed.issued,0);
+    assert.equal(f.coordinator.phase,"idle");
+    await assert.rejects(second.start(repairPlanning),/single-use/);
     const planning=f.makeConfig();
     // Adopt the exact new backend-signed checkpoint store prepared by
     // the protected service, not the superficially identical test store.
@@ -1022,6 +1051,9 @@ test("R5 protected owner service composes signed ADK Planning with strict host a
     assert.equal((await readdir(replayDir)).length,0);
     await f.planningRecovery.assertClean();
     await assert.rejects(prepared.start(planning),/single-use/);
+    await assert.rejects(prepared.startFreshRepair({
+      planning,audit:undefined
+    }),/single-use/);
     await assert.rejects(f.planningRecovery.assertFreshSession(
       snapshot.session_id),/retired session cannot be reused/);
   }finally{
