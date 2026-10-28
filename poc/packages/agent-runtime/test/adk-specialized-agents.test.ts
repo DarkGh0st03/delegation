@@ -429,6 +429,40 @@ test("Signed Test-only Task exposes run_tests but no file read/write tools",()=>
     /tests\/backend\/user\.service\.test\.ts/u);
 });
 
+test("Signed preparatory Test Task excludes run_tests even when the shared worker enables it",()=>{
+  const target="apps/backend/tests/account-suspension.test.ts";
+  const built=createAdkSpecializedAgent({
+    role:"test",
+    model:new ScriptedAdkLlm("create_file",{
+      branch:BRANCH,path:target,content:"test content"
+    }),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedBranch:BRANCH,
+    trustedTaskPaths:[target],
+    trustedFilePermissions:[{operation:"create_file",path:target}],
+    trustedRunTestsAllowed:false,
+    mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",
+      bearerForRequest:()=>"private-task-bearer"},
+    mcpCreateFile:true,mcpRunTests:true
+  });
+  assert.deepEqual(built.profile.creatable_paths,[target]);
+  assert.ok(built.mcpToolset);
+  assert.equal(built.agent.tools.some(tool=>tool.name==="run_tests"),false);
+  assert.ok(built.profile.system_prompt.includes("cannot invoke run_tests"));
+  const final=createAdkSpecializedAgent({
+    role:"test",
+    model:new ScriptedAdkLlm("run_tests",{branch:BRANCH,profile:"poc-default"}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedBranch:BRANCH,trustedTaskPaths:[],
+    trustedFilePermissions:[],trustedRunTestsAllowed:true,
+    mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",
+      bearerForRequest:()=>"private-task-bearer"},
+    mcpRunTests:true
+  });
+  assert.deepEqual(final.agent.tools.map(tool=>tool.name),["run_tests"]);
+  assert.equal(final.mcpToolset,undefined);
+});
+
 test("Signed role refuses path not included in its Task-scoped tool enum",async()=>{
   const permitted="apps/backend/src/users/user.service.ts";
   const other="apps/backend/src/users/user.controller.ts";

@@ -94,6 +94,31 @@ test("A2A completion is corroborated against real Gateway commit and precise pat
   }),false);
 });
 
+test("Signed Test preparation is a corroborated file edit, not a fabricated passing Runner",async()=>{
+  const written=effect("update_file","req-test-prep");
+  const obs=observation("test");
+  obs.artifact.test_outcome="not_run";
+  obs.artifact.files_modified=[FILE];
+  delete obs.artifact.tested_commit_sha;
+  delete obs.artifact.runner_profile;
+  delete obs.artifact.project_tests;
+  delete obs.artifact.researcher_acceptance;
+  assert.equal(await attestor.confirmCompleted(evidence("test",[written],obs)),true);
+  const lies=structuredClone(obs);
+  lies.artifact.test_outcome="pass";
+  assert.equal(await attestor.confirmCompleted(evidence("test",[written],lies)),false);
+  const noWritten=structuredClone(obs);
+  noWritten.artifact.files_modified=[];
+  assert.equal(await attestor.confirmCompleted(evidence("test",[written],noWritten)),false);
+  const wrongRevision=structuredClone(obs);
+  wrongRevision.artifact.commit_sha="b".repeat(40);
+  wrongRevision.artifact.revision=wrongRevision.artifact.commit_sha;
+  assert.equal(await attestor.confirmCompleted(evidence("test",[written],wrongRevision)),false);
+  const claimedTests=structuredClone(obs);
+  claimedTests.artifact.tested_commit_sha=SHA;
+  assert.equal(await attestor.confirmCompleted(evidence("test",[written],claimedTests)),false);
+});
+
 test("Test Agent must have Runner pass for exact reported commit and acceptance",async()=>{
   const effectRunner=effect("run_tests","req-3");
   const valid=observation("test");

@@ -264,6 +264,57 @@ test("unapproved second Backend Task fails closed before any DAG provider effect
   }),/Task without Engineer-granted permissions/);
   assert.deepEqual(h.log,[]);
 });
+test("Two approved Test Tasks independently prepare a test and run final Docker acceptance",async()=>{
+  const p=plan();
+  const testResource=uri+"/branches/feature%2Faccount-suspension/files/tests/regression.test.ts";
+  const originalTest=p.tasks.find(t=>t.id==="tests")!;
+  p.tasks.splice(p.tasks.findIndex(t=>t.id==="tests"),0,{
+    id:"test-preparation",agent_id:"test",title:"Prepare regression source",
+    description:"Create the approved regression test without running Docker",
+    depends_on:["frontend-task"],resources:[testResource]
+  });
+  originalTest.depends_on=["test-preparation"];
+  p.requested_permissions.push({
+    id:"test-preparation-write",task_id:"test-preparation",
+    agent_id:"test",operation:"create_file",resource:testResource,
+    reason:"Approved Test preparation without Runner"
+  });
+  const h=harness({alternativeApprovedPlan:p});
+  const captured:any[]=[];
+  const original=h.config.roleRunner.issueAndRun;
+  h.config.roleRunner.issueAndRun=async(input:any)=>{
+    captured.push(input);
+    return original(input);
+  };
+  const d=await TrustedApprovedA2ADispatcher.load(h.config as any);
+  const completed=await d.executeApprovedDag({
+    async invokeOrchestratorTask(_task,gatewayTaskId){
+      h.log.push("provider:"+gatewayTaskId);
+    }
+  });
+  assert.deepEqual(completed.completed_task_ids,[
+    "branch","backend-task","frontend-task","test-preparation","tests"
+  ]);
+  assert.deepEqual(completed.specialized_results.map(x=>x.role),
+    ["backend","frontend","test","test"]);
+  const prep=captured.find(x=>x.approved_task_id==="test-preparation");
+  const runner=captured.find(x=>x.approved_task_id==="tests");
+  assert.ok(prep&&runner);
+  assert.equal(prep.subtask.approved_run_tests,false);
+  assert.deepEqual(prep.subtask.approved_file_permissions,[
+    {operation:"create_file",path:"tests/regression.test.ts"}
+  ]);
+  assert.equal(runner.subtask.approved_run_tests,true);
+  assert.deepEqual(runner.subtask.approved_file_permissions,[]);
+  assert.notEqual(prep.credential_id,runner.credential_id);
+  const prepCompletion=h.log.findIndex(x=>x.startsWith("confirm:")&&
+    x.endsWith(":test"));
+  const runnerBind=h.log.findIndex(x=>x.startsWith("bind:tests:"));
+  assert.ok(prepCompletion>=0&&runnerBind>prepCompletion,
+    "Runner starts only after independently confirmed Test preparation");
+  assert.equal(h.coordinator.phase,"closed");
+});
+
 test("failed Gateway binding never reaches the A2A network, and ends Execution",async()=>{
  const h=harness({denyBinding:true});
  const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
