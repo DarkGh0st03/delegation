@@ -30,6 +30,8 @@ import {getApprovedOfflineScenario} from
   "../fixtures/approved-scenarios.mjs";
 import {beginApprovedRealRunnerSession} from
   "./approved-gateway-runner-session.mjs";
+import {TrustedGiteaPriorDiffReader}
+  from "../../../packages/orchestrator-runtime/src/trusted-gitea-prior-diff-reader.ts";
 import {safeNativeDockerFailureDiagnostic}
   from "./native-dag-result-diagnostic.mjs";
 import {safeGeminiPilotChildObservations,
@@ -417,6 +419,53 @@ async function main(){
     const fixture=await stage("commit_reference_implementation",
       ()=>pushReferenceApp(base,workingDir,
         basic(adminUser,adminPassword)),300000);
+    // R45: exercise the same owner-private, source-free SHA comparison
+    // used by an audited fresh recovery against REAL disposable Gitea.
+    // Compare the original pinned main to the existing independently
+    // observed feature head; no model, patch, cherry-pick or Gitea write.
+    const priorDiff=await stage("r45_gitea_retired_branch_diff_audit",async()=>{
+      const reader=new TrustedGiteaPriorDiffReader({
+        baseUrl:base,token:creds.readToken,
+        repository:{authority:"gitea.local",owner:"thesis",
+          repository:"iam-console-poc"}
+      });
+      const pins={
+        repository:{authority:"gitea.local",owner:"thesis",
+          repository:"iam-console-poc"},
+        branch,base_revision:fixture.mainSha,
+        head_revision:fixture.featureSha
+      };
+      const observed=await reader.readPinnedFeatureDiff(pins);
+      const changed=observed.changes.map(x=>x.path).sort();
+      assert.deepEqual(changed,Object.keys(referenceFiles).sort(),
+        "Comparison metadata must enumerate the exact fixture code changes");
+      assert.ok(observed.changes.every(x=>
+        ["added","modified","deleted"].includes(x.change)));
+      assert.equal(observed.base_revision,fixture.mainSha);
+      assert.equal(observed.head_revision,fixture.featureSha);
+      assert.equal(observed.branch,branch);
+      // A stale or unobserved feature head must fail WITHOUT reading diff,
+      // even if the old session has previously been revoked.
+      await assert.rejects(reader.readPinnedFeatureDiff({
+        ...pins,head_revision:"f".repeat(40)
+      }),/old feature branch changed during pinned audit/);
+      const [mainAfter,featureAfter]=await Promise.all([
+        api(base,repository+"/branches/main",{
+          authorization:creds.admin,label:"r45_check_unchanged_main"
+        }),
+        api(base,repository+"/branches/"+encodeURIComponent(branch),{
+          authorization:creds.admin,label:"r45_check_unchanged_feature"
+        })
+      ]);
+      assert.equal(mainAfter.commit.id,fixture.mainSha);
+      assert.equal(featureAfter.commit.id,fixture.featureSha);
+      return Object.freeze({main:observed.base_revision,
+        head:observed.head_revision,changed_files:changed.length});
+    },45000);
+    process.stderr.write("[trusted-positive-ci] r45_real_gitea_prior_diff "+
+      JSON.stringify({status:"PASS",exact_sha:true,
+        source_exposed:false,changed_files:priorDiff.changed_files,
+        main_unchanged:true,feature_unchanged:true})+"\n");
     if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
       // Additional ADK+Gitea probe, strictly NOT a Rust/Gateway authority test.
       const receipt=await stage("source_derived_adk_real_gitea_no_golden",
