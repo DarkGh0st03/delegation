@@ -96,3 +96,41 @@ export function extractSafeGeminiPilotUsage(log){
     note:"Diagnostic metadata only; actual charges and project limits require provider billing verification"
   });
 }
+
+/**
+ * Failed execFileSync calls capture child stdout separately from stderr.
+ * Recover ONLY reconstructed numeric observations, never untrusted text.
+ */
+export function safeGeminiPilotChildObservations(raw){
+  const value=Buffer.isBuffer(raw)?raw.toString("utf8"):
+    typeof raw==="string"?raw:"";
+  if(Buffer.byteLength(value,"utf8")>2_200_000)return Object.freeze([]);
+  const events=[];
+  const prefix="[signed-gemini-pilot] ";
+  for(const line of value.split(/\r?\n/u)){
+    if(events.length>=500)break;
+    let candidate;
+    if(line.startsWith(prefix))candidate=line.slice(prefix.length);
+    else if(line.startsWith("{"))candidate=line;
+    else continue;
+    if(candidate.length>4096)continue;
+    let e;
+    try{e=JSON.parse(candidate);}catch{continue;}
+    if(!e||typeof e!=="object"||Array.isArray(e))continue;
+    const kind=e.event;
+    const role=kind==="adk_llm_timing"?e.role:"planner";
+    if(!ROLES.includes(role)||!valid(e.turn,
+      SIGNED_GEMINI_PILOT.maxTurnsPerTask[role])||e.turn===0)continue;
+    if(!["gemini_pilot_planner_turn","gemini_pilot_planner_usage",
+         "adk_llm_timing"].includes(kind))continue;
+    if(kind==="adk_llm_timing"&&role==="planner")continue;
+    const result={event:kind,turn:e.turn};
+    if(kind==="adk_llm_timing")result.role=role;
+    if(kind!=="gemini_pilot_planner_turn"){
+      for(const field of FIELDS)
+        result[field]=valid(e[field])?e[field]:null;
+    }
+    events.push(Object.freeze(result));
+  }
+  return Object.freeze(events);
+}

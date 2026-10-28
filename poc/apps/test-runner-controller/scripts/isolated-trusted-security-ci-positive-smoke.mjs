@@ -32,6 +32,8 @@ import {beginApprovedRealRunnerSession} from
   "./approved-gateway-runner-session.mjs";
 import {safeNativeDockerFailureDiagnostic}
   from "./native-dag-result-diagnostic.mjs";
+import {safeGeminiPilotChildObservations}
+  from "../../../scripts/signed-gemini-pilot-usage.mjs";
 import {inspectF1RealGiteaPlannerReadiness}
   from "../../../scripts/f1-real-gitea-planner-readiness.mjs";
 import {buildF1RealGiteaResearchPlanningPort}
@@ -570,6 +572,12 @@ async function main(){
           const childStderr=Buffer.isBuffer(error?.stderr)?
             error.stderr.toString("utf8"):
             typeof error?.stderr==="string"?error.stderr:"";
+          if(realGeminiPilot){
+            // Re-emit only bounded, parsed usage observations: no raw stdout.
+            for(const event of safeGeminiPilotChildObservations(error?.stdout))
+              process.stderr.write((event.event==="adk_llm_timing"
+                ?"":"[signed-gemini-pilot] ")+JSON.stringify(event)+"\n");
+          }
           const locationMatch=childStderr.slice(-262144).match(
             /(?:^|[\\/])(native-approved-planner-dag-positive|native-planning-read-core-evm-e2e)\.mjs:(\d{1,4}):\d{1,4}/u);
           const locationLine=Number(locationMatch?.[2]);
@@ -658,6 +666,7 @@ async function main(){
                       "missing_branch_dependency","conflicting_unordered_writes",
                       "duplicate_task_permission","incorrect_work_branch",
                       "invalid_dependencies","invalid_permissions",
+                      "execution_dag_incompatible",
                       "contract_validation_other"
                     ];
                   const rejection=item.planning_rejection;

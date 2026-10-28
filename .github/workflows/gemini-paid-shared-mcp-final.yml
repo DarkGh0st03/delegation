@@ -261,7 +261,8 @@ jobs:
                       "missing_branch_dependency","conflicting_unordered_writes",
                       "duplicate_task_permission","incorrect_work_branch",
                       "invalid_dependencies","invalid_permissions",
-                      "contract_validation_other"
+                      "execution_dag_incompatible",
+                       "contract_validation_other"
                     ];
                     const rejection=item.planning_rejection;
                     const planningRejection=rejection&&

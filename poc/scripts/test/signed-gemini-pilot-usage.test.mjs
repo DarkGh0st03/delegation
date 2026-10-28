@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {extractSafeGeminiPilotUsage as extract} from
+import {extractSafeGeminiPilotUsage as extract,
+  safeGeminiPilotChildObservations as sanitizeChild} from
   "../signed-gemini-pilot-usage.mjs";
 const event=obj=>JSON.stringify(obj);
 const planner=(kind,turn,more={})=>"[signed-gemini-pilot] "+
@@ -80,4 +81,29 @@ test("bad counters, duplicate Planner evidence and spoofed lines fail closed",()
   const huge=extract("a".repeat(16_000_001));
   assert.equal(huge.observation_integrity,"log_unavailable_or_oversized");
   assert.equal(huge.provider_invoice_usd,null);
+});
+
+test("failed child stdout forwards numeric usage, not private source",()=>{
+  const secret="PRIVATE_PROMPT_TOKEN_DO_NOT_LOG";
+  const output=[
+    planner("gemini_pilot_planner_turn",1),
+    planner("gemini_pilot_planner_usage",1,{
+      input_tokens:45,output_tokens:9,thinking_tokens:null,
+      prompt:secret,apiKey:secret
+    }),
+    role("backend",1,{input_tokens:31,output_tokens:7,source:secret}),
+    secret,
+    "[signed-gemini-pilot] {invalid",
+    event({event:"other",secret})
+  ].join("\n");
+  const safe=sanitizeChild(Buffer.from(output));
+  assert.equal(safe.length,3);
+  assert.ok(!JSON.stringify(safe).includes(secret));
+  const report=extract(safe.map(e=>e.event==="adk_llm_timing"
+    ?JSON.stringify(e):"[signed-gemini-pilot] "+JSON.stringify(e)).join("\n"));
+  assert.equal(report.observed_delegate_calls,2);
+  assert.equal(report.role_usage.planner.provider_reported_input_tokens,45);
+  assert.equal(report.role_usage.backend.provider_reported_output_tokens,7);
+  assert.equal(report.provider_invoice_usd,null);
+  assert.deepEqual(sanitizeChild("x".repeat(2_200_001)),[]);
 });
