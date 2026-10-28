@@ -109,8 +109,20 @@ export class GatewayCorroboratedTaskAttestor implements TrustedTaskCompletionAtt
           typeof r.path==="string"&&r.path.length>0;
       });
     }
-    return claims.length>0&&files.length>0&&files.some(x=>
-      matchingPath(x,a)&&x.execution.provider==="gitea"&&
+    // The model may omit authorized operations, but it must not OMIT actual
+    // provider writes from its completion report. Corroborate both ways:
+    // all claims correspond to a real write (above), and every real write
+    // appears in the claimed file sets. Multiple writes to the same path
+    // remain valid within a Task.
+    if(claims.length===0||files.length===0||
+       files.some(x=>!matchingPath(x,a)))return false;
+    if(e.provider_effects.some(x=>{
+      if(x.tool==="update_file"||x.tool==="create_file")return false;
+      const r=x.execution;
+      return x.tool!=="read_file"||r.provider!=="gitea"||
+        r.tool!=="read_file"||!("branch" in r)||r.branch!==a.branch;
+    }))return false;
+    return files.some(x=>x.execution.provider==="gitea"&&
       "commit_sha" in x.execution&&x.execution.commit_sha===a.commit_sha);
   }
 }

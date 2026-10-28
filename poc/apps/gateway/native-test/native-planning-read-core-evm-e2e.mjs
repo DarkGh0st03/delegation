@@ -686,14 +686,23 @@ try{
         .fixture_scripted_payloads_reach_adk_runner,!geminiPilot);
       assert.equal(globalThis.__nativeDagPositive
         .independent_model_software_output_verified,geminiPilot);
-      assert.equal(globalThis.__nativeDagPositive.source_writes,
-        geminiPilot?proposed.plan.requested_permissions.filter(p=>
-          p.operation==="update_file").length:existingFiles.length);
+      if(geminiPilot){
+        assert.ok(globalThis.__nativeDagPositive.source_writes>=0&&
+          globalThis.__nativeDagPositive.source_writes<=
+            proposed.plan.requested_permissions.filter(p=>
+              p.operation==="update_file").length,
+          "Actual source writes must be a subset of granted operations");
+      }else assert.equal(globalThis.__nativeDagPositive.source_writes,
+        existingFiles.length);
       assert.equal(globalThis.__nativeDagPositive.manifest_source,
         "engineer_signed_approved_plan");
-      assert.equal(globalThis.__nativeDagPositive.created_test_files,
-        geminiPilot?proposed.plan.requested_permissions.filter(p=>
-          p.operation==="create_file"&&p.agent_id==="test").length:1);
+      if(geminiPilot){
+        assert.ok(globalThis.__nativeDagPositive.created_test_files>=0&&
+          globalThis.__nativeDagPositive.created_test_files<=
+            proposed.plan.requested_permissions.filter(p=>
+              p.operation==="create_file"&&p.agent_id==="test").length,
+          "Actual Test creations must be within signed grant scope");
+      }else assert.equal(globalThis.__nativeDagPositive.created_test_files,1);
       assert.equal(globalThis.__nativeDagPositive.test_runner_runs,1);
       assert.equal(globalThis.__nativeDagPositive.tested_commit_sha,
         globalThis.__nativeDagPositive.approved_branch_sha);

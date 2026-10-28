@@ -125,6 +125,25 @@ test("Real Gateway read effects can corroborate a read-only delegated Task",asyn
     evidence("backend",[read,extraWrite],obs)),false);
 });
 
+test("Every actual Gateway file mutation must be reflected in the completion artifact",async()=>{
+  const first=effect("update_file","req-write-1");
+  const second=effect("update_file","req-write-2");
+  (second.execution as any).path="apps/backend/second-file.ts";
+  const reported=observation("backend");
+  assert.equal(await attestor.confirmCompleted(evidence("backend",[first],reported)),true);
+  assert.equal(await attestor.confirmCompleted(
+    evidence("backend",[first,second],reported)),false,
+    "Unreported provider mutations cannot be silently accepted");
+  const complete=structuredClone(reported);
+  complete.artifact.files_modified=[FILE,"apps/backend/second-file.ts"];
+  assert.equal(await attestor.confirmCompleted(
+    evidence("backend",[first,second],complete)),true);
+  const fabricated=structuredClone(complete);
+  fabricated.artifact.files_created=["apps/backend/nonexistent.ts"];
+  assert.equal(await attestor.confirmCompleted(
+    evidence("backend",[first,second],fabricated)),false);
+});
+
 test("Signed Test preparation is a corroborated file edit, not a fabricated passing Runner",async()=>{
   const written=effect("update_file","req-test-prep");
   const obs=observation("test");
