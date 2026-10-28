@@ -390,6 +390,25 @@ export async function prepareConfiguredOwnerEngineerBootstrap(
         planning:{...planning,reviewPlanFile:reviewFile},
         host:{...config,operationalRecovery}
       });
+    },
+    startFreshRepair:async ({planning,audit,disposition,decisionStore,
+      previousCoordinator,nextSessionId,trustedGitea}={})=>{
+      if(attempted)
+        throw Error("Configured Engineer owner bootstrap is single-use");
+      attempted=true;
+      if((geminiAssembled&&planning!==geminiPlanning)||
+         !planning||typeof planning!=="object"||
+         planning.checkpointStore!==checkpoints||
+         planning.coordinator?.phase!=="idle"||
+         (planning.reviewPlanFile!==undefined&&
+          planning.reviewPlanFile!==reviewFile))
+        throw Error("Configured Engineer recovery requires original idle Planning and checkpoint identity");
+      return startOwnerControlledFreshRepairEngineerReviewHost({
+        audit,disposition,decisionStore,previousCoordinator,
+        nextCoordinator:planning.coordinator,nextSessionId,trustedGitea,
+        planning:{...planning,reviewPlanFile:reviewFile},
+        host:{...config,operationalRecovery}
+      });
     }
   });
 }
