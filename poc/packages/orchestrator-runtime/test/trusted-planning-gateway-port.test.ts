@@ -4,7 +4,8 @@
  * policy and Gitea transport are explicit fixtures, NOT native Rust/EVM.
  * No Gemini call or production credential material.
  */
-import {generateKeyPairSync} from "node:crypto";
+import {generateKeyPairSync,randomBytes,scryptSync,X509Certificate} from "node:crypto";
+import {execFileSync} from "node:child_process";
 import {mkdtemp,mkdir,rm,readFile,writeFile,chmod,readdir} from "node:fs/promises";
 import {join} from "node:path";
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
@@ -21,6 +22,14 @@ import {GiteaReadOnlyExecutor}
   from "../../../apps/gateway/src/gitea-read-executor.ts";
 import {TrustedPlanningRevisions}
   from "../../../apps/gateway/src/planning-revisions.ts";
+import {TrustedPlanningRetirementStore}
+  from "../../../apps/gateway/src/trusted-planning-retirement-store.ts";
+import {TrustedOperationalSessionStore}
+  from "../../../apps/gateway/src/trusted-operational-session-store.ts";
+import {TrustedApprovedExecutionPlans}
+  from "../../../apps/gateway/src/approved-execution-plans.ts";
+import {createTrustedPlanIpcServer}
+  from "../../../apps/gateway/src/trusted-plan-ipc.ts";
 import {InMemoryAuditSink} from "../../../apps/gateway/src/prepare.ts";
 import type {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {
@@ -992,7 +1001,39 @@ async function makeProtectedOwnerServiceConfig(f:any,home:string,
     await writeFile(configPath,JSON.stringify({...protectedConfig,planningMode}),
       {mode:0o600});
   }
-  return {configPath,protectedConfig,replayDir,admissionDir};
+  return {configPath,protectedConfig,replayDir,admissionDir,credentialFiles};
+}
+
+/** Disposable mTLS test materials: signed CA and private client fingerprint. */
+async function prepareR49Mtls(directory:string){
+  await mkdir(directory,{mode:0o700});
+  const run=(args:string[])=>execFileSync("openssl",args,{
+    cwd:directory,stdio:"ignore"
+  });
+  run(["req","-x509","-newkey","rsa:2048","-nodes","-days","1",
+    "-subj","/CN=R49 Disposable CA","-addext",
+    "basicConstraints=critical,CA:TRUE","-keyout","ca.key","-out","ca.pem"]);
+  const sign=async(role:string,usage:string,extra="")=>{
+    run(["req","-newkey","rsa:2048","-nodes",
+      "-subj","/CN="+role,"-keyout",role+".key","-out",role+".csr"]);
+    await writeFile(join(directory,role+".ext"),
+      "basicConstraints=critical,CA:FALSE\n"+
+      "keyUsage=critical,digitalSignature,keyEncipherment\n"+
+      "extendedKeyUsage="+usage+"\n"+extra,{mode:0o600});
+    run(["x509","-req","-days","1","-in",role+".csr",
+      "-CA","ca.pem","-CAkey","ca.key","-CAcreateserial",
+      "-out",role+".pem","-extfile",role+".ext"]);
+    return {
+      cert:await readFile(join(directory,role+".pem"),"utf8"),
+      key:await readFile(join(directory,role+".key"),"utf8")
+    };
+  };
+  const server=await sign("server","serverAuth",
+    "subjectAltName=IP:127.0.0.1\n");
+  const client=await sign("client","clientAuth");
+  const ca=await readFile(join(directory,"ca.pem"),"utf8");
+  return {ca,server,client,
+    expectedClientFingerprint256:new X509Certificate(client.cert).fingerprint256};
 }
 
 test("R5 protected owner service composes signed ADK Planning with strict host and revokes when IPC unavailable",async()=>{
@@ -1392,6 +1433,159 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
       await rm(ownerHome,{recursive:true,force:true});
       await rm(nextDecisionDir,{recursive:true,force:true});
       await nextFixture.cleanup();
+    }
+
+    // R49 positive: unlike R48's intentionally absent IPC, the private
+    // Gateway socket and pinned mTLS credentials are actually available.
+    // The fresh Engineer UI starts, but no approved write root exists until
+    // an independently authenticated human reviews and signs the new plan.
+    const positive=await makeOwnerReviewFixture();
+    const positiveHome=await mkdtemp(join(tmpdir(),"r49-live-review-"));
+    const positiveDecisionDir=await mkdtemp(join(tmpdir(),"r49-disposition-"));
+    let positiveHost:any,privateIpc:any;
+    try{
+      const {configPath,protectedConfig,credentialFiles}=
+        await makeProtectedOwnerServiceConfig(positive,positiveHome,"fresh_repair");
+      const mtls=await prepareR49Mtls(join(positiveHome,"mtls"));
+      await writeFile(credentialFiles.ca,mtls.ca,{mode:0o600});
+      await writeFile(credentialFiles.server,mtls.server.cert,{mode:0o600});
+      await writeFile(credentialFiles.serverKey,mtls.server.key,{mode:0o600});
+      const password="r49-offline-human-review";
+      await writeFile(configPath,JSON.stringify({
+        ...protectedConfig,planningMode:"fresh_repair",
+        approval:{...protectedConfig.approval,
+          passwordScryptHex:scryptSync(password,
+            Buffer.from(protectedConfig.approval.passwordSaltHex,"hex"),64)
+            .toString("hex")},
+        oidc:{...protectedConfig.oidc,tls:{
+          ...protectedConfig.oidc.tls,
+          expectedClientFingerprint256:mtls.expectedClientFingerprint256
+        }}
+      }),{mode:0o600});
+      const gatewayHome=join(positiveHome,"gateway");
+      const retired=join(positiveHome,"gateway-retired");
+      const active=join(positiveHome,"gateway-active");
+      for(const dir of [gatewayHome,retired,active])
+        await mkdir(dir,{mode:0o700});
+      const socketPath=join(gatewayHome,"gateway.sock");
+      const secretFile=join(gatewayHome,"private.hex");
+      await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+        {mode:0o600});
+      const gatewayRevision=new TrustedPlanningRevisions({
+        async readRepository(){return {
+          default_branch:"main",revision:SHA
+        };}
+      },{retirementStore:new TrustedPlanningRetirementStore(retired)});
+      await gatewayRevision.begin(snapshot.session_id,300000);
+      const plans=new TrustedApprovedExecutionPlans({
+        repository:snapshot.repository,engineerDid:"did:thesis:engineer",
+        approvals:{async loadAuthenticatedApproval(){
+          throw Error("R49 cannot use an unsigned old Engineer receipt");
+        }},
+        completionAttestor:{async confirmCompleted(){return false;}},
+        operationalLeaseMs:60000,
+        operationalSessionStore:new TrustedOperationalSessionStore(active)
+      });
+      privateIpc=await createTrustedPlanIpcServer({
+        socketPath,secretFile,plans,planningRevisions:gatewayRevision
+      });
+      await privateIpc.start();
+      const service=await prepareConfiguredOwnerEngineerBootstrap(configPath,{
+        operationalRecovery:positive.operationalRecovery
+      });
+      const positivePlanning=positive.makeConfig();
+      positivePlanning.checkpointStore=service.planningCheckpointStore;
+      delete (positivePlanning as any).reviewPlanFile;
+      positivePlanning.planner={...positivePlanning.planner,
+        model:new R5ScriptedNoProviderPlanningModel({
+          snapshot,workBranch:"feature/invoice-sort",
+          edits:{backend:[FILE],frontend:[SECOND_FILE]},
+          newTestFile:"src/billing/r49-recovery.spec.ts"
+        }),
+        requirement:"R49 independent repair review for TypeScript regression",
+        planId:"r49-independent-review"};
+      const nextAudit=await auditTrustedRetiredFeatureWork({
+        previousCoordinator:prior,nextSessionId:snapshot.session_id,
+        previousSignedApprovals,trustedFinalFeatureSha:previousHead,
+        trustedGitea:{async readPinnedFeatureDiff(pin){
+          assert.equal(pin.branch,previousBranch);
+          return {branch:pin.branch,base_revision:pin.base_revision,
+            head_revision:pin.head_revision,changes:[
+              {path:FILE,change:"modified" as const}
+            ]};
+        }}
+      });
+      const decisionStore=new TrustedFreshWorkDecisionStore(positiveDecisionDir);
+      const trustedMain={async readPinnedMainSnapshot(){
+        return {repository:snapshot.repository,base_revision:SHA,
+          directories:[...snapshot.directories],files:[...snapshot.files]};
+      }};
+      positiveHost=await service.startFreshRepair({
+        planning:positivePlanning,audit:nextAudit,
+        previousCoordinator:prior,nextSessionId:snapshot.session_id,
+        disposition:"start_from_pinned_main",
+        decisionStore,trustedGitea:trustedMain
+      });
+      assert.match(positiveHost.engineerUrl,/^http:\/\/127\.0\.0\.1:\d+$/u);
+      assert.equal(positive.coordinator.phase,"planning");
+      assert.equal(positive.observed.issued,1);
+      assert.equal(positive.observed.revoked,0);
+      assert.equal((await positive.operationalRecovery.pending()).length,0);
+      await assert.rejects(positive.gate.loadAuthenticatedApproval(
+        snapshot.session_id),(e:any)=>e.code==="ENOENT");
+      assert.equal((await fetch(positiveHost.engineerUrl+"/api/plan")).status,401);
+      const login=await fetch(positiveHost.engineerUrl+"/api/login",{
+        method:"POST",headers:{"content-type":"application/json",
+          origin:positiveHost.engineerUrl},
+        body:JSON.stringify({password})
+      });
+      assert.equal(login.status,200);
+      const cookie=login.headers.get("set-cookie")?.split(";")[0];
+      assert.ok(cookie);
+      const planResponse=await fetch(positiveHost.engineerUrl+"/api/plan",{
+        headers:{cookie}
+      });
+      assert.equal(planResponse.status,200);
+      const ui=await planResponse.json();
+      const checkpoint=await service.planningCheckpointStore.load();
+      const digest=checkpoint.proposal.digest;
+      assert.equal(ui.plan_digest,digest);
+      const permissions=checkpoint.proposal.plan.requested_permissions
+        .map((p:any)=>p.id);
+      const decision=await fetch(positiveHost.engineerUrl+"/api/approve",{
+        method:"POST",headers:{"content-type":"application/json",
+          origin:positiveHost.engineerUrl,cookie,
+          "x-csrf-token":ui.csrf_token},
+        body:JSON.stringify({plan_digest:digest,
+          approved_permission_ids:permissions,
+          confirmation:"APPROVE "+digest})
+      });
+      assert.equal(decision.status,201);
+      const signedNew=await positive.gate.loadAuthenticatedApproval(
+        snapshot.session_id);
+      assert.equal(signedNew.authenticated_engineer_did,"did:thesis:engineer");
+      assert.equal(planDigest(signedNew.plan),digest);
+      assert.deepEqual(signedNew.approval.approved_permission_ids,permissions);
+      assert.equal(positive.coordinator.phase,"planning");
+      assert.equal((await positive.operationalRecovery.pending()).length,0);
+      assert.throws(()=>positive.coordinator.trustedOperationalAuthority(),
+        /Verified operational root is not active/);
+      assert.deepEqual(await decisionStore.assertRecorded({
+        audit:nextAudit,disposition:"start_from_pinned_main"
+      }).then(x=>x.next_session_id),snapshot.session_id);
+      await positiveHost.close();
+      positiveHost=undefined;
+      assert.equal(positive.coordinator.phase,"closed");
+      assert.equal(positive.observed.revoked,1);
+      await positive.planningRecovery.assertClean();
+    }finally{
+      try{await positiveHost?.close();}finally{
+        try{await privateIpc?.close();}finally{
+          await rm(positiveHome,{recursive:true,force:true});
+          await rm(positiveDecisionDir,{recursive:true,force:true});
+          await positive.cleanup();
+        }
+      }
     }
   }finally{
     await rm(auditDir,{recursive:true,force:true});
