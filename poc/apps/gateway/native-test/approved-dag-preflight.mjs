@@ -64,9 +64,9 @@ export function preflightApprovedPilotDag({plan,grants,repo,branch}){
   for(const task of plan.tasks){
     const own=byTask.get(task.id);
     if(!own.length)deny("Task without approved grants");
-    if(task.agent_id!=="orchestrator"&&!own.some(g=>
-      WRITES.has(g.operation)||g.operation==="run_tests"))
-      deny("read-only specialized Task cannot confirm a revision in this pilot");
+    // A read-only specialist can complete only with a Gateway-corroborated
+    // read snapshot (the execution attestor enforces that). Requiring a
+    // mutation here would impose an artificial workflow on the Planner.
   }
   const single=(role,operation)=>{
     const selected=grants.filter(g=>
