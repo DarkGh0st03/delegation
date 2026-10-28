@@ -1468,9 +1468,15 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
       for(const dir of [gatewayHome,retired,active])
         await mkdir(dir,{mode:0o700});
       const socketPath=join(gatewayHome,"gateway.sock");
-      const secretFile=join(gatewayHome,"private.hex");
-      await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
-        {mode:0o600});
+      // The owner configuration and IPC server MUST use the same protected
+      // HMAC file and exact Unix socket; an orphan placeholder cannot work.
+      const secretFile=credentialFiles.gatewaySecret;
+      const boundConfig=JSON.parse(await readFile(configPath,"utf8"));
+      await writeFile(configPath,JSON.stringify({
+        ...boundConfig,recovery:{
+          ...boundConfig.recovery,gatewaySocketPath:socketPath
+        }
+      }),{mode:0o600});
       const gatewayRevision=new TrustedPlanningRevisions({
         async readRepository(){return {
           default_branch:"main",revision:SHA
