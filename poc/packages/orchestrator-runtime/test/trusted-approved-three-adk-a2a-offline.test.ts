@@ -16,6 +16,10 @@ import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
+import {extractTypecheckLocations}
+  from "../../../apps/test-runner-controller/src/typecheck-diagnostics.ts";
+import {safeRunnerFailureDetails}
+  from "../../agent-runtime/src/safe-runner-failure.ts";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
@@ -179,7 +183,7 @@ async function groundedPlanFromAdk(session){
   return {approved:checked.proposal.plan,model};
 }
 
-async function setup({wrongBackendPath=false,wrongTestProfile=false,plannerProduced=false,scopedChild=false,amplifiedChild=false}={}){
+async function setup({wrongBackendPath=false,wrongTestProfile=false,typecheckFailure=false,plannerProduced=false,scopedChild=false,amplifiedChild=false}={}){
   const session="offline-adk-"+randomBytes(6).toString("hex");
   const planned=plannerProduced?await groundedPlanFromAdk(session):undefined;
   const approved=planned?.approved??plan(session);
@@ -207,6 +211,15 @@ async function setup({wrongBackendPath=false,wrongTestProfile=false,plannerProdu
   const authenticated=await store.loadAuthenticatedApproval(session);
   assert.equal(planDigest(authenticated.plan),planDigest(approved));
   assert.equal(authenticated.authenticated_engineer_did,did);
+  // The failing fixture uses the real tsc diagnostic parser/Runner sanitizer.
+  // Compiler message and source never travel through protected A2A/LLM
+  // output; only safe location metadata may be shown under signed read grants.
+  const compilerOutput=[
+    "apps/backend/src/users/user.service.ts(8,4): error TS2322: INTERNAL_COMPILER_MESSAGE",
+    "apps/frontend/src/pages/UserDetailPage.tsx:5:3 - error TS2304: SECRET_SOURCE_TEXT"
+  ].join("\n");
+  const failedCompilerLocations=extractTypecheckLocations(compilerOutput,"");
+  assert.equal(failedCompilerLocations.length,2);
   const evidence=new Map();
   const bindings=new Map();
   const effects=new Map();
@@ -317,6 +330,24 @@ async function setup({wrongBackendPath=false,wrongTestProfile=false,plannerProdu
             path:args.path,revision:providerRevision,commit_sha:providerRevision,
             blob_sha:"d".repeat(40),precondition_blob_sha:"e".repeat(40)};
         }else if(tool==="run_tests"&&providerRevision===sha[2]){
+          if(typecheckFailure){
+            const failed={
+              provider:"runner",performed:true,tool,branch:BRANCH,
+              revision:providerRevision,tested_commit_sha:providerRevision,
+              runner_profile:"poc-default",status:"fail",
+              phases:[{phase:"typecheck",status:"fail"}],
+              typecheck_diagnostics:failedCompilerLocations,
+              project_tests:{status:"fail",phases:[]},
+              researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"}
+            };
+            const safe=safeRunnerFailureDetails(failed);
+            assert.deepEqual(safe,{
+              first_failed_phase:"typecheck",
+              repair_requires_new_approval:true
+            },"Test Agent has no signed read/write grant for compiler locations");
+            events.push("runner:typecheck_failed");
+            return json({execution:failed});
+          }
           effect={provider:"runner",performed:true,tool,branch:BRANCH,
             revision:providerRevision,tested_commit_sha:providerRevision,
             runner_profile:"poc-default",status:"pass",phases:[],
@@ -610,9 +641,9 @@ test("R2 Adapter cannot amplify a signed Task child: abort A2A before Backend ex
  * The new plan is independently regenerated from the pinned fixture snapshot;
  * old feature-branch changes are NOT silently carried forward.
  */
-test("R39 after partial Backend/Frontend success, failed Test closes old session and new signed ADK/A2A DAG completes",async()=>{
+test("R40 after TypeScript typecheck failure, independent signed repair ADK/A2A DAG completes",async()=>{
   const prior=await setup({
-    plannerProduced:true,scopedChild:true,wrongTestProfile:true
+    plannerProduced:true,scopedChild:true,typecheckFailure:true
   });
   try{
     assert.equal(prior.planningModel.requests.length,2);
@@ -627,8 +658,17 @@ test("R39 after partial Backend/Frontend success, failed Test closes old session
     assert.ok(prior.events.includes("confirmed:backend"));
     assert.ok(prior.events.includes("confirmed:frontend"));
     assert.ok(prior.events.includes("bound:tests"));
+    assert.equal(prior.events.filter(x=>x==="runner:typecheck_failed").length,1,
+      "one controlled typecheck failure; no unapproved automatic retry");
     assert.ok(!prior.events.includes("effect:tests"),
-      "unapproved Test arguments cannot reach the Runner fixture");
+      "failed typecheck cannot be confirmed as accepted Runner result");
+    const modelView=JSON.stringify(prior.models.test.requests);
+    assert.ok(!modelView.includes("INTERNAL_COMPILER_MESSAGE"));
+    assert.ok(!modelView.includes("SECRET_SOURCE_TEXT"));
+    assert.ok(!modelView.includes("apps/backend/src/users/user.service.ts"),
+      "no diagnostic path without an exact signed Test read grant");
+    assert.ok(!modelView.includes("apps/frontend/src/pages/UserDetailPage.tsx"),
+      "unapproved source locations never enter Test model prompts");
     assert.equal(prior.events.at(-1),"closed");
     const oldChildren=prior.childCredentialIds();
     assert.equal(oldChildren.length,3);
