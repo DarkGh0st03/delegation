@@ -676,7 +676,13 @@ export async function runNativePositiveApprovedDag({
           // Approval of the repository operation is a separate signed Task.
           // It may run only after the Test Agent's provider-corroborated
           // exact-SHA Docker and independent researcher acceptance.
-          assert.equal(runnerRuns,offlineRecovery?2:1);
+          if(realGeminiPilot){
+            // Gemini may recover from a real Docker FAIL under the same signed grants.
+            // Final provider-corroborated PASS and exact SHA checks remain mandatory.
+            assert.ok(Number.isSafeInteger(runnerRuns)&&
+              runnerRuns>=1&&runnerRuns<=6,
+              "Live signed Test Tasks require bounded Docker runs");
+          }else assert.equal(runnerRuns,offlineRecovery?2:1);
           assert.equal(runnerOutcome?.status,"pass");
           assert.equal(runnerOutcome?.project_tests?.status,"pass");
           assert.equal(runnerOutcome?.researcher_acceptance?.status,"pass");
@@ -808,7 +814,13 @@ export async function runNativePositiveApprovedDag({
     assert.ok(testCreates<=approvedTestCreates.length);
     assert.ok(testUpdates<=approvedTestUpdates.length);
     assert.ok(testReads<=readableTestFiles.length);
-    assert.equal(runnerRuns,offlineRecovery?2:1);
+    if(realGeminiPilot){
+      // Gemini may recover from a real Docker FAIL under the same signed grants.
+      // Final provider-corroborated PASS and exact SHA checks remain mandatory.
+      assert.ok(Number.isSafeInteger(runnerRuns)&&
+        runnerRuns>=1&&runnerRuns<=6,
+        "Live signed Test Tasks require bounded Docker runs");
+    }else assert.equal(runnerRuns,offlineRecovery?2:1);
     assert.equal(runnerHistory.length,runnerRuns);
     let failedTestSha=null;
     if(offlineRecovery){

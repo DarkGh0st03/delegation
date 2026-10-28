@@ -710,8 +710,13 @@ async function main(){
         assert.equal(positive?.positive_dag?.approved_work_branch,
           scenario.workBranch);
         assert.equal(positive?.positive_dag?.approved_shared_mcp_enabled,true);
-        assert.ok(positive?.positive_dag?.shared_mcp_http_requests>=21);
-        assert.ok(positive?.positive_dag?.private_crypto_mcp_http_requests>=21);
+        // Signed-DAG inner evidence already ties MCP calls to actual
+        // authorized operations. Live plans need not make 21 fixture calls.
+        const minimumMcpRequests=realGeminiPilot?1:21;
+        assert.ok(positive?.positive_dag?.shared_mcp_http_requests>=
+          minimumMcpRequests);
+        assert.ok(positive?.positive_dag?.private_crypto_mcp_http_requests>=
+          minimumMcpRequests);
         assert.equal(positive?.positive_dag?.real_a2a_sdk,true);
         if(realGeminiPilot){
           // The real Planner can assign several Task IDs to one role.
@@ -730,7 +735,13 @@ async function main(){
         assert.equal(positive?.positive_dag?.multi_test_a2a_independent_authority_verified,
           split);
         const recovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1";
-        assert.equal(positive?.positive_dag?.test_runner_runs,recovery?2:1);
+        if(realGeminiPilot){
+          const completedRuns=positive?.positive_dag?.test_runner_runs;
+          assert.ok(Number.isSafeInteger(completedRuns)&&
+            completedRuns>=1&&completedRuns<=6,
+            "Live Gemini may recover after a real Docker FAIL");
+        }else assert.equal(positive?.positive_dag?.test_runner_runs,
+          recovery?2:1);
         assert.equal(positive?.positive_dag?.recovery_verified,recovery);
         if(recovery){
           assert.match(positive.positive_dag.failed_test_sha,/^[a-f0-9]{40}$/u);
@@ -749,8 +760,11 @@ async function main(){
           assert.equal(positive?.positive_dag?.source_reads,recovery?11:10);
           assert.equal(positive?.positive_dag?.source_writes,recovery?11:10);
         }
-        if(realGeminiPilot)assert.ok([0,1].includes(positive?.positive_dag?.created_test_files));
-        else assert.equal(positive?.positive_dag?.created_test_files,1);
+        if(realGeminiPilot){
+          const created=positive?.positive_dag?.created_test_files;
+          // Real signed test Tasks may create more than the fixture's one file.
+          assert.ok(Number.isSafeInteger(created)&&created>=0&&created<=16);
+        }else assert.equal(positive?.positive_dag?.created_test_files,1);
         assert.equal(positive?.positive_dag?.adk_agents_executed,3);
         assert.equal(positive?.positive_dag?.scripted_adk_no_paid_model,
           !realGeminiPilot);
