@@ -41,7 +41,29 @@ const SCHEMAS = {
   }).strict()
 } as const satisfies Record<SpecializedToolName, z.ZodObject<z.ZodRawShape>>;
 
-export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: Record<string, unknown>; payload: {ok: true; result: unknown} | ReturnType<typeof controlledToolErrorPayload> }; 
+export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: Record<string, unknown>; payload: {ok: true; result: unknown} | ReturnType<typeof controlledToolErrorPayload> };
+
+/**
+ * MCP read/write/create go through ADK's afterToolCallback, not FunctionTool.
+ * Emit the same minimal diagnostic vocabulary in both paths. The model
+ * response, tool arguments, file paths and credentials never enter this log.
+ */
+export function safeMcpToolTiming(
+  role:SpecializedAgentRole,
+  tool:"read_file"|"update_file"|"create_file",
+  payload:AdkControlledToolOutcome["payload"]
+){
+  const allowed=new Set<ControlledToolErrorKind>([
+    "authorization_denied","tests_failed","tool_unavailable",
+    "invalid_tool_call","iteration_limit"
+  ]);
+  const kind=payload.ok?null:
+    allowed.has(payload.error.kind)?payload.error.kind:null;
+  return Object.freeze({
+    event:"adk_tool_timing" as const,role,tool,
+    success:payload.ok,error_kind:kind,duration_ms:null
+  });
+}
 
 /** Optional model generation parameters. Absent for every scripted baseline. */
 /** ADK config: output limit is required, but modern Gemini 3.x
@@ -403,17 +425,22 @@ export function createAdkSpecializedAgent(
     instruction: profile.system_prompt,
     tools: [...tools, ...(mcpToolset ? [mcpToolset] : []),
       ...(timedMcpRunTests ? [timedMcpRunTests] : [])],
-    // Observe only the MCP read_file; existing FunctionTools already emit outcomes.
+    // MCP calls must produce the same redacted success/failure telemetry as
+    // direct FunctionTools, while preserving the existing ADK tool response.
     ...(mcpToolset ? {afterToolCallback: ({tool, args, response}) => {
-      if (tool.name === "read_file") {
-        const payload = normalizeMcpReadFileOutcome(response, args);
-        config.onToolOutcome?.({name: "read_file", arguments: args, payload});
-      }else if(tool.name === "update_file" && config.mcpUpdateFile){
-        const payload = normalizeMcpUpdateFileOutcome(response, args);
-        config.onToolOutcome?.({name:"update_file",arguments:args,payload});
-      }else if(tool.name === "create_file" && config.mcpCreateFile){
-        const payload = normalizeMcpCreateFileOutcome(response, args);
-        config.onToolOutcome?.({name:"create_file",arguments:args,payload});
+      const name=tool.name;
+      let payload:AdkControlledToolOutcome["payload"]|undefined;
+      if(name==="read_file")
+        payload=normalizeMcpReadFileOutcome(response,args);
+      else if(name==="update_file"&&config.mcpUpdateFile)
+        payload=normalizeMcpUpdateFileOutcome(response,args);
+      else if(name==="create_file"&&config.mcpCreateFile)
+        payload=normalizeMcpCreateFileOutcome(response,args);
+      if(payload!==undefined&&
+         (name==="read_file"||name==="update_file"||name==="create_file")){
+        config.onToolOutcome?.({name,arguments:args,payload});
+        process.stdout.write(JSON.stringify(
+          safeMcpToolTiming(config.role,name,payload))+"\n");
       }
       return undefined;
     }} : {}),

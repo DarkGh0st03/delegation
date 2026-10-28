@@ -17,7 +17,8 @@ import {
   SPECIALIZED_AGENT_PROFILES,
   type SpecializedAgentRole
 } from "../src/index.ts";
-import type {AdkGenerationConfig} from "../src/adk-specialized-agents.ts";
+import {safeMcpToolTiming,
+  type AdkGenerationConfig} from "../src/adk-specialized-agents.ts";
 
 const BRANCH = "feature/account-suspension";
 const PATHS: Record<SpecializedAgentRole, string> = {
@@ -712,4 +713,24 @@ test("ADK offers signed dynamic-branch MCP tools only with exact operation grant
   assert.equal(built.agent.name,"delegated_backend");
   assert.match(built.profile.system_prompt,/feature\/invoice-sort/);
   assert.doesNotMatch(built.profile.system_prompt,/account suspension/i);
+});
+
+test("shared MCP ADK tool telemetry keeps only role, operation and outcome",()=>{
+  const secret="NO_PRIVATE_FILE_CONTENT_OR_SIGNED_VP";
+  const accepted=safeMcpToolTiming("backend","read_file",{
+    ok:true,result:{content:secret,branch:secret,path:secret}
+  });
+  assert.deepEqual(accepted,{
+    event:"adk_tool_timing",role:"backend",tool:"read_file",
+    success:true,error_kind:null,duration_ms:null
+  });
+  const denied=safeMcpToolTiming("backend","update_file",{
+    ok:false,error:{kind:"authorization_denied",message:secret,details:secret}
+  });
+  assert.deepEqual(denied,{
+    event:"adk_tool_timing",role:"backend",tool:"update_file",
+    success:false,error_kind:"authorization_denied",duration_ms:null
+  });
+  assert.ok(!JSON.stringify({accepted,denied}).includes(secret));
+  assert.ok(Object.isFrozen(denied));
 });
