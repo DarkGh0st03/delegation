@@ -51,6 +51,7 @@ test("one shared MCP run_tests routes only opted-in active Test role through pri
     if(fail)throw new ControlledToolError("tests_failed",
       "private runner failure details",{details:{
         first_failed_phase:"typecheck",privateLog:"PRIVATE_TS_SOURCE_CODE",
+        repair_requires_new_approval:true,
         typecheck_diagnostics:[{
           path:"tests/backend/fix.test.ts",line:14,column:7,code:"TS2304"
         }]
@@ -92,14 +93,16 @@ test("one shared MCP run_tests routes only opted-in active Test role through pri
       (denied.structuredContent as {error:{details:unknown}}).error.details,
       {first_failed_phase:"typecheck",
         typecheck_diagnostics:[{path:"tests/backend/fix.test.ts",
-          line:14,column:7,code:"TS2304"}]});
+          line:14,column:7,code:"TS2304"}],
+        repair_requires_new_approval:true});
     const normalized=normalizeMcpRunTestsOutcome(denied,args,
       ["tests/backend/fix.test.ts"]);
     assert.equal(normalized.ok,false);
     if(!normalized.ok)assert.deepEqual(normalized.error.details,
       {first_failed_phase:"typecheck",
         typecheck_diagnostics:[{path:"tests/backend/fix.test.ts",
-          line:14,column:7,code:"TS2304"}]});
+          line:14,column:7,code:"TS2304"}],
+        repair_requires_new_approval:true});
     assert.equal(attempted,2);
     const wrongProfile=await active.callTool({name:"run_tests",
       arguments:{...args,profile:"shell-command"}});

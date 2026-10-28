@@ -158,7 +158,9 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
         const details=bounded?.phase?{
           first_failed_phase:bounded.phase,
           ...(bounded.typecheck_diagnostics.length
-            ?{typecheck_diagnostics:bounded.typecheck_diagnostics}:{})
+            ?{typecheck_diagnostics:bounded.typecheck_diagnostics}:{}),
+          ...(bounded.repair_requires_new_approval===true
+            ?{repair_requires_new_approval:true}:{})
         }:undefined;
         const payload={ok:false,error:{kind,...(details?{details}:{})}};
         return {isError:true,

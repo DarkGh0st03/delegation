@@ -5,11 +5,13 @@ import {sanitizeTypecheckLocations,type TypecheckLocation}
 export class WorkerTestsFailedError extends Error {
   readonly phase:string|null;
   readonly typecheck_diagnostics:TypecheckLocation[];
-  constructor(phase:string|null,diagnostics:TypecheckLocation[]){
+  readonly repair_requires_new_approval?:true;
+  constructor(phase:string|null,diagnostics:TypecheckLocation[],needsApproval=false){
     super("tests_failed"+(phase?":"+phase:""));
     this.name="WorkerTestsFailedError";
     this.phase=phase;
     this.typecheck_diagnostics=diagnostics;
+    if(needsApproval)this.repair_requires_new_approval=true;
   }
 }
 import type {AgentRole, TaskClaims} from "./task-token.ts";
@@ -93,7 +95,12 @@ export class TaskRouter {
           typeof details==="object"&&!Array.isArray(details)
           ?sanitizeTypecheckLocations((details as {typecheck_diagnostics?:unknown})
             .typecheck_diagnostics):[];
-        throw new WorkerTestsFailedError(validPhase,diagnostics);
+        const newApproval=validPhase==="typecheck"&&details!==null&&
+          typeof details==="object"&&!Array.isArray(details)&&
+          (details as {repair_requires_new_approval?:unknown})
+            .repair_requires_new_approval===true;
+        throw new WorkerTestsFailedError(validPhase,diagnostics,
+          newApproval===true);
       }
       throw new Error(typeof candidate==="string"&&safe.includes(candidate)
         ?candidate:"task_worker_rejected");

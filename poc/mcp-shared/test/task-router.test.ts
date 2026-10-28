@@ -93,3 +93,22 @@ test("Runner phase transports only compiler locations already whitelisted by the
     return true;
   });
 });
+
+test("Out-of-scope repair referral stays boolean through trusted worker transport",async()=>{
+  const router=new TaskRouter(workers,async()=>new Response(JSON.stringify({
+    ok:false,error:{kind:"tests_failed",details:{
+      first_failed_phase:"typecheck",
+      repair_requires_new_approval:true,
+      private_data:"PRIVATE_COMPILER_OUTPUT"
+    }}
+  }),{status:422}));
+  await assert.rejects(router.runTests({...claims,role:"test"},"token",{
+    branch:"feature/account-suspension",profile:"poc-default"
+  }),(e:unknown)=>{
+    if(!(e instanceof WorkerTestsFailedError))return false;
+    assert.equal(e.repair_requires_new_approval,true);
+    assert.deepEqual(e.typecheck_diagnostics,[]);
+    assert.equal(JSON.stringify(e).includes("PRIVATE_COMPILER_OUTPUT"),false);
+    return true;
+  });
+});
