@@ -7,13 +7,11 @@
  * backend must explicitly start a fresh read-only root and obtain a new
  * signed review of a fresh proposal afterward.
  */
-import {isDeepStrictEqual} from "node:util";
 import {preliminaryReadPermissions,type RootParameters,type TrustedPlanningSnapshot}
   from "./trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
   from "./trusted-execution-coordinator.ts";
-import {startOwnerControlledPlanningReview,
-  type OwnerControlledPlanningConfig}
+import type {OwnerControlledPlanningConfig}
   from "./trusted-owner-planning-bootstrap.ts";
 import {TrustedPlanningReviewGate,
   type PlanningReviewPacket} from "./trusted-planning-review-gate.ts";
@@ -91,9 +89,9 @@ export async function prepareTrustedFreshPlanningIntake(input:{
 }
 
 /**
- * An explicit PRIVATE owner action, never invoked by a failed A2A Task or
- * automatically by the old DAG. Reuses the existing read-only Planning ->
- * backend-signed checkpoint -> independent Engineer review pipeline.
+ * Deliberately disabled R43 legacy entry. New repairs MUST use the audited,
+ * durably recorded owner disposition in trusted-fresh-work-audit.ts.
+ * Existing callers fail closed rather than bypass the owner review ledger.
  *
  * The repair is a NEW plan on a fresh pinned main snapshot, not a replay
  * of the failed feature branch. The host must provide its own reviewed
@@ -109,25 +107,12 @@ export async function startTrustedFreshRepairPlanningReview(input:{
   trustedGitea:TrustedFreshMainDiscovery;
   planning:Omit<OwnerControlledPlanningConfig,"coordinator"|"snapshot">;
 }):Promise<PlanningReviewPacket>{
-  if(!input||!input.planning||typeof input.planning!=="object")
-    fail("owner-controlled fresh repair Planning configuration required");
-  // Gitea snapshot is pinned and old root is confirmed revoked BEFORE
-  // model inference, Gateway reads, or preliminary credential issuance.
-  const intake=await prepareTrustedFreshPlanningIntake(input);
-  const cfg=input.planning;
-  if(!isDeepStrictEqual(cfg.planner?.snapshot,intake.snapshot))
-    fail("new Planner must use independently pinned Gitea snapshot");
-  if(typeof cfg.planner?.requirement!=="string"||
-     !cfg.planner.requirement.trim()||
-     cfg.planner.requirement.length>4000)
-    fail("fresh repair requirement must be explicitly supplied by the owner");
-  // The trusted owner bootstrap handles read-only root issuance, bounded
-  // ADK Planning, checkpoint signing/persistence and Engineer-review staging.
-  // It does NOT grant Engineer permissions or activate an Execution DAG.
-  return startOwnerControlledPlanningReview({
-    ...cfg,coordinator:input.nextCoordinator,
-    snapshot:structuredClone(intake.snapshot)
-  });
+  // R43: disable the formerly executable unguarded handoff. New repair
+  // Planning is possible only through startAuditedFreshRepairPlanning(),
+  // after a signed old-branch audit and durable owner disposition.
+  // Keeping this intentionally failing export makes old callers fail closed
+  // instead of silently bypassing the decision ledger.
+  fail("audited durable owner disposition required for fresh repair Planning");
 }
 
 /**
