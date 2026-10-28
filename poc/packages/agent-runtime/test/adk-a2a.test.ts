@@ -50,7 +50,7 @@ class OneToolModel extends BaseLlm {
   }
 }
 
-function fakeBoundary(role: SpecializedAgentRole, deny = false) {
+function fakeBoundary(role: SpecializedAgentRole, deny = false, readOnly = false) {
   const requests: Array<{url:string;body:Record<string,unknown>}> = [];
   let prepareCalls = 0;
   let executeCalls = 0;
@@ -82,9 +82,14 @@ function fakeBoundary(role: SpecializedAgentRole, deny = false) {
       executeCalls++;
       assert.equal(typeof body.signed_vp,"string");
       if (deny) return response(403,{error:"Policy rejected this operation"});
-      return response(200,{execution:role==="test"
-        ? {tested_commit_sha:SHA,runner_profile:"poc-default",project_tests:{status:"pass"},researcher_acceptance:{status:"pass"}}
-        : {provider:"gitea",commit_sha:SHA}});
+      return response(200,{execution:readOnly
+        ? {provider:"gitea",performed:true,tool:"read_file",
+           branch:BRANCH,path:PATHS[role],revision:SHA,
+           content:"authenticated file contents",blob_sha:"b",
+           last_commit_sha:SHA,size:27,encoding:"utf-8"}
+        :role==="test"
+          ? {tested_commit_sha:SHA,runner_profile:"poc-default",project_tests:{status:"pass"},researcher_acceptance:{status:"pass"}}
+          : {provider:"gitea",commit_sha:SHA}});
     }
     throw new Error("Unexpected HTTP endpoint " + text);
   };
@@ -160,6 +165,15 @@ for (const role of ["backend","frontend","test"] as const) {
     assert.ok(response.card.capabilities?.extensions.some(e=>e.uri===DELEGATED_AUTHORIZATION_EXTENSION_URI));
   });
 }
+
+
+test("ADK read-only specialist completes from a Gateway-pinned revision",async()=>{
+  const boundary=fakeBoundary("backend",false,true);
+  const model=new OneToolModel("read_file",{branch:BRANCH,path:PATHS.backend});
+  const {response}=await send("backend",model,boundary.fetchFn as typeof fetch,43378);
+  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+});
 
 test("Phase 3 Gateway denial never becomes a completed authorized A2A Artifact",async()=>{
   const role="backend";
