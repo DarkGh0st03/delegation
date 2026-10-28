@@ -151,3 +151,32 @@ test("missing repository evidence is not misreported as a denied tool",()=>{
   assert.equal(observed.agent_failure.category,"no_confirmed_revision");
   assert.equal(observed.observed_function_tool_failures,0);
 });
+
+test("redacted model response shapes distinguish empty, tool and exhausted results",()=>{
+  const secret="PRIVATE_MODEL_OUTPUT";
+  const raw=[
+    event({event:"adk_llm_timing",role:"backend",turn:1,
+      function_call_parts:0,text_parts:1,finish_reason:"STOP",text:secret}),
+    event({event:"adk_llm_timing",role:"backend",turn:2,
+      function_call_parts:0,text_parts:1,finish_reason:"MAX_TOKENS",text:secret}),
+    event({event:"adk_llm_timing",role:"backend",turn:3,
+      function_call_parts:1,text_parts:0,finish_reason:"MALFORMED_FUNCTION_CALL"}),
+    event({event:"adk_llm_timing",role:"backend",turn:4,
+      function_call_parts:1,text_parts:0,finish_reason:secret}),
+    event({event:"adk_llm_timing",role:"backend",turn:18,
+      function_call_parts:1,text_parts:0,finish_reason:"STOP"})
+  ].join("\n");
+  const safe=agentObservations(raw);
+  assert.equal(safe.length,3);
+  assert.ok(!JSON.stringify(safe).includes(secret));
+  const log=safe.map(e=>
+    "[trusted-positive-ci] gemini_agent_observation "+event(e)).join("\n");
+  const shape=agentSummary(log).role_evidence.backend;
+  assert.equal(shape.model_turns_with_shape_metadata,3);
+  assert.equal(shape.observed_function_call_parts,1);
+  assert.equal(shape.observed_text_parts,2);
+  assert.deepEqual(shape.model_finish_reasons,{
+    STOP:1,MAX_TOKENS:1,MALFORMED_FUNCTION_CALL:1
+  });
+  assert.equal(shape.agent_failure,undefined);
+});

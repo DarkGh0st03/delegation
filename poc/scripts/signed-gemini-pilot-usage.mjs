@@ -138,7 +138,12 @@ export function safeGeminiPilotChildObservations(raw){
 /** Reconstruct ONLY fixed-category Agent observations from a failed child.
  * Raw errors, paths, tool arguments, prompt text and credentials are dropped. */
 const AGENT_ROLES=["backend","frontend","test"];
-const AGENT_TYPES=["adk_task_outcome","adk_safe_diagnostic","adk_tool_timing"];
+const AGENT_TYPES=["adk_task_outcome","adk_safe_diagnostic",
+  "adk_tool_timing","adk_llm_timing"];
+const SAFE_FINISH_REASONS=["STOP","MAX_TOKENS","SAFETY","RECITATION",
+  "LANGUAGE","OTHER","BLOCKLIST","PROHIBITED_CONTENT","SPII",
+  "MALFORMED_FUNCTION_CALL","UNEXPECTED_TOOL_CALL","NO_IMAGE",
+  "FINISH_REASON_UNSPECIFIED","UNKNOWN"];
 const AGENT_ERRORS=["controlled_tool_failures","no_confirmed_revision"];
 const MODEL_ERRORS=["model_turn_budget","api_rate_limit_or_quota",
   "api_authentication","api_permission_denied","api_model_not_found",
@@ -161,6 +166,16 @@ function safeAgentObservation(x){
       return null;
     return {event:x.event,role:x.role,tool:x.tool,
       success:x.success,error_kind:x.error_kind};
+  }
+  if(x.event==="adk_llm_timing"){
+    if(!valid(x.turn,SIGNED_GEMINI_PILOT.maxTurnsPerTask[x.role])||
+       x.turn===0||!valid(x.function_call_parts,200)||
+       !valid(x.text_parts,200)||
+       (x.finish_reason!==null&&!SAFE_FINISH_REASONS.includes(x.finish_reason)))
+      return null;
+    return {event:x.event,role:x.role,turn:x.turn,
+      function_call_parts:x.function_call_parts,
+      text_parts:x.text_parts,finish_reason:x.finish_reason};
   }
   if(!valid(x.model_turns,SIGNED_GEMINI_PILOT.maxTurnsPerTask[x.role])||
      !(x.event==="adk_task_outcome"?AGENT_ERRORS:MODEL_ERRORS)
@@ -203,9 +218,19 @@ export function extractSafeGeminiPilotAgentSummary(log){
     if(!own.length)continue;
     const failedTools=own.filter(x=>x.event==="adk_tool_timing"&&!x.success);
     const successfulTools=own.filter(x=>x.event==="adk_tool_timing"&&x.success);
-    const failures=own.filter(x=>x.event!=="adk_tool_timing");
+    const modelCalls=own.filter(x=>x.event==="adk_llm_timing");
+    const failures=own.filter(x=>x.event==="adk_safe_diagnostic"||
+      x.event==="adk_task_outcome");
     const latest=failures.at(-1);
     roles[role]={
+      model_turns_with_shape_metadata:modelCalls.length,
+      observed_function_call_parts:modelCalls.reduce((n,x)=>n+x.function_call_parts,0),
+      observed_text_parts:modelCalls.reduce((n,x)=>n+x.text_parts,0),
+      model_finish_reasons:Object.fromEntries(
+        SAFE_FINISH_REASONS.filter(reason=>modelCalls.some(x=>
+          x.finish_reason===reason)).map(reason=>[
+          reason,modelCalls.filter(x=>x.finish_reason===reason).length
+        ])),
       observed_function_tool_successes:successfulTools.length,
       observed_function_tool_failures:failedTools.length,
       last_function_tool_error:failedTools.length
