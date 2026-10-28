@@ -107,14 +107,18 @@ test("R47 protected Planning mode cannot switch original and audited repair entr
   try{
     await rm(f.files.plan);
     const original=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
-    assert.equal((await loadTrustedEngineerServiceConfig(f.files.config)).planningMode,
+    assert.equal((await loadTrustedEngineerServiceConfig(f.files.config,{
+      pendingPlanningOutput:true
+    })).planningMode,
       "original");
     await assert.rejects(original.startFreshRepair({}),
       /fresh repair requires protected recovery mode/);
     f.config.planningMode="fresh_repair";
     await f.save();
     const fresh=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
-    assert.equal((await loadTrustedEngineerServiceConfig(f.files.config)).planningMode,
+    assert.equal((await loadTrustedEngineerServiceConfig(f.files.config,{
+      pendingPlanningOutput:true
+    })).planningMode,
       "fresh_repair");
     await assert.rejects(fresh.start({}),
       /original Planning disabled for fresh repair mode/);
@@ -129,8 +133,9 @@ test("R47 protected Planning mode cannot switch original and audited repair entr
       f.dirs.approval)).length,0);
     f.config.planningMode="untrusted";
     await f.save();
-    await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
-      /configuration denied/);
+    await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config,{
+      pendingPlanningOutput:true
+    }),/configuration denied/);
   }finally{await f.close();}
 });
 
