@@ -17,6 +17,8 @@ import {auditTrustedRetiredFeatureWork,startAuditedFreshRepairPlanning}
   from "../src/trusted-fresh-work-audit.ts";
 import {approvedWorkBranch}
   from "../../../packages/plan-contracts/src/approved-work-branch.mjs";
+import {TrustedFreshWorkDecisionStore}
+  from "../src/trusted-fresh-work-decision-store.ts";
 import {armTrustedFreshRepairReviewedDag}
   from "../src/trusted-fresh-repair-reviewed-dag.ts";
 import {TrustedApprovedA2ADispatcher}
@@ -601,7 +603,10 @@ test("R36: fresh signed repair uses existing trusted execution, not revoked cred
   // write, cherry-pick or planning authority.
   const previousBranch=approvedWorkBranch(fixturePlan());
   const previousFeatureSha="d".repeat(40);
-  let diffReads=0,recorded=0;
+  let diffReads=0;
+  const decisionDir=await mkdtemp(join(tmpdir(),"r42-owner-decision-"));
+  t.after(()=>rm(decisionDir,{recursive:true,force:true}));
+  const decisionStore=new TrustedFreshWorkDecisionStore(decisionDir);
   const oldDiff={
     branch:previousBranch,base_revision:SHA,
     head_revision:previousFeatureSha,changes:[
@@ -642,27 +647,34 @@ test("R36: fresh signed repair uses existing trusted execution, not revoked cred
     }
   }),/unsanitized prior changed-file/);
   const quarantined=await startAuditedFreshRepairPlanning({
-    audit,disposition:"quarantine_prior_branch",
+    audit,disposition:"quarantine_prior_branch",decisionStore,
     previousCoordinator,nextCoordinator,nextSessionId:nextId,
     trustedGitea:{async readPinnedMainSnapshot(){
       throw Error("Quarantine must not read main or start Planning");
     }},
-    planning:{} as any,
-    async recordDecision(record){
-      recorded++;
-      assert.equal(record.disposition,"quarantine_prior_branch");
-      assert.equal(record.audit,audit);
-    }
+    planning:{} as any
   });
-  assert.equal(recorded,1);
+  const persisted=await decisionStore.assertRecorded({
+    audit,disposition:"quarantine_prior_branch"
+  });
+  assert.equal(persisted.previous_session_id,"session-signed-1");
+  assert.equal(persisted.next_session_id,nextId);
+  assert.equal(persisted.previous_feature_head_sha,previousFeatureSha);
+  assert.equal(persisted.previous_plan_digest,planDigest(fixturePlan()));
   assert.equal(quarantined.status,"manual_reconciliation_required");
   assert.equal(quarantined.planning_authorized,false);
   await assert.rejects(startAuditedFreshRepairPlanning({
-    audit,disposition:"start_from_pinned_main",
+    audit,disposition:"start_from_pinned_main",decisionStore,
     previousCoordinator,nextCoordinator,nextSessionId:nextId,
     trustedGitea:{async readPinnedMainSnapshot(){throw Error("no replay");}},
-    planning:{} as any,async recordDecision(){throw Error("must not retry");}
+    planning:{} as any
   }),/single-use/);
+  await assert.rejects(decisionStore.recordDecision({
+    audit,disposition:"start_from_pinned_main"
+  }),(e:any)=>e.code==="EEXIST");
+  await assert.rejects(decisionStore.assertRecorded({
+    audit,disposition:"start_from_pinned_main"
+  }),/does not match audited work/);
   assert.deepEqual(nextCredentials.calls,["issue:urn:r36:fresh-read"]);
   // The fresh repair bridge must refuse a canceled GitHub job BEFORE root
   // issuance, then reuse the SAME approved DAG dispatcher without issuing
