@@ -109,6 +109,15 @@ test("216 deterministic diverse Planner → approval → pilot preflight cases",
   assert.equal(checked,216);
   assert.ok(zeroEdits>0&&multiTest>0);
 });
+test("Read-only specialist is valid in a signed dynamic DAG",()=>{
+  const draft=makeDraft({b:2,f:1,t:2,edits:2,mode:"mixed",early:true});
+  const prep=draft.find(x=>x.id==="test-0");
+  prep.permissions=[perm("read_file","tests/existing-0.test.ts")];
+  const shape=fullReview(draft);
+  assert.equal(shape.taskIdsByRole.test.length,2);
+  assert.equal(shape.runnerTaskId,"test-1");
+});
+
 test("Mutation suite rejects unsafe DAGs without any billed model",()=>{
   const base:Shape={b:2,f:2,t:2,edits:2,mode:"mixed",early:true};
   const mutations:Array<[string,(tasks:any[])=>void,RegExp]>=[
@@ -122,10 +131,6 @@ test("Mutation suite rejects unsafe DAGs without any billed model",()=>{
       ts.find(t=>t.id==="backend-1").permissions=[
         perm("update_file","apps/backend/service-1.ts")];
     },/same-Task read/u],
-    ["read-only specialist",ts=>{
-      ts.find(t=>t.id==="test-0").permissions=[
-        perm("read_file","tests/existing-0.test.ts")];
-    },/read-only specialized/u],
     ["independent writes collide",ts=>{
       ts.find(t=>t.id==="frontend-0").permissions=[
         perm("read_file","apps/backend/service-0.ts"),
