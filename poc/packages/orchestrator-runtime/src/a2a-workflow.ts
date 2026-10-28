@@ -168,7 +168,13 @@ export class DelegatedA2ARoleRunner {
       artifactPayload(result.task),
       input.role,
       {
-        requireTestPass: input.role === "test",
+        // A signed Test preparation Task with no run_tests grant must not
+        // need a PASS, nor may it CLAIM any Docker/Runner verdict. The
+        // legacy one-Test workflow still requires PASS by default.
+        requireTestPass: input.role==="test"&&
+          !(approvedTask&&input.subtask.approved_run_tests===false),
+        requireTestNotRun: input.role==="test"&&
+          approvedTask&&input.subtask.approved_run_tests===false,
         expectedBranch:input.subtask.branch
       }
     );

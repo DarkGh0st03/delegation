@@ -358,3 +358,111 @@ test("approved A2A task checks operational root before AND after child issuance"
   assert.equal(result.task_id,"task-backend");
   assert.deepEqual(events,["liveness","mint","liveness","send"]);
 });
+
+test("signed two-Test A2A workflow accepts independently scoped preparation but requires final PASS",async()=>{
+  const pathsSeen:string[]=[];
+  let forgePreparationVerdict=false;
+  const runner=new DelegatedA2ARoleRunner({
+    authorityIssuer:{
+      assertActiveBeforeA2ASend(){},
+      async issueSpecializedChild(input){
+        assert.equal(input.selection.role,"test");
+        return {role:"test",credential:credential("test")};
+      }
+    },
+    a2a:{
+      async sendProtectedTask(request){
+        const prep=request.subtask.approved_run_tests===false;
+        pathsSeen.push(request.subtask.subtask_id);
+        const task=completedTask("test") as any;
+        task.id="sdk-"+request.subtask.subtask_id;
+        const artifact=task.artifacts[0].parts[0].content.value;
+        if(prep){
+          artifact.files_created=["tests/e2e/approved.spec.ts"];
+          artifact.test_outcome=forgePreparationVerdict?"pass":"not_run";
+          if(forgePreparationVerdict){
+            artifact.tested_commit_sha=revision;
+            artifact.runner_profile="poc-default";
+            artifact.project_tests="pass";
+            artifact.researcher_acceptance="pass";
+          }
+        }else{
+          artifact.test_outcome="pass";
+          artifact.tested_commit_sha=revision;
+          artifact.runner_profile="poc-default";
+          artifact.project_tests="pass";
+          artifact.researcher_acceptance="pass";
+        }
+        return {card:{name:"Test Agent"},task:task as never};
+      }
+    }
+  });
+  const common={
+    role:"test" as const,
+    parent_credential_id:"urn:trusted:operational-root",
+    credential_id:"urn:phase9b:test",
+    valid_from:"2026-10-28T11:00:00Z",validity_seconds:300,
+    credential_status:{
+      type:"BitstringStatusListEntry" as const,
+      statusPurpose:"revocation" as const,
+      statusListIndex:"7311",
+      statusListCredential:"https://status.example/approved"
+    },
+    agent_base_url:"http://trusted-test.local"
+  };
+  const preparation={
+    ...common,approved_task_id:"test-preparation",
+    trusted_gateway_task_id:"dispatch_"+"A".repeat(22),
+    subtask:{
+      subtask_id:"test-preparation",
+      instruction:"Prepare signed regression without Runner",
+      branch:"feature/account-suspension",
+      relevant_paths:["tests/e2e/approved.spec.ts"],
+      approved_file_permissions:[{
+        operation:"create_file" as const,path:"tests/e2e/approved.spec.ts"
+      }],
+      approved_run_tests:false
+    }
+  };
+  const acceptance={
+    ...common,approved_task_id:"test",
+    trusted_gateway_task_id:"dispatch_"+"B".repeat(22),
+    subtask:{
+      subtask_id:"test",
+      instruction:"Run signed final Docker acceptance",
+      branch:"feature/account-suspension",
+      relevant_paths:[],
+      approved_file_permissions:[],
+      approved_run_tests:true
+    }
+  };
+  const first=await runner.issueAndRun(preparation);
+  assert.equal(first.artifact.test_outcome,"not_run");
+  assert.deepEqual(first.artifact.files_created,["tests/e2e/approved.spec.ts"]);
+  assert.equal(first.artifact.tested_commit_sha,undefined);
+  const second=await runner.issueAndRun(acceptance);
+  assert.equal(second.artifact.test_outcome,"pass");
+  assert.equal(second.artifact.tested_commit_sha,revision);
+  assert.deepEqual(pathsSeen,["test-preparation","test"]);
+  forgePreparationVerdict=true;
+  await assert.rejects(runner.issueAndRun(preparation),
+    /Signed Test preparation Artifact must report not_run/u);
+});
+test("signed Test preparation rejects forged Runner fields even with not_run outcome",async()=>{
+  const {validateWorkflowArtifact}=await import("../src/artifact-validation.ts");
+  const artifact={
+    role:"test",summary:"Prepared authorized regression",
+    branch:"feature/account-suspension",
+    revision,commit_sha:revision,files_created:["tests/e2e/approved.spec.ts"],
+    files_modified:[],test_outcome:"not_run",errors:[],
+    tested_commit_sha:revision,runner_profile:"poc-default",
+    project_tests:"pass",researcher_acceptance:"pass"
+  };
+  assert.throws(()=>validateWorkflowArtifact(artifact,"test",{
+    requireTestNotRun:true,
+    expectedBranch:"feature/account-suspension"
+  }),/must not claim Runner evidence/u);
+  assert.throws(()=>validateWorkflowArtifact(artifact,"test",{
+    requireTestPass:true,requireTestNotRun:true
+  }),/Conflicting signed Test artifact expectations/u);
+});

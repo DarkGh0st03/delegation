@@ -16,6 +16,8 @@ const VALID_TEST_OUTCOMES = new Set(["not_run", "pass", "fail"]);
 
 export interface WorkflowArtifactValidationOptions {
   requireTestPass?: boolean;
+  /** Signed Test preparation explicitly lacks run_tests authority. */
+  requireTestNotRun?: boolean;
   /** The approved Task branch comes from trusted pre-dispatch input. */
   expectedBranch?: string;
 }
@@ -97,6 +99,12 @@ export function validateWorkflowArtifact(
   }
 
   const requireTestPass = options.requireTestPass ?? false;
+  const requireTestNotRun = options.requireTestNotRun ?? false;
+  if(requireTestPass&&requireTestNotRun)
+    throw new Error("Conflicting signed Test artifact expectations");
+  if(requireTestNotRun&&
+     (expectedRole!=="test"||testOutcome!=="not_run"))
+    throw new Error("Signed Test preparation Artifact must report not_run");
   if (requireTestPass && testOutcome !== "pass") {
     throw new Error(
       "Test Agent Artifact is not acceptable until test_outcome is pass"
@@ -114,6 +122,8 @@ export function validateWorkflowArtifact(
     raw.project_tests,
     raw.researcher_acceptance
   ];
+  if(requireTestNotRun&&runnerFields.some(value=>value!==undefined))
+    throw new Error("Signed Test preparation Artifact must not claim Runner evidence");
   if (
     expectedRole !== "test" &&
     runnerFields.some((value) => value !== undefined)
