@@ -371,6 +371,7 @@ const root={
 };
 let issued=false,revoked=false;
 let pilotStage="setup",pilotModelTurns=0,pilotModelFailure="none";
+let pilotDelegatedPhase="not_started",pilotDelegatedFailure="none";
 let pilotPlanningRejection=null,pilotTaskCounts=null;
 try{
   const started=await coordinator.beginPlanning(root);
@@ -691,6 +692,10 @@ try{
         operationalRootId,branch:workBranch,
         referenceFiles:approvedAgentModelFactory?undefined:referenceFiles,
         realGeminiPilot:geminiPilot,
+        ...(geminiPilot?{
+          onPilotPhase:phase=>{pilotDelegatedPhase=phase;},
+          onPilotError:category=>{pilotDelegatedFailure=category;}
+        }:{}),
         offlineRecovery:signedOfflineRecovery,
         offlineMultiTest:signedOfflineMultiTest,
         scenarioId:scenario.id,repo,
@@ -955,6 +960,10 @@ try{
       }):null;
     process.stderr.write("[signed-gemini-pilot] "+JSON.stringify({
       stage:pilotStage,category,
+      ...(pilotStage==="delegated_agents_gitea_docker"?{
+        delegated_phase:pilotDelegatedPhase,
+        delegated_failure:pilotDelegatedFailure
+      }:{}),
       ...(assertionLocation?{assertion_location:assertionLocation}:{}),
       model_failure:pilotModelFailure,
       ...(pilotPlanningRejection

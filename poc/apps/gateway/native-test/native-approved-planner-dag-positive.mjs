@@ -88,7 +88,7 @@ export async function runNativePositiveApprovedDag({
   readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens,
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
   approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
-  offlineMultiTest=false
+  offlineMultiTest=false,onPilotPhase,onPilotError
 }){
   if(offlineRecovery&&(realGeminiPilot||
      typeof approvedAgentModelFactory!=="function"))
@@ -123,6 +123,7 @@ export async function runNativePositiveApprovedDag({
   // A single generic compiler selects tool calls from the AUTHENTICATED
   // Engineer-signed plan. Only the resulting code bytes remain test fixtures.
   // No reference fixture chooses the resources, roles or permissions.
+  if(realGeminiPilot)onPilotPhase?.("model_binding");
   const hostModels=approvedAgentModelFactory
     ? bindModelsToApprovedRoleTasks({
         plan:signed.plan,approvedRows:grants,
@@ -139,6 +140,7 @@ export async function runNativePositiveApprovedDag({
   if(hostModels)
     assert.deepEqual(hostModels.selected_roles,[...ROLES],
       "This existing three-role native acceptance harness requires all roles");
+  if(realGeminiPilot)onPilotPhase?.("dag_preflight");
   const ready=preflightApprovedPilotDag({plan:signed.plan,grants,repo,branch});
   const {taskIdsByRole,branchTaskId,reviewTaskId}=ready;
   const allSpecialistTaskIds=ROLES.flatMap(role=>taskIdsByRole[role]);
@@ -235,6 +237,7 @@ export async function runNativePositiveApprovedDag({
     baseUrl:giteaBase,token:writerToken,owner:repo.owner,
     repository:repo.repository,timeoutMs:20000
   });
+  if(realGeminiPilot)onPilotPhase?.("baseline_reads");
   const originals={};
   for(const path of expectedExisting){
     const result=await reader.readTextFile("main",path,baseSha);
@@ -520,6 +523,7 @@ export async function runNativePositiveApprovedDag({
       return reply({error:"trusted_operation_denied"},403);
     }
   };
+  if(realGeminiPilot)onPilotPhase?.("agent_bootstrap");
   try{
     if(sharedMcpEnabled){
       // All ports and public keys are created by the trusted offline host.
@@ -634,6 +638,7 @@ export async function runNativePositiveApprovedDag({
       }
     });
     servers.push(testAgent);urls.test=testAgent.baseUrl;
+    if(realGeminiPilot)onPilotPhase?.("dispatcher_setup");
     const dispatcher=await TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority({
       approvals:reviewGate,coordinator,sessionId,
       expectedPlanDigest:planDigest,baseRevision:baseSha,
@@ -670,6 +675,7 @@ export async function runNativePositiveApprovedDag({
     for(const taskId of allSpecialistTaskIds)await assert.rejects(
       dispatcher.dispatch(taskId),/dependencies/);
     assert.equal(observedImplementationWriteKeys.size,0);
+    if(realGeminiPilot)onPilotPhase?.("a2a_dispatch");
     const result=await dispatcher.executeApprovedDag({
       async invokeOrchestratorTask(planId,runtimeTaskId){
         if(planId===reviewTaskId){
@@ -740,6 +746,24 @@ export async function runNativePositiveApprovedDag({
         assert.equal((await reader.getBranchMetadata(branch)).commit_sha,baseSha);
       }
     }).catch(error=>{
+      if(realGeminiPilot){
+        const message=typeof error?.message==="string"?error.message:"";
+        const category=
+          message.startsWith("Trusted dispatch failed;")?"a2a_dispatch_failed":
+          message.startsWith("Trusted Orchestrator Task failed;")?"orchestrator_task_failed":
+          message.startsWith("Trusted DAG termination or revocation not confirmed")
+            ?"root_revocation_unconfirmed":
+          message.startsWith("Approved Task dependencies not verified")
+            ?"dependency_denied":
+          message.startsWith("ADK protected model failure:")?"adk_model_failure":
+          message.startsWith("Protected A2A result does not match")
+            ?"a2a_result_mismatch":
+          message.startsWith("Gateway provider effects changed")
+            ?"attestation_effect_race":
+          error?.code==="approved_plan_denied"?"approved_plan_denied":
+          error?.code==="ERR_ASSERTION"?"test_assertion":"unclassified";
+        onPilotError?.(category);
+      }
       if(offlineMultiTest){
         // Only plan-generated Task IDs and fixed diagnostic categories enter
         // logs. NEVER publish exception text, provider payloads, DCs or VPs.
@@ -776,6 +800,7 @@ export async function runNativePositiveApprovedDag({
       }
       throw error;
     });
+    if(realGeminiPilot)onPilotPhase?.("result_verification");
     assert.equal(coordinator.phase,"closed");
     assert.equal(result.plan_digest,planDigest);
     assert.deepEqual(
