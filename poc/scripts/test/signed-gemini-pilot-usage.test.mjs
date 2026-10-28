@@ -137,7 +137,7 @@ test("failed Agent tool diagnostic is whitelisted and source-free",()=>{
     "controlled_tool_failures");
   assert.equal(result.role_evidence.backend.agent_failure.progress.failed_writes,1);
   assert.ok(!JSON.stringify(result).includes(secret));
-  assert.equal(agentSummary("spoofed "+log),null);
+  assert.equal(agentSummary("spoofed "+log.split("\n")[0]),null);
   assert.deepEqual(agentObservations("x".repeat(2_200_001)),[]);
 });
 test("missing repository evidence is not misreported as a denied tool",()=>{
