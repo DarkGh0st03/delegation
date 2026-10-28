@@ -13,6 +13,10 @@ import {InMemoryAuditSink} from "../../../apps/gateway/src/prepare.ts";
 import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
 import {TrustedEngineerAuthoritySession} from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from "../src/trusted-execution-coordinator.ts";
+import {armTrustedFreshRepairReviewedDag}
+  from "../src/trusted-fresh-repair-reviewed-dag.ts";
+import {TrustedApprovedA2ADispatcher}
+  from "../src/trusted-approved-a2a-dispatcher.ts";
 import {TrustedPlanningReviewGate} from "../src/trusted-planning-review-gate.ts";
 import {prepareTrustedFreshPlanningIntake,
   startTrustedFreshRepairPlanningReview,
@@ -588,13 +592,75 @@ test("R36: fresh signed repair uses existing trusted execution, not revoked cred
   await assert.rejects(attempt(root("urn:r36:fresh-work","101",3600)),
     /Status List entry cannot be reused/);
   assert.deepEqual(nextCredentials.calls,["issue:urn:r36:fresh-read"]);
-  const active=await attempt(newRoot);
-  assert.deepEqual(active,{
-    status:"fresh_execution_activated",session_id:nextId,
-    base_revision:SHA,plan_digest:packet.plan_digest,
-    approval_decision_id:"decision-r36",
-    operational_root_id:"urn:r36:fresh-work"
+  // The fresh repair bridge must refuse a canceled GitHub job BEFORE root
+  // issuance, then reuse the SAME approved DAG dispatcher without issuing
+  // another receipt or making any paid/provider call during arming.
+  let livenessChecks=0,hostCloseCalls=0,dispatchLoads=0;
+  const endpoints={
+    backend:"http://127.0.0.1:18001",
+    frontend:"http://127.0.0.1:18002",
+    test:"http://127.0.0.1:18003"
+  };
+  const ownerInput={
+    previousCoordinator,nextCoordinator,nextSessionId:nextId,
+    reviewGate,operationalRoot:newRoot,endpoints,
+    async verifyLiveRun(){livenessChecks++;},
+    async close(){hostCloseCalls++;}
+  };
+  await assert.rejects(armTrustedFreshRepairReviewedDag({
+    ...ownerInput,async verifyLiveRun(){throw Error("GitHub job canceled");}
+  }),/GitHub job canceled/);
+  assert.deepEqual(nextCredentials.calls,["issue:urn:r36:fresh-read"]);
+
+  // Offline dispatcher fixture: the real factory/runner and its protected
+  // ADK/A2A path have separate regression suites. Verify here that the
+  // newly activated root/receipt pins are passed to that exact factory,
+  // and that terminal completion is confirmed before the host is closed.
+  t.mock.method(TrustedApprovedA2ADispatcher,
+    "loadWithScopedChildAuthority",async(config:any)=>{
+      dispatchLoads++;
+      assert.equal(config.coordinator,nextCoordinator);
+      assert.equal(config.approvals,reviewGate);
+      assert.equal(config.sessionId,nextId);
+      assert.equal(config.expectedPlanDigest,packet.plan_digest);
+      assert.equal(config.baseRevision,SHA);
+      assert.equal(config.expectedEngineerDid,ENGINEER);
+      assert.deepEqual(config.agentBaseUrls,endpoints);
+      assert.equal(config.coordinator.phase,"execution");
+      return {async executeApprovedDag({beforeTask,beforeCompletion}:any){
+        await beforeTask("branch");
+        await beforeCompletion();
+        await nextCoordinator.closeExecution();
+        return {plan_digest:packet.plan_digest,
+          completed_task_ids:["branch"],specialized_results:[]};
+      }} as any;
+    });
+  const bridge=await armTrustedFreshRepairReviewedDag(ownerInput);
+  assert.deepEqual(Object.keys(bridge),["executeApprovedDag"]);
+  assert.equal(dispatchLoads,0,"arming cannot dispatch A2A or bill a model");
+  assert.equal(nextCoordinator.phase,"execution");
+  const result=await bridge.executeApprovedDag({
+    a2a:{} as any,adapter:{} as any,
+    authorityForTask:async()=>{throw Error("not reached by fixture");},
+    invokeOrchestratorTask:async()=>{throw Error("not reached by fixture");}
   });
+  assert.deepEqual(result,{
+    plan_digest:packet.plan_digest,
+    completed_task_ids:["branch"],specialized_results:[]
+  });
+  assert.equal(dispatchLoads,1);
+  assert.equal(livenessChecks,6,
+    "admission, post-activation, pre-dispatch, Task, completion and final check");
+  assert.equal(hostCloseCalls,1);
+  await assert.rejects(bridge.executeApprovedDag({} as any),
+    /one-shot; retry forbidden/);
+  assert.equal(nextCoordinator.phase,"closed");
+  assert.equal(previousCoordinator.phase,"closed");
+  assert.deepEqual(nextCredentials.calls,[
+    "issue:urn:r36:fresh-read","revoke:urn:r36:fresh-read",
+    "issue:urn:r36:fresh-work","revoke:urn:r36:fresh-work"
+  ]);
+});
   assert.ok(Object.isFrozen(active));
   assert.equal(nextCoordinator.phase,"execution");
   assert.deepEqual(nextCredentials.calls,[
