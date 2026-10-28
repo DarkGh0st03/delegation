@@ -179,7 +179,7 @@ async function groundedPlanFromAdk(session){
   return {approved:checked.proposal.plan,model};
 }
 
-async function setup({wrongBackendPath=false,plannerProduced=false,scopedChild=false,amplifiedChild=false}={}){
+async function setup({wrongBackendPath=false,wrongTestProfile=false,plannerProduced=false,scopedChild=false,amplifiedChild=false}={}){
   const session="offline-adk-"+randomBytes(6).toString("hex");
   const planned=plannerProduced?await groundedPlanFromAdk(session):undefined;
   const approved=planned?.approved??plan(session);
@@ -344,7 +344,8 @@ async function setup({wrongBackendPath=false,plannerProduced=false,scopedChild=f
       branch:BRANCH,path:files.frontend,
       content:"export const frontendApproved=true;"
     }},
-    test:{tool:"run_tests",args:{branch:BRANCH,profile:"poc-default"}}
+    test:{tool:"run_tests",args:{branch:BRANCH,
+      profile:wrongTestProfile?"unapproved-test-profile":"poc-default"}}
   };
   try{
     for(const role of roles){
@@ -451,7 +452,8 @@ async function setup({wrongBackendPath=false,plannerProduced=false,scopedChild=f
           },a2a
         })
       });
-    return {dispatcher,coordinator,events,models,
+    return {dispatcher,coordinator,events,models,session,approved,
+      childCredentialIds:()=>[...issued.keys()],
       planningModel:planned?.model,
       get revision(){return providerRevision;},
       async createBranch(planTaskId,privateId){
@@ -593,4 +595,69 @@ test("R2 Adapter cannot amplify a signed Task child: abort A2A before Backend ex
     assert.ok(!h.events.includes("bound:tests"));
     assert.equal(h.coordinator.phase,"closed");
   }finally{await h.close();}
+});
+
+
+/**
+ * R39 offline two-session recovery checkpoint.
+ * Scenario-neutral security property: a completed Backend/Frontend prefix
+ * cannot authorize the failed Test Task, and neither its signed session nor
+ * its child identities are reused by a new independently signed ADK plan.
+ *
+ * REAL: ADK Runner, localhost A2A SDK, signed Ed25519 Engineer receipts,
+ * signed Planning checkpoint, task-scoped issuer and immutable DAG ordering.
+ * FIXTURES: Gitea/Runner effects, VP/Gateway/OPA/Adapter and model output.
+ * The new plan is independently regenerated from the pinned fixture snapshot;
+ * old feature-branch changes are NOT silently carried forward.
+ */
+test("R39 after partial Backend/Frontend success, failed Test closes old session and new signed ADK/A2A DAG completes",async()=>{
+  const prior=await setup({
+    plannerProduced:true,scopedChild:true,wrongTestProfile:true
+  });
+  try{
+    assert.equal(prior.planningModel.requests.length,2);
+    await assert.rejects(prior.dispatcher.executeApprovedDag({
+      invokeOrchestratorTask:prior.createBranch
+    }),/Protected A2A task ended without completion|ADK|failed|tool/i);
+    assert.deepEqual(prior.dispatcher.completedTaskIds,
+      ["branch","backend","frontend"]);
+    assert.equal(prior.coordinator.phase,"closed");
+    assert.equal(prior.revision,sha[2],
+      "two source modifications must be corroborated before Test fails");
+    assert.ok(prior.events.includes("confirmed:backend"));
+    assert.ok(prior.events.includes("confirmed:frontend"));
+    assert.ok(prior.events.includes("bound:tests"));
+    assert.ok(!prior.events.includes("effect:tests"),
+      "unapproved Test arguments cannot reach the Runner fixture");
+    assert.equal(prior.events.at(-1),"closed");
+    const oldChildren=prior.childCredentialIds();
+    assert.equal(oldChildren.length,3);
+
+    // The second independent signed plan uses a NEW Planner session, new
+    // Engineer receipt and new task-scoped children, not an old replay.
+    const next=await setup({plannerProduced:true,scopedChild:true});
+    try{
+      assert.notEqual(next.session,prior.session);
+      assert.notEqual(planDigest(next.approved),planDigest(prior.approved));
+      assert.equal(prior.coordinator.phase,"closed");
+      assert.equal(next.planningModel.requests.length,2);
+      assert.deepEqual(next.dispatcher.completedTaskIds,[]);
+      const result=await next.dispatcher.executeApprovedDag({
+        invokeOrchestratorTask:next.createBranch
+      });
+      assert.deepEqual(result.completed_task_ids,
+        ["branch","backend","frontend","tests"]);
+      assert.deepEqual(result.specialized_results.map(x=>x.role),roles);
+      assert.equal(next.revision,sha[2]);
+      assert.equal(next.coordinator.phase,"closed");
+      assert.equal(prior.coordinator.phase,"closed");
+      assert.equal(next.events.at(-1),"closed");
+      assert.equal(next.childCredentialIds().length,3);
+      for(const id of next.childCredentialIds())
+        assert.ok(!oldChildren.includes(id),
+          "new signed session cannot reuse a previous child credential ID");
+      assert.ok(next.events.indexOf("confirmed:frontend")<
+        next.events.indexOf("bound:tests"));
+    }finally{await next.close();}
+  }finally{await prior.close();}
 });
