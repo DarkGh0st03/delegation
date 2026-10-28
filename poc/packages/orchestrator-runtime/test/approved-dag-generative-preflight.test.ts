@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {compilePlanningProposal} from
-  "../../../packages/orchestrator-runtime/src/trusted-adk-planner.ts";
+  "../src/trusted-adk-planner.ts";
 import {assertApprovedPlanScope,makeApproval} from
-  "../../../packages/plan-contracts/src/plan.mjs";
-import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
+  "../../plan-contracts/src/plan.mjs";
+import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {preflightApprovedPilotDag} from
-  "../native-test/approved-dag-preflight.mjs";
+  "../../../apps/gateway/native-test/approved-dag-preflight.mjs";
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const branch="feature/account-suspension";
 const snapshot={
