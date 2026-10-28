@@ -104,6 +104,46 @@ test("Block B: same binding works for 3-role and 2-role independently approved p
     assert.ok(!JSON.stringify(bound.contexts).includes("trusted-secret"));
   }
 });
+
+test("Block B: independent approved sequential Tasks can share one role without merging Task permissions",()=>{
+  const draft={
+    tasks:[
+      branch(),
+      update("backend-model","backend","branch","src/backend.ts"),
+      update("backend-followup","backend","backend-model","src/backend.ts"),
+      update("frontend-ui","frontend","backend-followup","src/list.tsx"),
+      check("frontend-ui"),review("verify")
+    ],
+    assumptions:[],uncertainties:[]
+  };
+  const {plan}=compilePlanningProposal(draft,{
+    snapshot,agents,requirement:"Apply two independently approved Backend Tasks",
+    planId:"multiple-backend-tasks",workBranch:"feature/search"
+  });
+  const approval=makeApproval(plan,{
+    allowedOperations:new Set(RUST_OPERATIONS),
+    decision_id:"decision-multiple",approved_by:"did:thesis:engineer",
+    approved_at:"2026-10-27T12:00:00Z",
+    approved_permission_ids:plan.requested_permissions.map(p=>p.id)
+  });
+  const grants=assertApprovedPlanScope(plan,approval,{
+    allowedOperations:new Set(RUST_OPERATIONS),
+    expectedEngineerDid:"did:thesis:engineer"
+  });
+  const bound=bindModelsToApprovedRoleTasks({
+    plan,approvedRows:grants,
+    modelFactory:context=>new DummyModel(context.role)
+  });
+  assert.deepEqual(bound.selected_roles,["backend","frontend","test"]);
+  assert.deepEqual(bound.contexts.backend.tasks.map(t=>t.id),
+    ["backend-model","backend-followup"]);
+  assert.deepEqual(bound.contexts.backend.approved_permissions.map(p=>p.task_id),
+    ["backend-model","backend-model",
+      "backend-followup","backend-followup"]);
+  assert.equal(new Set(bound.contexts.backend.approved_permissions
+    .map(p=>p.resource+"|"+p.operation)).size,2,
+    "Two Task grants may share one canonical resource-operation pair");
+});
 test("Block B: permission reduction removes a role from model construction",()=>{
   const input=reviewed();
   const grants=input.approvedRows.filter(g=>g.agent_id!=="backend");

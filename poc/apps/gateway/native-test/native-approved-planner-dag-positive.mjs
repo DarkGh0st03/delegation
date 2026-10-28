@@ -284,6 +284,7 @@ export async function runNativePositiveApprovedDag({
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
   const readPaths={backend:new Set(),frontend:new Set(),test:new Set()};
+  const readPathsPerTask=new Map();
   const writePaths={backend:new Set(),frontend:new Set(),test:new Set()};
   const adkGatewayBase="http://approved-native-gateway.invalid";
   const reply=(body,status=200)=>new Response(JSON.stringify(body),{
@@ -330,7 +331,11 @@ export async function runNativePositiveApprovedDag({
           assert.ok(files[role].includes(request.arguments.path));
           assert.equal(request.arguments.branch,branch);
           if(request.tool==="update_file"){
-            assert.ok(readPaths[role].has(request.arguments.path));
+            // A previous Task's read cannot satisfy this independently
+            // delegated Task's source-witness requirement.
+            assert.ok(readPathsPerTask.get(activeTaskByRole[role])
+              ?.has(request.arguments.path),
+              "Each approved implementation Task must read before its write");
             if(hostModels){
               assert.equal(typeof request.arguments.content,"string");
               assert.ok(request.arguments.content.length>0&&
@@ -362,12 +367,19 @@ export async function runNativePositiveApprovedDag({
             // historical baseline fixture.
             const current=await reader.readTextFile(branch,effect.path);
             assert.equal(effect.content,current.content);
+            const roleTaskId=activeTaskByRole[role];
+            assert.ok(taskIdsByRole[role].includes(roleTaskId));
+            if(!readPathsPerTask.has(roleTaskId))
+              readPathsPerTask.set(roleTaskId,new Set());
+            readPathsPerTask.get(roleTaskId).add(effect.path);
             if(!readPaths[role].has(effect.path)){
               readPaths[role].add(effect.path);
               reads[role]++;
             }
           }else if(effect.tool==="update_file"){
-            assert.ok(readPaths[role].has(effect.path));
+            assert.ok(readPathsPerTask.get(activeTaskByRole[role])
+              ?.has(effect.path),
+              "A signed Task may not reuse another Task's prior read");
             assert.match(effect.commit_sha,SHA);
             if(!writePaths[role].has(effect.path)){
               writePaths[role].add(effect.path);
@@ -810,7 +822,9 @@ export async function runNativePositiveApprovedDag({
       status:"pass",signed_dag_completed:true,
       scenario_id:scenarioId,approved_work_branch:branch,
       completed_task_ids:result.completed_task_ids,
-      real_a2a_sdk:true,native_rust_child_credentials:allSpecialistTaskIds.length,
+      real_a2a_sdk:true,
+      a2a_tasks_dispatched:result.specialized_results.length,
+      native_rust_child_credentials:allSpecialistTaskIds.length,
       native_verifier:true,live_opa:true,real_gitea:true,
       source_reads:implementationFiles.length+testReads,
       source_writes:implementationFiles.length+testUpdates,

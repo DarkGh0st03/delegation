@@ -649,7 +649,14 @@ async function main(){
         assert.ok(positive?.positive_dag?.shared_mcp_http_requests>=21);
         assert.ok(positive?.positive_dag?.private_crypto_mcp_http_requests>=21);
         assert.equal(positive?.positive_dag?.real_a2a_sdk,true);
-        assert.equal(positive?.positive_dag?.native_rust_child_credentials,3);
+        if(realGeminiPilot){
+          // The real Planner can assign several Task IDs to one role.
+          // Require one independent signed child DC per completed A2A Task,
+          // not exactly one DC per role.
+          const children=positive?.positive_dag?.native_rust_child_credentials;
+          assert.ok(Number.isSafeInteger(children)&&children>=3&&children<=10);
+          assert.equal(children,positive?.positive_dag?.a2a_tasks_dispatched);
+        }else assert.equal(positive?.positive_dag?.native_rust_child_credentials,3);
         if(!realGeminiPilot)assert.deepEqual(
           positive?.positive_dag?.completed_task_ids,
           ["branch","backend","frontend","test","pr"]);

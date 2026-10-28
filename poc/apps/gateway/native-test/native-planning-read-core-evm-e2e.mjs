@@ -829,8 +829,10 @@ try{
     operational_root_closed:signedHandoff,
     dispatcher_bound_signed_dag:signedHandoff,
     dispatcher_stopped_before_a2a_on_provider_denial:signedHandoff&&!positiveDag,
-    a2a_tasks_dispatched:positiveDag?3:0,
-    child_dc_issued:positiveDag?3:0,
+    a2a_tasks_dispatched:positiveDag
+      ?globalThis.__nativeDagPositive.a2a_tasks_dispatched:0,
+    child_dc_issued:positiveDag
+      ?globalThis.__nativeDagPositive.native_rust_child_credentials:0,
     real_provider_mutations:positiveDag?(geminiPilot?globalThis.__nativeDagPositive.source_writes+globalThis.__nativeDagPositive.created_test_files:11):0,
     provider_writes:positiveDag?(geminiPilot?globalThis.__nativeDagPositive.source_writes+globalThis.__nativeDagPositive.created_test_files:11):0,
     ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{})
