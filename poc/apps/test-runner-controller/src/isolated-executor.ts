@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
+import {extractTypecheckLocations} from "./typecheck-diagnostics.ts";
 import type {
   RunnerExecutor,
   RunnerPhaseName,
@@ -259,6 +260,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     const logReference = `runner-log://${logId}`;
     const logs: string[] = [];
     const phases: RunnerPhaseResult[] = [];
+    let typecheckDiagnostics:ReturnType<typeof extractTypecheckLocations>=[];
     let containerCreateAttempted = false;
     let failed = false;
 
@@ -366,6 +368,8 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         if (result.exit_code === 0 && !result.timed_out) {
           phases.push({ phase: fixed.phase, status: "pass" });
         } else {
+          if(fixed.phase==="typecheck"&&!result.timed_out)
+            typecheckDiagnostics=extractTypecheckLocations(result.stdout,result.stderr);
           failed = true;
           phases.push({
             phase: fixed.phase,
@@ -433,6 +437,8 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         runner_profile: request.profile,
         status: failed ? "fail" : "pass",
         phases,
+        ...(typecheckDiagnostics.length>0
+          ?{typecheck_diagnostics:typecheckDiagnostics}:{}),
         project_tests: {
           status: projectStatus,
           phases: projectPhases

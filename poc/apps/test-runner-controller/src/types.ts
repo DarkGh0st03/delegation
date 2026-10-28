@@ -35,6 +35,7 @@ export interface RunnerResearcherAcceptanceResult extends RunnerPhaseResult {
   phase: "researcher_acceptance";
 }
 
+import type {TypecheckLocation} from "./typecheck-diagnostics.ts";
 export interface RunnerRunResult {
   request_id: string;
   repository: string;
@@ -46,6 +47,8 @@ export interface RunnerRunResult {
   project_tests?: RunnerProjectTestsResult;
   researcher_acceptance?: RunnerResearcherAcceptanceResult;
   log_reference?: string;
+  /** Trusted metadata only; agents must filter by approved read paths. */
+  typecheck_diagnostics?: TypecheckLocation[];
 }
 
 export interface RunnerExecutor {

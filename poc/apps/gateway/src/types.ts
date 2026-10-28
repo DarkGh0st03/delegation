@@ -352,6 +352,8 @@ export interface RunnerExecutionResult {
   project_tests?: RunnerProjectTestsExecutionResult;
   researcher_acceptance?: RunnerResearcherAcceptanceExecutionResult;
   log_reference?: string;
+  /** Sanitized compiler locations, never raw stderr/source. */
+  typecheck_diagnostics?: import("../../test-runner-controller/src/typecheck-diagnostics.ts").TypecheckLocation[];
 }
 
 export type ExecutionResult =

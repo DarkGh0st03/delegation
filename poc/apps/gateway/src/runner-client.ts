@@ -1,4 +1,6 @@
 import { ProviderUnavailableError } from "./errors.ts";
+import {sanitizeTypecheckLocations,type TypecheckLocation}
+  from "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import type { RunnerPhaseExecutionResult } from "./types.ts";
 
 type FetchLike = typeof fetch;
@@ -35,6 +37,7 @@ export interface RunnerClientResult {
     phase: "researcher_acceptance";
   };
   log_reference?: string;
+  typecheck_diagnostics?: TypecheckLocation[];
 }
 
 const PHASES = new Set([
@@ -211,7 +214,10 @@ export class RunnerClient {
         : {}),
       ...(typeof body.log_reference === "string" && body.log_reference.length > 0
         ? { log_reference: body.log_reference }
-        : {})
+        : {}),
+      ...(status==="fail"&&body.typecheck_diagnostics!==undefined
+        ?{typecheck_diagnostics:sanitizeTypecheckLocations(body.typecheck_diagnostics)}
+        :{})
     };
 
     if (

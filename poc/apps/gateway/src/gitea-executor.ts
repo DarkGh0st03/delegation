@@ -229,7 +229,10 @@ export class GiteaExecutor implements ExecutionPort {
           : { researcher_acceptance: run.researcher_acceptance }),
         ...(run.log_reference === undefined
           ? {}
-          : { log_reference: run.log_reference })
+          : { log_reference: run.log_reference }),
+        ...(run.typecheck_diagnostics===undefined
+          ?{}
+          :{typecheck_diagnostics:run.typecheck_diagnostics})
       };
       return result;
     }

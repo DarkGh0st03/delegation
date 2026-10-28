@@ -227,7 +227,7 @@ test("fixed pipeline stops after a failing phase and marks later phases skipped"
           return {
             exit_code: 2,
             stdout: "",
-            stderr: "typecheck failed",
+            stderr: "apps/backend/src/users/user.ts(23,7): error TS2304: PRIVATE_CODE",
             timed_out: false
           };
         }
@@ -247,6 +247,10 @@ test("fixed pipeline stops after a failing phase and marks later phases skipped"
   assert.equal(result.phases[0].status, "pass");
   assert.equal(result.phases[1].status, "fail");
   assert.equal(result.phases[2].status, "skipped");
+  assert.deepEqual(result.typecheck_diagnostics,[{
+    path:"apps/backend/src/users/user.ts",line:23,column:7,code:"TS2304"
+  }]);
+  assert.ok(!JSON.stringify(result).includes("PRIVATE_CODE"));
   assert.equal(execCount, 2);
 });
 
