@@ -179,9 +179,26 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
   const output={};
   for(const role of ROLES){
     if(scripts[role].length>30)deny("offline ADK turn cap exceeded");
-    output[role]=Object.freeze(scripts[role].map(c=>Object.freeze({
+    const roleCalls=scripts[role].map(c=>Object.freeze({
       name:c.name,args:Object.freeze(c.args)
-    })));
+    }));
+    // Task boundaries are deliberately NOT ADK tool calls and are never
+    // model-controlled. The offline model must return a final text response
+    // after each Task rather than consuming the next Task's signed schedule.
+    const groups=[];
+    for(const id of callTaskIds[role]){
+      const last=groups.at(-1);
+      if(last?.task_id===id)last.call_count++;
+      else groups.push({task_id:id,call_count:1});
+    }
+    if(groups.some(g=>g.call_count<1)||
+       new Set(groups.map(g=>g.task_id)).size!==groups.length)
+      deny("noncontiguous signed Task calls");
+    Object.defineProperty(roleCalls,"approved_task_groups",{
+      value:Object.freeze(groups.map(g=>Object.freeze(g))),
+      enumerable:false,writable:false,configurable:false
+    });
+    output[role]=Object.freeze(roleCalls);
   }
   return Object.freeze(output);
 }

@@ -7,6 +7,8 @@ import {makeApproval,assertApprovedPlanScope}
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {buildOfflineAdkScriptsFromApprovedPlan}
   from "./approved-plan-offline-adk-call-scripts.mjs";
+import {OfflineApprovedAdkModel}
+  from "./offline-approved-adk-model.mjs";
 // Share the existing nonbillable planner test gate with the source-derived
 // route compiler; no additional CI permissions or provider calls.
 import "./source-derived-route-offline-adk-model.test.mjs";
@@ -280,4 +282,57 @@ test("Signed recovery selects the final Runner Task's write after an earlier Tes
   assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
     ...input,approvedRows:finalNoRead
   }),/NO-GO/u,"The final Task needs its own source read grant");
+});
+
+test("Multiple signed Test Tasks preserve boundaries in one ADK model instance",async()=>{
+  const d=planned({alternate:true,priorTestWrite:true});
+  const path="tests/accessibility.test.tsx";
+  const failedContent=content[path]+"\nthrow Error('offline regression');";
+  const scripts=buildOfflineAdkScriptsFromApprovedPlan({
+    plan:d.plan,approvedRows:d.approvedRows,repo,branch:d.workBranch,
+    implementationContents:content,recoveryFixture:{path,failedContent}
+  });
+  assert.deepEqual(scripts.test.approved_task_groups,[
+    {task_id:"prepare-regression",call_count:2},
+    {task_id:"checks",call_count:6}
+  ]);
+  assert.equal(Object.isFrozen(scripts.test.approved_task_groups),true);
+  assert.equal(JSON.stringify(scripts.test).includes("approved_task_groups"),false);
+  const model=new OfflineApprovedAdkModel("test",scripts.test);
+  const step=async()=>{
+    const outputs=[];
+    for await(const response of model.generateContentAsync({contents:[]}))
+      outputs.push(response.content.parts[0]);
+    assert.equal(outputs.length,1);
+    return outputs[0];
+  };
+  assert.equal((await step()).functionCall.name,"read_file");
+  assert.equal((await step()).functionCall.name,"update_file");
+  const firstDone=await step();
+  assert.match(firstDone.text,/this signed Task/u);
+  assert.equal(firstDone.functionCall,undefined,
+    "First Test Task cannot consume final Runner Task operations");
+  assert.equal((await step()).functionCall.name,"read_file");
+  assert.equal((await step()).functionCall.name,"update_file");
+  assert.equal((await step()).functionCall.name,"run_tests");
+  assert.equal((await step()).functionCall.name,"read_file");
+  assert.equal((await step()).functionCall.name,"update_file");
+  assert.equal((await step()).functionCall.name,"run_tests");
+  assert.match((await step()).text,/this signed Task/u);
+  assert.equal(model.calls,10);
+  await assert.rejects(step(),/Task schedule exhausted/u);
+});
+test("Offline task-group metadata cannot silently alter its signed call count",()=>{
+  const d=planned({alternate:true,priorTestWrite:true});
+  const scripts=buildOfflineAdkScriptsFromApprovedPlan({
+    plan:d.plan,approvedRows:d.approvedRows,repo,branch:d.workBranch,
+    implementationContents:content
+  });
+  const calls=[...scripts.test];
+  Object.defineProperty(calls,"approved_task_groups",{value:[
+    {task_id:"prepare-regression",call_count:2},
+    {task_id:"checks",call_count:99}
+  ]});
+  assert.throws(()=>new OfflineApprovedAdkModel("test",calls),
+    /Invalid signed offline ADK Task boundaries/u);
 });
