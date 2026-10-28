@@ -837,6 +837,22 @@ async function main(){
             signed_dag_positive:true,backend_frontend_a2a_updates:10,
             test_agent_created_e2e:1,
             signed_generic_adk_agents:3,
+            // Role count is 3, but four independent Rust-signed A2A
+            // Task dispatches are required in the multi-Test DAG.
+            signed_dag_completed_task_ids:positive.positive_dag.completed_task_ids,
+            a2a_tasks_dispatched:positive.positive_dag.a2a_tasks_dispatched,
+            native_rust_child_credentials:
+              positive.positive_dag.native_rust_child_credentials,
+            test_runner_runs:positive.positive_dag.test_runner_runs,
+            multi_test_a2a_independent_authority_verified:
+              positive.positive_dag.multi_test_a2a_independent_authority_verified,
+            test_cross_role_repair_denied:
+              positive.positive_dag.test_cross_role_repair_denied,
+            recovery_verified:positive.positive_dag.recovery_verified,
+            failed_test_sha:positive.positive_dag.failed_test_sha,
+            signed_dag_pr_commit_sha:positive.positive_dag.tested_commit_sha,
+            signed_dag_pr_unmerged:positive.positive_dag.pr_created&&
+              positive.positive_dag.merge_calls===0,
             host_supplied_adk_models:true,
             fixture_scripted_payloads_reach_adk_runner:true,
             independent_model_software_output_verified:false,

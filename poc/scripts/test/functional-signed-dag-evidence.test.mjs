@@ -4,7 +4,8 @@ import {extractSignedFunctionalE2EEvidence}
   from "../functional-signed-dag-evidence.mjs";
 
 const SHA="a".repeat(40),MAIN="b".repeat(40),
-  COMMIT="c".repeat(40),PROBE="d".repeat(40);
+  COMMIT="c".repeat(40),PROBE="d".repeat(40),
+  FAILED="e".repeat(40),SIGNED_PR="f".repeat(40);
 const source={scenarioId:"account-suspension",sourceSha:SHA,runId:"4051234001"};
 const native=()=>({
   status:"PASS",real_gitea_sha:MAIN,
@@ -22,6 +23,14 @@ const native=()=>({
   source_derived_functional_file_count:4,
   remaining_prepackaged_application_file_count:7,
   independent_model_software_output_verified:false,
+  signed_dag_completed_task_ids:[
+    "branch","backend","frontend","test-preparation","test","pr"
+  ],
+  a2a_tasks_dispatched:4,native_rust_child_credentials:4,
+  test_runner_runs:2,multi_test_a2a_independent_authority_verified:true,
+  test_cross_role_repair_denied:true,recovery_verified:true,
+  signed_dag_pr_unmerged:true,failed_test_sha:FAILED,
+  signed_dag_pr_commit_sha:SIGNED_PR,
   backend_frontend_a2a_updates:10,test_agent_created_e2e:1,
   signed_generic_adk_agents:3,a2a_before_branch:0,main_mutations:0
 });
@@ -58,7 +67,18 @@ function log(v){
 }
 test("Account Suspension offline E2E reports actual signed DAG without Gemini or false autonomy",()=>{
   const evidence=extractSignedFunctionalE2EEvidence(log(fixture()),source);
+  assert.equal(evidence.schema,"account-suspension-signed-dag-e2e-checkpoint-v2");
   assert.equal(evidence.scenario_id,"account-suspension");
+  assert.deepEqual(evidence.signed_dag_approved_task_sequence,
+    ["branch","backend","frontend","test-preparation","test","pr"]);
+  assert.equal(evidence.independently_delegated_a2a_task_count,4);
+  assert.equal(evidence.rust_issued_signed_child_credential_count,4);
+  assert.equal(evidence.real_signed_dag_docker_runs,2);
+  assert.equal(evidence.failed_then_repaired_docker_verified,true);
+  assert.equal(evidence.test_preparation_no_runner_authority_verified,true);
+  assert.equal(evidence.cross_role_test_repair_denied,true);
+  assert.equal(evidence.signed_dag_failed_docker_sha,FAILED);
+  assert.equal(evidence.signed_dag_pull_request_commit_sha,SIGNED_PR);
   assert.equal(evidence.account_suspension_source_derived_backend_routes,true);
   assert.equal(evidence.source_derived_functional_file_count,4);
   assert.equal(evidence.remaining_prepackaged_application_file_count,7);
@@ -92,6 +112,20 @@ test("Account Suspension checkpoint fails on missing or duplicated proof",()=>{
 test("Account Suspension checkpoint fail-closed on fabricated approvals, provider effects or fixture claims",()=>{
   const mutate=[
     x=>{x.native.native_rust=false;},
+    x=>{x.native.signed_dag_completed_task_ids=[
+      "branch","backend","frontend","test","pr"];},
+    x=>{x.native.signed_dag_completed_task_ids=[
+      "branch","backend","frontend","test","test-preparation","pr"];},
+    x=>{x.native.a2a_tasks_dispatched=3;},
+    x=>{x.native.native_rust_child_credentials=3;},
+    x=>{x.native.test_runner_runs=1;},
+    x=>{x.native.multi_test_a2a_independent_authority_verified=false;},
+    x=>{x.native.test_cross_role_repair_denied=false;},
+    x=>{x.native.recovery_verified=false;},
+    x=>{x.native.signed_dag_pr_unmerged=false;},
+    x=>{x.native.failed_test_sha=SIGNED_PR;},
+    x=>{x.native.signed_dag_pr_commit_sha="invalid";},
+    x=>{x.native.signed_dag_pr_commit_sha=MAIN;},
     x=>{x.native.operational_root=false;},
     x=>{x.native.dispatcher_fail_closed=false;},
     x=>{x.native.source_derived_functional_route_verified=false;},

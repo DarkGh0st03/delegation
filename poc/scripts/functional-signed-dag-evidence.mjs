@@ -65,6 +65,22 @@ export function extractSignedFunctionalE2EEvidence(log,{
     "source_derived_status_verified",
     "source_derived_frontend_api_verified"
   ],"native signed-DAG");
+  if(!Array.isArray(native.signed_dag_completed_task_ids)||
+     JSON.stringify(native.signed_dag_completed_task_ids)!==
+       JSON.stringify(["branch","backend","frontend",
+         "test-preparation","test","pr"])||
+     native.a2a_tasks_dispatched!==4||
+     native.native_rust_child_credentials!==4||
+     native.test_runner_runs!==2||
+     native.multi_test_a2a_independent_authority_verified!==true||
+     native.test_cross_role_repair_denied!==true||
+     native.recovery_verified!==true||
+     native.signed_dag_pr_unmerged!==true||
+     !SHA.test(native.failed_test_sha??"")||
+     !SHA.test(native.signed_dag_pr_commit_sha??"")||
+     native.failed_test_sha===native.signed_dag_pr_commit_sha||
+     native.signed_dag_pr_commit_sha===native.real_gitea_sha)
+    deny("multi-Test signed A2A Task, failed/repaired SHA, or PR proof absent");
   if(native.source_derived_functional_file_count!==4||
      native.remaining_prepackaged_application_file_count!==7||
      native.independent_model_software_output_verified!==false||
@@ -113,12 +129,24 @@ export function extractSignedFunctionalE2EEvidence(log,{
     "approval_created"
   ],"real Docker/Gateway acceptance");
   return Object.freeze({
-    schema:"account-suspension-signed-dag-e2e-checkpoint-v1",
+    schema:"account-suspension-signed-dag-e2e-checkpoint-v2",
     status:"functional_scripted_real_gitea_docker_pass",
     scenario_id:SCENARIO,
     framework_source_sha:sourceSha,github_run_id:String(runId),
     isolated_main_sha:native.real_gitea_sha,
     tested_feature_commit_sha:acceptance.tested_commit_sha,
+    // These are the separate native signed-DAG branch SHAs, NOT the
+    // independent Security CI acceptance feature-branch SHA above.
+    signed_dag_failed_docker_sha:native.failed_test_sha,
+    signed_dag_pull_request_commit_sha:native.signed_dag_pr_commit_sha,
+    signed_dag_approved_task_sequence:Object.freeze([
+      ...native.signed_dag_completed_task_ids]),
+    independently_delegated_a2a_task_count:4,
+    rust_issued_signed_child_credential_count:4,
+    real_signed_dag_docker_runs:2,
+    failed_then_repaired_docker_verified:true,
+    test_preparation_no_runner_authority_verified:true,
+    cross_role_test_repair_denied:true,
     signed_test_fixture_ed25519:true,
     native_rust_vp_and_opa:true,
     three_scripted_adk_a2a_agents:true,
