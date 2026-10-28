@@ -10,6 +10,8 @@ import {TaskRouter} from "../src/task-router.ts";
 import {PrivateMcpTaskRegistry} from "../../packages/agent-runtime/src/private-mcp-task-registry.ts";
 import {attachPrivateMcpWorker} from "../../packages/agent-runtime/src/private-mcp-worker-http.ts";
 import {ControlledToolError} from "../../packages/agent-runtime/src/controlled-errors.ts";
+import {normalizeMcpRunTestsOutcome}
+  from "../../packages/agent-runtime/src/mcp-run-tests-result.ts";
 import {issueTaskToken} from "../src/task-token.ts";
 
 function pair(){
@@ -46,7 +48,10 @@ test("one shared MCP run_tests routes only opted-in active Test role through pri
     attempted++;
     assert.equal(tool,"run_tests");
     assert.deepEqual(input,args);
-    if(fail)throw new ControlledToolError("tests_failed","private runner failure details");
+    if(fail)throw new ControlledToolError("tests_failed",
+      "private runner failure details",{details:{
+        first_failed_phase:"typecheck",privateLog:"PRIVATE_TS_SOURCE_CODE"
+      }});
     return result;
   }};
   registry.begin("test-active",gateway,undefined,{allowRunTests:true});
@@ -79,6 +84,14 @@ test("one shared MCP run_tests routes only opted-in active Test role through pri
     assert.equal(denied.isError,true);
     assert.equal((denied.structuredContent as {error:{kind:string}}).error.kind,"tests_failed");
     assert.equal(JSON.stringify(denied).includes("private runner failure details"),false);
+    assert.equal(JSON.stringify(denied).includes("PRIVATE_TS_SOURCE_CODE"),false);
+    assert.deepEqual(
+      (denied.structuredContent as {error:{details:unknown}}).error.details,
+      {first_failed_phase:"typecheck"});
+    const normalized=normalizeMcpRunTestsOutcome(denied,args);
+    assert.equal(normalized.ok,false);
+    if(!normalized.ok)assert.deepEqual(normalized.error.details,
+      {first_failed_phase:"typecheck"});
     assert.equal(attempted,2);
     const wrongProfile=await active.callTool({name:"run_tests",
       arguments:{...args,profile:"shell-command"}});

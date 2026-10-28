@@ -1,6 +1,7 @@
 import type {Express} from "express";
 import express from "express";
 import {ControlledToolError} from "./controlled-errors.ts";
+import {safeRunnerFailedPhaseHint} from "./safe-runner-failure.ts";
 import {PrivateMcpTaskError,PrivateMcpTaskRegistry} from "./private-mcp-task-registry.ts";
 
 /** The only bridge from the shared MCP service into private per-A2A-task state. */
@@ -40,8 +41,13 @@ export function attachPrivateMcpWorker(app:Express,registry:PrivateMcpTaskRegist
         const status=error.kind==="authorization_denied"?403:
           error.kind==="invalid_tool_call"?400:
           error.kind==="tests_failed"?422:503;
-        // Never disclose Gateway or Adapter error text to the MCP caller.
-        res.status(status).json({ok:false,error:{kind:error.kind}});
+        // Only the already-whitelisted Runner phase may cross the private
+        // worker boundary. Never forward diagnostics/logs/source/code.
+        const hint=error.kind==="tests_failed"
+          ?safeRunnerFailedPhaseHint(error.details):undefined;
+        res.status(status).json({ok:false,error:{
+          kind:error.kind,...(hint?{details:hint}:{})
+        }});
       } else {
         res.status(503).json({ok:false,error:{kind:"tool_unavailable"}});
       }

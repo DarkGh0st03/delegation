@@ -63,13 +63,23 @@ export class TaskRouter {
       parsed=JSON.parse(body);
     } catch { throw new Error("task_worker_invalid_result"); }
     if (!response.ok) {
-      const candidate = parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? (parsed as {error?:{kind?:unknown}}).error?.kind : undefined;
-      const safe = ["authorization_denied", "invalid_tool_call", "inactive_task",
-                    "unauthorized", "tool_unavailable", "tests_failed"];
-      // Errors are fixed-category only. Never forward a worker's raw error text.
-      throw new Error(typeof candidate === "string" && safe.includes(candidate)
-        ? candidate : "task_worker_rejected");
+      const failure=parsed && typeof parsed==="object"&&!Array.isArray(parsed)
+        ? (parsed as {error?:{kind?:unknown;details?:unknown}}).error:undefined;
+      const candidate=failure?.kind;
+      const safe=["authorization_denied","invalid_tool_call","inactive_task",
+        "unauthorized","tool_unavailable","tests_failed"];
+      if(candidate==="tests_failed"&&tool==="run_tests"){
+        const details=failure?.details;
+        const phase=details&&typeof details==="object"&&!Array.isArray(details)
+          ?(details as {first_failed_phase?:unknown}).first_failed_phase:null;
+        const phases=new Set(["dependency_install","typecheck","backend_tests",
+          "frontend_tests","build","playwright_e2e","researcher_acceptance"]);
+        // Only a fixed enum crosses to shared MCP; no free-form exception.
+        if(typeof phase==="string"&&phases.has(phase))
+          throw new Error("tests_failed:"+phase);
+      }
+      throw new Error(typeof candidate==="string"&&safe.includes(candidate)
+        ?candidate:"task_worker_rejected");
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
         (parsed as Record<string,unknown>).ok !== true || !("result" in parsed)) {

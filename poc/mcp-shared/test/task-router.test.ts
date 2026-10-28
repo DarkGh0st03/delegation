@@ -49,3 +49,22 @@ test("worker errors never forward arbitrary body text",async()=>{
     branch:"feature/account-suspension",path:"a.ts"
   }),/^Error: task_worker_rejected$/);
 });
+
+test("Runner phase error transport keeps the phase enum but never arbitrary details",async()=>{
+  const testClaims={...claims,role:"test" as const};
+  const args={branch:"feature/account-suspension",profile:"poc-default"};
+  const content="PRIVATE_TYPECHECK_OUTPUT";
+  const transport=new TaskRouter(workers,async()=>new Response(JSON.stringify({
+    ok:false,error:{kind:"tests_failed",
+      details:{first_failed_phase:"typecheck",logs:content,path:content}}
+  }),{status:422}));
+  await assert.rejects(transport.runTests(testClaims,"token",args),
+    (e:unknown)=>e instanceof Error&&
+      e.message==="tests_failed:typecheck"&&!e.message.includes(content));
+  const invalid=new TaskRouter(workers,async()=>new Response(JSON.stringify({
+    ok:false,error:{kind:"tests_failed",
+      details:{first_failed_phase:content}}
+  }),{status:422}));
+  await assert.rejects(invalid.runTests(testClaims,"token",args),
+    (e:unknown)=>e instanceof Error&&e.message==="tests_failed");
+});

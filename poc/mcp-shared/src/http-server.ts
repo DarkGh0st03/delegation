@@ -146,13 +146,19 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
         return {content:[{type:"text" as const,text:JSON.stringify(payload)}],structuredContent:payload};
       }catch(e){
         const candidate=e instanceof Error?e.message:"tool_unavailable";
+        const phases=new Set(["dependency_install","typecheck","backend_tests",
+          "frontend_tests","build","playwright_e2e","researcher_acceptance"]);
+        const tagged=/^tests_failed:([a-z_]+)$/u.exec(candidate);
+        const phase=tagged&&phases.has(tagged[1])?tagged[1]:null;
         const kind=[
           "invalid_tool_arguments","task_worker_unavailable",
           "task_worker_rejected","task_worker_invalid_result",
           "authorization_denied","invalid_tool_call","inactive_task",
           "unauthorized","tool_unavailable","tests_failed"
-        ].includes(candidate)?candidate:"tool_unavailable";
-        const payload={ok:false,error:{kind}};
+        ].includes(candidate)||phase?"tests_failed"===candidate||phase
+          ?"tests_failed":candidate:"tool_unavailable";
+        const payload={ok:false,error:{kind,
+          ...(phase?{details:{first_failed_phase:phase}}:{})}};
         return {isError:true,
           content:[{type:"text" as const,text:JSON.stringify(payload)}],
           structuredContent:payload};

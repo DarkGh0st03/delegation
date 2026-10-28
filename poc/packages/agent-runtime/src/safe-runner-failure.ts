@@ -16,3 +16,14 @@ export function safeRunnerFailureDetails(execution:unknown):
     x.status==="fail"&&PHASES.has(x.phase));
   return first?{first_failed_phase:first.phase}:undefined;
 }
+
+/** Accept only the canonical phase enum from a trusted Runner error.
+ * Other fields, including paths and stderr, are unconditionally discarded. */
+export function safeRunnerFailedPhaseHint(value:unknown):
+  {first_failed_phase:string}|undefined {
+  if(value===null||typeof value!=="object"||Array.isArray(value))
+    return undefined;
+  const hint=(value as {first_failed_phase?:unknown}).first_failed_phase;
+  return typeof hint==="string"&&PHASES.has(hint)
+    ?{first_failed_phase:hint}:undefined;
+}
