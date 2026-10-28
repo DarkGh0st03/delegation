@@ -33,6 +33,8 @@ import {TrustedExecutionCoordinator}
   from "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {startOwnerControlledPlanningReview}
   from "../../../packages/orchestrator-runtime/src/trusted-owner-planning-bootstrap.ts";
+import {startAuditedFreshRepairPlanning}
+  from "../../../packages/orchestrator-runtime/src/trusted-fresh-work-audit.ts";
 import {TrustedReviewedPlanFile}
   from "../../../packages/orchestrator-runtime/src/trusted-reviewed-plan-file.ts";
 import {TrustedPlanningReviewGate}
@@ -831,7 +833,8 @@ export async function startTrustedEngineerLivePlanningHost(config){
  * checkpoints BEFORE provisional root issuance. Once Planning starts, every
  * failed service bootstrap must attempt confirmed revocation.
  */
-export async function startOwnerControlledEngineerReviewHost({planning,host}={}){
+function assertOwnerPlanningEngineerPins(planning,host){
+
   const snapshot=planning?.snapshot;
   const approval=host?.approval;
   const recovery=host?.recovery;
@@ -859,6 +862,12 @@ export async function startOwnerControlledEngineerReviewHost({planning,host}={})
   coordinator.assertOperationalRecoveryStore(host.operationalRecovery);
   if(coordinator.phase!=="idle")
     deny("owner Planning Coordinator must be unused");
+  return {coordinator,snapshot};
+}
+
+/** Original first-session Planning, not a recovery or an automatic retry. */
+export async function startOwnerControlledEngineerReviewHost({planning,host}={}){
+  const {coordinator}=assertOwnerPlanningEngineerPins(planning,host);
   // If the Planner fails it invokes closePlanning itself. If it completes
   // and Engineer host startup later fails, the strict wrapper closes it.
   await startOwnerControlledPlanningReview(planning);
@@ -872,4 +881,70 @@ export async function startOwnerControlledEngineerReviewHost({planning,host}={})
       reviewGate:planning.reviewGate
     }
   });
+}
+
+
+/**
+ * R46 owner-only RECOVERY entry into the REAL persistent Engineer host.
+ * The original first-session bootstrap above remains available solely for
+ * fresh work. This path forces all retired work through:
+ *   old Gateway/native revocation -> authenticated old signed receipt ->
+ *   provider-pinned Gitea diff -> owner durable disposition -> new ADK
+ *   Planning/checkpoint -> persistent Engineer review.
+ *
+ * Never exposed as an HTTP, A2A, MCP or model function. This method does not
+ * approve a new plan, issue an operational credential, dispatch a DAG or
+ * select a paid model. startAuditedFreshRepairPlanning controls exactly ONE
+ * fresh Planning issuance. Both review-host paths share identical preflight
+ * pins and recovery journal identities.
+ */
+export async function startOwnerControlledFreshRepairEngineerReviewHost({
+  audit,disposition,decisionStore,previousCoordinator,nextCoordinator,
+  nextSessionId,trustedGitea,planning,host
+}={}){
+  const {coordinator,snapshot}=assertOwnerPlanningEngineerPins(planning,host);
+  if(coordinator!==nextCoordinator||
+     nextSessionId!==snapshot.session_id||
+     previousCoordinator===nextCoordinator)
+    deny("fresh recovery requires the same new idle Coordinator and distinct old root");
+  let prepared;
+  try{
+    prepared=await startAuditedFreshRepairPlanning({
+      audit,disposition,decisionStore,previousCoordinator,nextCoordinator,
+      nextSessionId,trustedGitea,planning
+    });
+    if(prepared.status==="manual_reconciliation_required"){
+      // The owner chose quarantine. No new Gitea main read, no root, no
+      // Engineer listener and no automatic source replay are permitted.
+      if(coordinator.phase!=="idle")
+        deny("quarantined recovery cannot activate new Planning");
+      return prepared;
+    }
+    if(prepared.status!=="awaiting_engineer_signature"||
+       prepared.session_id!==snapshot.session_id||
+       prepared.base_revision!==snapshot.base_revision||
+       coordinator.phase!=="planning")
+      deny("signed fresh Planning packet differs from owner Engineer pins");
+    return await startTrustedEngineerLivePlanningHost({
+      ...host,activePlanning:{
+        coordinator,
+        planningRecovery:planning.planningRecovery,
+        operationalRecovery:host.operationalRecovery,
+        checkpointStore:planning.checkpointStore,
+        reviewGate:planning.reviewGate
+      }
+    });
+  }catch(error){
+    // The Planning bootstrap already closes after Planner/model failures.
+    // If a later host or packet check fails, independently retire the NEW
+    // preliminary root. An ambiguous revocation must never become a retry.
+    if(coordinator.phase==="planning"){
+      try{await coordinator.closePlanning();}
+      catch(revocationError){
+        throw Error("Trusted Engineer fresh repair: preliminary root retirement unconfirmed; manual reconciliation required",
+          {cause:revocationError});
+      }
+    }
+    throw error;
+  }
 }
