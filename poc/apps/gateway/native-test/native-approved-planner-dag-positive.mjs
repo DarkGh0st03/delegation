@@ -85,11 +85,15 @@ export async function runNativePositiveApprovedDag({
   referenceFiles,scenarioId,repo,giteaBase,
   readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens,
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
-  approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false
+  approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
+  offlineMultiTest=false
 }){
   if(offlineRecovery&&(realGeminiPilot||
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Signed-DAG recovery is a host-selected offline fixture only");
+  if(offlineMultiTest&&(!offlineRecovery||realGeminiPilot||
+     typeof approvedAgentModelFactory!=="function"))
+    throw Error("Multiple Test A2A Tasks require signed offline recovery fixture");
   if((realGeminiPilot&&typeof approvedAgentModelFactory!=="function")||
      (approvedAgentModelFactory!==undefined&&
       typeof approvedAgentModelFactory!=="function"))
@@ -733,7 +737,20 @@ export async function runNativePositiveApprovedDag({
     if(realGeminiPilot){
       assert.deepEqual(
         new Set(result.specialized_results.map(x=>x.role)),new Set(ROLES));
-    }else assert.deepEqual(result.specialized_results.map(x=>x.role),ROLES);
+    }else assert.deepEqual(result.specialized_results.map(x=>x.role),
+      offlineMultiTest?["backend","frontend","test","test"]:ROLES);
+    if(offlineMultiTest){
+      const signedTests=result.specialized_results.filter(x=>x.role==="test");
+      assert.equal(signedTests.length,2);
+      assert.equal(signedTests[0].artifact.test_outcome,"not_run",
+        "Test preparation must not borrow the later Runner permission");
+      assert.equal(signedTests[1].artifact.test_outcome,"pass");
+      assert.ok(childIds["test-preparation"]&&childIds.test);
+      assert.notEqual(childIds["test-preparation"],childIds.test,
+        "Independent signed Test A2A Tasks require distinct Rust child DCs");
+      assert.equal(runnerRuns,2,
+        "Only final Test Task may invoke failed and repaired Docker runs");
+    }
     for(const role of EDIT_ROLES){
       // Any actual write must have its own approved source read. A resource
       // granted for writing may remain untouched by the model.
@@ -925,6 +942,7 @@ export async function runNativePositiveApprovedDag({
       manifest_source:"engineer_signed_approved_plan",
       test_runner_runs:runnerRuns,
       recovery_verified:offlineRecovery,
+      multi_test_a2a_independent_authority_verified:offlineMultiTest,
       test_cross_role_repair_denied:signedTestOutOfScopeDenied,
       ...(offlineRecovery?{failed_test_sha:failedTestSha}:{}),
       test_runner_phases:runnerOutcome.phases.map(x=>x.phase),

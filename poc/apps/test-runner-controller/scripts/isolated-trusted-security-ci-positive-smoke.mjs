@@ -680,10 +680,15 @@ async function main(){
           const children=positive?.positive_dag?.native_rust_child_credentials;
           assert.ok(Number.isSafeInteger(children)&&children>=3&&children<=10);
           assert.equal(children,positive?.positive_dag?.a2a_tasks_dispatched);
-        }else assert.equal(positive?.positive_dag?.native_rust_child_credentials,3);
+        }else assert.equal(positive?.positive_dag?.native_rust_child_credentials,
+          process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1"?4:3);
+        const split=process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1";
         if(!realGeminiPilot)assert.deepEqual(
           positive?.positive_dag?.completed_task_ids,
-          ["branch","backend","frontend","test","pr"]);
+          split?["branch","backend","frontend","test-preparation","test","pr"]
+            :["branch","backend","frontend","test","pr"]);
+        assert.equal(positive?.positive_dag?.multi_test_a2a_independent_authority_verified,
+          split);
         const recovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1";
         assert.equal(positive?.positive_dag?.test_runner_runs,recovery?2:1);
         assert.equal(positive?.positive_dag?.recovery_verified,recovery);
@@ -750,7 +755,7 @@ async function main(){
           ?.independent_model_software_output_verified,realGeminiPilot);
         if(!realGeminiPilot)assert.deepEqual(
           positive?.positive_dag?.adk_model_turns,
-          {backend:13,frontend:9,test:recovery?8:3});
+          {backend:13,frontend:9,test:split?9:recovery?8:3});
         assert.equal(positive?.positive_dag?.main_unchanged,true);
         assert.equal(positive?.positive_dag?.operational_root_revoked,true);
         assert.equal(positive?.positive_dag?.pr_created,true);

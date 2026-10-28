@@ -103,6 +103,12 @@ const realGitea=[disposableBase,disposableToken,disposableSha]
   .some(v=>v!==undefined);
 const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
 const positiveDag=process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
+const signedOfflineMultiTest=positiveDag&&
+  process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1";
+if(signedOfflineMultiTest&&
+   (!signedOfflineRecovery||geminiPilot||
+    process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"))
+  throw Error("Multi-Test A2A is a nonbillable, signed recovery fixture only");
 const writerToken=process.env.PLANNING_DISPOSABLE_GITEA_WRITE_TOKEN;
 if(positiveDag&&(!signedHandoff||!realGitea||!writerToken||
    !process.env.ADAPTER_CALLER_BACKEND))
@@ -198,7 +204,8 @@ const planSketch=positiveDag?
   makeOfflineReviewableDag({
     snapshot,edits:roleFiles,newTestFile,
     taskInstructions:scenario.planning_intent.taskInstructions,
-    ...(testRepairFile?{testRepairFile}:{})
+    ...(testRepairFile?{testRepairFile}:{}),
+    ...(signedOfflineMultiTest?{splitTestTasks:true}:{})
   }):legacyPlanSketch;
 class ScriptedReadPlanner extends BaseLlm{
   turns=0; requests=[];
@@ -482,7 +489,13 @@ try{
     assert.deepEqual(proposed.plan.tasks.find(t=>t.id==="frontend")?.depends_on,
       ["branch"]);
     assert.deepEqual(proposed.plan.tasks.find(t=>t.id==="test")?.depends_on,
-      ["backend","frontend"]);
+      signedOfflineMultiTest?["test-preparation"]:["backend","frontend"]);
+    if(signedOfflineMultiTest){
+      assert.deepEqual(proposed.plan.tasks.find(t=>
+        t.id==="test-preparation")?.depends_on,["backend","frontend"]);
+      assert.equal(proposed.plan.tasks.filter(t=>
+        t.agent_id==="test").length,2);
+    }
   }
   if(!geminiPilot){
     const visible=JSON.stringify(model.requests);
@@ -659,6 +672,7 @@ try{
         referenceFiles:approvedAgentModelFactory?undefined:referenceFiles,
         realGeminiPilot:geminiPilot,
         offlineRecovery:signedOfflineRecovery,
+        offlineMultiTest:signedOfflineMultiTest,
         scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
         writerToken,opaUrl,engineerDid,orchestratorToken:token,
@@ -730,6 +744,11 @@ try{
         assert.equal(globalThis.__nativeDagPositive.recovery_verified,true);
         assert.notEqual(globalThis.__nativeDagPositive.failed_test_sha,
           globalThis.__nativeDagPositive.tested_commit_sha);
+      }
+      if(signedOfflineMultiTest){
+        assert.equal(globalThis.__nativeDagPositive.a2a_tasks_dispatched,4);
+        assert.equal(globalThis.__nativeDagPositive
+          .multi_test_a2a_independent_authority_verified,true);
       }
       assert.equal(globalThis.__nativeDagPositive.tested_commit_sha,
         globalThis.__nativeDagPositive.approved_branch_sha);

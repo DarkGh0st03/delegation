@@ -25,7 +25,8 @@ function requirePath(path){
   return path;
 }
 export function makeOfflineReviewableDag({
-  snapshot,edits,newTestFile,taskInstructions={},testRepairFile
+  snapshot,edits,newTestFile,taskInstructions={},testRepairFile,
+  splitTestTasks=false
 }){
   if(!snapshot||!Array.isArray(snapshot.files)||
      !Array.isArray(snapshot.directories)||
@@ -65,6 +66,8 @@ export function makeOfflineReviewableDag({
        !discovered.has(testRepairFile)||testRepairFile===newTestFile)
       throw Error("Offline Planning intent: repair target outside trusted test inventory");
   }
+  if(splitTestTasks&&testRepairFile===undefined)
+    throw Error("Offline Planning intent: split Test requires signed final repair grant");
   const tasks=[
     {id:"branch",agent_id:"orchestrator",title:"Create isolated work branch",
       description:"Keep planned changes off the main branch",depends_on:[],
@@ -80,12 +83,19 @@ export function makeOfflineReviewableDag({
         {operation:"update_file",path,reason:"Apply the reviewed change"}
       ])
     })),
-    {id:"test",agent_id:"test",title:"Create scoped E2E and run acceptance",
-      description:"Run the approved tests on the final feature branch SHA",
+    ...(splitTestTasks?[{
+      id:"test-preparation",agent_id:"test",title:"Create scoped E2E",
+      description:"Prepare the reviewed regression before final acceptance",
       depends_on:["backend","frontend"],
+      permissions:[{operation:"create_file",path:newTestFile,
+        reason:"Create test under an independently signed Test Task"}]
+    }]:[]),
+    {id:"test",agent_id:"test",title:"Run final Docker acceptance",
+      description:"Repair the reviewed regression and test the final SHA",
+      depends_on:splitTestTasks?["test-preparation"]:["backend","frontend"],
       permissions:[
-        {operation:"create_file",path:newTestFile,
-          reason:"Add the reviewed scenario regression"},
+        ...(!splitTestTasks?[{operation:"create_file",path:newTestFile,
+          reason:"Add the reviewed scenario regression"}]:[]),
         ...(testRepairFile?[{
           operation:"read_file",path:testRepairFile,
           reason:"Inspect existing regression under this same signed Task"
