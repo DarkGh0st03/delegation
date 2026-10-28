@@ -445,7 +445,8 @@ try{
   // The live model proposes its own valid, Engineer-reviewed permission set.
   if(!geminiPilot)
     assert.equal(proposed.plan.requested_permissions.length,
-      positiveDag?(2*existingFiles.length+4):5); // scripted only
+      positiveDag?(2*existingFiles.length+4+
+        (signedOfflineRecovery?2:0)):5); // signed fixture grants only
   if(geminiPilot){
     // Every actual preliminary read must pass the trusted Gateway and native
     // verifier. The count is whatever the model legitimately needed.
@@ -713,7 +714,7 @@ try{
               p.operation==="update_file").length,
           "Actual source writes must be a subset of granted operations");
       }else assert.equal(globalThis.__nativeDagPositive.source_writes,
-        existingFiles.length);
+        existingFiles.length+(signedOfflineRecovery?1:0));
       assert.equal(globalThis.__nativeDagPositive.manifest_source,
         "engineer_signed_approved_plan");
       if(geminiPilot){
@@ -877,7 +878,9 @@ try{
       ?globalThis.__nativeDagPositive.a2a_tasks_dispatched:0,
     child_dc_issued:positiveDag
       ?globalThis.__nativeDagPositive.native_rust_child_credentials:0,
-    real_provider_mutations:positiveDag?(geminiPilot?globalThis.__nativeDagPositive.source_writes+globalThis.__nativeDagPositive.created_test_files:11):0,
+    real_provider_mutations:positiveDag?
+      globalThis.__nativeDagPositive.source_writes+
+      globalThis.__nativeDagPositive.created_test_files:0,
     provider_writes:positiveDag?
       globalThis.__nativeDagPositive.source_writes+
       globalThis.__nativeDagPositive.created_test_files:0,
