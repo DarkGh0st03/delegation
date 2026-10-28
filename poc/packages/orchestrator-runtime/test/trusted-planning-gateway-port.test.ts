@@ -1000,9 +1000,17 @@ test("R5 protected owner service composes signed ADK Planning with strict host a
     assert.equal(f.observed.issued,0);
     assert.equal(prepared.operationalRecovery,f.operationalRecovery);
     assert.notEqual(prepared.planningCheckpointStore,f.store);
-    const second=await prepareConfiguredOwnerEngineerBootstrap(configPath,{
+    const repairConfigPath=join(home,"owner-fresh-repair-service.json");
+    await writeFile(repairConfigPath,JSON.stringify({
+      ...protectedConfig,planningMode:"fresh_repair"
+    }),{mode:0o600});
+    const second=await prepareConfiguredOwnerEngineerBootstrap(repairConfigPath,{
       operationalRecovery:f.operationalRecovery
     });
+    await assert.rejects(second.start({}),
+      /original Planning disabled for fresh repair mode/);
+    await assert.rejects(prepared.startFreshRepair({}),
+      /fresh repair requires protected recovery mode/);
     const repairPlanning=f.makeConfig();
     repairPlanning.checkpointStore=second.planningCheckpointStore;
     delete (repairPlanning as any).reviewPlanFile;
@@ -1028,7 +1036,10 @@ test("R5 protected owner service composes signed ADK Planning with strict host a
     assert.equal(unauthorizedReads,0);
     assert.equal(f.observed.issued,0);
     assert.equal(f.coordinator.phase,"idle");
-    await assert.rejects(second.start(repairPlanning),/single-use/);
+    await assert.rejects(second.start(repairPlanning),
+      /original Planning disabled for fresh repair mode/);
+    await assert.rejects(second.startFreshRepair({planning:repairPlanning}),
+      /single-use/);
     const planning=f.makeConfig();
     // Adopt the exact new backend-signed checkpoint store prepared by
     // the protected service, not the superficially identical test store.

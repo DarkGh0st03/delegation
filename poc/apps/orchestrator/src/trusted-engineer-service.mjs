@@ -69,12 +69,14 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
   if(!record(source)||
      Object.keys(source).some(k=>![
        "approval","oidc","recovery","approvalPort","oidcPort",
-       "scriptedOidc","scriptedOidcPort"
+       "scriptedOidc","scriptedOidcPort","planningMode"
      ].includes(k))||
      !record(source.approval)||!record(source.oidc)||
      !record(source.recovery)||!record(source.approval.checkpoint)||
      !record(source.oidc.tls)||
-     !record(source.oidc.pinned)||!record(source.oidc.trust))
+     !record(source.oidc.pinned)||!record(source.oidc.trust)||
+     (source.planningMode!==undefined&&
+      !["original","fresh_repair"].includes(source.planningMode)))
     denied();
   // Only owner-side Planning preparation may omit plan.json; cold
   // recovering service startup must always verify the already written
@@ -234,6 +236,9 @@ export async function loadTrustedEngineerServiceConfig(configPath,options={}){
   const {githubApiTokenFile,hmacSecretHexFile,tls,...oidcSettings}=oidc;
   const {adapterTokenFile,...recoverySettings}=recovery;
   return Object.freeze({
+    // R47: fixed by the protected 0600 owner configuration, not by a
+    // model, GitHub input, untrusted recovery payload or caller flag.
+    planningMode:source.planningMode??"original",
     // Private owner bootstrap only: signer PUBLIC key and the exact
     // work branch must come from the same 0600 config read as the Host.
     ownerPlanning:{
@@ -373,6 +378,8 @@ export async function prepareConfiguredOwnerEngineerBootstrap(
      * Neither workflow_dispatch nor model code can invoke this API.
      */
     start:async planning=>{
+      if(config.planningMode!=="original")
+        throw Error("Configured Engineer owner original Planning disabled for fresh repair mode");
       if(attempted)
         throw Error("Configured Engineer owner bootstrap is single-use");
       attempted=true; // reserve before any async Planning or root effect
@@ -393,6 +400,8 @@ export async function prepareConfiguredOwnerEngineerBootstrap(
     },
     startFreshRepair:async ({planning,audit,disposition,decisionStore,
       previousCoordinator,nextSessionId,trustedGitea}={})=>{
+      if(config.planningMode!=="fresh_repair")
+        throw Error("Configured Engineer fresh repair requires protected recovery mode");
       if(attempted)
         throw Error("Configured Engineer owner bootstrap is single-use");
       attempted=true;

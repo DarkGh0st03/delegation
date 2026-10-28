@@ -102,6 +102,38 @@ test("service loads only protected, local config and independent secrets",async(
     assert.equal(c.recovery.gatewaySocketPath,f.config.recovery.gatewaySocketPath);
   }finally{await f.close();}
 });
+test("R47 protected Planning mode cannot switch original and audited repair entrypoints",async()=>{
+  const f=await fixture();
+  try{
+    await rm(f.files.plan);
+    const original=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
+    assert.equal((await loadTrustedEngineerServiceConfig(f.files.config)).planningMode,
+      "original");
+    await assert.rejects(original.startFreshRepair({}),
+      /fresh repair requires protected recovery mode/);
+    f.config.planningMode="fresh_repair";
+    await f.save();
+    const fresh=await prepareConfiguredOwnerEngineerBootstrap(f.files.config);
+    assert.equal((await loadTrustedEngineerServiceConfig(f.files.config)).planningMode,
+      "fresh_repair");
+    await assert.rejects(fresh.start({}),
+      /original Planning disabled for fresh repair mode/);
+    // Missing independently bound audit must be rejected before a root,
+    // before Gitea access and before an Engineer approval listener.
+    await assert.rejects(fresh.startFreshRepair({}),
+      /original idle Planning and checkpoint identity/);
+    await assert.rejects(fresh.startFreshRepair({}),/single-use/);
+    assert.equal((await (await import("node:fs/promises")).readdir(
+      f.dirs.checkpoints)).length,0);
+    assert.equal((await (await import("node:fs/promises")).readdir(
+      f.dirs.approval)).length,0);
+    f.config.planningMode="untrusted";
+    await f.save();
+    await assert.rejects(loadTrustedEngineerServiceConfig(f.files.config),
+      /configuration denied/);
+  }finally{await f.close();}
+});
+
 test("service refuses group-readable files, symlinks and writable state dirs",async()=>{
   const f=await fixture();
   try{
