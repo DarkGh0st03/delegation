@@ -661,14 +661,3 @@ test("R36: fresh signed repair uses existing trusted execution, not revoked cred
     "issue:urn:r36:fresh-work","revoke:urn:r36:fresh-work"
   ]);
 });
-  assert.ok(Object.isFrozen(active));
-  assert.equal(nextCoordinator.phase,"execution");
-  assert.deepEqual(nextCredentials.calls,[
-    "issue:urn:r36:fresh-read","revoke:urn:r36:fresh-read",
-    "issue:urn:r36:fresh-work"
-  ]);
-  await nextCoordinator.closeExecution();
-  assert.equal(nextCoordinator.phase,"closed");
-  assert.equal(previousCoordinator.phase,"closed");
-  assert.equal(nextCredentials.calls.at(-1),"revoke:urn:r36:fresh-work");
-});
