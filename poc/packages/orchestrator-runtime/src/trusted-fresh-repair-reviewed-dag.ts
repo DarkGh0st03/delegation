@@ -15,7 +15,7 @@ import type {RootParameters}
   from "./trusted-engineer-authority.ts";
 import {beginTrustedFreshRepairApprovedExecution}
   from "./trusted-fresh-planning-intake.ts";
-import {createReviewedApprovedDagExecution}
+import {createReviewedApprovedDagExecution,pinTrustedReviewedAgentEndpoints}
   from "./trusted-reviewed-approved-dag.ts";
 
 type AgentEndpoints=Readonly<Record<"backend"|"frontend"|"test",string>>;
@@ -46,22 +46,29 @@ export async function armTrustedFreshRepairReviewedDag(input:{
      typeof input.verifyLiveRun!=="function"||
      typeof input.close!=="function")
     fail("private fresh owner and live-run verification are required");
-  // Never issue an operational root for a canceled/non-current job.
+  // Validate and immutably pin ALL endpoints before root issuance, including
+  // before the first asynchronous liveness check. No invalid endpoint may
+  // trigger irreversible credential issuance or consume a status entry.
+  const pinnedEndpoints=pinTrustedReviewedAgentEndpoints(input.endpoints);
   await input.verifyLiveRun();
   let activated=false;
-  let shutdownStarted=false;
-  const shutdown=async()=>{
-    if(shutdownStarted)return;
-    shutdownStarted=true;
-    try{
-      if(input.nextCoordinator.phase==="execution")
-        await input.nextCoordinator.closeExecution();
-      // A mere "closed" phase is insufficient; await Gateway, Rust and
-      // durable recovery reconciliation before completing host shutdown.
-      await input.nextCoordinator.assertOperationalClosureConfirmed();
-    }finally{
-      await input.close();
-    }
+  let shutdownPromise:Promise<void>|undefined;
+  const shutdown=():Promise<void>=>{
+    // Concurrent cancellation/close callers must await the SAME terminal
+    // retirement, not treat an in-progress shutdown as already complete.
+    if(shutdownPromise)return shutdownPromise;
+    shutdownPromise=(async()=>{
+      try{
+        if(input.nextCoordinator.phase==="execution")
+          await input.nextCoordinator.closeExecution();
+        // "closed" alone is not a receipt: await Gateway, native root
+        // revocation and durable journal reconciliation.
+        await input.nextCoordinator.assertOperationalClosureConfirmed();
+      }finally{
+        await input.close();
+      }
+    })();
+    return shutdownPromise;
   };
   try{
     const active=await beginTrustedFreshRepairApprovedExecution(input);
@@ -80,7 +87,7 @@ export async function armTrustedFreshRepairReviewedDag(input:{
           authenticated_engineer_did:receipt.authenticated_engineer_did
         },
         operational_root_id:active.operational_root_id,
-        endpoints:input.endpoints
+        endpoints:pinnedEndpoints
       },
       verifyLiveRun:input.verifyLiveRun,close:shutdown
     });

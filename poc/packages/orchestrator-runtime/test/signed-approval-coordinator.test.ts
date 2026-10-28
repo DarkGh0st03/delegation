@@ -601,12 +601,33 @@ test("R36: fresh signed repair uses existing trusted execution, not revoked cred
     frontend:"http://127.0.0.1:18002",
     test:"http://127.0.0.1:18003"
   };
+  const trustedEndpoints=structuredClone(endpoints);
   const ownerInput={
     previousCoordinator,nextCoordinator,nextSessionId:nextId,
     reviewGate,operationalRoot:newRoot,endpoints,
-    async verifyLiveRun(){livenessChecks++;},
+    async verifyLiveRun(){
+      livenessChecks++;
+      if(livenessChecks===1){
+        // Simulate an owner-controlled mutable config changing while the
+        // asynchronous signed root handoff is being performed.
+        endpoints.backend="http://attacker.invalid:9999";
+      }
+    },
     async close(){hostCloseCalls++;}
   };
+  for(const invalidEndpoints of [
+    {...endpoints,backend:"http://remote.invalid:443"},
+    {...endpoints,frontend:endpoints.backend},
+    {...endpoints,test:"http://127.0.0.1:0"}
+  ]){
+    await assert.rejects(armTrustedFreshRepairReviewedDag({
+      ...ownerInput,endpoints:invalidEndpoints
+    }),/three distinct localhost servers/);
+  }
+  assert.equal(livenessChecks,0,
+    "invalid endpoints must fail before even the first live-job check");
+  assert.deepEqual(nextCredentials.calls,["issue:urn:r36:fresh-read"],
+    "invalid endpoints must not consume the operational status entry");
   await assert.rejects(armTrustedFreshRepairReviewedDag({
     ...ownerInput,async verifyLiveRun(){throw Error("GitHub job canceled");}
   }),/GitHub job canceled/);
@@ -625,7 +646,7 @@ test("R36: fresh signed repair uses existing trusted execution, not revoked cred
       assert.equal(config.expectedPlanDigest,packet.plan_digest);
       assert.equal(config.baseRevision,SHA);
       assert.equal(config.expectedEngineerDid,ENGINEER);
-      assert.deepEqual(config.agentBaseUrls,endpoints);
+      assert.deepEqual(config.agentBaseUrls,trustedEndpoints);
       assert.equal(config.coordinator.phase,"execution");
       return {async executeApprovedDag({beforeTask,beforeCompletion}:any){
         await beforeTask("branch");

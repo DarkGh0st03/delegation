@@ -44,6 +44,20 @@ function fail(reason:string):never{
   throw Error("Reviewed Gemini DAG bridge: "+reason);
 }
 
+/** Shared owner-side A2A endpoint preflight. Run this BEFORE any new
+ * operational root issuance and freeze a defensive copy across awaits. */
+export function pinTrustedReviewedAgentEndpoints(
+  endpoints:Readonly<Record<"backend"|"frontend"|"test",string>>
+):Readonly<Record<"backend"|"frontend"|"test",string>>{
+  const pinnedUrls=ROLES.map(role=>endpoints?.[role]);
+  if(pinnedUrls.some(url=>typeof url!=="string"||!LOOPBACK.test(url))||
+     new Set(pinnedUrls).size!==ROLES.length)
+    fail("Gemini A2A endpoints must be three distinct localhost servers");
+  return Object.freeze({
+    backend:pinnedUrls[0]!,frontend:pinnedUrls[1]!,test:pinnedUrls[2]!
+  });
+}
+
 export function createReviewedApprovedDagExecution(input:{
   coordinator:TrustedExecutionCoordinator;
   reviewGate:TrustedPlanningReviewGate;
@@ -65,14 +79,8 @@ export function createReviewedApprovedDagExecution(input:{
      !readiness.authenticated_engineer_did?.startsWith("did:")||
      !input.running.operational_root_id)
     fail("missing authenticated signed plan, base SHA or operational root");
-  const pinnedUrls=ROLES.map(role=>endpoints?.[role]);
-  if(pinnedUrls.some(url=>typeof url!=="string"||!LOOPBACK.test(url))||
-     new Set(pinnedUrls).size!==ROLES.length)
-    fail("Gemini A2A endpoints must be three distinct localhost servers");
   // Freeze a value copy, never a caller-owned mutable endpoint object.
-  const agentBaseUrls=Object.freeze({
-    backend:pinnedUrls[0]!,frontend:pinnedUrls[1]!,test:pinnedUrls[2]!
-  });
+  const agentBaseUrls=pinTrustedReviewedAgentEndpoints(endpoints);
   const pinned=Object.freeze({
     sessionId:readiness.session_id,
     planDigest:readiness.plan_digest,
