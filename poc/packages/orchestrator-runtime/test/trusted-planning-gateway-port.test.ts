@@ -39,6 +39,12 @@ import {compilePlanningProposal} from "../src/trusted-adk-planner.ts";
 import {startTrustedFreshRepairPlanningReview,
   verifyTrustedFreshRepairEngineerApproval}
   from "../src/trusted-fresh-planning-intake.ts";
+import {auditTrustedRetiredFeatureWork,startAuditedFreshRepairPlanning}
+  from "../src/trusted-fresh-work-audit.ts";
+import {TrustedFreshWorkDecisionStore}
+  from "../src/trusted-fresh-work-decision-store.ts";
+import {approvedWorkBranch}
+  from "../../plan-contracts/src/approved-work-branch.mjs";
 import {startOwnerControlledPlanningReview}
   from "../src/trusted-owner-planning-bootstrap.ts";
 import {SignedPlanningCheckpointFileStore}
@@ -1024,8 +1030,10 @@ test("R5 protected owner service composes signed ADK Planning with strict host a
 });
 
 
-test("closed prior DAG -> fresh pinned Gitea -> offline ADK repair proposal -> signed checkpoint -> independent Engineer review",async()=>{
+test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> signed Engineer review",async()=>{
   const f=await makeOwnerReviewFixture();
+  const auditDir=await mkdtemp(join(tmpdir(),"r42-prior-signed-"));
+  const decisionDir=await mkdtemp(join(tmpdir(),"r42-prior-decision-"));
   const oldSnapshot={...snapshot,session_id:"previous-invoice-session"};
   const previous=compilePlanningProposal(proposal,{
     snapshot:oldSnapshot,requirement:"Original invoice improvement",
@@ -1119,11 +1127,56 @@ test("closed prior DAG -> fresh pinned Gitea -> offline ADK repair proposal -> s
     assert.deepEqual(revocations,[
       "urn:prior:planning","urn:prior:operational"
     ]);
-    const packet=await startTrustedFreshRepairPlanningReview({
-      previousCoordinator:prior,nextCoordinator:f.coordinator,
-      nextSessionId:snapshot.session_id,trustedGitea,
-      planning
+    const keys=generateKeyPairSync("ed25519"),keyId="r42-old-signing";
+    const issued=new Date();
+    const signedPrior=signEngineerApproval({
+      plan:previous.plan,approval:priorApproval,
+      engineerDid:"did:thesis:engineer",keyId,
+      privateKeyPem:keys.privateKey.export({format:"pem",type:"pkcs8"}).toString(),
+      issuedAt:issued.toISOString(),
+      expiresAt:new Date(issued.getTime()+600_000).toISOString()
     });
+    await writeFile(join(auditDir,oldSnapshot.session_id+".json"),
+      JSON.stringify(signedPrior),{mode:0o600});
+    const previousSignedApprovals=new SignedEngineerApprovalFileStore({
+      directory:auditDir,engineerDid:"did:thesis:engineer",
+      trustedKeys:{[keyId]:{
+        engineer_did:"did:thesis:engineer",
+        public_key_pem:keys.publicKey.export({format:"pem",type:"spki"}).toString()
+      }}
+    });
+    const previousBranch=approvedWorkBranch(previous.plan);
+    const previousHead="b".repeat(40);
+    let diffReads=0;
+    const audit=await auditTrustedRetiredFeatureWork({
+      previousCoordinator:prior,nextSessionId:snapshot.session_id,
+      previousSignedApprovals,trustedFinalFeatureSha:previousHead,
+      trustedGitea:{async readPinnedFeatureDiff(pin){
+        diffReads++;
+        assert.equal(pin.branch,previousBranch);
+        assert.equal(pin.base_revision,SHA);
+        assert.equal(pin.head_revision,previousHead);
+        return {branch:pin.branch,base_revision:pin.base_revision,
+          head_revision:pin.head_revision,
+          changes:[{path:FILE,change:"modified" as const}]};
+      }}
+    });
+    assert.equal(diffReads,1);
+    const decisionStore=new TrustedFreshWorkDecisionStore(decisionDir);
+    const started=await startAuditedFreshRepairPlanning({
+      audit,disposition:"start_from_pinned_main",decisionStore,
+      previousCoordinator:prior,nextCoordinator:f.coordinator,
+      nextSessionId:snapshot.session_id,trustedGitea,planning
+    });
+    if(started.status!=="awaiting_engineer_signature")
+      throw Error("Persisted main repair did not start signed review");
+    const persisted=await decisionStore.assertRecorded({
+      audit,disposition:"start_from_pinned_main"
+    });
+    assert.equal(persisted.previous_feature_head_sha,previousHead);
+    assert.equal(persisted.previous_branch,previousBranch);
+    assert.equal(persisted.next_session_id,snapshot.session_id);
+    const packet=started;
     assert.equal(freshDiscoveryReads,1);
     assert.equal(packet.status,"awaiting_engineer_signature");
     assert.equal(packet.base_revision,SHA);
@@ -1196,5 +1249,9 @@ test("closed prior DAG -> fresh pinned Gitea -> offline ADK repair proposal -> s
     assert.equal(f.coordinator.phase,"closed");
     await f.planningRecovery.assertClean();
     assert.equal(f.observed.revoked,1);
-  }finally{await f.cleanup();}
+  }finally{
+    await rm(auditDir,{recursive:true,force:true});
+    await rm(decisionDir,{recursive:true,force:true});
+    await f.cleanup();
+  }
 });
