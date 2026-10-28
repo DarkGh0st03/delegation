@@ -364,6 +364,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const filesCreated = new Set<string>();
     const errors: string[] = [];
     let revision: string | null = null;
+    let readRevision: string | null = null;
+    let conflictingReadRevisions = false;
+    let readEvidenceCount = 0;
     let testedCommitSha: string | undefined;
     let runnerProfile: "poc-default" | undefined;
     let projectTests: "pass" | "fail" | undefined;
@@ -377,6 +380,16 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       if (!result) {
         if (event.name !== "read_file") errors.push("malformed_tool_result");
         continue;
+      }
+      if (event.name === "read_file") {
+        // Read-only work may complete on the exact, Gateway-proven snapshot.
+        const observed = result.revision;
+        if (typeof observed === "string" && SHA.test(observed)) {
+          if (readRevision !== null && observed !== readRevision)
+            conflictingReadRevisions = true;
+          readRevision = observed;
+          readEvidenceCount++;
+        }
       }
       if (event.name === "update_file" || event.name === "create_file") {
         const path = event.arguments.path;
@@ -406,6 +419,12 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         researcherAcceptance = ra;
       }
     }
+    // Unlike a file mutation, read-only work does not produce a new commit.
+    // It must still return one consistent provider-authenticated revision.
+    if (revision === null && conflictingReadRevisions)
+      errors.push("inconsistent_read_revision");
+    if (revision === null && readEvidenceCount > 0 &&
+        !conflictingReadRevisions) revision = readRevision;
     // Not an acceptable completed A2A task if any controlled tool failed.
     // This also prevents LLM prose from papering over denial or a malformed SHA.
     if (errors.length > 0 || revision === null) {
@@ -427,8 +446,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       if(mayRunTests && testOutcome !== "pass")
         throw new Error("ADK signed Test run requires passing controlled test evidence");
       if(!mayRunTests && (testOutcome!=="not_run"||
-         filesModified.size+filesCreated.size===0))
-        throw new Error("ADK Test preparation Task requires verified file edits without Runner");
+         (filesModified.size+filesCreated.size===0&&readEvidenceCount===0)))
+        throw new Error("ADK Test preparation Task requires verified Gateway file operations without Runner");
     }
     process.stdout.write(JSON.stringify({
       event:"adk_role_timing",role:context.role,

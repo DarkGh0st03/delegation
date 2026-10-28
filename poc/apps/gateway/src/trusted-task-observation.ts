@@ -94,11 +94,23 @@ export class GatewayCorroboratedTaskAttestor implements TrustedTaskCompletionAtt
           r.researcher_acceptance?.status==="pass"&&r.branch===a.branch;
       });
     }
-    return a.test_outcome==="not_run"&&
+    const noTestClaims=a.test_outcome==="not_run"&&
       a.tested_commit_sha===undefined&&a.runner_profile===undefined&&
-      a.project_tests===undefined&&a.researcher_acceptance===undefined&&
-      claims.length>0&&files.length>0&&files.some(x=>
-        matchingPath(x,a)&&x.execution.provider==="gitea"&&
-        "commit_sha" in x.execution&&x.execution.commit_sha===a.commit_sha);
+      a.project_tests===undefined&&a.researcher_acceptance===undefined;
+    if(!noTestClaims)return false;
+    if(claims.length===0&&files.length===0){
+      // Read-only completion requires an actual Gateway-verified Gitea
+      // read at the exact reported revision, not an agent's prose.
+      return e.provider_effects.every(x=>{
+        const r=x.execution;
+        return x.tool==="read_file"&&r.provider==="gitea"&&
+          r.performed===true&&r.tool==="read_file"&&
+          r.branch===a.branch&&r.revision===a.commit_sha&&
+          typeof r.path==="string"&&r.path.length>0;
+      });
+    }
+    return claims.length>0&&files.length>0&&files.some(x=>
+      matchingPath(x,a)&&x.execution.provider==="gitea"&&
+      "commit_sha" in x.execution&&x.execution.commit_sha===a.commit_sha);
   }
 }
