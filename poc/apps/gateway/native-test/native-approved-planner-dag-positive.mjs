@@ -47,6 +47,7 @@ import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
 import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
+import {verifyPilotRunnerOutcome} from "./verified-pilot-runner-outcome.mjs";
 import {createSharedMcpHttpServer}
   from "../../../mcp-shared/src/http-server.ts";
 
@@ -464,15 +465,16 @@ export async function runNativePositiveApprovedDag({
               project_tests:effect.project_tests?.status,
               researcher_acceptance:effect.researcher_acceptance?.status
             })+"\n");
-          assert.equal(effect.status,"pass");
-          assert.equal(effect.project_tests?.status,"pass");
-          assert.equal(effect.researcher_acceptance?.status,"pass");
-          assert.deepEqual(effect.phases.map(x=>x.phase),[
-            "dependency_install","typecheck","backend_tests","frontend_tests",
-            "build","playwright_e2e","researcher_acceptance"
-          ]);
-          assert.ok(effect.phases.every(x=>x.status==="pass"));
+          // A completed provider operation can legitimately report FAIL.
+          // Return its real result to the controlled Test tool, which reports
+          // tests_failed. Do not convert a functional failure to HTTP 403.
+          // No A2A completion, trusted PASS, or PR is possible on failure.
+          const verdict=verifyPilotRunnerOutcome(effect,pinned.commit_sha);
           runnerRuns++;runnerOutcome=effect;
+          if(!verdict.passed){
+            process.stderr.write("[native-dag-adk] runner_failed "+
+              JSON.stringify({category:"functional_acceptance_failure"})+"\n");
+          }
         }else throw Error("ADK Test Agent attempted unexpected operation");
         return reply(executed);
       }
