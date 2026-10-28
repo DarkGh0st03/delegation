@@ -57,6 +57,7 @@ function harness(options:{
   approvedIds?:string[];
   correctEngineer?:boolean;
   attestation?:boolean;
+  onAttestation?:(planTaskId:string)=>Promise<void>;
   simulated?:boolean;
   wrongPresenter?:boolean;
   skipPolicyDigestCheck?:boolean;
@@ -88,6 +89,7 @@ function harness(options:{
       attestCalls++;
       assert.match(e.plan_digest,/^[a-f0-9]{64}$/u);
       assert.ok(e.successful_gateway_request_ids.length>0);
+      if(options.onAttestation)await options.onAttestation(e.plan_task_id);
       return options.attestation!==false;
     }}
   });
@@ -664,4 +666,59 @@ test("PR refuses a prior Docker PASS when Test writes a newer SHA; rerun restore
   const record=repaired.store.get(prepared.request_id);
   assert.equal(record?.approved_tested_head_sha,"b".repeat(40),
     "The last approved and passing Runner uniquely binds the PR head");
+});
+
+
+test("async completion rejects a late provider effect even when a second Docker PASS has the same SHA",async()=>{
+  // A prepared authorization may outlive the start of a trusted, async
+  // completion check. The attestor must see exactly the effects later
+  // committed as completed, not a subset collected before the late run.
+  let release!:()=>void;
+  let entered!:()=>void;
+  const pendingAttestation=new Promise<void>(resolve=>{release=resolve;});
+  const attesting=new Promise<void>(resolve=>{entered=resolve;});
+  const h=harness({onAttestation:async task=>{
+    if(task==="tests"){
+      entered();
+      await pendingAttestation;
+    }
+  }});
+  await activated(h);
+  await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+  await h.gates.confirmTaskCompletion("a2a-bootstrap");
+  await h.invoke("a2a-backend","backend","update_file",updateArgs);
+  await h.gates.confirmTaskCompletion("a2a-backend");
+  const testRequest={branch,profile:"poc-default"};
+  await h.invoke("a2a-tests","test","run_tests",testRequest);
+  // This VP-bound request was legitimately prepared before completion began.
+  const prepared=h.runtime.prepare({
+    task_id:"a2a-tests",agent_role:"test",
+    tool:"run_tests",arguments:testRequest
+  });
+  const completion=h.gates.confirmTaskCompletion("a2a-tests");
+  await attesting;
+  // No NEW tool requests may be prepared after the completion snapshot.
+  assert.throws(()=>h.runtime.prepare({
+    task_id:"a2a-tests",agent_role:"test",
+    tool:"run_tests",arguments:testRequest
+  }),(error:unknown)=>error instanceof GatewayError&&
+     error.code==="approved_plan_denied");
+  // The older prepared request can finish while the external attestor is
+  // pending. It produces a new real provider effect (same tested SHA).
+  const response=await h.runtime.execute({
+    request_id:prepared.request_id,signed_vp:"signed.vp.jwt"
+  });
+  assert.equal(response.execution.provider,"runner");
+  release();
+  await assert.rejects(completion,(error:unknown)=>
+    error instanceof GatewayError&&
+    error.code==="approved_plan_denied"&&
+    /effects changed during Task attestation/u.test(error.message));
+  // The task remains uncompleted and can be freshly verified with the
+  // complete, updated Gateway effects. No permissions were expanded.
+  assert.equal(h.providerCalls,4);
+  await h.gates.confirmTaskCompletion("a2a-tests");
+  await assert.rejects(h.gates.confirmTaskCompletion("a2a-tests"),
+    (error:unknown)=>error instanceof GatewayError&&
+      error.code==="approved_plan_denied");
 });
