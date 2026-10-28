@@ -32,6 +32,9 @@ on:
       - 'poc/apps/test-runner-controller/fixtures/approved-scenarios.mjs'
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts'
+      - 'poc/packages/orchestrator-runtime/src/a2a-workflow.ts'
+      - 'poc/packages/orchestrator-runtime/src/artifact-validation.ts'
+      - 'poc/packages/orchestrator-runtime/test/a2a-workflow.test.ts'
   workflow_dispatch:
 permissions:
   contents: read
@@ -89,6 +92,8 @@ jobs:
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
           node poc/scripts/init-local-env.mjs --force
+      - name: Validate independent signed Test preparation and final A2A Runner artifacts
+        run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/a2a-workflow.test.ts
       - name: Block B signed Task -> independent ADK model binding (zero provider calls)
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-agent-model-binding.test.mjs
       - name: Block B source-witnessed ADK offline model fail-closed unit tests
