@@ -203,7 +203,45 @@ jobs:
           set -euo pipefail
           # Raw process output stays local; only fixed, validated fields
           # are eligible for GitHub artifact publication.
-          npm --prefix poc run security-ci:isolated-positive-smoke             -w @thesis/test-runner-controller             > /tmp/functional-signed-dag.log 2>&1
+          if ! npm --prefix poc run security-ci:isolated-positive-smoke             -w @thesis/test-runner-controller             > /tmp/functional-signed-dag.log 2>&1; then
+            # Only fixed stage names, phase enums, and bounded source locations.
+            # Never publish raw agent/Runner logs or model/tool payloads.
+            node --input-type=module <<'NODE'
+          import {readFileSync} from "node:fs";
+          const raw=readFileSync("/tmp/functional-signed-dag.log","utf8");
+          const lines=raw.slice(-524288).split(/\r?\n/u);
+          const stages=new Set([
+            "complete_positive_security_ci_smoke",
+            "native_preliminary_planning_real_disposable_gitea",
+            "real_docker_project_and_researcher_acceptance",
+            "activate_signed_gateway_test_task"
+          ]);
+          const starts=lines.filter(l=>l.startsWith("[trusted-positive-ci] start "))
+            .map(l=>l.slice("[trusted-positive-ci] start ".length))
+            .filter(s=>stages.has(s));
+          const marker=lines.filter(l=>l.startsWith("[trusted-positive-ci] native_dag_failure "))
+            .at(-1);
+          let diagnosis="not_available",assertion_location=null;
+          if(marker&&marker.length<4096){
+            try {
+              const event=JSON.parse(marker.slice("[trusted-positive-ci] native_dag_failure ".length));
+              const allowed=new Set([
+                "no_structured_phase_status","functional_acceptance_failure"
+              ]);
+              if(allowed.has(event.diagnosis))diagnosis=event.diagnosis;
+              const loc=event.assertion_location;
+              if(loc&&["native-approved-planner-dag-positive",
+                "native-planning-read-core-evm-e2e"].includes(loc.module)&&
+                Number.isInteger(loc.line)&&loc.line>0&&loc.line<2000)
+                assertion_location={module:loc.module,line:loc.line};
+            }catch{/* never echo untrusted input */}
+          }
+          console.error("[signed-dag-safe-diagnostic] "+JSON.stringify({
+            stage:starts.at(-1)??"unknown",diagnosis,assertion_location
+          }));
+          NODE
+            exit 1
+          fi
           node poc/scripts/functional-signed-dag-evidence.mjs             /tmp/functional-signed-dag.log /tmp/functional-evidence.json
       - name: Upload sanitized functional evidence - not model/runner logs
         uses: actions/upload-artifact@v4
