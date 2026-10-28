@@ -31,6 +31,8 @@ import {startSpecializedAgentServer} from
 import {DeterministicA2AOrchestrator} from
   "../../../packages/agent-runtime/src/orchestrator.ts";
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
+import {SIGNED_GEMINI_PILOT}
+  from "../../../scripts/signed-gemini-pilot-consent.mjs";
 import {SourceWitnessedOfflineAdkModel}
   from "./source-witnessed-offline-adk-model.mjs";
 import {SourceDerivedRouteOfflineAdkModel}
@@ -584,11 +586,13 @@ export async function runNativePositiveApprovedDag({
             mcpSharedUrl,mcpCryptoUrl,mcpUpdateFile:true
           }:{}),
           maxModelTurns:realGeminiPilot
-            ?(role==="backend"?17:11)
+            ?SIGNED_GEMINI_PILOT.maxTurnsPerTask[role]
             :scripted?scripted.length+2:24,
-          maxModelCallMs:realGeminiPilot?120000:hostModels?90000:30000,
+          maxModelCallMs:realGeminiPilot
+            ?SIGNED_GEMINI_PILOT.maxModelCallMs:hostModels?90000:30000,
           ...(realGeminiPilot?{generateContentConfig:{
-            maxOutputTokens:8192,thinkingConfig:{thinkingLevel:"LOW"}
+            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+            thinkingConfig:{thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel}
           }}:{}),
           gatewayTimeoutMs:30000
         }
@@ -618,10 +622,13 @@ export async function runNativePositiveApprovedDag({
           mcpUpdateFile:updatedTestFiles.length>0,
           mcpCreateFile:createdTestFiles.length>0,mcpRunTests:true
         }:{}),
-        maxModelTurns:realGeminiPilot?6:hostModels?24:4,
-        maxModelCallMs:realGeminiPilot?120000:hostModels?90000:30000,
+        maxModelTurns:realGeminiPilot
+          ?SIGNED_GEMINI_PILOT.maxTurnsPerTask.test:hostModels?24:4,
+        maxModelCallMs:realGeminiPilot
+          ?SIGNED_GEMINI_PILOT.maxModelCallMs:hostModels?90000:30000,
         ...(realGeminiPilot?{generateContentConfig:{
-          maxOutputTokens:8192,thinkingConfig:{thinkingLevel:"LOW"}
+          maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+          thinkingConfig:{thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel}
         }}:{}),
         gatewayTimeoutMs:30000
       }

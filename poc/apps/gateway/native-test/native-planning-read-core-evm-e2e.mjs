@@ -43,6 +43,8 @@ import {getApprovedOfflineScenario} from
 import {makeOfflineReviewableDag} from
   "../../../packages/orchestrator-runtime/test/fixtures/offline-planning-dag.mjs";
 import {BaseLlm} from "@google/adk";
+import {SIGNED_GEMINI_PILOT,verifySignedGeminiPilotConsent}
+  from "../../../scripts/signed-gemini-pilot-consent.mjs";
 import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
@@ -77,20 +79,13 @@ const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1
   process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
 if(signedOfflineRecovery&&geminiPilot)
   throw Error("Offline scripted recovery must never use a paid Gemini model");
-if(geminiPilot&&(
-  process.env.GITHUB_ACTIONS!=="true"||
-  process.env.GITHUB_EVENT_NAME!=="workflow_dispatch"||
-  process.env.GITHUB_RUN_ATTEMPT!=="1"||
-  process.env.GITHUB_REF!=="refs/heads/refactor/post-prof-plan-contracts-20261021"||
-  process.env.DELEGATION_GEMINI_CHARGE_CONFIRMATION!==
-    "I AUTHORIZE GEMINI API CHARGES"||
-  process.env.DELEGATION_GEMINI_MODEL!=="gemini-3.8-flash"||
-  typeof process.env.GEMINI_API_KEY!=="string"||
-  process.env.GEMINI_API_KEY.trim().length<10||
-  process.env.APPROVED_RUNNER_SCENARIO!=="account-suspension"||
-  process.env.PLANNING_NATIVE_SIGNED_HANDOFF!=="1"||
-  process.env.PLANNING_NATIVE_POSITIVE_DAG!=="1"
-))throw Error("One-use signed Account Suspension Gemini pilot not authorized");
+if(geminiPilot){
+  verifySignedGeminiPilotConsent(process.env,{requireApiKey:true});
+  if(process.env.APPROVED_RUNNER_SCENARIO!=="account-suspension"||
+     process.env.PLANNING_NATIVE_SIGNED_HANDOFF!=="1"||
+     process.env.PLANNING_NATIVE_POSITIVE_DAG!=="1")
+    throw Error("One-use signed Account Suspension Gemini pilot not authorized");
+}
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const scenario=getApprovedOfflineScenario(process.env.APPROVED_RUNNER_SCENARIO);
 const referenceFiles=scenario.files;
@@ -411,9 +406,12 @@ try{
     requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
     planId:"native-planning-proposal",agents,readPort:port,
     ...(geminiPilot?{
-      maxModelTurns:20,maxProposalRevisions:1,
-      maxOutputTokens:8192,thinkingLevel:"LOW",
-      maxModelCallMs:120000,maxPlanningMs:480000,
+      maxModelTurns:SIGNED_GEMINI_PILOT.maxTurnsPerTask.planner,
+      maxProposalRevisions:1,
+      maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+      thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
+      maxModelCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
+      maxPlanningMs:480000,
       onObservation:observation=>{
         if(observation?.kind==="plan_rejection"){
           pilotPlanningRejection={stage:observation.stage,

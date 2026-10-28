@@ -78,14 +78,18 @@ jobs:
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
           node poc/scripts/init-local-env.mjs --force
       - name: Verify one-use manual charge consent and source identity (no Gemini call)
+        env:
+          DELEGATION_GEMINI_MODEL: ${{ inputs.model }}
+          DELEGATION_GEMINI_CHARGE_CONFIRMATION: ${{ inputs.authorization }}
+          DELEGATION_SIGNED_GEMINI_PILOT: "1"
         run: |
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = workflow_dispatch
           test "$GITHUB_RUN_ATTEMPT" = 1
           test "$GITHUB_REF" = refs/heads/refactor/post-prof-plan-contracts-20261021
-          echo "Refactor signed-Gemini PILOT: TEST Engineer approval, no human signing claim"
-          echo "Budget: Planner <=20 turns; Backend <=17; Frontend <=11; Test <=6"
-          echo "Each model call <=8192 output tokens, thinking LOW; cost is provider-dependent"
+          node --test poc/scripts/test/signed-gemini-pilot-consent.test.mjs
+          node poc/scripts/signed-gemini-pilot-consent.mjs --preflight-no-inference
+          echo "Pilot configuration checked without API access; pricing and input usage remain provider-dependent."
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs
           node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
@@ -190,6 +194,7 @@ jobs:
           test "$DELEGATION_GEMINI_CHARGE_CONFIRMATION" = 'I AUTHORIZE GEMINI API CHARGES'
           test "$DELEGATION_GEMINI_MODEL" = 'gemini-3.8-flash'
           test -n "${GEMINI_API_KEY:-}"
+          node poc/scripts/signed-gemini-pilot-consent.mjs --require-key-no-inference
           # Never publish raw model prompts, source or credential-bearing logs.
           npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller > /tmp/real-four-gemini-pilot.log 2>&1 || {
             # Never copy raw model/provider/GitHub/VP logs into artifacts.

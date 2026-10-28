@@ -9,6 +9,8 @@ on:
       - '.github/workflows/gemini-paid-shared-mcp-final.yml'
       - 'poc/scripts/functional-signed-dag-evidence.mjs'
       - 'poc/scripts/test/functional-signed-dag-evidence.test.mjs'
+      - 'poc/scripts/signed-gemini-pilot-consent.mjs'
+      - 'poc/scripts/test/signed-gemini-pilot-consent.test.mjs'
       - 'poc/apps/gateway/native-test/native-positive-approved-dag.mjs'
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
       - 'poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs'
@@ -89,6 +91,8 @@ jobs:
           version: v1.8.4
       - name: Validate functional checkpoint parser on checked-out source
         run: node --test poc/scripts/test/functional-signed-dag-evidence.test.mjs
+      - name: Refuse unauthorized Gemini pilot configurations (NO API access)
+        run: node --test poc/scripts/test/signed-gemini-pilot-consent.test.mjs
       - name: Install pinned local Node and DID dependencies
         run: |
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
