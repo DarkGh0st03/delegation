@@ -94,6 +94,37 @@ test("A2A completion is corroborated against real Gateway commit and precise pat
   }),false);
 });
 
+
+test("Real Gateway read effects can corroborate a read-only delegated Task",async()=>{
+  const read=effect("update_file","read-evidence");
+  (read as any).tool="read_file";
+  (read.execution as any)={provider:"gitea",performed:true,tool:"read_file",
+    branch:BRANCH,path:FILE,revision:SHA,content:"verified source",
+    blob_sha:"b",last_commit_sha:SHA,size:15,encoding:"utf-8"};
+  const obs=observation("backend");
+  obs.artifact.files_modified=[];
+  assert.equal(await attestor.confirmCompleted(evidence("backend",[read],obs)),true);
+  const wrongSha=structuredClone(obs);
+  wrongSha.artifact.revision="f".repeat(40);
+  wrongSha.artifact.commit_sha=wrongSha.artifact.revision;
+  assert.equal(await attestor.confirmCompleted(evidence("backend",[read],wrongSha)),false);
+  const fakeWrite=structuredClone(obs);
+  fakeWrite.artifact.files_modified=[FILE];
+  assert.equal(await attestor.confirmCompleted(evidence("backend",[read],fakeWrite)),false);
+  const wrongBranch=structuredClone(obs);
+  wrongBranch.artifact.branch="main";
+  assert.equal(await attestor.confirmCompleted(evidence("backend",[read],wrongBranch)),false);
+  const fakePass=structuredClone(obs);
+  fakePass.artifact.test_outcome="pass";
+  assert.equal(await attestor.confirmCompleted(evidence("backend",[read],fakePass)),false);
+  const simulated=structuredClone(read);
+  (simulated.execution as any).provider="mock";
+  assert.equal(await attestor.confirmCompleted(evidence("backend",[simulated],obs)),false);
+  const extraWrite=effect("update_file","unexpected-write");
+  assert.equal(await attestor.confirmCompleted(
+    evidence("backend",[read,extraWrite],obs)),false);
+});
+
 test("Signed Test preparation is a corroborated file edit, not a fabricated passing Runner",async()=>{
   const written=effect("update_file","req-test-prep");
   const obs=observation("test");
