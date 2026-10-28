@@ -24,6 +24,8 @@ on:
         options: [LOW]
 permissions:
   contents: read
+  # Only the pre-model exact-SHA CI check needs the read-only Actions API.
+  actions: read
 concurrency:
   group: refactor-one-use-four-gemini-${{ github.ref }}
   cancel-in-progress: false
@@ -95,6 +97,16 @@ jobs:
           node --check poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs
           node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
           node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-agent-model-binding.test.mjs
+      - name: Block billed Gemini pilot unless SAME SHA passed all three offline CI gates
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DELEGATION_GEMINI_MODEL: ${{ inputs.model }}
+          DELEGATION_GEMINI_CHARGE_CONFIRMATION: ${{ inputs.authorization }}
+          DELEGATION_SIGNED_GEMINI_PILOT: "1"
+        run: |
+          set -euo pipefail
+          node --test poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
+          node poc/scripts/signed-gemini-pilot-ci-gate.mjs --check-ci-no-inference
       - name: Start only disposable Anvil and OPA
         run: |
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
