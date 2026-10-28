@@ -73,6 +73,9 @@ for(const v of [token,engineerToken,engineerDid]){
 }
 // Strict opt-in: normal signed-DAG CI stays zero-billing and byte-identical.
 const geminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
+const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1";
+if(signedOfflineRecovery&&geminiPilot)
+  throw Error("Offline scripted recovery must never use a paid Gemini model");
 if(geminiPilot&&(
   process.env.GITHUB_ACTIONS!=="true"||
   process.env.GITHUB_EVENT_NAME!=="workflow_dispatch"||
@@ -132,6 +135,12 @@ const rootId="urn:native:planning-only-"+randomBytes(7).toString("hex");
 // separately scoped Test role, not by Backend/Frontend.
 const roleFiles=scenario.planning_intent.edits;
 const newTestFile=scenario.planning_intent.newTestFile;
+// Fixture-only recovery target: derive from existing discovered test files.
+const testRepairFile=signedOfflineRecovery
+  ?roleFiles.backend.find(path=>path.startsWith("tests/")):undefined;
+if(signedOfflineRecovery&&(!positiveDag||!signedHandoff||
+   scenario.id!=="account-suspension"||!testRepairFile))
+  throw Error("Signed offline recovery requires isolated Account Suspension DAG");
 const existingFiles=[...roleFiles.backend,...roleFiles.frontend];
 assert.deepEqual([...existingFiles,newTestFile].sort(),
   Object.keys(referenceFiles).sort());
@@ -187,7 +196,8 @@ const legacyPlanSketch={
 const planSketch=positiveDag?
   makeOfflineReviewableDag({
     snapshot,edits:roleFiles,newTestFile,
-    taskInstructions:scenario.planning_intent.taskInstructions
+    taskInstructions:scenario.planning_intent.taskInstructions,
+    ...(testRepairFile?{testRepairFile}:{})
   }):legacyPlanSketch;
 class ScriptedReadPlanner extends BaseLlm{
   turns=0; requests=[];
@@ -606,7 +616,12 @@ try{
             plan:reviewed.plan,approvedRows,repo,branch:workBranch,
             implementationContents:derivedPaths.length
               ?otherImplementations:referenceFiles,
-            ...(derivedPaths.length?{sourceDerivedPaths:derivedPaths}:{})
+            ...(derivedPaths.length?{sourceDerivedPaths:derivedPaths}:{}),
+            ...(signedOfflineRecovery?{recoveryFixture:{
+              path:testRepairFile,
+              failedContent:referenceFiles[testRepairFile]+
+                '\nthrow new Error("signed DAG offline recovery regression");\n'
+            }}:{})
           });
         approvedAgentModelFactory=context=>{
           const expected=approvedRows.filter(g=>
@@ -641,6 +656,7 @@ try{
         operationalRootId,branch:workBranch,
         referenceFiles:approvedAgentModelFactory?undefined:referenceFiles,
         realGeminiPilot:geminiPilot,
+        offlineRecovery:signedOfflineRecovery,
         scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
         writerToken,opaUrl,engineerDid,orchestratorToken:token,
@@ -706,7 +722,13 @@ try{
               p.operation==="create_file"&&p.agent_id==="test").length,
           "Actual Test creations must be within signed grant scope");
       }else assert.equal(globalThis.__nativeDagPositive.created_test_files,1);
-      assert.equal(globalThis.__nativeDagPositive.test_runner_runs,1);
+      assert.equal(globalThis.__nativeDagPositive.test_runner_runs,
+        signedOfflineRecovery?2:1);
+      if(signedOfflineRecovery){
+        assert.equal(globalThis.__nativeDagPositive.recovery_verified,true);
+        assert.notEqual(globalThis.__nativeDagPositive.failed_test_sha,
+          globalThis.__nativeDagPositive.tested_commit_sha);
+      }
       assert.equal(globalThis.__nativeDagPositive.tested_commit_sha,
         globalThis.__nativeDagPositive.approved_branch_sha);
     }else{
