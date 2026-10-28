@@ -608,6 +608,12 @@ test("Signed Backend plan on an unrelated repository is scoped by exact permissi
   assert.deepEqual(built.profile.read_only_paths,[context]);
   assert.deepEqual(built.agent.tools.map(x=>x.name),["read_file","update_file"]);
   assert.ok(built.profile.system_prompt.includes(branch));
+  assert.match(built.profile.system_prompt,
+    /Before every update_file, first call read_file for that exact existing path in this same Task/u);
+  assert.match(built.profile.system_prompt,
+    /A read from a previous Task is not evidence for this Task/u);
+  assert.match(built.profile.system_prompt,
+    /If that read is not authorized, fails, or the source is unavailable, do not attempt to write/u);
   assert.doesNotMatch(built.profile.system_prompt,/Account Suspension|account-suspension/u);
   assert.ok(!built.profile.system_prompt.includes("apps/backend/src/users/user.service.ts"));
   const service=new InMemorySessionService();
