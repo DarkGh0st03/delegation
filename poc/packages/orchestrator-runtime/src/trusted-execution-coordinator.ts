@@ -395,6 +395,25 @@ export class TrustedExecutionCoordinator {
     });
   }
 
+  /** A host-only assertion: the next session must still be unstarted and
+   * bind to the exact new trusted Gitea snapshot. No preliminary root,
+   * delegation, approval or operational capability is generated here. */
+  assertUnstartedFreshPlanningSnapshot(snapshot:
+    import("./trusted-engineer-authority.ts").TrustedPlanningSnapshot):void{
+    if(this.#phase!=="idle"||!snapshot||
+       snapshot.session_id!==this.#sessionId||
+       snapshot.base_revision!==this.#baseRevision)
+      throw Error("Fresh Planning requires an idle Coordinator with matching snapshot pins");
+    this.#authority.assertUnstartedPinnedSnapshot(snapshot);
+  }
+
+  /** Compare the old immutable Engineer repository pin; do not accept a
+   * repo chosen by the next model, a new Task, or the caller. */
+  assertOriginalRepository(repository:
+    import("./trusted-engineer-authority.ts").TrustedPlanningSnapshot["repository"]):void{
+    this.#authority.assertPinnedRepository(repository);
+  }
+
   /**
    * This ends new Gateway effects. Ending/revoking the operational root
    * remains a separate necessary action and is always attempted.

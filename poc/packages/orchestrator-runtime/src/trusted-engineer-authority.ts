@@ -9,6 +9,7 @@
  * independent of the revoked preliminary root (never its child).
  */
 import {MAX_PRELIMINARY_ROOT_SECONDS} from "../../plan-contracts/src/planning-limits.mjs";
+import {isDeepStrictEqual} from "node:util";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TOOL_NAMES} from "../../../apps/gateway/src/types.ts";
 import {
@@ -243,6 +244,23 @@ export class TrustedEngineerAuthoritySession {
 
   get phase():State {return this.#state;}
   get approvedPlanDigest():string|undefined{return this.#approvedPlanDigest;}
+
+  /** Private trusted host comparison, NOT a way to change an existing pin. */
+  assertPinnedRepository(repo:TrustedPlanningSnapshot["repository"]):void{
+    if(!isDeepStrictEqual(repo,this.#snapshot.repository))
+      fail("fresh Planning repository differs from the original pinned repository");
+  }
+
+  /** A distinct, freshly constructed Engineer authority must already be
+   * bound to the SAME independently discovered Gitea snapshot before the
+   * host may begin a read-only Planning session. No credential is issued. */
+  assertUnstartedPinnedSnapshot(snapshot:TrustedPlanningSnapshot):void{
+    if(this.#state!=="not_started")
+      fail("fresh Planning authority is not unstarted");
+    preliminaryReadPermissions(snapshot);
+    if(!isDeepStrictEqual(snapshot,this.#snapshot))
+      fail("new Planning snapshot differs from the Engineer's immutable pins");
+  }
 
   /** A temporary, short-lived root; never contains a write/test/PR permission. */
   async startPlanning(root:RootParameters):Promise<{

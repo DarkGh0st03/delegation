@@ -13,6 +13,8 @@ import {InMemoryAuditSink} from "../../../apps/gateway/src/prepare.ts";
 import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
 import {TrustedEngineerAuthoritySession} from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from "../src/trusted-execution-coordinator.ts";
+import {prepareTrustedFreshPlanningIntake}
+  from "../src/trusted-fresh-planning-intake.ts";
 import type {EngineerCredentialPort,RootParameters} from "../src/trusted-engineer-authority.ts";
 import type {IssuedDelegationCredential} from "../src/authority-client.ts";
 import type {DelegatedPermission} from "../src/permission-templates.ts";
@@ -302,6 +304,106 @@ test("actual signed file connects Engineer two-root handoff to Gateway plan enfo
     operational_credentials_issued:false
   });
   assert.ok(Object.isFrozen(referral));
+
+  // The NEXT Planning root is independently pinned by trusted Gitea reads;
+  // the first approved DAG cannot authenticate or authorize a new one.
+  const newerSha="c".repeat(40);
+  const nextSnapshot={session_id:"session-signed-2",repository:REPO,
+    base_revision:newerSha,directories:[""],files:["apps/backend/user.ts"]};
+  const nextCredentials=new CredentialPort();
+  const nextAuthority=new TrustedEngineerAuthoritySession({
+    snapshot:nextSnapshot,credentials:nextCredentials,
+    approvals,authenticatedEngineerDid:ENGINEER,
+    planningRevisions:{
+      async begin(id,ttlMs){
+        assert.equal(id,nextSnapshot.session_id);
+        assert.equal(ttlMs,600_000);
+        return {task_id:id,base_revision:newerSha,expires_at:EXPIRES};
+      },
+      end(){}
+    }
+  });
+  const nextCoordinator=new TrustedExecutionCoordinator({
+    authority:nextAuthority,approvedGatewayPlans:plans,
+    credentials:nextCredentials,sessionId:nextSnapshot.session_id,
+    baseRevision:newerSha
+  });
+  let trustedReads=0;
+  const discovery={async readPinnedMainSnapshot(){
+    trustedReads++;
+    return {repository:REPO,base_revision:newerSha,
+      directories:[""],files:["apps/backend/user.ts"]};
+  }};
+  const intake=await prepareTrustedFreshPlanningIntake({
+    previousCoordinator:coordinator,nextCoordinator,
+    nextSessionId:"session-signed-2",trustedGitea:discovery
+  });
+  assert.deepEqual(intake,{
+    state:"awaiting_fresh_planning_root",
+    previous_session_id:"session-signed-1",
+    previous_base_revision:SHA,
+    snapshot:nextSnapshot,
+    planning_authorized:false,
+    engineer_approved:false,
+    operational_credentials_issued:false
+  });
+  assert.equal(trustedReads,1);
+  assert.ok(Object.isFrozen(intake.snapshot));
+  assert.ok(Object.isFrozen(intake.snapshot.files));
+  assert.deepEqual(nextCredentials.calls,[],
+    "A referral cannot issue or automatically authorize new credentials");
+  await assert.rejects(prepareTrustedFreshPlanningIntake({
+    previousCoordinator:coordinator,nextCoordinator,
+    nextSessionId:"session-signed-2",
+    trustedGitea:{async readPinnedMainSnapshot(){
+      return {...nextSnapshot,session_id:undefined};
+    }}
+  }),/invalid shape/);
+  await assert.rejects(prepareTrustedFreshPlanningIntake({
+    previousCoordinator:coordinator,nextCoordinator,
+    nextSessionId:"session-signed-2",
+    trustedGitea:{async readPinnedMainSnapshot(){
+      return {...nextSnapshot,session_id:undefined,
+        repository:{...REPO,repository:"attacker"}};
+    }}
+  }),/invalid shape/);
+  await assert.rejects(prepareTrustedFreshPlanningIntake({
+    previousCoordinator:coordinator,nextCoordinator,
+    nextSessionId:"session-signed-2",
+    trustedGitea:{async readPinnedMainSnapshot(){
+      return {repository:REPO,base_revision:"d".repeat(40),
+        directories:[""],files:[]};
+    }}
+  }),/matching snapshot pins/);
+  await assert.rejects(prepareTrustedFreshPlanningIntake({
+    previousCoordinator:coordinator,nextCoordinator,
+    nextSessionId:"session-signed-2",
+    trustedGitea:{async readPinnedMainSnapshot(){
+      return {repository:{...REPO,repository:"attacker"},
+        base_revision:newerSha,directories:[""],files:[]};
+    }}
+  }),/original pinned repository/);
+  const nextReadOnly=await nextCoordinator.beginPlanning(
+    root("urn:signed:fresh-planning-root","105",600));
+  assert.equal(nextReadOnly.phase,"planning");
+  assert.deepEqual(nextReadOnly.permissions.map(p=>p.operation),
+    ["read_repository","list_directory","read_file"]);
+  assert.deepEqual(nextCredentials.calls,["issue:urn:signed:fresh-planning-root"]);
+  assert.equal(nextCoordinator.phase,"planning");
+  // The new Coordinator is only in preliminary Planning. No operational
+  // permission or Engineer approval is supplied by the handoff.
+  assert.throws(()=>nextCoordinator.trustedOperationalAuthority(),
+    /Verified operational root is not active/);
+  assert.equal(nextCredentials.calls.some(x=>x.includes("work-root")),false);
+  // Explicit trusted cancellation still revokes this independent read-only
+  // root; neither the old Coordinator nor a model can silently do so.
+  await nextCoordinator.closePlanning();
+  assert.equal(nextCoordinator.phase,"closed");
+  assert.deepEqual(nextCredentials.calls,[
+    "issue:urn:signed:fresh-planning-root",
+    "revoke:urn:signed:fresh-planning-root"
+  ]);
+
   await assert.rejects(
     coordinator.freshPlanningIntakeAfterClosure("session-signed-1"),
     /distinct valid session ID/);
