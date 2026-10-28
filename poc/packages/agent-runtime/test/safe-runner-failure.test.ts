@@ -13,9 +13,34 @@ test("Only same Task read grants reveal sanitized compiler locations",()=>{
   const actual=safeRunnerFailureDetails(raw,["tests/fix.test.ts"]);
   assert.deepEqual(actual,{first_failed_phase:"typecheck",
     typecheck_diagnostics:[
-      {path:"tests/fix.test.ts",line:4,column:7,code:"TS2304"}]
+      {path:"tests/fix.test.ts",line:4,column:7,code:"TS2304"}],
+    repair_requires_new_approval:true
   });
-  assert.deepEqual(safeRunnerFailureDetails(raw),{first_failed_phase:"typecheck"});
+  assert.deepEqual(safeRunnerFailureDetails(raw),{
+    first_failed_phase:"typecheck",repair_requires_new_approval:true
+  });
   assert.ok(!JSON.stringify(safeRunnerFailedPhaseHint(actual))
     .includes("SECRET_FILE_CONTENT"));
+});
+
+test("TypeScript repair needs both signed read and update rights",()=>{
+  const local="tests/fix.test.ts",outside="apps/frontend/private.tsx";
+  const raw={phases:[{phase:"typecheck",status:"fail"}],typecheck_diagnostics:[
+    {path:local,line:2,column:3,code:"TS2304"},
+    {path:outside,line:4,column:5,code:"TS2322"}
+  ]};
+  const scoped=safeRunnerFailureDetails(raw,[local],[local]);
+  assert.deepEqual(scoped,{first_failed_phase:"typecheck",
+    typecheck_diagnostics:[{path:local,line:2,column:3,code:"TS2304"}],
+    repair_requires_new_approval:true});
+  assert.ok(!JSON.stringify(scoped).includes(outside));
+  const onlyLocal={...raw,typecheck_diagnostics:[raw.typecheck_diagnostics[0]]};
+  assert.equal(safeRunnerFailureDetails(onlyLocal,[local],[local])
+    ?.repair_requires_new_approval,undefined);
+  assert.equal(safeRunnerFailureDetails(onlyLocal,[local],[])
+    ?.repair_requires_new_approval,true);
+  assert.equal(safeRunnerFailedPhaseHint({
+    first_failed_phase:"typecheck",repair_requires_new_approval:true,
+    secret:"PRIVATE"
+  })?.repair_requires_new_approval,true);
 });

@@ -219,6 +219,10 @@ export function createAdkSpecializedAgent(
       "For update_file provide the complete UTF-8 replacement file, not a patch or fragment.",
       "Never claim a commit or successful test without a confirmed controlled tool result.",
       "If the approved Task cannot be completed within these exact grants, report the limitation.",
+      ...(config.role==="test"?[
+        "If run_tests reports repair_requires_new_approval, do not attempt to modify unapproved files or repeatedly rerun tests; report that fresh Engineer review and a new approved Task are required.",
+        "TypeScript error locations do not grant file read or update permissions."
+      ]:[]),
       ...(config.role==="test"&&config.trustedRunTestsAllowed===false
         ? ["This Task may prepare test files but cannot invoke run_tests; do not claim tests passed."]
         : config.role==="test"
@@ -392,6 +396,8 @@ export function createAdkSpecializedAgent(
             });
             outcome=normalizeMcpRunTestsOutcome(response,argumentsRecord,
               config.trustedFilePermissions?.filter(p=>p.operation==="read_file")
+                .map(p=>p.path)??[],
+              config.trustedFilePermissions?.filter(p=>p.operation==="update_file")
                 .map(p=>p.path)??[]);
             if(outcome.ok)return response;
             // MCP tool-call errors must be visible as safe, fixed-vocabulary

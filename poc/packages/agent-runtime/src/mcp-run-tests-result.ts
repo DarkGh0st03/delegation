@@ -4,9 +4,9 @@ import {safeRunnerFailureDetails,safeRunnerFailedPhaseHint}
 
 type ErrorKind="authorization_denied"|"invalid_tool_call"|"tool_unavailable"|"tests_failed";
 function controlled(kind:ErrorKind,execution?:unknown,
-  approvedPaths:readonly string[]=[]){
+  approvedPaths:readonly string[]=[],approvedWrites:readonly string[]=[]){
   const details=kind==="tests_failed"
-    ?safeRunnerFailureDetails(execution,approvedPaths):undefined;
+    ?safeRunnerFailureDetails(execution,approvedPaths,approvedWrites):undefined;
   return controlledToolErrorPayload(new ControlledToolError(
     kind,"MCP "+kind,details?{details}:{}
   ));
@@ -21,7 +21,8 @@ function record(value:unknown):Record<string,unknown>|null{
  */
 export function normalizeMcpRunTestsOutcome(
   response:unknown,args:Record<string,unknown>,
-  approvedReadPaths:readonly string[]=[]
+  approvedReadPaths:readonly string[]=[],
+  approvedWritePaths:readonly string[]=[]
 ):{ok:true;result:unknown}|ReturnType<typeof controlledToolErrorPayload>{
   const envelope=record(response);
   const payload=record(envelope?.structuredContent);
@@ -39,8 +40,9 @@ export function normalizeMcpRunTestsOutcome(
         return controlled("tests_failed",{
           phases:[{phase:reason,status:"fail"}],
           ...(reason==="typecheck"
-            ?{typecheck_diagnostics:hint?.typecheck_diagnostics}:{})
-        },approvedReadPaths);
+            ?{typecheck_diagnostics:hint?.typecheck_diagnostics,
+               repair_requires_new_approval:hint?.repair_requires_new_approval}:{})
+        },approvedReadPaths,approvedWritePaths);
       return controlled("tests_failed");
     }
     if(kind==="authorization_denied")return controlled("authorization_denied");
@@ -66,7 +68,7 @@ export function normalizeMcpRunTestsOutcome(
     return controlled("tool_unavailable");
   }
   if(result.status!=="pass"||project?.status!=="pass"||acceptance?.status!=="pass"){
-    return controlled("tests_failed",result,approvedReadPaths);
+    return controlled("tests_failed",result,approvedReadPaths,approvedWritePaths);
   }
   return {ok:true,result:payload.result};
 }

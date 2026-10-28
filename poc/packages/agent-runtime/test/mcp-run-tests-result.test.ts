@@ -115,11 +115,26 @@ test("TypeScript failures show only signed read grants, never other paths",()=>{
   assert.equal(scoped.ok,false);
   if(!scoped.ok)assert.deepEqual(scoped.error.details,{
     first_failed_phase:"typecheck",
-    typecheck_diagnostics:[{path:allowed,line:42,column:3,code:"TS2304"}]
+    typecheck_diagnostics:[{path:allowed,line:42,column:3,code:"TS2304"}],
+    repair_requires_new_approval:true
   });
   assert.ok(!JSON.stringify(scoped).includes(privateContent));
   const noGrant=normalizeMcpRunTestsOutcome(data,args);
   if(!noGrant.ok)assert.deepEqual(noGrant.error.details,{
-    first_failed_phase:"typecheck"
+    first_failed_phase:"typecheck",repair_requires_new_approval:true
   });
+});
+
+test("Read-only scope cannot authorize a failed TypeScript repair",()=>{
+  const path="tests/repair.test.ts",args2=args;
+  const hint={first_failed_phase:"typecheck",
+    typecheck_diagnostics:[{path,line:8,column:2,code:"TS2304"}]};
+  const response={isError:true,structuredContent:{ok:false,error:{
+    kind:"tests_failed",details:hint}}};
+  const local=normalizeMcpRunTestsOutcome(response,args2,[path],[path]);
+  if(!local.ok)assert.deepEqual(local.error.details,hint);
+  const missingWrite=normalizeMcpRunTestsOutcome(response,args2,[path],[]);
+  if(!missingWrite.ok)assert.equal(
+    (missingWrite.error.details as {repair_requires_new_approval?:unknown})
+      ?.repair_requires_new_approval,true);
 });
