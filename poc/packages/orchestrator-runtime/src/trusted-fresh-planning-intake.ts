@@ -12,6 +12,10 @@ import {preliminaryReadPermissions,type TrustedPlanningSnapshot}
   from "./trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator}
   from "./trusted-execution-coordinator.ts";
+import {startOwnerControlledPlanningReview,
+  type OwnerControlledPlanningConfig}
+  from "./trusted-owner-planning-bootstrap.ts";
+import type {PlanningReviewPacket} from "./trusted-planning-review-gate.ts";
 
 type PinnedMainSnapshot=Omit<TrustedPlanningSnapshot,"session_id">;
 export interface TrustedFreshMainDiscovery {
@@ -82,5 +86,45 @@ export async function prepareTrustedFreshPlanningIntake(input:{
     planning_authorized:false as const,
     engineer_approved:false as const,
     operational_credentials_issued:false as const
+  });
+}
+
+/**
+ * An explicit PRIVATE owner action, never invoked by a failed A2A Task or
+ * automatically by the old DAG. Reuses the existing read-only Planning ->
+ * backend-signed checkpoint -> independent Engineer review pipeline.
+ *
+ * The repair is a NEW plan on a fresh pinned main snapshot, not a replay
+ * of the failed feature branch. The host must provide its own reviewed
+ * requirement and separately chosen (possibly offline) ADK model.
+ * This function makes no billing or execution authorization decisions:
+ * provider selection/consent belongs to the authenticated owner host,
+ * and no issued operational root exists at the return boundary.
+ */
+export async function startTrustedFreshRepairPlanningReview(input:{
+  previousCoordinator:TrustedExecutionCoordinator;
+  nextCoordinator:TrustedExecutionCoordinator;
+  nextSessionId:string;
+  trustedGitea:TrustedFreshMainDiscovery;
+  planning:Omit<OwnerControlledPlanningConfig,"coordinator"|"snapshot">;
+}):Promise<PlanningReviewPacket>{
+  if(!input||!input.planning||typeof input.planning!=="object")
+    fail("owner-controlled fresh repair Planning configuration required");
+  // Gitea snapshot is pinned and old root is confirmed revoked BEFORE
+  // model inference, Gateway reads, or preliminary credential issuance.
+  const intake=await prepareTrustedFreshPlanningIntake(input);
+  const cfg=input.planning;
+  if(!isDeepStrictEqual(cfg.planner?.snapshot,intake.snapshot))
+    fail("new Planner must use independently pinned Gitea snapshot");
+  if(typeof cfg.planner?.requirement!=="string"||
+     !cfg.planner.requirement.trim()||
+     cfg.planner.requirement.length>4000)
+    fail("fresh repair requirement must be explicitly supplied by the owner");
+  // The trusted owner bootstrap handles read-only root issuance, bounded
+  // ADK Planning, checkpoint signing/persistence and Engineer-review staging.
+  // It does NOT grant Engineer permissions or activate an Execution DAG.
+  return startOwnerControlledPlanningReview({
+    ...cfg,coordinator:input.nextCoordinator,
+    snapshot:structuredClone(intake.snapshot)
   });
 }

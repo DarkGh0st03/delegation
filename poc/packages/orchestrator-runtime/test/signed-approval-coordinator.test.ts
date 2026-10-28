@@ -13,7 +13,8 @@ import {InMemoryAuditSink} from "../../../apps/gateway/src/prepare.ts";
 import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
 import {TrustedEngineerAuthoritySession} from "../src/trusted-engineer-authority.ts";
 import {TrustedExecutionCoordinator} from "../src/trusted-execution-coordinator.ts";
-import {prepareTrustedFreshPlanningIntake}
+import {prepareTrustedFreshPlanningIntake,
+  startTrustedFreshRepairPlanningReview}
   from "../src/trusted-fresh-planning-intake.ts";
 import type {EngineerCredentialPort,RootParameters} from "../src/trusted-engineer-authority.ts";
 import type {IssuedDelegationCredential} from "../src/authority-client.ts";
@@ -352,6 +353,37 @@ test("actual signed file connects Engineer two-root handoff to Gateway plan enfo
   assert.ok(Object.isFrozen(intake.snapshot.files));
   assert.deepEqual(nextCredentials.calls,[],
     "A referral cannot issue or automatically authorize new credentials");
+  const noRootPlanning={
+    planner:{snapshot:nextSnapshot,requirement:"Repair prior TypeScript failure"},
+    gateway:{gatewayBaseUrl:"http://127.0.0.1:1",
+      adapterBaseUrl:"http://127.0.0.1:2",adapterToken:"offline-test"}
+  };
+  // A mismatched or unreviewed fresh requirement is rejected before ANY
+  // provisional credential, model call, or backend checkpoint can occur.
+  await assert.rejects(startTrustedFreshRepairPlanningReview({
+    previousCoordinator:coordinator,nextCoordinator,
+    nextSessionId:nextSnapshot.session_id,trustedGitea:discovery,
+    planning:{...noRootPlanning,planner:{
+      ...noRootPlanning.planner,snapshot:{...nextSnapshot,
+        base_revision:"b".repeat(40)}
+    }} as never
+  }),/independently pinned Gitea snapshot/);
+  await assert.rejects(startTrustedFreshRepairPlanningReview({
+    previousCoordinator:coordinator,nextCoordinator,
+    nextSessionId:nextSnapshot.session_id,trustedGitea:discovery,
+    planning:{...noRootPlanning,planner:{
+      ...noRootPlanning.planner,requirement:""}
+    } as never
+  }),/explicitly supplied by the owner/);
+  // Valid fresh snapshot reaches the existing authenticated owner
+  // bootstrap, which then rejects absent signing/recovery components.
+  await assert.rejects(startTrustedFreshRepairPlanningReview({
+    previousCoordinator:coordinator,nextCoordinator,
+    nextSessionId:nextSnapshot.session_id,trustedGitea:discovery,
+    planning:noRootPlanning as never
+  }),/independent Planning components and idle Coordinator required/);
+  assert.deepEqual(nextCredentials.calls,[],
+    "Preflight and missing owner services cannot issue a fresh root");
   await assert.rejects(prepareTrustedFreshPlanningIntake({
     previousCoordinator:coordinator,nextCoordinator,
     nextSessionId:"session-signed-2",
