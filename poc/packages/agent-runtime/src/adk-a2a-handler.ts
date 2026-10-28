@@ -246,6 +246,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       agentRole: context.role,
       taskId: context.trusted_gateway_task_id??context.task_id,
       evidenceHandler,
+      ...(signedTask?{approvedDiagnosticReadPaths:
+        context.subtask.approved_file_permissions!
+          .filter(p=>p.operation==="read_file").map(p=>p.path)}:{}),
       ...(cryptoPresentation ? {cryptoPresentation} : {}),
       ...(signal ? {signal} : {}),
       ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),

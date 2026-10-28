@@ -390,7 +390,9 @@ export function createAdkSpecializedAgent(
               args:args as {branch:string;profile:"poc-default"},
               ...(config.signal ? {signal:config.signal} : {})
             });
-            outcome=normalizeMcpRunTestsOutcome(response,argumentsRecord);
+            outcome=normalizeMcpRunTestsOutcome(response,argumentsRecord,
+              config.trustedFilePermissions?.filter(p=>p.operation==="read_file")
+                .map(p=>p.path)??[]);
             if(outcome.ok)return response;
             // MCP tool-call errors must be visible as safe, fixed-vocabulary
             // feedback to the model, not as raw Runner/Gateway responses.

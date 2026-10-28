@@ -29,6 +29,8 @@ export interface GatewayControlledToolClientConfig {
   runnerExecuteTimeoutMs?: number;
   fetchFn?: FetchLike;
   signal?: AbortSignal;
+  /** Exact signed Task read grants, never model arguments. */
+  approvedDiagnosticReadPaths?:readonly string[];
 }
 
 function errorMessage(body: unknown, fallback: string): string {
@@ -75,6 +77,7 @@ export class GatewayControlledToolClient {
   readonly #runnerExecuteTimeoutMs: number;
   readonly #fetch: FetchLike;
   readonly #signal?: AbortSignal;
+  readonly #approvedDiagnosticReadPaths:readonly string[];
 
   constructor(config: GatewayControlledToolClientConfig) {
     if (config.gatewayBaseUrl.trim().length === 0) {
@@ -97,6 +100,7 @@ export class GatewayControlledToolClient {
     }
     this.#fetch = config.fetchFn ?? fetch;
     this.#signal = config.signal;
+    this.#approvedDiagnosticReadPaths=[...(config.approvedDiagnosticReadPaths??[])];
   }
 
   async invoke(
@@ -228,7 +232,7 @@ export class GatewayControlledToolClient {
       throw new ControlledToolError(
         "tests_failed",
         "Controlled Test Runner reported a failing test outcome",
-        { details: safeRunnerFailureDetails(execution) }
+        { details: safeRunnerFailureDetails(execution,this.#approvedDiagnosticReadPaths) }
       );
     }
 

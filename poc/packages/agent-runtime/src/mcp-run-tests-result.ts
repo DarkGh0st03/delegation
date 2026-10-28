@@ -1,10 +1,12 @@
 import {ControlledToolError,controlledToolErrorPayload} from "./controlled-errors.ts";
-import {safeRunnerFailureDetails} from "./safe-runner-failure.ts";
+import {safeRunnerFailureDetails,safeRunnerFailedPhaseHint}
+  from "./safe-runner-failure.ts";
 
 type ErrorKind="authorization_denied"|"invalid_tool_call"|"tool_unavailable"|"tests_failed";
-function controlled(kind:ErrorKind,execution?:unknown){
+function controlled(kind:ErrorKind,execution?:unknown,
+  approvedPaths:readonly string[]=[]){
   const details=kind==="tests_failed"
-    ?safeRunnerFailureDetails(execution):undefined;
+    ?safeRunnerFailureDetails(execution,approvedPaths):undefined;
   return controlledToolErrorPayload(new ControlledToolError(
     kind,"MCP "+kind,details?{details}:{}
   ));
@@ -18,7 +20,8 @@ function record(value:unknown):Record<string,unknown>|null{
  * SHA and both mandatory acceptance gates before reporting PASS.
  */
 export function normalizeMcpRunTestsOutcome(
-  response:unknown,args:Record<string,unknown>
+  response:unknown,args:Record<string,unknown>,
+  approvedReadPaths:readonly string[]=[]
 ):{ok:true;result:unknown}|ReturnType<typeof controlledToolErrorPayload>{
   const envelope=record(response);
   const payload=record(envelope?.structuredContent);
@@ -27,15 +30,17 @@ export function normalizeMcpRunTestsOutcome(
     if(kind==="tests_failed"){
       // The worker may include a provider-corrobated failed phase in its
       // controlled error. Accept only the existing fixed enum, never logs.
-      const hint=record(record(payload?.error)?.details);
+      const hint=safeRunnerFailedPhaseHint(record(payload?.error)?.details);
       const reason=hint?.first_failed_phase;
       const allowed=new Set(["dependency_install","typecheck",
         "backend_tests","frontend_tests","build","playwright_e2e",
         "researcher_acceptance"]);
       if(typeof reason==="string"&&allowed.has(reason))
         return controlled("tests_failed",{
-          phases:[{phase:reason,status:"fail"}]
-        });
+          phases:[{phase:reason,status:"fail"}],
+          ...(reason==="typecheck"
+            ?{typecheck_diagnostics:hint?.typecheck_diagnostics}:{})
+        },approvedReadPaths);
       return controlled("tests_failed");
     }
     if(kind==="authorization_denied")return controlled("authorization_denied");
@@ -61,7 +66,7 @@ export function normalizeMcpRunTestsOutcome(
     return controlled("tool_unavailable");
   }
   if(result.status!=="pass"||project?.status!=="pass"||acceptance?.status!=="pass"){
-    return controlled("tests_failed",result);
+    return controlled("tests_failed",result,approvedReadPaths);
   }
   return {ok:true,result:payload.result};
 }

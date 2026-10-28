@@ -99,3 +99,27 @@ test("MCP preserves only a whitelisted failure hint from a prior controlled Gate
     }
   }
 });
+
+test("TypeScript failures show only signed read grants, never other paths",()=>{
+  const allowed="tests/backend/repair.test.ts";
+  const privateContent="PRIVATE_SOURCE_CODE";
+  const data={isError:true,structuredContent:{ok:false,error:{
+    kind:"tests_failed",details:{first_failed_phase:"typecheck",
+      typecheck_diagnostics:[
+        {path:allowed,line:42,column:3,code:"TS2304"},
+        {path:"apps/backend/src/private.ts",line:20,column:4,code:"TS2322"},
+        {path:allowed,line:1,column:1,code:"TS7006",raw:privateContent}
+      ]}
+  }}};
+  const scoped=normalizeMcpRunTestsOutcome(data,args,[allowed]);
+  assert.equal(scoped.ok,false);
+  if(!scoped.ok)assert.deepEqual(scoped.error.details,{
+    first_failed_phase:"typecheck",
+    typecheck_diagnostics:[{path:allowed,line:42,column:3,code:"TS2304"}]
+  });
+  assert.ok(!JSON.stringify(scoped).includes(privateContent));
+  const noGrant=normalizeMcpRunTestsOutcome(data,args);
+  if(!noGrant.ok)assert.deepEqual(noGrant.error.details,{
+    first_failed_phase:"typecheck"
+  });
+});
