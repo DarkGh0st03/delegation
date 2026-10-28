@@ -285,6 +285,7 @@ export async function runNativePositiveApprovedDag({
   // transport. Agent model instructions and signed plan are unchanged.
   const sharedMcpEnabled=process.env.APPROVED_RUNNER_NATIVE_MCP==="1";
   let normalMcpCalls=0,privateCryptoMcpCalls=0;
+  let signedTestOutOfScopeDenied=false;
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
@@ -314,6 +315,26 @@ export async function runNativePositiveApprovedDag({
       if(target===adkGatewayBase+"/v1/authorization/prepare"){
         assert.equal(request.agent_role,role);
         assert.match(request.task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+        if(role==="test"&&offlineRecovery&&!signedTestOutOfScopeDenied){
+          // Genuine live Gateway denial with the active signed Test Task
+          // binding. Frontend source remains writable only by its own role,
+          // regardless of the Test Task's valid DC or model instructions.
+          const foreignPath=files.frontend[0];
+          assert.ok(foreignPath&&!approvedTestUpdates.includes(foreignPath),
+            "Recovery fixture must test a genuinely unapproved Test resource");
+          const headBefore=await reader.getBranchMetadata(branch);
+          assert.throws(()=>gateway.prepare({
+            task_id:request.task_id,agent_role:"test",
+            tool:"update_file",arguments:{
+              branch,path:foreignPath,content:"// forbidden Test role update"
+            }
+          }),e=>e?.code==="approved_plan_denied",
+          "A signed Test Task must not expand its repair permission scope");
+          const headAfter=await reader.getBranchMetadata(branch);
+          assert.equal(headAfter.commit_sha,headBefore.commit_sha,
+            "Denied cross-role repair must leave the Gitea branch unchanged");
+          signedTestOutOfScopeDenied=true;
+        }
         if(role==="test"){
           const op=request.tool;
           assert.ok(["create_file","read_file","update_file","run_tests"].includes(op));
@@ -731,6 +752,8 @@ export async function runNativePositiveApprovedDag({
     assert.equal(runnerHistory.length,runnerRuns);
     let failedTestSha=null;
     if(offlineRecovery){
+      assert.equal(signedTestOutOfScopeDenied,true,
+        "Signed recovery must prove a cross-role repair is refused by Gateway");
       const [failed,recovered]=runnerHistory;
       assert.equal(failed.status,"fail",
         "First signed-DAG run must fail in actual isolated Docker");
@@ -902,6 +925,7 @@ export async function runNativePositiveApprovedDag({
       manifest_source:"engineer_signed_approved_plan",
       test_runner_runs:runnerRuns,
       recovery_verified:offlineRecovery,
+      test_cross_role_repair_denied:signedTestOutOfScopeDenied,
       ...(offlineRecovery?{failed_test_sha:failedTestSha}:{}),
       test_runner_phases:runnerOutcome.phases.map(x=>x.phase),
       project_tests:runnerOutcome.project_tests.status,
