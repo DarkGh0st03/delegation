@@ -96,14 +96,27 @@ export class GatewayCorroboratedTaskAttestor implements TrustedTaskCompletionAtt
       if(a.test_outcome!=="pass"||a.tested_commit_sha!==a.commit_sha||
          a.runner_profile!=="poc-default"||a.project_tests!=="pass"||
          a.researcher_acceptance!=="pass")return false;
-      return e.provider_effects.some(x=>{
-        const r=x.execution;
-        return r.provider==="runner"&&r.tool==="run_tests"&&
-          r.status==="pass"&&r.runner_profile==="poc-default"&&
-          r.tested_commit_sha===a.tested_commit_sha&&
-          r.project_tests?.status==="pass"&&
-          r.researcher_acceptance?.status==="pass"&&r.branch===a.branch;
-      });
+      // Trusted Gateway effects are ordered by successful execution. A
+      // formerly passing Docker run NEVER covers a later file mutation.
+      // A genuine retry may pass after the final approved edit, however.
+      const relevant=e.provider_effects.filter(x=>
+        x.tool==="run_tests"||x.tool==="update_file"||
+        x.tool==="create_file");
+      const final= relevant.at(-1);
+      if(final?.tool!=="run_tests")return false;
+      const r=final.execution;
+      if(r.provider!=="runner"||r.tool!=="run_tests"||
+         r.status!=="pass"||r.runner_profile!=="poc-default"||
+         r.tested_commit_sha!==a.tested_commit_sha||
+         r.project_tests?.status!=="pass"||
+         r.researcher_acceptance?.status!=="pass"||
+         r.branch!==a.branch)return false;
+      const lastMutation=files.at(-1)?.execution;
+      return lastMutation===undefined||(
+        lastMutation.provider==="gitea"&&
+        "commit_sha" in lastMutation&&
+        lastMutation.commit_sha===r.tested_commit_sha
+      );
     }
     const noTestClaims=a.test_outcome==="not_run"&&
       a.tested_commit_sha===undefined&&a.runner_profile===undefined&&

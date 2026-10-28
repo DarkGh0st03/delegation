@@ -61,12 +61,15 @@ function harness(options:{
   wrongPresenter?:boolean;
   skipPolicyDigestCheck?:boolean;
   incompleteRunnerAcceptance?:boolean;
+  runnerRevisions?:string[];
+  testWriteRevisions?:string[];
   operationalLeaseMs?:number;
   nowMs?:()=>number;
 }={}){
   const p=options.configuredPlan??plan();
   const a=approval(p,options.approvedIds);
   let attestCalls=0,providerCalls=0,verifiedCalls=0,opaCalls=0;
+  let testWrites=0,runnerRuns=0;
   const gates=new TrustedApprovedExecutionPlans({
     repository:repo,engineerDid:did,
     ...(options.operationalLeaseMs===undefined?{}:{
@@ -100,20 +103,27 @@ function harness(options:{
         branch:req.arguments.branch,base_branch:req.arguments.base_branch,
         revision:sha,commit_sha:sha
       };
-      if(req.tool==="update_file")return{
-        provider:"gitea",performed:true,tool:"update_file",
-        branch:req.arguments.branch,path:req.arguments.path,
-        revision:sha,commit_sha:sha,blob_sha:"b",precondition_blob_sha:"a"
-      };
-      if(req.tool==="run_tests")return{
+      if(req.tool==="update_file"){
+        const revision=record.agent_role==="test"
+          ?(options.testWriteRevisions?.[testWrites++]??sha):sha;
+        return {
+          provider:"gitea",performed:true,tool:"update_file",
+          branch:req.arguments.branch,path:req.arguments.path,
+          revision,commit_sha:revision,blob_sha:"b",precondition_blob_sha:"a"
+        };
+      }
+      if(req.tool==="run_tests"){
+        const revision=options.runnerRevisions?.[runnerRuns++]??sha;
+        return {
         provider:"runner",performed:true,tool:"run_tests",
-        branch:req.arguments.branch,revision:sha,tested_commit_sha:sha,
+        branch:req.arguments.branch,revision,tested_commit_sha:revision,
         runner_profile:"poc-default",status:"pass",phases:[],
         ...(options.incompleteRunnerAcceptance?{}:{
           project_tests:{status:"pass"},
           researcher_acceptance:{status:"pass"}
         })
-      };
+        };
+      }
       throw Error("unapproved provider operation");
     }
   };
@@ -597,4 +607,61 @@ test("an approved file edit AFTER passing tests invalidates the earlier PR SHA",
   }),(e:unknown)=>e instanceof GatewayError&&
       e.code==="approved_plan_denied");
   assert.equal(h.providerCalls,4);
+});
+
+test("PR refuses a prior Docker PASS when Test writes a newer SHA; rerun restores exact-SHA authority",async()=>{
+  const p=plan();
+  p.tasks.find(t=>t.id==="tests")!.resources.push(file);
+  p.requested_permissions.push({
+    id:"p-test-update",task_id:"tests",agent_id:"test",
+    resource:file,operation:"update_file",reason:"Approved same-task repair"
+  });
+  p.tasks.push({
+    id:"pr",agent_id:"orchestrator",title:"Review tested revision",
+    description:"Open only accepted final SHA",depends_on:["tests"],
+    resources:[uri]
+  });
+  p.requested_permissions.push({
+    id:"p-pr",task_id:"pr",agent_id:"orchestrator",
+    resource:uri,operation:"create_pull_request",reason:"Human review"
+  });
+  const testRequest={branch,profile:"poc-default"};
+  const prRequest={
+    task_id:"a2a-pr",agent_role:"orchestrator",
+    tool:"create_pull_request",arguments:{
+      head_branch:branch,base_branch:"main",title:"Reviewed final SHA"
+    }
+  };
+  async function prepareCase(rerun:boolean){
+    const finalSha="b".repeat(40);
+    const h=harness({configuredPlan:p,approvedIds:[
+      "p-branch","p-backend","p-test","p-test-update","p-pr"
+    ],runnerRevisions:[sha,finalSha],testWriteRevisions:[finalSha]});
+    await h.gates.activate("session-approval",sha);
+    for(const [task,id,role] of [
+      ["bootstrap","a2a-bootstrap","orchestrator"],
+      ["backend-task","a2a-backend","backend"],
+      ["tests","a2a-tests","test"],
+      ["pr","a2a-pr","orchestrator"]
+    ] as const)h.gates.bindTask("session-approval",task,id,role);
+    await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+    await h.gates.confirmTaskCompletion("a2a-bootstrap");
+    await h.invoke("a2a-backend","backend","update_file",updateArgs);
+    await h.gates.confirmTaskCompletion("a2a-backend");
+    await h.invoke("a2a-tests","test","run_tests",testRequest);
+    await h.invoke("a2a-tests","test","update_file",updateArgs);
+    if(rerun)await h.invoke("a2a-tests","test","run_tests",testRequest);
+    await h.gates.confirmTaskCompletion("a2a-tests");
+    return h;
+  }
+  const stale=await prepareCase(false);
+  assert.throws(()=>stale.runtime.prepare(prRequest),
+    (error:unknown)=>error instanceof GatewayError&&
+      error.code==="approved_plan_denied",
+    "An earlier PASS must never authorize a newer untested commit");
+  const repaired=await prepareCase(true);
+  const prepared=repaired.runtime.prepare(prRequest);
+  const record=repaired.store.get(prepared.request_id);
+  assert.equal(record?.approved_tested_head_sha,"b".repeat(40),
+    "The last approved and passing Runner uniquely binds the PR head");
 });

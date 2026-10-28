@@ -397,28 +397,29 @@ export class TrustedApprovedExecutionPlans {
     this.#assertDependencies(session,binding);
     // A model-reported "tests passed" cannot supply this SHA. It comes only
     // from a Gateway-recorded Runner provider effect plus trusted attestation.
-    const runnerEffects=[...binding.successfulRequests.values()].filter(v=>
-      v.execution.provider==="runner"&&v.execution.tool==="run_tests");
-    if(runnerEffects.length){
-      const revisions=new Set<string>();
-      let independentlyAccepted=true;
-      for(const entry of runnerEffects){
-        const run=entry.execution;
-        if(run.provider!=="runner"||run.tool!=="run_tests"||
-           run.branch!==session.workBranch||run.status!=="pass"||
-           run.project_tests?.status!=="pass"||
-           run.researcher_acceptance?.status!=="pass"||
-           !SHA.test(run.tested_commit_sha)){
-          independentlyAccepted=false;
-          break;
-        }
-        revisions.add(run.tested_commit_sha);
-      }
-      // Older trusted DAG fixtures may complete their test Task with
-      // limited Runner evidence, but this MUST NOT grant PR authority.
-      // PR creation requires stronger provider-corroborated acceptance.
-      if(independentlyAccepted&&revisions.size===1)
-        session.testedFeatureSha=[...revisions][0];
+    const successfulEffects=[...binding.successfulRequests.values()];
+    const relevantEffects=successfulEffects.filter(v=>
+      v.tool==="run_tests"||v.tool==="update_file"||
+      v.tool==="create_file");
+    const lastRelevant=relevantEffects.at(-1);
+    // Only the FINAL provider effect capable of changing the tested
+    // revision may establish PR authority. An earlier passing Docker
+    // receipt is stale after any later approved write. After a repair,
+    // a new passing Runner may legitimately attest a different SHA.
+    if(lastRelevant?.tool==="run_tests"){
+      const run=lastRelevant.execution;
+      const lastMutation=relevantEffects.filter(v=>
+        v.tool==="update_file"||v.tool==="create_file").at(-1)?.execution;
+      if(run.provider==="runner"&&run.tool==="run_tests"&&
+         run.branch===session.workBranch&&run.status==="pass"&&
+         run.project_tests?.status==="pass"&&
+         run.researcher_acceptance?.status==="pass"&&
+         SHA.test(run.tested_commit_sha)&&
+         (lastMutation===undefined||(
+           lastMutation.provider==="gitea"&&
+           "commit_sha" in lastMutation&&
+           lastMutation.commit_sha===run.tested_commit_sha)))
+        session.testedFeatureSha=run.tested_commit_sha;
     }
     binding.completed=true;
     session.completedPlanTasks.add(binding.planTaskId);

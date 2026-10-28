@@ -208,3 +208,29 @@ test("Test Agent must have Runner pass for exact reported commit and acceptance"
   (oldCommit.execution as any).tested_commit_sha="f".repeat(40);
   assert.equal(await attestor.confirmCompleted(evidence("test",[oldCommit],valid)),false);
 });
+
+test("Test completion cannot attest a stale PASS after a later approved write",async()=>{
+  const first=effect("run_tests","runner-old");
+  const later=effect("update_file","write-new");
+  (later.execution as any).revision="b".repeat(40);
+  (later.execution as any).commit_sha="b".repeat(40);
+  const stale=observation("test");
+  stale.artifact.files_modified=[FILE];
+  assert.equal(await attestor.confirmCompleted(
+    evidence("test",[first,later],stale)),false,
+    "A stale Runner cannot certify a later mutation");
+  const retried=effect("run_tests","runner-new");
+  (retried.execution as any).revision="b".repeat(40);
+  (retried.execution as any).tested_commit_sha="b".repeat(40);
+  const corrected=structuredClone(stale);
+  corrected.artifact.revision="b".repeat(40);
+  corrected.artifact.commit_sha=corrected.artifact.revision;
+  corrected.artifact.tested_commit_sha=corrected.artifact.revision;
+  assert.equal(await attestor.confirmCompleted(
+    evidence("test",[first,later,retried],corrected)),true,
+    "A real final Docker PASS can attest an approved repair");
+  const staleSha=structuredClone(corrected);
+  staleSha.artifact.tested_commit_sha=SHA;
+  assert.equal(await attestor.confirmCompleted(
+    evidence("test",[first,later,retried],staleSha)),false);
+});
