@@ -85,8 +85,11 @@ export async function runNativePositiveApprovedDag({
   referenceFiles,scenarioId,repo,giteaBase,
   readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens,
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
-  approvedAgentModelFactory,realGeminiPilot=false
+  approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false
 }){
+  if(offlineRecovery&&(realGeminiPilot||
+     typeof approvedAgentModelFactory!=="function"))
+    throw Error("Signed-DAG recovery is a host-selected offline fixture only");
   if((realGeminiPilot&&typeof approvedAgentModelFactory!=="function")||
      (approvedAgentModelFactory!==undefined&&
       typeof approvedAgentModelFactory!=="function"))
@@ -273,6 +276,7 @@ export async function runNativePositiveApprovedDag({
     writes={backend:0,frontend:0};
   let testCalls=0,testCreates=0,testUpdates=0,testReads=0,
     runnerRuns=0,runnerOutcome=null,latestSha=baseSha;
+  const runnerHistory=[];
   let createdPr=null;
   const childIds={},activeChildByRole={},activeTaskByRole={},
     servers=[],urls={},models={};
@@ -471,6 +475,7 @@ export async function runNativePositiveApprovedDag({
           // No A2A completion, trusted PASS, or PR is possible on failure.
           const verdict=verifyPilotRunnerOutcome(effect,pinned.commit_sha);
           runnerRuns++;runnerOutcome=effect;
+          runnerHistory.push(effect);
           if(!verdict.passed){
             process.stderr.write("[native-dag-adk] runner_failed "+
               JSON.stringify({category:"functional_acceptance_failure"})+"\n");
@@ -639,7 +644,7 @@ export async function runNativePositiveApprovedDag({
           // Approval of the repository operation is a separate signed Task.
           // It may run only after the Test Agent's provider-corroborated
           // exact-SHA Docker and independent researcher acceptance.
-          assert.equal(runnerRuns,1);
+          assert.equal(runnerRuns,offlineRecovery?2:1);
           assert.equal(runnerOutcome?.status,"pass");
           assert.equal(runnerOutcome?.project_tests?.status,"pass");
           assert.equal(runnerOutcome?.researcher_acceptance?.status,"pass");
@@ -722,7 +727,25 @@ export async function runNativePositiveApprovedDag({
     assert.ok(testCreates<=approvedTestCreates.length);
     assert.ok(testUpdates<=approvedTestUpdates.length);
     assert.ok(testReads<=readableTestFiles.length);
-    assert.equal(runnerRuns,1);
+    assert.equal(runnerRuns,offlineRecovery?2:1);
+    assert.equal(runnerHistory.length,runnerRuns);
+    let failedTestSha=null;
+    if(offlineRecovery){
+      const [failed,recovered]=runnerHistory;
+      assert.equal(failed.status,"fail",
+        "First signed-DAG run must fail in actual isolated Docker");
+      assert.equal(failed.project_tests?.status,"fail");
+      assert.equal(failed.researcher_acceptance?.status,"skipped");
+      assert.equal(failed.phases.find(p=>p.status==="fail")?.phase,"backend_tests");
+      assert.match(failed.tested_commit_sha,SHA);
+      assert.equal(recovered.status,"pass");
+      assert.equal(recovered.project_tests?.status,"pass");
+      assert.equal(recovered.researcher_acceptance?.status,"pass");
+      assert.notEqual(failed.tested_commit_sha,recovered.tested_commit_sha,
+        "Signed Test repair must produce a new commit before retesting");
+      assert.equal(runnerOutcome.tested_commit_sha,recovered.tested_commit_sha);
+      failedTestSha=failed.tested_commit_sha;
+    }
     if(!hostModels){
       assert.equal(models.backend.calls,2*files.backend.length+1);
       assert.equal(models.frontend.calls,2*files.frontend.length+1);
@@ -878,6 +901,8 @@ export async function runNativePositiveApprovedDag({
       created_test_files:testCreates,
       manifest_source:"engineer_signed_approved_plan",
       test_runner_runs:runnerRuns,
+      recovery_verified:offlineRecovery,
+      ...(offlineRecovery?{failed_test_sha:failedTestSha}:{}),
       test_runner_phases:runnerOutcome.phases.map(x=>x.phase),
       project_tests:runnerOutcome.project_tests.status,
       researcher_acceptance:runnerOutcome.researcher_acceptance.status,
