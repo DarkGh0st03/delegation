@@ -127,13 +127,22 @@ export async function runNativePositiveApprovedDag({
   if(hostModels)
     assert.deepEqual(hostModels.selected_roles,[...ROLES],
       "This existing three-role native acceptance harness requires all roles");
-  // Real Planner may choose its own Task IDs. Identity must come from the
-  // authenticated signed plan, never from fixed demo strings.
-  const idsByRole=Object.fromEntries(ROLES.map(role=>{
-    const tasks=signed.plan.tasks.filter(t=>t.agent_id===role);
-    assert.equal(tasks.length,1,"Pilot requires exactly one approved Task per role");
-    return [role,tasks[0].id];
+  // A real Planner may assign MULTIPLE approved Tasks to a specialist.
+  // Keep Task identity (and its independently scoped child DC) per Task,
+  // never collapse the immutable DAG into one synthetic Task per role.
+  const taskIdsByRole=Object.fromEntries(ROLES.map(role=>{
+    const selected=signed.plan.tasks.filter(t=>t.agent_id===role);
+    if(role==="test"){
+      // This bounded Docker acceptance profile performs one final regression
+      // edit and one exact-SHA run_tests; splitting that into multiple Test
+      // Tasks needs a separate acceptance profile.
+      assert.equal(selected.length,1,
+        "Account Suspension pilot requires one signed final Test Task");
+    }else assert.ok(selected.length>=1,
+      "Account Suspension pilot requires a signed implementation Task per role");
+    return [role,selected.map(t=>t.id)];
   }));
+  const allSpecialistTaskIds=ROLES.flatMap(role=>taskIdsByRole[role]);
   const orchestratorTaskFor=operation=>{
     const tasks=signed.plan.tasks.filter(t=>t.agent_id==="orchestrator"&&
       grants.some(g=>g.task_id===t.id&&g.operation===operation));
@@ -160,12 +169,16 @@ export async function runNativePositiveApprovedDag({
     return path;
   });
   const files={};
+  let implementationGrantCount=0;
   for(const role of EDIT_ROLES){
-    files[role]=approvedFiles(role,"update_file");
-    const read=approvedFiles(role,"read_file");
-    assert.ok(files[role].length>0,"Signed role has no approved edits");
-    assert.deepEqual([...read].sort(),[...files[role]].sort());
-    assert.equal(new Set(files[role]).size,files[role].length);
+    const writes=approvedFiles(role,"update_file");
+    const reads=approvedFiles(role,"read_file");
+    assert.ok(writes.length>0,"Signed role has no approved edits");
+    // Each approved edit must have its own read grant. Different sequential
+    // Tasks can legitimately reference the same source file.
+    assert.deepEqual([...reads].sort(),[...writes].sort());
+    implementationGrantCount+=writes.length+reads.length;
+    files[role]=[...new Set(writes)];
   }
   const approvedTestCreates=approvedFiles("test","create_file");
   const approvedTestUpdates=approvedFiles("test","update_file");
@@ -188,7 +201,7 @@ export async function runNativePositiveApprovedDag({
     assert.equal(grants.filter(g=>g.agent_id===role&&
       g.operation===operation&&g.resource===resource).length,1);
   }
-  const approvedCount=files.backend.length*2+files.frontend.length*2+
+  const approvedCount=implementationGrantCount+
     approvedTestCreates.length+approvedTestUpdates.length+
     approvedTestReads.length+allowedNonFile.length;
   assert.equal(grants.length,approvedCount,
@@ -260,7 +273,8 @@ export async function runNativePositiveApprovedDag({
   let testCalls=0,testCreates=0,testUpdates=0,testReads=0,
     runnerRuns=0,runnerOutcome=null,latestSha=baseSha;
   let createdPr=null;
-  const childIds={},servers=[],urls={},models={};
+  const childIds={},activeChildByRole={},activeTaskByRole={},
+    servers=[],urls={},models={};
   // Explicit opt-in makes the SAME real-provider test exercise the
   // production shared MCP and private A2A worker rather than FunctionTool
   // transport. Agent model instructions and signed plan are unchanged.
@@ -337,7 +351,7 @@ export async function runNativePositiveApprovedDag({
         assert.equal(executed.verified_delegation.presenter_id,
           process.env["ADAPTER_ID_"+role.toUpperCase()]);
         assert.equal(executed.verified_delegation.credential_id,
-          childIds[role]);
+          activeChildByRole[role]);
         const effect=executed.execution;
         if(role!=="test"){
           assert.equal(effect.provider,"gitea");
@@ -545,14 +559,19 @@ export async function runNativePositiveApprovedDag({
       adapter:{adapterBaseUrl:adapterUrl,
         bearerToken:orchestratorToken,timeoutMs:30000},
       async authorityForTask(taskId,role){
-        assert.equal(taskId,idsByRole[role]);
         assert.ok(ROLES.includes(role));
-        assert.equal(childIds[role],undefined);
-        childIds[role]="urn:native:approved-dag-"+role+"-"+
+        assert.ok(taskIdsByRole[role].includes(taskId),
+          "Child authority must belong to a signed role Task");
+        assert.equal(childIds[taskId],undefined,
+          "Each approved Task receives exactly one fresh child DC");
+        const credentialId="urn:native:approved-dag-"+role+"-"+
           randomBytes(8).toString("hex");
+        childIds[taskId]=credentialId;
+        activeChildByRole[role]=credentialId;
+        activeTaskByRole[role]=taskId;
         return {
           parent_credential_id:operationalRootId,
-          credential_id:childIds[role],
+          credential_id:credentialId,
           valid_from:new Date(Date.now()-1000).toISOString(),
           validity_seconds:realGeminiPilot?1800:300,
           credential_status:{type:"BitstringStatusListEntry",
@@ -562,8 +581,8 @@ export async function runNativePositiveApprovedDag({
         };
       }
     });
-    for(const role of ROLES)await assert.rejects(
-      dispatcher.dispatch(idsByRole[role]),/dependencies/);
+    for(const taskId of allSpecialistTaskIds)await assert.rejects(
+      dispatcher.dispatch(taskId),/dependencies/);
     assert.deepEqual(counts,{backend:0,frontend:0});
     const result=await dispatcher.executeApprovedDag({
       async invokeOrchestratorTask(planId,runtimeTaskId){
@@ -633,7 +652,7 @@ export async function runNativePositiveApprovedDag({
     assert.equal(result.plan_digest,planDigest);
     assert.deepEqual(
       new Set(result.completed_task_ids),
-      new Set([branchTaskId,...Object.values(idsByRole),reviewTaskId])
+      new Set(signed.plan.tasks.map(t=>t.id))
     );
     assert.ok(createdPr,"A signed, provider-confirmed PR must be opened");
     if(realGeminiPilot){
@@ -668,9 +687,14 @@ export async function runNativePositiveApprovedDag({
     }
     if(!hostModels)assert.ok(result.specialized_results.every(x=>
       x.artifact.model_id?.startsWith("offline-signed-approved-plan-")));
-    assert.ok(new Set(Object.values(childIds)).size===3);
-    assert.equal(result.specialized_results[2].artifact.test_outcome,"pass");
-    assert.equal(result.specialized_results[2].artifact.tested_commit_sha,
+    assert.equal(Object.keys(childIds).length,allSpecialistTaskIds.length);
+    assert.equal(new Set(Object.values(childIds)).size,
+      allSpecialistTaskIds.length,
+      "Every signed specialist Task must receive an independent child DC");
+    const finalTestResult=result.specialized_results.find(x=>x.role==="test");
+    assert.ok(finalTestResult,"Approved final Test Task was not dispatched");
+    assert.equal(finalTestResult.artifact.test_outcome,"pass");
+    assert.equal(finalTestResult.artifact.tested_commit_sha,
       runnerOutcome.tested_commit_sha);
     for(const path of expectedExisting){
       const updated=await reader.readTextFile(branch,path);
@@ -786,7 +810,7 @@ export async function runNativePositiveApprovedDag({
       status:"pass",signed_dag_completed:true,
       scenario_id:scenarioId,approved_work_branch:branch,
       completed_task_ids:result.completed_task_ids,
-      real_a2a_sdk:true,native_rust_child_credentials:3,
+      real_a2a_sdk:true,native_rust_child_credentials:allSpecialistTaskIds.length,
       native_verifier:true,live_opa:true,real_gitea:true,
       source_reads:implementationFiles.length+testReads,
       source_writes:implementationFiles.length+testUpdates,
