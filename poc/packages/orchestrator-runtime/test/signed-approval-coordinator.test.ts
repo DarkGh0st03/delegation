@@ -19,6 +19,8 @@ import {approvedWorkBranch}
   from "../../../packages/plan-contracts/src/approved-work-branch.mjs";
 import {TrustedFreshWorkDecisionStore}
   from "../src/trusted-fresh-work-decision-store.ts";
+import {TrustedGiteaPriorDiffReader}
+  from "../src/trusted-gitea-prior-diff-reader.ts";
 import {armTrustedFreshRepairReviewedDag}
   from "../src/trusted-fresh-repair-reviewed-dag.ts";
 import {TrustedApprovedA2ADispatcher}
@@ -616,20 +618,40 @@ test("R36: fresh signed repair uses existing trusted execution, not revoked cred
       {path:"apps/frontend/old.tsx",change:"added" as const}
     ]
   };
+  // Actual owner-only Gitea HTTP comparison protocol (fixture transport),
+  // rather than a freely synthesized audit callback.
+  const trustedPriorReader=new TrustedGiteaPriorDiffReader({
+    repository:REPO,baseUrl:"http://127.0.0.1:39002",
+    token:"owner-test-token",
+    fetchFn:async(url,options)=>{
+      diffReads++;
+      assert.equal(options?.method,"GET");
+      assert.equal(options?.redirect,"error");
+      assert.equal(new Headers(options?.headers).get("authorization"),
+        "token owner-test-token");
+      const request=String(url);
+      if(request.endsWith("/branches/feature%2Fapproved"))
+        return Response.json({name:previousBranch,
+          commit:{id:previousFeatureSha}});
+      assert.ok(request.endsWith("/compare/"+SHA+"..."+
+        previousFeatureSha+"?files=true&verification=false"));
+      return Response.json({total_commits:1,commits:[{
+        sha:previousFeatureSha,files:[
+          {filename:"apps/backend/user.ts",status:"modified"},
+          {filename:"apps/frontend/old.tsx",status:"added"}
+        ]
+      }]});
+    }
+  });
   const auditInput={
     previousCoordinator,nextSessionId:nextId,
     previousSignedApprovals:oldStore,
     trustedFinalFeatureSha:previousFeatureSha,
-    trustedGitea:{async readPinnedFeatureDiff(query:any){
-      diffReads++;
-      assert.equal(query.branch,previousBranch);
-      assert.equal(query.base_revision,SHA);
-      assert.equal(query.head_revision,previousFeatureSha);
-      return oldDiff;
-    }}
+    trustedGitea:trustedPriorReader
   };
   const audit=await auditTrustedRetiredFeatureWork(auditInput);
-  assert.equal(diffReads,1);
+  assert.equal(diffReads,3,
+    "read-only provider checks branch SHA before and after compare");
   assert.equal(audit.previous_branch,previousBranch);
   assert.equal(audit.previous_feature_head_sha,previousFeatureSha);
   assert.deepEqual(audit.changed_files,oldDiff.changes);
