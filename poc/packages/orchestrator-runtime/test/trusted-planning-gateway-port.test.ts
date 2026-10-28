@@ -900,95 +900,107 @@ test("owner Planning generates signed UI plan then strict host denial revokes or
 });
 
 
+/** Shared private 0600 owner bootstrap config; never a model or signed approval. */
+async function makeProtectedOwnerServiceConfig(f:any,home:string,
+  planningMode:"original"|"fresh_repair"="original"){
+  const privateDir=join(home,"secrets");
+  const replayDir=join(home,"replays");
+  const admissionDir=join(home,"admissions");
+  for(const d of [privateDir,replayDir,admissionDir]){
+    await mkdir(d,{mode:0o700});
+  }
+  const credentialFiles={
+    engineerPrivate:join(privateDir,"engineer.key"),
+    engineerPublic:join(privateDir,"engineer.pem"),
+    backendPublic:join(privateDir,"backend.pem"),
+    githubToken:join(privateDir,"github.read.token"),
+    hmac:join(privateDir,"session.hmac.hex"),
+    ca:join(privateDir,"ca.pem"),
+    server:join(privateDir,"server.pem"),
+    serverKey:join(privateDir,"server.key"),
+    adapterToken:join(privateDir,"adapter.token"),
+    gatewaySecret:join(privateDir,"gateway.secret")
+  };
+  const fixtures=[
+    [credentialFiles.engineerPrivate,f.engineerPrivateKeyPem],
+    [credentialFiles.engineerPublic,f.engineerPublicKeyPem],
+    [credentialFiles.backendPublic,f.backendPublicKeyPem],
+    [credentialFiles.githubToken,"offline-actions-read-only-token"],
+    [credentialFiles.hmac,"ab".repeat(32)],
+    [credentialFiles.ca,"-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----"],
+    [credentialFiles.server,"-----BEGIN CERTIFICATE-----\nHOST\n-----END CERTIFICATE-----"],
+    [credentialFiles.serverKey,"-----BEGIN PRIVATE KEY-----\nHOST\n-----END PRIVATE KEY-----"],
+    [credentialFiles.adapterToken,"offline-protected-adapter-bearer"],
+    [credentialFiles.gatewaySecret,"cd".repeat(32)]
+  ] as const;
+  for(const [filename,value] of fixtures)
+    await writeFile(filename,value,{mode:0o600});
+  const protectedConfig={
+    approval:{
+      engineerDid:"did:thesis:engineer",keyId:"engineer",
+      expectedSessionId:snapshot.session_id,
+      expectedBaseRevision:SHA,repository:snapshot.repository,
+      receiptDirectory:f.approvalDir,
+      trustedPlanFile:f.planFilePath,
+      privateKeyFile:credentialFiles.engineerPrivate,
+      publicKeyPemFile:credentialFiles.engineerPublic,
+      passwordSaltHex:"12".repeat(16),
+      passwordScryptHex:"34".repeat(64),
+      checkpoint:{
+        directory:f.checkpointDir,backendKeyId:f.backendKeyId,
+        backendPublicKeyPemFile:credentialFiles.backendPublic,
+        expectedWorkBranch:"feature/invoice-sort"
+      }
+    },
+    oidc:{
+      pinned:{
+        repository:"DarkGh0st03/delegation",
+        ref:"refs/heads/refactor/post-prof-plan-contracts-20261021",
+        workflowPath:".github/workflows/trusted-private-github-session-hold.yml",
+        sourceSha:"b".repeat(40)
+      },
+      trust:{
+        expectedAudience:"urn:offline-private-engineer",
+        expectedSubject:"repo:DarkGh0st03/delegation:environment:r5-private-admission",
+        expectedRepositoryId:"123",expectedOwnerId:"456"
+      },
+      replayDirectory:replayDir,admissionDirectory:admissionDir,
+      bindAddress:"127.0.0.1",
+      githubApiTokenFile:credentialFiles.githubToken,
+      hmacSecretHexFile:credentialFiles.hmac,
+      tls:{
+        caFile:credentialFiles.ca,certFile:credentialFiles.server,
+        keyFile:credentialFiles.serverKey,
+        expectedClientFingerprint256:Array(32).fill("AA").join(":")
+      }
+    },
+    recovery:{
+      directory:f.operationalDir,
+      planningDirectory:f.planningDir,
+      // Deliberately absent. A strict host must confirm live Gateway
+      // IPC and durable native revocation before opening ANY listener.
+      gatewaySocketPath:join(home,"no-trusted-gateway.sock"),
+      gatewaySecretFile:credentialFiles.gatewaySecret,
+      adapterBaseUrl:"http://127.0.0.1:8090",
+      adapterTokenFile:credentialFiles.adapterToken
+    },
+    approvalPort:0,oidcPort:0
+  };
+  const configPath=join(home,"owner-service.json");
+  await writeFile(configPath,JSON.stringify(protectedConfig),{mode:0o600});
+  if(planningMode==="fresh_repair"){
+    await writeFile(configPath,JSON.stringify({...protectedConfig,planningMode}),
+      {mode:0o600});
+  }
+  return {configPath,protectedConfig,replayDir,admissionDir};
+}
+
 test("R5 protected owner service composes signed ADK Planning with strict host and revokes when IPC unavailable",async()=>{
   const f=await makeOwnerReviewFixture();
   const home=await mkdtemp(join(tmpdir(),"r5-configured-owner-"));
   try{
-    const privateDir=join(home,"secrets");
-    const replayDir=join(home,"replays");
-    const admissionDir=join(home,"admissions");
-    for(const d of [privateDir,replayDir,admissionDir]){
-      await mkdir(d,{mode:0o700});
-    }
-    const credentialFiles={
-      engineerPrivate:join(privateDir,"engineer.key"),
-      engineerPublic:join(privateDir,"engineer.pem"),
-      backendPublic:join(privateDir,"backend.pem"),
-      githubToken:join(privateDir,"github.read.token"),
-      hmac:join(privateDir,"session.hmac.hex"),
-      ca:join(privateDir,"ca.pem"),
-      server:join(privateDir,"server.pem"),
-      serverKey:join(privateDir,"server.key"),
-      adapterToken:join(privateDir,"adapter.token"),
-      gatewaySecret:join(privateDir,"gateway.secret")
-    };
-    const fixtures=[
-      [credentialFiles.engineerPrivate,f.engineerPrivateKeyPem],
-      [credentialFiles.engineerPublic,f.engineerPublicKeyPem],
-      [credentialFiles.backendPublic,f.backendPublicKeyPem],
-      [credentialFiles.githubToken,"offline-actions-read-only-token"],
-      [credentialFiles.hmac,"ab".repeat(32)],
-      [credentialFiles.ca,"-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----"],
-      [credentialFiles.server,"-----BEGIN CERTIFICATE-----\nHOST\n-----END CERTIFICATE-----"],
-      [credentialFiles.serverKey,"-----BEGIN PRIVATE KEY-----\nHOST\n-----END PRIVATE KEY-----"],
-      [credentialFiles.adapterToken,"offline-protected-adapter-bearer"],
-      [credentialFiles.gatewaySecret,"cd".repeat(32)]
-    ] as const;
-    for(const [filename,value] of fixtures)
-      await writeFile(filename,value,{mode:0o600});
-    const protectedConfig={
-      approval:{
-        engineerDid:"did:thesis:engineer",keyId:"engineer",
-        expectedSessionId:snapshot.session_id,
-        expectedBaseRevision:SHA,repository:snapshot.repository,
-        receiptDirectory:f.approvalDir,
-        trustedPlanFile:f.planFilePath,
-        privateKeyFile:credentialFiles.engineerPrivate,
-        publicKeyPemFile:credentialFiles.engineerPublic,
-        passwordSaltHex:"12".repeat(16),
-        passwordScryptHex:"34".repeat(64),
-        checkpoint:{
-          directory:f.checkpointDir,backendKeyId:f.backendKeyId,
-          backendPublicKeyPemFile:credentialFiles.backendPublic,
-          expectedWorkBranch:"feature/invoice-sort"
-        }
-      },
-      oidc:{
-        pinned:{
-          repository:"DarkGh0st03/delegation",
-          ref:"refs/heads/refactor/post-prof-plan-contracts-20261021",
-          workflowPath:".github/workflows/trusted-private-github-session-hold.yml",
-          sourceSha:"b".repeat(40)
-        },
-        trust:{
-          expectedAudience:"urn:offline-private-engineer",
-          expectedSubject:"repo:DarkGh0st03/delegation:environment:r5-private-admission",
-          expectedRepositoryId:"123",expectedOwnerId:"456"
-        },
-        replayDirectory:replayDir,admissionDirectory:admissionDir,
-        bindAddress:"127.0.0.1",
-        githubApiTokenFile:credentialFiles.githubToken,
-        hmacSecretHexFile:credentialFiles.hmac,
-        tls:{
-          caFile:credentialFiles.ca,certFile:credentialFiles.server,
-          keyFile:credentialFiles.serverKey,
-          expectedClientFingerprint256:Array(32).fill("AA").join(":")
-        }
-      },
-      recovery:{
-        directory:f.operationalDir,
-        planningDirectory:f.planningDir,
-        // Deliberately absent. A strict host must confirm live Gateway
-        // IPC and durable native revocation before opening ANY listener.
-        gatewaySocketPath:join(home,"no-trusted-gateway.sock"),
-        gatewaySecretFile:credentialFiles.gatewaySecret,
-        adapterBaseUrl:"http://127.0.0.1:8090",
-        adapterTokenFile:credentialFiles.adapterToken
-      },
-      approvalPort:0,oidcPort:0
-    };
-    const configPath=join(home,"owner-service.json");
-    await writeFile(configPath,JSON.stringify(protectedConfig),{mode:0o600});
+    const {configPath,protectedConfig,replayDir,admissionDir}=
+      await makeProtectedOwnerServiceConfig(f,home);
     await assert.rejects(readFile(f.planFilePath,"utf8"),
       (e:any)=>e.code==="ENOENT");
     // This preparation reads owner-only protected files, but DOES NOT
@@ -1300,6 +1312,87 @@ test("closed prior DAG -> durable prior work disposition -> fresh ADK plan -> si
     assert.equal(f.coordinator.phase,"closed");
     await f.planningRecovery.assertClean();
     assert.equal(f.observed.revoked,1);
+
+    // R48: a SECOND, independently configured Engineer owner instance
+    // exercises the same prior signed old root through the real one-shot
+    // startFreshRepair(), ADK checkpoint and persistent-host bootstrap.
+    // Its missing private Gateway IPC is deliberately fatal AFTER the
+    // signed human-review packet, proving it cannot silently execute.
+    const nextFixture=await makeOwnerReviewFixture();
+    const ownerHome=await mkdtemp(join(tmpdir(),"r48-configured-owner-"));
+    const nextDecisionDir=await mkdtemp(join(tmpdir(),"r48-owner-decision-"));
+    try{
+      const {configPath}=await makeProtectedOwnerServiceConfig(
+        nextFixture,ownerHome,"fresh_repair");
+      const service=await prepareConfiguredOwnerEngineerBootstrap(configPath,{
+        operationalRecovery:nextFixture.operationalRecovery
+      });
+      const nextPlanning=nextFixture.makeConfig();
+      nextPlanning.checkpointStore=service.planningCheckpointStore;
+      delete (nextPlanning as any).reviewPlanFile;
+      nextPlanning.planner={...nextPlanning.planner,
+        model:new R5ScriptedNoProviderPlanningModel({
+          snapshot,workBranch:"feature/invoice-sort",
+          edits:{backend:[FILE],frontend:[SECOND_FILE]},
+          newTestFile:"src/billing/r48-repair.spec.ts"
+        }),
+        requirement:"Repair prior invoice TypeScript failure",
+        planId:"r48-independent-engineer-review"};
+      const reaudited=await auditTrustedRetiredFeatureWork({
+        previousCoordinator:prior,nextSessionId:snapshot.session_id,
+        previousSignedApprovals,trustedFinalFeatureSha:previousHead,
+        trustedGitea:{async readPinnedFeatureDiff(pin){
+          assert.equal(pin.branch,previousBranch);
+          assert.equal(pin.base_revision,SHA);
+          assert.equal(pin.head_revision,previousHead);
+          return {branch:pin.branch,base_revision:pin.base_revision,
+            head_revision:pin.head_revision,
+            changes:[{path:FILE,change:"modified" as const}]};
+        }}
+      });
+      const recordStore=new TrustedFreshWorkDecisionStore(nextDecisionDir);
+      await assert.rejects(service.start(nextPlanning),
+        /original Planning disabled for fresh repair mode/);
+      await assert.rejects(service.startFreshRepair({
+        planning:nextPlanning,audit:reaudited,
+        previousCoordinator:prior,nextSessionId:snapshot.session_id,
+        disposition:"start_from_pinned_main",decisionStore:recordStore,
+        trustedGitea
+      }),/ENOENT|connect|Gateway|IPC/iu,
+        "Engineer's unavailable private IPC must close fresh Planning, not approve");
+      const persisted=await recordStore.assertRecorded({
+        audit:reaudited,disposition:"start_from_pinned_main"
+      });
+      assert.equal(persisted.previous_feature_head_sha,previousHead);
+      assert.equal(persisted.next_session_id,snapshot.session_id);
+      assert.equal(freshDiscoveryReads,2);
+      assert.equal(nextFixture.observed.issued,1);
+      assert.equal(nextFixture.observed.revoked,1);
+      assert.equal(nextFixture.coordinator.phase,"closed");
+      assert.equal(prior.phase,"closed");
+      const newCheckpoint=await service.planningCheckpointStore.load();
+      assert.equal(newCheckpoint.snapshot.session_id,snapshot.session_id);
+      assert.equal(newCheckpoint.proposal.plan.requirement,
+        "Repair prior invoice TypeScript failure");
+      assert.equal(newCheckpoint.proposal.digest,
+        nextFixture.gate.reviewPacket().plan_digest);
+      assert.deepEqual(JSON.parse(await readFile(nextFixture.planFilePath,"utf8")),
+        newCheckpoint.proposal.plan);
+      assert.throws(()=>nextFixture.coordinator.trustedOperationalAuthority(),
+        /Verified operational root is not active/);
+      await assert.rejects(nextFixture.gate.loadAuthenticatedApproval(
+        snapshot.session_id),(e:any)=>e.code==="ENOENT",
+        "checkpoint is not an independent Engineer approval");
+      await nextFixture.planningRecovery.assertClean();
+      await assert.rejects(service.startFreshRepair({
+        planning:nextPlanning,audit:reaudited
+      }),/single-use/);
+      assert.equal(nextFixture.observed.issued,1);
+    }finally{
+      await rm(ownerHome,{recursive:true,force:true});
+      await rm(nextDecisionDir,{recursive:true,force:true});
+      await nextFixture.cleanup();
+    }
   }finally{
     await rm(auditDir,{recursive:true,force:true});
     await rm(decisionDir,{recursive:true,force:true});
