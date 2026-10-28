@@ -45,6 +45,7 @@ import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
   from "../src/canonical.ts";
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
+import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {createSharedMcpHttpServer}
   from "../../../mcp-shared/src/http-server.ts";
 
@@ -193,15 +194,14 @@ export async function runNativePositiveApprovedDag({
   const approvedTestCreates=approvedFiles("test","create_file");
   const approvedTestUpdates=approvedFiles("test","update_file");
   const approvedTestReads=approvedFiles("test","read_file");
-  // The Planner is allowed to create a regression test OR update an existing
-  // discovered test. Only the authenticated approved grants choose the mode.
-  assert.equal(approvedTestCreates.length+approvedTestUpdates.length,1,
-    "Pilot requires one signed Test regression-file edit");
-  if(approvedTestUpdates.length)
-    assert.ok(approvedTestReads.includes(approvedTestUpdates[0]),
-      "Test update requires approved read_file");
-  const createdTestFile=approvedTestCreates[0]??null;
-  const updatedTestFile=approvedTestUpdates[0]??null;
+  // Test is allowed zero, one or many edits, all derived from signed
+  // permission rows. The controlled Runner remains mandatory.
+  const testGrants=grants.filter(g=>g.agent_id==="test");
+  const {createdTestFiles,updatedTestFiles,readableTestFiles,
+    expectedWriteKeys:expectedTestWriteKeys}=analyzeApprovedTestEdits({
+      creates:approvedTestCreates,updates:approvedTestUpdates,
+      reads:approvedTestReads,testGrants
+    });
   const allowedNonFile=[
     ["orchestrator","create_branch",root],
     ["orchestrator","create_pull_request",root],
@@ -217,6 +217,9 @@ export async function runNativePositiveApprovedDag({
   assert.equal(grants.length,approvedCount,
     "Signed plan contains unexpected extra tool grants");
   const implementationFiles=[...files.backend,...files.frontend];
+  const expectedImplementationWriteKeys=new Set(grants.filter(g=>
+    EDIT_ROLES.includes(g.agent_id)&&g.operation==="update_file").map(g=>
+    g.task_id+"\0"+g.operation+"\0"+g.resource));
   // A later approved Test Task may read the regression source written by
   // an earlier Test Task. That new path is NOT present on main and must not
   // be fetched during baseline capture; the Gateway still enforces each
@@ -224,13 +227,14 @@ export async function runNativePositiveApprovedDag({
   const expectedExisting=[...new Set([
     ...implementationFiles,...readableFiles.backend,
     ...readableFiles.frontend,...approvedTestReads
-  ])].filter(path=>path!==createdTestFile);
-  assert.equal(new Set([...implementationFiles,...approvedTestUpdates]).size,
-    implementationFiles.length+approvedTestUpdates.length,
-    "Test writes must not conflict with implementation roles");
-  if(createdTestFile)assert.equal(
-    new Set([...expectedExisting,createdTestFile]).size,
-    expectedExisting.length+1);
+  ])].filter(path=>!createdTestFiles.includes(path));
+  for(const path of [...createdTestFiles,...updatedTestFiles]){
+    assert.ok(!implementationFiles.includes(path),
+      "Test writes must not conflict with implementation roles");
+  }
+  for(const path of createdTestFiles)
+    assert.ok(!expectedExisting.includes(path),
+      "New Test files must not be read from main");
   if(!hostModels)assert.deepEqual(
     [...implementationFiles,...approvedTestCreates].sort(),
     Object.keys(referenceFiles).sort());
@@ -303,6 +307,10 @@ export async function runNativePositiveApprovedDag({
   const readPaths={backend:new Set(),frontend:new Set(),test:new Set()};
   const readPathsPerTask=new Map();
   const writePaths={backend:new Set(),frontend:new Set(),test:new Set()};
+  const observedTestWriteKeys=new Set();
+  const observedImplementationWriteKeys=new Set();
+  const writeKey=(taskId,operation,path)=>
+    taskId+"\0"+operation+"\0"+canonicalFileUri(repo,branch,path);
   const adkGatewayBase="http://approved-native-gateway.invalid";
   const reply=(body,status=200)=>new Response(JSON.stringify(body),{
     status,headers:{"content-type":"application/json"}
@@ -326,16 +334,16 @@ export async function runNativePositiveApprovedDag({
           const op=request.tool;
           assert.ok(["create_file","read_file","update_file","run_tests"].includes(op));
           if(op==="create_file"){
-            assert.equal(request.arguments.path,createdTestFile);
+            assert.ok(createdTestFiles.includes(request.arguments.path));
             assert.equal(request.arguments.branch,branch);
           }else if(op==="read_file"){
             assert.ok(approvedTestReads.includes(request.arguments.path));
             assert.equal(request.arguments.branch,branch);
           }else if(op==="update_file"){
-            assert.equal(request.arguments.path,updatedTestFile);
+            assert.ok(updatedTestFiles.includes(request.arguments.path));
             assert.equal(request.arguments.branch,branch);
             assert.ok(readPathsPerTask.get(activeTaskByRole.test)
-              ?.has(updatedTestFile),
+              ?.has(request.arguments.path),
               "Test edit must read its approved source in this same Task");
             assert.equal(typeof request.arguments.content,"string");
             assert.ok(request.arguments.content.length>0&&
@@ -343,7 +351,8 @@ export async function runNativePositiveApprovedDag({
           }else{
             assert.equal(request.arguments.branch,branch);
             assert.equal(request.arguments.profile,"poc-default");
-            assert.equal(testCalls,1);
+            assert.equal(observedTestWriteKeys.size,expectedTestWriteKeys.size,
+              "Final Runner cannot precede approved Test file changes");
           }
         }else{
           assert.ok(["read_file","update_file"].includes(request.tool));
@@ -404,6 +413,10 @@ export async function runNativePositiveApprovedDag({
               ?.has(effect.path),
               "A signed Task may not reuse another Task's prior read");
             assert.match(effect.commit_sha,SHA);
+            const key=writeKey(activeTaskByRole[role],"update_file",effect.path);
+            assert.ok(expectedImplementationWriteKeys.has(key),
+              "Implementation effect must match the same signed Task grant");
+            observedImplementationWriteKeys.add(key);
             if(!writePaths[role].has(effect.path)){
               writePaths[role].add(effect.path);
               writes[role]++;
@@ -427,32 +440,45 @@ export async function runNativePositiveApprovedDag({
           }
         }else if(effect.tool==="update_file"&&role==="test"){
           assert.equal(effect.provider,"gitea");
-          assert.equal(effect.path,updatedTestFile);
+          assert.ok(updatedTestFiles.includes(effect.path));
           assert.ok(readPathsPerTask.get(activeTaskByRole.test)
             ?.has(effect.path),
             "A Test edit cannot reuse a separate Task's prior source read");
-          assert.ok(!writePaths.test.has(effect.path));
           assert.match(effect.commit_sha,SHA);
-          // A signed Test preparation Task may execute before implementation.
-          // Only the final run_tests must wait for all implementation edits.
+          const key=writeKey(activeTaskByRole.test,"update_file",effect.path);
+          assert.ok(expectedTestWriteKeys.has(key),
+            "Test update must belong to the active signed Task");
+          // Rewriting after a repair attempt is allowed; each granted edit
+          // must still be observed at least once.
+          if(!observedTestWriteKeys.has(key)){
+            observedTestWriteKeys.add(key);
+            testCalls++;testUpdates++;
+          }
           writePaths.test.add(effect.path);
           const head=await reader.getBranchMetadata(branch);
           assert.equal(head.commit_sha,effect.commit_sha);
-          testCalls++;testUpdates++;
         }else if(effect.tool==="create_file"){
-          assert.equal(testCreates,0);
           assert.equal(effect.provider,"gitea");
-          assert.equal(effect.path,createdTestFile);
+          assert.ok(createdTestFiles.includes(effect.path));
           assert.match(effect.commit_sha,SHA);
-          // A signed Test preparation Task may execute before implementation.
-          // Only the final run_tests must wait for all implementation edits.
+          const key=writeKey(activeTaskByRole.test,"create_file",effect.path);
+          assert.ok(expectedTestWriteKeys.has(key),
+            "Test creation must belong to the active signed Task");
+          assert.ok(!observedTestWriteKeys.has(key),
+            "The same signed Task cannot create a file twice");
+          observedTestWriteKeys.add(key);
+          writePaths.test.add(effect.path);
           const head=await reader.getBranchMetadata(branch);
           assert.equal(head.commit_sha,effect.commit_sha);
           testCalls++;testCreates++;
         }else if(effect.tool==="run_tests"){
           assert.deepEqual(counts,{backend:1,frontend:1},
             "Final Docker acceptance must run after all approved implementation edits");
-          assert.equal(testCalls,1);
+          assert.equal(observedTestWriteKeys.size,expectedTestWriteKeys.size,
+            "No Test grants may remain unexecuted when final Docker starts");
+          assert.equal(observedImplementationWriteKeys.size,
+            expectedImplementationWriteKeys.size,
+            "No implementation write grant may remain unexecuted");
           const pinned=await reader.getBranchMetadata(branch);
           assert.equal(effect.provider,"runner");
           assert.equal(effect.tested_commit_sha,pinned.commit_sha);
@@ -566,8 +592,8 @@ export async function runNativePositiveApprovedDag({
     if(testScript){
       assert.deepEqual(testScript.map(c=>c.name),
         ["create_file","run_tests"],
-        "Signed test permissions must determine ADK test sequence");
-      assert.equal(testScript[0].args.path,createdTestFile);
+        "Offline test fixture must keep its one scripted create and final Runner");
+      assert.equal(testScript[0].args.path,createdTestFiles[0]);
     }
     const testModel=hostModels?.models.test??
       new OfflineApprovedAdkModel("test",testScript);
@@ -582,8 +608,8 @@ export async function runNativePositiveApprovedDag({
         adapterToken:agentTokens.test,fetchFn:adkFetchFor("test"),
         ...(sharedMcpEnabled?{
           mcpSharedUrl,mcpCryptoUrl,
-          mcpUpdateFile:updatedTestFile!==null,
-          mcpCreateFile:createdTestFile!==null,mcpRunTests:true
+          mcpUpdateFile:updatedTestFiles.length>0,
+          mcpCreateFile:createdTestFiles.length>0,mcpRunTests:true
         }:{}),
         maxModelTurns:realGeminiPilot?6:hostModels?24:4,
         maxModelCallMs:realGeminiPilot?120000:hostModels?90000:30000,
@@ -714,10 +740,13 @@ export async function runNativePositiveApprovedDag({
         reads[role]<=readableFiles[role].length);
       assert.equal(writes[role],files[role].length);
     }
-    assert.equal(testCalls,1);
+    assert.equal(testCalls,expectedTestWriteKeys.size);
+    assert.equal(observedTestWriteKeys.size,expectedTestWriteKeys.size);
+    assert.equal(observedImplementationWriteKeys.size,
+      expectedImplementationWriteKeys.size);
     assert.equal(testCreates,approvedTestCreates.length);
     assert.equal(testUpdates,approvedTestUpdates.length);
-    assert.ok(testReads<=approvedTestReads.length);
+    assert.ok(testReads<=readableTestFiles.length);
     assert.equal(runnerRuns,1);
     if(!hostModels){
       assert.equal(models.backend.calls,2*files.backend.length+1);
@@ -730,10 +759,10 @@ export async function runNativePositiveApprovedDag({
     if(sharedMcpEnabled){
       // Optional read-only context is not guaranteed to be visited by a
       // model. Count mandatory source reads + the Test edit/Runner sequence.
-      const mandatoryExisting=new Set([
-        ...implementationFiles,...(updatedTestFile?[updatedTestFile]:[])
-      ]);
-      const minMcpRequests=2*mandatoryExisting.size+2;
+      // Count the actual mandatory operations, not a fixed one-file Test
+      // edit; a Test Runner-only DAG still has one mandatory MCP call.
+      const minMcpRequests=2*expectedImplementationWriteKeys.size+
+        2*approvedTestUpdates.length+approvedTestCreates.length+1;
       assert.ok(normalMcpCalls>=minMcpRequests,
         "Approved ADK tools must traverse real shared MCP HTTP");
       assert.ok(privateCryptoMcpCalls>=minMcpRequests,
@@ -766,14 +795,16 @@ export async function runNativePositiveApprovedDag({
       const unchanged=await reader.readTextFile("main",path,baseSha);
       assert.equal(unchanged.content,originals[path]);
     }
-    const savedTest=await reader.readTextFile(branch,
-      createdTestFile??updatedTestFile);
-    if(!hostModels)
-      assert.equal(savedTest.content,referenceFiles[createdTestFile]);
-    else{
-      assert.ok(savedTest.content.length>0);
-      if(updatedTestFile)assert.notEqual(savedTest.content,
-        originals[updatedTestFile],"Signed Test update must change actual source");
+    for(const path of new Set([...createdTestFiles,...updatedTestFiles])){
+      const savedTest=await reader.readTextFile(branch,path);
+      if(!hostModels)
+        assert.equal(savedTest.content,referenceFiles[path]);
+      else{
+        assert.ok(savedTest.content.length>0);
+        if(updatedTestFiles.includes(path)&&Object.hasOwn(originals,path))
+          assert.notEqual(savedTest.content,originals[path],
+            "Signed Test update must change actual source");
+      }
     }
     const witnessModel=models.frontend instanceof SourceWitnessedOfflineAdkModel
       ? models.frontend : null;
@@ -870,7 +901,7 @@ export async function runNativePositiveApprovedDag({
       native_rust_child_credentials:allSpecialistTaskIds.length,
       native_verifier:true,live_opa:true,real_gitea:true,
       source_reads:reads.backend+reads.frontend+testReads,
-      source_writes:implementationFiles.length+testUpdates,
+      source_writes:observedImplementationWriteKeys.size+testUpdates,
       created_test_files:testCreates,
       manifest_source:"engineer_signed_approved_plan",
       test_runner_runs:runnerRuns,
