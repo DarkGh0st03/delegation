@@ -168,17 +168,25 @@ export async function runNativePositiveApprovedDag({
     assert.equal(canonicalFileUri(repo,branch,path),g.resource);
     return path;
   });
-  const files={};
+  const files={},readableFiles={};
   let implementationGrantCount=0;
   for(const role of EDIT_ROLES){
     const writes=approvedFiles(role,"update_file");
     const reads=approvedFiles(role,"read_file");
     assert.ok(writes.length>0,"Signed role has no approved edits");
-    // Each approved edit must have its own read grant. Different sequential
-    // Tasks can legitimately reference the same source file.
-    assert.deepEqual([...reads].sort(),[...writes].sort());
+    // A Planner may grant extra read-only source context. Every writable
+    // file still needs an approved read in its own Task, verified separately
+    // by the per-dispatch source-read guard below.
+    const grantsByTask=grants.filter(g=>g.agent_id===role);
+    for(const write of grantsByTask.filter(g=>g.operation==="update_file")){
+      assert.ok(grantsByTask.some(read=>
+        read.task_id===write.task_id&&read.operation==="read_file"&&
+        read.resource===write.resource),
+      "Every signed implementation edit requires same-Task read authority");
+    }
     implementationGrantCount+=writes.length+reads.length;
     files[role]=[...new Set(writes)];
+    readableFiles[role]=[...new Set(reads)];
   }
   const approvedTestCreates=approvedFiles("test","create_file");
   const approvedTestUpdates=approvedFiles("test","update_file");
@@ -207,7 +215,10 @@ export async function runNativePositiveApprovedDag({
   assert.equal(grants.length,approvedCount,
     "Signed plan contains unexpected extra tool grants");
   const implementationFiles=[...files.backend,...files.frontend];
-  const expectedExisting=[...new Set([...implementationFiles,...approvedTestReads])];
+  const expectedExisting=[...new Set([
+    ...implementationFiles,...readableFiles.backend,
+    ...readableFiles.frontend,...approvedTestReads
+  ])];
   assert.equal(new Set([...implementationFiles,...approvedTestUpdates]).size,
     implementationFiles.length+approvedTestUpdates.length,
     "Test writes must not conflict with implementation roles");
@@ -328,7 +339,9 @@ export async function runNativePositiveApprovedDag({
           }
         }else{
           assert.ok(["read_file","update_file"].includes(request.tool));
-          assert.ok(files[role].includes(request.arguments.path));
+          assert.ok((request.tool==="read_file"
+            ?readableFiles[role]:files[role]).includes(request.arguments.path),
+            "Task request must stay inside signed read/write resource scope");
           assert.equal(request.arguments.branch,branch);
           if(request.tool==="update_file"){
             // A previous Task's read cannot satisfy this independently
@@ -360,7 +373,9 @@ export async function runNativePositiveApprovedDag({
         const effect=executed.execution;
         if(role!=="test"){
           assert.equal(effect.provider,"gitea");
-          assert.ok(files[role].includes(effect.path));
+          assert.ok((effect.tool==="read_file"
+            ?readableFiles[role]:files[role]).includes(effect.path),
+            "Verified provider effect must stay within approved operation scope");
           if(effect.tool==="read_file"){
             // Agents may legitimately re-read after updating a source file.
             // Compare to the actual signed-branch provider state, not the
@@ -672,12 +687,14 @@ export async function runNativePositiveApprovedDag({
         new Set(result.specialized_results.map(x=>x.role)),new Set(ROLES));
     }else assert.deepEqual(result.specialized_results.map(x=>x.role),ROLES);
     assert.deepEqual(counts,{backend:1,frontend:1});
-    assert.deepEqual(reads,{
-      backend:files.backend.length,frontend:files.frontend.length
-    });
-    assert.deepEqual(writes,{
-      backend:files.backend.length,frontend:files.frontend.length
-    });
+    for(const role of EDIT_ROLES){
+      // Source read proof is mandatory on every updated file; independent
+      // read-only context is optional and must never be written implicitly.
+      assert.ok(files[role].every(path=>readPaths[role].has(path)));
+      assert.ok(reads[role]>=files[role].length&&
+        reads[role]<=readableFiles[role].length);
+      assert.equal(writes[role],files[role].length);
+    }
     assert.equal(testCalls,1);
     assert.equal(testCreates,approvedTestCreates.length);
     assert.equal(testUpdates,approvedTestUpdates.length);
@@ -692,9 +709,15 @@ export async function runNativePositiveApprovedDag({
     // normal shared MCP and separate private cryptographic MCP. A green
     // FunctionTool fallback alone cannot satisfy this gate.
     if(sharedMcpEnabled){
-      assert.ok(normalMcpCalls>=2*expectedExisting.length+2,
+      // Optional read-only context is not guaranteed to be visited by a
+      // model. Count mandatory source reads + the Test edit/Runner sequence.
+      const mandatoryExisting=new Set([
+        ...implementationFiles,...(updatedTestFile?[updatedTestFile]:[])
+      ]);
+      const minMcpRequests=2*mandatoryExisting.size+2;
+      assert.ok(normalMcpCalls>=minMcpRequests,
         "Approved ADK tools must traverse real shared MCP HTTP");
-      assert.ok(privateCryptoMcpCalls>=2*expectedExisting.length+2,
+      assert.ok(privateCryptoMcpCalls>=minMcpRequests,
         "Adapter VP generation must traverse the crypto MCP boundary");
     }
     if(!hostModels)assert.ok(result.specialized_results.every(x=>
@@ -826,7 +849,7 @@ export async function runNativePositiveApprovedDag({
       a2a_tasks_dispatched:result.specialized_results.length,
       native_rust_child_credentials:allSpecialistTaskIds.length,
       native_verifier:true,live_opa:true,real_gitea:true,
-      source_reads:implementationFiles.length+testReads,
+      source_reads:reads.backend+reads.frontend+testReads,
       source_writes:implementationFiles.length+testUpdates,
       created_test_files:testCreates,
       manifest_source:"engineer_signed_approved_plan",
