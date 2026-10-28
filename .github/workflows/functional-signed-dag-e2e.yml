@@ -225,6 +225,7 @@ jobs:
           const marker=lines.filter(l=>l.startsWith("[trusted-positive-ci] native_dag_failure "))
             .at(-1);
           let diagnosis="not_available",assertion_location=null;
+          let multi_test_diagnostic=null;
           if(marker&&marker.length<4096){
             try {
               const event=JSON.parse(marker.slice("[trusted-positive-ci] native_dag_failure ".length));
@@ -237,10 +238,33 @@ jobs:
                 "native-planning-read-core-evm-e2e"].includes(loc.module)&&
                 Number.isInteger(loc.line)&&loc.line>0&&loc.line<2000)
                 assertion_location={module:loc.module,line:loc.line};
+              const m=event.multi_test_diagnostic;
+              const ids=["branch","backend","frontend","test-preparation","test","pr"];
+              const categories=[
+                "a2a_dispatch_failed","orchestrator_task_failed",
+                "root_revocation_unconfirmed","dependency_denied",
+                "adk_model_failure","a2a_result_mismatch",
+                "attestation_effect_race","approved_plan_denied",
+                "test_assertion","unclassified"
+              ];
+              if(m&&Array.isArray(m.completed_task_ids)&&
+                 m.completed_task_ids.length<=6&&
+                 m.completed_task_ids.every(id=>ids.includes(id))&&
+                 Array.isArray(m.issued_task_ids)&&
+                 m.issued_task_ids.length<=6&&
+                 m.issued_task_ids.every(id=>ids.includes(id))&&
+                 categories.includes(m.category)&&
+                 categories.includes(m.cause_category)&&
+                 Number.isInteger(m.runner_runs)&&m.runner_runs>=0&&
+                 m.runner_runs<=2&&
+                 Number.isInteger(m.signed_test_write_count)&&
+                 m.signed_test_write_count>=0&&m.signed_test_write_count<=4)
+                multi_test_diagnostic=m;
             }catch{/* never echo untrusted input */}
           }
           console.error("[signed-dag-safe-diagnostic] "+JSON.stringify({
-            stage:starts.at(-1)??"unknown",diagnosis,assertion_location
+            stage:starts.at(-1)??"unknown",diagnosis,assertion_location,
+            ...(multi_test_diagnostic?{multi_test_diagnostic}:{})
           }));
           NODE
             exit 1

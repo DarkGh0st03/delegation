@@ -576,6 +576,45 @@ async function main(){
           const offlineLocation=locationMatch&&locationLine>0&&
             locationLine<2000
             ?{module:locationMatch[1],line:locationLine}:null;
+          // Allow only recognized Task IDs and fixed failure categories out
+          // of the native signed multi-Test harness. No provider messages.
+          let multiTestDiagnostic=null;
+          const diagnosticPrefix="[native-dag-adk] multi_test_safe_diagnostic ";
+          for(const line of childStderr.slice(-262144).split(/\r?\n/u)
+            .filter(line=>line.startsWith(diagnosticPrefix)&&line.length<4096)
+            .reverse()){
+            try{
+              const event=JSON.parse(line.slice(diagnosticPrefix.length));
+              const ids=["branch","backend","frontend","test-preparation","test","pr"];
+              const categories=[
+                "a2a_dispatch_failed","orchestrator_task_failed",
+                "root_revocation_unconfirmed","dependency_denied",
+                "adk_model_failure","a2a_result_mismatch",
+                "attestation_effect_race","approved_plan_denied",
+                "test_assertion","unclassified"
+              ];
+              const validIds=value=>Array.isArray(value)&&value.length<=6&&
+                value.every(id=>ids.includes(id));
+              if(!validIds(event.completed_task_ids)||
+                 !validIds(event.issued_task_ids)||
+                 !categories.includes(event.category)||
+                 !categories.includes(event.cause_category)||
+                 !Number.isSafeInteger(event.runner_runs)||
+                 event.runner_runs<0||event.runner_runs>2||
+                 !Number.isSafeInteger(event.signed_test_write_count)||
+                 event.signed_test_write_count<0||
+                 event.signed_test_write_count>4)continue;
+              multiTestDiagnostic={
+                completed_task_ids:event.completed_task_ids,
+                issued_task_ids:event.issued_task_ids,
+                category:event.category,
+                cause_category:event.cause_category,
+                runner_runs:event.runner_runs,
+                signed_test_write_count:event.signed_test_write_count
+              };
+              break;
+            }catch{/* never print untrusted stderr */}
+          }
           // Child errors are untrusted. Only known enum fields and integers
           // from our own signed-gemini-pilot marker may cross this boundary.
           let geminiDiagnostic=null;
@@ -655,6 +694,7 @@ async function main(){
               stage:"signed_dag_disposable_docker_acceptance",
               ...(evidence??{diagnosis:"no_structured_phase_status"}),
               ...(offlineLocation?{assertion_location:offlineLocation}:{}),
+              ...(multiTestDiagnostic?{multi_test_diagnostic:multiTestDiagnostic}:{}),
               ...(geminiDiagnostic?{gemini_pilot_diagnostic:geminiDiagnostic}:{}),
               signed_dag_completed:false,
               permissions_bypassed:false
