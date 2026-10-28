@@ -9,7 +9,8 @@ import {open,lstat} from "node:fs/promises";
 import {constants} from "node:fs";
 import {dirname,isAbsolute,normalize} from "node:path";
 import {startTrustedEngineerRecoveringHost,
-  startOwnerControlledEngineerReviewHost} from "./trusted-engineer-host.mjs";
+  startOwnerControlledEngineerReviewHost,
+  startOwnerControlledFreshRepairEngineerReviewHost} from "./trusted-engineer-host.mjs";
 import {TrustedOperationalRecoveryStore}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
 import {TrustedReviewedPlanFile}
