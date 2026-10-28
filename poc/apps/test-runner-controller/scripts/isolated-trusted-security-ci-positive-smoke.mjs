@@ -564,6 +564,18 @@ async function main(){
           // inputs may be present in untrusted logs. Only fixed phase
           // names and success/failure enums may cross this CI boundary.
           const evidence=safeNativeDockerFailureDiagnostic(error?.stderr);
+          // Expose only a bounded source location from our fixed offline
+          // harness files; never publish child stderr, source, credentials,
+          // arbitrary assertion text or provider responses.
+          const childStderr=Buffer.isBuffer(error?.stderr)?
+            error.stderr.toString("utf8"):
+            typeof error?.stderr==="string"?error.stderr:"";
+          const locationMatch=childStderr.slice(-262144).match(
+            /(?:^|[\\/])(native-approved-planner-dag-positive|native-planning-read-core-evm-e2e)\.mjs:(\d{1,4}):\d{1,4}/u);
+          const locationLine=Number(locationMatch?.[2]);
+          const offlineLocation=locationMatch&&locationLine>0&&
+            locationLine<2000
+            ?{module:locationMatch[1],line:locationLine}:null;
           // Child errors are untrusted. Only known enum fields and integers
           // from our own signed-gemini-pilot marker may cross this boundary.
           let geminiDiagnostic=null;
@@ -642,6 +654,7 @@ async function main(){
             JSON.stringify({
               stage:"signed_dag_disposable_docker_acceptance",
               ...(evidence??{diagnosis:"no_structured_phase_status"}),
+              ...(offlineLocation?{assertion_location:offlineLocation}:{}),
               ...(geminiDiagnostic?{gemini_pilot_diagnostic:geminiDiagnostic}:{}),
               signed_dag_completed:false,
               permissions_bypassed:false
