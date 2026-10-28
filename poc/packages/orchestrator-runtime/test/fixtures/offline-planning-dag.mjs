@@ -25,7 +25,7 @@ function requirePath(path){
   return path;
 }
 export function makeOfflineReviewableDag({
-  snapshot,edits,newTestFile,taskInstructions={}
+  snapshot,edits,newTestFile,taskInstructions={},testRepairFile
 }){
   if(!snapshot||!Array.isArray(snapshot.files)||
      !Array.isArray(snapshot.directories)||
@@ -59,6 +59,12 @@ export function makeOfflineReviewableDag({
   if(!directories.has(parent)||discovered.has(newTestFile)||
      all.includes(newTestFile))
     throw Error("Offline Planning intent: test file outside scope");
+  if(testRepairFile!==undefined){
+    requirePath(testRepairFile);
+    if(!testRepairFile.startsWith("tests/")||
+       !discovered.has(testRepairFile)||testRepairFile===newTestFile)
+      throw Error("Offline Planning intent: repair target outside trusted test inventory");
+  }
   const tasks=[
     {id:"branch",agent_id:"orchestrator",title:"Create isolated work branch",
       description:"Keep planned changes off the main branch",depends_on:[],
@@ -80,6 +86,13 @@ export function makeOfflineReviewableDag({
       permissions:[
         {operation:"create_file",path:newTestFile,
           reason:"Add the reviewed scenario regression"},
+        ...(testRepairFile?[{
+          operation:"read_file",path:testRepairFile,
+          reason:"Inspect existing regression under this same signed Task"
+        },{
+          operation:"update_file",path:testRepairFile,
+          reason:"Repair a genuine failure without extending task authority"
+        }]:[]),
         {operation:"run_tests",path:null,reason:"Run exact-SHA acceptance"}
       ]},
     {id:"pr",agent_id:"orchestrator",title:"Open tested feature Pull Request",
