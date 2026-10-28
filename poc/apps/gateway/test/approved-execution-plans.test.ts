@@ -104,7 +104,7 @@ function harness(options:{
         revision:sha,commit_sha:sha
       };
       if(req.tool==="update_file"){
-        const revision=req.agent_role==="test"
+        const revision=record.agent_role==="test"
           ?(options.testWriteRevisions?.[testWrites++]??sha):sha;
         return {
           provider:"gitea",performed:true,tool:"update_file",
