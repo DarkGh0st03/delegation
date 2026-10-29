@@ -26,7 +26,11 @@ const result={
 /** No AI provider request. Native ADK Runner still performs full tool discovery/call. */
 class ScriptedReadModel extends BaseLlm {
   readonly requests:LlmRequest[]=[];
-  constructor(readonly signedFirstCall=false) {super({model:"local-mcp-test-no-provider"});}
+  readonly signedFirstCall:boolean;
+  constructor(signedFirstCall=false) {
+    super({model:"local-mcp-test-no-provider"});
+    this.signedFirstCall=signedFirstCall;
+  }
   override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void> {
     this.requests.push(request);
     if(this.requests.length===1) {
