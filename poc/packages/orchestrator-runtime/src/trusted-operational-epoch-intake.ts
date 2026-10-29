@@ -6,6 +6,7 @@
 import {TrustedOperationalEpochJournal} from "./trusted-operational-epoch-journal.mjs";
 import {SignedEngineerApprovalFileStore} from "./signed-approval-store.ts";
 import {assertApprovedPlanScope,planDigest} from "../../plan-contracts/src/plan.mjs";
+import {preflightNextOperationalEpoch} from "../../plan-contracts/src/operational-epoch-scope.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 const OPS=new Set<string>(RUST_OPERATIONS);
@@ -79,8 +80,26 @@ export class TrustedOperationalEpochIntake {
    deny("first epoch not linked to authenticated Engineer receipt");
   return this.#journal.reserveNext(candidatePlan,root,this.#agents);
  }
+ /** A separately constructed Coordinator may never impersonate this root. */
+ assertSameCoordinator(other:Pick<TrustedExecutionCoordinator,
+  "phase"|"trustedOperationalAuthority">):void{
+  if(other!==this.#coordinator)deny("Coordinator instance differs from epoch owner");
+ }
  async verifiedEpochHistory(){
-  await this.#rootAndPlan();
-  return this.#journal.records();
+  const {root,plan}=await this.#rootAndPlan();
+  const history=await this.#journal.records();
+  if(!history.length||planDigest(history[0].plan)!==planDigest(plan))
+   deny("signed initial epoch differs from Engineer approval");
+  for(let i=1;i<history.length;i++){
+   preflightNextOperationalEpoch({
+    originalSignedPlan:plan,
+    previousEpochPlan:history[i-1].plan,
+    candidatePlan:history[i].plan,
+    operationalRoot:root,pinnedAgentRegistry:this.#agents,
+    priorTaskIds:history.slice(0,i).flatMap(x=>x.plan.tasks.map(t=>t.id)),
+    priorPlanIds:history.slice(0,i).map(x=>x.plan.plan_id)
+   },{allowedOperations:OPS});
+  }
+  return history;
  }
 }
