@@ -2,6 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {classifySafeGeminiPilotFailure} from
   "../signed-gemini-pilot-failure-observation.mjs";
+import {safeNativeDockerFailureDiagnostic} from
+  "../../apps/test-runner-controller/scripts/native-dag-result-diagnostic.mjs";
+import {extractSafeGeminiPilotDockerEvidence} from
+  "../../apps/test-runner-controller/scripts/gemini-pilot-safe-docker-evidence.mjs";
+import {readFileSync} from "node:fs";
 const PHASES=[
   "dependency_install","typecheck","backend_tests","frontend_tests",
   "build","playwright_e2e","researcher_acceptance"
@@ -99,4 +104,61 @@ test("Unknown provider error strings never leave failure observation",()=>{
     observed_failure:"failure_without_verified_phase",
     causal_attribution:"not_established"
   });
+});
+
+test("real Docker marker -> native whitelist -> CI log -> artifact whitelist -> interpretation",()=>{
+  const secret="SECRET_PRIVATE_COMPILER_OUTPUT_AND_SIGNED_VP";
+  const untrusted={
+    status:"fail",project_tests:"fail",researcher_acceptance:"skipped",
+    phases:PHASES.map((phase,i)=>({
+      phase,status:i<1?"pass":i===1?"fail":"skipped",
+      source:secret
+    })),
+    typecheck_error_codes:["TS2304","TS2688"],
+    private_tool_response:secret
+  };
+  const native=safeNativeDockerFailureDiagnostic(
+    "[native-dag-adk] docker_phase_status "+JSON.stringify(untrusted));
+  assert.equal(native?.first_failed_phase,"typecheck");
+  assert.deepEqual(native?.typecheck_error_codes,["TS2304","TS2688"]);
+  assert.ok(!JSON.stringify(native).includes(secret));
+  const wrapped={
+    stage:"signed_dag_disposable_docker_acceptance",
+    ...native,
+    gemini_pilot_diagnostic:{
+      stage:"delegated_agents_gitea_docker",
+      category:"unclassified_failure",
+      planning_rejection:{stage:"contract",reason:"execution_dag_incompatible"}
+    },
+    private_model_text:secret
+  };
+  const log="untrusted model output "+secret+"\n"+
+    "[trusted-positive-ci] native_dag_failure "+JSON.stringify(wrapped)+"\n";
+  const publicDocker=extractSafeGeminiPilotDockerEvidence(log);
+  assert.deepEqual(publicDocker,native);
+  const classification=classifySafeGeminiPilotFailure({
+    docker_phase_evidence:publicDocker,
+    gemini_pilot_diagnostic:wrapped.gemini_pilot_diagnostic
+  });
+  assert.deepEqual(classification,{
+    observed_failure:"docker_typecheck_failure",
+    first_failed_phase:"typecheck",
+    causal_attribution:"not_established"
+  });
+  const artifact=JSON.stringify({
+    docker_phase_evidence:publicDocker,failure_observation:classification
+  });
+  assert.ok(!artifact.includes(secret));
+  assert.ok(!artifact.includes("execution_dag_incompatible"));
+});
+
+test("R74 paid failure workflow actually writes noncausal observation from sanitized evidence",()=>{
+  const yml=readFileSync(new URL(
+    "../../../.github/workflows/gemini-paid-shared-mcp-final.yml",
+    import.meta.url),"utf8");
+  assert.ok(yml.includes("signed-gemini-pilot-failure-observation.test.mjs"));
+  assert.ok(yml.includes("classifySafeGeminiPilotFailure"));
+  assert.ok(yml.includes("failure_observation:failureObservation"));
+  assert.ok(yml.includes("docker_phase_evidence:dockerEvidence"));
+  assert.ok(!yml.includes("causal_attribution:\"model_reasoning_failure\""));
 });
