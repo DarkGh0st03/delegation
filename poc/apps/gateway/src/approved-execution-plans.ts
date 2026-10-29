@@ -18,6 +18,7 @@ import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord
   type NormalizedToolRequest } from "./types.ts";
 import { GatewayError } from "./errors.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
+import {TrustedOperationalEpochIntake} from "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
 import type {ExecutionResult,GiteaReadFileExecutionResult,RunnerExecutionResult} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import type { GatewayRepositoryConfig } from "./types.ts";
@@ -72,6 +73,7 @@ interface RuntimeTaskBinding {
   readonly planTaskId: string;
   readonly agent: AgentRole;
   readonly sessionId: string;
+  readonly epochVersion:number;
   readonly successfulRequests: Map<string,TrustedProviderEffect>;
   completed: boolean;
   completing: boolean;
@@ -84,6 +86,8 @@ interface ActivePlan {
   readonly approval: any;
   readonly approvedAt: string;
   readonly workBranch:string;
+  currentEpoch:number;
+  readonly admittedEpochTasks:Map<string,{plan:any;digest:string;epoch:number}>;
   active: boolean;
   /** Only trusted explicit close/retire, never mere lease expiry. */
   closedByTrustedOwner:boolean;
@@ -123,6 +127,8 @@ export class TrustedApprovedExecutionPlans {
   readonly #sessionStore?:TrustedOperationalSessionStore;
   readonly #operationalLeaseMs?:number;
   readonly #nowMs:()=>number;
+  readonly #epochIntake?:TrustedOperationalEpochIntake;
+  readonly #epochAdmissionInFlight=new Set<string>();
 
   constructor(config:{
     repository:GatewayRepositoryConfig;
@@ -133,6 +139,8 @@ export class TrustedApprovedExecutionPlans {
     operationalLeaseMs?:number;
     /** Production: mandatory one-shot durable Gateway activation ledger. */
     operationalSessionStore?:TrustedOperationalSessionStore;
+    /** Only the owner-private Engineer-root-bound intake, not an A2A model payload. */
+    operationalEpochIntake?:TrustedOperationalEpochIntake;
     nowMs?:()=>number;
   }){
     if(!config.engineerDid?.startsWith("did:") || !config.approvals ||
@@ -149,6 +157,10 @@ export class TrustedApprovedExecutionPlans {
        !(config.operationalSessionStore instanceof TrustedOperationalSessionStore))
       throw Error("Invalid trusted operational session journal");
     this.#sessionStore=config.operationalSessionStore;
+    if(config.operationalEpochIntake!==undefined &&
+       !(config.operationalEpochIntake instanceof TrustedOperationalEpochIntake))
+      throw Error("Trusted operational epoch intake instance required");
+    this.#epochIntake=config.operationalEpochIntake;
     if(config.operationalLeaseMs!==undefined&&
        (!Number.isSafeInteger(config.operationalLeaseMs)||
         config.operationalLeaseMs<10_000||
@@ -248,7 +260,7 @@ export class TrustedApprovedExecutionPlans {
         denied("Operational session retired while verifying signed approval");
       this.#sessions.set(sessionId,{
         sessionId,digest,plan:snapshot,approval:receipt,approvedAt:receipt.approved_at,
-        workBranch,
+        workBranch,currentEpoch:1,admittedEpochTasks:new Map(),
         active:true,closedByTrustedOwner:false,completedPlanTasks:new Set(),
         ...(this.#operationalLeaseMs===undefined?{}:
           {leaseExpiresAtMs:this.#clock()+this.#operationalLeaseMs})
@@ -258,6 +270,78 @@ export class TrustedApprovedExecutionPlans {
       // Never reuse a failed session ID: the approval may have changed during
       // the failed external call, so a new authenticated session is required.
       throw error;
+    }
+  }
+
+  /**
+   * R103: Owner-private opt-in admission of the NEXT durably reserved plan.
+   * Engineer consent and the already-issued Rust root are independently
+   * verified by TrustedOperationalEpochIntake; this is a Gateway Task
+   * registry only. It does NOT issue a DC, verify a VP or call the provider.
+   *
+   * A failed Runner Task remains incomplete in the current API; entering a
+   * repair epoch requires a separate trusted failure quiescence mechanism.
+   * Until that is integrated, unresolved tasks MUST block this transition.
+   */
+  async admitNextOperationalEpoch(sessionId:string,epochVersion:number):
+    Promise<Readonly<{status:"gateway_epoch_admitted";epoch:number;plan_digest:string}>>{
+    ensureId(sessionId,"session ID");
+    const session=this.#sessions.get(sessionId);
+    if(!this.#epochIntake||!session||
+       !Number.isSafeInteger(epochVersion)||epochVersion<2||
+       this.#epochAdmissionInFlight.has(sessionId))
+      denied("Missing trusted epoch intake, active session or unique transition");
+    this.#ensureUnexpired(session);
+    if(epochVersion!==session.currentEpoch+1)
+      denied("Operational epoch version must advance exactly once");
+    // An in-flight original/previous Task may have an authorized Prepare.
+    // Never retire its grants before independently confirming quiescence.
+    if([...this.#bindings.values()].some(b=>b.sessionId===sessionId&&
+       b.epochVersion===session.currentEpoch&&!b.completed))
+      denied("Previous epoch has unresolved or in-flight Tasks");
+    this.#epochAdmissionInFlight.add(sessionId);
+    try{
+      const history=await this.#epochIntake.verifiedEpochHistory();
+      // Close/expiry may happen while the private store is performing IO.
+      this.#ensureUnexpired(session);
+      if(this.#sessions.get(sessionId)!==session||
+         epochVersion!==session.currentEpoch+1||history.length!==epochVersion||
+         history[0]?.plan_digest!==session.digest)
+        denied("Operational epoch changed or differs from original signed root");
+      const epoch=history.at(-1);
+      const plan=epoch?.plan;
+      if(!epoch||!plan||epoch.epoch!==epochVersion||
+         plan.session_id!==sessionId||
+         plan.base_revision!==session.plan.base_revision||
+         JSON.stringify(plan.repository)!==JSON.stringify(this.#repository)||
+         approvedWorkBranch(plan)!==session.workBranch||
+         planDigest(plan)!==epoch.plan_digest||
+         plan.tasks.length>MAX_TASKS||
+         plan.tasks.some((t:any)=>!TASK_AGENT.has(t.agent_id)))
+        denied("Operational epoch plan is outside pinned root session");
+      if([...this.#bindings.values()].some(b=>b.sessionId===sessionId&&
+         b.epochVersion===session.currentEpoch&&!b.completed))
+        denied("Previous epoch changed during admission");
+      for(const task of plan.tasks){
+        if(session.plan.tasks.some((t:any)=>t.id===task.id)||
+           session.admittedEpochTasks.has(task.id)||
+           [...this.#bindings.values()].some(b=>b.sessionId===sessionId&&
+             b.planTaskId===task.id))
+          denied("Replayed operational Task ID");
+      }
+      // Synchronous commit of the entire admitted plan after full checking.
+      const approvedPlan=structuredClone(plan);
+      for(const t of approvedPlan.tasks)
+        session.admittedEpochTasks.set(t.id,{
+          plan:approvedPlan,digest:epoch.plan_digest,epoch:epochVersion
+        });
+      session.currentEpoch=epochVersion;
+      // An old passing Test may never authorize a PR after replanning.
+      session.testedFeatureSha=undefined;
+      return Object.freeze({status:"gateway_epoch_admitted" as const,
+        epoch:epochVersion,plan_digest:epoch.plan_digest});
+    }finally{
+      this.#epochAdmissionInFlight.delete(sessionId);
     }
   }
 
@@ -271,14 +355,17 @@ export class TrustedApprovedExecutionPlans {
       denied("Unknown, inactive or duplicate approved runtime task");
     }
     this.#ensureUnexpired(session);
-    const task=session.plan.tasks.find((t:any)=>t.id===planTaskId);
+    const plan=session.currentEpoch===1?session.plan:
+      session.admittedEpochTasks.get(planTaskId)?.plan;
+    const task=plan?.tasks.find((t:any)=>t.id===planTaskId);
     if(!task || task.agent_id!==role ||
        [...this.#bindings.values()].some(b=>
          b.sessionId===sessionId && b.planTaskId===planTaskId)) {
-      denied("A2A runtime task is not assigned to the approved agent");
+      denied("A2A runtime task is not assigned to the current admitted epoch");
     }
     this.#bindings.set(runtimeTaskId,{
       runtimeTaskId,planTaskId,agent:role,sessionId,
+      epochVersion:session.currentEpoch,
       successfulRequests:new Map(),completed:false,completing:false
     });
   }
@@ -319,7 +406,8 @@ export class TrustedApprovedExecutionPlans {
     // registry must match the presenter whose VP the Rust Core verified.
     // Orchestrator identity is resolved independently by the Rust role map.
     if(binding.agent!=="orchestrator" && verifiedPresenterId!==undefined) {
-      const entry=session.plan.candidate_agents.find(
+      const effectivePlan=this.#taskPlan(session,binding);
+      const entry=effectivePlan.candidate_agents.find(
         (a:any)=>a.agent_id===binding.agent
       );
       if(!entry || entry.did!==verifiedPresenterId) {
@@ -496,11 +584,15 @@ export class TrustedApprovedExecutionPlans {
     const runnerUri="gitea://"+this.#repository.authority+"/"+
       this.#repository.owner+"/"+this.#repository.repository+
       "/branches/"+encodeURIComponent(query.branch);
-    const signedRows=session.plan.requested_permissions.filter((p:any)=>
+    const epochEntry=session.admittedEpochTasks.get(query.task_id);
+    if(epochEntry&&epochEntry.epoch!==session.currentEpoch)
+      denied("Test result comes from a stale operational epoch");
+    const effectivePlan=epochEntry?.plan??session.plan;
+    const signedRows=effectivePlan.requested_permissions.filter((p:any)=>
       p.task_id===query.task_id&&p.agent_id==="test"&&
       p.operation==="run_tests"&&p.resource===runnerUri&&
-      session.approval.approved_permission_ids.includes(p.id));
-    if(signedRows.length!==1)denied("Test Runner operation not signed by Engineer");
+      (epochEntry!==undefined||session.approval.approved_permission_ids.includes(p.id)));
+    if(signedRows.length!==1)denied("No authenticated Test Runner scope");
     const relevant=[...b.successfulRequests.values()].filter(e=>
       e.tool==="run_tests"||e.tool==="update_file"||e.tool==="create_file");
     const last=relevant.at(-1);
@@ -567,11 +659,22 @@ export class TrustedApprovedExecutionPlans {
       denied("No active trusted plan/task binding");
     }
     this.#ensureUnexpired(session);
+    if(binding.epochVersion!==session.currentEpoch)
+      denied("Stale operational epoch task binding");
     return {session,binding};
   }
 
+  #taskPlan(session:ActivePlan,binding:RuntimeTaskBinding):any{
+    if(binding.epochVersion===1)return session.plan;
+    const admitted=session.admittedEpochTasks.get(binding.planTaskId);
+    if(!admitted||admitted.epoch!==binding.epochVersion)
+      denied("No trusted admitted plan for this Task");
+    return admitted.plan;
+  }
+
   #assertDependencies(session:ActivePlan,binding:RuntimeTaskBinding):void {
-    const task=session.plan.tasks.find((t:any)=>t.id===binding.planTaskId);
+    const task=this.#taskPlan(session,binding).tasks.find(
+      (t:any)=>t.id===binding.planTaskId);
     if(!task)denied("Plan Task no longer exists");
     for(const dependency of task.depends_on) {
       if(!session.completedPlanTasks.has(dependency)) {
@@ -593,6 +696,21 @@ export class TrustedApprovedExecutionPlans {
     if((request.tool==="create_branch"||request.tool==="create_pull_request")&&
        request.arguments.base_branch!=="main"){
       denied("Approved work must originate from main; main cannot be mutated");
+    }
+    if(binding.epochVersion>1){
+      // R101 independently verified this immutable epoch against the
+      // actually issued Rust parent BEFORE trusted Gateway registration.
+      // Require exact Task, role, resource and operation again at Prepare,
+      // AFTER VP/OPA and immediately before every provider operation.
+      const plan=this.#taskPlan(session,binding);
+      const task=plan.tasks.find((t:any)=>t.id===binding.planTaskId);
+      if(!task||task.agent_id!==binding.agent||
+         task.depends_on.some((id:string)=>!session.completedPlanTasks.has(id))||
+         !plan.requested_permissions.some((p:any)=>
+           p.task_id===binding.planTaskId&&p.agent_id===binding.agent&&
+           p.resource===required.resource&&p.operation===required.operation))
+        denied("Operation, role, permission or dependency outside admitted epoch");
+      return;
     }
     try {
       assertApprovedExecution(session.plan,session.approval,{
