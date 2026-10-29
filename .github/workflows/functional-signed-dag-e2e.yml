@@ -45,6 +45,8 @@ on:
       - 'poc/apps/test-runner-controller/src/**'
       - 'poc/apps/test-runner-controller/test/**'
       - 'poc/apps/gateway/src/**'
+      # Gateway Runner and provider regression tests also gate the paid pilot.
+      - 'poc/apps/gateway/test/**'
       # The billed signed-DAG pilot's exact-SHA gate requires this workflow
       # for ALL owner/Planner/recovery, plan-contract and A2A changes.
       # Otherwise two CIs can be green while this required third CI never
