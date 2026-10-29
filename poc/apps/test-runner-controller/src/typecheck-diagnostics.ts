@@ -31,6 +31,26 @@ export function sanitizeTypecheckLocations(raw:unknown):TypecheckLocation[]{
   return result;
 }
 /** Parser accepts only compiler location headers, discards message/snippets. */
+/** Source-free TypeScript codes, including project-level errors without file paths.
+ * Runner metadata is NEVER authorization or an executable repair instruction. */
+export function sanitizeTypecheckErrorCodes(raw:unknown):string[]{
+  if(!Array.isArray(raw)||raw.length===0||raw.length>MAX_ITEMS)return [];
+  if(raw.some(x=>typeof x!=="string"||!CODE.test(x)))return [];
+  if(new Set(raw).size!==raw.length||
+     raw.some((x,i)=>i>0&&raw[i-1]>=x))return [];
+  return [...raw];
+}
+export function extractTypecheckErrorCodes(stdout:string,stderr:string):string[]{
+  const lines=(stdout+"\n"+stderr).slice(0,100_000)
+    .split(/\r?\n/u).slice(0,1000);
+  const codes=new Set<string>();
+  for(const line of lines){
+    const m=/^(?:error |[^\r\n]{1,181}\([0-9]{1,6},[0-9]{1,5}\): error |[^\r\n]{1,181}:[0-9]{1,6}:[0-9]{1,5} - error )(TS[0-9]{4,5}):/u.exec(line);
+    if(m&&CODE.test(m[1]))codes.add(m[1]);
+    if(codes.size>=MAX_ITEMS)break;
+  }
+  return [...codes].sort();
+}
 export function extractTypecheckLocations(stdout:string,stderr:string):TypecheckLocation[]{
   const lines=(stdout+"\n"+stderr).slice(0,100_000).split(/\r?\n/u).slice(0,1000);
   const candidates:TypecheckLocation[]=[];

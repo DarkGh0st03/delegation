@@ -232,7 +232,10 @@ export class GiteaExecutor implements ExecutionPort {
           : { log_reference: run.log_reference }),
         ...(run.typecheck_diagnostics===undefined
           ?{}
-          :{typecheck_diagnostics:run.typecheck_diagnostics})
+          :{typecheck_diagnostics:run.typecheck_diagnostics}),
+        ...(run.typecheck_error_codes===undefined
+          ?{}
+          :{typecheck_error_codes:run.typecheck_error_codes})
       };
       return result;
     }

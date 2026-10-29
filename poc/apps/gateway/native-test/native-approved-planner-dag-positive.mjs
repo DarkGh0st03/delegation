@@ -51,7 +51,7 @@ import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {classifyApprovedDagFailure} from "./native-approved-dag-failure-category.mjs";
 import {verifyPilotRunnerOutcome} from "./verified-pilot-runner-outcome.mjs";
-import {sanitizeTypecheckLocations} from
+import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes} from
   "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {createSharedMcpHttpServer}
   from "../../../mcp-shared/src/http-server.ts";
@@ -499,8 +499,10 @@ export async function runNativePositiveApprovedDag({
           // never compiler messages, source snippets, or unapproved paths.
           const typecheckCodes=effect.status==="fail"&&
             effect.phases?.some(x=>x.phase==="typecheck"&&x.status==="fail")
-            ?[...new Set(sanitizeTypecheckLocations(
-              effect.typecheck_diagnostics).map(x=>x.code))].sort():[];
+            ?(effect.typecheck_error_codes!==undefined
+              ?sanitizeTypecheckErrorCodes(effect.typecheck_error_codes)
+              :[...new Set(sanitizeTypecheckLocations(
+                effect.typecheck_diagnostics).map(x=>x.code))].sort()):[];
           process.stderr.write("[native-dag-adk] docker_phase_status "+
             JSON.stringify({
               status:effect.status,

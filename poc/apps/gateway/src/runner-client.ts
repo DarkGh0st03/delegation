@@ -1,5 +1,6 @@
 import { ProviderUnavailableError } from "./errors.ts";
-import {sanitizeTypecheckLocations,type TypecheckLocation}
+import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
+  type TypecheckLocation}
   from "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {sanitizeVitestFailureFiles}
   from "../../test-runner-controller/src/vitest-failure-files.ts";
@@ -40,6 +41,7 @@ export interface RunnerClientResult {
   };
   log_reference?: string;
   typecheck_diagnostics?: TypecheckLocation[];
+  typecheck_error_codes?: string[];
   failing_test_files?: string[];
 }
 
@@ -220,6 +222,10 @@ export class RunnerClient {
         : {}),
       ...(status==="fail"&&body.typecheck_diagnostics!==undefined
         ?{typecheck_diagnostics:sanitizeTypecheckLocations(body.typecheck_diagnostics)}
+        :{}),
+      ...(status==="fail"&&body.typecheck_error_codes!==undefined&&
+         parsePhases(body.phases).some(p=>p.phase==="typecheck"&&p.status==="fail")
+        ?{typecheck_error_codes:sanitizeTypecheckErrorCodes(body.typecheck_error_codes)}
         :{}),
       ...(status==="fail"&&body.failing_test_files!==undefined
         ?{failing_test_files:sanitizeVitestFailureFiles(body.failing_test_files,
