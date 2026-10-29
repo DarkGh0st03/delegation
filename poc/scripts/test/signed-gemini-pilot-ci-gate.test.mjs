@@ -89,6 +89,8 @@ test("remote check is GitHub GET ONLY and strips all tokens from receipt",async(
       calls++;
       assert.equal(new URL(url).hostname,"api.github.com");
       assert.equal(new URL(url).searchParams.get("branch"),BRANCH);
+      assert.equal(new URL(url).searchParams.get("head_sha"),sha,
+        "API must query pinned SHA, not a lossy page of newer CI runs");
       assert.equal(options.method,"GET");
       assert.equal(options.headers.authorization,"Bearer "+env.GITHUB_TOKEN);
       return {status:200,text:async()=>JSON.stringify({

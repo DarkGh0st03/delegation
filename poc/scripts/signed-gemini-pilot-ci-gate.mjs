@@ -45,6 +45,11 @@ export async function checkSignedGeminiCiGate(env,{request=fetch}={}){
   if(typeof token!=="string"||token.length<10)deny();
   const url=new URL("https://api.github.com/repos/"+REPO+"/actions/runs");
   url.searchParams.set("branch",BRANCH);
+  // GitHub Actions runs are numerous on this development branch. Query
+  // the pinned SHA at the API, rather than losing an old-but-valid green
+  // checkpoint when newer pushes fill the first page (100 runs).
+  // verifyExactShaOfflineCiRuns independently enforces all identities.
+  url.searchParams.set("head_sha",env.GITHUB_SHA);
   url.searchParams.set("per_page","100");
   let response;
   try{
