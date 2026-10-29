@@ -47,6 +47,9 @@ on:
       - 'poc/apps/gateway/src/**'
       # Gateway Runner and provider regression tests also gate the paid pilot.
       - 'poc/apps/gateway/test/**'
+      # A signed Test Task uses shared MCP; changes here require the
+      # same-SHA real Docker signed-DAG admission gate before paid inference.
+      - 'poc/mcp-shared/**'
       # The billed signed-DAG pilot's exact-SHA gate requires this workflow
       # for ALL owner/Planner/recovery, plan-contract and A2A changes.
       # Otherwise two CIs can be green while this required third CI never
