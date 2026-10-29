@@ -29,7 +29,12 @@ test("manual pilot produces ONLY a redacted zero-inference receipt",()=>{
   assert.equal(receipt.engineer_review,"signed_test_fixture_not_human");
   assert.deepEqual(receipt.max_model_turns_per_task,
     {planner:20,backend:17,frontend:11,test:6});
-  assert.equal(receipt.max_output_tokens_per_call,8192);
+  assert.equal(receipt.max_output_tokens_per_call,16384);
+  assert.equal(receipt.planner_max_output_tokens_per_call,8192);
+  assert.deepEqual(receipt.max_output_tokens_per_role,{
+    backend:16384,frontend:8192,test:8192
+  });
+  assert.equal(Object.isFrozen(SIGNED_GEMINI_PILOT.maxOutputTokensPerRole),true);
   assert.equal(receipt.max_model_call_ms,120000);
   assert.equal(receipt.model,"gemini-3.8-flash");
   assert.equal(Object.isFrozen(receipt),true);

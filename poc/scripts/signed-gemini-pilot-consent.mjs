@@ -11,7 +11,11 @@ import {pathToFileURL} from "node:url";
 import {resolve} from "node:path";
 export const SIGNED_GEMINI_PILOT = Object.freeze({
   model:"gemini-3.8-flash",thinkingLevel:"LOW",
+  // R52: increase only Backend response allowance after MAX_TOKENS.
   maxOutputTokensPerCall:8192,maxModelCallMs:120000,
+  maxOutputTokensPerRole:Object.freeze({
+    backend:16384,frontend:8192,test:8192
+  }),
   maxTurnsPerTask:Object.freeze({
     planner:20,backend:17,frontend:11,test:6
   }),
@@ -52,7 +56,9 @@ export function verifySignedGeminiPilotConsent(env,{requireApiKey=false}={}){
     billing_cap_configuration:"user_attested_not_programmatically_verified",
     billing_cap_overage_risk_acknowledged:true,
     thinking_level:SIGNED_GEMINI_PILOT.thinkingLevel,
-    max_output_tokens_per_call:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+    max_output_tokens_per_call:16384,
+    planner_max_output_tokens_per_call:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+    max_output_tokens_per_role:SIGNED_GEMINI_PILOT.maxOutputTokensPerRole,
     max_model_turns_per_task:SIGNED_GEMINI_PILOT.maxTurnsPerTask,
     max_model_call_ms:SIGNED_GEMINI_PILOT.maxModelCallMs,
     generation_calls:0,

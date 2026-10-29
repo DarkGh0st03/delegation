@@ -596,7 +596,7 @@ export async function runNativePositiveApprovedDag({
           maxModelCallMs:realGeminiPilot
             ?SIGNED_GEMINI_PILOT.maxModelCallMs:hostModels?90000:30000,
           ...(realGeminiPilot?{generateContentConfig:{
-            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerRole[role],
             thinkingConfig:{thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel}
           }}:{}),
           gatewayTimeoutMs:30000
@@ -632,7 +632,7 @@ export async function runNativePositiveApprovedDag({
         maxModelCallMs:realGeminiPilot
           ?SIGNED_GEMINI_PILOT.maxModelCallMs:hostModels?90000:30000,
         ...(realGeminiPilot?{generateContentConfig:{
-          maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+          maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerRole.test,
           thinkingConfig:{thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel}
         }}:{}),
         gatewayTimeoutMs:30000
