@@ -51,6 +51,8 @@ import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {classifyApprovedDagFailure} from "./native-approved-dag-failure-category.mjs";
 import {verifyPilotRunnerOutcome} from "./verified-pilot-runner-outcome.mjs";
+import {sanitizeTypecheckLocations} from
+  "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {createSharedMcpHttpServer}
   from "../../../mcp-shared/src/http-server.ts";
 
@@ -493,12 +495,20 @@ export async function runNativePositiveApprovedDag({
           const pinned=await reader.getBranchMetadata(branch);
           assert.equal(effect.provider,"runner");
           assert.equal(effect.tested_commit_sha,pinned.commit_sha);
+          // Preserve only independently sanitized TypeScript error codes,
+          // never compiler messages, source snippets, or unapproved paths.
+          const typecheckCodes=effect.status==="fail"&&
+            effect.phases?.some(x=>x.phase==="typecheck"&&x.status==="fail")
+            ?[...new Set(sanitizeTypecheckLocations(
+              effect.typecheck_diagnostics).map(x=>x.code))].sort():[];
           process.stderr.write("[native-dag-adk] docker_phase_status "+
             JSON.stringify({
               status:effect.status,
               phases:effect.phases?.map(x=>({phase:x.phase,status:x.status})),
               project_tests:effect.project_tests?.status,
-              researcher_acceptance:effect.researcher_acceptance?.status
+              researcher_acceptance:effect.researcher_acceptance?.status,
+              ...(typecheckCodes.length?
+                {typecheck_error_codes:typecheckCodes}:{})
             })+"\n");
           // A completed provider operation can legitimately report FAIL.
           // Return its real result to the controlled Test tool, which reports

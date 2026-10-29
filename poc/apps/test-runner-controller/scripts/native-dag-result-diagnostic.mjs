@@ -24,6 +24,19 @@ function parseExact(marker){
     statuses.push(Object.freeze({phase:PHASES[i],status:p.status}));
   }
   const firstFailed=statuses.find(x=>x.status==="fail");
+  // A bounded code-only diagnostic; arbitrary compiler output and paths
+  // are never re-emitted. Invalid metadata rejects the whole event.
+  let typecheckCodes;
+  if(marker.typecheck_error_codes!==undefined){
+    const codes=marker.typecheck_error_codes;
+    if(firstFailed?.phase!=="typecheck"||!Array.isArray(codes)||
+       codes.length===0||codes.length>8||
+       codes.some(x=>typeof x!=="string"||!/^TS[0-9]{4,5}$/u.test(x))||
+       new Set(codes).size!==codes.length||
+       codes.some((x,i)=>i>0&&codes[i-1]>=x))
+      return null;
+    typecheckCodes=Object.freeze([...codes]);
+  }
   if(marker.status==="fail"&&!firstFailed ||
      marker.status==="pass"&&statuses.some(x=>x.status!=="pass")||
      marker.status==="pass"&&(
@@ -34,7 +47,8 @@ function parseExact(marker){
     first_failed_phase:firstFailed?.phase??null,
     phases:Object.freeze(statuses),
     project_tests:marker.project_tests,
-    researcher_acceptance:marker.researcher_acceptance
+    researcher_acceptance:marker.researcher_acceptance,
+    ...(typecheckCodes?{typecheck_error_codes:typecheckCodes}:{})
   });
 }
 /** Returns only enums from known fixed phases. No arbitrary stderr copied. */

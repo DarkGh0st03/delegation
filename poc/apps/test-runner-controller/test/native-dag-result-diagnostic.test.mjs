@@ -44,6 +44,29 @@ test("R5 native Docker failure diagnosis supports every exact phase and benign s
   assert.equal(success.status,"pass");
   assert.equal(success.first_failed_phase,null);
 });
+test("Typecheck codes survive without paths or compiler messages",()=>{
+  const payload={...event("typecheck"),
+    typecheck_error_codes:["TS2304","TS2322"],
+    compiler_message:"SECRET_SOURCE_NEVER_PUBLISH",
+    typecheck_diagnostics:[{path:"private/path.ts",line:4}]};
+  const parsed=safe("[native-dag-adk] docker_phase_status "+
+    JSON.stringify(payload));
+  assert.deepEqual(parsed.typecheck_error_codes,["TS2304","TS2322"]);
+  assert.ok(!JSON.stringify(parsed).includes("SECRET_SOURCE_NEVER_PUBLISH"));
+  assert.ok(!JSON.stringify(parsed).includes("private/path.ts"));
+});
+test("Typecheck codes reject injected, duplicate, out-of-order or non-typecheck metadata",()=>{
+  const prefix="[native-dag-adk] docker_phase_status ";
+  for(const codes of [["TS2304;SECRET"],["TS2304","TS2304"],
+    ["TS2322","TS2304"],["TS999999"],[],Array(9).fill("TS2304")]){
+    assert.equal(safe(prefix+JSON.stringify({
+      ...event("typecheck"),typecheck_error_codes:codes
+    })),null);
+  }
+  assert.equal(safe(prefix+JSON.stringify({
+    ...event("frontend_tests"),typecheck_error_codes:["TS2304"]
+  })),null);
+});
 test("R5 malformed/fabricated Docker event never prints raw secret material",()=>{
   const errors=[
     "Bearer opaque-secret",

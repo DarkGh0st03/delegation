@@ -42,6 +42,23 @@ test("Pilot diagnostic accepts a genuine passing Docker phase, not model prose",
   assert.equal(result?.status,"pass");
   assert.equal(result?.first_failed_phase,null);
 });
+test("Pilot artifact carries only verified TypeScript codes across double filtering",()=>{
+  const payload={...sample("typecheck"),
+    typecheck_error_codes:["TS2304","TS2322"],
+    untrusted_compiler_output:"DO_NOT_EXPORT_PRIVATE_SOURCE",
+    typecheck_diagnostics:[{path:"private/credentials.ts",line:1}]};
+  const actual=safe(prefix+JSON.stringify(payload));
+  assert.deepEqual(actual?.typecheck_error_codes,["TS2304","TS2322"]);
+  const serialized=JSON.stringify(actual);
+  assert.doesNotMatch(serialized,/DO_NOT_EXPORT_PRIVATE_SOURCE|credentials\.ts/u);
+  for(const bad of [["TS2304;LEAK"],["TS2304","TS2304"],["TS2322","TS2304"]])
+    assert.equal(safe(prefix+JSON.stringify({
+      ...payload,typecheck_error_codes:bad
+    })),null);
+  assert.equal(safe(prefix+JSON.stringify({
+    ...sample("frontend_tests"),typecheck_error_codes:["TS2304"]
+  })),null);
+});
 test("Pilot diagnostic fails closed for malformed, forged or absent phase status",()=>{
   const fake=sample("frontend_tests");
   for(const line of [
