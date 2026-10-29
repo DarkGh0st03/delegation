@@ -30,6 +30,16 @@ test("aggregate distinguishes legitimate different reads from duplicate reads",(
   assert.equal(JSON.stringify(metrics).includes(secretPath),false);
 });
 
+test("Legacy approval referral without a failed phase remains terminal",()=>{
+  const progress=new AdkToolProgress();
+  progress.observe({name:"run_tests",arguments:{branch:"feature/test"},
+    payload:{ok:false,error:{kind:"tests_failed",message:"controlled",
+      details:{repair_requires_new_approval:true,
+        private_source:"NEVER_EXPOSE_THIS"}}}});
+  assert.equal(progress.requiresFreshEngineerApproval,true);
+  assert.equal(progress.typecheckScopeSummary,null);
+});
+
 test("all ADK role prompts encourage bounded investigation and safe full-file writes",()=>{
   for(const role of ["backend","frontend","test"] as const){
     const prompt=SPECIALIZED_AGENT_PROFILES[role].system_prompt;
