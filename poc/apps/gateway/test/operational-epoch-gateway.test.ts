@@ -229,6 +229,19 @@ test("R103 second plan binds new Backend and Test Tasks under same signed Rust r
  assert.equal(h.verified,5);
  assert.equal(h.policy,5);
  assert.equal(h.attested,5);
+ // Even when the branch SHA is unchanged, the old Test result does not
+ // attest the final epoch. Only the latest independently completed Test does.
+ await h.gates.retireSession(session);
+ assert.throws(()=>h.gates.readVerifiedRunnerEffect({
+   session_id:session,task_id:"test-original",
+   branch,tested_commit_sha:sha
+ }),/unique attested Test Task|current operational epoch|Test Runner/);
+ const accepted=h.gates.readVerifiedRunnerEffect({
+   session_id:session,task_id:"test-repair",
+   branch,tested_commit_sha:sha
+ });
+ assert.equal(accepted.status,"pass");
+ assert.equal(accepted.phases.length,7);
 });
 
 test("R103 rejects old prepared requests and missing new Task grants after transition",async(t)=>{
