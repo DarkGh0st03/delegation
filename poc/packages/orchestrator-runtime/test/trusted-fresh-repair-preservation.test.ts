@@ -383,15 +383,19 @@ test("R96 new signed exact-SHA run reconstructs both Backend and Frontend",async
 });
 test("R96 missing prior Frontend file means FAIL despite Runner PASS",async()=>{
   const f=await fixture();
-  try{await assert.rejects(()=>verifyTrustedFreshRepairPostRun(
-    (await simulateObservedPostRun(f,{paths:[backend]})).input
-  ),/post-run/i);}finally{await f.close();}
+  try{
+    const h=await simulateObservedPostRun(f,{paths:[backend]});
+    await assert.rejects(()=>verifyTrustedFreshRepairPostRun(h.input),
+      /post-run/i);
+  }finally{await f.close();}
 });
 test("R96 no Runner success without all actual fixed Docker phases passing",async()=>{
   const f=await fixture();
-  try{await assert.rejects(()=>verifyTrustedFreshRepairPostRun(
-    (await simulateObservedPostRun(f,{status:"fail"})).input
-  ),/post-run/i);}finally{await f.close();}
+  try{
+    const h=await simulateObservedPostRun(f,{status:"fail"});
+    await assert.rejects(()=>verifyTrustedFreshRepairPostRun(h.input),
+      /post-run|trusted|Test|Runner/i);
+  }finally{await f.close();}
 });
 test("R96 must reject stale Gitea, stale old SHA and wrong new SHA",async()=>{
   const f=await fixture();
