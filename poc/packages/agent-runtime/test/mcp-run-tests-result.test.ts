@@ -138,3 +138,34 @@ test("Read-only scope cannot authorize a failed TypeScript repair",()=>{
     (missingWrite.error.details as {repair_requires_new_approval?:unknown})
       ?.repair_requires_new_approval,true);
 });
+
+test("Test role receives only authorized Vitest failed files, never assertions",()=>{
+  const allowed="tests/frontend/suspension.test.tsx";
+  const outside="tests/frontend/private.test.ts";
+  const raw={isError:true,structuredContent:{ok:false,error:{
+    kind:"tests_failed",details:{
+      first_failed_phase:"frontend_tests",
+      failing_test_files:[allowed,outside],
+      raw_output:"TOP_SECRET_TEST_OUTPUT"
+    }
+  }}};
+  const scoped=normalizeMcpRunTestsOutcome(raw,args,[allowed],[allowed]);
+  assert.equal(scoped.ok,false);
+  if(!scoped.ok)assert.deepEqual(scoped.error.details,{
+    first_failed_phase:"frontend_tests",
+    failing_test_files:[allowed],
+    repair_requires_new_approval:true
+  });
+  assert.ok(!JSON.stringify(scoped).includes("TOP_SECRET_TEST_OUTPUT"));
+  assert.ok(!JSON.stringify(scoped).includes(outside));
+  const local=normalizeMcpRunTestsOutcome({
+    ...raw,structuredContent:{ok:false,error:{
+      kind:"tests_failed",
+      details:{first_failed_phase:"frontend_tests",failing_test_files:[allowed]}
+    }}
+  },args,[allowed]);
+  if(!local.ok)assert.deepEqual(local.error.details,{
+    first_failed_phase:"frontend_tests",
+    failing_test_files:[allowed]
+  });
+});

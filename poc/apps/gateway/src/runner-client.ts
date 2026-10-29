@@ -1,6 +1,8 @@
 import { ProviderUnavailableError } from "./errors.ts";
 import {sanitizeTypecheckLocations,type TypecheckLocation}
   from "../../test-runner-controller/src/typecheck-diagnostics.ts";
+import {sanitizeVitestFailureFiles}
+  from "../../test-runner-controller/src/vitest-failure-files.ts";
 import type { RunnerPhaseExecutionResult } from "./types.ts";
 
 type FetchLike = typeof fetch;
@@ -38,6 +40,7 @@ export interface RunnerClientResult {
   };
   log_reference?: string;
   typecheck_diagnostics?: TypecheckLocation[];
+  failing_test_files?: string[];
 }
 
 const PHASES = new Set([
@@ -217,7 +220,11 @@ export class RunnerClient {
         : {}),
       ...(status==="fail"&&body.typecheck_diagnostics!==undefined
         ?{typecheck_diagnostics:sanitizeTypecheckLocations(body.typecheck_diagnostics)}
-        :{})
+        :{}),
+      ...(status==="fail"&&body.failing_test_files!==undefined
+        ?{failing_test_files:sanitizeVitestFailureFiles(body.failing_test_files,
+           parsePhases(body.phases).some(p=>p.phase==="frontend_tests"&&p.status==="fail")
+             ?"frontend_tests":"backend_tests")}: {})
     };
 
     if (

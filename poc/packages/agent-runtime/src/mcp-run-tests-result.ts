@@ -41,7 +41,11 @@ export function normalizeMcpRunTestsOutcome(
           phases:[{phase:reason,status:"fail"}],
           ...(reason==="typecheck"
             ?{typecheck_diagnostics:hint?.typecheck_diagnostics,
-               repair_requires_new_approval:hint?.repair_requires_new_approval}:{})
+               repair_requires_new_approval:hint?.repair_requires_new_approval}
+            :reason==="frontend_tests"||reason==="backend_tests"
+              ?{failing_test_files:hint?.failing_test_files,
+                 repair_requires_new_approval:hint?.repair_requires_new_approval}
+              :{})
         },approvedReadPaths,approvedWritePaths);
       return controlled("tests_failed");
     }

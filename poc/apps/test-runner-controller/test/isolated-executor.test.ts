@@ -423,3 +423,32 @@ test("AUD-010: expiration mid-pipeline cannot return PASS and cleanup runs",asyn
   assert.equal(sawCreate,true);
   assert.equal(sawCleanup,true);
 });
+
+test("Vitest failed suites return only bounded filenames without raw error text",async()=>{
+  let fetchCount=0;
+  const worker=new IsolatedDockerRunnerExecutor(config,{
+    fetch_fn:async()=>{
+      fetchCount++;
+      return fetchCount===1
+        ?new Response(JSON.stringify({commit:{id:request.commit_sha}}),
+            {status:200,headers:{"content-type":"application/json"}})
+        :new Response(Buffer.from("test-archive"),{status:200});
+    },
+    command_runner:async(command,args)=>{
+      if(command==="docker"&&args[0]==="exec"&&args[2]==="bash"&&
+         String(args[4]).includes("vitest run tests/frontend")){
+        return {exit_code:1,timed_out:false,
+          stdout:" FAIL  tests/frontend/access.test.tsx > " +
+            "SECRET_TEST_TITLE_MUST_NOT_LEAK",
+          stderr:"AssertionError PRIVATE_ASSERTION_CONTENT"};
+      }
+      return {exit_code:0,timed_out:false,stdout:"",stderr:""};
+    }
+  });
+  const result=await worker.run(request);
+  assert.equal(result.status,"fail");
+  assert.deepEqual(result.failing_test_files,["tests/frontend/access.test.tsx"]);
+  assert.ok(!JSON.stringify(result).includes("SECRET_TEST_TITLE"));
+  assert.ok(!JSON.stringify(result).includes("PRIVATE_ASSERTION"));
+  assert.equal(result.phases.find(p=>p.phase==="build")?.status,"skipped");
+});

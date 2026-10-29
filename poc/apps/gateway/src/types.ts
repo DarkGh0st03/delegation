@@ -354,6 +354,8 @@ export interface RunnerExecutionResult {
   log_reference?: string;
   /** Sanitized compiler locations, never raw stderr/source. */
   typecheck_diagnostics?: import("../../test-runner-controller/src/typecheck-diagnostics.ts").TypecheckLocation[];
+  /** Bounded Vitest failed file paths, never text or source. */
+  failing_test_files?: string[];
 }
 
 export type ExecutionResult =

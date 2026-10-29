@@ -49,6 +49,8 @@ export interface RunnerRunResult {
   log_reference?: string;
   /** Trusted metadata only; agents must filter by approved read paths. */
   typecheck_diagnostics?: TypecheckLocation[];
+  /** Vitest FAIL paths only; no assertion text. Filter through signed read grants. */
+  failing_test_files?: string[];
 }
 
 export interface RunnerExecutor {

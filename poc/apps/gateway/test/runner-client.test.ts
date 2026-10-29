@@ -139,3 +139,30 @@ test("AUD-010: already aborted Gateway signal prevents a Runner HTTP call",async
   await assert.rejects(client.run(request,aborter.signal),/request failed/);
   assert.equal(calls,0);
 });
+
+test("RunnerClient accepts only bounded Vitest paths in a genuine failure",async()=>{
+  const client=new RunnerClient({
+    baseUrl:"http://runner.internal:8095",
+    gatewayToken:"private-runner-token",
+    fetchFn:async()=>new Response(JSON.stringify({
+      request_id:request.request_id,
+      repository:request.repository,
+      branch:request.branch,
+      tested_commit_sha:request.commit_sha,
+      runner_profile:"poc-default",status:"fail",
+      phases:[{phase:"frontend_tests",status:"fail"}],
+      project_tests:{status:"fail",
+        phases:[{phase:"frontend_tests",status:"fail"}]},
+      researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"},
+      failing_test_files:[
+        "tests/frontend/access.test.tsx",
+        "tests/frontend/../private.test.ts",
+        "tests/backend/internal.test.ts"
+      ],
+      secret:"DO_NOT_DISCLOSE"
+    }),{status:200})
+  });
+  const result=await client.run(request);
+  assert.deepEqual(result.failing_test_files,["tests/frontend/access.test.tsx"]);
+  assert.ok(!JSON.stringify(result).includes("DO_NOT_DISCLOSE"));
+});

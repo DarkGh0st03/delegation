@@ -44,3 +44,36 @@ test("TypeScript repair needs both signed read and update rights",()=>{
     secret:"PRIVATE"
   })?.repair_requires_new_approval,true);
 });
+
+test("Frontend Vitest metadata is disclosed only for signed read paths",()=>{
+  const allowed="tests/frontend/suspension.test.tsx",
+    outside="tests/frontend/private.test.ts";
+  const result={phases:[{phase:"frontend_tests",status:"fail"}],
+    failing_test_files:[allowed,outside],
+    hidden:"SECRET_ASSERTION_TEXT"};
+  assert.deepEqual(safeRunnerFailureDetails(result,[allowed],[allowed]),{
+    first_failed_phase:"frontend_tests",
+    failing_test_files:[allowed],
+    repair_requires_new_approval:true
+  });
+  assert.deepEqual(safeRunnerFailureDetails(result,[],[]),{
+    first_failed_phase:"frontend_tests",
+    repair_requires_new_approval:true
+  });
+  assert.deepEqual(safeRunnerFailureDetails({
+    ...result,failing_test_files:[allowed]
+  },[allowed],[allowed]),{
+    first_failed_phase:"frontend_tests",
+    failing_test_files:[allowed]
+  });
+  assert.deepEqual(safeRunnerFailedPhaseHint({
+    first_failed_phase:"frontend_tests",
+    failing_test_files:[allowed,outside],
+    repair_requires_new_approval:true,
+    hidden:"NEVER_LEAK_RUNNER_LOG"
+  }),{
+    first_failed_phase:"frontend_tests",
+    failing_test_files:[allowed,outside],
+    repair_requires_new_approval:true
+  });
+});

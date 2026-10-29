@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import {extractTypecheckLocations} from "./typecheck-diagnostics.ts";
+import {extractVitestFailureFiles} from "./vitest-failure-files.ts";
 import type {
   RunnerExecutor,
   RunnerPhaseName,
@@ -261,6 +262,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     const logs: string[] = [];
     const phases: RunnerPhaseResult[] = [];
     let typecheckDiagnostics:ReturnType<typeof extractTypecheckLocations>=[];
+    let failingTestFiles:string[]=[];
     let containerCreateAttempted = false;
     let failed = false;
 
@@ -370,6 +372,10 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         } else {
           if(fixed.phase==="typecheck"&&!result.timed_out)
             typecheckDiagnostics=extractTypecheckLocations(result.stdout,result.stderr);
+          if((fixed.phase==="frontend_tests"||fixed.phase==="backend_tests")&&
+             !result.timed_out)
+            failingTestFiles=extractVitestFailureFiles(
+              result.stdout,result.stderr,fixed.phase);
           failed = true;
           phases.push({
             phase: fixed.phase,
@@ -439,6 +445,8 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         phases,
         ...(typecheckDiagnostics.length>0
           ?{typecheck_diagnostics:typecheckDiagnostics}:{}),
+        ...(failingTestFiles.length>0
+          ?{failing_test_files:failingTestFiles}:{}),
         project_tests: {
           status: projectStatus,
           phases: projectPhases
