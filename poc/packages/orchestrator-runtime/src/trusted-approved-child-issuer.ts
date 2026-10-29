@@ -12,6 +12,7 @@ import {assertApprovedPlanScope,planDigest} from
   "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedChildIssuanceJournal} from "./trusted-child-issuance-journal.mjs";
+import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
 import type {AuthenticatedPlanStore} from
   "../../../apps/gateway/src/approved-execution-plans.ts";
@@ -86,7 +87,7 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
   readonly #approved=new Map<string,{role:Role;permissions:DelegatedPermission[]}>();
   readonly #attempted=new Set<string>();
 
-  private constructor(c:ApprovedChildIssuerConfig,
+  private constructor(c:Omit<ApprovedChildIssuerConfig,"approvals">,
     root:{credential_id:string;plan_digest:string;permissions:DelegatedPermission[]},
     tasks:Map<string,{role:Role;permissions:DelegatedPermission[]}>){
     this.#sessionId=c.sessionId;
@@ -154,6 +155,61 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     return new TrustedApprovedPlanChildAuthorityIssuer(
       config,root,mapping
     );
+  }
+
+  /**
+   * Opt-in R102.1: derive Task-specific child scope from the newest durable
+   * operational epoch under the SAME Engineer-authorized Rust root.
+   * This does not install Gateway Task authorization or dispatch A2A.
+   */
+  static async createForOperationalEpoch(config:
+    Omit<ApprovedChildIssuerConfig,"approvals"> & {
+      intake:TrustedOperationalEpochIntake;epochVersion:number
+    }):Promise<TrustedApprovedPlanChildAuthorityIssuer>{
+    if(!(config.intake instanceof TrustedOperationalEpochIntake)||
+       !(config.issuanceJournal instanceof TrustedChildIssuanceJournal)||
+       !Number.isSafeInteger(config.epochVersion)||config.epochVersion<2||
+       config.coordinator.phase!=="execution"||
+       !ID.test(config.sessionId)||!config.engineerDid.startsWith("did:")||
+       !config.adapterBaseUrl||!config.bearerToken)
+      reject("trusted current epoch and durable child-issuance journal required");
+    config.intake.assertSameCoordinator(config.coordinator);
+    const root=config.coordinator.trustedOperationalAuthority();
+    const issued=allUnique(root.permissions,"issued operational root");
+    if(!issued.size)reject("empty issued root");
+    const history=await config.intake.verifiedEpochHistory();
+    const current=history.at(-1);
+    if(!current||current.epoch!==config.epochVersion||
+       current.root_credential_id!==root.credential_id||
+       history[0].plan_digest!==root.plan_digest||
+       current.plan.session_id!==config.sessionId)
+      reject("stale, missing or foreign operational epoch");
+    config.issuanceJournal.assertBound({
+      sessionId:config.sessionId,baseRevision:current.plan.base_revision,
+      planDigest:root.plan_digest,parentCredentialId:root.credential_id
+    });
+    const tasks=new Map<string,{role:Role;permissions:DelegatedPermission[]}>();
+    for(const row of current.plan.requested_permissions){
+      if(!ROLES.has(row.agent_id))continue;
+      const permission={resource:row.resource,operation:row.operation} as DelegatedPermission;
+      if(!issued.has(KEY(permission)))reject("epoch permission exceeds issued root");
+      const entry=tasks.get(row.task_id);
+      if(entry&&entry.role!==row.agent_id)reject("epoch Task has conflicting role");
+      if(entry)entry.permissions.push(permission);
+      else tasks.set(row.task_id,{role:row.agent_id as Role,permissions:[permission]});
+    }
+    if(!tasks.size)reject("no specialized Tasks in current epoch");
+    for(const entry of tasks.values())
+      if(!allUnique(entry.permissions,"epoch Task").size)reject("Task without permission");
+    if(config.coordinator.phase!=="execution")reject("root revoked during epoch verification");
+    const active=config.coordinator.trustedOperationalAuthority();
+    const activePairs=allUnique(active.permissions,"active operational root");
+    if(active.credential_id!==root.credential_id||
+       active.plan_digest!==root.plan_digest||
+       activePairs.size!==issued.size||
+       [...activePairs].some(x=>!issued.has(x)))
+      reject("operational root changed during epoch verification");
+    return new TrustedApprovedPlanChildAuthorityIssuer(config,root,tasks);
   }
 
   /**
