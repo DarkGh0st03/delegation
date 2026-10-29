@@ -578,7 +578,8 @@ export class TrustedApprovedExecutionPlans {
       denied("No retired signed Test acceptance for requested exact SHA");
     const matches=[...this.#bindings.values()].filter(b=>
       b.sessionId===query.session_id&&b.planTaskId===query.task_id&&
-      b.agent==="test"&&b.completed);
+      b.agent==="test"&&b.completed&&
+      b.epochVersion===session.currentEpoch);
     if(matches.length!==1)denied("No unique attested Test Task");
     const b=matches[0];
     const runnerUri="gitea://"+this.#repository.authority+"/"+
