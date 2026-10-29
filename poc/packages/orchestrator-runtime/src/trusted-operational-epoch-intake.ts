@@ -57,9 +57,10 @@ export class TrustedOperationalEpochIntake {
    allowedOperations:OPS,expectedEngineerDid:this.#did
   }) as Array<{resource:string;operation:string}>;
   const issued=new Set(root.permissions.map(p=>JSON.stringify([p.resource,p.operation])));
+  const approved=new Set(rows.map(p=>JSON.stringify([p.resource,p.operation])));
   if(issued.size!==root.permissions.length||
-     issued.size!==rows.length||
-     rows.some(p=>!issued.has(JSON.stringify([p.resource,p.operation]))))
+     issued.size!==approved.size||
+     [...approved].some(p=>!issued.has(p)))
    deny("issued parent privileges differ from authenticated Engineer subset");
   this.#journal.assertBound({
    sessionId:this.#session,baseRevision:original.plan.base_revision,
