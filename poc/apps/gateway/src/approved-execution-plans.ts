@@ -296,9 +296,7 @@ export class TrustedApprovedExecutionPlans {
       denied("Operational epoch version must advance exactly once");
     // An in-flight original/previous Task may have an authorized Prepare.
     // Never retire its grants before independently confirming quiescence.
-    if([...this.#bindings.values()].some(b=>b.sessionId===sessionId&&
-       b.epochVersion===session.currentEpoch&&!b.completed))
-      denied("Previous epoch has unresolved or in-flight Tasks");
+    this.#assertEpochQuiescent(session);
     this.#epochAdmissionInFlight.add(sessionId);
     try{
       const history=await this.#epochIntake.verifiedEpochHistory();
@@ -319,9 +317,7 @@ export class TrustedApprovedExecutionPlans {
          plan.tasks.length>MAX_TASKS||
          plan.tasks.some((t:any)=>!TASK_AGENT.has(t.agent_id)))
         denied("Operational epoch plan is outside pinned root session");
-      if([...this.#bindings.values()].some(b=>b.sessionId===sessionId&&
-         b.epochVersion===session.currentEpoch&&!b.completed))
-        denied("Previous epoch changed during admission");
+      this.#assertEpochQuiescent(session);
       for(const task of plan.tasks){
         if(session.plan.tasks.some((t:any)=>t.id===task.id)||
            session.admittedEpochTasks.has(task.id)||
@@ -663,6 +659,28 @@ export class TrustedApprovedExecutionPlans {
     if(binding.epochVersion!==session.currentEpoch)
       denied("Stale operational epoch task binding");
     return {session,binding};
+  }
+
+  /**
+   * A plan cannot be skipped merely because its Tasks were never bound.
+   * Check every Task of the currently admitted DAG, not only the subset
+   * observed in the runtime-task map. A failed Test will need a separate,
+   * trusted terminal-failure report before it can qualify for transition.
+   */
+  #assertEpochQuiescent(session:ActivePlan):void{
+    const previous=session.currentEpoch===1?session.plan:
+      [...session.admittedEpochTasks.values()]
+        .find(x=>x.epoch===session.currentEpoch)?.plan;
+    if(!previous||!Array.isArray(previous.tasks)||!previous.tasks.length)
+      denied("Current operational epoch is missing its immutable plan");
+    for(const task of previous.tasks){
+      const bound=[...this.#bindings.values()].filter(b=>
+        b.sessionId===session.sessionId&&
+        b.epochVersion===session.currentEpoch&&
+        b.planTaskId===task.id);
+      if(bound.length!==1||!bound[0].completed||bound[0].completing)
+        denied("Previous epoch has unresolved, unbound or in-flight Tasks");
+    }
   }
 
   #taskPlan(session:ActivePlan,binding:RuntimeTaskBinding):any{
