@@ -1,14 +1,20 @@
 import {ControlledToolError,controlledToolErrorPayload} from "./controlled-errors.ts";
-import {safeRunnerFailureDetails,safeRunnerFailedPhaseHint}
-  from "./safe-runner-failure.ts";
+import {safeRunnerFailureDetails,safeRunnerFailedPhaseHint,
+  type TypecheckScopeSummary} from "./safe-runner-failure.ts";
 
 type ErrorKind="authorization_denied"|"invalid_tool_call"|"tool_unavailable"|"tests_failed";
 function controlled(kind:ErrorKind,execution?:unknown,
-  approvedPaths:readonly string[]=[],approvedWrites:readonly string[]=[]){
+  approvedPaths:readonly string[]=[],approvedWrites:readonly string[]=[],
+  upstreamScope?:TypecheckScopeSummary){
   const details=kind==="tests_failed"
     ?safeRunnerFailureDetails(execution,approvedPaths,approvedWrites):undefined;
+  // Preserve only a previously whitelisted numeric summary. Filtering the
+  // Runner's file paths twice must not erase counts of unapproved locations.
+  const safeDetails=details?.repair_requires_new_approval===true&&
+    details.first_failed_phase==="typecheck"&&upstreamScope
+    ?{...details,typecheck_scope_summary:upstreamScope}:details;
   return controlledToolErrorPayload(new ControlledToolError(
-    kind,"MCP "+kind,details?{details}:{}
+    kind,"MCP "+kind,safeDetails?{details:safeDetails}:{}
   ));
 }
 function record(value:unknown):Record<string,unknown>|null{
@@ -46,7 +52,7 @@ export function normalizeMcpRunTestsOutcome(
               ?{failing_test_files:hint?.failing_test_files,
                  repair_requires_new_approval:hint?.repair_requires_new_approval}
               :{})
-        },approvedReadPaths,approvedWritePaths);
+        },approvedReadPaths,approvedWritePaths,hint?.typecheck_scope_summary);
       return controlled("tests_failed");
     }
     if(kind==="authorization_denied")return controlled("authorization_denied");

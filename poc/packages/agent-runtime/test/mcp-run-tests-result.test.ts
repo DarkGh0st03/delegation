@@ -116,13 +116,40 @@ test("TypeScript failures show only signed read grants, never other paths",()=>{
   if(!scoped.ok)assert.deepEqual(scoped.error.details,{
     first_failed_phase:"typecheck",
     typecheck_diagnostics:[{path:allowed,line:42,column:3,code:"TS2304"}],
-    repair_requires_new_approval:true
+    repair_requires_new_approval:true,
+    typecheck_scope_summary:{parsed_locations:2,missing_read_grants:1,
+      missing_write_grants:2}
   });
   assert.ok(!JSON.stringify(scoped).includes(privateContent));
   const noGrant=normalizeMcpRunTestsOutcome(data,args);
   if(!noGrant.ok)assert.deepEqual(noGrant.error.details,{
-    first_failed_phase:"typecheck",repair_requires_new_approval:true
+    first_failed_phase:"typecheck",repair_requires_new_approval:true,
+    typecheck_scope_summary:{parsed_locations:2,missing_read_grants:2,
+      missing_write_grants:2}
   });
+});
+
+test("An upstream bounded grant-gap summary survives MCP re-filtering",()=>{
+  const signedPath="tests/backend/repair.test.ts";
+  const secret="UNAPPROVED_PATH_NEVER_EMIT";
+  const hint={first_failed_phase:"typecheck",
+    typecheck_diagnostics:[{path:signedPath,line:2,column:4,code:"TS2304"}],
+    repair_requires_new_approval:true,
+    typecheck_scope_summary:{parsed_locations:3,missing_read_grants:2,
+      missing_write_grants:3},
+    raw_message:secret};
+  const input={isError:true,structuredContent:{ok:false,error:{
+    kind:"tests_failed",details:hint}}};
+  const output=normalizeMcpRunTestsOutcome(input,args,[signedPath],[]);
+  assert.equal(output.ok,false);
+  if(!output.ok)assert.deepEqual(output.error.details,{
+    first_failed_phase:"typecheck",
+    typecheck_diagnostics:[{path:signedPath,line:2,column:4,code:"TS2304"}],
+    repair_requires_new_approval:true,
+    typecheck_scope_summary:{parsed_locations:3,missing_read_grants:2,
+      missing_write_grants:3}
+  });
+  assert.ok(!JSON.stringify(output).includes(secret));
 });
 
 test("Read-only scope cannot authorize a failed TypeScript repair",()=>{
