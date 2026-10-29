@@ -95,6 +95,7 @@ export async function runNativePositiveApprovedDag({
   readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens,
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
   approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
+  offlineTypecheckProbe=false,
   offlineMultiTest=false,onPilotPhase,onPilotError
 }){
   if(offlineRecovery&&(realGeminiPilot||
@@ -103,6 +104,9 @@ export async function runNativePositiveApprovedDag({
   if(offlineMultiTest&&(!offlineRecovery||realGeminiPilot||
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Multiple Test A2A Tasks require signed offline recovery fixture");
+  if(offlineTypecheckProbe&&(realGeminiPilot||offlineRecovery||offlineMultiTest||
+     typeof approvedAgentModelFactory!=="function"))
+    throw Error("Typecheck fault probe requires a scripted nonbillable signed DAG");
   if((realGeminiPilot&&typeof approvedAgentModelFactory!=="function")||
      (approvedAgentModelFactory!==undefined&&
       typeof approvedAgentModelFactory!=="function"))
@@ -302,6 +306,7 @@ export async function runNativePositiveApprovedDag({
   const sharedMcpEnabled=process.env.APPROVED_RUNNER_NATIVE_MCP==="1";
   let normalMcpCalls=0,privateCryptoMcpCalls=0;
   let signedTestOutOfScopeDenied=false;
+  let observedTypecheckProbe=null;
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
@@ -527,6 +532,27 @@ export async function runNativePositiveApprovedDag({
               observedWrites:writePaths,
               reader,branch,baseSha,testedSha:pinned.commit_sha
             }):null;
+          if(offlineTypecheckProbe){
+            assert.equal(effect.status,"fail");
+            assert.deepEqual(typecheckCodes,["TS2820"]);
+            assert.ok(scopeAudit&&revisionComparison,
+              "Signed-root coverage and pinned-revision evidence required");
+            assert.equal(scopeAudit.outside_planning_snapshot,0);
+            assert.equal(scopeAudit.outside_signed_plan_write,0);
+            assert.equal(scopeAudit.outside_operational_root_write,0);
+            assert.equal(scopeAudit.within_operational_root_write,1);
+            assert.equal(scopeAudit.within_test_task_write,0);
+            assert.equal(scopeAudit.covered_by_backend_write,1);
+            assert.equal(scopeAudit.covered_by_frontend_write,0);
+            assert.equal(revisionComparison.diagnostic_files,1);
+            assert.equal(revisionComparison.different_blob_from_base,1);
+            assert.equal(revisionComparison.backend_writes_observed,1);
+            assert.equal(revisionComparison.test_writes_observed,0);
+            assert.equal(revisionComparison.unverifiable_files,0);
+            observedTypecheckProbe=Object.freeze({
+              codes:typecheckCodes,scope:scopeAudit,revision:revisionComparison
+            });
+          }
           process.stderr.write("[native-dag-adk] docker_phase_status "+
             JSON.stringify({
               status:effect.status,
@@ -790,6 +816,22 @@ export async function runNativePositiveApprovedDag({
       if(realGeminiPilot){
         onPilotError?.(classifyApprovedDagFailure(error));
       }
+      if(offlineTypecheckProbe){
+        // Real Docker FAIL and trusted provider observations must precede
+        // any expected-failure classification: agent prose cannot supply them.
+        assert.ok(observedTypecheckProbe);
+        assert.equal(runnerRuns,1);
+        assert.equal(runnerOutcome?.status,"fail");
+        assert.equal(runnerOutcome?.project_tests?.status,"fail");
+        assert.equal(runnerOutcome?.researcher_acceptance?.status,"skipped");
+        assert.equal(runnerOutcome?.phases.find(p=>p.status==="fail")?.phase,
+          "typecheck");
+        assert.equal(createdPr,null);
+        assert.ok(!dispatcher.completedTaskIds.includes(reviewTaskId));
+        assert.equal(coordinator.phase,"closed",
+          "Failing DAG must retire its issued operational root");
+        return null;
+      }
       if(offlineMultiTest){
         // Only plan-generated Task IDs and fixed diagnostic categories enter
         // logs. NEVER publish exception text, provider payloads, DCs or VPs.
@@ -808,6 +850,35 @@ export async function runNativePositiveApprovedDag({
       }
       throw error;
     });
+    if(offlineTypecheckProbe){
+      assert.equal(result,null,"Failed DAG must not be accepted");
+      assert.equal((await reader.getBranchMetadata("main")).commit_sha,baseSha);
+      assert.equal((await reader.getBranchMetadata(branch)).commit_sha,
+        runnerOutcome.tested_commit_sha);
+      assert.throws(()=>gateway.prepare({
+        task_id:"after_expected_typecheck_failure",agent_role:"backend",
+        tool:"update_file",arguments:{
+          branch,path:files.backend[0],content:"forbidden"
+        }
+      }),e=>e?.code==="approved_plan_denied");
+      return Object.freeze({
+        status:"expected_typecheck_failure",typecheck_probe_verified:true,
+        signed_dag_completed:false,scenario_id:scenarioId,
+        approved_work_branch:branch,real_a2a_sdk:true,
+        a2a_tasks_dispatched:dispatcher.completedTaskIds.length,
+        native_rust_child_credentials:Object.keys(childIds).length,
+        real_gitea:true,live_opa:true,main_unchanged:true,
+        operational_root_revoked:true,pr_created:false,merge_calls:0,
+        source_writes:observedImplementationWriteKeys.size,
+        created_test_files:testCreates,runner_runs:runnerRuns,
+        test_runner_runs:runnerRuns,
+        project_tests:"fail",researcher_acceptance:"skipped",
+        first_failed_phase:"typecheck",
+        typecheck_error_codes:observedTypecheckProbe.codes,
+        typecheck_permission_scope_audit:observedTypecheckProbe.scope,
+        typecheck_revision_comparison:observedTypecheckProbe.revision
+      });
+    }
     if(realGeminiPilot)onPilotPhase?.("result_verification");
     assert.equal(coordinator.phase,"closed");
     assert.equal(result.plan_digest,planDigest);

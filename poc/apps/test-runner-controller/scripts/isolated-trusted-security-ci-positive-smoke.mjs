@@ -546,6 +546,12 @@ async function main(){
     }
     if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"){
       const realGeminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
+      const typecheckProbe=
+        process.env.APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE==="1";
+      if(typecheckProbe&&(realGeminiPilot||
+         process.env.APPROVED_RUNNER_THREE_AGENT_DAG!=="1"||
+         process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"))
+        throw Error("Typecheck probe requires scripted signed-DAG fixture");
       // Reuse this same disposable Gitea. Read-only PAT, actual main SHA,
       // real Rust/EVM root, native Core verifier, and independent OPA.
       // Running before A2A file writes makes the immutable feature SHA
@@ -774,6 +780,39 @@ async function main(){
           .map(line=>{try{return JSON.parse(line);}catch{return null;}})
           .find(event=>event?.event==="native_preliminary_adk_planning");
         assert.equal(positive?.status,"pass");
+        if(typecheckProbe){
+          const proof=positive?.positive_dag;
+          assert.equal(proof?.typecheck_probe_verified,true);
+          assert.equal(proof?.status,"expected_typecheck_failure");
+          assert.equal(proof?.signed_dag_completed,false);
+          assert.equal(proof?.first_failed_phase,"typecheck");
+          assert.equal(proof?.project_tests,"fail");
+          assert.equal(proof?.researcher_acceptance,"skipped");
+          assert.equal(proof?.test_runner_runs,1);
+          assert.equal(proof?.pr_created,false);
+          assert.equal(proof?.merge_calls,0);
+          assert.equal(proof?.main_unchanged,true);
+          assert.equal(proof?.operational_root_revoked,true);
+          assert.equal(proof?.typecheck_permission_scope_audit
+            ?.within_operational_root_write,1);
+          assert.equal(proof?.typecheck_permission_scope_audit
+            ?.within_test_task_write,0);
+          assert.equal(proof?.typecheck_permission_scope_audit
+            ?.covered_by_backend_write,1);
+          assert.equal(proof?.typecheck_revision_comparison
+            ?.different_blob_from_base,1);
+          assert.equal(proof?.typecheck_revision_comparison
+            ?.backend_writes_observed,1);
+          process.stdout.write(JSON.stringify({
+            event:"signed_typecheck_fault_probe",status:"PASS",
+            docker_failure_observed:true,first_failed_phase:"typecheck",
+            signed_parent_scope_verified:true,test_not_automatically_privileged:true,
+            exact_revision_difference_verified:true,
+            a2a_signed_dag_refused:true,operational_root_revoked:true,
+            no_pr_created:true,gemini_calls:0
+          })+"\n");
+          return;
+        }
         assert.equal(positive?.positive_dag?.signed_dag_completed,true);
         assert.equal(positive?.positive_dag?.scenario_id,scenario.id);
         assert.equal(positive?.positive_dag?.approved_work_branch,
@@ -958,6 +997,7 @@ async function main(){
               .source_witnessed_model_still_uses_fixture_code,
             a2a_before_branch:0,main_mutations:0})+"\n");
       },realGeminiPilot?3700000:1020000);
+      if(typecheckProbe)return; // Expected negative test; do not run positive PR CI.
       if(realGeminiPilot)return; // One Gemini E2E; skip additional scripted CI.
     }
     logs=await mkdtemp(join(tmpdir(),"thesis-positive-runner-"));

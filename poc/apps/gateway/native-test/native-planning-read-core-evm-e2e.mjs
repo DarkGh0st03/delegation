@@ -78,6 +78,8 @@ for(const v of [token,engineerToken,engineerDid]){
 const geminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
 const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1"&&
   process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
+const signedOfflineTypecheckProbe=
+  process.env.APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE==="1";
 if(signedOfflineRecovery&&geminiPilot)
   throw Error("Offline scripted recovery must never use a paid Gemini model");
 if(geminiPilot){
@@ -101,6 +103,12 @@ const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
 const positiveDag=process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
 const signedOfflineMultiTest=positiveDag&&
   process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1";
+if(signedOfflineTypecheckProbe&&
+   (geminiPilot||signedOfflineRecovery||signedOfflineMultiTest||
+    !positiveDag||!signedHandoff||!realGitea||
+    process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"||
+    scenario.id!=="account-suspension"))
+  throw Error("Typecheck fault injection requires a nonbillable signed fixture");
 if(signedOfflineMultiTest&&
    (!signedOfflineRecovery||geminiPilot||
     process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"))
@@ -653,6 +661,20 @@ try{
           }):[];
         const otherImplementations={...referenceFiles};
         for(const path of derivedPaths)delete otherImplementations[path];
+        if(signedOfflineTypecheckProbe){
+          // Test fault location is selected from ACTUAL signed Backend
+          // update grants. It never chooses or widens authorization.
+          const target=roleFiles.backend.find(path=>
+            path.startsWith("apps/backend/src/")&&path.endsWith(".ts")&&
+            !derivedPaths.includes(path)&&
+            approvedRows.some(g=>g.agent_id==="backend"&&
+              g.operation==="update_file"&&
+              g.resource===canonicalFileUri(repo,workBranch,path)));
+          if(!target||typeof otherImplementations[target]!=="string")
+            throw Error("No approved Backend TypeScript target for fault probe");
+          otherImplementations[target]+=
+            '\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
+        }
         // Not even the scripted call compiler is invoked for real Gemini.
         const offlineCalls=geminiPilot?null:
           buildOfflineAdkScriptsFromApprovedPlan({
@@ -704,6 +726,7 @@ try{
           onPilotError:category=>{pilotDelegatedFailure=category;}
         }:{}),
         offlineRecovery:signedOfflineRecovery,
+        offlineTypecheckProbe:signedOfflineTypecheckProbe,
         offlineMultiTest:signedOfflineMultiTest,
         scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
@@ -714,6 +737,18 @@ try{
           test:process.env.ADAPTER_CALLER_TEST
         }
       });
+      if(signedOfflineTypecheckProbe){
+        const proof=globalThis.__nativeDagPositive;
+        assert.equal(proof.typecheck_probe_verified,true);
+        assert.equal(proof.signed_dag_completed,false);
+        assert.equal(proof.status,"expected_typecheck_failure");
+        assert.equal(proof.project_tests,"fail");
+        assert.equal(proof.first_failed_phase,"typecheck");
+        assert.equal(proof.pr_created,false);
+        assert.equal(proof.operational_root_revoked,true);
+        assert.equal(proof.main_unchanged,true);
+        assert.deepEqual(proof.typecheck_error_codes,["TS2820"]);
+      }else{
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
       const sourceWitnessMode=
         process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
@@ -788,6 +823,7 @@ try{
       }
       assert.equal(globalThis.__nativeDagPositive.tested_commit_sha,
         globalThis.__nativeDagPositive.approved_branch_sha);
+      }
     }else{
     // Load the ACTUAL production-style approved DAG dispatcher from the
     // same signed review gate, operational root, and immutable base SHA.
