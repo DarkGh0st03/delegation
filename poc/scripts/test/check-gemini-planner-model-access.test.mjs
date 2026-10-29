@@ -14,11 +14,16 @@ test("non-generative access check uses GET and header, no generateContent",async
       assert.equal(init.method,"GET");
       assert.equal(init.headers["x-goog-api-key"],secret);
       assert.equal(init.redirect,"error");
-      return {status:200,json(){throw Error("response body must never be parsed");}};
+      return {status:200,json:async()=>({outputTokenLimit:65536,
+        untrusted:"NEVER_LOG_PROVIDER_TEXT"})};
     }
   });
   assert.equal(calls,1);
   assert.equal(check.result,"model_metadata_accessible");
+  assert.equal(check.required_output_tokens_per_call,20480);
+  assert.equal(check.provider_output_token_limit,65536);
+  assert.equal(check.output_capacity_verified,true);
+  assert.ok(!JSON.stringify(check).includes("NEVER_LOG_PROVIDER_TEXT"));
   assert.equal(check.content_generation_requests,0);
   assert.equal(check.model_generation_permission,"not_proven_by_metadata_only");
   assert.ok(!JSON.stringify(check).includes(secret));
@@ -60,4 +65,35 @@ test("transport failures are classified without logging exception",async()=>{
   assert.equal(checked.result,"network_or_timeout");
   assert.equal(checked.http_status,null);
   assert.ok(!JSON.stringify(checked).includes("NO_LOG_SECRET"));
+});
+
+test("model metadata refuses configured output larger than provider capacity without generation",async()=>{
+  for(const [limit,reason] of [
+    [16384,"model_output_limit_insufficient"],
+    [20479,"model_output_limit_insufficient"],
+    [20480,"model_metadata_accessible"],
+    [65536,"model_metadata_accessible"],
+    [null,"model_output_limit_unverified"],
+    ["65536","model_output_limit_unverified"],
+    [1000001,"model_output_limit_unverified"]
+  ]){
+    let calls=0;
+    const r=await checkModelMetadataAccess({
+      apiKey:"FAKE_NON_BILLABLE_KEY",
+      request:async()=>{calls++;return {status:200,
+        json:async()=>({outputTokenLimit:limit,prompt:"HIDDEN_PRIVATE_TEXT"})};}
+    });
+    assert.equal(r.result,reason);
+    assert.equal(r.required_output_tokens_per_call,20480);
+    assert.equal(r.output_capacity_verified,reason==="model_metadata_accessible");
+    assert.equal(r.content_generation_requests,0);
+    assert.equal(calls,1);
+    assert.ok(!JSON.stringify(r).includes("HIDDEN_PRIVATE_TEXT"));
+  }
+  const malformed=await checkModelMetadataAccess({
+    apiKey:"FAKE_NON_BILLABLE_KEY",
+    request:async()=>({status:200,json:async()=>{throw Error("PRIVATE_BROKEN_JSON");}})
+  });
+  assert.equal(malformed.result,"model_output_limit_unverified");
+  assert.ok(!JSON.stringify(malformed).includes("PRIVATE_BROKEN_JSON"));
 });
