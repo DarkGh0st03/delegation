@@ -319,6 +319,26 @@ jobs:
             exit 1
           fi
           node poc/scripts/functional-signed-dag-evidence.mjs             /tmp/functional-signed-dag.log /tmp/functional-evidence.json
+      - name: Signed negative TypeScript fault against real Docker and Rust delegated scope (no AI)
+        env:
+          APPROVED_RUNNER_NATIVE_EVM: "1"
+          APPROVED_RUNNER_THREE_AGENT_DAG: "1"
+          APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
+          APPROVED_RUNNER_NATIVE_SOURCE_WITNESS: "1"
+          APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE: "1"
+          APPROVED_RUNNER_SCENARIO: account-suspension
+          GITEA_ADMIN_USER: isolated_admin
+          GITEA_ADMIN_PASSWORD: local-typecheck-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+          OPA_IMAGE: openpolicyagent/opa:1.21.1
+        run: |
+          set -euo pipefail
+          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+          # This is an EXPECTED project typecheck failure. The isolated
+          # harness succeeds only after proving no extra Test permissions,
+          # full root retirement, unchanged main and no PR.
+          npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
       - name: Upload sanitized functional evidence - not model/runner logs
         uses: actions/upload-artifact@v4
         with:
