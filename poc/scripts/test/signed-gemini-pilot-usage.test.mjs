@@ -68,7 +68,7 @@ test("bad counters, duplicate Planner evidence and spoofed lines fail closed",()
       planner("gemini_pilot_planner_usage",1,{input_tokens:1,output_tokens:1}),
       planner("gemini_pilot_planner_usage",1,{input_tokens:1,output_tokens:1})],
       "duplicate_planner_usage"],
-    [[role("backend",18,{input_tokens:1,output_tokens:1})],
+    [[role("backend",21,{input_tokens:1,output_tokens:1})],
       "invalid_role_or_turn"],
     [[role("backend",1,{input_tokens:-1,output_tokens:1})],
       "invalid_provider_counter"]

@@ -45,7 +45,7 @@ test("manual pilot produces ONLY a redacted zero-inference receipt",()=>{
     3*SIGNED_GEMINI_PILOT.maxA2aTaskMs+SIGNED_GEMINI_PILOT.maxPlanningMs);
   assert.ok(SIGNED_GEMINI_PILOT.childCredentialValiditySeconds<=7200);
   assert.equal(Object.isFrozen(SIGNED_GEMINI_PILOT.maxOutputTokensPerRole),true);
-  assert.equal(receipt.max_model_call_ms,120000);
+  assert.equal(receipt.max_model_call_ms,180000);
   assert.equal(receipt.model,"gemini-3.8-flash");
   assert.equal(Object.isFrozen(receipt),true);
   assert.equal(Object.isFrozen(SIGNED_GEMINI_PILOT.maxTurnsPerTask),true);
