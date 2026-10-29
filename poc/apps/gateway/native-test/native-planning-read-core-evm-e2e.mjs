@@ -696,7 +696,7 @@ try{
         coordinator,reviewGate,approvedPlans,
         ...(approvedAgentModelFactory?{approvedAgentModelFactory}:{}),
         sessionId:session,planDigest:packet.plan_digest,baseSha,
-        operationalRootId,branch:workBranch,
+        operationalRootId,branch:workBranch,planningFiles:snapshot.files,
         referenceFiles:approvedAgentModelFactory?undefined:referenceFiles,
         realGeminiPilot:geminiPilot,
         ...(geminiPilot?{

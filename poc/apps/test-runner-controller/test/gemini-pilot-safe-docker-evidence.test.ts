@@ -71,3 +71,27 @@ test("Pilot diagnostic fails closed for malformed, forged or absent phase status
     prefix+JSON.stringify({...fake,phases:"/run/secrets/VP"})
   ])assert.equal(safe(line),null);
 });
+
+test("R81 pilot double filter accepts valid bounded scope counters and rejects injected source",async()=>{
+  const {auditTrustedTypecheckPermissionScope}=await import(
+    "../scripts/typecheck-permission-scope-audit.mjs");
+  const path="apps/backend/a.ts",branch="feature/a";
+  const resource="gitea://gitea.local/thesis/iam-console-poc/branches/"+
+    encodeURIComponent(branch)+"/files/"+path;
+  const rows=[{task_id:"backend",agent_id:"backend",operation:"update_file",
+    resource}];
+  const audit=auditTrustedTypecheckPermissionScope({
+    diagnostics:[{path,line:1,column:1,code:"TS2820"}],
+    planningFiles:[path],approvedRows:rows,
+    operationalPermissions:[{operation:"update_file",resource}],
+    repo:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"},
+    branch
+  });
+  const event={...sample("typecheck"),
+    typecheck_permission_scope_audit:audit,secret:"HIDDEN_SOURCE"};
+  const actual=safe(prefix+JSON.stringify(event));
+  assert.deepEqual(actual?.typecheck_permission_scope_audit,audit);
+  assert.doesNotMatch(JSON.stringify(actual),/HIDDEN_SOURCE|apps\/backend|gitea:\/\//u);
+  assert.equal(safe(prefix+JSON.stringify({...event,
+    typecheck_permission_scope_audit:{...audit,secret:"LEAK"}})),null);
+});

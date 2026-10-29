@@ -84,3 +84,33 @@ test("R5 malformed/fabricated Docker event never prints raw secret material",()=
   ];
   for(const line of errors)assert.equal(safe(line),null);
 });
+
+test("R81 native parser accepts only source-free, internally consistent permission coverage",async()=>{
+  const {auditTrustedTypecheckPermissionScope}=await import(
+    "./../scripts/typecheck-permission-scope-audit.mjs");
+  const path="apps/backend/a.ts",branch="feature/a";
+  const resource="gitea://gitea.local/thesis/iam-console-poc/branches/"+
+    encodeURIComponent(branch)+"/files/"+path;
+  const rows=[{task_id:"backend",agent_id:"backend",operation:"update_file",
+    resource}];
+  const coverage=auditTrustedTypecheckPermissionScope({
+    diagnostics:[{path,line:1,column:1,code:"TS2820"}],
+    planningFiles:[path],approvedRows:rows,
+    operationalPermissions:[{operation:"update_file",resource}],
+    repo:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"},
+    branch
+  });
+  const marker={...event("typecheck"),
+    typecheck_permission_scope_audit:coverage,
+    leak:"PRIVATE_LOCATION_NEVER_PUBLISH"};
+  const prefix="[native-dag-adk] docker_phase_status ";
+  const parsed=safe(prefix+JSON.stringify(marker));
+  assert.deepEqual(parsed.typecheck_permission_scope_audit,coverage);
+  assert.doesNotMatch(JSON.stringify(parsed),/PRIVATE_LOCATION|apps\/backend|gitea:\/\//u);
+  assert.equal(safe(prefix+JSON.stringify({
+    ...marker,typecheck_permission_scope_audit:{...coverage,
+      within_operational_root_write:6}
+  })),null);
+  assert.equal(safe(prefix+JSON.stringify({...event("frontend_tests"),
+    typecheck_permission_scope_audit:coverage})),null);
+});

@@ -3,6 +3,8 @@
  * signed DAG's REAL Docker acceptance. Child stderr can contain source,
  * credentials or untrusted test output and must NEVER be printed verbatim.
  */
+import {safeTypecheckPermissionScopeAudit}
+  from "./typecheck-permission-scope-audit.mjs";
 const PREFIX="[native-dag-adk] docker_phase_status ";
 const PHASES=Object.freeze([
   "dependency_install","typecheck","backend_tests","frontend_tests",
@@ -37,6 +39,12 @@ function parseExact(marker){
       return null;
     typecheckCodes=Object.freeze([...codes]);
   }
+  let scopeAudit;
+  if(marker.typecheck_permission_scope_audit!==undefined){
+    if(firstFailed?.phase!=="typecheck")return null;
+    scopeAudit=safeTypecheckPermissionScopeAudit(marker.typecheck_permission_scope_audit);
+    if(!scopeAudit)return null;
+  }
   if(marker.status==="fail"&&!firstFailed ||
      marker.status==="pass"&&statuses.some(x=>x.status!=="pass")||
      marker.status==="pass"&&(
@@ -48,7 +56,8 @@ function parseExact(marker){
     phases:Object.freeze(statuses),
     project_tests:marker.project_tests,
     researcher_acceptance:marker.researcher_acceptance,
-    ...(typecheckCodes?{typecheck_error_codes:typecheckCodes}:{})
+    ...(typecheckCodes?{typecheck_error_codes:typecheckCodes}:{}),
+    ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{})
   });
 }
 /** Returns only enums from known fixed phases. No arbitrary stderr copied. */

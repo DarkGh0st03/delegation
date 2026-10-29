@@ -51,6 +51,8 @@ import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {classifyApprovedDagFailure} from "./native-approved-dag-failure-category.mjs";
 import {verifyPilotRunnerOutcome} from "./verified-pilot-runner-outcome.mjs";
+import {auditTrustedTypecheckPermissionScope}
+  from "../../test-runner-controller/scripts/typecheck-permission-scope-audit.mjs";
 import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes} from
   "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {createSharedMcpHttpServer}
@@ -86,7 +88,7 @@ async function freePort(){
 }
 export async function runNativePositiveApprovedDag({
   coordinator,reviewGate,approvedPlans,sessionId,planDigest,baseSha,
-  operationalRootId,branch,
+  operationalRootId,branch,planningFiles,
   referenceFiles,scenarioId,repo,giteaBase,
   readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens,
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
@@ -503,6 +505,14 @@ export async function runNativePositiveApprovedDag({
               ?sanitizeTypecheckErrorCodes(effect.typecheck_error_codes)
               :[...new Set(sanitizeTypecheckLocations(
                 effect.typecheck_diagnostics).map(x=>x.code))].sort()):[];
+          const scopeAudit=effect.status==="fail"&&
+            effect.phases?.some(x=>x.phase==="typecheck"&&x.status==="fail")
+            ?auditTrustedTypecheckPermissionScope({
+              diagnostics:sanitizeTypecheckLocations(effect.typecheck_diagnostics),
+              planningFiles,approvedRows:grants,
+              operationalPermissions:coordinator.trustedOperationalAuthority().permissions,
+              repo,branch
+            }):null;
           process.stderr.write("[native-dag-adk] docker_phase_status "+
             JSON.stringify({
               status:effect.status,
@@ -510,7 +520,8 @@ export async function runNativePositiveApprovedDag({
               project_tests:effect.project_tests?.status,
               researcher_acceptance:effect.researcher_acceptance?.status,
               ...(typecheckCodes.length?
-                {typecheck_error_codes:typecheckCodes}:{})
+                {typecheck_error_codes:typecheckCodes}:{}),
+              ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{})
             })+"\n");
           // A completed provider operation can legitimately report FAIL.
           // Return its real result to the controlled Test tool, which reports
