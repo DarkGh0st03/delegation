@@ -188,6 +188,47 @@ test("ADK read-only specialist completes from a Gateway-pinned revision",async()
 
 
 /**
+ * R78: Paid R77 Frontend showed MAX_TOKENS followed by an approved-plan
+ * denial. This local model reproduces a terminal truncated response after
+ * one genuine Gateway read; no provider API or private source is used.
+ * A read-only specialist can still finish on STOP (separate regression).
+ */
+test("R78 Frontend terminal MAX_TOKENS cannot attest a completed A2A Task",async()=>{
+  class TruncatedFrontendModel extends BaseLlm {
+    readonly requests:LlmRequest[]=[];
+    constructor(){super({model:"offline-truncated-frontend-no-provider"});}
+    override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      if(this.requests.length===1){
+        yield {content:{role:"model",parts:[{
+          functionCall:{id:"read-before-truncation",name:"read_file",
+            args:{branch:BRANCH,path:PATHS.frontend}}
+        }]}};
+      }else{
+        yield {content:{role:"model",parts:[{text:"UNFINISHED_RESPONSE"}]},
+          finishReason:"MAX_TOKENS"};
+      }
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("No provider calls in R78 regression"));
+    }
+  }
+  const boundary=fakeBoundary("frontend",false,true);
+  const model=new TruncatedFrontendModel();
+  let completed=false;
+  try{
+    const {response}=await send("frontend",model,
+      boundary.fetchFn as typeof fetch,43413);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+  }catch{/* A2A may propagate a protected model failure as a transport error. */}
+  assert.equal(completed,false,
+    "Truncated final model output cannot be accepted from read evidence alone");
+  assert.equal(model.requests.length,2);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+});
+
+
+/**
  * Offline regression for the actual protected A2A -> BoundedModel -> ADK
  * function-response path. Gemini 3 requires the model's original signature
  * when the next request includes its prior functionCall. This fixture makes

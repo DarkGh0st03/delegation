@@ -14,9 +14,12 @@ export const SIGNED_GEMINI_PILOT = Object.freeze({
   // R52: increase only Backend response allowance after MAX_TOKENS.
   // R53: bounded full-file outputs; these ceilings do NOT grant permissions
   // or enforce monetary cost controls. Test repair has a larger turn budget.
+  // R78: Frontend alone hit MAX_TOKENS in paid pilot 40874777778; increase
+  // only its per-call allowance (provider metadata limit: 65536), not turns,
+  // rights or monetary budget. This may still incur additional API charges.
   maxOutputTokensPerCall:12288,maxModelCallMs:180000,
   maxOutputTokensPerRole:Object.freeze({
-    backend:20480,frontend:12288,test:12288
+    backend:20480,frontend:20480,test:12288
   }),
   maxTurnsPerTask:Object.freeze({
     planner:24,backend:20,frontend:14,test:10

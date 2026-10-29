@@ -33,7 +33,7 @@ test("manual pilot produces ONLY a redacted zero-inference receipt",()=>{
   assert.equal(receipt.planner_max_output_tokens_per_call,12288);
   assert.equal(receipt.max_model_call_ms,180000);
   assert.deepEqual(receipt.max_output_tokens_per_role,{
-    backend:20480,frontend:12288,test:12288
+    backend:20480,frontend:20480,test:12288
   });
   assert.equal(SIGNED_GEMINI_PILOT.maxPlanningMs,600000);
   assert.equal(SIGNED_GEMINI_PILOT.maxA2aTaskMs,1800000);

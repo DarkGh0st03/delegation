@@ -387,12 +387,18 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     }
     if(context.role==="test"&&progress.requiresFreshEngineerApproval)
       failForFreshReview();
-    if (model.budgetExceeded || model.providerErrorCategory || eventErrorCategory) {
+    // A final MAX_TOKENS response is incomplete even if ADK ends its run
+    // without an explicit error event. Never attest a read-only revision as
+    // completed implementation after the last model output was truncated.
+    const outputTruncated = model.lastFinishReason === "MAX_TOKENS";
+    if (model.budgetExceeded || model.providerErrorCategory ||
+        eventErrorCategory || outputTruncated) {
       const category = model.budgetExceeded ? "model_turn_budget" :
+        outputTruncated ? "model_output_truncated" :
         classifyAdkResponseFailure(
           model.providerErrorCategory ?? eventErrorCategory ?? "adk_event_error",
           model.lastFinishReason);
-      reportFailure(category, model.budgetExceeded ? null :
+      reportFailure(category, model.budgetExceeded || outputTruncated ? null :
         model.providerErrorDiagnostic ?? eventErrorDiagnostic);
       throw new Error("ADK protected model failure: " + category);
     }
