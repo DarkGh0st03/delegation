@@ -16,7 +16,7 @@ import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
-import {extractTypecheckLocations}
+import {extractTypecheckLocations,extractTypecheckErrorCodes}
   from "../../../apps/test-runner-controller/src/typecheck-diagnostics.ts";
 import {safeRunnerFailureDetails}
   from "../../agent-runtime/src/safe-runner-failure.ts";
@@ -219,7 +219,9 @@ async function setup({wrongBackendPath=false,wrongTestProfile=false,typecheckFai
     "apps/frontend/src/pages/UserDetailPage.tsx:5:3 - error TS2304: SECRET_SOURCE_TEXT"
   ].join("\n");
   const failedCompilerLocations=extractTypecheckLocations(compilerOutput,"");
+  const failedCompilerCodes=extractTypecheckErrorCodes(compilerOutput,"");
   assert.equal(failedCompilerLocations.length,2);
+  assert.deepEqual(failedCompilerCodes,["TS2304","TS2322"]);
   const evidence=new Map();
   const bindings=new Map();
   const effects=new Map();
@@ -337,12 +339,14 @@ async function setup({wrongBackendPath=false,wrongTestProfile=false,typecheckFai
               runner_profile:"poc-default",status:"fail",
               phases:[{phase:"typecheck",status:"fail"}],
               typecheck_diagnostics:failedCompilerLocations,
+              typecheck_error_codes:failedCompilerCodes,
               project_tests:{status:"fail",phases:[]},
               researcher_acceptance:{phase:"researcher_acceptance",status:"skipped"}
             };
             const safe=safeRunnerFailureDetails(failed);
             assert.deepEqual(safe,{
               first_failed_phase:"typecheck",
+              typecheck_error_codes:["TS2304","TS2322"],
               repair_requires_new_approval:true,
               typecheck_scope_summary:{parsed_locations:2,missing_read_grants:2,
                 missing_write_grants:2}
@@ -665,6 +669,11 @@ test("R40 after TypeScript typecheck failure, independent signed repair ADK/A2A 
     assert.ok(!prior.events.includes("effect:tests"),
       "failed typecheck cannot be confirmed as accepted Runner result");
     const modelView=JSON.stringify(prior.models.test.requests);
+    // A real ADK/Test A2A turn sees diagnostic codes, but never the
+    // compiler's raw messages or unapproved source locations. Codes are
+    // evidence only and never confer repair authority for another role.
+    assert.ok(modelView.includes("TS2304")&&modelView.includes("TS2322"),
+      "safe code-only diagnostic evidence must reach Test ADK after failure");
     assert.ok(!modelView.includes("INTERNAL_COMPILER_MESSAGE"));
     assert.ok(!modelView.includes("SECRET_SOURCE_TEXT"));
     assert.ok(!modelView.includes("apps/backend/src/users/user.service.ts"),
