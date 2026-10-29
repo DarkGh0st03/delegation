@@ -155,6 +155,9 @@ const MODEL_ERRORS=["model_turn_budget","model_output_truncated",
 const TOOL_ERRORS=["authorization_denied","tests_failed",
   "tool_unavailable","invalid_tool_call","iteration_limit"];
 const AGENT_TOOLS=["read_file","update_file","create_file","run_tests"];
+const SAFE_400_CAUSES=["missing_thought_signature",
+  "function_call_response_order","invalid_tool_schema",
+  "context_token_limit","generation_configuration"];
 const AGENT_METRICS=["successful_reads","distinct_read_paths",
   "duplicate_reads","failed_reads","successful_writes","failed_writes"];
 const AGENT_PREFIX="[trusted-positive-ci] gemini_agent_observation ";
@@ -188,9 +191,23 @@ function safeAgentObservation(x){
     if(!valid(x[key],300))return null;
     y[key]=x[key];
   }
-  if(x.event==="adk_safe_diagnostic")
+  if(x.event==="adk_safe_diagnostic"){
+    if(x.invalid_request_cause!==undefined&&
+       x.invalid_request_cause!==null&&
+       !SAFE_400_CAUSES.includes(x.invalid_request_cause))return null;
+    if(x.function_call_messages!==undefined&&
+       !valid(x.function_call_messages,300))return null;
+    if(x.function_call_messages_missing_signature!==undefined&&
+       !valid(x.function_call_messages_missing_signature,300))return null;
+    if(x.function_call_messages_missing_signature>x.function_call_messages)
+      return null;
     y.http_status=valid(x.http_status,599)&&x.http_status>=100
       ?x.http_status:null;
+    y.invalid_request_cause=x.invalid_request_cause??null;
+    y.function_call_messages=x.function_call_messages??null;
+    y.function_call_messages_missing_signature=
+      x.function_call_messages_missing_signature??null;
+  }
   return y;
 }
 export function safeGeminiPilotAgentObservations(raw,{reported=false}={}){
@@ -243,6 +260,13 @@ export function extractSafeGeminiPilotAgentSummary(log){
         model_turns:latest.model_turns,
         ...(latest.http_status!==undefined
           ?{http_status:latest.http_status}:{}),
+        ...(latest.invalid_request_cause!==undefined
+          ?{invalid_request_cause:latest.invalid_request_cause}:{}),
+        ...(latest.function_call_messages!==undefined
+          ?{function_call_messages:latest.function_call_messages}:{}),
+        ...(latest.function_call_messages_missing_signature!==undefined
+          ?{function_call_messages_missing_signature:
+            latest.function_call_messages_missing_signature}:{}),
         progress:Object.fromEntries(AGENT_METRICS.map(k=>[k,latest[k]]))
       }}:{})
     };

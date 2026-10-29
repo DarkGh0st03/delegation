@@ -214,3 +214,34 @@ test("MAX_TOKENS diagnostic stays source-free and separate from ADK provider fai
   assert.equal(report.role_evidence.backend.agent_failure.category,
     "model_output_truncated");
 });
+
+test("HTTP 400 reason and function-history integrity survive sanitized summary",()=>{
+  const secret="PRIVATE_ORIGINAL_TOOL_PAYLOAD";
+  const progress={successful_reads:1,distinct_read_paths:1,
+    duplicate_reads:0,failed_reads:0,successful_writes:0,failed_writes:0};
+  const eventPayload=event({
+    event:"adk_safe_diagnostic",role:"backend",
+    category:"api_invalid_request",model_turns:2,
+    http_status:400,invalid_request_cause:"missing_thought_signature",
+    function_call_messages:2,function_call_messages_missing_signature:1,
+    message:secret,...progress
+  });
+  const observations=agentObservations(eventPayload);
+  assert.equal(observations.length,1);
+  assert.ok(!JSON.stringify(observations).includes(secret));
+  const report=agentSummary("[trusted-positive-ci] gemini_agent_observation "+
+    event(observations[0]));
+  const failure=report.role_evidence.backend.agent_failure;
+  assert.equal(failure.category,"api_invalid_request");
+  assert.equal(failure.http_status,400);
+  assert.equal(failure.invalid_request_cause,"missing_thought_signature");
+  assert.equal(failure.function_call_messages,2);
+  assert.equal(failure.function_call_messages_missing_signature,1);
+  for(const invalid of [
+    {...observations[0],invalid_request_cause:secret},
+    {...observations[0],function_call_messages_missing_signature:9},
+    {...observations[0],function_call_messages:-1}
+  ]){
+    assert.equal(agentObservations(event(invalid)).length,0);
+  }
+});

@@ -367,3 +367,40 @@ test("Phase 3 explicit backend generation cap survives the real protected A2A/AD
   }
   assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
 });
+
+test("Protected non-streaming ADK preserves Gemini tool thought signature across turns",async()=>{
+  const signature="OFFLINE_SYNTHETIC_GEMINI_SIGNATURE_DO_NOT_LOG";
+  class SignatureModel extends BaseLlm{
+    readonly requests:LlmRequest[]=[];
+    constructor(){super({model:"signed-nonstream-gemini-simulator"});}
+    override async *generateContentAsync(request:LlmRequest):
+      AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      if(this.requests.length===1){
+        yield {content:{role:"model",parts:[{
+          functionCall:{id:"signed-file-edit",name:"update_file",args:{
+            branch:BRANCH,path:PATHS.backend,content:"authorized edit"
+          }},
+          thoughtSignature:signature
+        }]}};
+      }else{
+        yield {content:{role:"model",parts:[{text:"Done."}]}};
+      }
+    }
+    override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+      return Promise.reject(new Error("No provider connection"));
+    }
+  }
+  const boundary=fakeBoundary("backend");
+  const model=new SignatureModel();
+  const {response}=await send("backend",model,boundary.fetchFn as typeof fetch,
+    43377);
+  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.equal(model.requests.length,2);
+  const signedHistory=model.requests[1].contents.filter(c=>c.role==="model")
+    .flatMap(c=>c.parts??[]).filter(p=>p.functionCall);
+  assert.equal(signedHistory.length,1);
+  assert.equal(signedHistory[0].thoughtSignature,signature,
+    "ADK must not drop original provider signature in subsequent tool turn");
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+});

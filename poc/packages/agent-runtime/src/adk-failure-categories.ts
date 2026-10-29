@@ -29,11 +29,20 @@ export type AdkSafeErrorType =
   | "api_error" | "abort_error" | "timeout_error"
   | "type_error" | "network_error" | "generic_error" | "other";
 
+/** Fixed labels only; do not emit provider messages or tool arguments. */
+export type AdkInvalidRequestCause =
+  | "missing_thought_signature"
+  | "function_call_response_order"
+  | "invalid_tool_schema"
+  | "context_token_limit"
+  | "generation_configuration";
+
 export interface AdkSafeFailureDiagnostic {
   category: AdkFailureCategory;
   http_status: number | null;
   classification_source: AdkFailureSource;
   error_type: AdkSafeErrorType;
+  invalid_request_cause?: AdkInvalidRequestCause;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -88,6 +97,10 @@ function httpCategory(status: number): AdkFailureCategory | null {
   return null;
 }
 
+function statusIsInvalidRequest(status:number):boolean{
+  return status===400||status===422;
+}
+
 function textCategory(value: string): AdkFailureCategory | null {
   const diagnostic = value.toLowerCase();
   if (/resource.exhausted|quota|rate.limit|too many requests|429/.test(diagnostic))
@@ -109,6 +122,32 @@ function textCategory(value: string): AdkFailureCategory | null {
   return null;
 }
 
+/** Inspect provider 400 text transiently. Only an allowlisted, static cause
+ * escapes; unknown reasons remain unknown. Never store raw provider bodies. */
+function safeInvalidRequestCause(error: unknown): AdkInvalidRequestCause | null {
+  const e=record(error);
+  const sources=[e.message,record(e.cause).message,
+    record(e.response).message,record(record(e.response).data).message];
+  const value=sources.filter((v):v is string=>
+    typeof v==="string"&&v.length<20000).join(" ").toLowerCase();
+  if(/thought[_ -]?signature/u.test(value) &&
+      /missing|without|required|must|not (?:found|present)/u.test(value))
+    return "missing_thought_signature";
+  if(/function[_ ]?(?:call|response)/u.test(value) &&
+     /(?:out of order|mismatch|not matching|missing response|sequence|interleav)/u.test(value))
+    return "function_call_response_order";
+  if(/(?:tool|function[_ ]?declaration|schema|parametersjsonschema)/u.test(value) &&
+     /(?:invalid|unsupported|malformed|not supported|required)/u.test(value))
+    return "invalid_tool_schema";
+  if(/(?:context|input|prompt).{0,80}(?:token|length|size)/u.test(value) &&
+     /(?:exceed|limit|too large|maximum)/u.test(value))
+    return "context_token_limit";
+  if(/(?:thinking.?config|thinking.?level|maxoutputtokens|generation.?config)/u.test(value) &&
+     /(?:invalid|unsupported|unrecognized|not supported)/u.test(value))
+    return "generation_configuration";
+  return null;
+}
+
 /** Diagnostics contain ONLY finite numeric HTTP status and fixed enum values. */
 export function inspectAdkFailure(
   error: unknown,
@@ -120,7 +159,9 @@ export function inspectAdkFailure(
   if (http_status !== null) {
     const category = httpCategory(http_status);
     if (category !== null)
-      return {category, http_status, error_type, classification_source:"http_status"};
+      return {category, http_status, error_type, classification_source:"http_status",
+        ...(statusIsInvalidRequest(http_status)&&safeInvalidRequestCause(error)
+          ?{invalid_request_cause:safeInvalidRequestCause(error)!}:{})};
   }
   const codes = [e.code, e.errorCode]
     .filter((value): value is string => typeof value === "string").join(" ");

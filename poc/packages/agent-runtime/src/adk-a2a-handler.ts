@@ -16,7 +16,7 @@ import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGener
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
 import { AdkToolProgress } from "./adk-tool-progress.ts";
-import { safeAdkRequestShape } from "./adk-request-shape.ts";
+import {safeAdkRequestShape,safeAdkFunctionHistoryShape} from "./adk-request-shape.ts";
 import {safeAdkResponseShape,classifyAdkResponseFailure,
   type SafeAdkResponseShape} from "./adk-response-diagnostics.ts";
 
@@ -64,6 +64,8 @@ class BoundedModel extends BaseLlm {
   effectiveModelVersion: string | null = null;
   providerErrorCategory: AdkFailureCategory | null = null;
   lastFinishReason:string|null=null;
+  lastHistoryShape={function_call_messages:0,
+    function_call_messages_missing_signature:0};
   providerErrorDiagnostic: AdkSafeFailureDiagnostic | null = null;
   readonly delegate: BaseLlm;
   readonly limit: number;
@@ -93,6 +95,7 @@ class BoundedModel extends BaseLlm {
     }
     this.turns += 1;
     this.lastFinishReason=null;
+    this.lastHistoryShape=safeAdkFunctionHistoryShape(request);
     // Optional, content-free comparison with the successful Gemini ADK smoke.
     // Never log provider payloads, system prompts, tool schema or evidence.
     // Explicitly disabled for routine scripted and production runs.
@@ -343,6 +346,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         http_status: diagnostic?.http_status ?? null,
         classification_source: diagnostic?.classification_source ?? "fallback",
         error_type: diagnostic?.error_type ?? "other",
+        invalid_request_cause:diagnostic?.invalid_request_cause ?? null,
+        ...model.lastHistoryShape,
         model_turns: model.turns,
         successful_tools: events.filter(e => e.payload.ok).length,
         rejected_tools: events.filter(e => !e.payload.ok).length,

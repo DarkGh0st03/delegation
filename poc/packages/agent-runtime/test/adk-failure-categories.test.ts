@@ -352,3 +352,35 @@ test("Malformed or absent Gemini response metadata uses null rather than guessed
   assert.equal(failed.google_error_status,"UNAVAILABLE");
   assert.equal(JSON.stringify(failed).includes("DONT_LOG_ERROR"),false);
 });
+
+test("provider HTTP 400 cause is allowlisted and never leaks its message",()=>{
+  const cases=[
+    ["Unable to submit request because function call read_file in the 4. content block is missing a thought_signature.",
+      "missing_thought_signature"],
+    ["Function response out of order relative to function call",
+      "function_call_response_order"],
+    ["Invalid function_declaration schema for the supplied tool",
+      "invalid_tool_schema"],
+    ["Prompt context token limit exceeded by request",
+      "context_token_limit"],
+    ["Invalid thinkingConfig thinkingLevel for generation request",
+      "generation_configuration"]
+  ] as const;
+  for(const [message,reason] of cases){
+    const secret="DO_NOT_PUBLISH_PROVIDER_RESPONSE_001";
+    const r=inspectAdkFailure({name:"ApiError",status:400,
+      message:message+" "+secret});
+    assert.equal(r.http_status,400);
+    assert.equal(r.category,"api_invalid_request");
+    assert.equal(r.invalid_request_cause,reason);
+    assert.ok(!JSON.stringify(r).includes(secret));
+    assert.ok(!JSON.stringify(r).includes("read_file"));
+  }
+  const opaque=inspectAdkFailure({status:400,
+    message:"PRIVATE_UNKNOWN_PROVIDER_DETAILS"});
+  assert.equal(opaque.invalid_request_cause,undefined);
+  assert.ok(!JSON.stringify(opaque).includes("PRIVATE_UNKNOWN_PROVIDER_DETAILS"));
+  const unrelated=inspectAdkFailure({status:403,
+    message:cases[0][0]});
+  assert.equal(unrelated.invalid_request_cause,undefined);
+});

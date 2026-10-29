@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {LlmRequest} from "@google/adk";
-import {safeAdkRequestShape} from "../src/adk-request-shape.ts";
+import {safeAdkRequestShape,safeAdkFunctionHistoryShape} from "../src/adk-request-shape.ts";
 
 test("ADK request shape counts only safe metrics and never leaks secrets",()=>{
   const secret="PRIVATE_CREDENTIAL_NEVER_PRINT";
@@ -88,4 +88,29 @@ test("ADK request shape whitelists Gemini thinking level without leaking values"
   } as unknown as LlmRequest);
   assert.equal(untrusted.thinking_level,null);
   assert.ok(!JSON.stringify(untrusted).includes("PRIVATE_REASONING_NEVER_LOG"));
+});
+
+test("function-call history audit excludes parallel secondary calls and redacts signatures",()=>{
+  const privateSignature="PRIVATE_THOUGHT_SIGNATURE_001";
+  const privateArguments="PRIVATE_SOURCE_FILE_DATA";
+  const request={contents:[
+    {role:"user",parts:[{text:"PRIVATE_REQUIREMENT"}]},
+    {role:"model",parts:[{functionCall:{name:"read_file",
+      args:{path:privateArguments}},thoughtSignature:privateSignature},
+      {functionCall:{name:"update_file",args:{content:privateArguments}}}]},
+    {role:"user",parts:[{functionResponse:{name:"read_file",
+      response:{content:privateArguments}}}]},
+    {role:"model",parts:[{text:"thinking"},
+      {functionCall:{name:"read_file",args:{path:privateArguments}}}]},
+    {role:"model",parts:[{text:"done"}]}
+  ]} as unknown as LlmRequest;
+  const result=safeAdkFunctionHistoryShape(request);
+  assert.deepEqual(result,{
+    function_call_messages:2,function_call_messages_missing_signature:1
+  });
+  for(const secret of [privateSignature,privateArguments,"read_file","update_file"])
+    assert.ok(!JSON.stringify(result).includes(secret));
+  assert.deepEqual(safeAdkFunctionHistoryShape({} as LlmRequest),{
+    function_call_messages:0,function_call_messages_missing_signature:0
+  });
 });
