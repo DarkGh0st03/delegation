@@ -796,6 +796,8 @@ async function main(){
           assert.equal(proof?.merge_calls,0);
           assert.equal(proof?.main_unchanged,true);
           assert.equal(proof?.operational_root_revoked,true);
+          assert.equal(proof?.signed_test_cross_role_gateway_denials,2,
+            "Live Gateway must deny both Test cross-role file operations");
           assert.equal(proof?.typecheck_permission_scope_audit
             ?.within_operational_root_write,1);
           assert.equal(proof?.typecheck_permission_scope_audit
@@ -810,6 +812,7 @@ async function main(){
             event:"signed_typecheck_fault_probe",status:"PASS",
             docker_failure_observed:true,first_failed_phase:"typecheck",
             signed_parent_scope_verified:true,test_not_automatically_privileged:true,
+            signed_test_cross_role_gateway_denials:2,
             exact_revision_difference_verified:true,
             a2a_signed_dag_refused:true,operational_root_revoked:true,
             no_pr_created:true,gemini_calls:0

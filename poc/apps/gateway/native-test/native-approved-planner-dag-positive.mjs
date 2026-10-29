@@ -307,6 +307,7 @@ export async function runNativePositiveApprovedDag({
   let normalMcpCalls=0,privateCryptoMcpCalls=0;
   let signedTestOutOfScopeDenied=false;
   let observedTypecheckProbe=null;
+  let deniedCrossRoleTestProbes=0;
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
@@ -549,6 +550,35 @@ export async function runNativePositiveApprovedDag({
             assert.equal(revisionComparison.backend_writes_observed,1);
             assert.equal(revisionComparison.test_writes_observed,0);
             assert.equal(revisionComparison.unverifiable_files,0);
+            // R91: even a hostile Test Agent with its own valid signed Task
+            // and live child DC cannot transform Runner diagnostics into new
+            // file capabilities. Exercise the ACTUAL Gateway prepare boundary,
+            // not a mock classifier, while the Test Task is still active.
+            const [diagnostic]=sanitizeTypecheckLocations(
+              effect.typecheck_diagnostics);
+            assert.ok(diagnostic&&files.backend.includes(diagnostic.path),
+              "Compiler diagnostic must name an approved Backend file");
+            assert.ok(!approvedTestReads.includes(diagnostic.path)&&
+              !approvedTestUpdates.includes(diagnostic.path),
+              "Cross-role target must genuinely be outside signed Test scope");
+            assert.ok(taskIdsByRole.test.includes(activeTaskByRole.test),
+              "Denied request must use the currently signed Test Task");
+            const beforeDenied=await reader.getBranchMetadata(branch);
+            assert.equal(beforeDenied.commit_sha,pinned.commit_sha);
+            for(const tool of ["read_file","update_file"]){
+              assert.throws(()=>gateway.prepare({
+                task_id:activeTaskByRole.test,agent_role:"test",tool,
+                arguments:{
+                  branch,path:diagnostic.path,
+                  ...(tool==="update_file"?{content:"FORBIDDEN_UNAPPROVED_WRITE"}:{})
+                }
+              }),e=>e?.code==="approved_plan_denied",
+              "Runner evidence cannot expand an already signed Test Task");
+              deniedCrossRoleTestProbes++;
+            }
+            const afterDenied=await reader.getBranchMetadata(branch);
+            assert.equal(afterDenied.commit_sha,beforeDenied.commit_sha,
+              "Denied cross-role requests must not mutate Gitea");
             observedTypecheckProbe=Object.freeze({
               codes:typecheckCodes,scope:scopeAudit,revision:revisionComparison
             });
@@ -820,6 +850,8 @@ export async function runNativePositiveApprovedDag({
         // Real Docker FAIL and trusted provider observations must precede
         // any expected-failure classification: agent prose cannot supply them.
         assert.ok(observedTypecheckProbe);
+        assert.equal(deniedCrossRoleTestProbes,2,
+          "Both malicious signed Test read and write must be denied");
         assert.equal(runnerRuns,1);
         assert.equal(runnerOutcome?.status,"fail");
         assert.equal(runnerOutcome?.project_tests?.status,"fail");
@@ -863,6 +895,7 @@ export async function runNativePositiveApprovedDag({
       }),e=>e?.code==="approved_plan_denied");
       return Object.freeze({
         status:"expected_typecheck_failure",typecheck_probe_verified:true,
+        signed_test_cross_role_gateway_denials:deniedCrossRoleTestProbes,
         signed_dag_completed:false,scenario_id:scenarioId,
         approved_work_branch:branch,real_a2a_sdk:true,
         a2a_tasks_dispatched:dispatcher.completedTaskIds.length,
