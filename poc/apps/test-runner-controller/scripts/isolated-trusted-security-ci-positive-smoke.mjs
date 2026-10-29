@@ -571,6 +571,9 @@ async function main(){
             PLANNING_DISPOSABLE_GITEA_READ_TOKEN:creds.readToken,
             PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha,
             PLANNING_NATIVE_SIGNED_HANDOFF:"1",
+            // No source fault probe during the PRE-activation read-only phase.
+            // Its flag belongs solely to the later signed operational DAG.
+            APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE:"0",
             // The earlier denial-only rehearsal NEVER consumes Gemini calls.
             DELEGATION_SIGNED_GEMINI_PILOT:"0"
           }
