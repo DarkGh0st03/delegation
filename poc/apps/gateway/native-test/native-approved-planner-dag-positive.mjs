@@ -308,6 +308,9 @@ export async function runNativePositiveApprovedDag({
   const readPaths={backend:new Set(),frontend:new Set(),test:new Set()};
   const readPathsPerTask=new Map();
   const writePaths={backend:new Set(),frontend:new Set(),test:new Set()};
+  // A create grant is not proof of a created file: record only successful
+  // Gateway-corrobated create_file effects, not merely approved candidates.
+  const observedCreatedPaths=new Set();
   const observedTestWriteKeys=new Set();
   const observedImplementationWriteKeys=new Set();
   const writeKey=(taskId,operation,path)=>
@@ -489,6 +492,7 @@ export async function runNativePositiveApprovedDag({
             "The same signed Task cannot create a file twice");
           observedTestWriteKeys.add(key);
           writePaths.test.add(effect.path);
+          observedCreatedPaths.add(effect.path);
           const head=await reader.getBranchMetadata(branch);
           assert.equal(head.commit_sha,effect.commit_sha);
           testCalls++;testCreates++;
@@ -519,7 +523,8 @@ export async function runNativePositiveApprovedDag({
             effect.phases?.some(x=>x.phase==="typecheck"&&x.status==="fail")
             ?await compareTrustedTypecheckRevisions({
               diagnostics:sanitizeTypecheckLocations(effect.typecheck_diagnostics),
-              planningFiles,createdPaths:createdTestFiles,observedWrites:writePaths,
+              planningFiles,createdPaths:[...observedCreatedPaths],
+              observedWrites:writePaths,
               reader,branch,baseSha,testedSha:pinned.commit_sha
             }):null;
           process.stderr.write("[native-dag-adk] docker_phase_status "+
