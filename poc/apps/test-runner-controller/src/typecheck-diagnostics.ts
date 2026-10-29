@@ -66,7 +66,7 @@ const WORKSPACE_ROOTS:Readonly<Record<string,string>>=Object.freeze({
   "@iam/shared":"packages/shared",
   "@iam/security":"security"
 });
-const BANNER=/^> (@iam\/[A-Za-z0-9_-]+)@[0-9][A-Za-z0-9.+-]* typecheck$/u;
+const BANNER=/^> ((?:@[A-Za-z0-9_-]+\/)?[A-Za-z0-9_-]+)@[0-9][A-Za-z0-9.+-]* typecheck$/u;
 export function extractTypecheckLocations(stdout:string,stderr:string):TypecheckLocation[]{
   const lines=(stdout+"\n"+stderr).slice(0,100_000).split(/\r?\n/u).slice(0,1000);
   const candidates:TypecheckLocation[]=[];
