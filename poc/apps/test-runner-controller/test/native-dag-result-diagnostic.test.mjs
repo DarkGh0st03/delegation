@@ -114,3 +114,37 @@ test("R81 native parser accepts only source-free, internally consistent permissi
   assert.equal(safe(prefix+JSON.stringify({...event("frontend_tests"),
     typecheck_permission_scope_audit:coverage})),null);
 });
+
+
+test("R82 source-free revision comparison survives only the strict native boundary",async()=>{
+  const {compareTrustedTypecheckRevisions}=await import(
+    "../scripts/typecheck-revision-comparison.mjs");
+  const baseSha="a".repeat(40),testedSha="b".repeat(40);
+  const path="apps/backend/a.ts",records=[];
+  const metadata={commit_sha:testedSha};
+  const audit=await compareTrustedTypecheckRevisions({
+    diagnostics:[{path,line:1,column:1,code:"TS2820"}],
+    planningFiles:[path],createdPaths:[],
+    observedWrites:{backend:new Set([path]),frontend:new Set(),test:new Set()},
+    branch:"feature/a",baseSha,testedSha,
+    reader:{
+      async getBranchMetadata(){return metadata;},
+      async readTextFile(b,p,s){
+        records.push([b,p,s]);
+        return {branch:b,path:p,revision:s,
+          blob_sha:s==="a".repeat(40)?"1".repeat(40):"2".repeat(40),
+          content:"PRIVATE_SOURCE"};
+      }
+    }
+  });
+  const payload={...event("typecheck"),typecheck_revision_comparison:audit,
+    source_file:"INJECTED_FILE_PATH"};
+  const prefix="[native-dag-adk] docker_phase_status ";
+  const parsed=safe(prefix+JSON.stringify(payload));
+  assert.deepEqual(parsed.typecheck_revision_comparison,audit);
+  assert.doesNotMatch(JSON.stringify(parsed),/INJECTED_FILE|PRIVATE_SOURCE|apps\/backend/u);
+  assert.equal(safe(prefix+JSON.stringify({...payload,
+    typecheck_revision_comparison:{...audit,unknown_field:"secret"}})),null);
+  assert.equal(safe(prefix+JSON.stringify({
+    ...event("frontend_tests"),typecheck_revision_comparison:audit})),null);
+});

@@ -95,3 +95,31 @@ test("R81 pilot double filter accepts valid bounded scope counters and rejects i
   assert.equal(safe(prefix+JSON.stringify({...event,
     typecheck_permission_scope_audit:{...audit,secret:"LEAK"}})),null);
 });
+
+
+test("R82 double filter never exports compiler paths or forged provenance",async()=>{
+  const {compareTrustedTypecheckRevisions}=await import(
+    "../scripts/typecheck-revision-comparison.mjs");
+  const baseSha="a".repeat(40),testedSha="b".repeat(40),path="apps/frontend/a.tsx";
+  const audit=await compareTrustedTypecheckRevisions({
+    diagnostics:[{path,line:1,column:1,code:"TS2820"}],
+    planningFiles:[path],createdPaths:[],
+    observedWrites:{backend:new Set(),frontend:new Set([path]),test:new Set()},
+    branch:"feature/a",baseSha,testedSha,
+    reader:{
+      async getBranchMetadata(){return {commit_sha:testedSha};},
+      async readTextFile(branch,p,revision){
+        return {branch,path:p,revision,
+          blob_sha:revision===baseSha?"1".repeat(40):"2".repeat(40),
+          content:"SECRET_CANNOT_ESCAPE"};
+      }
+    }
+  });
+  const raw={...sample("typecheck"),typecheck_revision_comparison:audit,
+    source_file:"NEVER_PUBLISH_PATH"};
+  const result=safe(prefix+JSON.stringify(raw));
+  assert.deepEqual(result.typecheck_revision_comparison,audit);
+  assert.doesNotMatch(JSON.stringify(result),/apps\/frontend|SECRET_CANNOT|NEVER_PUBLISH/u);
+  assert.equal(safe(prefix+JSON.stringify({...raw,
+    typecheck_revision_comparison:{...audit,source:"MALICIOUS"}})),null);
+});

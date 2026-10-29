@@ -5,6 +5,8 @@
  */
 import {safeTypecheckPermissionScopeAudit}
   from "./typecheck-permission-scope-audit.mjs";
+import {safeTypecheckRevisionComparison}
+  from "./typecheck-revision-comparison.mjs";
 const PREFIX="[native-dag-adk] docker_phase_status ";
 const PHASES=Object.freeze([
   "dependency_install","typecheck","backend_tests","frontend_tests",
@@ -45,6 +47,12 @@ function parseExact(marker){
     scopeAudit=safeTypecheckPermissionScopeAudit(marker.typecheck_permission_scope_audit);
     if(!scopeAudit)return null;
   }
+  let revisionComparison;
+  if(marker.typecheck_revision_comparison!==undefined){
+    if(firstFailed?.phase!=="typecheck")return null;
+    revisionComparison=safeTypecheckRevisionComparison(marker.typecheck_revision_comparison);
+    if(!revisionComparison)return null;
+  }
   if(marker.status==="fail"&&!firstFailed ||
      marker.status==="pass"&&statuses.some(x=>x.status!=="pass")||
      marker.status==="pass"&&(
@@ -57,7 +65,8 @@ function parseExact(marker){
     project_tests:marker.project_tests,
     researcher_acceptance:marker.researcher_acceptance,
     ...(typecheckCodes?{typecheck_error_codes:typecheckCodes}:{}),
-    ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{})
+    ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{}),
+    ...(revisionComparison?{typecheck_revision_comparison:revisionComparison}:{})
   });
 }
 /** Returns only enums from known fixed phases. No arbitrary stderr copied. */

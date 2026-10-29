@@ -51,6 +51,8 @@ import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {classifyApprovedDagFailure} from "./native-approved-dag-failure-category.mjs";
 import {verifyPilotRunnerOutcome} from "./verified-pilot-runner-outcome.mjs";
+import {compareTrustedTypecheckRevisions}
+  from "../../test-runner-controller/scripts/typecheck-revision-comparison.mjs";
 import {auditTrustedTypecheckPermissionScope}
   from "../../test-runner-controller/scripts/typecheck-permission-scope-audit.mjs";
 import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes} from
@@ -513,6 +515,13 @@ export async function runNativePositiveApprovedDag({
               operationalPermissions:coordinator.trustedOperationalAuthority().permissions,
               repo,branch
             }):null;
+          const revisionComparison=effect.status==="fail"&&
+            effect.phases?.some(x=>x.phase==="typecheck"&&x.status==="fail")
+            ?await compareTrustedTypecheckRevisions({
+              diagnostics:sanitizeTypecheckLocations(effect.typecheck_diagnostics),
+              planningFiles,createdPaths:createdTestFiles,observedWrites:writePaths,
+              reader,branch,baseSha,testedSha:pinned.commit_sha
+            }):null;
           process.stderr.write("[native-dag-adk] docker_phase_status "+
             JSON.stringify({
               status:effect.status,
@@ -521,7 +530,8 @@ export async function runNativePositiveApprovedDag({
               researcher_acceptance:effect.researcher_acceptance?.status,
               ...(typecheckCodes.length?
                 {typecheck_error_codes:typecheckCodes}:{}),
-              ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{})
+              ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{}),
+              ...(revisionComparison?{typecheck_revision_comparison:revisionComparison}:{})
             })+"\n");
           // A completed provider operation can legitimately report FAIL.
           // Return its real result to the controlled Test tool, which reports
