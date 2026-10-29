@@ -228,6 +228,9 @@ test("HTTP 400 reason and function-history integrity survive sanitized summary",
   });
   const observations=agentObservations(eventPayload);
   assert.equal(observations.length,1);
+  // The private child sanitizes once; the public CI extractor sanitizes
+  // the same fixed-label event again and must retain nullable fields.
+  assert.equal(agentObservations(event(observations[0])).length,1);
   assert.ok(!JSON.stringify(observations).includes(secret));
   const report=agentSummary("[trusted-positive-ci] gemini_agent_observation "+
     event(observations[0]));
@@ -244,4 +247,21 @@ test("HTTP 400 reason and function-history integrity survive sanitized summary",
   ]){
     assert.equal(agentObservations(event(invalid)).length,0);
   }
+});
+
+test("re-sanitizing an error with absent optional 400 metadata keeps its evidence",()=>{
+  const progress={successful_reads:1,distinct_read_paths:1,
+    duplicate_reads:0,failed_reads:0,successful_writes:0,failed_writes:0};
+  const base={event:"adk_safe_diagnostic",role:"backend",
+    category:"api_invalid_request",model_turns:2,http_status:400,...progress};
+  const once=agentObservations(event(base));
+  assert.equal(once.length,1);
+  assert.equal(once[0].invalid_request_cause,null);
+  const twice=agentObservations(event(once[0]));
+  assert.equal(twice.length,1);
+  assert.deepEqual(twice,once);
+  const combined=agentSummary("[trusted-positive-ci] gemini_agent_observation "+
+    event(twice[0]));
+  assert.equal(combined.role_evidence.backend.agent_failure.category,
+    "api_invalid_request");
 });

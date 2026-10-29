@@ -195,11 +195,18 @@ function safeAgentObservation(x){
     if(x.invalid_request_cause!==undefined&&
        x.invalid_request_cause!==null&&
        !SAFE_400_CAUSES.includes(x.invalid_request_cause))return null;
-    if(x.function_call_messages!==undefined&&
+    // Sanitization runs twice: once in the isolated child and again on
+    // the prefixed CI line. Preserve explicit nulls for absent metadata.
+    if(x.function_call_messages!==undefined&&x.function_call_messages!==null&&
        !valid(x.function_call_messages,300))return null;
     if(x.function_call_messages_missing_signature!==undefined&&
+       x.function_call_messages_missing_signature!==null&&
        !valid(x.function_call_messages_missing_signature,300))return null;
-    if(x.function_call_messages_missing_signature>x.function_call_messages)
+    if(x.function_call_messages_missing_signature!==null&&
+       x.function_call_messages_missing_signature!==undefined&&
+       (x.function_call_messages===null||
+        x.function_call_messages===undefined||
+        x.function_call_messages_missing_signature>x.function_call_messages))
       return null;
     y.http_status=valid(x.http_status,599)&&x.http_status>=100
       ?x.http_status:null;
