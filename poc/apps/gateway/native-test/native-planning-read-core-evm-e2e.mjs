@@ -19,6 +19,7 @@ import {makeApproval,assertApprovedPlanScope}
   from "../../../packages/plan-contracts/src/plan.mjs";
 import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
+import {canonicalFileUri} from "../src/canonical.ts";
 import {SignedEngineerApprovalFileStore} from
   "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
 import {TrustedPlanningReviewGate} from
