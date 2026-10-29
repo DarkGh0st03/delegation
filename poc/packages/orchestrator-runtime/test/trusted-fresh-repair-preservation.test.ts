@@ -12,6 +12,10 @@ import {SignedEngineerApprovalFileStore}
   from "../src/signed-approval-store.ts";
 import {verifySignedFreshRepairPreservation as verify}
   from "../src/trusted-fresh-repair-preservation.mjs";
+import {verifyTrustedFreshRepairPostRun}
+  from "../src/trusted-fresh-repair-post-run.mjs";
+import {TrustedGiteaPriorDiffReader}
+  from "../src/trusted-gitea-prior-diff-reader.ts";
 import {createFreshTypecheckRepairIssueFence}
   from "../src/trusted-typecheck-repair-activation-fence.mjs";
 import {makeApproval,planDigest}
@@ -237,5 +241,97 @@ test("R95 cannot substitute a different old branch when arming new authority",as
         expectedOldFeatureSha:oldHead
       }
     }),/issue fence/i);
+  }finally{await f.close();}
+});
+
+function simulateObservedPostRun(f,{paths=[backend,frontend],
+  status="pass",revision="d".repeat(40)}={}){
+  const reader=new TrustedGiteaPriorDiffReader({
+    baseUrl:"http://127.0.0.1:13377",token:"UNIT_TEST_TOKEN",repository:repo,
+    fetchFn:async(url)=>{
+      if(url.includes("/branches/"))
+        return new Response(JSON.stringify({
+          name:nextBranch,commit:{id:revision}
+        }),{status:200,headers:{"content-type":"application/json"}});
+      if(url.includes("/compare/"))
+        return new Response(JSON.stringify({
+          total_commits:1,commits:[{
+            sha:revision,
+            files:paths.map(path=>({filename:path,status:"modified"}))
+          }]
+        }),{status:200,headers:{"content-type":"application/json"}});
+      throw Error("Unexpected independent Gitea comparison");
+    }
+  });
+  const requests=[];
+  const gatewayEvidence={
+    async readVerifiedRunnerEffect(req){
+      requests.push(req);
+      return {
+        provider:"runner",performed:true,tool:"run_tests",
+        branch:nextBranch,tested_commit_sha:revision,status,
+        project_tests:{status},researcher_acceptance:{status},
+        phases:["dependency_install","typecheck","backend_tests",
+          "frontend_tests","build","playwright_e2e",
+          "researcher_acceptance"].map(phase=>({phase,status}))
+      };
+    }
+  };
+  return {input:{...f.input,trustedGitea:reader,gatewayEvidence,
+    expectedTestedCommitSha:revision},requests};
+}
+test("R96 new signed exact-SHA run reconstructs both Backend and Frontend",async()=>{
+  const f=await fixture();
+  try{
+    const h=simulateObservedPostRun(f);
+    const result=await verifyTrustedFreshRepairPostRun(h.input);
+    assert.deepEqual(result,{
+      status:"fresh_repair_exact_sha_runner_pass",
+      prior_files_accounted_for:2,modified_files_reimplemented:2,
+      added_files_recreated:0,exact_signed_branch_revision_verified:true,
+      all_fixed_runner_phases_passed:true,
+      functional_equivalence_not_attested:true,prior_source_imported:false,
+      additional_permissions_issued:false
+    });
+    assert.equal(h.requests.length,1);
+    assert.equal(h.requests[0].branch,nextBranch);
+    assert.equal(h.requests[0].tested_commit_sha,"d".repeat(40));
+    assert.doesNotMatch(JSON.stringify(result),/UserDetailPage|user.service|gitea:/u);
+  }finally{await f.close();}
+});
+test("R96 missing prior Frontend file means FAIL despite Runner PASS",async()=>{
+  const f=await fixture();
+  try{await assert.rejects(()=>verifyTrustedFreshRepairPostRun(
+    simulateObservedPostRun(f,{paths:[backend]}).input
+  ),/post-run/i);}finally{await f.close();}
+});
+test("R96 no Runner success without all actual fixed Docker phases passing",async()=>{
+  const f=await fixture();
+  try{await assert.rejects(()=>verifyTrustedFreshRepairPostRun(
+    simulateObservedPostRun(f,{status:"fail"}).input
+  ),/post-run/i);}finally{await f.close();}
+});
+test("R96 must reject stale Gitea, stale old SHA and wrong new SHA",async()=>{
+  const f=await fixture();
+  try{
+    const h=simulateObservedPostRun(f);
+    await assert.rejects(()=>verifyTrustedFreshRepairPostRun({
+      ...h.input,expectedTestedCommitSha:"e".repeat(40)
+    }),/post-run|Gitea prior-work diff/i);
+    await assert.rejects(()=>verifyTrustedFreshRepairPostRun({
+      ...h.input,expectedOldFeatureSha:"f".repeat(40)
+    }),/preservation|post-run/i);
+    await assert.rejects(()=>verifyTrustedFreshRepairPostRun({
+      ...h.input,expectedTestedCommitSha:baseSha
+    }),/post-run/i);
+  }finally{await f.close();}
+});
+test("R96 cannot rely on Test Agent prose in place of Gateway evidence",async()=>{
+  const f=await fixture();
+  try{
+    const h=simulateObservedPostRun(f);
+    await assert.rejects(()=>verifyTrustedFreshRepairPostRun({
+      ...h.input,gatewayEvidence:{}
+    }),/post-run/i);
   }finally{await f.close();}
 });
