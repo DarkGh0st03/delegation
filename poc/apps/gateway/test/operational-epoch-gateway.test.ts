@@ -285,7 +285,7 @@ test("R103 admission fails closed for incomplete tasks, wrong version and revoke
  h.gates.bindTask(session,"setup","task-setup","orchestrator");
  await h.intake.reserveRepairEpoch(repair());
  await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
-  /unresolved or in-flight Tasks/);
+  /unresolved, unbound or in-flight Tasks/);
  assert.equal(h.provider,0);
  await assert.rejects(h.gates.admitNextOperationalEpoch(session,3),
   /advance exactly once/);
@@ -293,7 +293,7 @@ test("R103 admission fails closed for incomplete tasks, wrong version and revoke
  // An incomplete Task is a stronger earlier fence. It must never
  // accidentally enable a new epoch after revocation.
  await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
-  /unresolved or in-flight Tasks/);
+  /unresolved, unbound or in-flight Tasks/);
  assert.equal(h.provider,0);
 });
 
@@ -312,5 +312,29 @@ test("R103 cannot register a second operational epoch before it is durably reser
  await h.initialPass();
  await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
   /epoch changed|signed|record|length/i);
+ assert.equal(h.provider,3);
+});
+
+test("R103 cannot skip an unbound epoch even if its plan was durably reserved",async(t)=>{
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();
+ await h.gates.activate(session,sha);
+ await h.intake.reserveRepairEpoch(repair());
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
+  /unresolved, unbound or in-flight Tasks/);
+ assert.equal(h.provider,0);
+});
+test("R103 cannot advance to epoch three without executing admitted epoch two",async(t)=>{
+ const h=await harness(t);
+ await h.initialPass();
+ await h.intake.reserveRepairEpoch(repair());
+ await h.gates.admitNextOperationalEpoch(session,2);
+ const third=plan("repair-3",3,[
+  entry("backend-third","backend",file,"update_file"),
+  entry("test-third","test",branchURI,"run_tests",["backend-third"])
+ ]);
+ await h.intake.reserveRepairEpoch(third);
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,3),
+  /unresolved, unbound or in-flight Tasks/);
  assert.equal(h.provider,3);
 });
