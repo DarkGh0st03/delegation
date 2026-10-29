@@ -145,6 +145,12 @@ class BoundedModel extends BaseLlm {
         const maybeThoughts = (usage as {thoughtsTokenCount?: unknown} | undefined)?.thoughtsTokenCount;
         if (typeof maybeThoughts === "number" && Number.isFinite(maybeThoughts))
           thinkingTokens = maybeThoughts;
+        // A provider reply stopped by MAX_TOKENS is incomplete. In particular,
+        // never hand a partially generated functionCall to the ADK tool runner:
+        // that could otherwise execute a side effect before terminal failure
+        // detection. This does not retry a paid request or expand task grants.
+        if (responseShape.finish_reason === "MAX_TOKENS")
+          throw new Error("ADK model output truncated before controlled tool execution");
         yield response;
       }
     } catch (error) {

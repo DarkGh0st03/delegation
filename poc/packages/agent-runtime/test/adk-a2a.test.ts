@@ -187,6 +187,36 @@ test("ADK read-only specialist completes from a Gateway-pinned revision",async()
 
 
 
+
+test("R79 provider MAX_TOKENS with functionCall cannot execute any controlled tool",async()=>{
+  class TruncatedToolModel extends BaseLlm {
+    readonly requests:LlmRequest[]=[];
+    constructor(){super({model:"offline-truncated-tool-no-provider"});}
+    override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      yield {content:{role:"model",parts:[{
+        functionCall:{id:"truncated-untrusted-edit",name:"update_file",
+          args:{branch:BRANCH,path:PATHS.frontend,content:"INCOMPLETE_EDIT"}}
+      }]},finishReason:"MAX_TOKENS"};
+    }
+    override connect():Promise<BaseLlmConnection>{
+      return Promise.reject(Error("Live generation prohibited in R79 regression"));
+    }
+  }
+  const boundary=fakeBoundary("frontend");
+  const model=new TruncatedToolModel();
+  let completed=false;
+  try{
+    const {response}=await send("frontend",model,
+      boundary.fetchFn as typeof fetch,43414);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+  }catch{/* Fail-closed A2A may surface model failure as a transport error. */}
+  assert.equal(completed,false);
+  assert.equal(model.requests.length,1);
+  assert.deepEqual(boundary.counts(),{prepareCalls:0,executeCalls:0},
+    "Truncated functionCall must not reach the controlled Gateway");
+});
+
 /**
  * R78: Paid R77 Frontend showed MAX_TOKENS followed by an approved-plan
  * denial. This local model reproduces a terminal truncated response after
