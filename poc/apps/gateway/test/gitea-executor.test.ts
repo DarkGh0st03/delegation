@@ -3,7 +3,7 @@ import test from "node:test";
 import { ProviderOperationUnavailableError } from "../src/errors.ts";
 import type { GiteaClient } from "../src/gitea-client.ts";
 import { GiteaExecutor } from "../src/gitea-executor.ts";
-import type { RunnerClient } from "../src/runner-client.ts";
+import { RunnerClient } from "../src/runner-client.ts";
 import type { NormalizedToolRequest, PreparedRequestRecord } from "../src/types.ts";
 
 function record(request: NormalizedToolRequest): PreparedRequestRecord {
@@ -330,6 +330,62 @@ test("Gitea executor resolves the exact feature-branch SHA before invoking the C
   }
 });
 
+
+test("Runner to GiteaExecutor preserves only bounded typecheck codes on pinned SHA",async()=>{
+  const sha="d".repeat(40);
+  const secret="NEVER_PUBLISH_COMPILER_MESSAGE_OR_PRIVATE_SOURCE";
+  let invoked=0;
+  const client={
+    async getBranchMetadata(branch:string){
+      assert.equal(branch,"feature/account-suspension");
+      return {name:branch,commit_sha:sha};
+    }
+  } as unknown as GiteaClient;
+  // Use the real RunnerClient decoder rather than an unsanitized mocked
+  // RunnerClient, so this covers the actual transport and Gateway boundary.
+  const runner=new RunnerClient({
+    baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
+    fetchFn:async(_url,init)=>{
+      invoked++;
+      const body=JSON.parse(String(init?.body));
+      assert.equal(body.commit_sha,sha);
+      assert.equal(body.branch,"feature/account-suspension");
+      return new Response(JSON.stringify({
+        request_id:"req-fixed",repository:body.repository,
+        branch:body.branch,tested_commit_sha:sha,
+        runner_profile:"poc-default",status:"fail",
+        phases:[{phase:"dependency_install",status:"pass"},
+          {phase:"typecheck",status:"fail"}],
+        typecheck_error_codes:["TS2304","TS2688"],
+        typecheck_diagnostics:[
+          {path:"apps/backend/src/users/user.service.ts",
+            line:4,column:6,code:"TS2304"},
+          {path:"../private/secret.ts",line:1,column:1,code:"TS2688"}
+        ],
+        untrusted_compiler_output:secret
+      }),{status:200});
+    }
+  });
+  const executor=new GiteaExecutor(client,runner,
+    "gitea://gitea.local/thesis/iam-console-poc");
+  const result=await executor.execute(record({
+    tool:"run_tests",
+    arguments:{branch:"feature/account-suspension",profile:"poc-default"}
+  }));
+  assert.equal(invoked,1);
+  assert.equal(result.provider,"runner");
+  assert.equal(result.tool,"run_tests");
+  if(result.tool!=="run_tests")throw Error("Expected Runner result");
+  assert.equal(result.status,"fail");
+  assert.equal(result.tested_commit_sha,sha);
+  assert.deepEqual(result.typecheck_error_codes,["TS2304","TS2688"]);
+  assert.deepEqual(result.typecheck_diagnostics,[{
+    path:"apps/backend/src/users/user.service.ts",
+    line:4,column:6,code:"TS2304"
+  }]);
+  assert.ok(!JSON.stringify(result).includes(secret));
+  assert.ok(!JSON.stringify(result).includes("../private"));
+});
 
 test("real Gitea executor allows only the signed Gateway-approved feature branch",async()=>{
  const desired="feature/engineer-approved-42";
