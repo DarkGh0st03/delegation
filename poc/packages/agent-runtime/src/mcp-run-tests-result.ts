@@ -47,6 +47,7 @@ export function normalizeMcpRunTestsOutcome(
           phases:[{phase:reason,status:"fail"}],
           ...(reason==="typecheck"
             ?{typecheck_diagnostics:hint?.typecheck_diagnostics,
+               typecheck_error_codes:hint?.typecheck_error_codes,
                repair_requires_new_approval:hint?.repair_requires_new_approval}
             :reason==="frontend_tests"||reason==="backend_tests"
               ?{failing_test_files:hint?.failing_test_files,

@@ -196,3 +196,33 @@ test("Test role receives only authorized Vitest failed files, never assertions",
     failing_test_files:[allowed]
   });
 });
+
+test("Fileless TypeScript codes survive both MCP failure boundaries",()=>{
+  const secret="NEVER_EMIT_PRIVATE_COMPILER_SOURCE";
+  const codes=["TS2304","TS2688"];
+  const hint={first_failed_phase:"typecheck",
+    typecheck_error_codes:codes,raw_compiler_log:secret};
+  const raw={isError:true,structuredContent:{ok:false,error:{
+    kind:"tests_failed",details:hint}}};
+  const wrapped=normalizeMcpRunTestsOutcome(raw,args,[],[]);
+  assert.equal(wrapped.ok,false);
+  if(!wrapped.ok)assert.deepEqual(wrapped.error.details,{
+    first_failed_phase:"typecheck",typecheck_error_codes:codes});
+  assert.ok(!JSON.stringify(wrapped).includes(secret));
+
+  const resultFailed=success({...result,status:"fail",
+    phases:[{phase:"typecheck",status:"fail"}],
+    typecheck_error_codes:codes});
+  assert.equal(resultFailed.ok,false);
+  if(!resultFailed.ok)assert.deepEqual(resultFailed.error.details,{
+    first_failed_phase:"typecheck",typecheck_error_codes:codes});
+
+  const malformed=normalizeMcpRunTestsOutcome({
+    isError:true,structuredContent:{ok:false,error:{
+      kind:"tests_failed",details:{...hint,
+        typecheck_error_codes:["TS2304;"+secret]}}}
+  },args);
+  if(!malformed.ok)assert.deepEqual(malformed.error.details,{
+    first_failed_phase:"typecheck"});
+  assert.ok(!JSON.stringify(malformed).includes(secret));
+});

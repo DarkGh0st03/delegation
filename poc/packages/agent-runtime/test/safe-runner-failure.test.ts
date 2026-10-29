@@ -107,3 +107,26 @@ test("Untrusted typecheck scope metadata with extra fields never leaves the sani
   assert.equal(JSON.stringify(hint).includes(secret),false);
 });
 
+
+test("Fileless TypeScript errors reach Test as bounded code-only metadata",()=>{
+  const secret="NEVER_EXPOSE_RAW_COMPILER_MESSAGE";
+  const codes=["TS2304","TS2688"];
+  const raw={phases:[{phase:"typecheck",status:"fail"}],
+    typecheck_error_codes:codes,untrusted_error_message:secret};
+  const safe=safeRunnerFailureDetails(raw,[],[]);
+  assert.deepEqual(safe,{first_failed_phase:"typecheck",
+    typecheck_error_codes:codes});
+  assert.deepEqual(safeRunnerFailedPhaseHint({...safe,
+    injected_source:secret}),safe);
+  assert.ok(!JSON.stringify(safe).includes(secret));
+  assert.deepEqual(safeRunnerFailureDetails({...raw,
+    typecheck_error_codes:["TS2688","TS2304"]}),{
+      first_failed_phase:"typecheck"});
+  assert.deepEqual(safeRunnerFailureDetails({...raw,
+    phases:[{phase:"frontend_tests",status:"fail"}]}),{
+    first_failed_phase:"frontend_tests"});
+  assert.deepEqual(safeRunnerFailedPhaseHint({
+    first_failed_phase:"typecheck",
+    typecheck_error_codes:["TS2304;"+secret]}),{
+    first_failed_phase:"typecheck"});
+});
