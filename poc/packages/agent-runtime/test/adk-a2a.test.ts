@@ -7,7 +7,7 @@ import {
   type LlmResponse
 } from "@google/adk";
 import { TaskState } from "@a2a-js/sdk";
-import {safeAdkRequestShape} from "../src/adk-request-shape.ts";
+import {safeAdkRequestShape,safeAdkFunctionHistoryShape} from "../src/adk-request-shape.ts";
 import {
   DELEGATED_AUTHORIZATION_EXTENSION_URI,
   DeterministicA2AOrchestrator,
@@ -185,6 +185,54 @@ test("ADK read-only specialist completes from a Gateway-pinned revision",async()
   assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
 });
 
+
+
+/**
+ * Offline regression for the actual protected A2A -> BoundedModel -> ADK
+ * function-response path. Gemini 3 requires the model's original signature
+ * when the next request includes its prior functionCall. This fixture makes
+ * no provider calls and carries no real signature or credential.
+ */
+test("Protected A2A preserves synthetic model thought signature through Gateway read",async()=>{
+  const signature="SYNTHETIC_SIGNATURE_NOT_FROM_ANY_PROVIDER";
+  class SignedReadModel extends BaseLlm {
+    readonly requests:LlmRequest[]=[];
+    constructor(){super({model:"local-signed-read-no-provider"});}
+    override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      if(this.requests.length===1)yield {content:{role:"model",parts:[{
+        functionCall:{id:"offline-signed-read",name:"read_file",
+          args:{branch:BRANCH,path:PATHS.backend}},
+        thoughtSignature:signature
+      }]}};
+      else yield {content:{role:"model",parts:[{text:"Gateway read complete"}]}};
+    }
+    override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+      return Promise.reject(Error("External Gemini calls forbidden in offline signature regression"));
+    }
+  }
+  const boundary=fakeBoundary("backend",false,true);
+  const model=new SignedReadModel();
+  const {response}=await send("backend",model,boundary.fetchFn as typeof fetch,43401);
+  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
+  assert.equal(model.requests.length,2);
+  const second=model.requests[1]!;
+  const history=second.contents;
+  const callIndex=history.findIndex(content=>content.role==="model" &&
+    content.parts?.some(part=>part.functionCall?.name==="read_file"));
+  assert.ok(callIndex>=0,"Prior signed model functionCall must remain in ADK history");
+  const toolIndex=history.findIndex((content,index)=>index>callIndex &&
+    content.parts?.some(part=>part.functionResponse?.name==="read_file"));
+  assert.ok(toolIndex>callIndex,"Function response must follow its signed model call");
+  const signedPart=history[callIndex]?.parts?.find(part=>
+    part.functionCall?.name==="read_file");
+  assert.equal(signedPart?.thoughtSignature,signature);
+  assert.deepEqual(safeAdkFunctionHistoryShape(second),{
+    function_call_messages:1,function_call_messages_missing_signature:0
+  });
+  assert.equal(JSON.stringify(safeAdkFunctionHistoryShape(second)).includes(signature),false);
+});
 
 class TwoRunsModel extends BaseLlm {
   readonly requests:LlmRequest[]=[];
