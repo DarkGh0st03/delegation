@@ -9,12 +9,19 @@
  */
 const SHA=/^[a-f0-9]{40}$/u;
 const PATH=/^[A-Za-z0-9_@.-]+(?:\/[A-Za-z0-9_@.-]+)*\.tsx?$/u;
+// The trusted Planning inventory also includes CSS and other non-TS files.
+// Only compiler locations (not the inventory) must have a .ts/.tsx suffix.
+const REPOSITORY_PATH=/^[A-Za-z0-9_@.-]+(?:\/[A-Za-z0-9_@.-]+)*$/u;
 const SCHEMA="typecheck-revision-comparison-v1";
 const FIELDS=["diagnostic_files","same_blob_as_base","different_blob_from_base",
   "verified_new_files","unverifiable_files","backend_writes_observed",
   "frontend_writes_observed","test_writes_observed","without_observed_writes"];
 function pathOK(s){
   return typeof s==="string"&&s.length<=180&&PATH.test(s)&&
+    s.split("/").every(x=>x!=="."&&x!=="..");
+}
+function repoPathOK(s){
+  return typeof s==="string"&&s.length<=240&&REPOSITORY_PATH.test(s)&&
     s.split("/").every(x=>x!=="."&&x!=="..");
 }
 function count(n){return Number.isSafeInteger(n)&&n>=0&&n<=8;}
@@ -49,14 +56,14 @@ export async function compareTrustedTypecheckRevisions({
        !Number.isSafeInteger(d.line)||d.line<1||d.line>100000||
        !Number.isSafeInteger(d.column)||d.column<1||d.column>10000)||
      !Array.isArray(planningFiles)||planningFiles.length>128||
-     planningFiles.some(p=>!pathOK(p))||
+     planningFiles.some(p=>!repoPathOK(p))||
      !Array.isArray(createdPaths)||createdPaths.length>32||
-     createdPaths.some(p=>!pathOK(p))||
+     createdPaths.some(p=>!repoPathOK(p))||
      !observedWrites||typeof observedWrites!=="object"||
      !["backend","frontend","test"].every(role=>
        observedWrites[role] instanceof Set&&
        observedWrites[role].size<=128&&
-       [...observedWrites[role]].every(p=>pathOK(p)))||
+       [...observedWrites[role]].every(p=>repoPathOK(p)))||
      typeof branch!=="string"||!branch.startsWith("feature/")||
      branch.length>128||!SHA.test(baseSha)||!SHA.test(testedSha)||
      !reader||typeof reader.readTextFile!=="function"||

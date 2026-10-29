@@ -32,7 +32,7 @@ function opts(f){
   return {
     reader:f.reader,
     diagnostics:[d(backend),d(frontend),d(created),d(unknown)],
-    planningFiles:[backend,frontend],
+    planningFiles:[backend,frontend,"apps/frontend/src/styles.css"],
     createdPaths:[created],
     observedWrites:{
       backend:new Set([backend]),
@@ -89,4 +89,12 @@ test("R82 double whitelist refuses source, inconsistent counts and forged new fi
   assert.equal(safe({...r,different_blob_from_base:4}),null);
   assert.equal(safe({...r,verified_new_files:-1}),null);
   assert.equal(safe({...r,diagnostic_files:0}),null);
+});
+
+test("R83 safe Planning snapshot can include CSS, while diagnostics remain TypeScript-only",async()=>{
+  const f=fixture(),o=opts(f);
+  o.planningFiles.push("apps/frontend/src/styles.css","package.json");
+  o.observedWrites.frontend.add("apps/frontend/src/styles.css");
+  assert.equal((await compare(o)).different_blob_from_base,1);
+  assert.equal(await compare({...o,diagnostics:[d("apps/frontend/src/styles.css")]}),null);
 });
