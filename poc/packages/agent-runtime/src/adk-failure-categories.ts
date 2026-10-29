@@ -5,6 +5,7 @@
  */
 export type AdkFailureCategory =
   | "model_turn_budget"
+  | "model_output_truncated"
   | "api_rate_limit_or_quota"
   | "api_authentication"
   | "api_permission_denied"

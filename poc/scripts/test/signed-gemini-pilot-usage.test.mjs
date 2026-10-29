@@ -163,7 +163,7 @@ test("redacted model response shapes distinguish empty, tool and exhausted resul
       function_call_parts:1,text_parts:0,finish_reason:"MALFORMED_FUNCTION_CALL"}),
     event({event:"adk_llm_timing",role:"backend",turn:4,
       function_call_parts:1,text_parts:0,finish_reason:secret}),
-    event({event:"adk_llm_timing",role:"backend",turn:18,
+    event({event:"adk_llm_timing",role:"backend",turn:21,
       function_call_parts:1,text_parts:0,finish_reason:"STOP"})
   ].join("\n");
   const safe=agentObservations(raw);
@@ -196,4 +196,21 @@ test("fresh Engineer review is a fixed safe failure category",()=>{
     JSON.stringify(safe[0]));
   assert.equal(report.role_evidence.test.agent_failure.category,
     "repair_requires_new_approval");
+});
+
+test("MAX_TOKENS diagnostic stays source-free and separate from ADK provider failures",()=>{
+  const progress={successful_reads:3,distinct_read_paths:3,
+    duplicate_reads:0,failed_reads:0,successful_writes:0,failed_writes:0};
+  const secret="DO_NOT_EXPOSE_PRIVATE_GENERATION_TEXT";
+  const raw=event({event:"adk_safe_diagnostic",role:"backend",
+    category:"model_output_truncated",model_turns:7,
+    http_status:null,...progress,secret});
+  const events=agentObservations(raw);
+  assert.equal(events.length,1);
+  assert.equal(events[0].category,"model_output_truncated");
+  assert.ok(!JSON.stringify(events).includes(secret));
+  const report=agentSummary("[trusted-positive-ci] gemini_agent_observation "+
+    event(events[0]));
+  assert.equal(report.role_evidence.backend.agent_failure.category,
+    "model_output_truncated");
 });

@@ -1,3 +1,4 @@
+import type {AdkFailureCategory} from "./adk-failure-categories.ts";
 import type {LlmResponse} from "@google/adk";
 
 /** Only static, known Gemini/ADK finish labels may enter CI logs. */
@@ -32,4 +33,16 @@ export function safeAdkResponseShape(response: LlmResponse): SafeAdkResponseShap
     if (typeof part.text === "string") text_parts++;
   }
   return {finish_reason, function_call_parts, text_parts};
+}
+
+/** Preserve specific provider errors. A generic ADK event after MAX_TOKENS
+ * is a locally observed truncation, not a model reasoning failure.
+ * No model text, reasoning or tool args enter this diagnostic.
+ */
+export function classifyAdkResponseFailure(
+  category:AdkFailureCategory,finishReason:string|null
+):AdkFailureCategory{
+  return finishReason==="MAX_TOKENS"&&
+    (category==="adk_event_error"||category==="sdk_model_exception")
+    ?"model_output_truncated":category;
 }

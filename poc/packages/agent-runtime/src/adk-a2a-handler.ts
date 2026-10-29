@@ -17,7 +17,8 @@ import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
 import { AdkToolProgress } from "./adk-tool-progress.ts";
 import { safeAdkRequestShape } from "./adk-request-shape.ts";
-import {safeAdkResponseShape, type SafeAdkResponseShape} from "./adk-response-diagnostics.ts";
+import {safeAdkResponseShape,classifyAdkResponseFailure,
+  type SafeAdkResponseShape} from "./adk-response-diagnostics.ts";
 
 type FetchLike = typeof fetch;
 
@@ -62,6 +63,7 @@ class BoundedModel extends BaseLlm {
   budgetExceeded = false;
   effectiveModelVersion: string | null = null;
   providerErrorCategory: AdkFailureCategory | null = null;
+  lastFinishReason:string|null=null;
   providerErrorDiagnostic: AdkSafeFailureDiagnostic | null = null;
   readonly delegate: BaseLlm;
   readonly limit: number;
@@ -90,6 +92,7 @@ class BoundedModel extends BaseLlm {
       throw new Error("ADK model turn budget exhausted");
     }
     this.turns += 1;
+    this.lastFinishReason=null;
     // Optional, content-free comparison with the successful Gemini ADK smoke.
     // Never log provider payloads, system prompts, tool schema or evidence.
     // Explicitly disabled for routine scripted and production runs.
@@ -123,7 +126,10 @@ class BoundedModel extends BaseLlm {
           this.effectiveModelVersion = response.modelVersion;
         }
         const responseShape = safeAdkResponseShape(response);
-        if (responseShape.finish_reason !== null) finishReason = responseShape.finish_reason;
+        if (responseShape.finish_reason !== null){
+          finishReason = responseShape.finish_reason;
+          this.lastFinishReason=finishReason;
+        }
         functionCallParts += responseShape.function_call_parts;
         textParts += responseShape.text_parts;
         const usage = response.usageMetadata;
@@ -363,7 +369,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         failForFreshReview();
       const diagnostic = model.providerErrorDiagnostic ?? inspectAdkFailure(error);
       const category = model.budgetExceeded ? "model_turn_budget" :
-        model.providerErrorCategory ?? diagnostic.category;
+        classifyAdkResponseFailure(
+          model.providerErrorCategory ?? diagnostic.category,
+          model.lastFinishReason);
       reportFailure(category, model.budgetExceeded ? null : diagnostic);
       throw new Error("ADK protected model failure: " + category);
     } finally {
@@ -374,7 +382,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       failForFreshReview();
     if (model.budgetExceeded || model.providerErrorCategory || eventErrorCategory) {
       const category = model.budgetExceeded ? "model_turn_budget" :
-        model.providerErrorCategory ?? eventErrorCategory ?? "adk_event_error";
+        classifyAdkResponseFailure(
+          model.providerErrorCategory ?? eventErrorCategory ?? "adk_event_error",
+          model.lastFinishReason);
       reportFailure(category, model.budgetExceeded ? null :
         model.providerErrorDiagnostic ?? eventErrorDiagnostic);
       throw new Error("ADK protected model failure: " + category);

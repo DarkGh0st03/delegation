@@ -42,7 +42,9 @@ jobs:
     name: Four Gemini models - real signed DC VP Gitea Docker - TEST approval
     if: ${{ github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && github.repository == 'DarkGh0st03/delegation' && github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' && inputs.authorization == 'I AUTHORIZE GEMINI API CHARGES' && inputs.model == 'gemini-3.8-flash' && inputs.thinking_level == 'LOW' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Accommodate independent bounded Planning and signed ADK/A2A Tasks.
+    # GitHub still terminates the run; this is not a monetary spending cap.
+    timeout-minutes: 120
     env:
       ADAPTER_TRUST_PROFILE: evm
       ADAPTER_CALLER_ENGINEER: local-native-engineer-ci

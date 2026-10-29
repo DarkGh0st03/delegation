@@ -12,13 +12,19 @@ import {resolve} from "node:path";
 export const SIGNED_GEMINI_PILOT = Object.freeze({
   model:"gemini-3.8-flash",thinkingLevel:"LOW",
   // R52: increase only Backend response allowance after MAX_TOKENS.
-  maxOutputTokensPerCall:8192,maxModelCallMs:120000,
+  // R53: bounded full-file outputs; these ceilings do NOT grant permissions
+  // or enforce monetary cost controls. Test repair has a larger turn budget.
+  maxOutputTokensPerCall:12288,maxModelCallMs:180000,
   maxOutputTokensPerRole:Object.freeze({
-    backend:16384,frontend:8192,test:8192
+    backend:20480,frontend:12288,test:12288
   }),
   maxTurnsPerTask:Object.freeze({
-    planner:20,backend:17,frontend:11,test:6
+    planner:24,backend:20,frontend:14,test:10
   }),
+  maxPlanningMs:600000,maxA2aTaskMs:1800000,
+  // Session credentials remain ephemeral, bound and revocable; their
+  // lifetime covers bounded task deadlines rather than expiring midway.
+  operationalRootValiditySeconds:6300,childCredentialValiditySeconds:2400,
   branch:"refs/heads/refactor/post-prof-plan-contracts-20261021",
   repository:"DarkGh0st03/delegation"
 });
@@ -56,7 +62,9 @@ export function verifySignedGeminiPilotConsent(env,{requireApiKey=false}={}){
     billing_cap_configuration:"user_attested_not_programmatically_verified",
     billing_cap_overage_risk_acknowledged:true,
     thinking_level:SIGNED_GEMINI_PILOT.thinkingLevel,
-    max_output_tokens_per_call:16384,
+    max_output_tokens_per_call:Math.max(
+      SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+      ...Object.values(SIGNED_GEMINI_PILOT.maxOutputTokensPerRole)),
     planner_max_output_tokens_per_call:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
     max_output_tokens_per_role:SIGNED_GEMINI_PILOT.maxOutputTokensPerRole,
     max_model_turns_per_task:SIGNED_GEMINI_PILOT.maxTurnsPerTask,

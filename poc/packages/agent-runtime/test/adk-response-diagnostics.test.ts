@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {LlmResponse} from "@google/adk";
-import {safeAdkResponseShape} from "../src/adk-response-diagnostics.ts";
+import {safeAdkResponseShape,classifyAdkResponseFailure}
+  from "../src/adk-response-diagnostics.ts";
 
 test("safe response diagnostic reports max-token truncation and counts only",()=>{
   const response={finishReason:"MAX_TOKENS",
@@ -30,4 +31,17 @@ test("safe response diagnostic preserves expected finish labels and redacts othe
   assert.equal(safeAdkResponseShape({
     finishReason:injected
   } as unknown as LlmResponse).finish_reason,"UNKNOWN");
+});
+
+test("MAX_TOKENS in final ADK event is diagnosed without masking provider errors",()=>{
+  assert.equal(classifyAdkResponseFailure("adk_event_error","MAX_TOKENS"),
+    "model_output_truncated");
+  assert.equal(classifyAdkResponseFailure("sdk_model_exception","MAX_TOKENS"),
+    "model_output_truncated");
+  assert.equal(classifyAdkResponseFailure("api_rate_limit_or_quota","MAX_TOKENS"),
+    "api_rate_limit_or_quota");
+  assert.equal(classifyAdkResponseFailure("adk_event_error","STOP"),
+    "adk_event_error");
+  assert.equal(classifyAdkResponseFailure("adk_event_error",null),
+    "adk_event_error");
 });

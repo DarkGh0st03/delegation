@@ -28,12 +28,22 @@ test("manual pilot produces ONLY a redacted zero-inference receipt",()=>{
   assert.equal(receipt.paid_execution_authorized_by_this_receipt,false);
   assert.equal(receipt.engineer_review,"signed_test_fixture_not_human");
   assert.deepEqual(receipt.max_model_turns_per_task,
-    {planner:20,backend:17,frontend:11,test:6});
-  assert.equal(receipt.max_output_tokens_per_call,16384);
-  assert.equal(receipt.planner_max_output_tokens_per_call,8192);
+    {planner:24,backend:20,frontend:14,test:10});
+  assert.equal(receipt.max_output_tokens_per_call,20480);
+  assert.equal(receipt.planner_max_output_tokens_per_call,12288);
+  assert.equal(receipt.max_model_call_ms,180000);
   assert.deepEqual(receipt.max_output_tokens_per_role,{
-    backend:16384,frontend:8192,test:8192
+    backend:20480,frontend:12288,test:12288
   });
+  assert.equal(SIGNED_GEMINI_PILOT.maxPlanningMs,600000);
+  assert.equal(SIGNED_GEMINI_PILOT.maxA2aTaskMs,1800000);
+  assert.equal(SIGNED_GEMINI_PILOT.childCredentialValiditySeconds,2400);
+  assert.equal(SIGNED_GEMINI_PILOT.operationalRootValiditySeconds,6300);
+  assert.ok(SIGNED_GEMINI_PILOT.childCredentialValiditySeconds*1000 >
+    SIGNED_GEMINI_PILOT.maxA2aTaskMs);
+  assert.ok(SIGNED_GEMINI_PILOT.operationalRootValiditySeconds*1000 >
+    3*SIGNED_GEMINI_PILOT.maxA2aTaskMs+SIGNED_GEMINI_PILOT.maxPlanningMs);
+  assert.ok(SIGNED_GEMINI_PILOT.childCredentialValiditySeconds<=7200);
   assert.equal(Object.isFrozen(SIGNED_GEMINI_PILOT.maxOutputTokensPerRole),true);
   assert.equal(receipt.max_model_call_ms,120000);
   assert.equal(receipt.model,"gemini-3.8-flash");

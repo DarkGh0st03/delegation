@@ -645,7 +645,8 @@ export async function runNativePositiveApprovedDag({
       expectedPlanDigest:planDigest,baseRevision:baseSha,
       expectedEngineerDid:engineerDid,agentBaseUrls:urls,
       a2a:new DeterministicA2AOrchestrator({
-        deadlineMs:realGeminiPilot?1200000:500000,
+        deadlineMs:realGeminiPilot
+          ?SIGNED_GEMINI_PILOT.maxA2aTaskMs:500000,
         initialIntervalMs:50,maxIntervalMs:250
       }),
       adapter:{adapterBaseUrl:adapterUrl,
@@ -665,7 +666,8 @@ export async function runNativePositiveApprovedDag({
           parent_credential_id:operationalRootId,
           credential_id:credentialId,
           valid_from:new Date(Date.now()-1000).toISOString(),
-          validity_seconds:realGeminiPilot?1800:300,
+          validity_seconds:realGeminiPilot
+            ?SIGNED_GEMINI_PILOT.childCredentialValiditySeconds:300,
           credential_status:{type:"BitstringStatusListEntry",
             statusPurpose:"revocation",
             statusListIndex:String(randomInt(66001,69000)),

@@ -146,7 +146,8 @@ const SAFE_FINISH_REASONS=["STOP","MAX_TOKENS","SAFETY","RECITATION",
   "FINISH_REASON_UNSPECIFIED","UNKNOWN"];
 const AGENT_ERRORS=["controlled_tool_failures","no_confirmed_revision",
   "repair_requires_new_approval"];
-const MODEL_ERRORS=["model_turn_budget","api_rate_limit_or_quota",
+const MODEL_ERRORS=["model_turn_budget","model_output_truncated",
+  "api_rate_limit_or_quota",
   "api_authentication","api_permission_denied","api_model_not_found",
   "api_invalid_request","api_service_unavailable","api_inference_timeout",
   "api_network_failure","tool_schema_or_validation",

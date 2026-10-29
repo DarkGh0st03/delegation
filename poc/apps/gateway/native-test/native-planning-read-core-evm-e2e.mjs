@@ -422,7 +422,7 @@ try{
       maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
       thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
       maxModelCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
-      maxPlanningMs:480000,
+      maxPlanningMs:SIGNED_GEMINI_PILOT.maxPlanningMs,
       onObservation:observation=>{
         if(observation?.kind==="plan_rejection"){
           pilotPlanningRejection={stage:observation.stage,
@@ -578,7 +578,8 @@ try{
     const active=await coordinator.beginExecution({
       credential_id:opId,
       valid_from:new Date(Date.now()-1000).toISOString(),
-      validity_seconds:geminiPilot?2700:600,
+      validity_seconds:geminiPilot
+        ?SIGNED_GEMINI_PILOT.operationalRootValiditySeconds:600,
       credential_status:{
         type:"BitstringStatusListEntry",
         statusPurpose:"revocation",
