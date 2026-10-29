@@ -10,6 +10,8 @@ import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
 import {TrustedOperationalEpochJournal} from "../src/trusted-operational-epoch-journal.mjs";
 import {TrustedOperationalEpochIntake} from "../src/trusted-operational-epoch-intake.ts";
+import {TrustedApprovedPlanChildAuthorityIssuer} from "../src/trusted-approved-child-issuer.ts";
+import {TrustedChildIssuanceJournal} from "../src/trusted-child-issuance-journal.mjs";
 
 const OPS=new Set<string>(RUST_OPERATIONS);
 const REPO={authority:"gitea.local",owner:"sample",repository:"invoice-service"};
@@ -188,4 +190,86 @@ test("R101 private owner-only directory and forbidden entries are rejected",asyn
  await chmod(e.journalDir,0o700);
  await writeFile(join(e.journalDir,"unexpected.txt"),"x");
  await assert.rejects(e.makeOwner().reserveInitialEpoch(),/unexpected|out-of-order/);
+});
+
+test("R102: reserved repair Task issues exact child via existing Adapter route; replay denied",async(t)=>{
+ const e=await env(t),owner=e.makeOwner();
+ await owner.reserveInitialEpoch();
+ await owner.reserveRepairEpoch(nextPlan(2,"backend","backend-fix-2"));
+ const childDir=join(e.dir,"child-requests");
+ await mkdir(childDir,{mode:0o700});
+ const journal=new TrustedChildIssuanceJournal({
+  directory:childDir,sessionId:SESSION,baseRevision:SHA,
+  planDigest:e.parent.plan_digest,parentCredentialId:e.parent.credential_id
+ });
+ const observed:any[]=[];
+ const config={
+  intake:owner,epochVersion:2,coordinator:e.coordinator,
+  issuanceJournal:journal,sessionId:SESSION,engineerDid:ENGINEER,
+  adapterBaseUrl:"http://127.0.0.1:8999",bearerToken:"fixture-only",
+  fetchFn:(async (url:unknown,req:any)=>{
+   const body=JSON.parse(String(req.body));
+   observed.push({url:String(url),body});
+   return new Response(JSON.stringify({
+    "@context":["https://www.w3.org/ns/credentials/v2"],
+    type:["VerifiableCredential","DelegationCredential"],
+    id:body.credential_id,issuer:"did:example:orchestrator",
+    credentialSubject:{sub:"did:example:backend",per:body.permissions}
+   }),{status:201,headers:{"content-type":"application/json"}});
+  }) as typeof fetch
+ };
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer.createForOperationalEpoch(config);
+ const input={
+  parent_credential_id:e.parent.credential_id,
+  approved_task_id:"backend-fix-2",
+  selection:{role:"backend" as const},
+  credential_id:"urn:child:invoice-fix-2",
+  valid_from:"2026-10-29T10:00:00Z",validity_seconds:300,
+  credential_status:{
+   type:"BitstringStatusListEntry" as const,
+   statusPurpose:"revocation" as const,
+   statusListIndex:"1772",
+   statusListCredential:"https://status.example/repair"
+  }
+ };
+ const result=await issuer.issueSpecializedChild(input);
+ assert.equal(result.role,"backend");
+ assert.deepEqual(observed[0].body.permissions,[{resource:FILE,operation:"update_file"}]);
+ assert.equal(observed[0].body.parent_credential_id,e.parent.credential_id);
+ assert.equal(observed[0].url,"http://127.0.0.1:8999/v1/credentials/child");
+ assert.equal((await journal.records())[0].observation,"adapter_response_verified");
+ await assert.rejects(issuer.issueSpecializedChild(input),/already attempted/);
+ const another=await TrustedApprovedPlanChildAuthorityIssuer.createForOperationalEpoch(config);
+ await assert.rejects(another.issueSpecializedChild(input),/already reserved/);
+ assert.equal(observed.length,1);
+});
+test("R102: stale epoch, different Coordinator and revoked root fail before child issuance",async(t)=>{
+ const e=await env(t),owner=e.makeOwner();
+ await owner.reserveInitialEpoch();
+ await owner.reserveRepairEpoch(nextPlan(2,"backend","backend-fix-2"));
+ const childDir=join(e.dir,"child-requests");
+ await mkdir(childDir,{mode:0o700});
+ const config={
+  intake:owner,epochVersion:3,coordinator:e.coordinator,
+  issuanceJournal:new TrustedChildIssuanceJournal({
+   directory:childDir,sessionId:SESSION,baseRevision:SHA,
+   planDigest:e.parent.plan_digest,parentCredentialId:e.parent.credential_id
+  }),
+  sessionId:SESSION,engineerDid:ENGINEER,
+  adapterBaseUrl:"http://127.0.0.1:8999",bearerToken:"fixture-only"
+ };
+ await assert.rejects(
+  TrustedApprovedPlanChildAuthorityIssuer.createForOperationalEpoch(config),
+  /stale, missing or foreign operational epoch/);
+ await assert.rejects(
+  TrustedApprovedPlanChildAuthorityIssuer.createForOperationalEpoch({
+   ...config,epochVersion:2,
+   coordinator:{get phase(){return "execution" as const;},
+    trustedOperationalAuthority(){return structuredClone(e.parent);}}
+  }),/Coordinator instance differs/);
+ e.setPhase("closed");
+ await assert.rejects(
+  TrustedApprovedPlanChildAuthorityIssuer.createForOperationalEpoch({
+   ...config,epochVersion:2
+  }),/trusted current epoch and durable child-issuance journal required/);
 });
