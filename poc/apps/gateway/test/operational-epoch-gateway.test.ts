@@ -277,9 +277,21 @@ test("R103 admission fails closed for incomplete tasks, wrong version and revoke
  await assert.rejects(h.gates.admitNextOperationalEpoch(session,3),
   /advance exactly once/);
  h.setPhase("closed");
+ // An incomplete Task is a stronger earlier fence. It must never
+ // accidentally enable a new epoch after revocation.
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
+  /unresolved or in-flight Tasks/);
+ assert.equal(h.provider,0);
+});
+
+test("R103 independently rejects revoked issued root after all old Tasks complete",async(t)=>{
+ const h=await harness(t);
+ await h.initialPass();
+ await h.intake.reserveRepairEpoch(repair());
+ h.setPhase("closed");
  await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
   /operational root is not active/);
- assert.equal(h.provider,0);
+ assert.equal(h.provider,3);
 });
 
 test("R103 cannot register a second operational epoch before it is durably reserved",async(t)=>{
