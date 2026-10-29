@@ -90,3 +90,20 @@ test("Frontend Vitest metadata is disclosed only for signed read paths",()=>{
     repair_requires_new_approval:true
   });
 });
+
+test("Untrusted typecheck scope metadata with extra fields never leaves the sanitizer",()=>{
+  const secret="NEVER_PUBLISH_UNAPPROVED_TYPECHECK_SOURCE";
+  const hint=safeRunnerFailedPhaseHint({
+    first_failed_phase:"typecheck",
+    repair_requires_new_approval:true,
+    typecheck_scope_summary:{
+      parsed_locations:1,missing_read_grants:1,missing_write_grants:1,
+      source:secret
+    }
+  });
+  assert.deepEqual(hint,{
+    first_failed_phase:"typecheck",repair_requires_new_approval:true
+  });
+  assert.equal(JSON.stringify(hint).includes(secret),false);
+});
+
