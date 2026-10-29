@@ -17,6 +17,8 @@ on:
       - 'poc/scripts/test/signed-gemini-pilot-usage.test.mjs'
       - 'poc/scripts/signed-gemini-pilot-ci-gate.mjs'
       - 'poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs'
+      - 'poc/scripts/signed-gemini-pilot-*.mjs'
+      - 'poc/scripts/test/signed-gemini-pilot-*.test.mjs'
       # Prepaid-model metadata checks must be covered by the same-SHA gate.
       - 'poc/scripts/check-gemini-planner-model-access.mjs'
       - 'poc/scripts/test/check-gemini-planner-model-access.test.mjs'

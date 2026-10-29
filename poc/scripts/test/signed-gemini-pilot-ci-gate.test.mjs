@@ -40,7 +40,9 @@ test("required signed-DAG CI automatically covers all live Gemini execution and 
     "poc/packages/plan-contracts/src/**",
     "poc/packages/plan-contracts/test/**",
     "poc/scripts/check-gemini-planner-model-access.mjs",
-    "poc/scripts/test/check-gemini-planner-model-access.test.mjs"
+    "poc/scripts/test/check-gemini-planner-model-access.test.mjs",
+    "poc/scripts/signed-gemini-pilot-*.mjs",
+    "poc/scripts/test/signed-gemini-pilot-*.test.mjs"
   ]){
     assert.ok(yaml.includes("'"+path+"'"),
       "Signed DAG exact-SHA CI must run on "+path);
