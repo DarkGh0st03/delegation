@@ -451,7 +451,13 @@ try{
       }
     }:{})
   }).propose();
-  if(geminiPilot)pilotStage="gemini_plan_proposed";
+  if(geminiPilot){
+    // Earlier proposal rejections are recovery history, not the reason a
+    // later accepted DAG failed in A2A/Docker. Report them only when
+    // Planning itself is unsuccessful.
+    pilotPlanningRejection=null;
+    pilotStage="gemini_plan_proposed";
+  }
   assert.equal(proposed.status,"unapproved_proposal");
   if(geminiPilot){
     // Aggregated role counts only; no Task text, file paths, approval IDs
