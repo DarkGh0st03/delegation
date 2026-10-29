@@ -808,11 +808,19 @@ async function main(){
             ?.different_blob_from_base,1);
           assert.equal(proof?.typecheck_revision_comparison
             ?.backend_writes_observed,1);
+          assert.equal(proof?.typecheck_repair_nomination?.backend_candidates,1);
+          assert.equal(proof?.typecheck_repair_nomination
+            ?.signed_task_review_required,true);
+          assert.equal(proof?.typecheck_repair_nomination?.permissions_issued,false);
+          assert.equal(proof?.typecheck_repair_nomination?.task_dispatched,false);
+          assert.equal(proof?.typecheck_repair_nomination?.retry_started,false);
           process.stdout.write(JSON.stringify({
             event:"signed_typecheck_fault_probe",status:"PASS",
             docker_failure_observed:true,first_failed_phase:"typecheck",
             signed_parent_scope_verified:true,test_not_automatically_privileged:true,
             signed_test_cross_role_gateway_denials:2,
+            backend_repair_candidate_requires_new_review:true,
+            no_repair_dispatched:true,
             exact_revision_difference_verified:true,
             a2a_signed_dag_refused:true,operational_root_revoked:true,
             no_pr_created:true,gemini_calls:0

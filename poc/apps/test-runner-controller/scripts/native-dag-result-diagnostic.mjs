@@ -7,6 +7,8 @@ import {safeTypecheckPermissionScopeAudit}
   from "./typecheck-permission-scope-audit.mjs";
 import {safeTypecheckRevisionComparison}
   from "./typecheck-revision-comparison.mjs";
+import {safeTypecheckRepairNomination}
+  from "./typecheck-repair-nomination.mjs";
 const PREFIX="[native-dag-adk] docker_phase_status ";
 const PHASES=Object.freeze([
   "dependency_install","typecheck","backend_tests","frontend_tests",
@@ -53,6 +55,18 @@ function parseExact(marker){
     revisionComparison=safeTypecheckRevisionComparison(marker.typecheck_revision_comparison);
     if(!revisionComparison)return null;
   }
+  let repairNomination;
+  if(marker.typecheck_repair_nomination!==undefined){
+    if(firstFailed?.phase!=="typecheck"||!scopeAudit||!revisionComparison)
+      return null;
+    repairNomination=safeTypecheckRepairNomination(
+      marker.typecheck_repair_nomination);
+    if(!repairNomination||
+       repairNomination.diagnostic_files!==scopeAudit.distinct_file_count||
+       repairNomination.diagnostic_files!==revisionComparison.diagnostic_files||
+       repairNomination.outside_operational_scope!==
+         scopeAudit.outside_operational_root_write)return null;
+  }
   if(marker.status==="fail"&&!firstFailed ||
      marker.status==="pass"&&statuses.some(x=>x.status!=="pass")||
      marker.status==="pass"&&(
@@ -66,7 +80,8 @@ function parseExact(marker){
     researcher_acceptance:marker.researcher_acceptance,
     ...(typecheckCodes?{typecheck_error_codes:typecheckCodes}:{}),
     ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{}),
-    ...(revisionComparison?{typecheck_revision_comparison:revisionComparison}:{})
+    ...(revisionComparison?{typecheck_revision_comparison:revisionComparison}:{}),
+    ...(repairNomination?{typecheck_repair_nomination:repairNomination}:{})
   });
 }
 /** Returns only enums from known fixed phases. No arbitrary stderr copied. */

@@ -36,7 +36,9 @@ export function extractSafeGeminiPilotDockerEvidence(log){
         ...(data.typecheck_permission_scope_audit!==undefined
           ?{typecheck_permission_scope_audit:data.typecheck_permission_scope_audit}:{}),
         ...(data.typecheck_revision_comparison!==undefined
-          ?{typecheck_revision_comparison:data.typecheck_revision_comparison}:{})
+          ?{typecheck_revision_comparison:data.typecheck_revision_comparison}:{}),
+        ...(data.typecheck_repair_nomination!==undefined
+          ?{typecheck_repair_nomination:data.typecheck_repair_nomination}:{})
       };
       const safe=safeNativeDockerFailureDiagnostic(
         DOCKER_PREFIX+JSON.stringify(payload));

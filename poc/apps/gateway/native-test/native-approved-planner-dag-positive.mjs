@@ -55,6 +55,8 @@ import {compareTrustedTypecheckRevisions}
   from "../../test-runner-controller/scripts/typecheck-revision-comparison.mjs";
 import {auditTrustedTypecheckPermissionScope}
   from "../../test-runner-controller/scripts/typecheck-permission-scope-audit.mjs";
+import {nominateTrustedTypecheckRepair}
+  from "../../test-runner-controller/scripts/typecheck-repair-nomination.mjs";
 import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes} from
   "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {createSharedMcpHttpServer}
@@ -533,6 +535,14 @@ export async function runNativePositiveApprovedDag({
               observedWrites:writePaths,
               reader,branch,baseSha,testedSha:pinned.commit_sha
             }):null;
+          const repairNomination=scopeAudit&&revisionComparison
+            ?nominateTrustedTypecheckRepair({
+              diagnostics:sanitizeTypecheckLocations(effect.typecheck_diagnostics),
+              planningFiles,approvedRows:grants,
+              operationalPermissions:coordinator.trustedOperationalAuthority().permissions,
+              repo,branch,observedWrites:writePaths,
+              revisionComparison
+            }):null;
           if(offlineTypecheckProbe){
             assert.equal(effect.status,"fail");
             assert.deepEqual(typecheckCodes,["TS2820"]);
@@ -550,6 +560,16 @@ export async function runNativePositiveApprovedDag({
             assert.equal(revisionComparison.backend_writes_observed,1);
             assert.equal(revisionComparison.test_writes_observed,0);
             assert.equal(revisionComparison.unverifiable_files,0);
+            assert.ok(repairNomination,
+              "R92 requires a source-free, authenticated candidate decision");
+            assert.equal(repairNomination.backend_candidates,1);
+            assert.equal(repairNomination.frontend_candidates,0);
+            assert.equal(repairNomination.test_candidates,0);
+            assert.equal(repairNomination.unresolved_files,0);
+            assert.equal(repairNomination.signed_task_review_required,true);
+            assert.equal(repairNomination.permissions_issued,false);
+            assert.equal(repairNomination.task_dispatched,false);
+            assert.equal(repairNomination.retry_started,false);
             // R91: even a hostile Test Agent with its own valid signed Task
             // and live child DC cannot transform Runner diagnostics into new
             // file capabilities. Exercise the ACTUAL Gateway prepare boundary,
@@ -580,7 +600,8 @@ export async function runNativePositiveApprovedDag({
             assert.equal(afterDenied.commit_sha,beforeDenied.commit_sha,
               "Denied cross-role requests must not mutate Gitea");
             observedTypecheckProbe=Object.freeze({
-              codes:typecheckCodes,scope:scopeAudit,revision:revisionComparison
+              codes:typecheckCodes,scope:scopeAudit,revision:revisionComparison,
+              repairNomination
             });
           }
           process.stderr.write("[native-dag-adk] docker_phase_status "+
@@ -592,7 +613,8 @@ export async function runNativePositiveApprovedDag({
               ...(typecheckCodes.length?
                 {typecheck_error_codes:typecheckCodes}:{}),
               ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{}),
-              ...(revisionComparison?{typecheck_revision_comparison:revisionComparison}:{})
+              ...(revisionComparison?{typecheck_revision_comparison:revisionComparison}:{}),
+              ...(repairNomination?{typecheck_repair_nomination:repairNomination}:{})
             })+"\n");
           // A completed provider operation can legitimately report FAIL.
           // Return its real result to the controlled Test tool, which reports
@@ -909,7 +931,8 @@ export async function runNativePositiveApprovedDag({
         first_failed_phase:"typecheck",
         typecheck_error_codes:observedTypecheckProbe.codes,
         typecheck_permission_scope_audit:observedTypecheckProbe.scope,
-        typecheck_revision_comparison:observedTypecheckProbe.revision
+        typecheck_revision_comparison:observedTypecheckProbe.revision,
+        typecheck_repair_nomination:observedTypecheckProbe.repairNomination
       });
     }
     if(realGeminiPilot)onPilotPhase?.("result_verification");
