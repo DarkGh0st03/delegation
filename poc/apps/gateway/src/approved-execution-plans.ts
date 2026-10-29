@@ -18,7 +18,7 @@ import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord
   type NormalizedToolRequest } from "./types.ts";
 import { GatewayError } from "./errors.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
-import type {ExecutionResult} from "./types.ts";
+import type {ExecutionResult,GiteaReadFileExecutionResult} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import type { GatewayRepositoryConfig } from "./types.ts";
 
@@ -49,7 +49,9 @@ export interface TrustedProviderEffect {
   readonly request_id:string;
   readonly tool:string;
   readonly resource:string;
-  readonly execution:ExecutionResult;
+  // A successful read is attested by metadata only. Never retain private
+  // Gitea source content in the in-memory Gateway completion registry.
+  readonly execution:ExecutionResult | Omit<GiteaReadFileExecutionResult,"content">;
 }
 export interface TrustedCompletionEvidence {
   readonly session_id:string;
@@ -338,13 +340,33 @@ export class TrustedApprovedExecutionPlans {
     record:PreparedRequestRecord,result:ExecutionResult,verifiedPresenterId:string
   ):void {
     if(!result.performed||result.provider==="mock")return;
-    // Read-only responses can contain full repository file content and
-    // are not independently sufficient to attest completed write/test work.
-    // Never retain them in the in-memory completion-evidence registry.
     if(!["create_branch","create_pull_request","create_file",
-          "update_file","run_tests"].includes(record.request.tool))return;
+          "update_file","run_tests","read_file"].includes(record.request.tool))return;
     this.assertAuthorizedForExecution(record,verifiedPresenterId);
     if(result.tool!==record.request.tool)return;
+    if(result.tool==="read_file"){
+      // Read-only signed Tasks are permitted by the Planner contract and
+      // independently attested by GatewayCorroboratedTaskAttestor. Previously
+      // dropping all reads made those legitimate Tasks impossible to complete.
+      // Record only authenticated provider metadata, NEVER source bytes.
+      if(record.request.tool!=="read_file"||result.provider!=="gitea"||
+         !SHA.test(result.revision)||
+         result.branch!==record.request.arguments.branch||
+         result.path!==record.request.arguments.path)return;
+      this.#bindings.get(record.task_id)?.successfulRequests.set(record.request_id,
+        Object.freeze({
+          request_id:record.request_id,tool:"read_file",
+          resource:record.required_permission.resource,
+          execution:{
+            provider:"gitea" as const,performed:true as const,
+            tool:"read_file" as const,branch:result.branch,path:result.path,
+            revision:result.revision,blob_sha:result.blob_sha,
+            last_commit_sha:result.last_commit_sha,size:result.size,
+            encoding:result.encoding
+          }
+        }));
+      return;
+    }
     // Failed Runner jobs cannot be evidence of a passing Test Task.
     if(result.provider==="runner"&&result.status!=="pass")return;
     // Any successful approved file mutation invalidates the previous test

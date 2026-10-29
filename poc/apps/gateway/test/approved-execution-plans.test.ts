@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
-import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts";
+import {TrustedApprovedExecutionPlans,
+  type TrustedCompletionEvidence} from "../src/approved-execution-plans.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {InMemoryAuditSink,InMemoryRequestStore} from "../src/prepare.ts";
 import {MockExecutor} from "../src/mock-executor.ts";
@@ -57,7 +58,7 @@ function harness(options:{
   approvedIds?:string[];
   correctEngineer?:boolean;
   attestation?:boolean;
-  onAttestation?:(planTaskId:string)=>Promise<void>;
+  onAttestation?:(planTaskId:string,evidence:Readonly<TrustedCompletionEvidence>)=>Promise<void>;
   simulated?:boolean;
   wrongPresenter?:boolean;
   skipPolicyDigestCheck?:boolean;
@@ -89,7 +90,7 @@ function harness(options:{
       attestCalls++;
       assert.match(e.plan_digest,/^[a-f0-9]{64}$/u);
       assert.ok(e.successful_gateway_request_ids.length>0);
-      if(options.onAttestation)await options.onAttestation(e.plan_task_id);
+      if(options.onAttestation)await options.onAttestation(e.plan_task_id,e);
       return options.attestation!==false;
     }}
   });
@@ -104,6 +105,13 @@ function harness(options:{
         provider:"gitea",performed:true,tool:"create_branch",
         branch:req.arguments.branch,base_branch:req.arguments.base_branch,
         revision:sha,commit_sha:sha
+      };
+      if(req.tool==="read_file")return {
+        provider:"gitea",performed:true,tool:"read_file",
+        branch:req.arguments.branch,path:req.arguments.path,
+        revision:sha,blob_sha:"safe-blob-sha",last_commit_sha:sha,
+        size:31,encoding:"utf-8",
+        content:"PRIVATE_REPOSITORY_SOURCE_NOT_FOR_ATTESTATION"
       };
       if(req.tool==="update_file"){
         const revision=record.agent_role==="test"
@@ -211,6 +219,48 @@ test("approval activates exact SHA/digest, binds tasks and blocks dependent task
   assert.equal(p?.approved_plan_digest,planDigest(plan()));
   const result=h.audit.events.filter(e=>e.event==="authorization_executed").at(-1);
   assert.equal(result?.approved_plan_digest,planDigest(plan()));
+});
+
+test("R80 actual verified read-only Gateway Task attests metadata without retaining source",async()=>{
+  const p=plan();
+  const perm=p.requested_permissions.find(x=>x.id==="p-backend");
+  assert.ok(perm);
+  perm.operation="read_file";
+  perm.reason="Read approved repository source without mutation";
+  const h=harness({configuredPlan:p,onAttestation:async(taskId,evidence)=>{
+    if(taskId!=="backend-task")return;
+    assert.equal(evidence.provider_effects.length,1);
+    const effect=evidence.provider_effects[0]!;
+    assert.equal(effect.tool,"read_file");
+    assert.equal(effect.execution.provider,"gitea");
+    assert.equal(effect.execution.tool,"read_file");
+    assert.equal("content" in effect.execution,false,
+      "Raw repository contents must never be retained as Gateway attestation evidence");
+    assert.ok(!JSON.stringify(evidence).includes(
+      "PRIVATE_REPOSITORY_SOURCE_NOT_FOR_ATTESTATION"));
+  }});
+  assert.equal(await h.gates.activate("session-approval",sha),planDigest(p));
+  h.gates.bindTask("session-approval","bootstrap","a2a-bootstrap","orchestrator");
+  h.gates.bindTask("session-approval","backend-task","a2a-backend","backend");
+  h.gates.bindTask("session-approval","tests","a2a-tests","test");
+  await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+  await h.gates.confirmTaskCompletion("a2a-bootstrap");
+  const read=await h.invoke("a2a-backend","backend","read_file",{
+    branch,path:"apps/backend/user.ts"
+  });
+  assert.equal(read.execution.tool,"read_file");
+  if(read.execution.tool==="read_file")
+    assert.equal(read.execution.content,
+      "PRIVATE_REPOSITORY_SOURCE_NOT_FOR_ATTESTATION");
+  // A read-only Task can now be independently completed. This does NOT
+  // confer write permissions, passing tests or downstream PR authority.
+  await h.gates.confirmTaskCompletion("a2a-backend");
+  assert.equal(h.attestCalls,2);
+  assert.throws(()=>h.runtime.prepare({
+    task_id:"a2a-backend",agent_role:"backend",
+    tool:"update_file",arguments:updateArgs
+  }), (e:unknown)=>e instanceof GatewayError&&
+    e.code==="approved_plan_denied");
 });
 
 test("valid VP+OPA cannot authorize unapproved operation, URI, wrong role, task or missing binding",async()=>{
