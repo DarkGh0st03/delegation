@@ -740,3 +740,37 @@ test("shared MCP ADK tool telemetry keeps only role, operation and outcome",()=>
   assert.ok(!JSON.stringify({accepted,denied}).includes(secret));
   assert.ok(Object.isFrozen(denied));
 });
+
+test("Signed implementation Tasks include generic type-safety self-review without expanding grants",()=>{
+  const branch="feature/type-safe-contract-review";
+  const file="src/components/StatusPanel.tsx";
+  const rights=[
+    {operation:"read_file" as const,path:file},
+    {operation:"update_file" as const,path:file}
+  ];
+  for(const role of ["backend","frontend"] as const){
+    const built=createAdkSpecializedAgent({
+      role,model:new ScriptedAdkLlm("read_file",{branch,path:file}),
+      gatewayClient:{invoke:async()=>({})} as never,
+      trustedBranch:branch,trustedTaskPaths:[file],
+      trustedFilePermissions:rights
+    });
+    const prompt=built.profile.system_prompt;
+    assert.match(prompt,/known union\/enum literal values/u);
+    assert.match(prompt,/mutually exclusive types/u);
+    assert.match(prompt,/Do not guess a type, imported symbol, or status literal/u);
+    assert.match(prompt,/not a claim that the project typecheck or tests passed/u);
+    assert.deepEqual(built.profile.writable_paths,[file]);
+    assert.deepEqual(built.profile.read_only_paths,[]);
+    assert.deepEqual(built.agent.tools.map(tool=>tool.name),["read_file","update_file"]);
+    assert.doesNotMatch(prompt,/Account Suspension/u);
+  }
+  const testAgent=createAdkSpecializedAgent({
+    role:"test",model:new ScriptedAdkLlm("run_tests",{branch,profile:"poc-default"}),
+    gatewayClient:{invoke:async()=>({})} as never,
+    trustedBranch:branch,trustedTaskPaths:[],
+    trustedFilePermissions:[],trustedRunTestsAllowed:true
+  });
+  assert.doesNotMatch(testAgent.profile.system_prompt,/known union\/enum literal values/u);
+  assert.deepEqual(testAgent.agent.tools.map(tool=>tool.name),["run_tests"]);
+});
