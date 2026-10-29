@@ -828,6 +828,8 @@ async function main(){
           return;
         }
         assert.equal(positive?.positive_dag?.signed_dag_completed,true);
+        assert.equal(positive?.positive_dag?.retired_gateway_runner_proof_verified,
+          true,"Exact-SHA provider success must survive signed Task retirement");
         assert.equal(positive?.positive_dag?.scenario_id,scenario.id);
         assert.equal(positive?.positive_dag?.approved_work_branch,
           scenario.workBranch);

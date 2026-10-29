@@ -825,3 +825,25 @@ test("R97 incomplete phase receipt cannot masquerade as a complete accepted Dock
     branch,tested_commit_sha:sha
   }),/Incomplete trusted exact-SHA Runner acceptance/u);
 });
+
+test("R97.3 lease expiration must NOT impersonate trusted Gateway shutdown for post-run attestation",async()=>{
+  let now=100_000;
+  const h=harness({
+    fullRunnerPassPhases:true,operationalLeaseMs:10_000,
+    nowMs:()=>now
+  });
+  await activated(h);
+  await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+  await h.gates.confirmTaskCompletion("a2a-bootstrap");
+  await h.invoke("a2a-backend","backend","update_file",updateArgs);
+  await h.gates.confirmTaskCompletion("a2a-backend");
+  await h.invoke("a2a-tests","test","run_tests",{branch,profile:"poc-default"});
+  await h.gates.confirmTaskCompletion("a2a-tests");
+  now=111_000;
+  assert.throws(()=>h.gates.renewLease("session-approval",planDigest(plan())),
+    /lease expired/u);
+  assert.throws(()=>h.gates.readVerifiedRunnerEffect({
+    session_id:"session-approval",task_id:"tests",
+    branch,tested_commit_sha:sha
+  }),/retired signed Test acceptance/u);
+});

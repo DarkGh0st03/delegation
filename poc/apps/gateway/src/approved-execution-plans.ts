@@ -85,6 +85,8 @@ interface ActivePlan {
   readonly approvedAt: string;
   readonly workBranch:string;
   active: boolean;
+  /** Only trusted explicit close/retire, never mere lease expiry. */
+  closedByTrustedOwner:boolean;
   readonly completedPlanTasks: Set<string>;
   /** Only a trusted, attested exact-SHA Runner success may populate this. */
   testedFeatureSha?:string;
@@ -247,7 +249,7 @@ export class TrustedApprovedExecutionPlans {
       this.#sessions.set(sessionId,{
         sessionId,digest,plan:snapshot,approval:receipt,approvedAt:receipt.approved_at,
         workBranch,
-        active:true,completedPlanTasks:new Set(),
+        active:true,closedByTrustedOwner:false,completedPlanTasks:new Set(),
         ...(this.#operationalLeaseMs===undefined?{}:
           {leaseExpiresAtMs:this.#clock()+this.#operationalLeaseMs})
       });
@@ -480,7 +482,8 @@ export class TrustedApprovedExecutionPlans {
     const session=this.#sessions.get(query.session_id);
     // Closed, durably retired gateway authority and a finished TEST Task
     // are prerequisites. An A2A "completed" claim alone is insufficient.
-    if(!session||session.active||!this.#closedSessionIds.has(query.session_id)||
+    if(!session||session.active||!session.closedByTrustedOwner||
+       !this.#closedSessionIds.has(query.session_id)||
        session.workBranch!==query.branch||
        session.testedFeatureSha!==query.tested_commit_sha||
        !session.completedPlanTasks.has(query.task_id))
@@ -542,6 +545,7 @@ export class TrustedApprovedExecutionPlans {
     // ACK only after owner-private durable fsync. An uncertain write
     // blocks host recovery and preserves the separate Rust root journal.
     await this.#sessionStore?.markRetired(sessionId);
+    if(session)session.closedByTrustedOwner=true;
   }
 
   closeSession(sessionId:string):void {
@@ -549,6 +553,7 @@ export class TrustedApprovedExecutionPlans {
     const session=this.#sessions.get(sessionId);
     if(!session)denied("Unknown approved plan session");
     session.active=false;
+    session.closedByTrustedOwner=true;
     // Terminal state: a changed plan requires a NEW authenticated session,
     // reapproval and new operational root. Never overwrite this digest.
   }

@@ -1136,6 +1136,26 @@ export async function runNativePositiveApprovedDag({
     const head=await reader.getBranchMetadata(branch);
     assert.equal(head.commit_sha,runnerOutcome.tested_commit_sha);
     assert.equal(createdPr.revision,head.commit_sha);
+    // R97.3: independently recover the REAL Runner success from the
+    // Gateway's RETIRED signed Test Task store, not A2A/agent artifacts or
+    // the local runnerOutcome variable. This check is exercised by live
+    // Rust/OPA/Gitea/Docker in the existing no-billing signed DAG CI.
+    // The terminal in-memory Gateway session alone is not proof that the
+    // native Rust operational root and durable owner journal are retired.
+    await coordinator.assertOperationalClosureConfirmed();
+    const signedRunGrant=testGrants.find(g=>g.operation==="run_tests");
+    assert.ok(signedRunGrant);
+    const retiredRunner=approvedPlans.readVerifiedRunnerEffect({
+      session_id:sessionId,task_id:signedRunGrant.task_id,
+      branch,tested_commit_sha:head.commit_sha
+    });
+    assert.equal(retiredRunner.status,"pass");
+    assert.equal(retiredRunner.tested_commit_sha,head.commit_sha);
+    assert.deepEqual(retiredRunner.phases.map(x=>x.phase),
+      runnerOutcome.phases.map(x=>x.phase));
+    assert.ok(retiredRunner.phases.every(x=>x.status==="pass"));
+    assert.equal(retiredRunner.project_tests.status,"pass");
+    assert.equal(retiredRunner.researcher_acceptance.status,"pass");
     assert.equal((await reader.getBranchMetadata("main")).commit_sha,baseSha);
     assert.throws(()=>gateway.prepare({
       task_id:"after_closed",agent_role:"backend",
@@ -1145,6 +1165,7 @@ export async function runNativePositiveApprovedDag({
     }),e=>e?.code==="approved_plan_denied");
     return {
       status:"pass",signed_dag_completed:true,
+      retired_gateway_runner_proof_verified:true,
       scenario_id:scenarioId,approved_work_branch:branch,
       completed_task_ids:result.completed_task_ids,
       real_a2a_sdk:true,
