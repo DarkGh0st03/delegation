@@ -102,7 +102,9 @@ test("one shared MCP run_tests routes only opted-in active Test role through pri
       {first_failed_phase:"typecheck",
         typecheck_diagnostics:[{path:"tests/backend/fix.test.ts",
           line:14,column:7,code:"TS2304"}],
-        repair_requires_new_approval:true});
+        repair_requires_new_approval:true,
+        typecheck_scope_summary:{parsed_locations:1,missing_read_grants:0,
+          missing_write_grants:1}});
     assert.equal(attempted,2);
     const wrongProfile=await active.callTool({name:"run_tests",
       arguments:{...args,profile:"shell-command"}});
