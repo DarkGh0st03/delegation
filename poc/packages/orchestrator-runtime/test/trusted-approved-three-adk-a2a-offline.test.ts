@@ -343,7 +343,9 @@ async function setup({wrongBackendPath=false,wrongTestProfile=false,typecheckFai
             const safe=safeRunnerFailureDetails(failed);
             assert.deepEqual(safe,{
               first_failed_phase:"typecheck",
-              repair_requires_new_approval:true
+              repair_requires_new_approval:true,
+              typecheck_scope_summary:{parsed_locations:2,missing_read_grants:2,
+                missing_write_grants:2}
             },"Test Agent has no signed read/write grant for compiler locations");
             events.push("runner:typecheck_failed");
             return json({execution:failed});
