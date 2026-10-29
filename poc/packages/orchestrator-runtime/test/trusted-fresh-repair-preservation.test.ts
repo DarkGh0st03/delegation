@@ -16,6 +16,10 @@ import {verifyTrustedFreshRepairPostRun}
   from "../src/trusted-fresh-repair-post-run.mjs";
 import {TrustedGiteaPriorDiffReader}
   from "../src/trusted-gitea-prior-diff-reader.ts";
+import {TrustedApprovedExecutionPlans}
+  from "../../../apps/gateway/src/approved-execution-plans.ts";
+import {GatewayRuntime}
+  from "../../../apps/gateway/src/runtime.ts";
 import {createFreshTypecheckRepairIssueFence}
   from "../src/trusted-typecheck-repair-activation-fence.mjs";
 import {makeApproval,planDigest}
@@ -244,8 +248,11 @@ test("R95 cannot substitute a different old branch when arming new authority",as
   }finally{await f.close();}
 });
 
-function simulateObservedPostRun(f,{paths=[backend,frontend],
+async function simulateObservedPostRun(f,{paths=[backend,frontend],
   status="pass",revision="d".repeat(40)}={}){
+  // R97 UNIT-ONLY fixture: all provider results are simulated, but they go
+  // through real Gateway Prepare, VP/OPA checks, immutable provider records
+  // and signed Task completion. Production requires REAL Gitea and Docker.
   const reader=new TrustedGiteaPriorDiffReader({
     baseUrl:"http://127.0.0.1:13377",token:"UNIT_TEST_TOKEN",repository:repo,
     fetchFn:async(url)=>{
@@ -263,27 +270,101 @@ function simulateObservedPostRun(f,{paths=[backend,frontend],
       throw Error("Unexpected independent Gitea comparison");
     }
   });
-  const requests=[];
-  const gatewayEvidence={
-    async readVerifiedRunnerEffect(req){
-      requests.push(req);
-      return {
-        provider:"runner",performed:true,tool:"run_tests",
-        branch:nextBranch,tested_commit_sha:revision,status,
-        project_tests:{status},researcher_acceptance:{status},
-        phases:["dependency_install","typecheck","backend_tests",
-          "frontend_tests","build","playwright_e2e",
-          "researcher_acceptance"].map(phase=>({phase,status}))
+  const gatewayEvidence=new TrustedApprovedExecutionPlans({
+    repository:repo,engineerDid:did,
+    approvals:f.repairScope.approvalStore,
+    // Strict independent attestation is tested in Gateway native E2E.
+    // This unit fixture explicitly fakes it; never use it in production.
+    completionAttestor:{async confirmCompleted(){return true;}}
+  });
+  const phases=["dependency_install","typecheck","backend_tests",
+    "frontend_tests","build","playwright_e2e",
+    "researcher_acceptance"].map(phase=>({phase,status}));
+  const executionPort={
+    provider:"gitea",
+    providerFor(record){
+      return record.request.tool==="run_tests"?"runner":"gitea";
+    },
+    async execute(record){
+      const op=record.request.tool;
+      const args=record.request.arguments;
+      if(op==="create_branch")return {
+        provider:"gitea",performed:true,tool:"create_branch",
+        branch:args.branch,base_branch:args.base_branch,
+        revision:baseSha,commit_sha:baseSha
       };
+      if(op==="update_file")return {
+        provider:"gitea",performed:true,tool:"update_file",
+        branch:args.branch,path:args.path,
+        revision,commit_sha:revision,
+        blob_sha:"unit-blob",precondition_blob_sha:"unit-original"
+      };
+      if(op==="run_tests")return {
+        provider:"runner",performed:true,tool:"run_tests",
+        branch:args.branch,revision,tested_commit_sha:revision,
+        runner_profile:"poc-default",status,phases,
+        project_tests:{status,phases:phases.slice(0,6)},
+        researcher_acceptance:phases[6]
+      };
+      throw Error("Unapproved mock provider operation");
     }
   };
+  const gateway=new GatewayRuntime({
+    bind_host:"127.0.0.1",bind_port:0,
+    prepare:{audience:"cloud-access-gateway",
+      request_ttl_ms:120000,repository:repo},
+    adapter_url:"http://none",adapter_gateway_token:"UNIT",
+    opa_url:"http://none",opa_timeout_ms:1000,
+    provider_mode:"mock",gitea_timeout_ms:1000
+  },{
+    approvedPlans:gatewayEvidence,executor:executionPort,
+    verifier:{async verify(r){
+      return {
+        presenter_id:"did:thesis:"+r.presenter,
+        issuer_id:did,credential_id:"urn:unit:delegated",
+        permissions:[r.required_permission],hierarchy_depth:1,
+        expiration:"999999999999999"
+      };
+    }},
+    policy:{async evaluate(){return {allow:true,policy_version:"unit"};}}
+  });
+  await gatewayEvidence.activate(nextSession,baseSha);
+  for(const [planId,role] of [
+    ["branch","orchestrator"],["backend","backend"],
+    ["frontend","frontend"],["tests","test"]
+  ])gatewayEvidence.bindTask(nextSession,planId,"run_"+planId,role);
+  async function effect(role,id,tool,args){
+    const p=gateway.prepare({
+      task_id:"run_"+id,agent_role:role,tool,arguments:args
+    });
+    return gateway.execute({
+      request_id:p.request_id,signed_vp:"unit.only.vp"
+    });
+  }
+  await effect("orchestrator","branch","create_branch",{
+    base_branch:"main",branch:nextBranch
+  });
+  await gatewayEvidence.confirmTaskCompletion("run_branch");
+  await effect("backend","backend","update_file",{
+    branch:nextBranch,path:backend,content:"unit reconstructed backend"
+  });
+  await gatewayEvidence.confirmTaskCompletion("run_backend");
+  await effect("frontend","frontend","update_file",{
+    branch:nextBranch,path:frontend,content:"unit reconstructed frontend"
+  });
+  await gatewayEvidence.confirmTaskCompletion("run_frontend");
+  await effect("test","tests","run_tests",{
+    branch:nextBranch,profile:"poc-default"
+  });
+  if(status==="pass")await gatewayEvidence.confirmTaskCompletion("run_tests");
+  await gatewayEvidence.retireSession(nextSession);
   return {input:{...f.input,trustedGitea:reader,gatewayEvidence,
-    expectedFreshMainSha:baseSha,expectedTestedCommitSha:revision},requests};
+    expectedFreshMainSha:baseSha,expectedTestedCommitSha:revision}};
 }
 test("R96 new signed exact-SHA run reconstructs both Backend and Frontend",async()=>{
   const f=await fixture();
   try{
-    const h=simulateObservedPostRun(f);
+    const h=await simulateObservedPostRun(f);
     const result=await verifyTrustedFreshRepairPostRun(h.input);
     assert.deepEqual(result,{
       status:"fresh_repair_exact_sha_runner_pass",
@@ -293,28 +374,29 @@ test("R96 new signed exact-SHA run reconstructs both Backend and Frontend",async
       functional_equivalence_not_attested:true,prior_source_imported:false,
       additional_permissions_issued:false
     });
-    assert.equal(h.requests.length,1);
-    assert.equal(h.requests[0].branch,nextBranch);
-    assert.equal(h.requests[0].tested_commit_sha,"d".repeat(40));
+    assert.equal(h.input.gatewayEvidence.readVerifiedRunnerEffect({
+      session_id:nextSession,task_id:"tests",
+      branch:nextBranch,tested_commit_sha:"d".repeat(40)
+    }).status,"pass");
     assert.doesNotMatch(JSON.stringify(result),/UserDetailPage|user.service|gitea:/u);
   }finally{await f.close();}
 });
 test("R96 missing prior Frontend file means FAIL despite Runner PASS",async()=>{
   const f=await fixture();
   try{await assert.rejects(()=>verifyTrustedFreshRepairPostRun(
-    simulateObservedPostRun(f,{paths:[backend]}).input
+    (await simulateObservedPostRun(f,{paths:[backend]})).input
   ),/post-run/i);}finally{await f.close();}
 });
 test("R96 no Runner success without all actual fixed Docker phases passing",async()=>{
   const f=await fixture();
   try{await assert.rejects(()=>verifyTrustedFreshRepairPostRun(
-    simulateObservedPostRun(f,{status:"fail"}).input
+    (await simulateObservedPostRun(f,{status:"fail"})).input
   ),/post-run/i);}finally{await f.close();}
 });
 test("R96 must reject stale Gitea, stale old SHA and wrong new SHA",async()=>{
   const f=await fixture();
   try{
-    const h=simulateObservedPostRun(f);
+    const h=await simulateObservedPostRun(f);
     await assert.rejects(()=>verifyTrustedFreshRepairPostRun({
       ...h.input,expectedTestedCommitSha:"e".repeat(40)
     }),/post-run|Gitea prior-work diff/i);
@@ -329,7 +411,7 @@ test("R96 must reject stale Gitea, stale old SHA and wrong new SHA",async()=>{
 test("R96 cannot rely on Test Agent prose in place of Gateway evidence",async()=>{
   const f=await fixture();
   try{
-    const h=simulateObservedPostRun(f);
+    const h=await simulateObservedPostRun(f);
     await assert.rejects(()=>verifyTrustedFreshRepairPostRun({
       ...h.input,gatewayEvidence:{}
     }),/post-run/i);

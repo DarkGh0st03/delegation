@@ -18,7 +18,7 @@ import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord
   type NormalizedToolRequest } from "./types.ts";
 import { GatewayError } from "./errors.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
-import type {ExecutionResult,GiteaReadFileExecutionResult} from "./types.ts";
+import type {ExecutionResult,GiteaReadFileExecutionResult,RunnerExecutionResult} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import type { GatewayRepositoryConfig } from "./types.ts";
 
@@ -460,6 +460,72 @@ export class TrustedApprovedExecutionPlans {
     }
     binding.completed=true;
     session.completedPlanTasks.add(binding.planTaskId);
+  }
+
+
+  /**
+   * Owner-private, POST-RETIREMENT read of the exact provider-corrobated Test
+   * evidence. This is NOT an authorization, public API, A2A or MCP method.
+   * The caller must separately verify native DC/root retirement. Returning
+   * only fixed pass statuses avoids leaking Runner stderr or source paths.
+   */
+  readVerifiedRunnerEffect(query:Readonly<{
+    session_id:string;task_id:string;branch:string;tested_commit_sha:string;
+  }>):Readonly<Pick<RunnerExecutionResult,
+    "provider"|"performed"|"tool"|"branch"|"tested_commit_sha"|"status"|
+    "project_tests"|"researcher_acceptance"|"phases">>{
+    if(!query||typeof query!=="object"||Array.isArray(query)||
+       !ID.test(query.session_id)||!ID.test(query.task_id)||
+       !SHA.test(query.tested_commit_sha))denied("Invalid trusted Runner query");
+    const session=this.#sessions.get(query.session_id);
+    // Closed, durably retired gateway authority and a finished TEST Task
+    // are prerequisites. An A2A "completed" claim alone is insufficient.
+    if(!session||session.active||!this.#closedSessionIds.has(query.session_id)||
+       session.workBranch!==query.branch||
+       session.testedFeatureSha!==query.tested_commit_sha||
+       !session.completedPlanTasks.has(query.task_id))
+      denied("No retired signed Test acceptance for requested exact SHA");
+    const matches=[...this.#bindings.values()].filter(b=>
+      b.sessionId===query.session_id&&b.planTaskId===query.task_id&&
+      b.agent==="test"&&b.completed);
+    if(matches.length!==1)denied("No unique attested Test Task");
+    const b=matches[0];
+    const runnerUri="gitea://"+this.#repository.authority+"/"+
+      this.#repository.owner+"/"+this.#repository.repository+
+      "/branches/"+encodeURIComponent(query.branch);
+    const signedRows=session.plan.requested_permissions.filter((p:any)=>
+      p.task_id===query.task_id&&p.agent_id==="test"&&
+      p.operation==="run_tests"&&p.resource===runnerUri&&
+      session.approval.approved_permission_ids.includes(p.id));
+    if(signedRows.length!==1)denied("Test Runner operation not signed by Engineer");
+    const relevant=[...b.successfulRequests.values()].filter(e=>
+      e.tool==="run_tests"||e.tool==="update_file"||e.tool==="create_file");
+    const last=relevant.at(-1);
+    const run=last?.execution;
+    const phases=["dependency_install","typecheck","backend_tests",
+      "frontend_tests","build","playwright_e2e","researcher_acceptance"];
+    if(last?.tool!=="run_tests"||!run||run.provider!=="runner"||
+       run.tool!=="run_tests"||run.status!=="pass"||
+       run.runner_profile!=="poc-default"||
+       run.branch!==query.branch||
+       run.tested_commit_sha!==query.tested_commit_sha||
+       run.project_tests?.status!=="pass"||
+       run.researcher_acceptance?.status!=="pass"||
+       !Array.isArray(run.phases)||run.phases.length!==phases.length||
+       run.phases.some((p,i)=>p.phase!==phases[i]||p.status!=="pass"))
+      denied("Incomplete trusted exact-SHA Runner acceptance");
+    return Object.freeze({
+      provider:"runner" as const,performed:true as const,
+      tool:"run_tests" as const,branch:run.branch,
+      tested_commit_sha:run.tested_commit_sha,status:"pass" as const,
+      // Defensive copy. The caller never receives the internal provider
+      // effect or its raw stderr; mutating this array cannot alter the store.
+      phases:run.phases.map(p=>({phase:p.phase,status:"pass" as const})),
+      project_tests:Object.freeze({status:"pass" as const,phases:[]}),
+      researcher_acceptance:Object.freeze({
+        phase:"researcher_acceptance" as const,status:"pass" as const
+      })
+    });
   }
 
   /** Existing prepared requests fail after this trusted revocation. */

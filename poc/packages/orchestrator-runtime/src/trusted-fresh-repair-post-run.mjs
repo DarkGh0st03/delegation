@@ -11,6 +11,8 @@ import {TrustedPlanningReviewGate}
   from "./trusted-planning-review-gate.ts";
 import {TrustedGiteaPriorDiffReader}
   from "./trusted-gitea-prior-diff-reader.ts";
+import {TrustedApprovedExecutionPlans}
+  from "../../../apps/gateway/src/approved-execution-plans.ts";
 import {verifySignedFreshRepairPreservation}
   from "./trusted-fresh-repair-preservation.mjs";
 import {approvedWorkBranch}
@@ -40,9 +42,11 @@ function requireRunnerPass(e,branch,sha){
   }
 }
 /**
- * Gateway evidence MUST come from a trusted host's independently verified
- * Gateway provider result. The reader and callback are owner-private; model
- * output never implements these interfaces. Call after durable DAG closure.
+ * Gateway evidence MUST be the in-process, exact-SHA provider result
+ * retained by the SAME TrustedApprovedExecutionPlans that enforced the
+ * signed Task. An arbitrary callback, Test Agent JSON or A2A artifact is
+ * never acceptable. Caller must additionally confirm native Rust retirement.
+ * Call only after durable signed DAG/Gateway closure.
  */
 export async function verifyTrustedFreshRepairPostRun({
   priorAudit,decisionStore,reviewGate,trustedGitea,gatewayEvidence,
@@ -52,7 +56,7 @@ export async function verifyTrustedFreshRepairPostRun({
   if(!(decisionStore instanceof TrustedFreshWorkDecisionStore)||
      !(reviewGate instanceof TrustedPlanningReviewGate)||
      !(trustedGitea instanceof TrustedGiteaPriorDiffReader)||
-     typeof gatewayEvidence?.readVerifiedRunnerEffect!=="function"||
+     !(gatewayEvidence instanceof TrustedApprovedExecutionPlans)||
      !SHA.test(expectedTestedCommitSha)||
      expectedTestedCommitSha===expectedFreshMainSha)deny();
   const planned=await verifySignedFreshRepairPreservation({

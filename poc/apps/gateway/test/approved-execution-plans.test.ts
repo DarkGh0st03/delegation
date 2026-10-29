@@ -63,6 +63,7 @@ function harness(options:{
   wrongPresenter?:boolean;
   skipPolicyDigestCheck?:boolean;
   incompleteRunnerAcceptance?:boolean;
+  fullRunnerPassPhases?:boolean;
   runnerRevisions?:string[];
   testWriteRevisions?:string[];
   operationalLeaseMs?:number;
@@ -127,7 +128,12 @@ function harness(options:{
         return {
         provider:"runner",performed:true,tool:"run_tests",
         branch:req.arguments.branch,revision,tested_commit_sha:revision,
-        runner_profile:"poc-default",status:"pass",phases:[],
+        runner_profile:"poc-default",status:"pass",
+        phases:options.fullRunnerPassPhases?[
+          "dependency_install","typecheck","backend_tests",
+          "frontend_tests","build","playwright_e2e",
+          "researcher_acceptance"
+        ].map(phase=>({phase,status:"pass" as const})):[],
         ...(options.incompleteRunnerAcceptance?{}:{
           project_tests:{status:"pass"},
           researcher_acceptance:{status:"pass"}
@@ -771,4 +777,51 @@ test("async completion rejects a late provider effect even when a second Docker 
   await assert.rejects(h.gates.confirmTaskCompletion("a2a-tests"),
     (error:unknown)=>error instanceof GatewayError&&
       error.code==="approved_plan_denied");
+});
+
+test("R97 trusted Gateway returns exact-SHA Runner PASS only after Test completion and retirement",async()=>{
+  const h=harness({fullRunnerPassPhases:true});
+  await activated(h);
+  await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+  await h.gates.confirmTaskCompletion("a2a-bootstrap");
+  await h.invoke("a2a-backend","backend","update_file",updateArgs);
+  await h.gates.confirmTaskCompletion("a2a-backend");
+  await h.invoke("a2a-tests","test","run_tests",{branch,profile:"poc-default"});
+  const q={session_id:"session-approval",task_id:"tests",
+    branch,tested_commit_sha:sha};
+  assert.throws(()=>h.gates.readVerifiedRunnerEffect(q),
+    /retired signed Test acceptance/u);
+  await h.gates.confirmTaskCompletion("a2a-tests");
+  assert.throws(()=>h.gates.readVerifiedRunnerEffect(q),
+    /retired signed Test acceptance/u);
+  await h.gates.retireSession("session-approval");
+  const result=h.gates.readVerifiedRunnerEffect(q);
+  assert.equal(result.status,"pass");
+  assert.equal(result.tested_commit_sha,sha);
+  assert.equal(result.phases.length,7);
+  assert.deepEqual(result.phases.map(x=>x.status),Array(7).fill("pass"));
+  assert.equal(Object.isFrozen(result),true);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_REPOSITORY_SOURCE|log_reference|SIGNED_VP/u);
+  for(const bad of [
+    {...q,task_id:"backend-task"},
+    {...q,tested_commit_sha:"b".repeat(40)},
+    {...q,branch:"feature/attacker"},
+    {...q,session_id:"unknown-session"}
+  ])assert.throws(()=>h.gates.readVerifiedRunnerEffect(bad),/Test|Runner/u);
+});
+
+test("R97 incomplete phase receipt cannot masquerade as a complete accepted Docker run",async()=>{
+  const h=harness(); // Legacy minimal fixture has no fixed phase breakdown.
+  await activated(h);
+  await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+  await h.gates.confirmTaskCompletion("a2a-bootstrap");
+  await h.invoke("a2a-backend","backend","update_file",updateArgs);
+  await h.gates.confirmTaskCompletion("a2a-backend");
+  await h.invoke("a2a-tests","test","run_tests",{branch,profile:"poc-default"});
+  await h.gates.confirmTaskCompletion("a2a-tests");
+  await h.gates.retireSession("session-approval");
+  assert.throws(()=>h.gates.readVerifiedRunnerEffect({
+    session_id:"session-approval",task_id:"tests",
+    branch,tested_commit_sha:sha
+  }),/Incomplete trusted exact-SHA Runner acceptance/u);
 });
