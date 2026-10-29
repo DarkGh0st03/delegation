@@ -54,3 +54,39 @@ test("malformed, duplicate or unsorted TypeScript codes fail closed",()=>{
     Array.from({length:9},(_,i)=>"TS"+(2000+i))])
     assert.deepEqual(sanitizeTypecheckErrorCodes(x),[]);
 });
+
+test("R85 normalized real npm workspace TypeScript paths match signed Gitea scope",()=>{
+  const raw=[
+    "> @iam/backend@0.1.0 typecheck",
+    "> tsc --noEmit",
+    "src/users/user.service.ts(57,7): error TS2820: SECRET_SOURCE_NEVER_LOG",
+    "src/users/user.service.ts(60,7): error TS2820: SECRET_SOURCE_NEVER_LOG",
+    "> @iam/frontend@0.1.0 typecheck",
+    "> tsc --noEmit",
+    "src/pages/UserDetailPage.tsx(12,4): error TS2322: SECRET_SOURCE_NEVER_LOG",
+    "> @unknown/worker@1.0.0 typecheck",
+    "src/secret.ts(1,1): error TS2304: SECRET_SOURCE_NEVER_LOG"
+  ].join("\n");
+  const a=extractTypecheckLocations(raw,"");
+  assert.deepEqual(a,[
+    {path:"apps/backend/src/users/user.service.ts",line:57,column:7,code:"TS2820"},
+    {path:"apps/backend/src/users/user.service.ts",line:60,column:7,code:"TS2820"},
+    {path:"apps/frontend/src/pages/UserDetailPage.tsx",line:12,column:4,code:"TS2322"},
+    {path:"src/secret.ts",line:1,column:1,code:"TS2304"}
+  ]);
+  assert.doesNotMatch(JSON.stringify(a),/SECRET_SOURCE_NEVER_LOG/u);
+});
+test("R85 no workspace context means no inferred permission, and traversals stay rejected",()=>{
+  const raw=[
+    "src/users/a.ts(1,1): error TS2322: private",
+    "> @iam/backend@0.1.0 typecheck",
+    "../../private.ts(2,1): error TS2322: private",
+    "/etc/keys.ts(2,1): error TS2322: private",
+    "src/users/a.ts(3,1): error TS2322: private",
+    "> @evil/unknown@1.0.0 typecheck",
+    "src/users/b.ts(4,1): error TS2322: private"
+  ].join("\n");
+  assert.deepEqual(extractTypecheckLocations(raw,"").map(x=>x.path),[
+    "src/users/a.ts","apps/backend/src/users/a.ts","src/users/b.ts"
+  ]);
+});

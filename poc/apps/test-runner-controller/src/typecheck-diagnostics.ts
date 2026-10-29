@@ -51,17 +51,45 @@ export function extractTypecheckErrorCodes(stdout:string,stderr:string):string[]
   }
   return [...codes].sort();
 }
+/**
+ * The npm workspace banner identifies where tsc is actually running.
+ * tsc reports src/foo.ts relative to that workspace; the signed plan and
+ * Gitea use repository-relative paths. This source-free normalization is
+ * diagnostic evidence only and NEVER grants tool authorization.
+ *
+ * Explicit roots are part of this fixed IAM-console Runner profile, not
+ * model output. Unknown workspace banners disable relative-path expansion.
+ */
+const WORKSPACE_ROOTS:Readonly<Record<string,string>>=Object.freeze({
+  "@iam/backend":"apps/backend",
+  "@iam/frontend":"apps/frontend",
+  "@iam/shared":"packages/shared",
+  "@iam/security":"security"
+});
+const BANNER=/^> (@iam\/[A-Za-z0-9_-]+)@[0-9][A-Za-z0-9.+-]* typecheck$/u;
 export function extractTypecheckLocations(stdout:string,stderr:string):TypecheckLocation[]{
   const lines=(stdout+"\n"+stderr).slice(0,100_000).split(/\r?\n/u).slice(0,1000);
   const candidates:TypecheckLocation[]=[];
+  let workspaceRoot:string|null=null;
   for(const line of lines){
+    const banner=BANNER.exec(line);
+    if(banner){
+      // An unknown banner must not inherit the previous workspace root.
+      workspaceRoot=WORKSPACE_ROOTS[banner[1]!]??null;
+      continue;
+    }
     // tsc plain: src/file.ts(12,8): error TS2322: message
     const m=/^([^\r\n]{1,181})\(([0-9]{1,6}),([0-9]{1,5})\): error (TS[0-9]{4,5}):/u.exec(line);
     // tsc pretty: src/file.ts:12:8 - error TS2322: message
     const n=m?null:/^([^\r\n]{1,181}):([0-9]{1,6}):([0-9]{1,5}) - error (TS[0-9]{4,5}):/u.exec(line);
     const hit=m??n;
     if(!hit)continue;
-    const row={path:hit[1],line:Number(hit[2]),column:Number(hit[3]),code:hit[4]};
+    const rawPath=hit[1];
+    // Only a recognized npm banner may expand src/; no traversal, absolute
+    // path, or unknown workspace can gain an implied repository root.
+    const path=workspaceRoot!==null&&rawPath.startsWith("src/")
+      ?workspaceRoot+"/"+rawPath:rawPath;
+    const row={path,line:Number(hit[2]),column:Number(hit[3]),code:hit[4]};
     if(sanitizeTypecheckLocations([row]).length){
       candidates.push(row);
       if(candidates.length>=MAX_ITEMS)break;
