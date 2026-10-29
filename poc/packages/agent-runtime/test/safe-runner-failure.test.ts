@@ -14,10 +14,14 @@ test("Only same Task read grants reveal sanitized compiler locations",()=>{
   assert.deepEqual(actual,{first_failed_phase:"typecheck",
     typecheck_diagnostics:[
       {path:"tests/fix.test.ts",line:4,column:7,code:"TS2304"}],
-    repair_requires_new_approval:true
+    repair_requires_new_approval:true,
+    typecheck_scope_summary:{parsed_locations:2,missing_read_grants:1,
+      missing_write_grants:2}
   });
   assert.deepEqual(safeRunnerFailureDetails(raw),{
-    first_failed_phase:"typecheck",repair_requires_new_approval:true
+    first_failed_phase:"typecheck",repair_requires_new_approval:true,
+    typecheck_scope_summary:{parsed_locations:2,missing_read_grants:2,
+      missing_write_grants:2}
   });
   assert.ok(!JSON.stringify(safeRunnerFailedPhaseHint(actual))
     .includes("SECRET_FILE_CONTENT"));
@@ -32,7 +36,16 @@ test("TypeScript repair needs both signed read and update rights",()=>{
   const scoped=safeRunnerFailureDetails(raw,[local],[local]);
   assert.deepEqual(scoped,{first_failed_phase:"typecheck",
     typecheck_diagnostics:[{path:local,line:2,column:3,code:"TS2304"}],
-    repair_requires_new_approval:true});
+    repair_requires_new_approval:true,
+    typecheck_scope_summary:{parsed_locations:2,missing_read_grants:1,
+      missing_write_grants:1}});
+  assert.deepEqual(safeRunnerFailedPhaseHint(scoped)?.typecheck_scope_summary,{
+    parsed_locations:2,missing_read_grants:1,missing_write_grants:1});
+  assert.equal(safeRunnerFailedPhaseHint({
+    first_failed_phase:"typecheck",repair_requires_new_approval:true,
+    typecheck_scope_summary:{parsed_locations:1,missing_read_grants:2,
+      missing_write_grants:0}
+  })?.typecheck_scope_summary,undefined);
   assert.ok(!JSON.stringify(scoped).includes(outside));
   const onlyLocal={...raw,typecheck_diagnostics:[raw.typecheck_diagnostics[0]]};
   assert.equal(safeRunnerFailureDetails(onlyLocal,[local],[local])

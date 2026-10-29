@@ -330,6 +330,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       process.stderr.write(JSON.stringify({
         event:"adk_task_outcome",role:context.role,
         category:"repair_requires_new_approval",model_turns:model.turns,
+        ...(progress.typecheckScopeSummary
+          ?{typecheck_scope_summary:progress.typecheckScopeSummary}:{}),
         ...progress.snapshot()
       })+"\n");
       throw new Error("ADK Test repair requires fresh Engineer approval");

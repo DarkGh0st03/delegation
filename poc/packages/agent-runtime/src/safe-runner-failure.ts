@@ -11,6 +11,24 @@ const PHASES=new Set([
   "dependency_install","typecheck","backend_tests","frontend_tests",
   "build","playwright_e2e","researcher_acceptance"
 ]);
+export interface TypecheckScopeSummary {
+  /** Only bounded counts of previously sanitized compiler locations. */
+  parsed_locations:number;
+  missing_read_grants:number;
+  missing_write_grants:number;
+}
+function safeTypecheckScopeSummary(raw:unknown):TypecheckScopeSummary|undefined{
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))return undefined;
+  const x=raw as Record<string,unknown>;
+  if(Object.keys(x).sort().join(",")!=="missing_read_grants,missing_write_grants,parsed_locations")return undefined;
+  const valid=(n:unknown)=>typeof n==="number"&&Number.isSafeInteger(n)&&n>=0&&n<=8;
+  if(!valid(x.parsed_locations)||!valid(x.missing_read_grants)||!valid(x.missing_write_grants)||
+     (x.missing_read_grants as number)>(x.parsed_locations as number)||
+     (x.missing_write_grants as number)>(x.parsed_locations as number))return undefined;
+  return {parsed_locations:x.parsed_locations as number,
+    missing_read_grants:x.missing_read_grants as number,
+    missing_write_grants:x.missing_write_grants as number};
+}
 export interface SafeRunnerFailureHint {
   first_failed_phase:string;
   typecheck_diagnostics?:TypecheckLocation[];
@@ -18,6 +36,7 @@ export interface SafeRunnerFailureHint {
   failing_test_files?:string[];
   /** Never widens rights; only signals a fresh Engineer approval is needed. */
   repair_requires_new_approval?:true;
+  typecheck_scope_summary?:TypecheckScopeSummary;
 }
 function authorizedLocations(raw:unknown,approved:readonly string[]){
   const paths=new Set(approved.filter(p=>typeof p==="string"));
@@ -51,13 +70,20 @@ export function safeRunnerFailureDetails(execution:unknown,
   return {first_failed_phase:failed.phase,
     ...(locations.length?{typecheck_diagnostics:locations}:{}),
     ...(scopedFiles.length?{failing_test_files:scopedFiles}:{}),
-    ...(requiresNewApproval?{repair_requires_new_approval:true as const}:{})};
+    ...(requiresNewApproval?{repair_requires_new_approval:true as const}:{}),
+    ...(requiresNewApproval&&failed.phase==="typecheck"
+      ?{typecheck_scope_summary:{
+        parsed_locations:all.length,
+        missing_read_grants:all.filter(d=>!reads.has(d.path)).length,
+        missing_write_grants:all.filter(d=>!writes.has(d.path)).length
+      }}:{})};
 }
 /** Additional worker-side whitelist: no uncontrolled error fields. */
 export function safeRunnerFailedPhaseHint(value:unknown):SafeRunnerFailureHint|undefined{
   if(!value||typeof value!=="object"||Array.isArray(value))return undefined;
   const x=value as {first_failed_phase?:unknown;typecheck_diagnostics?:unknown;
-    failing_test_files?:unknown;repair_requires_new_approval?:unknown};
+    failing_test_files?:unknown;repair_requires_new_approval?:unknown;
+    typecheck_scope_summary?:unknown};
   if(typeof x.first_failed_phase!=="string"||!PHASES.has(x.first_failed_phase))
     return undefined;
   const locations=x.first_failed_phase==="typecheck"
@@ -72,5 +98,9 @@ export function safeRunnerFailedPhaseHint(value:unknown):SafeRunnerFailureHint|u
           x.first_failed_phase==="frontend_tests"||
           x.first_failed_phase==="backend_tests")&&
       x.repair_requires_new_approval===true
-        ?{repair_requires_new_approval:true as const}:{})};
+        ?{repair_requires_new_approval:true as const}:{}),
+    ...(x.first_failed_phase==="typecheck"&&
+        x.repair_requires_new_approval===true&&
+        safeTypecheckScopeSummary(x.typecheck_scope_summary)
+      ?{typecheck_scope_summary:safeTypecheckScopeSummary(x.typecheck_scope_summary)}:{})};
 }

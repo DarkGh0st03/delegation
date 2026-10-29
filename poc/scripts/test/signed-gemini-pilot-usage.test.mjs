@@ -187,15 +187,27 @@ test("fresh Engineer review is a fixed safe failure category",()=>{
     duplicate_reads:0,failed_reads:0,successful_writes:0,failed_writes:0};
   const raw=JSON.stringify({event:"adk_task_outcome",role:"test",
     category:"repair_requires_new_approval",model_turns:5,...progress,
+    typecheck_scope_summary:{parsed_locations:3,missing_read_grants:2,
+      missing_write_grants:3},
     file_path:privateSource,model_text:privateSource});
   const safe=agentObservations(raw);
   assert.equal(safe.length,1);
   assert.equal(safe[0].category,"repair_requires_new_approval");
+  assert.deepEqual(safe[0].typecheck_scope_summary,{
+    parsed_locations:3,missing_read_grants:2,missing_write_grants:3});
   assert.ok(!JSON.stringify(safe).includes(privateSource));
   const report=agentSummary("[trusted-positive-ci] gemini_agent_observation "+
     JSON.stringify(safe[0]));
   assert.equal(report.role_evidence.test.agent_failure.category,
     "repair_requires_new_approval");
+  assert.deepEqual(report.role_evidence.test.agent_failure.typecheck_scope_summary,{
+    parsed_locations:3,missing_read_grants:2,missing_write_grants:3});
+  assert.deepEqual(agentObservations(JSON.stringify({
+    event:"adk_task_outcome",role:"test",
+    category:"repair_requires_new_approval",model_turns:5,...progress,
+    typecheck_scope_summary:{parsed_locations:1,missing_read_grants:2,
+      missing_write_grants:0}
+  })),[]);
 });
 
 test("MAX_TOKENS diagnostic stays source-free and separate from ADK provider failures",()=>{

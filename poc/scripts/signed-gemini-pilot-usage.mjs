@@ -191,6 +191,22 @@ function safeAgentObservation(x){
     if(!valid(x[key],300))return null;
     y[key]=x[key];
   }
+  if(x.event==="adk_task_outcome"&&
+     x.category==="repair_requires_new_approval"&&
+     x.typecheck_scope_summary!==undefined){
+    const s=x.typecheck_scope_summary;
+    if(!s||typeof s!=="object"||Array.isArray(s)||
+       Object.keys(s).sort().join(",")!=="missing_read_grants,missing_write_grants,parsed_locations"||
+       !valid(s.parsed_locations,8)||!valid(s.missing_read_grants,8)||
+       !valid(s.missing_write_grants,8)||
+       s.missing_read_grants>s.parsed_locations||
+       s.missing_write_grants>s.parsed_locations)return null;
+    y.typecheck_scope_summary={
+      parsed_locations:s.parsed_locations,
+      missing_read_grants:s.missing_read_grants,
+      missing_write_grants:s.missing_write_grants
+    };
+  }
   if(x.event==="adk_safe_diagnostic"){
     if(x.invalid_request_cause!==undefined&&
        x.invalid_request_cause!==null&&
@@ -274,6 +290,8 @@ export function extractSafeGeminiPilotAgentSummary(log){
         ...(latest.function_call_messages_missing_signature!==undefined
           ?{function_call_messages_missing_signature:
             latest.function_call_messages_missing_signature}:{}),
+        ...(latest.typecheck_scope_summary!==undefined
+          ?{typecheck_scope_summary:latest.typecheck_scope_summary}:{}),
         progress:Object.fromEntries(AGENT_METRICS.map(k=>[k,latest[k]]))
       }}:{})
     };

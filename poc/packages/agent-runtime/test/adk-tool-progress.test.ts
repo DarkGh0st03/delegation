@@ -45,8 +45,11 @@ test("A trusted out-of-scope Runner repair remains terminal even after other too
   progress.observe({name:"run_tests",arguments:{branch:"feature/test"},
     payload:{ok:false,error:{kind:"tests_failed",message:"controlled error",
       details:{first_failed_phase:"typecheck",repair_requires_new_approval:true,
-        untrusted:secret}}}});
+        typecheck_scope_summary:{parsed_locations:2,missing_read_grants:1,
+          missing_write_grants:2},untrusted:secret}}}});
   assert.equal(progress.requiresFreshEngineerApproval,true);
+  assert.deepEqual(progress.typecheckScopeSummary,{
+    parsed_locations:2,missing_read_grants:1,missing_write_grants:2});
   progress.observe({name:"run_tests",arguments:{branch:"feature/test"},
     payload:{ok:true,result:{status:"pass"}}});
   assert.equal(progress.requiresFreshEngineerApproval,true);
