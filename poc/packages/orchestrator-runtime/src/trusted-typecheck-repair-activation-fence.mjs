@@ -13,6 +13,10 @@ import {SignedEngineerApprovalFileStore}
   from "./signed-approval-store.ts";
 import {verifyFreshTypecheckRepairReviewedScope}
   from "./trusted-typecheck-repair-preflight.mjs";
+import {verifySignedFreshRepairPreservation}
+  from "./trusted-fresh-repair-preservation.mjs";
+import {TrustedFreshWorkDecisionStore}
+  from "./trusted-fresh-work-decision-store.ts";
 
 function fail(){throw Error("Fresh repair issue fence: signed review changed or unavailable");}
 function fingerprint(verified){
@@ -20,7 +24,8 @@ function fingerprint(verified){
     engineer_did:verified.authenticated_engineer_did});
 }
 /** No methods of this object may be exposed on an A2A/MCP/LLM boundary. */
-export function createFreshTypecheckRepairIssueFence({repairScope,reviewGate}={}){
+export function createFreshTypecheckRepairIssueFence({repairScope,reviewGate,
+  preservation}={}){
   if(!repairScope||typeof repairScope!=="object"||
      !(repairScope.approvalStore instanceof SignedEngineerApprovalFileStore)||
      !(reviewGate instanceof TrustedPlanningReviewGate))
@@ -39,8 +44,28 @@ export function createFreshTypecheckRepairIssueFence({repairScope,reviewGate}={}
     nextApprovedBranch:repairScope.nextApprovedBranch,
     nomination:structuredClone(repairScope.nomination)
   };
+  if(preservation!==undefined&&(
+     !preservation||typeof preservation!=="object"||
+     !(preservation.decisionStore instanceof TrustedFreshWorkDecisionStore)||
+     !preservation.priorAudit||typeof preservation.priorAudit!=="object"||
+     preservation.priorAudit.previous_session_id!==scope.previousSessionId||
+     preservation.priorAudit.proposed_next_session_id!==scope.nextSessionId||
+     preservation.priorAudit.previous_branch!==scope.previousApprovedBranch
+  ))fail();
+  // Only the exact retired branch audit is usable; clone owner data BEFORE
+  // any asynchronous signed receipt/ledger operations.
+  const previous=preservation?{
+    priorAudit:structuredClone(preservation.priorAudit),
+    decisionStore:preservation.decisionStore,
+    expectedOldFeatureSha:preservation.expectedOldFeatureSha
+  }:null;
   let stage=0,pinned=null;
   async function verify(){
+    if(previous)await verifySignedFreshRepairPreservation({
+      ...previous,reviewGate,
+      expectedNextSessionId:scope.nextSessionId,
+      expectedNewMainSha:scope.expectedFreshMainSha
+    });
     const approved=await verifyFreshTypecheckRepairReviewedScope(scope);
     if(approved.status!=="fresh_engineer_signed_repair_scope_verified"||
        approved.operational_credentials_issued!==false)fail();

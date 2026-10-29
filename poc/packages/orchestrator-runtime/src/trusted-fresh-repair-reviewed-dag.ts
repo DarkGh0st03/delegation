@@ -15,6 +15,10 @@ import type {RootParameters}
   from "./trusted-engineer-authority.ts";
 import type {SignedEngineerApprovalFileStore}
   from "./signed-approval-store.ts";
+import type {TrustedPriorWorkAudit}
+  from "./trusted-fresh-work-audit.ts";
+import {TrustedFreshWorkDecisionStore}
+  from "./trusted-fresh-work-decision-store.ts";
 import {beginTrustedFreshRepairApprovedExecution}
   from "./trusted-fresh-planning-intake.ts";
 import {createReviewedApprovedDagExecution,pinTrustedReviewedAgentEndpoints}
@@ -55,6 +59,12 @@ export async function armTrustedFreshRepairReviewedDag(input:{
     nextApprovedBranch:string;
     nomination:unknown;
   };
+  /** Previously authenticated Gitea diff and durable owner disposition. */
+  typecheckPriorWork?:{
+    priorAudit:TrustedPriorWorkAudit;
+    decisionStore:TrustedFreshWorkDecisionStore;
+    expectedOldFeatureSha:string;
+  };
   /** Operator-pinned live Agent Card endpoints, never LLM output. */
   endpoints:AgentEndpoints;
   /** Authenticated current GitHub run liveness, rechecked around issuance. */
@@ -73,7 +83,8 @@ export async function armTrustedFreshRepairReviewedDag(input:{
   const pinnedEndpoints=pinTrustedReviewedAgentEndpoints(input.endpoints);
   const fence=input.typecheckRepairScope?
     createFreshTypecheckRepairIssueFence({
-      reviewGate:input.reviewGate,repairScope:input.typecheckRepairScope
+      reviewGate:input.reviewGate,repairScope:input.typecheckRepairScope,
+      preservation:input.typecheckPriorWork
     }):null;
   await input.verifyLiveRun();
   let activated=false;
@@ -160,9 +171,12 @@ export function armTrustedTypecheckRepairReviewedDag(input:
   Parameters<typeof armTrustedFreshRepairReviewedDag>[0] &
   {typecheckRepairScope:NonNullable<
     Parameters<typeof armTrustedFreshRepairReviewedDag>[0]["typecheckRepairScope"]
+  >;
+   typecheckPriorWork:NonNullable<
+    Parameters<typeof armTrustedFreshRepairReviewedDag>[0]["typecheckPriorWork"]
   >}
 ):ReturnType<typeof armTrustedFreshRepairReviewedDag>{
-  if(!input||!input.typecheckRepairScope)
-    throw Error("TypeScript repair requires trusted owner scope and fresh approval");
+  if(!input||!input.typecheckRepairScope||!input.typecheckPriorWork)
+    throw Error("TypeScript repair requires trusted previous audit, durable disposition and fresh approval");
   return armTrustedFreshRepairReviewedDag(input);
 }
