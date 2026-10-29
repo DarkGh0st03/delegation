@@ -278,7 +278,7 @@ function simulateObservedPostRun(f,{paths=[backend,frontend],
     }
   };
   return {input:{...f.input,trustedGitea:reader,gatewayEvidence,
-    expectedTestedCommitSha:revision},requests};
+    expectedFreshMainSha:baseSha,expectedTestedCommitSha:revision},requests};
 }
 test("R96 new signed exact-SHA run reconstructs both Backend and Frontend",async()=>{
   const f=await fixture();
