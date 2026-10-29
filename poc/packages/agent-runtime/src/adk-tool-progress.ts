@@ -28,10 +28,15 @@ export class AdkToolProgress {
   observe(event: AdkControlledToolOutcome): void {
     if(event.name === "run_tests" && !event.payload.ok &&
        event.payload.error.kind==="tests_failed"){
-      const hint=safeRunnerFailedPhaseHint(event.payload.error.details);
-      if(hint?.repair_requires_new_approval===true){
+      const details=event.payload.error.details;
+      // The trusted referral flag is sticky even when an older runner has
+      // not supplied a recognized failed phase; never silently clear it.
+      if(details!==null&&typeof details==="object"&&!Array.isArray(details)&&
+         (details as {repair_requires_new_approval?:unknown})
+           .repair_requires_new_approval===true){
         this.#requiresFreshEngineerApproval=true;
-        this.#typecheckScopeSummary=hint.typecheck_scope_summary??null;
+        this.#typecheckScopeSummary=
+          safeRunnerFailedPhaseHint(details)?.typecheck_scope_summary??null;
       }
     }
     if (event.name === "read_file") {
