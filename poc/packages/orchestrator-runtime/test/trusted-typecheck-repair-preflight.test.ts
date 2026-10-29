@@ -8,7 +8,11 @@ import {verifyFreshTypecheckRepairReviewedScope as verify}
   from "../src/trusted-typecheck-repair-preflight.mjs";
 import {SignedEngineerApprovalFileStore}
   from "../src/signed-approval-store.ts";
-import {makeApproval} from "../../plan-contracts/src/plan.mjs";
+import {makeApproval,planDigest} from "../../plan-contracts/src/plan.mjs";
+import {TrustedPlanningReviewGate}
+  from "../src/trusted-planning-review-gate.ts";
+import {createFreshTypecheckRepairIssueFence}
+  from "../src/trusted-typecheck-repair-activation-fence.mjs";
 import {signEngineerApproval} from "../../plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS}
   from "../../../apps/gateway/src/operation-catalog.ts";
@@ -92,7 +96,8 @@ async function fixture(alter=()=>{}){
     ownerSelectedRole:"backend",previousApprovedBranch:oldBranch,
     nextApprovedBranch:branch,nomination
   };
-  return {input,current,signed,dir,close:()=>rm(dir,{force:true,recursive:true})};
+  return {input,current,signed,dir,privateKey,
+    close:()=>rm(dir,{force:true,recursive:true})};
 }
 test("R93 independent Ed25519 review confirms signed repair path, DAG order and no authority issuance",async()=>{
   const f=await fixture();
@@ -160,5 +165,88 @@ test("R93 owner review cannot bypass independently authenticated Engineer signat
       {mode:0o600});
     await assert.rejects(()=>verify(f.input),
       /signature|approval|digest/i);
+  }finally{await f.close();}
+});
+
+function stagedReviewGate(f){
+  const gate=new TrustedPlanningReviewGate({
+    snapshot:{session_id:session,repository:repo,base_revision:sha,
+      directories:["","apps","apps/backend","apps/backend/src",
+        "apps/backend/src/users"],
+      files:[target]},
+    expectedWorkBranch:branch,authenticatedEngineerDid:did,
+    signedApprovals:f.input.approvalStore,planningIsActive:()=>true
+  });
+  gate.stageTrustedProposal({
+    status:"unapproved_proposal",verified_source_reads:1,
+    digest:planDigest(f.current),plan:f.current
+  });
+  return gate;
+}
+test("R94 pin fresh Engineer receipt before root issuance and recheck after activation",async()=>{
+  const f=await fixture();
+  try{
+    const gate=stagedReviewGate(f);
+    const fence=createFreshTypecheckRepairIssueFence({
+      repairScope:f.input,reviewGate:gate
+    });
+    await fence.pinBeforeOperationalActivation();
+    await fence.recheckAfterOperationalActivation();
+    await assert.rejects(()=>fence.recheckAfterOperationalActivation(),
+      /issue fence/i);
+    assert.equal(f.input.ownerSelectedRole,"backend");
+  }finally{await f.close();}
+});
+test("R94 a second valid Engineer signature changing only permission decision is refused",async()=>{
+  const f=await fixture();
+  try{
+    const gate=stagedReviewGate(f);
+    const fence=createFreshTypecheckRepairIssueFence({
+      repairScope:f.input,reviewGate:gate
+    });
+    await fence.pinBeforeOperationalActivation();
+    const signed=signEngineerApproval({
+      plan:f.current,
+      approval:{...f.signed.approval,decision_id:"second-valid-decision"},
+      engineerDid:did,keyId:"pinned-engineer",
+      privateKeyPem:f.privateKey.export({
+        type:"pkcs8",format:"pem"}).toString(),
+      issuedAt:new Date(Date.now()-12000).toISOString(),
+      expiresAt:new Date(Date.now()+20*60_000).toISOString()
+    });
+    await writeFile(join(f.dir,session+".json"),JSON.stringify(signed),
+      {mode:0o600});
+    await assert.rejects(()=>fence.recheckAfterOperationalActivation(),
+      /permission decision|signed|issue fence|trusted planning review/i);
+  }finally{await f.close();}
+});
+test("R94 reject unsigned repair scope before any root can issue",async()=>{
+  const f=await fixture();
+  try{
+    const gate=stagedReviewGate(f);
+    const rejectFence=createFreshTypecheckRepairIssueFence({
+      repairScope:{...f.input,nomination:{
+        ...nomination,permissions_issued:true
+      }},reviewGate:gate
+    });
+    await assert.rejects(
+      ()=>rejectFence.pinBeforeOperationalActivation(),
+      /repair preflight/i);
+    await assert.rejects(
+      ()=>rejectFence.recheckAfterOperationalActivation(),/issue fence/i);
+  }finally{await f.close();}
+});
+test("R94 capture owner-selected trusted repair path before asynchronous review",async()=>{
+  const f=await fixture();
+  try{
+    const gate=stagedReviewGate(f);
+    const selector={...f.input};
+    const fence=createFreshTypecheckRepairIssueFence({
+      repairScope:selector,reviewGate:gate
+    });
+    selector.trustedDiagnosticPath="../unapproved.ts";
+    selector.nomination={...nomination,permissions_issued:true};
+    await fence.pinBeforeOperationalActivation();
+    await fence.recheckAfterOperationalActivation();
   }finally{await f.close();}
 });
