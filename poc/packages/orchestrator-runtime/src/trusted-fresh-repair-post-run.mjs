@@ -75,17 +75,23 @@ export async function verifyTrustedFreshRepairPostRun({
     g.agent_id==="test"&&
     g.resource===canonicalBranchUri(plan.repository,branch));
   if(testTasks.length!==1)deny();
-  const [diff,effect]=await Promise.all([
-    trustedGitea.readPinnedFeatureDiff({
-      repository:structuredClone(plan.repository),branch,
-      base_revision:expectedFreshMainSha,
-      head_revision:expectedTestedCommitSha
-    }),
-    gatewayEvidence.readVerifiedRunnerEffect(Object.freeze({
+  // Query the already-retired, attested Gateway receipt FIRST. Calling a
+  // synchronous fail-closed getter inside Promise.all after starting an
+  // asynchronous Gitea read can leave the read rejected and unobserved.
+  // It also needlessly hits the repository when the exact Runner proof is
+  // absent or stale. Never expose provider exception text to an agent.
+  let effect;
+  try{
+    effect=gatewayEvidence.readVerifiedRunnerEffect(Object.freeze({
       session_id:expectedNextSessionId,task_id:testTasks[0].task_id,
       branch,tested_commit_sha:expectedTestedCommitSha
-    }))
-  ]);
+    }));
+  }catch{deny();}
+  const diff=await trustedGitea.readPinnedFeatureDiff({
+    repository:structuredClone(plan.repository),branch,
+    base_revision:expectedFreshMainSha,
+    head_revision:expectedTestedCommitSha
+  });
   if(diff.branch!==branch||diff.base_revision!==expectedFreshMainSha||
      diff.head_revision!==expectedTestedCommitSha||
      !Array.isArray(diff.changes)||diff.changes.length>64)deny();
