@@ -99,6 +99,9 @@ test("Out-of-scope repair referral stays boolean through trusted worker transpor
     ok:false,error:{kind:"tests_failed",details:{
       first_failed_phase:"typecheck",
       repair_requires_new_approval:true,
+      typecheck_error_codes:["TS2304","TS2688"],
+      typecheck_scope_summary:{parsed_locations:3,missing_read_grants:2,
+        missing_write_grants:3},
       private_data:"PRIVATE_COMPILER_OUTPUT"
     }}
   }),{status:422}));
@@ -108,7 +111,34 @@ test("Out-of-scope repair referral stays boolean through trusted worker transpor
     if(!(e instanceof WorkerTestsFailedError))return false;
     assert.equal(e.repair_requires_new_approval,true);
     assert.deepEqual(e.typecheck_diagnostics,[]);
+    assert.deepEqual(e.typecheck_error_codes,["TS2304","TS2688"]);
+    assert.deepEqual(e.typecheck_scope_summary,{parsed_locations:3,
+      missing_read_grants:2,missing_write_grants:3});
     assert.equal(JSON.stringify(e).includes("PRIVATE_COMPILER_OUTPUT"),false);
+    return true;
+  });
+});
+
+test("malformed code-only and grant-gap metadata is discarded at shared MCP",async()=>{
+  const secret="DO_NOT_FORWARD_COMPILER_LOG";
+  const router=new TaskRouter(workers,async()=>new Response(JSON.stringify({
+    ok:false,error:{kind:"tests_failed",details:{
+      first_failed_phase:"typecheck",repair_requires_new_approval:true,
+      typecheck_error_codes:["TS2304;"+secret],
+      typecheck_scope_summary:{
+        parsed_locations:1,missing_read_grants:2,missing_write_grants:0,
+        source:secret
+      },message:secret
+    }}
+  }),{status:422}));
+  await assert.rejects(router.runTests({...claims,role:"test"},"token",{
+    branch:"feature/account-suspension",profile:"poc-default"
+  }),(e:unknown)=>{
+    if(!(e instanceof WorkerTestsFailedError))return false;
+    assert.equal(e.repair_requires_new_approval,true);
+    assert.deepEqual(e.typecheck_error_codes,[]);
+    assert.equal(e.typecheck_scope_summary,undefined);
+    assert.ok(!JSON.stringify(e).includes(secret));
     return true;
   });
 });

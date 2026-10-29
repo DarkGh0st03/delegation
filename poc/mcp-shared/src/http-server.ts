@@ -159,6 +159,10 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
           first_failed_phase:bounded.phase,
           ...(bounded.typecheck_diagnostics.length
             ?{typecheck_diagnostics:bounded.typecheck_diagnostics}:{}),
+          ...(bounded.typecheck_error_codes.length
+            ?{typecheck_error_codes:bounded.typecheck_error_codes}:{}),
+          ...(bounded.typecheck_scope_summary
+            ?{typecheck_scope_summary:bounded.typecheck_scope_summary}:{}),
           ...(bounded.repair_requires_new_approval===true
             ?{repair_requires_new_approval:true}:{})
         }:undefined;

@@ -1,17 +1,49 @@
 import {parseCreatePresentationArgs,type CreatePresentationArgs} from "./crypto-catalog.ts";
-import {sanitizeTypecheckLocations,type TypecheckLocation}
+import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
+  type TypecheckLocation}
   from "../../apps/test-runner-controller/src/typecheck-diagnostics.ts";
+/** Shared MCP must independently revalidate even prefiltered private-worker
+ * evidence, without importing the worker's private authority or secrets. */
+type ScopeSummary=Readonly<{
+  parsed_locations:number;
+  missing_read_grants:number;
+  missing_write_grants:number;
+}>;
+function safeScopeSummary(value:unknown):ScopeSummary|undefined{
+  if(!value||typeof value!=="object"||Array.isArray(value))return undefined;
+  const x=value as Record<string,unknown>;
+  if(Object.keys(x).sort().join(",")!==
+     "missing_read_grants,missing_write_grants,parsed_locations")
+    return undefined;
+  const valid=(n:unknown)=>typeof n==="number"&&
+    Number.isSafeInteger(n)&&n>=0&&n<=8;
+  if(!valid(x.parsed_locations)||!valid(x.missing_read_grants)||
+     !valid(x.missing_write_grants)||
+     (x.missing_read_grants as number)>(x.parsed_locations as number)||
+     (x.missing_write_grants as number)>(x.parsed_locations as number))
+    return undefined;
+  return Object.freeze({
+    parsed_locations:x.parsed_locations as number,
+    missing_read_grants:x.missing_read_grants as number,
+    missing_write_grants:x.missing_write_grants as number
+  });
+}
 /** Only whitelisted failure metadata, no arbitrary untrusted error message. */
 export class WorkerTestsFailedError extends Error {
   readonly phase:string|null;
   readonly typecheck_diagnostics:TypecheckLocation[];
+  readonly typecheck_error_codes:readonly string[];
   readonly repair_requires_new_approval?:true;
-  constructor(phase:string|null,diagnostics:TypecheckLocation[],needsApproval=false){
+  readonly typecheck_scope_summary?:ScopeSummary;
+  constructor(phase:string|null,diagnostics:TypecheckLocation[],
+    needsApproval=false,codes:readonly string[]=[],scope?:ScopeSummary){
     super("tests_failed"+(phase?":"+phase:""));
     this.name="WorkerTestsFailedError";
     this.phase=phase;
     this.typecheck_diagnostics=diagnostics;
+    this.typecheck_error_codes=Object.freeze([...codes]);
     if(needsApproval)this.repair_requires_new_approval=true;
+    if(needsApproval&&scope)this.typecheck_scope_summary=scope;
   }
 }
 import type {AgentRole, TaskClaims} from "./task-token.ts";
@@ -95,12 +127,21 @@ export class TaskRouter {
           typeof details==="object"&&!Array.isArray(details)
           ?sanitizeTypecheckLocations((details as {typecheck_diagnostics?:unknown})
             .typecheck_diagnostics):[];
+        const codes=validPhase==="typecheck"&&details&&
+          typeof details==="object"&&!Array.isArray(details)
+          ?sanitizeTypecheckErrorCodes(
+            (details as {typecheck_error_codes?:unknown}).typecheck_error_codes):[];
         const newApproval=validPhase==="typecheck"&&details!==null&&
           typeof details==="object"&&!Array.isArray(details)&&
           (details as {repair_requires_new_approval?:unknown})
             .repair_requires_new_approval===true;
+        const scope=newApproval===true&&details&&
+          typeof details==="object"&&!Array.isArray(details)
+          ?safeScopeSummary(
+            (details as {typecheck_scope_summary?:unknown}).typecheck_scope_summary)
+          :undefined;
         throw new WorkerTestsFailedError(validPhase,diagnostics,
-          newApproval===true);
+          newApproval===true,codes,scope);
       }
       throw new Error(typeof candidate==="string"&&safe.includes(candidate)
         ?candidate:"task_worker_rejected");
