@@ -378,6 +378,75 @@ try{
  assert.equal(effects,3);
  await gates.confirmTaskCompletion("native-r110-discovery");
  assert.equal((await issuanceJournal.records()).length,3);
+
+ // R111: independently checked repair DAG, original Rust parent retained.
+ const repair={...structuredClone(initial),version:2,plan_id:"r111-"+unique,
+  tasks:[
+   {id:"repair-impl",agent_id:"backend",title:"Correct code",
+    description:"Update only granted source",depends_on:[],resources:[fileUri]},
+   {id:"repair-tests",agent_id:"test",title:"Retest",
+    description:"Verify correction",depends_on:["repair-impl"],resources:[branchUri]},
+   {id:"repair-pr",agent_id:"orchestrator",title:"Review",
+    description:"PR only after PASS",depends_on:["repair-tests"],resources:[repoUri]}
+  ],
+  requested_permissions:[
+   {id:"rp-write",task_id:"repair-impl",agent_id:"backend",
+    resource:fileUri,operation:"update_file",reason:"Original Engineer grant"},
+   {id:"rp-test",task_id:"repair-tests",agent_id:"test",
+    resource:branchUri,operation:"run_tests",reason:"Original Engineer grant"},
+   {id:"rp-pr",task_id:"repair-pr",agent_id:"orchestrator",
+    resource:repoUri,operation:"create_pull_request",reason:"Original Engineer grant"}
+  ]};
+ const guard=await intake.preflightRepairEpoch(repair);
+ assert.equal(guard.execution_authorized,false);
+ const reservation=await intake.reserveRepairEpoch(repair);
+ assert.equal(reservation.epoch,2);
+ const promoted=await gates.admitNextOperationalEpoch(session,2);
+ assert.deepEqual(promoted.blocked_descendant_task_ids,["initial-pr"]);
+ assert.throws(()=>gateway.prepare({task_id:"native-r110-backend",
+  agent_role:"backend",tool:"update_file",
+  arguments:{branch,path:file,content:"stale"}}),/Stale operational epoch/i);
+ const nextIssuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForOperationalEpoch({approvals,coordinator,intake,epochVersion:2,
+   sessionId:session,engineerDid:engineer,adapterBaseUrl:adapter,
+   bearerToken:tokens.orchestrator,issuanceJournal});
+ async function nextChild(task,role,index){
+  const id="urn:r111:"+task+"-"+unique;
+  const child=await nextIssuer.issueSpecializedChild({
+   parent_credential_id:root.credential_id,approved_task_id:task,
+   selection:{role},...parameters(id,index,300)});
+  assert.equal(child.credential.id,id);return id;
+ }
+ const fixer=await nextChild("repair-impl","backend","29885");
+ const tester=await nextChild("repair-tests","test","29886");
+ gates.bindTask(session,"repair-impl","runtime-fix","backend");
+ gates.bindTask(session,"repair-tests","runtime-retest","test");
+ gates.bindTask(session,"repair-pr","runtime-review","orchestrator");
+ assert.throws(()=>gateway.prepare({task_id:"runtime-review",
+  agent_role:"orchestrator",tool:"create_pull_request",
+  arguments:{head_branch:branch,base_branch:"main",title:"Too early"}
+ }),/dependency|PR requires|Runner/i);
+ const fixed=await executeWithChild("runtime-fix","backend","update_file",
+  {branch,path:file,content:"// corrected implementation"},fixer,tokens.backend);
+ assert.equal(fixed.execution.commit_sha,repairedSha);
+ assert.equal(fixed.verified_delegation.credential_id,fixer);
+ await gates.confirmTaskCompletion("runtime-fix");
+ const pass=await executeWithChild("runtime-retest","test","run_tests",
+  {branch,profile:"poc-default"},tester,tokens.test);
+ assert.equal(pass.execution.status,"pass");
+ assert.equal(pass.execution.tested_commit_sha,repairedSha);
+ assert.equal(pass.verified_delegation.credential_id,tester);
+ await gates.confirmTaskCompletion("runtime-retest");
+ const pr=await executeWithChild("runtime-review","orchestrator",
+  "create_pull_request",{head_branch:branch,base_branch:"main",
+   title:"R111 verified repair",body:"Tested SHA "+repairedSha},
+  root.credential_id,tokens.orchestrator);
+ assert.equal(pr.execution.revision,repairedSha);
+ assert.equal(pr.execution.pull_request_number,111);
+ await gates.confirmTaskCompletion("runtime-review");
+ assert.equal(prCreated,true);
+ assert.equal(effects,6);
+ assert.equal((await issuanceJournal.records()).length,5);
  process.stdout.write(JSON.stringify({
   result:"r111-native-evm-fail-discovery-repair-pass-pr",
   existing_engineer_approval:true,existing_rust_operational_root:true,
