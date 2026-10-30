@@ -328,7 +328,7 @@ export async function runNativePositiveApprovedDag({
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
-  let admittedBackendRepair=null;
+  let admittedBackendRepair=null,admittedTestRepair=null;
   const isSignedImplementationTask=(role,id)=>taskIdsByRole[role].includes(id)||
     (role==="backend"&&admittedBackendRepair?.taskId===id);
   const readPaths={backend:new Set(),frontend:new Set(),test:new Set()};
@@ -561,7 +561,7 @@ export async function runNativePositiveApprovedDag({
               repo,branch,observedWrites:writePaths,
               revisionComparison
             }):null;
-          if(offlineTypecheckProbe){
+          if(offlineTypecheckProbe&&!admittedTestRepair){
             assert.equal(effect.status,"fail");
             assert.deepEqual(typecheckCodes,["TS2820"]);
             assert.ok(scopeAudit&&revisionComparison,
@@ -784,6 +784,37 @@ export async function runNativePositiveApprovedDag({
     if(trustedOwnerRecovery?.bindOriginalA2APorts){
       await trustedOwnerRecovery.bindOriginalA2APorts({
         agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
+        async armVerifiedD1TestRun({
+          taskId,role,runtimeTaskId,credentialId,repairedSha
+        }){
+          if(admittedTestRepair||!admittedBackendRepair||
+             !offlineTypecheckProbe||realGeminiPilot||
+             role!=="test"||taskId!=="r150-owner-test-fresh"||
+             !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
+             !credentialId||!SHA.test(repairedSha)||
+             !(models.test instanceof OfflineApprovedAdkModel)||
+             runnerOutcome?.status!=="fail"||
+             runnerHistory.length!==1||
+             repairedSha===runnerOutcome.tested_commit_sha||
+             (await reader.getBranchMetadata(branch)).commit_sha!==repairedSha)
+            throw Error("R150.9 real D1 Test requires exact repaired SHA and distinct child");
+          const history=await trustedOwnerRecovery.intake.verifiedEpochHistory();
+          const epoch=history.at(-1);
+          const task=epoch?.plan.tasks.find(t=>t.id===taskId);
+          if(history.length!==2||task?.agent_id!=="test"||
+             epoch.root_credential_id!==operationalRootId||
+             !task.depends_on.includes(admittedBackendRepair.taskId)||
+             !epoch.plan.requested_permissions.some(g=>
+               g.task_id===taskId&&g.agent_id==="test"&&
+               g.operation==="run_tests"&&g.resource===scopedBranch))
+            throw Error("R150.9 Test not granted by independently admitted D1");
+          models.test.armTrustedD1TestRun({branch,taskId});
+          admittedTestRepair=Object.freeze({
+            taskId,runtimeTaskId,credentialId,repairedSha
+          });
+          activeChildByRole.test=credentialId;
+          activeTaskByRole.test=taskId;
+        },
         async armVerifiedD1BackendRepair({
           taskId,role,runtimeTaskId,credentialId,path,failedSha
         }){
