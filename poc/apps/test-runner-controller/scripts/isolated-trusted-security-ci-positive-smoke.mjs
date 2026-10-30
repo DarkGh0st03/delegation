@@ -24,6 +24,8 @@ import {join,dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 import {setTimeout as sleep} from "node:timers/promises";
 import {IsolatedDockerRunnerExecutor} from "../src/isolated-executor.ts";
+import {verifyR139RealRepairEvidence}
+  from "./r139-real-repair-evidence.mjs";
 import {TrustedGiteaSecurityCi,SECURITY_STATUS_CONTEXT,
   TRUSTED_PROJECT_PHASES} from "../src/trusted-security-ci.ts";
 import {getApprovedOfflineScenario} from
@@ -357,6 +359,123 @@ async function pushReferenceApp(base,workTree,admin){
   return {mainSha:baseline,featureSha:sha};
 }
 
+/**
+ * R139 provider proof in a FRESH disposable branch, with genuine Gitea
+ * commits, two different Docker Runner tasks and exact tested SHAs.
+ * This intentionally does not invent a signed R133 repair epoch, DC or VP.
+ * It runs AFTER existing trusted positive smoke has already finished.
+ */
+async function verifyR139DisposableRealRepair({base,workTree,creds,
+ executor,originalFeatureSha,mainSha}){
+ const repairBranch="feature/r139-repair-"+suffix;
+ const file="tests/backend/user.service.test.ts";
+ const target=join(workTree,...file.split("/"));
+ const before=await readFile(target,"utf8");
+ assert.equal(before,referenceFiles[file],"R139 must start from pinned fixture");
+ assert.equal(git(["status","--porcelain"],{cwd:workTree,
+  label:"verify clean R139 source tree"}),"");
+ git(["switch","-c",repairBranch,originalFeatureSha],{
+  cwd:workTree,label:"create NEW disposable R139 repair branch"
+ });
+ const broken=before+
+  '\\n\\nit("R139 intentional backend regression", () => {'+
+  ' expect(1).toBe(2); });\\n';
+ await writeFile(target,broken,"utf8");
+ git(["add","--",file],{cwd:workTree,label:"stage R139 failing test"});
+ git(["-c","user.name=R139 Fixture",
+  "-c","user.email=r139@localhost.invalid",
+  "commit","-m","test: inject deterministic temporary R139 regression"],{
+  cwd:workTree,label:"commit R139 failing SHA"});
+ const failedSha=git(["rev-parse","HEAD"],{cwd:workTree,
+  label:"resolve immutable R139 failure SHA"});
+ const remote=base+"/thesis/iam-console-poc.git";
+ git(["push",remote,"HEAD:refs/heads/"+repairBranch],{
+  cwd:workTree,auth:creds.admin,label:"push R139 failing branch"});
+ const failedRequest={
+  request_id:randomUUID(),
+  repository:"gitea://gitea.local/thesis/iam-console-poc",
+  branch:repairBranch,commit_sha:failedSha,profile:"poc-default"
+ };
+ const failed=await stage("r139_real_docker_original_fail",()=>
+  executor.run(failedRequest),840000);
+ assert.equal(failed.status,"fail");
+ assert.equal(failed.project_tests?.status,"fail");
+ assert.ok(failed.phases.some(p=>
+  p.phase==="backend_tests"&&p.status==="fail"),
+  "Must be a genuine Docker backend_tests FAIL, not transport error");
+ const prsBefore=await api(base,repository+"/pulls?state=all",{
+  authorization:creds.admin,label:"r139_no_pr_after_fail"});
+ assert.ok(!prsBefore.some(p=>p.head?.ref===repairBranch),
+  "R139 must never open review before Docker PASS");
+ await writeFile(target,before,"utf8");
+ git(["add","--",file],{cwd:workTree,label:"stage R139 repair"});
+ git(["-c","user.name=R139 Fixture",
+  "-c","user.email=r139@localhost.invalid",
+  "commit","-m","fix: resolve original R139 regression in new repair Task"],{
+  cwd:workTree,label:"commit R139 repaired SHA"});
+ const repairedSha=git(["rev-parse","HEAD"],{cwd:workTree,
+  label:"resolve immutable R139 repaired SHA"});
+ assert.match(repairedSha,/^[a-f0-9]{40}$/u);
+ assert.notEqual(repairedSha,failedSha);
+ assert.notEqual(repairedSha,mainSha);
+ git(["push",remote,"HEAD:refs/heads/"+repairBranch],{
+  cwd:workTree,auth:creds.admin,label:"push R139 repaired branch"});
+ const oldTaskRequest={...failedRequest,request_id:randomUUID()};
+ await assert.rejects(executor.run(oldTaskRequest),
+  /exact-SHA precondition failed/,
+  "Old FAIL Task cannot silently run against the new branch HEAD");
+ const passRequest={...failedRequest,request_id:randomUUID(),
+  commit_sha:repairedSha};
+ const passed=await stage("r139_real_docker_new_test_pass",()=>
+  executor.run(passRequest),840000);
+ const proof=verifyR139RealRepairEvidence({
+  failed,passed,failedSha,repairedSha,branch:repairBranch,
+  failedTaskId:"r139-original-test-"+suffix,
+  repairTaskId:"r139-new-backend-"+suffix,
+  passedTaskId:"r139-new-test-"+suffix
+ });
+ const [main,feature]=await Promise.all([
+  api(base,repository+"/branches/main",{
+   authorization:creds.admin,label:"R139 untouched main"}),
+  api(base,repository+"/branches/"+encodeURIComponent(repairBranch),{
+   authorization:creds.admin,label:"R139 exact repaired head"})
+ ]);
+ assert.equal(main.commit.id,mainSha);
+ assert.equal(feature.commit.id,repairedSha);
+ // Fixture-only disposable PR: no production authority and NEVER merged.
+ // Its creation is permitted here ONLY after both real Docker observations.
+ const pr=await api(base,repository+"/pulls",{
+  method:"POST",authorization:creds.admin,
+  label:"R139 disposable review only",
+  body:{
+   head:repairBranch,base:"main",
+   title:"WIP: R139 disposable Docker FAIL-to-PASS repair verification",
+   body:"Scripted isolated fixture. Not Engineer-approved or production authority. "+
+    "Original exact SHA: "+failedSha+"; repaired tested SHA: "+repairedSha,
+   draft:true
+  }
+ });
+ if(pr.state!=="open"||pr.merged!==false||
+    pr.head?.ref!==repairBranch||pr.head?.sha!==repairedSha||
+    pr.base?.ref!=="main")
+  throw Error("R139 disposable PR must remain open and match tested SHA");
+ const verified=await api(base,repository+"/pulls/"+pr.number,{
+  authorization:creds.admin,label:"R139 read-only PR proof"
+ });
+ assert.equal(verified.state,"open");
+ assert.equal(verified.merged,false);
+ assert.equal(verified.head?.sha,repairedSha);
+ assert.equal((await api(base,repository+"/branches/main",{
+  authorization:creds.admin,label:"R139 main unchanged after review"
+ })).commit.id,mainSha);
+ process.stdout.write(JSON.stringify({
+  event:"r139_real_disposable_gitea_docker_two_sha",
+  ...proof,review_only_pr_opened:true,
+  pr_state:"open",pr_merged:false,real_gitea_commit_count:2,
+  original_root_unchanged:true,main_mutations:0,merge_calls:0
+ })+"\\n");
+ return Object.freeze({failedSha,repairedSha,prNumber:pr.number});
+}
 async function main(){
   const acceptanceDir=fileURLToPath(new URL(
     "../../../runner/acceptance/",import.meta.url
@@ -1216,6 +1335,18 @@ async function main(){
     }else{
       assert.deepEqual(prs,[],
         "Non-DAG security regression must not create a PR");
+    }
+    if(process.env.APPROVED_RUNNER_REAL_REPAIR_TWO_SHA==="1"){
+      // No ADK/Gemini: only this disposable independent provider contract.
+      if(process.env.APPROVED_RUNNER_NATIVE_EVM==="1"||
+         process.env.APPROVED_RUNNER_THREE_AGENT_DAG==="1")
+        throw Error("R139 provider-only fixture cannot impersonate signed EVM recovery");
+      await stage("r139_disposable_two_sha_real_docker",()=>
+        verifyR139DisposableRealRepair({
+          base,workTree:workingDir,creds,executor,
+          originalFeatureSha:fixture.featureSha,
+          mainSha:fixture.mainSha
+        }),2400000);
     }
     process.stdout.write(JSON.stringify({
       event:"trusted_security_ci_real_docker_positive_acceptance",
