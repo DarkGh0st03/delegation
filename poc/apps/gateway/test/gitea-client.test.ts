@@ -559,8 +559,8 @@ test("R143 Gitea creates exactly one draft only on accepted SHA; rechecks PR and
   if(u.endsWith("/pulls")&&method==="POST"){
    posts++;const body=JSON.parse(String(init?.body));
    assert.deepEqual(body,{
-    head:"feature/r143-fix",base:"main",title:"Review corrected tests",
-    body:"Owner-reviewed correction",draft:true
+    head:"feature/r143-fix",base:"main",title:"WIP: Review corrected tests",
+    body:"Owner-reviewed correction"
    });
    return new Response(JSON.stringify(pr),{status:201});
   }
@@ -579,6 +579,52 @@ test("R143 Gitea creates exactly one draft only on accepted SHA; rechecks PR and
  assert.equal(r.draft,true);assert.equal(r.open,true);
  assert.equal(r.merged,false);assert.equal(r.head_revision,wanted);
  assert.equal(r.number,3);
+});
+test("R150.10.3 Gitea draft title uses WIP protocol once; does not send ignored draft field",async()=>{
+ const accepted="a".repeat(40),main="b".repeat(40);
+ let submittedTitle=null,posts=0;
+ const c=clientWith((async(url,init)=>{
+  const u=String(url);
+  if(u.endsWith("/branches/feature%2Fr143-fix"))
+   return new Response(JSON.stringify({name:"feature/r143-fix",
+    commit:{id:accepted}}),{status:200});
+  if(u.endsWith("/branches/main"))
+   return new Response(JSON.stringify({name:"main",commit:{id:main}}),
+    {status:200});
+  if(u.endsWith("/pulls")&&init?.method==="POST"){
+   posts++;
+   const request=JSON.parse(String(init.body));
+   assert.equal(Object.hasOwn(request,"draft"),false,
+    "Unsupported Gitea API draft request field must not be relied on");
+   submittedTitle=request.title;
+   return new Response(JSON.stringify({
+    id:4,number:5,state:"open",merged:false,
+    draft:request.title.startsWith("WIP: "),
+    head:{ref:"feature/r143-fix",sha:accepted},
+    base:{ref:"main",sha:main}
+   }),{status:201});
+  }
+  if(u.endsWith("/pulls/5")&&init?.method==="GET")
+   return new Response(JSON.stringify({
+    id:4,number:5,state:"open",merged:false,draft:true,
+    head:{ref:"feature/r143-fix",sha:accepted},
+    base:{ref:"main",sha:main}
+   }),{status:200});
+  throw Error("Unexpected Gitea draft request");
+ }) as typeof fetch);
+ const out=await c.createDraftPullRequest(
+  "feature/r143-fix","main","WIP: Verify repaired code",accepted
+ );
+ assert.equal(submittedTitle,"WIP: Verify repaired code");
+ assert.equal(posts,1);
+ assert.equal(out.draft,true);
+ let sent=0;
+ const bad=clientWith((async()=>{sent++;throw Error("no requests");})
+   as typeof fetch);
+ await assert.rejects(bad.createDraftPullRequest(
+  "feature/r143-fix","main","x".repeat(158),accepted
+ ),ProviderConflictError);
+ assert.equal(sent,0);
 });
 test("R143 refuses changed Gitea head before POST and does not open a PR",async()=>{
  let posts=0;const c=clientWith((async(url,init)=>{
