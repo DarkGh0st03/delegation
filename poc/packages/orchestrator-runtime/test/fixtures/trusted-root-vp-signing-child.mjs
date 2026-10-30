@@ -36,7 +36,20 @@ const presenter=new TrustedOrchestratorRootPresenter({
 });
 const server=await createTrustedRootVpSignerServer({
  socketPath,secretFile,presenter,rootCredentialId,
- rootPermissions:permissions,audience
+ rootPermissions:permissions,audience,
+ // A real production server MUST carry the original issued Coordinator.
+ // This isolated scripted fixture deliberately models an active root.
+ liveRoot:{
+  coordinator:{
+   phase:"execution",
+   trustedOperationalAuthority:()=>({
+    credential_id:rootCredentialId,
+    plan_digest:"a".repeat(64),permissions
+   })
+  },
+  originalPlanDigest:"a".repeat(64),
+  ownerRunActive:()=>true
+ }
 });
 await server.start();
 process.stdout.write("READY\n");

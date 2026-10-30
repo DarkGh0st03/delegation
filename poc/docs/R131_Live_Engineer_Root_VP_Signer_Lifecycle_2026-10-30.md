@@ -25,3 +25,8 @@ by itself and does not change scripted tests or main.
 Remaining: independently verify VP in the real Gateway process,
 complete safe cross-process operational epoch admission, attenuated
 new Child DC issuance and actual Gitea/Docker repair E2E.
+
+R131.2 makes the live-root binding **mandatory** in every private signer
+server constructor, including offline fixtures. There is no fallback
+unguarded signer bootstrap path; scripted tests pass an explicit fake
+Coordinator, whereas the Engineer handoff uses the actual live instance.

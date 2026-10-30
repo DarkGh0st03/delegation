@@ -51,7 +51,7 @@ export async function createTrustedRootVpSignerServer(config:{
  audience:string;
  /** R131 production: the SAME original live Coordinator, not a model port.
   * Offline R130 socket fixtures intentionally omit it. */
- liveRoot?:Readonly<{
+ liveRoot:Readonly<{
   coordinator:Pick<TrustedExecutionCoordinator,
    "phase"|"trustedOperationalAuthority">;
   originalPlanDigest:string;
@@ -74,16 +74,14 @@ export async function createTrustedRootVpSignerServer(config:{
   allowed.add(k);
  }
  const live=config.liveRoot;
- if(live!==undefined&&
-    (!live.coordinator||
+ if(!live||!live.coordinator||
      typeof live.coordinator.trustedOperationalAuthority!=="function"||
      typeof live.ownerRunActive!=="function"||
-     !/^[a-f0-9]{64}$/u.test(live.originalPlanDigest)))
+     !/^[a-f0-9]{64}$/u.test(live.originalPlanDigest))
   fail("live owner root and signed plan digest required");
  let fenced=false;
  const assertLive=()=>{
   if(fenced)fail("trusted owner has closed root signing");
-  if(!live)return; // R130 explicitly isolated transport fixture
   if(!live.ownerRunActive()||live.coordinator.phase!=="execution")
    fail("original owner root not active");
   const issued=live.coordinator.trustedOperationalAuthority();

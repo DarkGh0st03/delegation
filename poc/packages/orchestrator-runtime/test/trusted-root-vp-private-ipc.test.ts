@@ -64,7 +64,7 @@ async function setup(t:import("node:test").TestContext,options:{
  const server=await createTrustedRootVpSignerServer({
   socketPath,secretFile,presenter,
   rootCredentialId:credential,rootPermissions:[perm],audience,
-  ...(options.liveRoot?{liveRoot:{
+  liveRoot:{
    coordinator:{
     get phase(){return phase;},
     trustedOperationalAuthority(){
@@ -75,7 +75,7 @@ async function setup(t:import("node:test").TestContext,options:{
    },
    originalPlanDigest:"a".repeat(64),
    ownerRunActive:()=>phase==="execution"
-  }}:{})
+  }
  });
  await server.start();
  t.after(async()=>{
