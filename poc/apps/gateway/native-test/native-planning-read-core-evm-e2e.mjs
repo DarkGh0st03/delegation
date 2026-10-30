@@ -797,7 +797,7 @@ try{
                typeof ports.a2a.sendProtectedTask!=="function"||
                !ports.agentBaseUrls||
                !["backend","test"].every(role=>
-                 /^http:\\/\\/127\\.0\\.0\\.1:\\d+$/u.test(
+                 /^http:\/\/127\.0\.0\.1:\d+$/u.test(
                    ports.agentBaseUrls[role]??"")))
               throw Error("R150.7 owner A2A original ports missing or stale");
             originalA2APorts=Object.freeze({
