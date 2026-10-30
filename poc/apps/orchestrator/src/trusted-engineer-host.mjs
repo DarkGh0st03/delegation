@@ -159,7 +159,7 @@ export async function startTrustedEngineerLocalHost(config){
        !(ownerOperationalRecovery.planRepairEpoch.giteaClient instanceof GiteaClient)||
        typeof ownerOperationalRecovery.planRepairEpoch.proposeRepairPlan!=="function"||
        (ownerOperationalRecovery.planRepairEpoch.admitReservedEpoch!==undefined&&
-        typeof ownerOperationalRecovery.planRepairEpoch.admitReservedEpoch!=="boolean"))))
+        typeof ownerOperationalRecovery.planRepairEpoch.admitReservedEpoch!=="boolean")))))
     deny("R123 original owner Coordinator, Gateway IPC and signed store required");
   if(ownerOperationalRecovery){
     active.coordinator.assertSameApprovedGatewayPlans(recovery.gateway);

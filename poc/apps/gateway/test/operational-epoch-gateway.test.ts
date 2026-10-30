@@ -2058,8 +2058,15 @@ test("R125 IPC refuses missing durable reserved epoch and unfinished Test failur
  // quiescent; a model cannot skip finalization to enter repair.
  await assert.rejects(client.admitVerifiedOperationalEpoch(pins),
   /Gateway trusted control denied/);
- const p=await prepareTrustedRemoteRepairFeedback(request());
- assert.equal(p.status,"repair_planning_eligible");
+ // Signed owner ordinarily finalizes and verifies BEFORE reserving.
+ // Here the lower-level Gateway regression deliberately tests a
+ // finalized transition after a durably reserved but previously
+ // non-quiescent epoch. The finalization is still the REAL one-use IPC.
+ const p=await client.confirmVerifiedTestFailure({
+  session_id:session,root_plan_digest:planDigest(h.parent),
+  runtime_task_id:"task-test"
+ });
+ assert.equal(p.status,"validation_failed");
  assert.equal((await client.admitVerifiedOperationalEpoch(pins)).epoch,2);
  assert.equal(h.provider,3);
 });
