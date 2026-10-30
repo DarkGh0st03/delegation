@@ -23,11 +23,12 @@ import {prepareTrustedRepairFeedback,type TrustedRepairFeedbackSignal} from
 const CATALOG=new Set<string>(RUST_OPERATIONS);
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA=/^[a-f0-9]{40}$/u;
-const ROLES=new Set(["backend","frontend","test"]);
+const ROLES=new Set(["backend","frontend","test","orchestrator"]);
 const WRITES=new Set(["update_file","create_file","write_file"]);
 const MAX_TASKS=12,MAX_PERMISSIONS=32;
 const fail=(reason:string):never=>{throw Error("Trusted repair planner NO-GO: "+reason);};
-type Role="backend"|"frontend"|"test";
+type Role="backend"|"frontend"|"test"|"orchestrator";
+type SpecializedRole=Exclude<Role,"orchestrator">;
 type Repository={authority:string;owner:string;repository:string};
 type Grant={resource:string;operation:string};
 type RepairTaskDraft={
@@ -103,7 +104,7 @@ function ancestors(tasks:RepairTaskDraft[],ancestor:string,descendant:string){
  return visit(descendant);
 }
 function compileDraft(input:unknown,original:any,previous:any,
- planId:string,agentRegistry:readonly {agent_id:Role;did:string;card_ref:string}[]){
+ planId:string,agentRegistry:readonly {agent_id:SpecializedRole;did:string;card_ref:string}[]){
  const draft=strictObject(input,["tasks"],"repair draft");
  if(!Array.isArray(draft.tasks)||draft.tasks.length<2||
     draft.tasks.length>MAX_TASKS)fail("invalid repair Task count");
@@ -118,7 +119,9 @@ function compileDraft(input:unknown,original:any,previous:any,
     "Task "+i);
   const taskId=id(task.id,"Task id");
   const role=task.agent_id as Role;
-  if(!ROLES.has(role)||!registered.has(role))fail("unregistered repair role");
+  if(!ROLES.has(role)||
+    (role!=="orchestrator"&&!registered.has(role)))
+   fail("unregistered repair role");
   const title=text(task.title,160,"Task title");
   const description=text(task.description,1600,"Task description");
   if(!Array.isArray(task.depends_on)||task.depends_on.length>MAX_TASKS||
@@ -134,10 +137,13 @@ function compileDraft(input:unknown,original:any,previous:any,
    const resource=text(p.resource,1024,"resource URI");
    const operation=text(p.operation,64,"operation");
    if(!CATALOG.has(operation))fail("operation outside Rust catalog");
+   if(role==="orchestrator"&&operation!=="create_pull_request")
+    fail("Orchestrator may only create review PR in a repair epoch");
    if(role==="test"&&operation!=="run_tests"&&
       !["read_file","update_file","create_file"].includes(operation))
     fail("Test agent operation outside supported tool surface");
-   if(role!=="test"&&(!["read_file","update_file"].includes(operation)))
+   if(role!=="test"&&role!=="orchestrator"&&
+      !["read_file","update_file"].includes(operation))
     fail("implementation agent operation outside supported tool surface");
    return {resource,operation,reason:text(p.reason,280,"reason")};
   });
@@ -155,6 +161,12 @@ function compileDraft(input:unknown,original:any,previous:any,
  if(!writes.length||tests.length!==1)
   fail("repair requires concrete write Task and one Test validation");
  const testTask=tests[0];
+ const reviews=tasks.filter(t=>t.agent_id==="orchestrator");
+ if(reviews.length>1||reviews.some(t=>
+      t.permissions.length!==1||
+      t.permissions[0].operation!=="create_pull_request"||
+      !ancestors(tasks,testTask.id,t.id)))
+  fail("Optional review PR must depend on passing Test");
  if(writes.some(t=>t.id!==testTask.id&&
      !ancestors(tasks,t.id,testTask.id)))
   fail("Test must depend on each implementation repair");
@@ -205,7 +217,7 @@ export class TrustedOperationalRepairPlanner {
  readonly #session:string;
  readonly #testTask:string;
  readonly #nextId:string;
- readonly #agents:readonly {agent_id:Role;did:string;card_ref:string}[];
+ readonly #agents:readonly {agent_id:SpecializedRole;did:string;card_ref:string}[];
  readonly #head:(repository:Readonly<Repository>,branch:string)=>
    Promise<TrustedFeatureRevision>;
  readonly #proposer:(input:Readonly<TrustedRepairModelInput>)=>
@@ -215,7 +227,7 @@ export class TrustedOperationalRepairPlanner {
   gateway:TrustedApprovedExecutionPlans;
   intake:TrustedOperationalEpochIntake;
   sessionId:string;runtimeTestTaskId:string;nextPlanId:string;
-  pinnedAgentRegistry:readonly {agent_id:Role;did:string;card_ref:string}[];
+  pinnedAgentRegistry:readonly {agent_id:SpecializedRole;did:string;card_ref:string}[];
   /** Independent, Gateway-backed exact branch HEAD port. NOT model text. */
   readTrustedFeatureHead:(repository:Readonly<Repository>,branch:string)=>
     Promise<TrustedFeatureRevision>;
@@ -267,7 +279,7 @@ export class TrustedOperationalRepairPlanner {
     remaining_repair_epochs:feedback.remaining_repair_epochs
    }),
    already_delegated_grants:Object.freeze(grants.map(p=>Object.freeze(p))),
-   agents:Object.freeze(this.#agents.map(a=>a.agent_id))
+   agents:Object.freeze([...this.#agents.map(a=>a.agent_id),"orchestrator" as const])
   });
   const raw=await this.#proposer(modelInput);
   const plan=compileDraft(raw,original,previous,this.#nextId,this.#agents);
