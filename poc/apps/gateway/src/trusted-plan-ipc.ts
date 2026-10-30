@@ -81,7 +81,8 @@ function validate(x:unknown):Command{
      typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
      Number.isSafeInteger(o.epoch)&&
-     (o.epoch as number)>=2&&(o.epoch as number)<=3)
+     (o.epoch as number)>=(o.action==="inspect_signed_epoch"?1:2)&&
+     (o.epoch as number)<=3)
     return o as Command;
   if(o.action==="renew_lease"&&exact(o,["action","session_id","plan_digest"])&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest))
