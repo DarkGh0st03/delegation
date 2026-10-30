@@ -119,13 +119,13 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
  const issued=await issueAdmittedRepairTaskChild({
   ...config,runtimeTaskId
  });
- const root=config.coordinator.trustedOperationalAuthority();
+ const issuedRoot=config.coordinator.trustedOperationalAuthority();
  const assertActive=()=>{
   if(config.coordinator.phase!=="execution")
    fail("operational root revoked before protected A2A");
   const actual=config.coordinator.trustedOperationalAuthority();
-  if(root.credential_id!==actual.credential_id||
-     root.plan_digest!==actual.plan_digest)
+  if(issuedRoot.credential_id!==actual.credential_id||
+     issuedRoot.plan_digest!==actual.plan_digest)
    fail("operational root changed before protected A2A");
  };
  // An adapter into the ORIGINAL role runner, not an issuer: Rust already
@@ -136,7 +136,7 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
   async issueSpecializedChild(input){
    if(delivered)fail("preissued child cannot be replayed");
    delivered=true;
-   if(input.parent_credential_id!==root.credential_id||
+   if(input.parent_credential_id!==issuedRoot.credential_id||
       input.credential_id!==issued.credential_id||
       input.approved_task_id!==config.taskId||
       !same(input.selection,{role:config.role})||
@@ -152,7 +152,7 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
  });
  const result=await runner.issueAndRun({
   role:config.role,approved_task_id:config.taskId,
-  parent_credential_id:root.credential_id,
+  parent_credential_id:issuedRoot.credential_id,
   credential_id:issued.credential_id,
   valid_from:config.credential.valid_from,
   validity_seconds:config.credential.validity_seconds,
