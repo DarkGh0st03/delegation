@@ -615,11 +615,19 @@ impl CryptoRuntime {
                 != callers.identity_for_role(CallerRole::Orchestrator)?
             || !root.credential().hierarchy().is_empty()
         {
-            return Err(String::from("Issued credential is not the Engineer-to-Orchestrator root"));
+            return Err(String::from(
+                "Issued credential is not the Engineer-to-Orchestrator root",
+            ));
         }
-        let iat = root.credential().iat().parse::<u128>()
+        let iat = root
+            .credential()
+            .iat()
+            .parse::<u128>()
             .map_err(|_| String::from("Invalid issued root start time"))?;
-        let exp = root.credential().exp().parse::<u128>()
+        let exp = root
+            .credential()
+            .exp()
+            .parse::<u128>()
             .map_err(|_| String::from("Invalid issued root expiration"))?;
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -894,18 +902,21 @@ mod tests {
             .unwrap()
     }
 
-
     #[test]
     fn r128_gateway_reads_exact_issued_root_scope_and_current_status() {
         let registry = callers();
         let mut runtime = CryptoRuntime::new(&registry).unwrap();
         let issued = issue_root(&mut runtime, &registry);
         let gateway = registry.record_for_role(CallerRole::Gateway).unwrap();
-        let read = |rt: &CryptoRuntime, id: &str| rt.read_issued_root(
-            gateway, &registry, ReadCredentialStatusRequest {
-                credential_id: id.to_string(),
-            },
-        );
+        let read = |rt: &CryptoRuntime, id: &str| {
+            rt.read_issued_root(
+                gateway,
+                &registry,
+                ReadCredentialStatusRequest {
+                    credential_id: id.to_string(),
+                },
+            )
+        };
         let observed = read(&runtime, issued.id()).unwrap();
         assert_eq!(observed.credential_id, *issued.id());
         assert_eq!(observed.issuer_id, "did:thesis:engineer");
@@ -917,32 +928,44 @@ mod tests {
         let end = observed.exp_ns.parse::<u128>().unwrap();
         assert!(end > start);
         assert!(read(&runtime, "urn:unissued:root").is_err());
-        assert!(runtime.read_issued_root(
-            registry.record_for_role(CallerRole::Engineer).unwrap(),
-            &registry, ReadCredentialStatusRequest {
-                credential_id: issued.id().clone(),
-            },
-        ).is_err());
+        assert!(
+            runtime
+                .read_issued_root(
+                    registry.record_for_role(CallerRole::Engineer).unwrap(),
+                    &registry,
+                    ReadCredentialStatusRequest {
+                        credential_id: issued.id().clone(),
+                    },
+                )
+                .is_err()
+        );
 
         let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
-        let child = runtime.issue_child(
-            orchestrator, &registry, IssueChildRequest {
-                parent_credential_id: issued.id().clone(),
-                credential_id: String::from("urn:credential:r128-child"),
-                delegatee: CallerRole::Backend,
-                valid_from: String::from("2026-10-30T00:00:00Z"),
-                validity_seconds: 600,
-                credential_status: status(303),
-                permissions: vec![permission(Operation::ReadFile)],
-            },
-        ).unwrap();
+        let child = runtime
+            .issue_child(
+                orchestrator,
+                &registry,
+                IssueChildRequest {
+                    parent_credential_id: issued.id().clone(),
+                    credential_id: String::from("urn:credential:r128-child"),
+                    delegatee: CallerRole::Backend,
+                    valid_from: String::from("2026-10-30T00:00:00Z"),
+                    validity_seconds: 600,
+                    credential_status: status(303),
+                    permissions: vec![permission(Operation::ReadFile)],
+                },
+            )
+            .unwrap();
         assert!(read(&runtime, child.id()).is_err());
-        runtime.update_credential_status(
-            registry.record_for_role(CallerRole::Engineer).unwrap(),
-            UpdateCredentialStatusRequest {
-                credential_id: issued.id().clone(), status_set: true,
-            },
-        ).unwrap();
+        runtime
+            .update_credential_status(
+                registry.record_for_role(CallerRole::Engineer).unwrap(),
+                UpdateCredentialStatusRequest {
+                    credential_id: issued.id().clone(),
+                    status_set: true,
+                },
+            )
+            .unwrap();
         assert!(read(&runtime, issued.id()).is_err());
     }
 
