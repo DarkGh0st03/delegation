@@ -79,7 +79,7 @@ interface RuntimeTaskBinding {
   completing: boolean;
   /** Terminal validation FAILED, not a successful Test completion. */
   failedFinalized:boolean;
-  readonly failedRunner?:Readonly<TrustedRunnerFailure>;
+  failedRunner?:Readonly<TrustedRunnerFailure>;
 }
 
 export interface TrustedRunnerFailure {
