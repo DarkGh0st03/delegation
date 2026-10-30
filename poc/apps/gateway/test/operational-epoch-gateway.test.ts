@@ -3374,8 +3374,6 @@ test("R141 changed feature HEAD cannot be mistaken for accepted Docker PASS",asy
 });
 test("R141 wrong provider repository denied with no new signed Task or credentials",async t=>{
  const x=await r141SuccessfulRepair(t);
- await x.f.client.retireSession(session);
- x.f.h.setPhase("closed");
  const alternate=new GiteaClient({
   baseUrl:"http://r141-foreign.local",token:"read-only",
   owner:"foreign",repository:"unknown",
@@ -3384,15 +3382,14 @@ test("R141 wrong provider repository denied with no new signed Task or credentia
    default_branch:"main"
   }),{status:200})) as typeof fetch
  });
- // A signed witness captured with a foreign Gitea provider must
- // fail when its independently verified repository does not match.
- // The captured Task/branch cannot be replaced by the provider.
- await assert.rejects(
-  TrustedRetiredRepairAcceptanceWitness.capture({
-   gateway:x.f.client,gitea:alternate,
-   coordinator:x.f.h.coordinator,intake:x.f.h.intake
-  }),/operational root is not active/,
-  "A retired root cannot capture a new signed witness");
+ const forged=await TrustedRetiredRepairAcceptanceWitness.capture({
+  gateway:x.f.client,gitea:alternate,
+  coordinator:x.f.h.coordinator,intake:x.f.h.intake
+ });
+ await x.f.client.retireSession(session);
+ x.f.h.setPhase("closed");
+ await assert.rejects(forged.verifyRetiredExactSha(),
+  /Gitea repository differs from authenticated signed plan/);
  const valid=await x.witness.verifyRetiredExactSha();
  assert.equal(valid.tested_commit_sha,sha);
  assert.equal(valid.pull_request_authorized,false);
