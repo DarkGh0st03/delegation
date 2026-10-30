@@ -24,6 +24,8 @@ const ROLES=new Set(["orchestrator","backend","frontend","test"]);
 type Command=
   |{action:"activate";session_id:string;base_revision:string}
   |{action:"bind";session_id:string;plan_task_id:string;runtime_task_id:string;role:AgentRole}
+  |{action:"assert_repair_task_ready";session_id:string;plan_digest:string;
+     epoch:number;plan_task_id:string;role:AgentRole}
   |{action:"close";session_id:string}
   |{action:"retire";session_id:string}
   |{action:"retire_planning";session_id:string}
@@ -67,6 +69,14 @@ function validate(x:unknown):Command{
      typeof o.plan_task_id==="string"&&ID.test(o.plan_task_id)&&
      typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id)&&
      typeof o.role==="string"&&ROLES.has(o.role))return o as Command;
+  if(o.action==="assert_repair_task_ready"&&
+     exact(o,["action","session_id","plan_digest","epoch","plan_task_id","role"])&&
+     typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
+     Number.isSafeInteger(o.epoch)&&(o.epoch as number)>=2&&
+     (o.epoch as number)<=3&&
+     typeof o.plan_task_id==="string"&&ID.test(o.plan_task_id)&&
+     typeof o.role==="string"&&["backend","frontend","test"].includes(o.role))
+    return o as Command;
   if((o.action==="close"||o.action==="retire"||
       o.action==="retire_planning")&&
      exact(o,["action","session_id"]))return o as Command;
@@ -281,6 +291,9 @@ export async function createTrustedPlanIpcServer(config:{
         const plan_digest=await config.plans.activate(
           command.session_id,command.base_revision);
         response(res,200,{ok:true,plan_digest});
+      }else if(command.action==="assert_repair_task_ready"){
+        config.plans.assertRepairTaskReady(command);
+        response(res,200,{ok:true,ready:true});
       }else if(command.action==="bind"){
         config.plans.bindTask(command.session_id,command.plan_task_id,
           command.runtime_task_id,command.role);
@@ -503,6 +516,15 @@ export class TrustedPlanIpcClient{
       fail("Gateway returned invalid approved digest");
     }
     return result.plan_digest;
+  }
+  /** Non-authorizing live dependency check before any new child issuance. */
+  async assertRepairTaskReady(input:Readonly<{
+    session_id:string;plan_digest:string;epoch:number;
+    plan_task_id:string;role:"backend"|"frontend"|"test";
+  }>):Promise<void>{
+    const r=await this.#send({action:"assert_repair_task_ready",...input});
+    if(r.ready!==true||Object.keys(r).sort().join(",")!=="ok,ready")
+      fail("Gateway did not positively confirm current Task dependencies");
   }
   async bindTask(sessionId:string,planTaskId:string,runtimeTaskId:string,role:AgentRole){
     await this.#send({action:"bind",session_id:sessionId,plan_task_id:planTaskId,

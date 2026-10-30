@@ -108,6 +108,12 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
   approved_file_permissions:filePermissions,
   ...(config.role==="test"?{approved_run_tests:runTests}:{})
  };
+ // The true Gateway registry independently attests predecessor Tasks.
+ // An LLM-proposed or merely journalled DAG cannot make a Test ready.
+ await config.gateway.assertRepairTaskReady({
+  session_id:config.sessionId,plan_digest:config.planDigest,
+  epoch:config.epoch,plan_task_id:config.taskId,role:config.role
+ });
  // Pre-dispatch Gateway ID is generated only by the trusted owner.
  const runtimeTaskId="dispatch_"+randomBytes(16).toString("base64url");
  const issued=await issueAdmittedRepairTaskChild({

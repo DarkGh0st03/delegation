@@ -528,6 +528,37 @@ export class TrustedApprovedExecutionPlans {
     return this.#epochIntake===intake;
   }
 
+  /**
+   * R135: private source-free Gateway pre-dispatch dependency gate.  This
+   * does NOT bind a Task, grant a permission or complete any work. The
+   * caller cannot use a valid root VP to bypass signed DAG dependencies.
+   */
+  assertRepairTaskReady(input:Readonly<{
+    session_id:string;plan_digest:string;epoch:number;
+    plan_task_id:string;role:AgentRole;
+  }>):void{
+    const session=this.#sessions.get(ensureId(input.session_id,"session ID"));
+    ensureId(input.plan_task_id,"plan task ID");
+    if(!session?.active||!this.#remoteEpochInspector)
+      denied("Only active, independently admitted remote repair can dispatch");
+    this.#ensureUnexpired(session);
+    if(session.currentEpoch!==input.epoch||input.epoch<2||
+       [...this.#bindings.values()].some(b=>
+         b.sessionId===input.session_id&&b.planTaskId===input.plan_task_id))
+      denied("Repair epoch stale or Task previously bound");
+    const row=session.admittedEpochTasks.get(input.plan_task_id);
+    if(!row||row.epoch!==input.epoch||
+       row.digest!==input.plan_digest)
+      denied("Repair Task not admitted from current signed epoch");
+    const task=row.plan.tasks.find((x:any)=>x.id===input.plan_task_id);
+    if(!task||task.agent_id!==input.role||
+       !["backend","frontend","test"].includes(input.role))
+      denied("Repair Agent role not in trusted Gateway epoch");
+    if(task.depends_on.some((id:string)=>
+      !session.completedPlanTasks.has(id)))
+      denied("Repair Task dependencies not Gateway-attested");
+  }
+
   /** Bind the opaque A2A runtime task to ONE exact plan task and role. */
   bindTask(sessionId:string, planTaskId:string, runtimeTaskId:string, role:AgentRole):void {
     ensureId(sessionId,"session ID");
