@@ -50,3 +50,10 @@ test("R116 ignores third-party and injected stack filenames, and bounds cyclic c
  injected.stack="Error: fake\n  at eval (model_output.js:1:1)";
  assert.equal(safeApprovedDagFailureTrace(injected)[0].site,null);
 });
+
+test("R116 genuine Docker FAIL ends A2A Task without a false success",()=>{
+ assert.equal(classify(Error("Protected A2A task ended without completion")),
+  "a2a_task_not_completed");
+ assert.equal(classify(Error("Private source failure / credential payload")),
+  "unclassified");
+});
