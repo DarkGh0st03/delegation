@@ -818,6 +818,17 @@ export async function runNativePositiveApprovedDag({
     assert.equal(observedImplementationWriteKeys.size,0);
     if(realGeminiPilot)onPilotPhase?.("a2a_dispatch");
     const result=await dispatcher.executeApprovedDag({
+      ...(trustedOwnerRecovery?{
+        beforeTask:async()=>{
+          // A real Docker phase may last longer than the Gateway's durable
+          // operational lease. Only the authenticated owner IPC renews it;
+          // neither an A2A Task nor a model can choose its TTL or root.
+          await trustedOwnerRecovery.gateway.renewLease(sessionId,planDigest);
+        },
+        beforeCompletion:async()=>{
+          await trustedOwnerRecovery.gateway.renewLease(sessionId,planDigest);
+        }
+      }:{}),
       async invokeOrchestratorTask(planId,runtimeTaskId){
         if(planId===reviewTaskId){
           // Approval of the repository operation is a separate signed Task.
