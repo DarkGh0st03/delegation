@@ -20,6 +20,8 @@ import {prepareTrustedRepairFeedback} from
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
 import {TrustedOperationalRepairPlanner} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
+import {TrustedOperationalRepairSourceReader} from
+  "../../../packages/orchestrator-runtime/src/trusted-operational-repair-source-reader.ts";
 import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
@@ -84,6 +86,16 @@ function initialWithReview(withIndependentSibling=false){
  }
  return p;
 }
+function initialWithTrustedRead(){
+ const p=initial();
+ p.tasks.push({id:"read-diagnostics",agent_id:"backend",
+  title:"Inspect source",description:"Explicit pre-approved diagnostic read",
+  depends_on:["backend-original"],resources:[file]});
+ p.requested_permissions.push({id:"perm-read-diagnostics",
+  task_id:"read-diagnostics",agent_id:"backend",
+  resource:file,operation:"read_file",reason:"Scoped diagnostic read"});
+ return p;
+}
 function initialWithTestFileWrite(){
  const p=initial();
  p.tasks.find(t=>t.id==="test-original")!.resources.push(file);
@@ -103,9 +115,10 @@ const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
 }));
 async function harness(t:import("node:test").TestContext,
  options:{withReview?:boolean;withIndependentSibling?:boolean;
-  withTestWrite?:boolean}={}){
+  withTestWrite?:boolean;withRead?:boolean}={}){
  const parent=options.withReview?
   initialWithReview(options.withIndependentSibling):
+  options.withRead?initialWithTrustedRead():
   options.withTestWrite?initialWithTestFileWrite():initial();
  const dir=await mkdtemp(join(tmpdir(),"delegation-gateway-epoch-"));
  t.after(()=>rm(dir,{recursive:true,force:true}));
@@ -198,6 +211,15 @@ async function harness(t:import("node:test").TestContext,
      branch:req.arguments.branch,path:req.arguments.path,
      revision:sha,commit_sha:sha,blob_sha:"b",precondition_blob_sha:"a"
     };
+    if(req.tool==="read_file"){
+     const content="export function invoice(): number { return 42; }\n";
+     return {provider:"gitea" as const,performed:true as const,
+      tool:"read_file" as const,branch:req.arguments.branch,
+      path:req.arguments.path,revision:sha,
+      blob_sha:"b".repeat(40),last_commit_sha:sha,
+      size:Buffer.byteLength(content,"utf8"),
+      encoding:"utf-8" as const,content};
+    }
     if(req.tool==="run_tests"){
      const fail=nextRunnerFails;nextRunnerFails=false;
      const measured=fail?phases.map(p=>({
@@ -916,4 +938,100 @@ test("R107 feature reader cannot be rebound to another Coordinator/root or used 
  h.setPhase("closed");
  await assert.rejects(reader.read(repo,branch),
   /operational root is not active/);
+});
+
+/** The scripted Gitea metadata port is NOT a general source-read API. */
+const trustedFeature=(h:Awaited<ReturnType<typeof harness>>)=>
+ new TrustedOperationalFeatureHeadReader({
+  intake:h.intake,repository:repo,
+  giteaClient:new GiteaClient({
+   baseUrl:"http://trusted-gitea.local",token:"private-fixture-only",
+   owner:repo.owner,repository:repo.repository,
+   fetchFn:(async(url:unknown)=>{
+    if(String(url).endsWith("/repos/sample/invoice-service"))
+     return new Response(JSON.stringify({owner:{login:repo.owner},
+      name:repo.repository,full_name:"sample/invoice-service",
+      default_branch:"main"}),{status:200});
+    return new Response(JSON.stringify({
+     name:branch,commit:{id:sha}
+    }),{status:200});
+   }) as typeof fetch
+  })
+ });
+test("R108 scoped read after verified FAIL traverses actual Gateway Prepare/VP/OPA/Execute",async(t)=>{
+ const h=await harness(t,{withRead:true});
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// buggy"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ h.setRunnerFailure();await h.invoke("task-test","test","run_tests",runner);
+ h.gates.confirmTestValidationFailure("task-test");
+ let signed=0;
+ const feature=trustedFeature(h);
+ const reader=new TrustedOperationalRepairSourceReader({
+  gateway:h.runtime,intake:h.intake,featureHeadReader:feature,
+  sessionId:session,runtimeTaskId:"source-read-task",
+  agentRole:"backend",expectedTestedSha:sha,
+  issueSignedVp:async challenge=>{
+   signed++;
+   assert.equal(challenge.required_permission.resource,file);
+   assert.equal(challenge.required_permission.operation,"read_file");
+   assert.ok(challenge.challenge.length>20);
+   return "signed.fixture.vp";
+  }
+ });
+ await assert.rejects(reader.read("src/invoices.ts"),
+  /outside approved plan|Unknown|task/i);
+ assert.equal(signed,0);
+ assert.equal(h.provider,3);
+ h.gates.bindTask(session,"read-diagnostics","source-read-task","backend");
+ const source=await reader.read("src/invoices.ts");
+ assert.equal(source.status,"gateway_verified_read");
+ assert.equal(source.revision,sha);
+ assert.equal(source.branch,branch);
+ assert.match(source.content,/invoice/);
+ assert.ok(source.bytes>0);
+ assert.equal(signed,1);
+ assert.equal(h.provider,4);
+ assert.equal(h.verified,4);
+ assert.equal(h.policy,4);
+ assert.equal(Object.isFrozen(source),true);
+ await h.gates.confirmTaskCompletion("source-read-task");
+ await assert.rejects(reader.read("src/invoices.ts"),
+  /outside approved plan|completed/);
+ assert.equal(signed,1);
+});
+test("R108 lacking an exact root read grant blocks any Gateway or VP operation",async(t)=>{
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ let signCalls=0;
+ const reader=new TrustedOperationalRepairSourceReader({
+  gateway:h.runtime,intake:h.intake,featureHeadReader:trustedFeature(h),
+  sessionId:session,runtimeTaskId:"backend-task",
+  agentRole:"backend",expectedTestedSha:sha,
+  issueSignedVp:async()=>{signCalls++;return "signed.fixture.vp";}
+ });
+ await assert.rejects(reader.read("src/invoices.ts"),
+  /read_file resource absent from issued Rust root/);
+ assert.equal(signCalls,0);assert.equal(h.provider,0);
+ await assert.rejects(reader.read("../secrets.ts"),/invalid repository relative file path/);
+ assert.equal(signCalls,0);
+});
+test("R108 revoked root denies source read before any VP or provider work",async(t)=>{
+ const h=await harness(t,{withRead:true});
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"read-diagnostics","source-read-task","backend");
+ h.setPhase("closed");
+ const reader=new TrustedOperationalRepairSourceReader({
+  gateway:h.runtime,intake:h.intake,featureHeadReader:trustedFeature(h),
+  sessionId:session,runtimeTaskId:"source-read-task",
+  agentRole:"backend",expectedTestedSha:sha,
+  issueSignedVp:async()=>{throw Error("VP must not be created");}
+ });
+ await assert.rejects(reader.read("src/invoices.ts"),/operational root is not active/);
+ assert.equal(h.provider,0);
 });
