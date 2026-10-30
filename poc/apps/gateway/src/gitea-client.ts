@@ -442,7 +442,8 @@ export class GiteaClient {
       if(p.number!==number||p.state!=="open"||
          p.merged!==false||p.draft!==true||
          h.ref!==headBranch||h.sha!==expectedHeadSha||
-         b.ref!==baseBranch)
+         b.ref!==baseBranch||
+         (typeof b.sha==="string"&&b.sha!==base.commit_sha))
         throw new ProviderUnavailableError(
          "Gitea draft PR is not open, unmerged or pinned to accepted SHA");
       return p;
@@ -453,9 +454,11 @@ export class GiteaClient {
       "Gitea confirmed draft PR"
     );
     const after=await this.getBranchMetadata(headBranch);
-    if(after.commit_sha!==expectedHeadSha)
+    const afterBase=await this.getBranchMetadata(baseBranch);
+    if(after.commit_sha!==expectedHeadSha||
+       afterBase.commit_sha!==base.commit_sha)
       throw new ProviderUnavailableError(
-       "Gitea branch moved after draft PR creation");
+       "Gitea head or base branch moved after draft PR creation");
     const url=typeof confirmed.html_url==="string"&&confirmed.html_url.trim()
       ?confirmed.html_url:undefined;
     return Object.freeze({
