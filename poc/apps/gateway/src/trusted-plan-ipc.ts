@@ -10,7 +10,7 @@ import {dirname,resolve} from "node:path";
 import {constants} from "node:fs";
 import type {AgentRole} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
-import type {TrustedApprovedExecutionPlans} from "./approved-execution-plans.ts";
+import type {TrustedApprovedExecutionPlans,TrustedRunnerFailure} from "./approved-execution-plans.ts";
 import {TrustedPlanningRevisions} from "./planning-revisions.ts";
 
 const ROUTE="/v1/private-plan-control";
@@ -29,7 +29,9 @@ type Command=
   |{action:"begin_planning";session_id:string;ttl_ms:number}
   |{action:"lease_status"}
   |{action:"renew_lease";session_id:string;plan_digest:string}
-  |{action:"complete";runtime_task_id:string;observation:TrustedCompletionObservation};
+  |{action:"complete";runtime_task_id:string;observation:TrustedCompletionObservation}
+  |{action:"confirm_test_failure";session_id:string;
+     root_plan_digest:string;runtime_task_id:string};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
 function exact(x:unknown,fields:string[]):boolean{
@@ -60,11 +62,65 @@ function validate(x:unknown):Command{
      Number.isSafeInteger(o.ttl_ms)&&
      (o.ttl_ms as number)>=1&&(o.ttl_ms as number)<=900_000)
     return o as Command;
+  if(o.action==="confirm_test_failure"&&
+     exact(o,["action","session_id","root_plan_digest","runtime_task_id"])&&
+     typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
+     typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id))
+    return o as Command;
   if(o.action==="renew_lease"&&exact(o,["action","session_id","plan_digest"])&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest))
     return o as Command;
   return fail("unknown or malformed command");
 }
+
+/** Gateway-issued metadata only: no stdout/stderr, source, VP, DC or permission.
+ * The allowlist protects both IPC serialization and the remote host client. */
+const FAILURE_PHASES=new Set([
+  "typecheck","backend_tests","frontend_tests","build",
+  "playwright_e2e","researcher_acceptance"
+]);
+const FAILURE_KEYS=[
+  "status","session_id","root_plan_digest","request_id","plan_task_id",
+  "runtime_task_id","epoch_version","branch","tested_commit_sha",
+  "first_failed_phase","typecheck_error_codes"
+];
+function boundedTestFailure(
+  value:unknown,pins:Readonly<{
+    session_id:string;root_plan_digest:string;runtime_task_id:string;
+  }>
+):Readonly<TrustedRunnerFailure>{
+  if(!exact(value,FAILURE_KEYS))fail("invalid Gateway Test FAIL receipt");
+  const r=value as Record<string,unknown>;
+  if(r.status!=="validation_failed"||
+     r.session_id!==pins.session_id||
+     r.root_plan_digest!==pins.root_plan_digest||
+     r.runtime_task_id!==pins.runtime_task_id||
+     typeof r.request_id!=="string"||!ID.test(r.request_id)||
+     typeof r.plan_task_id!=="string"||!ID.test(r.plan_task_id)||
+     !Number.isSafeInteger(r.epoch_version)||
+     (r.epoch_version as number)<1||(r.epoch_version as number)>3||
+     typeof r.branch!=="string"||r.branch.length>160||
+     !/^[A-Za-z0-9][A-Za-z0-9._/%-]*$/u.test(r.branch)||
+     typeof r.tested_commit_sha!=="string"||!SHA.test(r.tested_commit_sha)||
+     typeof r.first_failed_phase!=="string"||
+     !FAILURE_PHASES.has(r.first_failed_phase)||
+     !Array.isArray(r.typecheck_error_codes)||
+     r.typecheck_error_codes.length>16||
+     r.typecheck_error_codes.some(
+       c=>typeof c!=="string"||!/^TS[0-9]{4}$/u.test(c)))
+    fail("Gateway Test FAIL receipt failed source-free identity validation");
+  return Object.freeze({
+    status:"validation_failed" as const,
+    session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+    request_id:r.request_id as string,plan_task_id:r.plan_task_id as string,
+    runtime_task_id:pins.runtime_task_id,epoch_version:r.epoch_version as number,
+    branch:r.branch as string,tested_commit_sha:r.tested_commit_sha as string,
+    first_failed_phase:r.first_failed_phase as string,
+    typecheck_error_codes:Object.freeze(
+      [...r.typecheck_error_codes] as string[])
+  });
+}
+
 function sign(secret:Buffer,timestamp:string,nonce:string,body:Buffer):string{
   const digest=createHash("sha256").update(body).digest("hex");
   return createHmac("sha256",secret)
@@ -194,6 +250,16 @@ export async function createTrustedPlanIpcServer(config:{
       }else if(command.action==="complete"){
         await config.plans.confirmTaskCompletion(command.runtime_task_id,command.observation);
         response(res,200,{ok:true});
+      }else if(command.action==="confirm_test_failure"){
+        // Genuine Gateway state proves completed predecessors, a Test role,
+        // exact Runner FAIL, no conflicting PASS and no in-flight effects.
+        // The original Engineer root pins are checked BEFORE finalization.
+        const pins={session_id:command.session_id,
+          root_plan_digest:command.root_plan_digest,
+          runtime_task_id:command.runtime_task_id};
+        const receipt=config.plans.confirmTestValidationFailure(
+          command.runtime_task_id,pins);
+        response(res,200,{ok:true,failure:boundedTestFailure(receipt,pins)});
       }else{
         config.plans.closeSession(command.session_id);
         response(res,200,{ok:true});
@@ -374,6 +440,14 @@ export class TrustedPlanIpcClient{
   }
   async closeSession(sessionId:string){
     await this.#send({action:"close",session_id:sessionId});
+  }
+  /** R114: owner-only, one-use terminal confirmation of a real Runner FAIL.
+   * This is evidence, never authority or an invitation to re-run a Task. */
+  async confirmVerifiedTestFailure(pins:Readonly<{
+    session_id:string;root_plan_digest:string;runtime_task_id:string;
+  }>):Promise<Readonly<TrustedRunnerFailure>>{
+    const result=await this.#send({action:"confirm_test_failure",...pins});
+    return boundedTestFailure(result.failure,pins);
   }
   async confirmTaskCompletion(runtimeTaskId:string,
     observation?:TrustedCompletionObservation):Promise<void>{

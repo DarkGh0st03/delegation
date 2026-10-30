@@ -701,9 +701,18 @@ export class TrustedApprovedExecutionPlans {
    * Gateway-observed Docker failure metadata is eligible. The owner may then
    * request a distinct, attenuated repair epoch under the same Rust root.
    */
-  confirmTestValidationFailure(runtimeTaskId:string):
+  confirmTestValidationFailure(runtimeTaskId:string,expected?:Readonly<{
+    session_id:string;root_plan_digest:string;
+  }>):
     Readonly<TrustedRunnerFailure>{
     const {session,binding}=this.#activeBinding(runtimeTaskId);
+    // R114: the remote Engineer's exact session/root-plan pins are checked
+    // BEFORE marking the Test failure final. Never let an authenticated but
+    // mismatched Task ID finalize a different signed session's Runner FAIL.
+    if(expected&&(expected.session_id!==session.sessionId||
+       expected.root_plan_digest!==session.digest||
+       binding.sessionId!==expected.session_id))
+      denied("Verified Test failure belongs to a different signed root");
     if(binding.agent!=="test"||binding.completed||binding.completing||
        binding.failedFinalized||!binding.failedRunner)
       denied("No unique verified failed Runner Test Task");

@@ -867,3 +867,98 @@ test("restarted Gateway IPC retains durable Planning retirement while Engineer r
   const newSession=await restarted.revision.begin("new-after-boot",5000);
   assert.equal(newSession.base_revision,SHA);
 });
+
+test("R114 authenticated IPC transfers only an exact root-bound failed Test receipt",async t=>{
+  const home=await mkdtemp(join(tmpdir(),"r114-failed-runner-ipc-"));
+  const privateDir=join(home,"private");
+  await mkdir(privateDir,{mode:0o700});
+  const socketPath=join(privateDir,"control.sock");
+  const secretFile=join(privateDir,"secret.hex");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+  const pins={session_id:"r114-session",root_plan_digest:"b".repeat(64),
+    runtime_task_id:"r114-test-task"};
+  let attempts=0,finalizations=0;
+  const fixture={
+    status:"validation_failed",...pins,
+    request_id:"r114-gateway-request",plan_task_id:"test",
+    epoch_version:1,branch:"feature/r114",tested_commit_sha:"a".repeat(40),
+    first_failed_phase:"typecheck",typecheck_error_codes:["TS2339"]
+  };
+  const plans={
+    operationalLeaseConfigured:()=>true,
+    operationalSessionDurableConfigured:()=>true,
+    confirmTestValidationFailure(id:string,expected:unknown){
+      attempts++;
+      if(id!==pins.runtime_task_id||
+         JSON.stringify(expected)!==JSON.stringify(pins))
+        throw Error("mismatched owner");
+      if(finalizations!==0)throw Error("already terminal");
+      finalizations++;
+      return fixture;
+    }
+  } as any;
+  const server=await createTrustedPlanIpcServer({socketPath,secretFile,plans});
+  await server.start();
+  t.after(async()=>{await server.close();await rm(home,{recursive:true,force:true});});
+  const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+  // A raw Unix request has no signed HMAC envelope and cannot finalize.
+  assert.equal(await rawSocket(socketPath,JSON.stringify({
+    action:"confirm_test_failure",...pins
+  }),{}),403);
+  assert.equal(attempts,0);
+  for(const input of [
+    {...pins,session_id:"r114-foreign"},
+    {...pins,root_plan_digest:"c".repeat(64)},
+    {...pins,runtime_task_id:"r114-foreign-test"}
+  ])await assert.rejects(client.confirmVerifiedTestFailure(input),
+    /Gateway trusted control denied/);
+  assert.equal(finalizations,0);
+  const result=await client.confirmVerifiedTestFailure(pins);
+  assert.deepEqual(result,fixture);
+  assert.ok(Object.isFrozen(result));
+  assert.ok(Object.isFrozen(result.typecheck_error_codes));
+  for(const forbidden of ["log","stderr","source","permission","signed_vp",
+    "credential","repair_approved","success"])
+    assert.ok(!(forbidden in result));
+  assert.equal(finalizations,1);
+  await assert.rejects(client.confirmVerifiedTestFailure(pins),
+    /Gateway trusted control denied/);
+  assert.equal(finalizations,1);
+  // This fixture exercises IPC authentication, shape and replay only.
+  // Gateway provenance and role enforcement have independent real registry tests.
+});
+
+test("R114 IPC denies malformed or model-controlled Test failure evidence",async t=>{
+  const home=await mkdtemp(join(tmpdir(),"r114-malformed-receipt-"));
+  await mkdir(join(home,"private"),{mode:0o700});
+  const socketPath=join(home,"private","control.sock");
+  const secretFile=join(home,"private","secret.hex");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+  const pins={session_id:"r114-shape",root_plan_digest:"b".repeat(64),
+    runtime_task_id:"r114-test"};
+  let returns=0;
+  const plans={
+    operationalLeaseConfigured:()=>true,
+    confirmTestValidationFailure(){
+      returns++;
+      return {
+        status:"validation_failed",...pins,request_id:"request-1",
+        plan_task_id:"test",epoch_version:1,branch:"feature/r114",
+        tested_commit_sha:SHA,first_failed_phase:"typecheck",
+        typecheck_error_codes:["TS2339"],raw_model_prompt:"private source"
+      };
+    }
+  } as any;
+  const server=await createTrustedPlanIpcServer({socketPath,secretFile,plans});
+  await server.start();
+  t.after(async()=>{await server.close();await rm(home,{recursive:true,force:true});});
+  const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+  await assert.rejects(client.confirmVerifiedTestFailure(pins),
+    /Gateway trusted control denied/);
+  assert.equal(returns,1);
+  // A caller cannot smuggle a replacement verdict or extra key into IPC.
+  await assert.rejects(client.confirmVerifiedTestFailure({
+    ...pins,source:"agent-claims-fail"
+  } as any),/unknown or malformed command/);
+  assert.equal(returns,1);
+});

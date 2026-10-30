@@ -1385,3 +1385,36 @@ test("R112 legacy dispatcher without trusted recovery opts out and remains termi
  await assert.rejects(x.result,/Protected A2A task ended without completion/);
  assert.equal(x.h.coordinator.phase,"closed");
 });
+
+test("R114 real Gateway pins original root before terminal Test FAIL finalization",async(t)=>{
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();
+ await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// bug"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ h.setRunnerFailure();
+ await h.invoke("task-test","test","run_tests",runner);
+ const rootPlan=planDigest(h.parent);
+ assert.throws(()=>h.gates.confirmTestValidationFailure("task-test",{
+  session_id:"foreign-session",root_plan_digest:rootPlan
+ }),/different signed root/);
+ assert.throws(()=>h.gates.confirmTestValidationFailure("task-test",{
+  session_id:session,root_plan_digest:"b".repeat(64)
+ }),/different signed root/);
+ // Wrong bindings do not consume the Gateway's one terminal FAIL.
+ const verified=h.gates.confirmTestValidationFailure("task-test",{
+  session_id:session,root_plan_digest:rootPlan
+ });
+ assert.equal(verified.status,"validation_failed");
+ assert.equal(verified.session_id,session);
+ assert.equal(verified.root_plan_digest,rootPlan);
+ assert.throws(()=>h.gates.confirmTestValidationFailure("task-test",{
+  session_id:session,root_plan_digest:rootPlan
+ }),/No unique verified failed Runner/);
+});
