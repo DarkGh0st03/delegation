@@ -10,6 +10,8 @@ on:
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
       - 'poc/apps/test-runner-controller/scripts/r139-real-repair-evidence*.mjs'
       - 'poc/apps/test-runner-controller/src/**'
+      - 'poc/apps/gateway/src/gitea-client.ts'
+      - 'poc/apps/gateway/test/gitea-client.test.ts'
       - 'poc/apps/test-runner-controller/fixtures/**'
       - 'poc/runner/acceptance/**'
   workflow_dispatch:
@@ -41,6 +43,8 @@ jobs:
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
       - name: R139 strict non-authorizing proof regressions
         run: node --test poc/apps/test-runner-controller/scripts/r139-real-repair-evidence.test.mjs
+      - name: R143 strict draft PR Gitea contract regression
+        run: node --experimental-strip-types --test poc/apps/gateway/test/gitea-client.test.ts
       - name: Preload pinned disposable images
         run: |
           docker pull docker.gitea.com/gitea:28.0.0

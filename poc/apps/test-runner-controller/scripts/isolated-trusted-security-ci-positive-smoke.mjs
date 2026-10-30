@@ -26,6 +26,7 @@ import {setTimeout as sleep} from "node:timers/promises";
 import {IsolatedDockerRunnerExecutor} from "../src/isolated-executor.ts";
 import {verifyR139RealRepairEvidence}
   from "./r139-real-repair-evidence.mjs";
+import {GiteaClient} from "../../gateway/src/gitea-client.ts";
 import {TrustedGiteaSecurityCi,SECURITY_STATUS_CONTEXT,
   TRUSTED_PROJECT_PHASES} from "../src/trusted-security-ci.ts";
 import {getApprovedOfflineScenario} from
@@ -442,29 +443,27 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
  ]);
  assert.equal(main.commit.id,mainSha);
  assert.equal(feature.commit.id,repairedSha);
- // Fixture-only disposable PR: no production authority and NEVER merged.
- // Its creation is permitted here ONLY after both real Docker observations.
- const pr=await api(base,repository+"/pulls",{
-  method:"POST",authorization:creds.admin,
-  label:"R139 disposable review only",
-  body:{
-   head:repairBranch,base:"main",
-   title:"WIP: R139 disposable Docker FAIL-to-PASS repair verification",
-   body:"Scripted isolated fixture. Not Engineer-approved or production authority. "+
-    "Original exact SHA: "+failedSha+"; repaired tested SHA: "+repairedSha,
-   draft:true
-  }
+ // R143 uses the SAME strict, one-shot draft PR contract as the
+ // Gateway client, with a disposable repository-scoped publisher PAT.
+ // The client independently checks HEAD, draft/open/merged=false,
+ // GET /pulls/number and HEAD again. No merge API is available here.
+ const prClient=new GiteaClient({
+  baseUrl:base,owner:"thesis",repository:"iam-console-poc",
+  token:creds.statusToken
  });
- if(pr.state!=="open"||pr.merged!==false||
-    pr.head?.ref!==repairBranch||pr.head?.sha!==repairedSha||
-    pr.base?.ref!=="main")
-  throw Error("R139 disposable PR must remain open and match tested SHA");
- const verified=await api(base,repository+"/pulls/"+pr.number,{
-  authorization:creds.admin,label:"R139 read-only PR proof"
- });
- assert.equal(verified.state,"open");
- assert.equal(verified.merged,false);
- assert.equal(verified.head?.sha,repairedSha);
+ const pr=await stage("r143_strict_real_draft_PR_after_runner_pass",()=>
+  prClient.createDraftPullRequest(
+   repairBranch,"main",
+   "WIP: R139 disposable Docker FAIL-to-PASS repair verification",
+   repairedSha,
+   "Scripted isolated fixture. Not Engineer-approved or production authority. "+
+    "Original exact SHA: "+failedSha+"; repaired tested SHA: "+repairedSha
+  ),60000);
+ assert.equal(pr.draft,true);
+ assert.equal(pr.open,true);
+ assert.equal(pr.merged,false);
+ assert.equal(pr.head_branch,repairBranch);
+ assert.equal(pr.head_revision,repairedSha);
  assert.equal((await api(base,repository+"/branches/main",{
   authorization:creds.admin,label:"R139 main unchanged after review"
  })).commit.id,mainSha);
