@@ -512,6 +512,11 @@ export class TrustedApprovedExecutionPlans {
     if(result.provider==="runner"&&result.status==="fail"){
       const {session,binding}=this.#activeBinding(record.task_id);
       const phases=result.phases;
+      // The failing Runner must be the only outstanding provider effect.
+      // Otherwise an earlier authorized write could complete after the
+      // failure and invalidate the reported tested SHA.
+      if(binding.inFlightEffects!==1)
+        denied("Concurrent provider effect makes Runner failure ambiguous");
       if(binding.agent!=="test"||record.agent_role!=="test"||
          binding.failedRunner!==undefined||binding.completed||
          binding.completing||result.tool!=="run_tests"||
@@ -820,7 +825,7 @@ export class TrustedApprovedExecutionPlans {
       if(b?.failedFinalized){
         if(task.agent_id!=="test"||b.agent!=="test"||
            b.completed||b.completing||b.inFlightEffects!==0||
-           !b.failedRunner||b.successfulRequests.size!==0)
+           !b.failedRunner)
           denied("Only corroborated failed Test Tasks may terminate an epoch");
         failed.add(task.id);
       }
@@ -841,6 +846,24 @@ export class TrustedApprovedExecutionPlans {
     }
     for(const task of previous.tasks){
       const b=bindings.get(task.id)?.[0];
+      if(failed.has(task.id)&&b?.failedRunner){
+        // A Test Agent may have made an authorized test-file edit before
+        // executing the Runner. The exact tested SHA must correspond to
+        // the LAST observed file mutation. Read-only provider effects do
+        // not invalidate a failed result.
+        const writes=[...b.successfulRequests.values()].filter(e=>
+          e.tool==="create_file"||e.tool==="update_file");
+        const last=writes.at(-1)?.execution;
+        if(writes.some(w=>w.execution.provider!=="gitea"||
+             !("branch" in w.execution)||
+             w.execution.branch!==session.workBranch)||
+           (last!==undefined&&
+            (!("commit_sha" in last)||
+             last.commit_sha!==b.failedRunner.tested_commit_sha))||
+           [...b.successfulRequests.values()].some(e=>
+             !["read_file","create_file","update_file"].includes(e.tool)))
+          denied("Failed Test revision does not cover verified provider mutations");
+      }
       if(blocked.has(task.id)){
         // A planned PR (or its own dependent descendants) is allowed to
         // be unbound, but never allowed to have an actual provider effect.
