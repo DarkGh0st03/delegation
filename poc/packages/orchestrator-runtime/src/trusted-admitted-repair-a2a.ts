@@ -11,6 +11,11 @@ import type {DeterministicSubtask} from "@thesis/agent-runtime";
 import {DelegatedA2ARoleRunner,type ChildAuthorityIssuerPort,
  type ProtectedA2AClientPort} from "./a2a-workflow.ts";
 import {issueAdmittedRepairTaskChild} from "./trusted-admitted-repair-child.ts";
+import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
+import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
+import {TrustedPlanIpcClient} from
+ "../../../apps/gateway/src/trusted-plan-ipc.ts";
+import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 
 type RepairInput=Parameters<typeof issueAdmittedRepairTaskChild>[0];
 type Role=RepairInput["role"];
@@ -18,6 +23,7 @@ const fail=(s:string):never=>{throw Error("R135 repair A2A NO-GO: "+s);};
 const pair=(x:{operation:string;resource:string})=>
  JSON.stringify([x.operation,x.resource]);
 const SHA=/^[a-f0-9]{64}$/u;
+const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 function same(a:unknown,b:unknown){return JSON.stringify(a)===JSON.stringify(b);}
 
 export async function dispatchTrustedAdmittedRepairA2A(config:
@@ -174,5 +180,70 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
   gateway_task_completed:false as const,
   docker_pass_verified:false as const,
   a2a_result:result
+ });
+}
+
+/**
+ * R136: post-A2A Gateway confirmation. This is never called from a
+ * model/agent tool. A completed A2A Artifact has ZERO completion authority:
+ * the live Gateway registry must already contain signed-VP/OPA-approved
+ * Gitea or Docker provider effects, then independently attest them.
+ *
+ * Failed/uncertain confirmation leaves Task uncompleted and is not retried
+ * automatically by the A2A runner.
+ */
+export async function confirmTrustedAdmittedRepairA2A(config:Readonly<{
+ receipt:Awaited<ReturnType<typeof dispatchTrustedAdmittedRepairA2A>>;
+ gateway:TrustedPlanIpcClient;
+ intake:TrustedOperationalEpochIntake;
+ coordinator:Pick<TrustedExecutionCoordinator,
+  "phase"|"trustedOperationalAuthority">;
+ sessionId:string;
+ planDigest:string;
+ epoch:number;
+}>):Promise<Readonly<{
+ status:"gateway_confirmed_repair_task_not_docker_acceptance";
+ session_id:string;task_id:string;runtime_task_id:string;
+ epoch:number;gateway_task_completed:true;docker_pass_verified:false;
+}>>{
+ const r=config?.receipt;
+ if(r?.status!=="a2a_artifact_unconfirmed"||
+    r.gateway_task_completed!==false||r.docker_pass_verified!==false||
+    r.epoch!==config.epoch||config.epoch<2||config.epoch>3||
+    !ID.test(config.sessionId)||!ID.test(r.task_id)||
+    !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(r.runtime_task_id)||
+    !SHA.test(config.planDigest)||
+    !(config.gateway instanceof TrustedPlanIpcClient)||
+    !(config.intake instanceof TrustedOperationalEpochIntake)||
+    config.coordinator?.phase!=="execution")
+  fail("only current owner-held unconfirmed repair A2A may seek Gateway completion");
+ config.intake.assertSameCoordinator(config.coordinator);
+ const history=await config.intake.verifiedEpochHistory();
+ const last=history.at(-1);
+ if(history.length!==config.epoch||!last||
+    last.plan_digest!==config.planDigest||
+    last.plan.session_id!==config.sessionId||
+    !last.plan.tasks.some((task:{id:string})=>task.id===r.task_id))
+  fail("completion Task not pinned to the current signed repair epoch");
+ const root=config.coordinator.trustedOperationalAuthority();
+ // This only conveys an A2A observation; Gateway's trusted attestor
+ // refuses it unless independently corroborated provider effects exist.
+ await config.gateway.confirmTaskCompletion(r.runtime_task_id,
+  observedA2ACompletion(r.a2a_result,r.runtime_task_id));
+ if(config.coordinator.phase!=="execution")
+  fail("original operational root retired during Task completion");
+ const after=await config.intake.verifiedEpochHistory();
+ const actual=config.coordinator.trustedOperationalAuthority();
+ if(after.length!==history.length||
+    after.at(-1)?.plan_digest!==last.plan_digest||
+    root.credential_id!==actual.credential_id||
+    root.plan_digest!==actual.plan_digest)
+  fail("root or epoch changed during Gateway confirmation");
+ return Object.freeze({
+  status:"gateway_confirmed_repair_task_not_docker_acceptance" as const,
+  session_id:config.sessionId,task_id:r.task_id,
+  runtime_task_id:r.runtime_task_id,epoch:r.epoch,
+  gateway_task_completed:true as const,
+  docker_pass_verified:false as const
  });
 }
