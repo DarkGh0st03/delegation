@@ -22,6 +22,8 @@ import {TrustedOperationalRepairPlanner} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
 import {TrustedOperationalRepairSourceReader} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-source-reader.ts";
+import {TrustedApprovedA2ADispatcher} from
+  "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {TrustedApprovedPlanChildAuthorityIssuer} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-child-issuer.ts";
 import {TrustedChildIssuanceJournal} from
@@ -167,11 +169,22 @@ async function harness(t:import("node:test").TestContext,
   ])).values()]
  };
  let phase="execution";
+ let gates:TrustedApprovedExecutionPlans;
  const coordinator={
   get phase(){return phase;},
   trustedOperationalAuthority(){
    if(phase!=="execution")throw Error("root retired");
    return structuredClone(rootAuthority);
+  },
+  async bindDispatchedTask(taskId:string,id:string,role:any){
+   gates.bindTask(session,taskId,id,role);
+  },
+  async confirmTask(id:string,observation:any){
+   await gates.confirmTaskCompletion(id,observation);
+  },
+  async closeExecution(){
+   gates.retireSession(session);
+   phase="closed";
   }
  };
  const journal=new TrustedOperationalEpochJournal({
@@ -185,7 +198,7 @@ async function harness(t:import("node:test").TestContext,
  });
  let provider=0,verified=0,policy=0,attested=0;
  let nextRunnerFails=false;
- const gates=new TrustedApprovedExecutionPlans({
+ gates=new TrustedApprovedExecutionPlans({
   repository:repo,engineerDid:engineer,
   approvals:signedStore,operationalEpochIntake:intake,
   completionAttestor:{async confirmCompleted(e){
@@ -293,7 +306,7 @@ async function harness(t:import("node:test").TestContext,
   await gates.confirmTaskCompletion("task-test");
  }
  return {gates,intake,runtime,prepared,invoke,initialPass,
-  coordinator,rootAuthority,dir,
+  coordinator,rootAuthority,dir,signedStore,parent,approved,
   setRunnerFailure:()=>{nextRunnerFails=true;},
   setPhase:(s:string)=>{phase=s;},
   get provider(){return provider;},get verified(){return verified;},
