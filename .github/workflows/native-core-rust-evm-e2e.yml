@@ -130,7 +130,7 @@ jobs:
           cat /tmp/native-evm-gateway.log
           exit 1
       - name: Verify actual signed VP, OPA, replay and EVM revocation
-        run: node poc/apps/gateway/native-test/native-real-evm-e2e.mjs
+        run: node --experimental-strip-types poc/apps/gateway/native-test/native-real-evm-e2e.mjs
       - name: Verify scoped child Rust DC and signed plan A2A with native Gateway
         run: node --experimental-strip-types poc/apps/gateway/native-test/native-approved-scoped-child-evm-e2e.mjs
       - name: Show trusted service diagnostics if verification fails
