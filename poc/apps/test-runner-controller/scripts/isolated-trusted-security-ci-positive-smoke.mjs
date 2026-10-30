@@ -411,19 +411,30 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
   authorization:creds.admin,label:"r139_no_pr_after_fail"});
  assert.ok(!prsBefore.some(p=>p.head?.ref===repairBranch),
   "R139 must never open review before Docker PASS");
- await writeFile(target,before,"utf8");
- git(["add","--",file],{cwd:workTree,label:"stage R139 repair"});
- git(["-c","user.name=R139 Fixture",
-  "-c","user.email=r139@localhost.invalid",
-  "commit","-m","fix: resolve original R139 regression in new repair Task"],{
-  cwd:workTree,label:"commit R139 repaired SHA"});
- const repairedSha=git(["rev-parse","HEAD"],{cwd:workTree,
-  label:"resolve immutable R139 repaired SHA"});
+ // R150.1: route the *repair* through the same Gitea provider API
+ // that the production Gateway uses for authorized update_file effects.
+ // A git push is only used above to inject the disposable failing fixture.
+ // This provider-level test does NOT yet attest a signed Gateway Child DC.
+ const repairClient=new GiteaClient({
+  baseUrl:base,owner:"thesis",repository:"iam-console-poc",
+  token:creds.statusToken
+ });
+ const observedBefore=await repairClient.getBranchMetadata(repairBranch);
+ assert.equal(observedBefore.commit_sha,failedSha,
+  "Repair may start only from the exact Docker-failed Gitea SHA");
+ const mutation=await stage("r150_provider_update_file_repair",()=>
+  repairClient.updateFile(repairBranch,file,before,
+   "fix: resolve original R150 TypeScript regression"),60000);
+ assert.equal(mutation.previous_revision,failedSha,
+  "Provider repair must record the failed revision as its precondition");
+ assert.match(mutation.precondition_blob_sha,/^[a-f0-9]{40}$/u);
+ const repairedSha=mutation.commit_sha;
  assert.match(repairedSha,/^[a-f0-9]{40}$/u);
  assert.notEqual(repairedSha,failedSha);
  assert.notEqual(repairedSha,mainSha);
- git(["push",remote,"HEAD:refs/heads/"+repairBranch],{
-  cwd:workTree,auth:creds.admin,label:"push R139 repaired branch"});
+ const observedAfter=await repairClient.getBranchMetadata(repairBranch);
+ assert.equal(observedAfter.commit_sha,repairedSha,
+  "Gitea provider repair must be the currently observed branch HEAD");
  const oldTaskRequest={...failedRequest,request_id:randomUUID()};
  await assert.rejects(executor.run(oldTaskRequest),
   /exact-SHA precondition failed/,
