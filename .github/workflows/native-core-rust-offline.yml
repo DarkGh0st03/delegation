@@ -45,5 +45,10 @@ jobs:
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
       - name: Load addon in Node and test negative EVM/VP boundaries
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/*.test.ts
+      # R144.1: the operational-epoch Gateway tests exercise the real
+      # A2A SDK and import @a2a-js/sdk. Without the pinned npm workspace,
+      # Node fails at import time before any Rust/Gateway assertion runs.
+      - name: Install pinned A2A workspace dependencies (no AI calls)
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
       - name: Gateway offline regression with native addon present
         run: node --experimental-strip-types --test poc/apps/gateway/test/*.test.ts
