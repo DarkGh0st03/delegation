@@ -77,6 +77,15 @@ function initialWithReview(withIndependentSibling=false){
  }
  return p;
 }
+function initialWithTestFileWrite(){
+ const p=initial();
+ p.tasks.find(t=>t.id==="test-original")!.resources.push(file);
+ p.requested_permissions.push({
+  id:"perm-test-write",task_id:"test-original",agent_id:"test",
+  resource:file,operation:"update_file",reason:"Authorized test fixture edit"
+ });
+ return p;
+}
 const repair=()=>plan("repair-2",2,[
  entry("backend-repair","backend",file,"update_file"),
  entry("test-repair","test",branchURI,"run_tests",["backend-repair"])
@@ -86,9 +95,11 @@ const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
  phase,status:"pass" as const
 }));
 async function harness(t:import("node:test").TestContext,
- options:{withReview?:boolean;withIndependentSibling?:boolean}={}){
+ options:{withReview?:boolean;withIndependentSibling?:boolean;
+  withTestWrite?:boolean}={}){
  const parent=options.withReview?
-  initialWithReview(options.withIndependentSibling):initial();
+  initialWithReview(options.withIndependentSibling):
+  options.withTestWrite?initialWithTestFileWrite():initial();
  const dir=await mkdtemp(join(tmpdir(),"delegation-gateway-epoch-"));
  t.after(()=>rm(dir,{recursive:true,force:true}));
  const approvalsDir=join(dir,"approvals"),epochsDir=join(dir,"epochs");
@@ -553,4 +564,25 @@ test("R105: no failed Test means neither PR nor other unbound Tasks can be skipp
  await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
   /unresolved, unbound or in-flight/);
  assert.equal(h.provider,3);
+});
+
+test("R105: authorized Test file edit before TypeScript FAIL remains repairable at exact Runner SHA",async(t)=>{
+ const h=await harness(t,{withTestWrite:true});
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// buggy"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ await h.invoke("task-test","test","update_file",edit("// test fixture"));
+ h.setRunnerFailure();await h.invoke("task-test","test","run_tests",runner);
+ const failure=h.gates.confirmTestValidationFailure("task-test");
+ assert.equal(failure.status,"validation_failed");
+ await h.intake.reserveRepairEpoch(repair());
+ const receipt=await h.gates.admitNextOperationalEpoch(session,2);
+ assert.deepEqual(receipt.blocked_descendant_task_ids,[]);
+ assert.equal(receipt.epoch,2);
+ assert.equal(h.provider,4);
 });
