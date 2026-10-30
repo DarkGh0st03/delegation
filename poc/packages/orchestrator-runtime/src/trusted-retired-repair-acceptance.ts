@@ -27,6 +27,7 @@ function deny(reason:string):never{
 export class TrustedRetiredRepairAcceptanceWitness {
  readonly #gateway:TrustedPlanIpcClient;
  readonly #gitea:GiteaClient;
+ readonly #originalRootPlanDigest:string;
  readonly #coordinator:Pick<TrustedExecutionCoordinator,
   "phase"|"trustedOperationalAuthority">;
  readonly #pins:Readonly<{
@@ -35,6 +36,7 @@ export class TrustedRetiredRepairAcceptanceWitness {
  }>;
  private constructor(c:{
   gateway:TrustedPlanIpcClient;gitea:GiteaClient;
+  rootPlanDigest:string;
   coordinator:Pick<TrustedExecutionCoordinator,
    "phase"|"trustedOperationalAuthority">;
   pins:Readonly<{
@@ -43,6 +45,7 @@ export class TrustedRetiredRepairAcceptanceWitness {
   }>;
  }){
   this.#gateway=c.gateway;this.#gitea=c.gitea;
+  this.#originalRootPlanDigest=c.rootPlanDigest;
   this.#coordinator=c.coordinator;
   this.#pins=Object.freeze({...c.pins,
    repository:Object.freeze({...c.pins.repository})});
@@ -89,12 +92,43 @@ export class TrustedRetiredRepairAcceptanceWitness {
    deny("root retired during signed acceptance capture");
   return new TrustedRetiredRepairAcceptanceWitness({
    gateway:config.gateway,gitea:config.gitea,
+   rootPlanDigest:first.plan_digest,
    coordinator:config.coordinator,
    pins:{
     session_id:current.plan.session_id,epoch:history.length,
     plan_digest:current.plan_digest,task_id:tests[0].id,
     branch,repository:{...current.plan.repository}
    }
+  });
+ }
+ /** R142 adds genuine native EVM root revocation to R141's
+  * independent Gateway Test PASS and fresh Gitea branch observations.
+  * Still not a review-only PR authorization. */
+ async verifyRevokedRetiredExactSha(){
+  const before=await this.verifyRetiredExactSha();
+  const revocation=await this.#gateway.readRetiredRootRevocation({
+   session_id:this.#pins.session_id,
+   root_plan_digest:this.#originalRootPlanDigest,
+   plan_digest:this.#pins.plan_digest,epoch:this.#pins.epoch,
+   task_id:this.#pins.task_id,branch:before.branch,
+   tested_commit_sha:before.tested_commit_sha
+  });
+  if(revocation.original_root_revoked!==true||
+     revocation.pull_request_authorized!==false)
+   deny("Gateway did not independently corroborate EVM root retirement");
+  const after=await this.verifyRetiredExactSha();
+  if(after.tested_commit_sha!==before.tested_commit_sha||
+     after.plan_digest!==before.plan_digest||
+     after.test_task_id!==before.test_task_id)
+   deny("Gitea HEAD or signed Test changed during native revocation check");
+  return Object.freeze({
+   status:"r142_retired_runner_gitea_native_revoked_no_pr_authority" as const,
+   session_id:this.#pins.session_id,epoch:this.#pins.epoch,
+   plan_digest:this.#pins.plan_digest,
+   test_task_id:this.#pins.task_id,branch:before.branch,
+   tested_commit_sha:before.tested_commit_sha,
+   native_anchor_version:revocation.anchor_version,
+   root_revoked:true as const,pull_request_authorized:false as const
   });
  }
  /** No write effects. No claim that Rust EVM root was revoked. */
