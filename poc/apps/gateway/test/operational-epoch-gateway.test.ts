@@ -3446,6 +3446,7 @@ async function r142RetirementFixture(t:import("node:test").TestContext){
   branch,tested_commit_sha:sha
  };
  return {...x,client,witness,pins,
+  get readCount(){return x.metadataCalls;},
   markRevoked(){statusSet=true;},
   corruptRootId(){rootId="urn:credential:other";},
   corruptAnchor(){anchorVersion=-1;},
@@ -3487,7 +3488,7 @@ test("R142 retired signed witness correlates same Gitea head with Gateway EVM st
  assert.equal(proof.pull_request_authorized,false);
  assert.equal(proof.tested_commit_sha,sha);
  assert.equal(f.adapterRequests,1);
- assert.equal(f.metadataCalls,4,
+ assert.equal(f.readCount,4,
   "R141 Gitea HEAD is rechecked before and after EVM validation");
 });
 test("R142 refuses fabricated anchors, foreign roots and stale Test SHAs",async t=>{
