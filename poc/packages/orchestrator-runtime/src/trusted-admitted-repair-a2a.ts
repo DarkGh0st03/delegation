@@ -30,6 +30,12 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
  Omit<RepairInput,"runtimeTaskId">&{
   agentBaseUrls:Readonly<Record<Role,string>>;
   a2a:ProtectedA2AClientPort;
+  /** Owner-private, one-shot hookup after real Rust issuance and BEFORE
+   * the protected A2A send. Cannot bind, issue, or grant permissions. */
+  beforeProtectedSend?:(issued:Readonly<{
+   task_id:string;role:Role;runtime_task_id:string;
+   credential_id:string;epoch:number
+  }>)=>Promise<void>;
  }):Promise<Readonly<{
  status:"a2a_artifact_unconfirmed";
  task_id:string;runtime_task_id:string;epoch:number;
@@ -153,6 +159,15 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
    return {role:config.role,credential:issued.credential};
   }
  };
+ // The original native host may install a one-use deterministic repair
+ // script on the ALREADY running agent process. Failure aborts BEFORE A2A.
+ // No credential bytes or new permission source are handed to this hook.
+ await config.beforeProtectedSend?.(Object.freeze({
+  task_id:config.taskId,role:config.role,
+  runtime_task_id:runtimeTaskId,
+  credential_id:issued.credential_id,epoch:config.epoch
+ }));
+ assertActive();
  const runner=new DelegatedA2ARoleRunner({
   authorityIssuer:preissued,a2a:config.a2a
  });
