@@ -13,6 +13,8 @@
  */
 import {Buffer} from "node:buffer";
 import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
+import {TrustedApprovedExecutionPlans} from "../../../apps/gateway/src/approved-execution-plans.ts";
+import {prepareTrustedRepairFeedback} from "./trusted-validation-repair-feedback.ts";
 import {canonicalFileUri} from "../../../apps/gateway/src/canonical.ts";
 import type {PreparedAuthorizationResponse} from
  "../../../apps/gateway/src/types.ts";
@@ -36,7 +38,9 @@ type Repository={authority:string;owner:string;repository:string};
 type AgentRole="orchestrator"|"backend"|"frontend"|"test";
 export class TrustedOperationalRepairSourceReader {
  readonly #gateway:GatewayRuntime;
+ readonly #gatewayPlans:TrustedApprovedExecutionPlans;
  readonly #intake:TrustedOperationalEpochIntake;
+ readonly #failedRuntimeTask:string;
  readonly #feature:TrustedOperationalFeatureHeadReader;
  readonly #session:string;
  readonly #runtimeTask:string;
@@ -49,6 +53,8 @@ export class TrustedOperationalRepairSourceReader {
  #busy=false;
  constructor(config:{
   gateway:GatewayRuntime;
+  trustedGatewayPlans:TrustedApprovedExecutionPlans;
+  failedRuntimeTestTaskId:string;
   intake:TrustedOperationalEpochIntake;
   featureHeadReader:TrustedOperationalFeatureHeadReader;
   sessionId:string;
@@ -59,7 +65,12 @@ export class TrustedOperationalRepairSourceReader {
    Promise<string>;
  }){
   if(!(config.gateway instanceof GatewayRuntime)||
+     !(config.trustedGatewayPlans instanceof TrustedApprovedExecutionPlans)||
+     !config.gateway.hasExactTrustedOperationalPlanGate(config.trustedGatewayPlans)||
      !(config.intake instanceof TrustedOperationalEpochIntake)||
+     !config.trustedGatewayPlans.isBoundToOperationalEpochIntake(config.intake)||
+     typeof config.failedRuntimeTestTaskId!=="string"||
+     !config.failedRuntimeTestTaskId||
      !(config.featureHeadReader instanceof TrustedOperationalFeatureHeadReader)||
      typeof config.sessionId!=="string"||!config.sessionId||
      typeof config.runtimeTaskId!=="string"||!config.runtimeTaskId||
@@ -71,6 +82,8 @@ export class TrustedOperationalRepairSourceReader {
    deny("real Gateway, owner intake, provider and VP issuer required");
   config.featureHeadReader.assertSameIntake(config.intake);
   this.#gateway=config.gateway;
+  this.#gatewayPlans=config.trustedGatewayPlans;
+  this.#failedRuntimeTask=config.failedRuntimeTestTaskId;
   this.#intake=config.intake;this.#feature=config.featureHeadReader;
   this.#session=config.sessionId;this.#runtimeTask=config.runtimeTaskId;
   this.#role=config.agentRole;this.#expectedSha=config.expectedTestedSha;
@@ -96,6 +109,18 @@ export class TrustedOperationalRepairSourceReader {
    const granted=await this.#intake.trustedRootReadGrants();
    if(!granted.some(p=>p.resource===resource&&p.operation==="read_file"))
     deny("read_file resource absent from issued Rust root");
+   // A read in the repair-planning phase MUST originate from a
+   // Gateway-confirmed Test FAIL on this very operational root/session.
+   // A caller-supplied SHA is never sufficient to start model source reads.
+   const failure=await prepareTrustedRepairFeedback({
+    gateway:this.#gatewayPlans,intake:this.#intake,
+    sessionId:this.#session,runtimeTestTaskId:this.#failedRuntimeTask
+   });
+   if(failure.status!=="repair_planning_eligible"||
+      failure.tested_commit_sha!==this.#expectedSha||
+      failure.failed_epoch!==history.length||
+      failure.work_branch!==branch)
+    deny("read source revision not pinned to trusted failed Runner");
    const before=await this.#feature.read(repo,branch);
    if(before.head_sha!==this.#expectedSha)
     deny("feature HEAD no longer matches failed Runner SHA");
@@ -132,6 +157,13 @@ export class TrustedOperationalRepairSourceReader {
    const after=await this.#feature.read(repo,branch);
    if(after.head_sha!==before.head_sha)
     deny("feature branch changed during approved file read");
+   const rechecked=await prepareTrustedRepairFeedback({
+    gateway:this.#gatewayPlans,intake:this.#intake,
+    sessionId:this.#session,runtimeTestTaskId:this.#failedRuntimeTask
+   });
+   if(rechecked.failed_request_id!==failure.failed_request_id||
+      rechecked.tested_commit_sha!==failure.tested_commit_sha)
+    deny("failed Runner evidence changed during source read");
    const latest=await this.#intake.verifiedEpochHistory();
    if(latest.length!==history.length||
       latest.at(-1)?.plan_digest!==current.plan_digest)
