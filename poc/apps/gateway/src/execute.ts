@@ -258,7 +258,7 @@ export async function executeAuthorization(
   dependencies.planningRevisions?.assertActiveForExecution(record);
   if (!record.pinned_revision) {
     try {
-      dependencies.approvedPlans?.assertAuthorizedForExecution(record,verified.presenter_id);
+      dependencies.approvedPlans?.assertAuthorizedForExecution(record,verified.presenter_id,verified.credential_id);
     } catch {
       dependencies.audit.emit({
         event:"authorization_executed",
