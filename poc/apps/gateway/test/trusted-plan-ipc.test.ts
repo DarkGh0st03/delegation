@@ -17,6 +17,8 @@ import {TrustedExecutionCoordinator} from
   "../../../packages/orchestrator-runtime/src/trusted-execution-coordinator.ts";
 import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
   from "../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts";
+import {TrustedOperationalEpochJournal}
+  from "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-journal.mjs";
 import {TrustedPlanIpcClient,createTrustedPlanIpcServer}
   from "../src/trusted-plan-ipc.ts";
 import {TrustedPlanningRevisions} from "../src/planning-revisions.ts";
@@ -78,12 +80,16 @@ function root(id:string,index:string){
 }
 async function setup(
   t:import("node:test").TestContext,
-  options:{operationalLeaseMs?:number;approvalViaUi?:boolean}={}
+  options:{operationalLeaseMs?:number;approvalViaUi?:boolean;
+   withSignedEpochMirror?:boolean}={}
 ){
   const home=await mkdtemp(join(tmpdir(),"trusted-plan-ipc-"));
-  const privateDir=join(home,"private"),receipts=join(home,"receipts");
+  const privateDir=join(home,"private"),receipts=join(home,"receipts"),
+   signedEpochDir=join(home,"shared-signed-epochs");
   await mkdir(privateDir,{mode:0o700});
   await mkdir(receipts,{mode:0o700});
+  if(options.withSignedEpochMirror)
+   await mkdir(signedEpochDir,{mode:0o700});
   const secretFile=join(privateDir,"ipc-secret.hex");
   const socketPath=join(privateDir,"control.sock");
   const secret=randomBytes(32).toString("hex");
@@ -113,9 +119,21 @@ async function setup(
   if(!options.approvalViaUi)
     await writeFile(join(receipts,p.session_id+".json"),
       JSON.stringify(signed),{mode:0o600});
+  if(options.withSignedEpochMirror){
+    // This is deliberately just an owner-owned journal file: the real
+    // Rust-issued root has NOT been created yet. Signed upper bound only.
+    const journal=new TrustedOperationalEpochJournal({
+      directory:signedEpochDir,sessionId:p.session_id,baseRevision:SHA,
+      rootCredentialId:"urn:fixture:unissued-work-root",
+      originalPlanDigest:planDigest(p),
+      allowedOperations:OPERATIONS
+    });
+    await journal.reserveInitial(p);
+  }
   const configFile=join(privateDir,"config.json");
   await writeFile(configFile,JSON.stringify({
     approvalDir:receipts,socketPath,secretFile,repository:REPO,
+    ...(options.withSignedEpochMirror?{signedEpochDir}:{}),
     engineerDid:DID,keyId:KEY_ID,publicKey:pub
   }),{mode:0o600});
   const child=fork(fileURLToPath(new URL("./fixtures/trusted-plan-ipc-child.ts",
@@ -178,7 +196,7 @@ async function setup(
   });
   return {
     p,trace,authority,credentials,client,store,publicUrl,socketPath,secret,
-    receipts,planFile,signerFile,publicKeyPem:pub
+    receipts,planFile,signerFile,publicKeyPem:pub,signedEpochDir
   };
 }
 async function post(base:string,path:string,data:unknown){
@@ -1005,4 +1023,33 @@ test("R122 authenticated finalized read-only IPC cannot invoke one-use finalizer
  assert.equal(await rawSocket(socketPath,JSON.stringify({
   action:"read_test_failure",...pins
  }),{}),403);
+});
+
+test("R126.2 independently verified signed ledger over a DIFFERENT Gateway OS process stays nonauthorizing",async t=>{
+ const e=await setup(t,{
+  operationalLeaseMs:120000,withSignedEpochMirror:true
+ });
+ assert.equal(e.client.signedEpochInspectionConfigured(),true);
+ const pins={session_id:e.p.session_id,
+  root_plan_digest:planDigest(e.p),plan_digest:planDigest(e.p),epoch:1};
+ // Separate Gateway child independently reloads the Ed25519 signature,
+ // 0700/0600 fsynced ledger and canonical digest; this is NOT a Rust DC.
+ const result=await e.client.inspectSignedEpoch(pins);
+ assert.equal(result.status,"signed_epoch_ledger_consistent_not_native_root_verified");
+ assert.equal(result.execution_authorized,false);
+ assert.equal(result.gateway_epoch_admitted,false);
+ assert.equal(result.child_credential_issued,false);
+ await assert.rejects(e.client.admitVerifiedOperationalEpoch({
+  ...pins,epoch:2
+ }),/Gateway trusted control denied/,
+ "An unissued root plus shared signed files cannot activate remote tasks");
+ await assert.rejects(e.client.inspectSignedEpoch({
+  ...pins,plan_digest:"b".repeat(64)
+ }),/Gateway trusted control denied/);
+ const path=join(e.signedEpochDir,"epoch-001.json");
+ const changed=JSON.parse(await readFile(path,"utf8"));
+ changed.plan_digest="c".repeat(64);
+ await writeFile(path,JSON.stringify(changed)+"\n",{mode:0o600});
+ await assert.rejects(e.client.inspectSignedEpoch(pins),
+  /Gateway trusted control denied/);
 });

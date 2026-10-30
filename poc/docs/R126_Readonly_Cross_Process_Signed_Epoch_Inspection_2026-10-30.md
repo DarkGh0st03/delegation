@@ -25,11 +25,16 @@ establish actual Rust issuance, grant validity or revocation state.
 
 The live Gateway `admit_epoch` still requires the genuine original
 Rust-root-bound Intake and completed failure quiescence: **signed ledger
-inspection alone never activates Tasks or issues DCs**. Four offline
-regressions prove signed epoch reads via actual HMAC Unix control,
+inspection alone never activates Tasks or issues DCs**. Five offline
+regressions, including an ACTUAL different OS-process Gateway, prove
+signed epoch reads via authenticated HMAC Unix control,
 wrong/stale pins, tampering and rejection of an independently generated
 owner-only epoch that Gateway has not admitted.
 
 Next: independent native Rust issuance + revocation evidence in the
 Gateway process, then actual Gateway epoch admission, new Child DCs,
 Gitea repair, Docker PASS and PR review-only. No paid Gemini, no main merge.
+
+R126.2 includes a forked Gateway child with separate process memory. It
+verifies that even a perfectly signed and readable original journal
+created before Rust root issuance CANNOT authorize Gateway epoch admission.

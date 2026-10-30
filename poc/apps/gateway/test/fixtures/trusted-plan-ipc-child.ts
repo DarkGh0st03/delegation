@@ -17,6 +17,8 @@ import {TrustedOperationalSessionStore}
   from "../../src/trusted-operational-session-store.ts";
 import {createTrustedPlanIpcServer}
   from "../../src/trusted-plan-ipc.ts";
+import {TrustedGatewaySignedEpochInspector}
+  from "../../src/trusted-gateway-signed-epoch-inspector.ts";
 import {GatewayRuntime} from "../../src/runtime.ts";
 import {createGatewayHttpServer} from "../../src/http.ts";
 
@@ -49,9 +51,15 @@ const planningRevisions=new TrustedPlanningRevisions({
     return {default_branch:"main",revision:cfg.repositoryBaseSha??"a".repeat(40)};
   }
 },planningRetirement?{retirementStore:planningRetirement}:{});
+const signedEpochInspector=cfg.signedEpochDir?
+ new TrustedGatewaySignedEpochInspector({
+  directory:cfg.signedEpochDir,approvals
+ }):undefined;
+if(signedEpochInspector)await signedEpochInspector.assertReady();
 const control=await createTrustedPlanIpcServer({
   socketPath:cfg.socketPath,secretFile:cfg.secretFile,
-  plans,planningRevisions
+  plans,planningRevisions,
+  ...(signedEpochInspector?{signedEpochInspector}:{})
 });
 const runtime=new GatewayRuntime({
   bind_host:"127.0.0.1",bind_port:0,
