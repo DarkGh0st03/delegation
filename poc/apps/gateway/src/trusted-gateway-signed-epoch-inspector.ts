@@ -311,6 +311,41 @@ export class TrustedGatewaySignedEpochInspector{
    child_credential_issued:false as const
   });
  }
+ /**
+  * R133 Gateway-only operational epoch snapshot: the live original
+  * root's fresh Rust VP is checked BEFORE and AFTER journal IO. This
+  * method only returns internally verified immutable journal records.
+  * No IPC user supplies plans, DCs, scopes, nonce or VP bytes.
+  */
+ async verifiedEpochHistoryForAdmission(pins:Readonly<{
+  session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+ }>){
+  if(!this.nativeRootVpConfigured())
+   deny("Distributed epoch requires independent live Rust root VP");
+  await this.inspectCryptographicRootVp(pins);
+  const root=await this.#readPinnedRootRecord(pins);
+  const journal=new TrustedOperationalEpochJournal({
+   directory:this.#dir,sessionId:pins.session_id,
+   baseRevision:root.baseRevision,rootCredentialId:root.rootId,
+   originalPlanDigest:pins.root_plan_digest,allowedOperations:OPS
+  });
+  const history=await journal.records();
+  if(history.length!==pins.epoch||
+     history[0]?.plan_digest!==pins.root_plan_digest||
+     history.at(-1)?.plan_digest!==pins.plan_digest)
+   deny("Pinned repair epoch changed after root VP");
+  const approval=await this.#approvals.loadAuthenticatedApproval(pins.session_id);
+  if(planDigest(approval.plan)!==pins.root_plan_digest)
+   deny("Engineer approval changed during admission");
+  await this.inspectCryptographicRootVp(pins);
+  const final=await journal.records();
+  if(final.length!==history.length||
+     final.some((row:any,n:number)=>
+      row.plan_digest!==history[n].plan_digest||
+      row.root_credential_id!==history[n].root_credential_id))
+   deny("Original Rust root or epoch journal changed before admission");
+  return Object.freeze(final);
+ }
  async #readPinnedRootRecord(pins:Readonly<{
   session_id:string;root_plan_digest:string;
  }>){

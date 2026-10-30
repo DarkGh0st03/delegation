@@ -144,6 +144,7 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
     repository:config.prepare.repository,engineerDid,approvals,
     operationalSessionStore,
     ...(leaseRaw===undefined?{}:{operationalLeaseMs:Number(leaseRaw)}),
+    ...(rootVpVerifier?{remoteEpochInspector:signedEpochInspector}:{}),
     // Gateway independently corroborates private Coordinator observations
     // using results retained from authorized provider I/O.
     completionAttestor:new GatewayCorroboratedTaskAttestor()

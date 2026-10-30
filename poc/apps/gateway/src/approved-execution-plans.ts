@@ -19,6 +19,7 @@ import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord
 import { GatewayError } from "./errors.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
 import {TrustedOperationalEpochIntake} from "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
+import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
 import {TrustedChildIssuanceJournal} from "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import type {ExecutionResult,GiteaReadFileExecutionResult,RunnerExecutionResult} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
@@ -154,6 +155,7 @@ export class TrustedApprovedExecutionPlans {
   readonly #operationalLeaseMs?:number;
   readonly #nowMs:()=>number;
   readonly #epochIntake?:TrustedOperationalEpochIntake;
+  readonly #remoteEpochInspector?:TrustedGatewaySignedEpochInspector;
   readonly #epochAdmissionInFlight=new Set<string>();
   readonly #discoveryAdmissionsInFlight=new Set<string>();
 
@@ -168,6 +170,8 @@ export class TrustedApprovedExecutionPlans {
     operationalSessionStore?:TrustedOperationalSessionStore;
     /** Only the owner-private Engineer-root-bound intake, not an A2A model payload. */
     operationalEpochIntake?:TrustedOperationalEpochIntake;
+    /** R133: Gateway-local authenticated journal + live native VP. */
+    remoteEpochInspector?:TrustedGatewaySignedEpochInspector;
     nowMs?:()=>number;
   }){
     if(!config.engineerDid?.startsWith("did:") || !config.approvals ||
@@ -188,6 +192,14 @@ export class TrustedApprovedExecutionPlans {
        !(config.operationalEpochIntake instanceof TrustedOperationalEpochIntake))
       throw Error("Trusted operational epoch intake instance required");
     this.#epochIntake=config.operationalEpochIntake;
+    if(config.remoteEpochInspector!==undefined&&
+       (!(config.remoteEpochInspector instanceof TrustedGatewaySignedEpochInspector)||
+        !config.remoteEpochInspector.nativeRootVpConfigured()||
+        config.operationalEpochIntake!==undefined||
+        !(config.operationalSessionStore instanceof TrustedOperationalSessionStore)||
+        config.operationalLeaseMs===undefined))
+      throw Error("R133 remote epoch requires durable Gateway and a fresh native Rust root VP");
+    this.#remoteEpochInspector=config.remoteEpochInspector;
     if(config.operationalLeaseMs!==undefined&&
        (!Number.isSafeInteger(config.operationalLeaseMs)||
         config.operationalLeaseMs<10_000||
@@ -317,7 +329,8 @@ export class TrustedApprovedExecutionPlans {
       blocked_descendant_task_ids:ReadonlyArray<string>}>>{
     ensureId(sessionId,"session ID");
     const session=this.#sessions.get(sessionId);
-    if(!this.#epochIntake||!session||
+    if((!this.#epochIntake&&!this.#remoteEpochInspector)||!session||
+       (this.#remoteEpochInspector!==undefined&&expected===undefined)||
        // R125 authenticated cross-process requests are SOURCE-FREE pins.
        // The real Gateway must have its OWN original-root-bound Intake:
        // an Engineer assertion or uploaded DAG cannot substitute for it.
@@ -336,7 +349,11 @@ export class TrustedApprovedExecutionPlans {
     const initialBlocked=this.#assertEpochQuiescent(session);
     this.#epochAdmissionInFlight.add(sessionId);
     try{
-      const history=await this.#epochIntake.verifiedEpochHistory();
+      const history=this.#remoteEpochInspector?
+        await this.#remoteEpochInspector.verifiedEpochHistoryForAdmission({
+         session_id:sessionId,root_plan_digest:session.digest,
+         plan_digest:expected!.plan_digest,epoch:epochVersion
+        }):await this.#epochIntake!.verifiedEpochHistory();
       // Close/expiry may happen while the private store is performing IO.
       this.#ensureUnexpired(session);
       if(this.#sessions.get(sessionId)!==session||
@@ -358,6 +375,25 @@ export class TrustedApprovedExecutionPlans {
       const finalBlocked=this.#assertEpochQuiescent(session);
       if(JSON.stringify(finalBlocked)!==JSON.stringify(initialBlocked))
         denied("Previous epoch changed during admission");
+      // Do not cache the earlier VP while async work occurs. The Gateway
+      // must observe a fresh root, signed plan and SAME failed Task
+      // quiescence immediately before installing the new Task registry.
+      if(this.#remoteEpochInspector){
+        const again=await this.#remoteEpochInspector.verifiedEpochHistoryForAdmission({
+         session_id:sessionId,root_plan_digest:session.digest,
+         plan_digest:expected!.plan_digest,epoch:epochVersion
+        });
+        this.#ensureUnexpired(session);
+        if(this.#sessions.get(sessionId)!==session||
+           epochVersion!==session.currentEpoch+1||
+           again.length!==history.length||
+           again.some((row:any,n:number)=>
+            row.plan_digest!==history[n].plan_digest||
+            row.root_credential_id!==history[n].root_credential_id)||
+           JSON.stringify(this.#assertEpochQuiescent(session))!==
+             JSON.stringify(initialBlocked))
+          denied("Root, signed repair epoch or previous Task changed during remote admission");
+      }
       for(const task of plan.tasks){
         if(session.plan.tasks.some((t:any)=>t.id===task.id)||
            session.admittedEpochTasks.has(task.id)||
