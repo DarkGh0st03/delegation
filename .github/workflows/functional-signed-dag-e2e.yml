@@ -294,8 +294,46 @@ jobs:
                 "root_revocation_unconfirmed","dependency_denied",
                 "adk_model_failure","a2a_result_mismatch",
                 "attestation_effect_race","approved_plan_denied",
-                "test_assertion","unclassified"
+                "test_assertion","unclassified",
+                "controlled_tool_failure","no_confirmed_revision",
+                "a2a_task_not_completed","a2a_artifact_invalid"
               ];
+              const sites=new Set([
+                "native-approved-planner-dag-positive.mjs",
+                "trusted-approved-a2a-dispatcher.ts","a2a-workflow.ts",
+                "orchestrator.ts","executor.ts","adk-a2a-handler.ts",
+                "artifact-validation.ts","private-request-handler.ts",
+                "gateway-tool-client.ts","adk-tool-progress.ts",
+                "approved-execution-plans.ts","runtime.ts","execute.ts",
+                "runner-client.ts","isolated-executor.ts",
+                "native-approved-dag-failure-category.mjs"
+              ]);
+              const kinds=new Set(["Error","AssertionError","TypeError",
+                "RangeError","SyntaxError","AbortError","TimeoutError",
+                "AggregateError","unknown"]);
+              const codes=new Set(["ERR_ASSERTION","approved_plan_denied",
+                "ERR_INVALID_ARG_TYPE","ERR_HTTP_HEADERS_SENT",
+                "ECONNRESET","ETIMEDOUT","ECONNREFUSED","ABORT_ERR",
+                "ERR_INVALID_STATE","unknown"]);
+              const phases=new Set(["none","dependency_install","typecheck",
+                "backend_tests","frontend_tests","build","playwright_e2e",
+                "researcher_acceptance"]);
+              const runnerStates=new Set(["pass","fail","unknown"]);
+              const cleanTrace=Array.isArray(m?.failure_trace)&&
+                m.failure_trace.length<=4&&m.failure_trace.every(entry=>
+                  entry&&typeof entry==="object"&&
+                  categories.includes(entry.category)&&
+                  kinds.has(entry.kind)&&codes.has(entry.code)&&
+                  (entry.site===null||
+                   (entry.site&&sites.has(entry.site.module)&&
+                    Number.isSafeInteger(entry.site.line)&&
+                    entry.site.line>0&&entry.site.line<=2500)))
+                  ?m.failure_trace.map(entry=>({
+                    category:entry.category,kind:entry.kind,code:entry.code,
+                    site:entry.site===null?null:{
+                      module:entry.site.module,line:entry.site.line
+                    }
+                  })):null;
               if(m&&Array.isArray(m.completed_task_ids)&&
                  m.completed_task_ids.length<=6&&
                  m.completed_task_ids.every(id=>ids.includes(id))&&
@@ -307,8 +345,21 @@ jobs:
                  Number.isInteger(m.runner_runs)&&m.runner_runs>=0&&
                  m.runner_runs<=2&&
                  Number.isInteger(m.signed_test_write_count)&&
-                 m.signed_test_write_count>=0&&m.signed_test_write_count<=4)
-                multi_test_diagnostic=m;
+                 m.signed_test_write_count>=0&&m.signed_test_write_count<=4&&
+                 runnerStates.has(m.runner_status)&&
+                 runnerStates.has(m.runner_project_status)&&
+                 phases.has(m.first_failed_phase))
+                multi_test_diagnostic={
+                  completed_task_ids:[...m.completed_task_ids],
+                  issued_task_ids:[...m.issued_task_ids],
+                  category:m.category,cause_category:m.cause_category,
+                  runner_runs:m.runner_runs,
+                  runner_status:m.runner_status,
+                  runner_project_status:m.runner_project_status,
+                  first_failed_phase:m.first_failed_phase,
+                  signed_test_write_count:m.signed_test_write_count,
+                  ...(cleanTrace?{failure_trace:cleanTrace}:{})
+                };
             }catch{/* never echo untrusted input */}
           }
           console.error("[signed-dag-safe-diagnostic] "+JSON.stringify({
