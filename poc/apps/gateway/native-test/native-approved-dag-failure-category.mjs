@@ -8,6 +8,10 @@ export function classifyApprovedDagFailure(error){
   if(m.startsWith("ADK protected model failure:"))return "adk_model_failure";
   if(m.startsWith("ADK controlled task failed:"))return "controlled_tool_failure";
   if(m.startsWith("ADK task produced no confirmed repository revision"))return "no_confirmed_revision";
+  // A2A reports a failed terminal Task even when Docker's own FAIL receipt
+  // is authentic. This does not mean the Test Task completed successfully.
+  if(m==="Protected A2A task ended without completion")
+    return "a2a_task_not_completed";
   if(/^Remote A2A Task [^\r\n]{1,120} is not completed$/u.test(m))return "a2a_task_not_completed";
   if(/^Remote A2A Task [^\r\n]{1,120} must return exactly one Artifact$/u.test(m)||
      m==="Remote A2A Artifact must contain exactly one JSON data part")return "a2a_artifact_invalid";
