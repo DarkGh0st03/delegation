@@ -452,7 +452,11 @@ export class TrustedApprovedExecutionPlans {
    */
   beginProviderEffect(record:PreparedRequestRecord):()=>void{
     const {binding}=this.#activeBinding(record.task_id);
-    if(binding.completed||binding.completing||binding.failedFinalized||
+    // An operation prepared BEFORE async PASS attestation may finish
+    // while the attestor is waiting; the existing attestor detects the
+    // changed effect set and rejects stale completion. The flight fence
+    // protects epoch transition without changing that invariant.
+    if(binding.completed||binding.failedFinalized||
        binding.failedRunner!==undefined||
        binding.agent!==record.agent_role||
        record.approved_plan_task_id!==binding.planTaskId)
