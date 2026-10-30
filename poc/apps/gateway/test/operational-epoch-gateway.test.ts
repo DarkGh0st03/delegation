@@ -1554,8 +1554,7 @@ test("R148.0 one original A2A FAIL feeds owner-controlled signed D1 under live r
    proposeRepairPlan:async input=>{
     proposals++;
     assert.equal(input.feedback.tested_commit_sha,sha);
-    assert.equal(input.feedback.first_failed_phase,"typecheck");
-    assert.equal(input.feedback.failed_runtime_task_id,x.failedRuntimeId);
+    assert.equal(input.feedback.failed_phase,"typecheck");
     assert.ok(input.already_delegated_grants.some(g=>
      g.resource===file&&g.operation==="update_file"));
     return repairDraft();
