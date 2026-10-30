@@ -13,6 +13,8 @@ import {assertApprovedPlanScope,planDigest} from
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedChildIssuanceJournal} from "./trusted-child-issuance-journal.mjs";
 import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
+import {TrustedApprovedExecutionPlans} from "../../../apps/gateway/src/approved-execution-plans.ts";
+import {prepareTrustedRepairFeedback} from "./trusted-validation-repair-feedback.ts";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
 import type {AuthenticatedPlanStore} from
   "../../../apps/gateway/src/approved-execution-plans.ts";
@@ -209,6 +211,76 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
        activePairs.size!==issued.size||
        [...activePairs].some(x=>!issued.has(x)))
       reject("operational root changed during epoch verification");
+    return new TrustedApprovedPlanChildAuthorityIssuer(config,root,tasks);
+  }
+
+  /**
+   * R109: issue a fresh READ-ONLY discovery child via the SAME Rust Adapter
+   * /v1/credentials/child endpoint, even though the Task ID does not occur
+   * in the original DAG. The old Engineer approval still fixes the root's
+   * exact maximum grants; the Gateway supplies corroborated failed Runner
+   * evidence. No extra Engineer signature or parallel authorization token.
+   */
+  static async createForRepairDiscovery(config:
+    Omit<ApprovedChildIssuerConfig,"approvals"> & {
+      intake:TrustedOperationalEpochIntake;
+      gateway:TrustedApprovedExecutionPlans;
+      failedRuntimeTestTaskId:string;
+      discoveryTaskId:string;
+      role:Role;
+      resource:string;
+    }):Promise<TrustedApprovedPlanChildAuthorityIssuer>{
+    if(!(config.intake instanceof TrustedOperationalEpochIntake)||
+       !(config.gateway instanceof TrustedApprovedExecutionPlans)||
+       !config.gateway.isBoundToOperationalEpochIntake(config.intake)||
+       !(config.issuanceJournal instanceof TrustedChildIssuanceJournal)||
+       !ID.test(config.sessionId)||!ID.test(config.discoveryTaskId)||
+       !ROLES.has(config.role)||
+       !config.engineerDid.startsWith("did:")||
+       !config.adapterBaseUrl||!config.bearerToken||
+       config.coordinator.phase!=="execution")
+      reject("trusted parent, Gateway failed Test and issuance journal required");
+    config.intake.assertSameCoordinator(config.coordinator);
+    const feedback=await prepareTrustedRepairFeedback({
+      gateway:config.gateway,intake:config.intake,
+      sessionId:config.sessionId,
+      runtimeTestTaskId:config.failedRuntimeTestTaskId
+    });
+    if(feedback.status!=="repair_planning_eligible")
+      reject("no remaining repair budget for source discovery");
+    const proof=await config.intake.preflightRepairDiscovery({
+      sessionId:config.sessionId,taskId:config.discoveryTaskId,
+      agentId:config.role,resource:config.resource
+    });
+    if(proof.epoch!==feedback.failed_epoch||
+       proof.work_branch!==feedback.work_branch||
+       proof.root_plan_digest!==feedback.root_plan_digest)
+      reject("discovery and failed Runner do not share active root epoch");
+    const root=config.coordinator.trustedOperationalAuthority();
+    const parents=allUnique(root.permissions,"issued Rust parent");
+    if(root.credential_id!==proof.root_credential_id||
+       root.plan_digest!==proof.root_plan_digest||
+       !parents.has(KEY({resource:config.resource,operation:"read_file"})))
+      reject("discovery child exceeds actually issued Rust parent");
+    const epochs=await config.intake.verifiedEpochHistory();
+    config.issuanceJournal.assertBound({
+      sessionId:config.sessionId,baseRevision:epochs[0].plan.base_revision,
+      planDigest:root.plan_digest,parentCredentialId:root.credential_id
+    });
+    if(config.coordinator.phase!=="execution")
+      reject("root revoked while preparing discovery");
+    const active=config.coordinator.trustedOperationalAuthority();
+    if(active.credential_id!==root.credential_id||
+       active.plan_digest!==root.plan_digest||
+       allUnique(active.permissions,"active Rust parent").size!==parents.size||
+       active.permissions.some(p=>!parents.has(KEY(p))))
+      reject("Rust root changed while preparing discovery");
+    const tasks=new Map<string,{role:Role;permissions:DelegatedPermission[]}>([
+      [config.discoveryTaskId,{
+        role:config.role,
+        permissions:[{resource:config.resource,operation:"read_file"}]
+      }]
+    ]);
     return new TrustedApprovedPlanChildAuthorityIssuer(config,root,tasks);
   }
 
