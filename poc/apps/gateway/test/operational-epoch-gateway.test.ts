@@ -1461,7 +1461,8 @@ async function r112Dispatcher(t:import("node:test").TestContext,
     {branch,base_branch:"main"});
   }
  });
- return {h,dispatcher,result,get failedRuntimeId(){return failedRuntimeId;}};
+ return {h,dispatcher,result,remoteClient,
+  get failedRuntimeId(){return failedRuntimeId;}};
 }
 test("R112 a corroborated terminal Test FAIL suspends only old A2A DAG; new root-scoped epoch may begin",async(t)=>{
  const x=await r112Dispatcher(t,{testFail:true,optIn:true});
@@ -1517,6 +1518,69 @@ test("R117 authenticated Gateway IPC confirms failed Test in A2A dispatcher with
  assert.equal(admitted.epoch,2);
  assert.equal(x.h.coordinator.phase,"execution");
 });
+/**
+ * R148.0 FIRST VERTICAL SLICE (no Gemini and no real Docker yet).
+ * The SAME Gateway records the provider-style Runner typecheck FAIL,
+ * the original protected A2A dispatcher suspends without revoking root,
+ * and the owner consumes THAT signal through authenticated HMAC IPC to
+ * reserve a distinct signed D1. This explicitly does NOT prove that
+ * the paid/native pilot or the actual Docker provider is wired in.
+ */
+test("R148.0 one original A2A FAIL feeds owner-controlled signed D1 under live root",async t=>{
+ const x=await r112Dispatcher(t,{testFail:true,remote:true});
+ const original=await x.result;
+ assert.equal(original.status,"verified_test_failure_suspended");
+ assert.equal(original.verified_test_failure?.provenance,
+  "gateway_verified_docker_runner");
+ assert.equal(original.verified_test_failure?.first_failed_phase,"typecheck");
+ assert.equal(original.verified_test_failure?.failed_runtime_task_id,
+  x.failedRuntimeId);
+ assert.ok(x.remoteClient instanceof TrustedPlanIpcClient);
+ assert.equal(x.h.coordinator.phase,"execution");
+ const ownerEpochDir=join(x.h.dir,"r148-owner-epochs");
+ await mkdir(ownerEpochDir,{mode:0o700});
+ let proposals=0;
+ const owner=await armTrustedOwnerOperationalRecovery({
+  gateway:x.remoteClient,coordinator:x.h.coordinator,
+  signedApprovals:x.h.signedStore,epochDirectory:ownerEpochDir,
+  running:{
+   readiness:{session_id:session,base_revision:sha,
+    plan_digest:planDigest(x.h.parent),
+    authenticated_engineer_did:engineer},
+   operational_root_id:x.h.rootAuthority.credential_id
+  },
+  planRepairEpoch:{
+   giteaClient:r124HeadClient(),
+   proposeRepairPlan:async input=>{
+    proposals++;
+    assert.equal(input.feedback.tested_commit_sha,sha);
+    assert.equal(input.feedback.first_failed_phase,"typecheck");
+    assert.equal(input.feedback.failed_runtime_task_id,x.failedRuntimeId);
+    assert.ok(input.already_delegated_grants.some(g=>
+     g.resource===file&&g.operation==="update_file"));
+    return repairDraft();
+   }
+  }
+ });
+ await owner.continueWithinActiveRoot(original.verified_test_failure!);
+ const history=await owner.intake.verifiedEpochHistory();
+ assert.equal(proposals,1,"one owner-private proposal, no retry");
+ assert.equal(history.length,2,"D0 and a separately signed D1");
+ assert.equal(history[0].plan_digest,planDigest(x.h.parent));
+ assert.notEqual(history[1].plan_digest,history[0].plan_digest);
+ assert.deepEqual(history[1].plan.tasks.map(t=>t.id),
+  ["repair-implementation","repair-validation"]);
+ assert.equal(x.h.coordinator.phase,"execution",
+  "the Rust parent must still be live at the recovery handoff");
+ assert.equal(x.h.provider,3,"no unauthorized repair or second Docker");
+ await assert.rejects(owner.continueWithinActiveRoot(
+  original.verified_test_failure!),/one-use/);
+ await x.h.coordinator.closeExecution();
+ assert.equal(x.h.coordinator.phase,"closed");
+ await assert.rejects(owner.intake.verifiedEpochHistory(),
+  /operational root is not active/);
+});
+
 test("R117 IPC cannot turn an A2A failure with no Docker FAIL into repair eligibility",async(t)=>{
  const x=await r112Dispatcher(t,{testFail:false,remote:true});
  await assert.rejects(x.result,/Protected A2A task ended without completion/);
