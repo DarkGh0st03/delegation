@@ -239,12 +239,10 @@ jobs:
           # Model remains SCRIPTED in this no-billing test.
           APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
           APPROVED_RUNNER_NATIVE_SOURCE_WITNESS: "1"
-          # Same signed Test Task: real Docker FAIL -> approved repair -> PASS.
-          # Scripted-only, no model provider keys; never enable in paid pilots.
-          APPROVED_RUNNER_SIGNED_DAG_RECOVERY: "1"
-          # Two Test Tasks share the same ADK role server but never share
-          # their signed Rust children, active Gateway bindings or Runner rights.
-          APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS: "1"
+          # R120: a failed Test Task is terminal. This original signed DAG
+          # must exercise the PASS path; do NOT attempt the now-forbidden
+          # same-Task FAIL -> edit -> PASS sequence here. Recovery requires
+          # a NEW signed epoch, fresh child DC and separate E2E evidence.
           APPROVED_RUNNER_SCENARIO: account-suspension
           GITEA_ADMIN_USER: isolated_admin
           GITEA_ADMIN_PASSWORD: local-native-ci-fixture-${{ github.run_id }}-${{ github.run_attempt }}
