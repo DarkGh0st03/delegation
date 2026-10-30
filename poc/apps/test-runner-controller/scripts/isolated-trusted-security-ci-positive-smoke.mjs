@@ -369,7 +369,7 @@ async function pushReferenceApp(base,workTree,admin){
 async function verifyR139DisposableRealRepair({base,workTree,creds,
  executor,originalFeatureSha,mainSha}){
  const repairBranch="feature/r139-repair-"+suffix;
- const file="tests/backend/user.service.test.ts";
+ const file="apps/backend/src/users/user.service.ts";
  const target=join(workTree,...file.split("/"));
  const before=await readFile(target,"utf8");
  assert.equal(before,referenceFiles[file],"R139 must start from pinned fixture");
@@ -378,14 +378,15 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
  git(["switch","-c",repairBranch,originalFeatureSha],{
   cwd:workTree,label:"create NEW disposable R139 repair branch"
  });
+ // Real TypeScript compiler fault, matching the paid Gemini failure phase.
+ // Commit the faulty source to disposable Gitea; never forge a Runner FAIL.
  const broken=before+
-  '\n\nit("R139 intentional backend regression", () => {'+
-  ' expect(1).toBe(2); });\n';
+  '\nexport const __r150Status: "ACTIVE" | "SUSPENDED" = "SUSPENDE";\n';
  await writeFile(target,broken,"utf8");
  git(["add","--",file],{cwd:workTree,label:"stage R139 failing test"});
  git(["-c","user.name=R139 Fixture",
   "-c","user.email=r139@localhost.invalid",
-  "commit","-m","test: inject deterministic temporary R139 regression"],{
+  "commit","-m","test: inject deterministic temporary R150 typecheck regression"],{
   cwd:workTree,label:"commit R139 failing SHA"});
  const failedSha=git(["rev-parse","HEAD"],{cwd:workTree,
   label:"resolve immutable R139 failure SHA"});
@@ -397,13 +398,15 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
   repository:"gitea://gitea.local/thesis/iam-console-poc",
   branch:repairBranch,commit_sha:failedSha,profile:"poc-default"
  };
- const failed=await stage("r139_real_docker_original_fail",()=>
+ const failed=await stage("r150_real_docker_typecheck_original_fail",()=>
   executor.run(failedRequest),840000);
  assert.equal(failed.status,"fail");
  assert.equal(failed.project_tests?.status,"fail");
  assert.ok(failed.phases.some(p=>
-  p.phase==="backend_tests"&&p.status==="fail"),
-  "Must be a genuine Docker backend_tests FAIL, not transport error");
+  p.phase==="typecheck"&&p.status==="fail"),
+  "Must be a genuine Docker TypeScript typecheck FAIL, not transport error");
+ assert.ok(failed.typecheck_error_codes?.includes("TS2820"),
+  "The actual compiler must observe the intentionally injected TS2820");
  const prsBefore=await api(base,repository+"/pulls?state=all",{
   authorization:creds.admin,label:"r139_no_pr_after_fail"});
  assert.ok(!prsBefore.some(p=>p.head?.ref===repairBranch),
@@ -432,6 +435,7 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
  const proof=verifyR139RealRepairEvidence({
   failed,passed,failedSha,repairedSha,branch:repairBranch,
   failedTaskId:"r139-original-test-"+suffix,
+  failedPhase:"typecheck",
   repairTaskId:"r139-new-backend-"+suffix,
   passedTaskId:"r139-new-test-"+suffix
  });
@@ -468,7 +472,7 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
   authorization:creds.admin,label:"R139 main unchanged after review"
  })).commit.id,mainSha);
  process.stdout.write(JSON.stringify({
-  event:"r139_real_disposable_gitea_docker_two_sha",
+  event:"r150_real_disposable_gitea_docker_typecheck_two_sha",
   ...proof,review_only_pr_opened:true,
   pr_state:"open",pr_merged:false,real_gitea_commit_count:2,
   original_root_unchanged:true,main_mutations:0,merge_calls:0
