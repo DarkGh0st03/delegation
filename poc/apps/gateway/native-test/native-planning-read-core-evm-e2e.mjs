@@ -719,8 +719,17 @@ try{
             allowedOperations:new Set(RUST_OPERATIONS),
             expectedEngineerDid:engineerDid
           });
+        // Match the same signed, non-derived Backend source that the
+        // zero-billing TypeScript fault probe actually modifies.
+        const sourceDerived=process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1"||
+          process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1";
+        const derivedPaths=sourceDerived?
+          selectSourceDerivedTargetsFromApprovedPlan({
+            plan:currentPlan,approvedRows:grants,repo,branch:workBranch
+          }):[];
         const target=roleFiles.backend.find(path=>
           path.startsWith("apps/backend/src/")&&path.endsWith(".ts")&&
+          !derivedPaths.includes(path)&&
           grants.some(g=>g.agent_id==="backend"&&g.operation==="read_file"&&
             g.resource===canonicalFileUri(repo,workBranch,path))&&
           grants.some(g=>g.agent_id==="backend"&&g.operation==="update_file"&&
