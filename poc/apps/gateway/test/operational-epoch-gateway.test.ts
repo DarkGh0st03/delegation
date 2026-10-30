@@ -792,3 +792,56 @@ test("R106 revoked operational root blocks even a well-scoped repair proposal",a
   /operational root is not active/);
  assert.equal((await h.intake.verifiedEpochHistory().catch(()=>[])).length,0);
 });
+
+test("R106 optional PR is a distinct Orchestrator Task after new Test, never an agent privilege",async(t)=>{
+ const h=await verifiedFailureForR106(t);
+ const plan=repairDraft();
+ const tasks=[...plan.tasks,{
+  id:"review-repair",agent_id:"orchestrator",title:"Open reviewed PR",
+  description:"Create a PR only following verified repair PASS",
+  depends_on:["repair-validation"],
+  permissions:[{resource:root,operation:"create_pull_request",
+   reason:"Original Engineer already granted review authority"}]
+ }];
+ const planner=prepareR106(h,{draft:()=>({tasks})});
+ const result=await planner.proposeAndReserve();
+ assert.equal(result.epoch,2);
+ const history=await h.intake.verifiedEpochHistory();
+ const latest=history.at(-1)!.plan;
+ assert.equal(latest.tasks.length,3);
+ assert.equal(latest.tasks[2].agent_id,"orchestrator");
+ assert.equal(latest.candidate_agents.length,2);
+ assert.deepEqual(latest.tasks[2].depends_on,["repair-validation"]);
+ assert.equal(latest.requested_permissions.at(-1).operation,"create_pull_request");
+ // Runtime admission is still a distinct trusted operation; no PR is
+ // executed or authorized just because a proposal and journal exist.
+ assert.equal(h.provider,3);
+});
+test("R106 PR cannot bypass the new Test's positive completion",async(t)=>{
+ const h=await verifiedFailureForR106(t);
+ const draft=repairDraft();
+ const tasks=[...draft.tasks,{
+  id:"premature-pr",agent_id:"orchestrator",title:"Open PR early",
+  description:"An unapproved early PR",
+  depends_on:["repair-implementation"],
+  permissions:[{resource:root,operation:"create_pull_request",reason:"Review"}]
+ }];
+ await assert.rejects(
+  prepareR106(h,{draft:()=>({tasks})}).proposeAndReserve(),
+  /Optional review PR must depend on passing Test/);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+});
+test("R106 model cannot add initial-branch creation as a repair shortcut",async(t)=>{
+ const h=await verifiedFailureForR106(t);
+ const draft=repairDraft();
+ const tasks=[...draft.tasks,{
+  id:"new-branch",agent_id:"orchestrator",title:"Unexpected branch",
+  description:"Wrongly discard the changed code",
+  depends_on:[],
+  permissions:[{resource:root,operation:"create_branch",reason:"Reset"}]
+ }];
+ await assert.rejects(
+  prepareR106(h,{draft:()=>({tasks})}).proposeAndReserve(),
+  /Orchestrator may only create review PR/);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+});
