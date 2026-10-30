@@ -1574,7 +1574,8 @@ test("R114 real Gateway pins original root before terminal Test FAIL finalizatio
  * intake is independently persisted and held by the Engineer owner.
  * No paid models, container engine, or external service are invoked here. */
 async function r115RemoteFixture(t:import("node:test").TestContext,
- options:{withDurable?:boolean;withRemoteEpoch?:boolean}={}){
+ options:{withDurable?:boolean;withRemoteEpoch?:boolean;
+  withReview?:boolean}={}){
  const h=await harness(t,options);
  await h.intake.reserveInitialEpoch();
  await h.gates.activate(session,sha);
@@ -2762,9 +2763,11 @@ test("R133.2 a valid Rust VP and fully passing original DAG cannot invent a repa
 
 /** R134 uses real signed-owner+HMAC Gateway fixtures, but scripted native
  * credential issuance. The resulting DC has no execution/VP authority. */
-async function r134Fixture(t:import("node:test").TestContext){
+async function r134Fixture(t:import("node:test").TestContext,
+ options:{withReview?:boolean}={}){
  const {h,client,request}=await r115RemoteFixture(t,{
-  withDurable:true,withRemoteEpoch:true
+  withDurable:true,withRemoteEpoch:true,
+  withReview:options.withReview
  });
  await prepareTrustedRemoteRepairFeedback(request());
  const reserved=await h.intake.reserveRepairEpoch(repair());
@@ -3300,8 +3303,9 @@ test("R140 A2A-only Task has no retired Runner acceptance, even after closing Ga
  assert.equal(f.h.provider,3,"An A2A claim cannot fabricate a Runner effect");
 });
 
-async function r141SuccessfulRepair(t:import("node:test").TestContext){
- const f=await r134Fixture(t);
+async function r141SuccessfulRepair(t:import("node:test").TestContext,
+ options:{withReview?:boolean}={}){
+ const f=await r134Fixture(t,options);
  await f.admit();
  await executeTrustedAdmittedRepairDag(r137Args(f,{
   async sendProtectedTask(req:any){
@@ -3319,7 +3323,13 @@ async function r141SuccessfulRepair(t:import("node:test").TestContext){
    return {card:{name:"Test"},task:artifact as never};
   }
  }));
- let head=sha,metadataCalls=0;
+ let head=sha,mainSha=sha,metadataCalls=0,prPosts=0,prGets=0;
+ const reviewPr=()=>{
+  const posted={id:55,number:7,state:"open",merged:false,draft:true,
+   head:{ref:branch,sha:head},base:{ref:"main",sha:mainSha},
+   html_url:"http://r141-isolated-gitea.local/pr/7"};
+  return posted;
+ };
  const gitea=new GiteaClient({
   baseUrl:"http://r141-isolated-gitea.local",token:"r141-read-only",
   owner:repo.owner,repository:repo.repository,
@@ -3331,6 +3341,20 @@ async function r141SuccessfulRepair(t:import("node:test").TestContext){
     metadataCalls++;
     return new Response(JSON.stringify({name:branch,commit:{id:head}}),
      {status:200});
+   }
+   if(uri.endsWith("/branches/main"))
+    return new Response(JSON.stringify({name:"main",commit:{id:mainSha}}),
+     {status:200});
+   if(uri.endsWith("/pulls")&&init?.method==="POST"){
+    prPosts++;
+    const request=JSON.parse(String(init.body));
+    assert.equal(request.head,branch);assert.equal(request.base,"main");
+    assert.equal(request.draft,true);
+    return new Response(JSON.stringify(reviewPr()),{status:201});
+   }
+   if(uri.endsWith("/pulls/7")&&(!init?.method||init.method==="GET")){
+    prGets++;
+    return new Response(JSON.stringify(reviewPr()),{status:200});
    }
    if(uri.endsWith("/api/v1/repos/"+repo.owner+"/"+repo.repository))
     return new Response(JSON.stringify({
@@ -3345,7 +3369,9 @@ async function r141SuccessfulRepair(t:import("node:test").TestContext){
  });
  return {f,witness,gitea,
   changeHead(value:string){head=value;},
-  get metadataCalls(){return metadataCalls;}
+  changeMain(value:string){mainSha=value;},
+  get metadataCalls(){return metadataCalls;},
+  get prPosts(){return prPosts;},get prGets(){return prGets;}
  };
 }
 test("R141 original root capture → retired signed Test → actual Gitea HEAD and Runner PASS",async t=>{
@@ -3406,8 +3432,9 @@ test("R141 wrong provider repository denied with no new signed Task or credentia
  * Ed25519 approval/epoch journal, with an explicitly scripted Adapter.
  * The native EVM status *response* in this unit test is not a real chain.
  */
-async function r142RetirementFixture(t:import("node:test").TestContext){
- const x=await r141SuccessfulRepair(t);
+async function r142RetirementFixture(t:import("node:test").TestContext,
+ options:{withReview?:boolean}={}){
+ const x=await r141SuccessfulRepair(t,options);
  let statusSet=false,source="evm_anchored_signed_jwt";
  let anchorVersion=8,rootId=x.f.h.rootAuthority.credential_id;
  let requests=0;
@@ -3534,5 +3561,68 @@ test("R142 original Coordinator shutdown uncertainty refuses otherwise valid EVM
  const proof=await f.witness.verifyRevokedRetiredExactSha();
  assert.equal(proof.root_revoked,true);
  assert.equal(proof.pull_request_authorized,false);
+ assert.equal(f.adapterRequests,1);
+});
+
+test("R145 after real-style Gateway/Adapter closure, signed original PR grant opens draft only once",async t=>{
+ const f=await r142RetirementFixture(t,{withReview:true});
+ await f.f.client.retireSession(session);
+ f.f.h.setPhase("closed");f.markRevoked();
+ assert.equal(f.prPosts,0);
+ const result=await f.witness.openSignedReviewOnlyDraft({
+  title:"Review independently tested repair",
+  body:"Engineer-approved, no merge; independent Rust root revoked"
+ });
+ assert.equal(result.status,"r145_signed_review_only_draft_open_unmerged");
+ assert.equal(result.signed_original_review_grant,true);
+ assert.equal(result.gateway_test_pass_verified,true);
+ assert.equal(result.original_root_revoked,true);
+ assert.equal(result.draft,true);assert.equal(result.merged,false);
+ assert.equal(result.merge_authorized,false);
+ assert.equal(result.head_branch,branch);
+ assert.equal(result.tested_commit_sha,sha);
+ assert.equal(result.draft_pr_number,7);
+ assert.equal(f.prPosts,1);
+ assert.equal(f.prGets,1);
+ assert.equal(f.adapterRequests,1);
+ assert.equal(f.f.h.provider,5,
+  "Draft review does not reactivate any Gateway or signed Task");
+ await assert.rejects(f.witness.openSignedReviewOnlyDraft({
+  title:"retry",body:"not allowed"
+ }),/one-shot, never retried/);
+ assert.equal(f.prPosts,1);
+});
+test("R145 no Engineer-signed original PR scope means zero reviewer writes",async t=>{
+ const f=await r142RetirementFixture(t);
+ await f.f.client.retireSession(session);
+ f.f.h.setPhase("closed");f.markRevoked();
+ await assert.rejects(f.witness.openSignedReviewOnlyDraft({
+  title:"Forged review",body:"Not independently approved"
+ }),/original signed Engineer scope has no reviewed PR grant/);
+ assert.equal(f.prPosts,0);
+ assert.equal(f.adapterRequests,0,
+  "Unsigned review cannot even trigger nonauthorizing EVM preflight");
+});
+test("R145 stale Gitea head or changed main SHA blocks review BEFORE PR POST",async t=>{
+ for(const variant of ["feature","main"]){
+  const f=await r142RetirementFixture(t,{withReview:true});
+  await f.f.client.retireSession(session);
+  f.f.h.setPhase("closed");f.markRevoked();
+  if(variant==="feature")f.changeHead("b".repeat(40));
+  else f.changeMain("b".repeat(40));
+  await assert.rejects(f.witness.openSignedReviewOnlyDraft({
+   title:"Review only",body:"Owner signed review"
+  }),/Gateway trusted control denied|Engineer-approved main revision changed/);
+  assert.equal(f.prPosts,0,"No review PR on a moved branch");
+ }
+});
+test("R145 a nonrevoked original Rust root cannot open a review PR",async t=>{
+ const f=await r142RetirementFixture(t,{withReview:true});
+ await f.f.client.retireSession(session);
+ f.f.h.setPhase("closed");
+ await assert.rejects(f.witness.openSignedReviewOnlyDraft({
+  title:"Review",body:"No revocation"
+ }),/Gateway trusted control denied/);
+ assert.equal(f.prPosts,0);
  assert.equal(f.adapterRequests,1);
 });
