@@ -1035,3 +1035,29 @@ test("R108 revoked root denies source read before any VP or provider work",async
  await assert.rejects(reader.read("src/invoices.ts"),/operational root is not active/);
  assert.equal(h.provider,0);
 });
+
+test("R108 source reader rejects Gateway deployments without signed Task-plan enforcement",async(t)=>{
+ const h=await harness(t,{withRead:true});
+ await h.intake.reserveInitialEpoch();
+ assert.equal(h.runtime.hasTrustedOperationalPlanGate(),true);
+ const unguarded=new GatewayRuntime({
+  bind_host:"127.0.0.1",bind_port:0,
+  prepare:{audience:"cloud-gateway",request_ttl_ms:120000,repository:repo},
+  adapter_url:"http://none",adapter_gateway_token:"test-only",
+  opa_url:"http://none",opa_timeout_ms:1000,
+  provider_mode:"mock",gitea_timeout_ms:1000
+ },{
+  executor:{provider:"gitea",
+   async execute(){throw Error("No unauthenticated source read");}},
+  verifier:{async verify(){throw Error("No verifier call");}},
+  policy:{async evaluate(){throw Error("No OPA call");}}
+ });
+ assert.equal(unguarded.hasTrustedOperationalPlanGate(),false);
+ assert.throws(()=>new TrustedOperationalRepairSourceReader({
+  gateway:unguarded,intake:h.intake,
+  featureHeadReader:trustedFeature(h),
+  sessionId:session,runtimeTaskId:"not-bound",
+  agentRole:"backend",expectedTestedSha:sha,
+  issueSignedVp:async()=>{throw Error("No authority");}
+ }),/real Gateway, owner intake, provider and VP issuer required/);
+});
