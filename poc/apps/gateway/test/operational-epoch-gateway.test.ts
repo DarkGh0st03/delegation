@@ -2970,3 +2970,25 @@ test("R135 revoked root during protected A2A blocks a completion receipt",async 
  assert.equal(f.calls.length,1);
  assert.equal(f.h.provider,3);
 });
+
+test("R135.3 Test repair cannot start until trusted Gateway confirms backend dependency",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ const adapterBefore=f.calls.length;
+ let sends=0;
+ await assert.rejects(dispatchTrustedAdmittedRepairA2A({
+  ...f.args,taskId:"test-repair",role:"test" as const,
+  credential:{...f.args.credential,
+   credential_id:"urn:r135:repair-test-child",
+   credential_status:{...f.args.credential.credential_status,
+    statusListIndex:"19032"}},
+  agentBaseUrls:{backend:"http://backend.local",
+   frontend:"http://frontend.local",test:"http://test.local"},
+  a2a:{async sendProtectedTask(){sends++;
+   throw Error("Uncompleted predecessor must block A2A");}}
+ }),/Gateway trusted control denied/);
+ assert.equal(f.calls.length,adapterBefore,
+  "A Task lacking dependencies cannot trigger irreversible native issuance");
+ assert.equal(sends,0,"No model/A2A work before trusted Task dependencies");
+ assert.equal(f.h.provider,3);
+});
