@@ -273,6 +273,37 @@ jobs:
             .filter(s=>stages.has(s));
           const marker=lines.filter(l=>l.startsWith("[trusted-positive-ci] native_dag_failure "))
             .at(-1);
+          // R119: R118 produced bounded model-turn and allowed-file counts,
+          // but the previous safe bridge silently dropped them. Read ONLY
+          // the named private diagnostic, revalidate each scalar and never
+          // expose raw Runner output, code, model prompts or unapproved paths.
+          const scopedMarker=lines.filter(l=>
+            l.startsWith("[native-dag-adk] multi_test_safe_diagnostic ")).at(-1);
+          let scopedProgress=null;
+          if(scopedMarker&&scopedMarker.length<4096){
+            try{
+              const v=JSON.parse(scopedMarker.slice(
+                "[native-dag-adk] multi_test_safe_diagnostic ".length));
+              const count=n=>Number.isSafeInteger(n)&&n>=0&&n<=32;
+              const scope=v?.failed_test_files_scoped;
+              if(count(v?.test_model_turns)&&
+                 count(v?.scripted_test_call_count)&&
+                 scope&&count(scope.count)&&count(scope.readable)&&
+                 count(scope.unreadable)&&
+                 scope.count===scope.readable+scope.unreadable&&
+                 typeof scope.explicit_referral==="boolean"){
+                scopedProgress={
+                  test_model_turns:v.test_model_turns,
+                  scripted_test_call_count:v.scripted_test_call_count,
+                  failed_test_files_scoped:{
+                    count:scope.count,readable:scope.readable,
+                    unreadable:scope.unreadable,
+                    explicit_referral:scope.explicit_referral
+                  }
+                };
+              }
+            }catch{/* fixed-vocabulary bridge only */}
+          }
           let diagnosis="not_available",assertion_location=null;
           let multi_test_diagnostic=null;
           if(marker&&marker.length<4096){
@@ -358,7 +389,8 @@ jobs:
                   runner_project_status:m.runner_project_status,
                   first_failed_phase:m.first_failed_phase,
                   signed_test_write_count:m.signed_test_write_count,
-                  ...(cleanTrace?{failure_trace:cleanTrace}:{})
+                  ...(cleanTrace?{failure_trace:cleanTrace}:{}),
+                  ...(scopedProgress??{})
                 };
             }catch{/* never echo untrusted input */}
           }
