@@ -390,6 +390,84 @@ export class GiteaClient {
     };
   }
 
+  /**
+   * R143 owner-side review-only creation in a disposable or explicitly
+   * approved repository. This is NOT a Rust DC capability, nor may a
+   * signed Test PASS or local Coordinator phase call it automatically.
+   *
+   * Gitea does not offer atomic HEAD compare-and-create for PRs.
+   * Detect all observable races; an uncertain POST is never retried.
+   */
+  async createDraftPullRequest(
+    headBranch:string,baseBranch:string,title:string,
+    expectedHeadSha:string,body?:string
+  ):Promise<Readonly<GiteaCreatedPullRequest&{
+    draft:true;open:true;merged:false
+  }>>{
+    if(typeof headBranch!=="string"||
+       !/^feature\/[A-Za-z0-9][A-Za-z0-9._/-]{0,180}$/u.test(headBranch)||
+       headBranch.includes("..")||headBranch.includes("//")||
+       typeof baseBranch!=="string"||
+       !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,180}$/u.test(baseBranch)||
+       baseBranch.includes("..")||baseBranch.includes("//")||
+       headBranch===baseBranch||
+       typeof title!=="string"||!title.trim()||title.length>160||
+       typeof expectedHeadSha!=="string"||
+       !/^[a-f0-9]{40}$/u.test(expectedHeadSha)||
+       (body!==undefined&&
+         (typeof body!=="string"||body.length>4096)))
+      throw new ProviderConflictError("Invalid explicitly scoped draft PR request");
+    const head=await this.getBranchMetadata(headBranch);
+    if(head.commit_sha!==expectedHeadSha)
+      throw new ProviderConflictError("Draft PR Gitea HEAD differs from accepted SHA");
+    const base=await this.getBranchMetadata(baseBranch);
+    if(!/^[a-f0-9]{40}$/u.test(base.commit_sha))
+      throw new ProviderUnavailableError("Gitea base branch SHA is not immutable");
+    // This is a ONE-SHOT POST with draft:true; no retries after ambiguous
+    // network status. Any later mismatch is an untrusted orphan for review.
+    const created=object(await this.#requestJson(this.#repoApi("/pulls"),{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        head:headBranch,base:baseBranch,title,body:body??"",
+        draft:true
+      })
+    }),"Gitea draft PR response");
+    const number=requiredSafeInteger(created.number,"pull_request.number");
+    if(number<1)
+      throw new ProviderUnavailableError("Gitea returned invalid draft PR number");
+    const assertDraft=(raw:unknown,label:string)=>{
+      const p=object(raw,label);
+      const h=object(p.head,"Gitea PR head");
+      const b=object(p.base,"Gitea PR base");
+      if(p.number!==number||p.state!=="open"||
+         p.merged!==false||p.draft!==true||
+         h.ref!==headBranch||h.sha!==expectedHeadSha||
+         b.ref!==baseBranch)
+        throw new ProviderUnavailableError(
+         "Gitea draft PR is not open, unmerged or pinned to accepted SHA");
+      return p;
+    };
+    assertDraft(created,"Gitea created draft PR");
+    const confirmed=assertDraft(
+      await this.#json(this.#repoApi("/pulls/"+number)),
+      "Gitea confirmed draft PR"
+    );
+    const after=await this.getBranchMetadata(headBranch);
+    if(after.commit_sha!==expectedHeadSha)
+      throw new ProviderUnavailableError(
+       "Gitea branch moved after draft PR creation");
+    const url=typeof confirmed.html_url==="string"&&confirmed.html_url.trim()
+      ?confirmed.html_url:undefined;
+    return Object.freeze({
+      id:requiredSafeInteger(confirmed.id,"pull_request.id"),
+      number,
+      ...(url?{url}:{}),
+      head_branch:headBranch,base_branch:baseBranch,
+      head_revision:expectedHeadSha,
+      draft:true as const,open:true as const,merged:false as const
+    });
+  }
+
   async createFile(
     branch: string,
     path: string,
