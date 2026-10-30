@@ -12,14 +12,15 @@ const valid=(r)=>r&&typeof r==="object"&&!Array.isArray(r)&&
  typeof r.repository==="string"&&typeof r.branch==="string";
 export function verifyR139RealRepairEvidence(input){
  const {failed,passed,failedSha,repairedSha,branch,failedTaskId,
-  repairTaskId,passedTaskId}=input??{};
+  repairTaskId,passedTaskId,failedPhase}=input??{};
  if(!SHA.test(failedSha??"")||!SHA.test(repairedSha??"")||
     failedSha===repairedSha||typeof branch!=="string"||
     !branch.startsWith("feature/")||
     !TASK.test(failedTaskId??"")||
     !TASK.test(repairTaskId??"")||
     !TASK.test(passedTaskId??"")||
-    new Set([failedTaskId,repairTaskId,passedTaskId]).size!==3)
+    new Set([failedTaskId,repairTaskId,passedTaskId]).size!==3||
+    !["typecheck","backend_tests"].includes(failedPhase))
   fail("two immutable SHAs and three distinct Task IDs required");
  if(!valid(failed)||!valid(passed)||
     failed.repository!=="gitea://gitea.local/thesis/iam-console-poc"||
@@ -30,7 +31,14 @@ export function verifyR139RealRepairEvidence(input){
     failed.request_id===passed.request_id||
     failed.status!=="fail"||failed.project_tests?.status!=="fail"||
     failed.phases.some(p=>p.phase==="researcher_acceptance"&&p.status==="pass")||
-    !failed.phases.some(p=>p.phase==="backend_tests"&&p.status==="fail")||
+    failed.phases.filter(p=>p.status==="fail").length!==1||
+    !failed.phases.some(p=>p.phase===failedPhase&&p.status==="fail")||
+    !failed.phases.some(p=>p.phase==="dependency_install"&&p.status==="pass")||
+    (failedPhase==="typecheck"&&
+     (!failed.phases.some(p=>p.phase==="backend_tests"&&p.status==="skipped")||
+      !failed.phases.some(p=>p.phase==="typecheck"&&p.status==="fail")))||
+    (failedPhase==="backend_tests"&&
+     !failed.phases.some(p=>p.phase==="typecheck"&&p.status==="pass"))||
     passed.status!=="pass"||passed.project_tests?.status!=="pass"||
     passed.researcher_acceptance?.status!=="pass"||
     !passed.phases.some(p=>p.phase==="backend_tests"&&p.status==="pass")||
@@ -40,6 +48,7 @@ export function verifyR139RealRepairEvidence(input){
  return Object.freeze({
   status:"r139_disposable_real_docker_repair_provider_verified_no_delegation",
   failed_sha:failedSha,repaired_sha:repairedSha,branch,
+  failed_phase:failedPhase,
   failed_test_task_id:failedTaskId,repair_task_id:repairTaskId,
   new_test_task_id:passedTaskId,
   failed_project_tests:"fail",repaired_project_tests:"pass",
