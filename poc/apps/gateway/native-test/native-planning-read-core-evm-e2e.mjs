@@ -32,6 +32,10 @@ import {TrustedGatewayRootVpVerifier} from "../src/trusted-root-vp-verification.
 import {createTrustedPlanIpcServer,TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
 import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
+import {issueAdmittedRepairTaskChild} from
+  "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts";
+import {TrustedChildIssuanceJournal} from
+  "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {GatewayCorroboratedTaskAttestor} from
@@ -695,6 +699,7 @@ try{
       "Operational root must match the exact approved resource/operation set");
     if(positiveDag){
       let trustedOwnerRecovery;
+      let ownerD1ChildEvidence;
       if(ownerD1Probe){
         // The *existing* approvedPlans instance is shared by this Gateway,
         // the issued Rust root's Coordinator and owner-private HMAC IPC.
@@ -789,6 +794,56 @@ try{
             assert.equal(epochs[1].root_credential_id,operationalId);
             assert.deepEqual(epochs[1].plan.tasks.map(t=>t.id),
               ["r150-owner-backend-repair","r150-owner-test-fresh"]);
+            // R150.6: ask the ORIGINAL Rust issuer for a genuinely
+            // attenuated first repair Child DC, after the SAME Gateway's
+            // independent epoch admission. No A2A dispatch or Gitea write
+            // is attributed to this credential issuance.
+            const journalDir=join(ownerDir,"repair-child-issuance");
+            await mkdir(journalDir,{mode:0o700});
+            const journal=new TrustedChildIssuanceJournal({
+              directory:journalDir,sessionId:session,
+              baseRevision:baseSha,planDigest:packet.plan_digest,
+              parentCredentialId:operationalId
+            });
+            const issued=await issueAdmittedRepairTaskChild({
+              sessionId:session,epoch:2,
+              planDigest:epochs[1].plan_digest,
+              taskId:"r150-owner-backend-repair",role:"backend",
+              runtimeTaskId:"dispatch_"+randomBytes(16).toString("base64url"),
+              coordinator,intake:armed.intake,gateway:gatewayOwner,
+              journal,engineerDid,adapterBaseUrl:adapterUrl,
+              orchestratorToken:token,
+              credential:{
+                credential_id:"urn:native:r150-d1-backend-"+randomBytes(7).toString("hex"),
+                valid_from:new Date(Date.now()-1000).toISOString(),
+                validity_seconds:300,
+                credential_status:{
+                  type:"BitstringStatusListEntry",
+                  statusPurpose:"revocation",
+                  statusListIndex:String(randomInt(70001,74000)),
+                  statusListCredential:"https://status.example/lists/native-owner-d1"
+                }
+              }
+            });
+            assert.equal(issued.status,"repair_child_issued_not_dispatched");
+            assert.equal(issued.gateway_task_bound,true);
+            assert.equal(issued.child_credential_issued,true);
+            assert.equal(issued.a2a_dispatched,false);
+            assert.equal(issued.provider_executed,false);
+            assert.equal(issued.epoch,2);
+            assert.equal(issued.session_id,session);
+            const records=await journal.records();
+            assert.equal(records.length,1);
+            assert.equal(records[0].task_id,"r150-owner-backend-repair");
+            assert.equal(records[0].observation,"adapter_response_verified");
+            assert.equal(records[0].parent_credential_id,operationalId);
+            ownerD1ChildEvidence={
+              original_rust_parent:operationalId,
+              child_issued:true,
+              gateway_task_bound:true,
+              a2a_dispatched:false,
+              provider_executed:false
+            };
           }
         };
       }
@@ -906,6 +961,12 @@ try{
           assert.equal(proof.pull_request_created,false);
           assert.equal(proof.failed_phase,"typecheck");
           assert.equal(coordinator.phase,"closed");
+          assert.equal(ownerD1ChildEvidence?.original_rust_parent,
+            operationalRootId);
+          assert.equal(ownerD1ChildEvidence?.child_issued,true);
+          assert.equal(ownerD1ChildEvidence?.gateway_task_bound,true);
+          assert.equal(ownerD1ChildEvidence?.a2a_dispatched,false);
+          assert.equal(ownerD1ChildEvidence?.provider_executed,false);
         }else{
         assert.equal(proof.typecheck_probe_verified,true);
         assert.equal(proof.signed_dag_completed,false);
