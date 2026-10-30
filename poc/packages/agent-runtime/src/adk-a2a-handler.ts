@@ -412,9 +412,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const filesModified = new Set<string>();
     const filesCreated = new Set<string>();
     const errors: string[] = [];
-    // tests_failed is recoverable INSIDE the same approved Test Task only
-    // when a later Gateway-corroborated run_tests actually passes. Other
-    // errors, notably denials, remain terminal regardless of later actions.
+    // R120: a Test FAIL is terminal for this signed Task. Repair requires
+    // a fresh Task/child, never an erasure by later model output.
     let outstandingTestFailure = false;
     let revision: string | null = null;
     let readRevision: string | null = null;
@@ -478,8 +477,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         runnerProfile = "poc-default";
         projectTests = pt;
         researcherAcceptance = ra;
-        if(pt==="pass"&&ra==="pass")
-          outstandingTestFailure=false;
+        // A synthetic later PASS never clears this Task's prior FAIL.
       }
     }
     if(outstandingTestFailure)errors.push("tests_failed");

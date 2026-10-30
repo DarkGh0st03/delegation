@@ -192,7 +192,7 @@ test("ADK cannot replay Docker run_tests after fresh-review referral",async()=>{
 });
 
 
-test("R118 a recoverable Docker FAIL is not an ADK Task PASS and permits a subsequent approved Runner attempt",async()=>{
+test("R120 failed Test Task cannot retry Docker through MCP",async()=>{
  class RetryAfterFail extends BaseLlm{
   requests:LlmRequest[]=[];
   constructor(){super({model:"offline-recoverable-runner-failure"});}
@@ -272,7 +272,7 @@ test("R118 a recoverable Docker FAIL is not an ADK Task PASS and permits a subse
   })){}
   assert.equal(model.requests.length,3,
    "ADK must receive feedback after recoverable first Docker FAIL");
-  assert.equal(attempts,2,"Only two approved actual runner calls");
+  assert.equal(attempts,1,"A signed Test FAIL fences a second Docker run");
   const outcomes=events as Array<{payload:{ok:boolean;error?:{
    kind:string;details?:{repair_requires_new_approval?:boolean}
   }}}>;
@@ -280,7 +280,9 @@ test("R118 a recoverable Docker FAIL is not an ADK Task PASS and permits a subse
   assert.equal(outcomes[0].payload.ok,false);
   assert.equal(outcomes[0].payload.error?.kind,"tests_failed");
   assert.notEqual(outcomes[0].payload.error?.details?.repair_requires_new_approval,true);
-  assert.equal(outcomes[1].payload.ok,true);
+  assert.equal(outcomes[1].payload.ok,false);
+   assert.equal(outcomes[1].payload.error?.kind,"tests_failed");
+   assert.equal(attempts,1);
  }finally{
   await built?.mcpToolset?.close();
   privateRegistry.end("recoverable-fail-test-task");

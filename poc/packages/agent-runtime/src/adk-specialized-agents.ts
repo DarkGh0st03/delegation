@@ -227,7 +227,7 @@ export function createAdkSpecializedAgent(
       "Never claim a commit or successful test without a confirmed controlled tool result.",
       "If the approved Task cannot be completed within these exact grants, report the limitation.",
       ...(config.role==="test"?[
-        "If run_tests reports repair_requires_new_approval, do not attempt to modify unapproved files or repeatedly rerun tests; report that fresh Engineer review and a new approved Task are required.",
+        "A failed run_tests ends THIS signed Test Task. Do not retry Docker or claim PASS within it. The trusted Orchestrator may admit a NEW Task with a fresh child under the original Rust root if its permission scope suffices; otherwise obtain a fresh Engineer approval.",
         "TypeScript error locations do not grant file read or update permissions."
       ]:[]),
       ...(config.role==="test"&&config.trustedRunTestsAllowed===false
@@ -275,6 +275,9 @@ export function createAdkSpecializedAgent(
   const schemaFor=(name:SpecializedToolName)=>SCHEMAS[name].extend({
     branch:z.literal(branch)
   });
+  // R120: one failed Runner result terminates this signed Test Task's
+  // ability to call Docker again; shared MCP and FunctionTools share it.
+  let terminalTestFailure:AdkControlledToolOutcome["payload"]|null=null;
   const tools = registry.modelTools
     // A signed Test-only Task advertises run_tests, not unrelated repo
     // reads/writes. No empty enum can turn into a broad string schema.
@@ -320,6 +323,17 @@ export function createAdkSpecializedAgent(
                 "Model file path is outside this approved Task's declared paths");
             }
           }
+          if(name==="run_tests"&&terminalTestFailure){
+
+            errorKind="tests_failed";
+
+            config.onToolOutcome?.({name,arguments:args as Record<string,unknown>,
+
+              payload:terminalTestFailure});
+
+            return terminalTestFailure;
+
+          }
           const result = await registry.execute({
             call_id: "adk-controlled-tool",
             name,
@@ -335,6 +349,8 @@ export function createAdkSpecializedAgent(
           if (error instanceof ControlledToolError) {
             errorKind = error.kind;
             const payload = controlledToolErrorPayload(error);
+            if(name==="run_tests"&&error.kind==="tests_failed")
+              terminalTestFailure=payload;
             config.onToolOutcome?.({ name, arguments: args as Record<string, unknown>, payload });
             return payload;
           }
@@ -383,10 +399,7 @@ export function createAdkSpecializedAgent(
     }
   }
 
-  // An out-of-grant compiler failure is terminal for this Task. The model
-  // may retry a tool call, but it must never trigger another billable Docker
-  // run using the same approval. Only a new signed session can proceed.
-  let terminalRepairReferral:AdkControlledToolOutcome["payload"]|null=null;
+  // R120: private failure latch is shared with the controlled MCP tool.
   const timedMcpRunTests = config.mcpRunTests &&
     config.trustedRunTestsAllowed!==false && config.mcpReadFile
     ? new FunctionTool({
@@ -399,8 +412,8 @@ export function createAdkSpecializedAgent(
           const argumentsRecord=args as Record<string,unknown>;
           let outcome:AdkControlledToolOutcome["payload"] | undefined;
           try {
-            if(terminalRepairReferral){
-              outcome=terminalRepairReferral;
+            if(terminalTestFailure){
+              outcome=terminalTestFailure;
               return {isError:true,structuredContent:outcome,
                 content:[{type:"text",text:JSON.stringify(outcome)}]};
             }
@@ -416,17 +429,12 @@ export function createAdkSpecializedAgent(
               config.trustedFilePermissions?.filter(p=>p.operation==="update_file")
                 .map(p=>p.path)??[]);
             if(outcome.ok)return response;
-            if(outcome.error.kind==="tests_failed"){
-              const d=outcome.error.details;
-              if(d!==null&&typeof d==="object"&&!Array.isArray(d)&&
-                 (d as {repair_requires_new_approval?:unknown})
-                   .repair_requires_new_approval===true)
-                terminalRepairReferral=outcome;
-            }
+            if(outcome.error.kind==="tests_failed")
+              terminalTestFailure=outcome;
             // MCP tool-call errors must be visible as safe, fixed-vocabulary
             // feedback to the model, not as raw Runner/Gateway responses.
-            // ADK can then repair with separately approved file tools and
-            // issue a NEW run_tests call. No secrets or source are forwarded.
+            // ADK may report failure, but a NEW signed Task is required
+            // for another Docker invocation. No secret data is forwarded.
             return {isError:true,structuredContent:outcome,
               content:[{type:"text",text:JSON.stringify(outcome)}]};
           }catch{

@@ -322,18 +322,19 @@ class TwoRunsModel extends BaseLlm {
   }
 }
 
-test("Protected A2A Test Agent can recover failed Docker with later verified PASS",async()=>{
+test("R120 Test A2A FAIL cannot be turned into same-task PASS",async()=>{
   const boundary=fakeBoundary("test",false,false,true);
   const model=new TwoRunsModel();
-  const {response}=await send("test",model,boundary.fetchFn as typeof fetch,43379);
-  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
-  assert.deepEqual(boundary.counts(),{prepareCalls:2,executeCalls:2});
+  let completed=false,artifacts="";
+  try{
+    const {response}=await send("test",model,boundary.fetchFn as typeof fetch,43379);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+    artifacts=JSON.stringify(response.task.artifacts);
+  }catch{/* A2A may surface terminal failure through the transport. */}
+  assert.equal(completed,false);
+  assert.deepEqual(boundary.counts(),{prepareCalls:1,executeCalls:1});
   assert.equal(model.requests.length,3);
-  const artifacts=JSON.stringify(response.task.artifacts);
   assert.equal(artifacts.includes("SECRET_FAILING_TEST_LOG"),false);
-  const part=response.task.artifacts[0]?.parts[0]?.content;
-  assert.equal(part?.$case,"data");
-  if(part?.$case==="data")assert.equal(part.value.test_outcome,"pass");
 });
 
 test("Protected A2A Test Agent cannot complete with only failed Docker evidence",async()=>{
@@ -370,7 +371,7 @@ class RepairWorkflowModel extends BaseLlm{
     return Promise.reject(Error("No provider API in offline repair test"));
   }
 }
-test("Protected A2A Test task: failed Runner -> same-task read and edit -> passing exact-SHA Runner",async()=>{
+test("R120 same-task source edit after failed Runner cannot authorize a second PASS",async()=>{
   const calls:string[]=[];
   const initialSha="a".repeat(40),fixedSha="b".repeat(40);
   let pending="",revision=initialSha;
@@ -416,17 +417,16 @@ test("Protected A2A Test task: failed Runner -> same-task read and edit -> passi
     throw Error("Unapproved tool");
   };
   const model=new RepairWorkflowModel();
-  const {response}=await send("test",model,fetchFn as typeof fetch,43381);
-  assert.equal(response.task.status?.state,TaskState.TASK_STATE_COMPLETED);
-  assert.deepEqual(calls,["run_tests","read_file","update_file","run_tests"]);
-  const part=response.task.artifacts[0]?.parts[0]?.content;
-  assert.equal(part?.$case,"data");
-  if(part?.$case==="data"){
-    assert.equal(part.value.test_outcome,"pass");
-    assert.equal(part.value.commit_sha,fixedSha);
-    assert.equal(part.value.tested_commit_sha,fixedSha);
-    assert.deepEqual(part.value.files_modified,[PATHS.test]);
-  }
+  let completed=false;
+  try{
+    const {response}=await send("test",model,fetchFn as typeof fetch,43381);
+    completed=response.task.status?.state===TaskState.TASK_STATE_COMPLETED;
+  }catch{/* A failed Test must not be accepted as completed. */}
+  assert.equal(completed,false);
+  assert.deepEqual(calls,["run_tests","read_file","update_file"],
+    "Second same-task run_tests cannot reach Gateway or Docker");
+  assert.equal(revision,fixedSha,
+    "Source edit alone is not a new verified Test acceptance");
 });
 
 test("Phase 3 Gateway denial never becomes a completed authorized A2A Artifact",async()=>{
