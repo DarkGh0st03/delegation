@@ -1522,36 +1522,97 @@ test("R112 transport error still retires root despite a real Runner FAIL",async(
  * increment: it is NOT yet a real Docker repair, new Child DC, PASS or PR.
  * Extend THIS path in R149/R150; do not falsely certify separate fixtures.
  */
+/**
+ * R149.2: the owner continuation itself executes the independently
+ * Gateway-admitted D1 via R138, using the SAME original failing
+ * protected A2A session. It is still a scripted Adapter/Runner fixture,
+ * never a real Docker, Rust VP or Gitea proof.
+ */
 test("R148 one original Test FAIL reaches owner and admits the next signed epoch under live root",async t=>{
  let liveChecks=0,proposalCalls=0;
+ const issued:string[]=[],sent:string[]=[];
+ let childJournal:TrustedChildIssuanceJournal|undefined;
  const x=await r112Dispatcher(t,{
   testFail:true,remote:true,remoteEpoch:true,
-  ownerArmer:async(h,gateway)=>armTrustedOwnerOperationalRecovery({
-   gateway,coordinator:h.coordinator,signedApprovals:h.signedStore,
-   epochDirectory:join(h.dir,"epochs"),
-   running:{readiness:{
-    session_id:session,base_revision:sha,
-    plan_digest:planDigest(h.parent),
-    authenticated_engineer_did:engineer
-   },operational_root_id:h.rootAuthority.credential_id},
-   verifyLiveRun:async()=>{
-    liveChecks++;
-    assert.equal(h.coordinator.phase,"execution");
-   },
-   planRepairEpoch:{
-    giteaClient:r124HeadClient(),
-    proposeRepairPlan:async input=>{
-     proposalCalls++;
-     assert.equal(input.feedback.failed_phase,"typecheck");
-     assert.equal(input.feedback.tested_commit_sha,sha);
-     assert.equal(input.feedback.remaining_repair_epochs,2);
-     return repairDraft();
+  ownerArmer:async(h,gateway)=>{
+   const childDir=join(h.dir,"r149-same-session-child-issuance");
+   await mkdir(childDir,{mode:0o700});
+   childJournal=new TrustedChildIssuanceJournal({
+    directory:childDir,sessionId:session,baseRevision:sha,
+    planDigest:h.rootAuthority.plan_digest,
+    parentCredentialId:h.rootAuthority.credential_id
+   });
+   const adapterFetch:typeof fetch=async(url,init)=>{
+    const body=JSON.parse(String(init?.body));
+    assert.match(String(url),/r149-adapter/);
+    issued.push(body.credential_id);
+    return new Response(JSON.stringify({
+     "@context":["https://www.w3.org/ns/credentials/v2"],
+     type:["VerifiableCredential","DelegationCredential"],
+     id:body.credential_id,issuer:"did:example:orchestrator",
+     credentialSubject:{sub:"did:example:"+body.delegatee,
+      per:body.permissions}
+    }),{status:201});
+   };
+   const protectedA2A={async sendProtectedTask(request:any){
+    const taskId=request.subtask.subtask_id;
+    sent.push(taskId);
+    if(taskId==="repair-implementation"){
+     assert.equal(request.subtask.approved_run_tests,undefined);
+     await h.invoke(request.trusted_gateway_task_id,"backend",
+      "update_file",edit("// fresh signed R149 repair effect"));
+     return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+    }
+    assert.equal(taskId,"repair-validation");
+    assert.equal(request.subtask.approved_run_tests,true);
+    await h.invoke(request.trusted_gateway_task_id,"test",
+     "run_tests",runner);
+    const artifact=r135A2AArtifact();
+    const value=artifact.artifacts[0].parts[0].content.value as any;
+    value.role="test";value.summary="New signed Test outcome";
+    value.test_outcome="pass";value.tested_commit_sha=sha;
+    value.runner_profile="poc-default";
+    value.project_tests="pass";value.researcher_acceptance="pass";
+    return {card:{name:"Test"},task:artifact as never};
+   }};
+   const ports=r137Args({
+    h,client:gateway,reserved:{plan_digest:planDigest(h.parent)},
+    journal:childJournal,
+    args:{adapterBaseUrl:"http://r149-adapter.local:8090",
+     orchestratorToken:"r149-private-owner-token",
+     fetchFn:adapterFetch}
+   } as never,protectedA2A);
+   const {journal,adapterBaseUrl,orchestratorToken,fetchFn,
+    agentBaseUrls,a2a,credentialForTask}=ports;
+   return armTrustedOwnerOperationalRecovery({
+    gateway,coordinator:h.coordinator,signedApprovals:h.signedStore,
+    epochDirectory:join(h.dir,"epochs"),
+    running:{readiness:{
+     session_id:session,base_revision:sha,
+     plan_digest:planDigest(h.parent),
+     authenticated_engineer_did:engineer
+    },operational_root_id:h.rootAuthority.credential_id},
+    verifyLiveRun:async()=>{
+     liveChecks++;
+     assert.equal(h.coordinator.phase,"execution");
     },
-    admitReservedEpoch:true
-   }
-  })
+    planRepairEpoch:{
+     giteaClient:r124HeadClient(),
+     proposeRepairPlan:async input=>{
+      proposalCalls++;
+      assert.equal(input.feedback.failed_phase,"typecheck");
+      assert.equal(input.feedback.tested_commit_sha,sha);
+      assert.equal(input.feedback.remaining_repair_epochs,2);
+      return repairDraft();
+     },
+     admitReservedEpoch:true,
+     executeAdmittedRepairDag:{journal,adapterBaseUrl,
+      orchestratorToken,fetchFn,agentBaseUrls,a2a,credentialForTask}
+    }
+   });
+  }
  });
- assert.ok(x.armed,"The owner bridge must be armed before the Test Task");
+ assert.ok(x.armed,"Owner bridge must be armed before the original Test Task");
  assert.deepEqual((await x.armed!.intake.verifiedEpochHistory())
   .map(epoch=>epoch.epoch),[1]);
  const outcome=await x.result;
@@ -1562,8 +1623,10 @@ test("R148 one original Test FAIL reaches owner and admits the next signed epoch
  assert.equal(outcome.verified_test_failure?.failed_runtime_task_id,
   x.failedRuntimeId);
  assert.equal(outcome.verified_test_failure?.execution_authorized,false);
- assert.equal(x.h.coordinator.phase,"execution",
-  "Only a verified Test failure may preserve the original root");
+ assert.equal(x.h.coordinator.phase,"execution");
+ assert.equal(x.h.provider,3,
+  "Before the owner callback there must be no repair provider effect");
+ assert.deepEqual(sent,[],"No repair A2A may run before owner handoff");
  await x.armed!.continueWithinActiveRoot(outcome.verified_test_failure!);
  const epochs=await x.armed!.intake.verifiedEpochHistory();
  assert.equal(epochs.length,2);
@@ -1572,82 +1635,18 @@ test("R148 one original Test FAIL reaches owner and admits the next signed epoch
  assert.deepEqual(epochs[1].plan.tasks.map(task=>task.id),
   ["repair-implementation","repair-validation"]);
  assert.equal(proposalCalls,1);
- assert.ok(liveChecks>=1);
- assert.equal(x.h.provider,3,
-  "The owner must not treat planning as a Docker retry or provider effect");
+ assert.ok(liveChecks>=4,
+  "Owner liveness must be checked before and between delegated repair Tasks");
+ assert.deepEqual(sent,["repair-implementation","repair-validation"],
+  "Owner callback must execute the entire newly signed repair DAG");
+ assert.equal(new Set(issued).size,2);
+ assert.equal(issued.length,2,"New Task must receive an independent child");
+ assert.equal((await childJournal!.records()).length,2);
+ assert.equal(x.h.provider,5,
+  "Exactly two new Gateway-backed scripted provider effects");
  assert.equal(x.h.coordinator.phase,"execution");
  await assert.rejects(x.armed!.continueWithinActiveRoot(
   outcome.verified_test_failure!),/one-use/);
-
- // R149.0: extend THE SAME original fail-and-owner session with fresh
- // protected repair A2A Task identities, not an unrelated R134 fixture.
- // The native Child issuance and provider effects are deliberately
- // scripted here; real EVM/Gitea/Docker wiring remains a separate gate.
- const childDir=join(x.h.dir,"r149-same-session-child-issuance");
- await mkdir(childDir,{mode:0o700});
- const childJournal=new TrustedChildIssuanceJournal({
-  directory:childDir,sessionId:session,baseRevision:sha,
-  planDigest:x.h.rootAuthority.plan_digest,
-  parentCredentialId:x.h.rootAuthority.credential_id
- });
- const issued:string[]=[],sent:string[]=[];
- const adapterFetch:typeof fetch=async(url,init)=>{
-  const body=JSON.parse(String(init?.body));
-  assert.match(String(url),/r149-adapter/);
-  issued.push(body.credential_id);
-  return new Response(JSON.stringify({
-   "@context":["https://www.w3.org/ns/credentials/v2"],
-   type:["VerifiableCredential","DelegationCredential"],
-   id:body.credential_id,issuer:"did:example:orchestrator",
-   credentialSubject:{sub:"did:example:"+body.delegatee,
-    per:body.permissions}
-  }),{status:201});
- };
- const protectedA2A={async sendProtectedTask(request:any){
-  const taskId=request.subtask.subtask_id;
-  sent.push(taskId);
-  if(taskId==="repair-implementation"){
-   assert.equal(request.subtask.approved_run_tests,undefined);
-   await x.h.invoke(request.trusted_gateway_task_id,"backend",
-    "update_file",edit("// fresh signed R149 repair effect"));
-   return {card:{name:"Backend"},task:r135A2AArtifact() as never};
-  }
-  assert.equal(taskId,"repair-validation");
-  assert.equal(request.subtask.approved_run_tests,true);
-  await x.h.invoke(request.trusted_gateway_task_id,"test",
-   "run_tests",runner);
-  const artifact=r135A2AArtifact();
-  const value=artifact.artifacts[0].parts[0].content.value as any;
-  value.role="test";value.summary="New signed Test outcome";
-  value.test_outcome="pass";value.tested_commit_sha=sha;
-  value.runner_profile="poc-default";
-  value.project_tests="pass";value.researcher_acceptance="pass";
-  return {card:{name:"Test"},task:artifact as never};
- }};
- const context={
-  h:x.h,client:x.remoteClient,reserved:{plan_digest:epochs[1].plan_digest},
-  journal:childJournal,args:{
-   adapterBaseUrl:"http://r149-adapter.local:8090",
-   orchestratorToken:"r149-private-owner-token",
-   fetchFn:adapterFetch
-  }
- };
- const repaired=await executeTrustedAdmittedRepairDag({
-  ...r137Args(context as never,protectedA2A),
-  intake:x.armed!.intake,
-  verifyLiveRun:async()=>{assert.equal(x.h.coordinator.phase,"execution");}
- });
- assert.equal(repaired.status,
-  "repair_dag_gateway_confirmed_not_final_runner_verified");
- assert.deepEqual(sent,["repair-implementation","repair-validation"]);
- assert.equal(new Set(issued).size,2);
- assert.equal(issued.length,2,"New Task must receive an independent child");
- assert.equal((await childJournal.records()).length,2);
- assert.equal(x.h.provider,5,
-  "Exactly two new Gateway-backed scripted provider effects");
- assert.equal(repaired.docker_pass_verified,false,
-  "Mock Runner effects must NEVER be misreported as real Docker PASS");
- assert.equal(repaired.pull_request_created,false);
  await x.h.coordinator.closeExecution();
  assert.equal(x.h.coordinator.phase,"closed");
  await assert.rejects(x.armed!.intake.verifiedEpochHistory(),
