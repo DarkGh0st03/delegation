@@ -602,12 +602,13 @@ export class TrustedApprovedExecutionPlans {
 
   /** Gateway-confirmed provider results are tracked internally, not via A2A. */
   recordProviderSuccess(
-    record:PreparedRequestRecord,result:ExecutionResult,verifiedPresenterId:string
+    record:PreparedRequestRecord,result:ExecutionResult,verifiedPresenterId:string,
+    verifiedCredentialId?:string
   ):void {
     if(!result.performed||result.provider==="mock")return;
     if(!["create_branch","create_pull_request","create_file",
           "update_file","run_tests","read_file"].includes(record.request.tool))return;
-    this.assertAuthorizedForExecution(record,verifiedPresenterId);
+    this.assertAuthorizedForExecution(record,verifiedPresenterId,verifiedCredentialId);
     if(result.tool!==record.request.tool)return;
     if(result.tool==="read_file"){
       // Read-only signed Tasks are permitted by the Planner contract and
