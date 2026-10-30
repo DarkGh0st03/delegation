@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync,randomBytes} from "node:crypto";
-import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,writeFile,readFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
@@ -35,6 +35,7 @@ import {TrustedChildIssuanceJournal} from
 import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
+import {TrustedGatewaySignedEpochInspector} from "../src/trusted-gateway-signed-epoch-inspector.ts";
 
 const repo={authority:"gitea.local",owner:"sample",repository:"invoice-service"};
 const root="gitea://gitea.local/sample/invoice-service";
@@ -2083,5 +2084,100 @@ test("R125 remote epoch admission refuses retired root and wrong session",async 
  await h.gates.retireSession(session);
  await assert.rejects(client.admitVerifiedOperationalEpoch(pins),
   /Gateway trusted control denied/);
+ assert.equal(h.provider,3);
+});
+
+async function r126InspectFixture(t:import("node:test").TestContext){
+ const base=await r115RemoteFixture(t,{withDurable:true});
+ const {h}=base;
+ const socketPath=join(h.dir,"r126-inspect.sock");
+ const secretFile=join(h.dir,"r126-inspect.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ const inspector=new TrustedGatewaySignedEpochInspector({
+  directory:join(h.dir,"epochs"),approvals:h.signedStore
+ });
+ const server=await createTrustedPlanIpcServer({
+  socketPath,secretFile,plans:h.gates,signedEpochInspector:inspector
+ });
+ await server.start();t.after(()=>server.close());
+ return {...base,inspector,client:await TrustedPlanIpcClient.connect({
+  socketPath,secretFile
+ })};
+}
+
+test("R126 IPC independently inspects Ed25519 signed original and next durable epochs",async t=>{
+ const {h,client,request}=await r126InspectFixture(t);
+ assert.equal(client.signedEpochInspectionConfigured(),true);
+ const pins={session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:planDigest(h.parent),epoch:1};
+ const first=await client.inspectSignedEpoch(pins);
+ assert.equal(first.status,"signed_epoch_ledger_consistent_not_native_root_verified");
+ assert.equal(first.execution_authorized,false);
+ assert.equal(first.gateway_epoch_admitted,false);
+ const proof=await prepareTrustedRemoteRepairFeedback(request());
+ assert.equal(proof.status,"repair_planning_eligible");
+ const reserved=await h.intake.reserveRepairEpoch(repair());
+ const next=await client.inspectSignedEpoch({
+  ...pins,epoch:2,plan_digest:reserved.plan_digest
+ });
+ assert.equal(next.epoch,2);
+ assert.equal(next.child_credential_issued,false);
+ assert.equal(h.provider,3);
+});
+
+test("R126 wrong root/digest/session, nonexistent epoch cannot become signed Gateway evidence",async t=>{
+ const {h,client}=await r126InspectFixture(t);
+ const pins={session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:planDigest(h.parent),epoch:1};
+ for(const forged of [
+  {...pins,session_id:"wrong-session"},
+  {...pins,root_plan_digest:"b".repeat(64)},
+  {...pins,plan_digest:"c".repeat(64)},
+  {...pins,epoch:2}
+ ])await assert.rejects(client.inspectSignedEpoch(forged),
+  /Gateway trusted control denied/);
+ assert.equal(h.provider,3);
+});
+
+test("R126 tampered fsynced journal is rejected despite valid signed Engineer receipt",async t=>{
+ const {h,client}=await r126InspectFixture(t);
+ const pins={session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:planDigest(h.parent),epoch:1};
+ assert.equal((await client.inspectSignedEpoch(pins)).epoch,1);
+ const path=join(h.dir,"epochs","epoch-001.json");
+ const corrupt=JSON.parse(await readFile(path,"utf8"));
+ corrupt.plan_digest="b".repeat(64);
+ await writeFile(path,JSON.stringify(corrupt)+"\n",{mode:0o600});
+ await assert.rejects(client.inspectSignedEpoch(pins),
+  /Gateway trusted control denied/);
+ assert.equal(h.provider,3);
+});
+
+test("R126 signed ledger inspection NEVER admits a different owner-only epoch",async t=>{
+ const {h,client,request}=await r126InspectFixture(t);
+ await prepareTrustedRemoteRepairFeedback(request());
+ const dirname=join(h.dir,"r126-not-gateway-epoch");
+ await mkdir(dirname,{mode:0o700});
+ const ledger=new TrustedOperationalEpochJournal({
+  directory:dirname,sessionId:session,baseRevision:sha,
+  rootCredentialId:h.rootAuthority.credential_id,
+  originalPlanDigest:planDigest(h.parent),allowedOperations:operations
+ });
+ await ledger.reserveInitial(h.parent);
+ const repairPlan=repair();
+ const reserved=await ledger.reserveNext(repairPlan,h.rootAuthority,registry);
+ const independent=new TrustedGatewaySignedEpochInspector({
+  directory:dirname,approvals:h.signedStore
+ });
+ const inspected=await independent.inspect({
+  session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:reserved.plan_digest,epoch:2
+ });
+ assert.equal(inspected.gateway_epoch_admitted,false);
+ await assert.rejects(client.admitVerifiedOperationalEpoch({
+  session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:reserved.plan_digest,epoch:2
+ }),/Gateway trusted control denied/);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
  assert.equal(h.provider,3);
 });

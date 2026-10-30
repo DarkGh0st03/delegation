@@ -14,6 +14,7 @@ import {createTrustedPlanIpcServer} from "./trusted-plan-ipc.ts";
 import {TrustedPlanningRevisions} from "./planning-revisions.ts";
 import {TrustedPlanningRetirementStore} from "./trusted-planning-retirement-store.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
+import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
 import {GiteaClient} from "./gitea-client.ts";
 import type {GatewayRuntimeConfig} from "./config.ts";
 
@@ -82,6 +83,14 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
     repository:config.prepare.repository.repository,
     timeoutMs:config.gitea_timeout_ms
   }),{retirementStore});
+  // Optional independently inspected operator-mounted 0700 epoch folder.
+  // This is NOT a native Rust authority source or admitted Gateway intake.
+  const sharedDir=process.env.TRUSTED_PLAN_EPOCH_LEDGER_DIR;
+  const signedEpochInspector=sharedDir?
+    new TrustedGatewaySignedEpochInspector({
+     directory:sharedDir,approvals
+    }):undefined;
+  if(signedEpochInspector)await signedEpochInspector.assertReady();
   const plans=new TrustedApprovedExecutionPlans({
     repository:config.prepare.repository,engineerDid,approvals,
     operationalSessionStore,
@@ -93,7 +102,7 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
   const ipc=await createTrustedPlanIpcServer({
     socketPath:value("TRUSTED_PLAN_IPC_SOCKET"),
     secretFile:value("TRUSTED_PLAN_IPC_SECRET_FILE"),plans,
-    planningRevisions
+    planningRevisions,signedEpochInspector
   });
   // SAME instance must be installed into GatewayRuntime.prepare/execute.
   return {plans,planningRevisions,ipc};

@@ -12,6 +12,7 @@ import type {AgentRole} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import {TrustedApprovedExecutionPlans,type TrustedRunnerFailure} from "./approved-execution-plans.ts";
 import {TrustedPlanningRevisions} from "./planning-revisions.ts";
+import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
 
 const ROUTE="/v1/private-plan-control";
 const MAX_BODY=4096,MAX_NONCES=4096,MAX_AGE=30_000;
@@ -35,6 +36,8 @@ type Command=
   |{action:"read_test_failure";session_id:string;
      root_plan_digest:string;runtime_task_id:string}
   |{action:"admit_epoch";session_id:string;root_plan_digest:string;
+     plan_digest:string;epoch:number}
+  |{action:"inspect_signed_epoch";session_id:string;root_plan_digest:string;
      plan_digest:string;epoch:number};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
@@ -72,7 +75,8 @@ function validate(x:unknown):Command{
      typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
      typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id))
     return o as Command;
-  if(o.action==="admit_epoch"&&
+  if((o.action==="admit_epoch"||
+      o.action==="inspect_signed_epoch")&&
      exact(o,["action","session_id","root_plan_digest","plan_digest","epoch"])&&
      typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
@@ -178,6 +182,7 @@ export async function createTrustedPlanIpcServer(config:{
   /** Must be the EXACT registry instance used by GatewayRuntime prepare and
    * execute, not a newly allocated registry or operational-plan alias. */
   planningRevisions?:TrustedPlanningRevisions;
+  signedEpochInspector?:TrustedGatewaySignedEpochInspector;
 }):Promise<{start():Promise<void>;close():Promise<void>;server:Server}>{
   const path=socketPath(config.socketPath);
   await ownerDirectory(dirname(path));
@@ -224,6 +229,8 @@ export async function createTrustedPlanIpcServer(config:{
           ok:true,enabled:config.plans.operationalLeaseConfigured(),
           operational_session_durable:
             config.plans.operationalSessionDurableConfigured?.()===true,
+          signed_epoch_inspection:
+            config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector,
           planning_retirement_enabled:
             config.planningRevisions instanceof TrustedPlanningRevisions,
           planning_retirement_durable:
@@ -271,6 +278,13 @@ export async function createTrustedPlanIpcServer(config:{
         const receipt=config.plans.readVerifiedTestFailure(
           command.runtime_task_id);
         response(res,200,{ok:true,failure:boundedTestFailure(receipt,pins)});
+      }else if(command.action==="inspect_signed_epoch"){
+        if(!(config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector)||
+           !config.plans.operationalLeaseConfigured()||
+           !config.plans.operationalSessionDurableConfigured())
+          fail("R126 signed ledger inspector and durable Gateway required");
+        const inspection=await config.signedEpochInspector.inspect(command);
+        response(res,200,{ok:true,inspection});
       }else if(command.action==="admit_epoch"){
         // R125: ONLY the real Gateway registry with durable operational
         // lease/session and original-root-bound Intake may commit a new
@@ -350,6 +364,7 @@ export class TrustedPlanIpcClient{
   #planningRetirementEnabled=false;
   #planningRetirementDurable=false;
   #operationalSessionDurable=false;
+  #signedEpochInspection=false;
   private constructor(path:string,secret:Buffer){
     this.#socket=path;this.#secret=secret;
   }
@@ -365,6 +380,7 @@ export class TrustedPlanIpcClient{
        typeof capabilities.planning_retirement_enabled!=="boolean"||
        typeof capabilities.planning_retirement_durable!=="boolean"||
        typeof capabilities.operational_session_durable!=="boolean"||
+       typeof capabilities.signed_epoch_inspection!=="boolean"||
        (capabilities.planning_retirement_durable&&
         !capabilities.planning_retirement_enabled))
       fail("Gateway did not attest authenticated recovery capabilities");
@@ -372,6 +388,7 @@ export class TrustedPlanIpcClient{
     client.#planningRetirementEnabled=capabilities.planning_retirement_enabled;
     client.#planningRetirementDurable=capabilities.planning_retirement_durable;
     client.#operationalSessionDurable=capabilities.operational_session_durable;
+    client.#signedEpochInspection=capabilities.signed_epoch_inspection;
     return client;
   }
   operationalLeaseConfigured():boolean{return this.#leaseEnabled;}
@@ -500,6 +517,32 @@ export class TrustedPlanIpcClient{
    * Gateway registry's OWN verified original Rust-root Intake and pending
    * failed/satisfied Task quiescence. A model cannot send this operation.
    */
+  signedEpochInspectionConfigured(){return this.#signedEpochInspection;}
+  /** R126 read-only signed journal consistency; NO native Rust grant. */
+  async inspectSignedEpoch(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+  }>){
+    if(!this.#signedEpochInspection)
+     fail("signed epoch inspector not configured");
+    const r=(await this.#send({action:"inspect_signed_epoch",...pins})).inspection;
+    if(!r||typeof r!=="object"||Array.isArray(r)||
+       Object.keys(r).sort().join(",")!==
+        "child_credential_issued,epoch,execution_authorized,gateway_epoch_admitted,plan_digest,root_plan_digest,session_id,status"||
+       r.status!=="signed_epoch_ledger_consistent_not_native_root_verified"||
+       r.session_id!==pins.session_id||
+       r.root_plan_digest!==pins.root_plan_digest||
+       r.plan_digest!==pins.plan_digest||r.epoch!==pins.epoch||
+       r.execution_authorized!==false||r.gateway_epoch_admitted!==false||
+       r.child_credential_issued!==false)
+      fail("invalid non-authorizing signed epoch inspection receipt");
+    return Object.freeze({
+     status:"signed_epoch_ledger_consistent_not_native_root_verified" as const,
+     session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+     plan_digest:pins.plan_digest,epoch:pins.epoch,
+     execution_authorized:false as const,gateway_epoch_admitted:false as const,
+     child_credential_issued:false as const
+    });
+  }
   async admitVerifiedOperationalEpoch(pins:Readonly<{
     session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
   }>):Promise<Readonly<{
