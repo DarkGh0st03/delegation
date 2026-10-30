@@ -49,7 +49,7 @@ import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
 import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
 import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
-import {classifyApprovedDagFailure} from "./native-approved-dag-failure-category.mjs";
+import {classifyApprovedDagFailure,safeApprovedDagFailureTrace} from "./native-approved-dag-failure-category.mjs";
 import {verifyPilotRunnerOutcome} from "./verified-pilot-runner-outcome.mjs";
 import {compareTrustedTypecheckRevisions}
   from "../../test-runner-controller/scripts/typecheck-revision-comparison.mjs";
@@ -898,7 +898,18 @@ export async function runNativePositiveApprovedDag({
               signed.plan.tasks.some(task=>task.id===id)),
             category:classify(error),
             cause_category:classify(error?.cause),
+            failure_trace:safeApprovedDagFailureTrace(error),
             runner_runs:runnerRuns,
+            runner_status:["pass","fail"].includes(runnerOutcome?.status)
+              ?runnerOutcome.status:"unknown",
+            first_failed_phase:[
+              "dependency_install","typecheck","backend_tests","frontend_tests",
+              "build","playwright_e2e","researcher_acceptance"
+            ].includes(runnerOutcome?.phases?.find(p=>p.status==="fail")?.phase)
+              ?runnerOutcome.phases.find(p=>p.status==="fail").phase:"none",
+            runner_project_status:["pass","fail"].includes(
+              runnerOutcome?.project_tests?.status)
+              ?runnerOutcome.project_tests.status:"unknown",
             signed_test_write_count:testCalls
           })+"\n");
       }
