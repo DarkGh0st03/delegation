@@ -382,30 +382,44 @@ async function pushReferenceApp(base,workTree,admin){
  * must be connected later; no claim of fully delegated recovery.
  */
 async function gatewayAuthorizedDisposableRepair({
- base,branchName,file,content,mainSha,failedSha,token,opaBaseUrl
+ base,branchName,file,content,mainSha,failedSha,token,opaBaseUrl,executor
 }){
  const sessionId="r150-gateway-repair-"+suffix;
  const engineerDid="did:thesis:engineer";
  const backendDid="did:thesis:backend";
+ const testDid="did:thesis:test";
  const uri="gitea://gitea.local/thesis/iam-console-poc";
  const branchUri=uri+"/branches/"+encodeURIComponent(branchName);
  const resource=branchUri+"/files/"+file;
  const taskId="repair-"+suffix,runtimeTaskId="dispatch_r150_"+suffix;
+ const testTaskId="retest-"+suffix;
+ const testRuntimeTaskId="dispatch_r150_test_"+suffix;
  const plan={
   schema_version:"1.0.0",plan_id:"r150-gateway-repair-"+suffix,
   session_id:sessionId,version:1,
   repository:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"},
   base_revision:mainSha,
-  requirement:"One authorized backend repair effect on disposable Gitea",
-  candidate_agents:[{agent_id:"backend",did:backendDid,card_ref:"trusted:backend"}],
-  tasks:[{id:taskId,agent_id:"backend",title:"Repair a failed TypeScript check",
-   description:"Restore the exact originally read backend file",depends_on:[],
-   resources:[resource]}],
+  requirement:"One authorized backend repair followed by one new Test Task",
+  candidate_agents:[
+   {agent_id:"backend",did:backendDid,card_ref:"trusted:backend"},
+   {agent_id:"test",did:testDid,card_ref:"trusted:test"}
+  ],
+  tasks:[
+   {id:taskId,agent_id:"backend",title:"Repair a failed TypeScript check",
+    description:"Restore the exact originally read backend file",depends_on:[],
+    resources:[resource]},
+   {id:testTaskId,agent_id:"test",title:"Retest corrected exact Gitea SHA",
+    description:"Run all phases on the independently observed repaired commit",
+    depends_on:[taskId],resources:[branchUri]}
+  ],
   requested_permissions:[
    {id:"r150-backend-read",task_id:taskId,agent_id:"backend",
     resource,operation:"read_file",reason:"Read pinned source before correction"},
    {id:"r150-backend-write",task_id:taskId,agent_id:"backend",
-    resource,operation:"update_file",reason:"Apply single approved in-scope repair"}
+    resource,operation:"update_file",reason:"Apply single approved in-scope repair"},
+   {id:"r150-new-test",task_id:testTaskId,agent_id:"test",
+    resource:branchUri,operation:"run_tests",
+    reason:"Run a fresh Docker test on the repaired exact SHA"}
   ],
   assumptions:[],uncertainties:[]
  };
@@ -414,7 +428,8 @@ async function gatewayAuthorizedDisposableRepair({
   allowedOperations:new Set(RUST_OPERATIONS),
   decision_id:"r150-gateway-approval-"+suffix,
   approved_by:engineerDid,approved_at:now.toISOString(),
-  approved_permission_ids:["r150-backend-read","r150-backend-write"]
+  approved_permission_ids:["r150-backend-read","r150-backend-write",
+   "r150-new-test"]
  });
  const keys=generateKeyPairSync("ed25519");
  const keyId="r150-disposable-review-key";
@@ -450,11 +465,14 @@ async function gatewayAuthorizedDisposableRepair({
    opa_url:"http://fixture-disabled",opa_timeout_ms:1000,
    provider_mode:"mock",gitea_timeout_ms:20000
   },{
-   approvedPlans:registry,executor:new GiteaExecutor(gitea),
+   // The real isolated Docker executor implements RunnerClient.run's
+   // tested-SHA protocol; Gateway owns the call, not this test's PASS path.
+   approvedPlans:registry,executor:new GiteaExecutor(gitea,executor,uri),
    verifier:{async verify(request){
-    assert.equal(request.presenter,"backend");
-    return {presenter_id:backendDid,issuer_id:"did:thesis:orchestrator",
-     credential_id:"urn:r150:scoped-backend-fixture",
+    assert.ok(["backend","test"].includes(request.presenter));
+    const did=request.presenter==="backend"?backendDid:testDid;
+    return {presenter_id:did,issuer_id:"did:thesis:orchestrator",
+     credential_id:"urn:r150:scoped-"+request.presenter+"-fixture",
      permissions:[request.required_permission],hierarchy_depth:1,
      expiration:new Date(Date.now()+20*60*1000).toISOString()};
    }},
@@ -485,9 +503,51 @@ async function gatewayAuthorizedDisposableRepair({
   const current=await gitea.getBranchMetadata(branchName);
   assert.equal(result.execution.commit_sha,current.commit_sha);
   assert.notEqual(current.commit_sha,failedSha);
+  // R150.3: a NEW Test Task cannot be prepared while its Backend
+  // dependency has not been independently Gateway-attested.
+  assert.throws(()=>gateway.prepare({
+   task_id:testRuntimeTaskId,agent_role:"test",
+   tool:"run_tests",arguments:{branch:branchName,profile:"poc-default"}
+  }),/approved plan|task|denied/i);
+  await registry.confirmTaskCompletion(runtimeTaskId,{
+   source:"trusted_a2a_poll",runtime_task_id:runtimeTaskId,
+   state:"completed",role:"backend",
+   artifact:{branch:branchName,revision:current.commit_sha,
+    commit_sha:current.commit_sha,files_modified:[file],files_created:[],
+    test_outcome:"not_run"}
+  });
+  // This is an in-process no-model trusted-observation fixture, NOT
+  // proof that the R149 owner's real A2A/Child DC has been connected.
+  registry.bindTask(sessionId,testTaskId,testRuntimeTaskId,"test");
+  const preparedTest=gateway.prepare({
+   task_id:testRuntimeTaskId,agent_role:"test",
+   tool:"run_tests",arguments:{branch:branchName,profile:"poc-default"}
+  });
+  const passEffect=await stage("r150_gateway_new_test_real_docker_pass",()=>
+   gateway.execute({request_id:preparedTest.request_id,
+    signed_vp:"r150-fixture-presentation"}),840000);
+  assert.equal(passEffect.policy.allow,true);
+  assert.equal(passEffect.execution.provider,"runner");
+  assert.equal(passEffect.execution.status,"pass");
+  assert.equal(passEffect.execution.tested_commit_sha,current.commit_sha);
+  assert.equal(passEffect.execution.project_tests?.status,"pass");
+  assert.equal(passEffect.execution.researcher_acceptance?.status,"pass");
+  assert.ok(passEffect.execution.phases.every(p=>p.status==="pass"));
+  await registry.confirmTaskCompletion(testRuntimeTaskId,{
+   source:"trusted_a2a_poll",runtime_task_id:testRuntimeTaskId,
+   state:"completed",role:"test",
+   artifact:{branch:branchName,revision:current.commit_sha,
+    commit_sha:current.commit_sha,files_modified:[],files_created:[],
+    test_outcome:"pass",tested_commit_sha:current.commit_sha,
+    runner_profile:"poc-default",project_tests:"pass",
+    researcher_acceptance:"pass"}
+  });
+  await registry.retireSession(sessionId);
   return {previous_revision:failedSha,
    precondition_blob_sha:result.execution.precondition_blob_sha,
-   commit_sha:result.execution.commit_sha,policy_version:result.policy.policy_version};
+   commit_sha:current.commit_sha,policy_version:result.policy.policy_version,
+   gateway_test_task_id:testTaskId,runner_request_id:preparedTest.request_id,
+   passed:passEffect.execution};
  }finally{
   try{registry?.closeSession(sessionId);}finally{
    await rm(dir,{recursive:true,force:true});
@@ -559,7 +619,7 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
   "Repair may start only from the exact Docker-failed Gitea SHA");
  const mutation=await gatewayAuthorizedDisposableRepair({
   base,branchName:repairBranch,file,content:before,
-  mainSha,failedSha,token:creds.statusToken,opaBaseUrl
+  mainSha,failedSha,token:creds.statusToken,opaBaseUrl,executor
  });
  assert.equal(mutation.previous_revision,failedSha,
   "Provider repair must record the failed revision as its precondition");
@@ -577,8 +637,13 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
   "Old FAIL Task cannot silently run against the new branch HEAD");
  const passRequest={...failedRequest,request_id:randomUUID(),
   commit_sha:repairedSha};
- const passed=await stage("r139_real_docker_new_test_pass",()=>
-  executor.run(passRequest),840000);
+ // R150.3: the exact-SHA Docker PASS is now a separate signed Test Task
+ // crossing the SAME approved Gateway as the repair provider effect.
+ // The earlier direct PASS request is no longer executed here.
+ const passed=mutation.passed;
+ assert.equal(passed.tested_commit_sha,repairedSha);
+ assert.equal(mutation.gateway_test_task_id,"retest-"+suffix);
+ assert.notEqual(mutation.runner_request_id,failedRequest.request_id);
  const proof=verifyR139RealRepairEvidence({
   failed,passed,failedSha,repairedSha,branch:repairBranch,
   failedTaskId:"r139-original-test-"+suffix,
