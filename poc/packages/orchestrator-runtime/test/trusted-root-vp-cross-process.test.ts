@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {spawn,type ChildProcessWithoutNullStreams} from "node:child_process";
+import {spawn} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
 import {randomBytes} from "node:crypto";
@@ -63,7 +63,7 @@ async function fixture(t:import("node:test").TestContext){
   });
  });
  const client=await TrustedRootVpSocketClient.connect({socketPath,secretFile});
- return {client,secretFile,wrongSecret};
+ return {client,secretFile,wrongSecret,socketPath};
 }
 test("R130.4 real separate OS process signs fresh Gateway-root challenge, no authority issued",async t=>{
  const f=await fixture(t),seen:string[]=[];
@@ -110,8 +110,10 @@ test("R130.4 OS-process socket rejects invalid secret, foreign root and nonce re
   challenge:"d".repeat(64)
  }),/Private root VP signing denied/);
  const rogue=await TrustedRootVpSocketClient.connect({
-  socketPath:"/tmp/placeholder",secretFile:f.wrongSecret
- }).catch(()=>null);
- // Wrong secret cannot be used against the actual owner-only socket.
- assert.equal(rogue,null);
+  socketPath:f.socketPath,secretFile:f.wrongSecret
+ });
+ // HMAC failure occurs BEFORE any Orchestrator signing call.
+ await assert.rejects(rogue.present({
+  ...original,challenge:"e".repeat(64)
+ }),/Private root VP signing denied/);
 });
