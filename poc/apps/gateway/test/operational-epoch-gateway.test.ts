@@ -34,6 +34,9 @@ import {TrustedChildIssuanceJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {issueAdmittedRepairTaskChild} from
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts";
+import {dispatchTrustedAdmittedRepairA2A} from
+  "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
+import {TaskState} from "@a2a-js/sdk";
 import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
@@ -2876,5 +2879,94 @@ test("R134 revocation during native child issuance leaves no dispatch authority"
  assert.equal(f.calls.length,1);
  assert.equal((await f.journal.records()).length,1,
   "External issuance must stay in durable audit, not silently be retried");
+ assert.equal(f.h.provider,3);
+});
+
+
+function r135A2AArtifact(){
+ return {
+  id:"sdk-r135-repair",
+  contextId:"context-r135",
+  status:{state:TaskState.TASK_STATE_COMPLETED,
+   timestamp:"2026-10-30T16:00:00Z",message:undefined},
+  artifacts:[{artifactId:"artifact-r135",name:"Backend repair",
+   description:"",parts:[{content:{$case:"data" as const,value:{
+    role:"backend",summary:"Completed authorized repair",
+    branch,revision:sha,commit_sha:sha,files_modified:[],
+    files_created:[],test_outcome:"not_run",errors:[]
+   }},metadata:undefined,filename:"",mediaType:"application/json"}],
+   metadata:undefined,extensions:[]}],
+  history:[],metadata:undefined
+ };
+}
+test("R135 signed repair grants + original Agent Card -> exactly one Rust DC -> protected A2A",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ const seen:any[]=[];
+ const result=await dispatchTrustedAdmittedRepairA2A({
+  ...f.args,
+  agentBaseUrls:{backend:"http://backend.local:8080",
+   frontend:"http://frontend.local:8081",
+   test:"http://test.local:8082"},
+  a2a:{async sendProtectedTask(request){
+   seen.push(structuredClone(request));
+   return {card:{name:"Pinned Backend Agent"},
+    task:r135A2AArtifact() as never};
+  }}
+ });
+ assert.equal(result.status,"a2a_artifact_unconfirmed");
+ assert.equal(result.epoch,2);
+ assert.equal(result.task_id,"backend-repair");
+ assert.match(result.runtime_task_id,/^dispatch_[A-Za-z0-9_-]{22}$/);
+ assert.equal(result.credential_id,f.args.credential.credential_id);
+ assert.equal(result.gateway_task_completed,false);
+ assert.equal(result.docker_pass_verified,false);
+ assert.equal(seen.length,1);
+ assert.equal(f.calls.length,1,"A2A must NOT issue another Rust child");
+ assert.equal(f.h.provider,3,"An A2A Artifact is not Gitea/Docker confirmation");
+ assert.equal(seen[0].trusted_gateway_task_id,result.runtime_task_id);
+ assert.equal(seen[0].agent_base_url,"http://backend.local:8080");
+ assert.deepEqual(seen[0].subtask.approved_file_permissions,
+  [{operation:"update_file",path:"src/invoices.ts"}]);
+ assert.deepEqual(seen[0].subtask.relevant_paths,["src/invoices.ts"]);
+ assert.equal(seen[0].subtask.branch,branch);
+ assert.equal(seen[0].delegation_evidence.credential_id,
+  f.args.credential.credential_id);
+ assert.deepEqual(JSON.parse(seen[0].delegation_evidence.credential)
+  .credentialSubject.per,[{resource:file,operation:"update_file"}]);
+ // A2A completion cannot turn into trusted Gateway Task completion.
+ assert.throws(()=>f.h.runtime.prepare({
+  task_id:"task-backend",agent_role:"backend",tool:"update_file",
+  arguments:edit("// stale")
+ }),/Stale operational epoch/);
+ assert.equal((await f.journal.records()).length,1);
+});
+test("R135 a repair A2A Task cannot be sent before independent Gateway admission",async t=>{
+ const f=await r134Fixture(t),sent:string[]=[];
+ await assert.rejects(dispatchTrustedAdmittedRepairA2A({
+  ...f.args,
+  agentBaseUrls:{backend:"http://backend.local",
+   frontend:"http://frontend.local",test:"http://test.local"},
+  a2a:{async sendProtectedTask(){sent.push("unsafe");
+   throw Error("A2A must not be reached");}}
+ }),/Gateway trusted control denied/);
+ assert.equal(sent.length,0);
+ assert.equal(f.calls.length,0);
+ assert.equal((await f.journal.records()).length,0);
+});
+test("R135 revoked root during protected A2A blocks a completion receipt",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();let sent=0;
+ await assert.rejects(dispatchTrustedAdmittedRepairA2A({
+  ...f.args,
+  agentBaseUrls:{backend:"http://backend.local",
+   frontend:"http://frontend.local",test:"http://test.local"},
+  a2a:{async sendProtectedTask(){
+   sent++;f.h.setPhase("closed");
+   return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+  }}
+ }),/operational root revoked before protected A2A/);
+ assert.equal(sent,1);
+ assert.equal(f.calls.length,1);
  assert.equal(f.h.provider,3);
 });
