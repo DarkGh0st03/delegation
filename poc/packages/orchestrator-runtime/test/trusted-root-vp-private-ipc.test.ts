@@ -21,7 +21,14 @@ const perm:Permission={
  resource:"gitea://gitea.local/sample/invoice-service",
  operation:"read_file"
 };
-async function setup(t:import("node:test").TestContext){
+async function setup(t:import("node:test").TestContext,options:{
+ liveRoot?:boolean;deferredSigner?:boolean;
+}={}){
+ let phase:"execution"|"closed"="execution";
+ let resume:undefined|(()=>void);
+ let entered:undefined|(()=>void);
+ const signerEntered=new Promise<void>(resolve=>{entered=resolve;});
+ const releaseSigner=()=>resume?.();
  const home=await mkdtemp(join(tmpdir(),"r130-private-"));
  const privateDir=join(home,"private");
  await mkdir(privateDir,{mode:0o700});
@@ -45,6 +52,10 @@ async function setup(t:import("node:test").TestContext){
    assert.deepEqual(body.disclosed_permissions,[perm]);
    assert.match(body.challenge,/^[a-f0-9]{64}$/);
    called.push({challenge:body.challenge,permissions:body.disclosed_permissions});
+   if(options.deferredSigner){
+    entered?.();
+    await new Promise<void>(resolve=>{resume=resolve;});
+   }
    return new Response(JSON.stringify({
     signed_vp:"signed-root-vp:"+body.challenge
    }),{status:200,headers:{"content-type":"application/json"}});
@@ -52,7 +63,19 @@ async function setup(t:import("node:test").TestContext){
  });
  const server=await createTrustedRootVpSignerServer({
   socketPath,secretFile,presenter,
-  rootCredentialId:credential,rootPermissions:[perm],audience
+  rootCredentialId:credential,rootPermissions:[perm],audience,
+  ...(options.liveRoot?{liveRoot:{
+   coordinator:{
+    get phase(){return phase;},
+    trustedOperationalAuthority(){
+     if(phase!=="execution")throw Error("root closed");
+     return {credential_id:credential,plan_digest:"a".repeat(64),
+      permissions:[perm]};
+    }
+   },
+   originalPlanDigest:"a".repeat(64),
+   ownerRunActive:()=>phase==="execution"
+  }}:{})
  });
  await server.start();
  t.after(async()=>{
@@ -64,7 +87,8 @@ async function setup(t:import("node:test").TestContext){
   credential_id:credential,audience,
   challenge,disclosed_permissions:[perm]
  });
- return {client,input,called,socketPath,secretFile,wrongSecret,server};
+ return {client,input,called,socketPath,secretFile,wrongSecret,server,
+  signerEntered,releaseSigner,closeRoot(){phase="closed";}};
 }
 test("R130 IPC: Gateway nonce -> private Orchestrator bearer -> Rust VP verification, no epoch authority",async t=>{
  const f=await setup(t);
@@ -139,4 +163,32 @@ test("R130 owner-only server does not replace existing Unix listener",async t=>{
  const f=await setup(t);
  await assert.rejects(f.server.start(),/already started/);
  assert.equal(f.called.length,0);
+});
+
+test("R131 active signed Coordinator root permits nonce-bound VP and rejects revoked root",async t=>{
+ const f=await setup(t,{liveRoot:true});
+ assert.equal(await f.client.present(f.input("1".repeat(64))),
+  "signed-root-vp:"+("1".repeat(64)));
+ f.closeRoot();
+ await assert.rejects(f.client.present(f.input("2".repeat(64))),
+  /Private root VP signing denied/);
+ assert.equal(f.called.length,1,"closed root cannot reach Rust Adapter");
+});
+test("R131 independent owner shutdown fence stops signing before Rust revocation",async t=>{
+ const f=await setup(t,{liveRoot:true});
+ f.server.fence();
+ await assert.rejects(f.client.present(f.input("3".repeat(64))),
+  /Private root VP signing denied/);
+ assert.equal(f.called.length,0);
+});
+test("R131 revocation DURING native signing cannot return stale signed VP",async t=>{
+ const f=await setup(t,{liveRoot:true,deferredSigner:true});
+ const promise=f.client.present(f.input("4".repeat(64)));
+ await f.signerEntered;
+ f.closeRoot();
+ f.releaseSigner();
+ await assert.rejects(promise,/Private root VP signing denied/);
+ assert.equal(f.called.length,1);
+ await assert.rejects(f.client.present(f.input("5".repeat(64))),
+  /Private root VP signing denied/);
 });
