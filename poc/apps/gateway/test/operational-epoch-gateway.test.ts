@@ -1288,3 +1288,100 @@ test("R109 denies discovery Task admission without a matching durable Adapter AC
  assert.equal(proof.execution_authorized,false);
  assert.equal(h.provider,3);
 });
+
+
+/** R112: the host owns the signed root and the SAME Gateway that witnessed
+ * Docker, not an A2A "failed" string or a model-generated claim. */
+async function r112Dispatcher(t:import("node:test").TestContext,
+ options:{testFail:boolean;message?:string;optIn?:boolean}){
+ const h=await harness(t,{withReview:true});
+ await h.intake.reserveInitialEpoch();
+ await h.gates.activate(session,sha);
+ let failedRuntimeId:string|undefined;
+ const dispatcher=await TrustedApprovedA2ADispatcher.load({
+  approvals:h.signedStore,
+  coordinator:h.coordinator as any,
+  sessionId:session,expectedPlanDigest:planDigest(h.parent),
+  baseRevision:sha,expectedEngineerDid:engineer,
+  agentBaseUrls:{backend:"http://trusted.backend",frontend:"http://trusted.frontend",
+   test:"http://trusted.test"},
+  ...(options.optIn?{verifiedTestFailureRecovery:{
+   gateway:h.gates,intake:h.intake
+  }}:{}),
+  async authorityForTask(id:string,role){
+   return {parent_credential_id:h.rootAuthority.credential_id,
+    credential_id:"urn:test:"+id,valid_from:"2026-10-29T09:00:00Z",
+    validity_seconds:300,credential_status:{
+     type:"BitstringStatusListEntry",statusPurpose:"revocation",
+     statusListIndex:role==="test"?"14002":"14001",
+     statusListCredential:"https://status.example/a2a"}
+   };
+  },
+  roleRunner:{
+   async issueAndRun(input){
+    if(input.role==="backend"){
+     await h.invoke(input.trusted_gateway_task_id,"backend",
+      "update_file",edit("// original change"));
+     return {role:"backend",task_id:"remote-backend",
+      artifact:{role:"backend",branch,revision:sha,commit_sha:sha,
+       files_modified:[],files_created:[],test_outcome:"not_run",
+       summary:"Gateway-confirmed backend operation",errors:[]}};
+    }
+    if(input.role==="test"){
+     failedRuntimeId=input.trusted_gateway_task_id;
+     if(options.testFail)h.setRunnerFailure();
+     await h.invoke(input.trusted_gateway_task_id,"test","run_tests",runner);
+     throw Error(options.message??"Protected A2A task ended without completion");
+    }
+    throw Error("Unexpected specialist dispatch");
+   }
+  }
+ } as any);
+ const result=dispatcher.executeApprovedDag({
+  async invokeOrchestratorTask(taskId,runtimeTaskId){
+   assert.equal(taskId,"setup");
+   await h.invoke(runtimeTaskId,"orchestrator","create_branch",
+    {branch,base_branch:"main"});
+  }
+ });
+ return {h,dispatcher,result,get failedRuntimeId(){return failedRuntimeId;}};
+}
+test("R112 a corroborated terminal Test FAIL suspends only old A2A DAG; new root-scoped epoch may begin",async(t)=>{
+ const x=await r112Dispatcher(t,{testFail:true,optIn:true});
+ const outcome=await x.result;
+ assert.equal(outcome.status,"verified_test_failure_suspended");
+ assert.equal(outcome.verified_test_failure?.status,"repair_planning_eligible");
+ assert.equal(outcome.verified_test_failure?.provenance,
+  "gateway_verified_docker_runner");
+ assert.equal(outcome.verified_test_failure?.failed_task_id,"test-original");
+ assert.equal(outcome.verified_test_failure?.failed_runtime_task_id,x.failedRuntimeId);
+ assert.deepEqual(outcome.completed_task_ids,["setup","backend-original"]);
+ assert.equal(x.h.coordinator.phase,"execution");
+ assert.equal(x.h.provider,3);
+ await assert.rejects(x.dispatcher.dispatch("test-original"),
+  /inactive|already running/);
+ const planned=await x.h.intake.reserveRepairEpoch(repair());
+ assert.equal(planned.epoch,2);
+ const admitted=await x.h.gates.admitNextOperationalEpoch(session,2);
+ assert.equal(admitted.epoch,2);
+ assert.deepEqual(admitted.blocked_descendant_task_ids,["post-review","pr-after-test"]);
+ assert.equal(x.h.coordinator.phase,"execution");
+});
+test("R112 no actual failed Runner denies suspension and retires the root",async(t)=>{
+ const x=await r112Dispatcher(t,{testFail:false,optIn:true});
+ await assert.rejects(x.result,/Protected A2A task ended without completion/);
+ assert.equal(x.h.coordinator.phase,"closed");
+ await assert.rejects(x.h.intake.verifiedEpochHistory(),
+  /operational root is not active/);
+});
+test("R112 transport error still retires root despite a real Runner FAIL",async(t)=>{
+ const x=await r112Dispatcher(t,{testFail:true,optIn:true,
+  message:"Connection reset during A2A transport"});
+ await assert.rejects(x.result,/Connection reset during A2A transport/);
+ assert.equal(x.h.coordinator.phase,"closed");
+});
+test("R112 legacy dispatcher without trusted recovery opts out and remains terminal",async(t)=>{
+ const x=await r112Dispatcher(t,{testFail:true,optIn:false});
+ await assert.rejects(x.result,/Protected A2A task ended without completion/);
+ assert.equal(x.h.coordinator.phase,"closed");
+});
