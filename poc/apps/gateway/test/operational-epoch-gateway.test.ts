@@ -128,9 +128,11 @@ async function harness(t:import("node:test").TestContext,
  const rootAuthority={
   credential_id:"urn:root:invoice-service",
   plan_digest:planDigest(parent),
-  permissions:parent.requested_permissions.map(x=>({
-   resource:x.resource,operation:x.operation
-  }))
+  permissions:[...new Map(parent.requested_permissions.map(x=>[
+   JSON.stringify([x.resource,x.operation]),{
+    resource:x.resource,operation:x.operation
+   }
+  ])).values()]
  };
  let phase="execution";
  const coordinator={
@@ -489,13 +491,17 @@ test("R104: a live provider effect fences terminal failure and prevents prematur
  assert.ok(prepared);
  const release=h.gates.beginProviderEffect(prepared);
  h.setRunnerFailure();
- await h.invoke("task-test","test","run_tests",runner);
+ // A different authorized provider effect is still outstanding. The
+ // Gateway must refuse ambiguous failure evidence; no terminal state yet.
+ await assert.rejects(h.invoke("task-test","test","run_tests",runner),
+  /Concurrent provider effect makes Runner failure ambiguous/);
  assert.throws(()=>h.gates.confirmTestValidationFailure("task-test"),
-  /In-flight provider effect/);
+  /No unique verified failed Runner/);
  await h.intake.reserveRepairEpoch(repair());
  await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
   /unresolved/);
  release();
+ h.setRunnerFailure();await h.invoke("task-test","test","run_tests",runner);
  const failure=h.gates.confirmTestValidationFailure("task-test");
  assert.equal(failure.status,"validation_failed");
  const admitted=await h.gates.admitNextOperationalEpoch(session,2);
