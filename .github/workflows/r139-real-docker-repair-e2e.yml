@@ -1,0 +1,62 @@
+name: R139 Real Disposable Gitea Docker Two-SHA Repair (No AI Billing)
+
+# Provider-level negative→positive proof ONLY. No production root,
+# no Gemini/OpenAI keys, no main-branch or persistent-Gitea mutations.
+on:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/workflows/r139-real-docker-repair-e2e.yml'
+      - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
+      - 'poc/apps/test-runner-controller/scripts/r139-real-repair-evidence*.mjs'
+      - 'poc/apps/test-runner-controller/src/**'
+      - 'poc/apps/test-runner-controller/fixtures/**'
+      - 'poc/runner/acceptance/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r139-real-repair-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  disposable-real-fail-repair-pass:
+    name: Real Gitea + two Docker runs + open draft PR, no AI
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout read-only framework
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Node 22.15
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.15.0
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install local dependencies (no paid model)
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: R139 strict non-authorizing proof regressions
+        run: node --test poc/apps/test-runner-controller/scripts/r139-real-repair-evidence.test.mjs
+      - name: Preload pinned disposable images
+        run: |
+          docker pull docker.gitea.com/gitea:28.0.0
+          docker pull node:22.15.0-bookworm
+          docker pull openpolicyagent/opa:1.21.1
+      - name: Execute real Docker FAIL then new SHA PASS and isolated draft PR
+        env:
+          APPROVED_RUNNER_REAL_REPAIR_TWO_SHA: "1"
+          GITEA_ADMIN_USER: isolated_admin
+          GITEA_ADMIN_PASSWORD: local-r139-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+          OPA_IMAGE: openpolicyagent/opa:1.21.1
+        run: npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
+      - name: Sanitize failure surface (no source, tokens or raw model logs)
+        if: failure()
+        run: |
+          docker ps -a --filter 'name=delegation-ci-positive-' --format '{{.Names}} {{.Status}}'
+          docker ps -a --filter 'name=delegation-runner-' --format '{{.Names}} {{.Status}}'

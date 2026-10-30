@@ -378,8 +378,8 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
   cwd:workTree,label:"create NEW disposable R139 repair branch"
  });
  const broken=before+
-  '\\n\\nit("R139 intentional backend regression", () => {'+
-  ' expect(1).toBe(2); });\\n';
+  '\n\nit("R139 intentional backend regression", () => {'+
+  ' expect(1).toBe(2); });\n';
  await writeFile(target,broken,"utf8");
  git(["add","--",file],{cwd:workTree,label:"stage R139 failing test"});
  git(["-c","user.name=R139 Fixture",
@@ -473,7 +473,7 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
   ...proof,review_only_pr_opened:true,
   pr_state:"open",pr_merged:false,real_gitea_commit_count:2,
   original_root_unchanged:true,main_mutations:0,merge_calls:0
- })+"\\n");
+ })+"\n");
  return Object.freeze({failedSha,repairedSha,prNumber:pr.number});
 }
 async function main(){
