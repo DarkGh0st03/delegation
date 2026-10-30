@@ -17,6 +17,7 @@ import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedExecutionPlans} from
   "../../../apps/gateway/src/approved-execution-plans.ts";
 import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
+import {TrustedOperationalFeatureHeadReader} from "../../../apps/gateway/src/trusted-operational-feature-head.ts";
 import {prepareTrustedRepairFeedback,type TrustedRepairFeedbackSignal} from
   "./trusted-validation-repair-feedback.ts";
 
@@ -218,8 +219,7 @@ export class TrustedOperationalRepairPlanner {
  readonly #testTask:string;
  readonly #nextId:string;
  readonly #agents:readonly {agent_id:SpecializedRole;did:string;card_ref:string}[];
- readonly #head:(repository:Readonly<Repository>,branch:string)=>
-   Promise<TrustedFeatureRevision>;
+ readonly #head:TrustedOperationalFeatureHeadReader;
  readonly #proposer:(input:Readonly<TrustedRepairModelInput>)=>
    Promise<unknown>;
  #attempted=false;
@@ -228,9 +228,8 @@ export class TrustedOperationalRepairPlanner {
   intake:TrustedOperationalEpochIntake;
   sessionId:string;runtimeTestTaskId:string;nextPlanId:string;
   pinnedAgentRegistry:readonly {agent_id:SpecializedRole;did:string;card_ref:string}[];
-  /** Independent, Gateway-backed exact branch HEAD port. NOT model text. */
-  readTrustedFeatureHead:(repository:Readonly<Repository>,branch:string)=>
-    Promise<TrustedFeatureRevision>;
+  /** Server-constructed Gateway observation bound to the same root owner. */
+  featureHeadReader:TrustedOperationalFeatureHeadReader;
   proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
  }){
   if(!(config.gateway instanceof TrustedApprovedExecutionPlans)||
@@ -238,14 +237,15 @@ export class TrustedOperationalRepairPlanner {
      !ID.test(config.sessionId)||!ID.test(config.runtimeTestTaskId)||
      !ID.test(config.nextPlanId)||
      !Array.isArray(config.pinnedAgentRegistry)||
-     typeof config.readTrustedFeatureHead!=="function"||
+     !(config.featureHeadReader instanceof TrustedOperationalFeatureHeadReader)||
      typeof config.proposeRepairPlan!=="function")
    fail("missing trusted planning dependencies");
   this.#gateway=config.gateway;this.#intake=config.intake;
   this.#session=config.sessionId;this.#testTask=config.runtimeTestTaskId;
   this.#nextId=config.nextPlanId;
   this.#agents=structuredClone(config.pinnedAgentRegistry);
-  this.#head=config.readTrustedFeatureHead;
+  config.featureHeadReader.assertSameIntake(config.intake);
+  this.#head=config.featureHeadReader;
   this.#proposer=config.proposeRepairPlan;
  }
  async proposeAndReserve():Promise<Readonly<TrustedRepairPlanningResult>>{
@@ -263,7 +263,7 @@ export class TrustedOperationalRepairPlanner {
   if(!original||!previous||history.length!==feedback.failed_epoch||
      planDigest(previous)!==feedback.failed_plan_digest)
    fail("repair epoch history changed");
-  assertFeatureHead(await this.#head(original.repository,feedback.work_branch),
+  assertFeatureHead(await this.#head.read(original.repository,feedback.work_branch),
     original.repository,feedback.work_branch,feedback.tested_commit_sha);
   const grants=[...new Map(original.requested_permissions.map((p:any)=>[
     JSON.stringify([p.resource,p.operation]),
@@ -295,7 +295,7 @@ export class TrustedOperationalRepairPlanner {
   });
   if(!sameFeedback(feedback,later))
    fail("validated failure replaced while model was planning");
-  assertFeatureHead(await this.#head(original.repository,feedback.work_branch),
+  assertFeatureHead(await this.#head.read(original.repository,feedback.work_branch),
     original.repository,feedback.work_branch,feedback.tested_commit_sha);
   // Exactly one durable reservation, with existing Engineer-root-based
   // preflight and anti-replay journal. Never auto-dispatch from a proposal.
