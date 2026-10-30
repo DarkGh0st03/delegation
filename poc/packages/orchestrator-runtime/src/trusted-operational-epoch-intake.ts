@@ -101,7 +101,7 @@ export class TrustedOperationalEpochIntake {
    sessionId:string;taskId:string;agentId:"backend"|"frontend"|"test";
    resource:string;
  }):Promise<Readonly<{
-  session_id:string;task_id:string;agent_id:string;resource:string;
+  session_id:string;task_id:string;agent_id:string;agent_did:string;resource:string;
   operation:"read_file";root_credential_id:string;
   root_plan_digest:string;epoch:number;work_branch:string;
   execution_authorized:false;
@@ -117,6 +117,8 @@ export class TrustedOperationalEpochIntake {
      !this.#agents.some(a=>a.agent_id===input.agentId&&
        a.did.startsWith("did:")&&a.card_ref.trim()))
    deny("discovery Task replay or unregistered Agent identity");
+  const agent=this.#agents.find(a=>a.agent_id===input.agentId);
+  if(!agent)deny("missing pinned Agent DID");
   const current=history.at(-1);
   const root=this.#coordinator.trustedOperationalAuthority();
   const branch=history[0]?.plan?.repository;
@@ -138,7 +140,7 @@ export class TrustedOperationalEpochIntake {
    deny("root or epoch changed during discovery preflight");
   return Object.freeze({
    session_id:this.#session,task_id:input.taskId,
-   agent_id:input.agentId,resource:input.resource,
+   agent_id:input.agentId,agent_did:agent.did,resource:input.resource,
    operation:"read_file" as const,
    root_credential_id:root.credential_id,
    root_plan_digest:root.plan_digest,
