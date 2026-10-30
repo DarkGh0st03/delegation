@@ -547,7 +547,13 @@ async function gatewayAuthorizedDisposableRepair({
    precondition_blob_sha:result.execution.precondition_blob_sha,
    commit_sha:current.commit_sha,policy_version:result.policy.policy_version,
    gateway_test_task_id:testTaskId,runner_request_id:preparedTest.request_id,
-   passed:passEffect.execution};
+   // GiteaExecutor intentionally does not repeat request_id/repository in
+   // the Runner execution object. The task-bound Gateway Prepare returned
+   // the authoritative request ID; the immutable approved plan pins repo.
+   // All status, phases and exact tested SHA still come from the REAL
+   // Gateway-corroborated Docker provider effect, never from fixtures.
+   passed:{...passEffect.execution,request_id:preparedTest.request_id,
+    repository:uri}};
  }finally{
   try{registry?.closeSession(sessionId);}finally{
    await rm(dir,{recursive:true,force:true});
