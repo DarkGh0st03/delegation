@@ -16,6 +16,8 @@ import {TrustedOperationalEpochJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-journal.mjs";
 import {TrustedOperationalEpochIntake} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
+import {prepareTrustedRepairFeedback} from
+  "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
 
 const repo={authority:"gitea.local",owner:"sample",repository:"invoice-service"};
 const root="gitea://gitea.local/sample/invoice-service";
@@ -591,4 +593,62 @@ test("R105: authorized Test file edit before TypeScript FAIL remains repairable 
  assert.deepEqual(receipt.blocked_descendant_task_ids,[]);
  assert.equal(receipt.epoch,2);
  assert.equal(h.provider,4);
+});
+
+test("R105: private handoff obtains a bounded FAIL from Gateway and active Engineer-root epoch",async(t)=>{
+ const h=await harness(t,{withReview:true});
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// bug"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ await assert.rejects(prepareTrustedRepairFeedback({
+  gateway:h.gates,intake:h.intake,sessionId:session,runtimeTestTaskId:"task-test"
+ }),/No terminal Gateway-confirmed validation failure/);
+ h.setRunnerFailure();await h.invoke("task-test","test","run_tests",runner);
+ h.gates.confirmTestValidationFailure("task-test");
+ const signal=await prepareTrustedRepairFeedback({
+  gateway:h.gates,intake:h.intake,sessionId:session,runtimeTestTaskId:"task-test"
+ });
+ assert.equal(signal.status,"repair_planning_eligible");
+ assert.equal(signal.provenance,"gateway_verified_docker_runner");
+ assert.equal(signal.session_id,session);
+ assert.equal(signal.first_failed_phase,"typecheck");
+ assert.deepEqual(signal.typecheck_error_codes,["TS2339"]);
+ assert.equal(signal.failed_epoch,1);
+ assert.equal(signal.remaining_repair_epochs,2);
+ assert.equal(signal.execution_authorized,false);
+ assert.equal(signal.permission_granted,false);
+ assert.equal(Object.isFrozen(signal),true);
+ assert.doesNotMatch(JSON.stringify(signal),/signed_vp|stderr|source_code|log_reference/i);
+ await assert.rejects(prepareTrustedRepairFeedback({
+  gateway:h.gates,intake:h.intake,sessionId:"foreign-session",
+  runtimeTestTaskId:"task-test"
+ }),/failed Runner receipt not bound/);
+ await h.intake.reserveRepairEpoch(repair());
+ // The original failure can no longer be reused as feedback for the
+ // newest (second) operational epoch, even before Gateway admission.
+ await assert.rejects(prepareTrustedRepairFeedback({
+  gateway:h.gates,intake:h.intake,sessionId:session,runtimeTestTaskId:"task-test"
+ }),/failed Runner receipt not bound/);
+});
+test("R105: revoked Engineer-root Coordinator cannot issue a repair planning handoff",async(t)=>{
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// bug"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ h.setRunnerFailure();await h.invoke("task-test","test","run_tests",runner);
+ h.gates.confirmTestValidationFailure("task-test");
+ h.setPhase("closed");
+ await assert.rejects(prepareTrustedRepairFeedback({
+  gateway:h.gates,intake:h.intake,sessionId:session,runtimeTestTaskId:"task-test"
+ }),/operational root is not active/);
 });
