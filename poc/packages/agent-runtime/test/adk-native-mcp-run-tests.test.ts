@@ -227,6 +227,7 @@ test("R118 a recoverable Docker FAIL is not an ADK Task PASS and permits a subse
    return execution;
   }
  },undefined,{allowRunTests:true,
+  allowedPaths:["tests/backend/user.service.test.ts"],
   allowedFilePermissions:[{path:"tests/backend/user.service.test.ts",
    operation:"read_file"},{path:"tests/backend/user.service.test.ts",
    operation:"update_file"}],approvedBranch:args.branch});
