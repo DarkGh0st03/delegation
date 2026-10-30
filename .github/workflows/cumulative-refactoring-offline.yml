@@ -229,6 +229,8 @@ jobs:
         run: node --experimental-strip-types poc/apps/gateway/native-test/native-approved-scoped-child-evm-e2e.mjs
       - name: Three ADK and A2A roles with native Rust DC VP and live OPA (provider fixture)
         run: node --experimental-strip-types poc/apps/gateway/native-test/native-approved-three-adk-evm-e2e.mjs
+      - name: R110 new repair read Task - real Rust child DC + native VP + EVM + OPA (scripted provider)
+        run: node --experimental-strip-types poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs
       - name: Planning ADK real Rust EVM root, native VP, OPA and pinned Gitea fixture (offline)
         run: node --experimental-strip-types poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
       - name: Preload disposable Gitea, OPA and Docker acceptance images
