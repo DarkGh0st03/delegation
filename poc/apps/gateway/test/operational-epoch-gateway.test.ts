@@ -1068,3 +1068,23 @@ test("R108 source reader rejects Gateway deployments without signed Task-plan en
   issueSignedVp:async()=>{throw Error("No authority");}
  }),/real Gateway, owner intake, provider and VP issuer required/);
 });
+
+test("R108 an authorized read Task still cannot expose code to ADK without a corroborated FAIL",async(t)=>{
+ const h=await harness(t,{withRead:true});
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"backend-original","runtime-backend","backend");
+ h.gates.bindTask(session,"read-diagnostics","runtime-source","backend");
+ let vpCalls=0;
+ const reader=new TrustedOperationalRepairSourceReader({
+  gateway:h.runtime,trustedGatewayPlans:h.gates,
+  failedRuntimeTestTaskId:"runtime-test-missing",
+  intake:h.intake,featureHeadReader:trustedFeature(h),
+  sessionId:session,runtimeTaskId:"runtime-source",
+  agentRole:"backend",expectedTestedSha:sha,
+  issueSignedVp:async()=>{vpCalls++;return "signed.fixture.vp";}
+ });
+ await assert.rejects(reader.read("src/invoices.ts"),
+  /No terminal Gateway-confirmed validation failure/);
+ assert.equal(vpCalls,0);
+ assert.equal(h.provider,0);
+});
