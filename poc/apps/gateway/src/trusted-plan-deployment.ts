@@ -89,6 +89,12 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
   // This is NOT a native Rust authority source or admitted Gateway intake.
   const sharedDir=process.env.TRUSTED_PLAN_EPOCH_LEDGER_DIR;
   const inspectNative=process.env.TRUSTED_PLAN_NATIVE_ROOT_STATUS_INSPECT;
+  const inspectScope=process.env.TRUSTED_PLAN_NATIVE_ROOT_SCOPE_INSPECT;
+  if(inspectScope!==undefined&&inspectScope!=="1")
+   throw Error("Invalid native Rust issued root comparison flag");
+  if(inspectScope==="1"&&(inspectNative!=="1"||
+     !process.env.TRUSTED_PLAN_ORCHESTRATOR_DID?.startsWith("did:")))
+   throw Error("Native issued root scope requires pinned Orchestrator DID and anchored status");
   if(inspectNative!==undefined&&inspectNative!=="1")
    throw Error("Invalid native Rust root status inspection flag");
   if(inspectNative==="1"&&(!sharedDir||
@@ -101,7 +107,10 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
   const signedEpochInspector=sharedDir?
     new TrustedGatewaySignedEpochInspector({
      directory:sharedDir,approvals,
-     ...(nativeRootStatus?{nativeRootStatus}:{})
+     ...(nativeRootStatus?{nativeRootStatus}:{}),
+     ...(inspectScope==="1"?{
+      trustedOrchestratorDid:process.env.TRUSTED_PLAN_ORCHESTRATOR_DID!
+     }:{})
     }):undefined;
   if(signedEpochInspector)await signedEpochInspector.assertReady();
   const plans=new TrustedApprovedExecutionPlans({

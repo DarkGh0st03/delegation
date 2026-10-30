@@ -40,6 +40,8 @@ type Command=
   |{action:"inspect_signed_epoch";session_id:string;root_plan_digest:string;
      plan_digest:string;epoch:number}
   |{action:"inspect_native_root";session_id:string;root_plan_digest:string;
+     plan_digest:string;epoch:number}
+  |{action:"inspect_issued_root";session_id:string;root_plan_digest:string;
      plan_digest:string;epoch:number};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
@@ -79,7 +81,8 @@ function validate(x:unknown):Command{
     return o as Command;
   if((o.action==="admit_epoch"||
       o.action==="inspect_signed_epoch"||
-      o.action==="inspect_native_root")&&
+      o.action==="inspect_native_root"||
+      o.action==="inspect_issued_root")&&
      exact(o,["action","session_id","root_plan_digest","plan_digest","epoch"])&&
      typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
@@ -238,6 +241,9 @@ export async function createTrustedPlanIpcServer(config:{
           native_root_status_inspection:
             config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector&&
             config.signedEpochInspector.nativeRootStatusConfigured(),
+          native_issued_scope_inspection:
+            config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector&&
+            config.signedEpochInspector.nativeIssuedScopeConfigured(),
           planning_retirement_enabled:
             config.planningRevisions instanceof TrustedPlanningRevisions,
           planning_retirement_durable:
@@ -285,6 +291,16 @@ export async function createTrustedPlanIpcServer(config:{
         const receipt=config.plans.readVerifiedTestFailure(
           command.runtime_task_id);
         response(res,200,{ok:true,failure:boundedTestFailure(receipt,pins)});
+      }else if(command.action==="inspect_issued_root"){
+        // R128: actual Rust-issued permission claims are compared with the
+        // original Ed25519 approval in the Gateway process. This endpoint
+        // exposes ONLY a non-authorizing boolean result, never DC bytes.
+        if(!(config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector)||
+           !config.plans.operationalLeaseConfigured()||
+           !config.plans.operationalSessionDurableConfigured())
+          fail("R128 native root scope requires durable trusted Gateway");
+        const comparison=await config.signedEpochInspector.inspectNativeIssuedRootScope(command);
+        response(res,200,{ok:true,comparison});
       }else if(command.action==="inspect_native_root"){
         // NOT operational admission: real Rust Adapter must independently
         // observe the ORIGINAL ledger root ID on anchored signed EVM status.
@@ -382,6 +398,7 @@ export class TrustedPlanIpcClient{
   #operationalSessionDurable=false;
   #signedEpochInspection=false;
   #nativeRootInspection=false;
+  #nativeIssuedScope=false;
   private constructor(path:string,secret:Buffer){
     this.#socket=path;this.#secret=secret;
   }
@@ -399,6 +416,7 @@ export class TrustedPlanIpcClient{
        typeof capabilities.operational_session_durable!=="boolean"||
        typeof capabilities.signed_epoch_inspection!=="boolean"||
        typeof capabilities.native_root_status_inspection!=="boolean"||
+       typeof capabilities.native_issued_scope_inspection!=="boolean"||
        (capabilities.planning_retirement_durable&&
         !capabilities.planning_retirement_enabled))
       fail("Gateway did not attest authenticated recovery capabilities");
@@ -408,6 +426,7 @@ export class TrustedPlanIpcClient{
     client.#operationalSessionDurable=capabilities.operational_session_durable;
     client.#signedEpochInspection=capabilities.signed_epoch_inspection;
     client.#nativeRootInspection=capabilities.native_root_status_inspection;
+    client.#nativeIssuedScope=capabilities.native_issued_scope_inspection;
     return client;
   }
   operationalLeaseConfigured():boolean{return this.#leaseEnabled;}
@@ -538,6 +557,38 @@ export class TrustedPlanIpcClient{
    */
   signedEpochInspectionConfigured(){return this.#signedEpochInspection;}
   nativeRootInspectionConfigured(){return this.#nativeRootInspection;}
+  nativeIssuedRootInspectionConfigured(){return this.#nativeIssuedScope;}
+  /** R128: owner-private comparison of actual issued grant set only. */
+  async inspectNativeIssuedRootScope(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+  }>){
+    if(!this.#nativeIssuedScope)
+     fail("native issued root inspection not configured");
+    const r=(await this.#send({action:"inspect_issued_root",...pins})).comparison;
+    if(!r||typeof r!=="object"||Array.isArray(r)||
+       Object.keys(r).sort().join(",")!==
+        "child_credential_issued,cryptographic_presentation_verified,epoch,execution_authorized,gateway_epoch_admitted,native_issued_grants_checked,plan_digest,root_plan_digest,session_id,status"||
+       r.status!=="native_issued_root_scope_correlated_no_vp_authority"||
+       r.session_id!==pins.session_id||
+       r.root_plan_digest!==pins.root_plan_digest||
+       r.plan_digest!==pins.plan_digest||r.epoch!==pins.epoch||
+       r.native_issued_grants_checked!==true||
+       r.cryptographic_presentation_verified!==false||
+       r.execution_authorized!==false||
+       r.gateway_epoch_admitted!==false||
+       r.child_credential_issued!==false)
+      fail("native issued scope result cannot authorize a child or plan");
+    return Object.freeze({
+     status:"native_issued_root_scope_correlated_no_vp_authority" as const,
+     session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+     plan_digest:pins.plan_digest,epoch:pins.epoch,
+     native_issued_grants_checked:true as const,
+     cryptographic_presentation_verified:false as const,
+     execution_authorized:false as const,
+     gateway_epoch_admitted:false as const,
+     child_credential_issued:false as const
+    });
+  }
   /** R127: anchored native Rust existence/revocation only. NOT a grant. */
   async inspectNativeRootStatus(pins:Readonly<{
     session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;

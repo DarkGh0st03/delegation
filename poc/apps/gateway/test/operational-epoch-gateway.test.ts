@@ -2302,3 +2302,142 @@ test("R127 original root journal race during Adapter lookup is denied",async t=>
  assert.equal(f.native.calls,1);
  assert.equal(f.h.provider,3);
 });
+
+async function r128Fixture(t:import("node:test").TestContext,options:{
+ grants?:(grants:Array<{resource:string;operation:string}>)=>
+  Array<{resource:string;operation:string}>;
+ issued?:Record<string,unknown>; status?:Record<string,unknown>;
+ onIssued?:()=>Promise<void>;
+}={}){
+ const base=await r115RemoteFixture(t,{withDurable:true});
+ let nativeCalls=0,issuedCalls=0;
+ const now=BigInt(Date.now())*1_000_000n;
+ const reader=new TrustedGatewayNativeRootStatusReader({
+  baseUrl:"http://rust-adapter.local:8090",gatewayToken:"r128-gateway-private",
+  fetchFn:(async (url:unknown,init?:RequestInit)=>{
+   assert.equal(init?.method,"POST");
+   assert.equal(new Headers(init.headers).get("authorization"),
+    "Bearer r128-gateway-private");
+   const json=JSON.parse(String(init.body));
+   assert.deepEqual(Object.keys(json),["credential_id"]);
+   const rootId=base.h.rootAuthority.credential_id;
+   assert.equal(json.credential_id,rootId);
+   if(String(url).endsWith("/v1/credentials/status/inspect")){
+    nativeCalls++;
+    return new Response(JSON.stringify({
+     ...r127Anchored(rootId),...options.status
+    }),{status:200,headers:{"content-type":"application/json"}});
+   }
+   if(String(url).endsWith("/v1/credentials/root/inspect")){
+    issuedCalls++;
+    await options.onIssued?.();
+    const grants=base.h.rootAuthority.permissions.map(x=>({
+     resource:x.resource,operation:x.operation
+    }));
+    const record={
+     credential_id:rootId,issuer_id:engineer,
+     delegatee_id:"did:example:orchestrator",
+     iat_ns:(now-1_000_000_000n).toString(),
+     exp_ns:(now+3_600_000_000_000n).toString(),
+     permissions:options.grants?options.grants(grants):grants,
+     status:r127Anchored(rootId),source:"adapter_local_issued_root",
+     ...options.issued
+    };
+    return new Response(JSON.stringify(record),
+     {status:200,headers:{"content-type":"application/json"}});
+   }
+   throw Error("Unexpected Rust Adapter read endpoint");
+  }) as typeof fetch
+ });
+ const socketPath=join(base.h.dir,"r128-issued.sock");
+ const secretFile=join(base.h.dir,"r128-issued.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ const inspector=new TrustedGatewaySignedEpochInspector({
+  directory:join(base.h.dir,"epochs"),approvals:base.h.signedStore,
+  nativeRootStatus:reader,trustedOrchestratorDid:"did:example:orchestrator"
+ });
+ const control=await createTrustedPlanIpcServer({
+  socketPath,secretFile,plans:base.h.gates,signedEpochInspector:inspector
+ });
+ await control.start();t.after(()=>control.close());
+ return {...base,reader,inspector,
+  get nativeCalls(){return nativeCalls;},
+  get issuedCalls(){return issuedCalls;},
+  client:await TrustedPlanIpcClient.connect({socketPath,secretFile})
+ };
+}
+function r128Pins(h:Awaited<ReturnType<typeof r115RemoteFixture>>["h"]){
+ return {session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:planDigest(h.parent),epoch:1};
+}
+test("R128 independent issuer-record grant comparison correlates signed approval, root, lifetime and new epoch",async t=>{
+ const f=await r128Fixture(t);
+ assert.equal(f.client.nativeIssuedRootInspectionConfigured(),true);
+ const pins=r128Pins(f.h);
+ const read=await f.client.inspectNativeIssuedRootScope(pins);
+ assert.equal(read.status,"native_issued_root_scope_correlated_no_vp_authority");
+ assert.equal(read.native_issued_grants_checked,true);
+ assert.equal(read.cryptographic_presentation_verified,false);
+ assert.equal(read.execution_authorized,false);
+ assert.equal(read.gateway_epoch_admitted,false);
+ assert.equal(f.issuedCalls,1);
+ assert.equal(f.nativeCalls,2);
+ const feedback=await prepareTrustedRemoteRepairFeedback(f.request());
+ assert.equal(feedback.status,"repair_planning_eligible");
+ const reserved=await f.h.intake.reserveRepairEpoch(repair());
+ const repairRead=await f.client.inspectNativeIssuedRootScope({
+  ...pins,epoch:2,plan_digest:reserved.plan_digest
+ });
+ assert.equal(repairRead.epoch,2);
+ assert.equal(f.issuedCalls,2);
+ assert.equal(f.h.provider,3);
+});
+test("R128 missing, extra or duplicated native issued permissions are rejected",async t=>{
+ const bad=[
+  (gs:Array<{resource:string;operation:string}>)=>gs.slice(0,1),
+  (gs:Array<{resource:string;operation:string}>)=>[...gs,{
+   resource:root+"/branches/feature%2Finvoice-approval/files/secret.ts",
+   operation:"read_file"
+  }],
+  (gs:Array<{resource:string;operation:string}>)=>[...gs,gs[0]]
+ ];
+ for(const grants of bad){
+  const f=await r128Fixture(t,{grants});
+  await assert.rejects(f.client.inspectNativeIssuedRootScope(r128Pins(f.h)),
+   /Gateway trusted control denied/);
+  assert.equal(f.h.provider,3);
+ }
+});
+test("R128 issuer, delegatee, expiry, native anchored status and epoch forgery fail closed",async t=>{
+ const now=BigInt(Date.now())*1_000_000n;
+ for(const opts of [
+  {issued:{issuer_id:"did:example:malicious"}},
+  {issued:{delegatee_id:"did:example:unknown"}},
+  {issued:{exp_ns:(now-1n).toString()}},
+  {issued:{status:r127Anchored("urn:root:invoice-service",{
+   source:"adapter_memory_only",anchor_version:null})}},
+  {status:{status_set:true}}
+ ]){
+  const f=await r128Fixture(t,opts);
+  await assert.rejects(f.client.inspectNativeIssuedRootScope(r128Pins(f.h)),
+   /Gateway trusted control denied/);
+ }
+ const f=await r128Fixture(t);
+ await assert.rejects(f.client.inspectNativeIssuedRootScope({
+  ...r128Pins(f.h),epoch:2
+ }),/Gateway trusted control denied/);
+ assert.equal(f.issuedCalls,0);
+});
+test("R128 original root change while reading real issued claims is denied",async t=>{
+ let f:Awaited<ReturnType<typeof r128Fixture>>;
+ f=await r128Fixture(t,{onIssued:async()=>{
+  const path=join(f.h.dir,"epochs","epoch-001.json");
+  const modified=JSON.parse(await readFile(path,"utf8"));
+  modified.root_credential_id="urn:r128:race";
+  await writeFile(path,JSON.stringify(modified)+"\n",{mode:0o600});
+ }});
+ await assert.rejects(f.client.inspectNativeIssuedRootScope(r128Pins(f.h)),
+  /Gateway trusted control denied/);
+ assert.equal(f.issuedCalls,1);
+ assert.equal(f.h.provider,3);
+});
