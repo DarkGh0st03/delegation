@@ -11,6 +11,8 @@ import {TrustedOperationalEpochJournal}
 import {TrustedOperationalRepairPlanner,
  type TrustedRepairModelInput}
  from "./trusted-operational-repair-planner.ts";
+import {TrustedAdkOperationalRepairProposer}
+ from "./trusted-adk-operational-repair-proposer.ts";
 import {TrustedOperationalFeatureHeadReader}
  from "../../../apps/gateway/src/trusted-operational-feature-head.ts";
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
@@ -63,7 +65,12 @@ export async function armTrustedOwnerOperationalRecovery(config:{
   * must separately approve any paid inference before using a paid adapter. */
  planRepairEpoch?:Readonly<{
   giteaClient:GiteaClient;
-  proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
+  /** R151.3: either the existing local callback OR a concrete, bounded
+   * ADK proposer constructed privately by the original owner. ADK has no
+   * authorization, credential or execution access; it supplies only a draft.
+   * The trusted planner STILL independently validates every proposed grant. */
+  proposeRepairPlan?:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
+  trustedAdkProposer?:TrustedAdkOperationalRepairProposer;
   /** R125: explicit owner opt-in to ACTUAL Gateway epoch admission.
    * Requires a genuinely Gateway-bound independently signed epoch Intake. */
   admitReservedEpoch?:boolean;
@@ -78,10 +85,15 @@ export async function armTrustedOwnerOperationalRecovery(config:{
  const r=config?.running?.readiness;
  const custom=typeof config?.continueWithinActiveRoot==="function";
  const structured=config?.planRepairEpoch!==undefined;
+ const callback=typeof config?.planRepairEpoch?.proposeRepairPlan==="function";
+ const typedAdk=config?.planRepairEpoch?.trustedAdkProposer
+   instanceof TrustedAdkOperationalRepairProposer;
  if(custom===structured||
     (config?.continueWithinActiveRoot!==undefined&&!custom)||
     (structured&&(!(config.planRepairEpoch!.giteaClient instanceof GiteaClient)||
-      typeof config.planRepairEpoch!.proposeRepairPlan!=="function")))
+       callback===typedAdk||
+       (config.planRepairEpoch!.proposeRepairPlan!==undefined&&!callback)||
+       (config.planRepairEpoch!.trustedAdkProposer!==undefined&&!typedAdk))))
   fail("exactly one trusted owner continuation or configured repair planner required");
  if(config.planRepairEpoch?.executeAdmittedRepairDag&&
     (config.planRepairEpoch.admitReservedEpoch!==true||
@@ -170,7 +182,9 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       giteaClient:config.planRepairEpoch!.giteaClient,
       intake,repository:record.plan.repository
      }),
-     proposeRepairPlan:config.planRepairEpoch!.proposeRepairPlan
+     proposeRepairPlan:typedAdk
+       ?input=>config.planRepairEpoch!.trustedAdkProposer!.propose(input)
+       :config.planRepairEpoch!.proposeRepairPlan!
     });
     const reserved=await planner.proposeAndReserve();
     if(reserved.status!=="repair_epoch_reserved_no_execution_authority"||
