@@ -1905,7 +1905,8 @@ async function r124Armed(t:import("node:test").TestContext,options:{
 }
 
 test("R124 live Engineer owner reserves fresh DAG after authentic finalized HMAC Test FAIL",async t=>{
- const {h,request,armed,...rest}=await r124Armed(t);
+ const fixture=await r124Armed(t);
+ const {h,request,armed}=fixture;
  const feedback=await prepareTrustedRemoteRepairFeedback(request());
  await armed.continueWithinActiveRoot(feedback);
  const rows=await armed.intake.verifiedEpochHistory();
@@ -1914,7 +1915,7 @@ test("R124 live Engineer owner reserves fresh DAG after authentic finalized HMAC
  assert.match(rows[1].plan.plan_id,/^repair-[a-f0-9]{24}$/);
  assert.deepEqual(rows[1].plan.tasks.map(x=>x.id),
   ["repair-implementation","repair-validation"]);
- assert.equal(rest.proposals,1);
+ assert.equal(fixture.proposals,1);
  assert.equal(h.coordinator.phase,"execution");
  assert.equal(h.provider,3,"No new child or provider effect on planning");
  await assert.rejects(armed.continueWithinActiveRoot(feedback),/one-use/);
