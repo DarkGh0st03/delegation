@@ -1073,6 +1073,7 @@ test("R108 an authorized read Task still cannot expose code to ADK without a cor
  const h=await harness(t,{withRead:true});
  await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
  h.gates.bindTask(session,"backend-original","runtime-backend","backend");
+ h.gates.bindTask(session,"test-original","runtime-test-missing","test");
  h.gates.bindTask(session,"read-diagnostics","runtime-source","backend");
  let vpCalls=0;
  const reader=new TrustedOperationalRepairSourceReader({
