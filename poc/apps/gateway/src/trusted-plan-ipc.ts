@@ -37,6 +37,8 @@ type Command=
      root_plan_digest:string;runtime_task_id:string}
   |{action:"read_test_failure";session_id:string;
      root_plan_digest:string;runtime_task_id:string}
+  |{action:"read_retired_runner_acceptance";session_id:string;task_id:string;
+     branch:string;tested_commit_sha:string}
   |{action:"admit_epoch";session_id:string;root_plan_digest:string;
      plan_digest:string;epoch:number}
   |{action:"inspect_signed_epoch";session_id:string;root_plan_digest:string;
@@ -69,6 +71,16 @@ function validate(x:unknown):Command{
      typeof o.plan_task_id==="string"&&ID.test(o.plan_task_id)&&
      typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id)&&
      typeof o.role==="string"&&ROLES.has(o.role))return o as Command;
+  // R140: source-free and non-authorizing post-retirement inspection.
+  if(o.action==="read_retired_runner_acceptance"&&
+     exact(o,["action","session_id","task_id","branch","tested_commit_sha"])&&
+     typeof o.session_id==="string"&&ID.test(o.session_id)&&
+     typeof o.task_id==="string"&&ID.test(o.task_id)&&
+     typeof o.branch==="string"&&o.branch.length>0&&o.branch.length<=200&&
+     /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(o.branch)&&
+     !o.branch.includes("..")&&!o.branch.includes("//")&&
+     typeof o.tested_commit_sha==="string"&&SHA.test(o.tested_commit_sha))
+    return o as Command;
   if(o.action==="assert_repair_task_ready"&&
      exact(o,["action","session_id","plan_digest","epoch","plan_task_id","role"])&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
@@ -301,6 +313,36 @@ export async function createTrustedPlanIpcServer(config:{
       }else if(command.action==="complete"){
         await config.plans.confirmTaskCompletion(command.runtime_task_id,command.observation);
         response(res,200,{ok:true});
+      }else if(command.action==="read_retired_runner_acceptance"){
+        // R140: NO attacker-supplied Runner result. Read the Gateway's
+        // original provider-effect ledger after durable session retirement.
+        if(!(config.plans instanceof TrustedApprovedExecutionPlans)||
+           !config.plans.operationalSessionDurableConfigured())
+          fail("R140 requires durable retired Gateway source-of-truth");
+        const result=config.plans.readVerifiedRunnerEffect(command);
+        if(result.provider!=="runner"||result.performed!==true||
+           result.tool!=="run_tests"||result.status!=="pass"||
+           result.tested_commit_sha!==command.tested_commit_sha||
+           result.branch!==command.branch||
+           result.project_tests?.status!=="pass"||
+           result.researcher_acceptance?.status!=="pass")
+          fail("R140 independent exact-SHA acceptance unavailable");
+        const phases=[
+         "dependency_install","typecheck","backend_tests",
+         "frontend_tests","build","playwright_e2e","researcher_acceptance"
+        ];
+        if(result.phases.length!==phases.length||
+           result.phases.some((p,i)=>p.phase!==phases[i]||p.status!=="pass"))
+          fail("R140 did not observe all real Runner phases");
+        response(res,200,{ok:true,acceptance:{
+          status:"retired_gateway_exact_sha_runner_pass_no_pr_authority",
+          session_id:command.session_id,task_id:command.task_id,
+          branch:command.branch,tested_commit_sha:command.tested_commit_sha,
+          phases,project_tests:"pass",researcher_acceptance:"pass",
+          gateway_session_retired:true,
+          rust_root_revocation_verified:false,
+          pull_request_authorized:false
+        }});
       }else if(command.action==="read_test_failure"){
         // R122: this cannot finalize a mere failed A2A claim. Only the
         // actual active Gateway registry may expose already-confirmed FAIL.
@@ -745,6 +787,53 @@ export class TrustedPlanIpcClient{
       plan_digest:pins.plan_digest,
       blocked_descendant_task_ids:Object.freeze(
         [...r.blocked_descendant_task_ids] as string[])
+    });
+  }
+  /**
+   * R140 authenticated owner read after DURABLE Gateway retirement.
+   * A bare A2A artifact or model-provided PASS can NEVER satisfy this.
+   * This verifies Gateway Runner records only; it is NOT Rust revocation,
+   * Gitea HEAD verification or PR authorization.
+   */
+  async readRetiredRunnerAcceptance(pins:Readonly<{
+    session_id:string;task_id:string;branch:string;tested_commit_sha:string;
+  }>):Promise<Readonly<{
+    status:"retired_gateway_exact_sha_runner_pass_no_pr_authority";
+    session_id:string;task_id:string;branch:string;tested_commit_sha:string;
+    phases:ReadonlyArray<string>;project_tests:"pass";
+    researcher_acceptance:"pass";gateway_session_retired:true;
+    rust_root_revocation_verified:false;pull_request_authorized:false;
+  }>>{
+    const r=(await this.#send({
+      action:"read_retired_runner_acceptance",...pins
+    })).acceptance;
+    const phases=[
+      "dependency_install","typecheck","backend_tests",
+      "frontend_tests","build","playwright_e2e","researcher_acceptance"
+    ];
+    if(!r||typeof r!=="object"||Array.isArray(r)||
+       Object.keys(r).sort().join(",")!==
+        "branch,gateway_session_retired,phases,project_tests,pull_request_authorized,researcher_acceptance,rust_root_revocation_verified,session_id,status,task_id,tested_commit_sha"||
+       r.status!=="retired_gateway_exact_sha_runner_pass_no_pr_authority"||
+       r.session_id!==pins.session_id||r.task_id!==pins.task_id||
+       r.branch!==pins.branch||
+       r.tested_commit_sha!==pins.tested_commit_sha||
+       r.project_tests!=="pass"||r.researcher_acceptance!=="pass"||
+       !Array.isArray(r.phases)||r.phases.length!==phases.length||
+       r.phases.some((x:unknown,i:number)=>x!==phases[i])||
+       r.gateway_session_retired!==true||
+       r.rust_root_revocation_verified!==false||
+       r.pull_request_authorized!==false)
+      fail("R140 Gateway returned untrusted Runner acceptance");
+    return Object.freeze({
+      status:"retired_gateway_exact_sha_runner_pass_no_pr_authority" as const,
+      session_id:pins.session_id,task_id:pins.task_id,
+      branch:pins.branch,tested_commit_sha:pins.tested_commit_sha,
+      phases:Object.freeze(phases),project_tests:"pass" as const,
+      researcher_acceptance:"pass" as const,
+      gateway_session_retired:true as const,
+      rust_root_revocation_verified:false as const,
+      pull_request_authorized:false as const
     });
   }
   async confirmTaskCompletion(runtimeTaskId:string,
