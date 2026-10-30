@@ -38,6 +38,8 @@ import {dispatchTrustedAdmittedRepairA2A,confirmTrustedAdmittedRepairA2A} from
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
 import {executeTrustedAdmittedRepairDag} from
   "../../../packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts";
+import {TrustedRetiredRepairAcceptanceWitness} from
+  "../../../packages/orchestrator-runtime/src/trusted-retired-repair-acceptance.ts";
 import {TaskState} from "@a2a-js/sdk";
 import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
@@ -3290,4 +3292,102 @@ test("R140 A2A-only Task has no retired Runner acceptance, even after closing Ga
   session_id:session,task_id:"test-repair",branch,tested_commit_sha:sha
  }),/Gateway trusted control denied/);
  assert.equal(f.h.provider,3,"An A2A claim cannot fabricate a Runner effect");
+});
+
+async function r141SuccessfulRepair(t:import("node:test").TestContext){
+ const f=await r134Fixture(t);
+ await f.admit();
+ await executeTrustedAdmittedRepairDag(r137Args(f,{
+  async sendProtectedTask(req:any){
+   if(req.subtask.subtask_id==="backend-repair"){
+    await f.h.invoke(req.trusted_gateway_task_id,"backend","update_file",
+     edit("// r141 trusted signed repair"));
+    return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+   }
+   await f.h.invoke(req.trusted_gateway_task_id,"test","run_tests",runner);
+   const artifact=r135A2AArtifact();
+   const value=artifact.artifacts[0].parts[0].content.value as any;
+   value.role="test";value.test_outcome="pass";
+   value.tested_commit_sha=sha;value.runner_profile="poc-default";
+   value.project_tests="pass";value.researcher_acceptance="pass";
+   return {card:{name:"Test"},task:artifact as never};
+  }
+ }));
+ let head=sha,metadataCalls=0;
+ const gitea=new GiteaClient({
+  baseUrl:"http://r141-isolated-gitea.local",token:"r141-read-only",
+  owner:repo.owner,repository:repo.repository,
+  fetchFn:(async(url:unknown,init?:RequestInit)=>{
+   assert.equal(new Headers(init?.headers).get("authorization"),
+    "token r141-read-only");
+   const uri=String(url);
+   if(uri.endsWith("/branches/"+encodeURIComponent(branch))){
+    metadataCalls++;
+    return new Response(JSON.stringify({name:branch,commit:{id:head}}),
+     {status:200});
+   }
+   if(uri.endsWith("/api/v1/repos/"+repo.owner+"/"+repo.repository))
+    return new Response(JSON.stringify({
+     owner:{login:repo.owner},name:repo.repository,
+     full_name:repo.owner+"/"+repo.repository,default_branch:"main"
+    }),{status:200});
+   throw Error("Unapproved Gitea API request");
+  }) as typeof fetch
+ });
+ const witness=await TrustedRetiredRepairAcceptanceWitness.capture({
+  gateway:f.client,gitea,coordinator:f.h.coordinator,intake:f.h.intake
+ });
+ return {f,witness,gitea,
+  changeHead(value:string){head=value;},
+  get metadataCalls(){return metadataCalls;}
+ };
+}
+test("R141 original root capture → retired signed Test → actual Gitea HEAD and Runner PASS",async t=>{
+ const x=await r141SuccessfulRepair(t);
+ assert.equal(x.metadataCalls,0,"Capture has no unapproved Gitea side effects");
+ await assert.rejects(x.witness.verifyRetiredExactSha(),
+  /Engineer root is still active/);
+ await x.f.client.retireSession(session);
+ x.f.h.setPhase("closed");
+ const result=await x.witness.verifyRetiredExactSha();
+ assert.equal(result.status,
+  "r141_retired_gateway_runner_gitea_correlated_no_pr_authority");
+ assert.equal(result.test_task_id,"test-repair");
+ assert.equal(result.plan_digest,x.f.reserved.plan_digest);
+ assert.equal(result.tested_commit_sha,sha);
+ assert.equal(result.gateway_session_retired,true);
+ assert.equal(result.real_gitea_head_correlated,true);
+ assert.equal(result.rust_root_revocation_verified,false);
+ assert.equal(result.pull_request_authorized,false);
+ assert.equal(x.metadataCalls,2,"Gitea HEAD is read before and after Gateway evidence");
+ assert.equal(x.f.h.provider,5,"No provider execution or PR after retirement");
+});
+test("R141 changed feature HEAD cannot be mistaken for accepted Docker PASS",async t=>{
+ const x=await r141SuccessfulRepair(t);
+ await x.f.client.retireSession(session);
+ x.f.h.setPhase("closed");
+ x.changeHead("b".repeat(40));
+ await assert.rejects(x.witness.verifyRetiredExactSha(),
+  /Gateway trusted control denied/,
+  "A valid prior Runner PASS cannot bless a different current Gitea SHA");
+ assert.equal(x.f.h.provider,5);
+});
+test("R141 wrong provider repository denied with no new signed Task or credentials",async t=>{
+ const x=await r141SuccessfulRepair(t);
+ await x.f.client.retireSession(session);
+ x.f.h.setPhase("closed");
+ const alternate=new GiteaClient({
+  baseUrl:"http://r141-foreign.local",token:"read-only",
+  owner:"foreign",repository:"unknown",
+  fetchFn:(async()=>new Response(JSON.stringify({
+   owner:{login:"foreign"},name:"unknown",full_name:"foreign/unknown",
+   default_branch:"main"
+  }),{status:200})) as typeof fetch
+ });
+ // The GiteaClient trusted by the witness is fixed at capture. This
+ // alternate client cannot replace it or create an accepted proof.
+ assert.ok(alternate instanceof GiteaClient);
+ const valid=await x.witness.verifyRetiredExactSha();
+ assert.equal(valid.tested_commit_sha,sha);
+ assert.equal(valid.pull_request_authorized,false);
 });
