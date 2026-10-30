@@ -132,6 +132,10 @@ export class GatewayRuntime {
   hasTrustedOperationalPlanGate():boolean{
     return this.#approvedPlans!==undefined;
   }
+  /** Identity equality, not duck-typed metadata. */
+  hasExactTrustedOperationalPlanGate(gate:TrustedApprovedExecutionPlans):boolean{
+    return this.#approvedPlans===gate;
+  }
 
   get providerLabel(): "mock" | "gitea" {
     return this.#executor.provider;
