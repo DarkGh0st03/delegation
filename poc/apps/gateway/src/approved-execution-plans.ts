@@ -367,6 +367,11 @@ export class TrustedApprovedExecutionPlans {
     }
   }
 
+  /** Owner-private identity check: no mixing Task gates across root sessions. */
+  isBoundToOperationalEpochIntake(intake:TrustedOperationalEpochIntake):boolean{
+    return this.#epochIntake===intake;
+  }
+
   /** Bind the opaque A2A runtime task to ONE exact plan task and role. */
   bindTask(sessionId:string, planTaskId:string, runtimeTaskId:string, role:AgentRole):void {
     ensureId(sessionId,"session ID");
