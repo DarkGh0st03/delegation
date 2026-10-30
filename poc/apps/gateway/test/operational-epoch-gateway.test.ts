@@ -8,6 +8,7 @@ import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan
 import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts";
+import {TrustedOperationalSessionStore} from "../src/trusted-operational-session-store.ts";
 import {TrustedPlanIpcClient,createTrustedPlanIpcServer} from "../src/trusted-plan-ipc.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {InMemoryAuditSink,InMemoryRequestStore} from "../src/prepare.ts";
@@ -129,7 +130,8 @@ const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
 }));
 async function harness(t:import("node:test").TestContext,
  options:{withReview?:boolean;withIndependentSibling?:boolean;
-  withTestWrite?:boolean;withRead?:boolean;withInlineRead?:boolean}={}){
+  withTestWrite?:boolean;withRead?:boolean;withInlineRead?:boolean;
+  withDurable?:boolean}={}){
  const parent=options.withReview?
   initialWithReview(options.withIndependentSibling):
   options.withInlineRead?initialWithInlineRead():
@@ -140,6 +142,8 @@ async function harness(t:import("node:test").TestContext,
  const approvalsDir=join(dir,"approvals"),epochsDir=join(dir,"epochs");
  await mkdir(approvalsDir,{mode:0o700});
  await mkdir(epochsDir,{mode:0o700});
+ const operationalDir=join(dir,"durable-gateway-operational");
+ if(options.withDurable)await mkdir(operationalDir,{mode:0o700});
  const keys=generateKeyPairSync("ed25519");
  const approved=makeApproval(parent,{
   allowedOperations:operations,decision_id:"engineer-approval",
@@ -184,7 +188,7 @@ async function harness(t:import("node:test").TestContext,
    await gates.confirmTaskCompletion(id,observation);
   },
   async closeExecution(){
-   gates.retireSession(session);
+   await gates.retireSession(session);
    phase="closed";
   }
  };
@@ -202,6 +206,10 @@ async function harness(t:import("node:test").TestContext,
  gates=new TrustedApprovedExecutionPlans({
   repository:repo,engineerDid:engineer,
   approvals:signedStore,operationalEpochIntake:intake,
+  ...(options.withDurable?{
+    operationalSessionStore:new TrustedOperationalSessionStore(operationalDir),
+    operationalLeaseMs:120000
+  }:{}),
   completionAttestor:{async confirmCompleted(e){
    attested++;
    assert.equal(e.session_id,session);
@@ -1295,7 +1303,7 @@ test("R109 denies discovery Task admission without a matching durable Adapter AC
  * Docker, not an A2A "failed" string or a model-generated claim. */
 async function r112Dispatcher(t:import("node:test").TestContext,
  options:{testFail:boolean;message?:string;optIn?:boolean;remote?:boolean}){
- const h=await harness(t,{withReview:true});
+ const h=await harness(t,{withReview:true,withDurable:options.remote});
  await h.intake.reserveInitialEpoch();
  await h.gates.activate(session,sha);
  let remoteClient:TrustedPlanIpcClient|undefined;
