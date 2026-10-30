@@ -3146,3 +3146,83 @@ test("R137 rejects duplicate owner child allocations before any irreversible eff
  assert.equal(f.calls.length,0);
  assert.equal((await f.journal.records()).length,0);
 });
+
+test("R138 live GitHub run watch remains checked across every signed repair Task",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ let watched=0;const calls:string[]=[];
+ const args=r137Args(f,{async sendProtectedTask(req:any){
+  const id=req.subtask.subtask_id;
+  calls.push(id);
+  if(id==="backend-repair"){
+   await f.h.invoke(req.trusted_gateway_task_id,"backend","update_file",
+    edit("// r138 authenticated backend"));
+   return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+  }
+  assert.equal(id,"test-repair");
+  await f.h.invoke(req.trusted_gateway_task_id,"test","run_tests",runner);
+  const artifact=r135A2AArtifact();
+  const value=artifact.artifacts[0].parts[0].content.value as any;
+  value.role="test";value.test_outcome="pass";
+  value.tested_commit_sha=sha;value.runner_profile="poc-default";
+  value.project_tests="pass";value.researcher_acceptance="pass";
+  return {card:{name:"Test"},task:artifact as never};
+ }});
+ const result=await executeTrustedAdmittedRepairDag({
+  ...args,verifyLiveRun:async()=>{watched++;}
+ });
+ assert.equal(result.tasks.length,2);
+ assert.deepEqual(calls,["backend-repair","test-repair"]);
+ assert.ok(watched>=8,"Owner GitHub run must be checked at each effect boundary");
+ assert.equal(result.docker_pass_verified,false);
+ assert.equal(result.pull_request_created,false);
+ assert.equal(f.calls.length,2);
+});
+test("R138 lost GitHub job after Backend confirmation fences Test child issuance",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ let watched=0;const calls:string[]=[];
+ const args=r137Args(f,{async sendProtectedTask(req:any){
+  calls.push(req.subtask.subtask_id);
+  if(req.subtask.subtask_id!=="backend-repair")
+   throw Error("Test A2A must not be reached after lost GitHub owner run");
+  await f.h.invoke(req.trusted_gateway_task_id,"backend","update_file",
+   edit("// r138 gateway-confirmed backend"));
+  return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+ }});
+ await assert.rejects(executeTrustedAdmittedRepairDag({
+  ...args,verifyLiveRun:async()=>{
+   if(++watched===5)throw Error("R138 GitHub run canceled");
+  }
+ }),/R138 GitHub run canceled/);
+ assert.equal(watched,5);
+ assert.deepEqual(calls,["backend-repair"]);
+ assert.equal(f.calls.length,1,
+  "No second Rust Child DC after GitHub job is lost");
+ assert.equal((await f.journal.records()).length,1);
+ assert.equal(f.h.provider,4,
+  "Backend already observed, but no Test effect or fake Docker PASS");
+ await assert.rejects(executeTrustedAdmittedRepairDag(args),
+  /same owner cannot replay a repair DAG/);
+});
+test("R138 owner-only repair cannot be configured without admitted epoch and run watch",async t=>{
+ const fixture=await r115RemoteFixture(t,{withDurable:true});
+ const {h,client}=fixture;
+ const directory=join(h.dir,"r138-owner-gate");
+ await mkdir(directory,{mode:0o700});
+ await assert.rejects(armTrustedOwnerOperationalRecovery({
+  gateway:client,coordinator:h.coordinator,
+  signedApprovals:h.signedStore,epochDirectory:directory,
+  running:{readiness:{
+   session_id:session,base_revision:sha,
+   plan_digest:planDigest(h.parent),
+   authenticated_engineer_did:engineer
+  },operational_root_id:h.rootAuthority.credential_id},
+  verifyLiveRun:async()=>{},
+  planRepairEpoch:{
+   giteaClient:r124HeadClient(),proposeRepairPlan:async()=>repairDraft(),
+   executeAdmittedRepairDag:{} as never
+  }
+ }),/R138 DAG requires admitted Gateway epoch/);
+ assert.equal(h.provider,3);
+});
