@@ -203,3 +203,65 @@ test("Account Suspension source-derived Backend model handles approved status un
   await next(m,input({ok:true,result:data}));
   assert.equal(m.derivedFileCount,2);
 });
+
+test("R150.8 one-use D1 repair requires actual failed SHA read and real Gateway write",async()=>{
+ const m=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
+ await next(m,{});
+ await next(m,input({ok:true,result:data}));
+ await next(m,{});
+ const repairPath="apps/backend/src/users/user.service.ts";
+ const failedSha="b".repeat(40),repairedSha="c".repeat(40);
+ const args={branch,path:repairPath,failedSha,taskId:"r150-owner-backend-repair"};
+ m.armTrustedD1TypecheckRepair(args);
+ const read=(await next(m,{})).functionCall;
+ assert.equal(read.name,"read_file");
+ assert.deepEqual(read.args,{branch,path:repairPath});
+ const injected='export const x=1;\n'+
+   'const __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
+ const write=(await next(m,input({ok:true,result:{
+  ...data,path:repairPath,revision:failedSha,content:injected
+ }}))).functionCall;
+ assert.equal(write.name,"update_file");
+ assert.deepEqual(write.args,{branch,path:repairPath,content:"export const x=1;\n"});
+ const finish=await next(m,input({ok:true,result:{
+  provider:"gitea",performed:true,tool:"update_file",
+  branch,path:repairPath,commit_sha:repairedSha
+ }}).contents[0].parts[0].functionResponse
+  ?{contents:[{parts:[{functionResponse:{name:"update_file",response:{
+    ok:true,result:{provider:"gitea",performed:true,tool:"update_file",
+      branch,path:repairPath,commit_sha:repairedSha}
+  }}}]}]}:{}));
+ assert.match(finish.text,/confirmed through protected Gateway/);
+ assert.throws(()=>m.armTrustedD1TypecheckRepair(args),/NO-GO/);
+});
+
+test("R150.8 refuses early, stale, forged or duplicated repair evidence",async()=>{
+ const repairPath="apps/backend/src/users/user.service.ts";
+ const failedSha="b".repeat(40);
+ const args={branch,path:repairPath,failedSha,taskId:"r150-owner-backend-repair"};
+ const early=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
+ assert.throws(()=>early.armTrustedD1TypecheckRepair(args),/NO-GO/);
+ const m=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
+ await next(m,{});await next(m,input({ok:true,result:data}));await next(m,{});
+ assert.throws(()=>m.armTrustedD1TypecheckRepair({...args,
+  taskId:"unapproved-task"}),/NO-GO/);
+ assert.throws(()=>m.armTrustedD1TypecheckRepair({...args,
+  path:"apps/backend/../secrets.ts"}),/NO-GO/);
+ m.armTrustedD1TypecheckRepair(args);
+ await next(m,{});
+ await assert.rejects(()=>next(m,input({ok:true,result:{
+  ...data,path:repairPath,revision:"c".repeat(40),content:source
+ }})),/NO-GO/);
+ const write=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
+ await next(write,{});await next(write,input({ok:true,result:data}));await next(write,{});
+ write.armTrustedD1TypecheckRepair(args);
+ await next(write,{});
+ await next(write,input({ok:true,result:{...data,path:repairPath,
+  revision:failedSha,content:'const x=1;\n'+
+   'const __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n'}}));
+ await assert.rejects(()=>next(write,{contents:[{parts:[{functionResponse:{
+  name:"update_file",response:{ok:true,result:{provider:"mock",
+   performed:true,tool:"update_file",branch,path:repairPath,
+   commit_sha:"c".repeat(40)}}
+ }}]}]}),/NO-GO/);
+});
