@@ -32,6 +32,8 @@ import {TrustedGatewayRootVpVerifier} from "../src/trusted-root-vp-verification.
 import {createTrustedPlanIpcServer,TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
 import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
+import {TrustedAdkOperationalRepairProposer} from
+  "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
 import {dispatchTrustedAdmittedRepairA2A,
   confirmTrustedAdmittedRepairA2A} from
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
@@ -117,6 +119,10 @@ const realGitea=[disposableBase,disposableToken,disposableSha]
 const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
 const positiveDag=process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
 const ownerD1Probe=process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1";
+const ownerD1AdkProposal=
+  process.env.APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL==="1";
+if(ownerD1AdkProposal&&(!ownerD1Probe||geminiPilot))
+  throw Error("R151 offline owner ADK repair fixture requires original signed D1 only");
 const signedOfflineMultiTest=positiveDag&&
   process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1";
 if(ownerD1Probe&&(!signedOfflineTypecheckProbe||geminiPilot||
@@ -748,21 +754,7 @@ try{
         const branchResource="gitea://"+repo.authority+"/"+repo.owner+"/"+
           repo.repository+"/branches/"+encodeURIComponent(workBranch);
         const operationalId=coordinator.trustedOperationalAuthority().credential_id;
-        const armed=await armTrustedOwnerOperationalRecovery({
-          gateway:gatewayOwner,coordinator,signedApprovals:signedStore,
-          epochDirectory:ownerEpochDir,
-          running:{readiness:{
-            session_id:session,base_revision:baseSha,
-            plan_digest:packet.plan_digest,
-            authenticated_engineer_did:engineerDid
-          },operational_root_id:operationalId},
-          verifyLiveRun:async()=>{
-            assert.equal(coordinator.phase,"execution");
-            await gatewayOwner.renewLease(session,packet.plan_digest);
-          },
-          planRepairEpoch:{
-            giteaClient:liveClient,
-            proposeRepairPlan:async input=>{
+        const nativeOwnerRepairDraft=async input=>{
               // The zero-billing test selects existing grants, not a new
               // capability. A future model may propose a different bounded
               // plan, which still faces the same Rust + Gateway admission.
@@ -786,7 +778,48 @@ try{
                    operation:"run_tests",
                    reason:"Independent new-epoch Docker validation"}]}
               ]};
-            },admitReservedEpoch:true
+
+        };
+        const trustedOwnerRepairAdk=ownerD1AdkProposal
+          ?new TrustedAdkOperationalRepairProposer({
+            model:new class extends BaseLlm{
+              constructor(){super({model:"r151-native-owner-offline-proposal"});}
+              async *generateContentAsync(request){
+                // Exercise the REAL ADK proposal turn without provider billing.
+                // The fixed source-derived candidate belongs only to this
+                // zero-billing regression fixture, never the Gemini pathway.
+                const raw=request?.contents?.at(-1)?.parts?.find(
+                  part=>typeof part.text==="string")?.text;
+                if(typeof raw!=="string"||raw.length>16000)
+                  throw Error("R151 offline owner model request unavailable");
+                const candidate=await nativeOwnerRepairDraft(JSON.parse(raw));
+                yield {content:{role:"model",parts:[{
+                  text:JSON.stringify(candidate)
+                }]}};
+              }
+              connect(){return Promise.reject(Error("No streaming or billing"));}
+            },
+            maxOutputTokens:8192
+          })
+          :undefined;
+        const armed=await armTrustedOwnerOperationalRecovery({
+          gateway:gatewayOwner,coordinator,signedApprovals:signedStore,
+          epochDirectory:ownerEpochDir,
+          running:{readiness:{
+            session_id:session,base_revision:baseSha,
+            plan_digest:packet.plan_digest,
+            authenticated_engineer_did:engineerDid
+          },operational_root_id:operationalId},
+          verifyLiveRun:async()=>{
+            assert.equal(coordinator.phase,"execution");
+            await gatewayOwner.renewLease(session,packet.plan_digest);
+          },
+          planRepairEpoch:{
+            giteaClient:liveClient,
+            ...(trustedOwnerRepairAdk
+              ?{trustedAdkProposer:trustedOwnerRepairAdk}
+              :{proposeRepairPlan:nativeOwnerRepairDraft}),
+            admitReservedEpoch:true
           }
         });
         let originalA2APorts;
