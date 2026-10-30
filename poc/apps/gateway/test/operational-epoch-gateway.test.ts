@@ -38,6 +38,12 @@ import {GiteaClient} from "../src/gitea-client.ts";
 import {TrustedGatewaySignedEpochInspector} from "../src/trusted-gateway-signed-epoch-inspector.ts";
 import {TrustedGatewayNativeRootStatusReader}
  from "../src/trusted-gateway-native-root-status.ts";
+import {TrustedGatewayRootVpVerifier}
+ from "../src/trusted-root-vp-verification.ts";
+import {TrustedOrchestratorRootPresenter}
+ from "../../../packages/orchestrator-runtime/src/trusted-orchestrator-root-presenter.ts";
+import {createTrustedRootVpSignerServer,TrustedRootVpSocketClient}
+ from "../../../packages/orchestrator-runtime/src/trusted-root-vp-private-ipc.ts";
 
 const repo={authority:"gitea.local",owner:"sample",repository:"invoice-service"};
 const root="gitea://gitea.local/sample/invoice-service";
@@ -2308,6 +2314,8 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
   Array<{resource:string;operation:string}>;
  issued?:Record<string,unknown>; status?:Record<string,unknown>;
  onIssued?:()=>Promise<void>;
+ withVp?:boolean; vpMutate?:Record<string,unknown>;
+ onVpVerification?:()=>Promise<void>;
 }={}){
  const base=await r115RemoteFixture(t,{withDurable:true});
  let nativeCalls=0,issuedCalls=0;
@@ -2352,9 +2360,73 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
  const socketPath=join(base.h.dir,"r128-issued.sock");
  const secretFile=join(base.h.dir,"r128-issued.hex");
  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ let signedVpCalls=0,verifiedVpCalls=0;
+ let rootVpVerifier:TrustedGatewayRootVpVerifier|undefined;
+ if(options.withVp){
+  const privateSocket=join(base.h.dir,"r132-root-vp.sock");
+  const privateSecret=join(base.h.dir,"r132-root-vp.hex");
+  await writeFile(privateSecret,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+  const presenter=new TrustedOrchestratorRootPresenter({
+   adapterBaseUrl:"http://orchestrator-adapter.local:8090",
+   orchestratorToken:"r132-private-orchestrator-only",
+   rootCredentialId:base.h.rootAuthority.credential_id,
+   rootPermissions:base.h.rootAuthority.permissions,
+   fetchFn:(async(url:unknown,init?:RequestInit)=>{
+    signedVpCalls++;
+    assert.equal(String(url),
+     "http://orchestrator-adapter.local:8090/v1/presentations");
+    assert.equal(new Headers(init?.headers).get("authorization"),
+     "Bearer r132-private-orchestrator-only");
+    const data=JSON.parse(String(init?.body));
+    assert.equal(data.credential_id,base.h.rootAuthority.credential_id);
+    assert.match(data.challenge,/^[a-f0-9]{64}$/);
+    return new Response(JSON.stringify({
+     signed_vp:"r132-signed-root:"+data.challenge
+    }),{status:200});
+   }) as typeof fetch
+  });
+  const server=await createTrustedRootVpSignerServer({
+   socketPath:privateSocket,secretFile:privateSecret,
+   presenter,rootCredentialId:base.h.rootAuthority.credential_id,
+   rootPermissions:base.h.rootAuthority.permissions,
+   audience:"urn:thesis:gateway:r132",
+   liveRoot:{
+    coordinator:base.h.coordinator,
+    originalPlanDigest:planDigest(base.h.parent),
+    ownerRunActive:()=>base.h.coordinator.phase==="execution"
+   }
+  });
+  await server.start();t.after(()=>server.close());
+  rootVpVerifier=new TrustedGatewayRootVpVerifier({
+   audience:"urn:thesis:gateway:r132",
+   signer:await TrustedRootVpSocketClient.connect({
+    socketPath:privateSocket,secretFile:privateSecret
+   }),
+   verifier:{
+    async verify(){throw Error("Single permission verification not allowed");},
+    async verifyMultiple(request){
+     verifiedVpCalls++;
+     await options.onVpVerification?.();
+     assert.equal(request.presenter,"orchestrator");
+     assert.equal(request.audience,"urn:thesis:gateway:r132");
+     assert.equal(request.signed_vp,"r132-signed-root:"+request.challenge);
+     const now=BigInt(Date.now())*1_000_000n;
+     return {
+      credential_id:base.h.rootAuthority.credential_id,
+      issuer_id:engineer,presenter_id:"did:example:orchestrator",
+      hierarchy_depth:0,
+      permissions:request.required_permissions,
+      expiration:(now+3_600_000_000_000n).toString(),
+      ...options.vpMutate
+     };
+    }
+   }
+  });
+ }
  const inspector=new TrustedGatewaySignedEpochInspector({
   directory:join(base.h.dir,"epochs"),approvals:base.h.signedStore,
-  nativeRootStatus:reader,trustedOrchestratorDid:"did:example:orchestrator"
+  nativeRootStatus:reader,trustedOrchestratorDid:"did:example:orchestrator",
+  ...(rootVpVerifier?{rootVpVerifier}:{})
  });
  const control=await createTrustedPlanIpcServer({
   socketPath,secretFile,plans:base.h.gates,signedEpochInspector:inspector
@@ -2363,6 +2435,8 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
  return {...base,reader,inspector,
   get nativeCalls(){return nativeCalls;},
   get issuedCalls(){return issuedCalls;},
+  get signedVpCalls(){return signedVpCalls;},
+  get verifiedVpCalls(){return verifiedVpCalls;},
   client:await TrustedPlanIpcClient.connect({socketPath,secretFile})
  };
 }
@@ -2439,5 +2513,77 @@ test("R128 original root change while reading real issued claims is denied",asyn
  await assert.rejects(f.client.inspectNativeIssuedRootScope(r128Pins(f.h)),
   /Gateway trusted control denied/);
  assert.equal(f.issuedCalls,1);
+ assert.equal(f.h.provider,3);
+});
+
+test("R132 private Gateway correlates signed epoch, EVM status, actual root grants, fresh signed VP",async t=>{
+ const f=await r128Fixture(t,{withVp:true});
+ const pins=r128Pins(f.h);
+ assert.equal(f.client.nativeRootVpInspectionConfigured(),true);
+ const proof=await f.client.inspectVerifiedRootVp(pins);
+ assert.equal(proof.status,"rust_root_vp_correlated_signed_epoch_no_admission");
+ assert.equal(proof.cryptographic_presentation_verified,true);
+ assert.equal(proof.native_issued_grants_checked,true);
+ assert.equal(proof.gateway_epoch_admitted,false);
+ assert.equal(proof.execution_authorized,false);
+ assert.equal(proof.child_credential_issued,false);
+ assert.equal(f.signedVpCalls,1);
+ assert.equal(f.verifiedVpCalls,1);
+ await prepareTrustedRemoteRepairFeedback(f.request());
+ const epoch=await f.h.intake.reserveRepairEpoch(repair());
+ const next=await f.client.inspectVerifiedRootVp({
+  ...pins,epoch:2,plan_digest:epoch.plan_digest
+ });
+ assert.equal(next.epoch,2);
+ assert.equal(f.signedVpCalls,2);
+ assert.equal(f.verifiedVpCalls,2);
+ assert.equal(f.h.provider,3,"reading cryptographic root cannot trigger provider");
+ await assert.rejects(f.client.admitVerifiedOperationalEpoch({
+  ...pins,epoch:2,plan_digest:epoch.plan_digest
+ }),/Gateway trusted control denied/,
+ "Root VP alone cannot install remote Gateway operational authority");
+});
+
+test("R132 corrupt Rust presenter, issuer, root identity or extra permissions deny VP",async t=>{
+ const bad=[
+  {credential_id:"urn:credential:r132-other"},
+  {issuer_id:"did:example:untrusted"},
+  {presenter_id:"did:example:backend"},
+  {hierarchy_depth:1},
+  {permissions:[{resource:file,operation:"create_pull_request"}]}
+ ];
+ for(const vpMutate of bad){
+  const f=await r128Fixture(t,{withVp:true,vpMutate});
+  await assert.rejects(f.client.inspectVerifiedRootVp(r128Pins(f.h)),
+   /Gateway trusted control denied/);
+  assert.equal(f.signedVpCalls,1);
+  assert.equal(f.h.provider,3);
+ }
+});
+
+test("R132 invalid signed epoch does not even request a root VP",async t=>{
+ const f=await r128Fixture(t,{withVp:true});
+ for(const invalid of [
+  {...r128Pins(f.h),plan_digest:"b".repeat(64)},
+  {...r128Pins(f.h),session_id:"r132-other-session"},
+  {...r128Pins(f.h),epoch:2}
+ ]){
+  await assert.rejects(f.client.inspectVerifiedRootVp(invalid),
+   /Gateway trusted control denied/);
+ }
+ assert.equal(f.signedVpCalls,0);
+ assert.equal(f.verifiedVpCalls,0);
+ assert.equal(f.h.provider,3);
+});
+
+test("R132 revoke live original root DURING VP verification, no stale attestation returned",async t=>{
+ let f:Awaited<ReturnType<typeof r128Fixture>>;
+ f=await r128Fixture(t,{withVp:true,onVpVerification:async()=>{
+  f.h.setPhase("closed");
+ }});
+ await assert.rejects(f.client.inspectVerifiedRootVp(r128Pins(f.h)),
+  /Gateway trusted control denied/);
+ assert.equal(f.signedVpCalls,1);
+ assert.equal(f.verifiedVpCalls,1);
  assert.equal(f.h.provider,3);
 });

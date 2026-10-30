@@ -24,6 +24,7 @@ import {assertApprovedPlanScope,planDigest}
 import {preflightNextOperationalEpoch}
  from "../../../packages/plan-contracts/src/operational-epoch-scope.mjs";
 import {RUST_OPERATIONS} from "./operation-catalog.ts";
+import type {Permission} from "./types.ts";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA=/^[a-f0-9]{40}$/u,DIGEST=/^[a-f0-9]{64}$/u;
@@ -278,7 +279,7 @@ export class TrustedGatewaySignedEpochInspector{
    const pair=JSON.stringify([g.resource,g.operation]);
    unique.set(pair,{resource:g.resource,operation:g.operation});
   }
-  const grants=[...unique.values()];
+  const grants=[...unique.values()] as Permission[];
   if(!grants.length||grants.length>128)
    deny("root VP requires nonempty scoped grants");
   const verified=await this.#rootVp!.verifyRoot({
