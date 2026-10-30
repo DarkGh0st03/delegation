@@ -85,11 +85,14 @@ async function setup(
 ){
   const home=await mkdtemp(join(tmpdir(),"trusted-plan-ipc-"));
   const privateDir=join(home,"private"),receipts=join(home,"receipts"),
-   signedEpochDir=join(home,"shared-signed-epochs");
+   signedEpochDir=join(home,"shared-signed-epochs"),
+   operationalDir=join(home,"durable-gateway-sessions");
   await mkdir(privateDir,{mode:0o700});
   await mkdir(receipts,{mode:0o700});
-  if(options.withSignedEpochMirror)
+  if(options.withSignedEpochMirror){
    await mkdir(signedEpochDir,{mode:0o700});
+   await mkdir(operationalDir,{mode:0o700});
+  }
   const secretFile=join(privateDir,"ipc-secret.hex");
   const socketPath=join(privateDir,"control.sock");
   const secret=randomBytes(32).toString("hex");
@@ -133,7 +136,7 @@ async function setup(
   const configFile=join(privateDir,"config.json");
   await writeFile(configFile,JSON.stringify({
     approvalDir:receipts,socketPath,secretFile,repository:REPO,
-    ...(options.withSignedEpochMirror?{signedEpochDir}:{}),
+    ...(options.withSignedEpochMirror?{signedEpochDir,operationalDir}:{}),
     engineerDid:DID,keyId:KEY_ID,publicKey:pub
   }),{mode:0o600});
   const child=fork(fileURLToPath(new URL("./fixtures/trusted-plan-ipc-child.ts",
