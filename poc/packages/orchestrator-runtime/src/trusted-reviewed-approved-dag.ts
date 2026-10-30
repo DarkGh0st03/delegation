@@ -13,9 +13,11 @@
 import {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 import {TrustedPlanningReviewGate} from "./trusted-planning-review-gate.ts";
 import {TrustedApprovedA2ADispatcher} from "./trusted-approved-a2a-dispatcher.ts";
-import type {TrustedApprovedExecutionPlans}
+import {TrustedApprovedExecutionPlans}
   from "../../../apps/gateway/src/approved-execution-plans.ts";
-import type {TrustedOperationalEpochIntake}
+import {TrustedPlanIpcClient}
+  from "../../../apps/gateway/src/trusted-plan-ipc.ts";
+import {TrustedOperationalEpochIntake}
   from "./trusted-operational-epoch-intake.ts";
 import type {TrustedRepairFeedbackSignal}
   from "./trusted-validation-repair-feedback.ts";
@@ -75,7 +77,7 @@ export function createReviewedApprovedDagExecution(input:{
   /** Owner-only R113 continuation; not exposed in A2A/MCP/model inputs.
    * The callback must complete within the lifetime of the same Rust root. */
   verifiedTestFailureRecovery?:Readonly<{
-    gateway:TrustedApprovedExecutionPlans;
+    gateway:TrustedApprovedExecutionPlans|TrustedPlanIpcClient;
     intake:TrustedOperationalEpochIntake;
     continueWithinActiveRoot:(signal:Readonly<TrustedRepairFeedbackSignal>)=>Promise<void>;
   }>;
@@ -102,8 +104,18 @@ export function createReviewedApprovedDagExecution(input:{
     rootId:input.running.operational_root_id
   });
   const recovery=input.verifiedTestFailureRecovery;
-  if(recovery&&typeof recovery.continueWithinActiveRoot!=="function")
-    fail("R113 owner-controlled recovery callback required");
+  if(recovery){
+    if(typeof recovery.continueWithinActiveRoot!=="function"||
+       !(recovery.intake instanceof TrustedOperationalEpochIntake)||
+       !(recovery.gateway instanceof TrustedApprovedExecutionPlans||
+         recovery.gateway instanceof TrustedPlanIpcClient))
+      fail("R117 authenticated owner recovery callback required");
+    recovery.intake.assertSameCoordinator(input.coordinator);
+    if(recovery.gateway instanceof TrustedPlanIpcClient&&
+       (!recovery.gateway.operationalLeaseConfigured()||
+        !recovery.gateway.operationalSessionDurableConfigured()))
+      fail("R117 remote recovery requires durable Gateway operational fences");
+  }
   let attempted=false;
   return Object.freeze({
     async executeApprovedDag(config:ExecutorInput){

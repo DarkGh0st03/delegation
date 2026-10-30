@@ -17,8 +17,10 @@ import {approvedWorkBranch} from "../../../packages/plan-contracts/src/approved-
 import {TrustedApprovedExecutionPlans,type AuthenticatedPlanStore}
  from "../../../apps/gateway/src/approved-execution-plans.ts";
 import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
-import {prepareTrustedRepairFeedback,type TrustedRepairFeedbackSignal}
+import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback,
+ type TrustedRepairFeedbackSignal}
  from "./trusted-validation-repair-feedback.ts";
+import {TrustedPlanIpcClient} from "../../../apps/gateway/src/trusted-plan-ipc.ts";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
 import type {
   DelegatedA2ARoleTaskInput,DelegatedA2ARoleTaskResult,
@@ -75,7 +77,7 @@ export interface TrustedApprovedA2ADispatcherConfig{
    * after an independently corroborated terminal failed Test.
    */
   verifiedTestFailureRecovery?:Readonly<{
-    gateway:TrustedApprovedExecutionPlans;
+    gateway:TrustedApprovedExecutionPlans|TrustedPlanIpcClient;
     intake:TrustedOperationalEpochIntake;
   }>;
 }
@@ -137,10 +139,16 @@ export class TrustedApprovedA2ADispatcher {
   static async load(config:TrustedApprovedA2ADispatcherConfig){
     if(config.verifiedTestFailureRecovery){
       const recovery=config.verifiedTestFailureRecovery;
-      if(!(recovery.gateway instanceof TrustedApprovedExecutionPlans)||
-         !(recovery.intake instanceof TrustedOperationalEpochIntake)||
-         !recovery.gateway.isBoundToOperationalEpochIntake(recovery.intake))
-        throw Error("R112 recovery requires the identical trusted Gateway/root intake");
+      if(!(recovery.intake instanceof TrustedOperationalEpochIntake))
+        throw Error("R117 recovery requires original signed Rust-root intake");
+      if(recovery.gateway instanceof TrustedApprovedExecutionPlans){
+        if(!recovery.gateway.isBoundToOperationalEpochIntake(recovery.intake))
+          throw Error("R112 recovery requires identical Gateway/root intake");
+      }else if(recovery.gateway instanceof TrustedPlanIpcClient){
+        if(!recovery.gateway.operationalLeaseConfigured()||
+           !recovery.gateway.operationalSessionDurableConfigured())
+          throw Error("R117 remote Gateway lacks durable operational recovery fences");
+      }else throw Error("R117 unknown remote Gateway recovery port");
       recovery.intake.assertSameCoordinator(config.coordinator);
     }
     if(!config.expectedEngineerDid?.startsWith("did:")||
@@ -405,11 +413,17 @@ export class TrustedApprovedA2ADispatcher {
          error.message==="Protected A2A task ended without completion"&&
          this.#config.coordinator.phase==="execution"){
         try{
-          recovery.gateway.confirmTestValidationFailure(dispatchId);
-          const proof=await prepareTrustedRepairFeedback({
-            gateway:recovery.gateway,intake:recovery.intake,
-            sessionId:this.#config.sessionId,runtimeTestTaskId:dispatchId
-          });
+          const proof=recovery.gateway instanceof TrustedPlanIpcClient
+            ?await prepareTrustedRemoteRepairFeedback({
+              gateway:recovery.gateway,intake:recovery.intake,
+              coordinator:this.#config.coordinator as TrustedExecutionCoordinator,
+              sessionId:this.#config.sessionId,runtimeTestTaskId:dispatchId
+            })
+            :(recovery.gateway.confirmTestValidationFailure(dispatchId),
+              await prepareTrustedRepairFeedback({
+                gateway:recovery.gateway,intake:recovery.intake,
+                sessionId:this.#config.sessionId,runtimeTestTaskId:dispatchId
+              }));
           if(proof.status==="repair_planning_eligible"&&
              proof.failed_task_id===task.id&&
              proof.failed_runtime_task_id===dispatchId&&
