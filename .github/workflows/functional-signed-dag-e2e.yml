@@ -38,6 +38,8 @@ on:
       - 'poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs'
       - 'poc/apps/gateway/native-test/offline-approved-adk-model.mjs'
       - 'poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs'
+      - 'poc/packages/orchestrator-runtime/src/trusted-gemini-repair-proposer.mjs'
+      - 'poc/packages/orchestrator-runtime/test/trusted-gemini-repair-proposer.test.mjs'
       - 'poc/apps/gateway/native-test/source-derived-controller-edits.mjs'
       - 'poc/apps/gateway/native-test/source-derived-controller-edits.test.mjs'
       - 'poc/apps/gateway/native-test/approved-plan-source-target-selection.mjs'
@@ -155,6 +157,8 @@ jobs:
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs
       - name: R150.9 fresh owner Test Task cannot replay terminal signed offline Task (NO AI)
         run: node --test poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs
+      - name: R151 one-use untrusted Gemini repair DAG proposal (NO API, NO BILLING)
+        run: node --test poc/packages/orchestrator-runtime/test/trusted-gemini-repair-proposer.test.mjs
       - name: Block B approved-DAG action selection and source-derived route tests (zero Gemini cost)
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs
       - name: Account Suspension controller source-derivation and denial tests
