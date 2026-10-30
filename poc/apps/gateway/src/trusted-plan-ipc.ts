@@ -16,6 +16,20 @@ import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch
 
 const ROUTE="/v1/private-plan-control";
 const MAX_BODY=4096,MAX_NONCES=4096,MAX_AGE=30_000;
+/**
+ * R150.10.2: only authenticated owner-only native EVM inspectors may take
+ * longer than the 5s local IPC default. The trusted inspector verifies
+ * signed epochs and may sequentially query the Rust Adapter and chain
+ * several times per request. A 5s socket deadline can abort healthy
+ * cryptographic checks. Every timeout stays bounded and terminal: NEVER
+ * retry ambiguous epoch admission or an EVM-root retirement inspection.
+ */
+const NATIVE_EVM_INSPECTION_ACTIONS=new Set<string>([
+ "inspect_signed_epoch","inspect_native_root","inspect_issued_root",
+ "inspect_verified_root_vp","admit_epoch","read_retired_root_revocation"
+]);
+const NATIVE_EVM_IPC_TIMEOUT_MS=60_000;
+const ORDINARY_IPC_TIMEOUT_MS=5_000;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA=/^[a-f0-9]{40}$/u;
 const MAC=/^[0-9a-f]{64}$/u;
@@ -566,9 +580,14 @@ export class TrustedPlanIpcClient{
     const body=Buffer.from(JSON.stringify(validate(value)));
     const timestamp=String(Date.now()),nonce=randomBytes(16).toString("base64url");
     const mac=sign(this.#secret,timestamp,nonce,body);
+    // Timeout only the remotely verified native-EVM attestation commands;
+    // all ordinary Gateway Task and lease-control calls remain at 5s.
+    const responseTimeoutMs=NATIVE_EVM_INSPECTION_ACTIONS.has(value.action)
+      ?NATIVE_EVM_IPC_TIMEOUT_MS:ORDINARY_IPC_TIMEOUT_MS;
     return new Promise((resolve,reject)=>{
       const req=httpRequest({
-        socketPath:this.#socket,method:"POST",path:ROUTE,timeout:5000,
+        socketPath:this.#socket,method:"POST",path:ROUTE,
+        timeout:responseTimeoutMs,
         headers:{"content-type":"application/json","content-length":body.length,
           "x-trusted-timestamp":timestamp,"x-trusted-nonce":nonce,
           "x-trusted-mac":mac}
@@ -588,7 +607,10 @@ export class TrustedPlanIpcClient{
           }catch{reject(Error("Gateway trusted control returned invalid response"));}
         });
       });
-      req.once("timeout",()=>req.destroy(Error("IPC timed out")));
+      // Action is an exact trusted Command discriminant, never provider
+      // content, model text, source code, tokens, a user-supplied path/ID.
+      req.once("timeout",()=>req.destroy(
+        Error("IPC timed out: "+value.action)));
       req.once("error",reject);
       req.end(body);
     });
