@@ -1202,16 +1202,24 @@ test("R109 new Task ID receives only the original Rust root read grant, then VP/
   request_id:wrong.request_id,signed_vp:"signed.fixture.vp"
  }),/Trusted approved plan rejected|approved_plan_denied/);
  assert.equal(h.provider,3);
- const valid=h.runtime.prepare({
-  task_id:"runtime-r109",agent_role:"backend",
-  tool:"read_file",arguments:{branch,path:"src/invoices.ts"}
+ // The SAME minted child's VP is now used by R108's bounded
+ // source reader: no side-channel token, no direct Gitea source access.
+ const sourceReader=new TrustedOperationalRepairSourceReader({
+  gateway:h.runtime,trustedGatewayPlans:h.gates,
+  failedRuntimeTestTaskId:"task-test",
+  intake:h.intake,featureHeadReader:trustedFeature(h),
+  sessionId:session,runtimeTaskId:"runtime-r109",
+  agentRole:"backend",expectedTestedSha:sha,
+  issueSignedVp:async challenge=>{
+   assert.equal(challenge.required_permission.resource,file);
+   assert.equal(challenge.required_permission.operation,"read_file");
+   return "signed.r109.discovery";
+  }
  });
- const response=await h.runtime.execute({
-  request_id:valid.request_id,signed_vp:"signed.r109.discovery"
- });
- assert.equal(response.decision,"allow");
- assert.equal(response.execution.tool,"read_file");
- assert.equal(response.execution.revision,sha);
+ const source=await sourceReader.read("src/invoices.ts");
+ assert.equal(source.status,"gateway_verified_read");
+ assert.equal(source.revision,sha);
+ assert.match(source.content,/invoice/);
  assert.equal(h.provider,4);
  assert.equal(h.policy,5);
  await h.gates.confirmTaskCompletion("runtime-r109");
