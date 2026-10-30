@@ -31,6 +31,8 @@ type Command=
   |{action:"renew_lease";session_id:string;plan_digest:string}
   |{action:"complete";runtime_task_id:string;observation:TrustedCompletionObservation}
   |{action:"confirm_test_failure";session_id:string;
+     root_plan_digest:string;runtime_task_id:string}
+  |{action:"read_test_failure";session_id:string;
      root_plan_digest:string;runtime_task_id:string};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
@@ -62,7 +64,8 @@ function validate(x:unknown):Command{
      Number.isSafeInteger(o.ttl_ms)&&
      (o.ttl_ms as number)>=1&&(o.ttl_ms as number)<=900_000)
     return o as Command;
-  if(o.action==="confirm_test_failure"&&
+  if((o.action==="confirm_test_failure"||
+      o.action==="read_test_failure")&&
      exact(o,["action","session_id","root_plan_digest","runtime_task_id"])&&
      typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
      typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id))
@@ -250,6 +253,15 @@ export async function createTrustedPlanIpcServer(config:{
       }else if(command.action==="complete"){
         await config.plans.confirmTaskCompletion(command.runtime_task_id,command.observation);
         response(res,200,{ok:true});
+      }else if(command.action==="read_test_failure"){
+        // R122: this cannot finalize a mere failed A2A claim. Only the
+        // actual active Gateway registry may expose already-confirmed FAIL.
+        const pins={session_id:command.session_id,
+          root_plan_digest:command.root_plan_digest,
+          runtime_task_id:command.runtime_task_id};
+        const receipt=config.plans.readVerifiedTestFailure(
+          command.runtime_task_id);
+        response(res,200,{ok:true,failure:boundedTestFailure(receipt,pins)});
       }else if(command.action==="confirm_test_failure"){
         // Genuine Gateway state proves completed predecessors, a Test role,
         // exact Runner FAIL, no conflicting PASS and no in-flight effects.
@@ -447,6 +459,16 @@ export class TrustedPlanIpcClient{
     session_id:string;root_plan_digest:string;runtime_task_id:string;
   }>):Promise<Readonly<TrustedRunnerFailure>>{
     const result=await this.#send({action:"confirm_test_failure",...pins});
+    return boundedTestFailure(result.failure,pins);
+  }
+  /**
+   * R122: read-only after genuine one-use finalization in this live Gateway
+   * session and epoch; never issues authority or authorizes Docker.
+   */
+  async readConfirmedTestFailure(pins:Readonly<{
+    session_id:string;root_plan_digest:string;runtime_task_id:string;
+  }>):Promise<Readonly<TrustedRunnerFailure>>{
+    const result=await this.#send({action:"read_test_failure",...pins});
     return boundedTestFailure(result.failure,pins);
   }
   async confirmTaskCompletion(runtimeTaskId:string,

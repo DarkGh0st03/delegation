@@ -962,3 +962,47 @@ test("R114 IPC denies malformed or model-controlled Test failure evidence",async
   } as any),/unknown or malformed command/);
   assert.equal(returns,1);
 });
+
+test("R122 authenticated finalized read-only IPC cannot invoke one-use finalizer",async t=>{
+ const home=await mkdtemp(join(tmpdir(),"r122-hmac-"));
+ await mkdir(join(home,"private"),{mode:0o700});
+ const socketPath=join(home,"private","gateway.sock");
+ const secretFile=join(home,"private","secret.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ const pins={session_id:"r122-session",root_plan_digest:"b".repeat(64),
+  runtime_task_id:"r122-test"};
+ let finished=false,confirms=0,reads=0;
+ const receipt={...pins,status:"validation_failed",request_id:"request-r122",
+  plan_task_id:"test",epoch_version:1,branch:"feature/r122",
+  tested_commit_sha:SHA,first_failed_phase:"backend_tests",
+  typecheck_error_codes:[]};
+ const plans={
+  operationalLeaseConfigured:()=>true,
+  operationalSessionDurableConfigured:()=>true,
+  confirmTestValidationFailure(id:string){
+   assert.equal(id,pins.runtime_task_id);confirms++;
+   if(finished)throw Error("already finalized");
+   finished=true;return receipt;
+  },
+  readVerifiedTestFailure(id:string){
+   assert.equal(id,pins.runtime_task_id);reads++;
+   if(!finished)throw Error("not finalized");
+   return receipt;
+  }
+ } as any;
+ const server=await createTrustedPlanIpcServer({socketPath,secretFile,plans});
+ await server.start();
+ t.after(async()=>{await server.close();await rm(home,{recursive:true,force:true});});
+ const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+ await assert.rejects(client.readConfirmedTestFailure(pins),
+  /Gateway trusted control denied/);
+ assert.equal(confirms,0);
+ assert.deepEqual(await client.confirmVerifiedTestFailure(pins),receipt);
+ assert.deepEqual(await client.readConfirmedTestFailure(pins),receipt);
+ assert.deepEqual(await client.readConfirmedTestFailure(pins),receipt);
+ assert.equal(confirms,1);
+ assert.equal(reads,3);
+ assert.equal(await rawSocket(socketPath,JSON.stringify({
+  action:"read_test_failure",...pins
+ }),{}),403);
+});

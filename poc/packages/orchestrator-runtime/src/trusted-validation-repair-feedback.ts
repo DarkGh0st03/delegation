@@ -163,6 +163,8 @@ export async function prepareTrustedRemoteRepairFeedback(config:{
  coordinator:Pick<TrustedExecutionCoordinator,"phase"|"trustedOperationalAuthority">;
  sessionId:string;
  runtimeTestTaskId:string;
+ /** Dispatcher-confirmed R122 read path; cannot finalize a raw claim. */
+ alreadyFinalized?:boolean;
 }):Promise<Readonly<TrustedRepairFeedbackSignal>>{
  if(!(config?.gateway instanceof TrustedPlanIpcClient)||
     !(config.intake instanceof TrustedOperationalEpochIntake)||
@@ -176,9 +178,12 @@ export async function prepareTrustedRemoteRepairFeedback(config:{
  return prepareVerifiedRepairFeedback({
   intake:config.intake,sessionId:config.sessionId,
   runtimeTestTaskId:config.runtimeTestTaskId,
-  readGatewayFailure:rootPlanDigest=>config.gateway.confirmVerifiedTestFailure({
-   session_id:config.sessionId,root_plan_digest:rootPlanDigest,
-   runtime_task_id:config.runtimeTestTaskId
-  })
+  readGatewayFailure:rootPlanDigest=>{
+   const pins={session_id:config.sessionId,root_plan_digest:rootPlanDigest,
+    runtime_task_id:config.runtimeTestTaskId};
+   return config.alreadyFinalized===true
+    ?config.gateway.readConfirmedTestFailure(pins)
+    :config.gateway.confirmVerifiedTestFailure(pins);
+  }
  });
 }

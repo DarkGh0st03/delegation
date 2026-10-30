@@ -218,6 +218,7 @@ export class TrustedOperationalRepairPlanner {
  readonly #gateway:TrustedApprovedExecutionPlans|TrustedPlanIpcClient;
  readonly #coordinator?:Pick<TrustedExecutionCoordinator,
   "phase"|"trustedOperationalAuthority">;
+ readonly #readFinalizedFailure:boolean;
  readonly #intake:TrustedOperationalEpochIntake;
  readonly #session:string;
  readonly #testTask:string;
@@ -232,6 +233,8 @@ export class TrustedOperationalRepairPlanner {
   /** Mandatory with IPC: original signed-root owner, not a recreated port. */
   coordinator?:Pick<TrustedExecutionCoordinator,
    "phase"|"trustedOperationalAuthority">;
+  /** A Test FAIL already finalized by the trusted A2A dispatcher. */
+  failedTestAlreadyFinalized?:boolean;
   intake:TrustedOperationalEpochIntake;
   sessionId:string;runtimeTestTaskId:string;nextPlanId:string;
   pinnedAgentRegistry:readonly {agent_id:SpecializedRole;did:string;card_ref:string}[];
@@ -257,6 +260,7 @@ export class TrustedOperationalRepairPlanner {
   }
   this.#gateway=config.gateway;this.#intake=config.intake;
   this.#coordinator=config.coordinator;
+  this.#readFinalizedFailure=config.failedTestAlreadyFinalized===true;
   this.#session=config.sessionId;this.#testTask=config.runtimeTestTaskId;
   this.#nextId=config.nextPlanId;
   this.#agents=structuredClone(config.pinnedAgentRegistry);
@@ -275,7 +279,8 @@ export class TrustedOperationalRepairPlanner {
   const feedback=remote
    ?await prepareTrustedRemoteRepairFeedback({
      gateway:remote,intake:this.#intake,coordinator:this.#coordinator!,
-     sessionId:this.#session,runtimeTestTaskId:this.#testTask
+     sessionId:this.#session,runtimeTestTaskId:this.#testTask,
+     alreadyFinalized:this.#readFinalizedFailure
     })
    :await prepareTrustedRepairFeedback({
      gateway:this.#gateway as TrustedApprovedExecutionPlans,

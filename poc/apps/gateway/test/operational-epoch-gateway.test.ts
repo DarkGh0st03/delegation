@@ -1610,6 +1610,7 @@ function r121RemotePlanner(h:Awaited<ReturnType<typeof harness>>,
   propose?:()=>Promise<unknown>|unknown;
   observedSha?:()=>Promise<string>|string;
   counters?:{model:number;head:number};
+  alreadyFinalized?:boolean;
  }={}){
  const reader=new GiteaClient({
   baseUrl:"http://gitea.local:3000",token:"private-r121-fixture",
@@ -1632,6 +1633,7 @@ function r121RemotePlanner(h:Awaited<ReturnType<typeof harness>>,
  });
  return new TrustedOperationalRepairPlanner({
   gateway,coordinator:h.coordinator,intake:h.intake,sessionId:session,
+  ...(options.alreadyFinalized?{failedTestAlreadyFinalized:true}:{}),
   runtimeTestTaskId:"task-test",nextPlanId:"r121-remote-repair-2",
   pinnedAgentRegistry:registry,
   featureHeadReader:new TrustedOperationalFeatureHeadReader({
@@ -1734,4 +1736,52 @@ test("R121 remote planner requires durable IPC Gateway and identical Coordinator
   featureHeadReader:originalReader,proposeRepairPlan:async()=>repairDraft()
  }),/Coordinator instance differs/);
  assert.equal((await d.h.intake.verifiedEpochHistory()).length,1);
+});
+
+test("R122 finalized-only IPC reads are independently pinned and do not retry Docker",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ const pins={session_id:session,root_plan_digest:planDigest(h.parent),
+  runtime_task_id:"task-test"};
+ await assert.rejects(client.readConfirmedTestFailure(pins),
+  /Gateway trusted control denied/);
+ const initial=await prepareTrustedRemoteRepairFeedback(request());
+ const read1=await client.readConfirmedTestFailure(pins);
+ const read2=await client.readConfirmedTestFailure(pins);
+ assert.deepEqual(read1,read2);
+ assert.equal(read1.status,"validation_failed");
+ assert.deepEqual(await prepareTrustedRemoteRepairFeedback({
+  ...request(),alreadyFinalized:true
+ }),initial);
+ for(const wrong of [
+  {...pins,session_id:"r122-wrong-session"},
+  {...pins,root_plan_digest:"b".repeat(64)},
+  {...pins,runtime_task_id:"r122-wrong-task"}
+ ])await assert.rejects(client.readConfirmedTestFailure(wrong),
+   /Gateway trusted control denied/);
+ await assert.rejects(client.confirmVerifiedTestFailure(pins),
+  /Gateway trusted control denied/);
+ assert.equal(h.provider,3);
+ await h.gates.retireSession(session);
+ await assert.rejects(client.readConfirmedTestFailure(pins),
+  /Gateway trusted control denied/);
+});
+
+test("R122 one-use dispatcher FAIL can enter the R121 planner without replay",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ const counters={model:0,head:0};
+ await assert.rejects(r121RemotePlanner(h,client,{
+  counters,alreadyFinalized:true
+ }).proposeAndReserve(),/Gateway trusted control denied/);
+ assert.deepEqual(counters,{model:0,head:0});
+ const feedback=await prepareTrustedRemoteRepairFeedback(request());
+ assert.equal(feedback.status,"repair_planning_eligible");
+ const result=await r121RemotePlanner(h,client,{
+  counters,alreadyFinalized:true
+ }).proposeAndReserve();
+ assert.equal(result.epoch,2);
+ assert.equal(result.child_credential_issued,false);
+ assert.equal(result.execution_authorized,false);
+ assert.deepEqual(counters,{model:1,head:2});
+ assert.equal((await h.intake.verifiedEpochHistory()).length,2);
+ assert.equal(h.provider,3);
 });
