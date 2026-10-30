@@ -13,6 +13,12 @@
 import {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 import {TrustedPlanningReviewGate} from "./trusted-planning-review-gate.ts";
 import {TrustedApprovedA2ADispatcher} from "./trusted-approved-a2a-dispatcher.ts";
+import type {TrustedApprovedExecutionPlans}
+  from "../../../apps/gateway/src/approved-execution-plans.ts";
+import type {TrustedOperationalEpochIntake}
+  from "./trusted-operational-epoch-intake.ts";
+import type {TrustedRepairFeedbackSignal}
+  from "./trusted-validation-repair-feedback.ts";
 // Both independently approved paid and nonbillable scripted executions
 // present the same immutable, authority-relevant facts. Neither model
 // budgets nor charge-consent fields can be used by the DAG dispatcher.
@@ -66,6 +72,13 @@ export function createReviewedApprovedDagExecution(input:{
   verifyLiveRun:()=>Promise<void>;
   /** Must retire Gateway/root before tearing down the three A2A servers. */
   close:()=>Promise<void>;
+  /** Owner-only R113 continuation; not exposed in A2A/MCP/model inputs.
+   * The callback must complete within the lifetime of the same Rust root. */
+  verifiedTestFailureRecovery?:Readonly<{
+    gateway:TrustedApprovedExecutionPlans;
+    intake:TrustedOperationalEpochIntake;
+    continueWithinActiveRoot:(signal:Readonly<TrustedRepairFeedbackSignal>)=>Promise<void>;
+  }>;
 }){
   if(!(input.coordinator instanceof TrustedExecutionCoordinator)||
      !(input.reviewGate instanceof TrustedPlanningReviewGate)||
@@ -88,6 +101,9 @@ export function createReviewedApprovedDagExecution(input:{
     engineerDid:readiness.authenticated_engineer_did,
     rootId:input.running.operational_root_id
   });
+  const recovery=input.verifiedTestFailureRecovery;
+  if(recovery&&typeof recovery.continueWithinActiveRoot!=="function")
+    fail("R113 owner-controlled recovery callback required");
   let attempted=false;
   return Object.freeze({
     async executeApprovedDag(config:ExecutorInput){
@@ -109,7 +125,10 @@ export function createReviewedApprovedDagExecution(input:{
           expectedEngineerDid:pinned.engineerDid,
           agentBaseUrls,
           a2a:config.a2a,adapter:config.adapter,
-          authorityForTask:config.authorityForTask
+          authorityForTask:config.authorityForTask,
+          ...(recovery?{verifiedTestFailureRecovery:{
+            gateway:recovery.gateway,intake:recovery.intake
+          }}:{})
         });
         const completed=await dispatcher.executeApprovedDag({
           invokeOrchestratorTask:config.invokeOrchestratorTask,
@@ -122,6 +141,39 @@ export function createReviewedApprovedDagExecution(input:{
           // this hook while the trusted operational session is still live.
           beforeCompletion:async()=>{await input.verifyLiveRun();}
         });
+        // R112 only suspends a verified failed Test, never completes it.
+        // Preserve the root while an owner-only callback executes; afterward
+        // the existing finally retires authority. Every uncertainty closes.
+        if(completed.status==="verified_test_failure_suspended"){
+          const feedback=completed.verified_test_failure;
+          if(!recovery||!feedback||
+             feedback.status!=="repair_planning_eligible"||
+             feedback.provenance!=="gateway_verified_docker_runner"||
+             feedback.authority_kind!=="existing_rust_operational_root"||
+             feedback.execution_authorized!==false||
+             feedback.permission_granted!==false||
+             feedback.session_id!==pinned.sessionId||
+             feedback.root_plan_digest!==pinned.planDigest)
+            fail("R113 verified Test FAIL lacks owner-bound repair admission");
+          const assertStillActive=()=>{
+            if(input.coordinator.phase!=="execution")
+              fail("R113 original operational root retired during repair handoff");
+            const current=input.coordinator.trustedOperationalAuthority();
+            if(current.credential_id!==pinned.rootId||
+               current.plan_digest!==pinned.planDigest)
+              fail("R113 repair handoff changed the signed Rust root");
+          };
+          await input.verifyLiveRun();
+          assertStillActive();
+          await recovery.continueWithinActiveRoot(feedback);
+          await input.verifyLiveRun();
+          assertStillActive();
+          // Deliberately NOT completed or PASS: requires separate acceptance.
+          return {...completed,
+            status:"verified_test_failure_recovery_handoff" as const};
+        }
+        if(completed.status&&completed.status!=="completed")
+          fail("unrecognized signed DAG terminal status");
         // CLOSED is the only valid successful terminal phase here.
         // Requiring execution would reject EVERY actual successful DAG:
         // executeApprovedDag() already awaited closeExecution().

@@ -287,3 +287,106 @@ test("R5 GitHub cancellation during durable root retirement denies success",asyn
     assert.equal(hostClosed,1);
   }finally{await f.close();}
 });
+
+const R113_FEEDBACK={
+  status:"repair_planning_eligible" as const,
+  provenance:"gateway_verified_docker_runner" as const,
+  authority_kind:"existing_rust_operational_root" as const,
+  session_id:"reviewed-session",root_plan_digest:digest,
+  execution_authorized:false as const,permission_granted:false as const
+};
+function r113Active(f:Awaited<ReturnType<typeof fixture>>){
+  let phase="execution";
+  Object.defineProperty(f.coordinator,"phase",{configurable:true,get:()=>phase});
+  Object.defineProperty(f.coordinator,"trustedOperationalAuthority",{
+    configurable:true,value:()=>({
+      credential_id:f.running.operational_root_id,
+      plan_digest:f.running.readiness.plan_digest,permissions:[]
+    })
+  });
+  return {get phase(){return phase;},retire(){phase="closed";}};
+}
+const R113_EXEC={
+  a2a:{},adapter:{},
+  authorityForTask:async()=>{throw Error("no child issuer in bridge fixture");},
+  invokeOrchestratorTask:async()=>{throw Error("no provider effects in bridge fixture");}
+} as any;
+function r113Suspend(t:any){
+  t.mock.method(TrustedApprovedA2ADispatcher,
+    "loadWithScopedChildAuthority",async()=>({
+      async executeApprovedDag(){
+        return {status:"verified_test_failure_suspended",
+          verified_test_failure:R113_FEEDBACK,completed_task_ids:[]};
+      }
+    } as any));
+}
+
+test("R113: no trusted recovery callback fails closed, not PASS",async t=>{
+  const f=await fixture(),active=r113Active(f);
+  let closed=0;r113Suspend(t);
+  try{
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,running:f.running as any,
+      async verifyLiveRun(){},async close(){closed++;active.retire();}
+    });
+    await assert.rejects(bridge.executeApprovedDag(R113_EXEC),
+      /owner-bound repair admission/);
+    assert.equal(closed,1);assert.equal(active.phase,"closed");
+  }finally{await f.close();}
+});
+
+test("R113: owner callback runs inside same active root before retirement",async t=>{
+  const f=await fixture(),active=r113Active(f);
+  const sequence:string[]=[];r113Suspend(t);
+  try{
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,running:f.running as any,
+      async verifyLiveRun(){sequence.push("live");},
+      async close(){sequence.push("revoke");active.retire();},
+      verifiedTestFailureRecovery:{gateway:{} as any,intake:{} as any,
+        async continueWithinActiveRoot(signal){
+          assert.equal(active.phase,"execution");
+          assert.equal(signal,R113_FEEDBACK);sequence.push("repair");
+        }}
+    });
+    const result=await bridge.executeApprovedDag(R113_EXEC);
+    assert.equal(result.status,"verified_test_failure_recovery_handoff");
+    assert.deepEqual(sequence,["live","live","repair","live","revoke"]);
+    assert.equal(active.phase,"closed");
+  }finally{await f.close();}
+});
+
+test("R113: rejected recovery callback retires root and forbids replay",async t=>{
+  const f=await fixture(),active=r113Active(f);r113Suspend(t);
+  let closed=0;
+  try{
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,running:f.running as any,
+      async verifyLiveRun(){},async close(){closed++;active.retire();},
+      verifiedTestFailureRecovery:{gateway:{} as any,intake:{} as any,
+        async continueWithinActiveRoot(){throw Error("recovery failed");}}
+    });
+    await assert.rejects(bridge.executeApprovedDag(R113_EXEC),/recovery failed/);
+    assert.equal(closed,1);assert.equal(active.phase,"closed");
+    await assert.rejects(bridge.executeApprovedDag(R113_EXEC),/one-shot; retry forbidden/);
+  }finally{await f.close();}
+});
+
+test("R113: canceled GitHub job after callback fails closed",async t=>{
+  const f=await fixture(),active=r113Active(f);r113Suspend(t);
+  let checks=0,closed=0;
+  try{
+    const bridge=createReviewedApprovedDagExecution({
+      coordinator:f.coordinator,reviewGate:f.gate,running:f.running as any,
+      async verifyLiveRun(){
+        if(++checks===3)throw Error("GitHub run canceled during repair");
+      },async close(){closed++;active.retire();},
+      verifiedTestFailureRecovery:{gateway:{} as any,intake:{} as any,
+        async continueWithinActiveRoot(){}}
+    });
+    await assert.rejects(bridge.executeApprovedDag(R113_EXEC),
+      /GitHub run canceled during repair/);
+    assert.equal(checks,3);assert.equal(closed,1);
+    assert.equal(active.phase,"closed");
+  }finally{await f.close();}
+});

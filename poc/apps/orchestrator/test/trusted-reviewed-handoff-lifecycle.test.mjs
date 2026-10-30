@@ -396,3 +396,45 @@ test("cannot construct trusted production handoff without a native terminal clos
     verifyTerminalClosure:"signed-completion-placeholder"
   }),/terminal closure verifier required/);
 });
+
+test("R113: suspended Test is not completed_verified",async()=>{
+  let closed=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){closed++;},
+    approvedDag:{async executeApprovedDag(){
+      return {status:"verified_test_failure_suspended"};
+    }}
+  }));
+  await assert.rejects(lifecycle.runApprovedDag({},executor()),
+    /unhandled verified Test FAIL/);
+  assert.equal(closed,1);
+  assert.equal(lifecycle.verifiedOutcome,"failed");
+});
+
+test("R113: repair handoff verifies closure but never reports PASS",async()=>{
+  let closed=0,verified=0;
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){closed++;},
+    approvedDag:{async executeApprovedDag(){
+      return {status:"verified_test_failure_recovery_handoff",
+        verified_test_failure:{execution_authorized:false,permission_granted:false}};
+    }}
+  }),{async verifyTerminalClosure(){verified++;}});
+  const result=await lifecycle.runApprovedDag({},executor());
+  assert.equal(result.status,"verified_test_failure_recovery_handoff");
+  assert.equal(closed,1);assert.equal(verified,1);
+  assert.equal(lifecycle.verifiedOutcome,"failed");
+});
+
+test("R113: unconfirmed root revocation after handoff remains failure",async()=>{
+  const lifecycle=createTrustedReviewedHandoffLifecycle(async()=>({
+    async close(){},
+    approvedDag:{async executeApprovedDag(){
+      return {status:"verified_test_failure_recovery_handoff",
+        verified_test_failure:{execution_authorized:false,permission_granted:false}};
+    }}
+  }),{async verifyTerminalClosure(){throw Error("native revocation unconfirmed");}});
+  await assert.rejects(lifecycle.runApprovedDag({},executor()),
+    /native revocation unconfirmed/);
+  assert.equal(lifecycle.verifiedOutcome,"failed");
+});

@@ -58,7 +58,7 @@ export function createTrustedReviewedHandoffLifecycle(start,{
       throw Error("Trusted handoff requires owner-provisioned signed DAG executor");
   };
   const executeOnce=async(input,createExecution)=>{
-    let completed=false;
+    let completed=false,repairHandoff=false;
     try{
       const running=await startAttempt(input);
       if(state!=="active")
@@ -77,7 +77,16 @@ export function createTrustedReviewedHandoffLifecycle(start,{
       // canceled root into a successful GitHub job.
       if(state!=="active")
         throw Error("Trusted handoff shutdown raced approved DAG completion");
-      completed=true;
+      // No R112 suspension may be promoted to completed_verified.
+      if(result?.status==="verified_test_failure_suspended")
+        throw Error("R113 unhandled verified Test FAIL: no trusted recovery handoff");
+      repairHandoff=result?.status===
+        "verified_test_failure_recovery_handoff";
+      if(repairHandoff&&(!result.verified_test_failure||
+         result.verified_test_failure.execution_authorized!==false||
+         result.verified_test_failure.permission_granted!==false))
+        throw Error("R113 repair handoff lacks non-authorizing trusted feedback");
+      completed=!repairHandoff;
       return result;
     }catch(error){
       verifiedOutcome="failed";
@@ -92,7 +101,7 @@ export function createTrustedReviewedHandoffLifecycle(start,{
         // resolved A2A/listener close ALONE cannot certify native retirement.
         // The strict Engineer Host supplies this verifier for paid AND
         // scripted admitted runs; only then may the runner see completion.
-        if(completed)
+        if(completed||repairHandoff)
           await verifyTerminalClosure();
         // The original operational root may be fully revoked while a
         // concurrent host SIGTERM is closing the whole review session.
