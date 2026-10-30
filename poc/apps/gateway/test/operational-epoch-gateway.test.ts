@@ -3394,3 +3394,121 @@ test("R141 wrong provider repository denied with no new signed Task or credentia
  assert.equal(valid.tested_commit_sha,sha);
  assert.equal(valid.pull_request_authorized,false);
 });
+
+/**
+ * R142 test uses the real owner-only Gateway HMAC socket + original
+ * Ed25519 approval/epoch journal, with an explicitly scripted Adapter.
+ * The native EVM status *response* in this unit test is not a real chain.
+ */
+async function r142RetirementFixture(t:import("node:test").TestContext){
+ const x=await r141SuccessfulRepair(t);
+ let statusSet=false,source="evm_anchored_signed_jwt";
+ let anchorVersion=8,rootId=x.f.h.rootAuthority.credential_id;
+ let requests=0;
+ const statusReader=new TrustedGatewayNativeRootStatusReader({
+  baseUrl:"http://r142-adapter.local:8090",gatewayToken:"r142-gateway-only",
+  fetchFn:(async(url:unknown,init?:RequestInit)=>{
+   requests++;
+   assert.equal(String(url),
+    "http://r142-adapter.local:8090/v1/credentials/status/inspect");
+   assert.equal(new Headers(init?.headers).get("authorization"),
+    "Bearer r142-gateway-only");
+   assert.deepEqual(JSON.parse(String(init?.body)),{
+    credential_id:x.f.h.rootAuthority.credential_id
+   },"The native root ID comes from the original signed journal");
+   return new Response(JSON.stringify({
+    credential_id:rootId,status_purpose:"revocation",
+    status_set:statusSet,source,anchor_version:anchorVersion
+   }),{status:200});
+  }) as typeof fetch
+ });
+ const inspector=new TrustedGatewaySignedEpochInspector({
+  directory:join(x.f.h.dir,"epochs"),approvals:x.f.h.signedStore,
+  nativeRootStatus:statusReader
+ });
+ const socketPath=join(x.f.h.dir,"r142-retired.sock");
+ const secretFile=join(x.f.h.dir,"r142-retired.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+  {mode:0o600});
+ const server=await createTrustedPlanIpcServer({
+  socketPath,secretFile,plans:x.f.h.gates,signedEpochInspector:inspector
+ });
+ await server.start();t.after(()=>server.close());
+ const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+ const witness=await TrustedRetiredRepairAcceptanceWitness.capture({
+  gateway:client,gitea:x.gitea,coordinator:x.f.h.coordinator,
+  intake:x.f.h.intake
+ });
+ const pins={
+  session_id:session,
+  root_plan_digest:planDigest(x.f.h.parent),
+  plan_digest:x.f.reserved.plan_digest,epoch:2,task_id:"test-repair",
+  branch,tested_commit_sha:sha
+ };
+ return {...x,client,witness,pins,
+  markRevoked(){statusSet=true;},
+  corruptRootId(){rootId="urn:credential:other";},
+  corruptAnchor(){anchorVersion=-1;},
+  corruptSource(){source="unanchored_local";},
+  get adapterRequests(){return requests;}
+ };
+}
+test("R142 EVM root revocation requires Gateway durable retirement and actual signed status_set=true",async t=>{
+ const f=await r142RetirementFixture(t);
+ await assert.rejects(f.client.readRetiredRootRevocation(f.pins),
+  /Gateway trusted control denied/);
+ assert.equal(f.adapterRequests,0,
+  "A live session cannot trigger post-retirement EVM proof");
+ await f.f.client.retireSession(session);
+ f.f.h.setPhase("closed");
+ await assert.rejects(f.client.readRetiredRootRevocation(f.pins),
+  /Gateway trusted control denied/,
+  "A nonrevoked original Rust root MUST be refused");
+ assert.equal(f.adapterRequests,1);
+ f.markRevoked();
+ const proof=await f.client.readRetiredRootRevocation(f.pins);
+ assert.equal(proof.status,
+  "gateway_retired_test_and_evm_root_revoked_no_pr_authority");
+ assert.equal(proof.original_root_revoked,true);
+ assert.equal(proof.pull_request_authorized,false);
+ assert.equal(proof.anchor_version,8);
+ assert.equal(proof.tested_commit_sha,sha);
+ assert.equal(f.f.h.provider,5,"R142 must not execute provider or PR calls");
+});
+test("R142 retired signed witness correlates same Gitea head with Gateway EVM status",async t=>{
+ const f=await r142RetirementFixture(t);
+ await f.f.client.retireSession(session);
+ f.f.h.setPhase("closed");f.markRevoked();
+ const proof=await f.witness.verifyRevokedRetiredExactSha();
+ assert.equal(proof.status,
+  "r142_retired_runner_gitea_native_revoked_no_pr_authority");
+ assert.equal(proof.native_anchor_version,8);
+ assert.equal(proof.root_revoked,true);
+ assert.equal(proof.pull_request_authorized,false);
+ assert.equal(proof.tested_commit_sha,sha);
+ assert.equal(f.adapterRequests,1);
+ assert.equal(f.metadataCalls,4,
+  "R141 Gitea HEAD is rechecked before and after EVM validation");
+});
+test("R142 refuses fabricated anchors, foreign roots and stale Test SHAs",async t=>{
+ const f=await r142RetirementFixture(t);
+ await f.f.client.retireSession(session);
+ f.f.h.setPhase("closed");f.markRevoked();
+ await assert.rejects(f.client.readRetiredRootRevocation({
+  ...f.pins,tested_commit_sha:"b".repeat(40)
+ }),/Gateway trusted control denied/);
+ assert.equal(f.adapterRequests,0,"Forged PASS cannot reach native Adapter");
+ f.corruptRootId();
+ await assert.rejects(f.client.readRetiredRootRevocation(f.pins),
+  /Gateway trusted control denied/);
+ assert.equal(f.f.h.provider,5);
+});
+test("R142 bad EVM anchor is never a valid Gateway original root revocation",async t=>{
+ const f=await r142RetirementFixture(t);
+ await f.f.client.retireSession(session);
+ f.f.h.setPhase("closed");f.markRevoked();
+ f.corruptSource();
+ await assert.rejects(f.witness.verifyRevokedRetiredExactSha(),
+  /Gateway trusted control denied/);
+ assert.equal(f.f.h.provider,5);
+});
