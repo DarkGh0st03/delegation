@@ -866,3 +866,54 @@ test("R106 model cannot add initial-branch creation as a repair shortcut",async(
   /Orchestrator may only create review PR/);
  assert.equal((await h.intake.verifiedEpochHistory()).length,1);
 });
+
+test("R107 trusted feature HEAD denies a foreign provider repository and malformed SHA",async(t)=>{
+ const h=await verifiedFailureForR106(t);
+ const makeReader=(fullName:string,commitSha:string)=>new TrustedOperationalFeatureHeadReader({
+  intake:h.intake,repository:repo,
+  giteaClient:new GiteaClient({
+   baseUrl:"http://trusted-gitea.local",token:"private-fixture-only",
+   owner:repo.owner,repository:repo.repository,
+   fetchFn:(async(url:unknown)=>{
+    if(String(url).endsWith("/repos/sample/invoice-service"))
+     return new Response(JSON.stringify({
+      owner:{login:repo.owner},name:repo.repository,
+      full_name:fullName,default_branch:"main"
+     }),{status:200});
+    return new Response(JSON.stringify({
+     name:branch,commit:{id:commitSha}
+    }),{status:200});
+   }) as typeof fetch
+  })
+ });
+ await assert.rejects(
+  makeReader("other/invoice-service",sha).read(repo,branch),
+  /provider repository identity differs/);
+ await assert.rejects(
+  makeReader("sample/invoice-service","deadbeef").read(repo,branch),
+  /noncanonical provider branch HEAD/);
+ await assert.rejects(
+  makeReader("sample/invoice-service",sha).read(
+   {...repo,repository:"foreign"},branch),
+  /requested repository is not pinned/);
+ await assert.rejects(
+  makeReader("sample/invoice-service",sha).read(repo,"feature/other"),
+  /working branch differs/);
+});
+test("R107 feature reader cannot be rebound to another Coordinator/root or used after revocation",async(t)=>{
+ const h=await verifiedFailureForR106(t);
+ const alternate=await harness(t);
+ const reader=new TrustedOperationalFeatureHeadReader({
+  intake:h.intake,repository:repo,
+  giteaClient:new GiteaClient({
+   baseUrl:"http://trusted-gitea.local",token:"private",
+   owner:repo.owner,repository:repo.repository,
+   fetchFn:(async()=>{throw Error("provider must not be contacted");}) as typeof fetch
+  })
+ });
+ assert.throws(()=>reader.assertSameIntake(alternate.intake),
+  /another operational root/);
+ h.setPhase("closed");
+ await assert.rejects(reader.read(repo,branch),
+  /operational root is not active/);
+});
