@@ -35,3 +35,36 @@ attested Test FAIL, original-root-bound new signed DAG and two fresh
 Rust DCs / protected A2A, then produce human-review-only PR.
 Historical same-Task positive fixture must not be weakened or
 claimed to represent recovery. Main remains unchanged.
+
+
+## R150.0 — Provider regression with a genuine TypeScript error (30 October 2026)
+
+The provider-only test has been upgraded from an injected Vitest
+`backend_tests:fail` assertion to an actual **TypeScript compiler failure**
+on `apps/backend/src/users/user.service.ts`. The initial disposable
+Gitea commit appends a deliberately invalid string literal:
+`"SUSPENDE"` assigned to `"ACTIVE" | "SUSPENDED"`.
+The real `IsolatedDockerRunnerExecutor` must report
+`dependency_install:pass`, `typecheck:fail`, and error code `TS2820`
+on initial exact commit SHA A. No tests after the failing typecheck may
+be claimed to pass.
+
+The same disposable checkout then restores the original source in
+a distinct commit SHA B. A stale request for A is rejected, a **new**
+Runner invocation verifies all project phases and researcher acceptance
+at B, and only then the existing strict draft-only Gitea PR is created.
+`verifyR139RealRepairEvidence` now requires the stated failed phase
+to equal the sole independently observed failing Runner phase.
+
+**Evidence boundary:** This is a real Docker/Gitea *provider* proof,
+not a delegated authorization proof. The R148–R149.2 integration
+separately proves Gateway-confirmed FAIL → new signed epoch → A2A
+Backend and Test under one original owner session, but its provider
+effects and Adapter credentials remain scripted. Neither part may be
+described as the full real signed-root recovery. R150's next essential
+work is to connect the **same** owner session and its child DC/VP
+Gateway effects to these genuine A/B Git and Docker revisions, then
+retire the root and publish the review-only draft only after exact-SHA
+PASS. Do not rerun paid Gemini until this unified zero-billing E2E is
+verified. No call to a paid model or production repository is authorized
+by this R150 increment.
