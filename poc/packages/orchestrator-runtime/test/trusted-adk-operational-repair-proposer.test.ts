@@ -64,7 +64,7 @@ test("R107 ADK proposes a one-turn non-authorizing repair DAG without tools",asy
  assert.ok(!request.includes("signed_vp"));
  assert.ok(!request.includes("private_key"));
  assert.ok(!request.includes("issue_child"));
- assert.ok(!request.includes("create_branch\\""));
+ assert.ok(!request.includes("create_branch"));
  const instruction=JSON.stringify(model.requests[0]?.config?.systemInstruction??{});
  assert.match(instruction,/NO direct tools/);
  assert.match(instruction,/ONLY exact existing ResourceURI\/Operation/);
@@ -98,6 +98,6 @@ test("R107 model is constrained by provider-level output-token setting",async()=
   model,maxOutputTokens:1024,thinkingLevel:"LOW"
  }).propose(input);
  const config=model.requests[0]?.config;
- assert.equal(config?.generateContentConfig?.maxOutputTokens,1024);
- assert.equal(config?.generateContentConfig?.thinkingConfig?.thinkingLevel,"LOW");
+ assert.equal(config?.maxOutputTokens,1024);
+ assert.equal(config?.thinkingConfig?.thinkingLevel,"LOW");
 });
