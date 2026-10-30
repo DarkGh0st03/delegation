@@ -69,6 +69,9 @@ on:
       # All live ADK/MCP Agent changes need the exact-SHA signed E2E gate.
       - 'poc/packages/agent-runtime/src/**'
       - 'poc/packages/agent-runtime/test/**'
+      # Shared-MCP real positive smoke also contributes to the same-SHA
+      # pre-Gemini gate; a fix to it must not leave Functional DAG unrun.
+      - 'poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs'
   workflow_dispatch:
 permissions:
   contents: read
