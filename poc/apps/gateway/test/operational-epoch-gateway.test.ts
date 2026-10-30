@@ -510,7 +510,9 @@ test("R104: a live provider effect fences terminal failure and prevents prematur
  assert.equal(admitted.epoch,2);
  await assert.rejects(h.runtime.execute({request_id:pre.request_id,
    signed_vp:"signed.fixture.vp"}),/approved plan|epoch/);
- assert.equal(h.provider,3);
+ // The deliberately ambiguous Runner invocation DID reach the provider,
+ // but its receipt was rejected: two writes + rejected FAIL + valid FAIL.
+ assert.equal(h.provider,4);
 });
 
 test("R105: Test FAIL skips only unsigned PR and transitive downstream Task",async(t)=>{
