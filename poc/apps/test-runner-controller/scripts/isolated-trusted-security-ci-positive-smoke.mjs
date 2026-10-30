@@ -1173,9 +1173,10 @@ async function main(){
         if(typecheckProbe){
           const proof=positive?.positive_dag;
           if(process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1"){
-            // True EVM-issued original operational root + fresh root VP,
-            // owner HMAC IPC and independently admitted D1. No model,
-            // no D1 A2A effects and NO final PASS/PR claim yet.
+            // Genuine EVM original root, authenticated Gateway epoch D1,
+            // independent real A2A/OPA/Gitea repair and fresh Docker PASS.
+            // Original terminal DAG remains FAILED. Only the trusted R145
+            // owner witness may publish a separate unmerged review-only PR.
             assert.equal(proof?.status,"trusted_owner_repair_handoff_retired");
             assert.equal(proof?.original_dag_completed,false);
             assert.equal(proof?.repair_epoch_handoff,true);
@@ -1185,13 +1186,27 @@ async function main(){
             assert.equal(proof?.failed_phase,"typecheck");
             assert.equal(proof?.original_signed_plan_digest?.length,64);
             assert.match(proof?.original_test_sha??"",/^[a-f0-9]{40}$/u);
+            const review=positive?.owner_repair_review;
+            assert.equal(review?.status,
+              "signed_d1_real_docker_pass_retired_draft_review");
+            assert.equal(review?.real_runner_pass_verified,true);
+            assert.equal(review?.root_revoked,true);
+            assert.equal(review?.draft,true);
+            assert.equal(review?.merged,false);
+            assert.equal(review?.merge_authorized,false);
+            assert.ok(Number.isSafeInteger(review?.draft_pr_number)&&
+              review.draft_pr_number>0);
+            assert.match(review?.tested_commit_sha??"",/^[a-f0-9]{40}$/u);
+            assert.notEqual(review.tested_commit_sha,proof.original_test_sha);
             process.stdout.write(JSON.stringify({
-              event:"signed_owner_d1_real_typecheck_fail",status:"PASS",
+              event:"signed_owner_d1_real_typecheck_repair_review",status:"PASS",
               original_rust_root_verified:true,
               independently_admitted_repair_epoch:true,
               original_root_retired:true,
-              repaired_docker_pass_verified:false,
-              pull_request_created:false,gemini_calls:0
+              repaired_docker_pass_verified:true,
+              corrected_exact_sha:review.tested_commit_sha,
+              draft_pr_review_only:true,merged:false,
+              automated_merge_calls:0,gemini_calls:0
             })+"\n");
             return;
           }
