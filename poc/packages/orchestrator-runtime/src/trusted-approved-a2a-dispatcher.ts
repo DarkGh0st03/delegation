@@ -14,7 +14,11 @@ import {assertApprovedPlanScope,planDigest} from "../../../packages/plan-contrac
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
 import {approvedWorkBranch} from "../../../packages/plan-contracts/src/approved-work-branch.mjs";
-import type {AuthenticatedPlanStore} from "../../../apps/gateway/src/approved-execution-plans.ts";
+import {TrustedApprovedExecutionPlans,type AuthenticatedPlanStore}
+ from "../../../apps/gateway/src/approved-execution-plans.ts";
+import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
+import {prepareTrustedRepairFeedback,type TrustedRepairFeedbackSignal}
+ from "./trusted-validation-repair-feedback.ts";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
 import type {
   DelegatedA2ARoleTaskInput,DelegatedA2ARoleTaskResult,
@@ -40,6 +44,12 @@ interface ApprovedSnapshot{
   digest:string;
   approvedBranch:string;
 }
+/** A private control-flow result, never a model-visible source of authority. */
+class VerifiedFailedTestSuspension extends Error {
+ constructor(readonly verified:Readonly<TrustedRepairFeedbackSignal>){
+  super("Gateway confirmed terminal Docker FAIL; trusted repair admission required");
+ }
+}
 type RootInput=Pick<DelegatedA2ARoleTaskInput,
   "parent_credential_id"|"credential_id"|"valid_from"|
   "validity_seconds"|"credential_status">;
@@ -57,6 +67,15 @@ export interface TrustedApprovedA2ADispatcherConfig{
   agentBaseUrls:Readonly<Record<SpecializedAgentRole,string>>;
   /** Trusted authority allocator: unique child status index per Task. */
   authorityForTask(taskId:string,role:SpecializedAgentRole):Promise<RootInput>;
+  /**
+   * R112 opt-in: only the host which owns BOTH the Gateway Task registry
+   * and the original signed Rust-root intake can preserve an active root
+   * after an independently corroborated terminal failed Test.
+   */
+  verifiedTestFailureRecovery?:Readonly<{
+    gateway:TrustedApprovedExecutionPlans;
+    intake:TrustedOperationalEpochIntake;
+  }>;
 }
 
 export class TrustedApprovedA2ADispatcher {
@@ -66,6 +85,7 @@ export class TrustedApprovedA2ADispatcher {
   readonly #started=new Set<string>();
   #busy=false;
   #terminal=false;
+  #withinDag=false;
 
   private constructor(config:TrustedApprovedA2ADispatcherConfig,
     snapshot:ApprovedSnapshot){
@@ -113,6 +133,14 @@ export class TrustedApprovedA2ADispatcher {
   }
 
   static async load(config:TrustedApprovedA2ADispatcherConfig){
+    if(config.verifiedTestFailureRecovery){
+      const recovery=config.verifiedTestFailureRecovery;
+      if(!(recovery.gateway instanceof TrustedApprovedExecutionPlans)||
+         !(recovery.intake instanceof TrustedOperationalEpochIntake)||
+         !recovery.gateway.isBoundToOperationalEpochIntake(recovery.intake))
+        throw Error("R112 recovery requires the identical trusted Gateway/root intake");
+      recovery.intake.assertSameCoordinator(config.coordinator);
+    }
     if(!config.expectedEngineerDid?.startsWith("did:")||
        !/^[a-f0-9]{64}$/u.test(config.expectedPlanDigest)||
        !SHA.test(config.baseRevision)||
@@ -172,6 +200,8 @@ export class TrustedApprovedA2ADispatcher {
     plan_digest:string;
     completed_task_ids:string[];
     specialized_results:DelegatedA2ARoleTaskResult[];
+    status?:"completed"|"verified_test_failure_suspended";
+    verified_test_failure?:Readonly<TrustedRepairFeedbackSignal>;
   }>{
     if(this.#terminal||this.#busy||
        this.#config.coordinator.phase!=="execution"||
@@ -189,6 +219,7 @@ export class TrustedApprovedA2ADispatcher {
        p.task_id===t.id&&p.agent_id===t.agent_id))){
       throw Error("Approved DAG has a Task without Engineer-granted permissions");
     }
+    this.#withinDag=true;
     const remaining=new Set(tasks.map(t=>t.id));
     const results:DelegatedA2ARoleTaskResult[]=[];
     try{
@@ -226,6 +257,21 @@ export class TrustedApprovedA2ADispatcher {
         specialized_results:results
       };
     }catch(error){
+      // This is NOT a generic A2A exception handler. The ONLY nonterminal
+      // failure is a previously finalized Gateway Runner receipt under the
+      // active, authenticated Rust root. The old dispatcher stays terminal:
+      // trusted R106/R109 owner code must admit a NEW epoch and fresh Tasks.
+      if(error instanceof VerifiedFailedTestSuspension &&
+         this.#config.coordinator.phase==="execution"){
+        this.#terminal=true;
+        return {
+          status:"verified_test_failure_suspended",
+          plan_digest:this.#snapshot.digest,
+          completed_task_ids:[...this.#completed],
+          specialized_results:results,
+          verified_test_failure:error.verified
+        };
+      }
       this.#terminal=true;
       // dispatch/runOrchestratorTask may have already failed closed.
       if(this.#config.coordinator.phase==="execution"){
@@ -236,6 +282,8 @@ export class TrustedApprovedA2ADispatcher {
         }
       }
       throw error;
+    }finally{
+      this.#withinDag=false;
     }
   }
 
@@ -346,6 +394,33 @@ export class TrustedApprovedA2ADispatcher {
       this.#completed.add(task.id);
       return result;
     }catch(error){
+      // An A2A "failed" message alone cannot preserve root authority.
+      // Only the allowlisted controlled-tool-failure transport outcome AND
+      // a Gateway-recorded, terminal, specific Test Runner FAIL qualify.
+      const recovery=this.#config.verifiedTestFailureRecovery;
+      if(this.#withinDag&&role==="test"&&recovery&&
+         error instanceof Error&&
+         error.message==="Protected A2A task ended without completion"&&
+         this.#config.coordinator.phase==="execution"){
+        try{
+          recovery.gateway.confirmTestValidationFailure(dispatchId);
+          const proof=await prepareTrustedRepairFeedback({
+            gateway:recovery.gateway,intake:recovery.intake,
+            sessionId:this.#config.sessionId,runtimeTestTaskId:dispatchId
+          });
+          if(proof.status==="repair_planning_eligible"&&
+             proof.failed_task_id===task.id&&
+             proof.failed_runtime_task_id===dispatchId&&
+             this.#config.coordinator.phase==="execution"){
+            this.#terminal=true;
+            throw new VerifiedFailedTestSuspension(proof);
+          }
+        }catch(verificationError){
+          if(verificationError instanceof VerifiedFailedTestSuspension)
+            throw verificationError;
+          // No fallback based on A2A text or incomplete Runner metadata.
+        }
+      }
       this.#terminal=true;
       // Fail closed on uncertain A2A dispatch: close Gateway and revoke the
       // operational root. Never automatically resubmit to another Agent.
