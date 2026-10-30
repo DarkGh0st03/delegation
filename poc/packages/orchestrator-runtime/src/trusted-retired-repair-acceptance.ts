@@ -29,7 +29,7 @@ export class TrustedRetiredRepairAcceptanceWitness {
  readonly #gitea:GiteaClient;
  readonly #originalRootPlanDigest:string;
  readonly #coordinator:Pick<TrustedExecutionCoordinator,
-  "phase"|"trustedOperationalAuthority">;
+  "phase"|"trustedOperationalAuthority"|"assertOperationalClosureConfirmed">;
  readonly #pins:Readonly<{
   session_id:string;epoch:number;plan_digest:string;
   task_id:string;branch:string;repository:Repo;
@@ -38,7 +38,7 @@ export class TrustedRetiredRepairAcceptanceWitness {
   gateway:TrustedPlanIpcClient;gitea:GiteaClient;
   rootPlanDigest:string;
   coordinator:Pick<TrustedExecutionCoordinator,
-   "phase"|"trustedOperationalAuthority">;
+   "phase"|"trustedOperationalAuthority"|"assertOperationalClosureConfirmed">;
   pins:Readonly<{
    session_id:string;epoch:number;plan_digest:string;
    task_id:string;branch:string;repository:Repo;
@@ -53,7 +53,7 @@ export class TrustedRetiredRepairAcceptanceWitness {
  static async capture(config:{
   gateway:TrustedPlanIpcClient;gitea:GiteaClient;
   coordinator:Pick<TrustedExecutionCoordinator,
-   "phase"|"trustedOperationalAuthority">;
+   "phase"|"trustedOperationalAuthority"|"assertOperationalClosureConfirmed">;
   intake:TrustedOperationalEpochIntake;
  }):Promise<TrustedRetiredRepairAcceptanceWitness>{
   if(!(config?.gateway instanceof TrustedPlanIpcClient)||
@@ -105,6 +105,10 @@ export class TrustedRetiredRepairAcceptanceWitness {
   * independent Gateway Test PASS and fresh Gitea branch observations.
   * Still not a review-only PR authorization. */
  async verifyRevokedRetiredExactSha(){
+  // The real Coordinator only resolves this after the SAME shutdown
+  // promise has confirmed Gateway close AND native Rust revocation.
+  // A merely "closed" phase must never qualify as terminal.
+  await this.#coordinator.assertOperationalClosureConfirmed();
   const before=await this.verifyRetiredExactSha();
   const revocation=await this.#gateway.readRetiredRootRevocation({
    session_id:this.#pins.session_id,
@@ -116,6 +120,7 @@ export class TrustedRetiredRepairAcceptanceWitness {
   if(revocation.original_root_revoked!==true||
      revocation.pull_request_authorized!==false)
    deny("Gateway did not independently corroborate EVM root retirement");
+  await this.#coordinator.assertOperationalClosureConfirmed();
   const after=await this.verifyRetiredExactSha();
   if(after.tested_commit_sha!==before.tested_commit_sha||
      after.plan_digest!==before.plan_digest||

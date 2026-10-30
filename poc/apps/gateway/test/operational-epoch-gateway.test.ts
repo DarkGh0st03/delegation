@@ -194,7 +194,7 @@ async function harness(t:import("node:test").TestContext,
   ])).values()]
  };
  let phase="execution";
- let nativeRootRevoked=false;
+ let nativeRootRevoked=false,shutdownConfirmed=true;
  let gates:TrustedApprovedExecutionPlans;
  const coordinator={
   get phase(){return phase;},
@@ -211,6 +211,10 @@ async function harness(t:import("node:test").TestContext,
   async closeExecution(){
    await gates.retireSession(session);
    phase="closed";
+  },
+  async assertOperationalClosureConfirmed(){
+   if(phase!=="closed"||!shutdownConfirmed)
+    throw Error("original Coordinator Rust revocation not confirmed");
   }
  };
  const journal=new TrustedOperationalEpochJournal({
@@ -398,6 +402,8 @@ async function harness(t:import("node:test").TestContext,
   setRunnerFailure:()=>{nextRunnerFails=true;},
   setPhase:(s:string)=>{phase=s;},
   revokeNativeRoot:()=>{nativeRootRevoked=true;},
+  markShutdownUnconfirmed:()=>{shutdownConfirmed=false;},
+  markShutdownConfirmed:()=>{shutdownConfirmed=true;},
   get provider(){return provider;},get verified(){return verified;},
   get policy(){return policy;},get attested(){return attested;}
  };
@@ -3512,4 +3518,21 @@ test("R142 bad EVM anchor is never a valid Gateway original root revocation",asy
  await assert.rejects(f.witness.verifyRevokedRetiredExactSha(),
   /Gateway trusted control denied/);
  assert.equal(f.f.h.provider,5);
+});
+
+test("R142 original Coordinator shutdown uncertainty refuses otherwise valid EVM root revocation",async t=>{
+ const f=await r142RetirementFixture(t);
+ await f.f.client.retireSession(session);
+ f.f.h.setPhase("closed");f.markRevoked();
+ f.f.h.markShutdownUnconfirmed();
+ await assert.rejects(f.witness.verifyRevokedRetiredExactSha(),
+  /original Coordinator Rust revocation not confirmed/,
+  "A closed phase is not native revocation or durable shutdown proof");
+ assert.equal(f.adapterRequests,0,
+  "Unconfirmed Coordinator cannot query native EVM status as acceptance");
+ f.f.h.markShutdownConfirmed();
+ const proof=await f.witness.verifyRevokedRetiredExactSha();
+ assert.equal(proof.root_revoked,true);
+ assert.equal(proof.pull_request_authorized,false);
+ assert.equal(f.adapterRequests,1);
 });
