@@ -19,6 +19,7 @@ import { TOOL_NAMES, type AgentRole, type Permission, type PreparedRequestRecord
 import { GatewayError } from "./errors.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
 import {TrustedOperationalEpochIntake} from "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
+import {TrustedChildIssuanceJournal} from "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import type {ExecutionResult,GiteaReadFileExecutionResult,RunnerExecutionResult} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import type { GatewayRepositoryConfig } from "./types.ts";
@@ -110,6 +111,9 @@ interface ActivePlan {
   readonly workBranch:string;
   currentEpoch:number;
   readonly admittedEpochTasks:Map<string,{plan:any;digest:string;epoch:number}>;
+  /** One-use owner-registered repair discovery Task, never model-created. */
+  readonly discoveryTasks:Map<string,{epoch:number;role:AgentRole;
+    resource:string;credentialId:string;plan:any;testedSha:string}>;
   active: boolean;
   /** Only trusted explicit close/retire, never mere lease expiry. */
   closedByTrustedOwner:boolean;
@@ -151,6 +155,7 @@ export class TrustedApprovedExecutionPlans {
   readonly #nowMs:()=>number;
   readonly #epochIntake?:TrustedOperationalEpochIntake;
   readonly #epochAdmissionInFlight=new Set<string>();
+  readonly #discoveryAdmissionsInFlight=new Set<string>();
 
   constructor(config:{
     repository:GatewayRepositoryConfig;
@@ -283,6 +288,7 @@ export class TrustedApprovedExecutionPlans {
       this.#sessions.set(sessionId,{
         sessionId,digest,plan:snapshot,approval:receipt,approvedAt:receipt.approved_at,
         workBranch,currentEpoch:1,admittedEpochTasks:new Map(),
+        discoveryTasks:new Map(),
         active:true,closedByTrustedOwner:false,completedPlanTasks:new Set(),
         ...(this.#operationalLeaseMs===undefined?{}:
           {leaseExpiresAtMs:this.#clock()+this.#operationalLeaseMs})
@@ -312,7 +318,8 @@ export class TrustedApprovedExecutionPlans {
     const session=this.#sessions.get(sessionId);
     if(!this.#epochIntake||!session||
        !Number.isSafeInteger(epochVersion)||epochVersion<2||
-       this.#epochAdmissionInFlight.has(sessionId))
+       this.#epochAdmissionInFlight.has(sessionId)||
+       this.#discoveryAdmissionsInFlight.has(sessionId))
       denied("Missing trusted epoch intake, active session or unique transition");
     this.#ensureUnexpired(session);
     if(epochVersion!==session.currentEpoch+1)
@@ -367,6 +374,111 @@ export class TrustedApprovedExecutionPlans {
     }
   }
 
+  /**
+   * R109: trusted HOST-ONLY admission of one extra, exact-granted discovery
+   * READ Task after a corroborated Runner FAIL, before the repair DAG exists.
+   * An Adapter-acknowledged, durably journalled Rust child issuance MUST
+   * precede registration. Execution remains conditional on the actual
+   * child's VP, native Rust verifier, OPA, role and exact Gitea read scope.
+   * No public HTTP/MCP/A2A operation may invoke this owner-private method.
+   */
+  async admitRepairDiscoveryTask(input:{
+    sessionId:string;failedRuntimeTestTaskId:string;
+    taskId:string;agentRole:"backend"|"frontend"|"test";
+    resource:string;credentialId:string;
+    childIssuanceJournal:TrustedChildIssuanceJournal;
+  }):Promise<Readonly<{status:"discovery_read_admitted_not_executed";
+    task_id:string;epoch:number;resource:string;credential_id:string}>>{
+    const session=this.#sessions.get(ensureId(input?.sessionId,"session ID"));
+    ensureId(input.taskId,"discovery Task ID");
+    ensureId(input.credentialId,"discovery credential ID");
+    if(!this.#epochIntake||!session?.active||
+       !(input.childIssuanceJournal instanceof TrustedChildIssuanceJournal)||
+       !["backend","frontend","test"].includes(input.agentRole)||
+       this.#epochAdmissionInFlight.has(input.sessionId)||
+       this.#discoveryAdmissionsInFlight.has(input.sessionId))
+      denied("Trusted parent, issued child journal and active repair session required");
+    this.#ensureUnexpired(session);
+    if(session.discoveryTasks.size>=4||
+       session.discoveryTasks.has(input.taskId)||
+       session.plan.tasks.some((t:any)=>t.id===input.taskId)||
+       session.admittedEpochTasks.has(input.taskId)||
+       [...this.#bindings.values()].some(b=>b.sessionId===input.sessionId&&
+         b.planTaskId===input.taskId))
+      denied("Discovery Task replay or per-failure read cap exceeded");
+    const failure=this.readVerifiedTestFailure(input.failedRuntimeTestTaskId);
+    if(failure.session_id!==session.sessionId||
+       failure.root_plan_digest!==session.digest||
+       failure.epoch_version!==session.currentEpoch||
+       failure.branch!==session.workBranch||
+       failure.first_failed_phase==="dependency_install"||
+       session.currentEpoch>=3)
+      denied("No repair-eligible verified Runner failure in this epoch");
+    this.#discoveryAdmissionsInFlight.add(session.sessionId);
+    try{
+      const proof=await this.#epochIntake.preflightRepairDiscovery({
+        sessionId:session.sessionId,taskId:input.taskId,
+        agentId:input.agentRole,resource:input.resource
+      });
+      if(proof.epoch!==session.currentEpoch||
+         proof.root_plan_digest!==session.digest||
+         proof.work_branch!==session.workBranch)
+        denied("Discovery root and Gateway failed Test epoch mismatch");
+      const history=await this.#epochIntake.verifiedEpochHistory();
+      input.childIssuanceJournal.assertBound({
+        sessionId:session.sessionId,
+        baseRevision:history[0].plan.base_revision,
+        planDigest:session.digest,
+        parentCredentialId:proof.root_credential_id
+      });
+      const journal=await input.childIssuanceJournal.records();
+      const issuance=journal.filter(x=>
+        x.task_id===input.taskId&&x.role===input.agentRole&&
+        x.credential_id===input.credentialId&&
+        x.observation==="adapter_response_verified");
+      if(issuance.length!==1||
+         journal.some(x=>x.credential_id===input.credentialId&&
+           x.task_id!==input.taskId))
+        denied("No matching one-use Adapter-issued and journalled child DC");
+      // Recheck the authenticated Engineer root and failure after IO, so
+      // neither a revoked parent nor an advancing epoch can admit a child.
+      const after=await this.#epochIntake.preflightRepairDiscovery({
+        sessionId:session.sessionId,taskId:input.taskId,
+        agentId:input.agentRole,resource:input.resource
+      });
+      const lastFailure=this.readVerifiedTestFailure(input.failedRuntimeTestTaskId);
+      this.#ensureUnexpired(session);
+      if(this.#sessions.get(session.sessionId)!==session||
+         lastFailure.request_id!==failure.request_id||
+         after.root_credential_id!==proof.root_credential_id||
+         session.currentEpoch!==proof.epoch||
+         session.discoveryTasks.has(input.taskId))
+        denied("Discovery parent, Test failure or session changed during admission");
+      const candidate=Object.freeze({
+        candidate_agents:Object.freeze([Object.freeze({
+          agent_id:input.agentRole,did:proof.agent_did
+        })]),
+        tasks:Object.freeze([Object.freeze({
+          id:input.taskId,agent_id:input.agentRole,depends_on:[]
+        })]),
+        requested_permissions:Object.freeze([Object.freeze({
+          task_id:input.taskId,agent_id:input.agentRole,
+          resource:input.resource,operation:"read_file"
+        })])
+      });
+      session.discoveryTasks.set(input.taskId,Object.freeze({
+        epoch:session.currentEpoch,role:input.agentRole,
+        resource:input.resource,credentialId:input.credentialId,
+        testedSha:failure.tested_commit_sha,plan:candidate
+      }));
+      return Object.freeze({status:"discovery_read_admitted_not_executed" as const,
+        task_id:input.taskId,epoch:session.currentEpoch,
+        resource:input.resource,credential_id:input.credentialId});
+    }finally{
+      this.#discoveryAdmissionsInFlight.delete(session.sessionId);
+    }
+  }
+
   /** Owner-private identity check: no mixing Task gates across root sessions. */
   isBoundToOperationalEpochIntake(intake:TrustedOperationalEpochIntake):boolean{
     return this.#epochIntake===intake;
@@ -382,8 +494,9 @@ export class TrustedApprovedExecutionPlans {
       denied("Unknown, inactive or duplicate approved runtime task");
     }
     this.#ensureUnexpired(session);
-    const plan=session.currentEpoch===1?session.plan:
-      session.admittedEpochTasks.get(planTaskId)?.plan;
+    const plan=session.discoveryTasks.get(planTaskId)?.plan??
+      (session.currentEpoch===1?session.plan:
+        session.admittedEpochTasks.get(planTaskId)?.plan);
     const task=plan?.tasks.find((t:any)=>t.id===planTaskId);
     if(!task || task.agent_id!==role ||
        [...this.#bindings.values()].some(b=>
@@ -420,7 +533,8 @@ export class TrustedApprovedExecutionPlans {
 
   /** Re-evaluate AFTER VP and OPA, immediately BEFORE provider I/O. */
   assertAuthorizedForExecution(
-    record:PreparedRequestRecord, verifiedPresenterId?:string
+    record:PreparedRequestRecord, verifiedPresenterId?:string,
+    verifiedCredentialId?:string
   ):void {
     if(!record.approved_plan_digest || !record.approved_plan_task_id) {
       denied("Prepared request has no trusted plan binding");
@@ -444,6 +558,11 @@ export class TrustedApprovedExecutionPlans {
         denied("Verified presenter DID differs from approved agent identity");
       }
     }
+    const discovery=session.discoveryTasks.get(binding.planTaskId);
+    if(discovery&&
+       (discovery.epoch!==binding.epochVersion||
+        discovery.credentialId!==verifiedCredentialId))
+      denied("Verified VP credential differs from journalled discovery child");
     if(record.approved_work_branch!==session.workBranch){
       denied("Trusted plan working branch changed after Prepare");
     }
@@ -853,6 +972,14 @@ export class TrustedApprovedExecutionPlans {
         }
       }
     }
+    // Extra discovery Task must complete through ordinary Gateway/VP/OPA
+    // and the attestor before a new repair epoch can replace its grants.
+    for(const [taskId,discovery] of session.discoveryTasks){
+      if(discovery.epoch!==session.currentEpoch)continue;
+      const b=bindings.get(taskId)?.[0];
+      if(!b||!b.completed||b.completing||b.inFlightEffects!==0)
+        denied("Unresolved dynamically delegated discovery read Task");
+    }
     for(const task of previous.tasks){
       const b=bindings.get(task.id)?.[0];
       if(failed.has(task.id)&&b?.failedRunner){
@@ -888,6 +1015,12 @@ export class TrustedApprovedExecutionPlans {
   }
 
   #taskPlan(session:ActivePlan,binding:RuntimeTaskBinding):any{
+    const discovery=session.discoveryTasks.get(binding.planTaskId);
+    if(discovery){
+      if(discovery.epoch!==binding.epochVersion)
+        denied("Stale discovery Task or replaced operational epoch");
+      return discovery.plan;
+    }
     if(binding.epochVersion===1)return session.plan;
     const admitted=session.admittedEpochTasks.get(binding.planTaskId);
     if(!admitted||admitted.epoch!==binding.epochVersion)
@@ -919,6 +1052,16 @@ export class TrustedApprovedExecutionPlans {
     if((request.tool==="create_branch"||request.tool==="create_pull_request")&&
        request.arguments.base_branch!=="main"){
       denied("Approved work must originate from main; main cannot be mutated");
+    }
+    const discovery=session.discoveryTasks.get(binding.planTaskId);
+    if(discovery){
+      if(discovery.epoch!==binding.epochVersion||
+         discovery.role!==binding.agent||
+         request.tool!=="read_file"||
+         required.operation!=="read_file"||
+         required.resource!==discovery.resource)
+        denied("Discovery Task can only read its exactly delegated file");
+      return;
     }
     if(binding.epochVersion>1){
       // R101 independently verified this immutable epoch against the
