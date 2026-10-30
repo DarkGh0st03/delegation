@@ -1101,32 +1101,38 @@ mod tests {
                 },
             )
         };
-        let verified = verify("r129-independent-gateway-random-challenge", perms.clone())
-            .unwrap();
+        let verified = verify("r129-independent-gateway-random-challenge", perms.clone()).unwrap();
         assert_eq!(verified.credential_id(), original.id());
         assert_eq!(verified.presenter_id(), "did:thesis:orchestrator");
         assert_eq!(verified.issuer_id(), "did:thesis:engineer");
         assert_eq!(verified.hierarchy_depth(), 0);
         assert_eq!(verified.permissions(), &perms);
         assert!(verify("r129-replayed-other-challenge", perms.clone()).is_err());
-        assert!(verify(
-            "r129-independent-gateway-random-challenge",
-            vec![
-                permission(Operation::ReadFile),
-                permission(Operation::CreatePullRequest),
-            ],
-        ).is_err());
-        assert!(runtime.verify_multiple_presentation(
-            gateway,
-            &registry,
-            VerifyMultiplePresentationRequest {
-                presenter: CallerRole::Backend,
-                audience: String::from("urn:thesis:gateway:root-repair"),
-                challenge: String::from("r129-independent-gateway-random-challenge"),
-                required_permissions: perms,
-                signed_vp: vp.signed_vp,
-            },
-        ).is_err());
+        assert!(
+            verify(
+                "r129-independent-gateway-random-challenge",
+                vec![
+                    permission(Operation::ReadFile),
+                    permission(Operation::CreatePullRequest),
+                ],
+            )
+            .is_err()
+        );
+        assert!(
+            runtime
+                .verify_multiple_presentation(
+                    gateway,
+                    &registry,
+                    VerifyMultiplePresentationRequest {
+                        presenter: CallerRole::Backend,
+                        audience: String::from("urn:thesis:gateway:root-repair"),
+                        challenge: String::from("r129-independent-gateway-random-challenge"),
+                        required_permissions: perms,
+                        signed_vp: vp.signed_vp,
+                    },
+                )
+                .is_err()
+        );
     }
 
     #[test]
