@@ -59,7 +59,7 @@ if(![engineer,backend,testDid,...Object.values(tokens)]
    .every(x=>typeof x==="string"&&x.length>4))
  throw Error("R110 missing actual EVM/Adapter role identities");
 const unique=randomBytes(5).toString("hex");
-const session="r110-native-"+unique,sha="a".repeat(40),failedSha="b".repeat(40);
+const session="r110-native-"+unique,sha="a".repeat(40),failedSha="b".repeat(40),repairedSha="c".repeat(40);
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const branch="feature/account-suspension",file="apps/backend/src/users/user.service.ts";
 const repoUri="gitea://gitea.local/thesis/iam-console-poc";
@@ -79,7 +79,10 @@ const initial={
    resources:[fileUri]},
   {id:"test",agent_id:"test",title:"Validate TypeScript",
    description:"Run controlled Docker validation",depends_on:["backend"],
-   resources:[branchUri]}
+   resources:[branchUri]},
+  {id:"initial-pr",agent_id:"orchestrator",title:"Reviewed change",
+   description:"Only after a verified PASS",depends_on:["test"],
+   resources:[repoUri]}
  ],
  requested_permissions:[
   {id:"backend-write",task_id:"backend",agent_id:"backend",
@@ -87,7 +90,9 @@ const initial={
   {id:"backend-read",task_id:"backend",agent_id:"backend",
    resource:fileUri,operation:"read_file",reason:"Maximum read scope"},
   {id:"test-run",task_id:"test",agent_id:"test",
-   resource:branchUri,operation:"run_tests",reason:"Check revision"}
+   resource:branchUri,operation:"run_tests",reason:"Check revision"},
+  {id:"review-pr",task_id:"initial-pr",agent_id:"orchestrator",
+   resource:repoUri,operation:"create_pull_request",reason:"Review only"}
  ],
  assumptions:[],uncertainties:[]
 };
@@ -188,7 +193,7 @@ try{
    }
   }
  });
- let effects=0;
+ let effects=0,currentSha=sha,repairWrite=false,prCreated=false;
  const gateway=new GatewayRuntime({
   bind_host:"127.0.0.1",bind_port:0,
   prepare:{audience:"cloud-access-gateway",request_ttl_ms:120_000,repository:repo},
@@ -204,21 +209,41 @@ try{
     effects++;
     const {tool,arguments:arg}=record.request;
     if(arg.branch!==branch)throw Error("Provider fixture denies a changed branch");
-    if(tool==="update_file"&&arg.path===file)
+    if(tool==="update_file"&&arg.path===file){
+     repairWrite=arg.content.includes("corrected");
+     currentSha=repairWrite?repairedSha:failedSha;
      return {provider:"gitea",performed:true,tool,branch,
-      path:file,revision:failedSha,commit_sha:failedSha,
+      path:file,revision:currentSha,commit_sha:currentSha,
       blob_sha:"d".repeat(40),precondition_blob_sha:"e".repeat(40)};
-    if(tool==="run_tests")
+    }
+    if(tool==="run_tests"){
+     const fails=!repairWrite;
      return {provider:"runner",performed:true,tool,branch,
-      revision:failedSha,tested_commit_sha:failedSha,
-      runner_profile:"poc-default",status:"fail",phases:phasesFail(),
-      typecheck_error_codes:["TS2339"],project_tests:{status:"fail"}};
+      revision:currentSha,tested_commit_sha:currentSha,
+      runner_profile:"poc-default",status:fails?"fail":"pass",
+      phases:fails?phasesFail():[
+       "dependency_install","typecheck","backend_tests","frontend_tests",
+       "build","playwright_e2e","researcher_acceptance"
+      ].map(phase=>({phase,status:"pass"})),
+      project_tests:{status:fails?"fail":"pass"},
+      ...(fails?{typecheck_error_codes:["TS2339"]}:{
+       researcher_acceptance:{phase:"researcher_acceptance",status:"pass"}
+      })};
+    }
     if(tool==="read_file"&&arg.path===file){
      const content="export function accountSuspension() { return true; }\n";
      return {provider:"gitea",performed:true,tool,branch,path:file,
-      revision:failedSha,blob_sha:"e".repeat(40),
-      last_commit_sha:failedSha,size:Buffer.byteLength(content),
+      revision:currentSha,blob_sha:"e".repeat(40),
+      last_commit_sha:currentSha,size:Buffer.byteLength(content),
       encoding:"utf-8",content};
+    }
+    if(tool==="create_pull_request"&&arg.head_branch===branch&&
+       arg.base_branch==="main"&&repairWrite&&currentSha===repairedSha){
+      prCreated=true;
+      return {provider:"gitea",performed:true,tool,
+       head_branch:branch,base_branch:"main",
+       revision:currentSha,pull_request_id:111,pull_request_number:111,
+       pull_request_url:"http://localhost/review/111"};
     }
     throw Error("Provider fixture denied an unknown tool/file");
    }
