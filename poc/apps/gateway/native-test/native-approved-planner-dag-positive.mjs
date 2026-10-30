@@ -59,6 +59,8 @@ import {nominateTrustedTypecheckRepair}
   from "../../test-runner-controller/scripts/typecheck-repair-nomination.mjs";
 import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes} from
   "../../test-runner-controller/src/typecheck-diagnostics.ts";
+import {sanitizeVitestFailureFiles} from
+  "../../test-runner-controller/src/vitest-failure-files.ts";
 import {createSharedMcpHttpServer}
   from "../../../mcp-shared/src/http-server.ts";
 
@@ -910,7 +912,25 @@ export async function runNativePositiveApprovedDag({
             runner_project_status:["pass","fail"].includes(
               runnerOutcome?.project_tests?.status)
               ?runnerOutcome.project_tests.status:"unknown",
-            signed_test_write_count:testCalls
+            signed_test_write_count:testCalls,
+            // R118: trusted failed-phase evidence and bounded model progress.
+            // Never log model text, raw Vitest output, repository source,
+            // credential material, or unapproved file paths.
+            test_model_turns:Number.isSafeInteger(models.test?.calls)?
+              models.test.calls:null,
+            scripted_test_call_count:Array.isArray(offlineScripts?.test)?
+              offlineScripts.test.length:null,
+            failed_test_files_scoped:(()=>{
+              const files=sanitizeVitestFailureFiles(
+                runnerOutcome?.failing_test_files,"backend_tests");
+              const grants=new Set(approvedTestReads);
+              return Object.freeze({
+                count:files.length,
+                readable:files.filter(path=>grants.has(path)).length,
+                unreadable:files.filter(path=>!grants.has(path)).length,
+                explicit_referral:runnerOutcome?.repair_requires_new_approval===true
+              });
+            })()
           })+"\n");
       }
       throw error;
