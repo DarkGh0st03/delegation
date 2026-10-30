@@ -1294,10 +1294,23 @@ test("R109 denies discovery Task admission without a matching durable Adapter AC
 /** R112: the host owns the signed root and the SAME Gateway that witnessed
  * Docker, not an A2A "failed" string or a model-generated claim. */
 async function r112Dispatcher(t:import("node:test").TestContext,
- options:{testFail:boolean;message?:string;optIn?:boolean}){
+ options:{testFail:boolean;message?:string;optIn?:boolean;remote?:boolean}){
  const h=await harness(t,{withReview:true});
  await h.intake.reserveInitialEpoch();
  await h.gates.activate(session,sha);
+ let remoteClient:TrustedPlanIpcClient|undefined;
+ if(options.remote){
+  const secretFile=join(h.dir,"r117-hmac-secret.hex");
+  const socketPath=join(h.dir,"r117-control.sock");
+  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+  const server=await createTrustedPlanIpcServer({
+   socketPath,secretFile,plans:h.gates
+  });
+  await server.start();t.after(()=>server.close());
+  remoteClient=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+  assert.equal(remoteClient.operationalLeaseConfigured(),true);
+  assert.equal(remoteClient.operationalSessionDurableConfigured(),true);
+ }
  let failedRuntimeId:string|undefined;
  const dispatcher=await TrustedApprovedA2ADispatcher.load({
   approvals:h.signedStore,
@@ -1306,7 +1319,9 @@ async function r112Dispatcher(t:import("node:test").TestContext,
   baseRevision:sha,expectedEngineerDid:engineer,
   agentBaseUrls:{backend:"http://trusted.backend",frontend:"http://trusted.frontend",
    test:"http://trusted.test"},
-  ...(options.optIn?{verifiedTestFailureRecovery:{
+  ...(options.remote?{verifiedTestFailureRecovery:{
+   gateway:remoteClient!,intake:h.intake
+  }}:options.optIn?{verifiedTestFailureRecovery:{
    gateway:h.gates,intake:h.intake
   }}:{}),
   async authorityForTask(id:string,role){
@@ -1381,6 +1396,39 @@ test("R112 transport error still retires root despite a real Runner FAIL",async(
  await assert.rejects(x.result,/Connection reset during A2A transport/);
  assert.equal(x.h.coordinator.phase,"closed");
 });
+
+test("R117 authenticated Gateway IPC confirms failed Test in A2A dispatcher without retiring Rust root",async(t)=>{
+ const x=await r112Dispatcher(t,{testFail:true,remote:true});
+ const status=await x.result;
+ assert.equal(status.status,"verified_test_failure_suspended");
+ assert.equal(status.verified_test_failure.provenance,"gateway_verified_docker_runner");
+ assert.equal(status.verified_test_failure.failed_runtime_task_id,x.failedRuntimeId);
+ assert.equal(status.verified_test_failure.first_failed_phase,"typecheck");
+ assert.equal(status.verified_test_failure.execution_authorized,false);
+ assert.equal(status.verified_test_failure.permission_granted,false);
+ assert.equal(x.h.coordinator.phase,"execution");
+ assert.deepEqual(status.completed_task_ids,["setup","backend-original"]);
+ await assert.rejects(x.dispatcher.dispatch("test-original"),
+  /inactive or already running/);
+ const next=await x.h.intake.reserveRepairEpoch(repair());
+ assert.equal(next.epoch,2);
+ const admitted=await x.h.gates.admitNextOperationalEpoch(session,2);
+ assert.equal(admitted.epoch,2);
+ assert.equal(x.h.coordinator.phase,"execution");
+});
+test("R117 IPC cannot turn an A2A failure with no Docker FAIL into repair eligibility",async(t)=>{
+ const x=await r112Dispatcher(t,{testFail:false,remote:true});
+ await assert.rejects(x.result,/Protected A2A task ended without completion/);
+ assert.equal(x.h.coordinator.phase,"closed");
+ assert.equal(x.h.provider,3);
+});
+test("R117 transport uncertainty despite genuine Docker FAIL always revokes the root",async(t)=>{
+ const x=await r112Dispatcher(t,{testFail:true,remote:true,
+  message:"Connection reset during protected A2A poll"});
+ await assert.rejects(x.result,/Connection reset during protected A2A poll/);
+ assert.equal(x.h.coordinator.phase,"closed");
+});
+
 test("R112 legacy dispatcher without trusted recovery opts out and remains terminal",async(t)=>{
  const x=await r112Dispatcher(t,{testFail:true,optIn:false});
  await assert.rejects(x.result,/Protected A2A task ended without completion/);
