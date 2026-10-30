@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {classifyApprovedDagFailure as classify} from "./native-approved-dag-failure-category.mjs";
+import {classifyApprovedDagFailure as classify,safeApprovedDagFailureTrace} from "./native-approved-dag-failure-category.mjs";
 test("remote A2A failure is distinct from missing Artifact without leaking IDs",()=>{
   const id="PRIVATE_TASK_ID";
   assert.equal(classify(Error("Remote A2A Task "+id+" is not completed")),"a2a_task_not_completed");
@@ -18,4 +18,35 @@ test("unknown text and newline injection are never exported",()=>{
   assert.equal(classify(Error("PRIVATE_MODEL_OUTPUT")),"unclassified");
   assert.equal(classify({message:"Remote A2A Task\nsecret is not completed"}),"unclassified");
   assert.equal(classify(null),"unclassified");
+});
+
+test("R116 error trace exposes only allowlisted first-party callsite and no secret text",()=>{
+ const inner=Error("PRIVATE_MODEL_OUTPUT token abc123");
+ inner.stack="Error: PRIVATE_MODEL_OUTPUT\n    at task (file:///home/ci/repo/poc/packages/agent-runtime/src/adk-a2a-handler.ts:414:22)\n    at processTicks (node:internal/process/task_queues:95:5)";
+ const outer=new Error("opaque provider token", {cause:inner});
+ outer.stack="Error: PRIVATE_TOKEN\n    at bad (file:///home/ci/repo/poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs:798:20)";
+ const trace=safeApprovedDagFailureTrace(outer);
+ assert.equal(trace.length,2);
+ assert.deepEqual(trace[0].site,
+  {module:"native-approved-planner-dag-positive.mjs",line:798});
+ assert.deepEqual(trace[1].site,
+  {module:"adk-a2a-handler.ts",line:414});
+ assert.equal(trace[1].kind,"Error");
+ assert.equal(trace[1].category,"unclassified");
+ assert.equal(JSON.stringify(trace).includes("PRIVATE_"),false);
+ assert.equal(JSON.stringify(trace).includes("abc123"),false);
+ assert.equal(JSON.stringify(trace).includes("/home/"),false);
+});
+test("R116 ignores third-party and injected stack filenames, and bounds cyclic causes",()=>{
+ const e=Error("unknown");
+ e.stack="Error: unknown\n    at handler (file:///tmp/evil/poc/apps/gateway/native-test/evil.ts:44:3)\n    at handler (node_modules/model-sdk/consumer.ts:50:3)";
+ e.cause=e;
+ const trace=safeApprovedDagFailureTrace(e);
+ assert.equal(trace.length,1);
+ assert.equal(trace[0].site,null);
+ assert.equal(trace[0].code,"unknown");
+ assert.equal(trace[0].category,"unclassified");
+ const injected=Error("test");
+ injected.stack="Error: fake\n  at eval (model_output.js:1:1)";
+ assert.equal(safeApprovedDagFailureTrace(injected)[0].site,null);
 });
