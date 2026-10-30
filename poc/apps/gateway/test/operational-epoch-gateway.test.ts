@@ -3226,3 +3226,68 @@ test("R138 owner-only repair cannot be configured without admitted epoch and run
  }),/R138 DAG requires admitted Gateway epoch/);
  assert.equal(h.provider,3);
 });
+
+test("R140 owner IPC returns exact SHA Docker PASS only after durable Gateway retirement",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ const a2a={async sendProtectedTask(req:any){
+  if(req.subtask.subtask_id==="backend-repair"){
+   await f.h.invoke(req.trusted_gateway_task_id,"backend","update_file",
+    edit("// R140 authorized repair"));
+   return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+  }
+  assert.equal(req.subtask.subtask_id,"test-repair");
+  await f.h.invoke(req.trusted_gateway_task_id,"test","run_tests",runner);
+  const artifact=r135A2AArtifact();
+  const value=artifact.artifacts[0].parts[0].content.value as any;
+  value.role="test";value.test_outcome="pass";
+  value.tested_commit_sha=sha;value.runner_profile="poc-default";
+  value.project_tests="pass";value.researcher_acceptance="pass";
+  return {card:{name:"Test"},task:artifact as never};
+ }};
+ const receipt=await executeTrustedAdmittedRepairDag(r137Args(f,a2a));
+ assert.equal(receipt.docker_pass_verified,false);
+ const query={
+  session_id:session,task_id:"test-repair",
+  branch,tested_commit_sha:sha
+ };
+ await assert.rejects(f.client.readRetiredRunnerAcceptance(query),
+  /Gateway trusted control denied/,
+  "The original root must be retired before exposing final evidence");
+ await f.client.retireSession(session);
+ f.h.setPhase("closed");
+ const verified=await f.client.readRetiredRunnerAcceptance(query);
+ assert.equal(verified.status,
+  "retired_gateway_exact_sha_runner_pass_no_pr_authority");
+ assert.equal(verified.gateway_session_retired,true);
+ assert.equal(verified.rust_root_revocation_verified,false);
+ assert.equal(verified.pull_request_authorized,false);
+ assert.equal(verified.project_tests,"pass");
+ assert.equal(verified.researcher_acceptance,"pass");
+ assert.equal(verified.phases.length,7);
+ assert.equal(verified.tested_commit_sha,sha);
+ const originalCalls=f.h.provider;
+ const again=await f.client.readRetiredRunnerAcceptance(query);
+ assert.deepEqual(again,verified,"Read-only inspection is repeatable");
+ assert.equal(f.h.provider,originalCalls,"No new provider calls or PR effects");
+ for(const forged of [
+  {...query,tested_commit_sha:"b".repeat(40)},
+  {...query,task_id:"backend-repair"},
+  {...query,branch:"feature/foreign-repair"},
+  {...query,task_id:"test"},
+  {...query,branch:"feature/../../escape"}
+ ]){
+  await assert.rejects(f.client.readRetiredRunnerAcceptance(forged),
+   /Gateway trusted control denied|Trusted plan IPC:/);
+ }
+});
+test("R140 A2A-only Task has no retired Runner acceptance, even after closing Gateway",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ await f.client.retireSession(session);
+ f.h.setPhase("closed");
+ await assert.rejects(f.client.readRetiredRunnerAcceptance({
+  session_id:session,task_id:"test-repair",branch,tested_commit_sha:sha
+ }),/Gateway trusted control denied/);
+ assert.equal(f.h.provider,3,"An A2A claim cannot fabricate a Runner effect");
+});
