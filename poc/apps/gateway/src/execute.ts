@@ -282,12 +282,17 @@ export async function executeAuthorization(
         "Trusted approved plan rejected the operation before provider execution");
     }
   }
+  // Synchronous owner-private flight fence: an epoch must not advance
+  // while an already-authorized provider request is still executing.
+  const releaseEffect=!record.pinned_revision
+    ?dependencies.approvedPlans?.beginProviderEffect(record):undefined;
   const providerStarted = durationNow();
   let execution: ExecutionResult;
   try {
     dependencies.signal?.throwIfAborted();
     execution = await dependencies.executor.execute(record,dependencies.signal);
   } catch (error) {
+    releaseEffect?.();
     const providerMs = elapsed(providerStarted, durationNow);
     const common = {
       event: "authorization_executed" as const,
@@ -338,10 +343,14 @@ export async function executeAuthorization(
 
   // Count only real Gateway-confirmed provider effects as trusted evidence
   // for a later, separately attested A2A Task completion.
-  if (!record.pinned_revision) {
-    dependencies.approvedPlans?.recordProviderSuccess(
-      record,execution,verified.presenter_id
-    );
+  try {
+    if (!record.pinned_revision) {
+      dependencies.approvedPlans?.recordProviderSuccess(
+        record,execution,verified.presenter_id
+      );
+    }
+  } finally {
+    releaseEffect?.();
   }
   const providerMs = elapsed(providerStarted, durationNow);
   const totalMs = elapsed(totalStarted, durationNow);
