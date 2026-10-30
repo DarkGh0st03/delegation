@@ -1,6 +1,6 @@
-name: R139 Real Disposable Gitea Docker Two-SHA Repair (No AI Billing)
+name: R150 Real Disposable Gitea Docker TS2820 Two-SHA Repair (No AI Billing)
 
-# Provider-level negative→positive proof ONLY. No production root,
+# Provider-level TypeScript negative→positive proof ONLY. No production root,
 # no Gemini/OpenAI keys, no main-branch or persistent-Gitea mutations.
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
           cache-dependency-path: poc/package-lock.json
       - name: Install local dependencies (no paid model)
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
-      - name: R139 strict non-authorizing proof regressions
+      - name: R139/R150 strict non-authorizing real typecheck evidence regressions
         run: node --test poc/apps/test-runner-controller/scripts/r139-real-repair-evidence.test.mjs
       - name: R143 strict draft PR Gitea contract regression
         run: node --experimental-strip-types --test poc/apps/gateway/test/gitea-client.test.ts
@@ -50,7 +50,7 @@ jobs:
           docker pull docker.gitea.com/gitea:28.0.0
           docker pull node:22.15.0-bookworm
           docker pull openpolicyagent/opa:1.21.1
-      - name: Execute real Docker FAIL then new SHA PASS and isolated draft PR
+      - name: Real Docker TS2820 FAIL then new SHA full PASS and isolated draft PR
         env:
           APPROVED_RUNNER_REAL_REPAIR_TWO_SHA: "1"
           GITEA_ADMIN_USER: isolated_admin
