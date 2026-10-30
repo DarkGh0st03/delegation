@@ -28,6 +28,9 @@ export class TrustedRetiredRepairAcceptanceWitness {
  readonly #gateway:TrustedPlanIpcClient;
  readonly #gitea:GiteaClient;
  readonly #originalRootPlanDigest:string;
+ readonly #signedReviewApproved:boolean;
+ readonly #originalBaseSha:string;
+ #reviewAttempted=false;
  readonly #coordinator:Pick<TrustedExecutionCoordinator,
   "phase"|"trustedOperationalAuthority"|"assertOperationalClosureConfirmed">;
  readonly #pins:Readonly<{
@@ -36,7 +39,7 @@ export class TrustedRetiredRepairAcceptanceWitness {
  }>;
  private constructor(c:{
   gateway:TrustedPlanIpcClient;gitea:GiteaClient;
-  rootPlanDigest:string;
+  rootPlanDigest:string;signedReviewApproved:boolean;originalBaseSha:string;
   coordinator:Pick<TrustedExecutionCoordinator,
    "phase"|"trustedOperationalAuthority"|"assertOperationalClosureConfirmed">;
   pins:Readonly<{
@@ -46,6 +49,8 @@ export class TrustedRetiredRepairAcceptanceWitness {
  }){
   this.#gateway=c.gateway;this.#gitea=c.gitea;
   this.#originalRootPlanDigest=c.rootPlanDigest;
+  this.#signedReviewApproved=c.signedReviewApproved;
+  this.#originalBaseSha=c.originalBaseSha;
   this.#coordinator=c.coordinator;
   this.#pins=Object.freeze({...c.pins,
    repository:Object.freeze({...c.pins.repository})});
@@ -90,9 +95,31 @@ export class TrustedRetiredRepairAcceptanceWitness {
      config.coordinator.trustedOperationalAuthority().credential_id!==
       root.credential_id)
    deny("root retired during signed acceptance capture");
+  // R145: a repair does not resurrect an old PR Task. Review may
+  // only be opened by the trusted owner when the ORIGINAL, signed
+  // Engineer scope explicitly approved create_pull_request (with an
+  // original Test dependency) in the actually ISSUED Rust root.
+  const repoRoot="gitea://"+first.plan.repository.authority+"/"+
+    first.plan.repository.owner+"/"+first.plan.repository.repository;
+  const originalTests=new Set(first.plan.tasks.filter(
+   (t:{agent_id:string})=>t.agent_id==="test").map(
+   (t:{id:string})=>t.id));
+  const signedReviewApproved=first.plan.requested_permissions.some(
+   (p:{task_id:string;agent_id:string;operation:string;resource:string})=>{
+    if(p.agent_id!=="orchestrator"||
+       p.operation!=="create_pull_request"||p.resource!==repoRoot)
+      return false;
+    const task=first.plan.tasks.find(
+      (t:{id:string})=>t.id===p.task_id);
+    return !!task&&task.agent_id==="orchestrator"&&
+      task.depends_on.some((id:string)=>originalTests.has(id))&&
+      root.permissions.some((g:{resource:string;operation:string})=>
+       g.resource===repoRoot&&g.operation==="create_pull_request");
+   });
   return new TrustedRetiredRepairAcceptanceWitness({
    gateway:config.gateway,gitea:config.gitea,
    rootPlanDigest:first.plan_digest,
+   signedReviewApproved,originalBaseSha:first.plan.base_revision,
    coordinator:config.coordinator,
    pins:{
     session_id:current.plan.session_id,epoch:history.length,
@@ -134,6 +161,68 @@ export class TrustedRetiredRepairAcceptanceWitness {
    tested_commit_sha:before.tested_commit_sha,
    native_anchor_version:revocation.anchor_version,
    root_revoked:true as const,pull_request_authorized:false as const
+  });
+ }
+ /**
+  * R145 owner-only one-shot DRAFT PR review publication.
+  * Prerequisites are from an immutable signed Engineer decision, not an
+  * agent-provided flag: original Rust PR scope, R142 original-root
+  * revocation/closure, exact-SHA Gateway Test PASS, and stable Gitea HEAD.
+  *
+  * This is deliberately not exposed by HTTP, A2A, MCP, or Gemini.
+  * No merge operation exists. Any ambiguous POST is terminal for this
+  * witness: the caller must not repeat it automatically.
+  */
+ async openSignedReviewOnlyDraft(input:Readonly<{
+   title:string;body:string;
+ }>){
+  if(this.#reviewAttempted)
+   deny("signed review PR publication is one-shot, never retried");
+  this.#reviewAttempted=true; // before ANY await, including preflight
+  if(!this.#signedReviewApproved)
+   deny("original signed Engineer scope has no reviewed PR grant");
+  if(typeof input?.title!=="string"||
+     !input.title.trim()||input.title.length>160||
+     typeof input.body!=="string"||input.body.length>4000)
+   deny("bounded owner-authored PR description required");
+  const proof=await this.verifyRevokedRetiredExactSha();
+  if(proof.root_revoked!==true||
+     proof.pull_request_authorized!==false||
+     proof.status!=="r142_retired_runner_gitea_native_revoked_no_pr_authority")
+   deny("independent retired root and exact Test SHA evidence unavailable");
+  const repo=await this.#gitea.getRepositoryMetadata();
+  if(repo.full_name!==this.#pins.repository.owner+"/"+
+      this.#pins.repository.repository||repo.default_branch!=="main")
+   deny("original Gitea repository or base branch changed");
+  const main=await this.#gitea.getBranchMetadata("main");
+  if(main.commit_sha!==this.#originalBaseSha)
+   deny("Engineer-approved main revision changed before review");
+  const issued=await this.#gitea.createDraftPullRequest(
+   proof.branch,"main",input.title,proof.tested_commit_sha,input.body
+  );
+  await this.#coordinator.assertOperationalClosureConfirmed();
+  const after=await this.#gitea.getBranchMetadata("main");
+  if(after.commit_sha!==this.#originalBaseSha)
+   deny("main moved after PR creation; quarantine uncertain review");
+  const now=await this.#gitea.getBranchMetadata(proof.branch);
+  if(now.commit_sha!==proof.tested_commit_sha)
+   deny("review branch changed after accepted Runner SHA");
+  if(issued.draft!==true||issued.open!==true||
+     issued.merged!==false||issued.head_revision!==proof.tested_commit_sha)
+   deny("provider did not independently corroborate unmerged draft");
+  return Object.freeze({
+   status:"r145_signed_review_only_draft_open_unmerged" as const,
+   session_id:this.#pins.session_id,
+   epoch:this.#pins.epoch,plan_digest:this.#pins.plan_digest,
+   tested_commit_sha:proof.tested_commit_sha,
+   head_branch:proof.branch,
+   draft_pr_number:issued.number,
+   draft_pr_url:issued.url??null,
+   signed_original_review_grant:true as const,
+   gateway_test_pass_verified:true as const,
+   original_root_revoked:true as const,
+   draft:true as const,merged:false as const,
+   merge_authorized:false as const
   });
  }
  /** No write effects. No claim that Rust EVM root was revoked. */
