@@ -38,7 +38,7 @@ import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts"
 import {GatewayRuntime} from "../src/runtime.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
-import {OpaPolicyClient} from "../src/opa-policy.ts";
+import {OpaPolicyClient} from "../src/policy-client.ts";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 
 const adapter="http://127.0.0.1:8090";
