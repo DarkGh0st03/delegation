@@ -1012,6 +1012,12 @@ export class TrustedApprovedExecutionPlans {
         failed.add(task.id);
       }
     }
+    // R133.2: the remote pathway is specifically a terminal Test-FAIL
+    // recovery, never an unsolicited second DAG following a passing Test.
+    // A valid Rust root VP proves authority, not that a repair is needed.
+    // Preserve legacy owner-local epoch transitions without a failed Task.
+    if(this.#remoteEpochInspector&&failed.size===0)
+      denied("Remote repair epoch requires an independently finalized failed Test");
     // Compute the exact transitive dependency closure. No model-supplied
     // skipped list is accepted, and a sibling cannot be discarded.
     const blocked=new Set<string>();

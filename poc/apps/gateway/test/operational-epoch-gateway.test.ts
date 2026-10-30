@@ -2728,3 +2728,18 @@ test("R133 remote Gateway denies missing pins and wrong original Engineer digest
  }
  assert.equal(h.provider,3);
 });
+
+test("R133.2 a valid Rust VP and fully passing original DAG cannot invent a repair trigger",async t=>{
+ const h=await harness(t,{withDurable:true,withRemoteEpoch:true});
+ await h.initialPass(); // genuinely passed Test task, NOT terminal FAIL
+ const reserved=await h.intake.reserveRepairEpoch(repair());
+ assert.equal(reserved.epoch,2);
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2,{
+  root_plan_digest:planDigest(h.parent),
+  plan_digest:reserved.plan_digest
+ }),/Remote repair epoch requires an independently finalized failed Test/);
+ assert.throws(()=>h.gates.bindTask(
+  session,"backend-repair","r1332-untriggered-backend","backend"
+ ),/current admitted epoch/);
+ assert.equal(h.provider,3,"Passing original DAG cannot authorize a repair provider effect");
+});

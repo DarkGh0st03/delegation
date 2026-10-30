@@ -25,3 +25,9 @@ real Rust crypto and a separate OS process. R133 doesn't issue fresh
 Child DCs or prove real Gitea/Docker recovery; these are the next steps.
 
 No paid Gemini, no main change.
+
+R133.2: distributed repair admission now additionally requires a
+corroborated and finalized prior failed Test. A fully passing prior
+DAG and a valid original-root VP are insufficient to trigger a
+new repair epoch. The old owner-local planned epoch transition remains
+available for distinct non-repair tests.
