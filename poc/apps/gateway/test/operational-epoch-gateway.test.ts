@@ -1979,26 +1979,43 @@ test("R124 owner refuses custom callback together with built-in repair planner",
  assert.equal(h.provider,3);
 });
 
-test("R125 authenticated IPC admits independently verified reserved repair epoch",async t=>{
+test("R125 remote Gateway rejects owner-only epoch journal it cannot independently verify",async t=>{
  const fixture=await r124Armed(t,{admitReservedEpoch:true});
- const {h,request,armed,client}=fixture;
+ const {h,request,armed}=fixture;
  const verified=await prepareTrustedRemoteRepairFeedback(request());
- await armed.continueWithinActiveRoot(verified);
+ // R124's owner-only journal is intentionally distinct from Gateway's
+ // independently rooted epoch intake in this fixture. HMAC authentication
+ // does NOT make serialized or separately held plans authoritative.
+ await assert.rejects(armed.continueWithinActiveRoot(verified),
+  /Gateway trusted control denied/);
  assert.equal(fixture.proposals,1);
- const epochs=await armed.intake.verifiedEpochHistory();
- assert.equal(epochs.length,2);
- const approved=epochs[1];
+ assert.equal((await armed.intake.verifiedEpochHistory()).length,2);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+ assert.throws(()=>h.gates.bindTask(
+  session,"repair-implementation","r125-foreign-dag","backend"
+ ),/current admitted epoch/);
+ assert.equal(h.provider,3);
+});
+
+test("R125 Gateway with SAME original-root-bound epoch intake admits new Task IDs through HMAC",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ const proof=await prepareTrustedRemoteRepairFeedback(request());
+ assert.equal(proof.status,"repair_planning_eligible");
+ const next=await h.intake.reserveRepairEpoch(repair());
  const pins={session_id:session,root_plan_digest:planDigest(h.parent),
-  plan_digest:approved.plan_digest,epoch:2};
+  plan_digest:next.plan_digest,epoch:2};
+ const receipt=await client.admitVerifiedOperationalEpoch(pins);
+ assert.equal(receipt.status,"gateway_epoch_admitted");
+ assert.equal(receipt.plan_digest,next.plan_digest);
+ assert.deepEqual(receipt.blocked_descendant_task_ids,[]);
  await assert.rejects(client.admitVerifiedOperationalEpoch(pins),
-  /Gateway trusted control denied/,
-  "admission is one-shot: subsequent epoch replay fails closed");
+  /Gateway trusted control denied/);
  assert.throws(()=>h.runtime.prepare({
   task_id:"task-backend",agent_role:"backend",tool:"update_file",
   arguments:edit("// old authority")
  }),/Stale operational epoch/);
- h.gates.bindTask(session,"repair-implementation","r125-implementation","backend");
- h.gates.bindTask(session,"repair-validation","r125-validation","test");
+ h.gates.bindTask(session,"backend-repair","r125-implementation","backend");
+ h.gates.bindTask(session,"test-repair","r125-validation","test");
  assert.throws(()=>h.runtime.prepare({
   task_id:"r125-validation",agent_role:"test",tool:"run_tests",
   arguments:runner

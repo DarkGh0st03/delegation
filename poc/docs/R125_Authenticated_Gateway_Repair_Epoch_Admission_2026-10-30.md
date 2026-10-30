@@ -29,10 +29,11 @@ issued as a side effect of admission.
 
 ## Verified in new offline fixture tests
 The same live original signed Coordinator/intake is held by Gateway
-and Engineer in a controlled process. Four additional regressions
-cover initial failure to new admitted Task IDs, independent new
-Backend/Test protected Gateway effects, wrong digest/epoch/identity,
-unfinalized Test, replay and root retirement.
+and Engineer in a controlled process. Five additional regressions
+cover rejection of a separate owner-only epoch journal, acceptance when
+the Gateway independently holds the SAME signed original-root intake,
+independent new Backend/Test protected Gateway effects, wrong
+digest/epoch/identity, unfinalized Test, replay and root retirement.
 
 ## Production cross-process limitation
 The live deployment's Gateway process does NOT yet receive an
