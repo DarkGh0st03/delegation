@@ -2315,10 +2315,11 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
  issued?:Record<string,unknown>; status?:Record<string,unknown>;
  onIssued?:()=>Promise<void>;
  withVp?:boolean; vpMutate?:Record<string,unknown>;
- onVpVerification?:()=>Promise<void>;
+ onVpVerification?:(revokeAdapterRoot:()=>void)=>Promise<void>;
 }={}){
  const base=await r115RemoteFixture(t,{withDurable:true});
  let nativeCalls=0,issuedCalls=0;
+ let adapterRootRevoked=false;
  const now=BigInt(Date.now())*1_000_000n;
  const reader=new TrustedGatewayNativeRootStatusReader({
   baseUrl:"http://rust-adapter.local:8090",gatewayToken:"r128-gateway-private",
@@ -2333,7 +2334,8 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
    if(String(url).endsWith("/v1/credentials/status/inspect")){
     nativeCalls++;
     return new Response(JSON.stringify({
-     ...r127Anchored(rootId),...options.status
+     ...r127Anchored(rootId),...options.status,
+     ...(adapterRootRevoked?{status_set:true}:{})
     }),{status:200,headers:{"content-type":"application/json"}});
    }
    if(String(url).endsWith("/v1/credentials/root/inspect")){
@@ -2348,7 +2350,9 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
      iat_ns:(now-1_000_000_000n).toString(),
      exp_ns:(now+3_600_000_000_000n).toString(),
      permissions:options.grants?options.grants(grants):grants,
-     status:r127Anchored(rootId),source:"adapter_local_issued_root",
+     status:r127Anchored(rootId,
+      adapterRootRevoked?{status_set:true}:{}),
+     source:"adapter_local_issued_root",
      ...options.issued
     };
     return new Response(JSON.stringify(record),
@@ -2406,7 +2410,7 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
     async verify(){throw Error("Single permission verification not allowed");},
     async verifyMultiple(request){
      verifiedVpCalls++;
-     await options.onVpVerification?.();
+     await options.onVpVerification?.(()=>{adapterRootRevoked=true;});
      assert.equal(request.presenter,"orchestrator");
      assert.equal(request.audience,"urn:thesis:gateway:r132");
      assert.equal(request.signed_vp,"r132-signed-root:"+request.challenge);
@@ -2538,10 +2542,10 @@ test("R132 private Gateway correlates signed epoch, EVM status, actual root gran
  assert.equal(f.signedVpCalls,2);
  assert.equal(f.verifiedVpCalls,2);
  assert.equal(f.h.provider,3,"reading cryptographic root cannot trigger provider");
- await assert.rejects(f.client.admitVerifiedOperationalEpoch({
-  ...pins,epoch:2,plan_digest:epoch.plan_digest
- }),/Gateway trusted control denied/,
- "Root VP alone cannot install remote Gateway operational authority");
+ assert.throws(()=>f.h.gates.bindTask(
+  session,"backend-repair","r132-unadmitted-new-task","backend"
+ ),/current admitted epoch/,
+ "Inspecting a signed VP must NOT activate the next operational epoch");
 });
 
 test("R132 corrupt Rust presenter, issuer, root identity or extra permissions deny VP",async t=>{
@@ -2578,7 +2582,8 @@ test("R132 invalid signed epoch does not even request a root VP",async t=>{
 
 test("R132 revoke live original root DURING VP verification, no stale attestation returned",async t=>{
  let f:Awaited<ReturnType<typeof r128Fixture>>;
- f=await r128Fixture(t,{withVp:true,onVpVerification:async()=>{
+ f=await r128Fixture(t,{withVp:true,onVpVerification:async revoke=>{
+  revoke(); // Real Adapter revocation becomes visible to a fresh status read
   f.h.setPhase("closed");
  }});
  await assert.rejects(f.client.inspectVerifiedRootVp(r128Pins(f.h)),
