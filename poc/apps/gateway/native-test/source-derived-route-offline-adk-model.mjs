@@ -84,7 +84,7 @@ function confirmedReadEffect(request,branch,path){
 function confirmedRead(request,branch,path){
   return confirmedReadEffect(request,branch,path).content;
 }
-const FAULT='\\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\\n';
+const FAULT='\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
 export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
   #script;#index=0;#targets;#rules;#controllerRules=null;
   #statusRule=null;#proof=null;#controllerProof=null;#statusProof=null;
@@ -151,7 +151,7 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
        this.#index<this.#script.length||
        typeof branch!=="string"||!branch.startsWith("feature/")||
        typeof path!=="string"||
-       !/^apps\\/backend\\/src\\/[A-Za-z0-9._/-]+\\.ts$/u.test(path)||
+       !/^apps\/backend\/src\/[A-Za-z0-9._/-]+\.ts$/u.test(path)||
        path.split("/").some(x=>x==="."||x==="..")||
        !SHA.test(failedSha??"")||
        typeof taskId!=="string"||
@@ -183,7 +183,7 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
         repair.stage=2;
         // A tiny deterministic fixture corrects precisely the observed
         // injected TS2820 line. This is NOT independent AI-generated code.
-        const corrected=source.replace(FAULT,"\\n");
+        const corrected=source.replace(FAULT,"\n");
         yield {content:{role:"model",parts:[{functionCall:{
           id:"r150-d1-backend-update",
           name:"update_file",
