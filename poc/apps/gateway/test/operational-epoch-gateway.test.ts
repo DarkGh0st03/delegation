@@ -3566,7 +3566,10 @@ async function r141SuccessfulRepair(t:import("node:test").TestContext,
     prPosts++;
     const request=JSON.parse(String(init.body));
     assert.equal(request.head,branch);assert.equal(request.base,"main");
-    assert.equal(request.draft,true);
+    // Gitea derives draft=true from its configured WIP title prefix;
+    // the POST CreatePullRequestOption does not support draft:true.
+    assert.equal(request.title,"WIP: Review independently tested repair");
+    assert.equal(Object.hasOwn(request,"draft"),false);
     return new Response(JSON.stringify(reviewPr()),{status:201});
    }
    if(uri.endsWith("/pulls/7")&&(!init?.method||init.method==="GET")){
