@@ -17,7 +17,7 @@
  */
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
-import {randomBytes,randomUUID} from "node:crypto";
+import {generateKeyPairSync,randomBytes,randomUUID} from "node:crypto";
 import {mkdir,mkdtemp,readFile,rm,stat,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,dirname} from "node:path";
@@ -27,6 +27,18 @@ import {IsolatedDockerRunnerExecutor} from "../src/isolated-executor.ts";
 import {verifyR139RealRepairEvidence}
   from "./r139-real-repair-evidence.mjs";
 import {GiteaClient} from "../../gateway/src/gitea-client.ts";
+import {GiteaExecutor} from "../../gateway/src/gitea-executor.ts";
+import {GatewayRuntime} from "../../gateway/src/runtime.ts";
+import {TrustedApprovedExecutionPlans} from "../../gateway/src/approved-execution-plans.ts";
+import {GatewayCorroboratedTaskAttestor} from "../../gateway/src/trusted-task-observation.ts";
+import {OpaPolicyClient} from "../../gateway/src/policy-client.ts";
+import {RUST_OPERATIONS} from "../../gateway/src/operation-catalog.ts";
+import {SignedEngineerApprovalFileStore} from
+  "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
+import {makeApproval,planDigest} from
+  "../../../packages/plan-contracts/src/plan.mjs";
+import {signEngineerApproval} from
+  "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {TrustedGiteaSecurityCi,SECURITY_STATUS_CONTEXT,
   TRUSTED_PROJECT_PHASES} from "../src/trusted-security-ci.ts";
 import {getApprovedOfflineScenario} from
@@ -361,13 +373,136 @@ async function pushReferenceApp(base,workTree,admin){
 }
 
 /**
+ * R150.2 narrow vertical provider bridge. A test-signed, task-scoped
+ * Gateway registry + real OPA must authorize the repair commit: the
+ * disposable Gitea token is never called directly by the repair logic.
+ *
+ * Deliberate evidence boundary: the verifier here is still a FIXTURE,
+ * not an R133/R134 Rust Child DC. The same-root R149.2 A2A/owner bridge
+ * must be connected later; no claim of fully delegated recovery.
+ */
+async function gatewayAuthorizedDisposableRepair({
+ base,branchName,file,content,mainSha,failedSha,token,opaBaseUrl
+}){
+ const sessionId="r150-gateway-repair-"+suffix;
+ const engineerDid="did:thesis:engineer";
+ const backendDid="did:thesis:backend";
+ const uri="gitea://gitea.local/thesis/iam-console-poc";
+ const branchUri=uri+"/branches/"+encodeURIComponent(branchName);
+ const resource=branchUri+"/files/"+file;
+ const taskId="repair-"+suffix,runtimeTaskId="dispatch_r150_"+suffix;
+ const plan={
+  schema_version:"1.0.0",plan_id:"r150-gateway-repair-"+suffix,
+  session_id:sessionId,version:1,
+  repository:{authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"},
+  base_revision:mainSha,
+  requirement:"One authorized backend repair effect on disposable Gitea",
+  candidate_agents:[{agent_id:"backend",did:backendDid,card_ref:"trusted:backend"}],
+  tasks:[{id:taskId,agent_id:"backend",title:"Repair a failed TypeScript check",
+   description:"Restore the exact originally read backend file",depends_on:[],
+   resources:[resource]}],
+  requested_permissions:[
+   {id:"r150-backend-read",task_id:taskId,agent_id:"backend",
+    resource,operation:"read_file",reason:"Read pinned source before correction"},
+   {id:"r150-backend-write",task_id:taskId,agent_id:"backend",
+    resource,operation:"update_file",reason:"Apply single approved in-scope repair"}
+  ],
+  assumptions:[],uncertainties:[]
+ };
+ const now=new Date();
+ const approved=makeApproval(plan,{
+  allowedOperations:new Set(RUST_OPERATIONS),
+  decision_id:"r150-gateway-approval-"+suffix,
+  approved_by:engineerDid,approved_at:now.toISOString(),
+  approved_permission_ids:["r150-backend-read","r150-backend-write"]
+ });
+ const keys=generateKeyPairSync("ed25519");
+ const keyId="r150-disposable-review-key";
+ const signed=signEngineerApproval({
+  plan,approval:approved,engineerDid,keyId,
+  privateKeyPem:keys.privateKey.export({format:"pem",type:"pkcs8"}).toString(),
+  issuedAt:now.toISOString(),
+  expiresAt:new Date(now.getTime()+20*60*1000).toISOString()
+ });
+ const dir=await mkdtemp(join(tmpdir(),"r150-gateway-repair-"));
+ let registry;
+ try{
+  await writeFile(join(dir,sessionId+".json"),JSON.stringify(signed),{mode:0o600});
+  const approvals=new SignedEngineerApprovalFileStore({
+   directory:dir,engineerDid,trustedKeys:{
+    [keyId]:{engineer_did:engineerDid,
+     public_key_pem:keys.publicKey.export({format:"pem",type:"spki"}).toString()}
+   }
+  });
+  registry=new TrustedApprovedExecutionPlans({
+   repository:plan.repository,engineerDid,approvals,
+   completionAttestor:new GatewayCorroboratedTaskAttestor()
+  });
+  assert.equal(await registry.activate(sessionId,mainSha),planDigest(plan));
+  registry.bindTask(sessionId,taskId,runtimeTaskId,"backend");
+  const gitea=new GiteaClient({
+   baseUrl:base,owner:"thesis",repository:"iam-console-poc",token
+  });
+  const gateway=new GatewayRuntime({
+   bind_host:"127.0.0.1",bind_port:0,
+   prepare:{audience:"cloud-access-gateway",request_ttl_ms:120000,
+    repository:plan.repository},
+   opa_url:"http://fixture-disabled",opa_timeout_ms:1000,
+   provider_mode:"mock",gitea_timeout_ms:20000
+  },{
+   approvedPlans:registry,executor:new GiteaExecutor(gitea),
+   verifier:{async verify(request){
+    assert.equal(request.presenter,"backend");
+    return {presenter_id:backendDid,issuer_id:"did:thesis:orchestrator",
+     credential_id:"urn:r150:scoped-backend-fixture",
+     permissions:[request.required_permission],hierarchy_depth:1,
+     expiration:new Date(Date.now()+20*60*1000).toISOString()};
+   }},
+   policy:new OpaPolicyClient({baseUrl:opaBaseUrl,timeoutMs:5000})
+  });
+  // No call to production/direct Gitea update_file is made below:
+  // the mutation must cross Gateway + independently running real OPA.
+  const original=await gitea.getBranchMetadata(branchName);
+  assert.equal(original.commit_sha,failedSha);
+  const read=gateway.prepare({task_id:runtimeTaskId,agent_role:"backend",
+   tool:"read_file",arguments:{branch:branchName,path:file}});
+  const readEffect=await gateway.execute({
+   request_id:read.request_id,signed_vp:"r150-fixture-presentation"
+  });
+  assert.equal(readEffect.policy.allow,true);
+  assert.equal(readEffect.execution.provider,"gitea");
+  assert.equal(readEffect.execution.content,await gitea.readTextFile(
+   branchName,file).then(r=>r.content));
+  const updated=gateway.prepare({task_id:runtimeTaskId,agent_role:"backend",
+   tool:"update_file",arguments:{branch:branchName,path:file,content}});
+  const result=await stage("r150_gateway_opa_authorized_real_gitea_update",()=>
+   gateway.execute({request_id:updated.request_id,
+    signed_vp:"r150-fixture-presentation"}),60000);
+  assert.equal(result.policy.allow,true);
+  assert.equal(result.execution.provider,"gitea");
+  assert.equal(result.execution.tool,"update_file");
+  assert.match(result.execution.precondition_blob_sha,/^[a-f0-9]{40}$/u);
+  const current=await gitea.getBranchMetadata(branchName);
+  assert.equal(result.execution.commit_sha,current.commit_sha);
+  assert.notEqual(current.commit_sha,failedSha);
+  return {previous_revision:failedSha,
+   precondition_blob_sha:result.execution.precondition_blob_sha,
+   commit_sha:result.execution.commit_sha,policy_version:result.policy.policy_version};
+ }finally{
+  try{registry?.closeSession(sessionId);}finally{
+   await rm(dir,{recursive:true,force:true});
+  }
+ }
+}
+
+/**
  * R139 provider proof in a FRESH disposable branch, with genuine Gitea
  * commits, two different Docker Runner tasks and exact tested SHAs.
  * This intentionally does not invent a signed R133 repair epoch, DC or VP.
  * It runs AFTER existing trusted positive smoke has already finished.
  */
 async function verifyR139DisposableRealRepair({base,workTree,creds,
- executor,originalFeatureSha,mainSha}){
+ executor,originalFeatureSha,mainSha,opaBaseUrl}){
  const repairBranch="feature/r139-repair-"+suffix;
  const file="apps/backend/src/users/user.service.ts";
  const target=join(workTree,...file.split("/"));
@@ -422,9 +557,10 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
  const observedBefore=await repairClient.getBranchMetadata(repairBranch);
  assert.equal(observedBefore.commit_sha,failedSha,
   "Repair may start only from the exact Docker-failed Gitea SHA");
- const mutation=await stage("r150_provider_update_file_repair",()=>
-  repairClient.updateFile(repairBranch,file,before,
-   "fix: resolve original R150 TypeScript regression"),60000);
+ const mutation=await gatewayAuthorizedDisposableRepair({
+  base,branchName:repairBranch,file,content:before,
+  mainSha,failedSha,token:creds.statusToken,opaBaseUrl
+ });
  assert.equal(mutation.previous_revision,failedSha,
   "Provider repair must record the failed revision as its precondition");
  assert.match(mutation.precondition_blob_sha,/^[a-f0-9]{40}$/u);
@@ -1359,7 +1495,7 @@ async function main(){
         verifyR139DisposableRealRepair({
           base,workTree:workingDir,creds,executor,
           originalFeatureSha:fixture.featureSha,
-          mainSha:fixture.mainSha
+          mainSha:fixture.mainSha,opaBaseUrl
         }),2400000);
     }
     process.stdout.write(JSON.stringify({
