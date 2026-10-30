@@ -770,6 +770,19 @@ export async function runNativePositiveApprovedDag({
       }
     });
     servers.push(testAgent);urls.test=testAgent.baseUrl;
+    // R150.7: retain the SAME protected A2A transport/Agent Card endpoints
+    // while the original Rust root is live. Only the authenticated owner
+    // can receive these ports; they do not create a Task, DC or permission.
+    const protectedA2A=new DeterministicA2AOrchestrator({
+      deadlineMs:realGeminiPilot
+        ?SIGNED_GEMINI_PILOT.maxA2aTaskMs:500000,
+      initialIntervalMs:50,maxIntervalMs:250
+    });
+    if(trustedOwnerRecovery?.bindOriginalA2APorts){
+      await trustedOwnerRecovery.bindOriginalA2APorts({
+        agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A
+      });
+    }
     if(realGeminiPilot)onPilotPhase?.("dispatcher_setup");
     const dispatcher=await TrustedApprovedA2ADispatcher.loadWithScopedChildAuthority({
       approvals:reviewGate,coordinator,sessionId,
@@ -782,11 +795,7 @@ export async function runNativePositiveApprovedDag({
         gateway:trustedOwnerRecovery.gateway,
         intake:trustedOwnerRecovery.intake
       }}:{}),
-      a2a:new DeterministicA2AOrchestrator({
-        deadlineMs:realGeminiPilot
-          ?SIGNED_GEMINI_PILOT.maxA2aTaskMs:500000,
-        initialIntervalMs:50,maxIntervalMs:250
-      }),
+      a2a:protectedA2A,
       adapter:{adapterBaseUrl:adapterUrl,
         bearerToken:orchestratorToken,timeoutMs:30000},
       async authorityForTask(taskId,role){
