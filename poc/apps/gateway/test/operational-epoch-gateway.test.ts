@@ -1540,9 +1540,9 @@ test("R148 one original Test FAIL reaches owner and admits the next signed epoch
     giteaClient:r124HeadClient(),
     proposeRepairPlan:async input=>{
      proposalCalls++;
-     assert.equal(input.feedback.first_failed_phase,"typecheck");
+     assert.equal(input.feedback.failed_phase,"typecheck");
      assert.equal(input.feedback.tested_commit_sha,sha);
-     assert.equal(input.feedback.execution_authorized,false);
+     assert.equal(input.feedback.remaining_repair_epochs,2);
      return repairDraft();
     },
     admitReservedEpoch:true
