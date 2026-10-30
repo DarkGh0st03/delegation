@@ -1395,9 +1395,16 @@ test("R109 denies discovery Task admission without a matching durable Adapter AC
 /** R112: the host owns the signed root and the SAME Gateway that witnessed
  * Docker, not an A2A "failed" string or a model-generated claim. */
 async function r112Dispatcher(t:import("node:test").TestContext,
- options:{testFail:boolean;message?:string;optIn?:boolean;remote?:boolean}){
+ options:{testFail:boolean;message?:string;optIn?:boolean;remote?:boolean;
+  ownerArmer?:(h:Awaited<ReturnType<typeof harness>>,
+   client:TrustedPlanIpcClient)=>Promise<Awaited<ReturnType<
+    typeof armTrustedOwnerOperationalRecovery>>>;
+ }){
+ if(options.ownerArmer&&!options.remote)
+  throw Error("R148 owner handoff requires a durable IPC Gateway");
  const h=await harness(t,{withReview:true,withDurable:options.remote});
- await h.intake.reserveInitialEpoch();
+ // The owner reserves original epoch 1 itself in the SAME durable journal.
+ if(!options.ownerArmer)await h.intake.reserveInitialEpoch();
  await h.gates.activate(session,sha);
  let remoteClient:TrustedPlanIpcClient|undefined;
  if(options.remote){
@@ -1412,6 +1419,9 @@ async function r112Dispatcher(t:import("node:test").TestContext,
   assert.equal(remoteClient.operationalLeaseConfigured(),true);
   assert.equal(remoteClient.operationalSessionDurableConfigured(),true);
  }
+ // Arm before any Test A2A send, while the original Rust root is active.
+ const armed=options.ownerArmer?
+  await options.ownerArmer(h,remoteClient!):undefined;
  let failedRuntimeId:string|undefined;
  const dispatcher=await TrustedApprovedA2ADispatcher.load({
   approvals:h.signedStore,
@@ -1421,7 +1431,7 @@ async function r112Dispatcher(t:import("node:test").TestContext,
   agentBaseUrls:{backend:"http://trusted.backend",frontend:"http://trusted.frontend",
    test:"http://trusted.test"},
   ...(options.remote?{verifiedTestFailureRecovery:{
-   gateway:remoteClient!,intake:h.intake
+   gateway:remoteClient!,intake:armed?.intake??h.intake
   }}:options.optIn?{verifiedTestFailureRecovery:{
    gateway:h.gates,intake:h.intake
   }}:{}),
@@ -1461,7 +1471,7 @@ async function r112Dispatcher(t:import("node:test").TestContext,
     {branch,base_branch:"main"});
   }
  });
- return {h,dispatcher,result,remoteClient,
+ return {h,dispatcher,result,remoteClient,armed,
   get failedRuntimeId(){return failedRuntimeId;}};
 }
 test("R112 a corroborated terminal Test FAIL suspends only old A2A DAG; new root-scoped epoch may begin",async(t)=>{
@@ -1497,6 +1507,79 @@ test("R112 transport error still retires root despite a real Runner FAIL",async(
   message:"Connection reset during A2A transport"});
  await assert.rejects(x.result,/Connection reset during A2A transport/);
  assert.equal(x.h.coordinator.phase,"closed");
+});
+
+/**
+ * R148: incremental no-billing SAME-SESSION owner recovery E2E spine.
+ * Unlike standalone R112/R123/R125 tests, the same dispatcher failure,
+ * original signed Engineer approval, original Coordinator, live Gateway IPC
+ * and fsynced epoch journal carry the verified FAIL into the owner callback
+ * and independently admitted second signed DAG.
+ *
+ * The provider, VP and Gitea HEAD are still scripted in this first
+ * increment: it is NOT yet a real Docker repair, new Child DC, PASS or PR.
+ * Extend THIS path in R149/R150; do not falsely certify separate fixtures.
+ */
+test("R148 one original Test FAIL reaches owner and admits the next signed epoch under live root",async t=>{
+ let liveChecks=0,proposalCalls=0;
+ const x=await r112Dispatcher(t,{
+  testFail:true,remote:true,
+  ownerArmer:async(h,gateway)=>armTrustedOwnerOperationalRecovery({
+   gateway,coordinator:h.coordinator,signedApprovals:h.signedStore,
+   epochDirectory:join(h.dir,"epochs"),
+   running:{readiness:{
+    session_id:session,base_revision:sha,
+    plan_digest:planDigest(h.parent),
+    authenticated_engineer_did:engineer
+   },operational_root_id:h.rootAuthority.credential_id},
+   verifyLiveRun:async()=>{
+    liveChecks++;
+    assert.equal(h.coordinator.phase,"execution");
+   },
+   planRepairEpoch:{
+    giteaClient:r124HeadClient(),
+    proposeRepairPlan:async input=>{
+     proposalCalls++;
+     assert.equal(input.feedback.first_failed_phase,"typecheck");
+     assert.equal(input.feedback.tested_commit_sha,sha);
+     assert.equal(input.feedback.execution_authorized,false);
+     return repairDraft();
+    },
+    admitReservedEpoch:true
+   }
+  })
+ });
+ assert.ok(x.armed,"The owner bridge must be armed before the Test Task");
+ assert.deepEqual((await x.armed!.intake.verifiedEpochHistory())
+  .map(epoch=>epoch.epoch),[1]);
+ const outcome=await x.result;
+ assert.equal(outcome.status,"verified_test_failure_suspended");
+ assert.equal(outcome.verified_test_failure?.status,"repair_planning_eligible");
+ assert.equal(outcome.verified_test_failure?.provenance,
+  "gateway_verified_docker_runner");
+ assert.equal(outcome.verified_test_failure?.failed_runtime_task_id,
+  x.failedRuntimeId);
+ assert.equal(outcome.verified_test_failure?.execution_authorized,false);
+ assert.equal(x.h.coordinator.phase,"execution",
+  "Only a verified Test failure may preserve the original root");
+ await x.armed!.continueWithinActiveRoot(outcome.verified_test_failure!);
+ const epochs=await x.armed!.intake.verifiedEpochHistory();
+ assert.equal(epochs.length,2);
+ assert.equal(epochs[0].plan_digest,planDigest(x.h.parent));
+ assert.equal(epochs[1].epoch,2);
+ assert.deepEqual(epochs[1].plan.tasks.map(task=>task.id),
+  ["repair-implementation","repair-validation"]);
+ assert.equal(proposalCalls,1);
+ assert.ok(liveChecks>=1);
+ assert.equal(x.h.provider,3,
+  "Never count a fabricated Docker retry or provider effect as recovery");
+ assert.equal(x.h.coordinator.phase,"execution");
+ await assert.rejects(x.armed!.continueWithinActiveRoot(
+  outcome.verified_test_failure!),/one-use/);
+ await x.h.coordinator.closeExecution();
+ assert.equal(x.h.coordinator.phase,"closed");
+ await assert.rejects(x.armed!.intake.verifiedEpochHistory(),
+  /operational root is not active/);
 });
 
 test("R117 authenticated Gateway IPC confirms failed Test in A2A dispatcher without retiring Rust root",async(t)=>{
