@@ -5,8 +5,15 @@
  * This does not infer, repair, allocate children or authorize a provider.
  * It is deliberately opt-in and never exposed through HTTP/A2A/MCP.
  */
+import {randomBytes} from "node:crypto";
 import {TrustedOperationalEpochJournal}
  from "./trusted-operational-epoch-journal.mjs";
+import {TrustedOperationalRepairPlanner,
+ type TrustedRepairModelInput}
+ from "./trusted-operational-repair-planner.ts";
+import {TrustedOperationalFeatureHeadReader}
+ from "../../../apps/gateway/src/trusted-operational-feature-head.ts";
+import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {TrustedOperationalEpochIntake}
  from "./trusted-operational-epoch-intake.ts";
 import {SignedEngineerApprovalFileStore}
@@ -38,21 +45,35 @@ export async function armTrustedOwnerOperationalRecovery(config:{
   }>;
   operational_root_id:string
  }>;
- continueWithinActiveRoot:(signal:Readonly<TrustedRepairFeedbackSignal>,
+ /** Existing R123 custom owner continuation, mutually exclusive with R124. */
+ continueWithinActiveRoot?:(signal:Readonly<TrustedRepairFeedbackSignal>,
   intake:TrustedOperationalEpochIntake)=>Promise<void>;
+ /** R124 concrete owner-only no-authority repair DAG planning after Test FAIL.
+  * The supplied proposal function is not an authorization source; an operator
+  * must separately approve any paid inference before using a paid adapter. */
+ planRepairEpoch?:Readonly<{
+  giteaClient:GiteaClient;
+  proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
+ }>;
 }):Promise<Readonly<{
  gateway:TrustedPlanIpcClient;
  intake:TrustedOperationalEpochIntake;
  continueWithinActiveRoot:(signal:Readonly<TrustedRepairFeedbackSignal>)=>Promise<void>;
 }>>{
  const r=config?.running?.readiness;
+ const custom=typeof config?.continueWithinActiveRoot==="function";
+ const structured=config?.planRepairEpoch!==undefined;
+ if(custom===structured||
+    (config?.continueWithinActiveRoot!==undefined&&!custom)||
+    (structured&&(!(config.planRepairEpoch!.giteaClient instanceof GiteaClient)||
+      typeof config.planRepairEpoch!.proposeRepairPlan!=="function")))
+  fail("exactly one trusted owner continuation or configured repair planner required");
  if(!(config.signedApprovals instanceof SignedEngineerApprovalFileStore)||
     !(config.gateway instanceof TrustedPlanIpcClient)||
     !config.gateway.operationalLeaseConfigured()||
     !config.gateway.operationalSessionDurableConfigured()||
     config.coordinator?.phase!=="execution"||
     typeof config.coordinator.trustedOperationalAuthority!=="function"||
-    typeof config.continueWithinActiveRoot!=="function"||
     !r?.session_id||!SHA.test(r.base_revision)||!DIGEST.test(r.plan_digest)||
     !r.authenticated_engineer_did?.startsWith("did:")||
     !config.running.operational_root_id)
@@ -107,7 +128,45 @@ export async function armTrustedOwnerOperationalRecovery(config:{
    });
    if(JSON.stringify(proof)!==JSON.stringify(signal))
     fail("Gateway proof changed since dispatcher suspension");
-   await config.continueWithinActiveRoot(proof,intake);
+   if(structured){
+    // R124: the signed Engineer's exact ORIGINAL candidates/repository
+    // are the only provenance for identities and work branch. The proposed
+    // DAG may add NEW Task IDs but never pairs outside the issued Rust root.
+    const before=await intake.verifiedEpochHistory();
+    if(before.length!==proof.failed_epoch||
+       before[0]?.plan_digest!==r.plan_digest)
+     fail("verified Test FAIL does not match the active original epoch");
+    const agents=record.plan.candidate_agents.map(a=>({
+     agent_id:a.agent_id as "backend"|"frontend"|"test",
+     did:a.did,card_ref:a.card_ref
+    }));
+    const planner=new TrustedOperationalRepairPlanner({
+     gateway:config.gateway,coordinator:config.coordinator,
+     intake,sessionId:r.session_id,
+     runtimeTestTaskId:proof.failed_runtime_task_id,
+     failedTestAlreadyFinalized:true,
+     nextPlanId:"repair-"+randomBytes(12).toString("hex"),
+     pinnedAgentRegistry:agents,
+     featureHeadReader:new TrustedOperationalFeatureHeadReader({
+      giteaClient:config.planRepairEpoch!.giteaClient,
+      intake,repository:record.plan.repository
+     }),
+     proposeRepairPlan:config.planRepairEpoch!.proposeRepairPlan
+    });
+    const reserved=await planner.proposeAndReserve();
+    if(reserved.status!=="repair_epoch_reserved_no_execution_authority"||
+       reserved.execution_authorized!==false||
+       reserved.child_credential_issued!==false||
+       reserved.epoch!==before.length+1||
+       reserved.source_failed_sha!==proof.tested_commit_sha)
+     fail("repair reservation cannot be promoted to execution authority");
+    const after=await intake.verifiedEpochHistory();
+    if(after.length!==reserved.epoch||
+       after.at(-1)?.plan_digest!==reserved.plan_digest)
+     fail("durable repair epoch differs from owner planner reservation");
+   }else{
+    await config.continueWithinActiveRoot!(proof,intake);
+   }
    const now=config.coordinator.trustedOperationalAuthority();
    if(config.coordinator.phase!=="execution"||
       now.credential_id!==root.credential_id||

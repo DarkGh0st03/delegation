@@ -1850,3 +1850,128 @@ test("R123 forged owner feedback and changed root are denied before callback",as
   async continueWithinActiveRoot(){delivered++;}
  }),/original approved Coordinator/);
 });
+
+/** R124: true owner continuation takes the signed root's candidate list,
+ * Gitea read-only HEAD and an in-process scripted proposal. It does not
+ * issue credentials or execute another Runner. */
+function r124HeadClient(observed?:()=>string|Promise<string>){
+ return new GiteaClient({
+  baseUrl:"http://gitea.local:3000",token:"r124-owner-fixture-only",
+  owner:repo.owner,repository:repo.repository,timeoutMs:1000,
+  fetchFn:(async (url:unknown)=>{
+   const request=String(url);
+   if(request.endsWith("/repos/sample/invoice-service"))
+    return new Response(JSON.stringify({
+     owner:{login:repo.owner},name:repo.repository,
+     full_name:repo.owner+"/"+repo.repository,default_branch:"main"
+    }),{status:200,headers:{"content-type":"application/json"}});
+   if(request.endsWith("/branches/feature%2Finvoice-approval"))
+    return new Response(JSON.stringify({
+     name:branch,commit:{id:observed?await observed():sha}
+    }),{status:200,headers:{"content-type":"application/json"}});
+   return new Response("{}",{status:404});
+  }) as typeof fetch
+ });
+}
+async function r124Armed(t:import("node:test").TestContext,options:{
+ propose?:()=>Promise<unknown>|unknown;
+ observedSha?:()=>string|Promise<string>;
+}={}){
+ const fixture=await r115RemoteFixture(t,{withDurable:true});
+ const {h,client}=fixture;
+ const epochDirectory=join(h.dir,"r124-owner-"+randomBytes(5).toString("hex"));
+ await mkdir(epochDirectory,{mode:0o700});
+ let proposals=0;
+ const armed=await armTrustedOwnerOperationalRecovery({
+  gateway:client,coordinator:h.coordinator,
+  signedApprovals:h.signedStore,epochDirectory,
+  running:{readiness:{
+   session_id:session,base_revision:sha,plan_digest:planDigest(h.parent),
+   authenticated_engineer_did:engineer
+  },operational_root_id:h.rootAuthority.credential_id},
+  planRepairEpoch:{
+   giteaClient:r124HeadClient(options.observedSha),
+   proposeRepairPlan:async input=>{
+    proposals++;
+    assert.equal(input.feedback.tested_commit_sha,sha);
+    assert.equal(input.feedback.remaining_repair_epochs,2);
+    assert.ok(input.already_delegated_grants.some(g=>
+     g.resource===file&&g.operation==="update_file"));
+    return options.propose?await options.propose():repairDraft();
+   }
+  }
+ });
+ return {...fixture,armed,get proposals(){return proposals;}};
+}
+
+test("R124 live Engineer owner reserves fresh DAG after authentic finalized HMAC Test FAIL",async t=>{
+ const {h,request,armed,...rest}=await r124Armed(t);
+ const feedback=await prepareTrustedRemoteRepairFeedback(request());
+ await armed.continueWithinActiveRoot(feedback);
+ const rows=await armed.intake.verifiedEpochHistory();
+ assert.equal(rows.length,2);
+ assert.equal(rows[1].plan.version,2);
+ assert.match(rows[1].plan.plan_id,/^repair-[a-f0-9]{24}$/);
+ assert.deepEqual(rows[1].plan.tasks.map(x=>x.id),
+  ["repair-implementation","repair-validation"]);
+ assert.equal(rest.proposals,1);
+ assert.equal(h.coordinator.phase,"execution");
+ assert.equal(h.provider,3,"No new child or provider effect on planning");
+ await assert.rejects(armed.continueWithinActiveRoot(feedback),/one-use/);
+});
+
+test("R124 stale trusted Gitea SHA blocks model proposal and epoch reservation",async t=>{
+ const fixture=await r124Armed(t,{observedSha:()=> "b".repeat(40)});
+ const feedback=await prepareTrustedRemoteRepairFeedback(fixture.request());
+ await assert.rejects(fixture.armed.continueWithinActiveRoot(feedback),
+  /branch HEAD differs/);
+ assert.equal(fixture.proposals,0);
+ assert.equal((await fixture.armed.intake.verifiedEpochHistory()).length,1);
+ assert.equal(fixture.h.provider,3);
+});
+
+test("R124 malicious model grant never reaches durable repair epoch",async t=>{
+ const rogue=repairDraft();
+ rogue.tasks[0].permissions[0].resource=
+  root+"/branches/feature%2Finvoice-approval/files/private/secret.ts";
+ const fixture=await r124Armed(t,{propose:()=>rogue});
+ const feedback=await prepareTrustedRemoteRepairFeedback(fixture.request());
+ await assert.rejects(fixture.armed.continueWithinActiveRoot(feedback),
+  /outside actually issued root/);
+ assert.equal(fixture.proposals,1);
+ assert.equal((await fixture.armed.intake.verifiedEpochHistory()).length,1);
+ assert.equal(fixture.h.provider,3);
+});
+
+test("R124 root revoked mid-proposal cannot reserve and cannot retry",async t=>{
+ let closed:()=>void=()=>{};
+ const fixture=await r124Armed(t,{propose:()=>{closed();return repairDraft();}});
+ closed=()=>fixture.h.setPhase("closed");
+ const feedback=await prepareTrustedRemoteRepairFeedback(fixture.request());
+ await assert.rejects(fixture.armed.continueWithinActiveRoot(feedback),
+  /operational root is not active/);
+ assert.equal(fixture.proposals,1);
+ await assert.rejects(fixture.armed.continueWithinActiveRoot(feedback),/one-use/);
+ assert.equal(fixture.h.provider,3);
+});
+
+test("R124 owner refuses custom callback together with built-in repair planner",async t=>{
+ const fixture=await r115RemoteFixture(t,{withDurable:true});
+ const {h,client}=fixture;
+ const directory=join(h.dir,"r124-conflict");
+ await mkdir(directory,{mode:0o700});
+ await assert.rejects(armTrustedOwnerOperationalRecovery({
+  gateway:client,coordinator:h.coordinator,
+  signedApprovals:h.signedStore,epochDirectory:directory,
+  running:{readiness:{
+   session_id:session,base_revision:sha,
+   plan_digest:planDigest(h.parent),authenticated_engineer_did:engineer
+  },operational_root_id:h.rootAuthority.credential_id},
+  async continueWithinActiveRoot(){},
+  planRepairEpoch:{
+   giteaClient:r124HeadClient(),
+   proposeRepairPlan:async()=>repairDraft()
+  }
+ }),/exactly one trusted owner continuation/);
+ assert.equal(h.provider,3);
+});

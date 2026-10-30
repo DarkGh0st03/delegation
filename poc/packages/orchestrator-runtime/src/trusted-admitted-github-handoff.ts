@@ -30,6 +30,9 @@ import {TrustedPlanIpcClient}
   from "../../../apps/gateway/src/trusted-plan-ipc.ts";
 import {SignedEngineerApprovalFileStore}
   from "./signed-approval-store.ts";
+import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
+import type {TrustedRepairModelInput}
+ from "./trusted-operational-repair-planner.ts";
 import type {TrustedRepairFeedbackSignal}
   from "./trusted-validation-repair-feedback.ts";
 import {TrustedOperationalEpochIntake}
@@ -137,10 +140,15 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
         gateway:TrustedPlanIpcClient;
         signedApprovals:SignedEngineerApprovalFileStore;
         epochDirectory:string;
-        continueWithinActiveRoot:(
+        continueWithinActiveRoot?:(
           signal:Readonly<TrustedRepairFeedbackSignal>,
           intake:TrustedOperationalEpochIntake
         )=>Promise<void>;
+        /** R124 optional concrete repair planner; never an HTTP field. */
+        planRepairEpoch?:Readonly<{
+          giteaClient:GiteaClient;
+          proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
+        }>;
       }>;
     }
 ){

@@ -41,6 +41,7 @@ import {TrustedPlanningReviewGate}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
 import {TrustedPlanIpcClient}
   from "../../gateway/src/trusted-plan-ipc.ts";
+import {GiteaClient} from "../../gateway/src/gitea-client.ts";
 import {SignedEngineerApprovalFileStore}
   from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
 import {SoftwareEngineerAuthorityBootstrap}
@@ -152,7 +153,11 @@ export async function startTrustedEngineerLocalHost(config){
      !(ownerOperationalRecovery.signedApprovals instanceof
        SignedEngineerApprovalFileStore)||
      typeof ownerOperationalRecovery.epochDirectory!=="string"||
-     typeof ownerOperationalRecovery.continueWithinActiveRoot!=="function"))
+     (typeof ownerOperationalRecovery.continueWithinActiveRoot==="function")===
+       (ownerOperationalRecovery.planRepairEpoch!==undefined)||
+     (ownerOperationalRecovery.planRepairEpoch!==undefined&&(
+       !(ownerOperationalRecovery.planRepairEpoch.giteaClient instanceof GiteaClient)||
+       typeof ownerOperationalRecovery.planRepairEpoch.proposeRepairPlan!=="function"))))
     deny("R123 original owner Coordinator, Gateway IPC and signed store required");
   if(ownerOperationalRecovery){
     active.coordinator.assertSameApprovedGatewayPlans(recovery.gateway);
