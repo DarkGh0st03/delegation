@@ -7,6 +7,7 @@ import {TrustedOperationalEpochJournal} from "./trusted-operational-epoch-journa
 import {SignedEngineerApprovalFileStore} from "./signed-approval-store.ts";
 import {assertApprovedPlanScope,planDigest} from "../../plan-contracts/src/plan.mjs";
 import {preflightNextOperationalEpoch} from "../../plan-contracts/src/operational-epoch-scope.mjs";
+import {approvedWorkBranch} from "../../plan-contracts/src/approved-work-branch.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 const OPS=new Set<string>(RUST_OPERATIONS);
@@ -123,15 +124,17 @@ export class TrustedOperationalEpochIntake {
    deny("missing active root or operational epoch");
   const expectedPrefix="gitea://"+branch.authority+"/"+branch.owner+
     "/"+branch.repository+"/branches/"+
-    encodeURIComponent((await import("../../plan-contracts/src/approved-work-branch.mjs"))
-      .approvedWorkBranch(current.plan))+"/files/";
+    encodeURIComponent(approvedWorkBranch(current.plan))+"/files/";
   if(!input.resource.startsWith(expectedPrefix)||
      !root.permissions.some(p=>p.resource===input.resource&&
        p.operation==="read_file"))
    deny("discovery read grant outside exact issued Rust root");
   const again=await this.verifiedEpochHistory();
+  const reissued=this.#coordinator.trustedOperationalAuthority();
   if(again.length!==history.length||
-     again.at(-1)?.plan_digest!==current.plan_digest)
+     again.at(-1)?.plan_digest!==current.plan_digest||
+     reissued.credential_id!==root.credential_id||
+     reissued.plan_digest!==root.plan_digest)
    deny("root or epoch changed during discovery preflight");
   return Object.freeze({
    session_id:this.#session,task_id:input.taskId,
@@ -140,8 +143,7 @@ export class TrustedOperationalEpochIntake {
    root_credential_id:root.credential_id,
    root_plan_digest:root.plan_digest,
    epoch:history.length,
-   work_branch:(await import("../../plan-contracts/src/approved-work-branch.mjs"))
-      .approvedWorkBranch(current.plan),
+   work_branch:approvedWorkBranch(current.plan),
    execution_authorized:false as const
   });
  }
