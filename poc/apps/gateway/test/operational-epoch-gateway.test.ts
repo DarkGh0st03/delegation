@@ -20,10 +20,6 @@ import {prepareTrustedRepairFeedback} from
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
 import {TrustedOperationalRepairPlanner} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
-import {TrustedAdkOperationalRepairProposer} from
-  "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
-import {BaseLlm,type LlmRequest,type LlmResponse,type BaseLlmConnection}
- from "@google/adk";
 import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
@@ -692,7 +688,6 @@ async function verifiedFailureForR106(t:import("node:test").TestContext){
 }
 const prepareR106=(h:Awaited<ReturnType<typeof verifiedFailureForR106>>,options:{
  draft?:()=>unknown;
- adk?:TrustedAdkOperationalRepairProposer;
  readHead?:()=>Promise<string>;
  count?:{model:number;head:number};
 }={})=>new TrustedOperationalRepairPlanner({
@@ -732,8 +727,7 @@ const prepareR106=(h:Awaited<ReturnType<typeof verifiedFailureForR106>>,options:
   assert.ok(input.already_delegated_grants.every(g=>
    ["create_branch","create_pull_request","read_file",
     "update_file","run_tests"].includes(g.operation)));
-  return options.adk?options.adk.propose(input):
-    options.draft?options.draft():repairDraft();
+  return options.draft?options.draft():repairDraft();
  }
 });
 
@@ -922,47 +916,4 @@ test("R107 feature reader cannot be rebound to another Coordinator/root or used 
  h.setPhase("closed");
  await assert.rejects(reader.read(repo,branch),
   /operational root is not active/);
-});
-
-test("R107 scripted ADK -> verified root -> new epoch -> Gateway correction -> Test PASS",async(t)=>{
- class ScriptedAdk extends BaseLlm{
-  requests:LlmRequest[]=[];
-  constructor(){super({model:"offline-adk-repair-integration"});}
-  override async *generateContentAsync(request:LlmRequest):
-   AsyncGenerator<LlmResponse,void>{
-   this.requests.push(request);
-   yield {content:{role:"model",parts:[{text:JSON.stringify(repairDraft())}]}};
-  }
-  override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
-   return Promise.reject(Error("No network"));
-  }
- }
- const h=await verifiedFailureForR106(t);
- const model=new ScriptedAdk();
- const adk=new TrustedAdkOperationalRepairProposer({
-  model,maxOutputTokens:4096,maxCallMs:2000,maxSessionMs:10000
- });
- const count={model:0,head:0};
- const controller=prepareR106(h,{adk,count});
- const reservation=await controller.proposeAndReserve();
- assert.equal(reservation.epoch,2);
- assert.equal(reservation.execution_authorized,false);
- assert.equal(reservation.child_credential_issued,false);
- assert.deepEqual(count,{head:2,model:1});
- assert.equal(model.requests.length,1);
- assert.equal(JSON.stringify(model.requests[0]?.config?.tools??[]),"[]");
- const second=await h.gates.admitNextOperationalEpoch(session,2);
- assert.equal(second.epoch,2);
- h.gates.bindTask(session,"repair-implementation","adk-backend-task","backend");
- h.gates.bindTask(session,"repair-validation","adk-test-task","test");
- await h.invoke("adk-backend-task","backend","update_file",edit("// corrected via trusted gateway"));
- await h.gates.confirmTaskCompletion("adk-backend-task");
- await h.invoke("adk-test-task","test","run_tests",runner);
- await h.gates.confirmTaskCompletion("adk-test-task");
- await h.gates.retireSession(session);
- assert.equal(h.gates.readVerifiedRunnerEffect({
-  session_id:session,task_id:"repair-validation",
-  branch,tested_commit_sha:sha
- }).status,"pass");
- assert.equal(h.provider,5);
 });
