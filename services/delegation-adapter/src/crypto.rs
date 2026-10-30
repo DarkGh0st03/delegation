@@ -1070,6 +1070,66 @@ mod tests {
     }
 
     #[test]
+    fn r129_engineer_root_requires_real_orchestrator_signed_fresh_multipermission_vp() {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry).unwrap();
+        let original = issue_root(&mut runtime, &registry);
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
+        let gateway = registry.record_for_role(CallerRole::Gateway).unwrap();
+        let perms = original.credential().permissions().clone();
+        let vp = runtime
+            .create_presentation(
+                orchestrator,
+                CreatePresentationRequest {
+                    credential_id: original.id().clone(),
+                    disclosed_permissions: perms.clone(),
+                    audience: String::from("urn:thesis:gateway:root-repair"),
+                    challenge: String::from("r129-independent-gateway-random-challenge"),
+                },
+            )
+            .unwrap();
+        let verify = |challenge: &str, required: Vec<Permission>| {
+            runtime.verify_multiple_presentation(
+                gateway,
+                &registry,
+                VerifyMultiplePresentationRequest {
+                    presenter: CallerRole::Orchestrator,
+                    audience: String::from("urn:thesis:gateway:root-repair"),
+                    challenge: challenge.to_string(),
+                    required_permissions: required,
+                    signed_vp: vp.signed_vp.clone(),
+                },
+            )
+        };
+        let verified = verify("r129-independent-gateway-random-challenge", perms.clone())
+            .unwrap();
+        assert_eq!(verified.credential_id(), original.id());
+        assert_eq!(verified.presenter_id(), "did:thesis:orchestrator");
+        assert_eq!(verified.issuer_id(), "did:thesis:engineer");
+        assert_eq!(verified.hierarchy_depth(), 0);
+        assert_eq!(verified.permissions(), &perms);
+        assert!(verify("r129-replayed-other-challenge", perms.clone()).is_err());
+        assert!(verify(
+            "r129-independent-gateway-random-challenge",
+            vec![
+                permission(Operation::ReadFile),
+                permission(Operation::CreatePullRequest),
+            ],
+        ).is_err());
+        assert!(runtime.verify_multiple_presentation(
+            gateway,
+            &registry,
+            VerifyMultiplePresentationRequest {
+                presenter: CallerRole::Backend,
+                audience: String::from("urn:thesis:gateway:root-repair"),
+                challenge: String::from("r129-independent-gateway-random-challenge"),
+                required_permissions: perms,
+                signed_vp: vp.signed_vp,
+            },
+        ).is_err());
+    }
+
+    #[test]
     fn root_child_presentation_and_verification_close_the_bridge() {
         let registry = callers();
         let mut runtime = CryptoRuntime::new(&registry).unwrap();
