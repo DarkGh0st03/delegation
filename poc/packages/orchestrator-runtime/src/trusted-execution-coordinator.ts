@@ -83,6 +83,13 @@ export class TrustedExecutionCoordinator {
   }
 
   get phase():Phase{return this.#phase;}
+  /** R123: recovery must use the SAME authenticated Gateway IPC client
+   * whose leases, task binds and root retirement belong to this Coordinator.
+   * A newly constructed private socket client is NOT the same authority. */
+  assertSameApprovedGatewayPlans(port:TrustedApprovedPlanControl):void{
+    if(port!==this.#gateway)
+      throw Error("Trusted Coordinator recovery Gateway identity differs");
+  }
   assertPlanningRecoveryStore(store:TrustedPlanningRecoveryStore):void{
     if(!(store instanceof TrustedPlanningRecoveryStore)||
        this.#planningRecovery!==store)

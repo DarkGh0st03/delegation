@@ -24,6 +24,16 @@ import {createReviewedApprovedDagExecution}
   from "./trusted-reviewed-approved-dag.ts";
 import {verifyGithubManualRunViaApi}
   from "./trusted-manual-github-dispatch.ts";
+import {armTrustedOwnerOperationalRecovery}
+  from "./trusted-owner-operational-repair-handoff.ts";
+import {TrustedPlanIpcClient}
+  from "../../../apps/gateway/src/trusted-plan-ipc.ts";
+import {SignedEngineerApprovalFileStore}
+  from "./signed-approval-store.ts";
+import type {TrustedRepairFeedbackSignal}
+  from "./trusted-validation-repair-feedback.ts";
+import {TrustedOperationalEpochIntake}
+  from "./trusted-operational-epoch-intake.ts";
 
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const REF=/^refs\/heads\/[A-Za-z0-9][A-Za-z0-9._/-]*$/u;
@@ -121,6 +131,17 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
       expectedWorkflowPath:string;
       /** Offline fixtures ONLY; default is GitHub REST over HTTPS. */
       githubApiFetchFn?:typeof fetch;
+      /** R123 opt-in owner-only recovery, never from an OIDC or model field.
+       * The same real Coordinator, Gateway and Engineer approval are mandatory. */
+      ownerOperationalRecovery?:Readonly<{
+        gateway:TrustedPlanIpcClient;
+        signedApprovals:SignedEngineerApprovalFileStore;
+        epochDirectory:string;
+        continueWithinActiveRoot:(
+          signal:Readonly<TrustedRepairFeedbackSignal>,
+          intake:TrustedOperationalEpochIntake
+        )=>Promise<void>;
+      }>;
     }
 ){
   if(!(input.coordinator instanceof TrustedExecutionCoordinator)||
@@ -132,6 +153,16 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
   // process crashing would leave an active long-lived execution session.
   input.coordinator.assertOperationalLeaseConfigured();
   input.coordinator.assertOperationalRecoveryConfigured();
+  if(input.ownerOperationalRecovery){
+    if(!(input.ownerOperationalRecovery.gateway instanceof TrustedPlanIpcClient)||
+       !(input.ownerOperationalRecovery.signedApprovals instanceof
+         SignedEngineerApprovalFileStore))
+      deny("R123 actual Gateway IPC and signed Engineer store required");
+    input.coordinator.assertSameApprovedGatewayPlans(
+      input.ownerOperationalRecovery.gateway);
+    input.reviewGate.assertSameSignedApprovals(
+      input.ownerOperationalRecovery.signedApprovals);
+  }
   const root=input.coordinator.trustedPlanningAuthority();
   if(root.session_id!==input.pins?.sessionId)
     deny("independent GitHub admission session differs from active Planning root");
@@ -164,7 +195,8 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
     fetchFn:input.githubApiFetchFn
   });
   const {admissionStore,pins,geminiApiKey,githubApiToken,
-    expectedWorkflowPath,githubApiFetchFn,...trusted}=input;
+    expectedWorkflowPath,githubApiFetchFn,ownerOperationalRecovery,
+    ...trusted}=input;
   const running=await startPersistedReviewedGeminiHandoff({
     ...trusted,
     maxModelCallMs:admitted.max_model_call_ms,
@@ -266,13 +298,26 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
       deny("GitHub job lost; operational root revocation unconfirmed");
     throw error;
   }
-  // The admitted host now exposes ONE private execution route that binds
-  // the reviewed Gemini role servers to the SAME signed-plan dispatcher used
-  // by offline E2E. Merely creating this controller performs no inference.
-  const approvedDag=createReviewedApprovedDagExecution({
-    coordinator:input.coordinator,reviewGate:input.reviewGate,running,
-    verifyLiveRun:checkNow,close:stop
-  });
+  // R123: opt-in recovery must be ARMED while this exact GitHub job and
+  // original Rust root are still alive, before any A2A task side effect.
+  // Failure after root issuance must perform the SAME terminal revocation
+  // path, not leave an orphaned operational session.
+  let approvedDag;
+  try{
+    const recovery=ownerOperationalRecovery?
+      await armTrustedOwnerOperationalRecovery({
+        ...ownerOperationalRecovery,coordinator:input.coordinator,running
+      }):undefined;
+    await checkNow();
+    approvedDag=createReviewedApprovedDagExecution({
+      coordinator:input.coordinator,reviewGate:input.reviewGate,running,
+      verifyLiveRun:checkNow,close:stop,
+      ...(recovery?{verifiedTestFailureRecovery:recovery}:{})
+    });
+  }catch(error){
+    await stop();
+    throw error;
+  }
   return Object.freeze({
     ...running,
     approvedDag,

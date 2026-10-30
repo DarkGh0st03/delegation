@@ -113,6 +113,13 @@ export class TrustedPlanningReviewGate implements TrustedApprovalStore {
     return structuredClone(this.#packet);
   }
 
+  /** Owner-only identity check: never load recovery epochs from a different
+   * signature store, even if it can authenticate some other Engineer plan. */
+  assertSameSignedApprovals(store:SignedEngineerApprovalFileStore):void{
+    if(store!==this.#signed)
+      refuse("recovery signed approval store differs from original review");
+  }
+
   reviewPacket():PlanningReviewPacket{
     if(!this.#packet)refuse("no staged proposal available for Engineer review");
     return structuredClone(this.#packet);

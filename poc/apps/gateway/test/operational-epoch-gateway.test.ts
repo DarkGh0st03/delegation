@@ -22,6 +22,8 @@ import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback} from
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
 import {TrustedOperationalRepairPlanner} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
+import {armTrustedOwnerOperationalRecovery} from
+  "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {TrustedOperationalRepairSourceReader} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-source-reader.ts";
 import {TrustedApprovedA2ADispatcher} from
@@ -1784,4 +1786,67 @@ test("R122 one-use dispatcher FAIL can enter the R121 planner without replay",as
  assert.deepEqual(counters,{model:1,head:2});
  assert.equal((await h.intake.verifiedEpochHistory()).length,2);
  assert.equal(h.provider,3);
+});
+
+test("R123 owner recovery arms original signed Rust root and permits one verified IPC handoff",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ const epochDirectory=join(h.dir,"r123-owner-epochs");
+ await mkdir(epochDirectory,{mode:0o700});
+ let delivered=0;
+ const armed=await armTrustedOwnerOperationalRecovery({
+  gateway:client,coordinator:h.coordinator,
+  signedApprovals:h.signedStore,epochDirectory,
+  running:{readiness:{
+   session_id:session,base_revision:sha,
+   plan_digest:planDigest(h.parent),
+   authenticated_engineer_did:engineer
+  },operational_root_id:h.rootAuthority.credential_id},
+  async continueWithinActiveRoot(proof,intake){
+   delivered++;
+   assert.equal(proof.status,"repair_planning_eligible");
+   assert.equal(proof.failed_runtime_task_id,"task-test");
+   assert.equal((await intake.verifiedEpochHistory()).length,1);
+  }
+ });
+ assert.equal((await armed.intake.verifiedEpochHistory()).length,1);
+ const verified=await prepareTrustedRemoteRepairFeedback(request());
+ await armed.continueWithinActiveRoot(verified);
+ assert.equal(delivered,1);
+ await assert.rejects(armed.continueWithinActiveRoot(verified),/one-use/);
+ assert.equal(h.coordinator.phase,"execution");
+ assert.equal(h.provider,3);
+});
+test("R123 forged owner feedback and changed root are denied before callback",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ const epochDirectory=join(h.dir,"r123-forgery-epochs");
+ await mkdir(epochDirectory,{mode:0o700});
+ let delivered=0;
+ const armed=await armTrustedOwnerOperationalRecovery({
+  gateway:client,coordinator:h.coordinator,
+  signedApprovals:h.signedStore,epochDirectory,
+  running:{readiness:{
+   session_id:session,base_revision:sha,
+   plan_digest:planDigest(h.parent),
+   authenticated_engineer_did:engineer
+  },operational_root_id:h.rootAuthority.credential_id},
+  async continueWithinActiveRoot(){delivered++;}
+ });
+ const verified=await prepareTrustedRemoteRepairFeedback(request());
+ await assert.rejects(armed.continueWithinActiveRoot({
+  ...verified,tested_commit_sha:"b".repeat(40)
+ }),/Gateway proof changed/);
+ assert.equal(delivered,0);
+ // The one-use callback is fenced even if the first signal was forged.
+ await assert.rejects(armed.continueWithinActiveRoot(verified),/one-use/);
+ h.setPhase("closed");
+ await assert.rejects(armTrustedOwnerOperationalRecovery({
+  gateway:client,coordinator:h.coordinator,
+  signedApprovals:h.signedStore,epochDirectory,
+  running:{readiness:{
+   session_id:session,base_revision:sha,
+   plan_digest:planDigest(h.parent),
+   authenticated_engineer_did:engineer
+  },operational_root_id:h.rootAuthority.credential_id},
+  async continueWithinActiveRoot(){delivered++;}
+ }),/original approved Coordinator/);
 });

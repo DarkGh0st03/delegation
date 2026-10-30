@@ -41,6 +41,8 @@ import {TrustedPlanningReviewGate}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
 import {TrustedPlanIpcClient}
   from "../../gateway/src/trusted-plan-ipc.ts";
+import {SignedEngineerApprovalFileStore}
+  from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
 import {SoftwareEngineerAuthorityBootstrap}
   from "../../../packages/orchestrator-runtime/src/authority-client.ts";
 import {createAuthenticatedEngineerServer}
@@ -140,6 +142,23 @@ export async function startTrustedEngineerLocalHost(config){
   // have different identities; neither is derived from the other.
   const recovery=config?.recovery;
   const active=config?.activePlanning;
+  // Opt-in only from the trusted local bootstrap. Never from HTTP, GitHub
+  // admission, model proposals or per-Task executor arguments.
+  const ownerOperationalRecovery=config?.ownerOperationalRecovery;
+  if(ownerOperationalRecovery&&(
+     !(active?.coordinator instanceof TrustedExecutionCoordinator)||
+     !(active.reviewGate instanceof TrustedPlanningReviewGate)||
+     !(recovery?.gateway instanceof TrustedPlanIpcClient)||
+     !(ownerOperationalRecovery.signedApprovals instanceof
+       SignedEngineerApprovalFileStore)||
+     typeof ownerOperationalRecovery.epochDirectory!=="string"||
+     typeof ownerOperationalRecovery.continueWithinActiveRoot!=="function"))
+    deny("R123 original owner Coordinator, Gateway IPC and signed store required");
+  if(ownerOperationalRecovery){
+    active.coordinator.assertSameApprovedGatewayPlans(recovery.gateway);
+    active.reviewGate.assertSameSignedApprovals(
+      ownerOperationalRecovery.signedApprovals);
+  }
   if(active!==undefined&&(
      !(active.coordinator instanceof TrustedExecutionCoordinator)||
      !(active.planningRecovery instanceof TrustedPlanningRecoveryStore)||
@@ -155,7 +174,8 @@ export async function startTrustedEngineerLocalHost(config){
     oidc.replayDirectory,oidc.admissionDirectory,approval.receiptDirectory,
     ...(scripted?[scripted.replayDirectory,scripted.admissionDirectory]:[]),
     ...(recovery?[recovery.directory]:[]),
-    ...(recovery?.planning?[recovery.planning.directory]:[])
+    ...(recovery?.planning?[recovery.planning.directory]:[]),
+    ...(ownerOperationalRecovery?[ownerOperationalRecovery.epochDirectory]:[])
   ];
   if(directories.some(x=>typeof x!=="string"||!x.trim())||
      new Set(directories.map(dir=>resolve(dir))).size!==directories.length)
@@ -248,7 +268,12 @@ export async function startTrustedEngineerLocalHost(config){
     await active.coordinator.assertOperationalClosureConfirmed();
   };
   const handoff=createTrustedReviewedHandoffLifecycle(trusted=>
-    startAdmittedGithubReviewedGeminiHandoff(trusted),{
+    startAdmittedGithubReviewedGeminiHandoff({
+      ...trusted,
+      ...(ownerOperationalRecovery?{ownerOperationalRecovery:{
+        ...ownerOperationalRecovery,gateway:recovery.gateway
+      }}:{})
+    }),{
       verifyTerminalClosure:verifyOriginalOperationalRetirement
     });
   const scriptedHandoff=createTrustedReviewedHandoffLifecycle(trusted=>
