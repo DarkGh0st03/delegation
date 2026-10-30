@@ -1103,3 +1103,167 @@ test("R108 an authorized read Task still cannot expose code to ADK without a cor
  assert.equal(vpCalls,0);
  assert.equal(h.provider,0);
 });
+
+
+async function r109FailedFixture(t:import("node:test").TestContext){
+ const h=await harness(t,{withInlineRead:true});
+ await h.intake.reserveInitialEpoch();
+ await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// error"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ h.setRunnerFailure();
+ await h.invoke("task-test","test","run_tests",runner);
+ h.gates.confirmTestValidationFailure("task-test");
+ return h;
+}
+async function r109IssueChild(h:Awaited<ReturnType<typeof r109FailedFixture>>){
+ const journalDir=join(h.dir,"r109-child-issuance");
+ await mkdir(journalDir,{mode:0o700});
+ const journal=new TrustedChildIssuanceJournal({
+  directory:journalDir,sessionId:session,baseRevision:sha,
+  planDigest:h.rootAuthority.plan_digest,
+  parentCredentialId:h.rootAuthority.credential_id
+ });
+ const adapterCalls:any[]=[];
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer.createForRepairDiscovery({
+  intake:h.intake,gateway:h.gates,coordinator:h.coordinator,
+  sessionId:session,engineerDid:engineer,
+  failedRuntimeTestTaskId:"task-test",
+  discoveryTaskId:"new-discovery-r109",role:"backend",resource:file,
+  issuanceJournal:journal,
+  adapterBaseUrl:"http://127.0.0.1:9999",
+  bearerToken:"private-owner-only",
+  fetchFn:(async (_url:unknown,request:any)=>{
+   const body=JSON.parse(String(request.body));
+   adapterCalls.push(body);
+   return new Response(JSON.stringify({
+    "@context":["https://www.w3.org/ns/credentials/v2"],
+    type:["VerifiableCredential","DelegationCredential"],
+    id:body.credential_id,issuer:"did:example:orchestrator",
+    credentialSubject:{sub:"did:example:backend",per:body.permissions}
+   }),{status:201});
+  }) as typeof fetch
+ });
+ const child=await issuer.issueSpecializedChild({
+  parent_credential_id:h.rootAuthority.credential_id,
+  approved_task_id:"new-discovery-r109",
+  selection:{role:"backend"},
+  credential_id:"urn:child:repair-discovery",
+  valid_from:"2026-10-29T10:00:00Z",validity_seconds:300,
+  credential_status:{type:"BitstringStatusListEntry",
+   statusPurpose:"revocation",statusListIndex:"9210",
+   statusListCredential:"https://status.example/discovery"}
+ });
+ assert.equal(child.role,"backend");
+ assert.equal(child.credential.id,"urn:child:repair-discovery");
+ assert.deepEqual(adapterCalls[0].permissions,[{resource:file,operation:"read_file"}]);
+ assert.equal(adapterCalls[0].parent_credential_id,
+  h.rootAuthority.credential_id);
+ assert.equal((await journal.records())[0].observation,
+  "adapter_response_verified");
+ return {journal,issuer,adapterCalls};
+}
+test("R109 new Task ID receives only the original Rust root read grant, then VP/Gateway/OPA read",async(t)=>{
+ const h=await r109FailedFixture(t);
+ assert.throws(()=>h.gates.bindTask(session,"new-discovery-r109",
+  "runtime-r109","backend"),/current admitted epoch/);
+ const {journal,issuer,adapterCalls}=await r109IssueChild(h);
+ assert.equal(adapterCalls.length,1);
+ const registered=await h.gates.admitRepairDiscoveryTask({
+  sessionId:session,failedRuntimeTestTaskId:"task-test",
+  taskId:"new-discovery-r109",agentRole:"backend",
+  resource:file,credentialId:"urn:child:repair-discovery",
+  childIssuanceJournal:journal
+ });
+ assert.equal(registered.status,"discovery_read_admitted_not_executed");
+ assert.equal(registered.epoch,1);
+ await assert.rejects(h.gates.admitRepairDiscoveryTask({
+  sessionId:session,failedRuntimeTestTaskId:"task-test",
+  taskId:"new-discovery-r109",agentRole:"backend",
+  resource:file,credentialId:"urn:child:repair-discovery",
+  childIssuanceJournal:journal
+ }),/replay|cap exceeded/);
+ h.gates.bindTask(session,"new-discovery-r109","runtime-r109","backend");
+ assert.throws(()=>h.runtime.prepare({
+  task_id:"runtime-r109",agent_role:"backend",
+  tool:"update_file",arguments:edit("// must not write")
+ }),/Discovery Task can only read/);
+ const wrong=h.runtime.prepare({
+  task_id:"runtime-r109",agent_role:"backend",
+  tool:"read_file",arguments:{branch,path:"src/invoices.ts"}
+ });
+ await assert.rejects(h.runtime.execute({
+  request_id:wrong.request_id,signed_vp:"signed.fixture.vp"
+ }),/Trusted approved plan rejected|approved_plan_denied/);
+ assert.equal(h.provider,3);
+ const valid=h.runtime.prepare({
+  task_id:"runtime-r109",agent_role:"backend",
+  tool:"read_file",arguments:{branch,path:"src/invoices.ts"}
+ });
+ const response=await h.runtime.execute({
+  request_id:valid.request_id,signed_vp:"signed.r109.discovery"
+ });
+ assert.equal(response.decision,"allow");
+ assert.equal(response.execution.tool,"read_file");
+ assert.equal(response.execution.revision,sha);
+ assert.equal(h.provider,4);
+ assert.equal(h.policy,5);
+ await h.gates.confirmTaskCompletion("runtime-r109");
+ const next=await h.intake.reserveRepairEpoch(repair());
+ assert.equal(next.epoch,2);
+ const admitted=await h.gates.admitNextOperationalEpoch(session,2);
+ assert.equal(admitted.epoch,2);
+ await assert.rejects(issuer.issueSpecializedChild({
+  parent_credential_id:h.rootAuthority.credential_id,
+  approved_task_id:"new-discovery-r109",
+  selection:{role:"backend"},
+  credential_id:"urn:child:repair-discovery",
+  valid_from:"2026-10-29T10:00:00Z",validity_seconds:300,
+  credential_status:{type:"BitstringStatusListEntry",
+   statusPurpose:"revocation",statusListIndex:"9210",
+   statusListCredential:"https://status.example/discovery"}
+ }),/already attempted/);
+ assert.equal(adapterCalls.length,1);
+});
+test("R109 cannot advance repair epoch with an admitted but uncompleted discovery read",async(t)=>{
+ const h=await r109FailedFixture(t);
+ const {journal}=await r109IssueChild(h);
+ await h.gates.admitRepairDiscoveryTask({
+  sessionId:session,failedRuntimeTestTaskId:"task-test",
+  taskId:"new-discovery-r109",agentRole:"backend",
+  resource:file,credentialId:"urn:child:repair-discovery",
+  childIssuanceJournal:journal
+ });
+ await h.intake.reserveRepairEpoch(repair());
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
+  /Unresolved dynamically delegated discovery/);
+ assert.equal(h.provider,3);
+});
+test("R109 denies discovery Task admission without a matching durable Adapter ACK",async(t)=>{
+ const h=await r109FailedFixture(t);
+ const dir=join(h.dir,"unissued-r109-child");
+ await mkdir(dir,{mode:0o700});
+ const journal=new TrustedChildIssuanceJournal({
+  directory:dir,sessionId:session,baseRevision:sha,
+  planDigest:h.rootAuthority.plan_digest,
+  parentCredentialId:h.rootAuthority.credential_id
+ });
+ await assert.rejects(h.gates.admitRepairDiscoveryTask({
+  sessionId:session,failedRuntimeTestTaskId:"task-test",
+  taskId:"new-discovery-r109",agentRole:"backend",
+  resource:file,credentialId:"urn:child:repair-discovery",
+  childIssuanceJournal:journal
+ }),/No matching one-use Adapter-issued/);
+ const proof=await h.intake.preflightRepairDiscovery({
+  sessionId:session,taskId:"new-discovery-r109",
+  agentId:"backend",resource:file
+ });
+ assert.equal(proof.execution_authorized,false);
+ assert.equal(h.provider,3);
+});
