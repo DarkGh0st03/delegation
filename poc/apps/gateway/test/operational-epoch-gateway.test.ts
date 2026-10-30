@@ -3480,6 +3480,8 @@ async function r142RetirementFixture(t:import("node:test").TestContext,
  };
  return {...x,client,witness,pins,
   get readCount(){return x.metadataCalls;},
+  get prPosts(){return x.prPosts;},
+  get prGets(){return x.prGets;},
   markRevoked(){statusSet=true;},
   corruptRootId(){rootId="urn:credential:other";},
   corruptAnchor(){anchorVersion=-1;},
