@@ -22,6 +22,10 @@ import {TrustedOperationalRepairPlanner} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
 import {TrustedOperationalRepairSourceReader} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-source-reader.ts";
+import {TrustedApprovedPlanChildAuthorityIssuer} from
+  "../../../packages/orchestrator-runtime/src/trusted-approved-child-issuer.ts";
+import {TrustedChildIssuanceJournal} from
+  "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
@@ -86,6 +90,13 @@ function initialWithReview(withIndependentSibling=false){
  }
  return p;
 }
+function initialWithInlineRead(){
+ const p=initial();
+ p.requested_permissions.push({id:"perm-root-read",
+  task_id:"backend-original",agent_id:"backend",
+  resource:file,operation:"read_file",reason:"Engineer max read scope"});
+ return p;
+}
 function initialWithTrustedRead(){
  const p=initial();
  p.tasks.push({id:"read-diagnostics",agent_id:"backend",
@@ -115,9 +126,10 @@ const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
 }));
 async function harness(t:import("node:test").TestContext,
  options:{withReview?:boolean;withIndependentSibling?:boolean;
-  withTestWrite?:boolean;withRead?:boolean}={}){
+  withTestWrite?:boolean;withRead?:boolean;withInlineRead?:boolean}={}){
  const parent=options.withReview?
   initialWithReview(options.withIndependentSibling):
+  options.withInlineRead?initialWithInlineRead():
   options.withRead?initialWithTrustedRead():
   options.withTestWrite?initialWithTestFileWrite():initial();
  const dir=await mkdtemp(join(tmpdir(),"delegation-gateway-epoch-"));
@@ -245,7 +257,8 @@ async function harness(t:import("node:test").TestContext,
    verified++;
    return {
     presenter_id:"did:example:"+req.presenter,
-    issuer_id:engineer,credential_id:"urn:fixture:delegated",
+    issuer_id:engineer,credential_id:req.signed_vp==="signed.r109.discovery"?
+      "urn:child:repair-discovery":"urn:fixture:delegated",
     permissions:[req.required_permission],hierarchy_depth:1,
     expiration:"999999999999999"
    };
@@ -280,6 +293,7 @@ async function harness(t:import("node:test").TestContext,
   await gates.confirmTaskCompletion("task-test");
  }
  return {gates,intake,runtime,prepared,invoke,initialPass,
+  coordinator,rootAuthority,dir,
   setRunnerFailure:()=>{nextRunnerFails=true;},
   setPhase:(s:string)=>{phase=s;},
   get provider(){return provider;},get verified(){return verified;},
