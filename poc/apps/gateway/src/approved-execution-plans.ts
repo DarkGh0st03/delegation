@@ -77,7 +77,26 @@ interface RuntimeTaskBinding {
   readonly successfulRequests: Map<string,TrustedProviderEffect>;
   completed: boolean;
   completing: boolean;
+  /** Terminal validation FAILED, not a successful Test completion. */
+  failedFinalized:boolean;
+  readonly failedRunner?:Readonly<TrustedRunnerFailure>;
 }
+
+export interface TrustedRunnerFailure {
+  readonly status:"validation_failed";
+  readonly request_id:string;
+  readonly plan_task_id:string;
+  readonly runtime_task_id:string;
+  readonly epoch_version:number;
+  readonly branch:string;
+  readonly tested_commit_sha:string;
+  readonly first_failed_phase:string;
+  readonly typecheck_error_codes:readonly string[];
+}
+const RUNNER_PHASES=[
+  "dependency_install","typecheck","backend_tests","frontend_tests",
+  "build","playwright_e2e","researcher_acceptance"
+] as const;
 
 interface ActivePlan {
   readonly sessionId: string;
@@ -362,7 +381,8 @@ export class TrustedApprovedExecutionPlans {
     this.#bindings.set(runtimeTaskId,{
       runtimeTaskId,planTaskId,agent:role,sessionId,
       epochVersion:session.currentEpoch,
-      successfulRequests:new Map(),completed:false,completing:false
+      successfulRequests:new Map(),completed:false,completing:false,
+      failedFinalized:false
     });
   }
 
@@ -372,7 +392,8 @@ export class TrustedApprovedExecutionPlans {
     { plan_digest:string; plan_task_id:string; work_branch:string;
       tested_head_sha?:string } {
     const {session,binding}=this.#activeBinding(runtimeTaskId);
-    if(binding.agent!==role || binding.completed || binding.completing) {
+    if(binding.agent!==role || binding.completed || binding.completing ||
+       binding.failedRunner!==undefined || binding.failedFinalized) {
       denied("Runtime role or completing/completed task is outside approved plan");
     }
     this.#checkAction(session,binding,required,request);
@@ -394,6 +415,7 @@ export class TrustedApprovedExecutionPlans {
     }
     const {session,binding}=this.#activeBinding(record.task_id);
     if(binding.agent!==record.agent_role || binding.completed ||
+       binding.failedRunner!==undefined || binding.failedFinalized ||
        record.approved_plan_task_id!==binding.planTaskId ||
        record.approved_plan_digest!==session.digest) {
       denied("Prepared plan digest, task binding or role changed");
@@ -453,7 +475,45 @@ export class TrustedApprovedExecutionPlans {
         }));
       return;
     }
-    // Failed Runner jobs cannot be evidence of a passing Test Task.
+    // A Runner FAIL is valid validation feedback, but NEVER a completed
+    // Test Task or PR authority. Store it only after VP/Core+OPA permitted
+    // an actual Runner provider execution. No model assertion is trusted.
+    if(result.provider==="runner"&&result.status==="fail"){
+      const {session,binding}=this.#activeBinding(record.task_id);
+      const phases=result.phases;
+      if(binding.agent!=="test"||record.agent_role!=="test"||
+         binding.failedRunner!==undefined||binding.completed||
+         binding.completing||result.tool!=="run_tests"||
+         result.runner_profile!=="poc-default"||
+         result.branch!==session.workBranch||
+         result.branch!==record.request.arguments.branch||
+         !SHA.test(result.tested_commit_sha)||
+         result.tested_commit_sha!==result.revision||
+         !Array.isArray(phases)||phases.length!==RUNNER_PHASES.length||
+         phases.some((p,i)=>p.phase!==RUNNER_PHASES[i]||
+           !["pass","fail","skipped"].includes(p.status))||
+         !phases.some(p=>p.status==="fail")||
+         result.project_tests?.status==="pass"&&
+           phases.some(p=>p.phase!=="researcher_acceptance"&&p.status==="fail"))
+        denied("Untrustworthy or incomplete failed Runner receipt");
+      const codes=result.typecheck_error_codes;
+      if(codes!==undefined&&(!Array.isArray(codes)||codes.length>16||
+         codes.some(c=>typeof c!=="string"||!/^TS[0-9]{4}$/u.test(c))))
+        denied("Untrusted compiler diagnostic code");
+      // Only bounded, whitelisted metadata crosses the private feedback
+      // boundary: no log references, stderr, source code or raw LLM text.
+      const first=phases.find(p=>p.status==="fail")!.phase;
+      binding.failedRunner=Object.freeze({
+        status:"validation_failed",request_id:record.request_id,
+        plan_task_id:binding.planTaskId,runtime_task_id:binding.runtimeTaskId,
+        epoch_version:binding.epochVersion,
+        branch:result.branch,tested_commit_sha:result.tested_commit_sha,
+        first_failed_phase:first,
+        typecheck_error_codes:Object.freeze([...(codes??[])])
+      });
+      session.testedFeatureSha=undefined;
+      return;
+    }
     if(result.provider==="runner"&&result.status!=="pass")return;
     // Any successful approved file mutation invalidates the previous test
     // attestation; tests must be rerun on the new immutable branch head.
@@ -471,13 +531,46 @@ export class TrustedApprovedExecutionPlans {
   }
 
   /**
+   * R104 private validation-failure acknowledgement: unlike PASS this does
+   * NOT complete a Test Task, attest tests, or enable a PR. Only previously
+   * Gateway-observed Docker failure metadata is eligible. The owner may then
+   * request a distinct, attenuated repair epoch under the same Rust root.
+   */
+  confirmTestValidationFailure(runtimeTaskId:string):
+    Readonly<TrustedRunnerFailure>{
+    const {session,binding}=this.#activeBinding(runtimeTaskId);
+    if(binding.agent!=="test"||binding.completed||binding.completing||
+       binding.failedFinalized||!binding.failedRunner)
+      denied("No unique verified failed Runner Test Task");
+    this.#assertDependencies(session,binding);
+    // Do not let earlier successful Runner effects provide an alternate
+    // completed Test for the same failed Task.
+    if([...binding.successfulRequests.values()].some(e=>e.tool==="run_tests"))
+      denied("Conflicting Runner PASS and FAIL in the same Task");
+    binding.failedFinalized=true;
+    session.testedFeatureSha=undefined;
+    return binding.failedRunner;
+  }
+
+  /** Owner-private metadata only. No signed VP, source, logs or credentials. */
+  readVerifiedTestFailure(runtimeTaskId:string):
+    Readonly<TrustedRunnerFailure>{
+    const {binding}=this.#activeBinding(runtimeTaskId);
+    if(binding.agent!=="test"||!binding.failedFinalized||
+       !binding.failedRunner||binding.completed)
+      denied("No terminal Gateway-confirmed validation failure");
+    return binding.failedRunner;
+  }
+
+  /**
    * Called ONLY by authenticated trusted A2A/CI completion coordinator.
    * Requires observed Gateway provider effects and external attestation.
    * No "mark complete" public HTTP route or model-facing MCP tool exists.
    */
   async confirmTaskCompletion(runtimeTaskId:string,observation?:TrustedCompletionObservation):Promise<void> {
     const {session,binding}=this.#activeBinding(runtimeTaskId);
-    if(binding.completed || binding.completing || !binding.successfulRequests.size) {
+    if(binding.completed || binding.completing||binding.failedRunner||
+       binding.failedFinalized || !binding.successfulRequests.size) {
       denied("Cannot complete a task without confirmed provider effects");
     }
     this.#assertDependencies(session,binding);
@@ -678,7 +771,9 @@ export class TrustedApprovedExecutionPlans {
         b.sessionId===session.sessionId&&
         b.epochVersion===session.currentEpoch&&
         b.planTaskId===task.id);
-      if(bound.length!==1||!bound[0].completed||bound[0].completing)
+      if(bound.length!==1||bound[0].completing||
+         !(bound[0].completed||
+           (task.agent_id==="test"&&bound[0].failedFinalized)))
         denied("Previous epoch has unresolved, unbound or in-flight Tasks");
     }
   }
