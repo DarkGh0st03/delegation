@@ -973,7 +973,9 @@ test("R108 scoped read after verified FAIL traverses actual Gateway Prepare/VP/O
  let signed=0;
  const feature=trustedFeature(h);
  const reader=new TrustedOperationalRepairSourceReader({
-  gateway:h.runtime,intake:h.intake,featureHeadReader:feature,
+  gateway:h.runtime,trustedGatewayPlans:h.gates,
+  failedRuntimeTestTaskId:"task-test",
+  intake:h.intake,featureHeadReader:feature,
   sessionId:session,runtimeTaskId:"source-read-task",
   agentRole:"backend",expectedTestedSha:sha,
   issueSignedVp:async challenge=>{
@@ -1010,7 +1012,9 @@ test("R108 lacking an exact root read grant blocks any Gateway or VP operation",
  await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
  let signCalls=0;
  const reader=new TrustedOperationalRepairSourceReader({
-  gateway:h.runtime,intake:h.intake,featureHeadReader:trustedFeature(h),
+  gateway:h.runtime,trustedGatewayPlans:h.gates,
+  failedRuntimeTestTaskId:"task-test",
+  intake:h.intake,featureHeadReader:trustedFeature(h),
   sessionId:session,runtimeTaskId:"backend-task",
   agentRole:"backend",expectedTestedSha:sha,
   issueSignedVp:async()=>{signCalls++;return "signed.fixture.vp";}
@@ -1027,7 +1031,9 @@ test("R108 revoked root denies source read before any VP or provider work",async
  h.gates.bindTask(session,"read-diagnostics","source-read-task","backend");
  h.setPhase("closed");
  const reader=new TrustedOperationalRepairSourceReader({
-  gateway:h.runtime,intake:h.intake,featureHeadReader:trustedFeature(h),
+  gateway:h.runtime,trustedGatewayPlans:h.gates,
+  failedRuntimeTestTaskId:"task-test",
+  intake:h.intake,featureHeadReader:trustedFeature(h),
   sessionId:session,runtimeTaskId:"source-read-task",
   agentRole:"backend",expectedTestedSha:sha,
   issueSignedVp:async()=>{throw Error("VP must not be created");}
@@ -1054,7 +1060,8 @@ test("R108 source reader rejects Gateway deployments without signed Task-plan en
  });
  assert.equal(unguarded.hasTrustedOperationalPlanGate(),false);
  assert.throws(()=>new TrustedOperationalRepairSourceReader({
-  gateway:unguarded,intake:h.intake,
+  gateway:unguarded,trustedGatewayPlans:h.gates,
+  failedRuntimeTestTaskId:"task-test",intake:h.intake,
   featureHeadReader:trustedFeature(h),
   sessionId:session,runtimeTaskId:"not-bound",
   agentRole:"backend",expectedTestedSha:sha,
