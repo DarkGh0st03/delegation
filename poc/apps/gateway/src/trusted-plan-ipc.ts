@@ -42,6 +42,8 @@ type Command=
   |{action:"inspect_native_root";session_id:string;root_plan_digest:string;
      plan_digest:string;epoch:number}
   |{action:"inspect_issued_root";session_id:string;root_plan_digest:string;
+     plan_digest:string;epoch:number}
+  |{action:"inspect_verified_root_vp";session_id:string;root_plan_digest:string;
      plan_digest:string;epoch:number};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
@@ -82,7 +84,8 @@ function validate(x:unknown):Command{
   if((o.action==="admit_epoch"||
       o.action==="inspect_signed_epoch"||
       o.action==="inspect_native_root"||
-      o.action==="inspect_issued_root")&&
+      o.action==="inspect_issued_root"||
+      o.action==="inspect_verified_root_vp")&&
      exact(o,["action","session_id","root_plan_digest","plan_digest","epoch"])&&
      typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
@@ -244,6 +247,9 @@ export async function createTrustedPlanIpcServer(config:{
           native_issued_scope_inspection:
             config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector&&
             config.signedEpochInspector.nativeIssuedScopeConfigured(),
+          native_root_vp_inspection:
+            config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector&&
+            config.signedEpochInspector.nativeRootVpConfigured(),
           planning_retirement_enabled:
             config.planningRevisions instanceof TrustedPlanningRevisions,
           planning_retirement_durable:
@@ -291,6 +297,16 @@ export async function createTrustedPlanIpcServer(config:{
         const receipt=config.plans.readVerifiedTestFailure(
           command.runtime_task_id);
         response(res,200,{ok:true,failure:boundedTestFailure(receipt,pins)});
+      }else if(command.action==="inspect_verified_root_vp"){
+        // An authenticated source-FREE request. Gateway obtains original
+        // IDs, grants and fresh challenge independently, then verifies
+        // R126/R127/R128 again AFTER native Rust presentation verification.
+        if(!(config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector)||
+           !config.plans.operationalLeaseConfigured()||
+           !config.plans.operationalSessionDurableConfigured())
+          fail("R132 native VP requires durable authenticated Gateway");
+        const proof=await config.signedEpochInspector.inspectCryptographicRootVp(command);
+        response(res,200,{ok:true,proof});
       }else if(command.action==="inspect_issued_root"){
         // R128: actual Rust-issued permission claims are compared with the
         // original Ed25519 approval in the Gateway process. This endpoint
@@ -399,6 +415,7 @@ export class TrustedPlanIpcClient{
   #signedEpochInspection=false;
   #nativeRootInspection=false;
   #nativeIssuedScope=false;
+  #nativeRootVp=false;
   private constructor(path:string,secret:Buffer){
     this.#socket=path;this.#secret=secret;
   }
@@ -417,6 +434,7 @@ export class TrustedPlanIpcClient{
        typeof capabilities.signed_epoch_inspection!=="boolean"||
        typeof capabilities.native_root_status_inspection!=="boolean"||
        typeof capabilities.native_issued_scope_inspection!=="boolean"||
+       typeof capabilities.native_root_vp_inspection!=="boolean"||
        (capabilities.planning_retirement_durable&&
         !capabilities.planning_retirement_enabled))
       fail("Gateway did not attest authenticated recovery capabilities");
@@ -427,6 +445,7 @@ export class TrustedPlanIpcClient{
     client.#signedEpochInspection=capabilities.signed_epoch_inspection;
     client.#nativeRootInspection=capabilities.native_root_status_inspection;
     client.#nativeIssuedScope=capabilities.native_issued_scope_inspection;
+    client.#nativeRootVp=capabilities.native_root_vp_inspection;
     return client;
   }
   operationalLeaseConfigured():boolean{return this.#leaseEnabled;}
@@ -558,6 +577,40 @@ export class TrustedPlanIpcClient{
   signedEpochInspectionConfigured(){return this.#signedEpochInspection;}
   nativeRootInspectionConfigured(){return this.#nativeRootInspection;}
   nativeIssuedRootInspectionConfigured(){return this.#nativeIssuedScope;}
+  nativeRootVpInspectionConfigured(){return this.#nativeRootVp;}
+  /** R132 read-only independent Rust VP and signed-epoch correlation. */
+  async inspectVerifiedRootVp(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+  }>){
+    if(!this.#nativeRootVp)
+     fail("native signed-root VP inspection not configured");
+    const r=(await this.#send({
+     action:"inspect_verified_root_vp",...pins
+    })).proof;
+    if(!r||typeof r!=="object"||Array.isArray(r)||
+       Object.keys(r).sort().join(",")!==
+        "child_credential_issued,cryptographic_presentation_verified,epoch,execution_authorized,gateway_epoch_admitted,native_issued_grants_checked,plan_digest,root_plan_digest,session_id,status"||
+       r.status!=="rust_root_vp_correlated_signed_epoch_no_admission"||
+       r.session_id!==pins.session_id||
+       r.root_plan_digest!==pins.root_plan_digest||
+       r.plan_digest!==pins.plan_digest||r.epoch!==pins.epoch||
+       r.native_issued_grants_checked!==true||
+       r.cryptographic_presentation_verified!==true||
+       r.gateway_epoch_admitted!==false||
+       r.execution_authorized!==false||
+       r.child_credential_issued!==false)
+      fail("Gateway root VP proof cannot be promoted to admission");
+    return Object.freeze({
+     status:"rust_root_vp_correlated_signed_epoch_no_admission" as const,
+     session_id:pins.session_id,
+     root_plan_digest:pins.root_plan_digest,plan_digest:pins.plan_digest,
+     epoch:pins.epoch,native_issued_grants_checked:true as const,
+     cryptographic_presentation_verified:true as const,
+     gateway_epoch_admitted:false as const,
+     execution_authorized:false as const,
+     child_credential_issued:false as const
+    });
+  }
   /** R128: owner-private comparison of actual issued grant set only. */
   async inspectNativeIssuedRootScope(pins:Readonly<{
     session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;

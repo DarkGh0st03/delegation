@@ -11,6 +11,8 @@ import {open,lstat} from "node:fs/promises";
 import {createHash} from "node:crypto";
 import {TrustedGatewayNativeRootStatusReader}
  from "./trusted-gateway-native-root-status.ts";
+import {TrustedGatewayRootVpVerifier}
+ from "./trusted-root-vp-verification.ts";
 import {constants} from "node:fs";
 import {isAbsolute,join,resolve} from "node:path";
 import {SignedEngineerApprovalFileStore}
@@ -33,9 +35,11 @@ export class TrustedGatewaySignedEpochInspector{
  readonly #approvals:SignedEngineerApprovalFileStore;
  readonly #nativeRoot?:TrustedGatewayNativeRootStatusReader;
  readonly #orchestratorDid?:string;
+ readonly #rootVp?:TrustedGatewayRootVpVerifier;
  constructor(config:{directory:string;approvals:SignedEngineerApprovalFileStore;
   nativeRootStatus?:TrustedGatewayNativeRootStatusReader;
-  trustedOrchestratorDid?:string}){
+  trustedOrchestratorDid?:string;
+  rootVpVerifier?:TrustedGatewayRootVpVerifier}){
   if(typeof config?.directory!=="string"||
      !isAbsolute(config.directory)||resolve(config.directory)!==config.directory||
      !(config.approvals instanceof SignedEngineerApprovalFileStore))
@@ -51,7 +55,13 @@ export class TrustedGatewaySignedEpochInspector{
       !(config.nativeRootStatus instanceof TrustedGatewayNativeRootStatusReader)))
    deny("native issued root comparison needs pinned Orchestrator DID and Adapter");
   this.#orchestratorDid=config.trustedOrchestratorDid;
+  if(config.rootVpVerifier!==undefined&&
+     (!(config.rootVpVerifier instanceof TrustedGatewayRootVpVerifier)||
+      !this.nativeIssuedScopeConfigured()))
+   deny("native root VP requires independent issued scope and pinned Orchestrator");
+  this.#rootVp=config.rootVpVerifier;
  }
+ nativeRootVpConfigured(){return !!this.#rootVp&&this.nativeIssuedScopeConfigured();}
  nativeRootStatusConfigured(){return !!this.#nativeRoot;}
  nativeIssuedScopeConfigured(){return !!this.#nativeRoot&&!!this.#orchestratorDid;}
  async assertReady(){
@@ -233,6 +243,70 @@ export class TrustedGatewaySignedEpochInspector{
    cryptographic_presentation_verified:false as const,
    execution_authorized:false as const,
    gateway_epoch_admitted:false as const,
+   child_credential_issued:false as const
+  });
+ }
+ /**
+  * R132: the actual Gateway process correlates R126 signed epoch,
+  * R127 EVM-root status, R128 issued grants, and an independently
+  * verified fresh root VP (R129/R130). NO Task authorization follows.
+  * Never accept a credential ID, DID, grant or signed VP from IPC JSON.
+  */
+ async inspectCryptographicRootVp(pins:Readonly<{
+  session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+ }>){
+  if(!this.nativeRootVpConfigured())
+   deny("root VP inspection requires real trusted Gateway verifier");
+  await this.inspectNativeIssuedRootScope(pins);
+  const original=await this.#approvals.loadAuthenticatedApproval(pins.session_id);
+  const before=await this.#readPinnedRootRecord(pins);
+  const journal=new TrustedOperationalEpochJournal({
+   directory:this.#dir,sessionId:pins.session_id,
+   baseRevision:before.baseRevision,
+   rootCredentialId:before.rootId,
+   originalPlanDigest:pins.root_plan_digest,allowedOperations:OPS
+  });
+  const epochs=await journal.records();
+  if(epochs.length!==pins.epoch||
+     epochs.at(-1)?.plan_digest!==pins.plan_digest)
+   deny("root VP scope does not match exactly pinned current epoch");
+  const current=epochs.at(-1)!.plan;
+  const unique=new Map<string,{resource:string;operation:string}>();
+  for(const g of current.requested_permissions){
+   if(!OPS.has(g.operation)||typeof g.resource!=="string")
+    deny("untrusted signed operational grant");
+   const pair=JSON.stringify([g.resource,g.operation]);
+   unique.set(pair,{resource:g.resource,operation:g.operation});
+  }
+  const grants=[...unique.values()];
+  if(!grants.length||grants.length>128)
+   deny("root VP requires nonempty scoped grants");
+  const verified=await this.#rootVp!.verifyRoot({
+   credential_id:before.rootId,
+   engineer_did:original.authenticated_engineer_did,
+   orchestrator_did:this.#orchestratorDid!,
+   required_permissions:grants
+  });
+  if(verified.cryptographic_presentation_verified!==true||
+     verified.credential_id!==before.rootId||
+     verified.verified_permission_count!==grants.length||
+     verified.execution_authorized!==false)
+   deny("native verifier did not corroborate original signed root");
+  // The root and all issued grants may have changed WHILE Rust verified
+  // the VP. Re-run live anchored checks, not just a stale file hash.
+  const after=await this.#readPinnedRootRecord(pins);
+  if(after.fileDigest!==before.fileDigest||
+     after.rootId!==before.rootId)
+   deny("original issued root changed while verifying VP");
+  await this.inspectNativeIssuedRootScope(pins);
+  return Object.freeze({
+   status:"rust_root_vp_correlated_signed_epoch_no_admission" as const,
+   session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+   plan_digest:pins.plan_digest,epoch:pins.epoch,
+   native_issued_grants_checked:true as const,
+   cryptographic_presentation_verified:true as const,
+   gateway_epoch_admitted:false as const,
+   execution_authorized:false as const,
    child_credential_issued:false as const
   });
  }

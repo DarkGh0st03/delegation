@@ -17,6 +17,11 @@ import {TrustedOperationalSessionStore} from "./trusted-operational-session-stor
 import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
 import {TrustedGatewayNativeRootStatusReader}
  from "./trusted-gateway-native-root-status.ts";
+import {TrustedGatewayRootVpVerifier}
+ from "./trusted-root-vp-verification.ts";
+import {TrustedRootVpSocketClient}
+ from "../../../packages/orchestrator-runtime/src/trusted-root-vp-private-ipc.ts";
+import {AdapterVerifierClient} from "./adapter-client.ts";
 import {GiteaClient} from "./gitea-client.ts";
 import type {GatewayRuntimeConfig} from "./config.ts";
 
@@ -90,6 +95,14 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
   const sharedDir=process.env.TRUSTED_PLAN_EPOCH_LEDGER_DIR;
   const inspectNative=process.env.TRUSTED_PLAN_NATIVE_ROOT_STATUS_INSPECT;
   const inspectScope=process.env.TRUSTED_PLAN_NATIVE_ROOT_SCOPE_INSPECT;
+  const inspectVp=process.env.TRUSTED_PLAN_NATIVE_ROOT_VP_INSPECT;
+  if(inspectVp!==undefined&&inspectVp!=="1")
+   throw Error("Invalid trusted root VP inspection flag");
+  if(inspectVp==="1"&&(inspectScope!=="1"||
+     !process.env.TRUSTED_PLAN_ROOT_VP_SOCKET||
+     !process.env.TRUSTED_PLAN_ROOT_VP_SECRET_FILE||
+     !process.env.TRUSTED_PLAN_ROOT_VP_AUDIENCE))
+   throw Error("Trusted root VP requires signed issuance scope and private signer IPC");
   if(inspectScope!==undefined&&inspectScope!=="1")
    throw Error("Invalid native Rust issued root comparison flag");
   if(inspectScope==="1"&&(inspectNative!=="1"||
@@ -104,13 +117,27 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
    new TrustedGatewayNativeRootStatusReader({
     baseUrl:config.adapter_url!,gatewayToken:config.adapter_gateway_token!
    }):undefined;
+  // Gateway holds ONLY the HMAC socket client. It NEVER gets the
+  // Orchestrator Adapter bearer or constructs an Orchestrator signer.
+  const rootVpVerifier=inspectVp==="1"?
+   new TrustedGatewayRootVpVerifier({
+    verifier:new AdapterVerifierClient({
+     baseUrl:config.adapter_url!,gatewayToken:config.adapter_gateway_token!
+    }),
+    signer:await TrustedRootVpSocketClient.connect({
+     socketPath:process.env.TRUSTED_PLAN_ROOT_VP_SOCKET!,
+     secretFile:process.env.TRUSTED_PLAN_ROOT_VP_SECRET_FILE!
+    }),
+    audience:process.env.TRUSTED_PLAN_ROOT_VP_AUDIENCE!
+   }):undefined;
   const signedEpochInspector=sharedDir?
     new TrustedGatewaySignedEpochInspector({
      directory:sharedDir,approvals,
      ...(nativeRootStatus?{nativeRootStatus}:{}),
      ...(inspectScope==="1"?{
       trustedOrchestratorDid:process.env.TRUSTED_PLAN_ORCHESTRATOR_DID!
-     }:{})
+     }:{}),
+     ...(rootVpVerifier?{rootVpVerifier}:{})
     }):undefined;
   if(signedEpochInspector)await signedEpochInspector.assertReady();
   const plans=new TrustedApprovedExecutionPlans({
