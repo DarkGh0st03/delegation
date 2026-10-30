@@ -85,6 +85,8 @@ interface RuntimeTaskBinding {
 
 export interface TrustedRunnerFailure {
   readonly status:"validation_failed";
+  readonly session_id:string;
+  readonly root_plan_digest:string;
   readonly request_id:string;
   readonly plan_task_id:string;
   readonly runtime_task_id:string;
@@ -540,7 +542,9 @@ export class TrustedApprovedExecutionPlans {
       // boundary: no log references, stderr, source code or raw LLM text.
       const first=phases.find(p=>p.status==="fail")!.phase;
       binding.failedRunner=Object.freeze({
-        status:"validation_failed",request_id:record.request_id,
+        status:"validation_failed",
+        session_id:session.sessionId,root_plan_digest:session.digest,
+        request_id:record.request_id,
         plan_task_id:binding.planTaskId,runtime_task_id:binding.runtimeTaskId,
         epoch_version:binding.epochVersion,
         branch:result.branch,tested_commit_sha:result.tested_commit_sha,
