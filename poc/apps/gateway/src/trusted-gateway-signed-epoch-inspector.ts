@@ -32,8 +32,10 @@ export class TrustedGatewaySignedEpochInspector{
  readonly #dir:string;
  readonly #approvals:SignedEngineerApprovalFileStore;
  readonly #nativeRoot?:TrustedGatewayNativeRootStatusReader;
+ readonly #orchestratorDid?:string;
  constructor(config:{directory:string;approvals:SignedEngineerApprovalFileStore;
-  nativeRootStatus?:TrustedGatewayNativeRootStatusReader}){
+  nativeRootStatus?:TrustedGatewayNativeRootStatusReader;
+  trustedOrchestratorDid?:string}){
   if(typeof config?.directory!=="string"||
      !isAbsolute(config.directory)||resolve(config.directory)!==config.directory||
      !(config.approvals instanceof SignedEngineerApprovalFileStore))
@@ -43,8 +45,15 @@ export class TrustedGatewaySignedEpochInspector{
    deny("real Gateway-only native status reader required");
   this.#dir=config.directory;this.#approvals=config.approvals;
   this.#nativeRoot=config.nativeRootStatus;
+  if(config.trustedOrchestratorDid!==undefined&&
+     (typeof config.trustedOrchestratorDid!=="string"||
+      !/^did:[A-Za-z0-9:._-]{3,250}$/u.test(config.trustedOrchestratorDid)||
+      !(config.nativeRootStatus instanceof TrustedGatewayNativeRootStatusReader)))
+   deny("native issued root comparison needs pinned Orchestrator DID and Adapter");
+  this.#orchestratorDid=config.trustedOrchestratorDid;
  }
  nativeRootStatusConfigured(){return !!this.#nativeRoot;}
+ nativeIssuedScopeConfigured(){return !!this.#nativeRoot&&!!this.#orchestratorDid;}
  async assertReady(){
   const m=await lstat(this.#dir);
   if(!m.isDirectory()||m.isSymbolicLink()||(m.mode&0o777)!==0o700||
@@ -164,6 +173,69 @@ export class TrustedGatewaySignedEpochInspector{
    root_permissions_verified:false as const
   });
  }
+ /**
+  * R128: compare actual Adapter-issued claims to signed maximum and every
+  * requested grant of the pinned current epoch. This is a NON-authorizing
+  * issuer-local attestation. A signed VP, accumulator/public-material
+  * verification, issued root chain and Gateway live epoch intake remain
+  * separate mandatory admission requirements.
+  */
+ async inspectNativeIssuedRootScope(pins:Readonly<{
+  session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+ }>){
+  if(!this.nativeIssuedScopeConfigured())
+   deny("native issued root scope comparison not configured");
+  await this.inspectNativeRootStatus(pins);
+  const before=await this.#readPinnedRootRecord(pins);
+  const actual=await this.#nativeRoot!.readIssuedRoot(before.rootId);
+  const signed=await this.#approvals.loadAuthenticatedApproval(pins.session_id);
+  if(actual.issuer_id!==signed.authenticated_engineer_did||
+     actual.delegatee_id!==this.#orchestratorDid)
+   deny("Rust issued root issuer or delegatee does not match pinned identities");
+  const original=signed.plan as any;
+  const approved=assertApprovedPlanScope(original,signed.approval,{
+   expectedEngineerDid:signed.authenticated_engineer_did,
+   allowedOperations:OPS
+  }) as Array<{resource:string;operation:string}>;
+  const pair=(x:{resource:string;operation:string})=>
+   JSON.stringify([x.resource,x.operation]);
+  const signedPairs=new Set(approved.map(pair));
+  const actualPairs=new Set<string>();
+  for(const g of actual.permissions){
+   if(!OPS.has(g.operation)||!signedPairs.has(pair(g)))
+    deny("native issued root exceeds the originally signed permission envelope");
+   actualPairs.add(pair(g));
+  }
+  const record=await this.#readPinnedRootRecord(pins);
+  const journal=new TrustedOperationalEpochJournal({
+   directory:this.#dir,sessionId:pins.session_id,
+   baseRevision:record.baseRevision,rootCredentialId:before.rootId,
+   originalPlanDigest:pins.root_plan_digest,allowedOperations:OPS
+  });
+  const epochs=await journal.records();
+  if(epochs.length!==pins.epoch||
+     epochs.at(-1)?.plan_digest!==pins.plan_digest||
+     epochs.at(-1)?.root_credential_id!==before.rootId)
+   deny("actual issued permissions not bound to the current durable epoch");
+  for(const permission of epochs.at(-1)!.plan.requested_permissions){
+   if(!actualPairs.has(pair(permission)))
+    deny("current signed repair plan requests a grant not actually issued in Rust");
+  }
+  const after=await this.#readPinnedRootRecord(pins);
+  if(before.fileDigest!==after.fileDigest||before.rootId!==after.rootId)
+   deny("root changed during native grant inspection");
+  await this.inspectNativeRootStatus(pins);
+  return Object.freeze({
+   status:"native_issued_root_scope_correlated_no_vp_authority" as const,
+   session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+   plan_digest:pins.plan_digest,epoch:pins.epoch,
+   native_issued_grants_checked:true as const,
+   cryptographic_presentation_verified:false as const,
+   execution_authorized:false as const,
+   gateway_epoch_admitted:false as const,
+   child_credential_issued:false as const
+  });
+ }
  async #readPinnedRootRecord(pins:Readonly<{
   session_id:string;root_plan_digest:string;
  }>){
@@ -182,7 +254,10 @@ export class TrustedGatewaySignedEpochInspector{
       typeof record.root_credential_id!=="string"||
       !ID.test(record.root_credential_id))
     deny("native status root ID not derived from original signed epoch");
+   if(typeof record.base_revision!=="string"||!SHA.test(record.base_revision))
+    deny("invalid original revision for issued root comparison");
    return {rootId:record.root_credential_id,
+    baseRevision:record.base_revision,
     fileDigest:createHash("sha256").update(text).digest("hex")};
   }finally{await fd.close();}
  }
