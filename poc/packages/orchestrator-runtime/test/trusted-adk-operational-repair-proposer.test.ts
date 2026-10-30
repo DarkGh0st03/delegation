@@ -66,7 +66,7 @@ test("R107 ADK proposes a one-turn non-authorizing repair DAG without tools",asy
  assert.ok(!request.includes("issue_child"));
  assert.ok(!request.includes("create_branch"));
  const instruction=JSON.stringify(model.requests[0]?.config?.systemInstruction??{});
- assert.match(instruction,/NO direct tools/);
+ assert.match(instruction,/NO tools to inspect the source/);
  assert.match(instruction,/ONLY exact existing ResourceURI\/Operation/);
  await assert.rejects(planner.propose(input),/single repair proposal already attempted/);
  assert.equal(model.requests.length,1);
