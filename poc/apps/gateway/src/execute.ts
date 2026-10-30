@@ -346,7 +346,7 @@ export async function executeAuthorization(
   try {
     if (!record.pinned_revision) {
       dependencies.approvedPlans?.recordProviderSuccess(
-        record,execution,verified.presenter_id
+        record,execution,verified.presenter_id,verified.credential_id
       );
     }
   } finally {
