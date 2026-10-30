@@ -149,6 +149,8 @@ jobs:
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-agent-model-binding.test.mjs
       - name: Block B source-witnessed ADK offline model fail-closed unit tests
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-witnessed-offline-adk-model.test.mjs
+      - name: R150.8 source-derived Backend D1 repair exact-SHA and write proof (NO AI)
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs
       - name: Block B approved-DAG action selection and source-derived route tests (zero Gemini cost)
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs
       - name: Account Suspension controller source-derivation and denial tests
