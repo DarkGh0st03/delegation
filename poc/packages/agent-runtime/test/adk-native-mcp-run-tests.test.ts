@@ -190,3 +190,98 @@ test("ADK cannot replay Docker run_tests after fresh-review referral",async()=>{
     await close(worker);
   }
 });
+
+
+test("R118 a recoverable Docker FAIL is not an ADK Task PASS and permits a subsequent approved Runner attempt",async()=>{
+ class RetryAfterFail extends BaseLlm{
+  requests:LlmRequest[]=[];
+  constructor(){super({model:"offline-recoverable-runner-failure"});}
+  override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+   this.requests.push(request);
+   if(this.requests.length<=2)
+    yield {content:{role:"model",parts:[{
+     functionCall:{id:"run-after-failure-"+this.requests.length,
+      name:"run_tests",args}
+    }]}};
+   else yield {content:{role:"model",parts:[{text:"Script finished; only verified PASS counts"}]}};
+  }
+  override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+   throw Error("Offline-only test must not call a model provider");
+  }
+ }
+ const k=keys(),f=keys(),t=keys();
+ let attempts=0;
+ const privateRegistry=new PrivateMcpTaskRegistry({
+  role:"test",signingPrivateKeyPem:t.privateKey,
+  signingPublicKeyPem:t.publicKey
+ });
+ privateRegistry.begin("recoverable-fail-test-task",{
+  invoke:async(tool,payload)=>{
+   assert.equal(tool,"run_tests");assert.deepEqual(payload,args);
+   attempts++;
+   if(attempts===1)
+    throw new ControlledToolError("tests_failed","intentional offline regression",{
+     details:{first_failed_phase:"backend_tests",
+      failing_test_files:["tests/backend/user.service.test.ts"]}
+    });
+   return execution;
+  }
+ },undefined,{allowRunTests:true,
+  allowedFilePermissions:[{path:"tests/backend/user.service.test.ts",
+   operation:"read_file"},{path:"tests/backend/user.service.test.ts",
+   operation:"update_file"}],approvedBranch:args.branch});
+ const app=express();attachPrivateMcpWorker(app,privateRegistry);
+ const worker=app.listen(0,"127.0.0.1");
+ await new Promise<void>(resolve=>worker.once("listening",resolve));
+ const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
+ const shared=createSharedMcpHttpServer({
+  verificationKeys:{backend:k.publicKey,frontend:f.publicKey,test:t.publicKey},
+  router:new TaskRouter({backend:{baseUrl:url},frontend:{baseUrl:url},
+   test:{baseUrl:url}})
+ });
+ await new Promise<void>(resolve=>shared.listen(0,"127.0.0.1",resolve));
+ let built:ReturnType<typeof createAdkSpecializedAgent>|undefined;
+ try{
+  const model=new RetryAfterFail(),events:unknown[]=[];
+  built=createAdkSpecializedAgent({
+   role:"test",model,gatewayClient:{
+    invoke:async()=>{throw Error("Legacy direct Gateway must not be used");}
+   } as never,
+   mcpReadFile:{endpoint:"http://127.0.0.1:"+
+    (shared.address() as AddressInfo).port+"/mcp",
+    bearerForRequest:()=>privateRegistry.bearerFor("recoverable-fail-test-task")},
+   mcpRunTests:true,trustedRunTestsAllowed:true,
+   trustedBranch:args.branch,
+   trustedFilePermissions:[{
+    path:"tests/backend/user.service.test.ts",operation:"read_file"
+   },{
+    path:"tests/backend/user.service.test.ts",operation:"update_file"
+   }],
+   onToolOutcome:e=>events.push(e)
+  });
+  const sessions=new InMemorySessionService();
+  const runner=new Runner({appName:"r118_recoverable_failure",
+   agent:built.agent,sessionService:sessions});
+  await sessions.createSession({appName:"r118_recoverable_failure",
+   userId:"offline",sessionId:"recoverable-fail-test-task"});
+  for await(const _ of runner.runAsync({
+   userId:"offline",sessionId:"recoverable-fail-test-task",
+   newMessage:{role:"user",parts:[{text:"Run approved tests twice in this offline fixture"}]}
+  })){}
+  assert.equal(model.requests.length,3,
+   "ADK must receive feedback after recoverable first Docker FAIL");
+  assert.equal(attempts,2,"Only two approved actual runner calls");
+  const outcomes=events as Array<{payload:{ok:boolean;error?:{
+   kind:string;details?:{repair_requires_new_approval?:boolean}
+  }}}>;
+  assert.equal(outcomes.length,2);
+  assert.equal(outcomes[0].payload.ok,false);
+  assert.equal(outcomes[0].payload.error?.kind,"tests_failed");
+  assert.notEqual(outcomes[0].payload.error?.details?.repair_requires_new_approval,true);
+  assert.equal(outcomes[1].payload.ok,true);
+ }finally{
+  await built?.mcpToolset?.close();
+  privateRegistry.end("recoverable-fail-test-task");
+  await close(shared);await close(worker);
+ }
+});
