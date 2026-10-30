@@ -125,6 +125,14 @@ export class GatewayRuntime {
     this.#executor = dependencies.executor ?? defaultExecutor(config);
   }
 
+  /**
+   * Owner-only capability check. Operational repair source reads must NEVER
+   * use a Gateway instance without the authenticated Task/epoch guard.
+   */
+  hasTrustedOperationalPlanGate():boolean{
+    return this.#approvedPlans!==undefined;
+  }
+
   get providerLabel(): "mock" | "gitea" {
     return this.#executor.provider;
   }
