@@ -73,6 +73,25 @@ export class TrustedOperationalEpochIntake {
   const {plan}=await this.#rootAndPlan();
   return this.#journal.reserveInitial(plan);
  }
+ /**
+  * R106 owner-private, PURE scope check for a future repair epoch.
+  * Source-of-truth history/Engineer approval/issued DC are re-read from
+  * private trusted state; no model-supplied root or replay ledger accepted.
+  * This method never reserves, issues credentials, or authorizes execution.
+  */
+ async preflightRepairEpoch(candidatePlan:unknown){
+  const history=await this.verifiedEpochHistory();
+  const root=this.#coordinator.trustedOperationalAuthority();
+  const first=history[0],previous=history.at(-1);
+  if(!first||!previous)deny("original epoch is not durably reserved");
+  return preflightNextOperationalEpoch({
+   originalSignedPlan:first.plan,previousEpochPlan:previous.plan,
+   candidatePlan,operationalRoot:root,
+   pinnedAgentRegistry:this.#agents,
+   priorTaskIds:history.flatMap(x=>x.plan.tasks.map(t=>t.id)),
+   priorPlanIds:history.map(x=>x.plan.plan_id)
+  },{allowedOperations:OPS});
+ }
  async reserveRepairEpoch(candidatePlan:unknown){
   const {root,plan}=await this.#rootAndPlan();
   const records=await this.#journal.records();
