@@ -37,6 +37,8 @@ import {dispatchTrustedAdmittedRepairA2A,
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
 import {TrustedChildIssuanceJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
+import {TrustedRetiredRepairAcceptanceWitness} from
+  "../../../packages/orchestrator-runtime/src/trusted-retired-repair-acceptance.ts";
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {GatewayCorroboratedTaskAttestor} from
@@ -442,7 +444,7 @@ const root={
 };
 let issued=false,revoked=false;
 let pilotStage="setup",pilotModelTurns=0,pilotModelFailure="none";
-let nativeOwnerIpcServer;
+let nativeOwnerIpcServer,ownerD1ReviewEvidence;
 let pilotDelegatedPhase="not_started",pilotDelegatedFailure="none";
 let pilotPlanningRejection=null,pilotTaskCounts=null;
 try{
@@ -700,7 +702,7 @@ try{
       "Operational root must match the exact approved resource/operation set");
     if(positiveDag){
       let trustedOwnerRecovery;
-      let ownerD1ChildEvidence;
+      let ownerD1ChildEvidence,ownerD1Gateway,ownerD1Witness;
       if(ownerD1Probe){
         // The *existing* approvedPlans instance is shared by this Gateway,
         // the issued Rust root's Coordinator and owner-private HMAC IPC.
@@ -717,6 +719,7 @@ try{
         const gatewayOwner=await TrustedPlanIpcClient.connect({
           socketPath,secretFile
         });
+        ownerD1Gateway=gatewayOwner;
         assert.equal(gatewayOwner.operationalLeaseConfigured(),true);
         assert.equal(gatewayOwner.operationalSessionDurableConfigured(),true);
         const currentPlan=trustedReceipt.plan;
@@ -927,6 +930,18 @@ try{
             const observedAfterTest=await liveClient.getBranchMetadata(workBranch);
             assert.equal(observedAfterTest.commit_sha,observedRepair.commit_sha,
               "New signed Docker Test may not silently mutate the repaired SHA");
+            // R150.10: capture signed D1 Test/root identity BEFORE shutdown.
+            // No model, A2A or PR endpoint gets this witness or Gitea writer.
+            // The witness will later re-check actual Gateway Runner effects,
+            // durable retirement, native Rust revocation and fresh Gitea HEAD.
+            const reviewerGitea=new GiteaClient({
+              baseUrl:disposableBase,token:writerToken,owner:"thesis",
+              repository:"iam-console-poc",timeoutMs:20000
+            });
+            ownerD1Witness=await TrustedRetiredRepairAcceptanceWitness.capture({
+              gateway:gatewayOwner,gitea:reviewerGitea,
+              coordinator,intake:armed.intake
+            });
             const records=await journal.records();
             assert.equal(records.length,2);
             assert.notEqual(testDispatched.credential_id,dispatched.credential_id);
@@ -1077,6 +1092,41 @@ try{
           assert.equal(ownerD1ChildEvidence?.test_sha,
             ownerD1ChildEvidence?.repaired_sha);
           assert.match(ownerD1ChildEvidence?.repaired_sha,/^[a-f0-9]{40}$/u);
+          // R150.10: closeExecution already confirmed Rust revocation.
+          // A plain Gateway close is NOT an independently persisted tombstone:
+          // the authenticated OWNER must now durably retire this same session.
+          if(!ownerD1Gateway||!ownerD1Witness)
+            throw Error("R150.10 original-root signed Test witness missing");
+          await coordinator.assertOperationalClosureConfirmed();
+          await ownerD1Gateway.retireSession(session);
+          const revoked=await ownerD1Witness.verifyRevokedRetiredExactSha();
+          assert.equal(revoked.status,
+            "r142_retired_runner_gitea_native_revoked_no_pr_authority");
+          assert.equal(revoked.tested_commit_sha,ownerD1ChildEvidence.repaired_sha);
+          assert.equal(revoked.root_revoked,true);
+          assert.equal(revoked.pull_request_authorized,false);
+          // Only the original Engineer-approved PR permission, verified
+          // independently by R145, can open a REVIEW-ONLY draft AFTER
+          // revocation and exact-SHA Runner PASS. Never merge.
+          const draft=await ownerD1Witness.openSignedReviewOnlyDraft({
+            title:"Review repaired account-suspension TypeScript regression",
+            body:"Signed Engineer-approved repair epoch D1.\n"+
+              "Independent Gateway/Runner Docker PASS on exact Gitea SHA: "+
+              revoked.tested_commit_sha+"\n"+
+              "Original Rust root revoked. Human review required. No auto-merge."
+          });
+          assert.equal(draft.status,"r145_signed_review_only_draft_open_unmerged");
+          assert.equal(draft.draft,true);
+          assert.equal(draft.merged,false);
+          assert.equal(draft.merge_authorized,false);
+          assert.equal(draft.tested_commit_sha,revoked.tested_commit_sha);
+          ownerD1ReviewEvidence=Object.freeze({
+            status:"signed_d1_real_docker_pass_retired_draft_review",
+            tested_commit_sha:draft.tested_commit_sha,
+            root_revoked:true,draft:true,merged:false,
+            merge_authorized:false,real_runner_pass_verified:true,
+            draft_pr_number:draft.draft_pr_number
+          });
           assert.notEqual(ownerD1ChildEvidence?.repaired_sha,proof.original_test_sha);
         }else{
         assert.equal(proof.typecheck_probe_verified,true);
@@ -1316,7 +1366,8 @@ try{
     provider_writes:positiveDag?
       globalThis.__nativeDagPositive.source_writes+
       globalThis.__nativeDagPositive.created_test_files:0,
-    ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{})
+    ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{}),
+    ...(ownerD1Probe?{owner_repair_review:ownerD1ReviewEvidence}:{})
   }));
 }catch(error){
   if(geminiPilot){
