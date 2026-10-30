@@ -914,6 +914,7 @@ async function main(){
             // No source fault probe during the PRE-activation read-only phase.
             // Its flag belongs solely to the later signed operational DAG.
             APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE:"0",
+            APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1:"0",
             // The earlier denial-only rehearsal NEVER consumes Gemini calls.
             DELEGATION_SIGNED_GEMINI_PILOT:"0"
           }
@@ -1171,6 +1172,29 @@ async function main(){
         assert.equal(positive?.status,"pass");
         if(typecheckProbe){
           const proof=positive?.positive_dag;
+          if(process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1"){
+            // True EVM-issued original operational root + fresh root VP,
+            // owner HMAC IPC and independently admitted D1. No model,
+            // no D1 A2A effects and NO final PASS/PR claim yet.
+            assert.equal(proof?.status,"trusted_owner_repair_handoff_retired");
+            assert.equal(proof?.original_dag_completed,false);
+            assert.equal(proof?.repair_epoch_handoff,true);
+            assert.equal(proof?.original_root_revoked,true);
+            assert.equal(proof?.final_runner_pass_verified,false);
+            assert.equal(proof?.pull_request_created,false);
+            assert.equal(proof?.failed_phase,"typecheck");
+            assert.equal(proof?.original_signed_plan_digest?.length,64);
+            assert.match(proof?.original_test_sha??"",/^[a-f0-9]{40}$/u);
+            process.stdout.write(JSON.stringify({
+              event:"signed_owner_d1_real_typecheck_fail",status:"PASS",
+              original_rust_root_verified:true,
+              independently_admitted_repair_epoch:true,
+              original_root_retired:true,
+              repaired_docker_pass_verified:false,
+              pull_request_created:false,gemini_calls:0
+            })+"\n");
+            return;
+          }
           assert.equal(proof?.typecheck_probe_verified,true);
           assert.equal(proof?.status,"expected_typecheck_failure");
           assert.equal(proof?.signed_dag_completed,false);
