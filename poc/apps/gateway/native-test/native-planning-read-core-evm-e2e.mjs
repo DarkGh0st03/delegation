@@ -785,8 +785,32 @@ try{
             },admitReservedEpoch:true
           }
         });
+        let originalA2APorts;
         trustedOwnerRecovery={
-          ...armed,async continueWithinActiveRoot(signal){
+          ...armed,
+          // Owner-private bridge to the live Agent Card endpoints already
+          // created by the ORIGINAL native A2A executor. No agent/model
+          // supplies a URL, signer, Task ID, permission or credential.
+          async bindOriginalA2APorts(ports){
+            if(originalA2APorts||coordinator.phase!=="execution"||
+               !ports?.a2a||
+               typeof ports.a2a.sendProtectedTask!=="function"||
+               !ports.agentBaseUrls||
+               !["backend","test"].every(role=>
+                 /^http:\\/\\/127\\.0\\.0\\.1:\\d+$/u.test(
+                   ports.agentBaseUrls[role]??"")))
+              throw Error("R150.7 owner A2A original ports missing or stale");
+            originalA2APorts=Object.freeze({
+              agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
+              a2a:ports.a2a
+            });
+          },
+          async continueWithinActiveRoot(signal){
+            // A real admitted D1 must reuse live, owner-pinned A2A ports.
+            // R150.7.0 only makes them available: dispatch still requires
+            // a separate real Child DC and Gateway predecessor attestation.
+            if(!originalA2APorts)
+              throw Error("R150.7 original protected A2A ports not bound");
             await armed.continueWithinActiveRoot(signal);
             const epochs=await armed.intake.verifiedEpochHistory();
             assert.deepEqual(epochs.map(e=>e.epoch),[1,2]);
