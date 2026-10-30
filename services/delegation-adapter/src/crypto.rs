@@ -6,6 +6,7 @@ use delegation::delegation::authorization::authorization_context::AuthorizationC
 use delegation::delegation::authorization::permission::Permission;
 use delegation::delegation::authorization::verified_delegation::VerifiedDelegation;
 use delegation::delegation::credentials::delegation::delegation_credential::DelegationCredential;
+use delegation::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use delegation::delegation::credentials::generic::verifiable_credential::VerifiableCredential;
 use delegation::delegation::issuance::delegation_issuer::DelegationIssuer;
 use delegation::delegation::issuance::issuer_trait::Issuer;
@@ -25,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 type Curve = Bn254;
 
@@ -106,6 +107,21 @@ pub struct CredentialStatusReadResponse {
     pub source: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anchor_version: Option<u64>,
+}
+
+/// R128: exact root claims from the CURRENT Rust Adapter-issued record,
+/// never a model claim or a raw DC/VP. This is issuer-local observation,
+/// not independent signed-presentation verification or an execution grant.
+#[derive(Clone, Debug, Serialize)]
+pub struct IssuedRootInspectionResponse {
+    pub credential_id: String,
+    pub issuer_id: String,
+    pub delegatee_id: String,
+    pub iat_ns: String,
+    pub exp_ns: String,
+    pub permissions: Vec<Permission>,
+    pub status: CredentialStatusReadResponse,
+    pub source: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -571,6 +587,71 @@ impl CryptoRuntime {
         })
     }
 
+    /// R128 private Gateway-only issued-root registry inspection. The
+    /// adapter itself must possess a root actually issued by its Engineer
+    /// identity. No raw credential, accumulator witness, VP or private
+    /// signing material is returned. Rust's anchored Status List check
+    /// still runs, but separate proof verification remains mandatory.
+    pub fn read_issued_root(
+        &self,
+        caller: &CallerRecord,
+        callers: &CallerRegistry,
+        request: ReadCredentialStatusRequest,
+    ) -> Result<IssuedRootInspectionResponse, String> {
+        require_capability(caller, CallerCapability::VerifyPresentation)?;
+        if caller.role() != CallerRole::Gateway {
+            return Err(String::from("Only the Gateway can inspect an issued root"));
+        }
+        if request.credential_id.is_empty() || request.credential_id.len() > 256 {
+            return Err(String::from("Bounded root credential ID required"));
+        }
+        let root = self
+            .credentials
+            .get(&request.credential_id)
+            .ok_or_else(|| String::from("Root was not issued by this Adapter instance"))?;
+        if root.id() != &request.credential_id
+            || root.issuer() != callers.identity_for_role(CallerRole::Engineer)?
+            || root.credential().delegatee_id()
+                != callers.identity_for_role(CallerRole::Orchestrator)?
+            || !root.credential().hierarchy().is_empty()
+        {
+            return Err(String::from("Issued credential is not the Engineer-to-Orchestrator root"));
+        }
+        let iat = root.credential().iat().parse::<u128>()
+            .map_err(|_| String::from("Invalid issued root start time"))?;
+        let exp = root.credential().exp().parse::<u128>()
+            .map_err(|_| String::from("Invalid issued root expiration"))?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| String::from("System clock before epoch"))?
+            .as_nanos();
+        if iat > now || exp <= now || exp <= iat {
+            return Err(String::from("Issued root is outside its validity interval"));
+        }
+        let grants = root.credential().permissions();
+        if grants.is_empty() || grants.len() > 128 {
+            return Err(String::from("Invalid issued root grant count"));
+        }
+        let mut unique = std::collections::HashSet::new();
+        if grants.iter().any(|g| !unique.insert(g.canonical_value())) {
+            return Err(String::from("Duplicate issued root grant"));
+        }
+        let status = self.read_credential_status(caller, callers, request)?;
+        if status.status_set {
+            return Err(String::from("Issued root has been revoked"));
+        }
+        Ok(IssuedRootInspectionResponse {
+            credential_id: root.id().clone(),
+            issuer_id: root.issuer().clone(),
+            delegatee_id: root.credential().delegatee_id().clone(),
+            iat_ns: iat.to_string(),
+            exp_ns: exp.to_string(),
+            permissions: grants.clone(),
+            status,
+            source: "adapter_local_issued_root",
+        })
+    }
+
     pub fn create_presentation(
         &self,
         caller: &CallerRecord,
@@ -811,6 +892,58 @@ mod tests {
                 },
             )
             .unwrap()
+    }
+
+
+    #[test]
+    fn r128_gateway_reads_exact_issued_root_scope_and_current_status() {
+        let registry = callers();
+        let mut runtime = CryptoRuntime::new(&registry).unwrap();
+        let issued = issue_root(&mut runtime, &registry);
+        let gateway = registry.record_for_role(CallerRole::Gateway).unwrap();
+        let read = |rt: &CryptoRuntime, id: &str| rt.read_issued_root(
+            gateway, &registry, ReadCredentialStatusRequest {
+                credential_id: id.to_string(),
+            },
+        );
+        let observed = read(&runtime, issued.id()).unwrap();
+        assert_eq!(observed.credential_id, *issued.id());
+        assert_eq!(observed.issuer_id, "did:thesis:engineer");
+        assert_eq!(observed.delegatee_id, "did:thesis:orchestrator");
+        assert_eq!(observed.permissions, *issued.credential().permissions());
+        assert_eq!(observed.status.source, "adapter_memory_only");
+        assert_eq!(observed.source, "adapter_local_issued_root");
+        let start = observed.iat_ns.parse::<u128>().unwrap();
+        let end = observed.exp_ns.parse::<u128>().unwrap();
+        assert!(end > start);
+        assert!(read(&runtime, "urn:unissued:root").is_err());
+        assert!(runtime.read_issued_root(
+            registry.record_for_role(CallerRole::Engineer).unwrap(),
+            &registry, ReadCredentialStatusRequest {
+                credential_id: issued.id().clone(),
+            },
+        ).is_err());
+
+        let orchestrator = registry.record_for_role(CallerRole::Orchestrator).unwrap();
+        let child = runtime.issue_child(
+            orchestrator, &registry, IssueChildRequest {
+                parent_credential_id: issued.id().clone(),
+                credential_id: String::from("urn:credential:r128-child"),
+                delegatee: CallerRole::Backend,
+                valid_from: String::from("2026-10-30T00:00:00Z"),
+                validity_seconds: 600,
+                credential_status: status(303),
+                permissions: vec![permission(Operation::ReadFile)],
+            },
+        ).unwrap();
+        assert!(read(&runtime, child.id()).is_err());
+        runtime.update_credential_status(
+            registry.record_for_role(CallerRole::Engineer).unwrap(),
+            UpdateCredentialStatusRequest {
+                credential_id: issued.id().clone(), status_set: true,
+            },
+        ).unwrap();
+        assert!(read(&runtime, issued.id()).is_err());
     }
 
     #[test]

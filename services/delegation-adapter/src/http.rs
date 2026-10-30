@@ -139,6 +139,21 @@ fn handle_request(mut request: Request, config: &AdapterConfig, crypto: &mut Cry
                 Err(error) => respond_error(request, StatusCode(400), &error),
             }
         }
+        (Method::Post, "/v1/credentials/root/inspect") => {
+            // Gateway-only issuance registry read; the Rust CryptoRuntime
+            // enforces identity, root lineage, lifetime and current status.
+            let body = match read_json::<ReadCredentialStatusRequest>(&mut request) {
+                Ok(body) => body,
+                Err(error) => {
+                    respond_error(request, StatusCode(400), &error);
+                    return;
+                }
+            };
+            match crypto.read_issued_root(&caller, &config.callers, body) {
+                Ok(record) => respond_json(request, StatusCode(200), &record),
+                Err(error) => respond_error(request, StatusCode(400), &error),
+            }
+        }
         (Method::Post, "/v1/presentations") => {
             let body = match read_json::<CreatePresentationRequest>(&mut request) {
                 Ok(body) => body,
