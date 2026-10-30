@@ -253,6 +253,7 @@ test("R118 a recoverable Docker FAIL is not an ADK Task PASS and permits a subse
     bearerForRequest:()=>privateRegistry.bearerFor("recoverable-fail-test-task")},
    mcpRunTests:true,trustedRunTestsAllowed:true,
    trustedBranch:args.branch,
+   trustedTaskPaths:["tests/backend/user.service.test.ts"],
    trustedFilePermissions:[{
     path:"tests/backend/user.service.test.ts",operation:"read_file"
    },{
