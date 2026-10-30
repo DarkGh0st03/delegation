@@ -39,6 +39,9 @@ type Command=
      root_plan_digest:string;runtime_task_id:string}
   |{action:"read_retired_runner_acceptance";session_id:string;task_id:string;
      branch:string;tested_commit_sha:string}
+  |{action:"read_retired_root_revocation";session_id:string;
+     root_plan_digest:string;plan_digest:string;epoch:number;
+     task_id:string;branch:string;tested_commit_sha:string}
   |{action:"admit_epoch";session_id:string;root_plan_digest:string;
      plan_digest:string;epoch:number}
   |{action:"inspect_signed_epoch";session_id:string;root_plan_digest:string;
@@ -77,6 +80,21 @@ function validate(x:unknown):Command{
      typeof o.session_id==="string"&&ID.test(o.session_id)&&
      typeof o.task_id==="string"&&ID.test(o.task_id)&&
      typeof o.branch==="string"&&o.branch.length>0&&o.branch.length<=200&&
+     /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(o.branch)&&
+     !o.branch.includes("..")&&!o.branch.includes("//")&&
+     typeof o.tested_commit_sha==="string"&&SHA.test(o.tested_commit_sha))
+    return o as Command;
+  // R142 also requires a previously completed, durably retired Test Task.
+  if(o.action==="read_retired_root_revocation"&&
+     exact(o,["action","session_id","root_plan_digest","plan_digest",
+       "epoch","task_id","branch","tested_commit_sha"])&&
+     typeof o.session_id==="string"&&ID.test(o.session_id)&&
+     typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
+     typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
+     Number.isSafeInteger(o.epoch)&&(o.epoch as number)>=2&&
+     (o.epoch as number)<=3&&
+     typeof o.task_id==="string"&&ID.test(o.task_id)&&
+     typeof o.branch==="string"&&o.branch.length<=200&&
      /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(o.branch)&&
      !o.branch.includes("..")&&!o.branch.includes("//")&&
      typeof o.tested_commit_sha==="string"&&SHA.test(o.tested_commit_sha))
@@ -313,6 +331,32 @@ export async function createTrustedPlanIpcServer(config:{
       }else if(command.action==="complete"){
         await config.plans.confirmTaskCompletion(command.runtime_task_id,command.observation);
         response(res,200,{ok:true});
+      }else if(command.action==="read_retired_root_revocation"){
+        // The pinned Test, signed epoch, and native Adapter root ID
+        // are independently resolved INSIDE the Gateway process.
+        if(!(config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector)||
+           !config.plans.operationalSessionDurableConfigured()||
+           !config.signedEpochInspector.nativeRootStatusConfigured())
+          fail("R142 requires durable retired Gateway and native Rust status");
+        const query={session_id:command.session_id,task_id:command.task_id,
+         branch:command.branch,tested_commit_sha:command.tested_commit_sha};
+        config.plans.readVerifiedRunnerEffect(query);
+        const root=await config.signedEpochInspector.inspectRetiredRootRevocation({
+         session_id:command.session_id,
+         root_plan_digest:command.root_plan_digest,
+         plan_digest:command.plan_digest,epoch:command.epoch
+        });
+        // Retirements and ledger rows cannot be substituted mid-call.
+        config.plans.readVerifiedRunnerEffect(query);
+        response(res,200,{ok:true,revocation:{
+         status:"gateway_retired_test_and_evm_root_revoked_no_pr_authority",
+         session_id:command.session_id,task_id:command.task_id,
+         branch:command.branch,tested_commit_sha:command.tested_commit_sha,
+         root_plan_digest:command.root_plan_digest,
+         plan_digest:command.plan_digest,epoch:command.epoch,
+         anchor_version:root.anchor_version,
+         original_root_revoked:true,pull_request_authorized:false
+        }});
       }else if(command.action==="read_retired_runner_acceptance"){
         // R140: NO attacker-supplied Runner result. Read the Gateway's
         // original provider-effect ledger after durable session retirement.
@@ -795,6 +839,42 @@ export class TrustedPlanIpcClient{
    * This verifies Gateway Runner records only; it is NOT Rust revocation,
    * Gitea HEAD verification or PR authorization.
    */
+  /**
+   * R142 non-authorizing post-retirement Rust EVM proof, combined with
+   * the Gateway's independently attested exact-SHA passing Test.
+   */
+  async readRetiredRootRevocation(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;
+    epoch:number;task_id:string;branch:string;tested_commit_sha:string;
+  }>){
+    const r=(await this.#send({
+     action:"read_retired_root_revocation",...pins
+    })).revocation;
+    if(!r||typeof r!=="object"||Array.isArray(r)||
+       Object.keys(r).sort().join(",")!==
+        "anchor_version,branch,epoch,original_root_revoked,plan_digest,pull_request_authorized,root_plan_digest,session_id,status,task_id,tested_commit_sha"||
+       r.status!==
+        "gateway_retired_test_and_evm_root_revoked_no_pr_authority"||
+       r.session_id!==pins.session_id||
+       r.root_plan_digest!==pins.root_plan_digest||
+       r.plan_digest!==pins.plan_digest||r.epoch!==pins.epoch||
+       r.task_id!==pins.task_id||r.branch!==pins.branch||
+       r.tested_commit_sha!==pins.tested_commit_sha||
+       !Number.isSafeInteger(r.anchor_version)||r.anchor_version<0||
+       r.original_root_revoked!==true||
+       r.pull_request_authorized!==false)
+      fail("R142 original root EVM revocation evidence invalid");
+    return Object.freeze({
+     status:"gateway_retired_test_and_evm_root_revoked_no_pr_authority" as const,
+     session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+     plan_digest:pins.plan_digest,epoch:pins.epoch,
+     task_id:pins.task_id,branch:pins.branch,
+     tested_commit_sha:pins.tested_commit_sha,
+     anchor_version:r.anchor_version as number,
+     original_root_revoked:true as const,
+     pull_request_authorized:false as const
+    });
+  }
   async readRetiredRunnerAcceptance(pins:Readonly<{
     session_id:string;task_id:string;branch:string;tested_commit_sha:string;
   }>):Promise<Readonly<{

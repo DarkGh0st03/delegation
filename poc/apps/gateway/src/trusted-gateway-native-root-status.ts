@@ -114,6 +114,54 @@ export class TrustedGatewayNativeRootStatusReader{
    execution_authorized:false as const
   });
  }
+ /**
+  * R142: adapter independently verifies the ANCHORED signed revocation
+  * JWT and reports a bit that MUST be set. Never infer revocation from
+  * transport errors, missing credentials, local Coordinator phase or TTL.
+  */
+ async readRevokedRoot(rootCredentialId:string){
+  if(typeof rootCredentialId!=="string"||!ID.test(rootCredentialId))
+   reject("bounded original root credential ID required");
+  let response:Response;
+  try{
+   response=await this.#fetch(this.#baseUrl+"/v1/credentials/status/inspect",{
+    method:"POST",headers:{
+     authorization:"Bearer "+this.#token,
+     "content-type":"application/json"
+    },body:JSON.stringify({credential_id:rootCredentialId}),
+    signal:AbortSignal.timeout(this.#timeout)
+   });
+  }catch{reject("authenticated revoked-root Adapter status unavailable");}
+  if(!response.ok)
+   reject("Rust Adapter did not attest original root revocation");
+  let payload:unknown;
+  try{
+   if(Number(response.headers.get("content-length")??"0")>2048)
+    reject("oversized revoked root status");
+   const body=await response.text();
+   if(Buffer.byteLength(body,"utf8")>2048)
+    reject("oversized revoked root status");
+   payload=JSON.parse(body);
+  }catch{reject("invalid revoked root status response");}
+  if(!payload||typeof payload!=="object"||Array.isArray(payload))
+   reject("revoked root status is not an object");
+  const p=payload as Record<string,unknown>;
+  if(Object.keys(p).sort().join(",")!==
+      "anchor_version,credential_id,source,status_purpose,status_set"||
+     p.credential_id!==rootCredentialId||
+     p.status_purpose!=="revocation"||p.status_set!==true||
+     p.source!=="evm_anchored_signed_jwt"||
+     !Number.isSafeInteger(p.anchor_version)||
+     (p.anchor_version as number)<0)
+   reject("root revocation is missing, unset or not EVM-anchored");
+  return Object.freeze({
+   status:"native_adapter_original_root_revoked_evm_anchored" as const,
+   root_credential_id:rootCredentialId,
+   anchor_version:p.anchor_version as number,
+   native_source:"evm_anchored_signed_jwt" as const,
+   execution_authorized:false as const
+  });
+ }
  async readActiveRoot(rootCredentialId:string){
   if(typeof rootCredentialId!=="string"||!ID.test(rootCredentialId))
    reject("bounded journal root credential ID required");

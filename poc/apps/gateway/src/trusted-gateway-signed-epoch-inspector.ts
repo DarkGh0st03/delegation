@@ -156,6 +156,37 @@ export class TrustedGatewaySignedEpochInspector{
   });
  }
  /**
+  * R142 post-retirement. The Gateway obtains the ORIGINAL root ID from
+  * its fsynced epoch-001 journal, verified against the Engineer signature,
+  * then independently asks native Rust/EVM for status_set:true.
+  * This does not grant review, PR or child-credential authority.
+  */
+ async inspectRetiredRootRevocation(pins:Readonly<{
+  session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+ }>){
+  if(!this.nativeRootStatusConfigured())
+   deny("Gateway native Rust revocation reader not configured");
+  await this.inspect(pins);
+  const before=await this.#readPinnedRootRecord(pins);
+  const result=await this.#nativeRoot!.readRevokedRoot(before.rootId);
+  const after=await this.#readPinnedRootRecord(pins);
+  if(after.fileDigest!==before.fileDigest||
+     after.rootId!==before.rootId)
+   deny("original root identification changed during EVM revocation read");
+  await this.inspect(pins);
+  return Object.freeze({
+   status:"signed_epoch_original_root_revoked_evm_anchored_no_pr_authority" as const,
+   session_id:pins.session_id,
+   root_plan_digest:pins.root_plan_digest,
+   plan_digest:pins.plan_digest,epoch:pins.epoch,
+   native_source:"evm_anchored_signed_jwt" as const,
+   anchor_version:result.anchor_version,
+   original_root_revoked:true as const,
+   pull_request_authorized:false as const,
+   execution_authorized:false as const
+  });
+ }
+ /**
   * R127: two independent signed-ledger checks surround a live
   * gateway-authenticated native Rust Adapter status observation. Never
   * use caller JSON as a root ID. Neither an anchored status nor this
