@@ -148,6 +148,7 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
         planRepairEpoch?:Readonly<{
           giteaClient:GiteaClient;
           proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
+          admitReservedEpoch?:boolean;
         }>;
       }>;
     }

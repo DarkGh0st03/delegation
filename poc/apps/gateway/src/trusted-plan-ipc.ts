@@ -10,7 +10,7 @@ import {dirname,resolve} from "node:path";
 import {constants} from "node:fs";
 import type {AgentRole} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
-import type {TrustedApprovedExecutionPlans,TrustedRunnerFailure} from "./approved-execution-plans.ts";
+import {TrustedApprovedExecutionPlans,type TrustedRunnerFailure} from "./approved-execution-plans.ts";
 import {TrustedPlanningRevisions} from "./planning-revisions.ts";
 
 const ROUTE="/v1/private-plan-control";
@@ -33,7 +33,9 @@ type Command=
   |{action:"confirm_test_failure";session_id:string;
      root_plan_digest:string;runtime_task_id:string}
   |{action:"read_test_failure";session_id:string;
-     root_plan_digest:string;runtime_task_id:string};
+     root_plan_digest:string;runtime_task_id:string}
+  |{action:"admit_epoch";session_id:string;root_plan_digest:string;
+     plan_digest:string;epoch:number};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
 function exact(x:unknown,fields:string[]):boolean{
@@ -69,6 +71,13 @@ function validate(x:unknown):Command{
      exact(o,["action","session_id","root_plan_digest","runtime_task_id"])&&
      typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
      typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id))
+    return o as Command;
+  if(o.action==="admit_epoch"&&
+     exact(o,["action","session_id","root_plan_digest","plan_digest","epoch"])&&
+     typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
+     typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
+     Number.isSafeInteger(o.epoch)&&
+     (o.epoch as number)>=2&&(o.epoch as number)<=3)
     return o as Command;
   if(o.action==="renew_lease"&&exact(o,["action","session_id","plan_digest"])&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest))
@@ -262,6 +271,20 @@ export async function createTrustedPlanIpcServer(config:{
         const receipt=config.plans.readVerifiedTestFailure(
           command.runtime_task_id);
         response(res,200,{ok:true,failure:boundedTestFailure(receipt,pins)});
+      }else if(command.action==="admit_epoch"){
+        // R125: ONLY the real Gateway registry with durable operational
+        // lease/session and original-root-bound Intake may commit a new
+        // epoch. Neither IPC HMAC nor Engineer data alone authorizes work.
+        if(!(config.plans instanceof TrustedApprovedExecutionPlans)||
+           !config.plans.operationalLeaseConfigured()||
+           !config.plans.operationalSessionDurableConfigured())
+          fail("R125 authentic durable Gateway epoch registry required");
+        const receipt=await config.plans.admitNextOperationalEpoch(
+          command.session_id,command.epoch,{
+            root_plan_digest:command.root_plan_digest,
+            plan_digest:command.plan_digest
+          });
+        response(res,200,{ok:true,admission:receipt});
       }else if(command.action==="confirm_test_failure"){
         // Genuine Gateway state proves completed predecessors, a Test role,
         // exact Runner FAIL, no conflicting PASS and no in-flight effects.
@@ -470,6 +493,39 @@ export class TrustedPlanIpcClient{
   }>):Promise<Readonly<TrustedRunnerFailure>>{
     const result=await this.#send({action:"read_test_failure",...pins});
     return boundedTestFailure(result.failure,pins);
+  }
+  /**
+   * R125: private trusted admission AFTER a durably reserved epoch.
+   * HMAC controls access, but admission authority is exclusively the live
+   * Gateway registry's OWN verified original Rust-root Intake and pending
+   * failed/satisfied Task quiescence. A model cannot send this operation.
+   */
+  async admitVerifiedOperationalEpoch(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+  }>):Promise<Readonly<{
+    status:"gateway_epoch_admitted";epoch:number;plan_digest:string;
+    blocked_descendant_task_ids:ReadonlyArray<string>;
+  }>>{
+    const result=await this.#send({action:"admit_epoch",...pins});
+    const r=result.admission;
+    if(!r||typeof r!=="object"||Array.isArray(r)||
+       Object.keys(r).sort().join(",")!==
+        "blocked_descendant_task_ids,epoch,plan_digest,status"||
+       r.status!=="gateway_epoch_admitted"||r.epoch!==pins.epoch||
+       r.plan_digest!==pins.plan_digest||
+       !Array.isArray(r.blocked_descendant_task_ids)||
+       r.blocked_descendant_task_ids.length>128||
+       r.blocked_descendant_task_ids.some((x:unknown)=>
+         typeof x!=="string"||!ID.test(x))||
+       new Set(r.blocked_descendant_task_ids).size!==
+        r.blocked_descendant_task_ids.length)
+      fail("Gateway returned uncorroborated pinned repair-epoch admission");
+    return Object.freeze({
+      status:"gateway_epoch_admitted" as const,epoch:pins.epoch,
+      plan_digest:pins.plan_digest,
+      blocked_descendant_task_ids:Object.freeze(
+        [...r.blocked_descendant_task_ids] as string[])
+    });
   }
   async confirmTaskCompletion(runtimeTaskId:string,
     observation?:TrustedCompletionObservation):Promise<void>{

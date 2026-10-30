@@ -54,6 +54,9 @@ export async function armTrustedOwnerOperationalRecovery(config:{
  planRepairEpoch?:Readonly<{
   giteaClient:GiteaClient;
   proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
+  /** R125: explicit owner opt-in to ACTUAL Gateway epoch admission.
+   * Requires a genuinely Gateway-bound independently signed epoch Intake. */
+  admitReservedEpoch?:boolean;
  }>;
 }):Promise<Readonly<{
  gateway:TrustedPlanIpcClient;
@@ -164,6 +167,19 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     if(after.length!==reserved.epoch||
        after.at(-1)?.plan_digest!==reserved.plan_digest)
      fail("durable repair epoch differs from owner planner reservation");
+    if(config.planRepairEpoch!.admitReservedEpoch===true){
+     // The real remote Gateway MUST already hold a separately valid
+     // original-root-bound intake. Never upload the proposed plan or
+     // treat this source-free IPC request as a grant of authority.
+     const admission=await config.gateway.admitVerifiedOperationalEpoch({
+      session_id:r.session_id,root_plan_digest:r.plan_digest,
+      plan_digest:reserved.plan_digest,epoch:reserved.epoch
+     });
+     if(admission.status!=="gateway_epoch_admitted"||
+        admission.plan_digest!==reserved.plan_digest||
+        admission.epoch!==reserved.epoch)
+      fail("Gateway epoch admission did not match reserved signed DAG");
+    }
    }else{
     await config.continueWithinActiveRoot!(proof,intake);
    }

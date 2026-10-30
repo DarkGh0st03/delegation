@@ -311,12 +311,19 @@ export class TrustedApprovedExecutionPlans {
    * repair epoch requires a separate trusted failure quiescence mechanism.
    * Until that is integrated, unresolved tasks MUST block this transition.
    */
-  async admitNextOperationalEpoch(sessionId:string,epochVersion:number):
+  async admitNextOperationalEpoch(sessionId:string,epochVersion:number,
+    expected?:Readonly<{root_plan_digest:string;plan_digest:string}>):
     Promise<Readonly<{status:"gateway_epoch_admitted";epoch:number;plan_digest:string;
       blocked_descendant_task_ids:ReadonlyArray<string>}>>{
     ensureId(sessionId,"session ID");
     const session=this.#sessions.get(sessionId);
     if(!this.#epochIntake||!session||
+       // R125 authenticated cross-process requests are SOURCE-FREE pins.
+       // The real Gateway must have its OWN original-root-bound Intake:
+       // an Engineer assertion or uploaded DAG cannot substitute for it.
+       (expected!==undefined&&(
+        session.digest!==expected.root_plan_digest||
+        !/^[a-f0-9]{64}$/u.test(expected.plan_digest)))||
        !Number.isSafeInteger(epochVersion)||epochVersion<2||
        this.#epochAdmissionInFlight.has(sessionId)||
        this.#discoveryAdmissionsInFlight.has(sessionId))
@@ -339,6 +346,7 @@ export class TrustedApprovedExecutionPlans {
       const epoch=history.at(-1);
       const plan=epoch?.plan;
       if(!epoch||!plan||epoch.epoch!==epochVersion||
+         (expected!==undefined&&epoch.plan_digest!==expected.plan_digest)||
          plan.session_id!==sessionId||
          plan.base_revision!==session.plan.base_revision||
          JSON.stringify(plan.repository)!==JSON.stringify(this.#repository)||

@@ -1876,6 +1876,7 @@ function r124HeadClient(observed?:()=>string|Promise<string>){
 async function r124Armed(t:import("node:test").TestContext,options:{
  propose?:()=>Promise<unknown>|unknown;
  observedSha?:()=>string|Promise<string>;
+ admitReservedEpoch?:boolean;
 }={}){
  const fixture=await r115RemoteFixture(t,{withDurable:true});
  const {h,client}=fixture;
@@ -1891,6 +1892,7 @@ async function r124Armed(t:import("node:test").TestContext,options:{
   },operational_root_id:h.rootAuthority.credential_id},
   planRepairEpoch:{
    giteaClient:r124HeadClient(options.observedSha),
+   ...(options.admitReservedEpoch?{admitReservedEpoch:true}:{}),
    proposeRepairPlan:async input=>{
     proposals++;
     assert.equal(input.feedback.tested_commit_sha,sha);
@@ -1974,5 +1976,88 @@ test("R124 owner refuses custom callback together with built-in repair planner",
    proposeRepairPlan:async()=>repairDraft()
   }
  }),/exactly one trusted owner continuation/);
+ assert.equal(h.provider,3);
+});
+
+test("R125 authenticated IPC admits independently verified reserved repair epoch",async t=>{
+ const fixture=await r124Armed(t,{admitReservedEpoch:true});
+ const {h,request,armed,client}=fixture;
+ const verified=await prepareTrustedRemoteRepairFeedback(request());
+ await armed.continueWithinActiveRoot(verified);
+ assert.equal(fixture.proposals,1);
+ const epochs=await armed.intake.verifiedEpochHistory();
+ assert.equal(epochs.length,2);
+ const approved=epochs[1];
+ const pins={session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:approved.plan_digest,epoch:2};
+ await assert.rejects(client.admitVerifiedOperationalEpoch(pins),
+  /Gateway trusted control denied/,
+  "admission is one-shot: subsequent epoch replay fails closed");
+ assert.throws(()=>h.runtime.prepare({
+  task_id:"task-backend",agent_role:"backend",tool:"update_file",
+  arguments:edit("// old authority")
+ }),/Stale operational epoch/);
+ h.gates.bindTask(session,"repair-implementation","r125-implementation","backend");
+ h.gates.bindTask(session,"repair-validation","r125-validation","test");
+ assert.throws(()=>h.runtime.prepare({
+  task_id:"r125-validation",agent_role:"test",tool:"run_tests",
+  arguments:runner
+ }),/dependency/i);
+ await h.invoke("r125-implementation","backend","update_file",edit("// repaired"));
+ await h.gates.confirmTaskCompletion("r125-implementation");
+ await h.invoke("r125-validation","test","run_tests",runner);
+ await h.gates.confirmTaskCompletion("r125-validation");
+ assert.equal(h.provider,5,"Two new protected provider effects, not retry");
+ assert.equal(h.coordinator.phase,"execution");
+});
+
+test("R125 IPC refuses wrong root, version and digest without moving Gateway epoch",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ await prepareTrustedRemoteRepairFeedback(request());
+ const reserved=await h.intake.reserveRepairEpoch(repair());
+ const pins={session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:reserved.plan_digest,epoch:2};
+ for(const bad of [
+  {...pins,root_plan_digest:"b".repeat(64)},
+  {...pins,plan_digest:"c".repeat(64)},
+  {...pins,epoch:3}
+ ])await assert.rejects(client.admitVerifiedOperationalEpoch(bad),
+  /Gateway trusted control denied/);
+ const admitted=await client.admitVerifiedOperationalEpoch(pins);
+ assert.equal(admitted.status,"gateway_epoch_admitted");
+ assert.equal(admitted.plan_digest,pins.plan_digest);
+ assert.deepEqual(admitted.blocked_descendant_task_ids,[]);
+ assert.equal(h.provider,3);
+});
+
+test("R125 IPC refuses missing durable reserved epoch and unfinished Test failure",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ const pins={session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:planDigest(repair()),epoch:2};
+ await assert.rejects(client.admitVerifiedOperationalEpoch(pins),
+  /Gateway trusted control denied/);
+ await h.intake.reserveRepairEpoch(repair());
+ // A Gateway-recorded FAIL, before the trusted owner finalizes it, is NOT
+ // quiescent; a model cannot skip finalization to enter repair.
+ await assert.rejects(client.admitVerifiedOperationalEpoch(pins),
+  /Gateway trusted control denied/);
+ const p=await prepareTrustedRemoteRepairFeedback(request());
+ assert.equal(p.status,"repair_planning_eligible");
+ assert.equal((await client.admitVerifiedOperationalEpoch(pins)).epoch,2);
+ assert.equal(h.provider,3);
+});
+
+test("R125 remote epoch admission refuses retired root and wrong session",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ await prepareTrustedRemoteRepairFeedback(request());
+ const reserve=await h.intake.reserveRepairEpoch(repair());
+ const pins={session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:reserve.plan_digest,epoch:2};
+ await assert.rejects(client.admitVerifiedOperationalEpoch({
+  ...pins,session_id:"other-session"
+ }),/Gateway trusted control denied/);
+ await h.gates.retireSession(session);
+ await assert.rejects(client.admitVerifiedOperationalEpoch(pins),
+  /Gateway trusted control denied/);
  assert.equal(h.provider,3);
 });
