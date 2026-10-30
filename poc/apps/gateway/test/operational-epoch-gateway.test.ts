@@ -36,6 +36,8 @@ import {issueAdmittedRepairTaskChild} from
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts";
 import {dispatchTrustedAdmittedRepairA2A,confirmTrustedAdmittedRepairA2A} from
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
+import {executeTrustedAdmittedRepairDag} from
+  "../../../packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts";
 import {TaskState} from "@a2a-js/sdk";
 import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
@@ -3027,4 +3029,120 @@ test("R136 A2A completion cannot confirm repair before Gateway observes authoriz
  await assert.rejects(confirmTrustedAdmittedRepairA2A(assertion),
   /Gateway trusted control denied/,
   "An already completed Task may not be re-attested or replayed");
+});
+
+
+function r137Args(f:Awaited<ReturnType<typeof r134Fixture>>,
+ a2a:{sendProtectedTask(request:any):Promise<any>}){
+ return {
+  sessionId:session,epoch:2,planDigest:f.reserved.plan_digest,
+  coordinator:f.h.coordinator,intake:f.h.intake,
+  gateway:f.client,journal:f.journal,
+  engineerDid:engineer,adapterBaseUrl:f.args.adapterBaseUrl,
+  orchestratorToken:f.args.orchestratorToken,
+  fetchFn:f.args.fetchFn,
+  agentBaseUrls:{backend:"http://backend.local:8080",
+   frontend:"http://frontend.local:8081",
+   test:"http://test.local:8082"},
+  a2a,
+  credentialForTask({id,role,ordinal}:{
+   id:string;role:"backend"|"frontend"|"test";ordinal:number
+  }){
+   return {
+    credential_id:"urn:r137:child:"+id,
+    valid_from:"2026-10-30T16:00:00Z",
+    validity_seconds:300,
+    credential_status:{
+     type:"BitstringStatusListEntry" as const,
+     statusPurpose:"revocation" as const,
+     statusListIndex:String(28010+ordinal),
+     statusListCredential:"https://status.example/r137"
+    }
+   };
+  }
+ };
+}
+test("R137 signed DAG advances Backend then Test only after separate Gateway effects",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ const calls:string[]=[];
+ const a2a={
+  async sendProtectedTask(request:any){
+   const id=request.subtask.subtask_id;
+   calls.push(id);
+   const gatewayTask=request.trusted_gateway_task_id;
+   assert.match(gatewayTask,/^dispatch_[A-Za-z0-9_-]{22}$/);
+   if(id==="backend-repair"){
+    assert.equal(request.subtask.approved_run_tests,undefined);
+    await f.h.invoke(gatewayTask,"backend","update_file",
+     edit("// repaired under newly admitted R137"));
+    return {card:{name:"Backend Agent"},task:r135A2AArtifact() as never};
+   }
+   assert.equal(id,"test-repair");
+   assert.equal(request.subtask.approved_run_tests,true);
+   assert.deepEqual(request.subtask.approved_file_permissions,[]);
+   await f.h.invoke(gatewayTask,"test","run_tests",runner);
+   const artifact=r135A2AArtifact();
+   const value=artifact.artifacts[0].parts[0].content.value as any;
+   value.role="test";value.summary="Runner-backed acceptance";
+   value.test_outcome="pass";value.tested_commit_sha=sha;
+   value.runner_profile="poc-default";
+   value.project_tests="pass";value.researcher_acceptance="pass";
+   return {card:{name:"Test Agent"},task:artifact as never};
+  }
+ };
+ const result=await executeTrustedAdmittedRepairDag(r137Args(f,a2a));
+ assert.equal(result.status,
+  "repair_dag_gateway_confirmed_not_final_runner_verified");
+ assert.deepEqual(calls,["backend-repair","test-repair"]);
+ assert.deepEqual(result.tasks.map(x=>x.task_id),calls);
+ assert.equal(new Set(result.tasks.map(x=>x.runtime_task_id)).size,2);
+ assert.equal(new Set(result.tasks.map(x=>x.credential_id)).size,2);
+ assert.equal(result.tasks.every(x=>x.gateway_task_completed),true);
+ assert.equal(result.docker_pass_verified,false,
+  "A scripted Runner receipt is not real Docker acceptance");
+ assert.equal(result.pull_request_created,false);
+ assert.equal(f.h.provider,5,"Only one backend and one test provider effect");
+ assert.equal(f.calls.length,2,"Only two new native Child DCs");
+ assert.equal((await f.journal.records()).length,2);
+ assert.equal(f.h.attested,4,
+  "Two original completed Tasks plus two new Gateway-confirmed repair Tasks");
+ await assert.rejects(executeTrustedAdmittedRepairDag(r137Args(f,a2a)),
+  /same owner cannot replay a repair DAG/);
+ assert.equal(f.calls.length,2,"No duplicate external issuance on replay");
+});
+test("R137 A2A-only Backend Artifact stops signed DAG before Test or second Child DC",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ const events:string[]=[];
+ const args=r137Args(f,{async sendProtectedTask(req:any){
+  events.push(req.subtask.subtask_id);
+  return {card:{name:"Fake Agent"},task:r135A2AArtifact() as never};
+ }});
+ await assert.rejects(executeTrustedAdmittedRepairDag(args),
+  /Gateway trusted control denied/,
+  "A2A-only completion must not satisfy signed Backend dependency");
+ assert.deepEqual(events,["backend-repair"]);
+ assert.equal(f.calls.length,1);
+ assert.equal((await f.journal.records()).length,1);
+ assert.equal(f.h.provider,3);
+ await assert.rejects(executeTrustedAdmittedRepairDag(args),
+  /same owner cannot replay a repair DAG/);
+ assert.equal(events.length,1);
+});
+test("R137 rejects duplicate owner child allocations before any irreversible effect",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ let sends=0;
+ const args=r137Args(f,{async sendProtectedTask(){
+  sends++;throw Error("Never start A2A");
+ }});
+ await assert.rejects(executeTrustedAdmittedRepairDag({
+  ...args,credentialForTask(){
+   return {...f.args.credential,credential_id:"urn:r137:duplicate"};
+  }
+ }),/missing\/duplicated or invalid trusted child allocation/);
+ assert.equal(sends,0);
+ assert.equal(f.calls.length,0);
+ assert.equal((await f.journal.records()).length,0);
 });
