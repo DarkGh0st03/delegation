@@ -147,6 +147,14 @@ export async function startTrustedEngineerLocalHost(config){
   // admission, model proposals or per-Task executor arguments.
   const ownerOperationalRecovery=config?.ownerOperationalRecovery;
   const ownerRootVpSigning=config?.ownerRootVpSigning;
+  // R138: no Owner repair DAG without real protected native root signer,
+  // independent Gateway epoch admission and operator-owned A2A ports.
+  const repairDag=ownerOperationalRecovery?.planRepairEpoch?.executeAdmittedRepairDag;
+  if(repairDag&&(!ownerRootVpSigning||
+     ownerOperationalRecovery.planRepairEpoch.admitReservedEpoch!==true||
+     typeof repairDag.credentialForTask!=="function"||
+     typeof repairDag.a2a?.sendProtectedTask!=="function"))
+    deny("R138 owner repair requires VP signer, Gateway admission and trusted A2A ports");
   if(ownerRootVpSigning&&(
      !(active?.coordinator instanceof TrustedExecutionCoordinator)||
      typeof ownerRootVpSigning.socketPath!=="string"||

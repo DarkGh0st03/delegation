@@ -48,6 +48,8 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
  fetchFn?:typeof fetch;
  agentBaseUrls:Readonly<Record<Role,string>>;
  a2a:ProtectedA2AClientPort;
+ /** R138: independent original GitHub run check; never a model port. */
+ verifyLiveRun?:()=>Promise<void>;
  /** Local trusted owner supplies unique native child ID/status per task;
   * NO model or agent may supply or override these values. */
  credentialForTask:(task:Readonly<{id:string;role:Role;ordinal:number}>)
@@ -72,9 +74,12 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
     !config.gateway.operationalSessionDurableConfigured()||
     config.coordinator?.phase!=="execution"||
     !config.a2a||typeof config.a2a.sendProtectedTask!=="function"||
+    (config.verifyLiveRun!==undefined&&
+     typeof config.verifyLiveRun!=="function")||
     typeof config.credentialForTask!=="function")
    fail("live trusted owner and durable admitted remote epoch required");
  config.intake.assertSameCoordinator(config.coordinator);
+ await config.verifyLiveRun?.();
  const originalRoot=config.coordinator.trustedOperationalAuthority();
  const history=await config.intake.verifiedEpochHistory();
  const last=history.at(-1);
@@ -153,6 +158,8 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
   if(fresh.length!==history.length||
      fresh.at(-1)?.plan_digest!==config.planDigest)
    fail("signed repair DAG changed during execution");
+  // If the pinned GitHub job is lost, refuse new child issuance.
+  await config.verifyLiveRun?.();
   const role=task.agent_id as Role;
   const dispatched=await dispatchTrustedAdmittedRepairA2A({
    sessionId:config.sessionId,epoch:config.epoch,
@@ -166,6 +173,8 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
    credential:credentials.get(task.id)!,
    agentBaseUrls:config.agentBaseUrls,a2a:config.a2a
   });
+  // A2A may have finished after an external cancellation.
+  await config.verifyLiveRun?.();
   const confirmed=await confirmTrustedAdmittedRepairA2A({
    receipt:dispatched,gateway:config.gateway,intake:config.intake,
    coordinator:config.coordinator,sessionId:config.sessionId,
@@ -175,6 +184,7 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
      confirmed.runtime_task_id!==dispatched.runtime_task_id||
      !confirmed.gateway_task_completed)
    fail("Gateway did not confirm exact signed predecessor");
+  await config.verifyLiveRun?.();
   done.add(task.id);
   results.push(Object.freeze({
    task_id:task.id,role,runtime_task_id:dispatched.runtime_task_id,
@@ -183,6 +193,7 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
    docker_pass_verified:false as const
   }));
  }
+ await config.verifyLiveRun?.();
  return Object.freeze({
   status:"repair_dag_gateway_confirmed_not_final_runner_verified" as const,
   session_id:config.sessionId,epoch:config.epoch,

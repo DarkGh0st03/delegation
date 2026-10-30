@@ -27,7 +27,15 @@ import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
 import type {TrustedExecutionCoordinator}
  from "./trusted-execution-coordinator.ts";
+import {executeTrustedAdmittedRepairDag}
+ from "./trusted-repair-dag-controller.ts";
 
+/** Local operator data ports only. Session/root/Gateway/epoch/Engineer
+ * identity are derived exclusively from signed owner state. */
+export type TrustedOwnerRepairDagPorts=Omit<
+ Parameters<typeof executeTrustedAdmittedRepairDag>[0],
+ "sessionId"|"epoch"|"planDigest"|"coordinator"|"intake"|"gateway"|"engineerDid"|"verifyLiveRun"
+>;
 const SHA=/^[0-9a-f]{40}$/u;
 const DIGEST=/^[0-9a-f]{64}$/u;
 const fail=(msg:string):never=>{throw Error("Trusted owner recovery R123: "+msg);};
@@ -38,6 +46,8 @@ export async function armTrustedOwnerOperationalRecovery(config:{
  signedApprovals:SignedEngineerApprovalFileStore;
  gateway:TrustedPlanIpcClient;
  epochDirectory:string;
+ /** Current original GitHub run watch and root lease, not caller input. */
+ verifyLiveRun?:()=>Promise<void>;
  running:Readonly<{
   readiness:Readonly<{
    session_id:string;base_revision:string;plan_digest:string;
@@ -57,6 +67,8 @@ export async function armTrustedOwnerOperationalRecovery(config:{
   /** R125: explicit owner opt-in to ACTUAL Gateway epoch admission.
    * Requires a genuinely Gateway-bound independently signed epoch Intake. */
   admitReservedEpoch?:boolean;
+  /** R138: only after R133 independently admitted the reserved DAG. */
+  executeAdmittedRepairDag?:Readonly<TrustedOwnerRepairDagPorts>;
  }>;
 }):Promise<Readonly<{
  gateway:TrustedPlanIpcClient;
@@ -71,6 +83,10 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     (structured&&(!(config.planRepairEpoch!.giteaClient instanceof GiteaClient)||
       typeof config.planRepairEpoch!.proposeRepairPlan!=="function")))
   fail("exactly one trusted owner continuation or configured repair planner required");
+ if(config.planRepairEpoch?.executeAdmittedRepairDag&&
+    (config.planRepairEpoch.admitReservedEpoch!==true||
+     typeof config.verifyLiveRun!=="function"))
+  fail("R138 DAG requires admitted Gateway epoch and live original GitHub run");
  if(!(config.signedApprovals instanceof SignedEngineerApprovalFileStore)||
     !(config.gateway instanceof TrustedPlanIpcClient)||
     !config.gateway.operationalLeaseConfigured()||
@@ -168,6 +184,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
        after.at(-1)?.plan_digest!==reserved.plan_digest)
      fail("durable repair epoch differs from owner planner reservation");
     if(config.planRepairEpoch!.admitReservedEpoch===true){
+     await config.verifyLiveRun?.();
      // The real remote Gateway MUST already hold a separately valid
      // original-root-bound intake. Never upload the proposed plan or
      // treat this source-free IPC request as a grant of authority.
@@ -179,6 +196,26 @@ export async function armTrustedOwnerOperationalRecovery(config:{
         admission.plan_digest!==reserved.plan_digest||
         admission.epoch!==reserved.epoch)
       fail("Gateway epoch admission did not match reserved signed DAG");
+     if(config.planRepairEpoch!.executeAdmittedRepairDag){
+      await config.verifyLiveRun!();
+      const report=await executeTrustedAdmittedRepairDag({
+       ...config.planRepairEpoch!.executeAdmittedRepairDag,
+       sessionId:r.session_id,epoch:reserved.epoch,
+       planDigest:reserved.plan_digest,
+       coordinator:config.coordinator,intake,gateway:config.gateway,
+       engineerDid:r.authenticated_engineer_did,
+       verifyLiveRun:config.verifyLiveRun
+      });
+      if(report.status!==
+          "repair_dag_gateway_confirmed_not_final_runner_verified"||
+         report.session_id!==r.session_id||
+         report.plan_digest!==reserved.plan_digest||
+         report.epoch!==reserved.epoch||
+         report.docker_pass_verified!==false||
+         report.pull_request_created!==false)
+       fail("R138 repair outcome cannot claim final Runner PASS or PR");
+      await config.verifyLiveRun!();
+     }
     }
    }else{
     await config.continueWithinActiveRoot!(proof,intake);

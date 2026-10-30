@@ -37,6 +37,8 @@ import type {TrustedRepairFeedbackSignal}
   from "./trusted-validation-repair-feedback.ts";
 import {TrustedOperationalEpochIntake}
   from "./trusted-operational-epoch-intake.ts";
+import type {TrustedOwnerRepairDagPorts}
+  from "./trusted-owner-operational-repair-handoff.ts";
 import {TrustedOrchestratorRootPresenter}
   from "./trusted-orchestrator-root-presenter.ts";
 import {createTrustedRootVpSignerServer}
@@ -159,6 +161,7 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
           giteaClient:GiteaClient;
           proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
           admitReservedEpoch?:boolean;
+          executeAdmittedRepairDag?:Readonly<TrustedOwnerRepairDagPorts>;
         }>;
       }>;
     }
@@ -357,7 +360,8 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
     }
     const recovery=ownerOperationalRecovery?
       await armTrustedOwnerOperationalRecovery({
-        ...ownerOperationalRecovery,coordinator:input.coordinator,running
+        ...ownerOperationalRecovery,coordinator:input.coordinator,running,
+        verifyLiveRun:checkNow
       }):undefined;
     await checkNow();
     approvedDag=createReviewedApprovedDagExecution({
