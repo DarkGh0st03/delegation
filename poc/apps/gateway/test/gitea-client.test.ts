@@ -619,8 +619,9 @@ test("R150.10.3 Gitea draft title uses WIP protocol once; does not send ignored 
  assert.equal(posts,1);
  assert.equal(out.draft,true);
  let sent=0;
- const bad=clientWith((async()=>{sent++;throw Error("no requests");})
-   as typeof fetch);
+ const deniedFetch=(async()=>{sent++;throw Error("no requests");})
+   as typeof fetch;
+ const bad=clientWith(deniedFetch);
  await assert.rejects(bad.createDraftPullRequest(
   "feature/r143-fix","main","x".repeat(158),accepted
  ),ProviderConflictError);
