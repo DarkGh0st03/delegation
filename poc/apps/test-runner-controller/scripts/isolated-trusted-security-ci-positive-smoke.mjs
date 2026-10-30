@@ -677,13 +677,59 @@ async function main(){
                  !Number.isSafeInteger(event.signed_test_write_count)||
                  event.signed_test_write_count<0||
                  event.signed_test_write_count>4)continue;
+              // R116 second sanitization boundary. Child stderr can
+              // contain model text; never forward arbitrary extra keys.
+              const phases=new Set(["none","dependency_install","typecheck",
+                "backend_tests","frontend_tests","build","playwright_e2e",
+                "researcher_acceptance"]);
+              const statuses=new Set(["pass","fail","unknown"]);
+              const safeSites=new Set([
+                "native-approved-planner-dag-positive.mjs",
+                "trusted-approved-a2a-dispatcher.ts","a2a-workflow.ts",
+                "orchestrator.ts","executor.ts","adk-a2a-handler.ts",
+                "artifact-validation.ts","private-request-handler.ts",
+                "gateway-tool-client.ts","adk-tool-progress.ts",
+                "approved-execution-plans.ts","runtime.ts","execute.ts",
+                "runner-client.ts","isolated-executor.ts",
+                "native-approved-dag-failure-category.mjs"
+              ]);
+              const safeKinds=new Set(["Error","AssertionError","TypeError",
+                "RangeError","SyntaxError","AbortError","TimeoutError",
+                "AggregateError","unknown"]);
+              const safeCodes=new Set(["ERR_ASSERTION","approved_plan_denied",
+                "ERR_INVALID_ARG_TYPE","ERR_HTTP_HEADERS_SENT",
+                "ECONNRESET","ETIMEDOUT","ECONNREFUSED","ABORT_ERR",
+                "ERR_INVALID_STATE","unknown"]);
+              const trace=Array.isArray(event.failure_trace)&&
+                event.failure_trace.length<=4&&
+                event.failure_trace.every(item=>
+                  item&&typeof item==="object"&&
+                  categories.includes(item.category)&&
+                  safeKinds.has(item.kind)&&safeCodes.has(item.code)&&
+                  (item.site===null||
+                   (item.site&&safeSites.has(item.site.module)&&
+                    Number.isSafeInteger(item.site.line)&&
+                    item.site.line>0&&item.site.line<=2500)))
+                ?event.failure_trace.map(item=>({
+                  category:item.category,kind:item.kind,code:item.code,
+                  site:item.site===null?null:{
+                    module:item.site.module,line:item.site.line
+                  }
+                })):null;
               multiTestDiagnostic={
-                completed_task_ids:event.completed_task_ids,
-                issued_task_ids:event.issued_task_ids,
+                completed_task_ids:[...event.completed_task_ids],
+                issued_task_ids:[...event.issued_task_ids],
                 category:event.category,
                 cause_category:event.cause_category,
                 runner_runs:event.runner_runs,
-                signed_test_write_count:event.signed_test_write_count
+                signed_test_write_count:event.signed_test_write_count,
+                runner_status:statuses.has(event.runner_status)
+                  ?event.runner_status:"unknown",
+                runner_project_status:statuses.has(event.runner_project_status)
+                  ?event.runner_project_status:"unknown",
+                first_failed_phase:phases.has(event.first_failed_phase)
+                  ?event.first_failed_phase:"none",
+                ...(trace?{failure_trace:trace}:{})
               };
               break;
             }catch{/* never print untrusted stderr */}
