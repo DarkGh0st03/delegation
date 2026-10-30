@@ -23,14 +23,33 @@ const passed={
 };
 const good=()=>({failed,passed,failedSha:shaA,repairedSha:shaB,branch,
  failedTaskId:"test-initial",repairTaskId:"backend-repair",
- passedTaskId:"test-repair"});
+ passedTaskId:"test-repair",failedPhase:"backend_tests"});
 test("R139 real-runner evidence stays explicitly non-authorizing",()=>{
  const x=verifyR139RealRepairEvidence(good());
  assert.equal(x.real_runner_exact_sha_evidence,true);
+ assert.equal(x.failed_phase,"backend_tests");
  assert.equal(x.gateway_repair_epoch_admitted,false);
  assert.equal(x.rust_repair_child_issued,false);
  assert.equal(x.review_only_pr_opened,false);
  assert.equal(x.merger_authorized,false);
+});
+test("R150 real typecheck fault is accepted only with an exact failure-phase receipt",()=>{
+ const typecheckFailed={...failed,phases:[
+  phase("dependency_install","pass"),phase("typecheck","fail"),
+  phase("backend_tests","skipped"),phase("frontend_tests","skipped")
+ ],typecheck_error_codes:["TS2820"]};
+ const proof=verifyR139RealRepairEvidence({
+  ...good(),failed:typecheckFailed,failedPhase:"typecheck"
+ });
+ assert.equal(proof.failed_phase,"typecheck");
+ assert.throws(()=>verifyR139RealRepairEvidence({
+  ...good(),failed:typecheckFailed,failedPhase:"backend_tests"
+ }),/R139 real Docker evidence NO-GO/);
+ assert.throws(()=>verifyR139RealRepairEvidence({
+  ...good(),failed:{...typecheckFailed,
+   phases:[phase("dependency_install","pass"),phase("typecheck","fail"),
+    phase("backend_tests","fail")]},failedPhase:"typecheck"
+ }),/R139 real Docker evidence NO-GO/);
 });
 test("R139 rejects stale SHA, same-Task retry and invented PASS",()=>{
  for(const change of [
