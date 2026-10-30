@@ -15,6 +15,8 @@ import {TrustedPlanningRevisions} from "./planning-revisions.ts";
 import {TrustedPlanningRetirementStore} from "./trusted-planning-retirement-store.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
 import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
+import {TrustedGatewayNativeRootStatusReader}
+ from "./trusted-gateway-native-root-status.ts";
 import {GiteaClient} from "./gitea-client.ts";
 import type {GatewayRuntimeConfig} from "./config.ts";
 
@@ -86,9 +88,20 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
   // Optional independently inspected operator-mounted 0700 epoch folder.
   // This is NOT a native Rust authority source or admitted Gateway intake.
   const sharedDir=process.env.TRUSTED_PLAN_EPOCH_LEDGER_DIR;
+  const inspectNative=process.env.TRUSTED_PLAN_NATIVE_ROOT_STATUS_INSPECT;
+  if(inspectNative!==undefined&&inspectNative!=="1")
+   throw Error("Invalid native Rust root status inspection flag");
+  if(inspectNative==="1"&&(!sharedDir||
+     !config.adapter_url||!config.adapter_gateway_token))
+   throw Error("Native root status requires signed epoch journal and authenticated Adapter");
+  const nativeRootStatus=inspectNative==="1"?
+   new TrustedGatewayNativeRootStatusReader({
+    baseUrl:config.adapter_url!,gatewayToken:config.adapter_gateway_token!
+   }):undefined;
   const signedEpochInspector=sharedDir?
     new TrustedGatewaySignedEpochInspector({
-     directory:sharedDir,approvals
+     directory:sharedDir,approvals,
+     ...(nativeRootStatus?{nativeRootStatus}:{})
     }):undefined;
   if(signedEpochInspector)await signedEpochInspector.assertReady();
   const plans=new TrustedApprovedExecutionPlans({

@@ -8,6 +8,9 @@
  * or as authorization to admit tasks, issue a child or execute a provider.
  */
 import {open,lstat} from "node:fs/promises";
+import {createHash} from "node:crypto";
+import {TrustedGatewayNativeRootStatusReader}
+ from "./trusted-gateway-native-root-status.ts";
 import {constants} from "node:fs";
 import {isAbsolute,join,resolve} from "node:path";
 import {SignedEngineerApprovalFileStore}
@@ -28,13 +31,20 @@ const deny=(s:string):never=>{throw Error("Gateway signed epoch inspection NO-GO
 export class TrustedGatewaySignedEpochInspector{
  readonly #dir:string;
  readonly #approvals:SignedEngineerApprovalFileStore;
- constructor(config:{directory:string;approvals:SignedEngineerApprovalFileStore}){
+ readonly #nativeRoot?:TrustedGatewayNativeRootStatusReader;
+ constructor(config:{directory:string;approvals:SignedEngineerApprovalFileStore;
+  nativeRootStatus?:TrustedGatewayNativeRootStatusReader}){
   if(typeof config?.directory!=="string"||
      !isAbsolute(config.directory)||resolve(config.directory)!==config.directory||
      !(config.approvals instanceof SignedEngineerApprovalFileStore))
    deny("trusted absolute directory and real Engineer signed store required");
+  if(config.nativeRootStatus!==undefined&&
+     !(config.nativeRootStatus instanceof TrustedGatewayNativeRootStatusReader))
+   deny("real Gateway-only native status reader required");
   this.#dir=config.directory;this.#approvals=config.approvals;
+  this.#nativeRoot=config.nativeRootStatus;
  }
+ nativeRootStatusConfigured(){return !!this.#nativeRoot;}
  async assertReady(){
   const m=await lstat(this.#dir);
   if(!m.isDirectory()||m.isSymbolicLink()||(m.mode&0o777)!==0o700||
@@ -124,5 +134,56 @@ export class TrustedGatewaySignedEpochInspector{
    gateway_epoch_admitted:false as const,
    child_credential_issued:false as const
   });
+ }
+ /**
+  * R127: two independent signed-ledger checks surround a live
+  * gateway-authenticated native Rust Adapter status observation. Never
+  * use caller JSON as a root ID. Neither an anchored status nor this
+  * result proves DC permission contents, expiration or VP/OPA access.
+  */
+ async inspectNativeRootStatus(pins:Readonly<{
+  session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+ }>){
+  if(!(this.#nativeRoot instanceof TrustedGatewayNativeRootStatusReader))
+   deny("native Rust status inspection not configured");
+  await this.inspect(pins);
+  const before=await this.#readPinnedRootRecord(pins);
+  await this.#nativeRoot.readActiveRoot(before.rootId);
+  const after=await this.#readPinnedRootRecord(pins);
+  if(after.fileDigest!==before.fileDigest||after.rootId!==before.rootId)
+   deny("original root identifier changed during native Adapter inspection");
+  await this.inspect(pins);
+  return Object.freeze({
+   status:"native_root_status_correlated_not_permission_authority" as const,
+   session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+   plan_digest:pins.plan_digest,epoch:pins.epoch,
+   native_source:"evm_anchored_signed_jwt" as const,
+   execution_authorized:false as const,
+   gateway_epoch_admitted:false as const,
+   child_credential_issued:false as const,
+   root_permissions_verified:false as const
+  });
+ }
+ async #readPinnedRootRecord(pins:Readonly<{
+  session_id:string;root_plan_digest:string;
+ }>){
+  const fd=await open(join(this.#dir,"epoch-001.json"),
+   constants.O_RDONLY|constants.O_NOFOLLOW);
+  try{
+   const m=await fd.stat();
+   if(!m.isFile()||m.nlink!==1||(m.mode&0o777)!==0o600||
+      m.size<30||m.size>131072||
+      (typeof process.getuid==="function"&&m.uid!==process.getuid()))
+    deny("native root lookup cannot read insecure original epoch");
+   const text=await fd.readFile("utf8");
+   const record=JSON.parse(text) as Record<string,unknown>;
+   if(record.session_id!==pins.session_id||
+      record.original_plan_digest!==pins.root_plan_digest||
+      typeof record.root_credential_id!=="string"||
+      !ID.test(record.root_credential_id))
+    deny("native status root ID not derived from original signed epoch");
+   return {rootId:record.root_credential_id,
+    fileDigest:createHash("sha256").update(text).digest("hex")};
+  }finally{await fd.close();}
  }
 }

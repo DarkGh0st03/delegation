@@ -36,6 +36,8 @@ import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
 import {TrustedGatewaySignedEpochInspector} from "../src/trusted-gateway-signed-epoch-inspector.ts";
+import {TrustedGatewayNativeRootStatusReader}
+ from "../src/trusted-gateway-native-root-status.ts";
 
 const repo={authority:"gitea.local",owner:"sample",repository:"invoice-service"};
 const root="gitea://gitea.local/sample/invoice-service";
@@ -2180,4 +2182,123 @@ test("R126 signed ledger inspection NEVER admits a different owner-only epoch",a
  }),/Gateway trusted control denied/);
  assert.equal((await h.intake.verifiedEpochHistory()).length,1);
  assert.equal(h.provider,3);
+});
+
+function r127NativeStatusFixture(t:import("node:test").TestContext,
+ responder:(id:string)=>unknown|Promise<unknown>){
+ let calls=0;
+ const status=new TrustedGatewayNativeRootStatusReader({
+  baseUrl:"http://adapter.internal:8090",gatewayToken:"private-gateway-only",
+  fetchFn:(async (url:unknown,init?:RequestInit)=>{
+   calls++;
+   assert.equal(String(url),
+    "http://adapter.internal:8090/v1/credentials/status/inspect");
+   assert.equal(new Headers(init?.headers).get("authorization"),
+    "Bearer private-gateway-only");
+   assert.equal(init?.method,"POST");
+   const body=JSON.parse(String(init?.body));
+   assert.deepEqual(Object.keys(body),["credential_id"]);
+   return new Response(JSON.stringify(await responder(body.credential_id)),{
+    status:200,headers:{"content-type":"application/json"}
+   });
+  }) as typeof fetch
+ });
+ return {status,get calls(){return calls;}};
+}
+async function r127Fixture(t:import("node:test").TestContext,
+ responder:(id:string)=>unknown|Promise<unknown>){
+ const base=await r115RemoteFixture(t,{withDurable:true});
+ const native=r127NativeStatusFixture(t,responder);
+ const socketPath=join(base.h.dir,"r127-native.sock");
+ const secretFile=join(base.h.dir,"r127-native.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ const inspector=new TrustedGatewaySignedEpochInspector({
+  directory:join(base.h.dir,"epochs"),approvals:base.h.signedStore,
+  nativeRootStatus:native.status
+ });
+ const server=await createTrustedPlanIpcServer({
+  socketPath,secretFile,plans:base.h.gates,
+  signedEpochInspector:inspector
+ });
+ await server.start();t.after(()=>server.close());
+ return {...base,native,client:await TrustedPlanIpcClient.connect({
+  socketPath,secretFile
+ })};
+}
+function r127Anchored(id:string, overrides:Record<string,unknown>={}){
+ return {credential_id:id,status_purpose:"revocation",
+  status_set:false,source:"evm_anchored_signed_jwt",anchor_version:12,
+  ...overrides};
+}
+test("R127 Gateway correlates independent EVM-anchored native Rust root status without granting Tasks",async t=>{
+ const f=await r127Fixture(t,id=>r127Anchored(id));
+ const pins={session_id:session,root_plan_digest:planDigest(f.h.parent),
+  plan_digest:planDigest(f.h.parent),epoch:1};
+ assert.equal(f.client.nativeRootInspectionConfigured(),true);
+ const status=await f.client.inspectNativeRootStatus(pins);
+ assert.equal(status.status,"native_root_status_correlated_not_permission_authority");
+ assert.equal(status.native_source,"evm_anchored_signed_jwt");
+ assert.equal(status.execution_authorized,false);
+ assert.equal(status.gateway_epoch_admitted,false);
+ assert.equal(status.root_permissions_verified,false);
+ assert.equal(f.native.calls,1);
+ assert.equal(f.h.provider,3);
+ const later=await prepareTrustedRemoteRepairFeedback(f.request());
+ const newEpoch=await f.h.intake.reserveRepairEpoch(repair());
+ const followup=await f.client.inspectNativeRootStatus({
+  ...pins,epoch:2,plan_digest:newEpoch.plan_digest
+ });
+ assert.equal(followup.epoch,2);
+ assert.equal(later.status,"repair_planning_eligible");
+ assert.equal(f.h.provider,3);
+});
+test("R127 revoked or memory-only Rust status fails closed",async t=>{
+ for(const changed of [
+  {status_set:true},
+  {source:"adapter_memory_only",anchor_version:null},
+  {status_purpose:"suspension"},
+  {anchor_version:-1},
+  {credential_id:"urn:other-issued-root"}
+ ]){
+  const f=await r127Fixture(t,id=>r127Anchored(id,changed));
+  const pins={session_id:session,root_plan_digest:planDigest(f.h.parent),
+   plan_digest:planDigest(f.h.parent),epoch:1};
+  await assert.rejects(f.client.inspectNativeRootStatus(pins),
+   /Gateway trusted control denied/);
+  assert.equal(f.native.calls,1);
+  assert.equal(f.h.provider,3);
+ }
+});
+test("R127 status read cannot bypass signed epoch or create Gateway admission",async t=>{
+ const f=await r127Fixture(t,id=>r127Anchored(id));
+ const pins={session_id:session,root_plan_digest:planDigest(f.h.parent),
+  plan_digest:planDigest(f.h.parent),epoch:1};
+ for(const invalid of [
+  {...pins,plan_digest:"b".repeat(64)},
+  {...pins,root_plan_digest:"c".repeat(64)},
+  {...pins,session_id:"unbound"},
+  {...pins,epoch:2}
+ ])await assert.rejects(f.client.inspectNativeRootStatus(invalid),
+  /Gateway trusted control denied/);
+ assert.equal(f.native.calls,0);
+ await assert.rejects(f.client.admitVerifiedOperationalEpoch({
+  ...pins,epoch:2
+ }),/Gateway trusted control denied/);
+ assert.equal(f.h.provider,3);
+});
+test("R127 original root journal race during Adapter lookup is denied",async t=>{
+ let f:Awaited<ReturnType<typeof r127Fixture>>;
+ f=await r127Fixture(t,async id=>{
+  const target=join(f.h.dir,"epochs","epoch-001.json");
+  const r=JSON.parse(await readFile(target,"utf8"));
+  r.root_credential_id="urn:r127:substituted";
+  await writeFile(target,JSON.stringify(r)+"\n",{mode:0o600});
+  return r127Anchored(id);
+ });
+ const pins={session_id:session,root_plan_digest:planDigest(f.h.parent),
+  plan_digest:planDigest(f.h.parent),epoch:1};
+ await assert.rejects(f.client.inspectNativeRootStatus(pins),
+  /Gateway trusted control denied/);
+ assert.equal(f.native.calls,1);
+ assert.equal(f.h.provider,3);
 });
