@@ -26,6 +26,8 @@ import {createRunnerHttpServer} from
 
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
+import {completeNativeVerifiedFailureHandoff} from
+  "./native-owner-verified-failure-handoff.mjs";
 import {startSpecializedAgentServer} from
   "../../../packages/agent-runtime/src/server.ts";
 import {DeterministicA2AOrchestrator} from
@@ -953,55 +955,17 @@ export async function runNativePositiveApprovedDag({
       }
       throw error;
     });
-    // R150.4: the LIVE native pilot must not mistake a Gateway-attested
-    // Docker FAIL for a successful DAG or retry its terminated Test Task.
-    // This owner-only handoff executes while original Rust authority and
-    // the protected A2A servers are still live. It may admit/dispatch D1,
-    // but does not by itself attest final Test PASS or PR publication.
     if(result?.status==="verified_test_failure_suspended"){
-      const proof=result.verified_test_failure;
-      const root=coordinator.trustedOperationalAuthority();
-      try{
-        if(!trustedOwnerRecovery||!proof||
-           proof.status!=="repair_planning_eligible"||
-           proof.provenance!=="gateway_verified_docker_runner"||
-           proof.authority_kind!=="existing_rust_operational_root"||
-           proof.session_id!==sessionId||
-           proof.root_plan_digest!==planDigest||
-           proof.execution_authorized!==false||
-           proof.permission_granted!==false||
-           root.credential_id!==operationalRootId||
-           root.plan_digest!==planDigest||
-           coordinator.phase!=="execution")
-          throw Error("R150.4 signed original-root recovery not authorized");
-        onPilotPhase?.("trusted_owner_repair_handoff");
-        await trustedOwnerRecovery.continueWithinActiveRoot(proof);
-        const after=coordinator.trustedOperationalAuthority();
-        if(coordinator.phase!=="execution"||
-           after.credential_id!==root.credential_id||
-           after.plan_digest!==root.plan_digest)
-          throw Error("R150.4 original Rust root changed during repair");
-      }finally{
-        // An owner callback can throw after a real Gitea write or DC
-        // issuance: uncertain external effects must NEVER leave authority
-        // operational. Revocation is mandatory on BOTH success and failure.
-        if(coordinator.phase==="execution")await coordinator.closeExecution();
-        await coordinator.assertOperationalClosureConfirmed();
-      }
-      assert.equal(createdPr,null,
-        "R150.4 original DAG cannot publish PR after a Test FAIL");
-      return Object.freeze({
-        status:"trusted_owner_repair_handoff_retired",
-        original_dag_completed:false,
-        original_signed_plan_digest:planDigest,
-        original_test_sha:proof.tested_commit_sha,
-        failed_phase:proof.first_failed_phase,
-        repair_epoch_handoff:true,
-        original_root_revoked:true,
-        final_runner_pass_verified:false,
-        pull_request_created:false,
-        merge_calls:0
+      // Genuine R112 Gateway fail evidence, owner D1 continuation and native
+      // Rust revocation all belong to the SAME original operational root.
+      // The helper intentionally never claims D1 Runner PASS or PR authority.
+      const handoff=await completeNativeVerifiedFailureHandoff({
+        result,coordinator,sessionId,rootPlanDigest:planDigest,
+        operationalRootId,trustedOwnerRecovery,onPilotPhase
       });
+      assert.equal(createdPr,null,
+        "Original DAG cannot publish PR after a verified Test FAIL");
+      return handoff;
     }
     if(offlineTypecheckProbe){
       assert.equal(result,null,"Failed DAG must not be accepted");
