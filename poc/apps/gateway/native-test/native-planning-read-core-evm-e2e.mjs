@@ -798,6 +798,7 @@ try{
                typeof ports.a2a.sendProtectedTask!=="function"||
                !ports.agentBaseUrls||
                typeof ports.armVerifiedD1BackendRepair!=="function"||
+               typeof ports.armVerifiedD1TestRun!=="function"||
                !["backend","test"].every(role=>
                  /^http:\/\/127\.0\.0\.1:\d+$/u.test(
                    ports.agentBaseUrls[role]??"")))
@@ -805,7 +806,8 @@ try{
             originalA2APorts=Object.freeze({
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
               a2a:ports.a2a,
-              armVerifiedD1BackendRepair:ports.armVerifiedD1BackendRepair
+              armVerifiedD1BackendRepair:ports.armVerifiedD1BackendRepair,
+              armVerifiedD1TestRun:ports.armVerifiedD1TestRun
             });
           },
           async continueWithinActiveRoot(signal){
@@ -880,13 +882,64 @@ try{
             assert.match(observedRepair.commit_sha,/^[a-f0-9]{40}$/u);
             assert.notEqual(observedRepair.commit_sha,signal.tested_commit_sha,
               "R150.8 genuine D1 Backend must produce a different Gitea SHA");
+            // R150.9: after Backend's independent Gateway completion, a
+            // NEW signed Test Task receives a NEW Rust Child DC. Its A2A
+            // worker uses the same original protected Test Agent endpoint.
+            // Neither the old terminal Test DC nor its failed Task is reused.
+            const testDispatched=await dispatchTrustedAdmittedRepairA2A({
+              sessionId:session,epoch:2,
+              planDigest:epochs[1].plan_digest,
+              taskId:"r150-owner-test-fresh",role:"test",
+              coordinator,intake:armed.intake,gateway:gatewayOwner,
+              journal,engineerDid,adapterBaseUrl:adapterUrl,
+              orchestratorToken:token,
+              credential:{
+                credential_id:"urn:native:r150-d1-test-"+randomBytes(7).toString("hex"),
+                valid_from:new Date(Date.now()-1000).toISOString(),
+                validity_seconds:300,
+                credential_status:{
+                  type:"BitstringStatusListEntry",
+                  statusPurpose:"revocation",
+                  statusListIndex:String(randomInt(74001,78000)),
+                  statusListCredential:"https://status.example/lists/native-owner-d1"
+                }
+              },
+              agentBaseUrls:originalA2APorts.agentBaseUrls,
+              a2a:originalA2APorts.a2a,
+              beforeProtectedSend:async issued=>{
+                assert.equal(issued.task_id,"r150-owner-test-fresh");
+                assert.equal(issued.epoch,2);
+                await originalA2APorts.armVerifiedD1TestRun({
+                  taskId:issued.task_id,role:issued.role,
+                  runtimeTaskId:issued.runtime_task_id,
+                  credentialId:issued.credential_id,
+                  repairedSha:observedRepair.commit_sha
+                });
+              }
+            });
+            const testConfirmed=await confirmTrustedAdmittedRepairA2A({
+              receipt:testDispatched,gateway:gatewayOwner,
+              intake:armed.intake,coordinator,sessionId:session,
+              planDigest:epochs[1].plan_digest,epoch:2
+            });
+            assert.equal(testConfirmed.gateway_task_completed,true);
+            assert.equal(testConfirmed.task_id,"r150-owner-test-fresh");
+            const observedAfterTest=await liveClient.getBranchMetadata(workBranch);
+            assert.equal(observedAfterTest.commit_sha,observedRepair.commit_sha,
+              "New signed Docker Test may not silently mutate the repaired SHA");
             const records=await journal.records();
-            assert.equal(records.length,1);
-            assert.equal(records[0].task_id,"r150-owner-backend-repair");
+            assert.equal(records.length,2);
+            assert.notEqual(testDispatched.credential_id,dispatched.credential_id);
+            assert.deepEqual(records.map(r=>r.task_id).sort(),
+              ["r150-owner-backend-repair","r150-owner-test-fresh"]);
             assert.equal(records[0].observation,"adapter_response_verified");
             assert.equal(records[0].parent_credential_id,operationalId);
             ownerD1ChildEvidence={
               original_rust_parent:operationalId,
+              new_test_child_issued:true,
+              test_gateway_task_completed:true,
+              test_a2a_dispatched:true,
+              test_sha:observedAfterTest.commit_sha,
               child_issued:true,
               gateway_task_bound:true,
               a2a_dispatched:true,
@@ -1018,6 +1071,11 @@ try{
           assert.equal(ownerD1ChildEvidence?.a2a_dispatched,true);
           assert.equal(ownerD1ChildEvidence?.provider_executed,true);
           assert.equal(ownerD1ChildEvidence?.gateway_task_completed,true);
+          assert.equal(ownerD1ChildEvidence?.new_test_child_issued,true);
+          assert.equal(ownerD1ChildEvidence?.test_gateway_task_completed,true);
+          assert.equal(ownerD1ChildEvidence?.test_a2a_dispatched,true);
+          assert.equal(ownerD1ChildEvidence?.test_sha,
+            ownerD1ChildEvidence?.repaired_sha);
           assert.match(ownerD1ChildEvidence?.repaired_sha,/^[a-f0-9]{40}$/u);
           assert.notEqual(ownerD1ChildEvidence?.repaired_sha,proof.original_test_sha);
         }else{
