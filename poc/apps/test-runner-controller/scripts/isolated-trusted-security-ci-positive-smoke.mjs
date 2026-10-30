@@ -503,8 +503,9 @@ async function gatewayAuthorizedDisposableRepair({
   const current=await gitea.getBranchMetadata(branchName);
   assert.equal(result.execution.commit_sha,current.commit_sha);
   assert.notEqual(current.commit_sha,failedSha);
-  // R150.3: a NEW Test Task cannot be prepared while its Backend
-  // dependency has not been independently Gateway-attested.
+  // Bind a distinct Test task first. A fresh binding alone is NOT
+  // sufficient: its signed Backend dependency must be Gateway-completed.
+  registry.bindTask(sessionId,testTaskId,testRuntimeTaskId,"test");
   assert.throws(()=>gateway.prepare({
    task_id:testRuntimeTaskId,agent_role:"test",
    tool:"run_tests",arguments:{branch:branchName,profile:"poc-default"}
@@ -516,9 +517,8 @@ async function gatewayAuthorizedDisposableRepair({
     commit_sha:current.commit_sha,files_modified:[file],files_created:[],
     test_outcome:"not_run"}
   });
-  // This is an in-process no-model trusted-observation fixture, NOT
-  // proof that the R149 owner's real A2A/Child DC has been connected.
-  registry.bindTask(sessionId,testTaskId,testRuntimeTaskId,"test");
+  // In-process trusted-observation fixture: not yet the R149
+  // original owner/A2A/Child DC integration.
   const preparedTest=gateway.prepare({
    task_id:testRuntimeTaskId,agent_role:"test",
    tool:"run_tests",arguments:{branch:branchName,profile:"poc-default"}
