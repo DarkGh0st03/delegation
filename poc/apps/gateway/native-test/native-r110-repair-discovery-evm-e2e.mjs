@@ -208,7 +208,9 @@ try{
    async execute(record){
     effects++;
     const {tool,arguments:arg}=record.request;
-    if(arg.branch!==branch)throw Error("Provider fixture denies a changed branch");
+    const target=tool==="create_pull_request"?arg.head_branch:arg.branch;
+    if(target!==branch)
+     throw Error("Provider fixture denies a changed branch");
     if(tool==="update_file"&&arg.path===file){
      repairWrite=arg.content.includes("corrected");
      currentSha=repairWrite?repairedSha:failedSha;
