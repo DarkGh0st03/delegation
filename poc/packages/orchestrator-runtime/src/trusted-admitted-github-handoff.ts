@@ -37,6 +37,10 @@ import type {TrustedRepairFeedbackSignal}
   from "./trusted-validation-repair-feedback.ts";
 import {TrustedOperationalEpochIntake}
   from "./trusted-operational-epoch-intake.ts";
+import {TrustedOrchestratorRootPresenter}
+  from "./trusted-orchestrator-root-presenter.ts";
+import {createTrustedRootVpSignerServer}
+  from "./trusted-root-vp-private-ipc.ts";
 
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const REF=/^refs\/heads\/[A-Za-z0-9][A-Za-z0-9._/-]*$/u;
@@ -136,6 +140,12 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
       githubApiFetchFn?:typeof fetch;
       /** R123 opt-in owner-only recovery, never from an OIDC or model field.
        * The same real Coordinator, Gateway and Engineer approval are mandatory. */
+      /** R131 private root VP signing under the SAME original live
+       * Coordinator and GitHub run watch. Operator-owned only. */
+      ownerRootVpSigning?:Readonly<{
+        socketPath:string;secretFile:string;adapterBaseUrl:string;
+        orchestratorToken:string;audience:string;
+      }>;
       ownerOperationalRecovery?:Readonly<{
         gateway:TrustedPlanIpcClient;
         signedApprovals:SignedEngineerApprovalFileStore;
@@ -205,7 +215,7 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
   });
   const {admissionStore,pins,geminiApiKey,githubApiToken,
     expectedWorkflowPath,githubApiFetchFn,ownerOperationalRecovery,
-    ...trusted}=input;
+    ownerRootVpSigning,...trusted}=input;
   const running=await startPersistedReviewedGeminiHandoff({
     ...trusted,
     maxModelCallMs:admitted.max_model_call_ms,
@@ -227,11 +237,20 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
   let status:WatchStatus="active";
   let pending:Promise<void>|undefined;
   let closing:Promise<void>|undefined;
+  let vpServer:Awaited<ReturnType<typeof createTrustedRootVpSignerServer>>|undefined;
   const stop=()=>{
     if(closing)return closing;
     status="closing";
     clearInterval(timer);
-    closing=running.close().then(()=>{
+    vpServer?.fence(); // synchronous: reject new and in-flight signing
+    closing=(async()=>{
+      let socketError:unknown;
+      try{await vpServer?.close();}catch(e){socketError=e;}
+      // Never skip Rust revocation even if private listener close fails.
+      await running.close();
+      if(socketError)throw Error("R131 root VP listener close unconfirmed",
+        {cause:socketError});
+    })().then(()=>{
       status="closed";
     },()=>{
       status="revocation_unconfirmed";
@@ -313,6 +332,29 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
   // path, not leave an orphaned operational session.
   let approvedDag;
   try{
+    if(ownerRootVpSigning){
+      // The signed Engineer handoff has issued the operational Rust root
+      // and installed Gateway execution BEFORE any signer may listen.
+      const root=input.coordinator.trustedOperationalAuthority();
+      const presenter=new TrustedOrchestratorRootPresenter({
+        adapterBaseUrl:ownerRootVpSigning.adapterBaseUrl,
+        orchestratorToken:ownerRootVpSigning.orchestratorToken,
+        rootCredentialId:root.credential_id,
+        rootPermissions:root.permissions
+      });
+      vpServer=await createTrustedRootVpSignerServer({
+        socketPath:ownerRootVpSigning.socketPath,
+        secretFile:ownerRootVpSigning.secretFile,
+        presenter,rootCredentialId:root.credential_id,
+        rootPermissions:root.permissions,audience:ownerRootVpSigning.audience,
+        liveRoot:{
+          coordinator:input.coordinator,
+          originalPlanDigest:root.plan_digest,
+          ownerRunActive:()=>status==="active"
+        }
+      });
+      await vpServer.start();
+    }
     const recovery=ownerOperationalRecovery?
       await armTrustedOwnerOperationalRecovery({
         ...ownerOperationalRecovery,coordinator:input.coordinator,running
@@ -330,6 +372,8 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
   return Object.freeze({
     ...running,
     approvedDag,
+    // The socket is owner-private; only its existence is exposed here.
+    ...(vpServer?{rootVpSignerReady:true as const}:{}),
     githubRunWatch:Object.freeze({
       checkNow,
       get status():WatchStatus{return status;}

@@ -13,6 +13,8 @@ import type {TrustedRootPresentationSigner}
  from "../../../apps/gateway/src/trusted-root-vp-verification.ts";
 import {TrustedOrchestratorRootPresenter}
  from "./trusted-orchestrator-root-presenter.ts";
+import type {TrustedExecutionCoordinator}
+ from "./trusted-execution-coordinator.ts";
 
 const ROUTE="/v1/private-root-vp",MAX_BODY=270000,MAX_VP=262144;
 const HORIZON=30000,MAX_USED=4096;
@@ -47,7 +49,15 @@ export async function createTrustedRootVpSignerServer(config:{
  socketPath:string;secretFile:string;presenter:TrustedOrchestratorRootPresenter;
  rootCredentialId:string;rootPermissions:ReadonlyArray<Permission>;
  audience:string;
-}):Promise<{server:Server;start():Promise<void>;close():Promise<void>}>{
+ /** R131 production: the SAME original live Coordinator, not a model port.
+  * Offline R130 socket fixtures intentionally omit it. */
+ liveRoot?:Readonly<{
+  coordinator:Pick<TrustedExecutionCoordinator,
+   "phase"|"trustedOperationalAuthority">;
+  originalPlanDigest:string;
+  ownerRunActive:()=>boolean;
+ }>;
+}):Promise<{server:Server;start():Promise<void>;fence():void;close():Promise<void>}>{
  const socket=pathOf(config.socketPath);
  await ownerDir(dirname(socket));
  const secret=await loadTrustedPlanIpcSecret(config.secretFile);
@@ -63,6 +73,30 @@ export async function createTrustedRootVpSignerServer(config:{
   const k=key(g);if(allowed.has(k))fail("duplicate pinned grant");
   allowed.add(k);
  }
+ const live=config.liveRoot;
+ if(live!==undefined&&
+    (!live.coordinator||
+     typeof live.coordinator.trustedOperationalAuthority!=="function"||
+     typeof live.ownerRunActive!=="function"||
+     !/^[a-f0-9]{64}$/u.test(live.originalPlanDigest)))
+  fail("live owner root and signed plan digest required");
+ let fenced=false;
+ const assertLive=()=>{
+  if(fenced)fail("trusted owner has closed root signing");
+  if(!live)return; // R130 explicitly isolated transport fixture
+  if(!live.ownerRunActive()||live.coordinator.phase!=="execution")
+   fail("original owner root not active");
+  const issued=live.coordinator.trustedOperationalAuthority();
+  if(issued.credential_id!==config.rootCredentialId||
+     issued.plan_digest!==live.originalPlanDigest||
+     issued.permissions.length!==allowed.size)
+   fail("live Coordinator root identity or scope mismatch");
+  const issuedSet=new Set(issued.permissions.map(key));
+  if(issuedSet.size!==allowed.size||
+     [...allowed].some(grant=>!issuedSet.has(grant)))
+   fail("live Rust-issued root grants changed");
+ };
+ assertLive();
  const seen=new Map<string,number>(),challenges=new Set<string>();
  const server=createServer(async(req,res)=>{
   try{
@@ -122,10 +156,12 @@ export async function createTrustedRootVpSignerServer(config:{
     send(res,409,{error:"challenge_replay"});return;
    }
    challenges.add(r.challenge); // consume BEFORE signer IO
+   assertLive(); // fence prior to calling native signing Adapter
    const vp=await config.presenter.present({
     credential_id:config.rootCredentialId,audience:config.audience,
     challenge:r.challenge,disclosed_permissions:grants
    });
+   assertLive(); // revocation DURING async native signing cannot return a VP
    if(typeof vp!=="string"||vp.length<16||
       Buffer.byteLength(vp,"utf8")>MAX_VP)fail("invalid signed VP");
    send(res,200,{ok:true,signed_vp:vp});
@@ -136,7 +172,9 @@ export async function createTrustedRootVpSignerServer(config:{
   server,
   async start(){
    if(running)fail("already started");
+   assertLive();
    await ownerDir(dirname(socket));
+   assertLive();
    try{await lstat(socket);fail("never replace a preexisting socket");}
    catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
    await new Promise<void>((resolve,reject)=>{
@@ -147,7 +185,9 @@ export async function createTrustedRootVpSignerServer(config:{
    try{await chmod(socket,0o600);}catch(e){server.close();throw e;}
    running=true;
   },
+  fence(){fenced=true;},
   async close(){
+   fenced=true;
    if(!running)return;
    await new Promise<void>((resolve,reject)=>{
     server.close(e=>e?reject(e):resolve());server.closeAllConnections();

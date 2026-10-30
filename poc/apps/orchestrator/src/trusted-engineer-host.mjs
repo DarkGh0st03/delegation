@@ -143,9 +143,19 @@ export async function startTrustedEngineerLocalHost(config){
   // have different identities; neither is derived from the other.
   const recovery=config?.recovery;
   const active=config?.activePlanning;
-  // Opt-in only from the trusted local bootstrap. Never from HTTP, GitHub
+  // Opt-in only from trusted owner bootstrap; never from HTTP, GitHub
   // admission, model proposals or per-Task executor arguments.
   const ownerOperationalRecovery=config?.ownerOperationalRecovery;
+  const ownerRootVpSigning=config?.ownerRootVpSigning;
+  if(ownerRootVpSigning&&(
+     !(active?.coordinator instanceof TrustedExecutionCoordinator)||
+     typeof ownerRootVpSigning.socketPath!=="string"||
+     typeof ownerRootVpSigning.secretFile!=="string"||
+     typeof ownerRootVpSigning.adapterBaseUrl!=="string"||
+     typeof ownerRootVpSigning.orchestratorToken!=="string"||
+     !ownerRootVpSigning.orchestratorToken.trim()||
+     typeof ownerRootVpSigning.audience!=="string"))
+    deny("R131 root VP signing requires original owner Coordinator and private secrets");
   if(ownerOperationalRecovery&&(
      !(active?.coordinator instanceof TrustedExecutionCoordinator)||
      !(active.reviewGate instanceof TrustedPlanningReviewGate)||
@@ -279,7 +289,8 @@ export async function startTrustedEngineerLocalHost(config){
       ...trusted,
       ...(ownerOperationalRecovery?{ownerOperationalRecovery:{
         ...ownerOperationalRecovery,gateway:recovery.gateway
-      }}:{})
+      }}:{}),
+      ...(ownerRootVpSigning?{ownerRootVpSigning}:{})
     }),{
       verifyTerminalClosure:verifyOriginalOperationalRetirement
     });
