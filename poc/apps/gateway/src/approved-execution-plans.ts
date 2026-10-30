@@ -304,7 +304,8 @@ export class TrustedApprovedExecutionPlans {
    * Until that is integrated, unresolved tasks MUST block this transition.
    */
   async admitNextOperationalEpoch(sessionId:string,epochVersion:number):
-    Promise<Readonly<{status:"gateway_epoch_admitted";epoch:number;plan_digest:string}>>{
+    Promise<Readonly<{status:"gateway_epoch_admitted";epoch:number;plan_digest:string;
+      blocked_descendant_task_ids:ReadonlyArray<string>}>>{
     ensureId(sessionId,"session ID");
     const session=this.#sessions.get(sessionId);
     if(!this.#epochIntake||!session||
@@ -316,7 +317,7 @@ export class TrustedApprovedExecutionPlans {
       denied("Operational epoch version must advance exactly once");
     // An in-flight original/previous Task may have an authorized Prepare.
     // Never retire its grants before independently confirming quiescence.
-    this.#assertEpochQuiescent(session);
+    const initialBlocked=this.#assertEpochQuiescent(session);
     this.#epochAdmissionInFlight.add(sessionId);
     try{
       const history=await this.#epochIntake.verifiedEpochHistory();
@@ -337,7 +338,9 @@ export class TrustedApprovedExecutionPlans {
          plan.tasks.length>MAX_TASKS||
          plan.tasks.some((t:any)=>!TASK_AGENT.has(t.agent_id)))
         denied("Operational epoch plan is outside pinned root session");
-      this.#assertEpochQuiescent(session);
+      const finalBlocked=this.#assertEpochQuiescent(session);
+      if(JSON.stringify(finalBlocked)!==JSON.stringify(initialBlocked))
+        denied("Previous epoch changed during admission");
       for(const task of plan.tasks){
         if(session.plan.tasks.some((t:any)=>t.id===task.id)||
            session.admittedEpochTasks.has(task.id)||
@@ -355,7 +358,8 @@ export class TrustedApprovedExecutionPlans {
       // An old passing Test may never authorize a PR after replanning.
       session.testedFeatureSha=undefined;
       return Object.freeze({status:"gateway_epoch_admitted" as const,
-        epoch:epochVersion,plan_digest:epoch.plan_digest});
+        epoch:epochVersion,plan_digest:epoch.plan_digest,
+        blocked_descendant_task_ids:finalBlocked});
     }finally{
       this.#epochAdmissionInFlight.delete(sessionId);
     }
@@ -788,28 +792,67 @@ export class TrustedApprovedExecutionPlans {
   }
 
   /**
-   * A plan cannot be skipped merely because its Tasks were never bound.
-   * Check every Task of the currently admitted DAG, not only the subset
-   * observed in the runtime-task map. A failed Test will need a separate,
-   * trusted terminal-failure report before it can qualify for transition.
+   * R105: only verified-failed Test Tasks and their strict transitive DAG
+   * descendants can be terminated without successful provider effects.
+   * All independent tasks MUST have completed, including unbound ones.
+   * A descendant cannot be skipped if any provider request reached Gitea
+   * or the Runner; this also protects PR/review Tasks after a failed test.
+   * An already prepared request is rejected by the stale-epoch fence.
    */
-  #assertEpochQuiescent(session:ActivePlan):void{
+  #assertEpochQuiescent(session:ActivePlan):ReadonlyArray<string>{
     const previous=session.currentEpoch===1?session.plan:
       [...session.admittedEpochTasks.values()]
         .find(x=>x.epoch===session.currentEpoch)?.plan;
     if(!previous||!Array.isArray(previous.tasks)||!previous.tasks.length)
       denied("Current operational epoch is missing its immutable plan");
+    const bindings=new Map<string,RuntimeTaskBinding[]>();
+    for(const b of this.#bindings.values()){
+      if(b.sessionId!==session.sessionId||
+         b.epochVersion!==session.currentEpoch)continue;
+      const group=bindings.get(b.planTaskId)??[];
+      group.push(b);bindings.set(b.planTaskId,group);
+    }
+    const failed=new Set<string>();
     for(const task of previous.tasks){
-      const bound=[...this.#bindings.values()].filter(b=>
-        b.sessionId===session.sessionId&&
-        b.epochVersion===session.currentEpoch&&
-        b.planTaskId===task.id);
-      if(bound.length!==1||bound[0].completing||
-         bound[0].inFlightEffects!==0||
-         !(bound[0].completed||
-           (task.agent_id==="test"&&bound[0].failedFinalized)))
+      const group=bindings.get(task.id)??[];
+      if(group.length>1)denied("Duplicate previous epoch Task binding");
+      const b=group[0];
+      if(b?.failedFinalized){
+        if(task.agent_id!=="test"||b.agent!=="test"||
+           b.completed||b.completing||b.inFlightEffects!==0||
+           !b.failedRunner||b.successfulRequests.size!==0)
+          denied("Only corroborated failed Test Tasks may terminate an epoch");
+        failed.add(task.id);
+      }
+    }
+    // Compute the exact transitive dependency closure. No model-supplied
+    // skipped list is accepted, and a sibling cannot be discarded.
+    const blocked=new Set<string>();
+    let changed=true;
+    while(changed){
+      changed=false;
+      for(const task of previous.tasks){
+        if(failed.has(task.id)||blocked.has(task.id))continue;
+        if(task.depends_on.some((dep:string)=>
+            failed.has(dep)||blocked.has(dep))){
+          blocked.add(task.id);changed=true;
+        }
+      }
+    }
+    for(const task of previous.tasks){
+      const b=bindings.get(task.id)?.[0];
+      if(blocked.has(task.id)){
+        // A planned PR (or its own dependent descendants) is allowed to
+        // be unbound, but never allowed to have an actual provider effect.
+        if(b&&(b.completed||b.completing||b.failedFinalized||
+           b.failedRunner!==undefined||b.inFlightEffects!==0||
+           b.successfulRequests.size!==0))
+          denied("Blocked descendant has a provider effect or terminal state");
+      }else if(!b||b.completing||b.inFlightEffects!==0||
+          !(b.completed||(failed.has(task.id)&&b.failedFinalized)))
         denied("Previous epoch has unresolved, unbound or in-flight Tasks");
     }
+    return Object.freeze([...blocked].sort());
   }
 
   #taskPlan(session:ActivePlan,binding:RuntimeTaskBinding):any{
