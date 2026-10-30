@@ -417,6 +417,14 @@ export class GiteaClient {
        (body!==undefined&&
          (typeof body!=="string"||body.length>4096)))
       throw new ProviderConflictError("Invalid explicitly scoped draft PR request");
+    // Gitea's CreatePullRequestOption has no writable draft field.
+    // A configured WIP title prefix is what makes the SERVER return
+    // draft:true and prevents accidental merge. This is not cosmetic:
+    // never weaken the independent created/GET draft=true checks below.
+    const draftTitle=/^(?:WIP:|\[WIP\])(?:\s|$)/iu.test(title)
+      ?title:"WIP: "+title;
+    if(draftTitle.length>160)
+      throw new ProviderConflictError("Draft PR WIP title exceeds limit");
     const head=await this.getBranchMetadata(headBranch);
     if(head.commit_sha!==expectedHeadSha)
       throw new ProviderConflictError("Draft PR Gitea HEAD differs from accepted SHA");
@@ -428,8 +436,7 @@ export class GiteaClient {
     const created=object(await this.#requestJson(this.#repoApi("/pulls"),{
       method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({
-        head:headBranch,base:baseBranch,title,body:body??"",
-        draft:true
+        head:headBranch,base:baseBranch,title:draftTitle,body:body??""
       })
     }),"Gitea draft PR response");
     const number=requiredSafeInteger(created.number,"pull_request.number");
