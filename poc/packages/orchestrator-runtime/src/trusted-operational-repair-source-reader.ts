@@ -66,7 +66,8 @@ export class TrustedOperationalRepairSourceReader {
      !["orchestrator","backend","frontend","test"].includes(config.agentRole)||
      !SHA.test(config.expectedTestedSha)||
      typeof config.issueSignedVp!=="function"||
-     config.gateway.providerLabel!=="gitea")
+     config.gateway.providerLabel!=="gitea"||
+     !config.gateway.hasTrustedOperationalPlanGate())
    deny("real Gateway, owner intake, provider and VP issuer required");
   config.featureHeadReader.assertSameIntake(config.intake);
   this.#gateway=config.gateway;
