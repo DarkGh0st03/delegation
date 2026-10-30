@@ -111,6 +111,7 @@ async function harness(t:import("node:test").TestContext){
   sessionId:session,engineerDid:engineer,pinnedAgentRegistry:registry
  });
  let provider=0,verified=0,policy=0,attested=0;
+ let nextRunnerFails=false;
  const gates=new TrustedApprovedExecutionPlans({
   repository:repo,engineerDid:engineer,
   approvals:signedStore,operationalEpochIntake:intake,
@@ -149,14 +150,24 @@ async function harness(t:import("node:test").TestContext){
      branch:req.arguments.branch,path:req.arguments.path,
      revision:sha,commit_sha:sha,blob_sha:"b",precondition_blob_sha:"a"
     };
-    if(req.tool==="run_tests")return {
-     provider:"runner" as const,performed:true as const,
-     tool:"run_tests" as const,branch:req.arguments.branch,
-     revision:sha,tested_commit_sha:sha,runner_profile:"poc-default",
-     status:"pass" as const,phases,
-     project_tests:{status:"pass" as const},
-     researcher_acceptance:{status:"pass" as const}
-    };
+    if(req.tool==="run_tests"){
+     const fail=nextRunnerFails;nextRunnerFails=false;
+     const measured=fail?phases.map(p=>({
+      phase:p.phase,status:(p.phase==="typecheck"?"fail":
+       p.phase==="dependency_install"?"pass":"skipped") as "pass"|"fail"|"skipped"
+     })):phases;
+     return {
+      provider:"runner" as const,performed:true as const,
+      tool:"run_tests" as const,branch:req.arguments.branch,
+      revision:sha,tested_commit_sha:sha,runner_profile:"poc-default" as const,
+      status:(fail?"fail":"pass") as "pass"|"fail",
+      phases:measured,
+      project_tests:{status:(fail?"fail":"pass") as "pass"|"fail"},
+      ...(fail?{typecheck_error_codes:["TS2339"]}:{
+        researcher_acceptance:{phase:"researcher_acceptance" as const,status:"pass" as const}
+      })
+     };
+    }
     throw Error("unhandled request");
    }
   },
@@ -199,6 +210,7 @@ async function harness(t:import("node:test").TestContext){
   await gates.confirmTaskCompletion("task-test");
  }
  return {gates,intake,runtime,prepared,invoke,initialPass,
+  setRunnerFailure:()=>{nextRunnerFails=true;},
   setPhase:(s:string)=>{phase=s;},
   get provider(){return provider;},get verified(){return verified;},
   get policy(){return policy;},get attested(){return attested;}
@@ -336,5 +348,88 @@ test("R103 cannot advance to epoch three without executing admitted epoch two",a
  await h.intake.reserveRepairEpoch(third);
  await assert.rejects(h.gates.admitNextOperationalEpoch(session,3),
   /unresolved, unbound or in-flight Tasks/);
+ assert.equal(h.provider,3);
+});
+
+test("R104 real Gateway-observed failed TypeScript validation triggers contained repair cycle",async(t)=>{
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();
+ await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",{branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// bug"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ assert.throws(()=>h.gates.confirmTestValidationFailure("task-test"),
+  /No unique verified failed Runner/);
+ h.setRunnerFailure();
+ await h.invoke("task-test","test","run_tests",runner);
+ const failure=h.gates.confirmTestValidationFailure("task-test");
+ assert.equal(failure.status,"validation_failed");
+ assert.equal(failure.first_failed_phase,"typecheck");
+ assert.deepEqual(failure.typecheck_error_codes,["TS2339"]);
+ assert.equal(failure.tested_commit_sha,sha);
+ assert.equal(h.gates.readVerifiedTestFailure("task-test").request_id,failure.request_id);
+ assert.doesNotMatch(JSON.stringify(failure),/log_reference|source|stderr|credential/i);
+ await assert.rejects(h.gates.confirmTaskCompletion("task-test"),
+  /No active|outside approved|failed|Cannot complete/i);
+ assert.throws(()=>h.runtime.prepare({task_id:"task-test",agent_role:"test",
+  tool:"run_tests",arguments:runner}),/outside approved plan/);
+ assert.throws(()=>h.gates.confirmTestValidationFailure("task-test"),
+  /No unique verified failed Runner/);
+ await h.intake.reserveRepairEpoch(repair());
+ const admitted=await h.gates.admitNextOperationalEpoch(session,2);
+ assert.equal(admitted.epoch,2);
+ h.gates.bindTask(session,"backend-repair","backend-fix-2","backend");
+ h.gates.bindTask(session,"test-repair","test-rerun-2","test");
+ await h.invoke("backend-fix-2","backend","update_file",edit("// fixed"));
+ await h.gates.confirmTaskCompletion("backend-fix-2");
+ await h.invoke("test-rerun-2","test","run_tests",runner);
+ await h.gates.confirmTaskCompletion("test-rerun-2");
+ assert.equal(h.provider,5);
+ assert.equal(h.verified,5);
+ assert.equal(h.policy,5);
+ await h.gates.retireSession(session);
+ const result=h.gates.readVerifiedRunnerEffect({
+  session_id:session,task_id:"test-repair",branch,tested_commit_sha:sha
+ });
+ assert.equal(result.status,"pass");
+ assert.equal(result.phases.length,7);
+});
+test("R104 a model-supplied failure cannot authorize repair without Gateway Runner evidence",async(t)=>{
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",{branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// source"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ await h.intake.reserveRepairEpoch(repair());
+ assert.throws(()=>h.gates.confirmTestValidationFailure("task-test"),
+  /No unique verified failed Runner/);
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
+  /unresolved/);
+ assert.equal(h.provider,2);
+});
+test("R104 revoked operational root blocks repair even after observed validation failure",async(t)=>{
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",{branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// bug"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ h.setRunnerFailure();await h.invoke("task-test","test","run_tests",runner);
+ h.gates.confirmTestValidationFailure("task-test");
+ await h.intake.reserveRepairEpoch(repair());
+ h.setPhase("closed");
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
+  /operational root is not active/);
  assert.equal(h.provider,3);
 });
