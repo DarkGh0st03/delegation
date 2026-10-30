@@ -61,7 +61,7 @@ function grant(context,tool,branch,path){
     p.operation===tool&&typeof p.resource==="string"&&
     p.resource.endsWith(suffix));
 }
-function confirmedRead(request,branch,path){
+function confirmedReadEffect(request,branch,path){
   const responses=(request?.contents??[]).flatMap(c=>c.parts??[])
     .filter(p=>p.functionResponse?.name==="read_file")
     .map(p=>p.functionResponse.response);
@@ -79,11 +79,16 @@ function confirmedRead(request,branch,path){
      data.path!==path||!SHA.test(data.revision??"")||
      typeof data.content!=="string"||data.content.length>200000)
     deny("foreign or oversized read result");
-  return data.content;
+  return data;
 }
+function confirmedRead(request,branch,path){
+  return confirmedReadEffect(request,branch,path).content;
+}
+const FAULT='\\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\\n';
 export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
   #script;#index=0;#targets;#rules;#controllerRules=null;
   #statusRule=null;#proof=null;#controllerProof=null;#statusProof=null;
+  #trustedRepair=null;#trustedRepairUsed=false;
   constructor({context,calls}={}){
     super({model:"offline-source-derived-routes-no-provider"});
     if(context?.role!=="backend"||!Array.isArray(calls)||
@@ -135,7 +140,63 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
     return Number(this.#proof!==null)+Number(this.#controllerProof!==null)+
       Number(this.#statusProof!==null);
   }
+  /**
+   * R150.8 one-shot, zero-billing source-derived repair. Only the trusted
+   * original native owner calls this after verifying D1, the Gateway bind,
+   * exact Backend file grants and genuine failed SHA. Agent/model input is
+   * never capable of arming the repair or expanding those permissions.
+   */
+  armTrustedD1TypecheckRepair({branch,path,failedSha,taskId}={}){
+    if(this.#trustedRepairUsed||this.#trustedRepair||
+       this.#index<this.#script.length||
+       typeof branch!=="string"||!branch.startsWith("feature/")||
+       typeof path!=="string"||
+       !/^apps\\/backend\\/src\\/[A-Za-z0-9._/-]+\\.ts$/u.test(path)||
+       path.split("/").some(x=>x==="."||x==="..")||
+       !SHA.test(failedSha??"")||
+       typeof taskId!=="string"||
+       !/^r150-owner-backend-repair$/u.test(taskId))
+      deny("trusted D1 typecheck repair requires exhausted signed original task");
+    this.#trustedRepair={branch,path,failedSha,stage:0,taskId};
+    this.#trustedRepairUsed=true;
+  }
   async *generateContentAsync(request){
+    const repair=this.#trustedRepair;
+    if(repair){
+      if(repair.stage===0){
+        repair.stage=1;
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"r150-d1-backend-read",
+          name:"read_file",
+          args:{branch:repair.branch,path:repair.path}
+        }}]}};
+        return;
+      }
+      if(repair.stage===1){
+        const observed=confirmedReadEffect(
+          request,repair.branch,repair.path);
+        if(observed.revision!==repair.failedSha)
+          deny("D1 repair must read the exact failed Gitea revision");
+        const source=observed.content;
+        if(source.split(FAULT).length!==2)
+          deny("unsupported or changed real TypeScript fault");
+        repair.stage=2;
+        // A tiny deterministic fixture corrects precisely the observed
+        // injected TS2820 line. This is NOT independent AI-generated code.
+        const corrected=source.replace(FAULT,"\\n");
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"r150-d1-backend-update",
+          name:"update_file",
+          args:{branch:repair.branch,path:repair.path,content:corrected}
+        }}]}};
+        return;
+      }
+      this.#trustedRepair=null;
+      yield {content:{role:"model",parts:[{
+        text:"D1 Backend source repair submitted through protected Gateway tools."
+      }]}};
+      return;
+    }
     const index=this.#index++,call=this.#script[index];
     if(!call){
       yield {content:{role:"model",parts:[{
