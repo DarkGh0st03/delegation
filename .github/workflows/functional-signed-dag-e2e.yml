@@ -300,7 +300,7 @@ jobs:
               ];
               const sites=new Set([
                 "native-approved-planner-dag-positive.mjs",
-                "trusted-approved-a2a-dispatcher.ts","a2a-"+"workflow.ts",
+                "trusted-approved-a2a-dispatcher.ts","a2a-"+"workflow"+"."+"ts",
                 "orchestrator.ts","executor.ts","adk-a2a-handler.ts",
                 "artifact-validation.ts","private-request-handler.ts",
                 "gateway-tool-client.ts","adk-tool-progress.ts",
