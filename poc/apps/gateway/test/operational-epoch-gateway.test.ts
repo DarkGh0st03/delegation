@@ -142,7 +142,7 @@ const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
 async function harness(t:import("node:test").TestContext,
  options:{withReview?:boolean;withIndependentSibling?:boolean;
   withTestWrite?:boolean;withRead?:boolean;withInlineRead?:boolean;
-  withDurable?:boolean}={}){
+  withDurable?:boolean;withRemoteEpoch?:boolean}={}){
  const parent=options.withReview?
   initialWithReview(options.withIndependentSibling):
   options.withInlineRead?initialWithInlineRead():
@@ -185,6 +185,7 @@ async function harness(t:import("node:test").TestContext,
   ])).values()]
  };
  let phase="execution";
+ let nativeRootRevoked=false;
  let gates:TrustedApprovedExecutionPlans;
  const coordinator={
   get phase(){return phase;},
@@ -214,9 +215,67 @@ async function harness(t:import("node:test").TestContext,
  });
  let provider=0,verified=0,policy=0,attested=0;
  let nextRunnerFails=false;
+ // Mock native Adapter + VP only in this fixture: production R133 uses
+ // R130 Unix HMAC Orchestrator and Rust's genuine verifier on each read.
+ const remote=options.withRemoteEpoch?new TrustedGatewaySignedEpochInspector({
+  directory:epochsDir,approvals:signedStore,
+  trustedOrchestratorDid:"did:example:orchestrator",
+  nativeRootStatus:new TrustedGatewayNativeRootStatusReader({
+   baseUrl:"http://r133-adapter.internal:8090",gatewayToken:"gateway-bearer",
+   fetchFn:(async(url:unknown,init?:RequestInit)=>{
+    if(phase!=="execution"||nativeRootRevoked)
+     return new Response("{}",{status:403});
+    assert.equal(new Headers(init?.headers).get("authorization"),
+     "Bearer gateway-bearer");
+    assert.deepEqual(JSON.parse(String(init?.body)),
+     {credential_id:rootAuthority.credential_id});
+    const status={credential_id:rootAuthority.credential_id,
+     status_purpose:"revocation",status_set:false,
+     source:"evm_anchored_signed_jwt",anchor_version:5};
+    if(String(url).endsWith("/v1/credentials/status/inspect"))
+     return new Response(JSON.stringify(status),{status:200});
+    if(String(url).endsWith("/v1/credentials/root/inspect")){
+     const now=BigInt(Date.now())*1_000_000n;
+     return new Response(JSON.stringify({
+      credential_id:rootAuthority.credential_id,issuer_id:engineer,
+      delegatee_id:"did:example:orchestrator",
+      iat_ns:(now-1_000_000_000n).toString(),
+      exp_ns:(now+60_000_000_000n).toString(),
+      permissions:rootAuthority.permissions,status,
+      source:"adapter_local_issued_root"
+     }),{status:200});
+    }
+    throw Error("Unexpected native status endpoint");
+   }) as typeof fetch
+  }),
+  rootVpVerifier:new TrustedGatewayRootVpVerifier({
+   audience:"urn:thesis:gateway:r133",
+   signer:{async present(data){
+    if(phase!=="execution"||nativeRootRevoked)
+     throw Error("Orchestrator root retired");
+    assert.equal(data.credential_id,rootAuthority.credential_id);
+    return "r133-root-vp:"+data.challenge;
+   }},
+   verifier:{
+    async verify(){throw Error("require signed multi-grant root VP");},
+    async verifyMultiple(data){
+     if(phase!=="execution"||nativeRootRevoked)
+      throw Error("Rust status revoked");
+     assert.equal(data.signed_vp,"r133-root-vp:"+data.challenge);
+     return {presenter_id:"did:example:orchestrator",
+      issuer_id:engineer,credential_id:rootAuthority.credential_id,
+      permissions:data.required_permissions,hierarchy_depth:0,
+      expiration:(BigInt(Date.now())*1_000_000n+
+       60_000_000_000n).toString()};
+    }
+   }
+  })
+ }):undefined;
  gates=new TrustedApprovedExecutionPlans({
   repository:repo,engineerDid:engineer,
-  approvals:signedStore,operationalEpochIntake:intake,
+  approvals:signedStore,
+  ...(options.withRemoteEpoch?{remoteEpochInspector:remote!}:
+   {operationalEpochIntake:intake}),
   ...(options.withDurable?{
     operationalSessionStore:new TrustedOperationalSessionStore(operationalDir),
     operationalLeaseMs:120000
@@ -329,6 +388,7 @@ async function harness(t:import("node:test").TestContext,
   coordinator,rootAuthority,dir,signedStore,parent,approved,
   setRunnerFailure:()=>{nextRunnerFails=true;},
   setPhase:(s:string)=>{phase=s;},
+  revokeNativeRoot:()=>{nativeRootRevoked=true;},
   get provider(){return provider;},get verified(){return verified;},
   get policy(){return policy;},get attested(){return attested;}
  };
@@ -1499,7 +1559,7 @@ test("R114 real Gateway pins original root before terminal Test FAIL finalizatio
  * intake is independently persisted and held by the Engineer owner.
  * No paid models, container engine, or external service are invoked here. */
 async function r115RemoteFixture(t:import("node:test").TestContext,
- options:{withDurable?:boolean}={}){
+ options:{withDurable?:boolean;withRemoteEpoch?:boolean}={}){
  const h=await harness(t,options);
  await h.intake.reserveInitialEpoch();
  await h.gates.activate(session,sha);
@@ -2591,4 +2651,80 @@ test("R132 revoke live original root DURING VP verification, no stale attestatio
  assert.equal(f.signedVpCalls,1);
  assert.equal(f.verifiedVpCalls,1);
  assert.equal(f.h.provider,3);
+});
+
+test("R133 HMAC IPC admits remote repair DAG only after finalized Docker Test FAIL",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{
+  withDurable:true,withRemoteEpoch:true
+ });
+ const confirmed=await prepareTrustedRemoteRepairFeedback(request());
+ assert.equal(confirmed.status,"repair_planning_eligible");
+ const reserved=await h.intake.reserveRepairEpoch(repair());
+ const pins={session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:reserved.plan_digest,epoch:2};
+ const receipt=await client.admitVerifiedOperationalEpoch(pins);
+ assert.equal(receipt.status,"gateway_epoch_admitted");
+ assert.equal(receipt.plan_digest,reserved.plan_digest);
+ assert.throws(()=>h.runtime.prepare({
+  task_id:"task-backend",agent_role:"backend",tool:"update_file",
+  arguments:edit("// stale")}),/Stale operational epoch/);
+ h.gates.bindTask(session,"backend-repair","r133-backend","backend");
+ h.gates.bindTask(session,"test-repair","r133-test","test");
+ assert.throws(()=>h.runtime.prepare({
+  task_id:"r133-test",agent_role:"test",tool:"run_tests",arguments:runner
+ }),/dependency/i);
+ await h.invoke("r133-backend","backend","update_file",edit("// repaired"));
+ await h.gates.confirmTaskCompletion("r133-backend");
+ await h.invoke("r133-test","test","run_tests",runner);
+ await h.gates.confirmTaskCompletion("r133-test");
+ assert.equal(h.provider,5);
+ await assert.rejects(client.admitVerifiedOperationalEpoch(pins),
+  /Gateway trusted control denied/);
+});
+
+test("R133 unfinalized original Test FAIL cannot admit remote repair",async t=>{
+ const {h,client}=await r115RemoteFixture(t,{
+  withDurable:true,withRemoteEpoch:true
+ });
+ const next=await h.intake.reserveRepairEpoch(repair());
+ await assert.rejects(client.admitVerifiedOperationalEpoch({
+  session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:next.plan_digest,epoch:2
+ }),/Gateway trusted control denied/);
+ assert.throws(()=>h.gates.bindTask(session,"backend-repair","r133-bad","backend"),
+  /current admitted epoch/);
+ assert.equal(h.provider,3);
+});
+
+test("R133 independently revoked Rust root blocks admission despite signed repair DAG",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{
+  withDurable:true,withRemoteEpoch:true
+ });
+ await prepareTrustedRemoteRepairFeedback(request());
+ const next=await h.intake.reserveRepairEpoch(repair());
+ h.revokeNativeRoot();
+ await assert.rejects(client.admitVerifiedOperationalEpoch({
+  session_id:session,root_plan_digest:planDigest(h.parent),
+  plan_digest:next.plan_digest,epoch:2
+ }),/Gateway trusted control denied/);
+ assert.equal(h.provider,3);
+});
+
+test("R133 remote Gateway denies missing pins and wrong original Engineer digest",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{
+  withDurable:true,withRemoteEpoch:true
+ });
+ await prepareTrustedRemoteRepairFeedback(request());
+ const next=await h.intake.reserveRepairEpoch(repair());
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
+  /Missing trusted epoch intake/);
+ for(const bad of [
+  {root_plan_digest:"b".repeat(64),plan_digest:next.plan_digest},
+  {root_plan_digest:planDigest(h.parent),plan_digest:"c".repeat(64)}
+ ]){
+  await assert.rejects(client.admitVerifiedOperationalEpoch({
+   session_id:session,epoch:2,...bad
+  }),/Gateway trusted control denied/);
+ }
+ assert.equal(h.provider,3);
 });
