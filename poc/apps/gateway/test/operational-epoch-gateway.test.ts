@@ -3384,9 +3384,15 @@ test("R141 wrong provider repository denied with no new signed Task or credentia
    default_branch:"main"
   }),{status:200})) as typeof fetch
  });
- // The GiteaClient trusted by the witness is fixed at capture. This
- // alternate client cannot replace it or create an accepted proof.
- assert.ok(alternate instanceof GiteaClient);
+ // A signed witness captured with a foreign Gitea provider must
+ // fail when its independently verified repository does not match.
+ // The captured Task/branch cannot be replaced by the provider.
+ await assert.rejects(
+  TrustedRetiredRepairAcceptanceWitness.capture({
+   gateway:x.f.client,gitea:alternate,
+   coordinator:x.f.h.coordinator,intake:x.f.h.intake
+  }),/operational root is not active/,
+  "A retired root cannot capture a new signed witness");
  const valid=await x.witness.verifyRetiredExactSha();
  assert.equal(valid.tested_commit_sha,sha);
  assert.equal(valid.pull_request_authorized,false);
