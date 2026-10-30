@@ -1396,13 +1396,15 @@ test("R109 denies discovery Task admission without a matching durable Adapter AC
  * Docker, not an A2A "failed" string or a model-generated claim. */
 async function r112Dispatcher(t:import("node:test").TestContext,
  options:{testFail:boolean;message?:string;optIn?:boolean;remote?:boolean;
+  remoteEpoch?:boolean;
   ownerArmer?:(h:Awaited<ReturnType<typeof harness>>,
    client:TrustedPlanIpcClient)=>Promise<Awaited<ReturnType<
     typeof armTrustedOwnerOperationalRecovery>>>;
  }){
  if(options.ownerArmer&&!options.remote)
   throw Error("R148 owner handoff requires a durable IPC Gateway");
- const h=await harness(t,{withReview:true,withDurable:options.remote});
+ const h=await harness(t,{withReview:true,withDurable:options.remote,
+  withRemoteEpoch:options.remoteEpoch});
  // The owner reserves original epoch 1 itself in the SAME durable journal.
  if(!options.ownerArmer)await h.intake.reserveInitialEpoch();
  await h.gates.activate(session,sha);
@@ -1523,7 +1525,7 @@ test("R112 transport error still retires root despite a real Runner FAIL",async(
 test("R148 one original Test FAIL reaches owner and admits the next signed epoch under live root",async t=>{
  let liveChecks=0,proposalCalls=0;
  const x=await r112Dispatcher(t,{
-  testFail:true,remote:true,
+  testFail:true,remote:true,remoteEpoch:true,
   ownerArmer:async(h,gateway)=>armTrustedOwnerOperationalRecovery({
    gateway,coordinator:h.coordinator,signedApprovals:h.signedStore,
    epochDirectory:join(h.dir,"epochs"),
