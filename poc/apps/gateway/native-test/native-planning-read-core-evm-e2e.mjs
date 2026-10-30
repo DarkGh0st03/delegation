@@ -437,6 +437,7 @@ const root={
 };
 let issued=false,revoked=false;
 let pilotStage="setup",pilotModelTurns=0,pilotModelFailure="none";
+let nativeOwnerIpcServer;
 let pilotDelegatedPhase="not_started",pilotDelegatedFailure="none";
 let pilotPlanningRejection=null,pilotTaskCounts=null;
 try{
@@ -693,6 +694,95 @@ try{
     assert.deepEqual(actualGrants,expectedGrants,
       "Operational root must match the exact approved resource/operation set");
     if(positiveDag){
+      let trustedOwnerRecovery;
+      if(ownerD1Probe){
+        // The *existing* approvedPlans instance is shared by this Gateway,
+        // the issued Rust root's Coordinator and owner-private HMAC IPC.
+        // No replacement plan, parallel test-root or model-controlled token.
+        const secretFile=join(ownerDir,"owner-hmac-secret.hex");
+        const socketPath=join(ownerDir,"gateway-owner.sock");
+        await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+          {mode:0o600});
+        nativeOwnerIpcServer=await createTrustedPlanIpcServer({
+          socketPath,secretFile,plans:approvedPlans,
+          signedEpochInspector:ownerGatewayInspector
+        });
+        await nativeOwnerIpcServer.start();
+        const gatewayOwner=await TrustedPlanIpcClient.connect({
+          socketPath,secretFile
+        });
+        assert.equal(gatewayOwner.operationalLeaseConfigured(),true);
+        assert.equal(gatewayOwner.operationalSessionDurableConfigured(),true);
+        const currentPlan=trustedReceipt.plan;
+        const grants=assertApprovedPlanScope(
+          currentPlan,trustedReceipt.approval,{
+            allowedOperations:new Set(RUST_OPERATIONS),
+            expectedEngineerDid:engineerDid
+          });
+        const target=roleFiles.backend.find(path=>
+          path.startsWith("apps/backend/src/")&&path.endsWith(".ts")&&
+          grants.some(g=>g.agent_id==="backend"&&g.operation==="read_file"&&
+            g.resource===canonicalFileUri(repo,workBranch,path))&&
+          grants.some(g=>g.agent_id==="backend"&&g.operation==="update_file"&&
+            g.resource===canonicalFileUri(repo,workBranch,path)));
+        assert.ok(target,"R150.5 must derive the error target from the signed Backend grants");
+        const fileResource=canonicalFileUri(repo,workBranch,target);
+        const branchResource="gitea://"+repo.authority+"/"+repo.owner+"/"+
+          repo.repository+"/branches/"+encodeURIComponent(workBranch);
+        const operationalId=coordinator.trustedOperationalAuthority().credential_id;
+        const armed=await armTrustedOwnerOperationalRecovery({
+          gateway:gatewayOwner,coordinator,signedApprovals:signedStore,
+          epochDirectory:ownerEpochDir,
+          running:{readiness:{
+            session_id:session,base_revision:baseSha,
+            plan_digest:packet.plan_digest,
+            authenticated_engineer_did:engineerDid
+          },operational_root_id:operationalId},
+          verifyLiveRun:async()=>{
+            assert.equal(coordinator.phase,"execution");
+            await gatewayOwner.renewLease(session,packet.plan_digest);
+          },
+          planRepairEpoch:{
+            giteaClient:liveClient,
+            proposeRepairPlan:async input=>{
+              // The zero-billing test selects existing grants, not a new
+              // capability. A future model may propose a different bounded
+              // plan, which still faces the same Rust + Gateway admission.
+              assert.equal(input.feedback.failed_phase,"typecheck");
+              assert.ok(input.feedback.typecheck_error_codes.includes("TS2820"));
+              assert.equal(input.feedback.remaining_repair_epochs,2);
+              return {tasks:[
+                {id:"r150-owner-backend-repair",agent_id:"backend",
+                 title:"Fix real observed Backend typecheck regression",
+                 description:"Correct the signed Backend source only",
+                 depends_on:[],permissions:[
+                   {resource:fileResource,operation:"read_file",
+                    reason:"Inspect already approved source"},
+                   {resource:fileResource,operation:"update_file",
+                    reason:"Repair only the original approved file"}]},
+                {id:"r150-owner-test-fresh",agent_id:"test",
+                 title:"Run new independent Test task",
+                 description:"Verify the repaired exact Gitea SHA in Docker",
+                 depends_on:["r150-owner-backend-repair"],
+                 permissions:[{resource:branchResource,
+                   operation:"run_tests",
+                   reason:"Independent new-epoch Docker validation"}]}
+              ]};
+            },admitReservedEpoch:true
+          }
+        });
+        trustedOwnerRecovery={
+          ...armed,async continueWithinActiveRoot(signal){
+            await armed.continueWithinActiveRoot(signal);
+            const epochs=await armed.intake.verifiedEpochHistory();
+            assert.deepEqual(epochs.map(e=>e.epoch),[1,2]);
+            assert.equal(epochs[0].root_credential_id,operationalId);
+            assert.equal(epochs[1].root_credential_id,operationalId);
+            assert.deepEqual(epochs[1].plan.tasks.map(t=>t.id),
+              ["r150-owner-backend-repair","r150-owner-test-fresh"]);
+          }
+        };
+      }
       let approvedAgentModelFactory;
       if(geminiPilot||
          process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS==="1"){
@@ -779,6 +869,7 @@ try{
         operationalRootId,branch:workBranch,planningFiles:snapshot.files,
         referenceFiles:approvedAgentModelFactory?undefined:referenceFiles,
         realGeminiPilot:geminiPilot,
+        ...(trustedOwnerRecovery?{trustedOwnerRecovery}:{}),
         ...(geminiPilot?{
           onPilotPhase:phase=>{pilotDelegatedPhase=phase;},
           onPilotError:category=>{pilotDelegatedFailure=category;}
@@ -797,6 +888,16 @@ try{
       });
       if(signedOfflineTypecheckProbe){
         const proof=globalThis.__nativeDagPositive;
+        if(ownerD1Probe){
+          assert.equal(proof.status,"trusted_owner_repair_handoff_retired");
+          assert.equal(proof.original_dag_completed,false);
+          assert.equal(proof.repair_epoch_handoff,true);
+          assert.equal(proof.final_runner_pass_verified,false);
+          assert.equal(proof.original_root_revoked,true);
+          assert.equal(proof.pull_request_created,false);
+          assert.equal(proof.failed_phase,"typecheck");
+          assert.equal(coordinator.phase,"closed");
+        }else{
         assert.equal(proof.typecheck_probe_verified,true);
         assert.equal(proof.signed_dag_completed,false);
         assert.equal(proof.status,"expected_typecheck_failure");
@@ -806,6 +907,7 @@ try{
         assert.equal(proof.operational_root_revoked,true);
         assert.equal(proof.main_unchanged,true);
         assert.deepEqual(proof.typecheck_error_codes,["TS2820"]);
+        }
       }else{
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
       const sourceWitnessMode=
@@ -1080,6 +1182,10 @@ try{
   try{
     if(issued&&!revoked)await authorityClient.revokeRoot(rootId);
   }finally{
-    if(receiptDir)await rm(receiptDir,{recursive:true,force:true});
+    try{if(nativeOwnerIpcServer)await nativeOwnerIpcServer.close();}
+    finally{
+      if(ownerDir)await rm(ownerDir,{recursive:true,force:true});
+      if(receiptDir)await rm(receiptDir,{recursive:true,force:true});
+    }
   }
 }
