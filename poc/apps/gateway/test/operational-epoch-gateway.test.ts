@@ -472,6 +472,13 @@ test("R104 real Gateway-observed failed TypeScript validation triggers contained
   /No unique verified failed Runner/);
  h.setRunnerFailure();
  await h.invoke("task-test","test","run_tests",runner);
+ // R119: the legacy "retry in the SAME signed Test Task" fixture is
+ // incompatible with R104/R112. A genuine Runner FAIL immediately fences
+ // further provider effects, even BEFORE its failure is finalized by host.
+ // Replanning must use a NEW attenuated child and a fresh operational epoch.
+ assert.throws(()=>h.runtime.prepare({
+  task_id:"task-test",agent_role:"test",tool:"run_tests",arguments:runner
+ }),/outside approved plan/);
  const failure=h.gates.confirmTestValidationFailure("task-test");
  assert.equal(failure.status,"validation_failed");
  assert.equal(failure.first_failed_phase,"typecheck");
