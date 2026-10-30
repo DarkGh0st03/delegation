@@ -20,6 +20,9 @@ import {prepareTrustedRepairFeedback} from
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
 import {TrustedOperationalRepairPlanner} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
+import {TrustedOperationalFeatureHeadReader} from
+  "../src/trusted-operational-feature-head.ts";
+import {GiteaClient} from "../src/gitea-client.ts";
 
 const repo={authority:"gitea.local",owner:"sample",repository:"invoice-service"};
 const root="gitea://gitea.local/sample/invoice-service";
@@ -691,11 +694,29 @@ const prepareR106=(h:Awaited<ReturnType<typeof verifiedFailureForR106>>,options:
  gateway:h.gates,intake:h.intake,sessionId:session,
  runtimeTestTaskId:"task-test",nextPlanId:"new-repair-epoch-2",
  pinnedAgentRegistry:registry,
- readTrustedFeatureHead:async()=>{
-  if(options.count)options.count.head++;
-  return {repository:repo,branch,
-   head_sha:options.readHead?await options.readHead():sha};
- },
+ featureHeadReader:new TrustedOperationalFeatureHeadReader({
+  intake:h.intake,repository:repo,
+  giteaClient:new GiteaClient({
+   baseUrl:"http://gitea.local:3000",token:"trusted-private-fixture-only",
+   owner:repo.owner,repository:repo.repository,timeoutMs:1000,
+   fetchFn:(async (url:unknown)=>{
+    const path=String(url);
+    if(path.endsWith("/repos/sample/invoice-service"))
+     return new Response(JSON.stringify({
+      owner:{login:repo.owner},name:repo.repository,
+      full_name:repo.owner+"/"+repo.repository,default_branch:"main"
+     }),{status:200,headers:{"content-type":"application/json"}});
+    if(path.endsWith("/branches/feature%2Finvoice-approval")){
+     if(options.count)options.count.head++;
+     return new Response(JSON.stringify({
+      name:branch,commit:{id:options.readHead?
+        await options.readHead():sha}
+     }),{status:200,headers:{"content-type":"application/json"}});
+    }
+    return new Response(JSON.stringify({message:"Not Found"}),{status:404});
+   }) as typeof fetch
+  })
+ }),
  proposeRepairPlan:async(input)=>{
   if(options.count)options.count.model++;
   assert.equal(input.feedback.failed_phase,"typecheck");
