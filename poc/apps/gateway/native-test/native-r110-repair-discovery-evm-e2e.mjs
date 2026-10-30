@@ -256,7 +256,7 @@ try{
  await intake.reserveInitialEpoch();
  const root=coordinator.trustedOperationalAuthority();
  assert.deepEqual(new Set(root.permissions.map(p=>p.operation)),
-  new Set(["read_file","update_file","run_tests"]));
+  new Set(["read_file","update_file","run_tests","create_pull_request"]));
  const issuanceJournal=new TrustedChildIssuanceJournal({
   directory:childDir,sessionId:session,baseRevision:sha,
   planDigest:root.plan_digest,parentCredentialId:root.credential_id
@@ -352,7 +352,7 @@ try{
   owner:repo.owner,repository:repo.repository,
   fetchFn:async url=>{
    if(String(url).includes("/branches/"))
-    return new Response(JSON.stringify({name:branch,commit:{id:failedSha}}),
+    return new Response(JSON.stringify({name:branch,commit:{id:currentSha}}),
       {status:200});
    return new Response(JSON.stringify({
     name:repo.repository,owner:{login:repo.owner},
@@ -379,7 +379,7 @@ try{
  await gates.confirmTaskCompletion("native-r110-discovery");
  assert.equal((await issuanceJournal.records()).length,3);
  process.stdout.write(JSON.stringify({
-  result:"r110-native-evm-repair-discovery-pass",
+  result:"r111-native-evm-fail-discovery-repair-pass-pr",
   existing_engineer_approval:true,existing_rust_operational_root:true,
   first_test_native_vp_verified:true,
   gateway_verified_test_failure:true,
@@ -389,7 +389,8 @@ try{
   child_vp_native_core_verified:true,
   real_opa_authorization:true,
   mismatched_valid_child_vp_rejected:true,
-  source_revision:failedSha,
+  source_revision:failedSha,repair_revision:repairedSha,
+  verified_repair_pass:true,pr_after_pass:true,
   gitea_provider_scripted:true,docker_runner_scripted:true,
   paid_gemini_calls:0
  },null,2)+"\n");
