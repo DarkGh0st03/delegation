@@ -7,9 +7,11 @@
  * -> OPA -> exact Task/role/resource -> Gitea. Merely possessing a read
  * grant on the root does NOT authorize an unbound operational Task.
  *
- * The caller must bind an independently approved read-only Task on the
- * active operational epoch. If no such Task exists, this class fails closed.
- * This deliberately does not silently widen an Engineer-signed old DAG.
+ * The caller must bind a trusted read-only Task on the active epoch.
+ * R109 permits a fresh Task ID only after a corroborated Test failure,
+ * durable Adapter child issuance and owner-private Gateway registration.
+ * The root's actual exact read pair is unchanged; neither this reader nor
+ * a model output may independently widen it.
  */
 import {Buffer} from "node:buffer";
 import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
