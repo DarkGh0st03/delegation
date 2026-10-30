@@ -16,10 +16,12 @@ import {PLAN_SCHEMA_VERSION,planDigest,validatePlan} from
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedExecutionPlans} from
   "../../../apps/gateway/src/approved-execution-plans.ts";
+import {TrustedPlanIpcClient} from "../../../apps/gateway/src/trusted-plan-ipc.ts";
+import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
 import {TrustedOperationalFeatureHeadReader} from "../../../apps/gateway/src/trusted-operational-feature-head.ts";
-import {prepareTrustedRepairFeedback,type TrustedRepairFeedbackSignal} from
-  "./trusted-validation-repair-feedback.ts";
+import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback,
+ type TrustedRepairFeedbackSignal} from "./trusted-validation-repair-feedback.ts";
 
 const CATALOG=new Set<string>(RUST_OPERATIONS);
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -213,7 +215,9 @@ function sameFeedback(a:TrustedRepairFeedbackSignal,b:TrustedRepairFeedbackSigna
  * budgets and a trusted read-only, current-feature-branch discovery port.
  */
 export class TrustedOperationalRepairPlanner {
- readonly #gateway:TrustedApprovedExecutionPlans;
+ readonly #gateway:TrustedApprovedExecutionPlans|TrustedPlanIpcClient;
+ readonly #coordinator?:Pick<TrustedExecutionCoordinator,
+  "phase"|"trustedOperationalAuthority">;
  readonly #intake:TrustedOperationalEpochIntake;
  readonly #session:string;
  readonly #testTask:string;
@@ -224,7 +228,10 @@ export class TrustedOperationalRepairPlanner {
    Promise<unknown>;
  #attempted=false;
  constructor(config:{
-  gateway:TrustedApprovedExecutionPlans;
+  gateway:TrustedApprovedExecutionPlans|TrustedPlanIpcClient;
+  /** Mandatory with IPC: original signed-root owner, not a recreated port. */
+  coordinator?:Pick<TrustedExecutionCoordinator,
+   "phase"|"trustedOperationalAuthority">;
   intake:TrustedOperationalEpochIntake;
   sessionId:string;runtimeTestTaskId:string;nextPlanId:string;
   pinnedAgentRegistry:readonly {agent_id:SpecializedRole;did:string;card_ref:string}[];
@@ -232,7 +239,8 @@ export class TrustedOperationalRepairPlanner {
   featureHeadReader:TrustedOperationalFeatureHeadReader;
   proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
  }){
-  if(!(config.gateway instanceof TrustedApprovedExecutionPlans)||
+  if((!(config.gateway instanceof TrustedApprovedExecutionPlans)&&
+      !(config.gateway instanceof TrustedPlanIpcClient))||
      !(config.intake instanceof TrustedOperationalEpochIntake)||
      !ID.test(config.sessionId)||!ID.test(config.runtimeTestTaskId)||
      !ID.test(config.nextPlanId)||
@@ -240,7 +248,15 @@ export class TrustedOperationalRepairPlanner {
      !(config.featureHeadReader instanceof TrustedOperationalFeatureHeadReader)||
      typeof config.proposeRepairPlan!=="function")
    fail("missing trusted planning dependencies");
+  if(config.gateway instanceof TrustedPlanIpcClient){
+   if(!config.coordinator||
+      !config.gateway.operationalLeaseConfigured()||
+      !config.gateway.operationalSessionDurableConfigured())
+    fail("R121 remote planner needs live Coordinator and durable Gateway fences");
+   config.intake.assertSameCoordinator(config.coordinator);
+  }
   this.#gateway=config.gateway;this.#intake=config.intake;
+  this.#coordinator=config.coordinator;
   this.#session=config.sessionId;this.#testTask=config.runtimeTestTaskId;
   this.#nextId=config.nextPlanId;
   this.#agents=structuredClone(config.pinnedAgentRegistry);
@@ -251,10 +267,21 @@ export class TrustedOperationalRepairPlanner {
  async proposeAndReserve():Promise<Readonly<TrustedRepairPlanningResult>>{
   if(this.#attempted)fail("model proposal already attempted (no retry)");
   this.#attempted=true;
-  const feedback=await prepareTrustedRepairFeedback({
-   gateway:this.#gateway,intake:this.#intake,
-   sessionId:this.#session,runtimeTestTaskId:this.#testTask
-  });
+  // R121: remote Gateway IPC FAIL is one-use: never repeat a finalizer.
+  // The original issued Rust root and signed epoch are independently
+  // attested by the SAME owner before the private HMAC confirmation.
+  const remote=this.#gateway instanceof TrustedPlanIpcClient?
+    this.#gateway:null;
+  const feedback=remote
+   ?await prepareTrustedRemoteRepairFeedback({
+     gateway:remote,intake:this.#intake,coordinator:this.#coordinator!,
+     sessionId:this.#session,runtimeTestTaskId:this.#testTask
+    })
+   :await prepareTrustedRepairFeedback({
+     gateway:this.#gateway as TrustedApprovedExecutionPlans,
+     intake:this.#intake,sessionId:this.#session,
+     runtimeTestTaskId:this.#testTask
+    });
   if(feedback.status!=="repair_planning_eligible"||
      feedback.remaining_repair_epochs<1)
    fail("repair budget exhausted");
@@ -289,12 +316,26 @@ export class TrustedOperationalRepairPlanner {
   if(proof.execution_authorized!==false||
      proof.child_credential_issued!==false)
    fail("unexpected preflight authority");
-  const later=await prepareTrustedRepairFeedback({
-   gateway:this.#gateway,intake:this.#intake,
-   sessionId:this.#session,runtimeTestTaskId:this.#testTask
-  });
-  if(!sameFeedback(feedback,later))
-   fail("validated failure replaced while model was planning");
+  if(remote){
+   // Replaying confirm_test_failure is denied by design. Revalidate the
+   // independently signed Engineer approval, issued Rust root and ALL
+   // durable epochs after any slow/untrusted model proposal instead.
+   const later=await this.#intake.verifiedEpochHistory();
+   if(later.length!==history.length||
+      later[0]?.plan_digest!==history[0]?.plan_digest||
+      later[0]?.root_credential_id!==history[0]?.root_credential_id||
+      later.at(-1)?.plan_digest!==history.at(-1)?.plan_digest||
+      later.at(-1)?.root_credential_id!==history.at(-1)?.root_credential_id)
+    fail("verified operational root or repair epoch changed while planning");
+  }else{
+   const later=await prepareTrustedRepairFeedback({
+    gateway:this.#gateway as TrustedApprovedExecutionPlans,
+    intake:this.#intake,sessionId:this.#session,
+    runtimeTestTaskId:this.#testTask
+   });
+   if(!sameFeedback(feedback,later))
+    fail("validated failure replaced while model was planning");
+  }
   assertFeatureHead(await this.#head.read(original.repository,feedback.work_branch),
     original.repository,feedback.work_branch,feedback.tested_commit_sha);
   // Exactly one durable reservation, with existing Engineer-root-based

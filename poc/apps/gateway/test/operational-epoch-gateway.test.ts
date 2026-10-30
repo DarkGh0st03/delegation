@@ -1487,8 +1487,9 @@ test("R114 real Gateway pins original root before terminal Test FAIL finalizatio
  * scripted provider receipts and the HMAC IPC; the original signed-root
  * intake is independently persisted and held by the Engineer owner.
  * No paid models, container engine, or external service are invoked here. */
-async function r115RemoteFixture(t:import("node:test").TestContext){
- const h=await harness(t);
+async function r115RemoteFixture(t:import("node:test").TestContext,
+ options:{withDurable?:boolean}={}){
+ const h=await harness(t,options);
  await h.intake.reserveInitialEpoch();
  await h.gates.activate(session,sha);
  h.gates.bindTask(session,"setup","task-setup","orchestrator");
@@ -1602,4 +1603,135 @@ test("R115 missing real Docker FAIL cannot be converted from model or A2A text",
   sessionId:session,runtimeTestTaskId:"task-test"
  }),/Gateway trusted control denied/);
  assert.equal(h.provider,2,"No fake Test or model claim reached Runner");
+});
+
+function r121RemotePlanner(h:Awaited<ReturnType<typeof harness>>,
+ gateway:TrustedPlanIpcClient,options:{
+  propose?:()=>Promise<unknown>|unknown;
+  observedSha?:()=>Promise<string>|string;
+  counters?:{model:number;head:number};
+ }={}){
+ const reader=new GiteaClient({
+  baseUrl:"http://gitea.local:3000",token:"private-r121-fixture",
+  owner:repo.owner,repository:repo.repository,timeoutMs:1000,
+  fetchFn:(async (url:unknown)=>{
+   const request=String(url);
+   if(request.endsWith("/repos/sample/invoice-service"))
+    return new Response(JSON.stringify({
+     owner:{login:repo.owner},name:repo.repository,
+     full_name:repo.owner+"/"+repo.repository,default_branch:"main"
+    }),{status:200,headers:{"content-type":"application/json"}});
+   if(request.endsWith("/branches/feature%2Finvoice-approval")){
+    if(options.counters)options.counters.head++;
+    return new Response(JSON.stringify({name:branch,
+     commit:{id:options.observedSha?await options.observedSha():sha}
+    }),{status:200,headers:{"content-type":"application/json"}});
+   }
+   return new Response("{}",{status:404});
+  }) as typeof fetch
+ });
+ return new TrustedOperationalRepairPlanner({
+  gateway,coordinator:h.coordinator,intake:h.intake,sessionId:session,
+  runtimeTestTaskId:"task-test",nextPlanId:"r121-remote-repair-2",
+  pinnedAgentRegistry:registry,
+  featureHeadReader:new TrustedOperationalFeatureHeadReader({
+   giteaClient:reader,intake:h.intake,repository:repo
+  }),
+  proposeRepairPlan:async()=>{
+   if(options.counters)options.counters.model++;
+   return options.propose?await options.propose():repairDraft();
+  }
+ });
+}
+
+test("R121 one-use authenticated IPC FAIL reserves a NEW signed repair epoch",async t=>{
+ const {h,client}=await r115RemoteFixture(t,{withDurable:true});
+ const counts={model:0,head:0};
+ const planner=r121RemotePlanner(h,client,{counters:counts});
+ const done=await planner.proposeAndReserve();
+ assert.equal(done.status,"repair_epoch_reserved_no_execution_authority");
+ assert.equal(done.epoch,2);
+ assert.equal(done.source_failed_sha,sha);
+ assert.equal(done.execution_authorized,false);
+ assert.equal(done.child_credential_issued,false);
+ assert.deepEqual(counts,{model:1,head:2});
+ const rows=await h.intake.verifiedEpochHistory();
+ assert.equal(rows.length,2);
+ assert.equal(rows[1].plan.plan_id,"r121-remote-repair-2");
+ assert.deepEqual(rows[1].plan.tasks.map(t=>t.id),
+  ["repair-implementation","repair-validation"]);
+ assert.ok(rows[1].plan.tasks.every(task=>
+  !h.parent.tasks.some(previous=>previous.id===task.id)));
+ await assert.rejects(client.confirmVerifiedTestFailure({
+  session_id:session,root_plan_digest:planDigest(h.parent),
+  runtime_task_id:"task-test"
+ }),/Gateway trusted control denied/);
+ await assert.rejects(planner.proposeAndReserve(),/already attempted/);
+ assert.equal(h.provider,3,"No unauthorized repair provider effect");
+});
+
+test("R121 remote planner root revoked during proposal cannot reserve epoch",async t=>{
+ const {h,client}=await r115RemoteFixture(t,{withDurable:true});
+ const counts={model:0,head:0};
+ const planner=r121RemotePlanner(h,client,{counters:counts,
+  propose(){h.setPhase("closed");return repairDraft();}
+ });
+ await assert.rejects(planner.proposeAndReserve(),
+  /operational root is not active/);
+ assert.equal(counts.model,1);
+ assert.equal(h.provider,3);
+});
+
+test("R121 remote planner rejects stale Gitea SHA before inference",async t=>{
+ const {h,client}=await r115RemoteFixture(t,{withDurable:true});
+ const counts={model:0,head:0};
+ await assert.rejects(r121RemotePlanner(h,client,{counters:counts,
+  observedSha:()=>"b".repeat(40)
+ }).proposeAndReserve(),/branch HEAD differs/);
+ assert.equal(counts.model,0);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+});
+
+test("R121 remote planner rejects feature SHA drift after model",async t=>{
+ const {h,client}=await r115RemoteFixture(t,{withDurable:true});
+ const counts={model:0,head:0};
+ await assert.rejects(r121RemotePlanner(h,client,{counters:counts,
+  observedSha:()=>counts.head===1?sha:"c".repeat(40)
+ }).proposeAndReserve(),/branch HEAD differs/);
+ assert.deepEqual(counts,{model:1,head:2});
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+});
+
+test("R121 remote planner denies proposed permissions outside signed Rust root",async t=>{
+ const {h,client}=await r115RemoteFixture(t,{withDurable:true});
+ const rogue=repairDraft();
+ rogue.tasks[0].permissions[0].resource=
+  root+"/branches/feature%2Finvoice-approval/files/private/secret.ts";
+ await assert.rejects(r121RemotePlanner(h,client,{
+  propose:()=>rogue
+ }).proposeAndReserve(),/outside actually issued root/);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+ assert.equal(h.provider,3);
+});
+
+test("R121 remote planner requires durable IPC Gateway and identical Coordinator",async t=>{
+ const {h,client}=await r115RemoteFixture(t);
+ assert.throws(()=>r121RemotePlanner(h,client),/durable Gateway fences/);
+ const d=await r115RemoteFixture(t,{withDurable:true});
+ // A factory-like Coordinator is NOT the exact owner bound to the intake.
+ d.h.intake.assertSameCoordinator(d.h.coordinator);
+ const originalReader=new TrustedOperationalFeatureHeadReader({
+  intake:d.h.intake,repository:repo,
+  giteaClient:new GiteaClient({baseUrl:"http://gitea.local:3000",
+   token:"private-test",owner:repo.owner,repository:repo.repository})
+ });
+ assert.throws(()=>new TrustedOperationalRepairPlanner({
+  gateway:d.client,coordinator:{
+   phase:"execution" as const,
+   trustedOperationalAuthority:()=>d.h.coordinator.trustedOperationalAuthority()
+  },intake:d.h.intake,sessionId:session,runtimeTestTaskId:"task-test",
+  nextPlanId:"r121-wrong-owner",pinnedAgentRegistry:registry,
+  featureHeadReader:originalReader,proposeRepairPlan:async()=>repairDraft()
+ }),/Coordinator instance differs/);
+ assert.equal((await d.h.intake.verifiedEpochHistory()).length,1);
 });
