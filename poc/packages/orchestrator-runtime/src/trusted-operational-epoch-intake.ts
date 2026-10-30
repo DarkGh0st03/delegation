@@ -90,6 +90,61 @@ export class TrustedOperationalEpochIntake {
   return Object.freeze(root.permissions.map(p=>
     Object.freeze({resource:p.resource,operation:p.operation})));
  }
+ /**
+  * R109: owner-only read-scoped discovery preflight before the next DAG
+  * exists. Source is the actual issued Rust root, not a model plan,
+  * application envelope or reconstructed role template.
+  * NO credential issuance / Gateway admission / provider read occurs here.
+  */
+ async preflightRepairDiscovery(input:{
+   sessionId:string;taskId:string;agentId:"backend"|"frontend"|"test";
+   resource:string;
+ }):Promise<Readonly<{
+  session_id:string;task_id:string;agent_id:string;resource:string;
+  operation:"read_file";root_credential_id:string;
+  root_plan_digest:string;epoch:number;work_branch:string;
+  execution_authorized:false;
+ }>>{
+  if(!input||input.sessionId!==this.#session||
+     !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(input.taskId??"")||
+     !["backend","frontend","test"].includes(input.agentId)||
+     typeof input.resource!=="string"||
+     !/^gitea:\/\/[^/]+\/[^/]+\/[^/]+\/branches\/[^/]+\/files\/[^?\s#]+$/u.test(input.resource))
+   deny("noncanonical discovery task or resource");
+  const history=await this.verifiedEpochHistory();
+  if(history.some(e=>e.plan.tasks.some(t=>t.id===input.taskId))||
+     !this.#agents.some(a=>a.agent_id===input.agentId&&
+       a.did.startsWith("did:")&&a.card_ref.trim()))
+   deny("discovery Task replay or unregistered Agent identity");
+  const current=history.at(-1);
+  const root=this.#coordinator.trustedOperationalAuthority();
+  const branch=history[0]?.plan?.repository;
+  if(!current||!root||!branch)
+   deny("missing active root or operational epoch");
+  const expectedPrefix="gitea://"+branch.authority+"/"+branch.owner+
+    "/"+branch.repository+"/branches/"+
+    encodeURIComponent((await import("../../plan-contracts/src/approved-work-branch.mjs"))
+      .approvedWorkBranch(current.plan))+"/files/";
+  if(!input.resource.startsWith(expectedPrefix)||
+     !root.permissions.some(p=>p.resource===input.resource&&
+       p.operation==="read_file"))
+   deny("discovery read grant outside exact issued Rust root");
+  const again=await this.verifiedEpochHistory();
+  if(again.length!==history.length||
+     again.at(-1)?.plan_digest!==current.plan_digest)
+   deny("root or epoch changed during discovery preflight");
+  return Object.freeze({
+   session_id:this.#session,task_id:input.taskId,
+   agent_id:input.agentId,resource:input.resource,
+   operation:"read_file" as const,
+   root_credential_id:root.credential_id,
+   root_plan_digest:root.plan_digest,
+   epoch:history.length,
+   work_branch:(await import("../../plan-contracts/src/approved-work-branch.mjs"))
+      .approvedWorkBranch(current.plan),
+   execution_authorized:false as const
+  });
+ }
  async preflightRepairEpoch(candidatePlan:unknown){
   const history=await this.verifiedEpochHistory();
   const root=this.#coordinator.trustedOperationalAuthority();
