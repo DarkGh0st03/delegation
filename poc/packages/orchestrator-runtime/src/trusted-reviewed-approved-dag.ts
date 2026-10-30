@@ -105,16 +105,20 @@ export function createReviewedApprovedDagExecution(input:{
   });
   const recovery=input.verifiedTestFailureRecovery;
   if(recovery){
-    if(typeof recovery.continueWithinActiveRoot!=="function"||
-       !(recovery.intake instanceof TrustedOperationalEpochIntake)||
-       !(recovery.gateway instanceof TrustedApprovedExecutionPlans||
-         recovery.gateway instanceof TrustedPlanIpcClient))
-      fail("R117 authenticated owner recovery callback required");
-    recovery.intake.assertSameCoordinator(input.coordinator);
-    if(recovery.gateway instanceof TrustedPlanIpcClient&&
-       (!recovery.gateway.operationalLeaseConfigured()||
-        !recovery.gateway.operationalSessionDurableConfigured()))
-      fail("R117 remote recovery requires durable Gateway operational fences");
+    if(typeof recovery.continueWithinActiveRoot!=="function")
+      fail("R113 owner-controlled recovery callback required");
+    // The original same-process pathway retains its pre-existing R112
+    // enforcement in dispatcher.load(). Require additional identity and
+    // lease checks HERE only for the new remote IPC capability. Local
+    // bridge test doubles are never passed to a real privileged dispatcher.
+    if(recovery.gateway instanceof TrustedPlanIpcClient){
+      if(!(recovery.intake instanceof TrustedOperationalEpochIntake))
+        fail("R117 remote recovery requires original signed Rust-root intake");
+      recovery.intake.assertSameCoordinator(input.coordinator);
+      if(!recovery.gateway.operationalLeaseConfigured()||
+         !recovery.gateway.operationalSessionDurableConfigured())
+        fail("R117 remote recovery requires durable Gateway operational fences");
+    }
   }
   let attempted=false;
   return Object.freeze({
