@@ -46,8 +46,10 @@ interface ApprovedSnapshot{
 }
 /** A private control-flow result, never a model-visible source of authority. */
 class VerifiedFailedTestSuspension extends Error {
- constructor(readonly verified:Readonly<TrustedRepairFeedbackSignal>){
+ readonly verified:Readonly<TrustedRepairFeedbackSignal>;
+ constructor(verified:Readonly<TrustedRepairFeedbackSignal>){
   super("Gateway confirmed terminal Docker FAIL; trusted repair admission required");
+  this.verified=verified;
  }
 }
 type RootInput=Pick<DelegatedA2ARoleTaskInput,
