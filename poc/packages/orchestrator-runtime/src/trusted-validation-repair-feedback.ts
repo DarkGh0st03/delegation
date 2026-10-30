@@ -72,6 +72,8 @@ export async function prepareTrustedRepairFeedback(config:{
  if(!initial||!current||
     initial.plan.session_id!==config.sessionId||
     current.plan.session_id!==config.sessionId||
+    failure.session_id!==config.sessionId||
+    failure.root_plan_digest!==initial.plan_digest||
     !SHA.test(failure.tested_commit_sha)||
     failure.runtime_task_id!==config.runtimeTestTaskId||
     failure.epoch_version!==epochs.length||
