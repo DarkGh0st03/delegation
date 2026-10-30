@@ -32,6 +32,8 @@ import {TrustedApprovedPlanChildAuthorityIssuer} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-child-issuer.ts";
 import {TrustedChildIssuanceJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
+import {issueAdmittedRepairTaskChild} from
+  "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts";
 import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
@@ -2742,4 +2744,137 @@ test("R133.2 a valid Rust VP and fully passing original DAG cannot invent a repa
   session,"backend-repair","r1332-untriggered-backend","backend"
  ),/current admitted epoch/);
  assert.equal(h.provider,3,"Passing original DAG cannot authorize a repair provider effect");
+});
+
+
+/** R134 uses real signed-owner+HMAC Gateway fixtures, but scripted native
+ * credential issuance. The resulting DC has no execution/VP authority. */
+async function r134Fixture(t:import("node:test").TestContext){
+ const {h,client,request}=await r115RemoteFixture(t,{
+  withDurable:true,withRemoteEpoch:true
+ });
+ await prepareTrustedRemoteRepairFeedback(request());
+ const reserved=await h.intake.reserveRepairEpoch(repair());
+ const dir=join(h.dir,"r134-child-journal");
+ await mkdir(dir,{mode:0o700});
+ const journal=new TrustedChildIssuanceJournal({
+  directory:dir,sessionId:session,baseRevision:sha,
+  planDigest:h.rootAuthority.plan_digest,
+  parentCredentialId:h.rootAuthority.credential_id
+ });
+ const calls:{path:string;headers:Headers;body:any}[]=[];
+ let revokedOnNativeReturn=false;
+ const fetchFn:typeof fetch=async(url,init)=>{
+  const body=JSON.parse(String(init?.body));
+  calls.push({path:String(url),headers:new Headers(init?.headers),body});
+  if(revokedOnNativeReturn)h.setPhase("closed");
+  return new Response(JSON.stringify({
+   "@context":["https://www.w3.org/ns/credentials/v2"],
+   type:["VerifiableCredential","DelegationCredential"],
+   id:body.credential_id,issuer:"did:example:orchestrator",
+   credentialSubject:{sub:"did:example:"+body.delegatee,per:body.permissions}
+  }),{status:201});
+ };
+ const credential={
+  credential_id:"urn:r134:repair-backend-child",
+  valid_from:"2026-10-30T16:00:00Z",
+  validity_seconds:300,
+  credential_status:{
+   type:"BitstringStatusListEntry" as const,
+   statusPurpose:"revocation" as const,
+   statusListIndex:"19031",
+   statusListCredential:"https://status.example/repair-r134"
+  }
+ };
+ const args={
+  sessionId:session,epoch:2,planDigest:reserved.plan_digest,
+  taskId:"backend-repair",role:"backend" as const,
+  runtimeTaskId:"r134-runtime-backend",
+  coordinator:h.coordinator,intake:h.intake,gateway:client,
+  journal,engineerDid:engineer,
+  adapterBaseUrl:"http://r134-adapter.local:8090",
+  orchestratorToken:"r134-private-owner-bearer",
+  credential,fetchFn
+ };
+ return {h,client,journal,reserved,calls,args,
+  revokeOnResponse(){revokedOnNativeReturn=true;},
+  async admit(){
+   return client.admitVerifiedOperationalEpoch({
+    session_id:session,root_plan_digest:planDigest(h.parent),
+    plan_digest:reserved.plan_digest,epoch:2
+   });
+  }
+ };
+}
+test("R134 remote R133 Gateway admission precedes exact Rust repair Child DC; no A2A or provider",async t=>{
+ const f=await r134Fixture(t);
+ await assert.rejects(issueAdmittedRepairTaskChild(f.args),
+  /Gateway trusted control denied/);
+ assert.equal(f.calls.length,0,
+  "No Rust side effects before independently admitted Gateway repair epoch");
+ assert.equal((await f.journal.records()).length,0);
+ assert.equal((await f.admit()).status,"gateway_epoch_admitted");
+ const result=await issueAdmittedRepairTaskChild(f.args);
+ assert.equal(result.status,"repair_child_issued_not_dispatched");
+ assert.equal(result.gateway_task_bound,true);
+ assert.equal(result.child_credential_issued,true);
+ assert.equal(result.a2a_dispatched,false);
+ assert.equal(result.provider_executed,false);
+ assert.equal(result.credential_id,f.args.credential.credential_id);
+ assert.equal(f.calls.length,1);
+ assert.equal(f.calls[0].path,
+  "http://r134-adapter.local:8090/v1/credentials/child");
+ assert.equal(f.calls[0].headers.get("authorization"),
+  "Bearer r134-private-owner-bearer");
+ assert.equal(f.calls[0].body.parent_credential_id,
+  f.h.rootAuthority.credential_id);
+ assert.equal(f.calls[0].body.delegatee,"backend");
+ assert.deepEqual(f.calls[0].body.permissions,
+  [{resource:file,operation:"update_file"}]);
+ assert.deepEqual(result.credential.credentialSubject.per,
+  f.calls[0].body.permissions);
+ assert.equal((await f.journal.records())[0].observation,
+  "adapter_response_verified");
+ assert.equal(f.h.provider,3,"Issuing a credential does not edit code");
+ assert.throws(()=>f.h.gates.bindTask(session,
+  "backend-repair","r134-rebound","backend"),/duplicate|assigned/i);
+ assert.throws(()=>f.h.runtime.prepare({
+  task_id:"task-backend",agent_role:"backend",tool:"update_file",
+  arguments:edit("// old credential must not work")
+ }),/Stale operational epoch/);
+});
+test("R134 foreign role and unadmitted Task deny before Rust child issuance",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ await assert.rejects(issueAdmittedRepairTaskChild({
+  ...f.args,role:"test" as const
+ }),/Task role or grants not found/);
+ assert.equal(f.calls.length,0);
+ await assert.rejects(issueAdmittedRepairTaskChild({
+  ...f.args,taskId:"not-in-epoch"
+ }),/Task role or grants not found/);
+ assert.equal(f.calls.length,0);
+ assert.equal((await f.journal.records()).length,0);
+});
+test("R134 no second credential after Task binding, even with a fresh credential ID",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ await issueAdmittedRepairTaskChild(f.args);
+ await assert.rejects(issueAdmittedRepairTaskChild({
+  ...f.args,runtimeTaskId:"r134-retry-runtime",
+  credential:{...f.args.credential,credential_id:"urn:r134:retry-child"}
+ }),/Gateway trusted control denied/);
+ assert.equal(f.calls.length,1,"Cannot mint new child by retrying bound Task");
+ assert.equal((await f.journal.records()).length,1);
+});
+test("R134 revocation during native child issuance leaves no dispatch authority",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ f.revokeOnResponse();
+ await assert.rejects(issueAdmittedRepairTaskChild(f.args),
+  /operational parent is no longer active/);
+ assert.equal(f.calls.length,1);
+ assert.equal((await f.journal.records()).length,1,
+  "External issuance must stay in durable audit, not silently be retried");
+ assert.equal(f.h.provider,3);
 });
