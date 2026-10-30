@@ -18,7 +18,8 @@ import {approvedWorkBranch} from "../../plan-contracts/src/approved-work-branch.
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA=/^[a-f0-9]{40}$/u,DIGEST=/^[a-f0-9]{64}$/u;
-const MAX_FILE=128*1024,MAX_EPOCHS=12;
+// Internal cost/safety budget: one implementation plus at most two repairs.
+const MAX_FILE=128*1024,MAX_EPOCHS=3;
 const deny=s=>{throw Error("Trusted operational epoch journal NO-GO: "+s);};
 const filename=n=>"epoch-"+String(n).padStart(3,"0")+".json";
 function safeId(x){return typeof x==="string"&&ID.test(x);}

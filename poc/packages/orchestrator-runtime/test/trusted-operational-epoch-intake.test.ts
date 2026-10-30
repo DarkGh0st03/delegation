@@ -273,3 +273,15 @@ test("R102: stale epoch, different Coordinator and revoked root fail before chil
    ...config,epochVersion:2
   }),/trusted current epoch and durable child-issuance journal required/);
 });
+
+test("R104: hard internal maximum is three cycles, independent of Engineer permissions",async(t)=>{
+ const e=await env(t),owner=e.makeOwner();
+ await owner.reserveInitialEpoch();
+ await owner.reserveRepairEpoch(nextPlan(2,"backend","backend-repair-two"));
+ await owner.reserveRepairEpoch(nextPlan(3,"test","test-cycle-three"));
+ assert.equal((await owner.verifiedEpochHistory()).length,3);
+ await assert.rejects(
+  owner.reserveRepairEpoch(nextPlan(4,"backend","backend-cycle-four")),
+  /epoch limit reached/);
+ assert.equal((await owner.verifiedEpochHistory()).length,3);
+});

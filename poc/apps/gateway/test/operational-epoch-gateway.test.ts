@@ -433,3 +433,35 @@ test("R104 revoked operational root blocks repair even after observed validation
   /operational root is not active/);
  assert.equal(h.provider,3);
 });
+
+test("R104: a live provider effect fences terminal failure and prevents premature replanning",async(t)=>{
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",{branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// bug"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ const pre=h.runtime.prepare({task_id:"task-test",
+   agent_role:"test",tool:"run_tests",arguments:runner});
+ const prepared=h.prepared.get(pre.request_id);
+ assert.ok(prepared);
+ const release=h.gates.beginProviderEffect(prepared);
+ h.setRunnerFailure();
+ await h.invoke("task-test","test","run_tests",runner);
+ assert.throws(()=>h.gates.confirmTestValidationFailure("task-test"),
+  /In-flight provider effect/);
+ await h.intake.reserveRepairEpoch(repair());
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
+  /unresolved/);
+ release();
+ const failure=h.gates.confirmTestValidationFailure("task-test");
+ assert.equal(failure.status,"validation_failed");
+ const admitted=await h.gates.admitNextOperationalEpoch(session,2);
+ assert.equal(admitted.epoch,2);
+ await assert.rejects(h.runtime.execute({request_id:pre.request_id,
+   signed_vp:"signed.fixture.vp"}),/approved plan|epoch/);
+ assert.equal(h.provider,3);
+});

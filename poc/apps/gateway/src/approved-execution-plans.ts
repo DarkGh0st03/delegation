@@ -570,6 +570,10 @@ export class TrustedApprovedExecutionPlans {
        binding.failedFinalized||!binding.failedRunner)
       denied("No unique verified failed Runner Test Task");
     this.#assertDependencies(session,binding);
+    // Dependency-install failures are not reliably attributable to
+    // generated code: never send them into an expensive autonomous loop.
+    if(binding.failedRunner.first_failed_phase==="dependency_install")
+      denied("Dependency install failure requires trusted infrastructure triage");
     if(binding.inFlightEffects!==0)
       denied("In-flight provider effect prevents terminal failure attestation");
     // Do not let earlier successful Runner effects provide an alternate
