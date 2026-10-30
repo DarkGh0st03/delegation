@@ -12,7 +12,7 @@
  */
 import assert from "node:assert/strict";
 import {randomBytes,randomInt,generateKeyPairSync} from "node:crypto";
-import {mkdtemp,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,writeFile,rm,mkdir} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {makeApproval,assertApprovedPlanScope}
@@ -25,6 +25,13 @@ import {SignedEngineerApprovalFileStore} from
 import {TrustedPlanningReviewGate} from
   "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
 import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts";
+import {TrustedOperationalSessionStore} from "../src/trusted-operational-session-store.ts";
+import {TrustedGatewaySignedEpochInspector} from "../src/trusted-gateway-signed-epoch-inspector.ts";
+import {TrustedGatewayNativeRootStatusReader} from "../src/trusted-gateway-native-root-status.ts";
+import {TrustedGatewayRootVpVerifier} from "../src/trusted-root-vp-verification.ts";
+import {createTrustedPlanIpcServer,TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
+import {armTrustedOwnerOperationalRecovery} from
+  "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
 import {GatewayCorroboratedTaskAttestor} from
@@ -102,8 +109,12 @@ const realGitea=[disposableBase,disposableToken,disposableSha]
   .some(v=>v!==undefined);
 const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
 const positiveDag=process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
+const ownerD1Probe=process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1";
 const signedOfflineMultiTest=positiveDag&&
   process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1";
+if(ownerD1Probe&&(!signedOfflineTypecheckProbe||geminiPilot||
+   !positiveDag||!signedHandoff||!realGitea))
+  throw Error("Native owner D1 admission requires a zero-billing real TypeScript FAIL");
 if(signedOfflineTypecheckProbe&&
    (geminiPilot||signedOfflineRecovery||signedOfflineMultiTest||
     !positiveDag||!signedHandoff||!realGitea||
@@ -298,6 +309,47 @@ const signedStore=receiptDir?new SignedEngineerApprovalFileStore({
     [keyId]:{engineer_did:engineerDid,public_key_pem:signerPublic}
   }
 }):undefined;
+/* R150.5: the SAME Gateway receiving protected A2A tool operations
+ * independently verifies the original EVM-issued Rust root, its fresh
+ * multi-permission VP and the owner's durable signed-epoch journal.
+ * This is opt-in ZERO-BILLING integration, not a model/agent permission. */
+const ownerDir=ownerD1Probe?
+  await mkdtemp(join(tmpdir(),"delegation-native-owner-d1-")):undefined;
+const ownerEpochDir=ownerDir?join(ownerDir,"epochs"):undefined;
+const ownerOpsDir=ownerDir?join(ownerDir,"operational"):undefined;
+if(ownerDir){
+  await mkdir(ownerEpochDir,{mode:0o700});
+  await mkdir(ownerOpsDir,{mode:0o700});
+}
+const ownerGatewayInspector=ownerDir?new TrustedGatewaySignedEpochInspector({
+  directory:ownerEpochDir,approvals:signedStore,
+  trustedOrchestratorDid:process.env.ADAPTER_ID_ORCHESTRATOR,
+  nativeRootStatus:new TrustedGatewayNativeRootStatusReader({
+    baseUrl:adapterUrl,gatewayToken:process.env.ADAPTER_CALLER_GATEWAY
+  }),
+  rootVpVerifier:new TrustedGatewayRootVpVerifier({
+    audience:"urn:thesis:gateway:r133",
+    verifier:loadDirectCoreRustVerifier(),
+    signer:{async present(input){
+      const response=await fetch(adapterUrl+"/v1/presentations",{
+        method:"POST",headers:{
+          authorization:"Bearer "+token,"content-type":"application/json"
+        },
+        body:JSON.stringify({
+          credential_id:input.credential_id,
+          disclosed_permissions:input.disclosed_permissions,
+          audience:input.audience,challenge:input.challenge
+        })
+      });
+      if(!response.ok)throw Error("Native owner original root VP signing failed");
+      const payload=await response.json();
+      if(typeof payload.signed_vp!=="string"||payload.signed_vp.length<16)
+        throw Error("Native owner original root VP missing");
+      return payload.signed_vp;
+    }}
+  })
+}):undefined;
+
 let coordinator;
 const reviewGate=signedStore?new TrustedPlanningReviewGate({
   snapshot,expectedWorkBranch:workBranch,
@@ -306,6 +358,11 @@ const reviewGate=signedStore?new TrustedPlanningReviewGate({
 }):undefined;
 const approvedPlans=reviewGate?new TrustedApprovedExecutionPlans({
   repository:repo,engineerDid,approvals:reviewGate,
+  ...(ownerD1Probe?{
+    remoteEpochInspector:ownerGatewayInspector,
+    operationalSessionStore:new TrustedOperationalSessionStore(ownerOpsDir),
+    operationalLeaseMs:120000
+  }:{}),
   completionAttestor:positiveDag?new GatewayCorroboratedTaskAttestor():{
     async confirmCompleted(){
       // Negative suite never accepts a remote completion claim.
