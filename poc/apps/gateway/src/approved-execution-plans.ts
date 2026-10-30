@@ -79,6 +79,7 @@ interface RuntimeTaskBinding {
   completing: boolean;
   /** Terminal validation FAILED, not a successful Test completion. */
   failedFinalized:boolean;
+  inFlightEffects:number;
   failedRunner?:Readonly<TrustedRunnerFailure>;
 }
 
@@ -382,7 +383,7 @@ export class TrustedApprovedExecutionPlans {
       runtimeTaskId,planTaskId,agent:role,sessionId,
       epochVersion:session.currentEpoch,
       successfulRequests:new Map(),completed:false,completing:false,
-      failedFinalized:false
+      failedFinalized:false,inFlightEffects:0
     });
   }
 
@@ -441,6 +442,28 @@ export class TrustedApprovedExecutionPlans {
       denied("Prepared PR SHA differs from completed trusted Runner acceptance");
     }
     this.#checkAction(session,binding,record.required_permission,record.request);
+  }
+
+  /**
+   * Provider in-flight fence, installed synchronously AFTER the final
+   * VP/Core+OPA authorisation and BEFORE any asynchronous provider I/O.
+   * The returned closure belongs only to the trusted Gateway executor.
+   * Repair epochs cannot replace a Task while any provider effect is live.
+   */
+  beginProviderEffect(record:PreparedRequestRecord):()=>void{
+    const {binding}=this.#activeBinding(record.task_id);
+    if(binding.completed||binding.completing||binding.failedFinalized||
+       binding.failedRunner!==undefined||
+       binding.agent!==record.agent_role||
+       record.approved_plan_task_id!==binding.planTaskId)
+      denied("Provider effect cannot start for a terminal or foreign Task");
+    binding.inFlightEffects++;
+    let ended=false;
+    return ()=>{
+      if(ended)denied("Duplicate completion of protected provider effect");
+      ended=true;
+      binding.inFlightEffects--;
+    };
   }
 
   /** Gateway-confirmed provider results are tracked internally, not via A2A. */
@@ -543,6 +566,8 @@ export class TrustedApprovedExecutionPlans {
        binding.failedFinalized||!binding.failedRunner)
       denied("No unique verified failed Runner Test Task");
     this.#assertDependencies(session,binding);
+    if(binding.inFlightEffects!==0)
+      denied("In-flight provider effect prevents terminal failure attestation");
     // Do not let earlier successful Runner effects provide an alternate
     // completed Test for the same failed Task.
     if([...binding.successfulRequests.values()].some(e=>e.tool==="run_tests"))
@@ -772,6 +797,7 @@ export class TrustedApprovedExecutionPlans {
         b.epochVersion===session.currentEpoch&&
         b.planTaskId===task.id);
       if(bound.length!==1||bound[0].completing||
+         bound[0].inFlightEffects!==0||
          !(bound[0].completed||
            (task.agent_id==="test"&&bound[0].failedFinalized)))
         denied("Previous epoch has unresolved, unbound or in-flight Tasks");
