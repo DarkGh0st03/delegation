@@ -34,7 +34,7 @@ import {TrustedChildIssuanceJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {issueAdmittedRepairTaskChild} from
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts";
-import {dispatchTrustedAdmittedRepairA2A} from
+import {dispatchTrustedAdmittedRepairA2A,confirmTrustedAdmittedRepairA2A} from
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
 import {TaskState} from "@a2a-js/sdk";
 import {TrustedOperationalFeatureHeadReader} from
@@ -2991,4 +2991,40 @@ test("R135.3 Test repair cannot start until trusted Gateway confirms backend dep
   "A Task lacking dependencies cannot trigger irreversible native issuance");
  assert.equal(sends,0,"No model/A2A work before trusted Task dependencies");
  assert.equal(f.h.provider,3);
+});
+
+test("R136 A2A completion cannot confirm repair before Gateway observes authorized Gitea effect",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ const result=await dispatchTrustedAdmittedRepairA2A({
+  ...f.args,
+  agentBaseUrls:{backend:"http://backend.local",
+   frontend:"http://frontend.local",test:"http://test.local"},
+  a2a:{async sendProtectedTask(){
+   return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+  }}
+ });
+ const assertion={
+  receipt:result,gateway:f.client,intake:f.h.intake,
+  coordinator:f.h.coordinator,sessionId:session,
+  planDigest:f.reserved.plan_digest,epoch:2
+ };
+ await assert.rejects(confirmTrustedAdmittedRepairA2A(assertion),
+  /Gateway trusted control denied/,
+  "A2A Artifact alone does not establish any trusted provider effects");
+ assert.equal(f.h.provider,3);
+ // A real Gateway Prepare/Execute record exists only after a scoped VP/OPA
+ // check. This fixture scripts that verification, not the actual Docker.
+ await f.h.invoke(result.runtime_task_id,"backend","update_file",
+  edit("// R136 repair effect"));
+ assert.equal(f.h.provider,4);
+ const confirmed=await confirmTrustedAdmittedRepairA2A(assertion);
+ assert.equal(confirmed.status,
+  "gateway_confirmed_repair_task_not_docker_acceptance");
+ assert.equal(confirmed.gateway_task_completed,true);
+ assert.equal(confirmed.docker_pass_verified,false);
+ assert.equal(confirmed.runtime_task_id,result.runtime_task_id);
+ await assert.rejects(confirmTrustedAdmittedRepairA2A(assertion),
+  /Gateway trusted control denied/,
+  "An already completed Task may not be re-attested or replayed");
 });
