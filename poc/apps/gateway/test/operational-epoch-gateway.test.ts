@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {generateKeyPairSync} from "node:crypto";
+import {generateKeyPairSync,randomBytes} from "node:crypto";
 import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
@@ -8,6 +8,7 @@ import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan
 import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts";
+import {TrustedPlanIpcClient,createTrustedPlanIpcServer} from "../src/trusted-plan-ipc.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {InMemoryAuditSink,InMemoryRequestStore} from "../src/prepare.ts";
 import {SignedEngineerApprovalFileStore} from
@@ -16,7 +17,7 @@ import {TrustedOperationalEpochJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-journal.mjs";
 import {TrustedOperationalEpochIntake} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
-import {prepareTrustedRepairFeedback} from
+import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback} from
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
 import {TrustedOperationalRepairPlanner} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
@@ -1417,4 +1418,125 @@ test("R114 real Gateway pins original root before terminal Test FAIL finalizatio
  assert.throws(()=>h.gates.confirmTestValidationFailure("task-test",{
   session_id:session,root_plan_digest:rootPlan
  }),/No unique verified failed Runner/);
+});
+
+/** R115: the same REAL Gateway plan registry serves both HTTP-authorized
+ * scripted provider receipts and the HMAC IPC; the original signed-root
+ * intake is independently persisted and held by the Engineer owner.
+ * No paid models, container engine, or external service are invoked here. */
+async function r115RemoteFixture(t:import("node:test").TestContext){
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();
+ await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// source fails"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ h.setRunnerFailure();
+ await h.invoke("task-test","test","run_tests",runner);
+ const secretFile=join(h.dir,"r115-ipc-secret.hex");
+ const socketPath=join(h.dir,"r115-control.sock");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ const server=await createTrustedPlanIpcServer({
+  socketPath,secretFile,plans:h.gates
+ });
+ await server.start();
+ t.after(()=>server.close());
+ const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+ const request=()=>({
+  gateway:client,intake:h.intake,coordinator:h.coordinator,
+  sessionId:session,runtimeTestTaskId:"task-test"
+ });
+ return {h,client,request};
+}
+
+test("R115 verified remote IPC FAIL joins the signed original root and durable epoch",async t=>{
+ const {h,request}=await r115RemoteFixture(t);
+ const result=await prepareTrustedRemoteRepairFeedback(request());
+ assert.equal(result.status,"repair_planning_eligible");
+ assert.equal(result.provenance,"gateway_verified_docker_runner");
+ assert.equal(result.authority_kind,"existing_rust_operational_root");
+ assert.equal(result.session_id,session);
+ assert.equal(result.root_plan_digest,planDigest(h.parent));
+ assert.equal(result.failed_plan_digest,planDigest(h.parent));
+ assert.equal(result.failed_runtime_task_id,"task-test");
+ assert.equal(result.failed_task_id,"test-original");
+ assert.equal(result.first_failed_phase,"typecheck");
+ assert.deepEqual(result.typecheck_error_codes,["TS2339"]);
+ assert.equal(result.work_branch,branch);
+ assert.equal(result.failed_epoch,1);
+ assert.equal(result.remaining_repair_epochs,2);
+ assert.equal(result.permission_granted,false);
+ assert.equal(result.execution_authorized,false);
+ assert.equal(Object.isFrozen(result),true);
+ assert.equal(h.coordinator.phase,"execution");
+ // The exact Test acknowledgment is one-use, not replayable for a new DAG.
+ await assert.rejects(prepareTrustedRemoteRepairFeedback(request()),
+  /Gateway trusted control denied/);
+});
+
+test("R115 wrong session, Task or Coordinator cannot finalize another root's failure",async t=>{
+ const {h,request}=await r115RemoteFixture(t);
+ const correct=request();
+ await assert.rejects(prepareTrustedRemoteRepairFeedback({
+  ...correct,coordinator:{
+   phase:"execution" as const,
+   trustedOperationalAuthority:()=>h.coordinator.trustedOperationalAuthority()
+  }
+ }),/Coordinator instance differs from epoch owner/);
+ await assert.rejects(prepareTrustedRemoteRepairFeedback({
+  ...correct,sessionId:"other-signed-session"
+ }),/Gateway trusted control denied/);
+ await assert.rejects(prepareTrustedRemoteRepairFeedback({
+  ...correct,runtimeTestTaskId:"different-test"
+ }),/Gateway trusted control denied/);
+ // Failed attempts did not consume the true Test receipt.
+ const accepted=await prepareTrustedRemoteRepairFeedback(correct);
+ assert.equal(accepted.failed_runtime_task_id,"task-test");
+});
+
+test("R115 revoked root after remote IPC response cannot yield repair eligibility",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t);
+ const original=client.confirmVerifiedTestFailure.bind(client);
+ client.confirmVerifiedTestFailure=async pins=>{
+  const verified=await original(pins);
+  // Simulate SIGTERM racing the awaited HMAC Unix-socket response.
+  h.setPhase("closed");
+  return verified;
+ };
+ await assert.rejects(prepareTrustedRemoteRepairFeedback(request()),
+  /operational root is not active/);
+ assert.equal(h.coordinator.phase,"closed");
+});
+
+test("R115 missing real Docker FAIL cannot be converted from model or A2A text",async t=>{
+ const h=await harness(t);
+ await h.intake.reserveInitialEpoch();
+ await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// code"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ const secretFile=join(h.dir,"r115-no-fail.secret.hex");
+ const socketPath=join(h.dir,"r115-no-fail.sock");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ const server=await createTrustedPlanIpcServer({
+  socketPath,secretFile,plans:h.gates
+ });
+ await server.start();
+ t.after(()=>server.close());
+ const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+ await assert.rejects(prepareTrustedRemoteRepairFeedback({
+  gateway:client,intake:h.intake,coordinator:h.coordinator,
+  sessionId:session,runtimeTestTaskId:"task-test"
+ }),/Gateway trusted control denied/);
+ assert.equal(h.provider,2,"No fake Test or model claim reached Runner");
 });

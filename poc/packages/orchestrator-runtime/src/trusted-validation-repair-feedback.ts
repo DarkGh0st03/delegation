@@ -11,6 +11,9 @@ import {approvedWorkBranch} from "../../plan-contracts/src/approved-work-branch.
 import {TrustedApprovedExecutionPlans} from
   "../../../apps/gateway/src/approved-execution-plans.ts";
 import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
+import {TrustedPlanIpcClient} from "../../../apps/gateway/src/trusted-plan-ipc.ts";
+import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
+import type {TrustedRunnerFailure} from "../../../apps/gateway/src/approved-execution-plans.ts";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA=/^[a-f0-9]{40}$/u;
@@ -47,17 +50,17 @@ export interface TrustedRepairFeedbackSignal{
  * A private host-owned intake. A2A text, Gemini response, metadata from
  * unverified webhooks and model-chosen Task IDs must never construct this.
  */
-export async function prepareTrustedRepairFeedback(config:{
- gateway:TrustedApprovedExecutionPlans;
+/** Common validator: neither the local nor the remote Gateway receipt can
+ * authorize a repair by itself. The independently signed Engineer approval,
+ * actually issued operational root and durable epoch history are mandatory.
+ * Remote IPC is called ONLY after the first owner-root validation, and an
+ * identical live-root check is repeated after the asynchronous IPC response. */
+async function prepareVerifiedRepairFeedback(config:{
  intake:TrustedOperationalEpochIntake;
  sessionId:string;
  runtimeTestTaskId:string;
+ readGatewayFailure:(originalRootPlanDigest:string)=>Promise<Readonly<TrustedRunnerFailure>>;
 }):Promise<Readonly<TrustedRepairFeedbackSignal>>{
- if(!(config?.gateway instanceof TrustedApprovedExecutionPlans)||
-    !(config.intake instanceof TrustedOperationalEpochIntake)||
-    typeof config.sessionId!=="string"||!ID.test(config.sessionId)||
-    typeof config.runtimeTestTaskId!=="string"||!ID.test(config.runtimeTestTaskId))
-  deny("owner-private Gateway and Engineer-root-bound intake required");
 
  // The original signed approval and every sequential epoch are verified
  // against the ACTUALLY issued Rust operational DC by this private intake.
@@ -65,10 +68,14 @@ export async function prepareTrustedRepairFeedback(config:{
  if(epochs.length<1||epochs.length>MAX_TOTAL_EPOCHS)
   deny("unrecognized or out-of-budget operational epoch history");
 
- // This method rejects model-only FAILs, active/in-flight tasks and stale
- // Test Tasks. No inference is made from an A2A completion artifact.
- const failure=config.gateway.readVerifiedTestFailure(config.runtimeTestTaskId);
+ // The original signed digest comes exclusively from this protected ledger:
+ // never take a replacement root digest from IPC, model text or operator JSON.
  const initial=epochs[0],current=epochs.at(-1);
+ if(!initial||!current)deny("signed operational epoch history unavailable");
+ // For IPC, the remote Gateway finalizes a Test FAIL once. A transport error
+ // is NOT evidence of failure, and must be handled by terminal host cleanup.
+ const failure=await config.readGatewayFailure(initial.plan_digest);
+
  if(!initial||!current||
     initial.plan.session_id!==config.sessionId||
     current.plan.session_id!==config.sessionId||
@@ -91,7 +98,10 @@ export async function prepareTrustedRepairFeedback(config:{
  // recent persisted epoch still matches the one inspected above.
  const again=await config.intake.verifiedEpochHistory();
  if(again.length!==epochs.length||
-    again.at(-1)?.plan_digest!==current.plan_digest)
+    again.at(-1)?.plan_digest!==current.plan_digest||
+    again[0]?.plan_digest!==initial.plan_digest||
+    again[0]?.root_credential_id!==initial.root_credential_id||
+    again.at(-1)?.root_credential_id!==current.root_credential_id)
   deny("operational history changed while obtaining validation evidence");
 
  const remaining=MAX_TOTAL_EPOCHS-epochs.length;
@@ -115,4 +125,60 @@ export async function prepareTrustedRepairFeedback(config:{
   permission_granted:false
  };
  return Object.freeze(result);
+}
+
+/** R105/R112 same-process route. Retains the existing strict in-process
+ * Gateway instance and does not relax any trusted dispatcher requirements. */
+export async function prepareTrustedRepairFeedback(config:{
+ gateway:TrustedApprovedExecutionPlans;
+ intake:TrustedOperationalEpochIntake;
+ sessionId:string;
+ runtimeTestTaskId:string;
+}):Promise<Readonly<TrustedRepairFeedbackSignal>>{
+ if(!(config?.gateway instanceof TrustedApprovedExecutionPlans)||
+    !(config.intake instanceof TrustedOperationalEpochIntake)||
+    typeof config.sessionId!=="string"||!ID.test(config.sessionId)||
+    typeof config.runtimeTestTaskId!=="string"||!ID.test(config.runtimeTestTaskId))
+  deny("owner-private Gateway and Engineer-root-bound intake required");
+ return prepareVerifiedRepairFeedback({
+  intake:config.intake,sessionId:config.sessionId,
+  runtimeTestTaskId:config.runtimeTestTaskId,
+  readGatewayFailure:async()=>config.gateway.readVerifiedTestFailure(
+   config.runtimeTestTaskId)
+ });
+}
+
+/** R115 separate-process private Engineer owner. The HMAC Unix client returns
+ * an independently Gateway-corroborated Docker FAIL (R114), and the ORIGINAL
+ * owner intake independently re-reads Ed25519 approval, real Rust grants,
+ * root credential ID, and every fsynced operational epoch. No supplied
+ * A2A/model assertion, fresh permission or new child DC is accepted here.
+ *
+ * A failed/replayed IPC ACK, loss of root, changed epoch, unsigned plan or
+ * revoked Engineer authority is a hard error; caller must closeExecution().
+ * This is a read-only eligibility signal, NOT a recovery executor. */
+export async function prepareTrustedRemoteRepairFeedback(config:{
+ gateway:TrustedPlanIpcClient;
+ intake:TrustedOperationalEpochIntake;
+ coordinator:Pick<TrustedExecutionCoordinator,"phase"|"trustedOperationalAuthority">;
+ sessionId:string;
+ runtimeTestTaskId:string;
+}):Promise<Readonly<TrustedRepairFeedbackSignal>>{
+ if(!(config?.gateway instanceof TrustedPlanIpcClient)||
+    !(config.intake instanceof TrustedOperationalEpochIntake)||
+    !config.coordinator||
+    typeof config.sessionId!=="string"||!ID.test(config.sessionId)||
+    typeof config.runtimeTestTaskId!=="string"||!ID.test(config.runtimeTestTaskId))
+  deny("authenticated private IPC and issued-root owner intake required");
+ // The actual same-process Coordinator must be the one used to create the
+ // original epoch intake. Never construct a second identity from receipt data.
+ config.intake.assertSameCoordinator(config.coordinator);
+ return prepareVerifiedRepairFeedback({
+  intake:config.intake,sessionId:config.sessionId,
+  runtimeTestTaskId:config.runtimeTestTaskId,
+  readGatewayFailure:rootPlanDigest=>config.gateway.confirmVerifiedTestFailure({
+   session_id:config.sessionId,root_plan_digest:rootPlanDigest,
+   runtime_task_id:config.runtimeTestTaskId
+  })
+ });
 }
