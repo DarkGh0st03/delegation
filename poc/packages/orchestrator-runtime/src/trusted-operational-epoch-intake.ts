@@ -79,6 +79,17 @@ export class TrustedOperationalEpochIntake {
   * private trusted state; no model-supplied root or replay ledger accepted.
   * This method never reserves, issues credentials, or authorizes execution.
   */
+ /** Host-private snapshot of REAL Coordinator-issued grants, not
+  * an application-only approval or a model-provided permissions list.
+  * Validates the original Engineer signature and every persisted epoch. */
+ async trustedRootReadGrants():Promise<ReadonlyArray<Readonly<{
+  resource:string;operation:string
+ }>>>{
+  await this.verifiedEpochHistory();
+  const root=this.#coordinator.trustedOperationalAuthority();
+  return Object.freeze(root.permissions.map(p=>
+    Object.freeze({resource:p.resource,operation:p.operation})));
+ }
  async preflightRepairEpoch(candidatePlan:unknown){
   const history=await this.verifiedEpochHistory();
   const root=this.#coordinator.trustedOperationalAuthority();
