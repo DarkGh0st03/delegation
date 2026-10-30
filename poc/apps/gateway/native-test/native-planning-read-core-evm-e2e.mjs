@@ -860,7 +860,10 @@ try{
                 assert.equal(issued.task_id,"r150-owner-backend-repair");
                 assert.equal(issued.epoch,2);
                 await originalA2APorts.armVerifiedD1BackendRepair({
-                  ...issued,path:target,failedSha:signal.tested_commit_sha
+                  taskId:issued.task_id,role:issued.role,
+                  runtimeTaskId:issued.runtime_task_id,
+                  credentialId:issued.credential_id,
+                  path:target,failedSha:signal.tested_commit_sha
                 });
               }
             });
