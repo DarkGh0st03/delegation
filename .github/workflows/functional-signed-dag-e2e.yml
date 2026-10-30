@@ -449,6 +449,7 @@ jobs:
           APPROVED_RUNNER_NATIVE_SOURCE_WITNESS: "1"
           APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE: "1"
           APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1: "1"
+          APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL: "1"
           APPROVED_RUNNER_SCENARIO: account-suspension
           GITEA_ADMIN_USER: isolated_admin
           GITEA_ADMIN_PASSWORD: local-owner-d1-fixture-${{ github.run_id }}-${{ github.run_attempt }}
