@@ -84,6 +84,23 @@ function confirmedReadEffect(request,branch,path){
 function confirmedRead(request,branch,path){
   return confirmedReadEffect(request,branch,path).content;
 }
+function confirmedRepairWrite(request,repair){
+  const responses=(request?.contents??[]).flatMap(c=>c.parts??[])
+    .filter(p=>p.functionResponse?.name==="update_file")
+    .map(p=>p.functionResponse.response);
+  const envelope=responses.at(-1);
+  const result=record(envelope?.structuredContent)
+    ?envelope.structuredContent
+    :record(envelope?.result?.structuredContent)
+      ?envelope.result.structuredContent:envelope;
+  const effect=result?.result;
+  if(result?.ok!==true||!record(effect)||
+     effect.provider!=="gitea"||effect.performed!==true||
+     effect.tool!=="update_file"||effect.branch!==repair.branch||
+     effect.path!==repair.path||!SHA.test(effect.commit_sha??"")||
+     effect.commit_sha===repair.failedSha)
+    deny("unconfirmed or stale Gateway D1 Gitea repair");
+}
 const FAULT='\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
 export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
   #script;#index=0;#targets;#rules;#controllerRules=null;
@@ -148,7 +165,7 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
    */
   armTrustedD1TypecheckRepair({branch,path,failedSha,taskId}={}){
     if(this.#trustedRepairUsed||this.#trustedRepair||
-       this.#index<this.#script.length||
+       this.#index<=this.#script.length||
        typeof branch!=="string"||!branch.startsWith("feature/")||
        typeof path!=="string"||
        !/^apps\/backend\/src\/[A-Za-z0-9._/-]+\.ts$/u.test(path)||
@@ -191,9 +208,10 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
         }}]}};
         return;
       }
+      confirmedRepairWrite(request,repair);
       this.#trustedRepair=null;
       yield {content:{role:"model",parts:[{
-        text:"D1 Backend source repair submitted through protected Gateway tools."
+        text:"D1 Backend source repair confirmed through protected Gateway tools."
       }]}};
       return;
     }
