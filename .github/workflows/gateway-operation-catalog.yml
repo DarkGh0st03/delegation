@@ -30,6 +30,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.15.0"
+      # R135's Gateway/Orchestrator cross-boundary A2A regression uses the
+      # existing pinned SDK, which is not available in a bare checkout.
+      # This is npm install only; no LLM API calls or paid provider runs.
+      - name: Install pinned local A2A workspace dependencies (no AI calls)
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
       - name: Check Rust Operation catalog matches generated Gateway TypeScript
         run: node poc/scripts/sync-rust-operation-catalog.mjs --check
       - name: Test Gateway authorization, provider and operation contracts (offline)
