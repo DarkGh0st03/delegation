@@ -18,6 +18,8 @@ import {TrustedOperationalEpochIntake} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
 import {prepareTrustedRepairFeedback} from
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
+import {TrustedOperationalRepairPlanner} from
+  "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
 
 const repo={authority:"gitea.local",owner:"sample",repository:"invoice-service"};
 const root="gitea://gitea.local/sample/invoice-service";
@@ -653,4 +655,140 @@ test("R105: revoked Engineer-root Coordinator cannot issue a repair planning han
  await assert.rejects(prepareTrustedRepairFeedback({
   gateway:h.gates,intake:h.intake,sessionId:session,runtimeTestTaskId:"task-test"
  }),/operational root is not active/);
+});
+
+/** R106 intentionally injects a scripted proposal; NO paid Gemini is called. */
+const repairDraft=()=>({tasks:[
+ {id:"repair-implementation",agent_id:"backend",title:"Fix invoice logic",
+  description:"Correct the implementation that failed typecheck",
+  depends_on:[],
+  permissions:[{resource:file,operation:"update_file",reason:"Repair within root"}]},
+ {id:"repair-validation",agent_id:"test",title:"Rerun verification",
+  description:"Test the updated branch in Docker",
+  depends_on:["repair-implementation"],
+  permissions:[{resource:branchURI,operation:"run_tests",reason:"Check repair"}]}
+]});
+async function verifiedFailureForR106(t:import("node:test").TestContext){
+ const h=await harness(t,{withReview:true});
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// buggy"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ h.setRunnerFailure();
+ await h.invoke("task-test","test","run_tests",runner);
+ h.gates.confirmTestValidationFailure("task-test");
+ return h;
+}
+const prepareR106=(h:Awaited<ReturnType<typeof verifiedFailureForR106>>,options:{
+ draft?:()=>unknown;
+ readHead?:()=>Promise<string>;
+ count?:{model:number;head:number};
+}={})=>new TrustedOperationalRepairPlanner({
+ gateway:h.gates,intake:h.intake,sessionId:session,
+ runtimeTestTaskId:"task-test",nextPlanId:"new-repair-epoch-2",
+ pinnedAgentRegistry:registry,
+ readTrustedFeatureHead:async()=>{
+  if(options.count)options.count.head++;
+  return {repository:repo,branch,
+   head_sha:options.readHead?await options.readHead():sha};
+ },
+ proposeRepairPlan:async(input)=>{
+  if(options.count)options.count.model++;
+  assert.equal(input.feedback.failed_phase,"typecheck");
+  assert.deepEqual(input.feedback.typecheck_error_codes,["TS2339"]);
+  assert.equal(input.feedback.tested_commit_sha,sha);
+  assert.equal(input.feedback.remaining_repair_epochs,2);
+  assert.equal(input.agents.includes("backend"),true);
+  assert.ok(input.already_delegated_grants.every(g=>
+   ["create_branch","create_pull_request","read_file",
+    "update_file","run_tests"].includes(g.operation)));
+  return options.draft?options.draft():repairDraft();
+ }
+});
+
+test("R106 private scripted repair Planner reserves one new DAG without Engineer interaction",async(t)=>{
+ const h=await verifiedFailureForR106(t),count={head:0,model:0};
+ const planner=prepareR106(h,{count});
+ const receipt=await planner.proposeAndReserve();
+ assert.equal(receipt.status,"repair_epoch_reserved_no_execution_authority");
+ assert.equal(receipt.epoch,2);
+ assert.equal(receipt.source_failed_sha,sha);
+ assert.equal(receipt.execution_authorized,false);
+ assert.equal(receipt.child_credential_issued,false);
+ assert.deepEqual(count,{head:2,model:1});
+ const history=await h.intake.verifiedEpochHistory();
+ assert.equal(history.length,2);
+ const second=history[1].plan;
+ assert.equal(second.plan_id,"new-repair-epoch-2");
+ assert.equal(second.base_revision,sha);
+ assert.equal(second.tasks.some(x=>x.agent_id==="orchestrator"),false);
+ assert.equal(second.requested_permissions.length,2);
+ assert.equal(second.tasks[0].depends_on.length,0);
+ assert.deepEqual(second.tasks[1].depends_on,["repair-implementation"]);
+ await assert.rejects(planner.proposeAndReserve(),/already attempted/);
+ assert.equal(count.model,1);
+ const admitted=await h.gates.admitNextOperationalEpoch(session,2);
+ assert.deepEqual(admitted.blocked_descendant_task_ids,
+  ["post-review","pr-after-test"]);
+ h.gates.bindTask(session,"repair-implementation","run-repair-impl","backend");
+ h.gates.bindTask(session,"repair-validation","run-repair-test","test");
+ await h.invoke("run-repair-impl","backend","update_file",edit("// corrected"));
+ await h.gates.confirmTaskCompletion("run-repair-impl");
+ await h.invoke("run-repair-test","test","run_tests",runner);
+ await h.gates.confirmTaskCompletion("run-repair-test");
+ await h.gates.retireSession(session);
+ assert.equal(h.gates.readVerifiedRunnerEffect({
+  session_id:session,task_id:"repair-validation",branch,
+  tested_commit_sha:sha
+ }).status,"pass");
+});
+
+test("R106 rejects unauthorized code mutation before reserving or calling any provider",async(t)=>{
+ const h=await verifiedFailureForR106(t),count={head:0,model:0};
+ const malicious=repairDraft();
+ malicious.tasks[0].permissions[0].resource=
+  root+"/branches/feature%2Finvoice-approval/files/src/secrets.ts";
+ const planner=prepareR106(h,{draft:()=>malicious,count});
+ await assert.rejects(planner.proposeAndReserve(),
+  /outside actually issued root/);
+ assert.equal(count.model,1);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+ assert.equal(h.provider,3);
+});
+test("R106 rejects stale feature branch SHA BEFORE any model is called",async(t)=>{
+ const h=await verifiedFailureForR106(t),count={head:0,model:0};
+ const planner=prepareR106(h,{readHead:async()=>"b".repeat(40),count});
+ await assert.rejects(planner.proposeAndReserve(),
+  /branch HEAD differs/);
+ assert.equal(count.model,0);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+});
+test("R106 rejects feature branch revision drift DURING model inference",async(t)=>{
+ const h=await verifiedFailureForR106(t),count={head:0,model:0};
+ const planner=prepareR106(h,{readHead:async()=>
+  count.head===1?sha:"b".repeat(40),count});
+ await assert.rejects(planner.proposeAndReserve(),
+  /branch HEAD differs/);
+ assert.equal(count.model,1);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+});
+test("R106 rejects a Test that does not depend on the repaired write",async(t)=>{
+ const h=await verifiedFailureForR106(t);
+ const broken=repairDraft();broken.tasks[1].depends_on=[];
+ const planner=prepareR106(h,{draft:()=>broken});
+ await assert.rejects(planner.proposeAndReserve(),
+  /Test must depend on each implementation repair/);
+ assert.equal((await h.intake.verifiedEpochHistory()).length,1);
+});
+test("R106 revoked operational root blocks even a well-scoped repair proposal",async(t)=>{
+ const h=await verifiedFailureForR106(t);
+ h.setPhase("closed");
+ const planner=prepareR106(h);
+ await assert.rejects(planner.proposeAndReserve(),
+  /operational root is not active/);
+ assert.equal((await h.intake.verifiedEpochHistory().catch(()=>[])).length,0);
 });
