@@ -32,8 +32,9 @@ import {TrustedGatewayRootVpVerifier} from "../src/trusted-root-vp-verification.
 import {createTrustedPlanIpcServer,TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
 import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
-import {issueAdmittedRepairTaskChild} from
-  "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-child.ts";
+import {dispatchTrustedAdmittedRepairA2A,
+  confirmTrustedAdmittedRepairA2A} from
+  "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
 import {TrustedChildIssuanceJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {TrustedApprovedA2ADispatcher} from
@@ -796,13 +797,15 @@ try{
                !ports?.a2a||
                typeof ports.a2a.sendProtectedTask!=="function"||
                !ports.agentBaseUrls||
+               typeof ports.armVerifiedD1BackendRepair!=="function"||
                !["backend","test"].every(role=>
                  /^http:\/\/127\.0\.0\.1:\d+$/u.test(
                    ports.agentBaseUrls[role]??"")))
               throw Error("R150.7 owner A2A original ports missing or stale");
             originalA2APorts=Object.freeze({
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
-              a2a:ports.a2a
+              a2a:ports.a2a,
+              armVerifiedD1BackendRepair:ports.armVerifiedD1BackendRepair
             });
           },
           async continueWithinActiveRoot(signal){
@@ -829,11 +832,14 @@ try{
               baseRevision:baseSha,planDigest:packet.plan_digest,
               parentCredentialId:operationalId
             });
-            const issued=await issueAdmittedRepairTaskChild({
+            // R150.8: the existing native Rust issuer mints the child,
+            // THEN the owner pins that credential to the already-running
+            // Backend ADK/A2A server before any protected Task is submitted.
+            // All source writes must go through this SAME Gateway and OPA.
+            const dispatched=await dispatchTrustedAdmittedRepairA2A({
               sessionId:session,epoch:2,
               planDigest:epochs[1].plan_digest,
               taskId:"r150-owner-backend-repair",role:"backend",
-              runtimeTaskId:"dispatch_"+randomBytes(16).toString("base64url"),
               coordinator,intake:armed.intake,gateway:gatewayOwner,
               journal,engineerDid,adapterBaseUrl:adapterUrl,
               orchestratorToken:token,
@@ -847,15 +853,30 @@ try{
                   statusListIndex:String(randomInt(70001,74000)),
                   statusListCredential:"https://status.example/lists/native-owner-d1"
                 }
+              },
+              agentBaseUrls:originalA2APorts.agentBaseUrls,
+              a2a:originalA2APorts.a2a,
+              beforeProtectedSend:async issued=>{
+                assert.equal(issued.task_id,"r150-owner-backend-repair");
+                assert.equal(issued.epoch,2);
+                await originalA2APorts.armVerifiedD1BackendRepair({
+                  ...issued,path:target,failedSha:signal.tested_commit_sha
+                });
               }
             });
-            assert.equal(issued.status,"repair_child_issued_not_dispatched");
-            assert.equal(issued.gateway_task_bound,true);
-            assert.equal(issued.child_credential_issued,true);
-            assert.equal(issued.a2a_dispatched,false);
-            assert.equal(issued.provider_executed,false);
-            assert.equal(issued.epoch,2);
-            assert.equal(issued.session_id,session);
+            assert.equal(dispatched.status,"a2a_artifact_unconfirmed");
+            assert.equal(dispatched.epoch,2);
+            const confirmed=await confirmTrustedAdmittedRepairA2A({
+              receipt:dispatched,gateway:gatewayOwner,
+              intake:armed.intake,coordinator,sessionId:session,
+              planDigest:epochs[1].plan_digest,epoch:2
+            });
+            assert.equal(confirmed.gateway_task_completed,true);
+            assert.equal(confirmed.task_id,"r150-owner-backend-repair");
+            const observedRepair=await liveClient.getBranchMetadata(workBranch);
+            assert.match(observedRepair.commit_sha,/^[a-f0-9]{40}$/u);
+            assert.notEqual(observedRepair.commit_sha,signal.tested_commit_sha,
+              "R150.8 genuine D1 Backend must produce a different Gitea SHA");
             const records=await journal.records();
             assert.equal(records.length,1);
             assert.equal(records[0].task_id,"r150-owner-backend-repair");
@@ -865,8 +886,10 @@ try{
               original_rust_parent:operationalId,
               child_issued:true,
               gateway_task_bound:true,
-              a2a_dispatched:false,
-              provider_executed:false
+              a2a_dispatched:true,
+              provider_executed:true,
+              gateway_task_completed:true,
+              repaired_sha:observedRepair.commit_sha
             };
           }
         };
@@ -989,8 +1012,11 @@ try{
             operationalRootId);
           assert.equal(ownerD1ChildEvidence?.child_issued,true);
           assert.equal(ownerD1ChildEvidence?.gateway_task_bound,true);
-          assert.equal(ownerD1ChildEvidence?.a2a_dispatched,false);
-          assert.equal(ownerD1ChildEvidence?.provider_executed,false);
+          assert.equal(ownerD1ChildEvidence?.a2a_dispatched,true);
+          assert.equal(ownerD1ChildEvidence?.provider_executed,true);
+          assert.equal(ownerD1ChildEvidence?.gateway_task_completed,true);
+          assert.match(ownerD1ChildEvidence?.repaired_sha,/^[a-f0-9]{40}$/u);
+          assert.notEqual(ownerD1ChildEvidence?.repaired_sha,proof.original_test_sha);
         }else{
         assert.equal(proof.typecheck_probe_verified,true);
         assert.equal(proof.signed_dag_completed,false);
