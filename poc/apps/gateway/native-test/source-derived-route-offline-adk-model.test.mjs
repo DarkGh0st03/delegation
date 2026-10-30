@@ -223,14 +223,12 @@ test("R150.8 one-use D1 repair requires actual failed SHA read and real Gateway 
  }}))).functionCall;
  assert.equal(write.name,"update_file");
  assert.deepEqual(write.args,{branch,path:repairPath,content:"export const x=1;\n"});
- const finish=await next(m,input({ok:true,result:{
-  provider:"gitea",performed:true,tool:"update_file",
-  branch,path:repairPath,commit_sha:repairedSha
- }}).contents[0].parts[0].functionResponse
-  ?{contents:[{parts:[{functionResponse:{name:"update_file",response:{
-    ok:true,result:{provider:"gitea",performed:true,tool:"update_file",
-      branch,path:repairPath,commit_sha:repairedSha}
-  }}}]}]}:{}));
+ const finish=await next(m,{contents:[{parts:[{functionResponse:{
+  name:"update_file",response:{ok:true,result:{
+   provider:"gitea",performed:true,tool:"update_file",
+   branch,path:repairPath,commit_sha:repairedSha
+  }}
+ }}]}]});
  assert.match(finish.text,/confirmed through protected Gateway/);
  assert.throws(()=>m.armTrustedD1TypecheckRepair(args),/NO-GO/);
 });
