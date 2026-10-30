@@ -51,6 +51,32 @@ function plan(planId:string,version:number,grants:ReturnType<typeof entry>[]){
   })),assumptions:[],uncertainties:[]
  };
 }
+function initialWithReview(withIndependentSibling=false){
+ const p=initial();
+ p.tasks.push(
+  {id:"pr-after-test",agent_id:"orchestrator",title:"Open review",
+   description:"PR only after accepted Test",
+   depends_on:["test-original"],resources:[root]},
+  {id:"post-review",agent_id:"backend",title:"Inspect after review",
+   description:"Read after approved PR",
+   depends_on:["pr-after-test"],resources:[file]}
+ );
+ p.requested_permissions.push(
+  {id:"perm-pr-after-test",task_id:"pr-after-test",agent_id:"orchestrator",
+   resource:root,operation:"create_pull_request",reason:"Human review"},
+  {id:"perm-post-review",task_id:"post-review",agent_id:"backend",
+   resource:file,operation:"read_file",reason:"Verify review"}
+ );
+ if(withIndependentSibling){
+  p.tasks.push({id:"independent-read",agent_id:"backend",
+   title:"Independent work",description:"Must finish despite Test failure",
+   depends_on:["setup"],resources:[file]});
+  p.requested_permissions.push({id:"perm-independent-read",
+   task_id:"independent-read",agent_id:"backend",resource:file,
+   operation:"read_file",reason:"Independent work"});
+ }
+ return p;
+}
 const repair=()=>plan("repair-2",2,[
  entry("backend-repair","backend",file,"update_file"),
  entry("test-repair","test",branchURI,"run_tests",["backend-repair"])
@@ -59,8 +85,10 @@ const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
  "build","playwright_e2e","researcher_acceptance"].map(phase=>({
  phase,status:"pass" as const
 }));
-async function harness(t:import("node:test").TestContext){
- const parent=initial();
+async function harness(t:import("node:test").TestContext,
+ options:{withReview?:boolean;withIndependentSibling?:boolean}={}){
+ const parent=options.withReview?
+  initialWithReview(options.withIndependentSibling):initial();
  const dir=await mkdtemp(join(tmpdir(),"delegation-gateway-epoch-"));
  t.after(()=>rm(dir,{recursive:true,force:true}));
  const approvalsDir=join(dir,"approvals"),epochsDir=join(dir,"epochs");
@@ -463,5 +491,66 @@ test("R104: a live provider effect fences terminal failure and prevents prematur
  assert.equal(admitted.epoch,2);
  await assert.rejects(h.runtime.execute({request_id:pre.request_id,
    signed_vp:"signed.fixture.vp"}),/approved plan|epoch/);
+ assert.equal(h.provider,3);
+});
+
+test("R105: Test FAIL skips only unsigned PR and transitive downstream Task",async(t)=>{
+ const h=await harness(t,{withReview:true});
+ await h.intake.reserveInitialEpoch();
+ await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// bug"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ h.setRunnerFailure();await h.invoke("task-test","test","run_tests",runner);
+ const fail=h.gates.confirmTestValidationFailure("task-test");
+ assert.equal(fail.first_failed_phase,"typecheck");
+ await h.intake.reserveRepairEpoch(repair());
+ const receipt=await h.gates.admitNextOperationalEpoch(session,2);
+ assert.deepEqual(receipt.blocked_descendant_task_ids,
+  ["post-review","pr-after-test"]);
+ assert.equal(h.provider,3);
+ assert.throws(()=>h.gates.bindTask(session,"pr-after-test",
+  "stale-pr-task","orchestrator"),/current admitted epoch/);
+ h.gates.bindTask(session,"backend-repair","backend-fix-2","backend");
+ h.gates.bindTask(session,"test-repair","test-rerun-2","test");
+ await h.invoke("backend-fix-2","backend","update_file",edit("// fixed"));
+ await h.gates.confirmTaskCompletion("backend-fix-2");
+ await h.invoke("test-rerun-2","test","run_tests",runner);
+ await h.gates.confirmTaskCompletion("test-rerun-2");
+ await h.gates.retireSession(session);
+ assert.equal(h.gates.readVerifiedRunnerEffect({
+  session_id:session,task_id:"test-repair",branch,tested_commit_sha:sha
+ }).status,"pass");
+});
+test("R105: independent unbound Task cannot be discarded as failed Test descendant",async(t)=>{
+ const h=await harness(t,{withReview:true,withIndependentSibling:true});
+ await h.intake.reserveInitialEpoch();
+ await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",
+  {branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// bug"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ h.setRunnerFailure();await h.invoke("task-test","test","run_tests",runner);
+ h.gates.confirmTestValidationFailure("task-test");
+ await h.intake.reserveRepairEpoch(repair());
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
+  /unresolved, unbound or in-flight/);
+ assert.equal(h.provider,3);
+});
+test("R105: no failed Test means neither PR nor other unbound Tasks can be skipped",async(t)=>{
+ const h=await harness(t,{withReview:true});
+ await h.initialPass();
+ await h.intake.reserveRepairEpoch(repair());
+ await assert.rejects(h.gates.admitNextOperationalEpoch(session,2),
+  /unresolved, unbound or in-flight/);
  assert.equal(h.provider,3);
 });
