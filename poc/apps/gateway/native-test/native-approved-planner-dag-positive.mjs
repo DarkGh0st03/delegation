@@ -328,6 +328,9 @@ export async function runNativePositiveApprovedDag({
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
+  let admittedBackendRepair=null;
+  const isSignedImplementationTask=(role,id)=>taskIdsByRole[role].includes(id)||
+    (role==="backend"&&admittedBackendRepair?.taskId===id);
   const readPaths={backend:new Set(),frontend:new Set(),test:new Set()};
   const readPathsPerTask=new Map();
   const writePaths={backend:new Set(),frontend:new Set(),test:new Set()};
@@ -447,7 +450,7 @@ export async function runNativePositiveApprovedDag({
             const current=await reader.readTextFile(branch,effect.path);
             assert.equal(effect.content,current.content);
             const roleTaskId=activeTaskByRole[role];
-            assert.ok(taskIdsByRole[role].includes(roleTaskId));
+            assert.ok(isSignedImplementationTask(role,roleTaskId));
             if(!readPathsPerTask.has(roleTaskId))
               readPathsPerTask.set(roleTaskId,new Set());
             readPathsPerTask.get(roleTaskId).add(effect.path);
@@ -780,7 +783,45 @@ export async function runNativePositiveApprovedDag({
     });
     if(trustedOwnerRecovery?.bindOriginalA2APorts){
       await trustedOwnerRecovery.bindOriginalA2APorts({
-        agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A
+        agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
+        async armVerifiedD1BackendRepair({
+          taskId,role,runtimeTaskId,credentialId,path,failedSha
+        }){
+          // Only the original trusted owner may invoke this after real
+          // R134 child issuance. Source/model claims grant NOTHING.
+          if(admittedBackendRepair||
+             !offlineTypecheckProbe||realGeminiPilot||
+             role!=="backend"||taskId!=="r150-owner-backend-repair"||
+             !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
+             !credentialId||!SHA.test(failedSha)||
+             runnerOutcome?.status!=="fail"||
+             runnerOutcome?.tested_commit_sha!==failedSha||
+             !(models.backend instanceof SourceDerivedRouteOfflineAdkModel)||
+             !files.backend.includes(path)||!readableFiles.backend.includes(path)||
+             (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
+            throw Error("R150.8 trusted Backend repair binding NO-GO");
+          const history=await trustedOwnerRecovery.intake.verifiedEpochHistory();
+          const epoch=history.at(-1),task=epoch?.plan.tasks.find(t=>t.id===taskId);
+          const file=canonicalFileUri(repo,branch,path);
+          if(history.length!==2||task?.agent_id!=="backend"||
+             epoch.root_credential_id!==operationalRootId||
+             !["read_file","update_file"].every(operation=>
+               epoch.plan.requested_permissions.some(g=>
+                 g.task_id===taskId&&g.agent_id==="backend"&&
+                 g.resource===file&&g.operation===operation)))
+            throw Error("R150.8 owner D1 repair outside signed epoch scope");
+          // A new A2A Task receives a distinct source-read journal and
+          // only its independently signed exact write key may be observed.
+          models.backend.armTrustedD1TypecheckRepair({
+            branch,path,failedSha,taskId
+          });
+          admittedBackendRepair=Object.freeze({
+            taskId,runtimeTaskId,credentialId,path,failedSha
+          });
+          activeChildByRole.backend=credentialId;
+          activeTaskByRole.backend=taskId;
+          expectedImplementationWriteKeys.add(writeKey(taskId,"update_file",path));
+        }
       });
     }
     if(realGeminiPilot)onPilotPhase?.("dispatcher_setup");
