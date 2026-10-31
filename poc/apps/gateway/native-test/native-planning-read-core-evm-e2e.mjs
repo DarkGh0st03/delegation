@@ -120,6 +120,17 @@ const realGitea=[disposableBase,disposableToken,disposableSha]
 const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
 const positiveDag=process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
 const ownerD1Probe=process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1";
+// R151.12: independently opted-in paid repair uses the original runtime
+// root, never the TS2820 offline injection or deterministic repair model.
+// Existing signed Gemini consent is REQUIRED separately above.
+const paidGeminiRecovery=geminiPilot&&
+  process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1";
+if(process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1"&&
+   (!geminiPilot||ownerD1Probe||
+    process.env.DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION!==
+      "I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH"))
+  throw Error("R151.12 paid repair epoch requires separate explicit billing consent");
+const ownerRecoveryEnabled=ownerD1Probe||paidGeminiRecovery;
 // The isolated Docker smoke script executes several independent native
 // subprocesses. Its opt-in flag is inherited by ALL of them, while only
 // the explicit owner-D1 subprocess can run the R151 proposal path.
@@ -330,7 +341,7 @@ const signedStore=receiptDir?new SignedEngineerApprovalFileStore({
  * independently verifies the original EVM-issued Rust root, its fresh
  * multi-permission VP and the owner's durable signed-epoch journal.
  * This is opt-in ZERO-BILLING integration, not a model/agent permission. */
-const ownerDir=ownerD1Probe?
+const ownerDir=ownerRecoveryEnabled?
   await mkdtemp(join(tmpdir(),"delegation-native-owner-d1-")):undefined;
 const ownerEpochDir=ownerDir?join(ownerDir,"epochs"):undefined;
 const ownerOpsDir=ownerDir?join(ownerDir,"operational"):undefined;
@@ -375,7 +386,7 @@ const reviewGate=signedStore?new TrustedPlanningReviewGate({
 }):undefined;
 const approvedPlans=reviewGate?new TrustedApprovedExecutionPlans({
   repository:repo,engineerDid,approvals:reviewGate,
-  ...(ownerD1Probe?{
+  ...(ownerRecoveryEnabled?{
     remoteEpochInspector:ownerGatewayInspector,
     operationalSessionStore:new TrustedOperationalSessionStore(ownerOpsDir),
     operationalLeaseMs:120000
@@ -713,7 +724,7 @@ try{
     if(positiveDag){
       let trustedOwnerRecovery;
       let ownerD1ChildEvidence,ownerD1Gateway,ownerD1Witness;
-      if(ownerD1Probe){
+      if(ownerRecoveryEnabled){
         // The *existing* approvedPlans instance is shared by this Gateway,
         // the issued Rust root's Coordinator and owner-private HMAC IPC.
         // No replacement plan, parallel test-root or model-controlled token.
@@ -753,8 +764,12 @@ try{
             g.resource===canonicalFileUri(repo,workBranch,path))&&
           grants.some(g=>g.agent_id==="backend"&&g.operation==="update_file"&&
             g.resource===canonicalFileUri(repo,workBranch,path)));
-        assert.ok(target,"R150.5 must derive the error target from the signed Backend grants");
-        const fileResource=canonicalFileUri(repo,workBranch,target);
+        if(!paidGeminiRecovery)
+          assert.ok(target,"R150.5 must derive the error target from the signed Backend grants");
+        // For a real Gemini repair the new signed D1 epoch, NOT this fixture
+        // selector, decides which previously authorized source is editable.
+        const fileResource=target?
+          canonicalFileUri(repo,workBranch,target):null;
         const branchResource="gitea://"+repo.authority+"/"+repo.owner+"/"+
           repo.repository+"/branches/"+encodeURIComponent(workBranch);
         const operationalId=coordinator.trustedOperationalAuthority().credential_id;
@@ -813,6 +828,18 @@ try{
             maxOutputTokens:8192
           })
           :undefined;
+        const ownerRepairProposer=paidGeminiRecovery
+          ?new TrustedAdkOperationalRepairProposer({
+            model:createGeminiAdkModel({
+              apiKey:process.env.GEMINI_API_KEY,
+              model:process.env.DELEGATION_GEMINI_MODEL
+            }),
+            maxCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
+            maxSessionMs:240000,
+            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+            thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel
+          })
+          :trustedOwnerRepairAdk;
         const armed=await armTrustedOwnerOperationalRecovery({
           gateway:gatewayOwner,coordinator,signedApprovals:signedStore,
           epochDirectory:ownerEpochDir,
@@ -827,8 +854,8 @@ try{
           },
           planRepairEpoch:{
             giteaClient:liveClient,
-            ...(trustedOwnerRepairAdk
-              ?{trustedAdkProposer:trustedOwnerRepairAdk}
+            ...(ownerRepairProposer
+              ?{trustedAdkProposer:ownerRepairProposer}
               :{proposeRepairPlan:nativeOwnerRepairDraft}),
             admitReservedEpoch:true
           }
@@ -868,12 +895,29 @@ try{
             assert.deepEqual(epochs.map(e=>e.epoch),[1,2]);
             assert.equal(epochs[0].root_credential_id,operationalId);
             assert.equal(epochs[1].root_credential_id,operationalId);
+            // Derive the actual repair target from the *admitted* D1 grants.
+            // Never let Gemini select a path, Task ID or operation outside
+            // the original Engineer-approved, Rust-issued root.
+            const repairTargets=roleFiles.backend.filter(path=>{
+              const uri=canonicalFileUri(repo,workBranch,path);
+              const grants=epochs[1].plan.requested_permissions;
+              return ["read_file","update_file"].every(operation=>
+                grants.some(g=>g.agent_id==="backend"&&
+                  g.resource===uri&&g.operation===operation));
+            });
+            if(repairTargets.length!==1)
+              throw Error("R151.12 expects exactly one signed Backend repair file");
+            const repairTarget=repairTargets[0];
+            const repairFileUri=canonicalFileUri(repo,workBranch,repairTarget);
             const selected=selectSignedNativeD1Tasks({
               epoch:epochs[1],planDigest:epochs[1].plan_digest,
-              fileUri:fileResource,branchUri:branchResource
+              fileUri:repairFileUri,branchUri:branchResource
             });
-            assert.equal(selected.backendTaskId,candidateBackendId);
-            assert.equal(selected.testTaskId,candidateTestId);
+            if(!paidGeminiRecovery){
+              assert.equal(selected.backendTaskId,candidateBackendId);
+              assert.equal(selected.testTaskId,candidateTestId);
+              assert.equal(repairFileUri,fileResource);
+            }
             // R150.6: ask the ORIGINAL Rust issuer for a genuinely
             // attenuated first repair Child DC, after the SAME Gateway's
             // independent epoch admission. No A2A dispatch or Gitea write
@@ -931,7 +975,7 @@ try{
                     taskId:issued.task_id,role:issued.role,
                     runtimeTaskId:issued.runtime_task_id,
                     credentialId:issued.credential_id,
-                    path:target,failedSha:signal.tested_commit_sha
+                    path:repairTarget,failedSha:signal.tested_commit_sha
                   });
                 }else if(issued.role==="test"&&
                          issued.task_id===selected.testTaskId&&
@@ -1114,16 +1158,18 @@ try{
           test:process.env.ADAPTER_CALLER_TEST
         }
       });
-      if(signedOfflineTypecheckProbe){
+      if(signedOfflineTypecheckProbe||
+         (paidGeminiRecovery&&globalThis.__nativeDagPositive?.status===
+           "trusted_owner_repair_handoff_retired")){
         const proof=globalThis.__nativeDagPositive;
-        if(ownerD1Probe){
+        if(ownerRecoveryEnabled&&proof.status==="trusted_owner_repair_handoff_retired"){
           assert.equal(proof.status,"trusted_owner_repair_handoff_retired");
           assert.equal(proof.original_dag_completed,false);
           assert.equal(proof.repair_epoch_handoff,true);
           assert.equal(proof.final_runner_pass_verified,false);
           assert.equal(proof.original_root_revoked,true);
           assert.equal(proof.pull_request_created,false);
-          assert.equal(proof.failed_phase,"typecheck");
+          if(ownerD1Probe)assert.equal(proof.failed_phase,"typecheck");
           assert.equal(coordinator.phase,"closed");
           assert.equal(ownerD1ChildEvidence?.original_rust_parent,
             operationalRootId);
@@ -1413,7 +1459,7 @@ try{
       globalThis.__nativeDagPositive.source_writes+
       globalThis.__nativeDagPositive.created_test_files:0,
     ...(positiveDag?{positive_dag:globalThis.__nativeDagPositive}:{}),
-    ...(ownerD1Probe?{owner_repair_review:ownerD1ReviewEvidence}:{})
+    ...(ownerRecoveryEnabled?{owner_repair_review:ownerD1ReviewEvidence}:{})
   }));
 }catch(error){
   if(geminiPilot){
