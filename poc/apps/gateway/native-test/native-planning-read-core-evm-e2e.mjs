@@ -1220,7 +1220,12 @@ try{
             if(!frontendTarget||
                typeof otherImplementations[frontendTarget]!=="string")
               throw Error("No originally signed Frontend TypeScript fault target");
-            otherImplementations[frontendTarget]+=
+            // Only the disposable fault fixture is whitespace-normalized.
+            // The larger JSX source plus the injected compiler line otherwise
+            // exceeds the original bounded tool-call size in this path.
+            // No production model source or signed grants are modified.
+            otherImplementations[frontendTarget]=
+              otherImplementations[frontendTarget].replace(/^ {2,}/gmu," ")+
               '\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
           }
         }
