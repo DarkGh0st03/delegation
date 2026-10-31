@@ -22,3 +22,5 @@ export {TrustedBackendDiscoveryCryptoPresentation} from "./trusted-backend-disco
 export {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A} from "./trusted-backend-discovery-a2a-binding.ts";
 export {TrustedBackendDiscoveryTaskSlot} from "./trusted-backend-discovery-task-slot.ts";
 export {createTrustedBackendDiscoveryTaskBindingServer,TrustedBackendDiscoveryTaskBindingSocketClient} from "./trusted-backend-discovery-task-binding-ipc.ts";
+
+export {startTrustedBackendDiscoveryHost} from "./trusted-backend-discovery-host.ts";
