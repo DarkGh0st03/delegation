@@ -75,6 +75,61 @@ class BudgetedRepairModel extends BaseLlm {
  }
 }
 
+
+/** Paid pilot's first D1 supports one Backend edit followed by one new Test.
+ * This preflight prevents a model call when the existing root cannot express
+ * that DAG. It never allocates or grants authority; planner/Gateway still
+ * independently check the exact role, Task and original Rust root. */
+function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>){
+ const suffix="/branches/"+encodeURIComponent(input.feedback.work_branch);
+ const runner=input.already_delegated_grants.find(g=>
+  g.operation==="run_tests"&&g.resource.startsWith("gitea://")&&
+  g.resource.endsWith(suffix))?.resource;
+ const edits=new Set<string>();
+ if(runner){
+  for(const grant of input.already_delegated_grants){
+   if(grant.operation==="update_file"&&
+      grant.resource.startsWith(runner+"/files/")&&
+      input.already_delegated_grants.some(other=>
+       other.operation==="read_file"&&other.resource===grant.resource))
+    edits.add(grant.resource);
+  }
+ }
+ if(!runner||!input.agents.includes("backend")||
+    !input.agents.includes("test")||edits.size===0)
+  deny("bounded Backend/Test repair missing existing root scope");
+ return {runner,edits};
+}
+
+/** Never trust a shape instruction in a prompt as a contract. A syntactically
+ * valid model response is still only a proposal, never a signed repair DAG. */
+function assertBoundedBackendTestDraft(result:unknown,
+ scope:ReturnType<typeof boundedBackendTestScope>):void{
+ const tasks=(result as {tasks?:unknown}).tasks;
+ if(!Array.isArray(tasks)||tasks.length!==2)
+  deny("bounded repair requires exactly Backend and Test Tasks");
+ const [backend,test]=tasks as Record<string,unknown>[];
+ if(!backend||!test||backend.agent_id!=="backend"||
+    test.agent_id!=="test"||typeof backend.id!=="string"||
+    !Array.isArray(backend.depends_on)||backend.depends_on.length!==0||
+    !Array.isArray(test.depends_on)||test.depends_on.length!==1||
+    test.depends_on[0]!==backend.id||
+    !Array.isArray(backend.permissions)||
+    !Array.isArray(test.permissions))
+  deny("bounded repair role or dependency mismatch");
+ const bp=backend.permissions as {resource?:unknown;operation?:unknown}[];
+ const tp=test.permissions as {resource?:unknown;operation?:unknown}[];
+ const updates=bp.filter(p=>p?.operation==="update_file");
+ if(updates.length!==1||typeof updates[0].resource!=="string"||
+    !scope.edits.has(updates[0].resource)||!bp.some(p=>
+      p?.operation==="read_file"&&p.resource===updates[0].resource)||
+    bp.some(p=>!p||!["read_file","update_file"].includes(
+      String(p.operation))||typeof p.resource!=="string")||
+    tp.length!==1||tp[0]?.operation!=="run_tests"||
+    tp[0].resource!==scope.runner)
+  deny("bounded repair Task grants are not an exact root subset");
+}
+
 export class TrustedAdkOperationalRepairProposer {
  readonly #model:BaseLlm;
  readonly #sourceReader?:TrustedOperationalRepairSourceReader;
@@ -143,6 +198,8 @@ export class TrustedAdkOperationalRepairProposer {
        typeof p.operation!=="string"))
    deny("invalid trusted source-free repair input");
 
+  const boundedScope=this.#taskShape==="backend_test"?
+   boundedBackendTestScope(input):undefined;
   const deadline=AbortSignal.timeout(this.#maxSessionMs);
   // Four authorized source reads plus the final model response.
   // Without a read port, retain the original one-inference limit.
@@ -243,6 +300,7 @@ export class TrustedAdkOperationalRepairProposer {
   if(!result||typeof result!=="object"||Array.isArray(result)||
      Object.keys(result).join(",")!=="tasks")
    deny("repair model returned fields outside permitted draft");
+  if(boundedScope)assertBoundedBackendTestDraft(result,boundedScope);
   this.#observer?.(Object.freeze({kind:"proposal_parsed",call:model.calls}));
   // No automatic fallback, retries, credentials or provider execution.
   // Structural/scope validation remains with TrustedOperationalRepairPlanner.

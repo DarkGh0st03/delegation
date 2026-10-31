@@ -101,3 +101,69 @@ test("R107 model is constrained by provider-level output-token setting",async()=
  assert.equal(config?.maxOutputTokens,1024);
  assert.equal(config?.thinkingConfig?.thinkingLevel,"LOW");
 });
+
+
+const boundedInput={
+ ...input,already_delegated_grants:[
+  {resource:file,operation:"read_file"},...input.already_delegated_grants
+ ]
+};
+function boundedDraft(){
+ const result=draft();
+ result.tasks[0].permissions.unshift({
+  resource:file,operation:"read_file",reason:"Inspect approved source"
+ });
+ return result;
+}
+test("R151.13 bounded signed D1 proposes only Backend -> Test with exact existing grants",async()=>{
+ const model=new ScriptedModel(boundedDraft());
+ const proposer=new TrustedAdkOperationalRepairProposer({
+  model,taskShape:"backend_test",maxOutputTokens:2048
+ });
+ assert.deepEqual(await proposer.propose(boundedInput),boundedDraft());
+ assert.equal(model.requests.length,1);
+ const instructions=JSON.stringify(model.requests[0]?.config?.systemInstruction??{});
+ assert.match(instructions,/EXACTLY two Tasks/);
+ assert.match(instructions,/Do NOT propose Frontend/);
+});
+test("R151.13 no inference if original root cannot express a bounded Backend/Test D1",async()=>{
+ const cases=[
+  input,
+  {...boundedInput,agents:["frontend","test"]},
+  {...boundedInput,already_delegated_grants:
+    boundedInput.already_delegated_grants.filter(g=>g.operation!=="run_tests")},
+  {...boundedInput,already_delegated_grants:
+    boundedInput.already_delegated_grants.map(g=>g.operation==="run_tests"
+      ?{...g,resource:g.resource+"/other"}:g)}
+ ];
+ for(const bad of cases){
+  const model=new ScriptedModel(boundedDraft());
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model,taskShape:"backend_test"
+  }).propose(bad),/bounded Backend\/Test repair missing existing root scope/);
+  assert.equal(model.requests.length,0);
+ }
+});
+test("R151.13 malformed bounded model DAG cannot reach owner admission",async()=>{
+ const good=boundedDraft();
+ const bad=[
+  {...good,tasks:[...good.tasks,good.tasks[0]]},
+  {...good,tasks:[{...good.tasks[0],agent_id:"frontend"},good.tasks[1]]},
+  {...good,tasks:[good.tasks[0],{...good.tasks[1],depends_on:[]}]},
+  {...good,tasks:[{...good.tasks[0],permissions:
+    good.tasks[0].permissions.filter(p=>p.operation!=="read_file")},good.tasks[1]]},
+  {...good,tasks:[{...good.tasks[0],permissions:
+    good.tasks[0].permissions.map(p=>p.operation==="update_file"
+      ?{...p,resource:file+"/out-of-scope"}:p)},good.tasks[1]]},
+  {...good,tasks:[good.tasks[0],{...good.tasks[1],permissions:[
+    ...good.tasks[1].permissions,{resource:file,operation:"update_file",reason:"No"}
+  ]}]}
+ ];
+ for(const payload of bad){
+  const model=new ScriptedModel(payload);
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model,taskShape:"backend_test"
+  }).propose(boundedInput),/bounded repair/);
+  assert.equal(model.requests.length,1);
+ }
+});
