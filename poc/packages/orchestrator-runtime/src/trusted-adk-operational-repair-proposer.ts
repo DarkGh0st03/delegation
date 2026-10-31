@@ -207,6 +207,22 @@ export class TrustedAdkOperationalRepairProposer {
 
   const boundedScope=this.#taskShape==="backend_test"?
    boundedBackendTestScope(input):undefined;
+  // R151.20: only show the repair model grants which THIS two-role DAG
+  // can actually use. The trusted planner still checks the model draft
+  // against the full original Rust root; this is prompt minimization,
+  // never a new credential or a change to root authorization.
+  const modelInput:Readonly<TrustedRepairModelInput>=boundedScope?
+   Object.freeze({
+    requirement:input.requirement,feedback:input.feedback,
+    agents:Object.freeze(["backend","test"] as const),
+    already_delegated_grants:Object.freeze([
+     ...[...boundedScope.edits].sort().flatMap(resource=>[
+      Object.freeze({resource,operation:"read_file"}),
+      Object.freeze({resource,operation:"update_file"})
+     ]),
+     Object.freeze({resource:boundedScope.runner,operation:"run_tests"})
+    ])
+   }):input;
   const deadline=AbortSignal.timeout(this.#maxSessionMs);
   // Four authorized source reads plus the final model response.
   // Without a read port, retain the original one-inference limit.
@@ -267,8 +283,12 @@ export class TrustedAdkOperationalRepairProposer {
     "tasks is an array of objects with EXACT keys: id,agent_id,title,description,depends_on,permissions.",
     "permissions is an array of objects with EXACT keys: resource,operation,reason.",
     "No DID, credential, model configuration, session, branch or repository fields.",
-    "Backend/Frontend: read_file,update_file. Test: run_tests,read_file,update_file,create_file.",
-    "Orchestrator: only create_pull_request, depending on the Test task.",
+    ...(this.#taskShape==="backend_test"?[
+     "For this bounded DAG, Backend may only read_file and update_file on ONE source; Test may only run_tests."
+    ]:[
+     "Backend/Frontend: read_file,update_file. Test: run_tests,read_file,update_file,create_file.",
+     "Orchestrator: only create_pull_request, depending on the Test task."
+    ]),
     "Do not output markdown, source code, raw logs or commentary."
    ].join("\n"),
    disallowTransferToParent:true,disallowTransferToPeers:true
@@ -283,7 +303,7 @@ export class TrustedAdkOperationalRepairProposer {
   try{
    for await(const event of runner.runAsync({
     userId,sessionId,
-    newMessage:{role:"user" as const,parts:[{text:JSON.stringify(input)}]}
+    newMessage:{role:"user" as const,parts:[{text:JSON.stringify(modelInput)}]}
    })){
     if(deadline.aborted)deny("repair planning deadline exceeded");
     if(event.errorCode||event.errorMessage)deny("model/ADK reported an error");

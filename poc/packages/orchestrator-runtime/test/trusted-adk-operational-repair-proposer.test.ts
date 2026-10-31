@@ -127,6 +127,39 @@ test("R151.13 bounded signed D1 proposes only Backend -> Test with exact existin
  assert.match(instructions,/Do NOT propose Frontend/);
  assert.match(instructions,/no extra read grants/);
 });
+test("R151.20 bounded model sees only feasible Backend/Test root grants",async()=>{
+ const unusedFile=runner+"/files/src/secondary.ts";
+ const unrelated={...boundedInput,already_delegated_grants:[
+  ...boundedInput.already_delegated_grants,
+  {resource:unusedFile,operation:"read_file"},
+  {resource:runner,operation:"create_pull_request"},
+  {resource:runner,operation:"delete_file"}
+ ]};
+ const model=new ScriptedModel(boundedDraft());
+ const proposer=new TrustedAdkOperationalRepairProposer({
+  model,taskShape:"backend_test"
+ });
+ assert.deepEqual(await proposer.propose(unrelated),boundedDraft());
+ assert.equal(model.requests.length,1);
+ const message=model.requests[0]?.contents?.at(-1)?.parts?.find(
+  p=>typeof p.text==="string")?.text;
+ assert.equal(typeof message,"string");
+ const exposed=JSON.parse(message!);
+ assert.deepEqual(exposed.agents,["backend","test"]);
+ assert.deepEqual(exposed.feedback,unrelated.feedback);
+ assert.equal(exposed.requirement,unrelated.requirement);
+ assert.deepEqual(exposed.already_delegated_grants,[
+  {resource:file,operation:"read_file"},
+  {resource:file,operation:"update_file"},
+  {resource:runner,operation:"run_tests"}
+ ]);
+ const instructions=JSON.stringify(model.requests[0]?.config?.systemInstruction??{});
+ assert.match(instructions,/Test may only run_tests/);
+ assert.ok(!instructions.includes("Backend\/Frontend:"));
+ assert.ok(!message!.includes("secondary.ts"));
+ assert.ok(!message!.includes("create_pull_request"));
+});
+
 test("R151.13 no inference if original root cannot express a bounded Backend/Test D1",async()=>{
  const cases=[
   input,
