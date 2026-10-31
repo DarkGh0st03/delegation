@@ -10,7 +10,12 @@ export function approvedWorkBranch(plan){
      typeof repo[k]==="string"&&repo[k].length>0)){
     throw Error("Approved branch: missing repository");
   }
-  const root="gitea://"+repo.authority+"/"+repo.owner+"/"+repo.repository;
+  // R151.22.1: match the Gateway's canonicalRepositoryUri contract.
+  // In particular, the owner/repository path segments are percent-encoded;
+  // signed grants using canonical URIs must not be mistaken for an
+  // external repository when the owner contains '+' or other characters.
+  const root="gitea://"+repo.authority.trim().toLowerCase()+"/"+
+    encodeURIComponent(repo.owner)+"/"+encodeURIComponent(repo.repository);
   if(!Array.isArray(plan.requested_permissions)){
     throw Error("Approved branch: missing permission set");
   }

@@ -14,6 +14,32 @@ test("all signed permission rows agree on a single canonical feature branch",()=
     root,uri+"/files/apps/backend/user.ts",uri
   ])),branch);
 });
+test("R151.22.1 signed repository owner and name use Gateway-compatible URI encoding",()=>{
+ const branch="feature/engineer-approved-42";
+ for(const [owner,repository,authority] of [
+  ["sample+east","invoice-service","gitea.local"],
+  ["sample","invoice+service","GITEA.LOCAL"],
+  ["team/east","invoice-service","gitea.local"]
+ ]){
+  const repositoryRoot="gitea://gitea.local/"+
+    encodeURIComponent(owner)+"/"+encodeURIComponent(repository);
+  const scoped=repositoryRoot+"/branches/"+encodeURIComponent(branch);
+  const signed={
+   repository:{authority,owner,repository},
+   requested_permissions:[
+    {id:"create-branch",resource:repositoryRoot},
+    {id:"read-source",resource:scoped+"/files/src/invoice.ts"}
+   ]
+  };
+  assert.equal(approvedWorkBranch(signed),branch);
+  assert.throws(()=>approvedWorkBranch({
+   ...signed,requested_permissions:[{id:"forged",resource:
+    "gitea://gitea.local/"+owner+"/"+repository+
+    "/branches/"+encodeURIComponent(branch)+"/files/src/invoice.ts"}]
+  }),/Approved branch: external repository/);
+ }
+});
+
 test("root-only historical plans remain restricted to the legacy branch",()=>{
   assert.equal(approvedWorkBranch(plan([root])),LEGACY_APPROVED_BRANCH);
 });
