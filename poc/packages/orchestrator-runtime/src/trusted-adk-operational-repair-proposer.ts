@@ -465,10 +465,10 @@ export class TrustedAdkOperationalRepairProposer {
       "Choose Backend or Frontend based on the verified failed file and original grants; never invent either role's authority.",
       "Do NOT propose both repairing agents, extra Tasks or a PR Task; owner handles the PR after PASS."
      ])
-    ]:[
+    ]:!this.#taskShape?[
      "Choose Backend/Frontend edits selectively; Test must depend on repairs.",
      "Optionally schedule a PR only AFTER the new passing Test."
-    ]),
+    ]:[]),
     "Do not create a branch, merge, request higher authority or invent file paths.",
     "If the provided scope is insufficient, fail to propose rather than invent grants.",
     "Return ONLY one JSON object with EXACTLY the key tasks.",
