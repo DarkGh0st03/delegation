@@ -4891,4 +4891,67 @@ test("R151.55 same native owner discovery supplies attested source to planner an
  assert.equal(epochs.length,2);
  assert.equal(epochs[1].plan_digest,reserved.plan_digest);
  assert.equal(h.f.h.coordinator.phase,"execution");
+
+ // Admit the signed epoch through the same Gateway registry and execute
+ // its signed Backend -> Test DAG with fresh Child DCs. Adapter, A2A and
+ // Runner effects remain explicit scripted ports in this test.
+ const admission=await h.f.h.gates.admitNextOperationalEpoch(session,2);
+ assert.equal(admission.epoch,2);
+ const childDir=join(h.f.h.dir,"r15155-repair-child-issuance");
+ await mkdir(childDir,{mode:0o700});
+ const childJournal=new TrustedChildIssuanceJournal({
+  directory:childDir,sessionId:session,baseRevision:sha,
+  planDigest:planDigest(h.f.h.parent),
+  parentCredentialId:h.f.h.rootAuthority.credential_id
+ });
+ const childCalls:string[]=[],repairCalls:string[]=[];
+ const adapterFetch:typeof fetch=async(_url,init)=>{
+  const body=JSON.parse(String(init?.body));childCalls.push(body.credential_id);
+  return new Response(JSON.stringify({
+   "@context":["https://www.w3.org/ns/credentials/v2"],
+   type:["VerifiableCredential","DelegationCredential"],
+   id:body.credential_id,issuer:"did:example:orchestrator",
+   credentialSubject:{sub:"did:example:"+body.delegatee,per:body.permissions}
+  }),{status:201});
+ };
+ const execution=await executeTrustedAdmittedRepairDag({
+  sessionId:session,epoch:2,planDigest:reserved.plan_digest,
+  coordinator:h.f.h.coordinator as any,intake:h.f.h.intake,gateway:h.f.client,
+  journal:childJournal,engineerDid:engineer,
+  adapterBaseUrl:"http://r15155-repair-adapter.local:8090",
+  orchestratorToken:"private-r15155-repair-token",fetchFn:adapterFetch,
+  agentBaseUrls:{backend:"http://backend.local:8080",
+   frontend:"http://frontend.local:8081",test:"http://test.local:8082"},
+  credentialForTask({id,ordinal}){return {
+   credential_id:"urn:r15155:repair-child:"+id,
+   valid_from:new Date().toISOString(),validity_seconds:300,
+   credential_status:{type:"BitstringStatusListEntry",
+    statusPurpose:"revocation",statusListIndex:String(29000+ordinal),
+    statusListCredential:"https://status.example/r15155-repair"}
+  };},
+  a2a:{async sendProtectedTask(request){
+   const id=request.subtask.subtask_id;repairCalls.push(id);
+   const runtimeId=request.trusted_gateway_task_id;
+   if(id==="repair-implementation"){
+    await h.f.h.invoke(runtimeId,"backend","update_file",
+     edit("// scripted repair after attested discovery"));
+    return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+   }
+   assert.equal(id,"repair-validation");
+   await h.f.h.invoke(runtimeId,"test","run_tests",runner);
+   const artifact=r135A2AArtifact();
+   const data=artifact.artifacts[0].parts[0].content.value as any;
+   data.role="test";data.test_outcome="pass";data.tested_commit_sha=sha;
+   data.runner_profile="poc-default";data.project_tests="pass";
+   data.researcher_acceptance="pass";
+   return {card:{name:"Test"},task:artifact as never};
+  }}
+ });
+ assert.equal(execution.status,"repair_dag_gateway_confirmed_not_final_runner_verified");
+ assert.deepEqual(repairCalls,["repair-implementation","repair-validation"]);
+ assert.equal(new Set(childCalls).size,2);
+ assert.equal(execution.docker_pass_verified,false);
+ assert.equal(execution.pull_request_created,false);
+ assert.equal(h.f.h.provider,7,"two Gateway-confirmed repair effects follow discovery");
+ assert.equal((await childJournal.records()).length,2);
 });
