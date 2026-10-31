@@ -136,6 +136,12 @@ const ownerRecoveryEnabled=ownerD1Probe||paidGeminiRecovery;
 // the explicit owner-D1 subprocess can run the R151 proposal path.
 const ownerD1AdkProposal=ownerD1Probe&&
   process.env.APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL==="1";
+// The multi-error fixture is opt-in and NEVER shares a paid Gemini run.
+const multiTypecheckProbe=
+  process.env.APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE==="1";
+if(multiTypecheckProbe&&(!ownerD1Probe||!ownerD1AdkProposal||
+   !signedOfflineTypecheckProbe||geminiPilot))
+  throw Error("Mixed TypeScript repair needs a separately armed zero-billing owner");
 if(ownerD1AdkProposal&&geminiPilot)
   throw Error("R151 offline owner ADK repair fixture is never a paid Gemini path");
 const signedOfflineMultiTest=positiveDag&&
@@ -789,6 +795,7 @@ try{
           ?"r151-dynamic-backend-source":"r150-owner-backend-repair";
         const candidateTestId=ownerD1AdkProposal
           ?"r151-dynamic-docker-validation":"r150-owner-test-fresh";
+        const candidateFrontendId="r151-multi-frontend-repair";
         const nativeOwnerRepairDraft=async input=>{
               // The zero-billing test selects existing grants, not a new
               // capability. A future model may propose a different bounded
@@ -796,6 +803,36 @@ try{
               assert.equal(input.feedback.failed_phase,"typecheck");
               assert.ok(input.feedback.typecheck_error_codes.includes("TS2820"));
               assert.equal(input.feedback.remaining_repair_epochs,2);
+              if(multiTypecheckProbe){
+                const proven=input.diagnostic_targets;
+                if(proven?.status!=="verified_runner_multi_file_repair_targets"||
+                   proven.tested_commit_sha!==input.feedback.tested_commit_sha||
+                   !Array.isArray(proven.targets)||proven.targets.length!==2||
+                   new Set(proven.targets.map(t=>t.role)).size!==2)
+                  throw Error("Two independently verified compiler targets required");
+                const chosen=Object.fromEntries(proven.targets.map(t=>
+                  [t.role,t.resource]));
+                return {tasks:[
+                  {id:candidateBackendId,agent_id:"backend",
+                   title:"Repair signed Backend TypeScript fault",
+                   description:"Read and correct the actual failed Backend source",
+                   depends_on:[],permissions:[
+                    {resource:chosen.backend,operation:"read_file",reason:"Inspect original"},
+                    {resource:chosen.backend,operation:"update_file",reason:"Fix backend"}]},
+                  {id:candidateFrontendId,agent_id:"frontend",
+                   title:"Repair signed Frontend TypeScript fault",
+                   description:"Read and correct the actual failed Frontend source",
+                   depends_on:[candidateBackendId],permissions:[
+                    {resource:chosen.frontend,operation:"read_file",reason:"Inspect original"},
+                    {resource:chosen.frontend,operation:"update_file",reason:"Fix frontend"}]},
+                  {id:candidateTestId,agent_id:"test",
+                   title:"Run independent new Docker TypeScript Test",
+                   description:"Verify both corrected files together",
+                   depends_on:[candidateBackendId,candidateFrontendId],
+                   permissions:[{resource:branchResource,operation:"run_tests",
+                    reason:"Test newest Gitea SHA"}]}
+                ]};
+              }
               return {tasks:[
                 {id:candidateBackendId,agent_id:"backend",
                  title:"Fix real observed Backend typecheck regression",
@@ -841,7 +878,17 @@ try{
             maxSessionMs:240000,
             maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
             thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
-            taskShape:"backend_test"
+            ...(multiTypecheckProbe?{
+              taskShape:"bounded_auto_edit_test",
+              readVerifiedRepairTarget:async input=>{
+                if(!readVerifiedRepairTarget)
+                  throw Error("Missing authenticated original Docker Runner targets");
+                const target=readVerifiedRepairTarget();
+                if(target?.tested_commit_sha!==input.feedback.tested_commit_sha)
+                  throw Error("Runner target set changed since failed SHA");
+                return target;
+              }
+            }:{taskShape:"backend_test"})
           })
           :undefined;
         let readVerifiedRepairTarget;
@@ -899,16 +946,17 @@ try{
                typeof ports.a2a.sendProtectedTask!=="function"||
                !ports.agentBaseUrls||
                typeof ports.armVerifiedD1BackendRepair!=="function"||
-               (paidGeminiRecovery&&
+               ((paidGeminiRecovery||multiTypecheckProbe)&&
                 typeof ports.armVerifiedD1FrontendRepair!=="function")||
                typeof ports.armVerifiedD1TestRun!=="function"||
                !["backend","test"].every(role=>
                  /^http:\/\/127\.0\.0\.1:\d+$/u.test(
                    ports.agentBaseUrls[role]??"")))
               throw Error("R150.7 owner A2A original ports missing or stale");
-            if(paidGeminiRecovery&&typeof ports.getVerifiedRepairTarget!=="function")
+            if((paidGeminiRecovery||multiTypecheckProbe)&&
+               typeof ports.getVerifiedRepairTarget!=="function")
               throw Error("Paid repair requires original Runner attribution");
-            if(paidGeminiRecovery)
+            if(paidGeminiRecovery||multiTypecheckProbe)
               readVerifiedRepairTarget=ports.getVerifiedRepairTarget;
             originalA2APorts=Object.freeze({
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
@@ -937,7 +985,7 @@ try{
             const repairTasks=epochs[1].plan.tasks.filter(t=>
               t.agent_id==="backend"||t.agent_id==="frontend");
             if(repairTasks.length<1||repairTasks.length>8||
-               (!paidGeminiRecovery&&repairTasks.length!==1))
+               (!paidGeminiRecovery&&!multiTypecheckProbe&&repairTasks.length!==1))
               throw Error("Signed D1 repair Task count outside pilot scope");
             const filesByTask=new Map();
             for(const task of repairTasks){
@@ -975,7 +1023,7 @@ try{
             }))throw Error("Signed D1 resources differ from original writers");
             const signedTaskOrder=multi?selected.orderedTaskIds:
               [repairTasks[0].id,selected.testTaskId];
-            if(!paidGeminiRecovery){
+            if(!paidGeminiRecovery&&!multiTypecheckProbe){
               assert.equal(selected.backendTaskId,candidateBackendId);
               assert.equal(selected.testTaskId,candidateTestId);
               assert.equal(canonicalFileUri(repo,workBranch,
@@ -1159,6 +1207,22 @@ try{
             throw Error("No approved Backend TypeScript target for fault probe");
           otherImplementations[target]+=
             '\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
+          if(multiTypecheckProbe){
+            const frontendTarget=roleFiles.frontend.find(path=>
+              path.startsWith("apps/frontend/src/")&&path.endsWith(".tsx")&&
+              !derivedPaths.includes(path)&&
+              approvedRows.some(g=>g.agent_id==="frontend"&&
+                g.operation==="update_file"&&
+                g.resource===canonicalFileUri(repo,workBranch,path))&&
+              approvedRows.some(g=>g.agent_id==="frontend"&&
+                g.operation==="read_file"&&
+                g.resource===canonicalFileUri(repo,workBranch,path)));
+            if(!frontendTarget||
+               typeof otherImplementations[frontendTarget]!=="string")
+              throw Error("No originally signed Frontend TypeScript fault target");
+            otherImplementations[frontendTarget]+=
+              '\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
+          }
         }
         // Not even the scripted call compiler is invoked for real Gemini.
         const offlineCalls=geminiPilot?null:
@@ -1213,6 +1277,7 @@ try{
         }:{}),
         offlineRecovery:signedOfflineRecovery,
         offlineTypecheckProbe:signedOfflineTypecheckProbe,
+        offlineMultiTypecheckProbe:multiTypecheckProbe,
         offlineMultiTest:signedOfflineMultiTest,
         scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
