@@ -7,6 +7,7 @@ import {join} from "node:path";
 import {makeApproval,planDigest} from "../../plan-contracts/src/plan.mjs";
 import {signEngineerApproval} from "../../plan-contracts/src/signed-approval.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+import {canonicalFileUri,canonicalRepositoryUri} from "../../../apps/gateway/src/canonical.ts";
 import {SignedEngineerApprovalFileStore} from "../src/signed-approval-store.ts";
 import {TrustedOperationalEpochJournal} from "../src/trusted-operational-epoch-journal.mjs";
 import {TrustedOperationalEpochIntake} from "../src/trusted-operational-epoch-intake.ts";
@@ -63,7 +64,8 @@ function nextPlan(n:number,role:"backend"|"frontend"|"test",id:string){
     operation,reason:"Fix or test"}],assumptions:[],uncertainties:[]
  };
 }
-async function env(t:import("node:test").TestContext,withRootRead=false){
+async function env(t:import("node:test").TestContext,withRootRead=false,
+ encodedOwner=false){
  const dir=await mkdtemp(join(tmpdir(),"delegation-r101-"));
  const approvals=join(dir,"approvals"),journalDir=join(dir,"epochs");
  await mkdir(approvals,{mode:0o700});await mkdir(journalDir,{mode:0o700});
@@ -71,9 +73,21 @@ async function env(t:import("node:test").TestContext,withRootRead=false){
  const keys=generateKeyPairSync("ed25519");
  const keyId="local-trusted-engineer";
  const plan=initial();
+ // R151.22: use a valid exact-URI grant even when the owner component
+ // requires percent-encoding. No unsigned test resource may authorize it.
+ const scopedRepo=encodedOwner?
+  {...REPO,owner:"sample+east"}:REPO;
+ const prefix=canonicalRepositoryUri(scopedRepo);
+ const scoped=(resource:string)=>encodedOwner?
+  resource.replace(URI,prefix):resource;
+ if(encodedOwner){
+  plan.repository=scopedRepo;
+  for(const task of plan.tasks)task.resources=task.resources.map(scoped);
+  for(const grant of plan.requested_permissions)grant.resource=scoped(grant.resource);
+ }
  if(withRootRead)plan.requested_permissions.push({
   id:"p-root-read",task_id:"initial-backend",agent_id:"backend",
-  resource:FILE,operation:"read_file",reason:"Authorized read for debugging"
+  resource:scoped(FILE),operation:"read_file",reason:"Authorized read for debugging"
  });
  const approved=makeApproval(plan,{
   allowedOperations:OPS,decision_id:"engineer-approval-invoices",
@@ -96,10 +110,10 @@ async function env(t:import("node:test").TestContext,withRootRead=false){
   credential_id:"urn:root:invoice",
   plan_digest:planDigest(plan),
   permissions:[
-   {resource:URI,operation:"create_branch"},
-   {resource:FILE,operation:"update_file"},
-   {resource:BRANCH,operation:"run_tests"},
-   ...(withRootRead?[{resource:FILE,operation:"read_file"}]:[])
+   {resource:scoped(URI),operation:"create_branch"},
+   {resource:scoped(FILE),operation:"update_file"},
+   {resource:scoped(BRANCH),operation:"run_tests"},
+   ...(withRootRead?[{resource:scoped(FILE),operation:"read_file"}]:[])
   ]
  };
  let phase="execution";
@@ -311,6 +325,26 @@ test("R109 root read pair may authorize a NEW Task ID without the old DAG naming
  assert.equal((await owner.verifiedEpochHistory()).length,1);
  assert.deepEqual(await readdir(e.approvals),[SESSION+".json"]);
 });
+test("R151.22 signed discovery uses Gateway canonical encoding of repository owner",async(t)=>{
+ const e=await env(t,true,true),owner=e.makeOwner();
+ await owner.reserveInitialEpoch();
+ const encodedFile=canonicalFileUri(e.plan.repository,
+  "feature/invoice-review","src/invoice.ts");
+ assert.match(encodedFile,/sample%2Beast/);
+ const proof=await owner.preflightRepairDiscovery({
+  sessionId:SESSION,taskId:"discovery-encoded-owner",
+  agentId:"backend",resource:encodedFile
+ });
+ assert.equal(proof.resource,encodedFile);
+ assert.equal(proof.operation,"read_file");
+ assert.equal(proof.execution_authorized,false);
+ assert.equal((await owner.verifiedEpochHistory()).length,1);
+ await assert.rejects(owner.preflightRepairDiscovery({
+  sessionId:SESSION,taskId:"discovery-unencoded-owner",
+  agentId:"backend",resource:FILE
+ }),/outside exact issued Rust root/);
+});
+
 test("R109 discovery cannot invent grants, switch branches, impersonate agents or replay original Task IDs",async(t)=>{
  const e=await env(t,true),owner=e.makeOwner();
  await owner.reserveInitialEpoch();

@@ -9,6 +9,7 @@ import {assertApprovedPlanScope,planDigest} from "../../plan-contracts/src/plan.
 import {preflightNextOperationalEpoch} from "../../plan-contracts/src/operational-epoch-scope.mjs";
 import {approvedWorkBranch} from "../../plan-contracts/src/approved-work-branch.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+import {canonicalBranchUri} from "../../../apps/gateway/src/canonical.ts";
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 const OPS=new Set<string>(RUST_OPERATIONS);
 const deny=(msg:string):never=>{throw Error("Trusted epoch intake: "+msg);};
@@ -124,9 +125,11 @@ export class TrustedOperationalEpochIntake {
   const branch=history[0]?.plan?.repository;
   if(!current||!root||!branch)
    deny("missing active root or operational epoch");
-  const expectedPrefix="gitea://"+branch.authority+"/"+branch.owner+
-    "/"+branch.repository+"/branches/"+
-    encodeURIComponent(approvedWorkBranch(current.plan))+"/files/";
+  // R151.22: exactly the canonical Gateway branch encoding, including
+  // owner/repository path segments. Hand-built URI prefixes can reject an
+  // Engineer-signed grant that Gateway itself canonicalizes differently.
+  const expectedPrefix=canonicalBranchUri(
+    branch,approvedWorkBranch(current.plan))+"/files/";
   if(!input.resource.startsWith(expectedPrefix)||
      !root.permissions.some(p=>p.resource===input.resource&&
        p.operation==="read_file"))
