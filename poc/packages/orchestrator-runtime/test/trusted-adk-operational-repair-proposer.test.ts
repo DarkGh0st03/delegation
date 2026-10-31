@@ -385,3 +385,74 @@ test("R151.73 paid D1 uses exact trusted Frontend compiler target before inferen
  }).propose(scoped),/bounded repair Task grants|different writer/);
  assert.equal(wrong.requests.length,1);
 });
+
+test("R151.74 multi-file D1 accepts Backend + Frontend + Test, without minting grants",async()=>{
+ const ui=runner+"/files/apps/frontend/src/Users.tsx";
+ const scope={...boundedInput,agents:["backend","frontend","test"] as const,
+  already_delegated_grants:[...boundedInput.already_delegated_grants,
+   {resource:ui,operation:"read_file"},{resource:ui,operation:"update_file"}]};
+ const old=boundedDraft();
+ const proposal={tasks:[
+  {...old.tasks[0],id:"backend-fix"},
+  {id:"frontend-fix",agent_id:"frontend",title:"Correct UI",description:"Fix TS",
+   depends_on:[],permissions:[
+    {resource:ui,operation:"read_file",reason:"Inspect"},
+    {resource:ui,operation:"update_file",reason:"Fix"}
+   ]},
+  {...old.tasks[1],id:"new-test",depends_on:["backend-fix","frontend-fix"]}
+ ]};
+ const model=new ScriptedModel(proposal);
+ const draft=await new TrustedAdkOperationalRepairProposer({
+  model,taskShape:"bounded_multi_edit_test"
+ }).propose(scope);
+ assert.deepEqual(draft,proposal);
+ assert.equal(model.requests.length,1);
+ const instructions=JSON.stringify(model.requests[0]?.config?.systemInstruction);
+ assert.match(instructions,/BOTH Backend and Frontend/);
+ const body=JSON.parse(model.requests[0]!.contents!.at(-1)!.parts!
+  .find(p=>typeof p.text==="string")!.text!);
+ assert.deepEqual(body.agents,["backend","frontend","test"]);
+});
+test("R151.74 multi-file D1 rejects foreign grants, collisions, cycles, missing Test deps",async()=>{
+ const ui=runner+"/files/apps/frontend/src/Users.tsx";
+ const scope={...boundedInput,agents:["backend","frontend","test"] as const,
+  already_delegated_grants:[...boundedInput.already_delegated_grants,
+   {resource:ui,operation:"read_file"},{resource:ui,operation:"update_file"}]};
+ const old=boundedDraft();
+ const valid={tasks:[
+  {...old.tasks[0],id:"b-fix"},
+  {id:"f-fix",agent_id:"frontend",title:"UI",description:"Repair",
+   depends_on:[],permissions:[
+    {resource:ui,operation:"read_file",reason:"Inspect"},
+    {resource:ui,operation:"update_file",reason:"Fix"}]},
+  {...old.tasks[1],id:"t1",depends_on:["b-fix","f-fix"]}
+ ]};
+ const bad=[
+  {...valid,tasks:[valid.tasks[0],{...valid.tasks[1],permissions:[
+   ...valid.tasks[1].permissions,
+   {resource:ui+"/foreign",operation:"update_file",reason:"No"}]},valid.tasks[2]]},
+  {...valid,tasks:[valid.tasks[0],{...valid.tasks[1],
+   permissions:valid.tasks[0].permissions},valid.tasks[2]]},
+  {...valid,tasks:[valid.tasks[0],valid.tasks[1],
+   {...valid.tasks[2],depends_on:["b-fix"]}]},
+  {...valid,tasks:[{...valid.tasks[0],depends_on:["f-fix"]},
+   {...valid.tasks[1],depends_on:["b-fix"]},valid.tasks[2]]},
+  {...valid,tasks:[valid.tasks[0],{...valid.tasks[1],id:"b-fix"},valid.tasks[2]]},
+  {...valid,tasks:[valid.tasks[0],{...valid.tasks[1],
+   depends_on:["outside-task"]},valid.tasks[2]]}
+ ];
+ for(const payload of bad){
+  const m=new ScriptedModel(payload);
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model:m,taskShape:"bounded_multi_edit_test"
+  }).propose(scope),/Trusted ADK repair proposer NO-GO/);
+  assert.equal(m.requests.length,1);
+ }
+ const off=new ScriptedModel(valid);
+ await assert.rejects(new TrustedAdkOperationalRepairProposer({
+  model:off,taskShape:"bounded_multi_edit_test"
+ }).propose({...scope,already_delegated_grants:
+  scope.already_delegated_grants.filter(p=>p.resource!==ui)}),
+  /multi-edit permission outside original root/);
+ assert.equal(off.requests.length,1);
+});

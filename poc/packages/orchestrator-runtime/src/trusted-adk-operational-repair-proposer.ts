@@ -152,6 +152,84 @@ function assertBoundedBackendTestDraft(result:unknown,
   deny("bounded repair Task grants are not an exact root subset");
 }
 
+/** R151.74: validate the model's unsigned multi-file proposal. The signed
+ * epoch planner/controller remain the sole authority for actual execution. */
+function assertBoundedMultiEditDraft(
+ result:unknown,scope:ReturnType<typeof boundedBackendTestScope>):void{
+ const tasks=(result as {tasks?:unknown})?.tasks;
+ if(!Array.isArray(tasks)||tasks.length<3||tasks.length>9)
+  deny("multi-edit repair needs two or more editors and one Test");
+ const ids=new Set<string>(),writes=new Set<string>();
+ const byId=new Map<string,Record<string,unknown>>();
+ for(const task of tasks as Record<string,unknown>[]){
+  if(!task||typeof task!=="object"||
+     typeof task.id!=="string"||
+     !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(task.id)||
+     ids.has(task.id)||!Array.isArray(task.depends_on)||
+     task.depends_on.length>8||
+     task.depends_on.some(dep=>typeof dep!=="string"||dep===task.id)||
+     new Set(task.depends_on).size!==task.depends_on.length||
+     !Array.isArray(task.permissions))
+   deny("invalid multi-edit Task ID, permissions or dependencies");
+  ids.add(task.id);byId.set(task.id,task);
+ }
+ const rows=[...byId.values()];
+ const editors=rows.filter(t=>t.agent_id==="backend"||t.agent_id==="frontend");
+ const tests=rows.filter(t=>t.agent_id==="test");
+ if(editors.length!==rows.length-1||tests.length!==1||
+    !editors.some(t=>t.agent_id==="backend")||
+    !editors.some(t=>t.agent_id==="frontend"))
+  deny("multi-edit requires both Backend and Frontend and one Test");
+ const test=tests[0],tp=test.permissions as {resource?:unknown;operation?:unknown}[];
+ if(tp.length!==1||tp[0]?.operation!=="run_tests"||
+    tp[0].resource!==scope.runner)
+  deny("multi-edit Test must use only original run_tests grant");
+ for(const task of editors){
+  const perms=task.permissions as {resource?:unknown;operation?:unknown}[];
+  if(perms.length<2||perms.length>16||perms.length%2!==0)
+   deny("multi-edit read/update pairs missing or too large");
+  const perFile=new Map<string,Set<string>>();
+  for(const p of perms){
+   if(!p||typeof p.resource!=="string"||
+      !scope.edits.has(p.resource)||
+      !["read_file","update_file"].includes(String(p.operation))||
+      !scope.grants.has(JSON.stringify([p.resource,p.operation])))
+    deny("multi-edit permission outside original root");
+   const ops=perFile.get(p.resource)??new Set<string>();
+   if(ops.has(p.operation as string))
+    deny("multi-edit duplicate file permission");
+   ops.add(p.operation as string);perFile.set(p.resource,ops);
+  }
+  for(const [resource,ops] of perFile){
+   if(ops.size!==2||!ops.has("read_file")||!ops.has("update_file")||
+      writes.has(resource))
+    deny("multi-edit write conflict or incomplete read/write pair");
+   writes.add(resource);
+  }
+ }
+ if(writes.size<2||writes.size>8)
+  deny("multi-edit expects 2-8 distinct authorized files");
+ const active=new Set<string>(),memo=new Map<string,Set<string>>();
+ function predecessors(id:string):Set<string>{
+  if(active.has(id))deny("cyclic repair Task dependency");
+  if(memo.has(id))return memo.get(id)!;
+  const task=byId.get(id);
+  if(!task)deny("external repair Task dependency");
+  active.add(id);
+  const all=new Set<string>();
+  for(const dep of task.depends_on as string[]){
+   if(!byId.has(dep))deny("external repair Task dependency");
+   all.add(dep);
+   for(const prev of predecessors(dep))all.add(prev);
+  }
+  active.delete(id);memo.set(id,all);return all;
+ }
+ rows.forEach(row=>predecessors(row.id as string));
+ const testAncestors=memo.get(test.id as string)!;
+ if(editors.some(e=>!testAncestors.has(e.id as string)))
+  deny("Test must depend on every multi-edit Task");
+}
+
 export class TrustedAdkOperationalRepairProposer {
  readonly #model:BaseLlm;
  readonly #sourceReader?:TrustedOperationalRepairSourceReader;
@@ -159,7 +237,7 @@ export class TrustedAdkOperationalRepairProposer {
  readonly #maxSessionMs:number;
  readonly #maxOutputTokens:number;
  readonly #thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
- readonly #taskShape?:"backend_test"|"backend_or_frontend_test";
+ readonly #taskShape?:"backend_test"|"backend_or_frontend_test"|"bounded_multi_edit_test";
  readonly #observer?:(event:Observe)=>void;
  readonly #readVerifiedRepairTarget?:(input:Readonly<TrustedRepairModelInput>)=>
   Promise<Readonly<{
@@ -177,7 +255,7 @@ export class TrustedAdkOperationalRepairProposer {
   thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
   /** Only for the first bounded native D1: no multi-agent expansion or PR
    * from the model. The trusted owner separately handles review-only PR. */
-  taskShape?:"backend_test"|"backend_or_frontend_test";
+  taskShape?:"backend_test"|"backend_or_frontend_test"|"bounded_multi_edit_test";
   onObservation?:(event:Observe)=>void;
   readVerifiedRepairTarget?:(input:Readonly<TrustedRepairModelInput>)=>
    Promise<Readonly<{
@@ -199,7 +277,7 @@ export class TrustedAdkOperationalRepairProposer {
      (config.thinkingLevel!==undefined&&
       !["LOW","MEDIUM","HIGH"].includes(config.thinkingLevel))||
      (config.taskShape!==undefined&&
-      !["backend_test","backend_or_frontend_test"].includes(config.taskShape))||
+      !["backend_test","backend_or_frontend_test","bounded_multi_edit_test"].includes(config.taskShape))||
      (config.onObservation!==undefined&&
       typeof config.onObservation!=="function")||
      (config.readVerifiedRepairTarget!==undefined&&
@@ -235,8 +313,11 @@ export class TrustedAdkOperationalRepairProposer {
    deny("invalid trusted source-free repair input");
 
   const boundedScope=this.#taskShape?
-   boundedBackendTestScope(input,
-    this.#taskShape==="backend_or_frontend_test"):undefined;
+   boundedBackendTestScope(input,this.#taskShape!=="backend_test"):undefined;
+  if(this.#taskShape==="bounded_multi_edit_test"&&
+     (!input.agents.includes("backend")||!input.agents.includes("frontend")||
+      this.#readVerifiedRepairTarget))
+   deny("multi-edit requires both approved roles without single-file nomination");
   const target=this.#readVerifiedRepairTarget
    ?await this.#readVerifiedRepairTarget(input):undefined;
   if(this.#readVerifiedRepairTarget&&
@@ -277,7 +358,7 @@ export class TrustedAdkOperationalRepairProposer {
     ...(target?{diagnostic_target:target}:{}),
     agents:Object.freeze((target
       ?[target.role,"test"]
-      :this.#taskShape==="backend_or_frontend_test"
+      :this.#taskShape!=="backend_test"
       ?["backend","frontend","test"]:["backend","test"]) as
        ("backend"|"frontend"|"test")[]),
     already_delegated_grants:Object.freeze([
@@ -343,7 +424,15 @@ export class TrustedAdkOperationalRepairProposer {
     ]:[]),
     "Use ONLY exact existing ResourceURI/Operation pairs supplied in the input.",
     "The Engineer will not approve Task/agent allocation or retry counts.",
-    ...(this.#taskShape?[
+    ...(this.#taskShape==="bounded_multi_edit_test"?[
+     "Produce 2-8 Backend/Frontend editing Tasks and exactly one new Test Task.",
+     "Include BOTH Backend and Frontend and allow multiple originally approved source files per editor.",
+     "Each edited file must have one read_file and one update_file grant in its Task.",
+     "Never assign the same file to multiple Task writers.",
+     "New Test depends directly or transitively on ALL editing Tasks and may only run_tests.",
+     "No model PR, new root, privilege expansion or branch creation."
+    ]:[]),
+    ...(this.#taskShape&&this.#taskShape!=="bounded_multi_edit_test"?[
      this.#taskShape==="backend_test"
       ?"This repair epoch supports EXACTLY two Tasks: one Backend and one Test."
       :"This repair epoch supports EXACTLY two Tasks: one Backend OR Frontend repair and one Test.",
@@ -365,8 +454,10 @@ export class TrustedAdkOperationalRepairProposer {
     "tasks is an array of objects with EXACT keys: id,agent_id,title,description,depends_on,permissions.",
     "permissions is an array of objects with EXACT keys: resource,operation,reason.",
     "No DID, credential, model configuration, session, branch or repository fields.",
-    ...(this.#taskShape?[
+    ...(this.#taskShape&&this.#taskShape!=="bounded_multi_edit_test"?[
      "For this bounded DAG, the single Backend OR Frontend repair may only read_file and update_file on ONE source; Test may only run_tests."
+    ]:this.#taskShape==="bounded_multi_edit_test"?[
+     "Backend/Frontend use only read_file and update_file. Test uses only run_tests."
     ]:[
      "Backend/Frontend: read_file,update_file. Test: run_tests,read_file,update_file,create_file.",
      "Orchestrator: only create_pull_request, depending on the Test task."
@@ -409,7 +500,9 @@ export class TrustedAdkOperationalRepairProposer {
   if(!result||typeof result!=="object"||Array.isArray(result)||
      Object.keys(result).join(",")!=="tasks")
    deny("repair model returned fields outside permitted draft");
-  if(effectiveScope)assertBoundedBackendTestDraft(result,effectiveScope,
+  if(this.#taskShape==="bounded_multi_edit_test")
+   assertBoundedMultiEditDraft(result,effectiveScope!);
+  else if(effectiveScope)assertBoundedBackendTestDraft(result,effectiveScope,
    this.#taskShape==="backend_or_frontend_test");
   if(target&&(result as {tasks:Array<{agent_id:string}>}).tasks[0]?.agent_id!==target.role)
    deny("model selected a different writer than the trusted Runner");
