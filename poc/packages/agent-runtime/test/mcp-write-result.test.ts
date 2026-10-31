@@ -30,6 +30,22 @@ test("MCP update requires Gateway-confirmed exact Gitea commit and blob precondi
     isError:false,structuredContent:{ok:true,result}
   },args);
   assert.deepEqual(valid,{ok:true,result});
+  // The exact same provider-verified commit must survive a text-only MCP
+  // ToolResult; an isError result or model prose cannot forge success.
+  assert.deepEqual(normalizeMcpUpdateFileOutcome({
+    content:[{type:"text",text:JSON.stringify({ok:true,result})}]
+  },args),{ok:true,result});
+  assert.equal(normalizeMcpUpdateFileOutcome({
+    isError:true,content:[{type:"text",text:JSON.stringify({ok:true,result})}]
+  },args).ok,false);
+  assert.equal(normalizeMcpUpdateFileOutcome({
+    content:[{type:"text",text:"Updated successfully"}]
+  },args).ok,false);
+  assert.equal(normalizeMcpUpdateFileOutcome({
+    content:[{type:"text",text:JSON.stringify({ok:true,result:{
+      ...result,precondition_blob_sha:undefined
+    }})}]
+  },args).ok,false);
   const cases=[
     {...result,provider:"mock"},
     {...result,tool:"create_file"},

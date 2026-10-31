@@ -12,7 +12,22 @@ export function normalizeMcpUpdateFileOutcome(
       ? v as Record<string,unknown>:null;
   }
   const envelope=record(response);
-  const payload=record(envelope?.structuredContent);
+  // An authenticated shared MCP ToolResult may be text-only in some SDK
+  // branches even when the server returned a structured result. Accept ONLY
+  // one bounded JSON tool-result part, never model prose or an isError reply.
+  let payload=record(envelope?.structuredContent);
+  if(payload===null&&envelope?.isError!==true&&
+     Array.isArray(envelope?.content)&&envelope.content.length===1){
+    const part=record(envelope.content[0]);
+    if(part?.type==="text"&&typeof part.text==="string"&&
+       part.text.length<=8192){
+      try{
+        const decoded=record(JSON.parse(part.text));
+        if(decoded&&Object.keys(decoded).sort().join(",")==="ok,result"&&
+           decoded.ok===true)payload=decoded;
+      }catch{/* A malformed text-only result is never a receipt. */}
+    }
+  }
   // This reports fixed enums and booleans only: never source bytes, paths,
   // arbitrary upstream messages or private authorization material.
   const safeFailure=(stage:string,kind:string|null=null,
@@ -31,7 +46,9 @@ export function normalizeMcpUpdateFileOutcome(
       "task_worker_invalid_result","task_worker_rejected",
       "invalid_tool_arguments"
     ]);
-    safeFailure(payload===null?"missing_structured_content":"upstream_failure",
+    safeFailure(payload===null
+      ?envelope?.isError===true?"unstructured_mcp_error":"missing_structured_content"
+      :"upstream_failure",
       typeof kind==="string"&&safeKinds.has(kind)?kind:"unknown");
     if(kind==="authorization_denied")return error("authorization_denied");
     if(kind==="invalid_tool_call")return error("invalid_tool_call");
