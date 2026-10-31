@@ -93,7 +93,7 @@ export async function createTrustedBackendDiscoveryTaskBindingServer(config:{
    const t=req.headers["x-backend-bind-time"];
    const nonce=req.headers["x-backend-bind-nonce"];
    const mac=req.headers["x-backend-bind-mac"];
-   if(typeof t!=="string"||!^\d{13}$/u.test(t)||
+   if(typeof t!=="string"||!/^\d{13}$/u.test(t)||
       Math.abs(Date.now()-Number(t))>AGE||
       typeof nonce!=="string"||!WIRE_NONCE.test(nonce)||
       typeof mac!=="string"||!MAC.test(mac)){
