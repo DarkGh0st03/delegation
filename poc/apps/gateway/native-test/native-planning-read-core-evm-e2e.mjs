@@ -34,6 +34,8 @@ import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {TrustedAdkOperationalRepairProposer} from
   "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
+import {selectSignedNativeD1Tasks} from
+  "./native-owner-d1-task-selection.mjs";
 import {dispatchTrustedAdmittedRepairA2A,
   confirmTrustedAdmittedRepairA2A} from
   "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
@@ -757,6 +759,13 @@ try{
         const branchResource="gitea://"+repo.authority+"/"+repo.owner+"/"+
           repo.repository+"/branches/"+encodeURIComponent(workBranch);
         const operationalId=coordinator.trustedOperationalAuthority().credential_id;
+        // These IDs deliberately differ in R151 offline ADK mode. All
+        // dispatch IDs below are subsequently read from the signed epoch,
+        // never from these proposal constants or untrusted model text.
+        const candidateBackendId=ownerD1AdkProposal
+          ?"r151-dynamic-backend-source":"r150-owner-backend-repair";
+        const candidateTestId=ownerD1AdkProposal
+          ?"r151-dynamic-docker-validation":"r150-owner-test-fresh";
         const nativeOwnerRepairDraft=async input=>{
               // The zero-billing test selects existing grants, not a new
               // capability. A future model may propose a different bounded
@@ -765,7 +774,7 @@ try{
               assert.ok(input.feedback.typecheck_error_codes.includes("TS2820"));
               assert.equal(input.feedback.remaining_repair_epochs,2);
               return {tasks:[
-                {id:"r150-owner-backend-repair",agent_id:"backend",
+                {id:candidateBackendId,agent_id:"backend",
                  title:"Fix real observed Backend typecheck regression",
                  description:"Correct the signed Backend source only",
                  depends_on:[],permissions:[
@@ -773,10 +782,10 @@ try{
                     reason:"Inspect already approved source"},
                    {resource:fileResource,operation:"update_file",
                     reason:"Repair only the original approved file"}]},
-                {id:"r150-owner-test-fresh",agent_id:"test",
+                {id:candidateTestId,agent_id:"test",
                  title:"Run new independent Test task",
                  description:"Verify the repaired exact Gitea SHA in Docker",
-                 depends_on:["r150-owner-backend-repair"],
+                 depends_on:[candidateBackendId],
                  permissions:[{resource:branchResource,
                    operation:"run_tests",
                    reason:"Independent new-epoch Docker validation"}]}
@@ -860,8 +869,12 @@ try{
             assert.deepEqual(epochs.map(e=>e.epoch),[1,2]);
             assert.equal(epochs[0].root_credential_id,operationalId);
             assert.equal(epochs[1].root_credential_id,operationalId);
-            assert.deepEqual(epochs[1].plan.tasks.map(t=>t.id),
-              ["r150-owner-backend-repair","r150-owner-test-fresh"]);
+            const selected=selectSignedNativeD1Tasks({
+              epoch:epochs[1],planDigest:epochs[1].plan_digest,
+              fileUri:fileResource,branchUri:branchResource
+            });
+            assert.equal(selected.backendTaskId,candidateBackendId);
+            assert.equal(selected.testTaskId,candidateTestId);
             // R150.6: ask the ORIGINAL Rust issuer for a genuinely
             // attenuated first repair Child DC, after the SAME Gateway's
             // independent epoch admission. No A2A dispatch or Gitea write
@@ -880,7 +893,7 @@ try{
             const dispatched=await dispatchTrustedAdmittedRepairA2A({
               sessionId:session,epoch:2,
               planDigest:epochs[1].plan_digest,
-              taskId:"r150-owner-backend-repair",role:"backend",
+              taskId:selected.backendTaskId,role:"backend",
               coordinator,intake:armed.intake,gateway:gatewayOwner,
               journal,engineerDid,adapterBaseUrl:adapterUrl,
               orchestratorToken:token,
@@ -898,7 +911,7 @@ try{
               agentBaseUrls:originalA2APorts.agentBaseUrls,
               a2a:originalA2APorts.a2a,
               beforeProtectedSend:async issued=>{
-                assert.equal(issued.task_id,"r150-owner-backend-repair");
+                assert.equal(issued.task_id,selected.backendTaskId);
                 assert.equal(issued.epoch,2);
                 await originalA2APorts.armVerifiedD1BackendRepair({
                   taskId:issued.task_id,role:issued.role,
@@ -916,7 +929,7 @@ try{
               planDigest:epochs[1].plan_digest,epoch:2
             });
             assert.equal(confirmed.gateway_task_completed,true);
-            assert.equal(confirmed.task_id,"r150-owner-backend-repair");
+            assert.equal(confirmed.task_id,selected.backendTaskId);
             const observedRepair=await liveClient.getBranchMetadata(workBranch);
             assert.match(observedRepair.commit_sha,/^[a-f0-9]{40}$/u);
             assert.notEqual(observedRepair.commit_sha,signal.tested_commit_sha,
@@ -928,7 +941,7 @@ try{
             const testDispatched=await dispatchTrustedAdmittedRepairA2A({
               sessionId:session,epoch:2,
               planDigest:epochs[1].plan_digest,
-              taskId:"r150-owner-test-fresh",role:"test",
+              taskId:selected.testTaskId,role:"test",
               coordinator,intake:armed.intake,gateway:gatewayOwner,
               journal,engineerDid,adapterBaseUrl:adapterUrl,
               orchestratorToken:token,
@@ -946,7 +959,7 @@ try{
               agentBaseUrls:originalA2APorts.agentBaseUrls,
               a2a:originalA2APorts.a2a,
               beforeProtectedSend:async issued=>{
-                assert.equal(issued.task_id,"r150-owner-test-fresh");
+                assert.equal(issued.task_id,selected.testTaskId);
                 assert.equal(issued.epoch,2);
                 await originalA2APorts.armVerifiedD1TestRun({
                   taskId:issued.task_id,role:issued.role,
@@ -962,7 +975,7 @@ try{
               planDigest:epochs[1].plan_digest,epoch:2
             });
             assert.equal(testConfirmed.gateway_task_completed,true);
-            assert.equal(testConfirmed.task_id,"r150-owner-test-fresh");
+            assert.equal(testConfirmed.task_id,selected.testTaskId);
             const observedAfterTest=await liveClient.getBranchMetadata(workBranch);
             assert.equal(observedAfterTest.commit_sha,observedRepair.commit_sha,
               "New signed Docker Test may not silently mutate the repaired SHA");
@@ -982,7 +995,7 @@ try{
             assert.equal(records.length,2);
             assert.notEqual(testDispatched.credential_id,dispatched.credential_id);
             assert.deepEqual(records.map(r=>r.task_id).sort(),
-              ["r150-owner-backend-repair","r150-owner-test-fresh"]);
+              [selected.backendTaskId,selected.testTaskId]);
             assert.equal(records[0].observation,"adapter_response_verified");
             assert.equal(records[0].parent_credential_id,operationalId);
             ownerD1ChildEvidence={
