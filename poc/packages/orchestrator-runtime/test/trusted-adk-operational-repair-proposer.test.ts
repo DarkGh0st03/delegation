@@ -335,3 +335,53 @@ test("R151.72 bounded D1 can nominate one Frontend repair then Test without new 
   }).propose(frontInput),/bounded repair/);
  }
 });
+
+
+test("R151.73 paid D1 uses exact trusted Frontend compiler target before inference",async()=>{
+ const frontend=runner+"/files/apps/frontend/src/App.tsx";
+ const target={status:"verified_runner_single_file_repair_target" as const,
+  tested_commit_sha:"a".repeat(40),role:"frontend" as const,resource:frontend};
+ const scoped={...boundedInput,agents:["backend","frontend","test"] as const,
+  already_delegated_grants:[...boundedInput.already_delegated_grants,
+   {resource:frontend,operation:"read_file"},
+   {resource:frontend,operation:"update_file"}]};
+ const baseline=boundedDraft();
+ const draft={tasks:[{
+  ...baseline.tasks[0],id:"fix-frontend",agent_id:"frontend",
+  permissions:[{resource:frontend,operation:"read_file",reason:"Inspect"},
+   {resource:frontend,operation:"update_file",reason:"Fix typecheck"}]
+ },{
+  ...baseline.tasks[1],depends_on:["fix-frontend"]
+ }]};
+ const model=new ScriptedModel(draft);
+ assert.deepEqual(await new TrustedAdkOperationalRepairProposer({
+  model,taskShape:"backend_or_frontend_test",
+  readVerifiedRepairTarget:async()=>target
+ }).propose(scoped),draft);
+ const message=JSON.parse(model.requests[0]!.contents!.at(-1)!.parts!
+  .find(p=>typeof p.text==="string")!.text!);
+ assert.deepEqual(message.diagnostic_target,target);
+ assert.deepEqual(message.already_delegated_grants,[
+  {resource:frontend,operation:"read_file"},
+  {resource:frontend,operation:"update_file"},
+  {resource:runner,operation:"run_tests"}
+ ]);
+ for(const bad of [
+  {...target,tested_commit_sha:"b".repeat(40)},
+  {...target,resource:runner+"/files/foreign.ts"},
+  undefined
+ ]){
+  const unbilled=new ScriptedModel(draft);
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model:unbilled,taskShape:"backend_or_frontend_test",
+   readVerifiedRepairTarget:async()=>bad as typeof target
+  }).propose(scoped),/no single trusted compiler target/);
+  assert.equal(unbilled.requests.length,0);
+ }
+ const wrong=new ScriptedModel(baseline);
+ await assert.rejects(new TrustedAdkOperationalRepairProposer({
+  model:wrong,taskShape:"backend_or_frontend_test",
+  readVerifiedRepairTarget:async()=>target
+ }).propose(scoped),/bounded repair Task grants|different writer/);
+ assert.equal(wrong.requests.length,1);
+});
