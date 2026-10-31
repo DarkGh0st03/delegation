@@ -1,3 +1,4 @@
+import {buildNativePreliminaryEnvironment} from "./native-preliminary-environment.mjs";
 /**
  * REAL positive exact-SHA CI integration — isolated disposable Gitea.
  *
@@ -914,21 +915,9 @@ async function main(){
           "--experimental-strip-types",planningScript
         ],{
           cwd:process.cwd(),encoding:"utf8",timeout:180000,
-          env:{...process.env,
-            OPA_URL:opaBaseUrl,
-            PLANNING_DISPOSABLE_GITEA_URL:base,
-            PLANNING_DISPOSABLE_GITEA_READ_TOKEN:creds.readToken,
-            PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha,
-            PLANNING_NATIVE_SIGNED_HANDOFF:"1",
-            // No source fault probe during the PRE-activation read-only phase.
-            // Its flag belongs solely to the later signed operational DAG.
-            APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE:"0",
-            APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE:"0",
-            APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1:"0",
-            APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE:"0",
-            // The earlier denial-only rehearsal NEVER consumes Gemini calls.
-            DELEGATION_SIGNED_GEMINI_PILOT:"0"
-          }
+          env:buildNativePreliminaryEnvironment(process.env,{
+            opaUrl:opaBaseUrl,giteaUrl:base,readToken:creds.readToken,mainSha:fixture.mainSha
+          })
         });
         const result=output.split(/\r?\n/u).filter(Boolean)
           .map(line=>{try{return JSON.parse(line);}catch{return null;}})
