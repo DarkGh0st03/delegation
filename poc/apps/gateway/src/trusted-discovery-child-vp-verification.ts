@@ -6,6 +6,8 @@
  * child credential. No caller-supplied VP, issuer or grant is trusted.
  * A separate private Backend-holder signer produces a nonce-bound VP.
  */
+import {TrustedBackendDiscoveryVpSocketClient} from
+ "../../../packages/agent-runtime/src/trusted-backend-discovery-vp-private-ipc.ts";
 import {randomBytes} from "node:crypto";
 import type {Permission,VerifierPort} from "./types.ts";
 import {TrustedGatewaySignedEpochInspector} from
@@ -131,4 +133,31 @@ export class TrustedGatewayDiscoveryChildVpVerifier{
    execution_authorized:false as const,source_read:false as const
   });
  }
+}
+
+/**
+ * R151.30: exclusively trusted Gateway-side composition. Socket authentication
+ * is independent from the Rust Core proof check above; no caller-supplied VP,
+ * Task grant, source content or admission flag crosses this boundary.
+ */
+export async function connectTrustedGatewayDiscoveryChildVpVerifier(options:Readonly<{
+ inspector:TrustedGatewaySignedEpochInspector;
+ verifier:VerifierPort;
+ audience:string;
+ backendSocketPath:string;
+ backendSecretFile:string;
+}>):Promise<TrustedGatewayDiscoveryChildVpVerifier>{
+ if(!(options?.inspector instanceof TrustedGatewaySignedEpochInspector)||
+    !options.inspector.nativeRootVpConfigured()||
+    typeof options.verifier?.verifyMultiple!=="function"||
+    typeof options.audience!=="string"||!AUDIENCE.test(options.audience))
+  deny("trusted Gateway inspector, native verifier and fixed audience required");
+ const signer=await TrustedBackendDiscoveryVpSocketClient.connect({
+  socketPath:options.backendSocketPath,
+  secretFile:options.backendSecretFile
+ });
+ return new TrustedGatewayDiscoveryChildVpVerifier({
+  inspector:options.inspector,verifier:options.verifier,
+  signer,audience:options.audience
+ });
 }

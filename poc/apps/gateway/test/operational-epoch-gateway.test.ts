@@ -50,8 +50,13 @@ import {TrustedGatewayNativeRootStatusReader}
  from "../src/trusted-gateway-native-root-status.ts";
 import {TrustedGatewayRootVpVerifier}
  from "../src/trusted-root-vp-verification.ts";
-import {TrustedGatewayDiscoveryChildVpVerifier}
+import {TrustedGatewayDiscoveryChildVpVerifier,
+ connectTrustedGatewayDiscoveryChildVpVerifier}
  from "../src/trusted-discovery-child-vp-verification.ts";
+import {TrustedBackendDiscoveryChildPresenter}
+ from "../../../packages/agent-runtime/src/trusted-backend-discovery-presenter.ts";
+import {createTrustedBackendDiscoveryVpSignerServer}
+ from "../../../packages/agent-runtime/src/trusted-backend-discovery-vp-private-ipc.ts";
 import type {VerifiedDelegation,VerifierPort} from "../src/types.ts";
 import {TrustedOrchestratorRootPresenter}
  from "../../../packages/orchestrator-runtime/src/trusted-orchestrator-root-presenter.ts";
@@ -4196,4 +4201,89 @@ test("R145 a nonrevoked original Rust root cannot open a review PR",async t=>{
  }),/Gateway trusted control denied/);
  assert.equal(f.prPosts,0);
  assert.equal(f.adapterRequests,1);
+});
+
+
+test("R151.30 Gateway independently verifies discovery Child VP over real authenticated Backend IPC without admission",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ const pins={...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file};
+ const audience="urn:thesis:gateway:r151:discovery";
+ const privateDir=join(h.f.h.dir,"r15130-backend-private");
+ await mkdir(privateDir,{mode:0o700});
+ const socketPath=join(privateDir,"backend-child-vp.sock"),
+  secretFile=join(privateDir,"hmac.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ let active=true,signed=0,verified=0;
+ const challenges:string[]=[];
+ const presenter=new TrustedBackendDiscoveryChildPresenter({
+  adapterBaseUrl:"http://adapter.internal:8090/",
+  backendToken:"backend-private-only",
+  childCredentialId:h.input.credential_id,resource:file,audience,
+  isTaskActive:()=>active,
+  fetchFn:(async(url:unknown,request?:RequestInit)=>{
+   signed++;
+   assert.equal(String(url),"http://adapter.internal:8090/v1/presentations");
+   assert.equal(new Headers(request?.headers).get("authorization"),
+    "Bearer backend-private-only");
+   const payload=JSON.parse(String(request?.body));
+   assert.equal(payload.credential_id,h.input.credential_id);
+   assert.deepEqual(payload.disclosed_permissions,[{resource:file,operation:"read_file"}]);
+   assert.equal(payload.audience,audience);
+   challenges.push(payload.challenge);
+   return new Response(JSON.stringify({
+    signed_vp:"signed-backend-child-vp:"+payload.challenge
+   }));
+  }) as typeof fetch
+ });
+ const server=await createTrustedBackendDiscoveryVpSignerServer({
+  socketPath,secretFile,presenter,childCredentialId:h.input.credential_id,
+  resource:file,audience,isTaskActive:()=>active
+ });
+ await server.start();
+ t.after(async()=>{await server.close();});
+ const verifier:VerifierPort={
+  async verify(){throw Error("R151.30 single permission verifier forbidden");},
+  async verifyMultiple(v){
+   verified++;
+   assert.equal(v.presenter,"backend");
+   assert.equal(v.audience,audience);
+   assert.equal(v.signed_vp,"signed-backend-child-vp:"+v.challenge);
+   assert.deepEqual(v.required_permissions,[{resource:file,operation:"read_file"}]);
+   return {
+    credential_id:h.input.credential_id,
+    presenter_id:"did:example:backend",
+    issuer_id:"did:example:orchestrator",
+    hierarchy_depth:1,
+    permissions:[{resource:file,operation:"read_file"}],
+    expiration:(BigInt(Date.now())*1_000_000n+30_000_000_000n).toString()
+   };
+  }
+ };
+ const port=await connectTrustedGatewayDiscoveryChildVpVerifier({
+  inspector:h.f.inspector,verifier,audience,backendSocketPath:socketPath,
+  backendSecretFile:secretFile
+ });
+ for(let n=0;n<2;n++){
+  const proof=await port.verifyChild(pins);
+  assert.equal(proof.status,"discovery_child_vp_verified_not_admitted");
+  assert.equal(proof.credential_id,h.input.credential_id);
+  assert.equal(proof.cryptographic_presentation_verified,true);
+  assert.equal(proof.execution_authorized,false);
+  assert.equal(proof.gateway_task_admitted,false);
+  assert.equal(proof.source_read,false);
+ }
+ assert.equal(signed,2);
+ assert.equal(verified,2);
+ assert.equal(new Set(challenges).size,2);
+ assert.equal(h.f.h.provider,3,"verification must not invoke Gitea");
+ assert.throws(()=>h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
+  "r15130-still-unadmitted","backend"),/current admitted epoch/);
+ active=false;
+ await assert.rejects(port.verifyChild(pins),
+  /private Backend holder refused exact discovery presentation/);
+ assert.equal(signed,2,"cancelled holder never signs again");
+ assert.equal(h.f.h.provider,3);
 });
