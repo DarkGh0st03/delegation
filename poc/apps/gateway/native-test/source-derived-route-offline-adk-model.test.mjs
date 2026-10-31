@@ -263,3 +263,23 @@ test("R150.8 refuses early, stale, forged or duplicated repair evidence",async()
    commit_sha:"c".repeat(40)}}
  }}]}]}),/NO-GO/);
 });
+
+test("R151.79 semantic acceptance repair reads actual failed SHA and restores only observed lifecycle code",async()=>{
+ const {injectAcceptanceFault,ACCEPTANCE_ORIGINAL}=await import("./offline-acceptance-repair-fixture.mjs");
+ const m=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
+ await next(m,{});await next(m,input({ok:true,result:data}));await next(m,{});
+ const repairPath="apps/backend/src/users/user.service.ts";
+ const failedSha="b".repeat(40),repairedSha="c".repeat(40);
+ const args={branch,path:repairPath,failedSha,taskId:"acceptance-editor-new"};
+ m.armTrustedD1AcceptanceRepair(args);
+ assert.equal((await next(m,{})).functionCall.name,"read_file");
+ const original="class Lifecycle { transition() { "+ACCEPTANCE_ORIGINAL+" } }\n";
+ const write=(await next(m,input({ok:true,result:{...data,path:repairPath,
+  revision:failedSha,content:injectAcceptanceFault(original)}}))).functionCall;
+ assert.equal(write.name,"update_file");assert.equal(write.args.content,original);
+ const finish=await next(m,{contents:[{parts:[{functionResponse:{name:"update_file",
+  response:{ok:true,result:{provider:"gitea",performed:true,tool:"update_file",
+   branch,path:repairPath,commit_sha:repairedSha}}}}]}]});
+ assert.match(finish.text,/confirmed through protected Gateway/u);
+ assert.throws(()=>m.armTrustedD1AcceptanceRepair(args),/NO-GO/u);
+});

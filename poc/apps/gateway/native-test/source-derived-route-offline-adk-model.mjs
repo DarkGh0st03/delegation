@@ -1,3 +1,4 @@
+import {repairAcceptanceFault} from "./offline-acceptance-repair-fixture.mjs";
 /**
  * Test-only scripted ADK Backend model. One update_file is derived from
  * the actual trusted read_file result plus rules in the signed Task.
@@ -177,6 +178,12 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
     this.#trustedRepair={branch,path,failedSha,stage:0,taskId};
     this.#trustedRepairUsed=true;
   }
+  /** Separate zero-billing semantic fixture; shares the same exhausted-Task,
+   * failed-SHA read and fresh-write checks, without compiler fault injection. */
+  armTrustedD1AcceptanceRepair(args){
+    this.armTrustedD1TypecheckRepair(args);
+    this.#trustedRepair.kind="acceptance";
+  }
   async *generateContentAsync(request){
     const repair=this.#trustedRepair;
     if(repair){
@@ -195,12 +202,13 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
         if(observed.revision!==repair.failedSha)
           deny("D1 repair must read the exact failed Gitea revision");
         const source=observed.content;
-        if(source.split(FAULT).length!==2)
+        if(repair.kind!=="acceptance"&&source.split(FAULT).length!==2)
           deny("unsupported or changed real TypeScript fault");
         repair.stage=2;
         // A tiny deterministic fixture corrects precisely the observed
         // injected TS2820 line. This is NOT independent AI-generated code.
-        const corrected=source.replace(FAULT,"\n");
+        const corrected=repair.kind==="acceptance"
+          ?repairAcceptanceFault(source):source.replace(FAULT,"\n");
         yield {content:{role:"model",parts:[{functionCall:{
           id:"r150-d1-backend-update",
           name:"update_file",

@@ -1,3 +1,4 @@
+import {nominateOfflineAcceptanceRepair} from "./offline-acceptance-repair-fixture.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
  * One native, signed four-task DAG over the disposable Gitea repository:
@@ -105,6 +106,7 @@ export async function runNativePositiveApprovedDag({
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
   approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
   offlineTypecheckProbe=false,offlineMultiTypecheckProbe=false,
+  offlineAcceptanceProbe=false,offlineAcceptanceFaultPath,
   offlineMultiTest=false,onPilotPhase,onPilotError,
   /** Owner-private capability supplied ONLY by an authenticated trusted
    * host. Never from Gemini, A2A, MCP, CLI arguments or plan JSON.
@@ -118,6 +120,10 @@ export async function runNativePositiveApprovedDag({
   if(offlineMultiTest&&(!offlineRecovery||realGeminiPilot||
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Multiple Test A2A Tasks require signed offline recovery fixture");
+  if(offlineAcceptanceProbe&&(realGeminiPilot||offlineTypecheckProbe||offlineRecovery||
+     offlineMultiTest||!trustedOwnerRecovery||typeof approvedAgentModelFactory!=="function"||
+     typeof offlineAcceptanceFaultPath!=="string"))
+    throw Error("Acceptance repair probe requires a separate original zero-billing owner");
   if(offlineTypecheckProbe&&(realGeminiPilot||offlineRecovery||offlineMultiTest||
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Typecheck fault probe requires a scripted nonbillable signed DAG");
@@ -617,6 +623,14 @@ export async function runNativePositiveApprovedDag({
                 });
             }
           }
+          if(offlineAcceptanceProbe&&runnerRuns===0){
+            verifiedRepairTarget=nominateOfflineAcceptanceRepair({
+              effect,testedSha:pinned.commit_sha,path:offlineAcceptanceFaultPath,
+              repo,branch,approvedRows:grants,
+              rootPermissions:coordinator.trustedOperationalAuthority().permissions,
+              observedWrites:writePaths
+            });
+          }
           if(offlineTypecheckProbe&&!admittedTestRepair){
             assert.equal(effect.status,"fail");
             assert.deepEqual(typecheckCodes,["TS2820"]);
@@ -856,7 +870,7 @@ export async function runNativePositiveApprovedDag({
           taskId,role,runtimeTaskId,credentialId,repairedSha
         }){
           if(admittedTestRepair||!activeD1Repair()||
-             !(offlineTypecheckProbe||realGeminiPilot)||
+             !(offlineTypecheckProbe||offlineAcceptanceProbe||realGeminiPilot)||
              role!=="test"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(repairedSha)||
@@ -906,7 +920,7 @@ export async function runNativePositiveApprovedDag({
           // Only the original trusted owner may invoke this after real
           // R134 child issuance. Source/model claims grant NOTHING.
           if(admittedTestRepair||admittedBackendRepair?.taskId===taskId||
-             !(offlineTypecheckProbe||realGeminiPilot)||
+             !(offlineTypecheckProbe||offlineAcceptanceProbe||realGeminiPilot)||
              role!=="backend"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(failedSha)||
@@ -931,10 +945,13 @@ export async function runNativePositiveApprovedDag({
             scriptedModelClass:SourceDerivedRouteOfflineAdkModel,
             allowGenerative:realGeminiPilot
           });
-          if(modelMode.needs_scripted_arming)
-            models.backend.armTrustedD1TypecheckRepair({
-              branch,path,failedSha,taskId
-            });
+          if(modelMode.needs_scripted_arming){
+            const arm=offlineAcceptanceProbe
+              ?models.backend.armTrustedD1AcceptanceRepair
+              :models.backend.armTrustedD1TypecheckRepair;
+            if(typeof arm!=="function")throw Error("Offline D1 fixture repair method missing");
+            arm.call(models.backend,{branch,path,failedSha,taskId});
+          }
           admittedBackendRepair=Object.freeze({
             taskId,runtimeTaskId,credentialId,path,failedSha
           });

@@ -549,3 +549,18 @@ test("R151.78 timeout, unknown checks and missing/stale/outside-root target make
   taskShape:"backend_test"}).propose(acceptanceInput),/independently verified Runner target/);
  assert.equal(model.requests.length,0);
 });
+
+test("R151.79 acceptance candidate stays pinned to the exact observed failed requirement",async()=>{
+ const candidate={...acceptanceTarget,status:"verified_acceptance_single_file_repair_candidate" as const,
+  failed_checks:["service_persistence"]};
+ const model=new ScriptedModel(boundedDraft());
+ assert.deepEqual(await new TrustedAdkOperationalRepairProposer({model,
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>candidate
+ }).propose(acceptanceInput),boundedDraft());
+ const wrong=new ScriptedModel(boundedDraft());
+ await assert.rejects(new TrustedAdkOperationalRepairProposer({model:wrong,
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>({...candidate,
+   failed_checks:["ui_state_actions"]})
+ }).propose(acceptanceInput),/candidate differs from verified failed checks/u);
+ assert.equal(wrong.requests.length,0);
+});

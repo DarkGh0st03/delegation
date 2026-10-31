@@ -229,6 +229,9 @@ function assertBoundedMultiEditDraft(
 type TrustedRunnerRepairTarget=Readonly<
  |{status:"verified_runner_single_file_repair_target";
    tested_commit_sha:string;role:"backend"|"frontend";resource:string}
+ |{status:"verified_acceptance_single_file_repair_candidate";
+   tested_commit_sha:string;role:"backend"|"frontend";resource:string;
+   failed_checks:readonly string[]}
  |{status:"verified_runner_multi_file_repair_targets";
    tested_commit_sha:string;targets:ReadonlyArray<Readonly<{
      role:"backend"|"frontend";resource:string
@@ -323,8 +326,15 @@ export class TrustedAdkOperationalRepairProposer {
    deny("automatic D1 requires signed Runner attribution");
   const target=this.#readVerifiedRepairTarget
    ?await this.#readVerifiedRepairTarget(input):undefined;
-  const single=target?.status==="verified_runner_single_file_repair_target"
+  const acceptanceCandidate=target?.status==="verified_acceptance_single_file_repair_candidate"
    ?target:undefined;
+  if(acceptanceCandidate&&(input.feedback.failed_phase!=="researcher_acceptance"||
+     !Array.isArray(acceptanceCandidate.failed_checks)||
+     JSON.stringify(acceptanceCandidate.failed_checks)!==
+       JSON.stringify(input.feedback.acceptance_failure?.failed_checks)))
+   deny("acceptance candidate differs from verified failed checks");
+  const single=target?.status==="verified_runner_single_file_repair_target"
+   ?target:acceptanceCandidate;
   const multiple=target?.status==="verified_runner_multi_file_repair_targets"
    ?target:undefined;
   const targets=multiple?.targets??(single?[single]:[]);
@@ -441,6 +451,10 @@ export class TrustedAdkOperationalRepairProposer {
     ]:multiple?[
      "diagnostic_targets identifies the trusted files and their original signed writers.",
      "Every diagnostic_targets file must be assigned to its matching Backend or Frontend editor."
+    ]:[]),
+    ...(acceptanceCandidate?[
+     "diagnostic_target is an original authorized writer/file candidate, not proof of the causal defect.",
+     "Investigate the failed acceptance requirement using the new signed editor Task's authorized source read."
     ]:[]),
     "Use ONLY exact existing ResourceURI/Operation pairs supplied in the input.",
     "The Engineer will not approve Task/agent allocation or retry counts.",

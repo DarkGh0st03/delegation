@@ -888,6 +888,15 @@ async function main(){
       const realGeminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
       const typecheckProbe=
         process.env.APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE==="1";
+      const acceptanceProbe=
+        process.env.APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE==="1";
+      if(acceptanceProbe&&(typecheckProbe||realGeminiPilot||
+         process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1!=="1"||
+         process.env.APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL!=="1"||
+         process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES!=="1"||
+         process.env.APPROVED_RUNNER_THREE_AGENT_DAG!=="1"||
+         process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"))
+        throw Error("Acceptance probe requires a separate zero-billing signed owner");
       if(typecheckProbe&&(realGeminiPilot||
          process.env.APPROVED_RUNNER_THREE_AGENT_DAG!=="1"||
          process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"))
@@ -914,6 +923,7 @@ async function main(){
             // No source fault probe during the PRE-activation read-only phase.
             // Its flag belongs solely to the later signed operational DAG.
             APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE:"0",
+            APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE:"0",
             APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1:"0",
             APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE:"0",
             // The earlier denial-only rehearsal NEVER consumes Gemini calls.
@@ -1171,7 +1181,7 @@ async function main(){
           .map(line=>{try{return JSON.parse(line);}catch{return null;}})
           .find(event=>event?.event==="native_preliminary_adk_planning");
         assert.equal(positive?.status,"pass");
-        if(typecheckProbe){
+        if(typecheckProbe||acceptanceProbe){
           const proof=positive?.positive_dag;
           if(process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1"){
             // Genuine EVM original root, authenticated Gateway epoch D1,
@@ -1184,7 +1194,7 @@ async function main(){
             assert.equal(proof?.original_root_revoked,true);
             assert.equal(proof?.final_runner_pass_verified,false);
             assert.equal(proof?.pull_request_created,false);
-            assert.equal(proof?.failed_phase,"typecheck");
+            assert.equal(proof?.failed_phase,acceptanceProbe?"researcher_acceptance":"typecheck");
             assert.equal(proof?.original_signed_plan_digest?.length,64);
             assert.match(proof?.original_test_sha??"",/^[a-f0-9]{40}$/u);
             const review=positive?.owner_repair_review;
@@ -1200,7 +1210,8 @@ async function main(){
             assert.match(review?.tested_commit_sha??"",/^[a-f0-9]{40}$/u);
             assert.notEqual(review.tested_commit_sha,proof.original_test_sha);
             process.stdout.write(JSON.stringify({
-              event:"signed_owner_d1_real_typecheck_repair_review",status:"PASS",
+              event:acceptanceProbe?"signed_owner_d1_real_acceptance_repair_review"
+                :"signed_owner_d1_real_typecheck_repair_review",status:"PASS",
               original_rust_root_verified:true,
               independently_admitted_repair_epoch:true,
               original_root_retired:true,
@@ -1439,7 +1450,7 @@ async function main(){
               .source_witnessed_model_still_uses_fixture_code,
             a2a_before_branch:0,main_mutations:0})+"\n");
       },realGeminiPilot?3700000:1020000);
-      if(typecheckProbe)return; // Expected negative test; do not run positive PR CI.
+      if(typecheckProbe||acceptanceProbe)return; // Expected negative test; do not run positive PR CI.
       if(realGeminiPilot)return; // One Gemini E2E; skip additional scripted CI.
     }
     logs=await mkdtemp(join(tmpdir(),"thesis-positive-runner-"));

@@ -148,6 +148,10 @@ export interface TrustedRepairModelInput {
   tested_commit_sha:string;
   role:"backend"|"frontend";
   resource:string;
+ }|{
+  status:"verified_acceptance_single_file_repair_candidate";
+  tested_commit_sha:string;role:"backend"|"frontend";resource:string;
+  failed_checks:readonly string[];
  }>;
  readonly diagnostic_targets?:Readonly<{
   status:"verified_runner_multi_file_repair_targets";

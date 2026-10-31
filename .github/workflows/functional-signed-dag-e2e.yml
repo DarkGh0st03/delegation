@@ -38,6 +38,8 @@ on:
       - 'poc/apps/gateway/native-test/source-witnessed-offline-adk-model.test.mjs'
       - 'poc/apps/gateway/native-test/source-derived-route-offline-adk-model.mjs'
       - 'poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs'
+      - 'poc/apps/gateway/native-test/offline-acceptance-repair-fixture.mjs'
+      - 'poc/apps/gateway/native-test/offline-acceptance-repair-fixture.test.mjs'
       - 'poc/apps/gateway/native-test/offline-approved-adk-model.mjs'
       - 'poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-gemini-repair-proposer.mjs'
@@ -163,6 +165,8 @@ jobs:
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-witnessed-offline-adk-model.test.mjs
       - name: R150.8 source-derived Backend D1 repair exact-SHA and write proof (NO AI)
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs
+      - name: R151.79 semantic acceptance fixture and original signed writer scope (NO AI)
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/offline-acceptance-repair-fixture.test.mjs
       - name: R150.9 fresh owner Test Task cannot replay terminal signed offline Task (NO AI)
         run: node --test poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs
       - name: R151 one-use untrusted Gemini repair DAG proposal (NO API, NO BILLING)
@@ -262,6 +266,28 @@ jobs:
           docker pull docker.gitea.com/gitea:28.0.0
           docker pull node:22.15.0-bookworm
           docker pull openpolicyagent/opa:1.21.1
+      - name: R151.79 project PASS and acceptance FAIL - fresh signed D1 to Docker PASS (NO AI)
+        env:
+          APPROVED_RUNNER_NATIVE_EVM: "1"
+          APPROVED_RUNNER_THREE_AGENT_DAG: "1"
+          APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
+          APPROVED_RUNNER_SOURCE_DERIVED_ROUTES: "1"
+          APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE: "1"
+          APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1: "1"
+          APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL: "1"
+          APPROVED_RUNNER_SCENARIO: account-suspension
+          GITEA_ADMIN_USER: isolated_admin
+          GITEA_ADMIN_PASSWORD: local-acceptance-d1-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+          OPA_IMAGE: openpolicyagent/opa:1.21.1
+        run: |
+          set -euo pipefail
+          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+          test -z "${GEMINI_API_KEY:-}"
+          # Candidate test assertions stay unchanged. Only the independent
+          # researcher acceptance detects the seeded email-preservation bug.
+          npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
       - name: R151.75 two real Backend and Frontend TypeScript faults - D1 Docker FAIL to PASS (NO AI)
         env:
           APPROVED_RUNNER_NATIVE_EVM: "1"
