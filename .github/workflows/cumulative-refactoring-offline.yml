@@ -157,7 +157,23 @@ jobs:
           node poc/scripts/init-local-env.mjs --force
       - name: Start only disposable Anvil and OPA
         run: |
-          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
+          # Transient GitHub Container Registry layer/network resets must not
+          # masquerade as Rust/OPA failures. Retry ONLY idempotent container
+          # startup; never any issuer/credential/plan or provider action.
+          services_started=0
+          for attempt in 1 2 3; do
+            if docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa; then
+              services_started=1
+              break
+            fi
+            echo "Disposable Anvil/OPA image pull or startup failed (attempt $attempt/3)"
+            if [[ "$attempt" != 3 ]]; then sleep 5; fi
+          done
+          if [[ "$services_started" != 1 ]]; then
+            echo "Disposable Anvil/OPA services failed to start after bounded retries"
+            docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps || true
+            exit 1
+          fi
           for i in {1..90}; do
             if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 &&
                curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1; then
