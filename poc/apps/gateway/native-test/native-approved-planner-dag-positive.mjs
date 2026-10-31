@@ -570,30 +570,44 @@ export async function runNativePositiveApprovedDag({
           // the signed original Backend/Frontend Gitea writes. Give the
           // post-FAIL Planner that ONE proven file/role, not a list to guess.
           if(realGeminiPilot&&runnerRuns===0&&repairNomination&&
-             repairNomination.diagnostic_files===1&&
+             repairNomination.diagnostic_files>=1&&
+             repairNomination.diagnostic_files<=8&&
              repairNomination.unresolved_files===0&&
-             repairNomination.outside_operational_scope===0){
+             repairNomination.outside_operational_scope===0&&
+             repairNomination.test_candidates===0){
             const locations=sanitizeTypecheckLocations(effect.typecheck_diagnostics);
             const paths=[...new Set(locations.map(d=>d.path))];
-            const roles=EDIT_ROLES.filter(role=>
-              paths.length===1&&writePaths[role].has(paths[0])&&
-              repairNomination[role+"_candidates"]===1);
-            if(roles.length===1&&
-               repairNomination.backend_candidates+
-                repairNomination.frontend_candidates===1&&
-               repairNomination.test_candidates===0){
-              const role=roles[0],path=paths[0];
-              const resource=canonicalFileUri(repo,branch,path);
+            const root=coordinator.trustedOperationalAuthority().permissions;
+            const targets=[];
+            for(const path of paths){
+              const roles=EDIT_ROLES.filter(role=>writePaths[role].has(path));
+              if(roles.length!==1)break;
+              const role=roles[0],resource=canonicalFileUri(repo,branch,path);
               const original=grants.filter(g=>g.agent_id===role&&
                 g.resource===resource&&["read_file","update_file"].includes(g.operation));
               const ids=[...new Set(original.map(g=>g.task_id))];
-              const root=coordinator.trustedOperationalAuthority().permissions;
-              if(ids.length===1&&["read_file","update_file"].every(operation=>
+              if(ids.length!==1||!["read_file","update_file"].every(operation=>
                  original.some(g=>g.task_id===ids[0]&&g.operation===operation)&&
-                 root.some(g=>g.resource===resource&&g.operation===operation)))
+                 root.some(g=>g.resource===resource&&g.operation===operation)))break;
+              targets.push(Object.freeze({role,resource}));
+            }
+            if(targets.length===paths.length&&
+               targets.filter(t=>t.role==="backend").length===
+                repairNomination.backend_candidates&&
+               targets.filter(t=>t.role==="frontend").length===
+                repairNomination.frontend_candidates){
+              if(targets.length===1)
                 verifiedRepairTarget=Object.freeze({
                   status:"verified_runner_single_file_repair_target",
-                  tested_commit_sha:pinned.commit_sha,role,resource
+                  tested_commit_sha:pinned.commit_sha,...targets[0]
+                });
+              else if(targets.length>1&&
+                  targets.some(t=>t.role==="backend")&&
+                  targets.some(t=>t.role==="frontend"))
+                verifiedRepairTarget=Object.freeze({
+                  status:"verified_runner_multi_file_repair_targets",
+                  tested_commit_sha:pinned.commit_sha,
+                  targets:Object.freeze(targets)
                 });
             }
           }

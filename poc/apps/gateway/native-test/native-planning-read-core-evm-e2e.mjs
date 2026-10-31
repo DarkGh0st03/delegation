@@ -864,7 +864,7 @@ try{
             maxSessionMs:240000,
             maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
             thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
-            taskShape:"backend_or_frontend_test"
+            taskShape:"bounded_auto_edit_test"
           })
           :trustedOwnerRepairAdk;
         const armed=await armTrustedOwnerOperationalRecovery({

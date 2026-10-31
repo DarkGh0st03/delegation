@@ -147,6 +147,11 @@ export interface TrustedRepairModelInput {
   role:"backend"|"frontend";
   resource:string;
  }>;
+ readonly diagnostic_targets?:Readonly<{
+  status:"verified_runner_multi_file_repair_targets";
+  tested_commit_sha:string;
+  targets:ReadonlyArray<Readonly<{role:"backend"|"frontend";resource:string}>>;
+ }>;
 }
 export interface TrustedRepairPlanningResult {
  readonly status:"repair_epoch_reserved_no_execution_authority";

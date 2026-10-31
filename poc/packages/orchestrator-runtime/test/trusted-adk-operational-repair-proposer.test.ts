@@ -456,3 +456,47 @@ test("R151.74 multi-file D1 rejects foreign grants, collisions, cycles, missing 
   /multi-edit permission outside original root/);
  assert.equal(off.requests.length,1);
 });
+
+test("R151.74.2 paid auto mode sends two independently attributed Runner files to multi-D1 model",async()=>{
+ const ui=runner+"/files/apps/frontend/src/Users.tsx";
+ const targets={status:"verified_runner_multi_file_repair_targets" as const,
+  tested_commit_sha:"a".repeat(40),targets:[
+   {role:"backend" as const,resource:file},
+   {role:"frontend" as const,resource:ui}
+  ]};
+ const scoped={...boundedInput,agents:["backend","frontend","test"] as const,
+  already_delegated_grants:[...boundedInput.already_delegated_grants,
+   {resource:ui,operation:"read_file"},{resource:ui,operation:"update_file"}]};
+ const old=boundedDraft();
+ const plan={tasks:[
+  {...old.tasks[0],id:"b-fix"},
+  {id:"f-fix",agent_id:"frontend",title:"UI",description:"Fix UI",
+   depends_on:[],permissions:[
+    {resource:ui,operation:"read_file",reason:"Inspect"},
+    {resource:ui,operation:"update_file",reason:"Fix"}]},
+  {...old.tasks[1],id:"test-again",depends_on:["b-fix","f-fix"]}
+ ]};
+ const m=new ScriptedModel(plan);
+ assert.deepEqual(await new TrustedAdkOperationalRepairProposer({
+  model:m,taskShape:"bounded_auto_edit_test",
+  readVerifiedRepairTarget:async()=>targets
+ }).propose(scoped),plan);
+ const sent=JSON.parse(m.requests[0]!.contents!.at(-1)!.parts!
+  .find(p=>typeof p.text==="string")!.text!);
+ assert.deepEqual(sent.diagnostic_targets,targets);
+ assert.deepEqual(sent.agents,["backend","frontend","test"]);
+ for(const wrong of [
+  {...targets,targets:[targets.targets[0]]},
+  {...targets,targets:[...targets.targets,targets.targets[0]]},
+  {...targets,targets:[targets.targets[0],{
+   role:"frontend" as const,resource:ui+"/not-approved"
+  }]}
+ ]){
+  const unused=new ScriptedModel(plan);
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model:unused,taskShape:"bounded_auto_edit_test",
+   readVerifiedRepairTarget:async()=>wrong
+  }).propose(scoped),/no authenticated Runner repair target set/);
+  assert.equal(unused.requests.length,0);
+ }
+});
