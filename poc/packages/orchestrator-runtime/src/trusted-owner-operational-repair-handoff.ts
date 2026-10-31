@@ -27,7 +27,7 @@ import {prepareTrustedRemoteRepairFeedback,
  from "./trusted-validation-repair-feedback.ts";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {planDigest} from "../../plan-contracts/src/plan.mjs";
-import type {TrustedExecutionCoordinator}
+import {TrustedExecutionCoordinator}
  from "./trusted-execution-coordinator.ts";
 import {executeTrustedAdmittedRepairDag}
  from "./trusted-repair-dag-controller.ts";
@@ -37,6 +37,9 @@ import type {TrustedRemoteDiscoveryA2AHandoff} from
  "./trusted-remote-discovery-a2a-handoff.ts";
 import {TrustedRemoteDiscoveryOwnerBindings} from
  "./trusted-remote-discovery-owner-bindings.ts";
+
+import {assembleTrustedRemoteDiscoveryOwner,type TrustedRemoteDiscoveryOwnerPorts}
+ from "./trusted-remote-discovery-owner-assembly.ts";
 
 /** Local operator data ports only. Session/root/Gateway/epoch/Engineer
  * identity are derived exclusively from signed owner state. */
@@ -111,6 +114,9 @@ export async function armTrustedOwnerOperationalRecovery(config:{
   /** R151.49: preferred concrete paired issuer/remote private read.
    * Cannot be mixed with loose discovery or source callbacks. */
   trustedRemoteDiscovery?:TrustedRemoteDiscoveryOwnerBindings;
+  /** Late assembly uses this owner's intake and attested failed Task, never
+   * an intake/Task selected by an external callback or model. */
+  remoteDiscoveryPorts?:TrustedRemoteDiscoveryOwnerPorts;
   /** R125: explicit owner opt-in to ACTUAL Gateway epoch admission.
    * Requires a genuinely Gateway-bound independently signed epoch Intake. */
   admitReservedEpoch?:boolean;
@@ -132,6 +138,13 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     (structured&&!isTrustedOwnerRepairPlannerConfig(config.planRepairEpoch)))
   fail("exactly one trusted owner continuation or configured repair planner required");
  const paired=config.planRepairEpoch?.trustedRemoteDiscovery;
+ const remotePorts=config.planRepairEpoch?.remoteDiscoveryPorts;
+ if(remotePorts!==undefined&&
+    (!remotePorts||!(config.coordinator instanceof TrustedExecutionCoordinator)||
+     paired!==undefined||config.planRepairEpoch!.completedDiscoveryRead!==undefined||
+     config.planRepairEpoch!.dispatchRemoteDiscovery!==undefined||
+     config.planRepairEpoch!.loadCompletedDiscoverySource!==undefined))
+  fail("late discovery requires native owner and exclusive private ports");
  if(paired!==undefined&&
     (!(paired instanceof TrustedRemoteDiscoveryOwnerBindings)||
      config.planRepairEpoch!.completedDiscoveryRead!==undefined||
@@ -142,7 +155,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     (!config.planRepairEpoch.dispatchRemoteDiscovery&&
      !config.planRepairEpoch.completedDiscoveryRead))
   fail("source delivery needs a verified Backend discovery Task");
- if((paired||config.planRepairEpoch?.dispatchRemoteDiscovery)&&
+ if((paired||remotePorts||config.planRepairEpoch?.dispatchRemoteDiscovery)&&
     (config.planRepairEpoch?.completedDiscoveryRead!==undefined||
      typeof config.coordinator?.closeExecution!=="function"))
   fail("dynamic discovery requires exclusive owner callback and fail-closed root shutdown");
@@ -211,6 +224,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
    if(JSON.stringify(proof)!==JSON.stringify(signal))
     fail("Gateway proof changed since dispatcher suspension");
    if(structured){
+    let activeDiscovery=paired;
     try{
     // R124: the signed Engineer's exact ORIGINAL candidates/repository
     // are the only provenance for identities and work branch. The proposed
@@ -229,14 +243,23 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     let discovered:Readonly<{
       task_id:string;runtime_task_id:string;resource:string;
     }>|undefined;
-    if(paired||config.planRepairEpoch!.dispatchRemoteDiscovery){
+    if(paired||remotePorts||config.planRepairEpoch!.dispatchRemoteDiscovery){
       try{
         await config.verifyLiveRun?.();
+        if(remotePorts){
+          activeDiscovery=await assembleTrustedRemoteDiscoveryOwner(remotePorts,{
+            coordinator:config.coordinator as TrustedExecutionCoordinator,
+            gateway:config.gateway,intake,sessionId:r.session_id,
+            engineerDid:r.authenticated_engineer_did,
+            failedRuntimeTestTaskId:proof.failed_runtime_task_id
+          });
+          await config.verifyLiveRun?.();
+        }
         discovered=await completeTrustedRemoteDiscoveryForPlanning({
           gateway:config.gateway,intake,coordinator:config.coordinator,
           signal:proof,
-          dispatchRemoteDiscovery:paired
-           ?()=>paired.dispatchRemoteDiscovery()
+          dispatchRemoteDiscovery:activeDiscovery
+           ?()=>activeDiscovery!.dispatchRemoteDiscovery()
            :config.planRepairEpoch!.dispatchRemoteDiscovery!
         });
         await config.verifyLiveRun?.();
@@ -259,10 +282,10 @@ export async function armTrustedOwnerOperationalRecovery(config:{
      failedTestAlreadyFinalized:true,
      ...(discovered||config.planRepairEpoch!.completedDiscoveryRead
        ?{completedDiscoveryRead:discovered??config.planRepairEpoch!.completedDiscoveryRead}:{}),
-     ...(paired
+     ...(activeDiscovery
        ?{loadCompletedDiscoverySource:(pins:Readonly<{
          task_id:string;runtime_task_id:string;resource:string;
-        }>)=>paired.loadCompletedDiscoverySource(pins)}
+        }>)=>activeDiscovery!.loadCompletedDiscoverySource(pins)}
        :config.planRepairEpoch!.loadCompletedDiscoverySource
        ?{loadCompletedDiscoverySource:config.planRepairEpoch!.loadCompletedDiscoverySource}:{}),
      nextPlanId:"repair-"+randomBytes(12).toString("hex"),
@@ -325,7 +348,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       // provider read confirmed, this one-use owner has no safe retry path.
       // A malformed model draft, lost preflight ACK, stale feature HEAD or
       // failed DAG admission/execution must not leave its Rust root alive.
-      if((paired||config.planRepairEpoch!.dispatchRemoteDiscovery)&&
+      if((paired||remotePorts||config.planRepairEpoch!.dispatchRemoteDiscovery)&&
          config.coordinator.phase==="execution"){
         try{await config.coordinator.closeExecution!();}
         catch{

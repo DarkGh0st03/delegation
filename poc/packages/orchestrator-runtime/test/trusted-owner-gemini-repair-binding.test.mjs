@@ -74,3 +74,27 @@ test("R151.50 host/runtime share exclusive proposer and admission validation",as
   {giteaClient,proposeRepairPlan:"invalid",trustedAdkProposer}
  ])assert.equal(isTrustedOwnerRepairPlannerConfig(config),false);
 });
+
+test("R151.51 late discovery rejects structural owner and mixed source paths before side effects",async()=>{
+ const {TrustedExecutionCoordinator}=await import("../src/trusted-execution-coordinator.ts");
+ const native=new TrustedExecutionCoordinator({
+  sessionId:"r151-fixture",baseRevision:"a".repeat(40),authority:{},
+  approvedGatewayPlans:{},credentials:{async revokeRoot(){throw Error("unexpected revoke");}}
+ });
+ const remoteDiscoveryPorts={};
+ const planner={giteaClient,proposeRepairPlan:noop,remoteDiscoveryPorts};
+ for(const extra of [
+  {dispatchRemoteDiscovery:noop},{loadCompletedDiscoverySource:noop},
+  {completedDiscoveryRead:{}},{trustedRemoteDiscovery:{}}
+ ])await assert.rejects(armTrustedOwnerOperationalRecovery({
+  ...base,coordinator:native,planRepairEpoch:{...planner,...extra}
+ }),/late discovery requires native owner and exclusive private ports/);
+ await assert.rejects(armTrustedOwnerOperationalRecovery({
+  ...base,coordinator:{phase:"execution",closeExecution:noop},planRepairEpoch:planner
+ }),/late discovery requires native owner and exclusive private ports/);
+ // Merely configuring ports must not construct the issuer or perform IPC:
+ // the native but inactive owner still stops at the original-root guard.
+ await assert.rejects(armTrustedOwnerOperationalRecovery({
+  ...base,coordinator:native,planRepairEpoch:planner
+ }),/original approved Coordinator, root and durable IPC required/);
+});
