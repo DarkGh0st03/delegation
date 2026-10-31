@@ -51,11 +51,49 @@ export interface TrustedRepairPlanningObservation{
  readonly work_branch:string;
  readonly remaining_repair_epochs:number;
 }
+/** R151.44: authenticated Gateway read metadata, never a source or grant. */
+export interface TrustedRepairDiscoveryObservation{
+ readonly status:"gateway_discovery_read_confirmed_no_authority";
+ readonly resource:string;readonly branch:string;
+ readonly tested_commit_sha:string;readonly operation:"read_file";
+}
+export interface TrustedRepairDiscoveryLookup{
+ readonly task_id:string;readonly runtime_task_id:string;readonly resource:string;
+}
+/** Source-free reducer: only the Gateway IPC client may supply this receipt. */
+export function boundedTrustedRepairDiscoveryObservation(
+ receipt:unknown,pins:Readonly<{
+  session_id:string;epoch:number;task_id:string;runtime_task_id:string;
+  resource:string;branch:string;tested_commit_sha:string;
+ }>):Readonly<TrustedRepairDiscoveryObservation>{
+ const r=strictObject(receipt,[
+  "status","session_id","task_id","runtime_task_id","epoch","resource",
+  "branch","revision","request_id","credential_id",
+  "gateway_provider_corroborated","source_disclosed",
+  "repair_dag_authorized","pr_authorized"
+ ],"Gateway discovery metadata");
+ if(r.status!=="gateway_confirmed_exact_sha_discovery_read_no_repair_authority"||
+    r.session_id!==pins.session_id||r.epoch!==pins.epoch||
+    r.task_id!==pins.task_id||r.runtime_task_id!==pins.runtime_task_id||
+    r.resource!==pins.resource||r.branch!==pins.branch||
+    r.revision!==pins.tested_commit_sha||
+    r.gateway_provider_corroborated!==true||r.source_disclosed!==false||
+    r.repair_dag_authorized!==false||r.pr_authorized!==false||
+    typeof r.request_id!=="string"||!ID.test(r.request_id)||
+    typeof r.credential_id!=="string"||!ID.test(r.credential_id))
+   fail("discovery provider evidence does not match the signed failed Test");
+ return Object.freeze({
+  status:"gateway_discovery_read_confirmed_no_authority" as const,
+  resource:pins.resource,branch:pins.branch,
+  tested_commit_sha:pins.tested_commit_sha,operation:"read_file" as const
+ });
+}
 export interface TrustedRepairModelInput {
  readonly requirement:string;
  readonly feedback:Readonly<TrustedRepairPlanningObservation>;
  readonly already_delegated_grants:ReadonlyArray<Readonly<Grant>>;
  readonly agents:readonly Role[];
+ readonly diagnostic_read?:Readonly<TrustedRepairDiscoveryObservation>;
 }
 export interface TrustedRepairPlanningResult {
  readonly status:"repair_epoch_reserved_no_execution_authority";
@@ -227,6 +265,7 @@ export class TrustedOperationalRepairPlanner {
  readonly #head:TrustedOperationalFeatureHeadReader;
  readonly #proposer:(input:Readonly<TrustedRepairModelInput>)=>
    Promise<unknown>;
+ readonly #discovery?:Readonly<TrustedRepairDiscoveryLookup>;
  #attempted=false;
  constructor(config:{
   gateway:TrustedApprovedExecutionPlans|TrustedPlanIpcClient;
@@ -241,6 +280,7 @@ export class TrustedOperationalRepairPlanner {
   /** Server-constructed Gateway observation bound to the same root owner. */
   featureHeadReader:TrustedOperationalFeatureHeadReader;
   proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
+  completedDiscoveryRead?:Readonly<TrustedRepairDiscoveryLookup>;
  }){
   if((!(config.gateway instanceof TrustedApprovedExecutionPlans)&&
       !(config.gateway instanceof TrustedPlanIpcClient))||
@@ -267,6 +307,18 @@ export class TrustedOperationalRepairPlanner {
   config.featureHeadReader.assertSameIntake(config.intake);
   this.#head=config.featureHeadReader;
   this.#proposer=config.proposeRepairPlan;
+  if(config.completedDiscoveryRead){
+   const d=config.completedDiscoveryRead;
+   if(!(config.gateway instanceof TrustedPlanIpcClient)||
+      config.failedTestAlreadyFinalized!==true||
+      !ID.test(d.task_id)||!ID.test(d.runtime_task_id)||
+      typeof d.resource!=="string"||d.resource.length>2048||
+      !/^gitea:\/\/[^/?#\s]+\/[^/?#\s]+\/[^/?#\s]+\/branches\/[^/?#\s]+\/files\/[^?#\s]+$/u.test(d.resource))
+    fail("only a finalized remote Test may select exact discovery Task pins");
+   this.#discovery=Object.freeze({
+    task_id:d.task_id,runtime_task_id:d.runtime_task_id,resource:d.resource
+   });
+  }
  }
  async proposeAndReserve():Promise<Readonly<TrustedRepairPlanningResult>>{
   if(this.#attempted)fail("model proposal already attempted (no retry)");
@@ -297,6 +349,27 @@ export class TrustedOperationalRepairPlanner {
    fail("repair epoch history changed");
   assertFeatureHead(await this.#head.read(original.repository,feedback.work_branch),
     original.repository,feedback.work_branch,feedback.tested_commit_sha);
+  // Authenticated Gateway source-of-truth, before any model inference.
+  // The supplied IDs are lookup pins, NOT evidence from an A2A message.
+  const discoveryQuery=this.#discovery&&remote?{
+   session_id:this.#session,root_plan_digest:feedback.root_plan_digest,
+   plan_digest:feedback.failed_plan_digest,epoch:feedback.failed_epoch,
+   task_id:this.#discovery.task_id,
+   runtime_task_id:this.#discovery.runtime_task_id,
+   runtime_test_task_id:this.#testTask,
+   resource:this.#discovery.resource,
+   tested_commit_sha:feedback.tested_commit_sha
+  }:undefined;
+  const discoveryReceipt=discoveryQuery?
+   await remote!.readConfirmedRemoteDiscoveryEffect(discoveryQuery):undefined;
+  const diagnostic=discoveryReceipt?
+   boundedTrustedRepairDiscoveryObservation(discoveryReceipt,{
+    session_id:this.#session,epoch:feedback.failed_epoch,
+    task_id:this.#discovery!.task_id,
+    runtime_task_id:this.#discovery!.runtime_task_id,
+    resource:this.#discovery!.resource,branch:feedback.work_branch,
+    tested_commit_sha:feedback.tested_commit_sha
+   }):undefined;
   const grants=[...new Map(original.requested_permissions.map((p:any)=>[
     JSON.stringify([p.resource,p.operation]),
     {resource:p.resource,operation:p.operation}
@@ -311,7 +384,8 @@ export class TrustedOperationalRepairPlanner {
     remaining_repair_epochs:feedback.remaining_repair_epochs
    }),
    already_delegated_grants:Object.freeze(grants.map(p=>Object.freeze(p))),
-   agents:Object.freeze([...this.#agents.map(a=>a.agent_id),"orchestrator" as const])
+   agents:Object.freeze([...this.#agents.map(a=>a.agent_id),"orchestrator" as const]),
+   ...(diagnostic?{diagnostic_read:diagnostic}:{})
   });
   const raw=await this.#proposer(modelInput);
   const plan=compileDraft(raw,original,previous,this.#nextId,this.#agents);
@@ -343,6 +417,12 @@ export class TrustedOperationalRepairPlanner {
   }
   assertFeatureHead(await this.#head.read(original.repository,feedback.work_branch),
     original.repository,feedback.work_branch,feedback.tested_commit_sha);
+  if(discoveryQuery){
+   // A slow model cannot replace or invalidate the one permitted read.
+   const second=await remote!.readConfirmedRemoteDiscoveryEffect(discoveryQuery);
+   if(JSON.stringify(second)!==JSON.stringify(discoveryReceipt))
+    fail("Gateway discovery provider receipt changed during proposal");
+  }
   // Exactly one durable reservation, with existing Engineer-root-based
   // preflight and anti-replay journal. Never auto-dispatch from a proposal.
   const reservation=await this.#intake.reserveRepairEpoch(plan);

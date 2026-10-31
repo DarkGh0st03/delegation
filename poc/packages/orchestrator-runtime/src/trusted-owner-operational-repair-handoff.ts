@@ -71,6 +71,10 @@ export async function armTrustedOwnerOperationalRecovery(config:{
    * The trusted planner STILL independently validates every proposed grant. */
   proposeRepairPlan?:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
   trustedAdkProposer?:TrustedAdkOperationalRepairProposer;
+  /** Optional exact Task selectors for a Gateway-confirmed discovery read. */
+  completedDiscoveryRead?:Readonly<{
+   task_id:string;runtime_task_id:string;resource:string;
+  }>;
   /** R125: explicit owner opt-in to ACTUAL Gateway epoch admission.
    * Requires a genuinely Gateway-bound independently signed epoch Intake. */
   admitReservedEpoch?:boolean;
@@ -176,6 +180,8 @@ export async function armTrustedOwnerOperationalRecovery(config:{
      intake,sessionId:r.session_id,
      runtimeTestTaskId:proof.failed_runtime_task_id,
      failedTestAlreadyFinalized:true,
+     ...(config.planRepairEpoch!.completedDiscoveryRead
+       ?{completedDiscoveryRead:config.planRepairEpoch!.completedDiscoveryRead}:{}),
      nextPlanId:"repair-"+randomBytes(12).toString("hex"),
      pinnedAgentRegistry:agents,
      featureHeadReader:new TrustedOperationalFeatureHeadReader({

@@ -224,6 +224,7 @@ export class TrustedAdkOperationalRepairProposer {
   const modelInput:Readonly<TrustedRepairModelInput>=boundedScope?
    Object.freeze({
     requirement:input.requirement,feedback:input.feedback,
+    ...(input.diagnostic_read?{diagnostic_read:input.diagnostic_read}:{}),
     agents:Object.freeze(["backend","test"] as const),
     already_delegated_grants:Object.freeze([
      ...[...boundedScope.edits].sort().flatMap(resource=>[
