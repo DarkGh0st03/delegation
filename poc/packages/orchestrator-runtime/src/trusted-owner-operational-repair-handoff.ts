@@ -80,6 +80,13 @@ export async function armTrustedOwnerOperationalRecovery(config:{
   completedDiscoveryRead?:Readonly<{
    task_id:string;runtime_task_id:string;resource:string;
   }>;
+  /** Owner-private source from completed Gateway/Backend read. This function
+   * cannot derive authorization and must NOT bypass Gateway to query Gitea.
+   * Planner checks exact SHA-256 and bytes against the Gateway effect BEFORE
+   * permitting source data in the model's one-turn draft context. */
+  loadCompletedDiscoverySource?:(
+   pins:Readonly<{task_id:string;runtime_task_id:string;resource:string}>
+  )=>Promise<string>;
   /** R151.45 owner-only callback: perform an already-authorized, journaled
    * remote discovery A2A dispatch AFTER the authentic Docker Test FAIL.
    * Receipts are independently reverified against the same Gateway, and
@@ -111,6 +118,10 @@ export async function armTrustedOwnerOperationalRecovery(config:{
        (config.planRepairEpoch!.proposeRepairPlan!==undefined&&!callback)||
        (config.planRepairEpoch!.trustedAdkProposer!==undefined&&!typedAdk))))
   fail("exactly one trusted owner continuation or configured repair planner required");
+ if(config.planRepairEpoch?.loadCompletedDiscoverySource&&
+    (!config.planRepairEpoch.dispatchRemoteDiscovery&&
+     !config.planRepairEpoch.completedDiscoveryRead))
+  fail("source delivery needs a verified Backend discovery Task");
  if(config.planRepairEpoch?.dispatchRemoteDiscovery&&
     (config.planRepairEpoch.completedDiscoveryRead!==undefined||
      typeof config.coordinator?.closeExecution!=="function"))
@@ -226,6 +237,8 @@ export async function armTrustedOwnerOperationalRecovery(config:{
      failedTestAlreadyFinalized:true,
      ...(discovered||config.planRepairEpoch!.completedDiscoveryRead
        ?{completedDiscoveryRead:discovered??config.planRepairEpoch!.completedDiscoveryRead}:{}),
+     ...(config.planRepairEpoch!.loadCompletedDiscoverySource
+       ?{loadCompletedDiscoverySource:config.planRepairEpoch!.loadCompletedDiscoverySource}:{}),
      nextPlanId:"repair-"+randomBytes(12).toString("hex"),
      pinnedAgentRegistry:agents,
      featureHeadReader:new TrustedOperationalFeatureHeadReader({

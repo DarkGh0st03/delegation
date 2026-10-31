@@ -246,3 +246,46 @@ test("R151.13 malformed bounded model DAG cannot reach owner admission",async()=
   assert.equal(model.requests.length,1);
  }
 });
+
+test("R151.47.2 bounded ADK includes verified source as inert data without granting tools",async()=>{
+ const code="export const payment=42;\n";
+ const read={
+  status:"gateway_discovery_read_confirmed_no_authority" as const,
+  resource:file,branch:"feature/maintenance",
+  tested_commit_sha:"a".repeat(40),operation:"read_file" as const
+ };
+ const source={
+  status:"gateway_sha256_verified_source_data_no_authority" as const,
+  resource:file,branch:"feature/maintenance",
+  tested_commit_sha:"a".repeat(40),
+  bytes:Buffer.byteLength(code,"utf8"),content:code
+ };
+ const model=new ScriptedModel(boundedDraft());
+ const proposal=new TrustedAdkOperationalRepairProposer({
+  model,taskShape:"backend_test"
+ });
+ assert.deepEqual(await proposal.propose({
+  ...boundedInput,diagnostic_read:read,diagnostic_source:source
+ }),boundedDraft());
+ assert.equal(model.requests.length,1);
+ const content=JSON.stringify(model.requests[0]);
+ assert.ok(content.includes("export const payment=42;"));
+ assert.ok(content.includes("untrusted DATA"));
+ assert.ok(!content.includes("signed_vp"));
+ assert.ok(!content.includes("Bearer "));
+ for(const mutation of [
+  {resource:file+"-different"},
+  {branch:"feature/other"},
+  {tested_commit_sha:"b".repeat(40)},
+  {bytes:1},{content:"x"},
+  {content:"x".repeat(32769),bytes:32769}
+ ]){
+  const rejected=new ScriptedModel(boundedDraft());
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model:rejected,taskShape:"backend_test"
+  }).propose({...boundedInput,diagnostic_read:read,
+   diagnostic_source:{...source,...mutation}}),
+   /untrusted source outside verified Backend/);
+  assert.equal(rejected.requests.length,0);
+ }
+});
