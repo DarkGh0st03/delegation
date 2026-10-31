@@ -178,6 +178,26 @@ test("R151.13 no inference if original root cannot express a bounded Backend/Tes
   assert.equal(model.requests.length,0);
  }
 });
+test("R151.21 malformed or non-TypeScript FAIL never triggers a bounded paid repair inference",async()=>{
+ const failures=[
+  {failed_phase:"backend_tests"},
+  {failed_phase:"build"},
+  {failed_phase:"typecheck",typecheck_error_codes:[]},
+  {failed_phase:"typecheck",typecheck_error_codes:["not-a-typescript-diagnostic"]},
+  {failed_phase:"typecheck",typecheck_error_codes:["TS2339","TS99999"]},
+  {failed_phase:"typecheck",typecheck_error_codes:Array(17).fill("TS2339")}
+ ];
+ for(const overrides of failures){
+  const model=new ScriptedModel(boundedDraft());
+  const feedback={...boundedInput.feedback,...overrides};
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model,taskShape:"backend_test"
+  }).propose({...boundedInput,feedback}),
+  /bounded Backend\/Test repair requires verified TypeScript diagnostics/);
+  assert.equal(model.requests.length,0);
+ }
+});
+
 test("R151.19 rejects extra Backend reads even if original Rust root allows them",async()=>{
  const extraFile=runner+"/files/src/ledger.ts";
  const rooted={...boundedInput,already_delegated_grants:[

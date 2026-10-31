@@ -81,6 +81,16 @@ class BudgetedRepairModel extends BaseLlm {
  * that DAG. It never allocates or grants authority; planner/Gateway still
  * independently check the exact role, Task and original Rust root. */
 function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>){
+ // R151.21: this first paid D1 is a compiler-error repair, not an
+ // infrastructure or arbitrary test-failure retry. Reject before calling
+ // Gemini when the authenticated Runner metadata is not actionable TS errors.
+ if(input.feedback.failed_phase!=="typecheck"||
+    !Array.isArray(input.feedback.typecheck_error_codes)||
+    input.feedback.typecheck_error_codes.length===0||
+    input.feedback.typecheck_error_codes.length>16||
+    input.feedback.typecheck_error_codes.some(code=>
+     typeof code!=="string"||!/^TS[0-9]{4}$/u.test(code)))
+  deny("bounded Backend/Test repair requires verified TypeScript diagnostics");
  const suffix="/branches/"+encodeURIComponent(input.feedback.work_branch);
  const runner=input.already_delegated_grants.find(g=>
   g.operation==="run_tests"&&g.resource.startsWith("gitea://")&&
