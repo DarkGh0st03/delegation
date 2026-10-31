@@ -172,7 +172,7 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
        path.split("/").some(x=>x==="."||x==="..")||
        !SHA.test(failedSha??"")||
        typeof taskId!=="string"||
-       !/^r150-owner-backend-repair$/u.test(taskId))
+       !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId))
       deny("trusted D1 typecheck repair requires exhausted signed original task");
     this.#trustedRepair={branch,path,failedSha,stage:0,taskId};
     this.#trustedRepairUsed=true;
