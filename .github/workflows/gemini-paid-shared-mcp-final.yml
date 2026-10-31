@@ -25,6 +25,11 @@ on:
         description: 'Type exactly I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES'
         type: string
         required: true
+      repair_authorization:
+        description: 'Optional extra billed recovery: type I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH, otherwise leave disabled'
+        type: string
+        required: true
+        default: 'NO ADDITIONAL REPAIR AUTHORIZED'
       thinking_level:
         description: 'Fixed LOW thinking for this bounded pilot'
         type: choice
@@ -210,6 +215,8 @@ jobs:
           DELEGATION_SIGNED_GEMINI_PILOT: "1"
           DELEGATION_PINNED_COMMIT_SHA: ${{ inputs.pinned_commit_sha }}
           DELEGATION_BILLING_CAP_ACK: ${{ inputs.billing_cap_acknowledgement }}
+          DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION: ${{ inputs.repair_authorization }}
+          DELEGATION_SIGNED_GEMINI_REPAIR_D1: ${{ inputs.repair_authorization == 'I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH' && '1' || '0' }}
           APPROVED_RUNNER_NATIVE_EVM: "1"
           APPROVED_RUNNER_THREE_AGENT_DAG: "1"
           APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
