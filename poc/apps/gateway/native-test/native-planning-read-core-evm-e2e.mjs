@@ -36,9 +36,8 @@ import {TrustedAdkOperationalRepairProposer} from
   "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
 import {selectSignedNativeD1Tasks} from
   "./native-owner-d1-task-selection.mjs";
-import {dispatchTrustedAdmittedRepairA2A,
-  confirmTrustedAdmittedRepairA2A} from
-  "../../../packages/orchestrator-runtime/src/trusted-admitted-repair-a2a.ts";
+import {executeTrustedAdmittedRepairDag} from
+  "../../../packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts";
 import {TrustedChildIssuanceJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {TrustedRetiredRepairAcceptanceWitness} from
@@ -886,99 +885,96 @@ try{
               baseRevision:baseSha,planDigest:packet.plan_digest,
               parentCredentialId:operationalId
             });
-            // R150.8: the existing native Rust issuer mints the child,
-            // THEN the owner pins that credential to the already-running
-            // Backend ADK/A2A server before any protected Task is submitted.
-            // All source writes must go through this SAME Gateway and OPA.
-            const dispatched=await dispatchTrustedAdmittedRepairA2A({
-              sessionId:session,epoch:2,
-              planDigest:epochs[1].plan_digest,
-              taskId:selected.backendTaskId,role:"backend",
+            // R151.10: follow the signed repair DAG, not an owner-authored
+            // Backend/Test dispatch sequence. Each predecessor must be
+            // independently Gateway-confirmed before the next Task.
+            let verifiedRepairedSha;
+            const report=await executeTrustedAdmittedRepairDag({
+              sessionId:session,epoch:2,planDigest:epochs[1].plan_digest,
               coordinator,intake:armed.intake,gateway:gatewayOwner,
               journal,engineerDid,adapterBaseUrl:adapterUrl,
               orchestratorToken:token,
-              credential:{
-                credential_id:"urn:native:r150-d1-backend-"+randomBytes(7).toString("hex"),
-                valid_from:new Date(Date.now()-1000).toISOString(),
-                validity_seconds:300,
-                credential_status:{
-                  type:"BitstringStatusListEntry",
-                  statusPurpose:"revocation",
-                  statusListIndex:String(randomInt(70001,74000)),
-                  statusListCredential:"https://status.example/lists/native-owner-d1"
-                }
-              },
               agentBaseUrls:originalA2APorts.agentBaseUrls,
               a2a:originalA2APorts.a2a,
+              verifyLiveRun:async()=>{
+                assert.equal(coordinator.phase,"execution");
+                await gatewayOwner.renewLease(session,packet.plan_digest);
+              },
+              credentialForTask:({id,role,ordinal})=>{
+                if(ordinal>1||
+                   (ordinal===0&&(role!=="backend"||
+                     id!==selected.backendTaskId))||
+                   (ordinal===1&&(role!=="test"||
+                     id!==selected.testTaskId)))
+                  throw Error("R151.10 native test role outside admitted scope");
+                return {
+                  credential_id:"urn:native:r151-d1-"+role+"-"+
+                    randomBytes(7).toString("hex"),
+                  valid_from:new Date(Date.now()-1000).toISOString(),
+                  validity_seconds:300,
+                  credential_status:{
+                    type:"BitstringStatusListEntry",
+                    statusPurpose:"revocation",
+                    statusListIndex:String(randomInt(
+                      role==="backend"?70001:74001,
+                      role==="backend"?74000:78000)),
+                    statusListCredential:
+                      "https://status.example/lists/native-owner-d1"
+                  }
+                };
+              },
               beforeProtectedSend:async issued=>{
-                assert.equal(issued.task_id,selected.backendTaskId);
                 assert.equal(issued.epoch,2);
-                await originalA2APorts.armVerifiedD1BackendRepair({
-                  taskId:issued.task_id,role:issued.role,
-                  runtimeTaskId:issued.runtime_task_id,
-                  credentialId:issued.credential_id,
-                  path:target,failedSha:signal.tested_commit_sha
-                });
-              }
-            });
-            assert.equal(dispatched.status,"a2a_artifact_unconfirmed");
-            assert.equal(dispatched.epoch,2);
-            const confirmed=await confirmTrustedAdmittedRepairA2A({
-              receipt:dispatched,gateway:gatewayOwner,
-              intake:armed.intake,coordinator,sessionId:session,
-              planDigest:epochs[1].plan_digest,epoch:2
-            });
-            assert.equal(confirmed.gateway_task_completed,true);
-            assert.equal(confirmed.task_id,selected.backendTaskId);
-            const observedRepair=await liveClient.getBranchMetadata(workBranch);
-            assert.match(observedRepair.commit_sha,/^[a-f0-9]{40}$/u);
-            assert.notEqual(observedRepair.commit_sha,signal.tested_commit_sha,
-              "R150.8 genuine D1 Backend must produce a different Gitea SHA");
-            // R150.9: after Backend's independent Gateway completion, a
-            // NEW signed Test Task receives a NEW Rust Child DC. Its A2A
-            // worker uses the same original protected Test Agent endpoint.
-            // Neither the old terminal Test DC nor its failed Task is reused.
-            const testDispatched=await dispatchTrustedAdmittedRepairA2A({
-              sessionId:session,epoch:2,
-              planDigest:epochs[1].plan_digest,
-              taskId:selected.testTaskId,role:"test",
-              coordinator,intake:armed.intake,gateway:gatewayOwner,
-              journal,engineerDid,adapterBaseUrl:adapterUrl,
-              orchestratorToken:token,
-              credential:{
-                credential_id:"urn:native:r150-d1-test-"+randomBytes(7).toString("hex"),
-                valid_from:new Date(Date.now()-1000).toISOString(),
-                validity_seconds:300,
-                credential_status:{
-                  type:"BitstringStatusListEntry",
-                  statusPurpose:"revocation",
-                  statusListIndex:String(randomInt(74001,78000)),
-                  statusListCredential:"https://status.example/lists/native-owner-d1"
+                if(issued.role==="backend"&&
+                   issued.task_id===selected.backendTaskId){
+                  await originalA2APorts.armVerifiedD1BackendRepair({
+                    taskId:issued.task_id,role:issued.role,
+                    runtimeTaskId:issued.runtime_task_id,
+                    credentialId:issued.credential_id,
+                    path:target,failedSha:signal.tested_commit_sha
+                  });
+                }else if(issued.role==="test"&&
+                         issued.task_id===selected.testTaskId&&
+                         /^[a-f0-9]{40}$/u.test(verifiedRepairedSha??"")){
+                  await originalA2APorts.armVerifiedD1TestRun({
+                    taskId:issued.task_id,role:issued.role,
+                    runtimeTaskId:issued.runtime_task_id,
+                    credentialId:issued.credential_id,
+                    repairedSha:verifiedRepairedSha
+                  });
+                }else{
+                  throw Error("R151.10 task outside owner-confirmed repair");
                 }
               },
-              agentBaseUrls:originalA2APorts.agentBaseUrls,
-              a2a:originalA2APorts.a2a,
-              beforeProtectedSend:async issued=>{
-                assert.equal(issued.task_id,selected.testTaskId);
-                assert.equal(issued.epoch,2);
-                await originalA2APorts.armVerifiedD1TestRun({
-                  taskId:issued.task_id,role:issued.role,
-                  runtimeTaskId:issued.runtime_task_id,
-                  credentialId:issued.credential_id,
-                  repairedSha:observedRepair.commit_sha
-                });
+              afterGatewayConfirmed:async task=>{
+                const head=await liveClient.getBranchMetadata(workBranch);
+                if(task.role==="backend"&&
+                   task.task_id===selected.backendTaskId){
+                  assert.match(head.commit_sha,/^[a-f0-9]{40}$/u);
+                  assert.notEqual(head.commit_sha,signal.tested_commit_sha,
+                    "Signed Backend must produce a changed Gitea SHA");
+                  verifiedRepairedSha=head.commit_sha;
+                }else if(task.role==="test"&&
+                         task.task_id===selected.testTaskId){
+                  assert.equal(head.commit_sha,verifiedRepairedSha,
+                    "Fresh Test may not silently mutate repaired SHA");
+                }else{
+                  throw Error("R151.10 unexpected Gateway-confirmed role");
+                }
               }
             });
-            const testConfirmed=await confirmTrustedAdmittedRepairA2A({
-              receipt:testDispatched,gateway:gatewayOwner,
-              intake:armed.intake,coordinator,sessionId:session,
-              planDigest:epochs[1].plan_digest,epoch:2
-            });
-            assert.equal(testConfirmed.gateway_task_completed,true);
-            assert.equal(testConfirmed.task_id,selected.testTaskId);
+            assert.equal(report.status,
+              "repair_dag_gateway_confirmed_not_final_runner_verified");
+            assert.deepEqual(report.tasks.map(t=>t.task_id),
+              [selected.backendTaskId,selected.testTaskId]);
+            assert.ok(report.tasks.every(t=>t.gateway_task_completed));
+            assert.ok(report.tasks.every(t=>t.docker_pass_verified===false));
+            assert.notEqual(report.tasks[0].credential_id,
+              report.tasks[1].credential_id);
+            assert.match(verifiedRepairedSha??"",/^[a-f0-9]{40}$/u);
+            const observedRepair={commit_sha:verifiedRepairedSha};
             const observedAfterTest=await liveClient.getBranchMetadata(workBranch);
-            assert.equal(observedAfterTest.commit_sha,observedRepair.commit_sha,
-              "New signed Docker Test may not silently mutate the repaired SHA");
+            assert.equal(observedAfterTest.commit_sha,verifiedRepairedSha);
             // R150.10: capture signed D1 Test/root identity BEFORE shutdown.
             // No model, A2A or PR endpoint gets this witness or Gitea writer.
             // The witness will later re-check actual Gateway Runner effects,
@@ -993,7 +989,8 @@ try{
             });
             const records=await journal.records();
             assert.equal(records.length,2);
-            assert.notEqual(testDispatched.credential_id,dispatched.credential_id);
+            assert.notEqual(report.tasks[0].credential_id,
+              report.tasks[1].credential_id);
             assert.deepEqual(records.map(r=>r.task_id).sort(),
               [selected.backendTaskId,selected.testTaskId]);
             assert.equal(records[0].observation,"adapter_response_verified");
