@@ -1,4 +1,4 @@
-import {repairAcceptanceFault} from "./offline-acceptance-repair-fixture.mjs";
+import {repairAcceptanceFault,ACCEPTANCE_FAULT} from "./offline-acceptance-repair-fixture.mjs";
 /**
  * Test-only scripted ADK Backend model. One update_file is derived from
  * the actual trusted read_file result plus rules in the signed Task.
@@ -181,8 +181,21 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
   /** Separate zero-billing semantic fixture; shares the same exhausted-Task,
    * failed-SHA read and fresh-write checks, without compiler fault injection. */
   armTrustedD1AcceptanceRepair(args){
-    this.armTrustedD1TypecheckRepair(args);
+    const paths=args?.paths??[args?.path];
+    if(!Array.isArray(paths)||paths.length<1||paths.length>8||paths[0]!==args?.path||
+       new Set(paths).size!==paths.length||paths.some(path=>typeof path!=="string"||
+        !/^(?:apps\/backend\/src\/|packages\/shared\/src\/)[A-Za-z0-9._/-]+\.ts$/u.test(path)||
+        path.split("/").some(part=>part==="."||part==="..")))
+      deny("invalid bounded acceptance investigation source paths");
+    // Reuse the existing one-use signed Task and failed-SHA checks. The
+    // first candidate may be shared source; arming validates a Backend path.
+    const backendPath=paths.find(path=>path.startsWith("apps/backend/src/"));
+    if(!backendPath)deny("acceptance fixture has no original Backend source");
+    this.armTrustedD1TypecheckRepair({...args,path:backendPath});
+    this.#trustedRepair.path=paths[0];
     this.#trustedRepair.kind="acceptance";
+    this.#trustedRepair.paths=Object.freeze([...paths]);
+    this.#trustedRepair.nextPath=1;
   }
   async *generateContentAsync(request){
     const repair=this.#trustedRepair;
@@ -202,6 +215,16 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
         if(observed.revision!==repair.failedSha)
           deny("D1 repair must read the exact failed Gitea revision");
         const source=observed.content;
+        if(repair.kind==="acceptance"&&!source.includes(ACCEPTANCE_FAULT)){
+          const next=repair.paths[repair.nextPath++];
+          if(!next)deny("no seeded semantic defect in observed authorized sources");
+          repair.path=next;
+          yield {content:{role:"model",parts:[{functionCall:{
+            id:"r151-acceptance-source-"+repair.nextPath,name:"read_file",
+            args:{branch:repair.branch,path:next}
+          }}]}};
+          return;
+        }
         if(repair.kind!=="acceptance"&&source.split(FAULT).length!==2)
           deny("unsupported or changed real TypeScript fault");
         repair.stage=2;

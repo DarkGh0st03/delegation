@@ -119,3 +119,28 @@ test("R151.74.1 signed owner rejects extra files, mixed roles and broken DAG",()
   assert.throws(()=>multi(epoch),/R151 signed owner D1 task selection NO-GO/);
  }
 });
+
+test("R151.80 acceptance schedule may contain two original Backend files without a forced Frontend edit",()=>{
+ const second=branchUri+"/files/src/secondary.ts",epoch=multiFixture();
+ epoch.plan.tasks[1].agent_id="backend";
+ for(const grant of epoch.plan.requested_permissions.filter(g=>g.task_id==="frontend-real")){
+  grant.agent_id="backend";grant.resource=second;
+ }
+ const config={epoch,planDigest:digest,branchUri,requireBothRoles:false,
+  originalFilesByRole:{backend:[fileUri,second],frontend:[]}};
+ assert.deepEqual(selectSignedNativeMultiD1Tasks(config).orderedTaskIds,
+  ["backend-real","frontend-real","test-after-repair"]);
+ assert.throws(()=>selectSignedNativeMultiD1Tasks({...config,requireBothRoles:true}),/NO-GO/u);
+ epoch.plan.tasks[2].depends_on=["backend-real"];
+ assert.throws(()=>selectSignedNativeMultiD1Tasks(config),/NO-GO/u);
+});
+
+test("R151.80 signed single-editor investigation can include multiple original file pairs",()=>{
+ const epoch=fixture(),second=branchUri+"/files/src/second.ts";
+ epoch.plan.requested_permissions.splice(2,0,...["read_file","update_file"].map(operation=>({
+  task_id:epoch.plan.tasks[0].id,agent_id:"backend",resource:second,operation})));
+ const result=selectSignedNativeMultiD1Tasks({epoch,planDigest:digest,branchUri,
+  requireBothRoles:false,originalFilesByRole:{backend:[fileUri,second],frontend:[]}});
+ assert.deepEqual(new Set(result.editingTasks[0].fileUris),new Set([fileUri,second]));
+ assert.equal(result.orderedTaskIds.at(-1),epoch.plan.tasks[1].id);
+});

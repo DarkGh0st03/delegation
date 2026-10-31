@@ -815,9 +815,11 @@ try{
               if(signedOfflineAcceptanceProbe){
                 assert.deepEqual(input.feedback.acceptance_failure,{
                   failed_checks:["service_persistence"],timed_out:false,unclassified_failure:false});
-                assert.equal(input.diagnostic_target?.status,
-                  "verified_acceptance_single_file_repair_candidate");
-                assert.equal(input.diagnostic_target.resource,fileResource);
+                assert.equal(input.diagnostic_candidates?.status,
+                  "verified_original_acceptance_repair_scope");
+                assert.equal(input.diagnostic_target,undefined);
+                assert.ok(input.diagnostic_candidates.candidates.some(candidate=>
+                  candidate.role==="backend"&&candidate.resource===fileResource));
               }else assert.ok(input.feedback.typecheck_error_codes.includes("TS2820"));
               assert.equal(input.feedback.remaining_repair_epochs,2);
               if(multiTypecheckProbe){
@@ -858,11 +860,13 @@ try{
                  description:signedOfflineAcceptanceProbe
                    ?"Read the failed revision and correct email preservation in the original signed Backend source"
                    :"Correct the signed Backend source only",
-                 depends_on:[],permissions:[
-                   {resource:fileResource,operation:"read_file",
-                    reason:"Inspect already approved source"},
-                   {resource:fileResource,operation:"update_file",
-                    reason:"Repair only the original approved file"}]},
+                 depends_on:[],permissions:signedOfflineAcceptanceProbe
+                   ?input.diagnostic_candidates.candidates.filter(candidate=>candidate.role==="backend")
+                     .flatMap(candidate=>["read_file","update_file"].map(operation=>({
+                       resource:candidate.resource,operation,reason:"Investigate within original signed Backend scope"})))
+                   :[
+                    {resource:fileResource,operation:"read_file",reason:"Inspect already approved source"},
+                    {resource:fileResource,operation:"update_file",reason:"Repair only the original approved file"}]},
                 {id:candidateTestId,agent_id:"test",
                  title:"Run new independent Test task",
                  description:"Verify the repaired exact Gitea SHA in Docker",
@@ -921,7 +925,7 @@ try{
               const target=readVerifiedRepairTarget();
               if(!target||target.tested_commit_sha!==
                  input.feedback.tested_commit_sha)
-                throw Error("Compiler target not bound to failed Gateway SHA");
+                throw Error("Repair scope not bound to failed Gateway SHA");
               return target;
             },
             model:createGeminiAdkModel({
@@ -1016,16 +1020,19 @@ try{
                     g.task_id===task.id&&g.agent_id===task.agent_id&&
                     g.operation===operation&&
                     g.resource===canonicalFileUri(repo,workBranch,path))));
-              // Initial mixed Gemini pilot: one signed file per editor Task.
-              if(found.length!==1)
-                throw Error("D1 editor needs one exact signed source file");
-              filesByTask.set(task.id,{role:task.agent_id,path:found[0]});
+              // Acceptance editors may investigate several originally signed
+              // sources together. The compiler probe keeps its proven shape.
+              if(found.length<1||found.length>8||
+                 (signal.first_failed_phase!=="researcher_acceptance"&&found.length!==1))
+                throw Error("D1 editor source files outside supported signed scope");
+              filesByTask.set(task.id,{role:task.agent_id,path:found[0],paths:found});
             }
-            const multi=repairTasks.length>1;
+            const multi=repairTasks.length>1||[...filesByTask.values()].some(x=>x.paths.length>1);
             const selected=multi
               ?selectSignedNativeMultiD1Tasks({
                 epoch:epochs[1],planDigest:epochs[1].plan_digest,
                 branchUri:branchResource,
+                requireBothRoles:signal.first_failed_phase!=="researcher_acceptance",
                 originalFilesByRole:Object.fromEntries(
                   ["backend","frontend"].map(role=>[role,
                     roleFiles[role].map(path=>
@@ -1039,16 +1046,17 @@ try{
                });
             if(multi&&selected.editingTasks.some(t=>{
               const own=filesByTask.get(t.taskId);
-              return !own||own.role!==t.role||t.fileUris.length!==1||
-                t.fileUris[0]!==canonicalFileUri(repo,workBranch,own.path);
+              return !own||own.role!==t.role||t.fileUris.length!==own.paths.length||
+                t.fileUris.some(uri=>!own.paths.some(path=>
+                  uri===canonicalFileUri(repo,workBranch,path)));
             }))throw Error("Signed D1 resources differ from original writers");
             const signedTaskOrder=multi?selected.orderedTaskIds:
               [repairTasks[0].id,selected.testTaskId];
             if(!paidGeminiRecovery&&!multiTypecheckProbe){
-              assert.equal(selected.backendTaskId,candidateBackendId);
+              assert.equal(multi?selected.editingTasks[0].taskId:selected.backendTaskId,candidateBackendId);
               assert.equal(selected.testTaskId,candidateTestId);
-              assert.equal(canonicalFileUri(repo,workBranch,
-                filesByTask.get(repairTasks[0].id).path),fileResource);
+              assert.ok(filesByTask.get(repairTasks[0].id).paths.some(path=>
+                canonicalFileUri(repo,workBranch,path)===fileResource));
             }
             // R150.6: ask the ORIGINAL Rust issuer for a genuinely
             // attenuated first repair Child DC, after the SAME Gateway's
@@ -1108,7 +1116,7 @@ try{
                     taskId:issued.task_id,role:issued.role,
                     runtimeTaskId:issued.runtime_task_id,
                     credentialId:issued.credential_id,
-                    path:editing.path,
+                    path:editing.path,paths:editing.paths,
                     failedSha:verifiedRepairedSha??signal.tested_commit_sha
                   });
                 }else if(issued.role==="test"&&
@@ -1328,7 +1336,6 @@ try{
         offlineTypecheckProbe:signedOfflineTypecheckProbe,
         offlineMultiTypecheckProbe:multiTypecheckProbe,
         offlineAcceptanceProbe:signedOfflineAcceptanceProbe,
-        offlineAcceptanceFaultPath:acceptanceFaultPath,
         offlineMultiTest:signedOfflineMultiTest,
         scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,

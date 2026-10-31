@@ -40,6 +40,8 @@ on:
       - 'poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs'
       - 'poc/apps/gateway/native-test/offline-acceptance-repair-fixture.mjs'
       - 'poc/apps/gateway/native-test/offline-acceptance-repair-fixture.test.mjs'
+      - 'poc/apps/gateway/native-test/acceptance-repair-candidate-scope.mjs'
+      - 'poc/apps/gateway/native-test/acceptance-repair-candidate-scope.test.mjs'
       - 'poc/apps/gateway/native-test/offline-approved-adk-model.mjs'
       - 'poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs'
       - 'poc/packages/orchestrator-runtime/src/trusted-gemini-repair-proposer.mjs'
@@ -166,7 +168,7 @@ jobs:
       - name: R150.8 source-derived Backend D1 repair exact-SHA and write proof (NO AI)
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs
       - name: R151.79 semantic acceptance fixture and original signed writer scope (NO AI)
-        run: node --experimental-strip-types --test poc/apps/gateway/native-test/offline-acceptance-repair-fixture.test.mjs
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/offline-acceptance-repair-fixture.test.mjs poc/apps/gateway/native-test/acceptance-repair-candidate-scope.test.mjs
       - name: R150.9 fresh owner Test Task cannot replay terminal signed offline Task (NO AI)
         run: node --test poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs
       - name: R151 one-use untrusted Gemini repair DAG proposal (NO API, NO BILLING)

@@ -1,4 +1,4 @@
-import {nominateOfflineAcceptanceRepair} from "./offline-acceptance-repair-fixture.mjs";
+import {collectAcceptanceRepairCandidateScope} from "./acceptance-repair-candidate-scope.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
  * One native, signed four-task DAG over the disposable Gitea repository:
@@ -106,7 +106,7 @@ export async function runNativePositiveApprovedDag({
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
   approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
   offlineTypecheckProbe=false,offlineMultiTypecheckProbe=false,
-  offlineAcceptanceProbe=false,offlineAcceptanceFaultPath,
+  offlineAcceptanceProbe=false,
   offlineMultiTest=false,onPilotPhase,onPilotError,
   /** Owner-private capability supplied ONLY by an authenticated trusted
    * host. Never from Gemini, A2A, MCP, CLI arguments or plan JSON.
@@ -121,8 +121,7 @@ export async function runNativePositiveApprovedDag({
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Multiple Test A2A Tasks require signed offline recovery fixture");
   if(offlineAcceptanceProbe&&(realGeminiPilot||offlineTypecheckProbe||offlineRecovery||
-     offlineMultiTest||!trustedOwnerRecovery||typeof approvedAgentModelFactory!=="function"||
-     typeof offlineAcceptanceFaultPath!=="string"))
+     offlineMultiTest||!trustedOwnerRecovery||typeof approvedAgentModelFactory!=="function"))
     throw Error("Acceptance repair probe requires a separate original zero-billing owner");
   if(offlineTypecheckProbe&&(realGeminiPilot||offlineRecovery||offlineMultiTest||
      typeof approvedAgentModelFactory!=="function"))
@@ -623,13 +622,22 @@ export async function runNativePositiveApprovedDag({
                 });
             }
           }
-          if(offlineAcceptanceProbe&&runnerRuns===0){
-            verifiedRepairTarget=nominateOfflineAcceptanceRepair({
-              effect,testedSha:pinned.commit_sha,path:offlineAcceptanceFaultPath,
-              repo,branch,approvedRows:grants,
-              rootPermissions:coordinator.trustedOperationalAuthority().permissions,
-              observedWrites:writePaths
-            });
+          if((realGeminiPilot||offlineAcceptanceProbe)&&runnerRuns===0&&
+             effect.status==="fail"&&effect.project_tests?.status==="pass"&&
+             effect.researcher_acceptance?.status==="fail"){
+            // Scope comes ONLY from the actual Runner and original signed
+            // Gateway write ledger, never a reference fixture or fault path.
+            // Ineligible diagnostics/scope cannot authorize a model call, but
+            // must not turn a genuine completed Runner FAIL into HTTP denial.
+            try{
+              verifiedRepairTarget=collectAcceptanceRepairCandidateScope({
+                effect,testedSha:pinned.commit_sha,repo,branch,approvedRows:grants,
+                rootPermissions:coordinator.trustedOperationalAuthority().permissions,
+                observedWrites:writePaths
+              });
+            }catch{verifiedRepairTarget=null;}
+            if(offlineAcceptanceProbe)assert.ok(verifiedRepairTarget,
+              "Semantic fixture must provide real original acceptance repair candidates");
           }
           if(offlineTypecheckProbe&&!admittedTestRepair){
             assert.equal(effect.status,"fail");
@@ -915,7 +923,7 @@ export async function runNativePositiveApprovedDag({
           activeTaskByRole.test=taskId;
         },
         async armVerifiedD1BackendRepair({
-          taskId,role,runtimeTaskId,credentialId,path,failedSha
+          taskId,role,runtimeTaskId,credentialId,path,paths=[path],failedSha
         }){
           // Only the original trusted owner may invoke this after real
           // R134 child issuance. Source/model claims grant NOTHING.
@@ -925,18 +933,20 @@ export async function runNativePositiveApprovedDag({
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(failedSha)||
              runnerOutcome?.status!=="fail"||
-             !files.backend.includes(path)||!readableFiles.backend.includes(path)||
+             !Array.isArray(paths)||paths.length<1||paths.length>8||paths[0]!==path||
+             new Set(paths).size!==paths.length||paths.some(p=>
+               !files.backend.includes(p)||!readableFiles.backend.includes(p))||
              (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
             throw Error("R150.8 trusted Backend repair binding NO-GO");
           const history=await trustedOwnerRecovery.intake.verifiedEpochHistory();
           const epoch=history.at(-1),task=epoch?.plan.tasks.find(t=>t.id===taskId);
-          const file=canonicalFileUri(repo,branch,path);
+          const resources=paths.map(p=>canonicalFileUri(repo,branch,p));
           if(history.length!==2||task?.agent_id!=="backend"||
              epoch.root_credential_id!==operationalRootId||
-             !["read_file","update_file"].every(operation=>
+             !resources.every(resource=>["read_file","update_file"].every(operation=>
                epoch.plan.requested_permissions.some(g=>
                  g.task_id===taskId&&g.agent_id==="backend"&&
-                 g.resource===file&&g.operation===operation)))
+                 g.resource===resource&&g.operation===operation))))
             throw Error("R150.8 owner D1 repair outside signed epoch scope");
           // A new A2A Task receives a distinct source-read journal and
           // only its independently signed exact write key may be observed.
@@ -946,21 +956,23 @@ export async function runNativePositiveApprovedDag({
             allowGenerative:realGeminiPilot
           });
           if(modelMode.needs_scripted_arming){
+            if(paths.length!==1&&!offlineAcceptanceProbe)
+              throw Error("Scripted compiler repair supports one observed source");
             const arm=offlineAcceptanceProbe
               ?models.backend.armTrustedD1AcceptanceRepair
               :models.backend.armTrustedD1TypecheckRepair;
             if(typeof arm!=="function")throw Error("Offline D1 fixture repair method missing");
-            arm.call(models.backend,{branch,path,failedSha,taskId});
+            arm.call(models.backend,{branch,path,paths,failedSha,taskId});
           }
           admittedBackendRepair=Object.freeze({
-            taskId,runtimeTaskId,credentialId,path,failedSha
+            taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha
           });
           activeChildByRole.backend=credentialId;
           activeTaskByRole.backend=taskId;
-          expectedImplementationWriteKeys.add(writeKey(taskId,"update_file",path));
+          for(const p of paths)expectedImplementationWriteKeys.add(writeKey(taskId,"update_file",p));
         },
         async armVerifiedD1FrontendRepair({
-          taskId,role,runtimeTaskId,credentialId,path,failedSha
+          taskId,role,runtimeTaskId,credentialId,path,paths=[path],failedSha
         }){
           // Generative Frontend correction only; do not add a scripted patch.
           if((!realGeminiPilot&&!offlineMultiTypecheckProbe)||admittedTestRepair||
@@ -970,34 +982,36 @@ export async function runNativePositiveApprovedDag({
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(failedSha)||
              runnerOutcome?.status!=="fail"||
-             !files.frontend.includes(path)||!readableFiles.frontend.includes(path)||
+             !Array.isArray(paths)||paths.length<1||paths.length>8||paths[0]!==path||
+             new Set(paths).size!==paths.length||paths.some(p=>
+               !files.frontend.includes(p)||!readableFiles.frontend.includes(p))||
              (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
             throw Error("R151.72 Frontend D1 repair requires live failed-SHA");
           const history=await trustedOwnerRecovery.intake.verifiedEpochHistory();
           const epoch=history.at(-1),task=epoch?.plan.tasks.find(t=>t.id===taskId);
-          const resource=canonicalFileUri(repo,branch,path);
+          const resources=paths.map(p=>canonicalFileUri(repo,branch,p));
           if(history.length!==2||task?.agent_id!=="frontend"||
              epoch.root_credential_id!==operationalRootId||
-             !["read_file","update_file"].every(operation=>
+             !resources.every(resource=>["read_file","update_file"].every(operation=>
                epoch.plan.requested_permissions.some(g=>
                  g.task_id===taskId&&g.agent_id==="frontend"&&
-                 g.operation===operation&&g.resource===resource)))
+                 g.operation===operation&&g.resource===resource))))
             throw Error("R151.72 Frontend D1 outside signed permission set");
           const mode=selectTrustedD1AgentModelActivation({
             role:"frontend",taskId,model:models.frontend,
             scriptedModelClass:OfflineApprovedAdkModel,
             allowGenerative:realGeminiPilot
           });
-          if(mode.needs_scripted_arming)
-            models.frontend.armTrustedD1TypecheckRepair({
-              branch,path,failedSha,taskId
-            });
+          if(mode.needs_scripted_arming){
+            if(paths.length!==1)throw Error("Scripted Frontend repair supports one observed source");
+            models.frontend.armTrustedD1TypecheckRepair({branch,path,failedSha,taskId});
+          }
           admittedFrontendRepair=Object.freeze({
-            taskId,runtimeTaskId,credentialId,path,failedSha
+            taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha
           });
           activeChildByRole.frontend=credentialId;
           activeTaskByRole.frontend=taskId;
-          expectedImplementationWriteKeys.add(writeKey(taskId,"update_file",path));
+          for(const p of paths)expectedImplementationWriteKeys.add(writeKey(taskId,"update_file",p));
         }
       });
     }

@@ -564,3 +564,80 @@ test("R151.79 acceptance candidate stays pinned to the exact observed failed req
  }).propose(acceptanceInput),/candidate differs from verified failed checks/u);
  assert.equal(wrong.requests.length,0);
 });
+
+const candidateUi=runner+"/files/ui/Actions.tsx";
+const candidateSecond=runner+"/files/src/other.ts";
+const generalAcceptanceInput={...acceptanceInput,already_delegated_grants:[
+ ...acceptanceInput.already_delegated_grants,
+ ...[candidateUi,candidateSecond].flatMap(resource=>[
+  {resource,operation:"read_file"},{resource,operation:"update_file"}])
+]};
+const generalScope={status:"verified_original_acceptance_repair_scope" as const,
+ tested_commit_sha:input.feedback.tested_commit_sha,failed_checks:["service_persistence"],
+ causal_attribution:"not_established" as const,candidates:[
+  {role:"backend" as const,resource:file},{role:"backend" as const,resource:candidateSecond},
+  {role:"frontend" as const,resource:candidateUi}
+ ]};
+
+test("R151.80 model selects a subset from original acceptance candidates without forced unrelated edits",async()=>{
+ const model=new ScriptedModel(boundedDraft());
+ const proposed=await new TrustedAdkOperationalRepairProposer({model,
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>generalScope
+ }).propose(generalAcceptanceInput);
+ assert.deepEqual(proposed,boundedDraft());
+ const sent=JSON.parse(model.requests[0]!.contents!.at(-1)!.parts!
+  .find(p=>typeof p.text==="string")!.text!);
+ assert.deepEqual(sent.diagnostic_candidates,generalScope);
+ assert.equal(sent.diagnostic_target,undefined);
+ const instructions=JSON.stringify(model.requests[0]?.config?.systemInstruction);
+ assert.match(instructions,/NOT proven causal files/u);
+ assert.match(instructions,/persist status and preserve email/u);
+ assert.doesNotMatch(instructions,/Include BOTH Backend and Frontend/u);
+});
+
+test("R151.80 multi-file acceptance can use a single original role with all edits preceding Test",async()=>{
+ const base=boundedDraft(),second={...base.tasks[0],id:"repair-secondary",
+  permissions:base.tasks[0].permissions.map(p=>({...p,resource:candidateSecond}))};
+ const plan={tasks:[base.tasks[0],second,{...base.tasks[1],depends_on:[base.tasks[0].id,second.id]}]};
+ assert.deepEqual(await new TrustedAdkOperationalRepairProposer({model:new ScriptedModel(plan),
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>generalScope
+ }).propose(generalAcceptanceInput),plan);
+});
+
+test("R151.80 candidate selection rejects writer swaps, conflicts, widened grants and missing Test dependencies",async()=>{
+ const good=boundedDraft();
+ const bad=[
+  {tasks:[{...good.tasks[0],agent_id:"frontend"},good.tasks[1]]},
+  {tasks:[{...good.tasks[0],permissions:good.tasks[0].permissions.map(p=>({...p,resource:candidateUi}))},good.tasks[1]]},
+  {tasks:[{...good.tasks[0],permissions:[...good.tasks[0].permissions,
+   {resource:candidateSecond,operation:"read_file",reason:"extra"}]},good.tasks[1]]},
+  {tasks:[good.tasks[0],{...good.tasks[1],depends_on:[]}]},
+  {tasks:[good.tasks[0],{...good.tasks[0],id:"conflicting-editor"},
+   {...good.tasks[1],depends_on:[good.tasks[0].id,"conflicting-editor"]}]},
+  {tasks:[good.tasks[0],{...good.tasks[1],permissions:[{resource:runner,
+   operation:"create_pull_request",reason:"skip tests"}]}]}
+ ];
+ for(const plan of bad)await assert.rejects(new TrustedAdkOperationalRepairProposer({
+  model:new ScriptedModel(plan),taskShape:"bounded_auto_edit_test",
+  readVerifiedRepairTarget:async()=>generalScope
+ }).propose(generalAcceptanceInput),/multi-edit|Test must depend/u);
+ const noCall=new ScriptedModel(good);
+ await assert.rejects(new TrustedAdkOperationalRepairProposer({model:noCall,
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>({...generalScope,
+   failed_checks:["ui_state_actions"]})
+ }).propose(generalAcceptanceInput),/candidate scope differs/u);
+ assert.equal(noCall.requests.length,0);
+});
+
+test("R151.80 one editor may investigate several original same-role files without granting test edits",async()=>{
+ const plan=boundedDraft();
+ plan.tasks[0].permissions.push(...plan.tasks[0].permissions.map(p=>({...p,resource:candidateSecond})));
+ assert.deepEqual(await new TrustedAdkOperationalRepairProposer({model:new ScriptedModel(plan),
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>generalScope
+ }).propose(generalAcceptanceInput),plan);
+ const wrong=structuredClone(plan);
+ wrong.tasks[0].permissions.push(...plan.tasks[0].permissions.slice(0,2).map(p=>({...p,resource:candidateUi})));
+ await assert.rejects(new TrustedAdkOperationalRepairProposer({model:new ScriptedModel(wrong),
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>generalScope
+ }).propose(generalAcceptanceInput),/original writer/u);
+});

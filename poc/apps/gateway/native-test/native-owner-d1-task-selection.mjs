@@ -55,14 +55,15 @@ export function selectSignedNativeD1Tasks({epoch,planDigest,fileUri,branchUri,
  * per-role files it previously wrote; no model-supplied file list is trusted.
  * This selects IDs and ordering, not authority, credentials or effects. */
 export function selectSignedNativeMultiD1Tasks({
- epoch,planDigest,branchUri,originalFilesByRole
+ epoch,planDigest,branchUri,originalFilesByRole,requireBothRoles=true
 }={}){
  const tasks=epoch?.plan?.tasks,grants=epoch?.plan?.requested_permissions;
  if(epoch?.epoch!==2||epoch?.plan_digest!==planDigest||
     !DIGEST.test(planDigest??"")||
     typeof branchUri!=="string"||!branchUri.startsWith("gitea://")||
-    !Array.isArray(tasks)||tasks.length<3||tasks.length>9||
-    !Array.isArray(grants)||grants.length<5||grants.length>33||
+    typeof requireBothRoles!=="boolean"||
+    !Array.isArray(tasks)||tasks.length<(requireBothRoles?3:2)||tasks.length>9||
+    !Array.isArray(grants)||grants.length<(requireBothRoles?5:3)||grants.length>33||
     !originalFilesByRole||typeof originalFilesByRole!=="object")
   deny();
  if(["backend","frontend"].some(role=>
@@ -91,8 +92,8 @@ export function selectSignedNativeMultiD1Tasks({
  const editors=tasks.filter(t=>t.agent_id!=="test");
  const test=tasks.filter(t=>t.agent_id==="test");
  if(test.length!==1||editors.length!==tasks.length-1||
-    !editors.some(t=>t.agent_id==="backend")||
-    !editors.some(t=>t.agent_id==="frontend"))
+    (requireBothRoles&&(!editors.some(t=>t.agent_id==="backend")||
+      !editors.some(t=>t.agent_id==="frontend"))))
   deny();
  const used=new Set(),results=[];
  for(const task of editors){
@@ -119,7 +120,7 @@ export function selectSignedNativeMultiD1Tasks({
    fileUris:Object.freeze([...files.keys()].sort())
   }));
  }
- if(used.size<2||used.size>8)deny();
+ if(used.size<(requireBothRoles?2:1)||used.size>8)deny();
  const testGrants=grants.filter(g=>g.task_id===test[0].id);
  if(testGrants.length!==1||testGrants[0].agent_id!=="test"||
     testGrants[0].operation!=="run_tests"||

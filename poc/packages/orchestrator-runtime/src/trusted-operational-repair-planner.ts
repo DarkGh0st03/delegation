@@ -153,6 +153,13 @@ export interface TrustedRepairModelInput {
   tested_commit_sha:string;role:"backend"|"frontend";resource:string;
   failed_checks:readonly string[];
  }>;
+ /** Original source options; model selection does not establish causal provenance. */
+ readonly diagnostic_candidates?:Readonly<{
+  status:"verified_original_acceptance_repair_scope";
+  tested_commit_sha:string;failed_checks:readonly string[];
+  causal_attribution:"not_established";
+  candidates:readonly Readonly<{role:"backend"|"frontend";resource:string}>[];
+ }>;
  readonly diagnostic_targets?:Readonly<{
   status:"verified_runner_multi_file_repair_targets";
   tested_commit_sha:string;

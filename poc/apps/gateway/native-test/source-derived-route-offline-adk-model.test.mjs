@@ -283,3 +283,22 @@ test("R151.79 semantic acceptance repair reads actual failed SHA and restores on
  assert.match(finish.text,/confirmed through protected Gateway/u);
  assert.throws(()=>m.armTrustedD1AcceptanceRepair(args),/NO-GO/u);
 });
+
+test("R151.80 acceptance editor investigates multiple authorized source reads and changes only observed faulty file",async()=>{
+ const {injectAcceptanceFault,ACCEPTANCE_ORIGINAL}=await import("./offline-acceptance-repair-fixture.mjs");
+ const m=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
+ await next(m,{});await next(m,input({ok:true,result:data}));await next(m,{});
+ const shared="packages/shared/src/account-status.ts",service="apps/backend/src/users/user.service.ts";
+ const failedSha="b".repeat(40);
+ m.armTrustedD1AcceptanceRepair({branch,path:shared,paths:[shared,service],
+  failedSha,taskId:"investigate-multiple-sources"});
+ assert.deepEqual((await next(m,{})).functionCall.args,{branch,path:shared});
+ const second=(await next(m,input({ok:true,result:{...data,path:shared,
+  revision:failedSha,content:'export const ACTIVE="ACTIVE";\n'}}))).functionCall;
+ assert.deepEqual(second,{id:"r151-acceptance-source-2",name:"read_file",args:{branch,path:service}});
+ const source="class Lifecycle { step() { "+ACCEPTANCE_ORIGINAL+" } }\n";
+ const write=(await next(m,input({ok:true,result:{...data,path:service,
+  revision:failedSha,content:injectAcceptanceFault(source)}}))).functionCall;
+ assert.equal(write.name,"update_file");assert.equal(write.args.path,service);
+ assert.equal(write.args.content,source);
+});
