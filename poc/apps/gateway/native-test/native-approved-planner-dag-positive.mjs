@@ -33,6 +33,8 @@ import {startSpecializedAgentServer} from
 import {DeterministicA2AOrchestrator} from
   "../../../packages/agent-runtime/src/orchestrator.ts";
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
+import {selectTrustedD1AgentModelActivation} from
+  "./trusted-d1-agent-model-activation.mjs";
 import {SIGNED_GEMINI_PILOT}
   from "../../../scripts/signed-gemini-pilot-consent.mjs";
 import {SourceWitnessedOfflineAdkModel}
@@ -788,11 +790,10 @@ export async function runNativePositiveApprovedDag({
           taskId,role,runtimeTaskId,credentialId,repairedSha
         }){
           if(admittedTestRepair||!admittedBackendRepair||
-             !offlineTypecheckProbe||realGeminiPilot||
+             !(offlineTypecheckProbe||realGeminiPilot)||
              role!=="test"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(repairedSha)||
-             !(models.test instanceof OfflineApprovedAdkModel)||
              runnerOutcome?.status!=="fail"||
              runnerHistory.length!==1||
              repairedSha===runnerOutcome.tested_commit_sha||
@@ -808,7 +809,15 @@ export async function runNativePositiveApprovedDag({
                g.task_id===taskId&&g.agent_id==="test"&&
                g.operation==="run_tests"&&g.resource===scopedBranch))
             throw Error("R150.9 Test not granted by independently admitted D1");
-          models.test.armTrustedD1TestRun({branch,taskId});
+          const modelMode=selectTrustedD1AgentModelActivation({
+            role:"test",taskId,model:models.test,
+            scriptedModelClass:OfflineApprovedAdkModel,
+            allowGenerative:realGeminiPilot
+          });
+          if(modelMode.needs_scripted_arming)
+            models.test.armTrustedD1TestRun({branch,taskId});
+          // A real model continues within a NEW signed A2A Task; the
+          // original trusted Gateway still enforces role/Task/VP/OPA scope.
           admittedTestRepair=Object.freeze({
             taskId,runtimeTaskId,credentialId,repairedSha
           });
@@ -821,13 +830,12 @@ export async function runNativePositiveApprovedDag({
           // Only the original trusted owner may invoke this after real
           // R134 child issuance. Source/model claims grant NOTHING.
           if(admittedBackendRepair||
-             !offlineTypecheckProbe||realGeminiPilot||
+             !(offlineTypecheckProbe||realGeminiPilot)||
              role!=="backend"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(failedSha)||
              runnerOutcome?.status!=="fail"||
              runnerOutcome?.tested_commit_sha!==failedSha||
-             !(models.backend instanceof SourceDerivedRouteOfflineAdkModel)||
              !files.backend.includes(path)||!readableFiles.backend.includes(path)||
              (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
             throw Error("R150.8 trusted Backend repair binding NO-GO");
@@ -843,9 +851,15 @@ export async function runNativePositiveApprovedDag({
             throw Error("R150.8 owner D1 repair outside signed epoch scope");
           // A new A2A Task receives a distinct source-read journal and
           // only its independently signed exact write key may be observed.
-          models.backend.armTrustedD1TypecheckRepair({
-            branch,path,failedSha,taskId
+          const modelMode=selectTrustedD1AgentModelActivation({
+            role:"backend",taskId,model:models.backend,
+            scriptedModelClass:SourceDerivedRouteOfflineAdkModel,
+            allowGenerative:realGeminiPilot
           });
+          if(modelMode.needs_scripted_arming)
+            models.backend.armTrustedD1TypecheckRepair({
+              branch,path,failedSha,taskId
+            });
           admittedBackendRepair=Object.freeze({
             taskId,runtimeTaskId,credentialId,path,failedSha
           });
