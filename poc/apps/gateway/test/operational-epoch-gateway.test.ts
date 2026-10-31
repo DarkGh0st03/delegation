@@ -4895,6 +4895,12 @@ test("R151.55 same native owner discovery supplies attested source to planner an
  // Admit the signed epoch through the same Gateway registry and execute
  // its signed Backend -> Test DAG with fresh Child DCs. Adapter, A2A and
  // Runner effects remain explicit scripted ports in this test.
+ const signedHistory=await h.f.h.inspector!.verifiedEpochHistoryForAdmission({
+  session_id:session,root_plan_digest:planDigest(h.f.h.parent),
+  plan_digest:reserved.plan_digest,epoch:2
+ });
+ assert.equal(signedHistory.length,2,
+  "Gateway must independently observe the newly signed repair epoch");
  const admission=await h.f.client.admitVerifiedOperationalEpoch({
   session_id:session,root_plan_digest:planDigest(h.f.h.parent),
   plan_digest:reserved.plan_digest,epoch:2
