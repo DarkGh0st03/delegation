@@ -50,3 +50,40 @@ test("R150.9 owner cannot re-arm another role, wrong Task, unsafe branch",async(
   assert.throws(()=>m.armTrustedD1TestRun(p),/cannot reuse/);
  }
 });
+
+test("R151.75 real-source Frontend D1 only removes the observed TypeScript fault",async()=>{
+ const m=model("frontend"),path="apps/frontend/src/pages/UserDetailPage.tsx";
+ const failedSha="a".repeat(40),nextSha="b".repeat(40);
+ const arm={branch,path,failedSha,taskId:"frontend-d1-fix"};
+ assert.throws(()=>m.armTrustedD1TypecheckRepair(arm),/new signed Task/);
+ for(let i=0;i<3;i++)await next(m);
+ assert.throws(()=>m.armTrustedD1TypecheckRepair({...arm,path:"../foreign.tsx"}),
+  /new signed Task/);
+ m.armTrustedD1TypecheckRepair(arm);
+ assert.throws(()=>m.armTrustedD1TypecheckRepair(arm),/new signed Task/);
+ assert.equal((await next(m)).functionCall.name,"read_file");
+ const fault='\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
+ const source="export const ui = 1;"+fault;
+ const result={contents:[{parts:[{functionResponse:{
+  name:"read_file",response:{ok:true,result:{
+   provider:"gitea",performed:true,tool:"read_file",
+   branch,path,revision:failedSha,content:source
+  }}
+ }}]}]};
+ const change=[];
+ for await(const response of m.generateContentAsync(result))
+  change.push(response.content.parts[0]);
+ assert.equal(change[0].functionCall.name,"update_file");
+ assert.equal(change[0].functionCall.args.content,"export const ui = 1;\n");
+ const write={contents:[{parts:[{functionResponse:{
+  name:"update_file",response:{ok:true,result:{
+   provider:"gitea",performed:true,tool:"update_file",
+   branch,path,commit_sha:nextSha
+  }}
+ }}]}]};
+ const done=[];
+ for await(const response of m.generateContentAsync(write))
+  done.push(response.content.parts[0]);
+ assert.match(done[0].text,/Frontend D1 updated/);
+ assert.throws(()=>m.armTrustedD1TypecheckRepair(arm),/new signed Task/);
+});
