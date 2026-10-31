@@ -452,3 +452,29 @@ test("Vitest failed suites return only bounded filenames without raw error text"
   assert.ok(!JSON.stringify(result).includes("PRIVATE_ASSERTION"));
   assert.equal(result.phases.find(p=>p.phase==="build")?.status,"skipped");
 });
+
+test("Acceptance FAIL preserves check IDs on the exact SHA and still cleans the container",async()=>{
+  const summary={failed_checks:["ui_pending_actions"],timed_out:false,unclassified_failure:false};
+  let fetched=0,cleaned=false;
+  const executor=new IsolatedDockerRunnerExecutor({...config,
+    acceptance_enabled:true,acceptance_dir:resolve("researcher-owned","acceptance")},{
+    fetch_fn:async()=>++fetched===1
+      ?new Response(JSON.stringify({commit:{id:request.commit_sha}}),{status:200})
+      :new Response(Buffer.from("fake-tar-gz"),{status:200}),
+    command_runner:async(_command,args)=>{
+      if(args[0]==="rm")cleaned=true;
+      return args.at(-1)===runnerResearcherAcceptanceCommand
+        ?{exit_code:1,timed_out:false,stdout:"[researcher-acceptance] failure_summary "+
+          JSON.stringify(summary),stderr:"PRIVATE_ASSERTION"}
+        :{exit_code:0,timed_out:false,stdout:"",stderr:""};
+    }
+  });
+  const result=await executor.run(request);
+  assert.equal(result.status,"fail");
+  assert.equal(result.project_tests?.status,"pass");
+  assert.equal(result.researcher_acceptance?.status,"fail");
+  assert.equal(result.tested_commit_sha,request.commit_sha);
+  assert.deepEqual(result.acceptance_failure,summary);
+  assert.ok(cleaned);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_ASSERTION/u);
+});

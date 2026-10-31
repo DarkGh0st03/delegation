@@ -1,3 +1,4 @@
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
  * Structured, secret-free failure diagnostics for the disposable native
  * signed DAG's REAL Docker acceptance. Child stderr can contain source,
@@ -32,6 +33,13 @@ function parseExact(marker){
   const firstFailed=statuses.find(x=>x.status==="fail");
   // A bounded code-only diagnostic; arbitrary compiler output and paths
   // are never re-emitted. Invalid metadata rejects the whole event.
+  let acceptanceFailure;
+  if(marker.acceptance_failure!==undefined){
+    if(firstFailed?.phase!=="researcher_acceptance"||
+       marker.project_tests!=="pass"||marker.researcher_acceptance!=="fail")return null;
+    acceptanceFailure=safeAcceptanceFailureSummary(marker.acceptance_failure);
+    if(!acceptanceFailure)return null;
+  }
   let typecheckCodes;
   if(marker.typecheck_error_codes!==undefined){
     const codes=marker.typecheck_error_codes;
@@ -78,6 +86,7 @@ function parseExact(marker){
     phases:Object.freeze(statuses),
     project_tests:marker.project_tests,
     researcher_acceptance:marker.researcher_acceptance,
+    ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
     ...(typecheckCodes?{typecheck_error_codes:typecheckCodes}:{}),
     ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{}),
     ...(revisionComparison?{typecheck_revision_comparison:revisionComparison}:{}),

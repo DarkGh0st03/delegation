@@ -1,3 +1,4 @@
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import { ProviderUnavailableError } from "./errors.ts";
 import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
   type TypecheckLocation}
@@ -39,6 +40,7 @@ export interface RunnerClientResult {
   researcher_acceptance?: RunnerPhaseExecutionResult & {
     phase: "researcher_acceptance";
   };
+  acceptance_failure?: import("../../test-runner-controller/src/types.ts").RunnerRunResult["acceptance_failure"];
   log_reference?: string;
   typecheck_diagnostics?: TypecheckLocation[];
   typecheck_error_codes?: string[];
@@ -194,7 +196,13 @@ export class RunnerClient {
       );
     }
 
+    const acceptanceFailure = status==="fail"&&projectStatus==="pass"&&
+      researcherAcceptance?.status==="fail"&&
+      parsePhases(body.phases).every(p=>p.phase==="researcher_acceptance"
+        ?p.status==="fail":p.status==="pass")
+      ?safeAcceptanceFailureSummary(body.acceptance_failure):null;
     const result: RunnerClientResult = {
+      ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
       request_id: string(body.request_id, "request_id"),
       repository: string(body.repository, "repository"),
       branch: string(body.branch, "branch"),

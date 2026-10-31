@@ -358,6 +358,7 @@ export interface RunnerExecutionResult {
   typecheck_error_codes?: string[];
   /** Bounded Vitest failed file paths, never text or source. */
   failing_test_files?: string[];
+  acceptance_failure?: import("../../test-runner-controller/src/types.ts").RunnerRunResult["acceptance_failure"];
 }
 
 export type ExecutionResult =

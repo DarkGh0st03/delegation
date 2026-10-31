@@ -123,3 +123,17 @@ test("R82 double filter never exports compiler paths or forged provenance",async
   assert.equal(safe(prefix+JSON.stringify({...raw,
     typecheck_revision_comparison:{...audit,source:"MALICIOUS"}})),null);
 });
+
+test("Acceptance check IDs survive pilot double filtering only with acceptance FAIL",()=>{
+  const acceptance_failure={failed_checks:["ui_pending_actions"],
+    timed_out:false,unclassified_failure:false};
+  const event={...sample("researcher_acceptance"),project_tests:"pass",
+    researcher_acceptance:"fail",acceptance_failure};
+  assert.deepEqual(safe(prefix+JSON.stringify(event))?.acceptance_failure,acceptance_failure);
+  for(const bad of [
+    {...event,acceptance_failure:{...acceptance_failure,source:"LEAK"}},
+    {...event,acceptance_failure:{...acceptance_failure,failed_checks:["HIDDEN_KEY"]}},
+    {...event,project_tests:"fail"},
+    {...sample("typecheck"),acceptance_failure}
+  ])assert.equal(safe(prefix+JSON.stringify(bad)),null);
+});

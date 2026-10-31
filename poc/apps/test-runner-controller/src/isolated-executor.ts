@@ -1,3 +1,4 @@
+import {extractAcceptanceFailureSummary} from "./acceptance-diagnostics.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -264,6 +265,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     let typecheckDiagnostics:ReturnType<typeof extractTypecheckLocations>=[];
     let typecheckErrorCodes:string[]=[];
     let failingTestFiles:string[]=[];
+    let acceptanceFailure:ReturnType<typeof extractAcceptanceFailureSummary>=null;
     let containerCreateAttempted = false;
     let failed = false;
 
@@ -416,6 +418,9 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
             status: "pass"
           };
         } else {
+          acceptanceFailure = result.timed_out
+            ? {failed_checks: [], timed_out: true, unclassified_failure: true}
+            : extractAcceptanceFailureSummary(result.stdout, result.stderr);
           failed = true;
           researcherAcceptance = {
             phase: "researcher_acceptance",
@@ -452,6 +457,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           ?{typecheck_error_codes:typecheckErrorCodes}:{}),
         ...(failingTestFiles.length>0
           ?{failing_test_files:failingTestFiles}:{}),
+        ...(acceptanceFailure ? {acceptance_failure: acceptanceFailure} : {}),
         project_tests: {
           status: projectStatus,
           phases: projectPhases

@@ -1,3 +1,4 @@
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
  * One native, signed four-task DAG over the disposable Gitea repository:
  *   branch -> Backend -> Frontend -> Test
@@ -690,6 +691,10 @@ export async function runNativePositiveApprovedDag({
               phases:effect.phases?.map(x=>({phase:x.phase,status:x.status})),
               project_tests:effect.project_tests?.status,
               researcher_acceptance:effect.researcher_acceptance?.status,
+              ...(effect.status==="fail"&&effect.project_tests?.status==="pass"&&
+                effect.researcher_acceptance?.status==="fail"&&
+                safeAcceptanceFailureSummary(effect.acceptance_failure)
+                ?{acceptance_failure:safeAcceptanceFailureSummary(effect.acceptance_failure)}:{}),
               ...(typecheckCodes.length?
                 {typecheck_error_codes:typecheckCodes}:{}),
               ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{}),

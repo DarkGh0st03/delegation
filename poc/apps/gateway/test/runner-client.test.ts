@@ -186,3 +186,26 @@ test("RunnerClient carries only valid fileless TypeScript codes",async()=>{
   const nonCompiler=await run({...fixture,phases:[{phase:"frontend_tests",status:"fail"}]});
   assert.equal(nonCompiler.typecheck_error_codes,undefined);
 });
+
+test("RunnerClient forwards fixed acceptance labels only for an acceptance-only FAIL",async()=>{
+  const acceptance_failure={failed_checks:["ui_pending_actions"],
+    timed_out:false,unclassified_failure:false};
+  const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
+    "build","playwright_e2e","researcher_acceptance"].map(phase=>({
+      phase,status:phase==="researcher_acceptance"?"fail":"pass"}));
+  const fixture={request_id:request.request_id,repository:request.repository,
+    branch:request.branch,tested_commit_sha:request.commit_sha,runner_profile:"poc-default",
+    status:"fail",phases,project_tests:{status:"pass",phases:phases.slice(0,-1)},
+    researcher_acceptance:phases.at(-1),acceptance_failure};
+  const run=async(data:unknown)=>new RunnerClient({
+    baseUrl:"http://runner.internal:8095",gatewayToken:"private-runner-token",
+    fetchFn:async()=>new Response(JSON.stringify(data),{status:200})
+  }).run(request);
+  assert.deepEqual((await run(fixture)).acceptance_failure,acceptance_failure);
+  assert.equal((await run({...fixture,acceptance_failure:{...acceptance_failure,
+    raw_assertion:"PRIVATE"}})).acceptance_failure,undefined);
+  assert.equal((await run({...fixture,status:"pass"})).acceptance_failure,undefined);
+  assert.equal((await run({...fixture,project_tests:{status:"fail",phases}}))
+    .acceptance_failure,undefined);
+  await assert.rejects(run({...fixture,tested_commit_sha:"b".repeat(40)}),/authorized request/u);
+});

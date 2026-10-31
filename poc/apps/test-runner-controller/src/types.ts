@@ -47,6 +47,12 @@ export interface RunnerRunResult {
   project_tests?: RunnerProjectTestsResult;
   researcher_acceptance?: RunnerResearcherAcceptanceResult;
   log_reference?: string;
+  /** Fixed researcher check IDs only; diagnostic, never repair authorization. */
+  acceptance_failure?: Readonly<{
+    failed_checks: readonly string[];
+    timed_out: boolean;
+    unclassified_failure: boolean;
+  }>;
   /** Trusted metadata only; agents must filter by approved read paths. */
   typecheck_diagnostics?: TypecheckLocation[];
   /** Fileless, source-free compiler error codes for diagnostics only. */
