@@ -47,7 +47,7 @@ export class OfflineApprovedAdkModel extends BaseLlm{
        this.#withinGroup!==0||this.#callIndex!==this.#calls.length||
        typeof branch!=="string"||!/^feature\/[A-Za-z0-9._/-]+$/u.test(branch)||
        branch.split("/").some(s=>s==="."||s==="..")||
-       taskId!=="r150-owner-test-fresh")
+       typeof taskId!=="string"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId))
       throw Error("R150.9 Test Task cannot reuse the original signed A2A run");
     this.#calls.push(Object.freeze({
       name:"run_tests",args:Object.freeze({branch,profile:"poc-default"})
