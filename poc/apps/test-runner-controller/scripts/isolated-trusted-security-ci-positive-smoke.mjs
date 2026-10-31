@@ -915,6 +915,7 @@ async function main(){
             // Its flag belongs solely to the later signed operational DAG.
             APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE:"0",
             APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1:"0",
+            APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE:"0",
             // The earlier denial-only rehearsal NEVER consumes Gemini calls.
             DELEGATION_SIGNED_GEMINI_PILOT:"0"
           }
