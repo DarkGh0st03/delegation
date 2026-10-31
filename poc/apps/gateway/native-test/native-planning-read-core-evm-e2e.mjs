@@ -1213,14 +1213,14 @@ try{
           ?selectSourceDerivedTargetsFromApprovedPlan({
             plan:reviewed.plan,approvedRows,repo,branch:workBranch
           }):[];
-        // The mixed zero-billing D1 fixture uses OfflineApprovedAdkModel
-        // for Frontend to support a second signed repair Task. That scripted
+        // Both mixed-TypeScript and acceptance zero-billing D1 fixtures use
+        // OfflineApprovedAdkModel for Frontend, with complete source fixtures. That scripted
         // model can consume complete signed-grant file fixtures, but CANNOT
         // synthesize the content-free API update reserved for the independent
         // SourceWitnessed model. Keep Backend source-derived route checks,
         // and do not emit an unfulfillable Frontend update_file call here.
         // This changes NO grants, Gateway checks or paid Gemini behavior.
-        const derivedPaths=multiTypecheckProbe
+        const derivedPaths=(multiTypecheckProbe||signedOfflineAcceptanceProbe)
           ?signedDerivedPaths.filter(path=>roleFiles.backend.includes(path))
           :signedDerivedPaths;
         const otherImplementations={...referenceFiles};

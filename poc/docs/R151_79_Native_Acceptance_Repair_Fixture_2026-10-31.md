@@ -68,3 +68,21 @@ nominates targets from compiler locations; no general acceptance source
 attribution has been enabled there. A paid rerun remains premature until the
 free native proof passes and a separately verified acceptance investigation
 path is connected to the real model. No Gemini call was made; main is unchanged.
+
+
+## R151.79.1 — observed CI blocker
+
+The first R151.79 Functional Signed DAG run (41235196004) failed before Docker:
+Frontend completed four reads and three updates, then its fourth update
+returned tool_unavailable. There is no Runner verdict from this execution.
+The new acceptance mode had inherited a content-free source-derived Frontend
+API update while using OfflineApprovedAdkModel. That scripted model requires
+complete update content; only SourceWitnessedOfflineAdkModel can generate the
+omitted payload. The existing mixed-TypeScript fixture already excludes that
+unsupported derived Frontend edit. Apply the same selection to acceptance
+mode: keep source-derived Backend checks and supply complete, already signed
+Frontend fixture content. Grants, production models and acceptance assertions
+are unchanged. The revised native proof still requires a new CI result.
+
+Additional local evidence: all 29 focused tests also passed on the exact pinned
+Node 22.15.0 runtime before this correction.
