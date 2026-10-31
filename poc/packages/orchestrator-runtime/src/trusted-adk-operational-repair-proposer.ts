@@ -123,7 +123,11 @@ function assertBoundedBackendTestDraft(result:unknown,
  const tp=test.permissions as {resource?:unknown;operation?:unknown}[];
  const updates=bp.filter(p=>p?.operation==="update_file");
  const editResource=updates.length===1?updates[0]?.resource:undefined;
- if(typeof editResource!=="string"||!scope.edits.has(editResource)||
+ // R151.19: the bounded D1 Backend Child DC is exactly one file:
+ // read_file and update_file of that same file, no extra discovery scope.
+ if(bp.length!==2||
+    bp.filter(p=>p?.operation==="read_file").length!==1||
+    typeof editResource!=="string"||!scope.edits.has(editResource)||
     !bp.some(p=>p?.operation==="read_file"&&p.resource===editResource)||
     bp.some(p=>!p||!["read_file","update_file"].includes(
       String(p.operation))||typeof p.resource!=="string"||
@@ -250,7 +254,7 @@ export class TrustedAdkOperationalRepairProposer {
     "The Engineer will not approve Task/agent allocation or retry counts.",
     ...(this.#taskShape==="backend_test"?[
      "This repair epoch supports EXACTLY two Tasks: one Backend and one Test.",
-     "Backend must have read_file and update_file for the SAME originally granted Backend source file.",
+     "Backend must have EXACTLY two permissions: read_file and update_file for ONE and the SAME originally granted Backend source file; no extra read grants.",
      "Test must have run_tests on the already approved feature branch, depending on Backend.",
      "Do NOT propose Frontend, extra Tasks, or a PR Task; the owner handles review-only PR after revocation."
     ]:[

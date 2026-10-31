@@ -125,6 +125,7 @@ test("R151.13 bounded signed D1 proposes only Backend -> Test with exact existin
  const instructions=JSON.stringify(model.requests[0]?.config?.systemInstruction??{});
  assert.match(instructions,/EXACTLY two Tasks/);
  assert.match(instructions,/Do NOT propose Frontend/);
+ assert.match(instructions,/no extra read grants/);
 });
 test("R151.13 no inference if original root cannot express a bounded Backend/Test D1",async()=>{
  const cases=[
@@ -144,6 +145,27 @@ test("R151.13 no inference if original root cannot express a bounded Backend/Tes
   assert.equal(model.requests.length,0);
  }
 });
+test("R151.19 rejects extra Backend reads even if original Rust root allows them",async()=>{
+ const extraFile=runner+"/files/src/ledger.ts";
+ const rooted={...boundedInput,already_delegated_grants:[
+  ...boundedInput.already_delegated_grants,
+  {resource:extraFile,operation:"read_file"}
+ ]};
+ for(const resource of [extraFile,file]){
+  const baseline=boundedDraft();
+  const proposed={tasks:[
+   {...baseline.tasks[0],permissions:[...baseline.tasks[0].permissions,{
+    resource,operation:"read_file",reason:"Unnecessary extra read"
+   }]},baseline.tasks[1]
+  ]};
+  const model=new ScriptedModel(proposed);
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model,taskShape:"backend_test"
+  }).propose(rooted),/bounded repair Task grants/);
+  assert.equal(model.requests.length,1);
+ }
+});
+
 test("R151.13 malformed bounded model DAG cannot reach owner admission",async()=>{
  const good=boundedDraft();
  const bad=[
