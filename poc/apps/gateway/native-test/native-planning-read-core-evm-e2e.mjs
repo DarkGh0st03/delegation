@@ -757,20 +757,24 @@ try{
           selectSourceDerivedTargetsFromApprovedPlan({
             plan:currentPlan,approvedRows:grants,repo,branch:workBranch
           }):[];
-        const target=roleFiles.backend.find(path=>
+        // R151.18: eligibility for paid repair must NOT inherit the
+        // synthetic fault injector's "!derivedPaths" exclusion. An existing
+        // source-derived Backend file remains an eligible signed D1 target.
+        // Only the offline TS2820 fixture needs a separate non-derived file.
+        const signedBackendRepairTargets=roleFiles.backend.filter(path=>
           path.startsWith("apps/backend/src/")&&path.endsWith(".ts")&&
-          !derivedPaths.includes(path)&&
           grants.some(g=>g.agent_id==="backend"&&g.operation==="read_file"&&
             g.resource===canonicalFileUri(repo,workBranch,path))&&
           grants.some(g=>g.agent_id==="backend"&&g.operation==="update_file"&&
             g.resource===canonicalFileUri(repo,workBranch,path)));
-        // R151.17: fail BEFORE even constructing a paid repair proposer if
-        // the live approved Backend scope cannot implement the supported D1.
-        // This only checks for an executable existing original-root target;
-        // Gemini still proposes the actual D1 Task/file and the trusted
-        // planner, Rust, Gateway and fresh Child DC independently enforce it.
-        if(!target)
-          throw Error("R151.17 NO-GO: signed Backend read_file/update_file source missing before repair inference");
+        const target=signedBackendRepairTargets.find(path=>
+          !derivedPaths.includes(path));
+        if(signedBackendRepairTargets.length===0)
+          throw Error("R151.18 NO-GO: no signed Backend read_file/update_file source for D1");
+        if(!paidGeminiRecovery&&!target)
+          throw Error("R151.18 NO-GO: no non-derived Backend TypeScript fault target");
+        // The trusted proposer still selects its own bounded D1 file; Rust
+        // and Gateway independently validate the proposed grants afterwards.
         // For a real Gemini repair the new signed D1 epoch, NOT this fixture
         // selector, decides which previously authorized source is editable.
         const fileResource=target?
