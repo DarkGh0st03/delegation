@@ -11,6 +11,8 @@ import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 import {TrustedCryptoMcpBridge} from "./trusted-crypto-mcp-bridge.ts";
+import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A,
+ type TrustedBackendDiscoveryA2ABinding} from "./trusted-backend-discovery-a2a-binding.ts";
 import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGenerationConfig } from "./adk-specialized-agents.ts";
 import type { DeterministicTaskHandler } from "./executor.ts";
@@ -43,6 +45,8 @@ export interface AdkA2ATaskHandlerConfig {
   mcpCreateFile?: boolean;
   /** Test Agent only: route controlled run_tests via the shared MCP server. */
   mcpRunTests?: boolean;
+  /** Opt-in private Child signer for one exact Gateway-bound Backend read. */
+  trustedBackendDiscovery?:TrustedBackendDiscoveryA2ABinding;
   fetchFn?: FetchLike;
 }
 
@@ -182,6 +186,8 @@ class BoundedModel extends BaseLlm {
  */
 export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): DeterministicTaskHandler {
   // Reject bad configuration at server startup, before accepting any requests.
+  if(config.trustedBackendDiscovery)
+    validateTrustedBackendDiscoveryA2ABinding(config.trustedBackendDiscovery);
   if (config.mcpUpdateFile && !config.mcpSharedUrl) {
     throw new Error("Shared MCP update_file requires MCP to be configured");
   }
@@ -219,6 +225,10 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   }
 
   return async (context: AgentTaskContext, signal?: AbortSignal): Promise<AgentArtifactPayload> => {
+    const selectedDiscovery=selectTrustedBackendDiscoveryA2A(
+      config.trustedBackendDiscovery,context
+    );
+    try{
     const taskStart = performance.now();
     // A signed Test preparation Task may create/update tests without owning
     // the separate final Docker run_tests grant. Never infer the runner
@@ -250,12 +260,21 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(signal ? {signal} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
+    // The MCP crypto worker and direct Gateway client use the SAME
+    // exact-Child presentation. Never fall back to the generic Adapter
+    // bearer on this Task, including when shared MCP is enabled.
+    const discoveryEvidence=selectedDiscovery?{
+      credentialId:context.delegation_evidence.credential_id,
+      presenterId:context.delegation_evidence.presenter_id,
+      createPresentation:(p:import("./delegation-evidence-handler.ts")
+       .PreparedGatewayAuthorization)=>selectedDiscovery.createSignedPresentation(p)
+    }:undefined;
     const cryptoPresentation = config.mcpCryptoUrl && config.mcpTaskRegistry
       ? new TrustedCryptoMcpBridge({
           endpoint:config.mcpCryptoUrl,registry:config.mcpTaskRegistry,
           taskId:context.task_id
         })
-      : undefined;
+      : selectedDiscovery;
     const gatewayClient = new GatewayControlledToolClient({
       gatewayBaseUrl: config.gatewayBaseUrl,
       agentRole: context.role,
@@ -292,7 +311,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
              ...(context.subtask.approved_file_permissions!==undefined
                ? {allowedFilePermissions:context.subtask.approved_file_permissions}:{})
            } : {}),
-       evidenceHandler});
+       evidenceHandler:discoveryEvidence??evidenceHandler});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
       ...(config.mcpUpdateFile ? {mcpUpdateFile:true} : {}),
@@ -536,5 +555,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(projectTests ? {project_tests: projectTests} : {}),
       ...(researcherAcceptance ? {researcher_acceptance: researcherAcceptance} : {})
     };
+    }finally{
+      // Active-task revocation cannot be inferred from model output.
+      selectedDiscovery?.fence();
+    }
   };
 }

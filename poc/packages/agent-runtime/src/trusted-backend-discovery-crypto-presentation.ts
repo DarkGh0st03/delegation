@@ -55,6 +55,11 @@ export class TrustedBackendDiscoveryCryptoPresentation
   if(this.#fenced||!this.#isTaskActive())
    deny("Backend discovery Task closed or cancelled");
  }
+ /** R151.36: trusted owner config cannot substitute another Child signer. */
+ matchesPins(pins:Readonly<{childCredentialId:string;resource:string;audience:string}>){
+  return !!pins&&pins.childCredentialId===this.#credential&&
+   pins.resource===this.#resource&&pins.audience===this.#audience;
+ }
  /** A canceled/retired Task cannot issue any additional proof. */
  fence(){this.#fenced=true;this.#holder.fence();}
  async createSignedPresentation(prepared:PreparedGatewayAuthorization){
