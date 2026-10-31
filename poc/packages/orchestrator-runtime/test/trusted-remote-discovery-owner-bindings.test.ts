@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {createTrustedRemoteDiscoveryOwnerBindings} from
  "../src/trusted-remote-discovery-owner-bindings.ts";
 
-test("R151.48.3 owner refuses a loose untrusted callback or forged issuer/handoff",()=>{
+test("R151.49 owner refuses a forged issuer/handoff or unpaired private source",()=>{
  const cases=[null,{},{
   issuer:{issueSpecializedChild:async()=>{}},handoff:{dispatchIssuedChild:async()=>{}},
   issueInput:{selection:{role:"backend"}}

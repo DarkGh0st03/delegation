@@ -35,6 +35,8 @@ import {completeTrustedRemoteDiscoveryForPlanning} from
  "./trusted-remote-discovery-planner-bridge.ts";
 import type {TrustedRemoteDiscoveryA2AHandoff} from
  "./trusted-remote-discovery-a2a-handoff.ts";
+import {TrustedRemoteDiscoveryOwnerBindings} from
+ "./trusted-remote-discovery-owner-bindings.ts";
 
 /** Local operator data ports only. Session/root/Gateway/epoch/Engineer
  * identity are derived exclusively from signed owner state. */
@@ -94,6 +96,9 @@ export async function armTrustedOwnerOperationalRecovery(config:{
    * a model or external A2A callback here. */
   dispatchRemoteDiscovery?:()=>ReturnType<
    TrustedRemoteDiscoveryA2AHandoff["dispatchIssuedChild"]>;
+  /** R151.49: preferred concrete paired issuer/remote private read.
+   * Cannot be mixed with loose discovery or source callbacks. */
+  trustedRemoteDiscovery?:TrustedRemoteDiscoveryOwnerBindings;
   /** R125: explicit owner opt-in to ACTUAL Gateway epoch admission.
    * Requires a genuinely Gateway-bound independently signed epoch Intake. */
   admitReservedEpoch?:boolean;
@@ -118,12 +123,19 @@ export async function armTrustedOwnerOperationalRecovery(config:{
        (config.planRepairEpoch!.proposeRepairPlan!==undefined&&!callback)||
        (config.planRepairEpoch!.trustedAdkProposer!==undefined&&!typedAdk))))
   fail("exactly one trusted owner continuation or configured repair planner required");
+ const paired=config.planRepairEpoch?.trustedRemoteDiscovery;
+ if(paired!==undefined&&
+    (!(paired instanceof TrustedRemoteDiscoveryOwnerBindings)||
+     config.planRepairEpoch!.completedDiscoveryRead!==undefined||
+     config.planRepairEpoch!.dispatchRemoteDiscovery!==undefined||
+     config.planRepairEpoch!.loadCompletedDiscoverySource!==undefined))
+  fail("paired discovery cannot mix signer, Task or private source callbacks");
  if(config.planRepairEpoch?.loadCompletedDiscoverySource&&
     (!config.planRepairEpoch.dispatchRemoteDiscovery&&
      !config.planRepairEpoch.completedDiscoveryRead))
   fail("source delivery needs a verified Backend discovery Task");
- if(config.planRepairEpoch?.dispatchRemoteDiscovery&&
-    (config.planRepairEpoch.completedDiscoveryRead!==undefined||
+ if((paired||config.planRepairEpoch?.dispatchRemoteDiscovery)&&
+    (config.planRepairEpoch?.completedDiscoveryRead!==undefined||
      typeof config.coordinator?.closeExecution!=="function"))
   fail("dynamic discovery requires exclusive owner callback and fail-closed root shutdown");
  if(config.planRepairEpoch?.executeAdmittedRepairDag&&
@@ -209,13 +221,15 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     let discovered:Readonly<{
       task_id:string;runtime_task_id:string;resource:string;
     }>|undefined;
-    if(config.planRepairEpoch!.dispatchRemoteDiscovery){
+    if(paired||config.planRepairEpoch!.dispatchRemoteDiscovery){
       try{
         await config.verifyLiveRun?.();
         discovered=await completeTrustedRemoteDiscoveryForPlanning({
           gateway:config.gateway,intake,coordinator:config.coordinator,
           signal:proof,
-          dispatchRemoteDiscovery:config.planRepairEpoch!.dispatchRemoteDiscovery
+          dispatchRemoteDiscovery:paired
+           ?()=>paired.dispatchRemoteDiscovery()
+           :config.planRepairEpoch!.dispatchRemoteDiscovery!
         });
         await config.verifyLiveRun?.();
       }catch{
@@ -237,7 +251,11 @@ export async function armTrustedOwnerOperationalRecovery(config:{
      failedTestAlreadyFinalized:true,
      ...(discovered||config.planRepairEpoch!.completedDiscoveryRead
        ?{completedDiscoveryRead:discovered??config.planRepairEpoch!.completedDiscoveryRead}:{}),
-     ...(config.planRepairEpoch!.loadCompletedDiscoverySource
+     ...(paired
+       ?{loadCompletedDiscoverySource:(pins:Readonly<{
+         task_id:string;runtime_task_id:string;resource:string;
+        }>)=>paired.loadCompletedDiscoverySource(pins)}
+       :config.planRepairEpoch!.loadCompletedDiscoverySource
        ?{loadCompletedDiscoverySource:config.planRepairEpoch!.loadCompletedDiscoverySource}:{}),
      nextPlanId:"repair-"+randomBytes(12).toString("hex"),
      pinnedAgentRegistry:agents,
@@ -299,7 +317,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       // provider read confirmed, this one-use owner has no safe retry path.
       // A malformed model draft, lost preflight ACK, stale feature HEAD or
       // failed DAG admission/execution must not leave its Rust root alive.
-      if(config.planRepairEpoch!.dispatchRemoteDiscovery&&
+      if((paired||config.planRepairEpoch!.dispatchRemoteDiscovery)&&
          config.coordinator.phase==="execution"){
         try{await config.coordinator.closeExecution!();}
         catch{

@@ -207,6 +207,9 @@ export class TrustedRemoteDiscoveryA2AHandoff {
    backendAgentBaseUrl:url.origin
   });
  }
+ /** Fixed owner identity, no capability or A2A authority exposed. */
+ get discoveryTaskId(){return this.#pins.discoveryTaskId;}
+ get requiresPrivateSourceDelivery(){return this.#requireSource;}
  /** Owner-only read of the authenticated, SHA-256-matched source, once.
   * Called by the repair Planner's loadCompletedDiscoverySource callback,
   * after the source-free remote discovery handoff returns. No A2A artifact
