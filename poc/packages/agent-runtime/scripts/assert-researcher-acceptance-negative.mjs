@@ -1,3 +1,4 @@
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
  * Independent negative control for the free, disposable-Gitea Docker E2E.
  * The pinned application must pass its own six phases but fail the immutable,
@@ -96,6 +97,10 @@ export async function runResearcherAcceptanceNegative({
       ["researcher acceptance exited with code 1"],
       "Timeouts or startup failures do not prove an acceptance assertion failure");
     assert.equal(result.status,"fail","Overall verdict must include independent acceptance failure");
+    const acceptanceFailure=safeAcceptanceFailureSummary(result.acceptance_failure);
+    assert.ok(acceptanceFailure&&acceptanceFailure.failed_checks.length>=5&&
+      !acceptanceFailure.timed_out&&!acceptanceFailure.unclassified_failure,
+      "Negative control must retain fixed researcher check IDs, not a timeout or unknown failure");
     const logId=/^runner-log:\/\/([0-9a-f-]{36})$/u.exec(result.log_reference??"")?.[1];
     assert.ok(logId,"Negative control must retain a structured Runner log");
     const log=stripVTControlCharacters(await readLog(join(logDir,logId+".log")));
@@ -110,7 +115,8 @@ export async function runResearcherAcceptanceNegative({
     return {
       event:"researcher_acceptance_negative",tested_commit_sha:baselineSha,
       project_tests:"pass",researcher_acceptance:"fail",overall_status:"fail",
-      project_phases:projectPhases,log_reference:result.log_reference
+      project_phases:projectPhases,acceptance_failure:acceptanceFailure,
+      log_reference:result.log_reference
     };
   }finally{
     if(created)await api("/branches/"+encodeURIComponent(negativeBranch),{method:"DELETE"});

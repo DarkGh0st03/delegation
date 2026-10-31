@@ -1,3 +1,4 @@
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
  * Separate-process approved-plan control over an owner-only Unix socket.
  * Never mounted on public Gateway HTTP, Gemini, MCP or A2A.
@@ -223,7 +224,8 @@ function boundedTestFailure(
     session_id:string;root_plan_digest:string;runtime_task_id:string;
   }>
 ):Readonly<TrustedRunnerFailure>{
-  if(!exact(value,FAILURE_KEYS))fail("invalid Gateway Test FAIL receipt");
+  if(!exact(value,FAILURE_KEYS)&&!exact(value,[...FAILURE_KEYS,"acceptance_failure"]))
+    fail("invalid Gateway Test FAIL receipt");
   const r=value as Record<string,unknown>;
   if(r.status!=="validation_failed"||
      r.session_id!==pins.session_id||
@@ -243,7 +245,14 @@ function boundedTestFailure(
      r.typecheck_error_codes.some(
        c=>typeof c!=="string"||!/^TS[0-9]{4}$/u.test(c)))
     fail("Gateway Test FAIL receipt failed source-free identity validation");
+  const acceptance=r.acceptance_failure===undefined ? undefined
+    :safeAcceptanceFailureSummary(r.acceptance_failure);
+  if(r.acceptance_failure!==undefined&&(!acceptance||
+     r.first_failed_phase!=="researcher_acceptance"||
+     (r.typecheck_error_codes as string[]).length!==0))
+    fail("invalid Gateway acceptance failure receipt");
   return Object.freeze({
+    ...(acceptance?{acceptance_failure:acceptance}:{}),
     status:"validation_failed" as const,
     session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
     request_id:r.request_id as string,plan_task_id:r.plan_task_id as string,

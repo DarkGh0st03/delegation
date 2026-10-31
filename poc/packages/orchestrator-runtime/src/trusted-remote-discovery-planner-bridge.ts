@@ -1,3 +1,5 @@
+import {isActionableRepairFailure}
+  from "../../../apps/test-runner-controller/src/repair-failure-eligibility.ts";
 /**
  * R151.45 — owner-only, one-use dynamic discovery -> repair-planner bridge.
  *
@@ -50,9 +52,8 @@ export async function completeTrustedRemoteDiscoveryForPlanning(config:{
     s.provenance!=="gateway_verified_docker_runner"||
     s.authority_kind!=="existing_rust_operational_root"||
     s.execution_authorized!==false||s.permission_granted!==false||
-    s.first_failed_phase!=="typecheck"||
-    !Array.isArray(s.typecheck_error_codes)||
-    s.typecheck_error_codes.length===0||
+    !isActionableRepairFailure(s.first_failed_phase,
+      s.typecheck_error_codes,s.acceptance_failure)||
     !ID.test(s.session_id)||!ID.test(s.failed_runtime_task_id)||
     !/^[0-9a-f]{40}$/u.test(s.tested_commit_sha))
   fail("only a finalized source-eligible real Test FAIL can dispatch discovery");

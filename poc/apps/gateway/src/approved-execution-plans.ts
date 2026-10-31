@@ -1,3 +1,6 @@
+import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
+import {isActionableRepairFailure, type AcceptanceFailureSummary}
+  from "../../test-runner-controller/src/repair-failure-eligibility.ts";
 /**
  * Opt-in, in-process Gateway enforcement for an immutable Engineer-approved
  * execution plan. NO HTTP method is exposed to activate, bind, complete or
@@ -102,6 +105,7 @@ export interface TrustedRunnerFailure {
   readonly tested_commit_sha:string;
   readonly first_failed_phase:string;
   readonly typecheck_error_codes:readonly string[];
+  readonly acceptance_failure?:AcceptanceFailureSummary;
 }
 const RUNNER_PHASES=[
   "dependency_install","typecheck","backend_tests","frontend_tests",
@@ -589,9 +593,9 @@ export class TrustedApprovedExecutionPlans {
        failure.root_plan_digest!==session.digest||
        failure.epoch_version!==input.epoch||
        failure.branch!==session.workBranch||
-       failure.first_failed_phase!=="typecheck"||
-       failure.typecheck_error_codes.length===0)
-      denied("A finalized, current TypeScript Runner FAIL is required");
+       !isActionableRepairFailure(failure.first_failed_phase,
+         failure.typecheck_error_codes,failure.acceptance_failure))
+      denied("A finalized, current actionable Runner FAIL is required");
     const blocked=this.#assertEpochQuiescent(session);
     this.#discoveryAdmissionsInFlight.add(session.sessionId);
     try{
@@ -875,6 +879,14 @@ export class TrustedApprovedExecutionPlans {
       // Only bounded, whitelisted metadata crosses the private feedback
       // boundary: no log references, stderr, source code or raw LLM text.
       const first=phases.find(p=>p.status==="fail")!.phase;
+      const acceptance = result.acceptance_failure===undefined ? undefined
+        :safeAcceptanceFailureSummary(result.acceptance_failure);
+      if(result.acceptance_failure!==undefined&&(!acceptance||
+         first!=="researcher_acceptance"||(codes?.length??0)!==0||
+         result.project_tests?.status!=="pass"||
+         result.researcher_acceptance?.status!=="fail"||
+         phases.slice(0,-1).some(p=>p.status!=="pass")))
+        denied("Untrusted acceptance failure diagnostic");
       binding.failedRunner=Object.freeze({
         status:"validation_failed",
         session_id:session.sessionId,root_plan_digest:session.digest,
@@ -883,7 +895,8 @@ export class TrustedApprovedExecutionPlans {
         epoch_version:binding.epochVersion,
         branch:result.branch,tested_commit_sha:result.tested_commit_sha,
         first_failed_phase:first,
-        typecheck_error_codes:Object.freeze([...(codes??[])])
+        typecheck_error_codes:Object.freeze([...(codes??[])]),
+        ...(acceptance?{acceptance_failure:acceptance}:{})
       });
       session.testedFeatureSha=undefined;
       return;
@@ -1078,8 +1091,8 @@ export class TrustedApprovedExecutionPlans {
        failure.epoch_version!==pins.epoch||
        failure.branch!==session.workBranch||
        failure.tested_commit_sha!==pins.tested_commit_sha||
-       failure.first_failed_phase!=="typecheck"||
-       failure.typecheck_error_codes.length===0)
+       !isActionableRepairFailure(failure.first_failed_phase,
+         failure.typecheck_error_codes,failure.acceptance_failure))
       denied("Gateway discovery source is not pinned to the original failed Runner SHA");
     const [effect]=binding.successfulRequests.values();
     const e=effect?.execution;

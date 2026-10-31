@@ -1,3 +1,5 @@
+import {isActionableRepairFailure}
+  from "../../../apps/test-runner-controller/src/repair-failure-eligibility.ts";
 /**
  * R151.38 — owner-private handoff from the ALREADY issued Backend discovery
  * Child into the authenticated remote Gateway and one prebound A2A read.
@@ -270,8 +272,8 @@ export class TrustedRemoteDiscoveryA2AHandoff {
     discoveryTaskId:p.discoveryTaskId,resource:p.resource
    });
    if(before.status!=="repair_planning_eligible"||
-      before.first_failed_phase!=="typecheck"||
-      !before.typecheck_error_codes.length||
+      !isActionableRepairFailure(before.first_failed_phase,
+        before.typecheck_error_codes,before.acceptance_failure)||
       scoped.status!=="remote_repair_discovery_preflight_only"||
       scoped.failed_epoch!==before.failed_epoch||
       scoped.root_plan_digest!==before.root_plan_digest||

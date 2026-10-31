@@ -500,3 +500,52 @@ test("R151.74.2 paid auto mode sends two independently attributed Runner files t
   assert.equal(unused.requests.length,0);
  }
 });
+
+const acceptanceInput={...boundedInput,feedback:{...boundedInput.feedback,
+ failed_phase:"researcher_acceptance",typecheck_error_codes:[],
+ acceptance_failure:{failed_checks:["service_persistence"],timed_out:false,
+  unclassified_failure:false}}};
+const acceptanceTarget={status:"verified_runner_single_file_repair_target" as const,
+ tested_commit_sha:input.feedback.tested_commit_sha,role:"backend" as const,resource:file};
+
+test("R151.78 actionable acceptance reaches bounded ADK with a separately verified target",async()=>{
+ const model=new ScriptedModel(boundedDraft());
+ const result=await new TrustedAdkOperationalRepairProposer({model,
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>acceptanceTarget
+ }).propose(acceptanceInput);
+ assert.deepEqual(result,boundedDraft());
+ const sent=JSON.parse(model.requests[0]!.contents!.at(-1)!.parts!
+  .find(p=>typeof p.text==="string")!.text!);
+ assert.deepEqual(sent.feedback.acceptance_failure,acceptanceInput.feedback.acceptance_failure);
+ assert.deepEqual(sent.diagnostic_target,acceptanceTarget);
+ assert.equal(sent.already_delegated_grants.some(g=>g.operation==="create_pull_request"),false);
+});
+
+test("R151.78 timeout, unknown checks and missing/stale/outside-root target make no model call",async()=>{
+ const base=acceptanceInput.feedback.acceptance_failure;
+ for(const acceptance_failure of [
+  {...base,timed_out:true},{...base,unclassified_failure:true},
+  {...base,failed_checks:[]},{...base,failed_checks:["PRIVATE_ASSERTION"]}
+ ]){
+  const model=new ScriptedModel(boundedDraft());
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({model,
+   taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>acceptanceTarget
+  }).propose({...acceptanceInput,feedback:{...acceptanceInput.feedback,acceptance_failure}}),
+   /requires verified TypeScript diagnostics or actionable acceptance/);
+  assert.equal(model.requests.length,0);
+ }
+ for(const target of [
+  {...acceptanceTarget,tested_commit_sha:"b".repeat(40)},
+  {...acceptanceTarget,resource:file+"/outside"}
+ ]){
+  const model=new ScriptedModel(boundedDraft());
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({model,
+   taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>target
+  }).propose(acceptanceInput),/no authenticated Runner repair target/);
+  assert.equal(model.requests.length,0);
+ }
+ const model=new ScriptedModel(boundedDraft());
+ await assert.rejects(new TrustedAdkOperationalRepairProposer({model,
+  taskShape:"backend_test"}).propose(acceptanceInput),/independently verified Runner target/);
+ assert.equal(model.requests.length,0);
+});

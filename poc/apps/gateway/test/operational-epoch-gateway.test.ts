@@ -247,6 +247,7 @@ async function harness(t:import("node:test").TestContext,
  });
  let provider=0,verified=0,policy=0,attested=0;
  let nextRunnerFails=false;
+ let acceptanceFailure:unknown;
  // Mock native Adapter + VP only in this fixture: production R133 uses
  // R130 Unix HMAC Orchestrator and Rust's genuine verifier on each read.
  const remote=options.withRemoteEpoch?new TrustedGatewaySignedEpochInspector({
@@ -358,7 +359,10 @@ async function harness(t:import("node:test").TestContext,
     }
     if(req.tool==="run_tests"){
      const fail=nextRunnerFails;nextRunnerFails=false;
-     const measured=fail?phases.map(p=>({
+     const acceptance=fail&&acceptanceFailure!==undefined;
+     const measured=acceptance?phases.map(p=>({...p,
+      status:p.phase==="researcher_acceptance"?"fail" as const:"pass" as const
+     })):fail?phases.map(p=>({
       phase:p.phase,status:(p.phase==="typecheck"?"fail":
        p.phase==="dependency_install"?"pass":"skipped") as "pass"|"fail"|"skipped"
      })):phases;
@@ -368,8 +372,10 @@ async function harness(t:import("node:test").TestContext,
       revision:sha,tested_commit_sha:sha,runner_profile:"poc-default" as const,
       status:(fail?"fail":"pass") as "pass"|"fail",
       phases:measured,
-      project_tests:{status:(fail?"fail":"pass") as "pass"|"fail"},
-      ...(fail?{typecheck_error_codes:["TS2339"]}:{
+      project_tests:{status:(fail&&!acceptance?"fail":"pass") as "pass"|"fail"},
+      ...(acceptance?{acceptance_failure:acceptanceFailure as any,
+        researcher_acceptance:{phase:"researcher_acceptance" as const,status:"fail" as const}
+      }:fail?{typecheck_error_codes:["TS2339"]}:{
         researcher_acceptance:{phase:"researcher_acceptance" as const,status:"pass" as const}
       })
      };
@@ -421,6 +427,7 @@ async function harness(t:import("node:test").TestContext,
  return {gates,intake,runtime,prepared,invoke,initialPass,
   coordinator,rootAuthority,dir,signedStore,parent,approved,journal,
   setRunnerFailure:()=>{nextRunnerFails=true;},
+  setAcceptanceFailure:(summary:unknown)=>{nextRunnerFails=true;acceptanceFailure=summary;},
   setPhase:(s:string)=>{phase=s;},
   revokeNativeRoot:()=>{nativeRootRevoked=true;},
   markShutdownUnconfirmed:()=>{shutdownConfirmed=false;},
@@ -862,6 +869,7 @@ const prepareR106=(h:Awaited<ReturnType<typeof verifiedFailureForR106>>,options:
  draft?:()=>unknown;
  readHead?:()=>Promise<string>;
  count?:{model:number;head:number};
+ expectedAcceptanceFailure?:{failed_checks:string[];timed_out:boolean;unclassified_failure:boolean};
 }={})=>new TrustedOperationalRepairPlanner({
  gateway:h.gates,intake:h.intake,sessionId:session,
  runtimeTestTaskId:"task-test",nextPlanId:"new-repair-epoch-2",
@@ -891,8 +899,11 @@ const prepareR106=(h:Awaited<ReturnType<typeof verifiedFailureForR106>>,options:
  }),
  proposeRepairPlan:async(input)=>{
   if(options.count)options.count.model++;
-  assert.equal(input.feedback.failed_phase,"typecheck");
-  assert.deepEqual(input.feedback.typecheck_error_codes,["TS2339"]);
+  assert.equal(input.feedback.failed_phase,options.expectedAcceptanceFailure
+    ?"researcher_acceptance":"typecheck");
+  assert.deepEqual(input.feedback.typecheck_error_codes,options.expectedAcceptanceFailure?[]:["TS2339"]);
+  if(options.expectedAcceptanceFailure)
+    assert.deepEqual(input.feedback.acceptance_failure,options.expectedAcceptanceFailure);
   assert.equal(input.feedback.tested_commit_sha,sha);
   assert.equal(input.feedback.remaining_repair_epochs,2);
   assert.equal(input.agents.includes("backend"),true);
@@ -5005,4 +5016,44 @@ test("R151.69 late native discovery ports are one-use and failure revokes before
  assert.equal(h.calls.length,0,"no discovery Child issued after failed preparation");
  await assert.rejects(owner.continueWithinActiveRoot(signal),/one-use/);
  assert.equal(prepared,1);
+});
+
+test("R151.78 acceptance-only FAIL keeps fixed diagnostics in trusted feedback and a new epoch",async(t)=>{
+ const h=await harness(t,{withReview:true});
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",{branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// faulty semantics"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ const summary={failed_checks:["service_persistence"],timed_out:false,unclassified_failure:false};
+ h.setAcceptanceFailure(summary);
+ await h.invoke("task-test","test","run_tests",runner);
+ const failure=h.gates.confirmTestValidationFailure("task-test");
+ assert.equal(failure.first_failed_phase,"researcher_acceptance");
+ assert.deepEqual(failure.acceptance_failure,summary);
+ assert.deepEqual(failure.typecheck_error_codes,[]);
+ const feedback=await prepareTrustedRepairFeedback({gateway:h.gates,
+  intake:h.intake,sessionId:session,runtimeTestTaskId:"task-test"});
+ assert.deepEqual(feedback.acceptance_failure,summary);
+ assert.equal(feedback.execution_authorized,false);
+ assert.equal(feedback.permission_granted,false);
+ assert.throws(()=>h.runtime.prepare({task_id:"task-test",agent_role:"test",
+  tool:"run_tests",arguments:runner}),/outside approved plan/);
+ // Signed root subset and fresh Tasks still gate execution independently.
+ const counts={head:0,model:0};
+ const planned=await prepareR106(h,{expectedAcceptanceFailure:summary,count:counts}).proposeAndReserve();
+ assert.equal(planned.execution_authorized,false);
+ assert.equal(planned.child_credential_issued,false);
+ assert.deepEqual(counts,{head:2,model:1});
+ await h.gates.admitNextOperationalEpoch(session,2);
+ h.gates.bindTask(session,"repair-implementation","acceptance-backend-new","backend");
+ h.gates.bindTask(session,"repair-validation","acceptance-test-new","test");
+ await h.invoke("acceptance-backend-new","backend","update_file",edit("// corrected semantics"));
+ await h.gates.confirmTaskCompletion("acceptance-backend-new");
+ await h.invoke("acceptance-test-new","test","run_tests",runner);
+ await h.gates.confirmTaskCompletion("acceptance-test-new");
+ assert.equal((await h.intake.verifiedEpochHistory()).length,2);
 });

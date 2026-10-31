@@ -1,3 +1,5 @@
+import {isActionableRepairFailure}
+  from "../../../apps/test-runner-controller/src/repair-failure-eligibility.ts";
 /**
  * R107 opt-in ADK adapter for a SOURCE-FREE verified repair proposal.
  *
@@ -83,16 +85,10 @@ class BudgetedRepairModel extends BaseLlm {
  * independently check the exact role, Task and original Rust root. */
 function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>,
  allowFrontend=false){
- // R151.21: this first paid D1 is a compiler-error repair, not an
- // infrastructure or arbitrary test-failure retry. Reject before calling
- // Gemini when the authenticated Runner metadata is not actionable TS errors.
- if(input.feedback.failed_phase!=="typecheck"||
-    !Array.isArray(input.feedback.typecheck_error_codes)||
-    input.feedback.typecheck_error_codes.length===0||
-    input.feedback.typecheck_error_codes.length>16||
-    input.feedback.typecheck_error_codes.some(code=>
-     typeof code!=="string"||!/^TS[0-9]{4}$/u.test(code)))
-  deny("bounded Backend/Test repair requires verified TypeScript diagnostics");
+ // Diagnostic eligibility never supplies a file, role or root authority.
+ if(!isActionableRepairFailure(input.feedback.failed_phase,
+    input.feedback.typecheck_error_codes,input.feedback.acceptance_failure))
+  deny("bounded Backend/Test repair requires verified TypeScript diagnostics or actionable acceptance checks");
  const suffix="/branches/"+encodeURIComponent(input.feedback.work_branch);
  const runner=input.already_delegated_grants.find(g=>
   g.operation==="run_tests"&&g.resource.startsWith("gitea://")&&
@@ -314,6 +310,9 @@ export class TrustedAdkOperationalRepairProposer {
        typeof p.operation!=="string"))
    deny("invalid trusted source-free repair input");
 
+  if(input.feedback.failed_phase==="researcher_acceptance"&&
+     (!this.#taskShape||!this.#readVerifiedRepairTarget))
+   deny("acceptance repair requires an independently verified Runner target");
   const boundedScope=this.#taskShape?
    boundedBackendTestScope(input,this.#taskShape!=="backend_test"):undefined;
   if(this.#taskShape==="bounded_multi_edit_test"&&

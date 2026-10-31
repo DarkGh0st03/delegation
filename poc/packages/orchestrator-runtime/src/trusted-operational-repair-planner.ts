@@ -1,3 +1,4 @@
+import type {AcceptanceFailureSummary} from "../../../apps/test-runner-controller/src/repair-failure-eligibility.ts";
 /**
  * R106: one-shot owner-private repair planning, NO fresh Engineer approval.
  *
@@ -49,6 +50,7 @@ export interface TrustedFeatureRevision {
 export interface TrustedRepairPlanningObservation{
  readonly failed_phase:string;
  readonly typecheck_error_codes:readonly string[];
+ readonly acceptance_failure?:AcceptanceFailureSummary;
  readonly tested_commit_sha:string;
  readonly work_branch:string;
  readonly remaining_repair_epochs:number;
@@ -461,6 +463,7 @@ export class TrustedOperationalRepairPlanner {
    feedback:Object.freeze({
     failed_phase:feedback.first_failed_phase,
     typecheck_error_codes:Object.freeze([...feedback.typecheck_error_codes]),
+    ...(feedback.acceptance_failure?{acceptance_failure:feedback.acceptance_failure}:{}),
     tested_commit_sha:feedback.tested_commit_sha,
     work_branch:feedback.work_branch,
     remaining_repair_epochs:feedback.remaining_repair_epochs
