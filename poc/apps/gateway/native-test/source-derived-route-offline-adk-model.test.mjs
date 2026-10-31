@@ -242,7 +242,7 @@ test("R150.8 refuses early, stale, forged or duplicated repair evidence",async()
  const m=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
  await next(m,{});await next(m,input({ok:true,result:data}));await next(m,{});
  assert.throws(()=>m.armTrustedD1TypecheckRepair({...args,
-  taskId:"unapproved-task"}),/NO-GO/);
+  taskId:"../unsafe-task"}),/NO-GO/);
  assert.throws(()=>m.armTrustedD1TypecheckRepair({...args,
   path:"apps/backend/../secrets.ts"}),/NO-GO/);
  m.armTrustedD1TypecheckRepair(args);
