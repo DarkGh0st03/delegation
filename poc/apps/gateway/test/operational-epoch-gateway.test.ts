@@ -2975,6 +2975,42 @@ test("R151.24 remote root revoked during Adapter issuance prevents returning the
 });
 
 
+test("R151.26 authenticated IPC returns only a source-free, non-authorizing discovery candidate",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ const pins={...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file};
+ const proof=await h.f.client.inspectDiscoveryChildCandidate(pins);
+ assert.equal(proof.credential_id,h.input.credential_id);
+ assert.equal(proof.task_id,h.config.discoveryTaskId);
+ assert.equal(proof.agent_role,"backend");
+ assert.equal(proof.operation,"read_file");
+ assert.equal(proof.adapter_response_acknowledged,true);
+ assert.equal(proof.child_vp_verified,false);
+ assert.equal(proof.gateway_task_admitted,false);
+ assert.equal(proof.execution_authorized,false);
+ assert.ok(Object.isFrozen(proof));
+ assert.equal(h.f.h.provider,3);
+ assert.throws(()=>h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
+  "r151-ipc-candidate-unadmitted","backend"),/current admitted epoch/);
+});
+test("R151.26 authenticated IPC rejects absent journal ACK and foreign resources",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const pins={...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file};
+ await assert.rejects(h.f.client.inspectDiscoveryChildCandidate(pins),
+  /Gateway trusted control denied/);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ await assert.rejects(h.f.client.inspectDiscoveryChildCandidate({
+  ...pins,resource:file+"-different"
+ }),/Gateway trusted control denied/);
+ await assert.rejects(h.f.client.inspectDiscoveryChildCandidate({
+  ...pins,task_id:"backend-original"
+ }),/Gateway trusted control denied/);
+ assert.equal(h.f.h.provider,3);
+});
 test("R151.25 Gateway derives discovery child from protected ACK without admitting source access",async t=>{
  const h=await r151RemoteDiscoveryIssuer(t);
  const issuer=await TrustedApprovedPlanChildAuthorityIssuer

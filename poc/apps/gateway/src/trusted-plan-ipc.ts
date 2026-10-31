@@ -26,7 +26,8 @@ const MAX_BODY=4096,MAX_NONCES=4096,MAX_AGE=30_000;
  */
 const NATIVE_EVM_INSPECTION_ACTIONS=new Set<string>([
  "inspect_signed_epoch","inspect_native_root","inspect_issued_root",
- "inspect_verified_root_vp","admit_epoch","read_retired_root_revocation"
+ "inspect_verified_root_vp","inspect_discovery_child_candidate",
+ "admit_epoch","read_retired_root_revocation"
 ]);
 const NATIVE_EVM_IPC_TIMEOUT_MS=60_000;
 const ORDINARY_IPC_TIMEOUT_MS=5_000;
@@ -65,7 +66,11 @@ type Command=
   |{action:"inspect_issued_root";session_id:string;root_plan_digest:string;
      plan_digest:string;epoch:number}
   |{action:"inspect_verified_root_vp";session_id:string;root_plan_digest:string;
-     plan_digest:string;epoch:number};
+     plan_digest:string;epoch:number}
+  // R151.26: exact source-free candidate lookup; neither issuance nor admission.
+  |{action:"inspect_discovery_child_candidate";session_id:string;
+     root_plan_digest:string;plan_digest:string;epoch:number;
+     task_id:string;resource:string};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
 function exact(x:unknown,fields:string[]):boolean{
@@ -146,6 +151,17 @@ function validate(x:unknown):Command{
      Number.isSafeInteger(o.epoch)&&
      (o.epoch as number)>=(o.action==="admit_epoch"?2:1)&&
      (o.epoch as number)<=3)
+    return o as Command;
+  if(o.action==="inspect_discovery_child_candidate"&&
+     exact(o,["action","session_id","root_plan_digest","plan_digest","epoch",
+       "task_id","resource"])&&
+     typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
+     typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
+     Number.isSafeInteger(o.epoch)&&(o.epoch as number)>=1&&
+     (o.epoch as number)<=3&&
+     typeof o.task_id==="string"&&ID.test(o.task_id)&&
+     typeof o.resource==="string"&&o.resource.length<=2048&&
+     /^gitea:\/\/[^/?#\s]+\/[^/?#\s]+\/[^/?#\s]+\/branches\/[^/?#\s]+\/files\/[^?#\s]+$/u.test(o.resource))
     return o as Command;
   if(o.action==="renew_lease"&&exact(o,["action","session_id","plan_digest"])&&
      typeof o.plan_digest==="string"&&MAC.test(o.plan_digest))
@@ -410,6 +426,17 @@ export async function createTrustedPlanIpcServer(config:{
         const receipt=config.plans.readVerifiedTestFailure(
           command.runtime_task_id);
         response(res,200,{ok:true,failure:boundedTestFailure(receipt,pins)});
+      }else if(command.action==="inspect_discovery_child_candidate"){
+        // R151.26: Gateway-owned journal + signed Engineer epoch + native
+        // root scope. No child VP verification, task admission or Gitea IO.
+        // Never accept caller-provided credential IDs, permissions or file bytes.
+        if(!(config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector)||
+           !config.plans.operationalLeaseConfigured()||
+           !config.plans.operationalSessionDurableConfigured())
+          fail("durable Gateway and signed epoch inspector required");
+        const candidate=await config.signedEpochInspector
+          .inspectDiscoveryChildCandidate(command);
+        response(res,200,{ok:true,candidate});
       }else if(command.action==="inspect_verified_root_vp"){
         // An authenticated source-FREE request. Gateway obtains original
         // IDs, grants and fresh challenge independently, then verifies
@@ -739,6 +766,56 @@ export class TrustedPlanIpcClient{
      gateway_epoch_admitted:false as const,
      execution_authorized:false as const,
      child_credential_issued:false as const
+    });
+  }
+  /**
+   * R151.26 authenticated remote, source-FREE child journal inspection.
+   * The returned candidate is NOT a VP verification or an authorized Task.
+   * Subsequent native child VP, Gateway admission and Prepare/Execute remain
+   * independent security boundaries.
+   */
+  async inspectDiscoveryChildCandidate(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;
+    epoch:number;task_id:string;resource:string;
+  }>){
+    if(!this.#operationalSessionDurable||!this.#nativeIssuedScope)
+      fail("remote discovery requires durable native-issued root scope");
+    const raw=(await this.#send({
+      action:"inspect_discovery_child_candidate",...pins
+    })).candidate;
+    if(!raw||typeof raw!=="object"||Array.isArray(raw)||
+       Object.keys(raw).sort().join(",")!==
+       "adapter_response_acknowledged,agent_did,agent_role,child_vp_verified,credential_id,epoch,execution_authorized,gateway_task_admitted,operation,plan_digest,resource,root_credential_id,root_plan_digest,session_id,status,task_id,work_branch"||
+       raw.status!=="discovery_child_candidate_verified_not_admitted"||
+       raw.session_id!==pins.session_id||
+       raw.root_plan_digest!==pins.root_plan_digest||
+       raw.plan_digest!==pins.plan_digest||
+       raw.epoch!==pins.epoch||
+       raw.task_id!==pins.task_id||raw.resource!==pins.resource||
+       raw.agent_role!=="backend"||
+       typeof raw.agent_did!=="string"||!raw.agent_did.startsWith("did:")||
+       typeof raw.credential_id!=="string"||!ID.test(raw.credential_id)||
+       typeof raw.root_credential_id!=="string"||!ID.test(raw.root_credential_id)||
+       raw.credential_id===raw.root_credential_id||
+       typeof raw.work_branch!=="string"||raw.work_branch.length>200||
+       raw.operation!=="read_file"||
+       raw.adapter_response_acknowledged!==true||
+       raw.child_vp_verified!==false||
+       raw.execution_authorized!==false||
+       raw.gateway_task_admitted!==false)
+      fail("Gateway discovery candidate cannot be promoted to authorization");
+    return Object.freeze({
+      status:"discovery_child_candidate_verified_not_admitted" as const,
+      session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+      plan_digest:pins.plan_digest,epoch:pins.epoch,
+      task_id:pins.task_id,resource:pins.resource,
+      agent_role:"backend" as const,agent_did:raw.agent_did as string,
+      operation:"read_file" as const,work_branch:raw.work_branch as string,
+      root_credential_id:raw.root_credential_id as string,
+      credential_id:raw.credential_id as string,
+      adapter_response_acknowledged:true as const,
+      child_vp_verified:false as const,
+      execution_authorized:false as const,gateway_task_admitted:false as const
     });
   }
   /** R128: owner-private comparison of actual issued grant set only. */
