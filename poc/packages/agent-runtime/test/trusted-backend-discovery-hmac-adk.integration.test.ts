@@ -140,7 +140,7 @@ test("R151.42 authenticated owner IPC -> Backend slot -> ADK -> private VP -> Ga
  assert.deepEqual(artifact.errors,[]);
  assert.deepEqual(f.counts,{adapter:1,prepare:1,execute:1,untrusted:0});
  assert.equal(f.model.observed.length,2);
- const source=f.slot.takeCapturedSource(f.pins.runtime_task_id);
+ const source=await f.client.takeSource(f.pins.runtime_task_id);
  assert.equal(source.content,privateSource);
  assert.equal(source.revision,sha);
  assert.equal(source.bytes,Buffer.byteLength(privateSource,"utf8"));
@@ -150,8 +150,8 @@ test("R151.42 authenticated owner IPC -> Backend slot -> ADK -> private VP -> Ga
  assert.equal(source.sha256,
   (await import("node:crypto")).createHash("sha256")
    .update(privateSource).digest("hex"));
- assert.throws(()=>f.slot.takeCapturedSource(f.pins.runtime_task_id),
-  /no one-use captured source/);
+ await assert.rejects(f.client.takeSource(f.pins.runtime_task_id),
+  /Backend private Task binding denied/);
  const seen=JSON.stringify(f.model.observed);
  for(const secret of [privateBearer,privateChild,fallbackBearer,
   "native-child:"+f.challenge])

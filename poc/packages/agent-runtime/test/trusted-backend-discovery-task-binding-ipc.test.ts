@@ -133,3 +133,29 @@ test("R151.41.1 Backend socket shutdown revokes signer even with active bound Ta
  assert.equal(f.calls,0);
  await assert.rejects(f.client.prepare(pins));
 });
+
+test("R151.48.1 authenticated source IPC denies missing source and foreign Task",async t=>{
+ const f=await fixture(t);
+ await f.client.prepare(pins);
+ await assert.rejects(f.client.takeSource(pins.runtime_task_id),
+  /Backend private Task binding denied/);
+ const foreign="dispatch_"+randomBytes(16).toString("base64url");
+ await assert.rejects(f.client.takeSource(foreign),
+  /Backend private Task binding denied/);
+ const text="export const x=42;\n";
+ f.slot.captureGatewaySource(pins.runtime_task_id,{
+  provider:"gitea",performed:true,tool:"read_file",
+  branch,path,revision:"a".repeat(40),content:text,
+  size:Buffer.byteLength(text,"utf8"),encoding:"utf-8"
+ });
+ const delivered=await f.client.takeSource(pins.runtime_task_id);
+ assert.equal(delivered.content,text);
+ assert.equal(delivered.branch,branch);
+ assert.equal(delivered.path,path);
+ assert.equal(delivered.revision,"a".repeat(40));
+ assert.equal(delivered.source_base64,undefined);
+ assert.ok(Object.isFrozen(delivered));
+ await assert.rejects(f.client.takeSource(pins.runtime_task_id),
+  /Backend private Task binding denied/);
+ await f.client.fence(pins.runtime_task_id);
+});

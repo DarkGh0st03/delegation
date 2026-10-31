@@ -9,6 +9,7 @@
  */
 import {createServer,request as httpRequest,type Server} from "node:http";
 import {createHash,createHmac,randomBytes,timingSafeEqual} from "node:crypto";
+import {Buffer} from "node:buffer";
 import {lstat,chmod,unlink} from "node:fs/promises";
 import {dirname,resolve} from "node:path";
 import {loadTrustedPlanIpcSecret} from "../../../apps/gateway/src/trusted-plan-ipc.ts";
@@ -17,7 +18,7 @@ import type {TrustedBackendDiscoveryTaskBindingPort} from
  "../../../packages/orchestrator-runtime/src/trusted-remote-discovery-a2a-handoff.ts";
 
 const ROUTE="/v1/private-backend-discovery-task-binding";
-const AGE=30_000,BODY_MAX=4096,RESPONSE_MAX=4096,MAX_NONCES=2048;
+const AGE=30_000,BODY_MAX=4096,RESPONSE_MAX=48000,MAX_NONCES=2048;
 const WIRE_NONCE=/^[A-Za-z0-9_-]{22}$/u;
 const MAC=/^[a-f0-9]{64}$/u;
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
@@ -64,15 +65,18 @@ function validPrepare(x:unknown):x is Prepare{
    typeof v.resource==="string"&&v.resource.length<=2048&&
    v.audience==="cloud-access-gateway";
 }
-type Wire={action:"prepare";pins:Prepare}|{action:"fence";runtime_task_id:string};
+type Wire={action:"prepare";pins:Prepare}|
+ {action:"fence";runtime_task_id:string}|
+ {action:"take_source";runtime_task_id:string};
 function parseWire(x:unknown):Wire{
  if(!x||typeof x!=="object"||Array.isArray(x))deny("invalid message");
  const obj=x as Record<string,unknown>,keys=Object.keys(obj).sort().join(",");
  if(obj.action==="prepare"&&keys==="action,pins"&&validPrepare(obj.pins))
   return {action:"prepare",pins:obj.pins};
- if(obj.action==="fence"&&keys==="action,runtime_task_id"&&
+ if((obj.action==="fence"||obj.action==="take_source")&&
+    keys==="action,runtime_task_id"&&
     typeof obj.runtime_task_id==="string"&&DISPATCH.test(obj.runtime_task_id))
-  return {action:"fence",runtime_task_id:obj.runtime_task_id};
+  return {action:obj.action,runtime_task_id:obj.runtime_task_id};
  deny("invalid authenticated Task operation or resource");
 }
 export async function createTrustedBackendDiscoveryTaskBindingServer(config:{
@@ -122,6 +126,17 @@ export async function createTrustedBackendDiscoveryTaskBindingServer(config:{
     const receipt=await config.slot.prepare(wire.pins);
     // Private source-free ACK cannot substitute for Gateway authorization.
     answer(res,200,{ok:true,receipt});
+   }else if(wire.action==="take_source"){
+    // The source lives in the Backend only until this authenticated
+    // one-use request. No A2A/MCP/HTTP port can read it.
+    const s=config.slot.takeCapturedSource(wire.runtime_task_id);
+    answer(res,200,{ok:true,source:{
+     status:"private_backend_read_source_not_authority",
+     runtime_task_id:wire.runtime_task_id,
+     resource:s.resource,branch:s.branch,path:s.path,
+     revision:s.revision,bytes:s.bytes,sha256:s.sha256,
+     source_base64:Buffer.from(s.content,"utf8").toString("base64")
+    }});
    }else{
     await config.slot.fence(wire.runtime_task_id);
     answer(res,200,{ok:true,fenced:true});
@@ -235,6 +250,44 @@ export class TrustedBackendDiscoveryTaskBindingSocketClient
    credential_id:input.credential_id,presenter_id:input.presenter_id,
    resource:input.resource,execution_authorized:false as const,
    source_read:false as const
+  });
+ }
+ /** R151.48.1: Private one-use source delivery; not proof of provider
+  * authorization. Owner MUST check SHA-256 against the Gateway ledger. */
+ async takeSource(runtimeTaskId:string){
+  if(!DISPATCH.test(runtimeTaskId))deny("invalid source Task ID");
+  const v=await this.#send({action:"take_source",runtime_task_id:runtimeTaskId});
+  if(Object.keys(v).sort().join(",")!=="ok,source"||
+     !v.source||typeof v.source!=="object"||Array.isArray(v.source))
+   deny("invalid private Backend source response");
+  const s=v.source as Record<string,unknown>;
+  if(Object.keys(s).sort().join(",")!==
+     "branch,bytes,path,resource,revision,runtime_task_id,sha256,source_base64,status"||
+     s.status!=="private_backend_read_source_not_authority"||
+     s.runtime_task_id!==runtimeTaskId||
+     typeof s.branch!=="string"||!s.branch.startsWith("feature/")||
+     typeof s.path!=="string"||!s.path.length||
+     typeof s.resource!=="string"||!s.resource.startsWith("gitea://")||
+     typeof s.revision!=="string"||!/^[a-f0-9]{40}$/u.test(s.revision)||
+     !Number.isSafeInteger(s.bytes)||s.bytes<1||s.bytes>32768||
+     typeof s.sha256!=="string"||!MAC.test(s.sha256)||
+     typeof s.source_base64!=="string"||
+     !/^[A-Za-z0-9+/]+={0,2}$/u.test(s.source_base64))
+   deny("malformed unauthorizing private source evidence");
+  const decoded=Buffer.from(s.source_base64,"base64");
+  const content=decoded.toString("utf8");
+  if(decoded.length!==s.bytes||
+     Buffer.from(content,"utf8").compare(decoded)!==0||
+     content.includes("\0")||
+     decoded.toString("base64")!==s.source_base64||
+     createHash("sha256").update(decoded).digest("hex")!==s.sha256)
+   deny("private source bytes fail exact UTF-8/hash verification");
+  return Object.freeze({
+   status:"private_backend_read_source_not_authority" as const,
+   runtime_task_id:runtimeTaskId,resource:s.resource as string,
+   branch:s.branch as string,path:s.path as string,
+   revision:s.revision as string,bytes:s.bytes as number,
+   sha256:s.sha256 as string,content
   });
  }
  async fence(runtimeTaskId:string){

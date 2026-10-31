@@ -79,6 +79,13 @@ export interface TrustedBackendDiscoveryTaskBindingPort {
   presenter_id:string;resource:string;
   execution_authorized:false;source_read:false;
  }>>;
+ /** Optional owner-private source transport after Gateway provider ledger
+  * corroboration, never callable by A2A/model/MCP. */
+ takeSource?(runtimeTaskId:string):Promise<Readonly<{
+  status:"private_backend_read_source_not_authority";
+  runtime_task_id:string;resource:string;branch:string;path:string;
+  revision:string;bytes:number;sha256:string;content:string;
+ }>>;
  /** Called even for failed A2A and unknown network outcomes. */
  fence(runtimeTaskId:string):Promise<void>;
 }
