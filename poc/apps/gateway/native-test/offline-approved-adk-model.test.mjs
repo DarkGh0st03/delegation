@@ -38,8 +38,8 @@ test("R150.9 owner cannot re-arm another role, wrong Task, unsafe branch",async(
  for(let i=0;i<3;i++)await next(backend);
  assert.throws(()=>backend.armTrustedD1TestRun(params),/cannot reuse/);
  const cases=[
-  {...params,taskId:"initial-test"},
-  {...params,taskId:"r150-owner-backend-repair"},
+  {...params,taskId:"../unsafe-task"},
+  {...params,taskId:"bad task with whitespace"},
   {...params,branch:"main"},
   {...params,branch:"feature/../main"},
   {...params,branch:"feature/"}
