@@ -7,7 +7,8 @@
  * can confirm this read. This class does not issue a Child, inspect source,
  * authorize a repair DAG or open a PR. No model or MCP caller owns it.
  */
-import {randomBytes} from "node:crypto";
+import {randomBytes,createHash} from "node:crypto";
+import {Buffer} from "node:buffer";
 import {TaskState} from "@a2a-js/sdk";
 import {canonicalFileUri} from "../../../apps/gateway/src/canonical.ts";
 import {TrustedPlanIpcClient} from "../../../apps/gateway/src/trusted-plan-ipc.ts";
@@ -110,6 +111,45 @@ export function validateTrustedBackendDiscoveryBindAck(
    deny("Backend read signer is not independently prebound to exact Gateway Task");
 }
 
+
+/** Source is untrusted bytes. A HMAC socket peer is NOT authority; the
+ * ORIGINAL Gateway ledger (signed Child/VP/Rust/OPA/provider completion)
+ * is the independent anchor. This helper grants no read or write rights. */
+export function verifyPrivateBackendDiscoverySource(
+ privateRead:unknown,ledger:Readonly<{
+  source_sha256:string;source_bytes:number;
+ }>,pins:Readonly<{
+  task_id:string;runtime_task_id:string;resource:string;branch:string;
+  path:string;revision:string;
+ }>):string{
+ if(!privateRead||typeof privateRead!=="object"||
+    Array.isArray(privateRead))
+  deny("private Backend source is missing");
+ const r=privateRead as Record<string,unknown>;
+ if(Object.keys(r).sort().join(",")!==
+    "branch,bytes,content,path,resource,revision,runtime_task_id,sha256,status"||
+    r.status!=="private_backend_read_source_not_authority"||
+    r.runtime_task_id!==pins.runtime_task_id||
+    r.resource!==pins.resource||r.branch!==pins.branch||
+    r.path!==pins.path||r.revision!==pins.revision||
+    typeof r.sha256!=="string"||!/^[a-f0-9]{64}$/u.test(r.sha256)||
+    typeof r.content!=="string"||r.content.length===0||
+    r.content.includes("\0")||
+    !Number.isSafeInteger(r.bytes)||r.bytes<1||r.bytes>32768||
+    !ledger||typeof ledger.source_sha256!=="string"||
+    !/^[a-f0-9]{64}$/u.test(ledger.source_sha256)||
+    !Number.isSafeInteger(ledger.source_bytes)||
+    ledger.source_bytes<1||ledger.source_bytes>32768)
+  deny("private source and Gateway provider identity cannot be bound");
+ const content=r.content as string;
+ const bytes=Buffer.byteLength(content,"utf8");
+ const hash=createHash("sha256").update(content,"utf8").digest("hex");
+ if(bytes!==r.bytes||bytes!==ledger.source_bytes||
+    hash!==r.sha256||hash!==ledger.source_sha256)
+  deny("private Backend source does not match real Gateway Gitea bytes");
+ return content;
+}
+
 export class TrustedRemoteDiscoveryA2AHandoff {
  readonly #gateway:TrustedPlanIpcClient;
  readonly #intake:TrustedOperationalEpochIntake;
@@ -117,11 +157,19 @@ export class TrustedRemoteDiscoveryA2AHandoff {
  readonly #a2a:ProtectedA2AClientPort;
  readonly #backend:TrustedBackendDiscoveryTaskBindingPort;
  readonly #pins:Pins;
+ readonly #requireSource:boolean;
+ #verifiedSource?:Readonly<{
+  task_id:string;runtime_task_id:string;resource:string;
+  content:string;expires_at_ms:number;
+ }>;
+ #sourceTaken=false;
  #attempted=false;
  constructor(config:Readonly<{
   gateway:TrustedPlanIpcClient;intake:TrustedOperationalEpochIntake;
   coordinator:TrustedExecutionCoordinator;a2a:ProtectedA2AClientPort;
   backendTaskBinding:TrustedBackendDiscoveryTaskBindingPort;
+  /** Opt in: demand private source HMAC delivery AFTER Gateway provenance. */
+  requirePrivateSourceDelivery?:boolean;
  }&Pins>){
   if(!(config.gateway instanceof TrustedPlanIpcClient)||
      !(config.intake instanceof TrustedOperationalEpochIntake)||
@@ -129,6 +177,10 @@ export class TrustedRemoteDiscoveryA2AHandoff {
      typeof config.a2a?.sendProtectedTask!=="function"||
      typeof config.backendTaskBinding?.prepare!=="function"||
      typeof config.backendTaskBinding?.fence!=="function"||
+     (config.requirePrivateSourceDelivery!==undefined&&
+      typeof config.requirePrivateSourceDelivery!=="boolean")||
+     (config.requirePrivateSourceDelivery===true&&
+      typeof config.backendTaskBinding.takeSource!=="function")||
      !ID.test(config.sessionId)||!ID.test(config.discoveryTaskId)||
      !ID.test(config.failedRuntimeTestTaskId)||
      !PATH.test(config.path)||config.path.includes("//")||
@@ -147,12 +199,34 @@ export class TrustedRemoteDiscoveryA2AHandoff {
   this.#gateway=config.gateway;this.#intake=config.intake;
   this.#coordinator=config.coordinator;this.#a2a=config.a2a;
   this.#backend=config.backendTaskBinding;
+  this.#requireSource=config.requirePrivateSourceDelivery===true;
   this.#pins=Object.freeze({
    sessionId:config.sessionId,discoveryTaskId:config.discoveryTaskId,
    failedRuntimeTestTaskId:config.failedRuntimeTestTaskId,
    resource:config.resource,path:config.path,
    backendAgentBaseUrl:url.origin
   });
+ }
+ /** Owner-only read of the authenticated, SHA-256-matched source, once.
+  * Called by the repair Planner's loadCompletedDiscoverySource callback,
+  * after the source-free remote discovery handoff returns. No A2A artifact
+  * carries this content and the source does not confer any extra grants. */
+ async takeVerifiedSource(pins:Readonly<{
+  task_id:string;runtime_task_id:string;resource:string;
+ }>):Promise<string>{
+  if(this.#sourceTaken)deny("owner source already consumed");
+  this.#sourceTaken=true;
+  const stored=this.#verifiedSource;
+  this.#verifiedSource=undefined; // consume on ANY attempted access
+  if(!stored||this.#coordinator.phase!=="execution"||
+     !pins||Object.keys(pins).sort().join(",")!==
+       "resource,runtime_task_id,task_id"||
+     pins.task_id!==stored.task_id||
+     pins.runtime_task_id!==stored.runtime_task_id||
+     pins.resource!==stored.resource||
+     Date.now()>stored.expires_at_ms)
+   deny("owner source Task pins expired, absent or inconsistent");
+  return stored.content;
  }
  /**
   * Called ONCE by the trusted owner after a durably ACKnowledged native
@@ -308,6 +382,22 @@ export class TrustedRemoteDiscoveryA2AHandoff {
       providerRead.repair_dag_authorized!==false||
       providerRead.pr_authorized!==false)
     deny("Gateway provider ledger did not attest exact signed Child discovery read");
+   // R151.48.2: source crosses only the authenticated owner-private
+   // Unix HMAC socket, NEVER the A2A result. The independent Gateway ledger
+   // was checked FIRST; source bytes are then compared to its SHA-256.
+   if(this.#requireSource){
+    const privateRead=await this.#backend.takeSource!(runtimeId);
+    const content=verifyPrivateBackendDiscoverySource(
+     privateRead,providerRead,{
+      task_id:p.discoveryTaskId,runtime_task_id:runtimeId,
+      resource:p.resource,branch:before.work_branch,path:p.path,
+      revision:before.tested_commit_sha
+     });
+    this.#verifiedSource=Object.freeze({
+     task_id:p.discoveryTaskId,runtime_task_id:runtimeId,
+     resource:p.resource,content,expires_at_ms:Date.now()+120000
+    });
+   }
    // Fail closed on an uncertain Backend holder retirement even if the
    // authenticated Gateway has already confirmed the source read.
    await this.#backend.fence(runtimeId);
@@ -322,6 +412,7 @@ export class TrustedRemoteDiscoveryA2AHandoff {
     pr_authorized:false as const
    });
   }catch{
+   this.#verifiedSource=undefined; // never retain bytes after uncertain work
    // A bind/send/cleanup uncertainty cannot be retried or promoted.
    if(runtimeId){
     try{await this.#backend.fence(runtimeId);}

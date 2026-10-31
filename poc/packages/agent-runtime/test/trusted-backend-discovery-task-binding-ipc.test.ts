@@ -153,7 +153,7 @@ test("R151.48.1 authenticated source IPC denies missing source and foreign Task"
  assert.equal(delivered.branch,branch);
  assert.equal(delivered.path,path);
  assert.equal(delivered.revision,"a".repeat(40));
- assert.equal(delivered.source_base64,undefined);
+ assert.equal(Object.keys(delivered).includes("source_base64"),false);
  assert.ok(Object.isFrozen(delivered));
  await assert.rejects(f.client.takeSource(pins.runtime_task_id),
   /Backend private Task binding denied/);
