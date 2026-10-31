@@ -47,6 +47,10 @@ export class TrustedGatewayDiscoveryChildVpVerifier{
   this.#signer=options.signer;
   this.#audience=options.audience;
  }
+ /** The HMAC IPC must use the exact Gateway epoch inspector, never a clone. */
+ usesInspector(inspector:TrustedGatewaySignedEpochInspector):boolean{
+  return this.#inspector===inspector;
+ }
  async verifyChild(pins:Pins){
   const before=await this.#inspector.inspectDiscoveryChildCandidate(pins);
   if(before.status!=="discovery_child_candidate_verified_not_admitted"||

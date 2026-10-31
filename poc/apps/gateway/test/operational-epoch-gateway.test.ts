@@ -4287,3 +4287,80 @@ test("R151.30 Gateway independently verifies discovery Child VP over real authen
  assert.equal(signed,2,"cancelled holder never signs again");
  assert.equal(h.f.h.provider,3);
 });
+
+
+test("R151.31 authenticated Gateway IPC exposes only a source-free verified Backend Child VP",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ const pins={...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file};
+ const audience="urn:thesis:gateway:r151:discovery";
+ let signed=0,verified=0;
+ const signer={
+  async present(p:{credential_id:string;audience:string;challenge:string;
+   disclosed_permissions:ReadonlyArray<{resource:string;operation:string}>}){
+   signed++;
+   assert.equal(p.credential_id,h.input.credential_id);
+   assert.equal(p.audience,audience);
+   assert.deepEqual(p.disclosed_permissions,[{resource:file,operation:"read_file"}]);
+   assert.match(p.challenge,/^[a-f0-9]{64}$/u);
+   return "signed-backend-child-vp:"+p.challenge;
+  }
+ };
+ const verifier:VerifierPort={
+  async verify(){throw Error("R151.31 single verifier forbidden");},
+  async verifyMultiple(v){
+   verified++;
+   assert.equal(v.presenter,"backend");
+   assert.equal(v.signed_vp,"signed-backend-child-vp:"+v.challenge);
+   assert.deepEqual(v.required_permissions,[{resource:file,operation:"read_file"}]);
+   return {
+    credential_id:h.input.credential_id,
+    presenter_id:"did:example:backend",
+    issuer_id:"did:example:orchestrator",
+    hierarchy_depth:1,permissions:[{resource:file,operation:"read_file"}],
+    expiration:(BigInt(Date.now())*1_000_000n+30_000_000_000n).toString()
+   };
+  }
+ };
+ const proofVerifier=new TrustedGatewayDiscoveryChildVpVerifier({
+  inspector:h.f.inspector,verifier,signer,audience
+ });
+ const socketPath=join(h.f.h.dir,"r15131-control.sock"),
+  secretFile=join(h.f.h.dir,"r15131-secret.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ const server=await createTrustedPlanIpcServer({
+  socketPath,secretFile,plans:h.f.h.gates,
+  signedEpochInspector:h.f.inspector,
+  discoveryChildVpVerifier:proofVerifier
+ });
+ await server.start();
+ t.after(()=>server.close());
+ const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+ const proof=await client.inspectVerifiedDiscoveryChildVp(pins);
+ assert.equal(proof.status,"discovery_child_vp_verified_not_admitted");
+ assert.equal(proof.cryptographic_presentation_verified,true);
+ assert.equal(proof.credential_id,h.input.credential_id);
+ assert.equal(proof.source_read,false);
+ assert.equal(proof.gateway_task_admitted,false);
+ assert.equal(proof.execution_authorized,false);
+ assert.ok(Object.isFrozen(proof));
+ assert.equal(signed,1);
+ assert.equal(verified,1);
+ assert.equal(h.f.h.provider,3,"no Gitea read on VP inspection");
+ assert.throws(()=>h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
+  "r15131-unadmitted","backend"),/current admitted epoch/);
+ await assert.rejects(client.inspectVerifiedDiscoveryChildVp({
+  ...pins,resource:file+"-foreign"
+ }),/Gateway trusted control denied/);
+ assert.equal(signed,1,"wrong resource rejected before Backend signer");
+ // Original remote Gateway has no proof port configured and must fail closed.
+ await assert.rejects(h.f.client.inspectVerifiedDiscoveryChildVp(pins),
+  /Gateway trusted control denied/);
+ h.status.status_set=true;
+ await assert.rejects(client.inspectVerifiedDiscoveryChildVp(pins),
+  /Gateway trusted control denied/);
+ assert.equal(signed,1,"revoked root never gets a new signed Child VP");
+ assert.equal(h.f.h.provider,3);
+});

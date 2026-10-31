@@ -13,6 +13,8 @@ import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
 import {TrustedApprovedExecutionPlans,type TrustedRunnerFailure} from "./approved-execution-plans.ts";
 import {TrustedPlanningRevisions} from "./planning-revisions.ts";
 import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
+import {TrustedGatewayDiscoveryChildVpVerifier}
+ from "./trusted-discovery-child-vp-verification.ts";
 
 const ROUTE="/v1/private-plan-control";
 const MAX_BODY=4096,MAX_NONCES=4096,MAX_AGE=30_000;
@@ -27,6 +29,7 @@ const MAX_BODY=4096,MAX_NONCES=4096,MAX_AGE=30_000;
 const NATIVE_EVM_INSPECTION_ACTIONS=new Set<string>([
  "inspect_signed_epoch","inspect_native_root","inspect_issued_root",
  "inspect_verified_root_vp","inspect_discovery_child_candidate",
+ "inspect_discovery_child_vp",
  "admit_epoch","read_retired_root_revocation"
 ]);
 const NATIVE_EVM_IPC_TIMEOUT_MS=60_000;
@@ -68,9 +71,9 @@ type Command=
   |{action:"inspect_verified_root_vp";session_id:string;root_plan_digest:string;
      plan_digest:string;epoch:number}
   // R151.26: exact source-free candidate lookup; neither issuance nor admission.
-  |{action:"inspect_discovery_child_candidate";session_id:string;
-     root_plan_digest:string;plan_digest:string;epoch:number;
-     task_id:string;resource:string};
+  |{action:"inspect_discovery_child_candidate"|"inspect_discovery_child_vp";
+     session_id:string;root_plan_digest:string;plan_digest:string;
+     epoch:number;task_id:string;resource:string};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
 function exact(x:unknown,fields:string[]):boolean{
@@ -152,7 +155,8 @@ function validate(x:unknown):Command{
      (o.epoch as number)>=(o.action==="admit_epoch"?2:1)&&
      (o.epoch as number)<=3)
     return o as Command;
-  if(o.action==="inspect_discovery_child_candidate"&&
+  if((o.action==="inspect_discovery_child_candidate"||
+      o.action==="inspect_discovery_child_vp")&&
      exact(o,["action","session_id","root_plan_digest","plan_digest","epoch",
        "task_id","resource"])&&
      typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
@@ -263,6 +267,8 @@ export async function createTrustedPlanIpcServer(config:{
    * execute, not a newly allocated registry or operational-plan alias. */
   planningRevisions?:TrustedPlanningRevisions;
   signedEpochInspector?:TrustedGatewaySignedEpochInspector;
+  /** R151.31: optional Gateway-owned proof, bound to SAME inspector. */
+  discoveryChildVpVerifier?:TrustedGatewayDiscoveryChildVpVerifier;
 }):Promise<{start():Promise<void>;close():Promise<void>;server:Server}>{
   const path=socketPath(config.socketPath);
   await ownerDirectory(dirname(path));
@@ -437,6 +443,21 @@ export async function createTrustedPlanIpcServer(config:{
         const candidate=await config.signedEpochInspector
           .inspectDiscoveryChildCandidate(command);
         response(res,200,{ok:true,candidate});
+      }else if(command.action==="inspect_discovery_child_vp"){
+        // R151.31: pure proof inspection; no admitted Task or Gitea effects.
+        // The caller cannot supply a credential ID, VP, signer, or grant.
+        if(!(config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector)||
+           !(config.discoveryChildVpVerifier instanceof TrustedGatewayDiscoveryChildVpVerifier)||
+           !config.discoveryChildVpVerifier.usesInspector(config.signedEpochInspector)||
+           !config.plans.operationalLeaseConfigured()||
+           !config.plans.operationalSessionDurableConfigured())
+          fail("durable Gateway and SAME verified Child inspector required");
+        const verified=await config.discoveryChildVpVerifier.verifyChild(command);
+        if(verified.gateway_task_admitted!==false||
+           verified.execution_authorized!==false||
+           verified.source_read!==false)
+          fail("child VP must never authorize execution");
+        response(res,200,{ok:true,proof:verified});
       }else if(command.action==="inspect_verified_root_vp"){
         // An authenticated source-FREE request. Gateway obtains original
         // IDs, grants and fresh challenge independently, then verifies
@@ -816,6 +837,52 @@ export class TrustedPlanIpcClient{
       adapter_response_acknowledged:true as const,
       child_vp_verified:false as const,
       execution_authorized:false as const,gateway_task_admitted:false as const
+    });
+  }
+  /**
+   * R151.31 authenticated Gateway child VP check: evidence ONLY.
+   * Exact journal-backed Child credentials are selected server-side.
+   * Even a valid VP never admits the discovery Task or permits source IO.
+   */
+  async inspectVerifiedDiscoveryChildVp(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;
+    epoch:number;task_id:string;resource:string;
+  }>){
+    if(!this.#operationalSessionDurable||!this.#nativeIssuedScope||
+       !this.#nativeRootVp)
+      fail("remote Gateway lacks durable Rust-root Child inspection");
+    const p=(await this.#send({
+      action:"inspect_discovery_child_vp",...pins
+    })).proof;
+    if(!p||typeof p!=="object"||Array.isArray(p)||
+       Object.keys(p).sort().join(",")!==
+       "agent_did,credential_id,cryptographic_presentation_verified,epoch,execution_authorized,gateway_task_admitted,operation,plan_digest,resource,root_credential_id,root_plan_digest,session_id,source_read,status,task_id"||
+       p.status!=="discovery_child_vp_verified_not_admitted"||
+       p.session_id!==pins.session_id||
+       p.root_plan_digest!==pins.root_plan_digest||
+       p.plan_digest!==pins.plan_digest||p.epoch!==pins.epoch||
+       p.task_id!==pins.task_id||p.resource!==pins.resource||
+       p.operation!=="read_file"||
+       typeof p.agent_did!=="string"||!p.agent_did.startsWith("did:")||
+       typeof p.credential_id!=="string"||!ID.test(p.credential_id)||
+       typeof p.root_credential_id!=="string"||
+       !ID.test(p.root_credential_id)||
+       p.credential_id===p.root_credential_id||
+       p.cryptographic_presentation_verified!==true||
+       p.gateway_task_admitted!==false||
+       p.execution_authorized!==false||p.source_read!==false)
+      fail("Gateway Child VP is not a valid non-authorizing proof");
+    return Object.freeze({
+      status:"discovery_child_vp_verified_not_admitted" as const,
+      session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+      plan_digest:pins.plan_digest,epoch:pins.epoch,task_id:pins.task_id,
+      resource:pins.resource,operation:"read_file" as const,
+      agent_did:p.agent_did as string,
+      credential_id:p.credential_id as string,
+      root_credential_id:p.root_credential_id as string,
+      cryptographic_presentation_verified:true as const,
+      gateway_task_admitted:false as const,execution_authorized:false as const,
+      source_read:false as const
     });
   }
   /** R128: owner-private comparison of actual issued grant set only. */
