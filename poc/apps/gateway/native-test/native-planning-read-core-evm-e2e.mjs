@@ -854,7 +854,7 @@ try{
             maxSessionMs:240000,
             maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
             thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
-            taskShape:"backend_test"
+            taskShape:"backend_or_frontend_test"
           })
           :trustedOwnerRepairAdk;
         const armed=await armTrustedOwnerOperationalRecovery({
@@ -889,6 +889,8 @@ try{
                typeof ports.a2a.sendProtectedTask!=="function"||
                !ports.agentBaseUrls||
                typeof ports.armVerifiedD1BackendRepair!=="function"||
+               (paidGeminiRecovery&&
+                typeof ports.armVerifiedD1FrontendRepair!=="function")||
                typeof ports.armVerifiedD1TestRun!=="function"||
                !["backend","test"].every(role=>
                  /^http:\/\/127\.0\.0\.1:\d+$/u.test(
@@ -898,6 +900,9 @@ try{
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
               a2a:ports.a2a,
               armVerifiedD1BackendRepair:ports.armVerifiedD1BackendRepair,
+              ...(ports.armVerifiedD1FrontendRepair?{
+                armVerifiedD1FrontendRepair:ports.armVerifiedD1FrontendRepair
+              }:{}),
               armVerifiedD1TestRun:ports.armVerifiedD1TestRun
             });
           },
@@ -915,21 +920,29 @@ try{
             // Derive the actual repair target from the *admitted* D1 grants.
             // Never let Gemini select a path, Task ID or operation outside
             // the original Engineer-approved, Rust-issued root.
-            const repairTargets=roleFiles.backend.filter(path=>{
+            const repairTasks=epochs[1].plan.tasks.filter(t=>
+              t.agent_id==="backend"||t.agent_id==="frontend");
+            if(repairTasks.length!==1)
+              throw Error("R151.72 expected one signed Backend/Frontend repair");
+            const repairRole=repairTasks[0].agent_id;
+            const repairTargets=roleFiles[repairRole].filter(path=>{
               const uri=canonicalFileUri(repo,workBranch,path);
               const grants=epochs[1].plan.requested_permissions;
               return ["read_file","update_file"].every(operation=>
-                grants.some(g=>g.agent_id==="backend"&&
+                grants.some(g=>g.task_id===repairTasks[0].id&&
+                  g.agent_id===repairRole&&
                   g.resource===uri&&g.operation===operation));
             });
             if(repairTargets.length!==1)
-              throw Error("R151.12 expects exactly one signed Backend repair file");
+              throw Error("R151.72 expected one exact signed repair file");
             const repairTarget=repairTargets[0];
             const repairFileUri=canonicalFileUri(repo,workBranch,repairTarget);
             const selected=selectSignedNativeD1Tasks({
               epoch:epochs[1],planDigest:epochs[1].plan_digest,
-              fileUri:repairFileUri,branchUri:branchResource
+              fileUri:repairFileUri,branchUri:branchResource,repairRole
             });
+            const repairTaskId=repairRole==="backend"
+              ?selected.backendTaskId:selected.frontendTaskId;
             if(!paidGeminiRecovery){
               assert.equal(selected.backendTaskId,candidateBackendId);
               assert.equal(selected.testTaskId,candidateTestId);
@@ -963,8 +976,8 @@ try{
               },
               credentialForTask:({id,role,ordinal})=>{
                 if(ordinal>1||
-                   (ordinal===0&&(role!=="backend"||
-                     id!==selected.backendTaskId))||
+                   (ordinal===0&&(role!==repairRole||
+                     id!==repairTaskId))||
                    (ordinal===1&&(role!=="test"||
                      id!==selected.testTaskId)))
                   throw Error("R151.10 native test role outside admitted scope");
@@ -977,8 +990,8 @@ try{
                     type:"BitstringStatusListEntry",
                     statusPurpose:"revocation",
                     statusListIndex:String(randomInt(
-                      role==="backend"?70001:74001,
-                      role==="backend"?74000:78000)),
+                      role==="test"?74001:70001,
+                      role==="test"?78000:74000)),
                     statusListCredential:
                       "https://status.example/lists/native-owner-d1"
                   }
@@ -986,9 +999,11 @@ try{
               },
               beforeProtectedSend:async issued=>{
                 assert.equal(issued.epoch,2);
-                if(issued.role==="backend"&&
-                   issued.task_id===selected.backendTaskId){
-                  await originalA2APorts.armVerifiedD1BackendRepair({
+                if(issued.role===repairRole&&issued.task_id===repairTaskId){
+                  const armRepair=repairRole==="frontend"
+                    ?originalA2APorts.armVerifiedD1FrontendRepair
+                    :originalA2APorts.armVerifiedD1BackendRepair;
+                  await armRepair({
                     taskId:issued.task_id,role:issued.role,
                     runtimeTaskId:issued.runtime_task_id,
                     credentialId:issued.credential_id,
@@ -1009,11 +1024,10 @@ try{
               },
               afterGatewayConfirmed:async task=>{
                 const head=await liveClient.getBranchMetadata(workBranch);
-                if(task.role==="backend"&&
-                   task.task_id===selected.backendTaskId){
+                if(task.role===repairRole&&task.task_id===repairTaskId){
                   assert.match(head.commit_sha,/^[a-f0-9]{40}$/u);
                   assert.notEqual(head.commit_sha,signal.tested_commit_sha,
-                    "Signed Backend must produce a changed Gitea SHA");
+                    "Signed repair agent must produce a changed Gitea SHA");
                   verifiedRepairedSha=head.commit_sha;
                 }else if(task.role==="test"&&
                          task.task_id===selected.testTaskId){
@@ -1027,7 +1041,7 @@ try{
             assert.equal(report.status,
               "repair_dag_gateway_confirmed_not_final_runner_verified");
             assert.deepEqual(report.tasks.map(t=>t.task_id),
-              [selected.backendTaskId,selected.testTaskId]);
+              [repairTaskId,selected.testTaskId]);
             assert.ok(report.tasks.every(t=>t.gateway_task_completed));
             assert.ok(report.tasks.every(t=>t.docker_pass_verified===false));
             assert.notEqual(report.tasks[0].credential_id,
@@ -1053,7 +1067,7 @@ try{
             assert.notEqual(report.tasks[0].credential_id,
               report.tasks[1].credential_id);
             assert.deepEqual(records.map(r=>r.task_id).sort(),
-              [selected.backendTaskId,selected.testTaskId]);
+              [repairTaskId,selected.testTaskId]);
             assert.equal(records[0].observation,"adapter_response_verified");
             assert.equal(records[0].parent_credential_id,operationalId);
             ownerD1ChildEvidence={
