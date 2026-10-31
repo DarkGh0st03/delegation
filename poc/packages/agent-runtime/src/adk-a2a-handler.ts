@@ -14,6 +14,7 @@ import {TrustedCryptoMcpBridge} from "./trusted-crypto-mcp-bridge.ts";
 import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A,
  type TrustedBackendDiscoveryA2ABinding} from "./trusted-backend-discovery-a2a-binding.ts";
 import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
+import {TrustedBackendDiscoveryTaskSlot} from "./trusted-backend-discovery-task-slot.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGenerationConfig } from "./adk-specialized-agents.ts";
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
@@ -47,6 +48,8 @@ export interface AdkA2ATaskHandlerConfig {
   mcpRunTests?: boolean;
   /** Opt-in private Child signer for one exact Gateway-bound Backend read. */
   trustedBackendDiscovery?:TrustedBackendDiscoveryA2ABinding;
+  /** Trusted Backend host's dynamic, one-use owner-prebound discovery slot. */
+  trustedBackendDiscoverySlot?:TrustedBackendDiscoveryTaskSlot;
   fetchFn?: FetchLike;
 }
 
@@ -188,6 +191,11 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   // Reject bad configuration at server startup, before accepting any requests.
   if(config.trustedBackendDiscovery)
     validateTrustedBackendDiscoveryA2ABinding(config.trustedBackendDiscovery);
+  if(config.trustedBackendDiscovery&&config.trustedBackendDiscoverySlot)
+    throw Error("Backend discovery cannot have two active signing sources");
+  if(config.trustedBackendDiscoverySlot&&
+     !(config.trustedBackendDiscoverySlot instanceof TrustedBackendDiscoveryTaskSlot))
+    throw Error("Untrusted Backend discovery dynamic slot");
   if (config.mcpUpdateFile && !config.mcpSharedUrl) {
     throw new Error("Shared MCP update_file requires MCP to be configured");
   }
@@ -225,9 +233,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   }
 
   return async (context: AgentTaskContext, signal?: AbortSignal): Promise<AgentArtifactPayload> => {
-    const selectedDiscovery=selectTrustedBackendDiscoveryA2A(
-      config.trustedBackendDiscovery,context
-    );
+    const selectedDiscovery=config.trustedBackendDiscoverySlot
+      ?config.trustedBackendDiscoverySlot.bindingFor(context)
+      :selectTrustedBackendDiscoveryA2A(config.trustedBackendDiscovery,context);
     try{
     const taskStart = performance.now();
     // A signed Test preparation Task may create/update tests without owning

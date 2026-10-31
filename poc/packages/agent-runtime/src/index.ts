@@ -20,3 +20,4 @@ export * from "./gemini-adk-model.ts";
 export { BaseLlm } from "@google/adk";
 export {TrustedBackendDiscoveryCryptoPresentation} from "./trusted-backend-discovery-crypto-presentation.ts";
 export {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A} from "./trusted-backend-discovery-a2a-binding.ts";
+export {TrustedBackendDiscoveryTaskSlot} from "./trusted-backend-discovery-task-slot.ts";
