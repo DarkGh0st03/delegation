@@ -1101,7 +1101,7 @@ try{
             assert.equal(new Set(report.tasks.map(t=>t.credential_id)).size,
               signedTaskOrder.length);
             assert.deepEqual(records.map(r=>r.task_id).sort(),
-              signedTaskOrder);
+              [...signedTaskOrder].sort());
             assert.equal(records[0].observation,"adapter_response_verified");
             assert.equal(records[0].parent_credential_id,operationalId);
             ownerD1ChildEvidence={

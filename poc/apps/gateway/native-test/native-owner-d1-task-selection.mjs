@@ -65,12 +65,15 @@ export function selectSignedNativeMultiD1Tasks({
     !Array.isArray(grants)||grants.length<5||grants.length>33||
     !originalFilesByRole||typeof originalFilesByRole!=="object")
   deny();
+ if(["backend","frontend"].some(role=>
+    !Array.isArray(originalFilesByRole[role])||
+    originalFilesByRole[role].length>16))
+  deny();
  const allowed={
   backend:new Set(originalFilesByRole.backend),
   frontend:new Set(originalFilesByRole.frontend)
  };
  if(["backend","frontend"].some(role=>
-    !Array.isArray(originalFilesByRole[role])||
     originalFilesByRole[role].length>16||
     [...allowed[role]].some(uri=>
      typeof uri!=="string"||!uri.startsWith(branchUri+"/files/"))))
