@@ -21,7 +21,7 @@ import {TrustedOperationalEpochIntake} from
 import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback,
   preflightTrustedRemoteRepairDiscovery} from
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
-import {TrustedOperationalRepairPlanner} from
+import {TrustedOperationalRepairPlanner,type TrustedRepairModelInput} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
 import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
@@ -1922,10 +1922,12 @@ test("R115 missing real Docker FAIL cannot be converted from model or A2A text",
 
 function r121RemotePlanner(h:Awaited<ReturnType<typeof harness>>,
  gateway:TrustedPlanIpcClient,options:{
-  propose?:()=>Promise<unknown>|unknown;
+  propose?:(input:TrustedRepairModelInput)=>Promise<unknown>|unknown;
   observedSha?:()=>Promise<string>|string;
   counters?:{model:number;head:number};
   alreadyFinalized?:boolean;
+  completedDiscoveryRead?:Readonly<{task_id:string;runtime_task_id:string;resource:string}>;
+  onInput?:(input:TrustedRepairModelInput)=>void;
  }={}){
  const reader=new GiteaClient({
   baseUrl:"http://gitea.local:3000",token:"private-r121-fixture",
@@ -1949,14 +1951,16 @@ function r121RemotePlanner(h:Awaited<ReturnType<typeof harness>>,
  return new TrustedOperationalRepairPlanner({
   gateway,coordinator:h.coordinator,intake:h.intake,sessionId:session,
   ...(options.alreadyFinalized?{failedTestAlreadyFinalized:true}:{}),
+  ...(options.completedDiscoveryRead?{completedDiscoveryRead:options.completedDiscoveryRead}:{}),
   runtimeTestTaskId:"task-test",nextPlanId:"r121-remote-repair-2",
   pinnedAgentRegistry:registry,
   featureHeadReader:new TrustedOperationalFeatureHeadReader({
    giteaClient:reader,intake:h.intake,repository:repo
   }),
-  proposeRepairPlan:async()=>{
+  proposeRepairPlan:async(input)=>{
    if(options.counters)options.counters.model++;
-   return options.propose?await options.propose():repairDraft();
+   options.onInput?.(input);
+   return options.propose?await options.propose(input):repairDraft();
   }
  });
 }
@@ -4505,4 +4509,33 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
   await assert.rejects(client.readConfirmedRemoteDiscoveryEffect(invalid),
    /Gateway trusted control denied/);
  }
+ // R151.44: verified discovery metadata reaches the exact repair planner
+ // only AFTER the completed provider read has been independently attested.
+ const counts={model:0,head:0};
+ let visible:TrustedRepairModelInput|undefined;
+ const planner=r121RemotePlanner(h.f.h,client,{
+  alreadyFinalized:true,counters:counts,
+  completedDiscoveryRead:{
+   task_id:h.config.discoveryTaskId,
+   runtime_task_id:"r15132-read-runtime",resource:file
+  },
+  onInput:input=>{visible=input;}
+ });
+ const proposed=await planner.proposeAndReserve();
+ assert.equal(proposed.status,"repair_epoch_reserved_no_execution_authority");
+ assert.equal(proposed.execution_authorized,false);
+ assert.equal(proposed.child_credential_issued,false);
+ assert.equal(proposed.source_failed_sha,sha);
+ assert.equal(counts.model,1);
+ assert.ok(visible);
+ assert.deepEqual(visible.diagnostic_read,{
+  status:"gateway_discovery_read_confirmed_no_authority",
+  resource:file,branch,tested_commit_sha:sha,operation:"read_file"
+ });
+ const payload=JSON.stringify(visible);
+ assert.equal(payload.includes(h.input.credential_id),false);
+ assert.equal(payload.includes(ledger.request_id),false);
+ assert.equal(payload.includes("signed_vp"),false);
+ assert.equal(payload.includes("source_disclosed"),false);
+ assert.equal((await h.f.h.intake.verifiedEpochHistory()).length,2);
 });
