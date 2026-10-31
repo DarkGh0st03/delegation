@@ -69,6 +69,7 @@ export function boundedTrustedRepairDiscoveryObservation(
  const r=strictObject(receipt,[
   "status","session_id","task_id","runtime_task_id","epoch","resource",
   "branch","revision","request_id","credential_id",
+  "source_sha256","source_bytes",
   "gateway_provider_corroborated","source_disclosed",
   "repair_dag_authorized","pr_authorized"
  ],"Gateway discovery metadata");
@@ -80,7 +81,11 @@ export function boundedTrustedRepairDiscoveryObservation(
     r.gateway_provider_corroborated!==true||r.source_disclosed!==false||
     r.repair_dag_authorized!==false||r.pr_authorized!==false||
     typeof r.request_id!=="string"||!ID.test(r.request_id)||
-    typeof r.credential_id!=="string"||!ID.test(r.credential_id))
+    typeof r.credential_id!=="string"||!ID.test(r.credential_id)||
+    typeof r.source_sha256!=="string"||
+    !/^[a-f0-9]{64}$/u.test(r.source_sha256)||
+    !Number.isSafeInteger(r.source_bytes)||
+    (r.source_bytes as number)<0||(r.source_bytes as number)>32768)
    fail("discovery provider evidence does not match the signed failed Test");
  return Object.freeze({
   status:"gateway_discovery_read_confirmed_no_authority" as const,

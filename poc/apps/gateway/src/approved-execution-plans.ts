@@ -10,6 +10,7 @@
  * This is an additional gate, NOT a replacement for Rust DC/VP verification,
  * OPA policy, tool validation or repository provider restrictions.
  */
+import {createHash} from "node:crypto";
 import { assertApprovedExecution, assertApprovedPlanScope, planDigest } from
   "../../../packages/plan-contracts/src/plan.mjs";
 import { RUST_OPERATIONS } from "./operation-catalog.ts";
@@ -53,6 +54,9 @@ export interface TrustedProviderEffect {
   readonly request_id:string;
   readonly tool:string;
   readonly resource:string;
+  /** SHA-256 of the ACTUAL Gateway/Gitea read bytes, never model data. */
+  readonly source_sha256?:string;
+  readonly source_bytes?:number;
   // A successful read is attested by metadata only. Never retain private
   // Gitea source content in the in-memory Gateway completion registry.
   readonly execution:ExecutionResult | Omit<GiteaReadFileExecutionResult,"content">;
@@ -803,11 +807,17 @@ export class TrustedApprovedExecutionPlans {
       if(record.request.tool!=="read_file"||result.provider!=="gitea"||
          !SHA.test(result.revision)||
          result.branch!==record.request.arguments.branch||
-         result.path!==record.request.arguments.path)return;
+         result.path!==record.request.arguments.path||
+         typeof result.content!=="string"||
+         result.encoding!=="utf-8")return;
+      // Record ONLY a bounded immutable fingerprint, never source bytes.
+      const sourceBytes=Buffer.byteLength(result.content,"utf8");
+      const sourceHash=createHash("sha256").update(result.content,"utf8").digest("hex");
       this.#bindings.get(record.task_id)?.successfulRequests.set(record.request_id,
         Object.freeze({
           request_id:record.request_id,tool:"read_file",
           resource:record.required_permission.resource,
+          source_sha256:sourceHash,source_bytes:sourceBytes,
           execution:{
             provider:"gitea" as const,performed:true as const,
             tool:"read_file" as const,branch:result.branch,path:result.path,
@@ -1061,6 +1071,10 @@ export class TrustedApprovedExecutionPlans {
     const e=effect?.execution;
     if(!effect||effect.tool!=="read_file"||
        effect.resource!==pins.resource||
+       typeof effect.source_sha256!=="string"||
+       !/^[a-f0-9]{64}$/u.test(effect.source_sha256)||
+       !Number.isSafeInteger(effect.source_bytes)||
+       effect.source_bytes!<0||effect.source_bytes!>32768||
        e?.provider!=="gitea"||e.tool!=="read_file"||
        e.performed!==true||
        !("revision" in e)||e.revision!==pins.tested_commit_sha||
@@ -1070,6 +1084,7 @@ export class TrustedApprovedExecutionPlans {
        !("blob_sha" in e)||typeof e.blob_sha!=="string"||
        !("last_commit_sha" in e)||
        !("size" in e)||!Number.isSafeInteger(e.size)||
+       e.size!==effect.source_bytes||
        !("encoding" in e)||e.encoding!=="utf-8")
       denied("No exact-SHA Gateway-correlated Gitea read-only provider effect");
     // Check the precise Gateway-generated ResourceURI rather than trusting
@@ -1090,6 +1105,7 @@ export class TrustedApprovedExecutionPlans {
       resource:pins.resource,branch:session.workBranch,
       revision:pins.tested_commit_sha,request_id:effect.request_id,
       credential_id:discovery.credentialId,
+      source_sha256:effect.source_sha256,source_bytes:effect.source_bytes,
       gateway_provider_corroborated:true as const,
       source_disclosed:false as const,
       repair_dag_authorized:false as const,

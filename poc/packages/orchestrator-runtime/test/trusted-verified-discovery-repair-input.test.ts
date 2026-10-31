@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
 import test from "node:test";
 import {boundedTrustedRepairDiscoveryObservation} from
  "../src/trusted-operational-repair-planner.ts";
@@ -14,6 +15,8 @@ const proven=()=>({
  runtime_task_id:pins.runtime_task_id,resource:pins.resource,
  branch:pins.branch,revision:pins.tested_commit_sha,
  request_id:"gateway-request-r15144",credential_id:"urn:child:r151-read",
+ source_sha256:createHash("sha256").update("export const ok=true;").digest("hex"),
+ source_bytes:21,
  gateway_provider_corroborated:true,source_disclosed:false,
  repair_dag_authorized:false,pr_authorized:false
 });
@@ -38,6 +41,8 @@ test("R151.44 reject wrong source, SHA, Task, identity, synthetic grant and secr
   {repair_dag_authorized:true},{pr_authorized:true},
   {status:"a2a_reported_read"},{request_id:"invalid/id"},
   {credential_id:"invalid/credential"},
+  {source_sha256:"a".repeat(63)},{source_bytes:32769},
+  {source_bytes:-1},{source_bytes:1.1},
   {content:"source"}, {signed_vp:"forbidden"}
  ]){
   assert.throws(()=>boundedTrustedRepairDiscoveryObservation({

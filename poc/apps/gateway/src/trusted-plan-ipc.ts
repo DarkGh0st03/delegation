@@ -1103,7 +1103,7 @@ export class TrustedPlanIpcClient{
     })).receipt;
     if(!v||typeof v!=="object"||Array.isArray(v)||
        Object.keys(v).sort().join(",")!==
-       "branch,credential_id,epoch,gateway_provider_corroborated,pr_authorized,repair_dag_authorized,request_id,resource,revision,runtime_task_id,session_id,source_disclosed,status,task_id"||
+       "branch,credential_id,epoch,gateway_provider_corroborated,pr_authorized,repair_dag_authorized,request_id,resource,revision,runtime_task_id,session_id,source_bytes,source_disclosed,source_sha256,status,task_id"||
        v.status!=="gateway_confirmed_exact_sha_discovery_read_no_repair_authority"||
        v.session_id!==pins.session_id||v.task_id!==pins.task_id||
        v.runtime_task_id!==pins.runtime_task_id||
@@ -1112,6 +1112,9 @@ export class TrustedPlanIpcClient{
        typeof v.branch!=="string"||v.branch.length<1||v.branch.length>200||
        typeof v.request_id!=="string"||!ID.test(v.request_id)||
        typeof v.credential_id!=="string"||!ID.test(v.credential_id)||
+       typeof v.source_sha256!=="string"||!MAC.test(v.source_sha256)||
+       !Number.isSafeInteger(v.source_bytes)||v.source_bytes<0||
+       v.source_bytes>32768||
        v.gateway_provider_corroborated!==true||
        v.source_disclosed!==false||v.repair_dag_authorized!==false||
        v.pr_authorized!==false)
@@ -1123,6 +1126,7 @@ export class TrustedPlanIpcClient{
       resource:pins.resource,branch:v.branch as string,
       revision:pins.tested_commit_sha,request_id:v.request_id as string,
       credential_id:v.credential_id as string,
+      source_sha256:v.source_sha256 as string,source_bytes:v.source_bytes as number,
       gateway_provider_corroborated:true as const,
       source_disclosed:false as const,repair_dag_authorized:false as const,
       pr_authorized:false as const

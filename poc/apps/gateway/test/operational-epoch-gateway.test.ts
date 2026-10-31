@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {generateKeyPairSync,randomBytes} from "node:crypto";
+import {generateKeyPairSync,randomBytes,createHash} from "node:crypto";
 import {mkdtemp,mkdir,writeFile,readFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
@@ -4496,6 +4496,11 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
   "gateway_confirmed_exact_sha_discovery_read_no_repair_authority");
  assert.equal(ledger.revision,sha);
  assert.equal(ledger.credential_id,h.input.credential_id);
+ assert.equal(ledger.source_bytes,Buffer.byteLength(
+  "export function invoice(): number { return 42; }\n","utf8"));
+ assert.equal(ledger.source_sha256,
+  createHash("sha256").update(
+   "export function invoice(): number { return 42; }\n").digest("hex"));
  assert.equal(ledger.gateway_provider_corroborated,true);
  assert.equal(ledger.source_disclosed,false);
  assert.equal(ledger.repair_dag_authorized,false);
