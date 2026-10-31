@@ -64,21 +64,64 @@ export function validateTrustedDiscoveryA2AArtifact(
  return Object.freeze(artifact);
 }
 
+
+/** No secrets or VP in the trusted Backend binding receipt. The caller must
+ * provide an authenticated owner-only transport (e.g. Unix HMAC IPC).
+ * Neither the A2A caller nor the model may invoke this port. */
+export interface TrustedBackendDiscoveryTaskBindingPort {
+ prepare(input:Readonly<{
+  runtime_task_id:string;plan_task_id:string;credential_id:string;
+  presenter_id:string;branch:string;path:string;resource:string;
+  audience:"cloud-access-gateway";
+ }>):Promise<Readonly<{
+  status:"backend_discovery_read_prebound_not_executed";
+  runtime_task_id:string;plan_task_id:string;credential_id:string;
+  presenter_id:string;resource:string;
+  execution_authorized:false;source_read:false;
+ }>>;
+ /** Called even for failed A2A and unknown network outcomes. */
+ fence(runtimeTaskId:string):Promise<void>;
+}
+export function validateTrustedBackendDiscoveryBindAck(
+ receipt:Awaited<ReturnType<TrustedBackendDiscoveryTaskBindingPort["prepare"]>>,
+ pins:Readonly<{
+  runtime_task_id:string;plan_task_id:string;credential_id:string;
+  presenter_id:string;resource:string;
+ }>
+):void{
+ if(!receipt||typeof receipt!=="object"||Array.isArray(receipt)||
+    Object.keys(receipt).sort().join(",")!==
+     "credential_id,execution_authorized,plan_task_id,presenter_id,resource,runtime_task_id,source_read,status"||
+    receipt.status!=="backend_discovery_read_prebound_not_executed"||
+    receipt.runtime_task_id!==pins.runtime_task_id||
+    receipt.plan_task_id!==pins.plan_task_id||
+    receipt.credential_id!==pins.credential_id||
+    receipt.presenter_id!==pins.presenter_id||
+    receipt.resource!==pins.resource||
+    receipt.execution_authorized!==false||
+    receipt.source_read!==false)
+   deny("Backend read signer is not independently prebound to exact Gateway Task");
+}
+
 export class TrustedRemoteDiscoveryA2AHandoff {
  readonly #gateway:TrustedPlanIpcClient;
  readonly #intake:TrustedOperationalEpochIntake;
  readonly #coordinator:TrustedExecutionCoordinator;
  readonly #a2a:ProtectedA2AClientPort;
+ readonly #backend:TrustedBackendDiscoveryTaskBindingPort;
  readonly #pins:Pins;
  #attempted=false;
  constructor(config:Readonly<{
   gateway:TrustedPlanIpcClient;intake:TrustedOperationalEpochIntake;
   coordinator:TrustedExecutionCoordinator;a2a:ProtectedA2AClientPort;
+  backendTaskBinding:TrustedBackendDiscoveryTaskBindingPort;
  }&Pins>){
   if(!(config.gateway instanceof TrustedPlanIpcClient)||
      !(config.intake instanceof TrustedOperationalEpochIntake)||
      !(config.coordinator instanceof TrustedExecutionCoordinator)||
      typeof config.a2a?.sendProtectedTask!=="function"||
+     typeof config.backendTaskBinding?.prepare!=="function"||
+     typeof config.backendTaskBinding?.fence!=="function"||
      !ID.test(config.sessionId)||!ID.test(config.discoveryTaskId)||
      !ID.test(config.failedRuntimeTestTaskId)||
      !PATH.test(config.path)||config.path.includes("//")||
@@ -96,6 +139,7 @@ export class TrustedRemoteDiscoveryA2AHandoff {
   config.intake.assertSameCoordinator(config.coordinator);
   this.#gateway=config.gateway;this.#intake=config.intake;
   this.#coordinator=config.coordinator;this.#a2a=config.a2a;
+  this.#backend=config.backendTaskBinding;
   this.#pins=Object.freeze({
    sessionId:config.sessionId,discoveryTaskId:config.discoveryTaskId,
    failedRuntimeTestTaskId:config.failedRuntimeTestTaskId,
@@ -112,6 +156,7 @@ export class TrustedRemoteDiscoveryA2AHandoff {
   if(this.#attempted)deny("one-use discovery handoff already attempted");
   this.#attempted=true; // reserve before any async inspection or side effect
   const p=this.#pins;
+  let runtimeId:string|undefined;
   try{
    if(this.#coordinator.phase!=="execution")
     deny("original Rust root is not active");
@@ -177,7 +222,7 @@ export class TrustedRemoteDiscoveryA2AHandoff {
     deny("discovery admission receipt cannot authorize a provider read");
    // Fresh non-caller-chosen Gateway identity. A lost bind/send ACK is a
    // terminal uncertainty; no automated redispatch or credential reissue.
-   const runtimeId="dispatch_"+randomBytes(16).toString("base64url");
+   runtimeId="dispatch_"+randomBytes(16).toString("base64url");
    await this.#gateway.bindTask(
     p.sessionId,p.discoveryTaskId,runtimeId,"backend"
    );
@@ -192,6 +237,17 @@ export class TrustedRemoteDiscoveryA2AHandoff {
       renewed.failed_plan_digest!==before.failed_plan_digest||
       this.#coordinator.phase!=="execution")
     deny("root, failed Runner, or epoch changed before A2A dispatch");
+   // R151.39: before the A2A message, the owner-only Backend service
+   // must bind its PRIVATE Rust signer to this newly allocated runtime ID.
+   // A bare credential in A2A JSON MUST NOT select the signing holder.
+   const taskPins={
+    runtime_task_id:runtimeId,plan_task_id:p.discoveryTaskId,
+    credential_id:issued.id,presenter_id:candidate.agent_did,
+    branch:before.work_branch,path:p.path,resource:p.resource,
+    audience:"cloud-access-gateway" as const
+   };
+   const bound=await this.#backend.prepare(taskPins);
+   validateTrustedBackendDiscoveryBindAck(bound,taskPins);
    const evidence={
     credential:JSON.stringify(issued),credential_id:issued.id,
     presenter_id:candidate.agent_did
@@ -231,6 +287,9 @@ export class TrustedRemoteDiscoveryA2AHandoff {
    await this.#gateway.confirmTaskCompletion(
     runtimeId,observedA2ACompletion(observed,runtimeId)
    );
+   // Fail closed on an uncertain Backend holder retirement even if the
+   // authenticated Gateway has already confirmed the source read.
+   await this.#backend.fence(runtimeId);
    return Object.freeze({
     status:"remote_discovery_gateway_provider_confirmed" as const,
     session_id:p.sessionId,task_id:p.discoveryTaskId,
@@ -242,6 +301,11 @@ export class TrustedRemoteDiscoveryA2AHandoff {
     pr_authorized:false as const
    });
   }catch{
+   // A bind/send/cleanup uncertainty cannot be retried or promoted.
+   if(runtimeId){
+    try{await this.#backend.fence(runtimeId);}
+    catch{/* Owner root closure below remains mandatory. */}
+   }
    // A2A/IPC uncertainty cannot be resubmitted or promoted to a new epoch.
    // Fail closed on the ORIGINAL owner root even when remote cleanup fails.
    try{await this.#coordinator.closeExecution();}
