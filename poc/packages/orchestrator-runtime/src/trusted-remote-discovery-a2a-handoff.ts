@@ -29,6 +29,41 @@ type Pins=Readonly<{
  sessionId:string;discoveryTaskId:string;failedRuntimeTestTaskId:string;
  resource:string;path:string;backendAgentBaseUrl:string;
 }>;
+/**
+ * Validate the remote Backend's ONLY accepted read artifact. This is
+ * non-authorizing parsing: even a valid Task/Artifact cannot mark success
+ * unless the Gateway later corroborates a real provider read.
+ */
+export function validateTrustedDiscoveryA2AArtifact(
+ response:Awaited<ReturnType<ProtectedA2AClientPort["sendProtectedTask"]>>,
+ pins:Readonly<{branch:string;tested_commit_sha:string}>
+){
+ if(!response||typeof response!=="object"||
+    typeof response.card?.name!=="string"||
+    !response.card.name.trim()||response.card.name.length>160||
+    response.task?.status?.state!==TaskState.TASK_STATE_COMPLETED||
+    typeof response.task.id!=="string"||!ID.test(response.task.id)||
+    !Array.isArray(response.task.artifacts)||
+    response.task.artifacts.length!==1)
+  deny("remote Backend Task is not exactly completed");
+ const artifactParts=response.task.artifacts[0]?.parts;
+ // Reject unexpected text/multimedia parts: no source or VP material
+ // belongs in a supposedly structured, source-free A2A receipt.
+ if(!Array.isArray(artifactParts)||artifactParts.length!==1||
+    artifactParts[0]?.content?.$case!=="data")
+  deny("remote Backend must return only one structured artifact");
+ const artifact=validateWorkflowArtifact(
+  artifactParts[0].content.value,"backend",{expectedBranch:pins.branch}
+ );
+ if(!/^[a-f0-9]{40}$/u.test(pins.tested_commit_sha)||
+    artifact.revision!==pins.tested_commit_sha||
+    artifact.commit_sha!==pins.tested_commit_sha||
+    artifact.test_outcome!=="not_run"||
+    artifact.files_modified.length!==0||artifact.files_created.length!==0)
+  deny("discovery A2A artifact is not a pure read of failed SHA");
+ return Object.freeze(artifact);
+}
+
 export class TrustedRemoteDiscoveryA2AHandoff {
  readonly #gateway:TrustedPlanIpcClient;
  readonly #intake:TrustedOperationalEpochIntake;
@@ -173,22 +208,9 @@ export class TrustedRemoteDiscoveryA2AHandoff {
      approved_run_tests:false
     }
    });
-   if(response.task?.status?.state!==TaskState.TASK_STATE_COMPLETED||
-      !ID.test(response.task.id)||response.task.artifacts.length!==1)
-    deny("remote Backend Task is not exactly completed");
-   const parts=response.task.artifacts[0]?.parts.filter(
-    x=>x.content?.$case==="data"
-   );
-   if(parts?.length!==1||parts[0]?.content?.$case!=="data")
-    deny("remote Backend must return one structured artifact");
-   const artifact=validateWorkflowArtifact(
-    parts[0].content.value,"backend",{expectedBranch:before.work_branch}
-   );
-   if(artifact.revision!==before.tested_commit_sha||
-      artifact.commit_sha!==before.tested_commit_sha||
-      artifact.test_outcome!=="not_run"||
-      artifact.files_modified.length!==0||artifact.files_created.length!==0)
-    deny("discovery A2A artifact is not a pure read of failed SHA");
+   const artifact=validateTrustedDiscoveryA2AArtifact(response,{
+    branch:before.work_branch,tested_commit_sha:before.tested_commit_sha
+   });
    const checked=await prepareTrustedRemoteRepairFeedback({
     gateway:this.#gateway,intake:this.#intake,
     coordinator:this.#coordinator,
