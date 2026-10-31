@@ -187,3 +187,91 @@ export async function prepareTrustedRemoteRepairFeedback(config:{
   }
  });
 }
+
+/**
+ * R151.23: source-FREE remote discovery preflight for the first bounded
+ * Backend/Test repair. No discovery Task, Child DC or provider read is
+ * created here. Gateway may create a fresh signed ORIGINAL-root VP solely
+ * to verify native authority; this is not Task admission or executable scope.
+ *
+ * The trusted owner independently validates the exact read_file grant in
+ * the actually issued Rust root; the live remote Gateway independently
+ * validates a previously finalized Test FAIL and fresh original-root VP.
+ */
+export async function preflightTrustedRemoteRepairDiscovery(config:{
+ gateway:TrustedPlanIpcClient;
+ intake:TrustedOperationalEpochIntake;
+ coordinator:Pick<TrustedExecutionCoordinator,"phase"|"trustedOperationalAuthority">;
+ sessionId:string;runtimeTestTaskId:string;discoveryTaskId:string;resource:string;
+}):Promise<Readonly<{
+ status:"remote_repair_discovery_preflight_only";
+ session_id:string;task_id:string;resource:string;failed_epoch:number;
+ tested_commit_sha:string;root_plan_digest:string;
+ permission_granted:false;child_credential_issued:false;
+ source_read:false;execution_authorized:false;
+}>>{
+ if(!(config?.gateway instanceof TrustedPlanIpcClient)||
+    !(config.intake instanceof TrustedOperationalEpochIntake)||
+    !config.coordinator||
+    !config.gateway.nativeRootVpInspectionConfigured())
+  deny("remote discovery requires live Gateway root VP inspection and original owner");
+ config.intake.assertSameCoordinator(config.coordinator);
+ // R122 read-only: discovery cannot finalize a Runner failure itself.
+ const input={
+  gateway:config.gateway,intake:config.intake,
+  coordinator:config.coordinator,sessionId:config.sessionId,
+  runtimeTestTaskId:config.runtimeTestTaskId,alreadyFinalized:true
+ };
+ const before=await prepareTrustedRemoteRepairFeedback(input);
+ if(before.status!=="repair_planning_eligible"||
+    before.first_failed_phase!=="typecheck"||
+    before.typecheck_error_codes.length===0||
+    before.typecheck_error_codes.some(c=>!/^TS[0-9]{4}$/u.test(c)))
+  deny("only verified TypeScript Test FAIL supports bounded Backend discovery");
+ const discovery={
+  sessionId:config.sessionId,taskId:config.discoveryTaskId,
+  agentId:"backend" as const,resource:config.resource
+ };
+ const scoped=await config.intake.preflightRepairDiscovery(discovery);
+ if(scoped.session_id!==before.session_id||
+    scoped.root_plan_digest!==before.root_plan_digest||
+    scoped.epoch!==before.failed_epoch||
+    scoped.work_branch!==before.work_branch||
+    scoped.operation!=="read_file"||
+    scoped.execution_authorized!==false)
+  deny("signed discovery read and failed Gateway epoch differ");
+ // IPC transports only the signed root/session/epoch pins, never a
+ // caller-supplied grant, credential ID, source body or VP bytes.
+ const root=await config.gateway.inspectVerifiedRootVp({
+  session_id:before.session_id,root_plan_digest:before.root_plan_digest,
+  plan_digest:before.failed_plan_digest,epoch:before.failed_epoch
+ });
+ if(root.cryptographic_presentation_verified!==true||
+    root.native_issued_grants_checked!==true||
+    root.execution_authorized!==false||
+    root.child_credential_issued!==false)
+  deny("native root VP inspection is not non-authorizing");
+ const after=await prepareTrustedRemoteRepairFeedback(input);
+ const rescoped=await config.intake.preflightRepairDiscovery(discovery);
+ if(after.status!==before.status||
+    after.root_plan_digest!==before.root_plan_digest||
+    after.failed_plan_digest!==before.failed_plan_digest||
+    after.failed_epoch!==before.failed_epoch||
+    after.failed_request_id!==before.failed_request_id||
+    after.tested_commit_sha!==before.tested_commit_sha||
+    after.work_branch!==before.work_branch||
+    rescoped.root_credential_id!==scoped.root_credential_id||
+    rescoped.epoch!==scoped.epoch||
+    rescoped.root_plan_digest!==scoped.root_plan_digest||
+    rescoped.resource!==scoped.resource)
+  deny("Gateway failure, Rust root or signed discovery scope changed");
+ return Object.freeze({
+  status:"remote_repair_discovery_preflight_only" as const,
+  session_id:before.session_id,task_id:scoped.task_id,
+  resource:scoped.resource,failed_epoch:before.failed_epoch,
+  tested_commit_sha:before.tested_commit_sha,
+  root_plan_digest:before.root_plan_digest,
+  permission_granted:false as const,child_credential_issued:false as const,
+  source_read:false as const,execution_authorized:false as const
+ });
+}

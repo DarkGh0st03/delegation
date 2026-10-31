@@ -18,7 +18,8 @@ import {TrustedOperationalEpochJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-journal.mjs";
 import {TrustedOperationalEpochIntake} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
-import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback} from
+import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback,
+  preflightTrustedRemoteRepairDiscovery} from
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
 import {TrustedOperationalRepairPlanner} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
@@ -1792,7 +1793,7 @@ test("R114 real Gateway pins original root before terminal Test FAIL finalizatio
  * No paid models, container engine, or external service are invoked here. */
 async function r115RemoteFixture(t:import("node:test").TestContext,
  options:{withDurable?:boolean;withRemoteEpoch?:boolean;
-  withReview?:boolean}={}){
+  withReview?:boolean;withRead?:boolean}={}){
  const h=await harness(t,options);
  await h.intake.reserveInitialEpoch();
  await h.gates.activate(session,sha);
@@ -2607,10 +2608,10 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
   Array<{resource:string;operation:string}>;
  issued?:Record<string,unknown>; status?:Record<string,unknown>;
  onIssued?:()=>Promise<void>;
- withVp?:boolean; vpMutate?:Record<string,unknown>;
+ withRead?:boolean;withVp?:boolean; vpMutate?:Record<string,unknown>;
  onVpVerification?:(revokeAdapterRoot:()=>void)=>Promise<void>;
 }={}){
- const base=await r115RemoteFixture(t,{withDurable:true});
+ const base=await r115RemoteFixture(t,{withDurable:true,withRead:options.withRead});
  let nativeCalls=0,issuedCalls=0;
  let adapterRootRevoked=false;
  const now=BigInt(Date.now())*1_000_000n;
@@ -2839,6 +2840,47 @@ test("R132 private Gateway correlates signed epoch, EVM status, actual root gran
   session,"backend-repair","r132-unadmitted-new-task","backend"
  ),/current admitted epoch/,
  "Inspecting a signed VP must NOT activate the next operational epoch");
+});
+
+test("R151.23 remote Backend discovery verifies Test FAIL, signed read and native VP without granting authority",async t=>{
+ const f=await r128Fixture(t,{withVp:true,withRead:true});
+ await prepareTrustedRemoteRepairFeedback(f.request());
+ const proof=await preflightTrustedRemoteRepairDiscovery({
+  ...f.request(),discoveryTaskId:"r151-remote-source-probe",resource:file
+ });
+ assert.equal(proof.status,"remote_repair_discovery_preflight_only");
+ assert.equal(proof.session_id,session);
+ assert.equal(proof.task_id,"r151-remote-source-probe");
+ assert.equal(proof.resource,file);
+ assert.equal(proof.tested_commit_sha,sha);
+ assert.equal(proof.failed_epoch,1);
+ assert.equal(proof.permission_granted,false);
+ assert.equal(proof.child_credential_issued,false);
+ assert.equal(proof.source_read,false);
+ assert.equal(proof.execution_authorized,false);
+ assert.ok(Object.isFrozen(proof));
+ assert.equal(f.signedVpCalls,1);
+ assert.equal(f.verifiedVpCalls,1);
+ assert.equal(f.h.provider,3,"preflight cannot perform a provider read");
+ assert.equal((await f.h.intake.verifiedEpochHistory()).length,1);
+});
+test("R151.23 missing original Rust read grant denies discovery before VP inspection",async t=>{
+ const f=await r128Fixture(t,{withVp:true});
+ await prepareTrustedRemoteRepairFeedback(f.request());
+ await assert.rejects(preflightTrustedRemoteRepairDiscovery({
+  ...f.request(),discoveryTaskId:"r151-no-read",resource:file
+ }),/discovery read grant outside exact issued Rust root/);
+ assert.equal(f.signedVpCalls,0);
+ assert.equal(f.verifiedVpCalls,0);
+ assert.equal(f.h.provider,3);
+});
+test("R151.23 unfinalized Runner FAIL cannot unlock remote discovery",async t=>{
+ const f=await r128Fixture(t,{withVp:true,withRead:true});
+ await assert.rejects(preflightTrustedRemoteRepairDiscovery({
+  ...f.request(),discoveryTaskId:"r151-no-final-fail",resource:file
+ }),/Gateway trusted control denied/);
+ assert.equal(f.signedVpCalls,0);
+ assert.equal(f.h.provider,3);
 });
 
 test("R132 corrupt Rust presenter, issuer, root identity or extra permissions deny VP",async t=>{
