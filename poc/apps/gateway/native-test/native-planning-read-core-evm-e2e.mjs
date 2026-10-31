@@ -119,10 +119,13 @@ const realGitea=[disposableBase,disposableToken,disposableSha]
 const signedHandoff=process.env.PLANNING_NATIVE_SIGNED_HANDOFF==="1";
 const positiveDag=process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
 const ownerD1Probe=process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1";
-const ownerD1AdkProposal=
+// The isolated Docker smoke script executes several independent native
+// subprocesses. Its opt-in flag is inherited by ALL of them, while only
+// the explicit owner-D1 subprocess can run the R151 proposal path.
+const ownerD1AdkProposal=ownerD1Probe&&
   process.env.APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL==="1";
-if(ownerD1AdkProposal&&(!ownerD1Probe||geminiPilot))
-  throw Error("R151 offline owner ADK repair fixture requires original signed D1 only");
+if(ownerD1AdkProposal&&geminiPilot)
+  throw Error("R151 offline owner ADK repair fixture is never a paid Gemini path");
 const signedOfflineMultiTest=positiveDag&&
   process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1";
 if(ownerD1Probe&&(!signedOfflineTypecheckProbe||geminiPilot||
