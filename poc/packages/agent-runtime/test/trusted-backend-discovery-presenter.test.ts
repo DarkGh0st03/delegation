@@ -135,9 +135,7 @@ test("R151.28 validates fixed trusted configuration before signing",()=>{
   {audience:"bad"},
   {isTaskActive:null}
  ]){
-  // A standalone canonical URI is not enough to grant source access:
-  // the R151.27 Gateway still enforces the signed pinned resource.
-  if(changes.resource==="gitea://")continue;
+  // Even a valid file URI grants nothing before Gateway R151.27 verification.
   assert.throws(()=>new TrustedBackendDiscoveryChildPresenter({
    ...fixed,...changes
   } as typeof fixed),/Trusted Backend discovery presenter NO-GO/);
