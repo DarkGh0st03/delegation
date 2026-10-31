@@ -41,7 +41,8 @@ import {TrustedPlanningReviewGate}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
 import {TrustedPlanIpcClient}
   from "../../gateway/src/trusted-plan-ipc.ts";
-import {GiteaClient} from "../../gateway/src/gitea-client.ts";
+import {isTrustedOwnerRepairPlannerConfig}
+  from "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {SignedEngineerApprovalFileStore}
   from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
 import {SoftwareEngineerAuthorityBootstrap}
@@ -173,11 +174,8 @@ export async function startTrustedEngineerLocalHost(config){
      typeof ownerOperationalRecovery.epochDirectory!=="string"||
      (typeof ownerOperationalRecovery.continueWithinActiveRoot==="function")===
        (ownerOperationalRecovery.planRepairEpoch!==undefined)||
-     (ownerOperationalRecovery.planRepairEpoch!==undefined&&(
-       !(ownerOperationalRecovery.planRepairEpoch.giteaClient instanceof GiteaClient)||
-       typeof ownerOperationalRecovery.planRepairEpoch.proposeRepairPlan!=="function"||
-       (ownerOperationalRecovery.planRepairEpoch.admitReservedEpoch!==undefined&&
-        typeof ownerOperationalRecovery.planRepairEpoch.admitReservedEpoch!=="boolean")))))
+     (ownerOperationalRecovery.planRepairEpoch!==undefined&&
+       !isTrustedOwnerRepairPlannerConfig(ownerOperationalRecovery.planRepairEpoch))))
     deny("R123 original owner Coordinator, Gateway IPC and signed store required");
   if(ownerOperationalRecovery){
     active.coordinator.assertSameApprovedGatewayPlans(recovery.gateway);

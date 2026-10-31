@@ -48,6 +48,18 @@ const SHA=/^[0-9a-f]{40}$/u;
 const DIGEST=/^[0-9a-f]{64}$/u;
 const fail=(msg:string):never=>{throw Error("Trusted owner recovery R123: "+msg);};
 
+/** Shared host/runtime gate. A proposer supplies data, never authority. */
+export function isTrustedOwnerRepairPlannerConfig(config:unknown):boolean{
+ if(!config||typeof config!=="object")return false;
+ const c=config as Record<string,unknown>;
+ const callback=typeof c.proposeRepairPlan==="function";
+ const adk=c.trustedAdkProposer instanceof TrustedAdkOperationalRepairProposer;
+ return c.giteaClient instanceof GiteaClient&&callback!==adk&&
+  (c.proposeRepairPlan===undefined||callback)&&
+  (c.trustedAdkProposer===undefined||adk)&&
+  (c.admitReservedEpoch===undefined||typeof c.admitReservedEpoch==="boolean");
+}
+
 export async function armTrustedOwnerOperationalRecovery(config:{
  coordinator:Pick<TrustedExecutionCoordinator,
   "phase"|"trustedOperationalAuthority"> &
@@ -113,15 +125,11 @@ export async function armTrustedOwnerOperationalRecovery(config:{
  const r=config?.running?.readiness;
  const custom=typeof config?.continueWithinActiveRoot==="function";
  const structured=config?.planRepairEpoch!==undefined;
- const callback=typeof config?.planRepairEpoch?.proposeRepairPlan==="function";
  const typedAdk=config?.planRepairEpoch?.trustedAdkProposer
    instanceof TrustedAdkOperationalRepairProposer;
  if(custom===structured||
     (config?.continueWithinActiveRoot!==undefined&&!custom)||
-    (structured&&(!(config.planRepairEpoch!.giteaClient instanceof GiteaClient)||
-       callback===typedAdk||
-       (config.planRepairEpoch!.proposeRepairPlan!==undefined&&!callback)||
-       (config.planRepairEpoch!.trustedAdkProposer!==undefined&&!typedAdk))))
+    (structured&&!isTrustedOwnerRepairPlannerConfig(config.planRepairEpoch)))
   fail("exactly one trusted owner continuation or configured repair planner required");
  const paired=config.planRepairEpoch?.trustedRemoteDiscovery;
  if(paired!==undefined&&

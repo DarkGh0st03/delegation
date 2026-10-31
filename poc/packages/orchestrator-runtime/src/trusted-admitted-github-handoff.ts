@@ -30,15 +30,10 @@ import {TrustedPlanIpcClient}
   from "../../../apps/gateway/src/trusted-plan-ipc.ts";
 import {SignedEngineerApprovalFileStore}
   from "./signed-approval-store.ts";
-import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
-import type {TrustedRepairModelInput}
- from "./trusted-operational-repair-planner.ts";
 import type {TrustedRepairFeedbackSignal}
   from "./trusted-validation-repair-feedback.ts";
 import {TrustedOperationalEpochIntake}
   from "./trusted-operational-epoch-intake.ts";
-import type {TrustedOwnerRepairDagPorts}
-  from "./trusted-owner-operational-repair-handoff.ts";
 import {TrustedOrchestratorRootPresenter}
   from "./trusted-orchestrator-root-presenter.ts";
 import {createTrustedRootVpSignerServer}
@@ -157,12 +152,9 @@ export async function startAdmittedGithubReviewedGeminiHandoff(
           intake:TrustedOperationalEpochIntake
         )=>Promise<void>;
         /** R124 optional concrete repair planner; never an HTTP field. */
-        planRepairEpoch?:Readonly<{
-          giteaClient:GiteaClient;
-          proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
-          admitReservedEpoch?:boolean;
-          executeAdmittedRepairDag?:Readonly<TrustedOwnerRepairDagPorts>;
-        }>;
+        planRepairEpoch?:Parameters<
+          typeof armTrustedOwnerOperationalRecovery
+        >[0]["planRepairEpoch"];
       }>;
     }
 ){

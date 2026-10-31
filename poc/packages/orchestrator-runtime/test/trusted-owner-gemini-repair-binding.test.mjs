@@ -4,7 +4,7 @@ import {BaseLlm} from "@google/adk";
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {TrustedAdkOperationalRepairProposer} from
  "../src/trusted-adk-operational-repair-proposer.ts";
-import {armTrustedOwnerOperationalRecovery} from
+import {armTrustedOwnerOperationalRecovery,isTrustedOwnerRepairPlannerConfig} from
  "../src/trusted-owner-operational-repair-handoff.ts";
 
 class NoNetworkAdk extends BaseLlm {
@@ -52,4 +52,25 @@ test("R151 owner still accepts the existing callback with no implicit Gemini",as
  await assert.rejects(armTrustedOwnerOperationalRecovery({
   ...base,planRepairEpoch:{giteaClient,proposeRepairPlan:noop}
  }),/original approved Coordinator, root and durable IPC required/);
+});
+
+
+test("R151.50 host/runtime share exclusive proposer and admission validation",async()=>{
+ for(const proposer of [{proposeRepairPlan:noop},{trustedAdkProposer}]){
+  for(const admitReservedEpoch of [undefined,false,true])
+   assert.equal(isTrustedOwnerRepairPlannerConfig({giteaClient,...proposer,admitReservedEpoch}),true);
+  for(const admitReservedEpoch of ["true",1,null,{}]){
+   const planRepairEpoch={giteaClient,...proposer,admitReservedEpoch};
+   assert.equal(isTrustedOwnerRepairPlannerConfig(planRepairEpoch),false);
+   await assert.rejects(armTrustedOwnerOperationalRecovery({
+    ...base,planRepairEpoch
+   }),/exactly one trusted owner continuation or configured repair planner required/);
+  }
+ }
+ for(const config of [undefined,null,{},
+  {giteaClient,proposeRepairPlan:noop,trustedAdkProposer},
+  {giteaClient,trustedAdkProposer:{propose:noop}},
+  {giteaClient:{},proposeRepairPlan:noop},
+  {giteaClient,proposeRepairPlan:"invalid",trustedAdkProposer}
+ ])assert.equal(isTrustedOwnerRepairPlannerConfig(config),false);
 });
