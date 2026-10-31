@@ -109,6 +109,11 @@ export class TrustedBackendDiscoveryTaskSlot {
   if(!/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId))deny("invalid task fence");
   if(this.#binding&&this.#binding.runtimeTaskId!==runtimeTaskId)
    deny("foreign Task cannot retire a live Backend holder");
+  this.retireAll();
+ }
+ /** A process or socket shutdown must revoke the private holder even
+  * without any matching runtime ID or completed A2A Task. */
+ retireAll(){
   this.#retired=true;this.#reserved=true;
   this.#binding?.presentation.fence();
   this.#holder.fence();

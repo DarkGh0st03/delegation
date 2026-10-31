@@ -52,7 +52,7 @@ async function fixture(t:import("node:test").TestContext){
  const client=await TrustedBackendDiscoveryTaskBindingSocketClient.connect({
   socketPath,secretFile
  });
- return {slot,client,socketPath,secretFile,get calls(){return calls;}};
+ return {slot,client,socketPath,secretFile,server,get calls(){return calls;}};
 }
 test("R151.41 owner HMAC IPC prebinds exact Backend Child and safely retires it",async t=>{
  const f=await fixture(t);
@@ -107,4 +107,29 @@ test("R151.41 unauthenticated and foreign requests never bind or sign",async t=>
  // A malformed authenticated attempt is one-use fail-closed.
  await assert.rejects(f.client.prepare(pins),/binding denied/);
  assert.equal(f.calls,0);
+});
+
+test("R151.41.1 Backend socket shutdown revokes signer even with active bound Task",async t=>{
+ const f=await fixture(t);
+ await f.client.prepare(pins);
+ const context={
+  task_id:"r15141-a2a",context_id:"ctx",role:"backend" as const,
+  trusted_gateway_task_id:runtime,
+  subtask:{subtask_id:pins.plan_task_id,instruction:"Read",branch,
+   relevant_paths:[path],approved_file_permissions:[{operation:"read_file" as const,path}],
+   approved_run_tests:false},
+  delegation_evidence:{credential:"PRIVATE",credential_id:child,
+   presenter_id:pins.presenter_id}
+ };
+ const holder=f.slot.bindingFor(context);
+ assert.ok(holder);
+ await f.server.close();
+ await assert.rejects(holder!.createSignedPresentation({
+  request_id:"post-shutdown",audience:"cloud-access-gateway",
+  challenge:randomBytes(32).toString("base64url"),
+  required_permission:{resource,operation:"read_file"},
+  expires_at:new Date(Date.now()+30000).toISOString()
+ }),/closed or cancelled/);
+ assert.equal(f.calls,0);
+ await assert.rejects(f.client.prepare(pins));
 });

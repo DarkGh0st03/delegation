@@ -149,6 +149,7 @@ export async function createTrustedBackendDiscoveryTaskBindingServer(config:{
   },
   async close(){
    closed=true;
+   config.slot.retireAll();
    if(!running)return;
    await new Promise<void>((ok,bad)=>{
     server.close(e=>e?bad(e):ok());
