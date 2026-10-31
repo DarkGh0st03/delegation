@@ -1188,10 +1188,20 @@ try{
         const deriveRoutes=!geminiPilot&&(
           process.env.APPROVED_RUNNER_SOURCE_DERIVED_ROUTES==="1"||
           process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1");
-        const derivedPaths=deriveRoutes
+        const signedDerivedPaths=deriveRoutes
           ?selectSourceDerivedTargetsFromApprovedPlan({
             plan:reviewed.plan,approvedRows,repo,branch:workBranch
           }):[];
+        // The mixed zero-billing D1 fixture uses OfflineApprovedAdkModel
+        // for Frontend to support a second signed repair Task. That scripted
+        // model can consume complete signed-grant file fixtures, but CANNOT
+        // synthesize the content-free API update reserved for the independent
+        // SourceWitnessed model. Keep Backend source-derived route checks,
+        // and do not emit an unfulfillable Frontend update_file call here.
+        // This changes NO grants, Gateway checks or paid Gemini behavior.
+        const derivedPaths=multiTypecheckProbe
+          ?signedDerivedPaths.filter(path=>roleFiles.backend.includes(path))
+          :signedDerivedPaths;
         const otherImplementations={...referenceFiles};
         for(const path of derivedPaths)delete otherImplementations[path];
         if(signedOfflineTypecheckProbe){
