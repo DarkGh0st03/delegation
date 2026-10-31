@@ -2846,7 +2846,7 @@ test("R151.23 remote Backend discovery verifies Test FAIL, signed read and nativ
  const f=await r128Fixture(t,{withVp:true,withRead:true});
  await prepareTrustedRemoteRepairFeedback(f.request());
  const proof=await preflightTrustedRemoteRepairDiscovery({
-  ...f.request(),discoveryTaskId:"r151-remote-source-probe",resource:file
+  ...f.request(),gateway:f.client,discoveryTaskId:"r151-remote-source-probe",resource:file
  });
  assert.equal(proof.status,"remote_repair_discovery_preflight_only");
  assert.equal(proof.session_id,session);
@@ -2868,7 +2868,7 @@ test("R151.23 missing original Rust read grant denies discovery before VP inspec
  const f=await r128Fixture(t,{withVp:true});
  await prepareTrustedRemoteRepairFeedback(f.request());
  await assert.rejects(preflightTrustedRemoteRepairDiscovery({
-  ...f.request(),discoveryTaskId:"r151-no-read",resource:file
+  ...f.request(),gateway:f.client,discoveryTaskId:"r151-no-read",resource:file
  }),/discovery read grant outside exact issued Rust root/);
  assert.equal(f.signedVpCalls,0);
  assert.equal(f.verifiedVpCalls,0);
@@ -2877,7 +2877,7 @@ test("R151.23 missing original Rust read grant denies discovery before VP inspec
 test("R151.23 unfinalized Runner FAIL cannot unlock remote discovery",async t=>{
  const f=await r128Fixture(t,{withVp:true,withRead:true});
  await assert.rejects(preflightTrustedRemoteRepairDiscovery({
-  ...f.request(),discoveryTaskId:"r151-no-final-fail",resource:file
+  ...f.request(),gateway:f.client,discoveryTaskId:"r151-no-final-fail",resource:file
  }),/Gateway trusted control denied/);
  assert.equal(f.signedVpCalls,0);
  assert.equal(f.h.provider,3);
