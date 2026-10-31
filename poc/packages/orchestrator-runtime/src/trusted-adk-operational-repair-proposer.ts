@@ -82,6 +82,7 @@ export class TrustedAdkOperationalRepairProposer {
  readonly #maxSessionMs:number;
  readonly #maxOutputTokens:number;
  readonly #thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
+ readonly #taskShape?:"backend_test";
  readonly #observer?:(event:Observe)=>void;
  #attempted=false;
  constructor(config:{
@@ -92,6 +93,9 @@ export class TrustedAdkOperationalRepairProposer {
   maxSessionMs?:number;
   maxOutputTokens?:number;
   thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
+  /** Only for the first bounded native D1: no multi-agent expansion or PR
+   * from the model. The trusted owner separately handles review-only PR. */
+  taskShape?:"backend_test";
   onObservation?:(event:Observe)=>void;
  }){
   if(!(config?.model instanceof BaseLlm)||
@@ -107,6 +111,7 @@ export class TrustedAdkOperationalRepairProposer {
      (config.maxOutputTokens??8192)>16000||
      (config.thinkingLevel!==undefined&&
       !["LOW","MEDIUM","HIGH"].includes(config.thinkingLevel))||
+     (config.taskShape!==undefined&&config.taskShape!=="backend_test")||
      (config.onObservation!==undefined&&
       typeof config.onObservation!=="function"))
    deny("invalid bounded ADK configuration");
@@ -116,6 +121,7 @@ export class TrustedAdkOperationalRepairProposer {
   this.#maxSessionMs=config.maxSessionMs??120000;
   this.#maxOutputTokens=config.maxOutputTokens??8192;
   this.#thinkingLevel=config.thinkingLevel;
+  this.#taskShape=config.taskShape;
   this.#observer=config.onObservation;
  }
  async propose(input:Readonly<TrustedRepairModelInput>):Promise<unknown>{
@@ -182,8 +188,15 @@ export class TrustedAdkOperationalRepairProposer {
     ]:["You have NO tools to inspect the source in this source-free planning mode."]),
     "Use ONLY exact existing ResourceURI/Operation pairs supplied in the input.",
     "The Engineer will not approve Task/agent allocation or retry counts.",
-    "Choose Backend/Frontend edits selectively; Test must depend on repairs.",
-    "Optionally schedule a PR only AFTER the new passing Test.",
+    ...(this.#taskShape==="backend_test"?[
+     "This repair epoch supports EXACTLY two Tasks: one Backend and one Test.",
+     "Backend must have read_file and update_file for the SAME originally granted Backend source file.",
+     "Test must have run_tests on the already approved feature branch, depending on Backend.",
+     "Do NOT propose Frontend, extra Tasks, or a PR Task; the owner handles review-only PR after revocation."
+    ]:[
+     "Choose Backend/Frontend edits selectively; Test must depend on repairs.",
+     "Optionally schedule a PR only AFTER the new passing Test."
+    ]),
     "Do not create a branch, merge, request higher authority or invent file paths.",
     "If the provided scope is insufficient, fail to propose rather than invent grants.",
     "Return ONLY one JSON object with EXACTLY the key tasks.",
