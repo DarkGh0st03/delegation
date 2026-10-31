@@ -825,7 +825,14 @@ try{
               }
               connect(){return Promise.reject(Error("No streaming or billing"));}
             },
-            maxOutputTokens:8192
+            // R151.16: exactly mirror the billed recovery model budget,
+            // output constraints and supported Backend->Test DAG shape.
+            // The model above is still a no-network offline fixture.
+            maxCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
+            maxSessionMs:240000,
+            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+            thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
+            taskShape:"backend_test"
           })
           :undefined;
         const ownerRepairProposer=paidGeminiRecovery
