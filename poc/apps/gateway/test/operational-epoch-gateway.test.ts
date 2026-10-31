@@ -2724,7 +2724,8 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
  const inspector=new TrustedGatewaySignedEpochInspector({
   directory:join(base.h.dir,"epochs"),approvals:base.h.signedStore,
   nativeRootStatus:reader,trustedOrchestratorDid:"did:example:orchestrator",
-  ...(rootVpVerifier?{rootVpVerifier}:{})
+  ...(rootVpVerifier?{rootVpVerifier}:{}),
+  discoveryChildDirectory:join(base.h.dir,"r151-remote-child")
  });
  const control=await createTrustedPlanIpcServer({
   socketPath,secretFile,plans:base.h.gates,signedEpochInspector:inspector
@@ -2970,6 +2971,68 @@ test("R151.24 remote root revoked during Adapter issuance prevents returning the
  assert.equal(h.calls.length,1);
  assert.equal((await h.journal.records())[0].observation,"adapter_response_verified");
  await assert.rejects(issuer.issueSpecializedChild(h.input),/already attempted/);
+ assert.equal(h.f.h.provider,3);
+});
+
+
+test("R151.25 Gateway derives discovery child from protected ACK without admitting source access",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ const proof=await h.f.inspector.inspectDiscoveryChildCandidate({
+  ...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file
+ });
+ assert.equal(proof.credential_id,h.input.credential_id);
+ assert.equal(proof.agent_did,"did:example:backend");
+ assert.equal(proof.operation,"read_file");
+ assert.equal(proof.child_vp_verified,false);
+ assert.equal(proof.gateway_task_admitted,false);
+ assert.equal(proof.execution_authorized,false);
+ assert.ok(Object.isFrozen(proof));
+ assert.equal(h.f.h.provider,3);
+ assert.throws(()=>h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
+  "r151-candidate-not-admitted","backend"),/current admitted epoch/);
+});
+test("R151.25 Gateway rejects uncertain discovery issuance without an Adapter ACK",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ await h.journal.recordIntent({
+  taskId:h.config.discoveryTaskId,role:"backend",
+  credentialId:h.input.credential_id,
+  statusListCredential:h.input.credential_status.statusListCredential,
+  statusListIndex:h.input.credential_status.statusListIndex
+ });
+ await assert.rejects(h.f.inspector.inspectDiscoveryChildCandidate({
+  ...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file
+ }),/no unique acknowledged Backend discovery child/);
+ assert.equal(h.calls.length,0);
+ assert.equal(h.f.h.provider,3);
+});
+test("R151.25 Gateway rejects reused Tasks and resources outside the Rust read grant",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ for(const input of [
+  {task_id:"backend-original",resource:file},
+  {task_id:h.config.discoveryTaskId,resource:file+"-unapproved"},
+  {task_id:h.config.discoveryTaskId,resource:"gitea://other/repo/name/branches/main/files/x.ts"}
+ ]){
+  await assert.rejects(h.f.inspector.inspectDiscoveryChildCandidate({
+   ...r128Pins(h.f.h),...input
+  }),/already appears|read absent|outside the signed canonical branch/);
+ }
+ assert.equal(h.f.h.provider,3);
+});
+test("R151.25 acknowledged child cannot keep a revoked root eligible",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ h.status.status_set=true;
+ await assert.rejects(h.f.inspector.inspectDiscoveryChildCandidate({
+  ...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file
+ }),/revoked|status|active/i);
  assert.equal(h.f.h.provider,3);
 });
 

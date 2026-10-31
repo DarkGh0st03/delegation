@@ -25,6 +25,9 @@ import {preflightNextOperationalEpoch}
  from "../../../packages/plan-contracts/src/operational-epoch-scope.mjs";
 import {RUST_OPERATIONS} from "./operation-catalog.ts";
 import type {Permission} from "./types.ts";
+import {TrustedChildIssuanceJournal} from "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
+import {canonicalBranchUri} from "./canonical.ts";
+import {approvedWorkBranch} from "../../../packages/plan-contracts/src/approved-work-branch.mjs";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const SHA=/^[a-f0-9]{40}$/u,DIGEST=/^[a-f0-9]{64}$/u;
@@ -37,10 +40,12 @@ export class TrustedGatewaySignedEpochInspector{
  readonly #nativeRoot?:TrustedGatewayNativeRootStatusReader;
  readonly #orchestratorDid?:string;
  readonly #rootVp?:TrustedGatewayRootVpVerifier;
+ readonly #discoveryChildDir?:string;
  constructor(config:{directory:string;approvals:SignedEngineerApprovalFileStore;
   nativeRootStatus?:TrustedGatewayNativeRootStatusReader;
   trustedOrchestratorDid?:string;
-  rootVpVerifier?:TrustedGatewayRootVpVerifier}){
+  rootVpVerifier?:TrustedGatewayRootVpVerifier;
+  discoveryChildDirectory?:string}){
   if(typeof config?.directory!=="string"||
      !isAbsolute(config.directory)||resolve(config.directory)!==config.directory||
      !(config.approvals instanceof SignedEngineerApprovalFileStore))
@@ -61,6 +66,11 @@ export class TrustedGatewaySignedEpochInspector{
       !this.nativeIssuedScopeConfigured()))
    deny("native root VP requires independent issued scope and pinned Orchestrator");
   this.#rootVp=config.rootVpVerifier;
+  if(config.discoveryChildDirectory!==undefined&&
+     (!isAbsolute(config.discoveryChildDirectory)||
+      resolve(config.discoveryChildDirectory)!==config.discoveryChildDirectory))
+   deny("discovery journal requires a trusted absolute directory");
+  this.#discoveryChildDir=config.discoveryChildDirectory;
  }
  nativeRootVpConfigured(){return !!this.#rootVp&&this.nativeIssuedScopeConfigured();}
  nativeRootStatusConfigured(){return !!this.#nativeRoot;}
@@ -376,6 +386,70 @@ export class TrustedGatewaySignedEpochInspector{
       row.root_credential_id!==history[n].root_credential_id))
    deny("Original Rust root or epoch journal changed before admission");
   return Object.freeze(final);
+ }
+ /**
+  * R151.25 Gateway-local discovery candidate inspection. The child ID is
+  * derived from a host-configured protected journal, never caller JSON.
+  * Its ACK is an issuer observation, NOT proof of a valid child VP.
+  * No Task is registered and no provider access is authorized here.
+  */
+ async inspectDiscoveryChildCandidate(input:Readonly<{
+  session_id:string;root_plan_digest:string;plan_digest:string;epoch:number;
+  task_id:string;resource:string;
+ }>){
+  const pins={session_id:input?.session_id,root_plan_digest:input?.root_plan_digest,
+   plan_digest:input?.plan_digest,epoch:input?.epoch};
+  const taskId=input?.task_id,resource=input?.resource;
+  if(!this.#discoveryChildDir||!ID.test(taskId??"")||
+     typeof resource!=="string"||resource.length>2048)
+   deny("configured discovery journal, fresh Task and exact read resource required");
+  const history=await this.verifiedEpochHistoryForAdmission(pins);
+  const root=await this.#readPinnedRootRecord(pins);
+  const original=history[0].plan;
+  const branch=approvedWorkBranch(history.at(-1)!.plan);
+  if(history.some((e:any)=>e.plan.tasks.some((t:any)=>t.id===taskId)))
+   deny("discovery Task already appears in signed epoch history");
+  const agents=original.candidate_agents.filter((a:any)=>a.agent_id==="backend");
+  if(agents.length!==1||typeof agents[0].did!=="string"||
+     !agents[0].did.startsWith("did:"))
+   deny("discovery requires one signed Backend identity");
+  if(!resource.startsWith(canonicalBranchUri(original.repository,branch)+"/files/")||
+     !/^gitea:\/\/[^/]+\/[^/]+\/[^/]+\/branches\/[^/]+\/files\/[^?\s#]+$/u.test(resource))
+   deny("discovery resource is outside the signed canonical branch");
+  const actual=await this.#nativeRoot!.readIssuedRoot(root.rootId);
+  if(!actual.permissions.some(p=>p.resource===resource&&p.operation==="read_file"))
+   deny("discovery read absent from actually issued Rust root");
+  const journal=new TrustedChildIssuanceJournal({
+   directory:this.#discoveryChildDir,sessionId:pins.session_id,
+   baseRevision:root.baseRevision,planDigest:pins.root_plan_digest,
+   parentCredentialId:root.rootId
+  });
+  const records=await journal.records();
+  const matches=records.filter((r:any)=>r.task_id===taskId);
+  if(matches.length!==1||matches[0].role!=="backend"||
+     matches[0].observation!=="adapter_response_verified"||
+     matches[0].credential_id===root.rootId)
+   deny("no unique acknowledged Backend discovery child");
+  const issued=matches[0];
+  // Repeat live Rust/VP checks after journal IO. A journal ACK must never
+  // keep a revoked root or replaced epoch eligible for later admission.
+  const final=await this.verifiedEpochHistoryForAdmission(pins);
+  const after=await journal.records();
+  const latest=after.find((r:any)=>r.task_id===taskId);
+  if(final.at(-1)?.root_credential_id!==root.rootId||
+     final.length!==history.length||JSON.stringify(latest)!==JSON.stringify(issued))
+   deny("discovery root, epoch or child journal changed");
+  return Object.freeze({
+   status:"discovery_child_candidate_verified_not_admitted" as const,
+   session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,
+   plan_digest:pins.plan_digest,epoch:pins.epoch,
+   task_id:taskId,agent_role:"backend" as const,agent_did:agents[0].did,
+   resource,operation:"read_file" as const,work_branch:branch,
+   root_credential_id:root.rootId,credential_id:issued.credential_id,
+   adapter_response_acknowledged:true as const,
+   child_vp_verified:false as const,
+   execution_authorized:false as const,gateway_task_admitted:false as const
+  });
  }
  async #readPinnedRootRecord(pins:Readonly<{
   session_id:string;root_plan_digest:string;
