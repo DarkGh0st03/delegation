@@ -13,8 +13,26 @@ export function normalizeMcpUpdateFileOutcome(
   }
   const envelope=record(response);
   const payload=record(envelope?.structuredContent);
+  // This reports fixed enums and booleans only: never source bytes, paths,
+  // arbitrary upstream messages or private authorization material.
+  const safeFailure=(stage:string,kind:string|null=null,
+    flags?:Record<string,boolean>):void=>{
+    process.stderr.write(JSON.stringify({
+      event:"mcp_update_safe_diagnostic",
+      stage, ...(kind?{kind}:{}),
+      ...(flags?{receipt_checks:flags}:{})
+    })+"\n");
+  };
   if(envelope?.isError===true||payload?.ok!==true){
     const kind=record(payload?.error)?.kind;
+    const safeKinds=new Set([
+      "authorization_denied","invalid_tool_call","inactive_task",
+      "unauthorized","tool_unavailable","task_worker_unavailable",
+      "task_worker_invalid_result","task_worker_rejected",
+      "invalid_tool_arguments"
+    ]);
+    safeFailure(payload===null?"missing_structured_content":"upstream_failure",
+      typeof kind==="string"&&safeKinds.has(kind)?kind:"unknown");
     if(kind==="authorization_denied")return error("authorization_denied");
     if(kind==="invalid_tool_call")return error("invalid_tool_call");
     return error("tool_unavailable");
@@ -28,6 +46,20 @@ export function normalizeMcpUpdateFileOutcome(
      typeof result?.blob_sha!=="string"||!sha.test(result.blob_sha)||
      typeof result?.precondition_blob_sha!=="string"||
      !sha.test(result.precondition_blob_sha)){
+    safeFailure("invalid_provider_receipt",null,{
+      gitea_provider:result?.provider==="gitea",
+      provider_performed:result?.performed===true,
+      expected_tool:result?.tool==="update_file",
+      exact_branch:result?.branch===args.branch,
+      exact_path:result?.path===args.path,
+      commit_sha:typeof result?.commit_sha==="string"&&
+        sha.test(result.commit_sha),
+      consistent_revision:result?.revision===result?.commit_sha,
+      blob_sha:typeof result?.blob_sha==="string"&&
+        sha.test(result.blob_sha),
+      precondition_sha:typeof result?.precondition_blob_sha==="string"&&
+        sha.test(result.precondition_blob_sha)
+    });
     return error("tool_unavailable");
   }
   return {ok:true,result:payload.result};

@@ -262,6 +262,30 @@ jobs:
           docker pull docker.gitea.com/gitea:28.0.0
           docker pull node:22.15.0-bookworm
           docker pull openpolicyagent/opa:1.21.1
+      - name: R151.75 two real Backend and Frontend TypeScript faults - D1 Docker FAIL to PASS (NO AI)
+        env:
+          APPROVED_RUNNER_NATIVE_EVM: "1"
+          APPROVED_RUNNER_THREE_AGENT_DAG: "1"
+          APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
+          APPROVED_RUNNER_SOURCE_DERIVED_ROUTES: "1"
+          APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE: "1"
+          APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1: "1"
+          APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL: "1"
+          APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE: "1"
+          APPROVED_RUNNER_SCENARIO: account-suspension
+          GITEA_ADMIN_USER: isolated_admin
+          GITEA_ADMIN_PASSWORD: local-mixed-d1-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+          OPA_IMAGE: openpolicyagent/opa:1.21.1
+        run: |
+          set -euo pipefail
+          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+          test -z "${GEMINI_API_KEY:-}"
+          # Real disposable Gitea + Docker. Source bytes arise from Gateway
+          # reads inside distinct signed Backend and Frontend D1 A2A Tasks.
+          # The harness must attest fresh Runner PASS and draft-only PR.
+          npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
       - name: Account Suspension - signed DAG source-derived routes and Docker acceptance
         env:
           APPROVED_RUNNER_NATIVE_EVM: "1"
@@ -472,30 +496,6 @@ jobs:
           # A separate real Docker FAIL, under an ORIGINAL issued Rust root.
           # The authenticated owner's journal reserves and the SAME Gateway
           # independently admits signed D1; no repair A2A PASS/PR is claimed.
-          npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
-      - name: R151.75 two real Backend and Frontend TypeScript faults - D1 Docker FAIL to PASS (NO AI)
-        env:
-          APPROVED_RUNNER_NATIVE_EVM: "1"
-          APPROVED_RUNNER_THREE_AGENT_DAG: "1"
-          APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: "1"
-          APPROVED_RUNNER_SOURCE_DERIVED_ROUTES: "1"
-          APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE: "1"
-          APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1: "1"
-          APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL: "1"
-          APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE: "1"
-          APPROVED_RUNNER_SCENARIO: account-suspension
-          GITEA_ADMIN_USER: isolated_admin
-          GITEA_ADMIN_PASSWORD: local-mixed-d1-fixture-${{ github.run_id }}-${{ github.run_attempt }}
-          GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
-          TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
-          OPA_IMAGE: openpolicyagent/opa:1.21.1
-        run: |
-          set -euo pipefail
-          test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
-          test -z "${GEMINI_API_KEY:-}"
-          # Real disposable Gitea + Docker. Source bytes arise from Gateway
-          # reads inside distinct signed Backend and Frontend D1 A2A Tasks.
-          # The harness must attest fresh Runner PASS and draft-only PR.
           npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
       - name: Upload sanitized functional evidence - not model/runner logs
         uses: actions/upload-artifact@v4
