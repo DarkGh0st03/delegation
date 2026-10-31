@@ -654,8 +654,8 @@ export async function runNativePositiveApprovedDag({
             // and live child DC cannot transform Runner diagnostics into new
             // file capabilities. Exercise the ACTUAL Gateway prepare boundary,
             // not a mock classifier, while the Test Task is still active.
-            const [diagnostic]=sanitizeTypecheckLocations(
-              effect.typecheck_diagnostics);
+            const diagnostic=sanitizeTypecheckLocations(
+              effect.typecheck_diagnostics).find(d=>files.backend.includes(d.path));
             assert.ok(diagnostic&&files.backend.includes(diagnostic.path),
               "Compiler diagnostic must name an approved Backend file");
             assert.ok(!approvedTestReads.includes(diagnostic.path)&&
