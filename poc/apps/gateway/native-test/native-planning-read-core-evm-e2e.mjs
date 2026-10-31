@@ -764,8 +764,13 @@ try{
             g.resource===canonicalFileUri(repo,workBranch,path))&&
           grants.some(g=>g.agent_id==="backend"&&g.operation==="update_file"&&
             g.resource===canonicalFileUri(repo,workBranch,path)));
-        if(!paidGeminiRecovery)
-          assert.ok(target,"R150.5 must derive the error target from the signed Backend grants");
+        // R151.17: fail BEFORE even constructing a paid repair proposer if
+        // the live approved Backend scope cannot implement the supported D1.
+        // This only checks for an executable existing original-root target;
+        // Gemini still proposes the actual D1 Task/file and the trusted
+        // planner, Rust, Gateway and fresh Child DC independently enforce it.
+        if(!target)
+          throw Error("R151.17 NO-GO: signed Backend read_file/update_file source missing before repair inference");
         // For a real Gemini repair the new signed D1 epoch, NOT this fixture
         // selector, decides which previously authorized source is editable.
         const fileResource=target?
