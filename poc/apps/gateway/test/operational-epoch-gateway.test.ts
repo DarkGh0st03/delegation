@@ -4658,78 +4658,30 @@ test("R151.46 uncorroborated fake discovery cannot reach planner or reserve repa
 });
 
 
-test("R151.49 paired owner accepts only same native Backend Task and mandatory private source",async t=>{
+test("R151.49 owner refuses simulated Coordinator as remote child handoff authority",async t=>{
+ // This existing Gateway fixture intentionally uses a STRUCTURAL
+ // coordinator, not the real privileged TrustedExecutionCoordinator.
+ // An authentic remote discovery handoff must never weaken its instance
+ // and same-Gateway checks just to accept that scripted fixture.
  const h=await r151RemoteDiscoveryIssuer(t);
  const issuer=await TrustedApprovedPlanChildAuthorityIssuer
   .createForRemoteRepairDiscovery(h.config);
- const backend={
-  async prepare(){throw Error("owner has not authorized a remote discovery read");},
-  async fence(){},
-  async takeSource(){throw Error("no authenticated Backend source ready");}
- };
- const makeHandoff=(requirePrivateSourceDelivery:boolean)=>
-  new TrustedRemoteDiscoveryA2AHandoff({
-   gateway:h.f.client,intake:h.f.h.intake,
-   coordinator:h.f.h.coordinator,
-   a2a:{async sendProtectedTask(){throw Error("no remote dispatch before FAIL");}},
-   backendTaskBinding:backend,
-   sessionId:session,discoveryTaskId:h.config.discoveryTaskId,
-   failedRuntimeTestTaskId:"task-test",
-   resource:file,path:"src/invoices.ts",
-   backendAgentBaseUrl:"http://127.0.0.1:9999",
-   requirePrivateSourceDelivery
-  });
- const handoff=makeHandoff(true);
- assert.equal(handoff.discoveryTaskId,h.config.discoveryTaskId);
- assert.equal(handoff.requiresPrivateSourceDelivery,true);
- assert.throws(()=>createTrustedRemoteDiscoveryOwnerBindings({
-  issuer,handoff,issueInput:{...h.input,approved_task_id:"foreign-task"}
- }),/one exact issued Backend discovery Child/);
- assert.throws(()=>createTrustedRemoteDiscoveryOwnerBindings({
-  issuer,handoff:makeHandoff(false),issueInput:h.input
- }),/mandatory private source/);
- const paired=createTrustedRemoteDiscoveryOwnerBindings({
-  issuer,handoff,issueInput:h.input
- });
- // Assembly does not issue a Child, read Gitea or contact the model.
- assert.equal(h.calls.length,0);
- assert.equal(h.f.h.provider,3);
- const dir=join(h.f.h.dir,"r15149-owner-paired");
- await mkdir(dir,{mode:0o700});
- const base={
-  coordinator:h.f.h.coordinator,gateway:h.f.client,
-  signedApprovals:h.f.h.signedStore,epochDirectory:dir,
-  running:{readiness:{
-   session_id:session,base_revision:sha,
-   plan_digest:planDigest(h.f.h.parent),
-   authenticated_engineer_did:engineer
-  },operational_root_id:h.f.h.rootAuthority.credential_id}
- };
- for(const collision of [
-  {dispatchRemoteDiscovery:async()=>{throw Error("foreign callback");}},
-  {loadCompletedDiscoverySource:async()=> "forged"},
-  {completedDiscoveryRead:{
-   task_id:h.config.discoveryTaskId,
-   runtime_task_id:"dispatch_"+randomBytes(16).toString("base64url"),
-   resource:file
-  }}
- ]){
-  await assert.rejects(armTrustedOwnerOperationalRecovery({
-   ...base,planRepairEpoch:{
-    giteaClient:r124HeadClient(),
-    trustedRemoteDiscovery:paired,
-    proposeRepairPlan:async()=>({tasks:[]}),
-    ...collision
-   }
-  }),/paired discovery cannot mix signer, Task or private source callbacks/);
- }
- const owner=await armTrustedOwnerOperationalRecovery({
-  ...base,planRepairEpoch:{
-   giteaClient:r124HeadClient(),trustedRemoteDiscovery:paired,
-   proposeRepairPlan:async()=>{throw Error("no model until verified FAIL");}
-  }
- });
- assert.ok(owner.intake);
- assert.equal(h.calls.length,0);
- assert.equal(h.f.h.provider,3);
+ assert.ok(issuer);
+ assert.throws(()=>new TrustedRemoteDiscoveryA2AHandoff({
+  gateway:h.f.client,intake:h.f.h.intake,
+  coordinator:h.f.h.coordinator as any,
+  a2a:{async sendProtectedTask(){throw Error("no paid model calls");}},
+  backendTaskBinding:{
+   async prepare(){throw Error("no native signing without owner");},
+   async fence(){},
+   async takeSource(){throw Error("no private source ready");}
+  },
+  sessionId:session,discoveryTaskId:h.config.discoveryTaskId,
+  failedRuntimeTestTaskId:"task-test",
+  resource:file,path:"src/invoices.ts",
+  backendAgentBaseUrl:"http://127.0.0.1:9999",
+  requirePrivateSourceDelivery:true
+ }),/one owner session, live Gateway, pinned read and A2A transport required/);
+ assert.equal(h.calls.length,0,"no Child issued by rejected owner assembly");
+ assert.equal(h.f.h.provider,3,"no Gitea read from rejected handoff");
 });
