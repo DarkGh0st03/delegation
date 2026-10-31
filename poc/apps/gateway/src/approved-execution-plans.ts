@@ -20,6 +20,7 @@ import { GatewayError } from "./errors.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
 import {TrustedOperationalEpochIntake} from "../../../packages/orchestrator-runtime/src/trusted-operational-epoch-intake.ts";
 import {TrustedGatewaySignedEpochInspector} from "./trusted-gateway-signed-epoch-inspector.ts";
+import {TrustedGatewayDiscoveryChildVpVerifier} from "./trusted-discovery-child-vp-verification.ts";
 import {TrustedChildIssuanceJournal} from "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import type {ExecutionResult,GiteaReadFileExecutionResult,RunnerExecutionResult} from "./types.ts";
 import type {TrustedCompletionObservation} from "./trusted-task-observation.ts";
@@ -518,6 +519,115 @@ export class TrustedApprovedExecutionPlans {
       return Object.freeze({status:"discovery_read_admitted_not_executed" as const,
         task_id:input.taskId,epoch:session.currentEpoch,
         resource:input.resource,credential_id:input.credentialId});
+    }finally{
+      this.#discoveryAdmissionsInFlight.delete(session.sessionId);
+    }
+  }
+
+  /**
+   * R151.32: authenticated private remote admission of one *read-only* Backend
+   * discovery Task after a finalized, real Docker TYPECHECK failure.
+   *
+   * Child ID/role/permissions come ONLY from the independent Rust-verified,
+   * journal-pinned Gateway Child VP; NEVER from a caller-supplied credential.
+   * This registers a Task, not an A2A binding, provider read or signed VP
+   * reuse. Each later Prepare/Execute still requires fresh Rust VP + OPA.
+   */
+  async admitRemoteRepairDiscoveryTask(input:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;
+    epoch:number;task_id:string;resource:string;runtime_test_task_id:string;
+  }>,proofPort:TrustedGatewayDiscoveryChildVpVerifier):Promise<Readonly<{
+    status:"discovery_read_admitted_not_executed";task_id:string;
+    epoch:number;resource:string;credential_id:string;
+    gateway_task_admitted:true;execution_authorized:false;source_read:false;
+  }>>{
+    const session=this.#sessions.get(ensureId(input?.session_id,"session ID"));
+    ensureId(input?.task_id,"discovery Task ID");
+    ensureId(input?.runtime_test_task_id,"failed Test runtime ID");
+    if(!session?.active||
+       (!this.#remoteEpochInspector&&!this.#epochIntake)||
+       !(proofPort instanceof TrustedGatewayDiscoveryChildVpVerifier)||
+       (this.#remoteEpochInspector!==undefined&&
+        !proofPort.usesInspector(this.#remoteEpochInspector))||
+       !this.#sessionStore||!this.#operationalLeaseMs||
+       this.#epochAdmissionInFlight.has(input.session_id)||
+       this.#discoveryAdmissionsInFlight.has(input.session_id)||
+       input.root_plan_digest!==session.digest||
+       !/^[a-f0-9]{64}$/u.test(input.plan_digest)||
+       !Number.isSafeInteger(input.epoch)||input.epoch<1||
+       input.epoch!==session.currentEpoch||session.currentEpoch>=3)
+      denied("Durable, current trusted root and independent discovery proof required");
+    this.#ensureUnexpired(session);
+    if(session.discoveryTasks.size>=4||
+       session.discoveryTasks.has(input.task_id)||
+       session.plan.tasks.some((t:any)=>t.id===input.task_id)||
+       session.admittedEpochTasks.has(input.task_id)||
+       [...this.#bindings.values()].some(b=>
+        b.sessionId===session.sessionId&&b.planTaskId===input.task_id))
+      denied("Discovery Task replay or read budget exhausted");
+    const failure=this.readVerifiedTestFailure(input.runtime_test_task_id);
+    if(failure.status!=="validation_failed"||
+       failure.session_id!==session.sessionId||
+       failure.root_plan_digest!==session.digest||
+       failure.epoch_version!==input.epoch||
+       failure.branch!==session.workBranch||
+       failure.first_failed_phase!=="typecheck"||
+       failure.typecheck_error_codes.length===0)
+      denied("A finalized, current TypeScript Runner FAIL is required");
+    const blocked=this.#assertEpochQuiescent(session);
+    this.#discoveryAdmissionsInFlight.add(session.sessionId);
+    try{
+      const proof=await proofPort.verifyChild({
+        session_id:input.session_id,root_plan_digest:input.root_plan_digest,
+        plan_digest:input.plan_digest,epoch:input.epoch,
+        task_id:input.task_id,resource:input.resource
+      });
+      if(proof.status!=="discovery_child_vp_verified_not_admitted"||
+         proof.cryptographic_presentation_verified!==true||
+         proof.gateway_task_admitted!==false||
+         proof.execution_authorized!==false||proof.source_read!==false||
+         proof.session_id!==session.sessionId||
+         proof.root_plan_digest!==session.digest||
+         proof.plan_digest!==input.plan_digest||proof.epoch!==input.epoch||
+         proof.task_id!==input.task_id||proof.resource!==input.resource||
+         proof.operation!=="read_file"||
+         !ID.test(proof.credential_id)||!proof.agent_did.startsWith("did:"))
+        denied("Rust-verified journal child differs from exact signed Backend read");
+      this.#ensureUnexpired(session);
+      const again=this.readVerifiedTestFailure(input.runtime_test_task_id);
+      if(this.#sessions.get(session.sessionId)!==session||
+         session.currentEpoch!==input.epoch||
+         again.request_id!==failure.request_id||
+         again.tested_commit_sha!==failure.tested_commit_sha||
+         JSON.stringify(this.#assertEpochQuiescent(session))!==
+          JSON.stringify(blocked)||
+         session.discoveryTasks.has(input.task_id))
+        denied("Original Gateway Test FAIL or epoch changed during Child proof");
+      // No model-selected credential, DID, grant or file can enter registry.
+      const candidate=Object.freeze({
+        candidate_agents:Object.freeze([Object.freeze({
+          agent_id:"backend",did:proof.agent_did
+        })]),
+        tasks:Object.freeze([Object.freeze({
+          id:input.task_id,agent_id:"backend",depends_on:[]
+        })]),
+        requested_permissions:Object.freeze([Object.freeze({
+          task_id:input.task_id,agent_id:"backend",
+          resource:proof.resource,operation:"read_file"
+        })])
+      });
+      session.discoveryTasks.set(input.task_id,Object.freeze({
+        epoch:input.epoch,role:"backend" as const,
+        resource:proof.resource,credentialId:proof.credential_id,
+        testedSha:failure.tested_commit_sha,plan:candidate
+      }));
+      return Object.freeze({
+        status:"discovery_read_admitted_not_executed" as const,
+        task_id:input.task_id,epoch:input.epoch,
+        resource:proof.resource,credential_id:proof.credential_id,
+        gateway_task_admitted:true as const,
+        execution_authorized:false as const,source_read:false as const
+      });
     }finally{
       this.#discoveryAdmissionsInFlight.delete(session.sessionId);
     }

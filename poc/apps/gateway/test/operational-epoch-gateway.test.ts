@@ -4364,3 +4364,75 @@ test("R151.31 authenticated Gateway IPC exposes only a source-free verified Back
  assert.equal(signed,1,"revoked root never gets a new signed Child VP");
  assert.equal(h.f.h.provider,3);
 });
+
+
+test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read after a real Test FAIL, without IO",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ const pins={...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file,
+  runtime_test_task_id:"task-test"};
+ let signed=0,verified=0;
+ const audience="urn:thesis:gateway:r151:discovery";
+ const port=new TrustedGatewayDiscoveryChildVpVerifier({
+  inspector:h.f.inspector,audience,
+  signer:{async present(p){
+   signed++;
+   assert.equal(p.credential_id,h.input.credential_id);
+   assert.deepEqual(p.disclosed_permissions,[{resource:file,operation:"read_file"}]);
+   return "signed-backend-child-vp:"+p.challenge;
+  }},
+  verifier:{
+   async verify(){throw Error("Must use native multipermission Rust verifier");},
+   async verifyMultiple(p){
+    verified++;
+    assert.equal(p.presenter,"backend");
+    assert.deepEqual(p.required_permissions,[{resource:file,operation:"read_file"}]);
+    assert.equal(p.signed_vp,"signed-backend-child-vp:"+p.challenge);
+    return {credential_id:h.input.credential_id,
+     presenter_id:"did:example:backend",issuer_id:"did:example:orchestrator",
+     hierarchy_depth:1,permissions:[{resource:file,operation:"read_file"}],
+     expiration:(BigInt(Date.now())*1_000_000n+30_000_000_000n).toString()};
+   }
+  }
+ });
+ const socketPath=join(h.f.h.dir,"r15132-control.sock");
+ const secretFile=join(h.f.h.dir,"r15132-secret.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ const server=await createTrustedPlanIpcServer({
+  socketPath,secretFile,plans:h.f.h.gates,
+  signedEpochInspector:h.f.inspector,discoveryChildVpVerifier:port
+ });
+ await server.start();t.after(()=>server.close());
+ const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+ assert.throws(()=>h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
+  "r15132-too-early","backend"),/current admitted epoch/);
+ await assert.rejects(client.admitRemoteRepairDiscoveryTask({
+  ...pins,resource:file+"-foreign"
+ }),/Gateway trusted control denied/);
+ assert.equal(signed,0);
+ await assert.rejects(client.admitRemoteRepairDiscoveryTask({
+  ...pins,runtime_test_task_id:"wrong-test"
+ }),/Gateway trusted control denied/);
+ assert.equal(signed,0);
+ const result=await client.admitRemoteRepairDiscoveryTask(pins);
+ assert.equal(result.status,"discovery_read_admitted_not_executed");
+ assert.equal(result.task_id,h.config.discoveryTaskId);
+ assert.equal(result.credential_id,h.input.credential_id);
+ assert.equal(result.gateway_task_admitted,true);
+ assert.equal(result.execution_authorized,false);
+ assert.equal(result.source_read,false);
+ assert.ok(Object.isFrozen(result));
+ assert.equal(signed,1);
+ assert.equal(verified,1);
+ assert.equal(h.f.h.provider,3,"registration cannot touch Gitea or Docker");
+ h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
+  "r15132-read-runtime","backend");
+ assert.throws(()=>h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
+  "r15132-replay-runtime","backend"),/current admitted epoch/);
+ await assert.rejects(client.admitRemoteRepairDiscoveryTask(pins),
+  /Gateway trusted control denied/);
+ assert.equal(signed,1,"replay rejected before signing again");
+ assert.equal(h.f.h.provider,3);
+});

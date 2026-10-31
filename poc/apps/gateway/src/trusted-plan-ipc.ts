@@ -29,7 +29,7 @@ const MAX_BODY=4096,MAX_NONCES=4096,MAX_AGE=30_000;
 const NATIVE_EVM_INSPECTION_ACTIONS=new Set<string>([
  "inspect_signed_epoch","inspect_native_root","inspect_issued_root",
  "inspect_verified_root_vp","inspect_discovery_child_candidate",
- "inspect_discovery_child_vp",
+ "inspect_discovery_child_vp","admit_remote_discovery_task",
  "admit_epoch","read_retired_root_revocation"
 ]);
 const NATIVE_EVM_IPC_TIMEOUT_MS=60_000;
@@ -73,7 +73,10 @@ type Command=
   // R151.26: exact source-free candidate lookup; neither issuance nor admission.
   |{action:"inspect_discovery_child_candidate"|"inspect_discovery_child_vp";
      session_id:string;root_plan_digest:string;plan_digest:string;
-     epoch:number;task_id:string;resource:string};
+     epoch:number;task_id:string;resource:string}
+  |{action:"admit_remote_discovery_task";session_id:string;
+     root_plan_digest:string;plan_digest:string;epoch:number;
+     task_id:string;resource:string;runtime_test_task_id:string};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
 function exact(x:unknown,fields:string[]):boolean{
@@ -164,6 +167,18 @@ function validate(x:unknown):Command{
      Number.isSafeInteger(o.epoch)&&(o.epoch as number)>=1&&
      (o.epoch as number)<=3&&
      typeof o.task_id==="string"&&ID.test(o.task_id)&&
+     typeof o.resource==="string"&&o.resource.length<=2048&&
+     /^gitea:\/\/[^/?#\s]+\/[^/?#\s]+\/[^/?#\s]+\/branches\/[^/?#\s]+\/files\/[^?#\s]+$/u.test(o.resource))
+    return o as Command;
+  if(o.action==="admit_remote_discovery_task"&&
+     exact(o,["action","session_id","root_plan_digest","plan_digest","epoch",
+       "task_id","resource","runtime_test_task_id"])&&
+     typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
+     typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
+     Number.isSafeInteger(o.epoch)&&(o.epoch as number)>=1&&
+     (o.epoch as number)<=2&&
+     typeof o.task_id==="string"&&ID.test(o.task_id)&&
+     typeof o.runtime_test_task_id==="string"&&ID.test(o.runtime_test_task_id)&&
      typeof o.resource==="string"&&o.resource.length<=2048&&
      /^gitea:\/\/[^/?#\s]+\/[^/?#\s]+\/[^/?#\s]+\/branches\/[^/?#\s]+\/files\/[^?#\s]+$/u.test(o.resource))
     return o as Command;
@@ -458,6 +473,22 @@ export async function createTrustedPlanIpcServer(config:{
            verified.source_read!==false)
           fail("child VP must never authorize execution");
         response(res,200,{ok:true,proof:verified});
+      }else if(command.action==="admit_remote_discovery_task"){
+        // R151.32: private owner-only registration, not permission to read.
+        // Credential/VP/issuer/grants never come from the IPC caller.
+        if(!(config.signedEpochInspector instanceof TrustedGatewaySignedEpochInspector)||
+           !(config.discoveryChildVpVerifier instanceof TrustedGatewayDiscoveryChildVpVerifier)||
+           !config.discoveryChildVpVerifier.usesInspector(config.signedEpochInspector)||
+           !config.plans.operationalLeaseConfigured()||
+           !config.plans.operationalSessionDurableConfigured())
+          fail("Gateway lacks durable, independently verified discovery authority");
+        const admission=await config.plans.admitRemoteRepairDiscoveryTask(
+          command,config.discoveryChildVpVerifier);
+        if(admission.gateway_task_admitted!==true||
+           admission.execution_authorized!==false||
+           admission.source_read!==false)
+          fail("Discovery registration must not execute or grant provider IO");
+        response(res,200,{ok:true,admission});
       }else if(command.action==="inspect_verified_root_vp"){
         // An authenticated source-FREE request. Gateway obtains original
         // IDs, grants and fresh challenge independently, then verifies
@@ -883,6 +914,39 @@ export class TrustedPlanIpcClient{
       cryptographic_presentation_verified:true as const,
       gateway_task_admitted:false as const,execution_authorized:false as const,
       source_read:false as const
+    });
+  }
+  /**
+   * R151.32: private source-free registration of a Backend discovery Task.
+   * Gateway selects the journalled Child; no VP, grants or source is returned.
+   * Execution still requires bind + fresh Prepare/Execute + Rust + OPA.
+   */
+  async admitRemoteRepairDiscoveryTask(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;
+    epoch:number;task_id:string;resource:string;runtime_test_task_id:string;
+  }>){
+    if(!this.#operationalSessionDurable||!this.#nativeIssuedScope||
+       !this.#nativeRootVp)
+      fail("remote discovery admission requires durable live Rust root");
+    const v=(await this.#send({
+      action:"admit_remote_discovery_task",...pins
+    })).admission;
+    if(!v||typeof v!=="object"||Array.isArray(v)||
+       Object.keys(v).sort().join(",")!==
+       "credential_id,epoch,execution_authorized,gateway_task_admitted,resource,source_read,status,task_id"||
+       v.status!=="discovery_read_admitted_not_executed"||
+       v.task_id!==pins.task_id||v.epoch!==pins.epoch||
+       v.resource!==pins.resource||
+       typeof v.credential_id!=="string"||!ID.test(v.credential_id)||
+       v.gateway_task_admitted!==true||
+       v.execution_authorized!==false||v.source_read!==false)
+      fail("Gateway remote discovery admission receipt invalid");
+    return Object.freeze({
+      status:"discovery_read_admitted_not_executed" as const,
+      task_id:pins.task_id,epoch:pins.epoch,
+      resource:pins.resource,credential_id:v.credential_id as string,
+      gateway_task_admitted:true as const,
+      execution_authorized:false as const,source_read:false as const
     });
   }
   /** R128: owner-private comparison of actual issued grant set only. */
