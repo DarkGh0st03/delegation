@@ -248,9 +248,13 @@ export class GatewayControlledToolClient {
     }
 
     if(tool==="read_file"&&this.#onTrustedDiscoveryRead){
-      // The hook executes only AFTER a successful Gateway Execute response.
-      // Unknown/malformed provider data is denied by the private slot.
-      // Do not log or send this copy in the public A2A Task artifact.
+      // A 200 from an untrusted proxy is not an ALLOW. Require exact
+      // Gateway decision/request match before private source capture.
+      const result=executeBody as {request_id?:unknown;decision?:unknown};
+      if(result.request_id!==prepared.request_id||
+         result.decision!=="allow")
+        throw new ControlledToolError("authorization_denied",
+         "Gateway source capture lacks exact authorized request evidence");
       this.#onTrustedDiscoveryRead(execution);
     }
     return execution;

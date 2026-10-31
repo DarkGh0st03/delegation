@@ -6,7 +6,9 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import {randomBytes} from "node:crypto";
+import {randomBytes,createHash} from "node:crypto";
+import {verifyPrivateBackendDiscoverySource} from
+ "../../orchestrator-runtime/src/trusted-remote-discovery-a2a-handoff.ts";
 import {mkdtemp,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
@@ -138,6 +140,8 @@ test("R151.42 authenticated owner IPC -> Backend slot -> ADK -> private VP -> Ga
  assert.equal(artifact.revision,sha);
  assert.deepEqual(artifact.files_modified,[]);
  assert.deepEqual(artifact.errors,[]);
+ assert.equal(JSON.stringify(artifact).includes(privateSource),false,
+  "A2A result must stay source-free");
  assert.deepEqual(f.counts,{adapter:1,prepare:1,execute:1,untrusted:0});
  assert.equal(f.model.observed.length,2);
  const source=await f.client.takeSource(f.pins.runtime_task_id);
@@ -148,8 +152,15 @@ test("R151.42 authenticated owner IPC -> Backend slot -> ADK -> private VP -> Ga
  assert.equal(source.path,path);
  assert.equal(source.resource,resource);
  assert.equal(source.sha256,
-  (await import("node:crypto")).createHash("sha256")
-   .update(privateSource).digest("hex"));
+  createHash("sha256").update(privateSource).digest("hex"));
+ const verified=verifyPrivateBackendDiscoverySource(source,{
+  source_sha256:createHash("sha256").update(privateSource).digest("hex"),
+  source_bytes:Buffer.byteLength(privateSource,"utf8")
+ },{
+  task_id:planTask,runtime_task_id:f.pins.runtime_task_id,
+  resource,branch,path,revision:sha
+ });
+ assert.equal(verified,privateSource);
  await assert.rejects(f.client.takeSource(f.pins.runtime_task_id),
   /Backend private Task binding denied/);
  const seen=JSON.stringify(f.model.observed);
