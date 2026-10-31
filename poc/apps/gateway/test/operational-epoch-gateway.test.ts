@@ -1814,7 +1814,7 @@ test("R114 real Gateway pins original root before terminal Test FAIL finalizatio
 async function r115RemoteFixture(t:import("node:test").TestContext,
  options:{withDurable?:boolean;withRemoteEpoch?:boolean;nativeCoordinator?:boolean;
   withReview?:boolean;withRead?:boolean;
-  installInspector?:(h:Awaited<ReturnType<typeof harness>>)=>Promise<TrustedGatewaySignedEpochInspector>;
+  installInspector?:(h:Awaited<ReturnType<typeof harness>>)=>Promise<{signedEpochInspector:TrustedGatewaySignedEpochInspector;discoveryChildVpVerifier?:TrustedGatewayDiscoveryChildVpVerifier}>;
  }={}){
  const h=await harness(t,options);
  await h.intake.reserveInitialEpoch();
@@ -1824,7 +1824,7 @@ async function r115RemoteFixture(t:import("node:test").TestContext,
  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
  const server=await createTrustedPlanIpcServer({
   socketPath,secretFile,plans:h.gates,
-  ...(options.installInspector?{signedEpochInspector:await options.installInspector(h)}:{})
+  ...(options.installInspector?await options.installInspector(h):{})
  });
  await server.start();
  t.after(()=>server.close());
@@ -2658,7 +2658,7 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
   Array<{resource:string;operation:string}>;
  issued?:Record<string,unknown>; status?:Record<string,unknown>;
  onIssued?:()=>Promise<void>;
- sameIpc?:boolean;nativeCoordinator?:boolean;withRead?:boolean;withVp?:boolean; vpMutate?:Record<string,unknown>;
+ discoveryVp?:boolean;sameIpc?:boolean;nativeCoordinator?:boolean;withRead?:boolean;withVp?:boolean; vpMutate?:Record<string,unknown>;
  onVpVerification?:(revokeAdapterRoot:()=>void)=>Promise<void>;
 }={}){
  let inspection:any;
@@ -2781,7 +2781,19 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
   get nativeCalls(){return nativeCalls;},get issuedCalls(){return issuedCalls;},
   get signedVpCalls(){return signedVpCalls;},get verifiedVpCalls(){return verifiedVpCalls;}
  };
- return inspector;
+ const discoveryChildVpVerifier=options.discoveryVp?new TrustedGatewayDiscoveryChildVpVerifier({
+  inspector,audience:"cloud-access-gateway",
+  signer:{async present(p){return "fixture-child-vp:"+p.challenge;}},
+  verifier:{async verify(){throw Error("multi-grant verification required");},
+   async verifyMultiple(p){
+    assert.equal(p.signed_vp,"fixture-child-vp:"+p.challenge);
+    return {credential_id:"urn:child:r151-remote-discovery",
+     presenter_id:"did:example:backend",issuer_id:"did:example:orchestrator",
+     hierarchy_depth:1,permissions:[{resource:file,operation:"read_file"}],
+     expiration:(BigInt(Date.now())*1_000_000n+60_000_000_000n).toString()};
+   }}
+ }):undefined;
+ return {signedEpochInspector:inspector,...(discoveryChildVpVerifier?{discoveryChildVpVerifier}:{})};
  }
  const base=await r115RemoteFixture(t,{
   withDurable:true,withRead:options.withRead,nativeCoordinator:options.nativeCoordinator,
@@ -2952,10 +2964,10 @@ test("R151.23 unfinalized Runner FAIL cannot unlock remote discovery",async t=>{
 
 
 async function r151RemoteDiscoveryIssuer(t:import("node:test").TestContext,
- options:{withRead?:boolean;finalized?:boolean;revokeOnIssue?:boolean;nativeCoordinator?:boolean;sameIpc?:boolean}={}){
+ options:{withRead?:boolean;finalized?:boolean;revokeOnIssue?:boolean;nativeCoordinator?:boolean;sameIpc?:boolean;discoveryVp?:boolean}={}){
  const status:Record<string,unknown>={};
  const f=await r128Fixture(t,{withVp:true,
-  withRead:options.withRead??true,status,nativeCoordinator:options.nativeCoordinator,sameIpc:options.sameIpc});
+  withRead:options.withRead??true,status,nativeCoordinator:options.nativeCoordinator,sameIpc:options.sameIpc,discoveryVp:options.discoveryVp});
  if(options.finalized!==false)await prepareTrustedRemoteRepairFeedback(f.request());
  const directory=join(f.h.dir,"r151-remote-child");
  await mkdir(directory,{mode:0o700});
@@ -4796,4 +4808,52 @@ test("R151.53 original IPC supports real Coordinator and verified discovery asse
  assert.ok(owner);
  assert.equal(h.calls.length,0,"assembly does not issue a Child");
  assert.equal(h.f.h.provider,3,"assembly does not read Gitea");
+});
+
+
+test("R151.54 native Coordinator discovery reaches Gateway provider ledger and one-use private source",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t,{nativeCoordinator:true,sameIpc:true,discoveryVp:true});
+ // Complete the independent read already required by the original signed DAG.
+ h.f.h.gates.bindTask(session,"read-diagnostics","r154-original-read","backend");
+ await h.f.h.invoke("r154-original-read","backend","read_file",{branch,path:"src/invoices.ts"});
+ await h.f.h.gates.confirmTaskCompletion("r154-original-read");
+ let sent=0,fenced=0,sourceTaken=0;
+ let read:any;
+ const owner=await assembleTrustedRemoteDiscoveryOwner({
+  adapterBaseUrl:h.config.adapterBaseUrl,bearerToken:h.config.bearerToken,
+  issuanceJournal:h.journal,fetchFn:h.config.fetchFn,
+  discoveryTaskId:h.config.discoveryTaskId,resource:file,path:"src/invoices.ts",
+  backendAgentBaseUrl:"http://127.0.0.1:9999",issueInput:h.input,
+  a2a:{async sendProtectedTask(request){
+   sent++;
+   const prepared=h.f.h.runtime.prepare({task_id:request.trusted_gateway_task_id!,
+    agent_role:"backend",tool:"read_file",arguments:{branch,path:"src/invoices.ts"}});
+   const response=await h.f.h.runtime.execute({request_id:prepared.request_id,signed_vp:"signed.r151.discovery"});
+   read=response.execution;
+   return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+  }},
+  backendTaskBinding:{async prepare(p){return {
+   status:"backend_discovery_read_prebound_not_executed" as const,
+   runtime_task_id:p.runtime_task_id,plan_task_id:p.plan_task_id,
+   credential_id:p.credential_id,presenter_id:p.presenter_id,resource:p.resource,
+   execution_authorized:false as const,source_read:false as const
+  };},async fence(){fenced++;},async takeSource(runtimeId){
+   sourceTaken++;
+   return {status:"private_backend_read_source_not_authority" as const,
+    runtime_task_id:runtimeId,resource:file,branch,path:"src/invoices.ts",revision:sha,
+    content:read.content,bytes:Buffer.byteLength(read.content),
+    sha256:createHash("sha256").update(read.content).digest("hex")};
+  }}
+ },{coordinator:h.f.h.coordinator as unknown as TrustedExecutionCoordinator,
+  gateway:h.f.client,intake:h.f.h.intake,sessionId:session,
+  engineerDid:engineer,failedRuntimeTestTaskId:"task-test"});
+ const result=await owner.dispatchRemoteDiscovery();
+ assert.equal(result.gateway_provider_corroborated,true);
+ assert.equal(sent,1);assert.equal(fenced,1);assert.equal(sourceTaken,1);
+ const pins={task_id:result.task_id,runtime_task_id:result.runtime_task_id,resource:file};
+ assert.equal(await owner.loadCompletedDiscoverySource(pins),read.content);
+ await assert.rejects(owner.loadCompletedDiscoverySource(pins),/one-use|source/);
+ await assert.rejects(owner.dispatchRemoteDiscovery(),/one-use/);
+ assert.equal(h.calls.length,1);assert.equal(sent,1);
+ assert.equal(h.f.h.provider,5);
 });
