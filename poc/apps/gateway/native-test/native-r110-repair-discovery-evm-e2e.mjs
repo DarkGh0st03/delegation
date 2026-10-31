@@ -8,6 +8,7 @@
  * the final real Gitea + real Docker acceptance test.
  */
 import assert from "node:assert/strict";
+import {BaseLlm} from "@google/adk";
 import {generateKeyPairSync,randomBytes} from "node:crypto";
 import {mkdtemp,mkdir,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
@@ -32,6 +33,8 @@ import {TrustedChildIssuanceJournal} from
   "../../../packages/orchestrator-runtime/src/trusted-child-issuance-journal.mjs";
 import {TrustedOperationalRepairSourceReader} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-source-reader.ts";
+import {TrustedAdkOperationalRepairProposer} from
+  "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
 import {TrustedOperationalFeatureHeadReader} from
   "../src/trusted-operational-feature-head.ts";
 import {TrustedApprovedExecutionPlans} from "../src/approved-execution-plans.ts";
@@ -373,10 +376,69 @@ try{
   agentRole:"backend",expectedTestedSha:failedSha,
   issueSignedVp:prepared=>vp(discoveryChild,tokens.backend,prepared)
  });
- const code=await reader.read(file);
- assert.equal(code.revision,failedSha);
- assert.equal(code.status,"gateway_verified_read");
- assert.match(code.content,/accountSuspension/);
+ // R151.14: a real ADK FunctionTool calls the R110 source reader, which
+ // performs native Rust VP verification + real OPA authorization. The model
+ // is a no-network test double and must see exact-SHA Gateway source before
+ // proposing the new D1. Gitea and Docker provider effects remain scripted.
+ let proposalTurns=0,sourceReadObserved=false;
+ class SourceReadProposalModel extends BaseLlm {
+  constructor(){super({model:"r151-native-no-billing-source-reader"});}
+  async *generateContentAsync(request){
+   proposalTurns++;
+   if(proposalTurns===1){
+    yield {content:{role:"model",parts:[{functionCall:{
+     id:"r151-native-source-inspection",name:"read_file",args:{path:file}
+    }}]}};
+    return;
+   }
+   const toolOutput=(request.contents??[]).flatMap(x=>x.parts??[])
+     .filter(x=>x.functionResponse?.name==="read_file")
+     .map(x=>JSON.stringify(x.functionResponse.response??{}))
+     .join("\n");
+   if(!toolOutput.includes("accountSuspension")||
+      !toolOutput.includes(failedSha))
+    throw Error("R151 native model did not receive exact-SHA Gateway source");
+   sourceReadObserved=true;
+   const draft={tasks:[
+    {id:"r151-source-derived-backend",agent_id:"backend",
+     title:"Repair inspected source",
+     description:"Correct the TypeScript error found after reading source",
+     depends_on:[],permissions:[
+      {resource:fileUri,operation:"read_file",
+       reason:"Inspect verified failing source"},
+      {resource:fileUri,operation:"update_file",
+       reason:"Correct only the existing root-approved Backend file"}]},
+    {id:"r151-source-derived-test",agent_id:"test",
+     title:"Validate corrected source in Docker",
+     description:"Run fresh tests on the repaired exact feature SHA",
+     depends_on:["r151-source-derived-backend"],permissions:[
+      {resource:branchUri,operation:"run_tests",
+       reason:"Validate the revised feature branch"}]}
+   ]};
+   yield {content:{role:"model",parts:[{text:JSON.stringify(draft)}]}};
+  }
+  connect(){return Promise.reject(Error("No provider network or billing"));}
+ }
+ const adk=new TrustedAdkOperationalRepairProposer({
+  model:new SourceReadProposalModel(),sourceReader:reader,
+  taskShape:"backend_test",maxOutputTokens:4096
+ });
+ const proposal=await adk.propose({
+  requirement:initial.requirement,
+  feedback:{failed_phase:"typecheck",typecheck_error_codes:["TS2339"],
+   tested_commit_sha:failedSha,work_branch:branch,
+   remaining_repair_epochs:2},
+  already_delegated_grants:[
+   {resource:fileUri,operation:"read_file"},
+   {resource:fileUri,operation:"update_file"},
+   {resource:branchUri,operation:"run_tests"}],
+  agents:["backend","test"]
+ });
+ assert.equal(proposalTurns,2);
+ assert.equal(sourceReadObserved,true);
+ assert.deepEqual(proposal.tasks.map(x=>x.agent_id),["backend","test"]);
+ assert.deepEqual(proposal.tasks[1].depends_on,[proposal.tasks[0].id]);
+ assert.equal(proposal.tasks[0].permissions[1].resource,fileUri);
  assert.equal(effects,3);
  await gates.confirmTaskCompletion("native-r110-discovery");
  assert.equal((await issuanceJournal.records()).length,3);
@@ -457,6 +519,9 @@ try{
   child_dc_signed_by_real_rust_adapter:true,
   fresh_task_not_in_approved_dag:true,
   exact_attenuated_read_permission:true,
+  protected_adk_source_read_before_d1_proposal:true,
+  protected_adk_model_calls:proposalTurns,
+  model_source_code_observed:sourceReadObserved,
   child_vp_native_core_verified:true,
   real_opa_authorization:true,
   mismatched_valid_child_vp_rejected:true,
