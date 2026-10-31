@@ -789,7 +789,7 @@ export async function runNativePositiveApprovedDag({
         }){
           if(admittedTestRepair||!admittedBackendRepair||
              !offlineTypecheckProbe||realGeminiPilot||
-             role!=="test"||taskId!=="r150-owner-test-fresh"||
+             role!=="test"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(repairedSha)||
              !(models.test instanceof OfflineApprovedAdkModel)||
@@ -822,7 +822,7 @@ export async function runNativePositiveApprovedDag({
           // R134 child issuance. Source/model claims grant NOTHING.
           if(admittedBackendRepair||
              !offlineTypecheckProbe||realGeminiPilot||
-             role!=="backend"||taskId!=="r150-owner-backend-repair"||
+             role!=="backend"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(failedSha)||
              runnerOutcome?.status!=="fail"||
