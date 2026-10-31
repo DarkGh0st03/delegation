@@ -138,6 +138,15 @@ export interface TrustedRepairModelInput {
  readonly agents:readonly Role[];
  readonly diagnostic_read?:Readonly<TrustedRepairDiscoveryObservation>;
  readonly diagnostic_source?:Readonly<TrustedRepairDiagnosticSource>;
+ /** Optional host-internal Runner attribution for a unique signed writer.
+  * Only a planner caller that independently checked the real Docker/Gitea
+  * receipts may supply it. Never authorization or a new root grant. */
+ readonly diagnostic_target?:Readonly<{
+  status:"verified_runner_single_file_repair_target";
+  tested_commit_sha:string;
+  role:"backend"|"frontend";
+  resource:string;
+ }>;
 }
 export interface TrustedRepairPlanningResult {
  readonly status:"repair_epoch_reserved_no_execution_authority";
