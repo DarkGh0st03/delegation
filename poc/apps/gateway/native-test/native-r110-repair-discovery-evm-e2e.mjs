@@ -443,21 +443,32 @@ try{
  await gates.confirmTaskCompletion("native-r110-discovery");
  assert.equal((await issuanceJournal.records()).length,3);
 
- // R111: independently checked repair DAG, original Rust parent retained.
+ // R151.15: the signed D1 implementation/Test Tasks now derive from the
+ // actual ADK proposal made AFTER the authorized source read. The trusted
+ // intake validates every pair against the unchanged original Rust root,
+ // then Gateway independently admits the version. This test keeps the
+ // historical, trusted-host PR Task and scripted provider effects.
+ const [suggestedBackend,suggestedTest]=proposal.tasks;
+ assert.equal(suggestedBackend.agent_id,"backend");
+ assert.equal(suggestedTest.agent_id,"test");
+ const fromProposal=task=>({
+  id:task.id,agent_id:task.agent_id,title:task.title,
+  description:task.description,depends_on:[...task.depends_on],
+  resources:[...new Set(task.permissions.map(p=>p.resource))]
+ });
  const repair={...structuredClone(initial),version:2,plan_id:"r111-"+unique,
   tasks:[
-   {id:"repair-impl",agent_id:"backend",title:"Correct code",
-    description:"Update only granted source",depends_on:[],resources:[fileUri]},
-   {id:"repair-tests",agent_id:"test",title:"Retest",
-    description:"Verify correction",depends_on:["repair-impl"],resources:[branchUri]},
+   fromProposal(suggestedBackend),
+   fromProposal(suggestedTest),
    {id:"repair-pr",agent_id:"orchestrator",title:"Review",
-    description:"PR only after PASS",depends_on:["repair-tests"],resources:[repoUri]}
+    description:"PR only after PASS",depends_on:[suggestedTest.id],resources:[repoUri]}
   ],
   requested_permissions:[
-   {id:"rp-write",task_id:"repair-impl",agent_id:"backend",
-    resource:fileUri,operation:"update_file",reason:"Original Engineer grant"},
-   {id:"rp-test",task_id:"repair-tests",agent_id:"test",
-    resource:branchUri,operation:"run_tests",reason:"Original Engineer grant"},
+   ...proposal.tasks.flatMap(task=>task.permissions.map((permission,i)=>({
+    id:"rp-"+task.id+"-"+i,task_id:task.id,agent_id:task.agent_id,
+    resource:permission.resource,operation:permission.operation,
+    reason:permission.reason
+   }))),
    {id:"rp-pr",task_id:"repair-pr",agent_id:"orchestrator",
     resource:repoUri,operation:"create_pull_request",reason:"Original Engineer grant"}
   ]};
@@ -481,10 +492,10 @@ try{
    selection:{role},...parameters(id,index,300)});
   assert.equal(child.credential.id,id);return id;
  }
- const fixer=await nextChild("repair-impl","backend","29885");
- const tester=await nextChild("repair-tests","test","29886");
- gates.bindTask(session,"repair-impl","runtime-fix","backend");
- gates.bindTask(session,"repair-tests","runtime-retest","test");
+ const fixer=await nextChild(suggestedBackend.id,"backend","29885");
+ const tester=await nextChild(suggestedTest.id,"test","29886");
+ gates.bindTask(session,suggestedBackend.id,"runtime-fix","backend");
+ gates.bindTask(session,suggestedTest.id,"runtime-retest","test");
  gates.bindTask(session,"repair-pr","runtime-review","orchestrator");
  assert.throws(()=>gateway.prepare({task_id:"runtime-review",
   agent_role:"orchestrator",tool:"create_pull_request",
@@ -520,6 +531,9 @@ try{
   fresh_task_not_in_approved_dag:true,
   exact_attenuated_read_permission:true,
   protected_adk_source_read_before_d1_proposal:true,
+  adk_proposed_d1_rust_root_preflight_and_gateway_admitted:true,
+  adk_proposed_backend_task_id:suggestedBackend.id,
+  adk_proposed_test_task_id:suggestedTest.id,
   protected_adk_model_calls:proposalTurns,
   model_source_code_observed:sourceReadObserved,
   child_vp_native_core_verified:true,
