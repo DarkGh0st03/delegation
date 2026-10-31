@@ -4901,26 +4901,22 @@ test("R151.55 same native owner discovery supplies attested source to planner an
  // Admit the signed epoch through the same Gateway registry and execute
  // its signed Backend -> Test DAG with fresh Child DCs. Adapter, A2A and
  // Runner effects remain explicit scripted ports in this test.
- let admission:Awaited<ReturnType<typeof h.f.client.admitVerifiedOperationalEpoch>>;
- try{
-  admission=await h.f.client.admitVerifiedOperationalEpoch({
-   session_id:session,root_plan_digest:planDigest(h.f.h.parent),
-   plan_digest:reserved.plan_digest,epoch:2
-  });
- }catch(remoteError){
-  try{
-   await h.f.h.gates.admitNextOperationalEpoch(session,2,{
-    root_plan_digest:planDigest(h.f.h.parent),
-    plan_digest:reserved.plan_digest
-   });
-  }catch(registryError){
-   throw new Error("Authenticated Gateway admission failed; registry reason: "+
-    (registryError instanceof Error?registryError.message:String(registryError)));
-  }
-  throw new Error("Authenticated Gateway IPC denied although its registry admitted the signed epoch");
- }
+ const admission=await h.f.client.admitVerifiedOperationalEpoch({
+  session_id:session,root_plan_digest:planDigest(h.f.h.parent),
+  plan_digest:reserved.plan_digest,epoch:2
+ });
  assert.equal(admission.status,"gateway_epoch_admitted");
  assert.equal(admission.epoch,2);
+ const gatewayMethods=h.f.client as any;
+ for(const method of ["assertRepairTaskReady","bindTask",
+   "confirmTaskCompletion"]){
+  const original=gatewayMethods[method].bind(h.f.client);
+  gatewayMethods[method]=async(...args:any[])=>{
+   try{return await original(...args);}
+   catch(error){throw new Error("Gateway "+method+" failed: "+
+    (error instanceof Error?error.message:String(error)));}
+  };
+ }
  const childDir=join(h.f.h.dir,"r15155-repair-child-issuance");
  await mkdir(childDir,{mode:0o700});
  const childJournal=new TrustedChildIssuanceJournal({
