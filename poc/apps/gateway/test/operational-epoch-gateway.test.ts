@@ -4979,3 +4979,30 @@ test("R151.55 same native owner discovery supplies attested source to planner an
  assert.equal(h.f.h.provider,7,"two Gateway-confirmed repair effects follow discovery");
  assert.equal((await childJournal.records()).length,2);
 });
+
+
+test("R151.69 late native discovery ports are one-use and failure revokes before model",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t,{nativeCoordinator:true,sameIpc:true});
+ const dir=join(h.f.h.dir,"late-owner-ports");
+ await mkdir(dir,{mode:0o700});
+ let prepared=0,models=0;
+ const owner=await armTrustedOwnerOperationalRecovery({
+  coordinator:h.f.h.coordinator,gateway:h.f.client,
+  signedApprovals:h.f.h.signedStore,epochDirectory:dir,
+  running:{readiness:{session_id:session,base_revision:sha,
+   plan_digest:planDigest(h.f.h.parent),authenticated_engineer_did:engineer},
+   operational_root_id:h.f.h.rootAuthority.credential_id},
+  planRepairEpoch:{giteaClient:r124HeadClient(),
+   async prepareRemoteDiscoveryPorts(){prepared++;throw Error("native Backend endpoint unavailable");},
+   async proposeRepairPlan(){models++;return repairDraft();}}
+ });
+ assert.equal(prepared,0,"startup must not resolve unavailable native ports");
+ const signal=await prepareTrustedRemoteRepairFeedback({...h.f.request(),alreadyFinalized:true});
+ await assert.rejects(owner.continueWithinActiveRoot(signal),/dynamic discovery failed closed/);
+ assert.equal(prepared,1);
+ assert.equal(models,0);
+ assert.equal(h.f.h.coordinator.phase,"closed");
+ assert.equal(h.calls.length,0,"no discovery Child issued after failed preparation");
+ await assert.rejects(owner.continueWithinActiveRoot(signal),/one-use/);
+ assert.equal(prepared,1);
+});

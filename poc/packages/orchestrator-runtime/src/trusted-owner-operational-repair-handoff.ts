@@ -117,6 +117,9 @@ export async function armTrustedOwnerOperationalRecovery(config:{
   /** Late assembly uses this owner's intake and attested failed Task, never
    * an intake/Task selected by an external callback or model. */
   remoteDiscoveryPorts?:TrustedRemoteDiscoveryOwnerPorts;
+  /** Native host endpoints become available after startup. Resolve only
+   * after verified Test FAIL, under the original one-use owner. */
+  prepareRemoteDiscoveryPorts?:()=>Promise<TrustedRemoteDiscoveryOwnerPorts>;
   /** R125: explicit owner opt-in to ACTUAL Gateway epoch admission.
    * Requires a genuinely Gateway-bound independently signed epoch Intake. */
   admitReservedEpoch?:boolean;
@@ -139,8 +142,12 @@ export async function armTrustedOwnerOperationalRecovery(config:{
   fail("exactly one trusted owner continuation or configured repair planner required");
  const paired=config.planRepairEpoch?.trustedRemoteDiscovery;
  const remotePorts=config.planRepairEpoch?.remoteDiscoveryPorts;
- if(remotePorts!==undefined&&
-    (!remotePorts||!(config.coordinator instanceof TrustedExecutionCoordinator)||
+ const prepareRemotePorts=config.planRepairEpoch?.prepareRemoteDiscoveryPorts;
+ if(prepareRemotePorts!==undefined&&
+    (typeof prepareRemotePorts!=="function"||remotePorts!==undefined))
+  fail("late discovery requires one private ports factory or fixed ports");
+ if((remotePorts!==undefined||prepareRemotePorts!==undefined)&&
+    ((!remotePorts&&!prepareRemotePorts)||!(config.coordinator instanceof TrustedExecutionCoordinator)||
      paired!==undefined||config.planRepairEpoch!.completedDiscoveryRead!==undefined||
      config.planRepairEpoch!.dispatchRemoteDiscovery!==undefined||
      config.planRepairEpoch!.loadCompletedDiscoverySource!==undefined))
@@ -155,7 +162,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     (!config.planRepairEpoch.dispatchRemoteDiscovery&&
      !config.planRepairEpoch.completedDiscoveryRead))
   fail("source delivery needs a verified Backend discovery Task");
- if((paired||remotePorts||config.planRepairEpoch?.dispatchRemoteDiscovery)&&
+ if((paired||remotePorts||prepareRemotePorts||config.planRepairEpoch?.dispatchRemoteDiscovery)&&
     (config.planRepairEpoch?.completedDiscoveryRead!==undefined||
      typeof config.coordinator?.closeExecution!=="function"))
   fail("dynamic discovery requires exclusive owner callback and fail-closed root shutdown");
@@ -243,11 +250,13 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     let discovered:Readonly<{
       task_id:string;runtime_task_id:string;resource:string;
     }>|undefined;
-    if(paired||remotePorts||config.planRepairEpoch!.dispatchRemoteDiscovery){
+    if(paired||remotePorts||prepareRemotePorts||config.planRepairEpoch!.dispatchRemoteDiscovery){
       try{
         await config.verifyLiveRun?.();
-        if(remotePorts){
-          activeDiscovery=await assembleTrustedRemoteDiscoveryOwner(remotePorts,{
+        if(remotePorts||prepareRemotePorts){
+          const resolvedPorts=remotePorts??await prepareRemotePorts!();
+          await config.verifyLiveRun?.();
+          activeDiscovery=await assembleTrustedRemoteDiscoveryOwner(resolvedPorts,{
             coordinator:config.coordinator as TrustedExecutionCoordinator,
             gateway:config.gateway,intake,sessionId:r.session_id,
             engineerDid:r.authenticated_engineer_did,
@@ -348,7 +357,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       // provider read confirmed, this one-use owner has no safe retry path.
       // A malformed model draft, lost preflight ACK, stale feature HEAD or
       // failed DAG admission/execution must not leave its Rust root alive.
-      if((paired||remotePorts||config.planRepairEpoch!.dispatchRemoteDiscovery)&&
+      if((paired||remotePorts||prepareRemotePorts||config.planRepairEpoch!.dispatchRemoteDiscovery)&&
          config.coordinator.phase==="execution"){
         try{await config.coordinator.closeExecution!();}
         catch{
