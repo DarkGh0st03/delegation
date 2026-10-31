@@ -103,7 +103,7 @@ export async function runNativePositiveApprovedDag({
   readerToken,writerToken,opaUrl,engineerDid,orchestratorToken,agentTokens,
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
   approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
-  offlineTypecheckProbe=false,
+  offlineTypecheckProbe=false,offlineMultiTypecheckProbe=false,
   offlineMultiTest=false,onPilotPhase,onPilotError,
   /** Owner-private capability supplied ONLY by an authenticated trusted
    * host. Never from Gemini, A2A, MCP, CLI arguments or plan JSON.
@@ -120,6 +120,10 @@ export async function runNativePositiveApprovedDag({
   if(offlineTypecheckProbe&&(realGeminiPilot||offlineRecovery||offlineMultiTest||
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Typecheck fault probe requires a scripted nonbillable signed DAG");
+  if(offlineMultiTypecheckProbe&&
+     (!offlineTypecheckProbe||realGeminiPilot||offlineRecovery||offlineMultiTest||
+      !trustedOwnerRecovery||typeof approvedAgentModelFactory!=="function"))
+    throw Error("Two-error D1 requires original nonbillable signed owner");
   if(trustedOwnerRecovery!==undefined&&(
      typeof trustedOwnerRecovery!=="object"||
      trustedOwnerRecovery===null||
@@ -569,7 +573,8 @@ export async function runNativePositiveApprovedDag({
           // The Docker Runner has already attributed compiler locations to
           // the signed original Backend/Frontend Gitea writes. Give the
           // post-FAIL Planner that ONE proven file/role, not a list to guess.
-          if(realGeminiPilot&&runnerRuns===0&&repairNomination&&
+          if((realGeminiPilot||offlineMultiTypecheckProbe)&&runnerRuns===0&&
+             repairNomination&&
              repairNomination.diagnostic_files>=1&&
              repairNomination.diagnostic_files<=8&&
              repairNomination.unresolved_files===0&&
@@ -619,19 +624,26 @@ export async function runNativePositiveApprovedDag({
             assert.equal(scopeAudit.outside_planning_snapshot,0);
             assert.equal(scopeAudit.outside_signed_plan_write,0);
             assert.equal(scopeAudit.outside_operational_root_write,0);
-            assert.equal(scopeAudit.within_operational_root_write,1);
+            assert.equal(scopeAudit.within_operational_root_write,
+              offlineMultiTypecheckProbe?2:1);
             assert.equal(scopeAudit.within_test_task_write,0);
             assert.equal(scopeAudit.covered_by_backend_write,1);
-            assert.equal(scopeAudit.covered_by_frontend_write,0);
-            assert.equal(revisionComparison.diagnostic_files,1);
-            assert.equal(revisionComparison.different_blob_from_base,1);
+            assert.equal(scopeAudit.covered_by_frontend_write,
+              offlineMultiTypecheckProbe?1:0);
+            assert.equal(revisionComparison.diagnostic_files,
+              offlineMultiTypecheckProbe?2:1);
+            assert.equal(revisionComparison.different_blob_from_base,
+              offlineMultiTypecheckProbe?2:1);
             assert.equal(revisionComparison.backend_writes_observed,1);
+            if(offlineMultiTypecheckProbe)
+              assert.equal(revisionComparison.frontend_writes_observed,1);
             assert.equal(revisionComparison.test_writes_observed,0);
             assert.equal(revisionComparison.unverifiable_files,0);
             assert.ok(repairNomination,
               "R92 requires a source-free, authenticated candidate decision");
             assert.equal(repairNomination.backend_candidates,1);
-            assert.equal(repairNomination.frontend_candidates,0);
+            assert.equal(repairNomination.frontend_candidates,
+              offlineMultiTypecheckProbe?1:0);
             assert.equal(repairNomination.test_candidates,0);
             assert.equal(repairNomination.unresolved_files,0);
             assert.equal(repairNomination.signed_task_review_required,true);
@@ -929,7 +941,7 @@ export async function runNativePositiveApprovedDag({
           taskId,role,runtimeTaskId,credentialId,path,failedSha
         }){
           // Generative Frontend correction only; do not add a scripted patch.
-          if(!realGeminiPilot||admittedTestRepair||
+          if((!realGeminiPilot&&!offlineMultiTypecheckProbe)||admittedTestRepair||
              admittedFrontendRepair?.taskId===taskId||
              role!=="frontend"||
              !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
@@ -951,10 +963,13 @@ export async function runNativePositiveApprovedDag({
             throw Error("R151.72 Frontend D1 outside signed permission set");
           const mode=selectTrustedD1AgentModelActivation({
             role:"frontend",taskId,model:models.frontend,
-            scriptedModelClass:SourceDerivedRouteOfflineAdkModel,
-            allowGenerative:true
+            scriptedModelClass:OfflineApprovedAdkModel,
+            allowGenerative:realGeminiPilot
           });
-          assert.equal(mode.needs_scripted_arming,false);
+          if(mode.needs_scripted_arming)
+            models.frontend.armTrustedD1TypecheckRepair({
+              branch,path,failedSha,taskId
+            });
           admittedFrontendRepair=Object.freeze({
             taskId,runtimeTaskId,credentialId,path,failedSha
           });
