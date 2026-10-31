@@ -524,10 +524,27 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     if (errors.length > 0 || revision === null) {
       // No model text, file names or raw tool errors; only static categories
       // and safe aggregate counts. Fail closed exactly as before.
+      const staticKinds=new Set([
+        "authorization_denied","tests_failed","tool_unavailable",
+        "invalid_tool_call","iteration_limit","invalid_commit_result",
+        "invalid_test_result","malformed_tool_result",
+        "inconsistent_read_revision"
+      ]);
+      const staticTools=new Set([
+        "read_file","update_file","create_file","run_tests"
+      ]);
+      // Safe, file-free diagnostic to distinguish a Gateway refusal from
+      // malformed MCP evidence and a model's invalid tool request. Never
+      // print the original exception, provider payload, paths or credentials.
+      const failedKinds=[...new Set(errors.filter(k=>staticKinds.has(k)))].sort();
+      const failedOperations=[...new Set(events.filter(e=>!e.payload.ok)
+        .map(e=>e.name).filter(name=>staticTools.has(name)))].sort();
       process.stderr.write(JSON.stringify({
         event:"adk_task_outcome",role:context.role,
         category:errors.length > 0 ? "controlled_tool_failures" : "no_confirmed_revision",
         model_turns:model.turns,
+        failed_error_kinds:failedKinds,
+        failed_operations:failedOperations,
         ...progress.snapshot()
       }) + "\n");
     }
