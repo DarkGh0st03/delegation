@@ -50,6 +50,9 @@ import {TrustedGatewayNativeRootStatusReader}
  from "../src/trusted-gateway-native-root-status.ts";
 import {TrustedGatewayRootVpVerifier}
  from "../src/trusted-root-vp-verification.ts";
+import {TrustedGatewayDiscoveryChildVpVerifier}
+ from "../src/trusted-discovery-child-vp-verification.ts";
+import type {VerifiedDelegation,VerifierPort} from "../src/types.ts";
 import {TrustedOrchestratorRootPresenter}
  from "../../../packages/orchestrator-runtime/src/trusted-orchestrator-root-presenter.ts";
 import {createTrustedRootVpSignerServer,TrustedRootVpSocketClient}
@@ -3011,6 +3014,121 @@ test("R151.26 authenticated IPC rejects absent journal ACK and foreign resources
  }),/Gateway trusted control denied/);
  assert.equal(h.f.h.provider,3);
 });
+
+test("R151.27 cryptographic discovery Child VP remains non-authorizing and uses fresh Gateway challenges",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ const pins={...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file};
+ const challenges:string[]=[];
+ const signer={async present(p:{credential_id:string;audience:string;challenge:string;
+  disclosed_permissions:ReadonlyArray<{resource:string;operation:string}>}){
+  assert.equal(p.credential_id,h.input.credential_id);
+  assert.equal(p.audience,"urn:thesis:gateway:r151:discovery");
+  assert.deepEqual(p.disclosed_permissions,[{resource:file,operation:"read_file"}]);
+  challenges.push(p.challenge);
+  assert.match(p.challenge,/^[a-f0-9]{64}$/u);
+  return "signed-backend-child-vp:"+p.challenge;
+ }};
+ let nativeChecks=0;
+ const verifier:VerifierPort={
+  async verify(){throw Error("single verifier must not be used");},
+  async verifyMultiple(p){
+   nativeChecks++;
+   assert.equal(p.presenter,"backend");
+   assert.equal(p.signed_vp,"signed-backend-child-vp:"+p.challenge);
+   assert.deepEqual(p.required_permissions,[{resource:file,operation:"read_file"}]);
+   return {
+    credential_id:h.input.credential_id,
+    presenter_id:"did:example:backend",
+    issuer_id:"did:example:orchestrator",
+    hierarchy_depth:1,permissions:[{resource:file,operation:"read_file"}],
+    expiration:(BigInt(Date.now())*1_000_000n+30_000_000_000n).toString()
+   };
+  }
+ };
+ const proofPort=new TrustedGatewayDiscoveryChildVpVerifier({
+  inspector:h.f.inspector,signer,verifier,
+  audience:"urn:thesis:gateway:r151:discovery"
+ });
+ for(let n=0;n<2;n++){
+  const proof=await proofPort.verifyChild(pins);
+  assert.equal(proof.credential_id,h.input.credential_id);
+  assert.equal(proof.cryptographic_presentation_verified,true);
+  assert.equal(proof.gateway_task_admitted,false);
+  assert.equal(proof.execution_authorized,false);
+  assert.equal(proof.source_read,false);
+  assert.ok(Object.isFrozen(proof));
+ }
+ assert.equal(nativeChecks,2);
+ assert.equal(new Set(challenges).size,2,"each native VP must have a fresh challenge");
+ assert.equal(h.f.h.provider,3,"VP inspection cannot access Gitea");
+ assert.throws(()=>h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
+  "r151-unadmitted-child","backend"),/current admitted epoch/);
+});
+
+test("R151.27 refuses false child VP identity, issuer, depth, grants and expiry",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ const pins={...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file};
+ const base:VerifiedDelegation={
+  credential_id:h.input.credential_id,
+  presenter_id:"did:example:backend",issuer_id:"did:example:orchestrator",
+  hierarchy_depth:1,permissions:[{resource:file,operation:"read_file"}],
+  expiration:(BigInt(Date.now())*1_000_000n+30_000_000_000n).toString()
+ };
+ for(const changed of [
+  {...base,credential_id:"urn:foreign-child"},
+  {...base,presenter_id:"did:example:other"},
+  {...base,issuer_id:"did:example:other"},
+  {...base,hierarchy_depth:0},
+  {...base,permissions:[]},
+  {...base,permissions:[...base.permissions,{resource:file,operation:"update_file" as const}]},
+  {...base,expiration:"1"}
+ ]){
+  const verifier:VerifierPort={
+   async verify(){throw Error("unexpected verifier");},
+   async verifyMultiple(){return changed;}
+  };
+  const proofPort=new TrustedGatewayDiscoveryChildVpVerifier({
+   inspector:h.f.inspector,verifier,
+   signer:{async present(p){return "signed-backend-child-vp:"+p.challenge;}},
+   audience:"urn:thesis:gateway:r151:discovery"
+  });
+  await assert.rejects(proofPort.verifyChild(pins),
+   /Trusted discovery Child VP NO-GO/);
+ }
+ assert.equal(h.f.h.provider,3);
+});
+
+test("R151.27 missing journal ACK or invalid signature denies before read",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const pins={...r128Pins(h.f.h),task_id:h.config.discoveryTaskId,resource:file};
+ let attempted=0;
+ const verifier:VerifierPort={
+  async verify(){throw Error("unexpected verifier");},
+  async verifyMultiple(){attempted++;throw Error("Native Rust rejected invalid VP");}
+ };
+ const proofPort=new TrustedGatewayDiscoveryChildVpVerifier({
+  inspector:h.f.inspector,verifier,
+  signer:{async present(){return "invalid-child-signature-not-accepted";}},
+  audience:"urn:thesis:gateway:r151:discovery"
+ });
+ await assert.rejects(proofPort.verifyChild(pins),
+  /no unique acknowledged Backend discovery child/);
+ assert.equal(attempted,0);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await issuer.issueSpecializedChild(h.input);
+ await assert.rejects(proofPort.verifyChild(pins),
+  /Native Rust rejected invalid VP/);
+ assert.equal(attempted,1);
+ assert.equal(h.f.h.provider,3);
+});
+
 test("R151.25 Gateway derives discovery child from protected ACK without admitting source access",async t=>{
  const h=await r151RemoteDiscoveryIssuer(t);
  const issuer=await TrustedApprovedPlanChildAuthorityIssuer

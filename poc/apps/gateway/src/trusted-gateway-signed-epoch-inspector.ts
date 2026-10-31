@@ -73,6 +73,11 @@ export class TrustedGatewaySignedEpochInspector{
   this.#discoveryChildDir=config.discoveryChildDirectory;
  }
  nativeRootVpConfigured(){return !!this.#rootVp&&this.nativeIssuedScopeConfigured();}
+ /** The actual pinned original Rust root delegatee, not a caller DID. */
+ trustedOrchestratorDid(){
+  if(!this.nativeIssuedScopeConfigured())deny("trusted root DID unavailable");
+  return this.#orchestratorDid!;
+ }
  nativeRootStatusConfigured(){return !!this.#nativeRoot;}
  nativeIssuedScopeConfigured(){return !!this.#nativeRoot&&!!this.#orchestratorDid;}
  async assertReady(){
