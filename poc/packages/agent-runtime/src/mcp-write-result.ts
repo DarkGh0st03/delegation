@@ -28,6 +28,24 @@ export function normalizeMcpUpdateFileOutcome(
       }catch{/* A malformed text-only result is never a receipt. */}
     }
   }
+  // MCP SDK may send an isError ToolResult WITHOUT structuredContent.
+  // Parse one bounded JSON error envelope ONLY to preserve a whitelisted
+  // failure kind. Never reinterpret isError as a successful Gitea write.
+  if(payload===null&&envelope?.isError===true&&
+     Array.isArray(envelope.content)&&envelope.content.length===1){
+    const part=record(envelope.content[0]);
+    if(part?.type==="text"&&typeof part.text==="string"&&
+       part.text.length<=2048){
+      try{
+        const decoded=record(JSON.parse(part.text));
+        const failure=record(decoded?.error);
+        if(decoded?.ok===false&&failure&&
+           Object.keys(decoded).sort().join(",")==="error,ok"&&
+           Object.keys(failure).join(",")==="kind"&&
+           typeof failure.kind==="string")payload=decoded;
+      }catch{/* SDK tool text is never trusted as a write receipt. */}
+    }
+  }
   // This reports fixed enums and booleans only: never source bytes, paths,
   // arbitrary upstream messages or private authorization material.
   const safeFailure=(stage:string,kind:string|null=null,

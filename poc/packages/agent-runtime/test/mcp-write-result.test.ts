@@ -63,6 +63,25 @@ test("MCP update requires Gateway-confirmed exact Gitea commit and blob precondi
   assert.deepEqual(normalizeMcpUpdateFileOutcome({
     isError:true,structuredContent:{ok:false,error:{kind:"authorization_denied"}}
   },args).ok,false);
+  // Exact MCP transport error kind is preserved without ever accepting an
+  // isError ToolResult as proof of a committed update.
+  for(const kind of ["authorization_denied","invalid_tool_call",
+    "task_worker_invalid_result","task_worker_rejected",
+    "task_worker_unavailable"]){
+    const response={isError:true,content:[{type:"text",text:JSON.stringify({
+      ok:false,error:{kind}
+    })}]};
+    const normalized=normalizeMcpUpdateFileOutcome(response,args);
+    assert.equal(normalized.ok,false);
+    assert.equal(normalized.error.kind,
+      kind==="authorization_denied"?"authorization_denied":
+      kind==="invalid_tool_call"?"invalid_tool_call":"tool_unavailable");
+  }
+  assert.equal(normalizeMcpUpdateFileOutcome({
+    isError:true,content:[{type:"text",text:JSON.stringify({
+      ok:true,result
+    })}]
+  },args).ok,false);
   // Model prose or an unstructured success claim is never a commit.
   assert.deepEqual(normalizeMcpUpdateFileOutcome({ok:true,result},args).ok,false);
 });
