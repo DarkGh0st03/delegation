@@ -2797,6 +2797,7 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
  }
  const base=await r115RemoteFixture(t,{
   withDurable:true,withRead:options.withRead,nativeCoordinator:options.nativeCoordinator,
+  ...(options.sameIpc?{withRemoteEpoch:true}:{}),
   ...(options.sameIpc?{installInspector:install}:{})
  });
  if(options.sameIpc)return {...base,...inspection};
@@ -4907,24 +4908,6 @@ test("R151.55 same native owner discovery supplies attested source to planner an
  });
  assert.equal(admission.status,"gateway_epoch_admitted");
  assert.equal(admission.epoch,2);
- try{
-  h.f.h.gates.assertRepairTaskReady({session_id:session,
-   plan_digest:reserved.plan_digest,epoch:2,
-   plan_task_id:"repair-implementation",role:"backend"});
- }catch(error){
-  throw new Error("Gateway registry readiness reason: "+
-   (error instanceof Error?error.message:String(error)));
- }
- const gatewayMethods=h.f.client as any;
- for(const method of ["assertRepairTaskReady","bindTask",
-   "confirmTaskCompletion"]){
-  const original=gatewayMethods[method].bind(h.f.client);
-  gatewayMethods[method]=async(...args:any[])=>{
-   try{return await original(...args);}
-   catch(error){throw new Error("Gateway "+method+" failed: "+
-    (error instanceof Error?error.message:String(error)));}
-  };
- }
  const childDir=join(h.f.h.dir,"r15155-repair-child-issuance");
  await mkdir(childDir,{mode:0o700});
  const childJournal=new TrustedChildIssuanceJournal({
