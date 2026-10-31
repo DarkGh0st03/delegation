@@ -2883,6 +2883,96 @@ test("R151.23 unfinalized Runner FAIL cannot unlock remote discovery",async t=>{
  assert.equal(f.h.provider,3);
 });
 
+
+async function r151RemoteDiscoveryIssuer(t:import("node:test").TestContext,
+ options:{withRead?:boolean;finalized?:boolean;revokeOnIssue?:boolean}={}){
+ const status:Record<string,unknown>={};
+ const f=await r128Fixture(t,{withVp:true,
+  withRead:options.withRead??true,status});
+ if(options.finalized!==false)await prepareTrustedRemoteRepairFeedback(f.request());
+ const directory=join(f.h.dir,"r151-remote-child");
+ await mkdir(directory,{mode:0o700});
+ const journal=new TrustedChildIssuanceJournal({
+  directory,sessionId:session,baseRevision:sha,
+  planDigest:f.h.rootAuthority.plan_digest,
+  parentCredentialId:f.h.rootAuthority.credential_id
+ });
+ const calls:any[]=[];
+ const config={
+  intake:f.h.intake,gateway:f.client,coordinator:f.h.coordinator,
+  sessionId:session,engineerDid:engineer,
+  failedRuntimeTestTaskId:"task-test",discoveryTaskId:"r151-remote-child-task",
+  role:"backend" as const,resource:file,issuanceJournal:journal,
+  adapterBaseUrl:"http://127.0.0.1:9999",bearerToken:"private-owner-only",
+  fetchFn:(async (_url:unknown,request:RequestInit)=>{
+   const body=JSON.parse(String(request.body));calls.push(body);
+   if(options.revokeOnIssue)status.status_set=true;
+   return new Response(JSON.stringify({
+    id:body.credential_id,
+    credentialSubject:{sub:"did:example:backend",per:body.permissions}
+   }),{status:201});
+  }) as typeof fetch
+ };
+ const input={
+  parent_credential_id:f.h.rootAuthority.credential_id,
+  approved_task_id:config.discoveryTaskId,selection:{role:"backend"},
+  credential_id:"urn:child:r151-remote-discovery",
+  valid_from:new Date().toISOString(),validity_seconds:300,
+  credential_status:{type:"BitstringStatusListEntry" as const,
+   statusPurpose:"revocation" as const,statusListIndex:"9250",
+   statusListCredential:"https://status.example/remote-discovery"}
+ };
+ return {f,config,input,journal,calls,status};
+}
+test("R151.24 remote discovery issues only read_file and never admits or reads a Task",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ assert.equal(h.calls.length,0);
+ const result=await issuer.issueSpecializedChild(h.input);
+ assert.deepEqual(result.credential.credentialSubject.per,
+  [{resource:file,operation:"read_file"}]);
+ assert.equal(h.calls.length,1);
+ assert.equal(h.calls[0].parent_credential_id,h.f.h.rootAuthority.credential_id);
+ assert.equal((await h.journal.records())[0].observation,"adapter_response_verified");
+ assert.equal(h.f.h.provider,3);
+ assert.throws(()=>h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
+  "r151-remote-read","backend"),/current admitted epoch/);
+ await assert.rejects(issuer.issueSpecializedChild(h.input),/already attempted/);
+ assert.equal(h.calls.length,1);
+});
+test("R151.24 remote discovery refuses missing read or unfinalized FAIL before child issuance",async t=>{
+ for(const options of [{withRead:false},{finalized:false}]){
+  const h=await r151RemoteDiscoveryIssuer(t,options);
+  await assert.rejects(TrustedApprovedPlanChildAuthorityIssuer
+   .createForRemoteRepairDiscovery(h.config),
+   /discovery read grant outside exact issued Rust root|Gateway trusted control denied/);
+  assert.equal(h.calls.length,0);
+  assert.equal((await h.journal.records()).length,0);
+  assert.equal(h.f.h.provider,3);
+ }
+});
+test("R151.24 remote root revoked after preparation blocks the Adapter child request",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ h.status.status_set=true;
+ await assert.rejects(issuer.issueSpecializedChild(h.input),/Gateway trusted control denied/);
+ assert.equal(h.calls.length,0);
+ await assert.rejects(issuer.issueSpecializedChild(h.input),/already attempted/);
+ assert.equal(h.f.h.provider,3);
+});
+test("R151.24 remote root revoked during Adapter issuance prevents returning the child",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t,{revokeOnIssue:true});
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ await assert.rejects(issuer.issueSpecializedChild(h.input),/Gateway trusted control denied/);
+ assert.equal(h.calls.length,1);
+ assert.equal((await h.journal.records())[0].observation,"adapter_response_verified");
+ await assert.rejects(issuer.issueSpecializedChild(h.input),/already attempted/);
+ assert.equal(h.f.h.provider,3);
+});
+
 test("R132 corrupt Rust presenter, issuer, root identity or extra permissions deny VP",async t=>{
  const bad=[
   {credential_id:"urn:credential:r132-other"},

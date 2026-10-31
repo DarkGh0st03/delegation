@@ -14,7 +14,8 @@ import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedChildIssuanceJournal} from "./trusted-child-issuance-journal.mjs";
 import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
 import {TrustedApprovedExecutionPlans} from "../../../apps/gateway/src/approved-execution-plans.ts";
-import {prepareTrustedRepairFeedback} from "./trusted-validation-repair-feedback.ts";
+import {prepareTrustedRepairFeedback,preflightTrustedRemoteRepairDiscovery} from "./trusted-validation-repair-feedback.ts";
+import {TrustedPlanIpcClient} from "../../../apps/gateway/src/trusted-plan-ipc.ts";
 import type {SpecializedAgentRole} from "@thesis/agent-runtime";
 import type {AuthenticatedPlanStore} from
   "../../../apps/gateway/src/approved-execution-plans.ts";
@@ -88,6 +89,7 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
   readonly #journal?:TrustedChildIssuanceJournal;
   readonly #approved=new Map<string,{role:Role;permissions:DelegatedPermission[]}>();
   readonly #attempted=new Set<string>();
+  #remoteDiscoveryFence? : ()=>Promise<void>;
 
   private constructor(c:Omit<ApprovedChildIssuerConfig,"approvals">,
     root:{credential_id:string;plan_digest:string;permissions:DelegatedPermission[]},
@@ -285,6 +287,70 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
   }
 
   /**
+   * R151.24: prepare an exact read-only child using the authenticated remote
+   * Gateway. Issuance is separate from Task admission and source execution.
+   * Recheck the pinned FAIL/root before the Adapter request and before return.
+   */
+  static async createForRemoteRepairDiscovery(config:
+    Omit<ApprovedChildIssuerConfig,"approvals"> & {
+      intake:TrustedOperationalEpochIntake;
+      gateway:TrustedPlanIpcClient;
+      failedRuntimeTestTaskId:string;
+      discoveryTaskId:string;
+      role:"backend";
+      resource:string;
+    }):Promise<TrustedApprovedPlanChildAuthorityIssuer>{
+    const c={...config};
+    if(!(c.intake instanceof TrustedOperationalEpochIntake)||
+       !(c.gateway instanceof TrustedPlanIpcClient)||
+       !(c.issuanceJournal instanceof TrustedChildIssuanceJournal)||
+       c.role!=="backend"||!ID.test(c.sessionId)||!ID.test(c.discoveryTaskId)||
+       !c.engineerDid.startsWith("did:")||!c.adapterBaseUrl||!c.bearerToken||
+       !Number.isFinite(c.timeoutMs??5000)||(c.timeoutMs??5000)<=0||
+       c.coordinator.phase!=="execution")
+      reject("remote discovery requires trusted owner, Backend and durable journal");
+    c.intake.assertSameCoordinator(c.coordinator);
+    const request=Object.freeze({
+      gateway:c.gateway,intake:c.intake,coordinator:c.coordinator,
+      sessionId:c.sessionId,runtimeTestTaskId:c.failedRuntimeTestTaskId,
+      discoveryTaskId:c.discoveryTaskId,resource:c.resource
+    });
+    const proof=await preflightTrustedRemoteRepairDiscovery(request);
+    const root=c.coordinator.trustedOperationalAuthority();
+    const parents=allUnique(root.permissions,"issued Rust parent");
+    if(root.plan_digest!==proof.root_plan_digest||
+       !parents.has(KEY({resource:c.resource,operation:"read_file"})))
+      reject("remote discovery child exceeds issued Rust parent");
+    const history=await c.intake.verifiedEpochHistory();
+    if(history.length!==proof.failed_epoch||
+       history.at(-1)?.root_credential_id!==root.credential_id)
+      reject("remote discovery epoch changed during preparation");
+    c.issuanceJournal.assertBound({
+      sessionId:c.sessionId,baseRevision:history[0].plan.base_revision,
+      planDigest:root.plan_digest,parentCredentialId:root.credential_id
+    });
+    const fence=async()=>{
+      const current=await preflightTrustedRemoteRepairDiscovery(request);
+      const active=c.coordinator.trustedOperationalAuthority();
+      const activePairs=allUnique(active.permissions,"active Rust parent");
+      if(JSON.stringify(current)!==JSON.stringify(proof)||
+         active.credential_id!==root.credential_id||
+         active.plan_digest!==root.plan_digest||
+         activePairs.size!==parents.size||
+         [...activePairs].some(p=>!parents.has(p)))
+        reject("remote discovery FAIL, epoch or Rust parent changed");
+    };
+    await fence();
+    const tasks=new Map<string,{role:Role;permissions:DelegatedPermission[]}>([
+      [c.discoveryTaskId,{role:"backend",
+        permissions:[{resource:c.resource,operation:"read_file"}]}]
+    ]);
+    const issuer=new TrustedApprovedPlanChildAuthorityIssuer(c,root,tasks);
+    issuer.#remoteDiscoveryFence=fence;
+    return issuer;
+  }
+
+  /**
    * Recheck the real Coordinator/root at the final protected A2A boundary.
    * An Engineer shutdown can occur while the Adapter HTTP issuance is in
    * flight. The issued child cannot justify a new Agent Task after that.
@@ -340,6 +406,9 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
       });
       this.assertActiveBeforeA2ASend();
     }
+    // A durable intent remains non-retryable if this live remote fence fails.
+    await this.#remoteDiscoveryFence?.();
+    this.assertActiveBeforeA2ASend();
     const response=await this.#fetch(
       this.#adapterBaseUrl+"/v1/credentials/child",{
         method:"POST",
@@ -372,6 +441,8 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     });
     // A successful HTTP response may arrive AFTER human-initiated root
     // revocation. Never hand an Agent a formerly valid child on that path.
+    this.assertActiveBeforeA2ASend();
+    await this.#remoteDiscoveryFence?.();
     this.assertActiveBeforeA2ASend();
     return {role,credential};
   }
