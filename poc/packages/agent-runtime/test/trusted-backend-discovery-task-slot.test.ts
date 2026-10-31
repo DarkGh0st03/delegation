@@ -86,7 +86,8 @@ test("R151.40 mismatched dispatch, Child or A2A permissions cannot select signer
   /Trusted Backend discovery A2A NO-GO/);
  assert.throws(()=>f.slot.bindingFor({...f.context,
   trusted_gateway_task_id:"foreign"}),/Trusted Backend discovery A2A NO-GO/);
- await assert.rejects(f.slot.fence("dispatch_other"),/foreign Task/);
+ await assert.rejects(f.slot.fence("dispatch_"+randomBytes(16).toString("base64url")),
+  /foreign Task/);
  await f.slot.fence(runtime);
 });
 test("R151.40 unknown control requests consume slot without issuing authority",async()=>{
