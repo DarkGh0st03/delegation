@@ -4938,7 +4938,9 @@ test("R151.55 same native owner discovery supplies attested source to planner an
    credentialSubject:{sub:"did:example:"+body.delegatee,per:body.permissions}
   }),{status:201});
  };
- const execution=await executeTrustedAdmittedRepairDag({
+ let execution:Awaited<ReturnType<typeof executeTrustedAdmittedRepairDag>>;
+ try{
+ execution=await executeTrustedAdmittedRepairDag({
   sessionId:session,epoch:2,planDigest:reserved.plan_digest,
   coordinator:h.f.h.coordinator as any,intake:h.f.h.intake,gateway:h.f.client,
   journal:childJournal,engineerDid:engineer,
@@ -4971,6 +4973,10 @@ test("R151.55 same native owner discovery supplies attested source to planner an
    return {card:{name:"Test"},task:artifact as never};
   }}
  });
+ }catch(error){
+  throw new Error("Admitted repair DAG dispatch/execution stage failed: "+
+   (error instanceof Error?error.message:String(error)));
+ }
  assert.equal(execution.status,"repair_dag_gateway_confirmed_not_final_runner_verified");
  assert.deepEqual(repairCalls,["repair-implementation","repair-validation"]);
  assert.equal(new Set(childCalls).size,2);
