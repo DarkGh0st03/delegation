@@ -853,7 +853,17 @@ export async function runNativePositiveApprovedDag({
           const task=epoch?.plan.tasks.find(t=>t.id===taskId);
           if(history.length!==2||task?.agent_id!=="test"||
              epoch.root_credential_id!==operationalRootId||
-             !task.depends_on.includes(activeD1Repair().taskId)||
+             !epoch.plan.tasks.filter(t=>
+               t.agent_id==="backend"||t.agent_id==="frontend").every(repair=>{
+               const visited=new Set(),pending=[...task.depends_on];
+               while(pending.length){
+                 const id=pending.pop();
+                 if(visited.has(id))continue;
+                 visited.add(id);
+                 pending.push(...(epoch.plan.tasks.find(t=>t.id===id)?.depends_on??[]));
+               }
+               return visited.has(repair.id);
+             })||
              !epoch.plan.requested_permissions.some(g=>
                g.task_id===taskId&&g.agent_id==="test"&&
                g.operation==="run_tests"&&g.resource===scopedBranch))
@@ -878,13 +888,12 @@ export async function runNativePositiveApprovedDag({
         }){
           // Only the original trusted owner may invoke this after real
           // R134 child issuance. Source/model claims grant NOTHING.
-          if(activeD1Repair()||
+          if(admittedTestRepair||admittedBackendRepair?.taskId===taskId||
              !(offlineTypecheckProbe||realGeminiPilot)||
              role!=="backend"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(failedSha)||
              runnerOutcome?.status!=="fail"||
-             runnerOutcome?.tested_commit_sha!==failedSha||
              !files.backend.includes(path)||!readableFiles.backend.includes(path)||
              (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
             throw Error("R150.8 trusted Backend repair binding NO-GO");
@@ -920,13 +929,13 @@ export async function runNativePositiveApprovedDag({
           taskId,role,runtimeTaskId,credentialId,path,failedSha
         }){
           // Generative Frontend correction only; do not add a scripted patch.
-          if(!realGeminiPilot||activeD1Repair()||admittedTestRepair||
+          if(!realGeminiPilot||admittedTestRepair||
+             admittedFrontendRepair?.taskId===taskId||
              role!=="frontend"||
              !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(failedSha)||
              runnerOutcome?.status!=="fail"||
-             runnerOutcome?.tested_commit_sha!==failedSha||
              !files.frontend.includes(path)||!readableFiles.frontend.includes(path)||
              (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
             throw Error("R151.72 Frontend D1 repair requires live failed-SHA");

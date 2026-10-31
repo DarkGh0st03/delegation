@@ -34,7 +34,7 @@ import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {TrustedAdkOperationalRepairProposer} from
   "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
-import {selectSignedNativeD1Tasks} from
+import {selectSignedNativeD1Tasks,selectSignedNativeMultiD1Tasks} from
   "./native-owner-d1-task-selection.mjs";
 import {executeTrustedAdmittedRepairDag} from
   "../../../packages/orchestrator-runtime/src/trusted-repair-dag-controller.ts";
@@ -936,31 +936,50 @@ try{
             // the original Engineer-approved, Rust-issued root.
             const repairTasks=epochs[1].plan.tasks.filter(t=>
               t.agent_id==="backend"||t.agent_id==="frontend");
-            if(repairTasks.length!==1)
-              throw Error("R151.72 expected one signed Backend/Frontend repair");
-            const repairRole=repairTasks[0].agent_id;
-            const repairTargets=roleFiles[repairRole].filter(path=>{
-              const uri=canonicalFileUri(repo,workBranch,path);
-              const grants=epochs[1].plan.requested_permissions;
-              return ["read_file","update_file"].every(operation=>
-                grants.some(g=>g.task_id===repairTasks[0].id&&
-                  g.agent_id===repairRole&&
-                  g.resource===uri&&g.operation===operation));
-            });
-            if(repairTargets.length!==1)
-              throw Error("R151.72 expected one exact signed repair file");
-            const repairTarget=repairTargets[0];
-            const repairFileUri=canonicalFileUri(repo,workBranch,repairTarget);
-            const selected=selectSignedNativeD1Tasks({
-              epoch:epochs[1],planDigest:epochs[1].plan_digest,
-              fileUri:repairFileUri,branchUri:branchResource,repairRole
-            });
-            const repairTaskId=repairRole==="backend"
-              ?selected.backendTaskId:selected.frontendTaskId;
+            if(repairTasks.length<1||repairTasks.length>8||
+               (!paidGeminiRecovery&&repairTasks.length!==1))
+              throw Error("Signed D1 repair Task count outside pilot scope");
+            const filesByTask=new Map();
+            for(const task of repairTasks){
+              const found=roleFiles[task.agent_id].filter(path=>
+                ["read_file","update_file"].every(operation=>
+                  epochs[1].plan.requested_permissions.some(g=>
+                    g.task_id===task.id&&g.agent_id===task.agent_id&&
+                    g.operation===operation&&
+                    g.resource===canonicalFileUri(repo,workBranch,path))));
+              // Initial mixed Gemini pilot: one signed file per editor Task.
+              if(found.length!==1)
+                throw Error("D1 editor needs one exact signed source file");
+              filesByTask.set(task.id,{role:task.agent_id,path:found[0]});
+            }
+            const multi=repairTasks.length>1;
+            const selected=multi
+              ?selectSignedNativeMultiD1Tasks({
+                epoch:epochs[1],planDigest:epochs[1].plan_digest,
+                branchUri:branchResource,
+                originalFilesByRole:Object.fromEntries(
+                  ["backend","frontend"].map(role=>[role,
+                    roleFiles[role].map(path=>
+                      canonicalFileUri(repo,workBranch,path))]))
+               })
+              :selectSignedNativeD1Tasks({
+                epoch:epochs[1],planDigest:epochs[1].plan_digest,
+                fileUri:canonicalFileUri(repo,workBranch,
+                  filesByTask.get(repairTasks[0].id).path),
+                branchUri:branchResource,repairRole:repairTasks[0].agent_id
+               });
+            if(multi&&selected.editingTasks.some(t=>{
+              const own=filesByTask.get(t.taskId);
+              return !own||own.role!==t.role||t.fileUris.length!==1||
+                t.fileUris[0]!==canonicalFileUri(repo,workBranch,own.path);
+            }))throw Error("Signed D1 resources differ from original writers");
+            const signedTaskOrder=multi?selected.orderedTaskIds:
+              [repairTasks[0].id,selected.testTaskId];
             if(!paidGeminiRecovery){
               assert.equal(selected.backendTaskId,candidateBackendId);
               assert.equal(selected.testTaskId,candidateTestId);
-              assert.equal(repairFileUri,fileResource);
+              assert.equal(canonicalFileUri(repo,workBranch,
+                filesByTask.get(repairTasks[0].id).path),fileResource);
             }
             // R150.6: ask the ORIGINAL Rust issuer for a genuinely
             // attenuated first repair Child DC, after the SAME Gateway's
@@ -989,12 +1008,10 @@ try{
                 await gatewayOwner.renewLease(session,packet.plan_digest);
               },
               credentialForTask:({id,role,ordinal})=>{
-                if(ordinal>1||
-                   (ordinal===0&&(role!==repairRole||
-                     id!==repairTaskId))||
-                   (ordinal===1&&(role!=="test"||
-                     id!==selected.testTaskId)))
-                  throw Error("R151.10 native test role outside admitted scope");
+                if(id!==signedTaskOrder[ordinal]||
+                   (id===selected.testTaskId)!==(role==="test")||
+                   (role!=="test"&&filesByTask.get(id)?.role!==role))
+                  throw Error("Signed D1 Task not in admitted topological schedule");
                 return {
                   credential_id:"urn:native:r151-d1-"+role+"-"+
                     randomBytes(7).toString("hex"),
@@ -1013,15 +1030,17 @@ try{
               },
               beforeProtectedSend:async issued=>{
                 assert.equal(issued.epoch,2);
-                if(issued.role===repairRole&&issued.task_id===repairTaskId){
-                  const armRepair=repairRole==="frontend"
+                const editing=filesByTask.get(issued.task_id);
+                if(editing&&issued.role===editing.role){
+                  const armRepair=editing.role==="frontend"
                     ?originalA2APorts.armVerifiedD1FrontendRepair
                     :originalA2APorts.armVerifiedD1BackendRepair;
                   await armRepair({
                     taskId:issued.task_id,role:issued.role,
                     runtimeTaskId:issued.runtime_task_id,
                     credentialId:issued.credential_id,
-                    path:repairTarget,failedSha:signal.tested_commit_sha
+                    path:editing.path,
+                    failedSha:verifiedRepairedSha??signal.tested_commit_sha
                   });
                 }else if(issued.role==="test"&&
                          issued.task_id===selected.testTaskId&&
@@ -1038,10 +1057,11 @@ try{
               },
               afterGatewayConfirmed:async task=>{
                 const head=await liveClient.getBranchMetadata(workBranch);
-                if(task.role===repairRole&&task.task_id===repairTaskId){
+                if(filesByTask.get(task.task_id)?.role===task.role){
                   assert.match(head.commit_sha,/^[a-f0-9]{40}$/u);
-                  assert.notEqual(head.commit_sha,signal.tested_commit_sha,
-                    "Signed repair agent must produce a changed Gitea SHA");
+                  assert.notEqual(head.commit_sha,
+                    verifiedRepairedSha??signal.tested_commit_sha,
+                    "Each signed repair must produce a changed Gitea SHA");
                   verifiedRepairedSha=head.commit_sha;
                 }else if(task.role==="test"&&
                          task.task_id===selected.testTaskId){
@@ -1055,11 +1075,11 @@ try{
             assert.equal(report.status,
               "repair_dag_gateway_confirmed_not_final_runner_verified");
             assert.deepEqual(report.tasks.map(t=>t.task_id),
-              [repairTaskId,selected.testTaskId]);
+              signedTaskOrder);
             assert.ok(report.tasks.every(t=>t.gateway_task_completed));
             assert.ok(report.tasks.every(t=>t.docker_pass_verified===false));
-            assert.notEqual(report.tasks[0].credential_id,
-              report.tasks[1].credential_id);
+            assert.equal(new Set(report.tasks.map(t=>t.credential_id)).size,
+              signedTaskOrder.length);
             assert.match(verifiedRepairedSha??"",/^[a-f0-9]{40}$/u);
             const observedRepair={commit_sha:verifiedRepairedSha};
             const observedAfterTest=await liveClient.getBranchMetadata(workBranch);
@@ -1077,11 +1097,11 @@ try{
               coordinator,intake:armed.intake
             });
             const records=await journal.records();
-            assert.equal(records.length,2);
-            assert.notEqual(report.tasks[0].credential_id,
-              report.tasks[1].credential_id);
+            assert.equal(records.length,signedTaskOrder.length);
+            assert.equal(new Set(report.tasks.map(t=>t.credential_id)).size,
+              signedTaskOrder.length);
             assert.deepEqual(records.map(r=>r.task_id).sort(),
-              [repairTaskId,selected.testTaskId]);
+              signedTaskOrder);
             assert.equal(records[0].observation,"adapter_response_verified");
             assert.equal(records[0].parent_credential_id,operationalId);
             ownerD1ChildEvidence={
