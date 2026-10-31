@@ -372,7 +372,9 @@ async function harness(t:import("node:test").TestContext,
    return {
     presenter_id:"did:example:"+req.presenter,
     issuer_id:engineer,credential_id:req.signed_vp==="signed.r109.discovery"?
-      "urn:child:repair-discovery":"urn:fixture:delegated",
+      "urn:child:repair-discovery":
+      req.signed_vp==="signed.r151.discovery"?
+      "urn:child:r151-remote-discovery":"urn:fixture:delegated",
     permissions:[req.required_permission],hierarchy_depth:1,
     expiration:"999999999999999"
    };
@@ -4452,4 +4454,30 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
   /Gateway trusted control denied/);
  assert.equal(signed,1,"replay rejected before signing again");
  assert.equal(h.f.h.provider,observedBeforeAdmission);
+ // R151.33: admission never substitutes for the fresh per-operation VP/OPA.
+ assert.throws(()=>h.f.h.runtime.prepare({
+  task_id:"r15132-read-runtime",agent_role:"backend",
+  tool:"update_file",arguments:{branch,path:"src/invoices.ts",content:"no"}
+ }),/Discovery Task can only read/);
+ const foreign=h.f.h.runtime.prepare({
+  task_id:"r15132-read-runtime",agent_role:"backend",
+  tool:"read_file",arguments:{branch,path:"src/invoices.ts"}
+ });
+ await assert.rejects(h.f.h.runtime.execute({
+  request_id:foreign.request_id,signed_vp:"signed.fixture.vp"
+ }),/Trusted approved plan rejected|approved_plan_denied/);
+ assert.equal(h.f.h.provider,observedBeforeAdmission,
+  "foreign VP cannot read the source");
+ const request=h.f.h.runtime.prepare({
+  task_id:"r15132-read-runtime",agent_role:"backend",
+  tool:"read_file",arguments:{branch,path:"src/invoices.ts"}
+ });
+ const response=await h.f.h.runtime.execute({
+  request_id:request.request_id,signed_vp:"signed.r151.discovery"
+ });
+ assert.equal(response.execution.provider,"gitea");
+ assert.equal(response.execution.tool,"read_file");
+ assert.equal(response.execution.performed,true);
+ assert.equal(h.f.h.provider,observedBeforeAdmission+1);
+ await h.f.h.gates.confirmTaskCompletion("r15132-read-runtime");
 });
