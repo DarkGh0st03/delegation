@@ -364,6 +364,26 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
       reject("operational parent is no longer active");
   }
 
+  /** R151.49.3: a private discovery issuer may be paired ONLY with the
+   * SAME live Coordinator/root and the exact Backend Task/resource.
+   * Prevent a valid Child issued under another original root from being
+   * dispatched through this owner's otherwise-valid remote A2A handoff. */
+  assertExactRemoteDiscoveryOwner(pins:Readonly<{
+    coordinator:ApprovedChildIssuerConfig["coordinator"];
+    sessionId:string;taskId:string;resource:string;
+  }>):void{
+    const task=this.#approved.get(pins.taskId);
+    if(!this.#remoteDiscoveryFence||
+       this.#coordinator!==pins.coordinator||
+       this.#sessionId!==pins.sessionId||
+       this.#approved.size!==1||!task||task.role!=="backend"||
+       task.permissions.length!==1||
+       task.permissions[0]?.resource!==pins.resource||
+       task.permissions[0]?.operation!=="read_file")
+      reject("issuer and A2A handoff are not the same native root and exact Backend read");
+    this.assertActiveBeforeA2ASend();
+  }
+
   async issueSpecializedChild(input:ScopedInput):Promise<{
     role:Role;credential:IssuedDelegationCredential;
   }>{

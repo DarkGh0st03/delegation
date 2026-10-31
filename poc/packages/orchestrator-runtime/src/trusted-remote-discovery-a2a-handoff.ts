@@ -20,6 +20,8 @@ import {validateWorkflowArtifact} from "./artifact-validation.ts";
 import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
 import {approvedWorkBranch} from "../../plan-contracts/src/approved-work-branch.mjs";
 import type {IssuedDelegationCredential} from "./authority-client.ts";
+import {TrustedApprovedPlanChildAuthorityIssuer} from
+ "./trusted-approved-child-issuer.ts";
 import type {ProtectedA2AClientPort,DelegatedA2ARoleTaskResult} from
  "./a2a-workflow.ts";
 
@@ -205,6 +207,17 @@ export class TrustedRemoteDiscoveryA2AHandoff {
    failedRuntimeTestTaskId:config.failedRuntimeTestTaskId,
    resource:config.resource,path:config.path,
    backendAgentBaseUrl:url.origin
+  });
+ }
+ /** Check trusted issuer/Task pairing BEFORE any native Child is created. */
+ assertExactDiscoveryIssuer(issuer:TrustedApprovedPlanChildAuthorityIssuer){
+  if(!(issuer instanceof TrustedApprovedPlanChildAuthorityIssuer))
+   deny("trusted remote Child issuer required");
+  issuer.assertExactRemoteDiscoveryOwner({
+   coordinator:this.#coordinator,
+   sessionId:this.#pins.sessionId,
+   taskId:this.#pins.discoveryTaskId,
+   resource:this.#pins.resource
   });
  }
  /** Fixed owner identity, no capability or A2A authority exposed. */

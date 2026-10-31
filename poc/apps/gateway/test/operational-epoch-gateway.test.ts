@@ -4685,3 +4685,26 @@ test("R151.49 owner refuses simulated Coordinator as remote child handoff author
  assert.equal(h.calls.length,0,"no Child issued by rejected owner assembly");
  assert.equal(h.f.h.provider,3,"no Gitea read from rejected handoff");
 });
+
+
+test("R151.49.3 native discovery issuer cannot pair with another Coordinator, Task or source",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer
+  .createForRemoteRepairDiscovery(h.config);
+ const same={
+  coordinator:h.config.coordinator,sessionId:session,
+  taskId:h.config.discoveryTaskId,resource:file
+ };
+ assert.doesNotThrow(()=>issuer.assertExactRemoteDiscoveryOwner(same));
+ for(const different of [
+  {...same,coordinator:{...h.config.coordinator}},
+  {...same,sessionId:"another-root-session"},
+  {...same,taskId:"another-backend-task"},
+  {...same,resource:file+"-foreign"}
+ ]){
+  assert.throws(()=>issuer.assertExactRemoteDiscoveryOwner(different),
+   /issuer and A2A handoff are not the same native root and exact Backend read/);
+ }
+ assert.equal(h.calls.length,0,"owner matching does not issue credentials");
+ assert.equal(h.f.h.provider,3,"owner matching does not read Gitea");
+});

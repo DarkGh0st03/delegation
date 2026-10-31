@@ -32,6 +32,9 @@ export class TrustedRemoteDiscoveryOwnerBindings {
      !config.issueInput||config.issueInput.selection?.role!=="backend"||
      config.issueInput.approved_task_id!==config.handoff.discoveryTaskId)
    deny("one exact issued Backend discovery Child with mandatory private source required");
+  // Cross-check coordinator identity and the ORIGINAL native root, not
+  // merely a matching Task ID or a matching public Gitea URI.
+  config.handoff.assertExactDiscoveryIssuer(config.issuer);
   this.#issuer=config.issuer;
   this.#handoff=config.handoff;
   this.#issueInput=Object.freeze({...config.issueInput});
