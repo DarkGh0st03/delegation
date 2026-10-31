@@ -4795,6 +4795,11 @@ test("R151.53 original IPC supports real Coordinator and verified discovery asse
  const coordinator=h.f.h.coordinator as unknown as TrustedExecutionCoordinator;
  assert.ok(coordinator instanceof TrustedExecutionCoordinator);
  assert.equal(coordinator.phase,"execution");
+ // The same valid inspector accepted at bootstrap cannot replace the
+ // Gateway trust configuration once the original root is active.
+ assert.throws(()=>h.f.h.gates.installRemoteEpochInspectorAtBootstrap(
+  h.f.inspector
+ ),/only be installed before durable Gateway activation/);
  // Inspector capabilities are installed before the original client connects.
  const owner=await assembleTrustedRemoteDiscoveryOwner({
   adapterBaseUrl:h.config.adapterBaseUrl,bearerToken:h.config.bearerToken,
