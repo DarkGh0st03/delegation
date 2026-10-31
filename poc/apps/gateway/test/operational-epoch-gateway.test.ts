@@ -4479,5 +4479,30 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
  assert.equal(response.execution.tool,"read_file");
  assert.equal(response.execution.performed,true);
  assert.equal(h.f.h.provider,observedBeforeAdmission+1);
+ const ledgerPins={...pins,runtime_task_id:"r15132-read-runtime",
+  tested_commit_sha:sha};
+ await assert.rejects(client.readConfirmedRemoteDiscoveryEffect(ledgerPins),
+  /Gateway trusted control denied/,
+  "discovery read cannot be claimed before trusted Task completion");
  await h.f.h.gates.confirmTaskCompletion("r15132-read-runtime");
+ const ledger=await client.readConfirmedRemoteDiscoveryEffect(ledgerPins);
+ assert.equal(ledger.status,
+  "gateway_confirmed_exact_sha_discovery_read_no_repair_authority");
+ assert.equal(ledger.revision,sha);
+ assert.equal(ledger.credential_id,h.input.credential_id);
+ assert.equal(ledger.gateway_provider_corroborated,true);
+ assert.equal(ledger.source_disclosed,false);
+ assert.equal(ledger.repair_dag_authorized,false);
+ assert.equal(ledger.pr_authorized,false);
+ assert.equal(JSON.stringify(ledger).includes("export function invoice"),false);
+ assert.ok(Object.isFrozen(ledger));
+ for(const invalid of [
+  {...ledgerPins,resource:file+"-different"},
+  {...ledgerPins,runtime_task_id:"r15132-original-diagnostics"},
+  {...ledgerPins,tested_commit_sha:"b".repeat(40)},
+  {...ledgerPins,task_id:"read-diagnostics"}
+ ]){
+  await assert.rejects(client.readConfirmedRemoteDiscoveryEffect(invalid),
+   /Gateway trusted control denied/);
+ }
 });

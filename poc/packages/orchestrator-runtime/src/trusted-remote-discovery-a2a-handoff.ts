@@ -287,6 +287,20 @@ export class TrustedRemoteDiscoveryA2AHandoff {
    await this.#gateway.confirmTaskCompletion(
     runtimeId,observedA2ACompletion(observed,runtimeId)
    );
+   // R151.43: independently query the Gateway provider ledger, not A2A.
+   const providerRead=await this.#gateway.readConfirmedRemoteDiscoveryEffect({
+    ...childPins,runtime_task_id:runtimeId,
+    runtime_test_task_id:p.failedRuntimeTestTaskId,
+    tested_commit_sha:before.tested_commit_sha
+   });
+   if(providerRead.credential_id!==issued.id||
+      providerRead.branch!==before.work_branch||
+      providerRead.revision!==before.tested_commit_sha||
+      providerRead.gateway_provider_corroborated!==true||
+      providerRead.source_disclosed!==false||
+      providerRead.repair_dag_authorized!==false||
+      providerRead.pr_authorized!==false)
+    deny("Gateway provider ledger did not attest exact signed Child discovery read");
    // Fail closed on an uncertain Backend holder retirement even if the
    // authenticated Gateway has already confirmed the source read.
    await this.#backend.fence(runtimeId);

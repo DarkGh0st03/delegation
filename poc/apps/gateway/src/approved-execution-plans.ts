@@ -1008,6 +1008,96 @@ export class TrustedApprovedExecutionPlans {
 
 
   /**
+   * R151.43: owner-only independent POST-completion discovery read receipt.
+   *
+   * The Gateway, not A2A/model text, established this successful Gitea
+   * provider effect AFTER each normal Rust VP, OPA and Task gate. Return
+   * ONLY source-free metadata; never cache or return the file content/VP.
+   * This receipt is NOT permission to create a repair DAG or open a PR.
+   */
+  readConfirmedRemoteDiscoveryEffect(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;
+    epoch:number;task_id:string;runtime_task_id:string;
+    runtime_test_task_id:string;resource:string;tested_commit_sha:string;
+  }>){
+    if(!pins||!ID.test(pins.session_id)||!ID.test(pins.task_id)||
+       !ID.test(pins.runtime_task_id)||!ID.test(pins.runtime_test_task_id)||
+       !/^[a-f0-9]{64}$/u.test(pins.root_plan_digest)||
+       !/^[a-f0-9]{64}$/u.test(pins.plan_digest)||
+       !Number.isSafeInteger(pins.epoch)||pins.epoch<1||pins.epoch>2||
+       !SHA.test(pins.tested_commit_sha)||
+       typeof pins.resource!=="string"||pins.resource.length>2048)
+      denied("Malformed trusted discovery read verification request");
+    const {session,binding}=this.#activeBinding(pins.runtime_task_id);
+    const admitted=session.currentEpoch===1?session.plan:
+       [...session.admittedEpochTasks.values()]
+        .find(x=>x.epoch===session.currentEpoch)?.plan;
+    const discovery=session.discoveryTasks.get(pins.task_id);
+    if(session.sessionId!==pins.session_id||
+       session.digest!==pins.root_plan_digest||
+       !admitted||planDigest(admitted)!==pins.plan_digest||
+       pins.epoch!==session.currentEpoch||
+       binding.epochVersion!==pins.epoch||
+       binding.sessionId!==pins.session_id||
+       binding.planTaskId!==pins.task_id||binding.agent!=="backend"||
+       !binding.completed||binding.completing||binding.inFlightEffects!==0||
+       !session.completedPlanTasks.has(pins.task_id)||
+       !discovery||discovery.epoch!==pins.epoch||
+       discovery.role!=="backend"||discovery.resource!==pins.resource||
+       discovery.testedSha!==pins.tested_commit_sha||
+       !ID.test(discovery.credentialId)||
+       binding.successfulRequests.size!==1)
+      denied("Gateway has no exact completed authenticated Backend discovery read");
+    const failure=this.readVerifiedTestFailure(pins.runtime_test_task_id);
+    if(failure.session_id!==pins.session_id||
+       failure.root_plan_digest!==pins.root_plan_digest||
+       failure.epoch_version!==pins.epoch||
+       failure.branch!==session.workBranch||
+       failure.tested_commit_sha!==pins.tested_commit_sha||
+       failure.first_failed_phase!=="typecheck"||
+       failure.typecheck_error_codes.length===0)
+      denied("Gateway discovery source is not pinned to the original failed Runner SHA");
+    const [effect]=binding.successfulRequests.values();
+    const e=effect?.execution;
+    if(!effect||effect.tool!=="read_file"||
+       effect.resource!==pins.resource||
+       e?.provider!=="gitea"||e.tool!=="read_file"||
+       e.performed!==true||
+       !("revision" in e)||e.revision!==pins.tested_commit_sha||
+       !("branch" in e)||e.branch!==session.workBranch||
+       !("path" in e)||typeof e.path!=="string"||
+       !e.path||e.path.startsWith("/")||e.path.includes("..")||
+       !("blob_sha" in e)||typeof e.blob_sha!=="string"||
+       !("last_commit_sha" in e)||
+       !("size" in e)||!Number.isSafeInteger(e.size)||
+       !("encoding" in e)||e.encoding!=="utf-8")
+      denied("No exact-SHA Gateway-correlated Gitea read-only provider effect");
+    // Check the precise Gateway-generated ResourceURI rather than trusting
+    // a model-selected path, and never send source bytes over owner IPC.
+    const encodedBranch=encodeURIComponent(session.workBranch);
+    const prefix="gitea://"+[
+      this.#repository.authority,this.#repository.owner,this.#repository.repository
+    ].map(x=>encodeURIComponent(x)).join("/")+
+     "/branches/"+encodedBranch+"/files/";
+    if(!pins.resource.startsWith(prefix)||
+       pins.resource.slice(prefix.length)!==e.path.split("/")
+        .map(x=>encodeURIComponent(x)).join("/"))
+      denied("Read provider path not equal to signed Gitea ResourceURI");
+    return Object.freeze({
+      status:"gateway_confirmed_exact_sha_discovery_read_no_repair_authority" as const,
+      session_id:session.sessionId,task_id:pins.task_id,
+      runtime_task_id:pins.runtime_task_id,epoch:pins.epoch,
+      resource:pins.resource,branch:session.workBranch,
+      revision:pins.tested_commit_sha,request_id:effect.request_id,
+      credential_id:discovery.credentialId,
+      gateway_provider_corroborated:true as const,
+      source_disclosed:false as const,
+      repair_dag_authorized:false as const,
+      pr_authorized:false as const
+    });
+  }
+
+  /**
    * Owner-private, POST-RETIREMENT read of the exact provider-corrobated Test
    * evidence. This is NOT an authorization, public API, A2A or MCP method.
    * The caller must separately verify native DC/root retirement. Returning

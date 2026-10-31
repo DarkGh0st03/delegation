@@ -76,7 +76,11 @@ type Command=
      epoch:number;task_id:string;resource:string}
   |{action:"admit_remote_discovery_task";session_id:string;
      root_plan_digest:string;plan_digest:string;epoch:number;
-     task_id:string;resource:string;runtime_test_task_id:string};
+     task_id:string;resource:string;runtime_test_task_id:string}
+  |{action:"read_confirmed_discovery_effect";session_id:string;
+     root_plan_digest:string;plan_digest:string;epoch:number;
+     task_id:string;runtime_task_id:string;runtime_test_task_id:string;
+     resource:string;tested_commit_sha:string};
 
 function fail(message:string):never{throw Error("Trusted plan IPC: "+message);}
 function exact(x:unknown,fields:string[]):boolean{
@@ -179,6 +183,21 @@ function validate(x:unknown):Command{
      (o.epoch as number)<=2&&
      typeof o.task_id==="string"&&ID.test(o.task_id)&&
      typeof o.runtime_test_task_id==="string"&&ID.test(o.runtime_test_task_id)&&
+     typeof o.resource==="string"&&o.resource.length<=2048&&
+     /^gitea:\/\/[^/?#\s]+\/[^/?#\s]+\/[^/?#\s]+\/branches\/[^/?#\s]+\/files\/[^?#\s]+$/u.test(o.resource))
+    return o as Command;
+  if(o.action==="read_confirmed_discovery_effect"&&
+     exact(o,["action","session_id","root_plan_digest","plan_digest",
+       "epoch","task_id","runtime_task_id","runtime_test_task_id",
+       "resource","tested_commit_sha"])&&
+     typeof o.root_plan_digest==="string"&&MAC.test(o.root_plan_digest)&&
+     typeof o.plan_digest==="string"&&MAC.test(o.plan_digest)&&
+     Number.isSafeInteger(o.epoch)&&(o.epoch as number)>=1&&
+     (o.epoch as number)<=2&&
+     typeof o.task_id==="string"&&ID.test(o.task_id)&&
+     typeof o.runtime_task_id==="string"&&ID.test(o.runtime_task_id)&&
+     typeof o.runtime_test_task_id==="string"&&ID.test(o.runtime_test_task_id)&&
+     typeof o.tested_commit_sha==="string"&&SHA.test(o.tested_commit_sha)&&
      typeof o.resource==="string"&&o.resource.length<=2048&&
      /^gitea:\/\/[^/?#\s]+\/[^/?#\s]+\/[^/?#\s]+\/branches\/[^/?#\s]+\/files\/[^?#\s]+$/u.test(o.resource))
     return o as Command;
@@ -489,6 +508,14 @@ export async function createTrustedPlanIpcServer(config:{
            admission.source_read!==false)
           fail("Discovery registration must not execute or grant provider IO");
         response(res,200,{ok:true,admission});
+      }else if(command.action==="read_confirmed_discovery_effect"){
+        // Source-free post-completion read of Gateway's own provider ledger.
+        // No model-provided read or A2A artifact can manufacture this.
+        if(!config.plans.operationalLeaseConfigured()||
+           !config.plans.operationalSessionDurableConfigured())
+          fail("durable operational Gateway source-of-truth required");
+        const receipt=config.plans.readConfirmedRemoteDiscoveryEffect(command);
+        response(res,200,{ok:true,receipt});
       }else if(command.action==="inspect_verified_root_vp"){
         // An authenticated source-FREE request. Gateway obtains original
         // IDs, grants and fresh challenge independently, then verifies
@@ -1061,6 +1088,44 @@ export class TrustedPlanIpcClient{
       plan_digest:pins.plan_digest,
       blocked_descendant_task_ids:Object.freeze(
         [...r.blocked_descendant_task_ids] as string[])
+    });
+  }
+  /** R151.43: independent Gateway provider ledger proof; NO source bytes. */
+  async readConfirmedRemoteDiscoveryEffect(pins:Readonly<{
+    session_id:string;root_plan_digest:string;plan_digest:string;
+    epoch:number;task_id:string;runtime_task_id:string;
+    runtime_test_task_id:string;resource:string;tested_commit_sha:string;
+  }>){
+    if(!this.#operationalSessionDurable||!this.#leaseEnabled)
+      fail("durable live Gateway required for discovery evidence");
+    const v=(await this.#send({
+      action:"read_confirmed_discovery_effect",...pins
+    })).receipt;
+    if(!v||typeof v!=="object"||Array.isArray(v)||
+       Object.keys(v).sort().join(",")!==
+       "branch,credential_id,epoch,gateway_provider_corroborated,pr_authorized,repair_dag_authorized,request_id,resource,revision,runtime_task_id,session_id,source_disclosed,status,task_id"||
+       v.status!=="gateway_confirmed_exact_sha_discovery_read_no_repair_authority"||
+       v.session_id!==pins.session_id||v.task_id!==pins.task_id||
+       v.runtime_task_id!==pins.runtime_task_id||
+       v.epoch!==pins.epoch||v.resource!==pins.resource||
+       v.revision!==pins.tested_commit_sha||
+       typeof v.branch!=="string"||v.branch.length<1||v.branch.length>200||
+       typeof v.request_id!=="string"||!ID.test(v.request_id)||
+       typeof v.credential_id!=="string"||!ID.test(v.credential_id)||
+       v.gateway_provider_corroborated!==true||
+       v.source_disclosed!==false||v.repair_dag_authorized!==false||
+       v.pr_authorized!==false)
+      fail("Gateway discovery provider receipt cannot be independently corroborated");
+    return Object.freeze({
+      status:"gateway_confirmed_exact_sha_discovery_read_no_repair_authority" as const,
+      session_id:pins.session_id,task_id:pins.task_id,
+      runtime_task_id:pins.runtime_task_id,epoch:pins.epoch,
+      resource:pins.resource,branch:v.branch as string,
+      revision:pins.tested_commit_sha,request_id:v.request_id as string,
+      credential_id:v.credential_id as string,
+      gateway_provider_corroborated:true as const,
+      source_disclosed:false as const,repair_dag_authorized:false as const,
+      pr_authorized:false as const
     });
   }
   /**
