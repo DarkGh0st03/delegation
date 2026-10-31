@@ -4873,7 +4873,13 @@ test("R151.55 same native owner discovery supplies attested source to planner an
   loadCompletedDiscoverySource:()=>owner.loadCompletedDiscoverySource(pins),
   onInput:input=>{visible=input;}
  });
- const reserved=await planner.proposeAndReserve();
+ let reserved:Awaited<ReturnType<typeof planner.proposeAndReserve>>;
+ try{
+  reserved=await planner.proposeAndReserve();
+ }catch(error){
+  throw new Error("Native owner repair-planner stage failed: "+
+   (error instanceof Error?error.message:String(error)));
+ }
  assert.equal(reserved.status,"repair_epoch_reserved_no_execution_authority");
  assert.equal(reserved.execution_authorized,false);
  assert.equal(reserved.child_credential_issued,false);
