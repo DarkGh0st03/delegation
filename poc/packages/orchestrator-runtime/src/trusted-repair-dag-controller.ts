@@ -54,6 +54,21 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
   * NO model or agent may supply or override these values. */
  credentialForTask:(task:Readonly<{id:string;role:Role;ordinal:number}>)
   =>Credential;
+ /** R151.10: trusted original owner may bind the just-issued native
+  * child to its already-running role Agent BEFORE protected A2A send.
+  * No plan or authority is accepted from the role/model callback. */
+ beforeProtectedSend?:(issued:Readonly<{
+  task_id:string;role:Role;runtime_task_id:string;
+  credential_id:string;epoch:number
+ }>)=>Promise<void>;
+ /** R151.10: progress only after the same Gateway independently confirms
+  * signed VP/OPA and actual provider effects; owner can pin exact Gitea
+  * SHA for a subsequent signed Test. No completion may be inferred from
+  * the model or A2A result alone. */
+ afterGatewayConfirmed?:(task:Readonly<{
+  task_id:string;role:Role;runtime_task_id:string;
+  credential_id:string;epoch:number
+ }>)=>Promise<void>;
 }>):Promise<Readonly<{
  status:"repair_dag_gateway_confirmed_not_final_runner_verified";
  session_id:string;epoch:number;plan_digest:string;
@@ -76,7 +91,11 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
     !config.a2a||typeof config.a2a.sendProtectedTask!=="function"||
     (config.verifyLiveRun!==undefined&&
      typeof config.verifyLiveRun!=="function")||
-    typeof config.credentialForTask!=="function")
+    typeof config.credentialForTask!=="function"||
+    (config.beforeProtectedSend!==undefined&&
+     typeof config.beforeProtectedSend!=="function")||
+    (config.afterGatewayConfirmed!==undefined&&
+     typeof config.afterGatewayConfirmed!=="function"))
    fail("live trusted owner and durable admitted remote epoch required");
  config.intake.assertSameCoordinator(config.coordinator);
  await config.verifyLiveRun?.();
@@ -171,7 +190,10 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
    orchestratorToken:config.orchestratorToken,
    ...(config.fetchFn?{fetchFn:config.fetchFn}:{}),
    credential:credentials.get(task.id)!,
-   agentBaseUrls:config.agentBaseUrls,a2a:config.a2a
+   agentBaseUrls:config.agentBaseUrls,a2a:config.a2a,
+   ...(config.beforeProtectedSend?{
+    beforeProtectedSend:config.beforeProtectedSend
+   }:{})
   });
   // A2A may have finished after an external cancellation.
   await config.verifyLiveRun?.();
@@ -185,6 +207,16 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
      !confirmed.gateway_task_completed)
    fail("Gateway did not confirm exact signed predecessor");
   await config.verifyLiveRun?.();
+  await config.afterGatewayConfirmed?.(Object.freeze({
+   task_id:task.id,role,runtime_task_id:dispatched.runtime_task_id,
+   credential_id:dispatched.credential_id,epoch:config.epoch
+  }));
+  // The trusted owner may have fetched exact SHA / Runner evidence; it
+  // cannot override predecessor confirmation or mutate the signed DAG.
+  if(config.coordinator.phase!=="execution"||
+     config.coordinator.trustedOperationalAuthority().credential_id!==
+       originalRoot.credential_id)
+   fail("original Rust root retired during confirmed Task callback");
   done.add(task.id);
   results.push(Object.freeze({
    task_id:task.id,role,runtime_task_id:dispatched.runtime_task_id,
