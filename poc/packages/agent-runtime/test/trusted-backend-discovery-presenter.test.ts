@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import {test} from "node:test";
 import {TrustedBackendDiscoveryChildPresenter} from
  "../src/trusted-backend-discovery-presenter.ts";
+import {isTrustedDiscoveryChallenge} from
+ "../src/trusted-discovery-challenge.ts";
 
 const credential="urn:r151:backend-discovery-child";
 const resource="gitea://gitea.local/acme/service/branches/fix/files/src/app.ts";
@@ -15,7 +17,7 @@ const proof=(nonce=challenge)=>({
 
 function setup(options?:{
  status?:number;body?:unknown;
- fetchFn?:typeof fetch;
+ fetchFn?:typeof fetch;expectedChallenge?:string;
 }){
  let active=true,seen:unknown[]=[];
  const signer=new TrustedBackendDiscoveryChildPresenter({
@@ -32,7 +34,7 @@ function setup(options?:{
    const body=JSON.parse(String(init?.body));
    assert.deepEqual(body,{
     credential_id:credential,disclosed_permissions:[grant],
-    audience,challenge
+    audience,challenge:options?.expectedChallenge??challenge
    });
    return new Response(JSON.stringify(
     options?.body??{signed_vp:"signed-backend-vp:from-rust"}
@@ -140,4 +142,29 @@ test("R151.28 validates fixed trusted configuration before signing",()=>{
    ...fixed,...changes
   } as typeof fixed),/Trusted Backend discovery presenter NO-GO/);
  }
+});
+
+test("R151.34 canonical 256-bit Gateway Prepare nonce is signed for exact child and cannot replay",async()=>{
+ const gatewayNonce=Buffer.alloc(32,0x91).toString("base64url");
+ assert.equal(gatewayNonce.length,43);
+ assert.equal(isTrustedDiscoveryChallenge(gatewayNonce),true);
+ const f=setup({expectedChallenge:gatewayNonce});
+ assert.equal(await f.signer.present(proof(gatewayNonce)),
+  "signed-backend-vp:from-rust");
+ assert.equal(f.seen.length,1);
+ await assert.rejects(f.signer.present(proof(gatewayNonce)),/replayed challenge/);
+ assert.equal(f.seen.length,1);
+});
+test("R151.34 nonce parser refuses noncanonical base64url and non-256-bit inputs",()=>{
+ const nonce=Buffer.alloc(32,0x91).toString("base64url");
+ const malformed=[
+  nonce+"=", nonce.slice(0,-1), nonce+"A", nonce.replace(/.$/u,"B"),
+  "123456789012345678901234567890123456789012",
+  "A".repeat(64), "A".repeat(43), "f".repeat(65),
+  "g".repeat(64), undefined, {}, null
+ ];
+ for(const value of malformed){
+  assert.equal(isTrustedDiscoveryChallenge(value),false,JSON.stringify(value));
+ }
+ assert.equal(isTrustedDiscoveryChallenge("a".repeat(64)),true);
 });

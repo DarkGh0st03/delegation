@@ -8,10 +8,10 @@
  * VP (R151.27); signing does not admit a Task or read any source.
  */
 import type {Permission} from "../../../apps/gateway/src/types.ts";
+import {isTrustedDiscoveryChallenge} from "./trusted-discovery-challenge.ts";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
 const AUDIENCE=/^[A-Za-z0-9:._/-]{8,256}$/u;
-const CHALLENGE=/^[a-f0-9]{64}$/u;
 const MAX_VP_BYTES=256*1024;
 const MAX_CHALLENGES=32;
 const deny=(why:string):never=>{
@@ -85,7 +85,7 @@ export class TrustedBackendDiscoveryChildPresenter {
   if(!input||
      input.credential_id!==this.#credentialId||
      input.audience!==this.#audience||
-     !CHALLENGE.test(input.challenge)||
+     !isTrustedDiscoveryChallenge(input.challenge)||
      !Array.isArray(input.disclosed_permissions)||
      input.disclosed_permissions.length!==1)
    deny("presentation must pin one original discovery Child and Gateway challenge");

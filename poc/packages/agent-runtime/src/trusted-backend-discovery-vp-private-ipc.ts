@@ -16,12 +16,13 @@ import {loadTrustedPlanIpcSecret} from
  "../../../apps/gateway/src/trusted-plan-ipc.ts";
 import {TrustedBackendDiscoveryChildPresenter} from
  "./trusted-backend-discovery-presenter.ts";
+import {isTrustedDiscoveryChallenge} from "./trusted-discovery-challenge.ts";
 
 const ROUTE="/v1/private-backend-discovery-vp";
 const MAX_BODY=4096,MAX_VP=256*1024,AGE=30_000,MAX_NONCES=4096;
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
 const AUD=/^[A-Za-z0-9:._/-]{8,256}$/u;
-const CHALLENGE=/^[a-f0-9]{64}$/u,MAC=/^[a-f0-9]{64}$/u;
+const MAC=/^[a-f0-9]{64}$/u;
 const WIRE_NONCE=/^[A-Za-z0-9_-]{22}$/u;
 const RESOURCE=/^gitea:\/\/[^/?#\s]+\/[^/?#\s]+\/[^/?#\s]+\/branches\/[^/?#\s]+\/files\/[^?#\s]+$/u;
 const deny=(message:string):never=>{
@@ -55,7 +56,7 @@ function validProof(value:unknown,id:string,resource:string,audience:string){
  if(Object.keys(p).sort().join(",")!==
     "audience,challenge,credential_id,disclosed_permissions"||
     p.credential_id!==id||p.audience!==audience||
-    typeof p.challenge!=="string"||!CHALLENGE.test(p.challenge)||
+    typeof p.challenge!=="string"||!isTrustedDiscoveryChallenge(p.challenge)||
     !Array.isArray(p.disclosed_permissions)||
     p.disclosed_permissions.length!==1)return false;
  const v=p.disclosed_permissions[0];
@@ -184,7 +185,7 @@ export class TrustedBackendDiscoveryVpSocketClient
   disclosed_permissions:ReadonlyArray<Permission>;
  }>):Promise<string>{
   if(!input||!ID.test(input.credential_id)||
-     !AUD.test(input.audience)||!CHALLENGE.test(input.challenge)||
+     !AUD.test(input.audience)||!isTrustedDiscoveryChallenge(input.challenge)||
      !Array.isArray(input.disclosed_permissions)||
      input.disclosed_permissions.length!==1||
      !input.disclosed_permissions[0]||

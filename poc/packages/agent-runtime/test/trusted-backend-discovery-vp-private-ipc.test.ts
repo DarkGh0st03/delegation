@@ -10,6 +10,8 @@ import {TrustedBackendDiscoveryChildPresenter} from
 import {createTrustedBackendDiscoveryVpSignerServer,
  TrustedBackendDiscoveryVpSocketClient} from
  "../src/trusted-backend-discovery-vp-private-ipc.ts";
+import {isTrustedDiscoveryChallenge} from
+ "../src/trusted-discovery-challenge.ts";
 
 const credential="urn:r151:backend-discovery-child";
 const resource="gitea://gitea.local/acme/service/branches/fix/files/src/app.ts";
@@ -42,7 +44,7 @@ async function setup(t:TestContext,opts:{deferred?:boolean}={}){
    assert.equal(body.credential_id,credential);
    assert.deepEqual(body.disclosed_permissions,[permission]);
    assert.equal(body.audience,audience);
-   assert.match(body.challenge,/^[a-f0-9]{64}$/u);
+   assert.equal(isTrustedDiscoveryChallenge(body.challenge),true);
    if(opts.deferred){enter();await hold;}
    return new Response(JSON.stringify({
     signed_vp:"rust-backend-signed:"+body.challenge
@@ -122,4 +124,20 @@ test("R151.29 owner fence and preexisting listener cannot be bypassed",async t=>
  await assert.rejects(f.client.present(input("5".repeat(64))),
   /Private Backend discovery VP denied/);
  assert.equal(f.called(),0);
+});
+
+test("R151.34 authenticated Backend IPC signs actual Gateway Prepare Base64URL nonce",async t=>{
+ const f=await setup(t);
+ const challenge=randomBytes(32).toString("base64url");
+ assert.equal(challenge.length,43);
+ assert.equal(await f.client.present(input(challenge)),
+  "rust-backend-signed:"+challenge);
+ await assert.rejects(f.client.present(input(challenge)),
+  /Private Backend discovery VP denied/);
+ for(const invalid of [challenge+"=",challenge.slice(0,-1),
+  "x".repeat(43),"g".repeat(64)]){
+  await assert.rejects(f.client.present(input(invalid)),
+   /Private Backend discovery VP NO-GO/);
+ }
+ assert.equal(f.called(),1);
 });
