@@ -44,6 +44,8 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-owner-gemini-repair-binding.test.mjs'
       - 'poc/apps/gateway/native-test/native-owner-d1-task-selection.mjs'
       - 'poc/apps/gateway/native-test/native-owner-d1-task-selection.test.mjs'
+      - 'poc/apps/gateway/native-test/trusted-d1-agent-model-activation.mjs'
+      - 'poc/apps/gateway/native-test/trusted-d1-agent-model-activation.test.mjs'
       - 'poc/apps/gateway/native-test/source-derived-controller-edits.mjs'
       - 'poc/apps/gateway/native-test/source-derived-controller-edits.test.mjs'
       - 'poc/apps/gateway/native-test/approved-plan-source-target-selection.mjs'
@@ -167,6 +169,8 @@ jobs:
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-owner-gemini-repair-binding.test.mjs
       - name: R151.9 signed-epoch dynamic Backend/Test IDs and exact scope (NO API)
         run: node --test poc/apps/gateway/native-test/native-owner-d1-task-selection.test.mjs
+      - name: R151.11 generative repair model owner-bound selection (NO API, NO BILLING)
+        run: node --test poc/apps/gateway/native-test/trusted-d1-agent-model-activation.test.mjs
       - name: Block B approved-DAG action selection and source-derived route tests (zero Gemini cost)
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs
       - name: Account Suspension controller source-derivation and denial tests
