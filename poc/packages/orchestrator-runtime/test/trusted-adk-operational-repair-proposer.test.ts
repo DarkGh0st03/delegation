@@ -375,7 +375,7 @@ test("R151.73 paid D1 uses exact trusted Frontend compiler target before inferen
   await assert.rejects(new TrustedAdkOperationalRepairProposer({
    model:unbilled,taskShape:"backend_or_frontend_test",
    readVerifiedRepairTarget:async()=>bad as typeof target
-  }).propose(scoped),/no single trusted compiler target/);
+  }).propose(scoped),/no authenticated Runner repair target set/);
   assert.equal(unbilled.requests.length,0);
  }
  const wrong=new ScriptedModel(baseline);
