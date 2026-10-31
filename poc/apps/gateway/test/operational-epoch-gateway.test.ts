@@ -4416,20 +4416,23 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
   ...pins,runtime_test_task_id:"wrong-test"
  }),/Gateway trusted control denied/);
  assert.equal(signed,0);
- let result:Awaited<ReturnType<typeof client.admitRemoteRepairDiscoveryTask>>;
- try{result=await client.admitRemoteRepairDiscoveryTask(pins);}
- catch(ipcError){
-  // Diagnostic regression: identify the trusted gate that fails behind
-  // the source-free HMAC IPC's intentionally opaque external 403 response.
-  // Never print credentials, VP bytes, provider source or adapter tokens.
-  try{await h.f.h.gates.admitRemoteRepairDiscoveryTask(pins,port);}
-  catch(gateError){
-   assert.fail("R151.32 trusted gate rejected before admission: "+
-    String((gateError as Error).message));
-  }
-  assert.fail("R151.32 owner IPC rejected a valid gate admission: "+
-   String((ipcError as Error).message));
- }
+ // A legitimate independent task in the original signed DAG remains
+ // unresolved after Test FAIL. The Gateway must NOT skip it just because
+ // a new Backend discovery Child VP is otherwise valid.
+ await assert.rejects(client.admitRemoteRepairDiscoveryTask(pins),
+  /Gateway trusted control denied/);
+ assert.equal(signed,0,"quiescence must be checked before native signing");
+ // Finish that exact existing approved read through its normal
+ // Gateway/VP/OPA provider path; never fabricate Task completion.
+ h.f.h.gates.bindTask(session,"read-diagnostics",
+  "r15132-original-diagnostics","backend");
+ await h.f.h.invoke("r15132-original-diagnostics","backend",
+  "read_file",{branch,path:"src/invoices.ts"});
+ await h.f.h.gates.confirmTaskCompletion("r15132-original-diagnostics");
+ const observedBeforeAdmission=h.f.h.provider;
+ assert.equal(observedBeforeAdmission,4,
+  "one original signed diagnostic read has been completed");
+ const result=await client.admitRemoteRepairDiscoveryTask(pins);
  assert.equal(result.status,"discovery_read_admitted_not_executed");
  assert.equal(result.task_id,h.config.discoveryTaskId);
  assert.equal(result.credential_id,h.input.credential_id);
@@ -4439,7 +4442,8 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
  assert.ok(Object.isFrozen(result));
  assert.equal(signed,1);
  assert.equal(verified,1);
- assert.equal(h.f.h.provider,3,"registration cannot touch Gitea or Docker");
+ assert.equal(h.f.h.provider,observedBeforeAdmission,
+  "registration cannot touch Gitea or Docker");
  h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
   "r15132-read-runtime","backend");
  assert.throws(()=>h.f.h.gates.bindTask(session,h.config.discoveryTaskId,
@@ -4447,5 +4451,5 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
  await assert.rejects(client.admitRemoteRepairDiscoveryTask(pins),
   /Gateway trusted control denied/);
  assert.equal(signed,1,"replay rejected before signing again");
- assert.equal(h.f.h.provider,3);
+ assert.equal(h.f.h.provider,observedBeforeAdmission);
 });
