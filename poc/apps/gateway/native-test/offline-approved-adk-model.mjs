@@ -5,6 +5,22 @@
  */
 import {BaseLlm} from "@google/adk";
 
+const TYPECHECK_FAULT='\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
+const SHA=/^[a-f0-9]{40}$/u;
+function trustedToolEffect(request,tool,branch,path){
+ const responses=(request?.contents??[]).flatMap(c=>c.parts??[])
+  .filter(p=>p.functionResponse?.name===tool)
+  .map(p=>p.functionResponse.response);
+ const wrapper=responses.at(-1);
+ const output=wrapper?.structuredContent??wrapper?.result?.structuredContent??wrapper;
+ const effect=output?.result;
+ if(output?.ok!==true||effect?.provider!=="gitea"||
+    effect.performed!==true||effect.tool!==tool||
+    effect.branch!==branch||effect.path!==path)
+  throw Error("Offline D1 missing independently confirmed Gitea effect");
+ return effect;
+}
+
 export class OfflineApprovedAdkModel extends BaseLlm{
   #calls;
   #turn=0;
@@ -14,6 +30,8 @@ export class OfflineApprovedAdkModel extends BaseLlm{
   #groups;
   #role;
   #d1TestArmed=false;
+  #d1Repair=null;
+  #d1RepairArmed=false;
   constructor(role,calls){
     super({model:"offline-signed-approved-plan-"+role});
     if(!["backend","frontend","test"].includes(role)||
@@ -55,7 +73,57 @@ export class OfflineApprovedAdkModel extends BaseLlm{
     this.#groups.push(Object.freeze({task_id:taskId,call_count:1}));
     this.#d1TestArmed=true;
   }
-  async *generateContentAsync(){
+  /** Nonbillable Frontend fault repair, armed only by the original signed
+   * owner after a fresh Child DC. No source bytes are prepackaged. */
+  armTrustedD1TypecheckRepair({branch,path,failedSha,taskId}={}){
+   if(this.#role!=="frontend"||this.#d1RepairArmed||this.#d1Repair||
+      this.#d1TestArmed||!this.#groups||
+      this.#groupIndex!==this.#groups.length||
+      this.#withinGroup!==0||this.#callIndex!==this.#calls.length||
+      typeof branch!=="string"||!/^feature\/[A-Za-z0-9._/-]+$/u.test(branch)||
+      typeof path!=="string"||
+      !/^apps\/frontend\/src\/[A-Za-z0-9._/-]+\.tsx?$/u.test(path)||
+      path.split("/").some(x=>x==="."||x==="..")||
+      !SHA.test(failedSha??"")||
+      typeof taskId!=="string"||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId))
+    throw Error("Offline D1 Frontend repair requires a new signed Task");
+   this.#d1Repair={branch,path,failedSha,taskId,stage:0};
+   this.#d1RepairArmed=true;
+  }
+  async *generateContentAsync(request){
+    const repair=this.#d1Repair;
+    if(repair){
+      this.#turn++;
+      if(repair.stage===0){
+        repair.stage=1;
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"offline-d1-frontend-read",name:"read_file",
+          args:{branch:repair.branch,path:repair.path}
+        }}]}};return;
+      }
+      if(repair.stage===1){
+        const data=trustedToolEffect(request,"read_file",repair.branch,repair.path);
+        if(data.revision!==repair.failedSha||
+           typeof data.content!=="string"||
+           data.content.split(TYPECHECK_FAULT).length!==2)
+          throw Error("Offline D1 Frontend source is not failed pinned TypeScript");
+        repair.stage=2;
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"offline-d1-frontend-update",name:"update_file",
+          args:{branch:repair.branch,path:repair.path,
+            content:data.content.replace(TYPECHECK_FAULT,"\n")}
+        }}]}};return;
+      }
+      const written=trustedToolEffect(request,"update_file",repair.branch,repair.path);
+      if(!SHA.test(written.commit_sha??"")||
+         written.commit_sha===repair.failedSha)
+        throw Error("Offline D1 Frontend mutation was not committed");
+      this.#d1Repair=null;
+      yield {content:{role:"model",parts:[{
+        text:"Frontend D1 updated the signed source through Gateway."
+      }]}};return;
+    }
     const group=this.#groups?.[this.#groupIndex];
     if(this.#groups&&!group)
       throw Error("Signed offline ADK Task schedule exhausted");
