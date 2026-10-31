@@ -160,7 +160,7 @@ test("R151.34 nonce parser refuses noncanonical base64url and non-256-bit inputs
  const malformed=[
   nonce+"=", nonce.slice(0,-1), nonce+"A", nonce.replace(/.$/u,"B"),
   "123456789012345678901234567890123456789012",
-  "A".repeat(64), "A".repeat(43), "f".repeat(65),
+  "A".repeat(64), "f".repeat(65),
   "g".repeat(64), undefined, {}, null
  ];
  for(const value of malformed){
