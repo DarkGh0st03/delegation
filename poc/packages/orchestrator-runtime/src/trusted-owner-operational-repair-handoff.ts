@@ -31,6 +31,10 @@ import type {TrustedExecutionCoordinator}
  from "./trusted-execution-coordinator.ts";
 import {executeTrustedAdmittedRepairDag}
  from "./trusted-repair-dag-controller.ts";
+import {completeTrustedRemoteDiscoveryForPlanning} from
+ "./trusted-remote-discovery-planner-bridge.ts";
+import type {TrustedRemoteDiscoveryA2AHandoff} from
+ "./trusted-remote-discovery-a2a-handoff.ts";
 
 /** Local operator data ports only. Session/root/Gateway/epoch/Engineer
  * identity are derived exclusively from signed owner state. */
@@ -44,7 +48,8 @@ const fail=(msg:string):never=>{throw Error("Trusted owner recovery R123: "+msg)
 
 export async function armTrustedOwnerOperationalRecovery(config:{
  coordinator:Pick<TrustedExecutionCoordinator,
-  "phase"|"trustedOperationalAuthority">;
+  "phase"|"trustedOperationalAuthority"> &
+  Partial<Pick<TrustedExecutionCoordinator,"closeExecution">>;
  signedApprovals:SignedEngineerApprovalFileStore;
  gateway:TrustedPlanIpcClient;
  epochDirectory:string;
@@ -75,6 +80,13 @@ export async function armTrustedOwnerOperationalRecovery(config:{
   completedDiscoveryRead?:Readonly<{
    task_id:string;runtime_task_id:string;resource:string;
   }>;
+  /** R151.45 owner-only callback: perform an already-authorized, journaled
+   * remote discovery A2A dispatch AFTER the authentic Docker Test FAIL.
+   * Receipts are independently reverified against the same Gateway, and
+   * a failed/uncertain callback closes the original Rust root. Never pass
+   * a model or external A2A callback here. */
+  dispatchRemoteDiscovery?:()=>ReturnType<
+   TrustedRemoteDiscoveryA2AHandoff["dispatchIssuedChild"]>;
   /** R125: explicit owner opt-in to ACTUAL Gateway epoch admission.
    * Requires a genuinely Gateway-bound independently signed epoch Intake. */
   admitReservedEpoch?:boolean;
@@ -99,6 +111,10 @@ export async function armTrustedOwnerOperationalRecovery(config:{
        (config.planRepairEpoch!.proposeRepairPlan!==undefined&&!callback)||
        (config.planRepairEpoch!.trustedAdkProposer!==undefined&&!typedAdk))))
   fail("exactly one trusted owner continuation or configured repair planner required");
+ if(config.planRepairEpoch?.dispatchRemoteDiscovery&&
+    (config.planRepairEpoch.completedDiscoveryRead!==undefined||
+     typeof config.coordinator?.closeExecution!=="function"))
+  fail("dynamic discovery requires exclusive owner callback and fail-closed root shutdown");
  if(config.planRepairEpoch?.executeAdmittedRepairDag&&
     (config.planRepairEpoch.admitReservedEpoch!==true||
      typeof config.verifyLiveRun!=="function"))
@@ -175,13 +191,40 @@ export async function armTrustedOwnerOperationalRecovery(config:{
      agent_id:a.agent_id as "backend"|"frontend"|"test",
      did:a.did,card_ref:a.card_ref
     }));
+    // Dynamic random runtime Task ID is only known AFTER remote A2A
+    // dispatch. Its source-free selectors must be re-attested directly
+    // through the original Gateway before any paid model proposal.
+    let discovered:Readonly<{
+      task_id:string;runtime_task_id:string;resource:string;
+    }>|undefined;
+    if(config.planRepairEpoch!.dispatchRemoteDiscovery){
+      try{
+        await config.verifyLiveRun?.();
+        discovered=await completeTrustedRemoteDiscoveryForPlanning({
+          gateway:config.gateway,intake,coordinator:config.coordinator,
+          signal:proof,
+          dispatchRemoteDiscovery:config.planRepairEpoch!.dispatchRemoteDiscovery
+        });
+        await config.verifyLiveRun?.();
+      }catch{
+        // Transport/issuance/read uncertainty can never be retried under
+        // this root. A potentially admitted Child may still be live.
+        if(config.coordinator.phase==="execution"){
+          try{await config.coordinator.closeExecution!();}
+          catch{
+            fail("dynamic discovery failed; original root shutdown reconciliation required");
+          }
+        }
+        fail("dynamic discovery failed closed before model repair proposal");
+      }
+    }
     const planner=new TrustedOperationalRepairPlanner({
      gateway:config.gateway,coordinator:config.coordinator,
      intake,sessionId:r.session_id,
      runtimeTestTaskId:proof.failed_runtime_task_id,
      failedTestAlreadyFinalized:true,
-     ...(config.planRepairEpoch!.completedDiscoveryRead
-       ?{completedDiscoveryRead:config.planRepairEpoch!.completedDiscoveryRead}:{}),
+     ...(discovered||config.planRepairEpoch!.completedDiscoveryRead
+       ?{completedDiscoveryRead:discovered??config.planRepairEpoch!.completedDiscoveryRead}:{}),
      nextPlanId:"repair-"+randomBytes(12).toString("hex"),
      pinnedAgentRegistry:agents,
      featureHeadReader:new TrustedOperationalFeatureHeadReader({

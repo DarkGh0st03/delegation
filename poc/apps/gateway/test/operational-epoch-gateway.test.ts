@@ -23,6 +23,8 @@ import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback,
   "../../../packages/orchestrator-runtime/src/trusted-validation-repair-feedback.ts";
 import {TrustedOperationalRepairPlanner,type TrustedRepairModelInput} from
   "../../../packages/orchestrator-runtime/src/trusted-operational-repair-planner.ts";
+import {completeTrustedRemoteDiscoveryForPlanning} from
+  "../../../packages/orchestrator-runtime/src/trusted-remote-discovery-planner-bridge.ts";
 import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {TrustedOperationalRepairSourceReader} from
@@ -4513,12 +4515,38 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
  // only AFTER the completed provider read has been independently attested.
  const counts={model:0,head:0};
  let visible:TrustedRepairModelInput|undefined;
+ const proofForDiscovery=await prepareTrustedRemoteRepairFeedback({
+  gateway:client,intake:h.f.h.intake,coordinator:h.f.h.coordinator,
+  sessionId:session,runtimeTestTaskId:"task-test",alreadyFinalized:true
+ });
+ let ownerDispatches=0;
+ const dynamic=await completeTrustedRemoteDiscoveryForPlanning({
+  gateway:client,intake:h.f.h.intake,coordinator:h.f.h.coordinator,
+  signal:proofForDiscovery,
+  // The existing R151.32 fixture has already completed its actual
+  // mock-Gitea read. In production this callback is the one-use
+  // TrustedRemoteDiscoveryA2AHandoff.dispatchIssuedChild promise.
+  dispatchRemoteDiscovery:async()=>{
+   ownerDispatches++;
+   return {
+    status:"remote_discovery_gateway_provider_confirmed" as const,
+    session_id:session,task_id:h.config.discoveryTaskId,
+    runtime_task_id:"r15132-read-runtime",
+    credential_id:h.input.credential_id,
+    branch,resource:file,verified_revision:sha,
+    gateway_provider_corroborated:true as const,
+    repair_dag_authorized:false as const,pr_authorized:false as const
+   };
+  }
+ });
+ assert.deepEqual(dynamic,{
+  task_id:h.config.discoveryTaskId,
+  runtime_task_id:"r15132-read-runtime",resource:file
+ });
+ assert.equal(ownerDispatches,1);
  const planner=r121RemotePlanner(h.f.h,client,{
   alreadyFinalized:true,counters:counts,
-  completedDiscoveryRead:{
-   task_id:h.config.discoveryTaskId,
-   runtime_task_id:"r15132-read-runtime",resource:file
-  },
+  completedDiscoveryRead:dynamic,
   onInput:input=>{visible=input;}
  });
  const proposed=await planner.proposeAndReserve();
