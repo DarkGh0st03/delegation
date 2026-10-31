@@ -47,7 +47,7 @@ export class TrustedBackendDiscoveryChildPresenter {
      typeof config.backendToken!=="string"||!config.backendToken.trim()||
      !ID.test(config.childCredentialId)||
      typeof config.resource!=="string"||
-     !/^gitea:\/\/[^/]+\/[^/]+\/[^/]+\/branches\/[^/]+\/files\/[^?\\s#]+$/u.test(config.resource)||
+     !/^gitea:\/\/[^/]+\/[^/]+\/[^/]+\/branches\/[^/]+\/files\/[^?\s#]+$/u.test(config.resource)||
      config.resource.length>2048||
      !AUDIENCE.test(config.audience)||
      typeof config.isTaskActive!=="function"||
