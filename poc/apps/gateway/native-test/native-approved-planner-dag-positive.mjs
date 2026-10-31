@@ -326,6 +326,7 @@ export async function runNativePositiveApprovedDag({
   let normalMcpCalls=0,privateCryptoMcpCalls=0;
   let signedTestOutOfScopeDenied=false;
   let observedTypecheckProbe=null;
+  let verifiedRepairTarget=null;
   let deniedCrossRoleTestProbes=0;
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
@@ -565,6 +566,37 @@ export async function runNativePositiveApprovedDag({
               repo,branch,observedWrites:writePaths,
               revisionComparison
             }):null;
+          // The Docker Runner has already attributed compiler locations to
+          // the signed original Backend/Frontend Gitea writes. Give the
+          // post-FAIL Planner that ONE proven file/role, not a list to guess.
+          if(realGeminiPilot&&runnerRuns===0&&repairNomination&&
+             repairNomination.diagnostic_files===1&&
+             repairNomination.unresolved_files===0&&
+             repairNomination.outside_operational_scope===0){
+            const locations=sanitizeTypecheckLocations(effect.typecheck_diagnostics);
+            const paths=[...new Set(locations.map(d=>d.path))];
+            const roles=EDIT_ROLES.filter(role=>
+              paths.length===1&&writePaths[role].has(paths[0])&&
+              repairNomination[role+"_candidates"]===1);
+            if(roles.length===1&&
+               repairNomination.backend_candidates+
+                repairNomination.frontend_candidates===1&&
+               repairNomination.test_candidates===0){
+              const role=roles[0],path=paths[0];
+              const resource=canonicalFileUri(repo,branch,path);
+              const original=grants.filter(g=>g.agent_id===role&&
+                g.resource===resource&&["read_file","update_file"].includes(g.operation));
+              const ids=[...new Set(original.map(g=>g.task_id))];
+              const root=coordinator.trustedOperationalAuthority().permissions;
+              if(ids.length===1&&["read_file","update_file"].every(operation=>
+                 original.some(g=>g.task_id===ids[0]&&g.operation===operation)&&
+                 root.some(g=>g.resource===resource&&g.operation===operation)))
+                verifiedRepairTarget=Object.freeze({
+                  status:"verified_runner_single_file_repair_target",
+                  tested_commit_sha:pinned.commit_sha,role,resource
+                });
+            }
+          }
           if(offlineTypecheckProbe&&!admittedTestRepair){
             assert.equal(effect.status,"fail");
             assert.deepEqual(typecheckCodes,["TS2820"]);
@@ -788,6 +820,7 @@ export async function runNativePositiveApprovedDag({
     if(trustedOwnerRecovery?.bindOriginalA2APorts){
       await trustedOwnerRecovery.bindOriginalA2APorts({
         agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
+        getVerifiedRepairTarget:()=>verifiedRepairTarget,
         async armVerifiedD1TestRun({
           taskId,role,runtimeTaskId,credentialId,repairedSha
         }){

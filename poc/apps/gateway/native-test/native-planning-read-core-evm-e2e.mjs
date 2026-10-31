@@ -844,8 +844,18 @@ try{
             taskShape:"backend_test"
           })
           :undefined;
+        let readVerifiedRepairTarget;
         const ownerRepairProposer=paidGeminiRecovery
           ?new TrustedAdkOperationalRepairProposer({
+            readVerifiedRepairTarget:async input=>{
+              if(!readVerifiedRepairTarget)
+                throw Error("No trusted Runner attribution after Test FAIL");
+              const target=readVerifiedRepairTarget();
+              if(!target||target.tested_commit_sha!==
+                 input.feedback.tested_commit_sha)
+                throw Error("Compiler target not bound to failed Gateway SHA");
+              return target;
+            },
             model:createGeminiAdkModel({
               apiKey:process.env.GEMINI_API_KEY,
               model:process.env.DELEGATION_GEMINI_MODEL
@@ -896,6 +906,10 @@ try{
                  /^http:\/\/127\.0\.0\.1:\d+$/u.test(
                    ports.agentBaseUrls[role]??"")))
               throw Error("R150.7 owner A2A original ports missing or stale");
+            if(paidGeminiRecovery&&typeof ports.getVerifiedRepairTarget!=="function")
+              throw Error("Paid repair requires original Runner attribution");
+            if(paidGeminiRecovery)
+              readVerifiedRepairTarget=ports.getVerifiedRepairTarget;
             originalA2APorts=Object.freeze({
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
               a2a:ports.a2a,
