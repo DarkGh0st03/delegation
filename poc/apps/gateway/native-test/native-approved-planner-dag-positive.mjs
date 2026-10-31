@@ -330,9 +330,11 @@ export async function runNativePositiveApprovedDag({
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
-  let admittedBackendRepair=null,admittedTestRepair=null;
+  let admittedBackendRepair=null,admittedFrontendRepair=null,admittedTestRepair=null;
+  const activeD1Repair=()=>admittedBackendRepair??admittedFrontendRepair;
   const isSignedImplementationTask=(role,id)=>taskIdsByRole[role].includes(id)||
-    (role==="backend"&&admittedBackendRepair?.taskId===id);
+    (role==="backend"&&admittedBackendRepair?.taskId===id)||
+    (role==="frontend"&&admittedFrontendRepair?.taskId===id);
   const readPaths={backend:new Set(),frontend:new Set(),test:new Set()};
   const readPathsPerTask=new Map();
   const writePaths={backend:new Set(),frontend:new Set(),test:new Set()};
@@ -789,7 +791,7 @@ export async function runNativePositiveApprovedDag({
         async armVerifiedD1TestRun({
           taskId,role,runtimeTaskId,credentialId,repairedSha
         }){
-          if(admittedTestRepair||!admittedBackendRepair||
+          if(admittedTestRepair||!activeD1Repair()||
              !(offlineTypecheckProbe||realGeminiPilot)||
              role!=="test"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
@@ -804,7 +806,7 @@ export async function runNativePositiveApprovedDag({
           const task=epoch?.plan.tasks.find(t=>t.id===taskId);
           if(history.length!==2||task?.agent_id!=="test"||
              epoch.root_credential_id!==operationalRootId||
-             !task.depends_on.includes(admittedBackendRepair.taskId)||
+             !task.depends_on.includes(activeD1Repair().taskId)||
              !epoch.plan.requested_permissions.some(g=>
                g.task_id===taskId&&g.agent_id==="test"&&
                g.operation==="run_tests"&&g.resource===scopedBranch))
@@ -829,7 +831,7 @@ export async function runNativePositiveApprovedDag({
         }){
           // Only the original trusted owner may invoke this after real
           // R134 child issuance. Source/model claims grant NOTHING.
-          if(admittedBackendRepair||
+          if(activeD1Repair()||
              !(offlineTypecheckProbe||realGeminiPilot)||
              role!=="backend"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
@@ -865,6 +867,43 @@ export async function runNativePositiveApprovedDag({
           });
           activeChildByRole.backend=credentialId;
           activeTaskByRole.backend=taskId;
+          expectedImplementationWriteKeys.add(writeKey(taskId,"update_file",path));
+        },
+        async armVerifiedD1FrontendRepair({
+          taskId,role,runtimeTaskId,credentialId,path,failedSha
+        }){
+          // Generative Frontend correction only; do not add a scripted patch.
+          if(!realGeminiPilot||activeD1Repair()||admittedTestRepair||
+             role!=="frontend"||
+             !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
+             !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
+             !credentialId||!SHA.test(failedSha)||
+             runnerOutcome?.status!=="fail"||
+             runnerOutcome?.tested_commit_sha!==failedSha||
+             !files.frontend.includes(path)||!readableFiles.frontend.includes(path)||
+             (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
+            throw Error("R151.72 Frontend D1 repair requires live failed-SHA");
+          const history=await trustedOwnerRecovery.intake.verifiedEpochHistory();
+          const epoch=history.at(-1),task=epoch?.plan.tasks.find(t=>t.id===taskId);
+          const resource=canonicalFileUri(repo,branch,path);
+          if(history.length!==2||task?.agent_id!=="frontend"||
+             epoch.root_credential_id!==operationalRootId||
+             !["read_file","update_file"].every(operation=>
+               epoch.plan.requested_permissions.some(g=>
+                 g.task_id===taskId&&g.agent_id==="frontend"&&
+                 g.operation===operation&&g.resource===resource)))
+            throw Error("R151.72 Frontend D1 outside signed permission set");
+          const mode=selectTrustedD1AgentModelActivation({
+            role:"frontend",taskId,model:models.frontend,
+            scriptedModelClass:SourceDerivedRouteOfflineAdkModel,
+            allowGenerative:true
+          });
+          assert.equal(mode.needs_scripted_arming,false);
+          admittedFrontendRepair=Object.freeze({
+            taskId,runtimeTaskId,credentialId,path,failedSha
+          });
+          activeChildByRole.frontend=credentialId;
+          activeTaskByRole.frontend=taskId;
           expectedImplementationWriteKeys.add(writeKey(taskId,"update_file",path));
         }
       });
