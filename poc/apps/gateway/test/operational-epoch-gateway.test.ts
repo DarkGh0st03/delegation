@@ -1929,6 +1929,7 @@ function r121RemotePlanner(h:Awaited<ReturnType<typeof harness>>,
   counters?:{model:number;head:number};
   alreadyFinalized?:boolean;
   completedDiscoveryRead?:Readonly<{task_id:string;runtime_task_id:string;resource:string}>;
+  loadCompletedDiscoverySource?:()=>Promise<string>;
   onInput?:(input:TrustedRepairModelInput)=>void;
  }={}){
  const reader=new GiteaClient({
@@ -1954,6 +1955,9 @@ function r121RemotePlanner(h:Awaited<ReturnType<typeof harness>>,
   gateway,coordinator:h.coordinator,intake:h.intake,sessionId:session,
   ...(options.alreadyFinalized?{failedTestAlreadyFinalized:true}:{}),
   ...(options.completedDiscoveryRead?{completedDiscoveryRead:options.completedDiscoveryRead}:{}),
+  ...(options.loadCompletedDiscoverySource?{
+   loadCompletedDiscoverySource:async()=>options.loadCompletedDiscoverySource!()
+  }:{}),
   runtimeTestTaskId:"task-test",nextPlanId:"r121-remote-repair-2",
   pinnedAgentRegistry:registry,
   featureHeadReader:new TrustedOperationalFeatureHeadReader({
@@ -4552,6 +4556,8 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
  const planner=r121RemotePlanner(h.f.h,client,{
   alreadyFinalized:true,counters:counts,
   completedDiscoveryRead:dynamic,
+  loadCompletedDiscoverySource:async()=>
+   "export function invoice(): number { return 42; }\n",
   onInput:input=>{visible=input;}
  });
  const proposed=await planner.proposeAndReserve();
@@ -4564,6 +4570,12 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
  assert.deepEqual(visible.diagnostic_read,{
   status:"gateway_discovery_read_confirmed_no_authority",
   resource:file,branch,tested_commit_sha:sha,operation:"read_file"
+ });
+ assert.deepEqual(visible.diagnostic_source,{
+  status:"gateway_sha256_verified_source_data_no_authority",
+  resource:file,branch,tested_commit_sha:sha,
+  bytes:Buffer.byteLength("export function invoice(): number { return 42; }\n","utf8"),
+  content:"export function invoice(): number { return 42; }\n"
  });
  const payload=JSON.stringify(visible);
  assert.equal(payload.includes(h.input.credential_id),false);

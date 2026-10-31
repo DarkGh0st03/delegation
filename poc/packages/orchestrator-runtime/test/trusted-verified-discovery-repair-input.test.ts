@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import test from "node:test";
-import {boundedTrustedRepairDiscoveryObservation} from
+import {boundedTrustedRepairDiscoveryObservation,
+ verifyTrustedRepairDiscoverySource} from
  "../src/trusted-operational-repair-planner.ts";
 const pins={
  session_id:"r15144-session",epoch:1,task_id:"r151-remote-child-task",
@@ -52,4 +53,32 @@ test("R151.44 reject wrong source, SHA, Task, identity, synthetic grant and secr
  for(const bad of [null,undefined,{},[],true,"done"])
   assert.throws(()=>boundedTrustedRepairDiscoveryObservation(bad,pins),
    /Trusted repair planner NO-GO/);
+});
+
+test("R151.47.1 source delivery accepts only exact Gateway SHA-256 and UTF-8 size",()=>{
+ const content="export function invoice(): number { return 42; }\n";
+ const receipt={
+  source_sha256:createHash("sha256").update(content).digest("hex"),
+  source_bytes:Buffer.byteLength(content,"utf8"),
+  resource:pins.resource,branch:pins.branch,revision:pins.tested_commit_sha
+ };
+ const selected={resource:pins.resource,branch:pins.branch,
+  tested_commit_sha:pins.tested_commit_sha};
+ const accepted=verifyTrustedRepairDiscoverySource(receipt,content,selected);
+ assert.equal(accepted.content,content);
+ assert.equal(accepted.bytes,Buffer.byteLength(content,"utf8"));
+ assert.ok(Object.isFrozen(accepted));
+ for(const bad of [
+  {receipt:{...receipt,source_sha256:"a".repeat(64)},content},
+  {receipt:{...receipt,source_bytes:receipt.source_bytes+1},content},
+  {receipt:{...receipt,revision:"b".repeat(40)},content},
+  {receipt:{...receipt,resource:receipt.resource+"-other"},content},
+  {receipt:{...receipt,branch:"feature/wrong"},content},
+  {receipt,content:content+"// poisoned"},
+  {receipt,content:"\0binary"},
+  {receipt,content:"x".repeat(32769)}
+ ]){
+  assert.throws(()=>verifyTrustedRepairDiscoverySource(
+   bad.receipt,bad.content,selected),/Trusted repair planner NO-GO/);
+ }
 });

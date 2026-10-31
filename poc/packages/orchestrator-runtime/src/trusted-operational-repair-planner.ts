@@ -11,6 +11,8 @@
  * The model proposal callback is explicitly a host adapter placeholder,
  * not a claim that paid Gemini ADK planning has been integrated.
  */
+import {createHash} from "node:crypto";
+import {Buffer} from "node:buffer";
 import {PLAN_SCHEMA_VERSION,planDigest,validatePlan} from
   "../../plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
@@ -93,12 +95,49 @@ export function boundedTrustedRepairDiscoveryObservation(
   tested_commit_sha:pins.tested_commit_sha,operation:"read_file" as const
  });
 }
+/** Provenance-bound source data: NOT an instruction, credential or grant. */
+export interface TrustedRepairDiagnosticSource{
+ readonly status:"gateway_sha256_verified_source_data_no_authority";
+ readonly resource:string;readonly branch:string;
+ readonly tested_commit_sha:string;readonly bytes:number;readonly content:string;
+}
+/** Read bytes arrive over a separate owner-controlled channel. No model or
+ * A2A claim can assert their authenticity; only Gateway's own previously
+ * corroborated SHA-256 and exact byte count can do so. */
+export function verifyTrustedRepairDiscoverySource(
+ receipt:Readonly<{
+  source_sha256:string;source_bytes:number;resource:string;
+  branch:string;revision:string;
+ }>,
+ content:unknown,
+ pins:Readonly<{resource:string;branch:string;tested_commit_sha:string}>
+):Readonly<TrustedRepairDiagnosticSource>{
+ if(!receipt||typeof receipt!=="object"||
+    receipt.resource!==pins.resource||receipt.branch!==pins.branch||
+    receipt.revision!==pins.tested_commit_sha||
+    typeof receipt.source_sha256!=="string"||
+    !/^[a-f0-9]{64}$/u.test(receipt.source_sha256)||
+    !Number.isSafeInteger(receipt.source_bytes)||
+    receipt.source_bytes<1||receipt.source_bytes>32768||
+    typeof content!=="string"||!content.length||content.includes("\0"))
+   fail("invalid source or Gateway fingerprint for completed discovery");
+ const bytes=Buffer.byteLength(content,"utf8");
+ if(bytes!==receipt.source_bytes||bytes>32768||
+    createHash("sha256").update(content,"utf8").digest("hex")!==receipt.source_sha256)
+   fail("source bytes differ from independently attested Gateway Gitea read");
+ return Object.freeze({
+  status:"gateway_sha256_verified_source_data_no_authority" as const,
+  resource:pins.resource,branch:pins.branch,
+  tested_commit_sha:pins.tested_commit_sha,bytes,content
+ });
+}
 export interface TrustedRepairModelInput {
  readonly requirement:string;
  readonly feedback:Readonly<TrustedRepairPlanningObservation>;
  readonly already_delegated_grants:ReadonlyArray<Readonly<Grant>>;
  readonly agents:readonly Role[];
  readonly diagnostic_read?:Readonly<TrustedRepairDiscoveryObservation>;
+ readonly diagnostic_source?:Readonly<TrustedRepairDiagnosticSource>;
 }
 export interface TrustedRepairPlanningResult {
  readonly status:"repair_epoch_reserved_no_execution_authority";
@@ -271,6 +310,8 @@ export class TrustedOperationalRepairPlanner {
  readonly #proposer:(input:Readonly<TrustedRepairModelInput>)=>
    Promise<unknown>;
  readonly #discovery?:Readonly<TrustedRepairDiscoveryLookup>;
+ readonly #loadDiscoverySource?:
+  (pins:Readonly<TrustedRepairDiscoveryLookup>)=>Promise<string>;
  #attempted=false;
  constructor(config:{
   gateway:TrustedApprovedExecutionPlans|TrustedPlanIpcClient;
@@ -286,6 +327,10 @@ export class TrustedOperationalRepairPlanner {
   featureHeadReader:TrustedOperationalFeatureHeadReader;
   proposeRepairPlan:(input:Readonly<TrustedRepairModelInput>)=>Promise<unknown>;
   completedDiscoveryRead?:Readonly<TrustedRepairDiscoveryLookup>;
+  /** Owner-only source transport from completed Backend discovery, never
+   * direct Gitea access or model-supplied unverified text. */
+  loadCompletedDiscoverySource?:
+   (pins:Readonly<TrustedRepairDiscoveryLookup>)=>Promise<string>;
  }){
   if((!(config.gateway instanceof TrustedApprovedExecutionPlans)&&
       !(config.gateway instanceof TrustedPlanIpcClient))||
@@ -312,6 +357,11 @@ export class TrustedOperationalRepairPlanner {
   config.featureHeadReader.assertSameIntake(config.intake);
   this.#head=config.featureHeadReader;
   this.#proposer=config.proposeRepairPlan;
+  if(config.loadCompletedDiscoverySource!==undefined&&
+     (typeof config.loadCompletedDiscoverySource!=="function"||
+      !config.completedDiscoveryRead))
+    fail("source bytes require pre-confirmed discovery Task lookup");
+  this.#loadDiscoverySource=config.loadCompletedDiscoverySource;
   if(config.completedDiscoveryRead){
    const d=config.completedDiscoveryRead;
    if(!(config.gateway instanceof TrustedPlanIpcClient)||
@@ -375,6 +425,19 @@ export class TrustedOperationalRepairPlanner {
     resource:this.#discovery!.resource,branch:feedback.work_branch,
     tested_commit_sha:feedback.tested_commit_sha
    }):undefined;
+  // The authenticated Gateway receipt is checked before any owner source
+  // transport, and source bytes are SHA-256 checked BEFORE model inference.
+  const source=this.#loadDiscoverySource&&this.#discovery&&discoveryReceipt?
+   verifyTrustedRepairDiscoverySource(
+    discoveryReceipt,await this.#loadDiscoverySource(this.#discovery),{
+     resource:this.#discovery.resource,branch:feedback.work_branch,
+     tested_commit_sha:feedback.tested_commit_sha
+    }):undefined;
+  if(source&&discoveryQuery){
+   const checked=await remote!.readConfirmedRemoteDiscoveryEffect(discoveryQuery);
+   if(JSON.stringify(checked)!==JSON.stringify(discoveryReceipt))
+    fail("Gateway read digest changed while receiving source bytes");
+  }
   const grants=[...new Map(original.requested_permissions.map((p:any)=>[
     JSON.stringify([p.resource,p.operation]),
     {resource:p.resource,operation:p.operation}
@@ -390,7 +453,8 @@ export class TrustedOperationalRepairPlanner {
    }),
    already_delegated_grants:Object.freeze(grants.map(p=>Object.freeze(p))),
    agents:Object.freeze([...this.#agents.map(a=>a.agent_id),"orchestrator" as const]),
-   ...(diagnostic?{diagnostic_read:diagnostic}:{})
+   ...(diagnostic?{diagnostic_read:diagnostic}:{}),
+   ...(source?{diagnostic_source:source}:{})
   });
   const raw=await this.#proposer(modelInput);
   const plan=compileDraft(raw,original,previous,this.#nextId,this.#agents);
