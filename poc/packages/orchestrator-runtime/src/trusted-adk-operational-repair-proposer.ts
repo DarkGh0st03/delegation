@@ -86,6 +86,8 @@ function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>){
   g.operation==="run_tests"&&g.resource.startsWith("gitea://")&&
   g.resource.endsWith(suffix))?.resource;
  const edits=new Set<string>();
+ const grants=new Set(input.already_delegated_grants.map(g=>
+  JSON.stringify([g.resource,g.operation])));
  if(runner){
   for(const grant of input.already_delegated_grants){
    if(grant.operation==="update_file"&&
@@ -98,7 +100,7 @@ function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>){
  if(!runner||!input.agents.includes("backend")||
     !input.agents.includes("test")||edits.size===0)
   deny("bounded Backend/Test repair missing existing root scope");
- return {runner,edits};
+ return {runner,edits,grants};
 }
 
 /** Never trust a shape instruction in a prompt as a contract. A syntactically
@@ -120,11 +122,12 @@ function assertBoundedBackendTestDraft(result:unknown,
  const bp=backend.permissions as {resource?:unknown;operation?:unknown}[];
  const tp=test.permissions as {resource?:unknown;operation?:unknown}[];
  const updates=bp.filter(p=>p?.operation==="update_file");
- if(updates.length!==1||typeof updates[0].resource!=="string"||
-    !scope.edits.has(updates[0].resource)||!bp.some(p=>
-      p?.operation==="read_file"&&p.resource===updates[0].resource)||
+ const editResource=updates.length===1?updates[0]?.resource:undefined;
+ if(typeof editResource!=="string"||!scope.edits.has(editResource)||
+    !bp.some(p=>p?.operation==="read_file"&&p.resource===editResource)||
     bp.some(p=>!p||!["read_file","update_file"].includes(
-      String(p.operation))||typeof p.resource!=="string")||
+      String(p.operation))||typeof p.resource!=="string"||
+      !scope.grants.has(JSON.stringify([p.resource,p.operation])))||
     tp.length!==1||tp[0]?.operation!=="run_tests"||
     tp[0].resource!==scope.runner)
   deny("bounded repair Task grants are not an exact root subset");

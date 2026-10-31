@@ -129,7 +129,7 @@ test("R151.13 bounded signed D1 proposes only Backend -> Test with exact existin
 test("R151.13 no inference if original root cannot express a bounded Backend/Test D1",async()=>{
  const cases=[
   input,
-  {...boundedInput,agents:["frontend","test"]},
+  {...boundedInput,agents:["frontend","test"] as const},
   {...boundedInput,already_delegated_grants:
     boundedInput.already_delegated_grants.filter(g=>g.operation!=="run_tests")},
   {...boundedInput,already_delegated_grants:
@@ -157,7 +157,11 @@ test("R151.13 malformed bounded model DAG cannot reach owner admission",async()=
       ?{...p,resource:file+"/out-of-scope"}:p)},good.tasks[1]]},
   {...good,tasks:[good.tasks[0],{...good.tasks[1],permissions:[
     ...good.tasks[1].permissions,{resource:file,operation:"update_file",reason:"No"}
-  ]}]}
+  ]}]},
+  {...good,tasks:[{...good.tasks[0],permissions:[
+    ...good.tasks[0].permissions,
+    {resource:file+"/unapproved",operation:"read_file",reason:"No"}
+  ]},good.tasks[1]]}
  ];
  for(const payload of bad){
   const model=new ScriptedModel(payload);
