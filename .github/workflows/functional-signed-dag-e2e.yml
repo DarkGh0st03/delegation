@@ -24,6 +24,8 @@ on:
       - 'poc/scripts/test/check-gemini-planner-model-access.test.mjs'
       - 'poc/apps/gateway/native-test/native-positive-approved-dag.mjs'
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
+      # Native after-FAIL ADK protected source-read regression is in the paid pilot dependency chain.
+      - 'poc/apps/gateway/native-test/native-r110-repair-discovery-evm-e2e.mjs'
       - 'poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs'
       - 'poc/apps/gateway/native-test/native-owner-verified-failure-handoff.mjs'
       - 'poc/apps/gateway/native-test/native-owner-verified-failure-handoff.test.mjs'
