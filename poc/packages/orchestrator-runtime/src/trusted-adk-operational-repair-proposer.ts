@@ -275,7 +275,9 @@ export class TrustedAdkOperationalRepairProposer {
     ...(input.diagnostic_read?{diagnostic_read:input.diagnostic_read}:{}),
     ...(source?{diagnostic_source:source}:{}),
     ...(target?{diagnostic_target:target}:{}),
-    agents:Object.freeze((this.#taskShape==="backend_or_frontend_test"
+    agents:Object.freeze((target
+      ?[target.role,"test"]
+      :this.#taskShape==="backend_or_frontend_test"
       ?["backend","frontend","test"]:["backend","test"]) as
        ("backend"|"frontend"|"test")[]),
     already_delegated_grants:Object.freeze([
@@ -346,7 +348,7 @@ export class TrustedAdkOperationalRepairProposer {
       ?"This repair epoch supports EXACTLY two Tasks: one Backend and one Test."
       :"This repair epoch supports EXACTLY two Tasks: one Backend OR Frontend repair and one Test.",
      "The repairing agent must have EXACTLY two permissions: read_file and update_file for ONE and the SAME originally approved source file; no extra read grants.",
-     "Test must have run_tests on the already approved feature branch, depending on Backend.",
+     "Test must have run_tests on the approved feature branch and depend on the selected Backend or Frontend repairing Task.",
      ...(this.#taskShape==="backend_test"?[
       "Do NOT propose Frontend, extra Tasks, or a PR Task; the owner handles review-only PR after revocation."
      ]:[
