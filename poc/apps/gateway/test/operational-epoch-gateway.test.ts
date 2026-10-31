@@ -2776,6 +2776,8 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
   ...(rootVpVerifier?{rootVpVerifier}:{}),
   discoveryChildDirectory:join(base.h.dir,"r151-remote-child")
  });
+ if(options.sameIpc)
+  base.h.gates.installRemoteEpochInspectorAtBootstrap(inspector);
 
  inspection={reader,inspector,
   get nativeCalls(){return nativeCalls;},get issuedCalls(){return issuedCalls;},

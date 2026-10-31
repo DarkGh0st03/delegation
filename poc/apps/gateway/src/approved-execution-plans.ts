@@ -160,7 +160,7 @@ export class TrustedApprovedExecutionPlans {
   readonly #operationalLeaseMs?:number;
   readonly #nowMs:()=>number;
   readonly #epochIntake?:TrustedOperationalEpochIntake;
-  readonly #remoteEpochInspector?:TrustedGatewaySignedEpochInspector;
+  #remoteEpochInspector?:TrustedGatewaySignedEpochInspector;
   readonly #epochAdmissionInFlight=new Set<string>();
   readonly #discoveryAdmissionsInFlight=new Set<string>();
 
@@ -223,6 +223,20 @@ export class TrustedApprovedExecutionPlans {
   /** Authenticated IPC capability: the deployed Gateway needs both fences. */
   operationalSessionDurableConfigured():boolean{
     return this.#sessionStore instanceof TrustedOperationalSessionStore;
+  }
+
+  /** Install the host's final signed-root inspector during Gateway bootstrap,
+   * before any session is activated. Runtime callers cannot replace trust
+   * roots after an operational session begins. */
+  installRemoteEpochInspectorAtBootstrap(
+    inspector:TrustedGatewaySignedEpochInspector
+  ):void{
+    if(!(inspector instanceof TrustedGatewaySignedEpochInspector)||
+       !inspector.nativeRootVpConfigured()||
+       !(this.#sessionStore instanceof TrustedOperationalSessionStore)||
+       !this.#operationalLeaseMs||this.#epochIntake||this.#sessions.size!==0)
+      denied("Remote epoch inspector can only be installed before durable Gateway activation");
+    this.#remoteEpochInspector=inspector;
   }
 
   #clock():number{
