@@ -4416,7 +4416,20 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
   ...pins,runtime_test_task_id:"wrong-test"
  }),/Gateway trusted control denied/);
  assert.equal(signed,0);
- const result=await client.admitRemoteRepairDiscoveryTask(pins);
+ let result:Awaited<ReturnType<typeof client.admitRemoteRepairDiscoveryTask>>;
+ try{result=await client.admitRemoteRepairDiscoveryTask(pins);}
+ catch(ipcError){
+  // Diagnostic regression: identify the trusted gate that fails behind
+  // the source-free HMAC IPC's intentionally opaque external 403 response.
+  // Never print credentials, VP bytes, provider source or adapter tokens.
+  try{await h.f.h.gates.admitRemoteRepairDiscoveryTask(pins,port);}
+  catch(gateError){
+   assert.fail("R151.32 trusted gate rejected before admission: "+
+    String((gateError as Error).message));
+  }
+  assert.fail("R151.32 owner IPC rejected a valid gate admission: "+
+   String((ipcError as Error).message));
+ }
  assert.equal(result.status,"discovery_read_admitted_not_executed");
  assert.equal(result.task_id,h.config.discoveryTaskId);
  assert.equal(result.credential_id,h.input.credential_id);
