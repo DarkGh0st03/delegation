@@ -4907,6 +4907,14 @@ test("R151.55 same native owner discovery supplies attested source to planner an
  });
  assert.equal(admission.status,"gateway_epoch_admitted");
  assert.equal(admission.epoch,2);
+ try{
+  h.f.h.gates.assertRepairTaskReady({session_id:session,
+   plan_digest:reserved.plan_digest,epoch:2,
+   plan_task_id:"repair-implementation",role:"backend"});
+ }catch(error){
+  throw new Error("Gateway registry readiness reason: "+
+   (error instanceof Error?error.message:String(error)));
+ }
  const gatewayMethods=h.f.client as any;
  for(const method of ["assertRepairTaskReady","bindTask",
    "confirmTaskCompletion"]){
