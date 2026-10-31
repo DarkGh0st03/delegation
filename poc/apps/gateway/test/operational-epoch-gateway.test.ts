@@ -1813,7 +1813,9 @@ test("R114 real Gateway pins original root before terminal Test FAIL finalizatio
  * No paid models, container engine, or external service are invoked here. */
 async function r115RemoteFixture(t:import("node:test").TestContext,
  options:{withDurable?:boolean;withRemoteEpoch?:boolean;nativeCoordinator?:boolean;
-  withReview?:boolean;withRead?:boolean}={}){
+  withReview?:boolean;withRead?:boolean;
+  installInspector?:(h:Awaited<ReturnType<typeof harness>>)=>Promise<TrustedGatewaySignedEpochInspector>;
+ }={}){
  const h=await harness(t,options);
  await h.intake.reserveInitialEpoch();
  if(!options.nativeCoordinator)await h.gates.activate(session,sha);
@@ -1821,7 +1823,8 @@ async function r115RemoteFixture(t:import("node:test").TestContext,
  const socketPath=join(h.dir,"r115-control.sock");
  await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
  const server=await createTrustedPlanIpcServer({
-  socketPath,secretFile,plans:h.gates
+  socketPath,secretFile,plans:h.gates,
+  ...(options.installInspector?{signedEpochInspector:await options.installInspector(h)}:{})
  });
  await server.start();
  t.after(()=>server.close());
@@ -2655,10 +2658,12 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
   Array<{resource:string;operation:string}>;
  issued?:Record<string,unknown>; status?:Record<string,unknown>;
  onIssued?:()=>Promise<void>;
- nativeCoordinator?:boolean;withRead?:boolean;withVp?:boolean; vpMutate?:Record<string,unknown>;
+ sameIpc?:boolean;nativeCoordinator?:boolean;withRead?:boolean;withVp?:boolean; vpMutate?:Record<string,unknown>;
  onVpVerification?:(revokeAdapterRoot:()=>void)=>Promise<void>;
 }={}){
- const base=await r115RemoteFixture(t,{withDurable:true,withRead:options.withRead,nativeCoordinator:options.nativeCoordinator});
+ let inspection:any;
+ async function install(h:Awaited<ReturnType<typeof harness>>){
+ const base={h};
  let nativeCalls=0,issuedCalls=0;
  let adapterRootRevoked=false;
  const now=BigInt(Date.now())*1_000_000n;
@@ -2702,9 +2707,6 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
    throw Error("Unexpected Rust Adapter read endpoint");
   }) as typeof fetch
  });
- const socketPath=join(base.h.dir,"r128-issued.sock");
- const secretFile=join(base.h.dir,"r128-issued.hex");
- await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
  let signedVpCalls=0,verifiedVpCalls=0;
  let rootVpVerifier:TrustedGatewayRootVpVerifier|undefined;
  if(options.withVp){
@@ -2774,15 +2776,32 @@ async function r128Fixture(t:import("node:test").TestContext,options:{
   ...(rootVpVerifier?{rootVpVerifier}:{}),
   discoveryChildDirectory:join(base.h.dir,"r151-remote-child")
  });
+
+ inspection={reader,inspector,
+  get nativeCalls(){return nativeCalls;},get issuedCalls(){return issuedCalls;},
+  get signedVpCalls(){return signedVpCalls;},get verifiedVpCalls(){return verifiedVpCalls;}
+ };
+ return inspector;
+ }
+ const base=await r115RemoteFixture(t,{
+  withDurable:true,withRead:options.withRead,nativeCoordinator:options.nativeCoordinator,
+  ...(options.sameIpc?{installInspector:install}:{})
+ });
+ if(options.sameIpc)return {...base,...inspection};
+ await install(base.h);
+ const socketPath=join(base.h.dir,"r128-issued.sock");
+ const secretFile=join(base.h.dir,"r128-issued.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
  const control=await createTrustedPlanIpcServer({
-  socketPath,secretFile,plans:base.h.gates,signedEpochInspector:inspector
+  socketPath,secretFile,plans:base.h.gates,signedEpochInspector:inspection.inspector
  });
  await control.start();t.after(()=>control.close());
- return {...base,reader,inspector,
-  get nativeCalls(){return nativeCalls;},
-  get issuedCalls(){return issuedCalls;},
-  get signedVpCalls(){return signedVpCalls;},
-  get verifiedVpCalls(){return verifiedVpCalls;},
+ return {...base,
+  reader:inspection.reader,inspector:inspection.inspector,
+  get nativeCalls(){return inspection.nativeCalls;},
+  get issuedCalls(){return inspection.issuedCalls;},
+  get signedVpCalls(){return inspection.signedVpCalls;},
+  get verifiedVpCalls(){return inspection.verifiedVpCalls;},
   client:await TrustedPlanIpcClient.connect({socketPath,secretFile})
  };
 }
@@ -2933,10 +2952,10 @@ test("R151.23 unfinalized Runner FAIL cannot unlock remote discovery",async t=>{
 
 
 async function r151RemoteDiscoveryIssuer(t:import("node:test").TestContext,
- options:{withRead?:boolean;finalized?:boolean;revokeOnIssue?:boolean;nativeCoordinator?:boolean}={}){
+ options:{withRead?:boolean;finalized?:boolean;revokeOnIssue?:boolean;nativeCoordinator?:boolean;sameIpc?:boolean}={}){
  const status:Record<string,unknown>={};
  const f=await r128Fixture(t,{withVp:true,
-  withRead:options.withRead??true,status,nativeCoordinator:options.nativeCoordinator});
+  withRead:options.withRead??true,status,nativeCoordinator:options.nativeCoordinator,sameIpc:options.sameIpc});
  if(options.finalized!==false)await prepareTrustedRemoteRepairFeedback(f.request());
  const directory=join(f.h.dir,"r151-remote-child");
  await mkdir(directory,{mode:0o700});
@@ -4752,6 +4771,29 @@ test("R151.52 real Coordinator lifecycle refuses discovery through a replacement
   coordinator,gateway:h.f.client,intake:h.f.h.intake,sessionId:session,
   engineerDid:engineer,failedRuntimeTestTaskId:"task-test"
  }),/Trusted Coordinator recovery Gateway identity differs/);
+ assert.equal(h.calls.length,0,"assembly does not issue a Child");
+ assert.equal(h.f.h.provider,3,"assembly does not read Gitea");
+});
+
+test("R151.53 original IPC supports real Coordinator and verified discovery assembly",async t=>{
+ const h=await r151RemoteDiscoveryIssuer(t,{nativeCoordinator:true,sameIpc:true});
+ const coordinator=h.f.h.coordinator as unknown as TrustedExecutionCoordinator;
+ assert.ok(coordinator instanceof TrustedExecutionCoordinator);
+ assert.equal(coordinator.phase,"execution");
+ // Inspector capabilities are installed before the original client connects.
+ const owner=await assembleTrustedRemoteDiscoveryOwner({
+  adapterBaseUrl:h.config.adapterBaseUrl,bearerToken:h.config.bearerToken,
+  issuanceJournal:h.journal,fetchFn:h.config.fetchFn,
+  discoveryTaskId:h.config.discoveryTaskId,resource:file,path:"src/invoices.ts",
+  backendAgentBaseUrl:"http://127.0.0.1:9999",issueInput:h.input,
+  a2a:{async sendProtectedTask(){throw Error("assembly must not dispatch");}},
+  backendTaskBinding:{async prepare(){throw Error("assembly must not bind");},
+   async fence(){},async takeSource(){throw Error("assembly must not read");}}
+ },{
+  coordinator,gateway:h.f.client,intake:h.f.h.intake,sessionId:session,
+  engineerDid:engineer,failedRuntimeTestTaskId:"task-test"
+ });
+ assert.ok(owner);
  assert.equal(h.calls.length,0,"assembly does not issue a Child");
  assert.equal(h.f.h.provider,3,"assembly does not read Gitea");
 });
