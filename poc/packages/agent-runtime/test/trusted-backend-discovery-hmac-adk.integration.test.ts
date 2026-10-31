@@ -21,6 +21,7 @@ import type {AgentTaskContext} from "../src/contracts.ts";
 
 const branch="feature/invoice-approval",path="src/invoices.ts";
 const sha="a".repeat(40);
+const privateSource="export function invoice() {}";
 const resource="gitea://gitea.local/sample/invoice-service/branches/feature%2Finvoice-approval/files/src/invoices.ts";
 const child="urn:child:r151-remote-discovery";
 const planTask="r151-remote-child-task",backendDid="did:example:backend";
@@ -116,8 +117,8 @@ async function fixture(t:import("node:test").TestContext){
      request_id:body.request_id,decision:"allow",
      execution:{provider:"gitea",performed:true,tool:"read_file",
       branch,path,revision:sha,blob_sha:"b".repeat(40),
-      last_commit_sha:sha,size:29,encoding:"utf-8",
-      content:"export function invoice() {}"}
+      last_commit_sha:sha,size:Buffer.byteLength(privateSource,"utf8"),
+      content:privateSource,encoding:"utf-8"}
     }),{status:200});
    }
    untrusted++;
@@ -139,6 +140,18 @@ test("R151.42 authenticated owner IPC -> Backend slot -> ADK -> private VP -> Ga
  assert.deepEqual(artifact.errors,[]);
  assert.deepEqual(f.counts,{adapter:1,prepare:1,execute:1,untrusted:0});
  assert.equal(f.model.observed.length,2);
+ const source=f.slot.takeCapturedSource(f.pins.runtime_task_id);
+ assert.equal(source.content,privateSource);
+ assert.equal(source.revision,sha);
+ assert.equal(source.bytes,Buffer.byteLength(privateSource,"utf8"));
+ assert.equal(source.branch,branch);
+ assert.equal(source.path,path);
+ assert.equal(source.resource,resource);
+ assert.equal(source.sha256,
+  (await import("node:crypto")).createHash("sha256")
+   .update(privateSource).digest("hex"));
+ assert.throws(()=>f.slot.takeCapturedSource(f.pins.runtime_task_id),
+  /no one-use captured source/);
  const seen=JSON.stringify(f.model.observed);
  for(const secret of [privateBearer,privateChild,fallbackBearer,
   "native-child:"+f.challenge])

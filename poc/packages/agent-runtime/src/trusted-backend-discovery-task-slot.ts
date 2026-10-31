@@ -10,6 +10,8 @@
  * The slot DOES NOT verify Gateway authorization; the Gateway's fresh
  * Rust/OPA Prepare/Execute remains authoritative.
  */
+import {createHash} from "node:crypto";
+import {Buffer} from "node:buffer";
 import {canonicalFileUri} from "../../../apps/gateway/src/canonical.ts";
 import type {AgentTaskContext} from "./contracts.ts";
 import {TrustedBackendDiscoveryChildPresenter} from
@@ -40,6 +42,12 @@ export class TrustedBackendDiscoveryTaskSlot {
  #binding?:TrustedBackendDiscoveryA2ABinding;
  #reserved=false;
  #retired=false;
+ #captured=false;
+ #taken=false;
+ #source?:Readonly<{
+  revision:string;content:string;bytes:number;sha256:string;
+  branch:string;path:string;resource:string;
+ }>;
  constructor(config:Readonly<Pins & {holder:TrustedBackendDiscoveryChildPresenter}>){
   if(!config||!ID.test(config.planTaskId)||!ID.test(config.childCredentialId)||
      !/^did:[A-Za-z0-9:._-]{6,240}$/u.test(config.presenterId)||
@@ -104,6 +112,54 @@ export class TrustedBackendDiscoveryTaskSlot {
   // fall back to a generic Adapter bearer.
   return selectTrustedBackendDiscoveryA2A(b,context);
  }
+ /**
+  * Trusted Backend-only callback from an actual successful Gateway Execute.
+  * The A2A caller and model never receive an accessor for this private slot.
+  * Capture is one-use, <=32 KiB, and is NOT evidence of Gateway completion.
+  */
+ captureGatewaySource(runtimeTaskId:string,result:unknown):void{
+  const b=this.#binding,p=this.#pins;
+  if(this.#captured||this.#taken||this.#retired||
+     !b||b.runtimeTaskId!==runtimeTaskId)
+   deny("no active unique Backend discovery read capture");
+  this.#captured=true; // reserve even if malformed: no second source attempt
+  if(!result||typeof result!=="object"||Array.isArray(result))
+   deny("Gateway source read is not an object");
+  const v=result as Record<string,unknown>;
+  if(v.provider!=="gitea"||v.performed!==true||
+     v.tool!=="read_file"||v.branch!==p.branch||
+     v.path!==p.path||typeof v.revision!=="string"||
+     !/^[a-f0-9]{40}$/u.test(v.revision)||
+     v.encoding!=="utf-8"||
+     typeof v.content!=="string"||!v.content.length||
+     v.content.includes("\0")||
+     !Number.isSafeInteger(v.size))
+   deny("Gateway source differs from exact signed Backend discovery file");
+  const content=v.content as string;
+  const bytes=Buffer.byteLength(content,"utf8");
+  if(bytes>32768||bytes!==(v.size as number))
+   deny("Gateway source is too large or has invalid byte count");
+  this.#source=Object.freeze({
+   revision:v.revision as string,content,bytes,
+   sha256:createHash("sha256").update(content,"utf8").digest("hex"),
+   branch:p.branch,path:p.path,resource:p.resource
+  });
+ }
+ /**
+  * The authenticated owner may extract the one source snapshot privately.
+  * Reading consumes it. It must independently check Gateway provider ledger
+  * and SHA-256 BEFORE using these untrusted bytes in repair inference.
+  */
+ takeCapturedSource(runtimeTaskId:string){
+  const b=this.#binding;
+  if(this.#retired||this.#taken||!b||
+     b.runtimeTaskId!==runtimeTaskId||!this.#source)
+   deny("no one-use captured source for exact Backend Task");
+  this.#taken=true;
+  const snapshot=this.#source;
+  this.#source=undefined;
+  return snapshot;
+ }
  /** Authenticated owner task retirement; also valid after unknown bind. */
  async fence(runtimeTaskId:string){
   if(!/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId))deny("invalid task fence");
@@ -115,6 +171,7 @@ export class TrustedBackendDiscoveryTaskSlot {
   * without any matching runtime ID or completed A2A Task. */
  retireAll(){
   this.#retired=true;this.#reserved=true;
+  this.#source=undefined;
   this.#binding?.presentation.fence();
   this.#holder.fence();
  }

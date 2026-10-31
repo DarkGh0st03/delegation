@@ -101,3 +101,39 @@ test("R151.40 unknown control requests consume slot without issuing authority",a
   assert.equal(f.signatures,0);
  }
 });
+
+test("R151.48 reject foreign, oversized or double Backend captures before owner source delivery",async()=>{
+ const good={
+  provider:"gitea",performed:true,tool:"read_file",
+  branch,path,revision:"a".repeat(40),size:6,
+  encoding:"utf-8",content:"source"
+ };
+ for(const bad of [
+  {...good,path:"src/foreign.ts"},
+  {...good,branch:"feature/foreign"},
+  {...good,revision:"invalid"},
+  {...good,size:7},
+  {...good,content:"x".repeat(32769),size:32769},
+  {...good,content:"unsafe\0content",size:14},
+  {...good,performed:false}
+ ]){
+  const f=fixture();await f.slot.prepare(f.pins);
+  assert.throws(()=>f.slot.captureGatewaySource(runtime,bad),
+   /Trusted Backend discovery slot NO-GO/);
+  assert.throws(()=>f.slot.captureGatewaySource(runtime,good),
+   /no active unique Backend discovery/);
+  assert.throws(()=>f.slot.takeCapturedSource(runtime),
+   /no one-use captured source/);
+  await f.slot.fence(runtime);
+ }
+ const f=fixture();await f.slot.prepare(f.pins);
+ assert.throws(()=>f.slot.captureGatewaySource(
+  "dispatch_"+randomBytes(16).toString("base64url"),good),
+  /no active unique Backend discovery/);
+ // The wrong runtime id may not consume the real task's source budget.
+ f.slot.captureGatewaySource(runtime,good);
+ const accepted=f.slot.takeCapturedSource(runtime);
+ assert.equal(accepted.content,"source");
+ await f.slot.fence(runtime);
+ assert.throws(()=>f.slot.takeCapturedSource(runtime),/no one-use captured source/);
+});
