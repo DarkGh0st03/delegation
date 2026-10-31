@@ -4811,7 +4811,7 @@ test("R151.53 original IPC supports real Coordinator and verified discovery asse
 });
 
 
-test("R151.54 native Coordinator discovery reaches Gateway provider ledger and one-use private source",async t=>{
+async function r154DispatchedDiscovery(t:import("node:test").TestContext){
  const h=await r151RemoteDiscoveryIssuer(t,{nativeCoordinator:true,sameIpc:true,discoveryVp:true});
  // Complete the independent read already required by the original signed DAG.
  h.f.h.gates.bindTask(session,"read-diagnostics","r154-original-read","backend");
@@ -4850,10 +4850,45 @@ test("R151.54 native Coordinator discovery reaches Gateway provider ledger and o
  const result=await owner.dispatchRemoteDiscovery();
  assert.equal(result.gateway_provider_corroborated,true);
  assert.equal(sent,1);assert.equal(fenced,1);assert.equal(sourceTaken,1);
+ return {h,owner,result,read};
+}
+test("R151.54 native Coordinator discovery reaches Gateway provider ledger and one-use private source",async t=>{
+ const {h,owner,result,read}=await r154DispatchedDiscovery(t);
  const pins={task_id:result.task_id,runtime_task_id:result.runtime_task_id,resource:file};
  assert.equal(await owner.loadCompletedDiscoverySource(pins),read.content);
  await assert.rejects(owner.loadCompletedDiscoverySource(pins),/one-use|source/);
  await assert.rejects(owner.dispatchRemoteDiscovery(),/one-use/);
- assert.equal(h.calls.length,1);assert.equal(sent,1);
+ assert.equal(h.calls.length,1);
  assert.equal(h.f.h.provider,5);
+});
+
+
+test("R151.55 same native owner discovery supplies attested source to planner and reserves repair epoch",async t=>{
+ const {h,owner,result,read}=await r154DispatchedDiscovery(t);
+ const pins={task_id:result.task_id,runtime_task_id:result.runtime_task_id,resource:file};
+ const counts={model:0,head:0};
+ let visible:TrustedRepairModelInput|undefined;
+ const planner=r121RemotePlanner(h.f.h,h.f.client,{
+  alreadyFinalized:true,counters:counts,completedDiscoveryRead:pins,
+  loadCompletedDiscoverySource:()=>owner.loadCompletedDiscoverySource(pins),
+  onInput:input=>{visible=input;}
+ });
+ const reserved=await planner.proposeAndReserve();
+ assert.equal(reserved.status,"repair_epoch_reserved_no_execution_authority");
+ assert.equal(reserved.execution_authorized,false);
+ assert.equal(reserved.child_credential_issued,false);
+ assert.equal(reserved.epoch,2);
+ assert.equal(reserved.source_failed_sha,sha);
+ assert.equal(counts.model,1);
+ assert.equal(visible?.diagnostic_source?.content,read.content);
+ assert.equal(visible?.diagnostic_source?.tested_commit_sha,sha);
+ assert.equal(visible?.diagnostic_read?.resource,file);
+ assert.equal(h.calls.length,1,"planner must not issue execution credentials");
+ assert.equal(h.f.h.provider,5,"planner performs no additional provider operation");
+ await assert.rejects(owner.loadCompletedDiscoverySource(pins),/source/);
+ await assert.rejects(planner.proposeAndReserve(),/already attempted/);
+ const epochs=await h.f.h.intake.verifiedEpochHistory();
+ assert.equal(epochs.length,2);
+ assert.equal(epochs[1].plan_digest,reserved.plan_digest);
+ assert.equal(h.f.h.coordinator.phase,"execution");
 });
