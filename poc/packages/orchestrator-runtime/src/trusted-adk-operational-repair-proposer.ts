@@ -81,7 +81,8 @@ class BudgetedRepairModel extends BaseLlm {
  * This preflight prevents a model call when the existing root cannot express
  * that DAG. It never allocates or grants authority; planner/Gateway still
  * independently check the exact role, Task and original Rust root. */
-function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>){
+function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>,
+ allowFrontend=false){
  // R151.21: this first paid D1 is a compiler-error repair, not an
  // infrastructure or arbitrary test-failure retry. Reject before calling
  // Gemini when the authenticated Runner metadata is not actionable TS errors.
@@ -108,8 +109,9 @@ function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>){
     edits.add(grant.resource);
   }
  }
- if(!runner||!input.agents.includes("backend")||
-    !input.agents.includes("test")||edits.size===0)
+ if(!runner||!input.agents.includes("test")||
+    !(input.agents.includes("backend")||
+      (allowFrontend&&input.agents.includes("frontend")))||edits.size===0)
   deny("bounded Backend/Test repair missing existing root scope");
  return {runner,edits,grants};
 }
@@ -117,20 +119,22 @@ function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>){
 /** Never trust a shape instruction in a prompt as a contract. A syntactically
  * valid model response is still only a proposal, never a signed repair DAG. */
 function assertBoundedBackendTestDraft(result:unknown,
- scope:ReturnType<typeof boundedBackendTestScope>):void{
+ scope:ReturnType<typeof boundedBackendTestScope>,allowFrontend=false):void{
  const tasks=(result as {tasks?:unknown}).tasks;
  if(!Array.isArray(tasks)||tasks.length!==2)
   deny("bounded repair requires exactly Backend and Test Tasks");
- const [backend,test]=tasks as Record<string,unknown>[];
- if(!backend||!test||backend.agent_id!=="backend"||
-    test.agent_id!=="test"||typeof backend.id!=="string"||
-    !Array.isArray(backend.depends_on)||backend.depends_on.length!==0||
+ const [repair,test]=tasks as Record<string,unknown>[];
+ const repairRole=repair?.agent_id;
+ if(!repair||!test||
+    !(repairRole==="backend"||(allowFrontend&&repairRole==="frontend"))||
+    test.agent_id!=="test"||typeof repair.id!=="string"||
+    !Array.isArray(repair.depends_on)||repair.depends_on.length!==0||
     !Array.isArray(test.depends_on)||test.depends_on.length!==1||
-    test.depends_on[0]!==backend.id||
-    !Array.isArray(backend.permissions)||
+    test.depends_on[0]!==repair.id||
+    !Array.isArray(repair.permissions)||
     !Array.isArray(test.permissions))
   deny("bounded repair role or dependency mismatch");
- const bp=backend.permissions as {resource?:unknown;operation?:unknown}[];
+ const bp=repair.permissions as {resource?:unknown;operation?:unknown}[];
  const tp=test.permissions as {resource?:unknown;operation?:unknown}[];
  const updates=bp.filter(p=>p?.operation==="update_file");
  const editResource=updates.length===1?updates[0]?.resource:undefined;
@@ -155,7 +159,7 @@ export class TrustedAdkOperationalRepairProposer {
  readonly #maxSessionMs:number;
  readonly #maxOutputTokens:number;
  readonly #thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
- readonly #taskShape?:"backend_test";
+ readonly #taskShape?:"backend_test"|"backend_or_frontend_test";
  readonly #observer?:(event:Observe)=>void;
  #attempted=false;
  constructor(config:{
@@ -168,7 +172,7 @@ export class TrustedAdkOperationalRepairProposer {
   thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
   /** Only for the first bounded native D1: no multi-agent expansion or PR
    * from the model. The trusted owner separately handles review-only PR. */
-  taskShape?:"backend_test";
+  taskShape?:"backend_test"|"backend_or_frontend_test";
   onObservation?:(event:Observe)=>void;
  }){
   if(!(config?.model instanceof BaseLlm)||
@@ -184,7 +188,8 @@ export class TrustedAdkOperationalRepairProposer {
      (config.maxOutputTokens??8192)>16000||
      (config.thinkingLevel!==undefined&&
       !["LOW","MEDIUM","HIGH"].includes(config.thinkingLevel))||
-     (config.taskShape!==undefined&&config.taskShape!=="backend_test")||
+     (config.taskShape!==undefined&&
+      !["backend_test","backend_or_frontend_test"].includes(config.taskShape))||
      (config.onObservation!==undefined&&
       typeof config.onObservation!=="function"))
    deny("invalid bounded ADK configuration");
@@ -216,8 +221,9 @@ export class TrustedAdkOperationalRepairProposer {
        typeof p.operation!=="string"))
    deny("invalid trusted source-free repair input");
 
-  const boundedScope=this.#taskShape==="backend_test"?
-   boundedBackendTestScope(input):undefined;
+  const boundedScope=this.#taskShape?
+   boundedBackendTestScope(input,
+    this.#taskShape==="backend_or_frontend_test"):undefined;
   const source=input.diagnostic_source;
   if(source){
    const read=input.diagnostic_read;
@@ -244,7 +250,9 @@ export class TrustedAdkOperationalRepairProposer {
     requirement:input.requirement,feedback:input.feedback,
     ...(input.diagnostic_read?{diagnostic_read:input.diagnostic_read}:{}),
     ...(source?{diagnostic_source:source}:{}),
-    agents:Object.freeze(["backend","test"] as const),
+    agents:Object.freeze((this.#taskShape==="backend_or_frontend_test"
+      ?["backend","frontend","test"]:["backend","test"]) as
+       ("backend"|"frontend"|"test")[]),
     already_delegated_grants:Object.freeze([
      ...[...boundedScope.edits].sort().flatMap(resource=>[
       Object.freeze({resource,operation:"read_file"}),
@@ -304,11 +312,18 @@ export class TrustedAdkOperationalRepairProposer {
       "You have NO tools to inspect the source in this source-free planning mode."]),
     "Use ONLY exact existing ResourceURI/Operation pairs supplied in the input.",
     "The Engineer will not approve Task/agent allocation or retry counts.",
-    ...(this.#taskShape==="backend_test"?[
-     "This repair epoch supports EXACTLY two Tasks: one Backend and one Test.",
-     "Backend must have EXACTLY two permissions: read_file and update_file for ONE and the SAME originally granted Backend source file; no extra read grants.",
+    ...(this.#taskShape?[
+     this.#taskShape==="backend_test"
+      ?"This repair epoch supports EXACTLY two Tasks: one Backend and one Test."
+      :"This repair epoch supports EXACTLY two Tasks: one Backend OR Frontend repair and one Test.",
+     "The repairing agent must have EXACTLY two permissions: read_file and update_file for ONE and the SAME originally approved source file; no extra read grants.",
      "Test must have run_tests on the already approved feature branch, depending on Backend.",
-     "Do NOT propose Frontend, extra Tasks, or a PR Task; the owner handles review-only PR after revocation."
+     ...(this.#taskShape==="backend_test"?[
+      "Do NOT propose Frontend, extra Tasks, or a PR Task; the owner handles review-only PR after revocation."
+     ]:[
+      "Choose Backend or Frontend based on the verified failed file and original grants; never invent either role's authority.",
+      "Do NOT propose both repairing agents, extra Tasks or a PR Task; owner handles the PR after PASS."
+     ])
     ]:[
      "Choose Backend/Frontend edits selectively; Test must depend on repairs.",
      "Optionally schedule a PR only AFTER the new passing Test."
@@ -319,8 +334,8 @@ export class TrustedAdkOperationalRepairProposer {
     "tasks is an array of objects with EXACT keys: id,agent_id,title,description,depends_on,permissions.",
     "permissions is an array of objects with EXACT keys: resource,operation,reason.",
     "No DID, credential, model configuration, session, branch or repository fields.",
-    ...(this.#taskShape==="backend_test"?[
-     "For this bounded DAG, Backend may only read_file and update_file on ONE source; Test may only run_tests."
+    ...(this.#taskShape?[
+     "For this bounded DAG, the single Backend OR Frontend repair may only read_file and update_file on ONE source; Test may only run_tests."
     ]:[
      "Backend/Frontend: read_file,update_file. Test: run_tests,read_file,update_file,create_file.",
      "Orchestrator: only create_pull_request, depending on the Test task."
@@ -363,7 +378,8 @@ export class TrustedAdkOperationalRepairProposer {
   if(!result||typeof result!=="object"||Array.isArray(result)||
      Object.keys(result).join(",")!=="tasks")
    deny("repair model returned fields outside permitted draft");
-  if(boundedScope)assertBoundedBackendTestDraft(result,boundedScope);
+  if(boundedScope)assertBoundedBackendTestDraft(result,boundedScope,
+   this.#taskShape==="backend_or_frontend_test");
   this.#observer?.(Object.freeze({kind:"proposal_parsed",call:model.calls}));
   // No automatic fallback, retries, credentials or provider execution.
   // Structural/scope validation remains with TrustedOperationalRepairPlanner.

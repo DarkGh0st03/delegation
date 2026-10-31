@@ -47,3 +47,20 @@ test("R151.9 fails closed on mutated role, dependency, permission, epoch or dige
   assert.throws(()=>check(e),/R151 signed owner D1 task selection NO-GO/);
  }
 });
+
+test("R151.72 derives exact Frontend then Test from signed epoch",()=>{
+ const frontFile=branchUri+"/files/apps/frontend/src/App.tsx";
+ const epoch=fixture("fix-ui","test-after-ui");
+ epoch.plan.tasks[0].agent_id="frontend";
+ epoch.plan.requested_permissions[0].agent_id="frontend";
+ epoch.plan.requested_permissions[1].agent_id="frontend";
+ epoch.plan.requested_permissions[0].resource=frontFile;
+ epoch.plan.requested_permissions[1].resource=frontFile;
+ assert.deepEqual(selectSignedNativeD1Tasks({
+  epoch,planDigest:digest,fileUri:frontFile,branchUri,
+  repairRole:"frontend"
+ }),{frontendTaskId:"fix-ui",testTaskId:"test-after-ui"});
+ assert.throws(()=>selectSignedNativeD1Tasks({
+  epoch,planDigest:digest,fileUri:frontFile,branchUri
+ }),/R151 signed owner D1 task selection NO-GO/);
+});

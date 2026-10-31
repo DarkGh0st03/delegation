@@ -17,7 +17,7 @@ const deny=()=>{throw Error("R151.11 signed D1 model activation NO-GO");};
 export function selectTrustedD1AgentModelActivation({
  role,taskId,model,scriptedModelClass,allowGenerative=false
 }={}){
- if(!["backend","test"].includes(role)||!TASK.test(taskId??"")||
+ if(!["backend","frontend","test"].includes(role)||!TASK.test(taskId??"")||
     typeof scriptedModelClass!=="function"||
     typeof allowGenerative!=="boolean"||
     !(model instanceof BaseLlm))

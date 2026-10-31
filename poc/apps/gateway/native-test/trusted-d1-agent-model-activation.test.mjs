@@ -42,3 +42,10 @@ test("R151.11 disallows models crossing offline/generative boundary",()=>{
   assert.throws(()=>select(x),/R151.11 signed D1 model activation NO-GO/);
  }
 });
+
+test("R151.72 signed Frontend repair activates existing generative agent without model call",()=>{
+ const result=select({role:"frontend",taskId:"repair-ui-1",
+  model:new Generative(),scriptedModelClass:Scripted,allowGenerative:true});
+ assert.deepEqual(result,{mode:"generative",role:"frontend",
+  task_id:"repair-ui-1",needs_scripted_arming:false});
+});

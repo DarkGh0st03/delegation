@@ -289,3 +289,49 @@ test("R151.47.2 bounded ADK includes verified source as inert data without grant
   assert.equal(rejected.requests.length,0);
  }
 });
+
+test("R151.72 bounded D1 can nominate one Frontend repair then Test without new authority",async()=>{
+ const frontend=runner+"/files/apps/frontend/src/App.tsx";
+ const frontInput={...boundedInput,
+  already_delegated_grants:[
+   ...boundedInput.already_delegated_grants,
+   {resource:frontend,operation:"read_file"},
+   {resource:frontend,operation:"update_file"}
+  ]};
+ const proposed={tasks:[
+  {id:"fix-frontend",agent_id:"frontend",title:"Fix frontend TypeScript",
+   description:"Correct the exact approved component",depends_on:[],
+   permissions:[
+    {resource:frontend,operation:"read_file",reason:"Inspect"},
+    {resource:frontend,operation:"update_file",reason:"Fix typecheck"}
+   ]},
+  {id:"retest-frontend",agent_id:"test",title:"Run Docker",
+   description:"Recheck the new commit",depends_on:["fix-frontend"],
+   permissions:[{resource:runner,operation:"run_tests",reason:"Verify"}]}
+ ]};
+ const model=new ScriptedModel(proposed);
+ const p=new TrustedAdkOperationalRepairProposer({
+  model,taskShape:"backend_or_frontend_test"
+ });
+ assert.deepEqual(await p.propose(frontInput),proposed);
+ assert.equal(model.requests.length,1);
+ const body=JSON.parse(model.requests[0]!.contents!.at(-1)!.parts!.find(
+  part=>typeof part.text==="string")!.text!);
+ assert.ok(body.agents.includes("frontend"));
+ assert.ok(body.already_delegated_grants.some(
+  (x:{resource:string})=>x.resource===frontend));
+ for(const bad of [
+  {...proposed,tasks:[{...proposed.tasks[0],agent_id:"test"},proposed.tasks[1]]},
+  {...proposed,tasks:[{...proposed.tasks[0],permissions:[
+   ...proposed.tasks[0].permissions,
+   {resource:frontend,operation:"create_file",reason:"Unauthorized"}
+  ]},proposed.tasks[1]]},
+  {...proposed,tasks:[...proposed.tasks,{
+   id:"extra",agent_id:"backend",depends_on:[],permissions:[]}]}
+ ]){
+  const rejected=new ScriptedModel(bad);
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model:rejected,taskShape:"backend_or_frontend_test"
+  }).propose(frontInput),/bounded repair/);
+ }
+});
