@@ -4567,3 +4567,71 @@ test("R151.32 Gateway admits exactly one Rust-verified Backend discovery read af
  assert.equal(payload.includes("source_disclosed"),false);
  assert.equal((await h.f.h.intake.verifiedEpochHistory()).length,2);
 });
+
+
+test("R151.46 dynamic remote discovery failure closes original Rust root before any repair model",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ const ownerDir=join(h.dir,"r15146-dynamic-failure");
+ await mkdir(ownerDir,{mode:0o700});
+ let dispatched=0,models=0;
+ const owner=await armTrustedOwnerOperationalRecovery({
+  coordinator:h.coordinator,gateway:client,signedApprovals:h.signedStore,
+  epochDirectory:ownerDir,
+  running:{readiness:{
+   session_id:session,base_revision:sha,
+   plan_digest:planDigest(h.parent),
+   authenticated_engineer_did:engineer
+  },operational_root_id:h.rootAuthority.credential_id},
+  planRepairEpoch:{
+   giteaClient:r124HeadClient(),
+   dispatchRemoteDiscovery:async()=>{
+    dispatched++;
+    throw Error("Backend owner IPC lost ACK after a native Child may be live");
+   },
+   proposeRepairPlan:async()=>{models++;return repairDraft();}
+  }
+ });
+ const signal=await prepareTrustedRemoteRepairFeedback(request());
+ await assert.rejects(owner.continueWithinActiveRoot(signal),
+  /dynamic discovery failed closed before model repair proposal/);
+ assert.equal(dispatched,1);
+ assert.equal(models,0,"never bill or invoke repair model on ambiguous discovery");
+ assert.equal(h.coordinator.phase,"closed");
+ await assert.rejects(owner.continueWithinActiveRoot(signal),/one-use/);
+ assert.equal((await h.intake.verifiedEpochHistory().catch(()=>[])).length,0,
+  "Root closure invalidates future trusted operational history access");
+});
+
+test("R151.46 uncorroborated fake discovery cannot reach planner or reserve repair epoch",async t=>{
+ const {h,client,request}=await r115RemoteFixture(t,{withDurable:true});
+ const ownerDir=join(h.dir,"r15146-forged-read");
+ await mkdir(ownerDir,{mode:0o700});
+ let models=0;
+ const owner=await armTrustedOwnerOperationalRecovery({
+  coordinator:h.coordinator,gateway:client,signedApprovals:h.signedStore,
+  epochDirectory:ownerDir,
+  running:{readiness:{
+   session_id:session,base_revision:sha,
+   plan_digest:planDigest(h.parent),
+   authenticated_engineer_did:engineer
+  },operational_root_id:h.rootAuthority.credential_id},
+  planRepairEpoch:{
+   giteaClient:r124HeadClient(),
+   dispatchRemoteDiscovery:async()=>({
+    status:"remote_discovery_gateway_provider_confirmed" as const,
+    session_id:session,task_id:"r15146-fake-child-task",
+    runtime_task_id:"dispatch_r15146_forged",
+    credential_id:"urn:child:r15146-fake",resource:file,branch,
+    verified_revision:sha,gateway_provider_corroborated:true as const,
+    repair_dag_authorized:false as const,pr_authorized:false as const
+   }),
+   proposeRepairPlan:async()=>{models++;return repairDraft();}
+  }
+ });
+ const signal=await prepareTrustedRemoteRepairFeedback(request());
+ await assert.rejects(owner.continueWithinActiveRoot(signal),
+  /dynamic discovery failed closed before model repair proposal/);
+ assert.equal(models,0);
+ assert.equal(h.coordinator.phase,"closed");
+ assert.equal(h.provider,3,"forged A2A Task made no Gitea or Docker call");
+});

@@ -180,6 +180,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
    if(JSON.stringify(proof)!==JSON.stringify(signal))
     fail("Gateway proof changed since dispatcher suspension");
    if(structured){
+    try{
     // R124: the signed Engineer's exact ORIGINAL candidates/repository
     // are the only provenance for identities and work branch. The proposed
     // DAG may add NEW Task IDs but never pairs outside the issued Rust root.
@@ -279,6 +280,20 @@ export async function armTrustedOwnerOperationalRecovery(config:{
        fail("R138 repair outcome cannot claim final Runner PASS or PR");
       await config.verifyLiveRun!();
      }
+    }
+    }catch(error){
+      // R151.46: once the remote discovery Child has been issued and its
+      // provider read confirmed, this one-use owner has no safe retry path.
+      // A malformed model draft, lost preflight ACK, stale feature HEAD or
+      // failed DAG admission/execution must not leave its Rust root alive.
+      if(config.planRepairEpoch!.dispatchRemoteDiscovery&&
+         config.coordinator.phase==="execution"){
+        try{await config.coordinator.closeExecution!();}
+        catch{
+          fail("post-discovery planning failed; original Rust root shutdown reconciliation required");
+        }
+      }
+      throw error;
     }
    }else{
     await config.continueWithinActiveRoot!(proof,intake);
