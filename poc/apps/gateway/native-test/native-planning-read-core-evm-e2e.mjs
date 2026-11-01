@@ -1,4 +1,4 @@
-import {injectProjectTestFault,injectFrontendTestFault,FRONTEND_TEST_ORIGINAL} from "./offline-project-test-repair-fixture.mjs";
+import {injectProjectTestFault,injectFrontendTestFault,injectGeneratedTestAssertionFault,GENERATED_TEST_CORRECT_ASSERTION,FRONTEND_TEST_ORIGINAL} from "./offline-project-test-repair-fixture.mjs";
 import {injectAcceptanceFault,ACCEPTANCE_ORIGINAL} from "./offline-acceptance-repair-fixture.mjs";
 /**
  * Native, offline pre-approval Planning integration. This runs only after
@@ -106,13 +106,18 @@ const signedOfflineTypecheckProbe=
 const signedOfflineAcceptanceProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE==="1";
 const signedOfflineBackendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE==="1";
 const signedOfflineFrontendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE==="1";
-if([signedOfflineAcceptanceProbe,signedOfflineBackendTestProbe,signedOfflineFrontendTestProbe].filter(Boolean).length>1)
+const signedOfflineGeneratedTestProbe=
+  process.env.APPROVED_RUNNER_SIGNED_DAG_GENERATED_TEST_PROBE==="1";
+if([signedOfflineAcceptanceProbe,signedOfflineBackendTestProbe,
+    signedOfflineFrontendTestProbe,signedOfflineGeneratedTestProbe].filter(Boolean).length>1)
   throw Error("Separate semantic fixture flags required");
-const signedOfflineProjectTestProbe=signedOfflineBackendTestProbe||signedOfflineFrontendTestProbe;
+const signedOfflineProjectTestProbe=signedOfflineBackendTestProbe||
+  signedOfflineFrontendTestProbe||signedOfflineGeneratedTestProbe;
 const fixtureEditorRole=signedOfflineFrontendTestProbe?"frontend":"backend";
 const fixtureSemanticMarker=signedOfflineFrontendTestProbe?FRONTEND_TEST_ORIGINAL:ACCEPTANCE_ORIGINAL;
 const signedOfflineSemanticProbe=signedOfflineAcceptanceProbe||signedOfflineProjectTestProbe;
-const semanticFailurePhase=signedOfflineFrontendTestProbe?"frontend_tests":signedOfflineBackendTestProbe?"backend_tests":"researcher_acceptance";
+const semanticFailurePhase=signedOfflineFrontendTestProbe?"frontend_tests":
+  signedOfflineProjectTestProbe?"backend_tests":"researcher_acceptance";
 if(signedOfflineRecovery&&geminiPilot)
   throw Error("Offline scripted recovery must never use a paid Gemini model");
 if(geminiPilot){
@@ -160,9 +165,11 @@ if(multiTypecheckProbe&&(!ownerD1Probe||!ownerD1AdkProposal||
 if(ownerD1AdkProposal&&geminiPilot)
   throw Error("R151 offline owner ADK repair fixture is never a paid Gemini path");
 const signedOfflineMultiTest=positiveDag&&
-  process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1";
+  (process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1"||
+   signedOfflineGeneratedTestProbe);
 if(signedOfflineSemanticProbe&&(!ownerD1Probe||!ownerD1AdkProposal||
-   signedOfflineTypecheckProbe||signedOfflineRecovery||signedOfflineMultiTest||
+   signedOfflineTypecheckProbe||signedOfflineRecovery||
+   (signedOfflineMultiTest&&!signedOfflineGeneratedTestProbe)||
    geminiPilot||!positiveDag||!signedHandoff||!realGitea||
    process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"||
    scenario.id!=="account-suspension"))
@@ -177,7 +184,7 @@ if(signedOfflineTypecheckProbe&&
     scenario.id!=="account-suspension"))
   throw Error("Typecheck fault injection requires a nonbillable signed fixture");
 if(signedOfflineMultiTest&&
-   (!signedOfflineRecovery||geminiPilot||
+   (!(signedOfflineRecovery||signedOfflineGeneratedTestProbe)||geminiPilot||
     process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"))
   throw Error("Multi-Test A2A is a nonbillable, signed recovery fixture only");
 const writerToken=process.env.PLANNING_DISPOSABLE_GITEA_WRITE_TOKEN;
@@ -216,6 +223,8 @@ const newTestFile=scenario.planning_intent.newTestFile;
 // Fixture-only recovery target: derive from existing discovered test files.
 const testRepairFile=signedOfflineRecovery
   ?roleFiles.backend.find(path=>path.startsWith("tests/")):undefined;
+const generatedBackendTestFile=signedOfflineGeneratedTestProbe
+  ?"tests/backend/generated-status.test.ts":undefined;
 if(signedOfflineRecovery&&(!positiveDag||!signedHandoff||
    scenario.id!=="account-suspension"||!testRepairFile))
   throw Error("Signed offline recovery requires isolated Account Suspension DAG");
@@ -276,6 +285,7 @@ const planSketch=positiveDag?
     snapshot,edits:roleFiles,newTestFile,
     taskInstructions:scenario.planning_intent.taskInstructions,
     ...(testRepairFile?{testRepairFile}:{}),
+    ...(generatedBackendTestFile?{generatedBackendTestFile}:{}),
     ...(signedOfflineMultiTest?{splitTestTasks:true}:{})
   }):legacyPlanSketch;
 class ScriptedReadPlanner extends BaseLlm{
