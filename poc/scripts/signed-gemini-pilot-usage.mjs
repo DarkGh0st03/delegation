@@ -138,7 +138,9 @@ export function safeGeminiPilotChildObservations(raw){
 /** Reconstruct ONLY fixed-category Agent observations from a failed child.
  * Raw errors, paths, tool arguments, prompt text and credentials are dropped. */
 const AGENT_ROLES=["backend","frontend","test"];
-const AGENT_TYPES=["adk_task_outcome","adk_safe_diagnostic",
+const D1_REVISION_CATEGORIES=["revision_baseline_mismatch","no_confirmed_editor_write",
+  "editor_effect_binding_mismatch","provider_head_mismatch","unchanged_editor_revision"];
+const AGENT_TYPES=["d1_editor_revision","adk_task_outcome","adk_safe_diagnostic",
   "adk_tool_timing","adk_llm_timing"];
 const SAFE_FINISH_REASONS=["STOP","MAX_TOKENS","SAFETY","RECITATION",
   "LANGUAGE","OTHER","BLOCKLIST","PROHIBITED_CONTENT","SPII",
@@ -168,6 +170,9 @@ function safeAgentObservation(x){
   if(!x||typeof x!=="object"||Array.isArray(x)||
      !AGENT_ROLES.includes(x.role)||!AGENT_TYPES.includes(x.event))
     return null;
+  if(x.event==="d1_editor_revision")return ["backend","frontend"].includes(x.role)&&
+    D1_REVISION_CATEGORIES.includes(x.category)
+    ?{event:x.event,role:x.role,category:x.category}:null;
   if(x.event==="adk_tool_timing"){
     if(!AGENT_TOOLS.includes(x.tool)||typeof x.success!=="boolean"||
        (x.error_kind!==null&&!TOOL_ERRORS.includes(x.error_kind)))
@@ -269,6 +274,8 @@ export function extractSafeGeminiPilotAgentSummary(log){
       x.event==="adk_task_outcome");
     const latest=failures.at(-1);
     roles[role]={
+      ...(own.some(x=>x.event==="d1_editor_revision")?{
+        d1_revision_failure:own.filter(x=>x.event==="d1_editor_revision").at(-1).category}:{}),
       model_turns_with_shape_metadata:modelCalls.length,
       observed_function_call_parts:modelCalls.reduce((n,x)=>n+x.function_call_parts,0),
       observed_text_parts:modelCalls.reduce((n,x)=>n+x.text_parts,0),

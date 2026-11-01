@@ -1,3 +1,4 @@
+import {verifyD1EditorRevision} from "./d1-editor-revision.mjs";
 import {collectProjectTestRepairCandidateScope} from "./project-test-repair-candidate-scope.mjs";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
 import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
@@ -358,7 +359,8 @@ export async function runNativePositiveApprovedDag({
   // Gateway-corrobated create_file effects, not merely approved candidates.
   const observedCreatedPaths=new Set();
   const observedTestWriteKeys=new Set();
-  const observedImplementationWriteKeys=new Set();
+  const observedImplementationWriteKeys=new Map();
+  let implementationWriteSequence=0;
   const writeKey=(taskId,operation,path)=>
     taskId+"\0"+operation+"\0"+canonicalFileUri(repo,branch,path);
   const adkGatewayBase="http://approved-native-gateway.invalid";
@@ -379,6 +381,9 @@ export async function runNativePositiveApprovedDag({
       const request=JSON.parse(String(options?.body));
       if(target===adkGatewayBase+"/v1/authorization/prepare"){
         assert.equal(request.agent_role,role);
+        const repair=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:null;
+        if(repair)assert.equal(request.task_id,repair.runtimeTaskId,
+          "D1 request must use its active runtime Task binding");
         assert.match(request.task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
         if(role==="test"&&offlineRecovery&&!signedTestOutOfScopeDenied){
           // Genuine live Gateway denial with the active signed Test Task
@@ -450,6 +455,7 @@ export async function runNativePositiveApprovedDag({
         return reply(gateway.prepare(request),201);
       }
       if(target===adkGatewayBase+"/v1/authorization/execute"){
+        const repairBinding=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:null;
         const executed=await gateway.execute(request);
         assert.equal(executed.policy.allow,true);
         assert.equal(executed.policy.policy_version,"phase6-approved-branch-v2");
@@ -486,7 +492,13 @@ export async function runNativePositiveApprovedDag({
             const key=writeKey(activeTaskByRole[role],"update_file",effect.path);
             assert.ok(expectedImplementationWriteKeys.has(key),
               "Implementation effect must match the same signed Task grant");
-            observedImplementationWriteKeys.add(key);
+            observedImplementationWriteKeys.set(key,Object.freeze({
+              taskId:activeTaskByRole[role],role,
+              runtimeTaskId:repairBinding?.runtimeTaskId??null,
+              credentialId:executed.verified_delegation.credential_id,
+              operation:"update_file",branch:effect.branch,path:effect.path,
+              commitSha:effect.commit_sha,sequence:++implementationWriteSequence
+            }));
             if(!writePaths[role].has(effect.path)){
               writePaths[role].add(effect.path);
               writes[role]++;
@@ -895,6 +907,21 @@ export async function runNativePositiveApprovedDag({
       await trustedOwnerRecovery.bindOriginalA2APorts({
         agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
         getVerifiedRepairTarget:()=>verifiedRepairTarget,
+        async verifyD1EditorRevision(task,previousSha){
+          const binding=task.role==="backend"?admittedBackendRepair:admittedFrontendRepair;
+          const head=await reader.getBranchMetadata(branch);
+          try{
+            return verifyD1EditorRevision({task,binding,branch,previousSha,
+              headSha:head.commit_sha,writes:[...observedImplementationWriteKeys.values()]});
+          }catch(error){
+            const categories=["revision_baseline_mismatch","no_confirmed_editor_write",
+              "editor_effect_binding_mismatch","provider_head_mismatch","unchanged_editor_revision"];
+            if(categories.includes(error.category))process.stderr.write(JSON.stringify({
+              event:"d1_editor_revision",role:task.role,category:error.category
+            })+"\n");
+            throw error;
+          }
+        },
         async armVerifiedD1TestRun({
           taskId,role,runtimeTaskId,credentialId,repairedSha
         }){

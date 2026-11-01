@@ -986,6 +986,7 @@ try{
                ((paidGeminiRecovery||multiTypecheckProbe)&&
                 typeof ports.armVerifiedD1FrontendRepair!=="function")||
                typeof ports.armVerifiedD1TestRun!=="function"||
+               typeof ports.verifyD1EditorRevision!=="function"||
                !["backend","test"].every(role=>
                  /^http:\/\/127\.0\.0\.1:\d+$/u.test(
                    ports.agentBaseUrls[role]??"")))
@@ -998,6 +999,7 @@ try{
             originalA2APorts=Object.freeze({
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
               a2a:ports.a2a,
+              verifyD1EditorRevision:ports.verifyD1EditorRevision,
               armVerifiedD1BackendRepair:ports.armVerifiedD1BackendRepair,
               ...(ports.armVerifiedD1FrontendRepair?{
                 armVerifiedD1FrontendRepair:ports.armVerifiedD1FrontendRepair
@@ -1145,15 +1147,12 @@ try{
                 }
               },
               afterGatewayConfirmed:async task=>{
-                const head=await liveClient.getBranchMetadata(workBranch);
                 if(filesByTask.get(task.task_id)?.role===task.role){
-                  assert.match(head.commit_sha,/^[a-f0-9]{40}$/u);
-                  assert.notEqual(head.commit_sha,
-                    verifiedRepairedSha??signal.tested_commit_sha,
-                    "Each signed repair must produce a changed Gitea SHA");
-                  verifiedRepairedSha=head.commit_sha;
+                  verifiedRepairedSha=await originalA2APorts.verifyD1EditorRevision(
+                    task,verifiedRepairedSha??signal.tested_commit_sha);
                 }else if(task.role==="test"&&
                          task.task_id===selected.testTaskId){
+                  const head=await liveClient.getBranchMetadata(workBranch);
                   assert.equal(head.commit_sha,verifiedRepairedSha,
                     "Fresh Test may not silently mutate repaired SHA");
                 }else{

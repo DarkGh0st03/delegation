@@ -5136,3 +5136,45 @@ test("Frontend test FAIL retains exact-SHA private feedback without granting sou
  assert.throws(()=>h.runtime.prepare({task_id:"task-test",agent_role:"test",
   tool:"run_tests",arguments:runner}),/outside approved plan/);
 });
+
+test("R151.87 owner revision gate stops real D1 controller before Test on inconsistent provider HEAD",async t=>{
+ const {verifyD1EditorRevision}=await import("../native-test/d1-editor-revision.mjs");
+ for(const mode of ["no_write","wrong_head","valid"]){
+  const f=await r134Fixture(t);await f.admit();
+  const sent:string[]=[];let binding:any;const writes:any[]=[];
+  let finalSha:string|undefined;
+  const args=r137Args(f,{async sendProtectedTask(req:any){
+   const id=req.subtask.subtask_id;sent.push(id);
+   if(id==="backend-repair"){
+    await f.h.invoke(req.trusted_gateway_task_id,"backend","update_file",edit("// observed repair"));
+    // Deliberately omit the owner's observed receipt in no_write mode.
+    // Gateway completion alone must never substitute for that receipt.
+    if(mode!=="no_write")writes.push({taskId:id,role:"backend",runtimeTaskId:req.trusted_gateway_task_id,
+     credentialId:binding.credentialId,operation:"update_file",branch,path:"src/invoices.ts",commitSha:sha,sequence:1});
+    return {card:{name:"Backend"},task:r135A2AArtifact() as never};
+   }
+   assert.equal(finalSha,sha,"Test must receive owner's final verified revision");
+   await f.h.invoke(req.trusted_gateway_task_id,"test","run_tests",runner);
+   const artifact=r135A2AArtifact();const value=artifact.artifacts[0].parts[0].content.value as any;
+   Object.assign(value,{role:"test",test_outcome:"pass",tested_commit_sha:sha,runner_profile:"poc-default",project_tests:"pass",researcher_acceptance:"pass"});
+   return {card:{name:"Test"},task:artifact as never};
+  }});
+  const previousSha="e".repeat(40);
+  const configured={...args,
+   beforeProtectedSend:async(issued:any)=>{
+    if(issued.role==="backend")binding={taskId:issued.task_id,runtimeTaskId:issued.runtime_task_id,
+     credentialId:issued.credential_id,failedSha:previousSha,paths:["src/invoices.ts"]};
+   },
+   afterGatewayConfirmed:async(task:any)=>{
+    if(task.role==="backend")finalSha=verifyD1EditorRevision({task,binding,writes,branch,previousSha,
+     headSha:mode==="wrong_head"?"f".repeat(40):sha});
+   }
+  };
+  if(mode==="valid"){
+   await executeTrustedAdmittedRepairDag(configured);assert.deepEqual(sent,["backend-repair","test-repair"]);
+  }else{
+   await assert.rejects(executeTrustedAdmittedRepairDag(configured),new RegExp(mode==="no_write"?"no_confirmed_editor_write":"provider_head_mismatch"));
+   assert.deepEqual(sent,["backend-repair"]);assert.equal(f.calls.length,1,"No Test child issued");
+  }
+ }
+});

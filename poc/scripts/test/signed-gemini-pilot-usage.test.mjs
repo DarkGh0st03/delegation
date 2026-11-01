@@ -296,3 +296,12 @@ test("tool rejection histogram survives both sanitizers without leaking arbitrar
  });
  assert.doesNotMatch(JSON.stringify(summary),/SECRET|PRIVATE/);
 });
+
+test("D1 editor revision failure survives both sanitizers without private receipt fields",()=>{
+ const raw=JSON.stringify({event:"d1_editor_revision",role:"frontend",category:"no_confirmed_editor_write",path:"SECRET",credentialId:"PRIVATE"});
+ const forwarded=agentObservations(raw).map(x=>"[trusted-positive-ci] gemini_agent_observation "+JSON.stringify(x)).join("\n");
+ const summary=agentSummary(forwarded);
+ assert.equal(summary.role_evidence.frontend.d1_revision_failure,"no_confirmed_editor_write");
+ assert.doesNotMatch(JSON.stringify(summary),/SECRET|PRIVATE/);
+ assert.deepEqual(agentObservations(raw.replace("no_confirmed_editor_write","PRIVATE")),[]);
+});
