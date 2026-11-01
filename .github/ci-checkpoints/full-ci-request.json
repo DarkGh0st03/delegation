@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R151.94 - prevent silent paid D1 disablement on malformed exact consent",
-  "candidate_parent_sha": "582f1187d7e7a9366aff64c293b1712ce1a5cf10",
-  "purpose": "Zero-billing same-SHA regression gate after correcting paid D1 authorization preflight: reject whitespace near-match before Gemini generation; preserve signed Runner FAIL -> D1 -> Docker PASS and review-only PR",
+  "checkpoint": "R151.95 - D1 signed repair-editor guidance after real Gemini no-write FAIL",
+  "candidate_parent_sha": "fa538a7523bb44d9b559cf154fdaa14c8cb6e6c4",
+  "purpose": "After paid pilot 41342947143 backend_tests FAIL and D1 no_confirmed_editor_write, validate owner-derived D1 repair-editor instructions without changing signed scope, Rust authority, Runner attestation, or the existing signed A2A JSON context contract. Strictly NO Gemini inference.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
