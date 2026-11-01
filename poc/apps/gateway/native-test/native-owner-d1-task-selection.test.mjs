@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {selectSignedNativeD1Tasks,selectSignedNativeMultiD1Tasks} from "./native-owner-d1-task-selection.mjs";
+import {selectSignedNativeD1Tasks,selectSignedNativeMultiD1Tasks,
+ selectSignedNativeTestEditD1Tasks} from "./native-owner-d1-task-selection.mjs";
 
 const branchUri="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fdynamic";
 const fileUri=branchUri+"/files/apps/backend/src/example.ts";
@@ -143,4 +144,76 @@ test("R151.80 signed single-editor investigation can include multiple original f
   requireBothRoles:false,originalFilesByRole:{backend:[fileUri,second],frontend:[]}});
  assert.deepEqual(new Set(result.editingTasks[0].fileUris),new Set([fileUri,second]));
  assert.equal(result.orderedTaskIds.at(-1),epoch.plan.tasks[1].id);
+});
+
+
+const createdTest=branchUri+"/files/tests/backend/generated.test.ts";
+const createdTest2=branchUri+"/files/tests/backend/generated-second.test.ts";
+function testEditFixture(){
+ const editId="test-edit-fresh",runId="test-rerun-fresh";
+ const perms=[
+  {task_id:editId,agent_id:"test",resource:createdTest,operation:"read_file"},
+  {task_id:editId,agent_id:"test",resource:createdTest,operation:"update_file"},
+  {task_id:runId,agent_id:"test",resource:branchUri,operation:"run_tests"}
+ ];
+ const original=[
+  {task_id:"original-test",agent_id:"test",resource:createdTest,operation:"create_file"},
+  {task_id:"original-test",agent_id:"test",resource:createdTest,operation:"read_file"},
+  {task_id:"original-test",agent_id:"test",resource:createdTest,operation:"update_file"},
+  {task_id:"original-test",agent_id:"test",resource:branchUri,operation:"run_tests"}
+ ];
+ return {epoch:{epoch:2,plan_digest:digest,
+  plan:{tasks:[
+   {id:editId,agent_id:"test",depends_on:[]},
+   {id:runId,agent_id:"test",depends_on:[editId]}
+  ],requested_permissions:perms}},
+  planDigest:digest,branchUri,originalCreatedTestFileUris:[createdTest],
+  originalApprovedTestGrants:original,originalRootPermissions:original};
+}
+test("Signed owner Test-only D1 uses two fresh Tasks under existing Test read/update grants",()=>{
+ const result=selectSignedNativeTestEditD1Tasks(testEditFixture());
+ assert.deepEqual(result,{testEditTaskId:"test-edit-fresh",testRunTaskId:"test-rerun-fresh",
+  fileUris:[createdTest],orderedTaskIds:["test-edit-fresh","test-rerun-fresh"]});
+ assert.equal(Object.isFrozen(result),true);
+ assert.equal(Object.isFrozen(result.fileUris),true);
+});
+test("Generated test creation alone never authorizes test repair",()=>{
+ const input=testEditFixture();
+ for(const ledger of ["originalApprovedTestGrants","originalRootPermissions"]){
+  const bad={...input,[ledger]:input[ledger].filter(g=>
+   g.resource!==createdTest||g.operation==="create_file")};
+  assert.throws(()=>selectSignedNativeTestEditD1Tasks(bad),/NO-GO/);
+ }
+});
+test("Test edit D1 rejects forged paths, roles, branch grants, task dependencies and replay",()=>{
+ const changes=[
+  x=>{x.epoch.plan.tasks[0].agent_id="backend";},
+  x=>{x.epoch.plan.tasks[1].depends_on=[];},
+  x=>{x.epoch.plan.tasks[1].id=x.epoch.plan.tasks[0].id;},
+  x=>{x.epoch.plan.requested_permissions[1].operation="create_file";},
+  x=>{x.epoch.plan.requested_permissions[1].resource=createdTest2;},
+  x=>{x.epoch.plan.requested_permissions[2].operation="update_file";},
+  x=>{x.epoch.plan.requested_permissions.push(x.epoch.plan.requested_permissions[0]);},
+  x=>{x.originalCreatedTestFileUris=[createdTest2];},
+  x=>{x.epoch.epoch=1;},
+  x=>{x.epoch.plan_digest="b".repeat(64);},
+  x=>{x.epoch.plan.tasks[0].depends_on=["test-rerun-fresh"];}
+ ];
+ for(const change of changes){
+  const input=testEditFixture();change(input);
+  assert.throws(()=>selectSignedNativeTestEditD1Tasks(input),/NO-GO/);
+ }
+});
+test("Test D1 can edit multiple independently preapproved generated tests",()=>{
+ const x=testEditFixture();
+ const original2=["create_file","read_file","update_file"].map(operation=>({
+  task_id:"original-test",agent_id:"test",resource:createdTest2,operation}));
+ x.originalCreatedTestFileUris.push(createdTest2);
+ x.originalApprovedTestGrants.push(...original2);
+ x.originalRootPermissions.push(...original2);
+ x.epoch.plan.requested_permissions.splice(2,0,
+  ...["read_file","update_file"].map(operation=>({
+   task_id:"test-edit-fresh",agent_id:"test",resource:createdTest2,operation})));
+ const result=selectSignedNativeTestEditD1Tasks(x);
+ assert.deepEqual(result.fileUris,[createdTest2,createdTest].sort());
 });
