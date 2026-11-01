@@ -106,6 +106,9 @@ test("ADK Planner reads real Gateway-shaped pinned source, returning only a draf
   assert.ok(system.includes("concrete regression tests"));
   assert.ok(system.includes("merely calling run_tests"));
   assert.ok(system.includes("Pull Request creation"));
+  assert.ok(system.includes("one shared behavioral contract"));
+  assert.ok(system.includes("existing invariants to preserve"));
+  assert.ok(system.includes("record the specific uncertainty"));
 });
 test("Planner guidance encourages source-grounded tests without granting new tools",()=>{
   assert.ok(Object.isFrozen(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE));
