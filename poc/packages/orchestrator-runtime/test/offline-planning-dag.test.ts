@@ -62,3 +62,49 @@ test("offline draft does not gain permission from untrusted fixture payload",()=
     snapshot:restricted,edits,newTestFile:"tests/e2e/inventory.spec.ts"
   }),/file absent from trusted inventory/);
 });
+
+test("opt-in generated Backend failure has separate signed create, read, update and test Tasks",()=>{
+  const scoped={...snapshot,directories:[...snapshot.directories,"tests/backend"]};
+  const scenario={
+    snapshot:scoped,edits,newTestFile:"tests/e2e/inventory.spec.ts",
+    generatedBackendTestFile:"tests/backend/generated-status.test.ts",
+    splitTestTasks:true
+  };
+  const sketch=makeOfflineReviewableDag(scenario);
+  assert.deepEqual(sketch.tasks.map(task=>task.id),
+    ["branch","backend","frontend","test-preparation","test","pr"]);
+  const prep=sketch.tasks.find(task=>task.id==="test-preparation");
+  const validation=sketch.tasks.find(task=>task.id==="test");
+  assert.deepEqual(prep.permissions.filter(p=>
+    p.path==="tests/backend/generated-status.test.ts").map(p=>p.operation),["create_file"]);
+  assert.deepEqual(validation.permissions.filter(p=>
+    p.path==="tests/backend/generated-status.test.ts").map(p=>p.operation),
+    ["read_file","update_file"]);
+  assert.deepEqual(validation.permissions.filter(p=>
+    p.operation==="run_tests").map(p=>p.operation),["run_tests"]);
+  assert.deepEqual(validation.depends_on,["test-preparation"]);
+  const compiled=compilePlanningProposal(sketch,{...config,snapshot:scoped});
+  assert.equal(compiled.status,"unapproved_proposal");
+  assert.equal(compiled.plan.tasks.filter(t=>t.agent_id==="test").length,2);
+  assert.equal("approval" in compiled,false);
+});
+test("generated project-Test authority is never inferred from Test creation alone",()=>{
+  const scoped={...snapshot,directories:[...snapshot.directories,"tests/backend"]};
+  const base={snapshot:scoped,edits,newTestFile:"tests/e2e/inventory.spec.ts",splitTestTasks:true};
+  for(const invalid of [
+    "../secret.test.ts","tests/backend/../../secret.test.ts",
+    "tests/backend/../secret.test.ts","tests/e2e/inventory.spec.ts",
+    "tests/backend/untracked.ts","tests/frontend/other.test.ts"
+  ]){
+    assert.throws(()=>makeOfflineReviewableDag({...base,generatedBackendTestFile:invalid}),
+      /Offline Planning intent/);
+  }
+  assert.throws(()=>makeOfflineReviewableDag({
+    ...base,splitTestTasks:false,
+    generatedBackendTestFile:"tests/backend/generated-status.test.ts"
+  }),/Offline Planning intent/);
+  assert.throws(()=>makeOfflineReviewableDag({
+    ...base,snapshot,
+    generatedBackendTestFile:"tests/backend/generated-status.test.ts"
+  }),/Offline Planning intent/);
+});
