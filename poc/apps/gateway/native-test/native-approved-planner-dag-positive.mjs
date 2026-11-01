@@ -1,4 +1,5 @@
 import {selectSignedNativeTestEditD1Tasks} from "./native-owner-d1-task-selection.mjs";
+import {verifiedFailedCreatedTestPaths} from "./verified-failed-generated-test-selection.mjs";
 import {verifyD1EditorRevision} from "./d1-editor-revision.mjs";
 import {collectProjectTestRepairCandidateScope} from "./project-test-repair-candidate-scope.mjs";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
@@ -935,13 +936,17 @@ export async function runNativePositiveApprovedDag({
         agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
         getVerifiedRepairTarget:()=>verifiedRepairTarget,
         selectTestEditD1:epoch=>{
+          const failedGeneratedPaths=verifiedFailedCreatedTestPaths({
+            runnerOutcome,originalCreatedPaths:observedCreatedPaths,
+            branch,failedSha:runnerOutcome?.tested_commit_sha
+          });
           const selected=selectSignedNativeTestEditD1Tasks({
             epoch,planDigest:epoch.plan_digest,branchUri:scopedBranch,
-            originalCreatedTestFileUris:[...observedCreatedPaths].map(p=>canonicalFileUri(repo,branch,p)),
+            originalCreatedTestFileUris:failedGeneratedPaths.map(p=>canonicalFileUri(repo,branch,p)),
             originalApprovedTestGrants:grants.filter(g=>g.agent_id==="test"),
             originalRootPermissions:coordinator.trustedOperationalAuthority().permissions
           });
-          const paths=selected.fileUris.map(uri=>[...observedCreatedPaths].find(p=>canonicalFileUri(repo,branch,p)===uri));
+          const paths=selected.fileUris.map(uri=>failedGeneratedPaths.find(p=>canonicalFileUri(repo,branch,p)===uri));
           if(paths.some(p=>!p))throw Error("D1 generated Test paths lack original provider evidence");
           return Object.freeze({...selected,paths:Object.freeze(paths)});
         },
@@ -957,9 +962,13 @@ export async function runNativePositiveApprovedDag({
           const history=await trustedOwnerRecovery.intake.verifiedEpochHistory(),epoch=history.at(-1);
           if(history.length!==2||epoch.root_credential_id!==operationalRootId)
             throw Error("D1 Test editor root mismatch");
+          const failedGeneratedPaths=verifiedFailedCreatedTestPaths({
+            runnerOutcome,originalCreatedPaths:observedCreatedPaths,
+            branch,failedSha
+          });
           const selected=selectSignedNativeTestEditD1Tasks({
             epoch,planDigest:epoch.plan_digest,branchUri:scopedBranch,
-            originalCreatedTestFileUris:[...observedCreatedPaths].map(p=>canonicalFileUri(repo,branch,p)),
+            originalCreatedTestFileUris:failedGeneratedPaths.map(p=>canonicalFileUri(repo,branch,p)),
             originalApprovedTestGrants:grants.filter(g=>g.agent_id==="test"),
             originalRootPermissions:coordinator.trustedOperationalAuthority().permissions
           });
