@@ -948,7 +948,7 @@ export async function runNativePositiveApprovedDag({
           const existing=grants.filter(g=>g.agent_id==="test"&&
             ["read_file","update_file"].includes(g.operation));
           const root=coordinator.trustedOperationalAuthority().permissions;
-          const eligible=observedCreatedPaths.some(path=>{
+          const eligible=[...observedCreatedPaths].some(path=>{
             const resource=canonicalFileUri(repo,branch,path);
             const rows=existing.filter(g=>g.resource===resource);
             return new Set(rows.map(g=>g.task_id)).size===1&&
