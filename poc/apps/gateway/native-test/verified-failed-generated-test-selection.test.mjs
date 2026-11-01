@@ -40,7 +40,7 @@ test("New Test-edit scope rejects unverified or ambiguous Runner facts",()=>{
   x=>{x.runnerOutcome.phases[3].status="fail";},
   x=>{x.runnerOutcome.phases[2].phase="typecheck";},
   x=>{x.runnerOutcome.failing_test_files=["tests/frontend/generated.test.tsx"];},
-  x=>{x.originalCreatedPaths=new Set([other]);},
+  x=>{x.originalCreatedPaths=new Set(["tests/backend/created-not-failed.test.ts"]);},
   x=>{x.originalCreatedPaths.add("../outside");},
   x=>{x.failedSha="invalid-sha";}
  ];
