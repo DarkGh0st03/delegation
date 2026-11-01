@@ -49,7 +49,8 @@ function decodeFile(repo,branch,resource){
  */
 export function buildOfflineAdkScriptsFromApprovedPlan({
   plan,approvedRows,repo,branch,implementationContents,
-  sourceDerivedPaths=[],recoveryFixture
+  sourceDerivedPaths=[],recoveryFixture,
+  initialFailedGeneratedTestPaths=[]
 }={}){
   if(!plain(plan)||!plain(repo)||typeof branch!=="string"||
      !Array.isArray(approvedRows)||approvedRows.length>256||
@@ -59,7 +60,18 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
        p.startsWith("/")||p.includes("..")||p.includes("\\"))||
      new Set(sourceDerivedPaths).size!==sourceDerivedPaths.length)
     deny("missing or malformed reviewed input");
+  if(!Array.isArray(initialFailedGeneratedTestPaths)||
+     initialFailedGeneratedTestPaths.length>4||
+     new Set(initialFailedGeneratedTestPaths).size!==initialFailedGeneratedTestPaths.length||
+     initialFailedGeneratedTestPaths.some(p=>typeof p!=="string"||
+       !p.startsWith("tests/")||p.startsWith("/")||p.includes("..")||
+       p.includes("\\")||p.includes("%")||
+       !/\.(?:test|spec)\.[jt]sx?$/u.test(p)))
+    deny("invalid generated Test failure fixture");
+  const pendingGenerated=new Set(initialFailedGeneratedTestPaths);
   const derived=new Set(sourceDerivedPaths),consumed=new Set();
+  if(initialFailedGeneratedTestPaths.some(p=>derived.has(p)))
+    deny("generated Test failure cannot overlap source-derived fixture");
   const tasks=topo(plan),ids=new Set(tasks.map(t=>t.id));
   const scripts=Object.fromEntries(ROLES.map(role=>[role,[]]));
   // Keep Task ownership of every scripted call, even when the same role
@@ -110,6 +122,22 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
         emit(role,task.id,{name:"read_file",args:{branch,path}});
       for(const operation of ["update_file","create_file"]){
         if(!ops.has(operation))continue;
+        if(operation==="update_file"&&pendingGenerated.has(path)){
+          // The original signed Test validation Task intentionally does NOT
+          // consume its optional update grant. The independently created,
+          // incorrect assertion is tested as-is, and only a fresh signed
+          // D1 Test Task may correct it after an authenticated Docker FAIL.
+          // The permission is explicit but never an obligation to mutate.
+          if(role!=="test"||!ops.has("read_file")||
+             runners.length!==1||
+             !approvedRows.some(g=>g.agent_id==="test"&&
+               g.operation==="create_file"&&g.resource===canonicalFileUri(repo,branch,path)&&
+               g.task_id!==task.id&&
+               tasks.findIndex(t=>t.id===g.task_id)<tasks.findIndex(t=>t.id===task.id)))
+            deny("generated Test fault requires signed earlier create and final Runner");
+          pendingGenerated.delete(path);
+          continue;
+        }
         if(derived.has(path)){
           if(operation!=="update_file"||!ops.has("read_file")||
              Object.hasOwn(implementationContents,path))
@@ -133,6 +161,8 @@ export function buildOfflineAdkScriptsFromApprovedPlan({
     deny("orphaned approved grant");
   if(consumed.size!==derived.size)
     deny("source-derived path not present in approved read/update grants");
+  if(pendingGenerated.size)
+    deny("generated Test failure lacks later signed read/update/run authority");
   // An optional, explicitly simulated functional failure is a TEST FIXTURE,
   // never an additional authority grant. Both repair writes use the same
   // signed Test Task's existing read/update permissions.
