@@ -273,7 +273,7 @@ export class TrustedRemoteDiscoveryA2AHandoff {
    });
    if(before.status!=="repair_planning_eligible"||
       !isActionableRepairFailure(before.first_failed_phase,
-        before.typecheck_error_codes,before.acceptance_failure)||
+        before.typecheck_error_codes,before.acceptance_failure,before.project_test_failure)||
       scoped.status!=="remote_repair_discovery_preflight_only"||
       scoped.failed_epoch!==before.failed_epoch||
       scoped.root_plan_digest!==before.root_plan_digest||

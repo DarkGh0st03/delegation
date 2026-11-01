@@ -1,5 +1,7 @@
+import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
+import {sanitizeVitestFailureFiles} from "../../test-runner-controller/src/vitest-failure-files.ts";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
-import {isActionableRepairFailure, type AcceptanceFailureSummary}
+import {isActionableRepairFailure, type AcceptanceFailureSummary, type ProjectTestFailureSummary}
   from "../../test-runner-controller/src/repair-failure-eligibility.ts";
 /**
  * Opt-in, in-process Gateway enforcement for an immutable Engineer-approved
@@ -106,6 +108,7 @@ export interface TrustedRunnerFailure {
   readonly first_failed_phase:string;
   readonly typecheck_error_codes:readonly string[];
   readonly acceptance_failure?:AcceptanceFailureSummary;
+  readonly project_test_failure?:ProjectTestFailureSummary;
 }
 const RUNNER_PHASES=[
   "dependency_install","typecheck","backend_tests","frontend_tests",
@@ -594,7 +597,7 @@ export class TrustedApprovedExecutionPlans {
        failure.epoch_version!==input.epoch||
        failure.branch!==session.workBranch||
        !isActionableRepairFailure(failure.first_failed_phase,
-         failure.typecheck_error_codes,failure.acceptance_failure))
+         failure.typecheck_error_codes,failure.acceptance_failure,failure.project_test_failure))
       denied("A finalized, current actionable Runner FAIL is required");
     const blocked=this.#assertEpochQuiescent(session);
     this.#discoveryAdmissionsInFlight.add(session.sessionId);
@@ -887,6 +890,12 @@ export class TrustedApprovedExecutionPlans {
          result.researcher_acceptance?.status!=="fail"||
          phases.slice(0,-1).some(p=>p.status!=="pass")))
         denied("Untrusted acceptance failure diagnostic");
+      const projectIndex=RUNNER_PHASES.indexOf(first);
+      const project=first==="backend_tests"&&(codes?.length??0)===0&&
+        result.project_tests?.status==="fail"&&result.researcher_acceptance?.status==="skipped"&&
+        phases.every((p,i)=>p.status===(i<projectIndex?"pass":i===projectIndex?"fail":"skipped"))
+        ?safeProjectTestFailureDiagnostic({phase:first,failed_test_file_count:
+          sanitizeVitestFailureFiles(result.failing_test_files,"backend_tests").length}):null;
       binding.failedRunner=Object.freeze({
         status:"validation_failed",
         session_id:session.sessionId,root_plan_digest:session.digest,
@@ -896,6 +905,7 @@ export class TrustedApprovedExecutionPlans {
         branch:result.branch,tested_commit_sha:result.tested_commit_sha,
         first_failed_phase:first,
         typecheck_error_codes:Object.freeze([...(codes??[])]),
+        ...(project?{project_test_failure:project}:{}),
         ...(acceptance?{acceptance_failure:acceptance}:{})
       });
       session.testedFeatureSha=undefined;
@@ -1092,7 +1102,7 @@ export class TrustedApprovedExecutionPlans {
        failure.branch!==session.workBranch||
        failure.tested_commit_sha!==pins.tested_commit_sha||
        !isActionableRepairFailure(failure.first_failed_phase,
-         failure.typecheck_error_codes,failure.acceptance_failure))
+         failure.typecheck_error_codes,failure.acceptance_failure,failure.project_test_failure))
       denied("Gateway discovery source is not pinned to the original failed Runner SHA");
     const [effect]=binding.successfulRequests.values();
     const e=effect?.execution;

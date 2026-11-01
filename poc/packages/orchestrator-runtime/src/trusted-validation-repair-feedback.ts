@@ -1,4 +1,4 @@
-import {isActionableRepairFailure, type AcceptanceFailureSummary}
+import {isActionableRepairFailure, type AcceptanceFailureSummary, type ProjectTestFailureSummary}
   from "../../../apps/test-runner-controller/src/repair-failure-eligibility.ts";
 /**
  * R105: only a Gateway-confirmed, terminal failed Test plus the original
@@ -44,6 +44,7 @@ export interface TrustedRepairFeedbackSignal{
  readonly first_failed_phase:string;
  readonly typecheck_error_codes:ReadonlyArray<string>;
  readonly acceptance_failure?:AcceptanceFailureSummary;
+ readonly project_test_failure?:ProjectTestFailureSummary;
  readonly remaining_repair_epochs:number;
  readonly execution_authorized:false;
  readonly permission_granted:false;
@@ -124,6 +125,7 @@ async function prepareVerifiedRepairFeedback(config:{
   first_failed_phase:failure.first_failed_phase,
   typecheck_error_codes:Object.freeze([...failure.typecheck_error_codes]),
   ...(failure.acceptance_failure?{acceptance_failure:failure.acceptance_failure}:{}),
+  ...(failure.project_test_failure?{project_test_failure:failure.project_test_failure}:{}),
   remaining_repair_epochs:remaining,
   execution_authorized:false,
   permission_granted:false
@@ -229,7 +231,7 @@ export async function preflightTrustedRemoteRepairDiscovery(config:{
  const before=await prepareTrustedRemoteRepairFeedback(input);
  if(before.status!=="repair_planning_eligible"||
     !isActionableRepairFailure(before.first_failed_phase,
-      before.typecheck_error_codes,before.acceptance_failure))
+      before.typecheck_error_codes,before.acceptance_failure,before.project_test_failure))
   deny("only actionable verified Runner FAIL supports bounded Backend discovery");
  const discovery={
   sessionId:config.sessionId,taskId:config.discoveryTaskId,

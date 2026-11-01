@@ -53,7 +53,7 @@ export async function completeTrustedRemoteDiscoveryForPlanning(config:{
     s.authority_kind!=="existing_rust_operational_root"||
     s.execution_authorized!==false||s.permission_granted!==false||
     !isActionableRepairFailure(s.first_failed_phase,
-      s.typecheck_error_codes,s.acceptance_failure)||
+      s.typecheck_error_codes,s.acceptance_failure,s.project_test_failure)||
     !ID.test(s.session_id)||!ID.test(s.failed_runtime_task_id)||
     !/^[0-9a-f]{40}$/u.test(s.tested_commit_sha))
   fail("only a finalized source-eligible real Test FAIL can dispatch discovery");

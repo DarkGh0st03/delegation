@@ -1087,3 +1087,36 @@ test("R151.78 authenticated IPC preserves acceptance labels and rejects injected
   await assert.rejects(client.readConfirmedTestFailure(pins),/Gateway trusted control denied/);
  }
 });
+
+test("Backend test private IPC preserves bounded counts and rejects mixed or injected receipts",async t=>{
+ const home=await mkdtemp(join(tmpdir(),"r151-acceptance-ipc-"));
+ const privateDir=join(home,"private");await mkdir(privateDir,{mode:0o700});
+ const socketPath=join(privateDir,"control.sock"),secretFile=join(privateDir,"secret.hex");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",{mode:0o600});
+ const pins={session_id:"acceptance-session",root_plan_digest:"b".repeat(64),
+  runtime_task_id:"acceptance-test"};
+ const summary={phase:"backend_tests",failed_test_file_count:2};
+ let receipt:any={status:"validation_failed",...pins,request_id:"acceptance-request",
+  plan_task_id:"test",epoch_version:1,branch:"feature/acceptance",tested_commit_sha:SHA,
+  first_failed_phase:"backend_tests",typecheck_error_codes:[],project_test_failure:summary};
+ const plans={operationalLeaseConfigured:()=>true,operationalSessionDurableConfigured:()=>true,
+  readVerifiedTestFailure:()=>receipt} as any;
+ const server=await createTrustedPlanIpcServer({socketPath,secretFile,plans});await server.start();
+ t.after(async()=>{await server.close();await rm(home,{recursive:true,force:true});});
+ const client=await TrustedPlanIpcClient.connect({socketPath,secretFile});
+ const verified=await client.readConfirmedTestFailure(pins);
+ assert.deepEqual(verified.project_test_failure,summary);
+ assert.ok(Object.isFrozen(verified.project_test_failure));
+ const valid=receipt;
+ for(const invalid of [
+  {...valid,project_test_failure:{...summary,raw_assertion:"PRIVATE"}},
+  {...valid,project_test_failure:{...summary,failed_test_file_count:9}},
+  {...valid,project_test_failure:{...summary,phase:"frontend_tests"}},
+  {...valid,acceptance_failure:{failed_checks:["service_persistence"],timed_out:false,unclassified_failure:false}},
+  {...valid,first_failed_phase:"typecheck"},
+  {...valid,typecheck_error_codes:["TS2339"]}
+ ]){
+  receipt=invalid;
+  await assert.rejects(client.readConfirmedTestFailure(pins),/Gateway trusted control denied/);
+ }
+});

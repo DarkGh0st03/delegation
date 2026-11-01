@@ -641,3 +641,34 @@ test("R151.80 one editor may investigate several original same-role files withou
   taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>generalScope
  }).propose(generalAcceptanceInput),/original writer/u);
 });
+
+const backendTestInput={...generalAcceptanceInput,feedback:{...input.feedback,
+ failed_phase:"backend_tests",typecheck_error_codes:[],
+ project_test_failure:{phase:"backend_tests",failed_test_file_count:2}}};
+const backendTestScope={status:"verified_original_project_test_repair_scope" as const,
+ tested_commit_sha:input.feedback.tested_commit_sha,
+ project_test_failure:backendTestInput.feedback.project_test_failure,
+ causal_attribution:"not_established" as const,candidates:[
+  {role:"backend" as const,resource:file},{role:"backend" as const,resource:candidateSecond}]};
+test("Backend test recovery proposes only an original source subset and a new run-only Test",async()=>{
+ const model=new ScriptedModel(boundedDraft());
+ assert.deepEqual(await new TrustedAdkOperationalRepairProposer({model,
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>backendTestScope
+ }).propose(backendTestInput),boundedDraft());
+ const sent=JSON.parse(model.requests[0]!.contents!.at(-1)!.parts!.find(p=>typeof p.text==="string")!.text!);
+ assert.deepEqual(sent.diagnostic_candidates,backendTestScope);
+ assert.deepEqual(sent.agents,["backend","test"]);
+ assert.match(JSON.stringify(model.requests[0]?.config?.systemInstruction),/do not change test files/);
+});
+test("Backend repair makes no model call for missing, mismatched or role-swapped private candidates",async()=>{
+ for(const target of [undefined,generalScope,
+  {...backendTestScope,project_test_failure:{phase:"backend_tests",failed_test_file_count:1}},
+  {...backendTestScope,candidates:[{role:"frontend",resource:candidateUi}]},
+  {...backendTestScope,tested_commit_sha:"b".repeat(40)}]){
+  const model=new ScriptedModel(boundedDraft());
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({model,
+   taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>target as any
+  }).propose(backendTestInput),/NO-GO/);
+  assert.equal(model.requests.length,0);
+ }
+});

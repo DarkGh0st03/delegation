@@ -11,6 +11,7 @@ const parent={ADAPTER_TRUST_PROFILE:"evm",GATEWAY_VERIFIER_MODE:"core-rust",
  DELEGATION_SIGNED_GEMINI_PILOT:"1",DELEGATION_SIGNED_GEMINI_REPAIR_D1:"1",
  DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION:"I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH",
  DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
+ APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE:"1",
  GEMINI_API_KEY:"fixture-key-not-for-provider-use",APPROVED_RUNNER_SCENARIO:"account-suspension"};
 
 test("R151.81 reproduce the exact old inherited-repair guard without API access",()=>{
@@ -27,6 +28,7 @@ test("R151.81 reproduce the exact old inherited-repair guard without API access"
 
 test("R151.81 preliminary child clears both paid switches, acknowledgements and key while preserving native fixtures",()=>{
  const child=buildNativePreliminaryEnvironment(parent,fixtures);
+ assert.equal(child.APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE,"0");
  assert.equal(child.DELEGATION_SIGNED_GEMINI_PILOT,"0");
  assert.equal(child.DELEGATION_SIGNED_GEMINI_REPAIR_D1,"0");
  assert.equal(child.DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION,"NO ADDITIONAL REPAIR AUTHORIZED");

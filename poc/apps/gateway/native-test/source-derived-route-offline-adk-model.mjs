@@ -1,3 +1,4 @@
+import {repairProjectTestFault,PROJECT_TEST_FAULT} from "./offline-project-test-repair-fixture.mjs";
 import {repairAcceptanceFault,ACCEPTANCE_FAULT} from "./offline-acceptance-repair-fixture.mjs";
 /**
  * Test-only scripted ADK Backend model. One update_file is derived from
@@ -197,6 +198,10 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
     this.#trustedRepair.paths=Object.freeze([...paths]);
     this.#trustedRepair.nextPath=1;
   }
+  armTrustedD1ProjectTestRepair(args){
+    this.armTrustedD1AcceptanceRepair(args);
+    this.#trustedRepair.kind="project_test";
+  }
   async *generateContentAsync(request){
     const repair=this.#trustedRepair;
     if(repair){
@@ -215,7 +220,9 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
         if(observed.revision!==repair.failedSha)
           deny("D1 repair must read the exact failed Gitea revision");
         const source=observed.content;
-        if(repair.kind==="acceptance"&&!source.includes(ACCEPTANCE_FAULT)){
+        const semantic=repair.kind==="acceptance"||repair.kind==="project_test";
+        const marker=repair.kind==="project_test"?PROJECT_TEST_FAULT:ACCEPTANCE_FAULT;
+        if(semantic&&!source.includes(marker)){
           const next=repair.paths[repair.nextPath++];
           if(!next)deny("no seeded semantic defect in observed authorized sources");
           repair.path=next;
@@ -225,12 +232,12 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
           }}]}};
           return;
         }
-        if(repair.kind!=="acceptance"&&source.split(FAULT).length!==2)
+        if(!semantic&&source.split(FAULT).length!==2)
           deny("unsupported or changed real TypeScript fault");
         repair.stage=2;
         // A tiny deterministic fixture corrects precisely the observed
         // injected TS2820 line. This is NOT independent AI-generated code.
-        const corrected=repair.kind==="acceptance"
+        const corrected=repair.kind==="project_test"?repairProjectTestFault(source):repair.kind==="acceptance"
           ?repairAcceptanceFault(source):source.replace(FAULT,"\n");
         yield {content:{role:"model",parts:[{functionCall:{
           id:"r150-d1-backend-update",

@@ -1,3 +1,4 @@
+import {injectProjectTestFault} from "./offline-project-test-repair-fixture.mjs";
 import {injectAcceptanceFault,ACCEPTANCE_ORIGINAL} from "./offline-acceptance-repair-fixture.mjs";
 /**
  * Native, offline pre-approval Planning integration. This runs only after
@@ -99,8 +100,11 @@ const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1
   process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
 const signedOfflineTypecheckProbe=
   process.env.APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE==="1";
-const signedOfflineAcceptanceProbe=
-  process.env.APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE==="1";
+const signedOfflineAcceptanceProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE==="1";
+const signedOfflineBackendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE==="1";
+if(signedOfflineAcceptanceProbe&&signedOfflineBackendTestProbe)throw Error("Separate semantic fixture flags required");
+const signedOfflineSemanticProbe=signedOfflineAcceptanceProbe||signedOfflineBackendTestProbe;
+const semanticFailurePhase=signedOfflineBackendTestProbe?"backend_tests":"researcher_acceptance";
 if(signedOfflineRecovery&&geminiPilot)
   throw Error("Offline scripted recovery must never use a paid Gemini model");
 if(geminiPilot){
@@ -149,13 +153,13 @@ if(ownerD1AdkProposal&&geminiPilot)
   throw Error("R151 offline owner ADK repair fixture is never a paid Gemini path");
 const signedOfflineMultiTest=positiveDag&&
   process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1";
-if(signedOfflineAcceptanceProbe&&(!ownerD1Probe||!ownerD1AdkProposal||
+if(signedOfflineSemanticProbe&&(!ownerD1Probe||!ownerD1AdkProposal||
    signedOfflineTypecheckProbe||signedOfflineRecovery||signedOfflineMultiTest||
    geminiPilot||!positiveDag||!signedHandoff||!realGitea||
    process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS!=="1"||
    scenario.id!=="account-suspension"))
   throw Error("Acceptance semantic fault requires a separate zero-billing signed owner");
-if(ownerD1Probe&&(!(signedOfflineTypecheckProbe||signedOfflineAcceptanceProbe)||geminiPilot||
+if(ownerD1Probe&&(!(signedOfflineTypecheckProbe||signedOfflineSemanticProbe)||geminiPilot||
    !positiveDag||!signedHandoff||!realGitea))
   throw Error("Native owner D1 admission requires a zero-billing verified compiler or acceptance FAIL");
 if(signedOfflineTypecheckProbe&&
@@ -783,7 +787,7 @@ try{
           grants.some(g=>g.agent_id==="backend"&&g.operation==="update_file"&&
             g.resource===canonicalFileUri(repo,workBranch,path)));
         const target=signedBackendRepairTargets.find(path=>
-          !derivedPaths.includes(path)&&(!signedOfflineAcceptanceProbe||
+          !derivedPaths.includes(path)&&(!signedOfflineSemanticProbe||
             referenceFiles[path]?.includes(ACCEPTANCE_ORIGINAL)));
         if(signedBackendRepairTargets.length===0)
           throw Error("R151.18 NO-GO: no signed Backend read_file/update_file source for D1");
@@ -810,13 +814,16 @@ try{
               // The zero-billing test selects existing grants, not a new
               // capability. A future model may propose a different bounded
               // plan, which still faces the same Rust + Gateway admission.
-              assert.equal(input.feedback.failed_phase,signedOfflineAcceptanceProbe
-                ?"researcher_acceptance":"typecheck");
-              if(signedOfflineAcceptanceProbe){
-                assert.deepEqual(input.feedback.acceptance_failure,{
+              assert.equal(input.feedback.failed_phase,signedOfflineSemanticProbe
+                ?semanticFailurePhase:"typecheck");
+              if(signedOfflineSemanticProbe){
+                if(signedOfflineBackendTestProbe){
+                  assert.equal(input.feedback.project_test_failure?.phase,"backend_tests");
+                  assert.ok(input.feedback.project_test_failure.failed_test_file_count>0);
+                }else assert.deepEqual(input.feedback.acceptance_failure,{
                   failed_checks:["service_persistence"],timed_out:false,unclassified_failure:false});
                 assert.equal(input.diagnostic_candidates?.status,
-                  "verified_original_acceptance_repair_scope");
+                  signedOfflineBackendTestProbe?"verified_original_project_test_repair_scope":"verified_original_acceptance_repair_scope");
                 assert.equal(input.diagnostic_target,undefined);
                 assert.ok(input.diagnostic_candidates.candidates.some(candidate=>
                   candidate.role==="backend"&&candidate.resource===fileResource));
@@ -854,13 +861,13 @@ try{
               }
               return {tasks:[
                 {id:candidateBackendId,agent_id:"backend",
-                 title:signedOfflineAcceptanceProbe
-                   ?"Preserve email during account lifecycle transitions"
+                 title:signedOfflineSemanticProbe
+                   ?(signedOfflineBackendTestProbe?"Repair Backend lifecycle persistence": "Preserve email during account lifecycle transitions")
                    :"Fix real observed Backend typecheck regression",
-                 description:signedOfflineAcceptanceProbe
-                   ?"Read the failed revision and correct email preservation in the original signed Backend source"
+                 description:signedOfflineSemanticProbe
+                   ?"Read the failed revision and correct the semantic defect in the original signed Backend source"
                    :"Correct the signed Backend source only",
-                 depends_on:[],permissions:signedOfflineAcceptanceProbe
+                 depends_on:[],permissions:signedOfflineSemanticProbe
                    ?input.diagnostic_candidates.candidates.filter(candidate=>candidate.role==="backend")
                      .flatMap(candidate=>["read_file","update_file"].map(operation=>({
                        resource:candidate.resource,operation,reason:"Investigate within original signed Backend scope"})))
@@ -903,7 +910,7 @@ try{
             maxSessionMs:240000,
             maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
             thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
-            ...((multiTypecheckProbe||signedOfflineAcceptanceProbe)?{
+            ...((multiTypecheckProbe||signedOfflineSemanticProbe)?{
               taskShape:"bounded_auto_edit_test",
               readVerifiedRepairTarget:async input=>{
                 if(!readVerifiedRepairTarget)
@@ -978,10 +985,10 @@ try{
                  /^http:\/\/127\.0\.0\.1:\d+$/u.test(
                    ports.agentBaseUrls[role]??"")))
               throw Error("R150.7 owner A2A original ports missing or stale");
-            if((paidGeminiRecovery||multiTypecheckProbe||signedOfflineAcceptanceProbe)&&
+            if((paidGeminiRecovery||multiTypecheckProbe||signedOfflineSemanticProbe)&&
                typeof ports.getVerifiedRepairTarget!=="function")
               throw Error("Paid repair requires original Runner attribution");
-            if(paidGeminiRecovery||multiTypecheckProbe||signedOfflineAcceptanceProbe)
+            if(paidGeminiRecovery||multiTypecheckProbe||signedOfflineSemanticProbe)
               readVerifiedRepairTarget=ports.getVerifiedRepairTarget;
             originalA2APorts=Object.freeze({
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
@@ -1023,7 +1030,7 @@ try{
               // Acceptance editors may investigate several originally signed
               // sources together. The compiler probe keeps its proven shape.
               if(found.length<1||found.length>8||
-                 (signal.first_failed_phase!=="researcher_acceptance"&&found.length!==1))
+                 (!["researcher_acceptance","backend_tests"].includes(signal.first_failed_phase)&&found.length!==1))
                 throw Error("D1 editor source files outside supported signed scope");
               filesByTask.set(task.id,{role:task.agent_id,path:found[0],paths:found});
             }
@@ -1032,7 +1039,7 @@ try{
               ?selectSignedNativeMultiD1Tasks({
                 epoch:epochs[1],planDigest:epochs[1].plan_digest,
                 branchUri:branchResource,
-                requireBothRoles:signal.first_failed_phase!=="researcher_acceptance",
+                requireBothRoles:!["researcher_acceptance","backend_tests"].includes(signal.first_failed_phase),
                 originalFilesByRole:Object.fromEntries(
                   ["backend","frontend"].map(role=>[role,
                     roleFiles[role].map(path=>
@@ -1228,12 +1235,12 @@ try{
         // SourceWitnessed model. Keep Backend source-derived route checks,
         // and do not emit an unfulfillable Frontend update_file call here.
         // This changes NO grants, Gateway checks or paid Gemini behavior.
-        const derivedPaths=(multiTypecheckProbe||signedOfflineAcceptanceProbe)
+        const derivedPaths=(multiTypecheckProbe||signedOfflineSemanticProbe)
           ?signedDerivedPaths.filter(path=>roleFiles.backend.includes(path))
           :signedDerivedPaths;
         const otherImplementations={...referenceFiles};
         for(const path of derivedPaths)delete otherImplementations[path];
-        if(signedOfflineAcceptanceProbe){
+        if(signedOfflineSemanticProbe){
           const targets=roleFiles.backend.filter(path=>
             !derivedPaths.includes(path)&&
             typeof otherImplementations[path]==="string"&&
@@ -1243,7 +1250,7 @@ try{
               g.resource===canonicalFileUri(repo,workBranch,path))));
           assert.equal(targets.length,1,"One originally approved semantic fixture source is required");
           acceptanceFaultPath=targets[0];
-          otherImplementations[acceptanceFaultPath]=injectAcceptanceFault(
+          otherImplementations[acceptanceFaultPath]=(signedOfflineBackendTestProbe?injectProjectTestFault:injectAcceptanceFault)(
             otherImplementations[acceptanceFaultPath]);
         }
         if(signedOfflineTypecheckProbe){
@@ -1336,6 +1343,7 @@ try{
         offlineTypecheckProbe:signedOfflineTypecheckProbe,
         offlineMultiTypecheckProbe:multiTypecheckProbe,
         offlineAcceptanceProbe:signedOfflineAcceptanceProbe,
+        offlineProjectTestProbe:signedOfflineBackendTestProbe,
         offlineMultiTest:signedOfflineMultiTest,
         scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
@@ -1346,7 +1354,7 @@ try{
           test:process.env.ADAPTER_CALLER_TEST
         }
       });
-      if(signedOfflineTypecheckProbe||signedOfflineAcceptanceProbe||
+      if(signedOfflineTypecheckProbe||signedOfflineSemanticProbe||
          (paidGeminiRecovery&&globalThis.__nativeDagPositive?.status===
            "trusted_owner_repair_handoff_retired")){
         const proof=globalThis.__nativeDagPositive;
@@ -1357,8 +1365,8 @@ try{
           assert.equal(proof.final_runner_pass_verified,false);
           assert.equal(proof.original_root_revoked,true);
           assert.equal(proof.pull_request_created,false);
-          if(ownerD1Probe)assert.equal(proof.failed_phase,signedOfflineAcceptanceProbe
-            ?"researcher_acceptance":"typecheck");
+          if(ownerD1Probe)assert.equal(proof.failed_phase,signedOfflineSemanticProbe
+            ?semanticFailurePhase:"typecheck");
           assert.equal(coordinator.phase,"closed");
           assert.equal(ownerD1ChildEvidence?.original_rust_parent,
             operationalRootId);
@@ -1390,8 +1398,8 @@ try{
           // independently by R145, can open a REVIEW-ONLY draft AFTER
           // revocation and exact-SHA Runner PASS. Never merge.
           const draft=await ownerD1Witness.openSignedReviewOnlyDraft({
-            title:signedOfflineAcceptanceProbe
-              ?"Review repaired account-suspension email preservation regression"
+            title:signedOfflineSemanticProbe
+              ?(signedOfflineBackendTestProbe?"Review repaired Backend test regression":"Review repaired account-suspension email preservation regression")
               :"Review repaired account-suspension TypeScript regression",
             body:"Signed Engineer-approved repair epoch D1.\n"+
               "Independent Gateway/Runner Docker PASS on exact Gitea SHA: "+

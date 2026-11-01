@@ -1,3 +1,4 @@
+import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
  * Separate-process approved-plan control over an owner-only Unix socket.
@@ -224,7 +225,8 @@ function boundedTestFailure(
     session_id:string;root_plan_digest:string;runtime_task_id:string;
   }>
 ):Readonly<TrustedRunnerFailure>{
-  if(!exact(value,FAILURE_KEYS)&&!exact(value,[...FAILURE_KEYS,"acceptance_failure"]))
+  if(!exact(value,FAILURE_KEYS)&&!exact(value,[...FAILURE_KEYS,"acceptance_failure"])&&
+     !exact(value,[...FAILURE_KEYS,"project_test_failure"]))
     fail("invalid Gateway Test FAIL receipt");
   const r=value as Record<string,unknown>;
   if(r.status!=="validation_failed"||
@@ -251,7 +253,13 @@ function boundedTestFailure(
      r.first_failed_phase!=="researcher_acceptance"||
      (r.typecheck_error_codes as string[]).length!==0))
     fail("invalid Gateway acceptance failure receipt");
+  const project=r.project_test_failure===undefined?undefined
+    :safeProjectTestFailureDiagnostic(r.project_test_failure);
+  if(r.project_test_failure!==undefined&&(!project||project.phase!=="backend_tests"||
+     project.phase!==r.first_failed_phase||(r.typecheck_error_codes as string[]).length!==0))
+    fail("invalid Gateway project-test failure receipt");
   return Object.freeze({
+    ...(project?{project_test_failure:project}:{}),
     ...(acceptance?{acceptance_failure:acceptance}:{}),
     status:"validation_failed" as const,
     session_id:pins.session_id,root_plan_digest:pins.root_plan_digest,

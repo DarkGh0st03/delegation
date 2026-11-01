@@ -302,3 +302,18 @@ test("R151.80 acceptance editor investigates multiple authorized source reads an
  assert.equal(write.name,"update_file");assert.equal(write.args.path,service);
  assert.equal(write.args.content,source);
 });
+
+test("Backend test editor reads the real failed revision and repairs only the observed semantic save",async()=>{
+ const {injectProjectTestFault,PROJECT_TEST_ORIGINAL}=await import("./offline-project-test-repair-fixture.mjs");
+ const m=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
+ await next(m,{});await next(m,input({ok:true,result:data}));await next(m,{});
+ const repairPath="apps/backend/src/users/user.service.ts",failedSha="b".repeat(40);
+ const args={branch,path:repairPath,failedSha,taskId:"backend-test-editor-new"};
+ m.armTrustedD1ProjectTestRepair(args);
+ assert.equal((await next(m,{})).functionCall.name,"read_file");
+ const source="class Lifecycle { transition() { "+PROJECT_TEST_ORIGINAL+" } }\n";
+ const write=(await next(m,input({ok:true,result:{...data,path:repairPath,
+  revision:failedSha,content:injectProjectTestFault(source)}}))).functionCall;
+ assert.equal(write.name,"update_file");assert.equal(write.args.content,source);
+ assert.throws(()=>m.armTrustedD1ProjectTestRepair(args),/NO-GO/);
+});

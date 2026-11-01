@@ -1,4 +1,4 @@
-import type {AcceptanceFailureSummary} from "../../../apps/test-runner-controller/src/repair-failure-eligibility.ts";
+import type {AcceptanceFailureSummary, ProjectTestFailureSummary} from "../../../apps/test-runner-controller/src/repair-failure-eligibility.ts";
 /**
  * R106: one-shot owner-private repair planning, NO fresh Engineer approval.
  *
@@ -51,6 +51,7 @@ export interface TrustedRepairPlanningObservation{
  readonly failed_phase:string;
  readonly typecheck_error_codes:readonly string[];
  readonly acceptance_failure?:AcceptanceFailureSummary;
+ readonly project_test_failure?:ProjectTestFailureSummary;
  readonly tested_commit_sha:string;
  readonly work_branch:string;
  readonly remaining_repair_epochs:number;
@@ -159,6 +160,11 @@ export interface TrustedRepairModelInput {
   tested_commit_sha:string;failed_checks:readonly string[];
   causal_attribution:"not_established";
   candidates:readonly Readonly<{role:"backend"|"frontend";resource:string}>[];
+ }|{
+  status:"verified_original_project_test_repair_scope";
+  tested_commit_sha:string;project_test_failure:ProjectTestFailureSummary;
+  causal_attribution:"not_established";
+  candidates:readonly Readonly<{role:"backend";resource:string}>[];
  }>;
  readonly diagnostic_targets?:Readonly<{
   status:"verified_runner_multi_file_repair_targets";
@@ -475,6 +481,7 @@ export class TrustedOperationalRepairPlanner {
     failed_phase:feedback.first_failed_phase,
     typecheck_error_codes:Object.freeze([...feedback.typecheck_error_codes]),
     ...(feedback.acceptance_failure?{acceptance_failure:feedback.acceptance_failure}:{}),
+    ...(feedback.project_test_failure?{project_test_failure:feedback.project_test_failure}:{}),
     tested_commit_sha:feedback.tested_commit_sha,
     work_branch:feedback.work_branch,
     remaining_repair_epochs:feedback.remaining_repair_epochs

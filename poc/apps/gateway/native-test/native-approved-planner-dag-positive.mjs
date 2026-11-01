@@ -1,3 +1,4 @@
+import {collectProjectTestRepairCandidateScope} from "./project-test-repair-candidate-scope.mjs";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
 import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
 import {collectAcceptanceRepairCandidateScope} from "./acceptance-repair-candidate-scope.mjs";
@@ -108,7 +109,7 @@ export async function runNativePositiveApprovedDag({
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
   approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
   offlineTypecheckProbe=false,offlineMultiTypecheckProbe=false,
-  offlineAcceptanceProbe=false,
+  offlineAcceptanceProbe=false,offlineProjectTestProbe=false,
   offlineMultiTest=false,onPilotPhase,onPilotError,
   /** Owner-private capability supplied ONLY by an authenticated trusted
    * host. Never from Gemini, A2A, MCP, CLI arguments or plan JSON.
@@ -116,13 +117,15 @@ export async function runNativePositiveApprovedDag({
    * and independently configured Gateway's signed-epoch admission. */
   trustedOwnerRecovery
 }){
+  const offlineSemanticProbe=offlineAcceptanceProbe||offlineProjectTestProbe;
+  if(offlineProjectTestProbe&&offlineAcceptanceProbe)throw Error("Separate semantic fixture modes required");
   if(offlineRecovery&&(realGeminiPilot||
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Signed-DAG recovery is a host-selected offline fixture only");
   if(offlineMultiTest&&(!offlineRecovery||realGeminiPilot||
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Multiple Test A2A Tasks require signed offline recovery fixture");
-  if(offlineAcceptanceProbe&&(realGeminiPilot||offlineTypecheckProbe||offlineRecovery||
+  if(offlineSemanticProbe&&(realGeminiPilot||offlineTypecheckProbe||offlineRecovery||
      offlineMultiTest||!trustedOwnerRecovery||typeof approvedAgentModelFactory!=="function"))
     throw Error("Acceptance repair probe requires a separate original zero-billing owner");
   if(offlineTypecheckProbe&&(realGeminiPilot||offlineRecovery||offlineMultiTest||
@@ -624,6 +627,14 @@ export async function runNativePositiveApprovedDag({
                 });
             }
           }
+          if((realGeminiPilot||offlineProjectTestProbe)&&runnerRuns===0&&effect.status==="fail"&&
+             effect.phases?.find(p=>p.status==="fail")?.phase==="backend_tests"){
+            try{verifiedRepairTarget=collectProjectTestRepairCandidateScope({
+              effect,testedSha:pinned.commit_sha,repo,branch,approvedRows:grants,
+              rootPermissions:coordinator.trustedOperationalAuthority().permissions,observedWrites:writePaths
+            });}catch{verifiedRepairTarget=null;}
+            if(offlineProjectTestProbe)assert.ok(verifiedRepairTarget,"Real Backend failure needs original signed candidates");
+          }
           if((realGeminiPilot||offlineAcceptanceProbe)&&runnerRuns===0&&
              effect.status==="fail"&&effect.project_tests?.status==="pass"&&
              effect.researcher_acceptance?.status==="fail"){
@@ -888,7 +899,7 @@ export async function runNativePositiveApprovedDag({
           taskId,role,runtimeTaskId,credentialId,repairedSha
         }){
           if(admittedTestRepair||!activeD1Repair()||
-             !(offlineTypecheckProbe||offlineAcceptanceProbe||realGeminiPilot)||
+             !(offlineTypecheckProbe||offlineSemanticProbe||realGeminiPilot)||
              role!=="test"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(repairedSha)||
@@ -938,7 +949,7 @@ export async function runNativePositiveApprovedDag({
           // Only the original trusted owner may invoke this after real
           // R134 child issuance. Source/model claims grant NOTHING.
           if(admittedTestRepair||admittedBackendRepair?.taskId===taskId||
-             !(offlineTypecheckProbe||offlineAcceptanceProbe||realGeminiPilot)||
+             !(offlineTypecheckProbe||offlineSemanticProbe||realGeminiPilot)||
              role!=="backend"||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
              !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId)||
              !credentialId||!SHA.test(failedSha)||
@@ -966,9 +977,9 @@ export async function runNativePositiveApprovedDag({
             allowGenerative:realGeminiPilot
           });
           if(modelMode.needs_scripted_arming){
-            if(paths.length!==1&&!offlineAcceptanceProbe)
+            if(paths.length!==1&&!offlineSemanticProbe)
               throw Error("Scripted compiler repair supports one observed source");
-            const arm=offlineAcceptanceProbe
+            const arm=offlineProjectTestProbe?models.backend.armTrustedD1ProjectTestRepair:offlineAcceptanceProbe
               ?models.backend.armTrustedD1AcceptanceRepair
               :models.backend.armTrustedD1TypecheckRepair;
             if(typeof arm!=="function")throw Error("Offline D1 fixture repair method missing");
