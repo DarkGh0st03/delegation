@@ -98,3 +98,34 @@ test("Frontend fixture inverts only the observed lifecycle UI condition and repa
    }
   }
  });
+
+
+test("Generated failing tests get provenance-only counts, not edit grants or causal attribution",()=>{
+ const generated=["tests/backend/fresh-first.test.ts","tests/backend/fresh-second.test.ts"];
+ const creation=generated.map(path=>({task_id:"create-tests",agent_id:"test",
+  resource:base+path,operation:"create_file"}));
+ const signedSource=perms(file,"backend");
+ const input={...config,effect:{...effect,failing_test_files:generated},
+  approvedRows:[...signedSource,...creation],
+  rootPermissions:[...signedSource,...creation],
+  observedWrites:{backend:new Set([file]),frontend:new Set(),test:new Set(generated)},
+  observedTestCreates:new Set(generated)};
+ const result=collect(input);
+ assert.deepEqual(result.test_failure_provenance,{
+  failed_test_written_by_test_count:2,failed_test_created_by_test_count:2,
+  created_test_without_approved_rewrite_count:2,causal_attribution:"not_established"
+ });
+ assert.deepEqual(result.candidates,[{role:"backend",resource:base+file}]);
+ for(const path of generated)assert.equal(JSON.stringify(result).includes(path),false);
+ // The original Engineer may have approved explicit test editing in addition
+ // to create_file; that reduces approval needs, but does not prove causality.
+ const granted=[...creation,...["read_file","update_file"].map(operation=>({
+  task_id:"edit-tests",agent_id:"test",resource:base+generated[0],operation
+ }))];
+ const permitted=collect({...input,approvedRows:[...signedSource,...granted],
+  rootPermissions:[...signedSource,...granted]});
+ assert.equal(permitted.test_failure_provenance.created_test_without_approved_rewrite_count,1);
+ assert.equal(permitted.test_failure_provenance.causal_attribution,"not_established");
+ assert.throws(()=>collect({...input,observedTestCreates:new Set(["foreign.test.ts"])}),
+  /creation provenance/);
+});
