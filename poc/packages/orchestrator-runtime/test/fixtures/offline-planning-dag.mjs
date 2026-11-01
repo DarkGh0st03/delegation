@@ -26,7 +26,7 @@ function requirePath(path){
 }
 export function makeOfflineReviewableDag({
   snapshot,edits,newTestFile,taskInstructions={},testRepairFile,
-  splitTestTasks=false
+  generatedBackendTestFile,splitTestTasks=false
 }){
   if(!snapshot||!Array.isArray(snapshot.files)||
      !Array.isArray(snapshot.directories)||
@@ -66,7 +66,17 @@ export function makeOfflineReviewableDag({
        !discovered.has(testRepairFile)||testRepairFile===newTestFile)
       throw Error("Offline Planning intent: repair target outside trusted test inventory");
   }
-  if(splitTestTasks&&testRepairFile===undefined)
+  if(generatedBackendTestFile!==undefined){
+    requirePath(generatedBackendTestFile);
+    if(!splitTestTasks||
+       !/^tests\/backend\/[A-Za-z0-9._/-]+\.(?:test|spec)\.[jt]sx?$/u.test(generatedBackendTestFile)||
+       !directories.has(generatedBackendTestFile.slice(0,generatedBackendTestFile.lastIndexOf("/")))||
+       discovered.has(generatedBackendTestFile)||
+       generatedBackendTestFile===newTestFile||
+       all.includes(generatedBackendTestFile))
+      throw Error("Offline Planning intent: generated Backend test outside signed test inventory");
+  }
+  if(splitTestTasks&&testRepairFile===undefined&&generatedBackendTestFile===undefined)
     throw Error("Offline Planning intent: split Test requires signed final repair grant");
   const tasks=[
     {id:"branch",agent_id:"orchestrator",title:"Create isolated work branch",
@@ -87,8 +97,12 @@ export function makeOfflineReviewableDag({
       id:"test-preparation",agent_id:"test",title:"Create scoped E2E",
       description:"Prepare the reviewed regression before final acceptance",
       depends_on:["backend","frontend"],
-      permissions:[{operation:"create_file",path:newTestFile,
-        reason:"Create test under an independently signed Test Task"}]
+      permissions:[
+        {operation:"create_file",path:newTestFile,
+         reason:"Create E2E test under an independently signed Test Task"},
+        ...(generatedBackendTestFile?[{operation:"create_file",path:generatedBackendTestFile,
+         reason:"Create a separate project Test under an independently signed Task"}]:[])
+      ]
     }]:[]),
     {id:"test",agent_id:"test",title:"Run final Docker acceptance",
       description:"Repair the reviewed regression and test the final SHA",
@@ -96,6 +110,13 @@ export function makeOfflineReviewableDag({
       permissions:[
         ...(!splitTestTasks?[{operation:"create_file",path:newTestFile,
           reason:"Add the reviewed scenario regression"}]:[]),
+        ...(generatedBackendTestFile?[{
+          operation:"read_file",path:generatedBackendTestFile,
+          reason:"Read signed newly-created project Test"
+        },{
+          operation:"update_file",path:generatedBackendTestFile,
+          reason:"Permit bounded Test correction within original Engineer authority"
+        }]:[]),
         ...(testRepairFile?[{
           operation:"read_file",path:testRepairFile,
           reason:"Inspect existing regression under this same signed Task"
