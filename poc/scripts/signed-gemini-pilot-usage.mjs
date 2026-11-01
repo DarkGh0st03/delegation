@@ -158,7 +158,7 @@ const TOOL_ERRORS=["authorization_denied","tests_failed",
   "tool_unavailable","invalid_tool_call","iteration_limit"];
 const TOOL_FAILURE_REASONS=["invalid_arguments","branch_mismatch",
   "path_outside_signed_scope","operation_not_granted",
-  "gateway_prepare_rejected","upstream_unavailable"];
+  "gateway_prepare_rejected","upstream_unavailable","request_validation_rejected","task_binding_rejected","signed_permission_rejected","dependency_rejected","task_inactive_or_expired","runtime_scope_rejected","source_witness_missing","gateway_prepare_unclassified"];
 const AGENT_TOOLS=["read_file","update_file","create_file","run_tests"];
 const SAFE_400_CAUSES=["missing_thought_signature",
   "function_call_response_order","invalid_tool_schema",

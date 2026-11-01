@@ -137,8 +137,8 @@ interface ActivePlan {
   leaseExpiresAtMs?:number;
 }
 
-function denied(message: string, code = "approved_plan_denied"): never {
-  throw new GatewayError(403, code, message);
+function denied(message: string, code = "approved_plan_denied", reason?:string): never {
+  throw Object.assign(new GatewayError(403, code, message),reason?{prepare_reason:reason}:{});
 }
 function ensureId(value:unknown, label:string):string {
   if(typeof value!=="string" || !ID.test(value)) {
@@ -262,7 +262,7 @@ export class TrustedApprovedExecutionPlans {
         // Expiration is terminal; a clock rollback or late Engineer cannot
         // resurrect this session. Root revocation is separately reconciled.
         session.active=false;
-        denied("Trusted Gateway operational lease expired; plan permanently denied");
+        denied("Trusted Gateway operational lease expired; plan permanently denied","approved_plan_denied","task_inactive_or_expired");
       }
     }
   }
@@ -721,6 +721,24 @@ export class TrustedApprovedExecutionPlans {
     });
   }
 
+  /** Read-only preflight of the exact hints about to enter the private MCP registry. */
+  assertRuntimeFileGrants(runtimeTaskId:string,role:AgentRole,branch:string,
+    permissions:readonly {operation:string;path:string}[]):void {
+    const {session,binding}=this.#activeBinding(runtimeTaskId);
+    if(binding.agent!==role||binding.completed||binding.completing||binding.failedRunner)
+      denied("Runtime grant preflight binding mismatch","approved_plan_denied","task_binding_rejected");
+    const plan=this.#taskPlan(session,binding);
+    const prefix="gitea://"+plan.repository.authority+"/"+plan.repository.owner+"/"+
+      plan.repository.repository+"/branches/"+encodeURIComponent(branch)+"/files/";
+    if(branch!==session.workBranch||permissions.length>32||permissions.some(p=>
+      typeof p.path!=="string"||!p.path||p.path.split("/").some(x=>!x||x==="."||x==="..")||
+      !["read_file","update_file","create_file"].includes(p.operation)||
+      !plan.requested_permissions.some((g:any)=>g.task_id===binding.planTaskId&&
+        g.agent_id===role&&g.operation===p.operation&&
+        g.resource===prefix+p.path.split("/").map(encodeURIComponent).join("/"))))
+      denied("Runtime hints exceed exact signed file grants","approved_plan_denied","signed_permission_rejected");
+  }
+
   /** Called during Gateway Prepare, before a one-shot challenge is created. */
   authorizePrepare(runtimeTaskId:string, role:AgentRole, required:Permission,
     request?:NormalizedToolRequest):
@@ -729,9 +747,20 @@ export class TrustedApprovedExecutionPlans {
     const {session,binding}=this.#activeBinding(runtimeTaskId);
     if(binding.agent!==role || binding.completed || binding.completing ||
        binding.failedRunner!==undefined || binding.failedFinalized) {
-      denied("Runtime role or completing/completed task is outside approved plan");
+      denied("Runtime role or completing/completed task is outside approved plan","approved_plan_denied","task_inactive_or_expired");
     }
-    this.#checkAction(session,binding,required,request);
+    try{this.#checkAction(session,binding,required,request);}
+    catch(error){
+      const plan=this.#taskPlan(session,binding);
+      const task=plan.tasks.find((t:any)=>t.id===binding.planTaskId);
+      const reason=task?.depends_on.some((id:string)=>!session.completedPlanTasks.has(id))
+        ?"dependency_rejected":!plan.requested_permissions.some((p:any)=>
+          p.task_id===binding.planTaskId&&p.agent_id===role&&
+          p.resource===required.resource&&p.operation===required.operation)
+          ?"signed_permission_rejected":"gateway_prepare_unclassified";
+      if(error instanceof GatewayError)Object.assign(error,{prepare_reason:reason});
+      throw error;
+    }
     const approvedTestedSha=request?.tool==="create_pull_request"
       ?session.testedFeatureSha:undefined;
     if(request?.tool==="create_pull_request"&&!approvedTestedSha)
@@ -1255,11 +1284,11 @@ export class TrustedApprovedExecutionPlans {
     const binding=this.#bindings.get(runtimeTaskId);
     const session=binding && this.#sessions.get(binding.sessionId);
     if(!binding || !session?.active) {
-      denied("No active trusted plan/task binding");
+      denied("No active trusted plan/task binding","approved_plan_denied","task_binding_rejected");
     }
     this.#ensureUnexpired(session);
     if(binding.epochVersion!==session.currentEpoch)
-      denied("Stale operational epoch task binding");
+      denied("Stale operational epoch task binding","approved_plan_denied","task_inactive_or_expired");
     return {session,binding};
   }
 
@@ -1392,7 +1421,7 @@ export class TrustedApprovedExecutionPlans {
       request.tool==="create_pull_request"?request.arguments.head_branch:
       "branch" in request.arguments?request.arguments.branch:undefined;
     if(branch!==undefined&&branch!==session.workBranch){
-      denied("Provider branch differs from immutable approved plan");
+      denied("Provider branch differs from immutable approved plan","approved_plan_denied","signed_permission_rejected");
     }
     if((request.tool==="create_branch"||request.tool==="create_pull_request")&&
        request.arguments.base_branch!=="main"){

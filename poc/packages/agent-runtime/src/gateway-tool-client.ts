@@ -1,3 +1,4 @@
+import {safeToolFailureReason} from "../../../mcp-shared/src/tool-failure-reason.ts";
 import type { SpecializedAgentRole } from "./contracts.ts";
 import type { CryptoPresentationPort } from "./trusted-crypto-mcp-bridge.ts";
 import { ControlledToolError } from "./controlled-errors.ts";
@@ -154,7 +155,8 @@ export class GatewayControlledToolClient {
         ),
         {
           statusCode: prepareResponse.status,
-          reason: prepareResponse.status >= 500 ? "upstream_unavailable" : "gateway_prepare_rejected"
+          reason: prepareResponse.status >= 500 ? "upstream_unavailable" :
+            safeToolFailureReason((preparedBody as {prepare_reason?:unknown})?.prepare_reason)??"gateway_prepare_rejected"
         }
       );
     }

@@ -377,9 +377,11 @@ export async function runNativePositiveApprovedDag({
       return fetch(url,options);
     if(!target.startsWith(adkGatewayBase+"/v1/authorization/"))
       throw Error("ADK attempted unknown transport");
+    let prepareStage="request_validation_rejected";
     try{
       const request=JSON.parse(String(options?.body));
       if(target===adkGatewayBase+"/v1/authorization/prepare"){
+        prepareStage="runtime_scope_rejected";
         assert.equal(request.agent_role,role);
         const repair=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:null;
         if(repair)assert.equal(request.task_id,repair.runtimeTaskId,
@@ -438,9 +440,11 @@ export async function runNativePositiveApprovedDag({
           if(request.tool==="update_file"){
             // A previous Task's read cannot satisfy this independently
             // delegated Task's source-witness requirement.
+            prepareStage="source_witness_missing";
             assert.ok(readPathsPerTask.get(activeTaskByRole[role])
               ?.has(request.arguments.path),
               "Each approved implementation Task must read before its write");
+            prepareStage="request_validation_rejected";
             if(hostModels){
               assert.equal(typeof request.arguments.content,"string");
               assert.ok(request.arguments.content.length>0&&
@@ -452,6 +456,7 @@ export async function runNativePositiveApprovedDag({
             }
           }
         }
+        prepareStage="gateway_prepare_unclassified";
         return reply(gateway.prepare(request),201);
       }
       if(target===adkGatewayBase+"/v1/authorization/execute"){
@@ -777,7 +782,8 @@ export async function runNativePositiveApprovedDag({
       process.stderr.write("[native-dag-adk] controlled_denial "+
         JSON.stringify({role,kind:error?.constructor?.name??"Error",
           code:error?.code??"unknown"})+"\n");
-      return reply({error:"trusted_operation_denied"},403);
+      return reply({error:"trusted_operation_denied",
+        ...(target.endsWith("/prepare")?{prepare_reason:error?.prepare_reason??prepareStage}:{})},403);
     }
   };
   if(realGeminiPilot)onPilotPhase?.("agent_bootstrap");
@@ -898,11 +904,21 @@ export async function runNativePositiveApprovedDag({
     // R150.7: retain the SAME protected A2A transport/Agent Card endpoints
     // while the original Rust root is live. Only the authenticated owner
     // can receive these ports; they do not create a Task, DC or permission.
-    const protectedA2A=new DeterministicA2AOrchestrator({
+    const protectedTransport=new DeterministicA2AOrchestrator({
       deadlineMs:realGeminiPilot
         ?SIGNED_GEMINI_PILOT.maxA2aTaskMs:500000,
       initialIntervalMs:50,maxIntervalMs:250
     });
+    const protectedA2A={async sendProtectedTask(request){
+      // The same immutable hints are consumed by ADK and the private MCP registry.
+      // This check precedes sendMessage and therefore specialized model inference.
+      const role=["backend","frontend","test"].find(role=>
+        activeTaskByRole[role]===request.subtask.subtask_id);
+      assert.ok(role,"Preflight requires current trusted role Task");
+      approvedPlans.assertRuntimeFileGrants(request.trusted_gateway_task_id,role,
+        request.subtask.branch,request.subtask.approved_file_permissions??[]);
+      return protectedTransport.sendProtectedTask(request);
+    }};
     if(trustedOwnerRecovery?.bindOriginalA2APorts){
       await trustedOwnerRecovery.bindOriginalA2APorts({
         agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,

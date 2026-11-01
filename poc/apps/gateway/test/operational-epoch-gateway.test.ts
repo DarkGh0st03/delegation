@@ -5178,3 +5178,17 @@ test("R151.87 owner revision gate stops real D1 controller before Test on incons
   }
  }
 });
+
+test("R151.89 runtime grant preflight compares exact signed pairs without provider effects",async t=>{
+ const h=await harness(t);await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"backend-original","preflight-editor","backend");
+ const before=h.provider;
+ h.gates.assertRuntimeFileGrants("preflight-editor","backend",branch,[{operation:"update_file",path:"src/invoices.ts"}]);
+ for(const [role,br,permissions] of [
+  ["frontend",branch,[{operation:"update_file",path:"src/invoices.ts"}]],
+  ["backend",branch,[{operation:"read_file",path:"src/invoices.ts"}]],
+  ["backend","feature/foreign",[{operation:"update_file",path:"src/invoices.ts"}]],
+  ["backend",branch,[{operation:"update_file",path:"src/other.ts"}]]
+ ] as const)assert.throws(()=>h.gates.assertRuntimeFileGrants("preflight-editor",role,br,permissions));
+ assert.equal(h.provider,before);
+});

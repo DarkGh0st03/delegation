@@ -305,3 +305,14 @@ test("D1 editor revision failure survives both sanitizers without private receip
  assert.doesNotMatch(JSON.stringify(summary),/SECRET|PRIVATE/);
  assert.deepEqual(agentObservations(raw.replace("no_confirmed_editor_write","PRIVATE")),[]);
 });
+
+test("R151.89 trusted prepare rejection stages survive double sanitization",()=>{
+ const reasons=["request_validation_rejected","task_binding_rejected","signed_permission_rejected",
+  "dependency_rejected","task_inactive_or_expired","runtime_scope_rejected","source_witness_missing","gateway_prepare_unclassified"];
+ const raw=reasons.map(reason=>JSON.stringify({event:"adk_tool_timing",role:"frontend",tool:"read_file",
+  success:false,error_kind:"invalid_tool_call",reason,path:"PRIVATE"})).join("\n");
+ const forwarded=agentObservations(raw).map(x=>"[trusted-positive-ci] gemini_agent_observation "+JSON.stringify(x)).join("\n");
+ const summary=agentSummary(forwarded);
+ for(const reason of reasons)assert.equal(summary.role_evidence.frontend.failed_operations.read_file[reason],1);
+ assert.doesNotMatch(JSON.stringify(summary),/PRIVATE/);
+});

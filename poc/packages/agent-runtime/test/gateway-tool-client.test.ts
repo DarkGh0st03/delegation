@@ -171,3 +171,16 @@ test("prepare diagnostics preserve rejection semantics and never execute",async(
   assert.equal(calls,1);
  }
 });
+
+test("trusted prepare categories are allowlisted without changing denial semantics",async()=>{
+ for(const reason of ["request_validation_rejected","task_binding_rejected","signed_permission_rejected",
+  "dependency_rejected","task_inactive_or_expired","runtime_scope_rejected","source_witness_missing","PRIVATE"]){
+  let calls=0;
+  const client=new GatewayControlledToolClient({gatewayBaseUrl:"http://gateway.local",agentRole:"frontend",
+   taskId:"diagnostic",evidenceHandler:evidenceHandler(),fetchFn:async()=>{calls++;
+    return new Response(JSON.stringify({error:"trusted_operation_denied",prepare_reason:reason}),{status:403});}});
+  await assert.rejects(client.invoke("read_file",{branch:"feature/account-suspension",path:"apps/frontend/src/Profile.tsx"}),
+   (e:any)=>e.kind==="invalid_tool_call"&&e.reason===(reason==="PRIVATE"?"gateway_prepare_rejected":reason));
+  assert.equal(calls,1);
+ }
+});
