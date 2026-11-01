@@ -1,0 +1,49 @@
+name: Fast CI - Development
+on:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fast-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  node-contracts:
+    name: Fast offline Node contracts and MCP integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+          cache-dependency-path: |
+            poc/package-lock.json
+            poc/mcp-shared/package-lock.json
+      - name: Install pinned dependencies
+        run: |
+          npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+          npm --prefix poc/mcp-shared ci --ignore-scripts --no-audit --no-fund
+      - name: Scaffold, imports and type-only contracts
+        run: |
+          npm --prefix poc run check:scaffold
+          npm --prefix poc run check:imports
+          npm --prefix poc run audit:r6:types
+          npm --prefix poc run audit:r6:runtime-named
+      - name: Authorization plan contracts and Gateway
+        run: |
+          node --test poc/packages/plan-contracts/test/*.test.mjs
+          node --experimental-strip-types --test poc/apps/gateway/test/prepare.test.ts poc/apps/gateway/test/operation-catalog.test.ts poc/apps/gateway/test/planning-revision-pinning.test.ts
+      - name: ADK, A2A and real loopback shared MCP
+        run: |
+          node --experimental-strip-types --test poc/packages/agent-runtime/test/gateway-tool-client.test.ts poc/packages/agent-runtime/test/private-mcp-task-registry.test.ts poc/packages/agent-runtime/test/adk-specialized-agents.test.ts poc/packages/agent-runtime/test/adk-native-mcp-integration.test.ts
+          npm --prefix poc/mcp-shared test
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/a2a-workflow.test.ts poc/packages/orchestrator-runtime/test/trusted-gemini-repair-proposer.test.mjs
+      - name: Pilot gate and bounded diagnostics without inference
+        run: |
+          node --test poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs poc/scripts/test/signed-gemini-pilot-consent.test.mjs poc/scripts/test/signed-gemini-pilot-usage.test.mjs poc/scripts/test/signed-gemini-pilot-failure-observation.test.mjs
+          node --test poc/apps/gateway/native-test/d1-editor-revision.test.mjs

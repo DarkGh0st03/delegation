@@ -3,10 +3,10 @@ name: Shared MCP Real Docker Acceptance E2E (Scripted, No AI Billing)
 # Free regression with *scripted ADK model*, real MCP/Rust/OPA/Gitea,
 # real isolated Docker Runner + independent researcher acceptance and CI.
 # This is NOT live Gemini and receives no Gemini/OpenAI API key.
-# Jobs run automatically when relevant architecture code changes.
+# Development checkpoints run manually; main/spike pushes and PR checks remain automatic.
 on:
   push:
-    branches: [feat/shared-mcp-spike, main, refactor/post-prof-plan-contracts-20261021]
+    branches: [feat/shared-mcp-spike, main]
     paths:
       - '.github/workflows/shared-mcp-real-positive-e2e.yml'
       - '.github/workflows/functional-signed-dag-e2e.yml'

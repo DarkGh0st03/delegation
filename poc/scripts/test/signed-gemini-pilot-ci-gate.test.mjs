@@ -28,27 +28,17 @@ const valid=()=>({
   DELEGATION_GEMINI_MODEL:"gemini-3.8-flash",
   DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES"
 });
-test("required signed-DAG CI automatically covers all live Gemini execution and recovery paths",()=>{
-  const yaml=readFileSync(new URL(
-    "../../../.github/workflows/functional-signed-dag-e2e.yml",
-    import.meta.url),"utf8");
-  for(const path of [
-    "poc/apps/orchestrator/src/**",
-    "poc/apps/orchestrator/test/**",
-    "poc/packages/orchestrator-runtime/src/**",
-    "poc/packages/orchestrator-runtime/test/**",
-    "poc/packages/plan-contracts/src/**",
-    "poc/packages/plan-contracts/test/**",
-    "poc/scripts/check-gemini-planner-model-access.mjs",
-    "poc/scripts/test/check-gemini-planner-model-access.test.mjs",
-    "poc/scripts/signed-gemini-pilot-*.mjs",
-    "poc/scripts/test/signed-gemini-pilot-*.test.mjs"
-  ]){
-    assert.ok(yaml.includes("'"+path+"'"),
-      "Signed DAG exact-SHA CI must run on "+path);
+test("full checkpoint CI is manual on development and never replaced by Fast CI",()=>{
+  for(const name of ["functional-signed-dag-e2e","cumulative-refactoring-offline",
+    "shared-mcp-real-positive-e2e","r139-real-docker-repair-e2e"]){
+    const yaml=readFileSync(new URL("../../../.github/workflows/"+name+".yml",import.meta.url),"utf8");
+    assert.ok(yaml.includes("workflow_dispatch:"));
+    const triggers=yaml.slice(yaml.indexOf("on:"),yaml.indexOf("permissions:"));
+    assert.ok(!triggers.includes("refactor/post-prof-plan-contracts-20261021"));
+    assert.ok(yaml.includes("jobs:"),"All full jobs remain available");
   }
-  assert.ok(yaml.includes("workflow_dispatch:"),
-    "An independent free manual rerun must remain available");
+  assert.equal(verifyExactShaOfflineCiRuns(paths.map(p=>({...green(p),event:"workflow_dispatch"})),sha).independent_workflows_verified,3);
+  assert.throws(()=>verifyExactShaOfflineCiRuns([{...green(paths[0]),path:".github/workflows/fast-ci.yml"}],sha));
 });
 
 test("three independent offline green workflows on same SHA allow a NO-INFERENCE readiness report",()=>{

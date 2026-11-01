@@ -3,17 +3,6 @@ name: R150 Real Disposable Gitea Docker TS2820 Two-SHA Repair (No AI Billing)
 # Provider-level TypeScript negative→positive proof ONLY. No production root,
 # no Gemini/OpenAI keys, no main-branch or persistent-Gitea mutations.
 on:
-  push:
-    branches: [refactor/post-prof-plan-contracts-20261021]
-    paths:
-      - '.github/workflows/r139-real-docker-repair-e2e.yml'
-      - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
-      - 'poc/apps/test-runner-controller/scripts/r139-real-repair-evidence*.mjs'
-      - 'poc/apps/test-runner-controller/src/**'
-      - 'poc/apps/gateway/src/gitea-client.ts'
-      - 'poc/apps/gateway/test/gitea-client.test.ts'
-      - 'poc/apps/test-runner-controller/fixtures/**'
-      - 'poc/runner/acceptance/**'
   workflow_dispatch:
 
 permissions:
