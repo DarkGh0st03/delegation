@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R151.93.1 - generated-Test D1 count correction and real Docker verification",
-  "candidate_parent_sha": "8c628ac83483f07db5f61522f82614620ab49b62",
-  "purpose": "Verify signed generated Backend Test FAIL -> fresh D1 Test edit -> new exact-SHA Docker PASS -> review-only PR after correcting the explicit generated-Test grant cardinality assertion; all prior zero-model-call regressions",
+  "checkpoint": "R151.94 - prevent silent paid D1 disablement on malformed exact consent",
+  "candidate_parent_sha": "582f1187d7e7a9366aff64c293b1712ce1a5cf10",
+  "purpose": "Zero-billing same-SHA regression gate after correcting paid D1 authorization preflight: reject whitespace near-match before Gemini generation; preserve signed Runner FAIL -> D1 -> Docker PASS and review-only PR",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
