@@ -35,6 +35,7 @@ import {createTrustedPlanIpcServer,TrustedPlanIpcClient} from "../src/trusted-pl
 import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {selectTrustedD1RepairScope} from "./trusted-d1-repair-scope-choice.mjs";
+import {assertSignedD1ScheduledTask} from "./trusted-d1-signed-task-schedule.mjs";
 import {createBoundedD1GeminiInvestigationChoice} from "./trusted-d1-gemini-investigation-choice.mjs";
 import {TrustedAdkOperationalRepairProposer} from
   "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
@@ -1186,10 +1187,10 @@ try{
                 await gatewayOwner.renewLease(session,packet.plan_digest);
               },
               credentialForTask:({id,role,ordinal})=>{
-                if(id!==signedTaskOrder[ordinal]||
-                   (id===selected.testTaskId)!==(role==="test")||
-                   (role!=="test"&&filesByTask.get(id)?.role!==role))
-                  throw Error("Signed D1 Task not in admitted topological schedule");
+                assertSignedD1ScheduledTask({
+                  id,role,ordinal,orderedTaskIds:signedTaskOrder,
+                  validatorTaskId:selected.testTaskId,editors:filesByTask
+                });
                 return {
                   credential_id:"urn:native:r151-d1-"+role+"-"+
                     randomBytes(7).toString("hex"),
