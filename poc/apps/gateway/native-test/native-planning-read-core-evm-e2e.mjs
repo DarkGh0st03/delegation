@@ -612,7 +612,8 @@ try{
   if(!geminiPilot)
     assert.equal(proposed.plan.requested_permissions.length,
       positiveDag?(2*existingFiles.length+4+
-        (signedOfflineRecovery?2:0)):5); // signed fixture grants only
+        (signedOfflineRecovery?2:0)+
+        (signedOfflineGeneratedTestProbe?3:0)):5); // signed fixture grants only
   if(geminiPilot){
     // Every actual preliminary read must pass the trusted Gateway and native
     // verifier. The count is whatever the model legitimately needed.
