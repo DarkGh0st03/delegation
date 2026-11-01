@@ -230,6 +230,72 @@ function assertBoundedMultiEditDraft(
   deny("Test must depend on every multi-edit Task");
 }
 
+/** A verified Test creation does not prove a faulty test. The ADK model
+ * may propose investigation only within the already-approved Test scope. */
+function signedGeneratedTestDraftScope(
+ input:Readonly<TrustedRepairModelInput>,
+ target:Readonly<{candidates:readonly {role:"test";resource:string}[]}>){
+ const suffix="/branches/"+encodeURIComponent(input.feedback.work_branch);
+ const runner=input.already_delegated_grants.find(g=>
+  g.operation==="run_tests"&&g.resource.startsWith("gitea://")&&
+  g.resource.endsWith(suffix))?.resource;
+ const grant=new Set(input.already_delegated_grants.map(g=>
+  JSON.stringify([g.resource,g.operation])));
+ if(!runner||!input.agents.includes("test")||
+    !Array.isArray(target.candidates)||target.candidates.length<1||
+    target.candidates.length>8)deny("signed Test edit scope unavailable");
+ const edits=new Set<string>();
+ for(const candidate of target.candidates){
+  const resource=candidate?.resource;
+  if(candidate?.role!=="test"||typeof resource!=="string"||
+     !resource.startsWith(runner+"/files/tests/")||
+     edits.has(resource)||resource.length>1024||
+     !["read_file","update_file"].every(operation=>
+      grant.has(JSON.stringify([resource,operation]))))
+   deny("generated Test candidate is outside existing signed grants");
+  edits.add(resource);
+ }
+ return {runner,edits,grants:grant};
+}
+function assertSignedGeneratedTestDraft(result:unknown,
+ scope:ReturnType<typeof signedGeneratedTestDraftScope>):void{
+ const tasks=(result as {tasks?:unknown})?.tasks;
+ if(!Array.isArray(tasks)||tasks.length!==2)
+  deny("Test-edit D1 requires one editor and a new run-only Test");
+ const [editor,validator]=tasks as Array<Record<string,unknown>>;
+ const id=x=>typeof x==="string"&&
+  /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(x);
+ if(!editor||!validator||editor.agent_id!=="test"||
+    validator.agent_id!=="test"||!id(editor.id)||
+    !id(validator.id)||editor.id===validator.id||
+    !Array.isArray(editor.depends_on)||editor.depends_on.length!==0||
+    !Array.isArray(validator.depends_on)||
+    validator.depends_on.length!==1||
+    validator.depends_on[0]!==editor.id||
+    !Array.isArray(editor.permissions)||!Array.isArray(validator.permissions))
+  deny("Test-edit D1 role or dependency mismatch");
+ const edits=editor.permissions as Array<{resource?:unknown;operation?:unknown}>;
+ const tests=validator.permissions as Array<{resource?:unknown;operation?:unknown}>;
+ if(edits.length<2||edits.length>16||edits.length%2!==0||
+    tests.length!==1||tests[0]?.resource!==scope.runner||
+    tests[0].operation!=="run_tests")
+  deny("Test-edit D1 requires read/update pairs and run-only validation");
+ const seen=new Map<string,Set<string>>();
+ for(const p of edits){
+  if(!p||typeof p.resource!=="string"||
+    !scope.edits.has(p.resource)||
+    !["read_file","update_file"].includes(String(p.operation))||
+    !scope.grants.has(JSON.stringify([p.resource,p.operation])))
+   deny("Test-edit D1 requested permissions outside original grants");
+  const ops=seen.get(p.resource)??new Set<string>();
+  if(ops.has(p.operation as string))deny("duplicate Test-edit permission");
+  ops.add(p.operation as string);seen.set(p.resource,ops);
+ }
+ if(seen.size<1||seen.size>8||[...seen.values()].some(ops=>
+   ops.size!==2||!ops.has("read_file")||!ops.has("update_file")))
+  deny("Test-edit D1 requires one complete signed pair per file");
+}
+
 type TrustedRunnerRepairTarget=Readonly<
  |{status:"verified_runner_single_file_repair_target";
    tested_commit_sha:string;role:"backend"|"frontend";resource:string}
@@ -251,6 +317,11 @@ type TrustedRunnerRepairTarget=Readonly<
     causal_attribution:"not_established"
    }>;
   }
+ |{status:"verified_original_generated_test_edit_scope";
+   tested_commit_sha:string;
+   project_test_failure:import("../../../apps/test-runner-controller/src/repair-failure-eligibility.ts").ProjectTestFailureSummary;
+   causal_attribution:"not_established";
+   candidates:readonly Readonly<{role:"test";resource:string}>[]}
  |{status:"verified_runner_multi_file_repair_targets";
    tested_commit_sha:string;targets:ReadonlyArray<Readonly<{
      role:"backend"|"frontend";resource:string
@@ -263,7 +334,7 @@ export class TrustedAdkOperationalRepairProposer {
  readonly #maxSessionMs:number;
  readonly #maxOutputTokens:number;
  readonly #thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
- readonly #taskShape?:"backend_test"|"backend_or_frontend_test"|"bounded_multi_edit_test"|"bounded_auto_edit_test";
+ readonly #taskShape?:"backend_test"|"backend_or_frontend_test"|"bounded_multi_edit_test"|"bounded_auto_edit_test"|"bounded_generated_test_edit";
  readonly #observer?:(event:Observe)=>void;
  readonly #readVerifiedRepairTarget?:(input:Readonly<TrustedRepairModelInput>)=>
   Promise<TrustedRunnerRepairTarget>;
@@ -297,7 +368,7 @@ export class TrustedAdkOperationalRepairProposer {
      (config.thinkingLevel!==undefined&&
       !["LOW","MEDIUM","HIGH"].includes(config.thinkingLevel))||
      (config.taskShape!==undefined&&
-      !["backend_test","backend_or_frontend_test","bounded_multi_edit_test","bounded_auto_edit_test"].includes(config.taskShape))||
+      !["backend_test","backend_or_frontend_test","bounded_multi_edit_test","bounded_auto_edit_test","bounded_generated_test_edit"].includes(config.taskShape))||
      (config.onObservation!==undefined&&
       typeof config.onObservation!=="function")||
      (config.readVerifiedRepairTarget!==undefined&&
@@ -335,7 +406,8 @@ export class TrustedAdkOperationalRepairProposer {
   if(input.feedback.failed_phase==="researcher_acceptance"&&
      (!this.#taskShape||!this.#readVerifiedRepairTarget))
    deny("acceptance repair requires an independently verified Runner target");
-  const boundedScope=this.#taskShape?
+  const generatedMode=this.#taskShape==="bounded_generated_test_edit";
+  const boundedScope=this.#taskShape&&!generatedMode?
    boundedBackendTestScope(input,this.#taskShape!=="backend_test"):undefined;
   if(this.#taskShape==="bounded_multi_edit_test"&&
      (!input.agents.includes("backend")||!input.agents.includes("frontend")||
@@ -345,6 +417,16 @@ export class TrustedAdkOperationalRepairProposer {
    deny("automatic D1 requires signed Runner attribution");
   const target=this.#readVerifiedRepairTarget
    ?await this.#readVerifiedRepairTarget(input):undefined;
+  const generatedScope=target?.status==="verified_original_generated_test_edit_scope"?target:undefined;
+  if(generatedMode&&(!generatedScope||this.#sourceReader||
+     !["backend_tests","frontend_tests"].includes(input.feedback.failed_phase)||
+     generatedScope.causal_attribution!=="not_established"||
+     generatedScope.tested_commit_sha!==input.feedback.tested_commit_sha||
+     JSON.stringify(generatedScope.project_test_failure)!==
+      JSON.stringify(input.feedback.project_test_failure)))
+   deny("Test-edit D1 requires authenticated project-test candidate scope");
+  const generatedGrants=generatedScope?
+   signedGeneratedTestDraftScope(input,generatedScope):undefined;
   const acceptanceCandidate=target?.status==="verified_acceptance_single_file_repair_candidate"
    ?target:undefined;
   if(acceptanceCandidate&&(input.feedback.failed_phase!=="researcher_acceptance"||
@@ -391,7 +473,7 @@ export class TrustedAdkOperationalRepairProposer {
   const multiple=target?.status==="verified_runner_multi_file_repair_targets"
    ?target:undefined;
   const targets=semanticScope?.candidates??multiple?.targets??(single?[single]:[]);
-  if(this.#readVerifiedRepairTarget&&
+  if(this.#readVerifiedRepairTarget&&!generatedMode&&
      (!target||target.tested_commit_sha!==input.feedback.tested_commit_sha||
       !boundedScope||targets.length<1||targets.length>8||
       new Set(targets.map(x=>x.resource)).size!==targets.length||
@@ -428,8 +510,20 @@ export class TrustedAdkOperationalRepairProposer {
   // can actually use. The trusted planner still checks the model draft
   // against the full original Rust root; this is prompt minimization,
   // never a new credential or a change to root authorization.
-  const modelInput:Readonly<TrustedRepairModelInput>=effectiveScope?
+  const modelInput:Readonly<TrustedRepairModelInput>=generatedScope&&generatedGrants?
    Object.freeze({
+    requirement:input.requirement,feedback:input.feedback,
+    diagnostic_candidates:generatedScope,
+    agents:Object.freeze(["test"] as ("test")[]),
+    already_delegated_grants:Object.freeze([
+     ...[...generatedGrants.edits].sort().flatMap(resource=>[
+      Object.freeze({resource,operation:"read_file"}),
+      Object.freeze({resource,operation:"update_file"})
+     ]),
+     Object.freeze({resource:generatedGrants.runner,operation:"run_tests"})
+    ])
+   }) as Readonly<TrustedRepairModelInput>
+   :effectiveScope?Object.freeze({
     requirement:input.requirement,feedback:input.feedback,
     ...(input.diagnostic_read?{diagnostic_read:input.diagnostic_read}:{}),
     ...(source?{diagnostic_source:source}:{}),
@@ -527,6 +621,14 @@ export class TrustedAdkOperationalRepairProposer {
      "The new Test depends directly or transitively on ALL selected editors and uses only original run_tests.",
      "No PR, new root, branch creation, extra discovery grants or permission expansion."
     ]:[]),
+    ...(generatedScope?[
+     "The verified Runner confirms a project-test FAIL and the Test Agent created some failed files.",
+     "Creation and failure do NOT establish that a Test assertion is wrong; never claim causal certainty.",
+     "You may propose one fresh Test investigation/edit Task with read_file/update_file on exact approved generated Test candidates.",
+     "A separate Test run-only Task must depend on the editor. Do not edit Backend/Frontend sources or change the test command.",
+     "The signed Engineer approval and Rust root MUST already authorize every read_file, update_file and run_tests; never invent new permissions.",
+     "If the original test is actually correct, do not weaken an assertion merely to obtain PASS. Propose a valid fix only within approved requirements."
+    ]:[]),
     ...(projectScope?[
      `The verified first failed phase is ${projectPhase}. diagnostic_candidates are original ${projectRole} source/writer options, NOT proven causal files.`,
      `Select a bounded subset of original ${projectRole} candidates. Produce 1-8 ${projectRole} source editor Tasks and exactly one Test Task using only run_tests.`,
@@ -548,7 +650,10 @@ export class TrustedAdkOperationalRepairProposer {
      "New Test depends directly or transitively on ALL editing Tasks and may only run_tests.",
      "No model PR, new root, privilege expansion or branch creation."
     ]:[]),
-    ...(this.#taskShape&&!multiMode?[
+    ...(generatedMode?[
+     "Return EXACTLY two Test Tasks: one generated-Test editor and one run-only validator, which depends on the editor.",
+     "Every edited file must have one read_file and update_file permission pair. No create_file, source edits or PR."
+    ]:this.#taskShape&&!multiMode?[
      this.#taskShape==="backend_test"
       ?"This repair epoch supports EXACTLY two Tasks: one Backend and one Test."
       :"This repair epoch supports EXACTLY two Tasks: one Backend OR Frontend repair and one Test.",
@@ -570,7 +675,9 @@ export class TrustedAdkOperationalRepairProposer {
     "tasks is an array of objects with EXACT keys: id,agent_id,title,description,depends_on,permissions.",
     "permissions is an array of objects with EXACT keys: resource,operation,reason.",
     "No DID, credential, model configuration, session, branch or repository fields.",
-    ...(this.#taskShape&&!multiMode?[
+    ...(generatedMode?[
+     "Test editor: read_file and update_file only, using original approved generated tests. Validator: run_tests only."
+    ]:this.#taskShape&&!multiMode?[
      "For this bounded DAG, the single Backend OR Frontend repair may only read_file and update_file on ONE source; Test may only run_tests."
     ]:multiMode?[
      "Backend/Frontend use only read_file and update_file. Test uses only run_tests."
@@ -616,7 +723,8 @@ export class TrustedAdkOperationalRepairProposer {
   if(!result||typeof result!=="object"||Array.isArray(result)||
      Object.keys(result).join(",")!=="tasks")
    deny("repair model returned fields outside permitted draft");
-  if(multiMode)assertBoundedMultiEditDraft(result,effectiveScope!,semanticScope?.candidates);
+  if(generatedMode)assertSignedGeneratedTestDraft(result,generatedGrants!);
+  else if(multiMode)assertBoundedMultiEditDraft(result,effectiveScope!,semanticScope?.candidates);
   else if(effectiveScope)assertBoundedBackendTestDraft(result,effectiveScope,
    this.#taskShape!=="backend_test");
   if(single&&(result as {tasks:Array<{agent_id:string}>}).tasks[0]?.agent_id!==single.role)
