@@ -36,3 +36,9 @@ test("multiple writes use last observed provider commit, not map insertion order
  const f=fixture();
  assert.equal(verify({...f,headSha:c,writes:[{...f.writes[0],commitSha:c,sequence:3},f.writes[0]]}),c);
 });
+
+test("Generated Test editor pins its own commit and cannot reuse the D0 write",()=>{
+ const f=fixture("test");assert.equal(verify(f),b);
+ assert.throws(()=>verify({...f,writes:[{...f.writes[0],taskId:"initial-test"}]}),/no_confirmed_editor_write/);
+ assert.throws(()=>verify({...f,headSha:c}),/provider_head_mismatch/);
+});

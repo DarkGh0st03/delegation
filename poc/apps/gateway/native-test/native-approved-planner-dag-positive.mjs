@@ -1,3 +1,4 @@
+import {selectSignedNativeTestEditD1Tasks} from "./native-owner-d1-task-selection.mjs";
 import {verifyD1EditorRevision} from "./d1-editor-revision.mjs";
 import {collectProjectTestRepairCandidateScope} from "./project-test-repair-candidate-scope.mjs";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
@@ -347,8 +348,8 @@ export async function runNativePositiveApprovedDag({
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
   let mcpSharedUrl,mcpCryptoUrl;
-  let admittedBackendRepair=null,admittedFrontendRepair=null,admittedTestRepair=null;
-  const activeD1Repair=()=>admittedBackendRepair??admittedFrontendRepair;
+  let admittedBackendRepair=null,admittedFrontendRepair=null,admittedTestEdit=null,admittedTestRepair=null;
+  const activeD1Repair=()=>admittedBackendRepair??admittedFrontendRepair??admittedTestEdit;
   const isSignedImplementationTask=(role,id)=>taskIdsByRole[role].includes(id)||
     (role==="backend"&&admittedBackendRepair?.taskId===id)||
     (role==="frontend"&&admittedFrontendRepair?.taskId===id);
@@ -360,6 +361,7 @@ export async function runNativePositiveApprovedDag({
   const observedCreatedPaths=new Set();
   const observedTestWriteKeys=new Set();
   const observedImplementationWriteKeys=new Map();
+  const observedTestEditEffects=new Map();
   let implementationWriteSequence=0;
   const writeKey=(taskId,operation,path)=>
     taskId+"\0"+operation+"\0"+canonicalFileUri(repo,branch,path);
@@ -383,7 +385,7 @@ export async function runNativePositiveApprovedDag({
       if(target===adkGatewayBase+"/v1/authorization/prepare"){
         prepareStage="runtime_scope_rejected";
         assert.equal(request.agent_role,role);
-        const repair=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:null;
+        const repair=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:admittedTestRepair??admittedTestEdit;
         if(repair)assert.equal(request.task_id,repair.runtimeTaskId,
           "D1 request must use its active runtime Task binding");
         assert.match(request.task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
@@ -460,7 +462,7 @@ export async function runNativePositiveApprovedDag({
         return reply(gateway.prepare(request),201);
       }
       if(target===adkGatewayBase+"/v1/authorization/execute"){
-        const repairBinding=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:null;
+        const repairBinding=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:admittedTestRepair??admittedTestEdit;
         const executed=await gateway.execute(request);
         assert.equal(executed.policy.allow,true);
         assert.equal(executed.policy.policy_version,"phase6-approved-branch-v2");
@@ -517,7 +519,7 @@ export async function runNativePositiveApprovedDag({
           const current=await reader.readTextFile(branch,effect.path);
           assert.equal(effect.content,current.content);
           const activeTestTask=activeTaskByRole.test;
-          assert.ok(taskIdsByRole.test.includes(activeTestTask));
+          assert.ok(taskIdsByRole.test.includes(activeTestTask)||admittedTestEdit?.taskId===activeTestTask);
           if(!readPathsPerTask.has(activeTestTask))
             readPathsPerTask.set(activeTestTask,new Set());
           readPathsPerTask.get(activeTestTask).add(effect.path);
@@ -540,6 +542,14 @@ export async function runNativePositiveApprovedDag({
           if(!observedTestWriteKeys.has(key)){
             observedTestWriteKeys.add(key);
             testCalls++;testUpdates++;
+          }
+          if(admittedTestEdit?.taskId===activeTaskByRole.test){
+            observedTestEditEffects.set(key,Object.freeze({
+              taskId:activeTaskByRole.test,role:"test",runtimeTaskId:admittedTestEdit.runtimeTaskId,
+              credentialId:executed.verified_delegation.credential_id,
+              operation:"update_file",branch:effect.branch,path:effect.path,
+              commitSha:effect.commit_sha,sequence:++implementationWriteSequence
+            }));
           }
           writePaths.test.add(effect.path);
           const head=await reader.getBranchMetadata(branch);
@@ -924,12 +934,53 @@ export async function runNativePositiveApprovedDag({
       await trustedOwnerRecovery.bindOriginalA2APorts({
         agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
         getVerifiedRepairTarget:()=>verifiedRepairTarget,
+        selectTestEditD1:epoch=>{
+          const selected=selectSignedNativeTestEditD1Tasks({
+            epoch,planDigest:epoch.plan_digest,branchUri:scopedBranch,
+            originalCreatedTestFileUris:[...observedCreatedPaths].map(p=>canonicalFileUri(repo,branch,p)),
+            originalApprovedTestGrants:grants.filter(g=>g.agent_id==="test"),
+            originalRootPermissions:coordinator.trustedOperationalAuthority().permissions
+          });
+          const paths=selected.fileUris.map(uri=>[...observedCreatedPaths].find(p=>canonicalFileUri(repo,branch,p)===uri));
+          if(paths.some(p=>!p))throw Error("D1 generated Test paths lack original provider evidence");
+          return Object.freeze({...selected,paths:Object.freeze(paths)});
+        },
+        async armVerifiedD1TestEdit({taskId,role,runtimeTaskId,credentialId,path,paths=[path],failedSha}){
+          if(admittedTestEdit||admittedTestRepair||role!=="test"||
+             !(realGeminiPilot||offlineProjectTestProbe)||
+             !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(runtimeTaskId??"")||
+             !credentialId||!SHA.test(failedSha??"")||runnerHistory.length!==1||
+             runnerOutcome?.status!=="fail"||runnerOutcome.tested_commit_sha!==failedSha||
+             !Array.isArray(paths)||paths[0]!==path||
+             (await reader.getBranchMetadata(branch)).commit_sha!==failedSha)
+            throw Error("D1 Test editor requires original failed SHA and fresh child");
+          const history=await trustedOwnerRecovery.intake.verifiedEpochHistory(),epoch=history.at(-1);
+          if(history.length!==2||epoch.root_credential_id!==operationalRootId)
+            throw Error("D1 Test editor root mismatch");
+          const selected=selectSignedNativeTestEditD1Tasks({
+            epoch,planDigest:epoch.plan_digest,branchUri:scopedBranch,
+            originalCreatedTestFileUris:[...observedCreatedPaths].map(p=>canonicalFileUri(repo,branch,p)),
+            originalApprovedTestGrants:grants.filter(g=>g.agent_id==="test"),
+            originalRootPermissions:coordinator.trustedOperationalAuthority().permissions
+          });
+          if(taskId!==selected.testEditTaskId||paths.length!==selected.fileUris.length||
+             new Set(paths).size!==paths.length||paths.some(p=>
+              !selected.fileUris.includes(canonicalFileUri(repo,branch,p))||
+              !approvedTestReads.includes(p)||!updatedTestFiles.includes(p)))
+            throw Error("D1 Test editor differs from signed original scope");
+          const mode=selectTrustedD1AgentModelActivation({role:"test",taskId,model:models.test,
+            scriptedModelClass:OfflineApprovedAdkModel,allowGenerative:realGeminiPilot});
+          if(mode.needs_scripted_arming)models.test.armTrustedD1GeneratedTestRepair({branch,path,paths,failedSha,taskId});
+          admittedTestEdit=Object.freeze({taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha});
+          activeTaskByRole.test=taskId;activeChildByRole.test=credentialId;
+          for(const p of paths)expectedTestWriteKeys.add(writeKey(taskId,"update_file",p));
+        },
         async verifyD1EditorRevision(task,previousSha){
-          const binding=task.role==="backend"?admittedBackendRepair:admittedFrontendRepair;
+          const binding=task.role==="backend"?admittedBackendRepair:task.role==="frontend"?admittedFrontendRepair:admittedTestEdit;
           const head=await reader.getBranchMetadata(branch);
           try{
             return verifyD1EditorRevision({task,binding,branch,previousSha,
-              headSha:head.commit_sha,writes:[...observedImplementationWriteKeys.values()]});
+              headSha:head.commit_sha,writes:[...(task.role==="test"?observedTestEditEffects:observedImplementationWriteKeys).values()]});
           }catch(error){
             const categories=["revision_baseline_mismatch","no_confirmed_editor_write",
               "editor_effect_binding_mismatch","provider_head_mismatch","unchanged_editor_revision"];
@@ -958,7 +1009,7 @@ export async function runNativePositiveApprovedDag({
           if(history.length!==2||task?.agent_id!=="test"||
              epoch.root_credential_id!==operationalRootId||
              !epoch.plan.tasks.filter(t=>
-               t.agent_id==="backend"||t.agent_id==="frontend").every(repair=>{
+               epoch.plan.requested_permissions.some(g=>g.task_id===t.id&&g.operation==="update_file")).every(repair=>{
                const visited=new Set(),pending=[...task.depends_on];
                while(pending.length){
                  const id=pending.pop();
@@ -1356,7 +1407,7 @@ export async function runNativePositiveApprovedDag({
     assert.ok(observedImplementationWriteKeys.size<=
       expectedImplementationWriteKeys.size);
     assert.ok(testCreates<=approvedTestCreates.length);
-    assert.ok(testUpdates<=approvedTestUpdates.length);
+    assert.ok(testUpdates<=approvedTestUpdates.length+(admittedTestEdit?.paths.length??0));
     assert.ok(testReads<=readableTestFiles.length);
     if(realGeminiPilot){
       // Gemini may recover from a real Docker FAIL under the same signed grants.

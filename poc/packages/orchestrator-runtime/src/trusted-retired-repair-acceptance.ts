@@ -1,3 +1,4 @@
+import {finalRepairTestTask} from "./repair-final-test-task.ts";
 /**
  * R141 — read-only exact-SHA correlation AFTER the trusted owner retires
  * its original Gateway session. R139 real Docker provider evidence and
@@ -80,17 +81,9 @@ export class TrustedRetiredRepairAcceptanceWitness {
   const branch=approvedWorkBranch(current.plan);
   if(branch!==approvedWorkBranch(first.plan))
    deny("repair branch changed from original Engineer approval");
-  const tests=current.plan.tasks.filter((t:{id:string;agent_id:string})=>
-    t.agent_id==="test");
-  if(tests.length!==1||!tests[0]||
-     !current.plan.requested_permissions.some((p:{
-      task_id:string;agent_id:string;operation:string;resource:string
-     })=>p.task_id===tests[0].id&&p.agent_id==="test"&&
-      p.operation==="run_tests"&&
-      p.resource==="gitea://"+current.plan.repository.authority+"/"+
-       current.plan.repository.owner+"/"+current.plan.repository.repository+
-       "/branches/"+encodeURIComponent(branch)))
-   deny("one final signed Test Task with exact branch grant required");
+  const finalTestTaskId=finalRepairTestTask(current.plan,
+    "gitea://"+current.plan.repository.authority+"/"+current.plan.repository.owner+"/"+
+    current.plan.repository.repository+"/branches/"+encodeURIComponent(branch));
   if(config.coordinator.phase!=="execution"||
      config.coordinator.trustedOperationalAuthority().credential_id!==
       root.credential_id)
@@ -123,7 +116,7 @@ export class TrustedRetiredRepairAcceptanceWitness {
    coordinator:config.coordinator,
    pins:{
     session_id:current.plan.session_id,epoch:history.length,
-    plan_digest:current.plan_digest,task_id:tests[0].id,
+    plan_digest:current.plan_digest,task_id:finalTestTaskId,
     branch,repository:{...current.plan.repository}
    }
   });

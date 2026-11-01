@@ -1,3 +1,4 @@
+import {selectSignedNativeTestEditD1Tasks} from "../native-test/native-owner-d1-task-selection.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync,randomBytes,createHash} from "node:crypto";
@@ -167,11 +168,30 @@ const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
  "build","playwright_e2e","researcher_acceptance"].map(phase=>({
  phase,status:"pass" as const
 }));
+const generatedTestPath="tests/backend/generated.test.ts";
+const generatedTestUri=branchURI+"/files/"+generatedTestPath;
+function initialWithGeneratedTest(){
+ const p=initial();
+ p.tasks.find(t=>t.id==="test-original")!.resources.push(generatedTestUri);
+ for(const operation of ["create_file","read_file","update_file"])
+  p.requested_permissions.push({id:"generated-"+operation,task_id:"test-original",agent_id:"test",
+   resource:generatedTestUri,operation,reason:"Explicit original generated-test grant"});
+ return p;
+}
+function generatedTestRepair(){
+ const p=plan("generated-test-repair",2,[
+  entry("test-edit","test",generatedTestUri,"update_file"),
+  entry("test-revalidate","test",branchURI,"run_tests",["test-edit"])
+ ]);
+ p.requested_permissions.push({id:"test-edit-read",task_id:"test-edit",agent_id:"test",
+  resource:generatedTestUri,operation:"read_file",reason:"Read before editing"});
+ return p;
+}
 async function harness(t:import("node:test").TestContext,
  options:{withReview?:boolean;withIndependentSibling?:boolean;
-  withTestWrite?:boolean;withRead?:boolean;withInlineRead?:boolean;
+  withGeneratedTest?:boolean;withTestWrite?:boolean;withRead?:boolean;withInlineRead?:boolean;
   withDurable?:boolean;withRemoteEpoch?:boolean}={}){
- const parent=options.withReview?
+ const parent=options.withGeneratedTest?initialWithGeneratedTest():options.withReview?
   initialWithReview(options.withIndependentSibling):
   options.withInlineRead?initialWithInlineRead():
   options.withRead?initialWithTrustedRead():
@@ -343,6 +363,10 @@ async function harness(t:import("node:test").TestContext,
      tool:"create_branch" as const,
      branch:req.arguments.branch,base_branch:req.arguments.base_branch,
      revision:sha,commit_sha:sha
+    };
+    if(req.tool==="create_file")return {
+     provider:"gitea" as const,performed:true as const,tool:"create_file" as const,
+     branch:req.arguments.branch,path:req.arguments.path,revision:sha,commit_sha:sha,blob_sha:"b"
     };
     if(req.tool==="update_file")return {
      provider:"gitea" as const,performed:true as const,
@@ -1842,7 +1866,7 @@ test("R114 real Gateway pins original root before terminal Test FAIL finalizatio
  * No paid models, container engine, or external service are invoked here. */
 async function r115RemoteFixture(t:import("node:test").TestContext,
  options:{withDurable?:boolean;withRemoteEpoch?:boolean;nativeCoordinator?:boolean;
-  withReview?:boolean;withRead?:boolean;
+  withReview?:boolean;withRead?:boolean;withGeneratedTest?:boolean;
   installInspector?:(h:Awaited<ReturnType<typeof harness>>)=>Promise<{signedEpochInspector:TrustedGatewaySignedEpochInspector;discoveryChildVpVerifier?:TrustedGatewayDiscoveryChildVpVerifier}>;
  }={}){
  const h=await harness(t,options);
@@ -1885,7 +1909,10 @@ async function r115RemoteFixture(t:import("node:test").TestContext,
  await h.gates.confirmTaskCompletion("task-setup");
  await h.invoke("task-backend","backend","update_file",edit("// source fails"));
  await h.gates.confirmTaskCompletion("task-backend");
- h.setRunnerFailure();
+ if(options.withGeneratedTest){
+  await h.invoke("task-test","test","create_file",{branch,path:generatedTestPath,content:"// scripted wrong test"});
+  h.setBackendTestFailure([generatedTestPath]);
+ }else h.setRunnerFailure();
  await h.invoke("task-test","test","run_tests",runner);
  const request=()=>({
   gateway:client,intake:h.intake,coordinator:h.coordinator,
@@ -3437,13 +3464,13 @@ test("R133.2 a valid Rust VP and fully passing original DAG cannot invent a repa
 /** R134 uses real signed-owner+HMAC Gateway fixtures, but scripted native
  * credential issuance. The resulting DC has no execution/VP authority. */
 async function r134Fixture(t:import("node:test").TestContext,
- options:{withReview?:boolean}={}){
+ options:{withReview?:boolean;withGeneratedTest?:boolean}={}){
  const {h,client,request}=await r115RemoteFixture(t,{
   withDurable:true,withRemoteEpoch:true,
-  withReview:options.withReview
+  withReview:options.withReview,withGeneratedTest:options.withGeneratedTest
  });
  await prepareTrustedRemoteRepairFeedback(request());
- const reserved=await h.intake.reserveRepairEpoch(repair());
+ const reserved=await h.intake.reserveRepairEpoch(options.withGeneratedTest?generatedTestRepair():repair());
  const dir=join(h.dir,"r134-child-journal");
  await mkdir(dir,{mode:0o700});
  const journal=new TrustedChildIssuanceJournal({
@@ -5200,3 +5227,46 @@ test("R151.89 runtime grant preflight compares exact signed pairs without provid
  ] as const)assert.throws(()=>h.gates.assertRuntimeFileGrants("preflight-editor",role,br,permissions));
  assert.equal(h.provider,before);
 });
+
+ test("Generated Test D1 selector reaches separate signed A2A edit and Runner Tasks",async t=>{
+  const f=await r134Fixture(t,{withGeneratedTest:true});
+  await f.admit();
+  const history=await f.h.intake.verifiedEpochHistory();
+  const selected=selectSignedNativeTestEditD1Tasks({epoch:history.at(-1),planDigest:f.reserved.plan_digest,
+   branchUri:branchURI,originalCreatedTestFileUris:[generatedTestUri],
+   originalApprovedTestGrants:f.h.parent.requested_permissions,
+   originalRootPermissions:f.h.rootAuthority.permissions});
+  const sent:string[]=[];
+  const args=r137Args(f,{async sendProtectedTask(req:any){
+   sent.push(req.subtask.subtask_id);
+   const artifact=r135A2AArtifact(),value=artifact.artifacts[0].parts[0].content.value as any;
+   value.role="test";value.summary="Authorized generated-test repair";
+   if(req.subtask.subtask_id===selected.testEditTaskId){
+    assert.equal(req.subtask.approved_run_tests,false);
+    assert.deepEqual(req.subtask.approved_file_permissions.map((g:any)=>g.operation).sort(),["read_file","update_file"]);
+    await f.h.invoke(req.trusted_gateway_task_id,"test","read_file",{branch,path:generatedTestPath});
+    await f.h.invoke(req.trusted_gateway_task_id,"test","update_file",{branch,path:generatedTestPath,content:"// corrected assertion"});
+    value.test_outcome="not_run";value.files_modified=[generatedTestPath];
+   }else{
+    assert.equal(req.subtask.subtask_id,selected.testRunTaskId);
+    assert.equal(req.subtask.approved_run_tests,true);
+    assert.deepEqual(req.subtask.approved_file_permissions,[]);
+    await f.h.invoke(req.trusted_gateway_task_id,"test","run_tests",runner);
+    Object.assign(value,{test_outcome:"pass",tested_commit_sha:sha,runner_profile:"poc-default",
+     project_tests:"pass",researcher_acceptance:"pass"});
+   }
+   return {card:{name:"Test Agent"},task:artifact as never};
+  }});
+  const report=await executeTrustedAdmittedRepairDag(args);
+  assert.deepEqual(sent,selected.orderedTaskIds);
+  assert.equal(new Set(report.tasks.map(t=>t.credential_id)).size,2);
+  assert.equal(f.calls.length,2);
+  assert.deepEqual(f.calls.map(c=>c.body.permissions.map((p:any)=>p.operation).sort()),
+   [["read_file","update_file"],["run_tests"]]);
+  assert.equal(report.docker_pass_verified,false,"Scripted provider evidence is not real Docker");
+  const gitea=new GiteaClient({baseUrl:"http://unused.local",token:"private-fixture",owner:repo.owner,
+   repository:repo.repository,fetchFn:(async()=>{throw Error("capture must not call provider");}) as typeof fetch});
+  await TrustedRetiredRepairAcceptanceWitness.capture({gateway:f.client,gitea,
+   coordinator:f.h.coordinator,intake:f.h.intake});
+  await assert.rejects(executeTrustedAdmittedRepairDag(args),/cannot replay/);
+ });

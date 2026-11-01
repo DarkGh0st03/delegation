@@ -1003,6 +1003,8 @@ try{
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
               a2a:ports.a2a,
               verifyD1EditorRevision:ports.verifyD1EditorRevision,
+              selectTestEditD1:ports.selectTestEditD1,
+              armVerifiedD1TestEdit:ports.armVerifiedD1TestEdit,
               armVerifiedD1BackendRepair:ports.armVerifiedD1BackendRepair,
               ...(ports.armVerifiedD1FrontendRepair?{
                 armVerifiedD1FrontendRepair:ports.armVerifiedD1FrontendRepair
@@ -1026,14 +1028,25 @@ try{
             // Derive the actual repair target from the *admitted* D1 grants.
             // Never let Gemini select a path, Task ID or operation outside
             // the original Engineer-approved, Rust-issued root.
-            const repairTasks=epochs[1].plan.tasks.filter(t=>
+            const testEditMode=epochs[1].plan.tasks.length===2&&epochs[1].plan.tasks.every(t=>t.agent_id==="test");
+            let testEditSelection;
+            if(testEditMode){
+              if(!["backend_tests","frontend_tests"].includes(signal.first_failed_phase)||
+                 typeof originalA2APorts.selectTestEditD1!=="function"||
+                 typeof originalA2APorts.armVerifiedD1TestEdit!=="function")
+                throw Error("D1 Test editing requires verified project failure and trusted original ports");
+              testEditSelection=originalA2APorts.selectTestEditD1(epochs[1]);
+            }
+            const repairTasks=testEditMode
+              ?epochs[1].plan.tasks.filter(t=>t.id===testEditSelection.testEditTaskId)
+              :epochs[1].plan.tasks.filter(t=>
               t.agent_id==="backend"||t.agent_id==="frontend");
             if(repairTasks.length<1||repairTasks.length>8||
                (!paidGeminiRecovery&&!multiTypecheckProbe&&repairTasks.length!==1))
               throw Error("Signed D1 repair Task count outside pilot scope");
             const filesByTask=new Map();
             for(const task of repairTasks){
-              const found=roleFiles[task.agent_id].filter(path=>
+              const found=testEditMode?[...testEditSelection.paths]:roleFiles[task.agent_id].filter(path=>
                 ["read_file","update_file"].every(operation=>
                   epochs[1].plan.requested_permissions.some(g=>
                     g.task_id===task.id&&g.agent_id===task.agent_id&&
@@ -1046,8 +1059,8 @@ try{
                 throw Error("D1 editor source files outside supported signed scope");
               filesByTask.set(task.id,{role:task.agent_id,path:found[0],paths:found});
             }
-            const multi=repairTasks.length>1||[...filesByTask.values()].some(x=>x.paths.length>1);
-            const selected=multi
+            const multi=!testEditMode&&(repairTasks.length>1||[...filesByTask.values()].some(x=>x.paths.length>1));
+            const selected=testEditMode?{testTaskId:testEditSelection.testRunTaskId}:multi
               ?selectSignedNativeMultiD1Tasks({
                 epoch:epochs[1],planDigest:epochs[1].plan_digest,
                 branchUri:branchResource,
@@ -1071,7 +1084,7 @@ try{
             }))throw Error("Signed D1 resources differ from original writers");
             const signedTaskOrder=multi?selected.orderedTaskIds:
               [repairTasks[0].id,selected.testTaskId];
-            if(!paidGeminiRecovery&&!multiTypecheckProbe){
+            if(!testEditMode&&!paidGeminiRecovery&&!multiTypecheckProbe){
               assert.equal(multi?selected.editingTasks[0].taskId:selected.backendTaskId,candidateBackendId);
               assert.equal(selected.testTaskId,candidateTestId);
               assert.ok(filesByTask.get(repairTasks[0].id).paths.some(path=>
@@ -1128,7 +1141,7 @@ try{
                 assert.equal(issued.epoch,2);
                 const editing=filesByTask.get(issued.task_id);
                 if(editing&&issued.role===editing.role){
-                  const armRepair=editing.role==="frontend"
+                  const armRepair=editing.role==="test"?originalA2APorts.armVerifiedD1TestEdit:editing.role==="frontend"
                     ?originalA2APorts.armVerifiedD1FrontendRepair
                     :originalA2APorts.armVerifiedD1BackendRepair;
                   if(geminiPilot)pilotDelegatedPhase="d1_editor_preparation";

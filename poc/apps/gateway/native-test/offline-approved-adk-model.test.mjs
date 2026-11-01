@@ -130,3 +130,26 @@ test("Frontend project repair refuses wrong role, early reuse and stale source r
    await assert.rejects(responsePart(m,readEffect(ui,"PRIVATE_SOURCE","b".repeat(40))),/pinned TypeScript/);}
  }
 });
+
+test("Generated assertion repair reads failed revision then yields a separate run-only Task",async()=>{
+ const {GENERATED_TEST_WRONG_ASSERTION:wrong,GENERATED_TEST_CORRECT_ASSERTION:correct}=await import("./offline-project-test-repair-fixture.mjs");
+ const m=model(),path="tests/backend/generated.test.ts",failedSha="a".repeat(40);
+ const args={branch,path,failedSha,taskId:"test-edit"};
+ assert.throws(()=>m.armTrustedD1GeneratedTestRepair(args),/fresh bounded/);
+ for(let i=0;i<3;i++)await next(m);
+ for(const bad of [{...args,taskId:"initial-test"},{...args,path:"../foreign.ts"},
+  {...args,paths:[path,"tests/backend/other.test.ts"]}])
+  assert.throws(()=>m.armTrustedD1GeneratedTestRepair(bad),/fresh bounded/);
+ m.armTrustedD1GeneratedTestRepair(args);
+ assert.equal((await next(m)).functionCall.name,"read_file");
+ const change=await responsePart(m,readEffect(path,"// preserve\n"+wrong,failedSha));
+ assert.equal(change.functionCall.name,"update_file");
+ assert.equal(change.functionCall.args.content,"// preserve\n"+correct);
+ assert.throws(()=>m.armTrustedD1TestRun({branch,taskId:"retest"}),/cannot reuse/);
+ const done=await responsePart(m,{contents:[{parts:[{functionResponse:{name:"update_file",
+  response:{ok:true,result:{provider:"gitea",performed:true,tool:"update_file",branch,path,commit_sha:"b".repeat(40)}}}}]}]});
+ assert.match(done.text,/Test D1/);
+ m.armTrustedD1TestRun({branch,taskId:"retest"});
+ assert.equal((await next(m)).functionCall.name,"run_tests");
+ assert.throws(()=>m.armTrustedD1GeneratedTestRepair(args),/fresh bounded/);
+});

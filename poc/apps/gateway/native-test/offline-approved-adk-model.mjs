@@ -1,4 +1,4 @@
-import {FRONTEND_TEST_FAULT,repairFrontendTestFault} from "./offline-project-test-repair-fixture.mjs";
+import {FRONTEND_TEST_FAULT,repairFrontendTestFault,repairGeneratedTestAssertionFault} from "./offline-project-test-repair-fixture.mjs";
 /**
  * Test-only, fixed tool-call schedule through real Google ADK LlmAgent/Runner.
  * Never contacts Gemini; the real Gateway checks each operation independently.
@@ -61,7 +61,7 @@ export class OfflineApprovedAdkModel extends BaseLlm{
    * real Rust Child DC before A2A sends; this model supplies tool intent only.
    */
   armTrustedD1TestRun({branch,taskId}={}){
-    if(this.#role!=="test"||this.#d1TestArmed||!this.#groups||
+    if(this.#role!=="test"||this.#d1TestArmed||this.#d1Repair||!this.#groups||
        this.#groupIndex!==this.#groups.length||
        this.#withinGroup!==0||this.#callIndex!==this.#calls.length||
        typeof branch!=="string"||!/^feature\/[A-Za-z0-9._/-]+$/u.test(branch)||
@@ -104,6 +104,22 @@ export class OfflineApprovedAdkModel extends BaseLlm{
     this.armTrustedD1TypecheckRepair({...args,path:typedPath});
     Object.assign(this.#d1Repair,{path:paths[0],paths:Object.freeze([...paths]),nextPath:1,kind:"project_test"});
   }
+  /** Offline-only assertion fixture. Reads actual authorized source; no prewritten replacement. */
+  armTrustedD1GeneratedTestRepair({branch,path,paths=[path],failedSha,taskId}={}){
+    if(this.#role!=="test"||this.#d1RepairArmed||this.#d1Repair||this.#d1TestArmed||
+       !this.#groups||this.#groupIndex!==this.#groups.length||this.#withinGroup!==0||
+       this.#callIndex!==this.#calls.length||
+       typeof branch!=="string"||!/^feature\/[A-Za-z0-9._/-]+$/u.test(branch)||
+       branch.split("/").some(x=>x==="."||x==="..")||
+       typeof path!=="string"||!/^tests\/(?:backend|frontend)\/[A-Za-z0-9._/-]+\.(?:test|spec)\.[jt]sx?$/u.test(path)||
+       path.split("/").some(x=>x==="."||x==="..")||
+       !Array.isArray(paths)||paths.length!==1||paths[0]!==path||
+       !SHA.test(failedSha??"")||typeof taskId!=="string"||
+       !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||this.#groups.some(g=>g.task_id===taskId))
+      throw Error("Offline generated Test repair requires a fresh bounded Task");
+    this.#d1Repair={branch,path,failedSha,taskId,stage:0,kind:"generated_test"};
+    this.#d1RepairArmed=true;
+  }
   async *generateContentAsync(request){
     const repair=this.#d1Repair;
     if(repair){
@@ -128,13 +144,13 @@ export class OfflineApprovedAdkModel extends BaseLlm{
             id:"offline-d1-frontend-source-"+repair.nextPath,name:"read_file",args:{branch:repair.branch,path}
           }}]}};return;
         }
-        if(repair.kind!=="project_test"&&data.content.split(TYPECHECK_FAULT).length!==2)
+        if(!["project_test","generated_test"].includes(repair.kind)&&data.content.split(TYPECHECK_FAULT).length!==2)
           throw Error("Offline D1 Frontend source is not failed pinned TypeScript");
         repair.stage=2;
         yield {content:{role:"model",parts:[{functionCall:{
           id:"offline-d1-frontend-update",name:"update_file",
           args:{branch:repair.branch,path:repair.path,
-            content:repair.kind==="project_test"?repairFrontendTestFault(data.content):data.content.replace(TYPECHECK_FAULT,"\n")}
+            content:repair.kind==="generated_test"?repairGeneratedTestAssertionFault(data.content):repair.kind==="project_test"?repairFrontendTestFault(data.content):data.content.replace(TYPECHECK_FAULT,"\n")}
         }}]}};return;
       }
       const written=trustedToolEffect(request,"update_file",repair.branch,repair.path);
@@ -143,7 +159,7 @@ export class OfflineApprovedAdkModel extends BaseLlm{
         throw Error("Offline D1 Frontend mutation was not committed");
       this.#d1Repair=null;
       yield {content:{role:"model",parts:[{
-        text:"Frontend D1 updated the signed source through Gateway."
+        text:repair.kind==="generated_test"?"Test D1 updated the signed test through Gateway.":"Frontend D1 updated the signed source through Gateway."
       }]}};return;
     }
     const group=this.#groups?.[this.#groupIndex];
