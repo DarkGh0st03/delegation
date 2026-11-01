@@ -891,8 +891,10 @@ async function main(){
         process.env.APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE==="1";
       const acceptanceProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE==="1";
       const backendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE==="1";
-      if(acceptanceProbe&&backendTestProbe)throw Error("Separate semantic fixture flags required");
-      const semanticProbe=acceptanceProbe||backendTestProbe;
+      const frontendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE==="1";
+      if([acceptanceProbe,backendTestProbe,frontendTestProbe].filter(Boolean).length>1)
+        throw Error("Separate semantic fixture flags required");
+      const semanticProbe=acceptanceProbe||backendTestProbe||frontendTestProbe;
       if(semanticProbe&&(typecheckProbe||realGeminiPilot||
          process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1!=="1"||
          process.env.APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL!=="1"||
@@ -1185,7 +1187,7 @@ async function main(){
             assert.equal(proof?.original_root_revoked,true);
             assert.equal(proof?.final_runner_pass_verified,false);
             assert.equal(proof?.pull_request_created,false);
-            assert.equal(proof?.failed_phase,backendTestProbe?"backend_tests":acceptanceProbe?"researcher_acceptance":"typecheck");
+            assert.equal(proof?.failed_phase,frontendTestProbe?"frontend_tests":backendTestProbe?"backend_tests":acceptanceProbe?"researcher_acceptance":"typecheck");
             assert.equal(proof?.original_signed_plan_digest?.length,64);
             assert.match(proof?.original_test_sha??"",/^[a-f0-9]{40}$/u);
             const review=positive?.owner_repair_review;
@@ -1201,7 +1203,7 @@ async function main(){
             assert.match(review?.tested_commit_sha??"",/^[a-f0-9]{40}$/u);
             assert.notEqual(review.tested_commit_sha,proof.original_test_sha);
             process.stdout.write(JSON.stringify({
-              event:backendTestProbe?"signed_owner_d1_real_backend_test_repair_review":acceptanceProbe?"signed_owner_d1_real_acceptance_repair_review"
+              event:frontendTestProbe?"signed_owner_d1_real_frontend_test_repair_review":backendTestProbe?"signed_owner_d1_real_backend_test_repair_review":acceptanceProbe?"signed_owner_d1_real_acceptance_repair_review"
                 :"signed_owner_d1_real_typecheck_repair_review",status:"PASS",
               original_rust_root_verified:true,
               independently_admitted_repair_epoch:true,

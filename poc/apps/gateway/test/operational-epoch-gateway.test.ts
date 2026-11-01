@@ -249,6 +249,7 @@ async function harness(t:import("node:test").TestContext,
  let nextRunnerFails=false;
  let acceptanceFailure:unknown;
  let backendTestFiles:unknown;
+ let projectFailurePhase="backend_tests";
  // Mock native Adapter + VP only in this fixture: production R133 uses
  // R130 Unix HMAC Orchestrator and Rust's genuine verifier on each read.
  const remote=options.withRemoteEpoch?new TrustedGatewaySignedEpochInspector({
@@ -363,7 +364,8 @@ async function harness(t:import("node:test").TestContext,
      const acceptance=fail&&acceptanceFailure!==undefined;
      const project=fail&&backendTestFiles!==undefined;
      const measured=project?phases.map((p,i)=>({...p,
-      status:(i<2?"pass":i===2?"fail":"skipped") as "pass"|"fail"|"skipped"
+      status:(i<phases.findIndex(x=>x.phase===projectFailurePhase)?"pass":
+       i===phases.findIndex(x=>x.phase===projectFailurePhase)?"fail":"skipped") as "pass"|"fail"|"skipped"
      })):acceptance?phases.map(p=>({...p,
       status:p.phase==="researcher_acceptance"?"fail" as const:"pass" as const
      })):fail?phases.map(p=>({
@@ -433,7 +435,8 @@ async function harness(t:import("node:test").TestContext,
  return {gates,intake,runtime,prepared,invoke,initialPass,
   coordinator,rootAuthority,dir,signedStore,parent,approved,journal,
   setRunnerFailure:()=>{nextRunnerFails=true;},
-  setBackendTestFailure:(files:unknown)=>{nextRunnerFails=true;backendTestFiles=files;},
+  setBackendTestFailure:(files:unknown)=>{nextRunnerFails=true;backendTestFiles=files;projectFailurePhase="backend_tests";},
+  setFrontendTestFailure:(files:unknown)=>{nextRunnerFails=true;backendTestFiles=files;projectFailurePhase="frontend_tests";},
   setAcceptanceFailure:(summary:unknown)=>{nextRunnerFails=true;acceptanceFailure=summary;},
   setPhase:(s:string)=>{phase=s;},
   revokeNativeRoot:()=>{nativeRootRevoked=true;},
@@ -907,7 +910,7 @@ const prepareR106=(h:Awaited<ReturnType<typeof verifiedFailureForR106>>,options:
  }),
  proposeRepairPlan:async(input)=>{
   if(options.count)options.count.model++;
-  assert.equal(input.feedback.failed_phase,options.expectedProjectTestFailure?"backend_tests":options.expectedAcceptanceFailure
+  assert.equal(input.feedback.failed_phase,options.expectedProjectTestFailure?options.expectedProjectTestFailure.phase:options.expectedAcceptanceFailure
     ?"researcher_acceptance":"typecheck");
   assert.deepEqual(input.feedback.typecheck_error_codes,(options.expectedAcceptanceFailure||options.expectedProjectTestFailure)?[]:["TS2339"]);
   if(options.expectedAcceptanceFailure)
@@ -5106,4 +5109,30 @@ test("Backend test FAIL retains bounded private feedback through original-root p
  await h.invoke("acceptance-test-new","test","run_tests",runner);
  await h.gates.confirmTaskCompletion("acceptance-test-new");
  assert.equal((await h.intake.verifiedEpochHistory()).length,2);
+});
+
+test("Frontend test FAIL retains exact-SHA private feedback without granting source access",async(t)=>{
+ const h=await harness(t,{withReview:true});
+ await h.intake.reserveInitialEpoch();await h.gates.activate(session,sha);
+ h.gates.bindTask(session,"setup","task-setup","orchestrator");
+ h.gates.bindTask(session,"backend-original","task-backend","backend");
+ h.gates.bindTask(session,"test-original","task-test","test");
+ await h.invoke("task-setup","orchestrator","create_branch",{branch,base_branch:"main"});
+ await h.gates.confirmTaskCompletion("task-setup");
+ await h.invoke("task-backend","backend","update_file",edit("// faulty semantics"));
+ await h.gates.confirmTaskCompletion("task-backend");
+ const summary={phase:"frontend_tests",failed_test_file_count:1};
+ h.setFrontendTestFailure(["tests/frontend/behavior.test.tsx"]);
+ await h.invoke("task-test","test","run_tests",runner);
+ const failure=h.gates.confirmTestValidationFailure("task-test");
+ assert.equal(failure.first_failed_phase,"frontend_tests");
+ assert.deepEqual(failure.project_test_failure,summary);
+ assert.deepEqual(failure.typecheck_error_codes,[]);
+ const feedback=await prepareTrustedRepairFeedback({gateway:h.gates,
+  intake:h.intake,sessionId:session,runtimeTestTaskId:"task-test"});
+ assert.deepEqual(feedback.project_test_failure,summary);
+ assert.equal(feedback.execution_authorized,false);
+ assert.equal(feedback.permission_granted,false);
+ assert.throws(()=>h.runtime.prepare({task_id:"task-test",agent_role:"test",
+  tool:"run_tests",arguments:runner}),/outside approved plan/);
 });

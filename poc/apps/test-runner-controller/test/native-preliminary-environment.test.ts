@@ -11,13 +11,14 @@ const parent={ADAPTER_TRUST_PROFILE:"evm",GATEWAY_VERIFIER_MODE:"core-rust",
  DELEGATION_SIGNED_GEMINI_PILOT:"1",DELEGATION_SIGNED_GEMINI_REPAIR_D1:"1",
  DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION:"I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH",
  DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
- APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE:"1",
+ APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE:"1",APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE:"1",
  GEMINI_API_KEY:"fixture-key-not-for-provider-use",APPROVED_RUNNER_SCENARIO:"account-suspension"};
 
 test("R151.81 reproduce the exact old inherited-repair guard without API access",()=>{
  const script=fileURLToPath(new URL("../../gateway/native-test/native-planning-read-core-evm-e2e.mjs",import.meta.url));
  const oldChild={...process.env,...parent,DELEGATION_SIGNED_GEMINI_PILOT:"0",GEMINI_API_KEY:"",
   APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1:"0",APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE:"0",
+  APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE:"0",APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE:"0",
   APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE:"0",APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE:"0"};
  const child=spawnSync(process.execPath,["--experimental-strip-types",script],{
   env:oldChild,encoding:"utf8",timeout:15000,maxBuffer:1024*1024});
@@ -29,6 +30,7 @@ test("R151.81 reproduce the exact old inherited-repair guard without API access"
 test("R151.81 preliminary child clears both paid switches, acknowledgements and key while preserving native fixtures",()=>{
  const child=buildNativePreliminaryEnvironment(parent,fixtures);
  assert.equal(child.APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE,"0");
+ assert.equal(child.APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE,"0");
  assert.equal(child.DELEGATION_SIGNED_GEMINI_PILOT,"0");
  assert.equal(child.DELEGATION_SIGNED_GEMINI_REPAIR_D1,"0");
  assert.equal(child.DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION,"NO ADDITIONAL REPAIR AUTHORIZED");

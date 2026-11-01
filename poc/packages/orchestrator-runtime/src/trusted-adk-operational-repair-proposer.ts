@@ -89,7 +89,7 @@ function boundedBackendTestScope(input:Readonly<TrustedRepairModelInput>,
  // Diagnostic eligibility never supplies a file, role or root authority.
  if(!isActionableRepairFailure(input.feedback.failed_phase,
     input.feedback.typecheck_error_codes,input.feedback.acceptance_failure,input.feedback.project_test_failure))
-  deny("bounded Backend/Test repair requires verified TypeScript diagnostics or actionable acceptance checks or classified Backend tests");
+  deny("bounded Backend/Test repair requires verified TypeScript diagnostics or actionable acceptance checks or classified project tests");
  const suffix="/branches/"+encodeURIComponent(input.feedback.work_branch);
  const runner=input.already_delegated_grants.find(g=>
   g.operation==="run_tests"&&g.resource.startsWith("gitea://")&&
@@ -243,7 +243,7 @@ type TrustedRunnerRepairTarget=Readonly<
  |{status:"verified_original_project_test_repair_scope";
    tested_commit_sha:string;project_test_failure:import("../../../apps/test-runner-controller/src/repair-failure-eligibility.ts").ProjectTestFailureSummary;
    causal_attribution:"not_established";
-   candidates:readonly Readonly<{role:"backend";resource:string}>[]}
+   candidates:readonly Readonly<{role:"backend"|"frontend";resource:string}>[]}
  |{status:"verified_runner_multi_file_repair_targets";
    tested_commit_sha:string;targets:ReadonlyArray<Readonly<{
      role:"backend"|"frontend";resource:string
@@ -356,16 +356,18 @@ export class TrustedAdkOperationalRepairProposer {
      !Array.isArray(acceptanceScope.candidates)||
      acceptanceScope.candidates.some(x=>!x||!["backend","frontend"].includes(x.role))))
    deny("acceptance candidate scope differs from verified failure or original roles");
+  const projectPhase=input.feedback.failed_phase;
+  const projectRole=projectPhase==="frontend_tests"?"frontend":"backend";
   const projectScope=target?.status==="verified_original_project_test_repair_scope"?target:undefined;
   if(projectScope&&(this.#taskShape!=="bounded_auto_edit_test"||
-     input.feedback.failed_phase!=="backend_tests"||
+     !["backend_tests","frontend_tests"].includes(projectPhase)||
      projectScope.causal_attribution!=="not_established"||
      JSON.stringify(projectScope.project_test_failure)!==JSON.stringify(input.feedback.project_test_failure)||
      !Array.isArray(projectScope.candidates)||
-     projectScope.candidates.some(x=>!x||x.role!=="backend")))
-   deny("project-test candidate scope differs from verified failure or original Backend role");
-  if(input.feedback.failed_phase==="backend_tests"&&!projectScope)
-   deny("Backend tests require verified original source candidate scope");
+     projectScope.candidates.some(x=>!x||x.role!==projectRole)))
+   deny("project-test candidate scope differs from verified failure or original phase-matching role");
+  if(["backend_tests","frontend_tests"].includes(projectPhase)&&!projectScope)
+   deny("Project tests require verified original source candidate scope");
   const semanticScope=acceptanceScope??projectScope;
   const single=target?.status==="verified_runner_single_file_repair_target"
    ?target:acceptanceCandidate;
@@ -509,8 +511,8 @@ export class TrustedAdkOperationalRepairProposer {
      "No PR, new root, branch creation, extra discovery grants or permission expansion."
     ]:[]),
     ...(projectScope?[
-     "The verified first failed phase is backend_tests. diagnostic_candidates are original Backend source/writer options, NOT proven causal files.",
-     "Select a bounded subset of original Backend candidates. Produce 1-8 Backend source editor Tasks and exactly one Test Task using only run_tests.",
+     `The verified first failed phase is ${projectPhase}. diagnostic_candidates are original ${projectRole} source/writer options, NOT proven causal files.`,
+     `Select a bounded subset of original ${projectRole} candidates. Produce 1-8 ${projectRole} source editor Tasks and exactly one Test Task using only run_tests.`,
      "Each editor must read its authorized source at the failed revision before writing. It may investigate several originally authorized sources without changing every one.",
      "Investigate the requested behavior; do not change test files, test commands, acceptance assertions or permissions to force a PASS.",
      "The new Test must depend on all editors. No PR, new root, branch creation or extra grants. Unknown failure causality is not permission to widen scope."

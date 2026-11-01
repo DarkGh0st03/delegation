@@ -1,3 +1,4 @@
+import {FRONTEND_TEST_FAULT,repairFrontendTestFault} from "./offline-project-test-repair-fixture.mjs";
 /**
  * Test-only, fixed tool-call schedule through real Google ADK LlmAgent/Runner.
  * Never contacts Gemini; the real Gateway checks each operation independently.
@@ -91,6 +92,18 @@ export class OfflineApprovedAdkModel extends BaseLlm{
    this.#d1Repair={branch,path,failedSha,taskId,stage:0};
    this.#d1RepairArmed=true;
   }
+  armTrustedD1ProjectTestRepair(args){
+    const paths=args?.paths??[args?.path];
+    if(!Array.isArray(paths)||paths.length<1||paths.length>8||paths[0]!==args?.path||
+       new Set(paths).size!==paths.length||paths.some(path=>typeof path!=="string"||
+        !/^apps\/frontend\/src\/[A-Za-z0-9._/-]+\.(?:tsx?|css)$/u.test(path)||
+        path.split("/").some(x=>x==="."||x==="..")))
+      throw Error("Offline Frontend project repair requires bounded original source paths");
+    const typedPath=paths.find(path=>/\.tsx?$/u.test(path));
+    if(!typedPath)throw Error("Offline Frontend fixture needs an original typed source");
+    this.armTrustedD1TypecheckRepair({...args,path:typedPath});
+    Object.assign(this.#d1Repair,{path:paths[0],paths:Object.freeze([...paths]),nextPath:1,kind:"project_test"});
+  }
   async *generateContentAsync(request){
     const repair=this.#d1Repair;
     if(repair){
@@ -105,14 +118,23 @@ export class OfflineApprovedAdkModel extends BaseLlm{
       if(repair.stage===1){
         const data=trustedToolEffect(request,"read_file",repair.branch,repair.path);
         if(data.revision!==repair.failedSha||
-           typeof data.content!=="string"||
-           data.content.split(TYPECHECK_FAULT).length!==2)
+           typeof data.content!=="string")
+          throw Error("Offline D1 Frontend source is not failed pinned TypeScript");
+        if(repair.kind==="project_test"&&!data.content.includes(FRONTEND_TEST_FAULT)){
+          const path=repair.paths[repair.nextPath++];
+          if(!path)throw Error("Offline Frontend semantic fault not found in observed authorized sources");
+          repair.path=path;
+          yield {content:{role:"model",parts:[{functionCall:{
+            id:"offline-d1-frontend-source-"+repair.nextPath,name:"read_file",args:{branch:repair.branch,path}
+          }}]}};return;
+        }
+        if(repair.kind!=="project_test"&&data.content.split(TYPECHECK_FAULT).length!==2)
           throw Error("Offline D1 Frontend source is not failed pinned TypeScript");
         repair.stage=2;
         yield {content:{role:"model",parts:[{functionCall:{
           id:"offline-d1-frontend-update",name:"update_file",
           args:{branch:repair.branch,path:repair.path,
-            content:data.content.replace(TYPECHECK_FAULT,"\n")}
+            content:repair.kind==="project_test"?repairFrontendTestFault(data.content):data.content.replace(TYPECHECK_FAULT,"\n")}
         }}]}};return;
       }
       const written=trustedToolEffect(request,"update_file",repair.branch,repair.path);

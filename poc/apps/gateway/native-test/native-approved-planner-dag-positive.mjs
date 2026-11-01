@@ -628,12 +628,12 @@ export async function runNativePositiveApprovedDag({
             }
           }
           if((realGeminiPilot||offlineProjectTestProbe)&&runnerRuns===0&&effect.status==="fail"&&
-             effect.phases?.find(p=>p.status==="fail")?.phase==="backend_tests"){
+             ["backend_tests","frontend_tests"].includes(effect.phases?.find(p=>p.status==="fail")?.phase)){
             try{verifiedRepairTarget=collectProjectTestRepairCandidateScope({
               effect,testedSha:pinned.commit_sha,repo,branch,approvedRows:grants,
               rootPermissions:coordinator.trustedOperationalAuthority().permissions,observedWrites:writePaths
             });}catch{verifiedRepairTarget=null;}
-            if(offlineProjectTestProbe)assert.ok(verifiedRepairTarget,"Real Backend failure needs original signed candidates");
+            if(offlineProjectTestProbe)assert.ok(verifiedRepairTarget,"Real project test failure needs original signed candidates");
           }
           if((realGeminiPilot||offlineAcceptanceProbe)&&runnerRuns===0&&
              effect.status==="fail"&&effect.project_tests?.status==="pass"&&
@@ -995,8 +995,9 @@ export async function runNativePositiveApprovedDag({
         async armVerifiedD1FrontendRepair({
           taskId,role,runtimeTaskId,credentialId,path,paths=[path],failedSha
         }){
-          // Generative Frontend correction only; do not add a scripted patch.
-          if((!realGeminiPilot&&!offlineMultiTypecheckProbe)||admittedTestRepair||
+          // Bind the same original Frontend identity to fresh signed D1 grants.
+          // Deterministic fault repair is restricted to nonbillable fixtures.
+          if((!realGeminiPilot&&!offlineMultiTypecheckProbe&&!offlineProjectTestProbe)||admittedTestRepair||
              admittedFrontendRepair?.taskId===taskId||
              role!=="frontend"||
              !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(taskId)||
@@ -1024,8 +1025,11 @@ export async function runNativePositiveApprovedDag({
             allowGenerative:realGeminiPilot
           });
           if(mode.needs_scripted_arming){
-            if(paths.length!==1)throw Error("Scripted Frontend repair supports one observed source");
-            models.frontend.armTrustedD1TypecheckRepair({branch,path,failedSha,taskId});
+            if(offlineProjectTestProbe)models.frontend.armTrustedD1ProjectTestRepair({branch,path,paths,failedSha,taskId});
+            else{
+              if(paths.length!==1)throw Error("Scripted Frontend compiler repair supports one observed source");
+              models.frontend.armTrustedD1TypecheckRepair({branch,path,failedSha,taskId});
+            }
           }
           admittedFrontendRepair=Object.freeze({
             taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha

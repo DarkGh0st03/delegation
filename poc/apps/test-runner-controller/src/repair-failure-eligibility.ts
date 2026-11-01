@@ -7,8 +7,8 @@ export type AcceptanceFailureSummary = NonNullable<RunnerRunResult["acceptance_f
 /** Diagnostic eligibility only. A live original root, pinned SHA and independently
  * checked target/grants remain mandatory before source reads or repair execution. */
 export function isActionableRepairFailure(phase: unknown, codes: unknown, acceptance: unknown, project?: unknown): boolean {
-  if(project!==undefined&&phase!=="backend_tests")return false;
-  if(phase==="backend_tests"){
+  if(project!==undefined&&phase!=="backend_tests"&&phase!=="frontend_tests")return false;
+  if(phase==="backend_tests"||phase==="frontend_tests"){
     const safe=safeProjectTestFailureDiagnostic(project);
     return Array.isArray(codes)&&codes.length===0&&acceptance===undefined&&
       !!safe&&safe.phase===phase;

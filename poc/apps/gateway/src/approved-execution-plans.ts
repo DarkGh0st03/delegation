@@ -891,11 +891,12 @@ export class TrustedApprovedExecutionPlans {
          phases.slice(0,-1).some(p=>p.status!=="pass")))
         denied("Untrusted acceptance failure diagnostic");
       const projectIndex=RUNNER_PHASES.indexOf(first);
-      const project=first==="backend_tests"&&(codes?.length??0)===0&&
+      const projectPhase=first==="backend_tests"||first==="frontend_tests"?first:null;
+      const project=projectPhase&&(codes?.length??0)===0&&
         result.project_tests?.status==="fail"&&result.researcher_acceptance?.status==="skipped"&&
         phases.every((p,i)=>p.status===(i<projectIndex?"pass":i===projectIndex?"fail":"skipped"))
-        ?safeProjectTestFailureDiagnostic({phase:first,failed_test_file_count:
-          sanitizeVitestFailureFiles(result.failing_test_files,"backend_tests").length}):null;
+        ?safeProjectTestFailureDiagnostic({phase:projectPhase,failed_test_file_count:
+          sanitizeVitestFailureFiles(result.failing_test_files,projectPhase).length}):null;
       binding.failedRunner=Object.freeze({
         status:"validation_failed",
         session_id:session.sessionId,root_plan_digest:session.digest,

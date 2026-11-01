@@ -87,3 +87,46 @@ test("R151.75 real-source Frontend D1 only removes the observed TypeScript fault
  assert.match(done[0].text,/Frontend D1 updated/);
  assert.throws(()=>m.armTrustedD1TypecheckRepair(arm),/new signed Task/);
 });
+
+async function responsePart(m,request){
+ const out=[];for await(const r of m.generateContentAsync(request))out.push(r.content.parts[0]);
+ return out[0];
+}
+function readEffect(path,content,revision){return {contents:[{parts:[{functionResponse:{
+ name:"read_file",response:{ok:true,result:{provider:"gitea",performed:true,tool:"read_file",
+ branch,path,revision,content}}
+}}]}]};}
+test("Frontend project repair scans authorized failed-SHA source and edits only the observed faulty UI",async()=>{
+ const {injectFrontendTestFault,FRONTEND_TEST_ORIGINAL}=await import("./offline-project-test-repair-fixture.mjs");
+ const m=model("frontend");for(let i=0;i<3;i++)await next(m);
+ const style="apps/frontend/src/styles.css",api="apps/frontend/src/api/users-api.ts",
+  ui="apps/frontend/src/pages/UserDetailPage.tsx",failedSha="a".repeat(40);
+ const args={branch,path:style,paths:[style,api,ui],failedSha,taskId:"frontend-semantic-new"};
+ assert.throws(()=>m.armTrustedD1ProjectTestRepair({...args,paths:[style,"tests/frontend/foreign.test.tsx"]}),/bounded original/);
+ m.armTrustedD1ProjectTestRepair(args);
+ assert.deepEqual((await next(m)).functionCall.args,{branch,path:style});
+ assert.deepEqual((await responsePart(m,readEffect(style,"body { color: black; }",failedSha)))
+  .functionCall.args,{branch,path:api});
+ assert.deepEqual((await responsePart(m,readEffect(api,"export const api=true;",failedSha)))
+  .functionCall.args,{branch,path:ui});
+ const source="export const control = "+FRONTEND_TEST_ORIGINAL+";\n";
+ const write=(await responsePart(m,readEffect(ui,injectFrontendTestFault(source),failedSha))).functionCall;
+ assert.equal(write.name,"update_file");assert.equal(write.args.path,ui);assert.equal(write.args.content,source);
+ const done=await responsePart(m,{contents:[{parts:[{functionResponse:{name:"update_file",
+  response:{ok:true,result:{provider:"gitea",performed:true,tool:"update_file",branch,path:ui,
+   commit_sha:"b".repeat(40)}}}}]}]});
+ assert.match(done.text,/Frontend D1 updated/);
+ assert.throws(()=>m.armTrustedD1ProjectTestRepair(args),/new signed Task/);
+});
+test("Frontend project repair refuses wrong role, early reuse and stale source revisions",async()=>{
+ const ui="apps/frontend/src/pages/UserDetailPage.tsx",failedSha="a".repeat(40);
+ const args={branch,path:ui,paths:[ui],failedSha,taskId:"frontend-semantic-new"};
+ for(const role of ["frontend","backend"]){
+  const m=model(role);
+  assert.throws(()=>m.armTrustedD1ProjectTestRepair(args),/new signed Task/);
+  for(let i=0;i<3;i++)await next(m);
+  if(role==="backend")assert.throws(()=>m.armTrustedD1ProjectTestRepair(args),/new signed Task/);
+  else{m.armTrustedD1ProjectTestRepair(args);await next(m);
+   await assert.rejects(responsePart(m,readEffect(ui,"PRIVATE_SOURCE","b".repeat(40))),/pinned TypeScript/);}
+ }
+});

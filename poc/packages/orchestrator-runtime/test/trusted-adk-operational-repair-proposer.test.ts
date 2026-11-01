@@ -672,3 +672,37 @@ test("Backend repair makes no model call for missing, mismatched or role-swapped
   assert.equal(model.requests.length,0);
  }
 });
+
+const frontendTestInput={...generalAcceptanceInput,feedback:{...input.feedback,
+ failed_phase:"frontend_tests",typecheck_error_codes:[],
+ project_test_failure:{phase:"frontend_tests",failed_test_file_count:1}}};
+const frontendTestScope={...backendTestScope,project_test_failure:frontendTestInput.feedback.project_test_failure,
+ candidates:[{role:"frontend" as const,resource:candidateUi}]};
+function frontendSemanticDraft(){const d=boundedDraft();d.tasks[0].agent_id="frontend";
+ d.tasks[0].permissions=d.tasks[0].permissions.map(p=>({...p,resource:candidateUi}));return d;}
+test("Frontend test repair sees only original Frontend sources and a new run-only Test",async()=>{
+ const draft=frontendSemanticDraft(),model=new ScriptedModel(draft);
+ assert.deepEqual(await new TrustedAdkOperationalRepairProposer({model,
+  taskShape:"bounded_auto_edit_test",readVerifiedRepairTarget:async()=>frontendTestScope
+ }).propose(frontendTestInput),draft);
+ const sent=JSON.parse(model.requests[0]!.contents!.at(-1)!.parts!.find(p=>typeof p.text==="string")!.text!);
+ assert.deepEqual(sent.agents,["frontend","test"]);
+ assert.deepEqual(sent.diagnostic_candidates,frontendTestScope);
+ assert.ok(sent.already_delegated_grants.every(p=>p.resource===candidateUi||p.operation==="run_tests"));
+});
+test("Frontend test repair rejects Backend writer substitution and Test source-write grants",async()=>{
+ const good=frontendSemanticDraft();
+ const bad=[{tasks:[{...good.tasks[0],agent_id:"backend"},good.tasks[1]]},
+  {tasks:[good.tasks[0],{...good.tasks[1],permissions:good.tasks[0].permissions}]},
+  {tasks:[good.tasks[0],{...good.tasks[1],depends_on:[]}]}];
+ for(const draft of bad)await assert.rejects(new TrustedAdkOperationalRepairProposer({
+  model:new ScriptedModel(draft),taskShape:"bounded_auto_edit_test",
+  readVerifiedRepairTarget:async()=>frontendTestScope
+ }).propose(frontendTestInput),/NO-GO/);
+ for(const scope of [backendTestScope,{...frontendTestScope,candidates:[{role:"backend",resource:candidateUi}]}]){
+  const model=new ScriptedModel(good);
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({model,taskShape:"bounded_auto_edit_test",
+   readVerifiedRepairTarget:async()=>scope as any}).propose(frontendTestInput),/NO-GO/);
+  assert.equal(model.requests.length,0);
+ }
+});

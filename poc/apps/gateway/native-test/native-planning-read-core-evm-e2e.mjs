@@ -1,4 +1,4 @@
-import {injectProjectTestFault} from "./offline-project-test-repair-fixture.mjs";
+import {injectProjectTestFault,injectFrontendTestFault,FRONTEND_TEST_ORIGINAL} from "./offline-project-test-repair-fixture.mjs";
 import {injectAcceptanceFault,ACCEPTANCE_ORIGINAL} from "./offline-acceptance-repair-fixture.mjs";
 /**
  * Native, offline pre-approval Planning integration. This runs only after
@@ -102,9 +102,14 @@ const signedOfflineTypecheckProbe=
   process.env.APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE==="1";
 const signedOfflineAcceptanceProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE==="1";
 const signedOfflineBackendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE==="1";
-if(signedOfflineAcceptanceProbe&&signedOfflineBackendTestProbe)throw Error("Separate semantic fixture flags required");
-const signedOfflineSemanticProbe=signedOfflineAcceptanceProbe||signedOfflineBackendTestProbe;
-const semanticFailurePhase=signedOfflineBackendTestProbe?"backend_tests":"researcher_acceptance";
+const signedOfflineFrontendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE==="1";
+if([signedOfflineAcceptanceProbe,signedOfflineBackendTestProbe,signedOfflineFrontendTestProbe].filter(Boolean).length>1)
+  throw Error("Separate semantic fixture flags required");
+const signedOfflineProjectTestProbe=signedOfflineBackendTestProbe||signedOfflineFrontendTestProbe;
+const fixtureEditorRole=signedOfflineFrontendTestProbe?"frontend":"backend";
+const fixtureSemanticMarker=signedOfflineFrontendTestProbe?FRONTEND_TEST_ORIGINAL:ACCEPTANCE_ORIGINAL;
+const signedOfflineSemanticProbe=signedOfflineAcceptanceProbe||signedOfflineProjectTestProbe;
+const semanticFailurePhase=signedOfflineFrontendTestProbe?"frontend_tests":signedOfflineBackendTestProbe?"backend_tests":"researcher_acceptance";
 if(signedOfflineRecovery&&geminiPilot)
   throw Error("Offline scripted recovery must never use a paid Gemini model");
 if(geminiPilot){
@@ -780,19 +785,19 @@ try{
         // synthetic fault injector's "!derivedPaths" exclusion. An existing
         // source-derived Backend file remains an eligible signed D1 target.
         // Only the offline TS2820 fixture needs a separate non-derived file.
-        const signedBackendRepairTargets=roleFiles.backend.filter(path=>
-          path.startsWith("apps/backend/src/")&&path.endsWith(".ts")&&
-          grants.some(g=>g.agent_id==="backend"&&g.operation==="read_file"&&
+        const signedRepairTargets=roleFiles[fixtureEditorRole].filter(path=>
+          path.startsWith("apps/"+fixtureEditorRole+"/src/")&&/\.tsx?$/u.test(path)&&
+          grants.some(g=>g.agent_id===fixtureEditorRole&&g.operation==="read_file"&&
             g.resource===canonicalFileUri(repo,workBranch,path))&&
-          grants.some(g=>g.agent_id==="backend"&&g.operation==="update_file"&&
+          grants.some(g=>g.agent_id===fixtureEditorRole&&g.operation==="update_file"&&
             g.resource===canonicalFileUri(repo,workBranch,path)));
-        const target=signedBackendRepairTargets.find(path=>
+        const target=signedRepairTargets.find(path=>
           !derivedPaths.includes(path)&&(!signedOfflineSemanticProbe||
-            referenceFiles[path]?.includes(ACCEPTANCE_ORIGINAL)));
-        if(signedBackendRepairTargets.length===0)
-          throw Error("R151.18 NO-GO: no signed Backend read_file/update_file source for D1");
+            referenceFiles[path]?.includes(fixtureSemanticMarker)));
+        if(signedRepairTargets.length===0)
+          throw Error("R151.18 NO-GO: no signed editor read_file/update_file source for D1");
         if(!paidGeminiRecovery&&!target)
-          throw Error("R151.18 NO-GO: no non-derived Backend TypeScript fault target");
+          throw Error("R151.18 NO-GO: no non-derived signed fixture source target");
         // The trusted proposer still selects its own bounded D1 file; Rust
         // and Gateway independently validate the proposed grants afterwards.
         // For a real Gemini repair the new signed D1 epoch, NOT this fixture
@@ -805,7 +810,7 @@ try{
         // These IDs deliberately differ in R151 offline ADK mode. All
         // dispatch IDs below are subsequently read from the signed epoch,
         // never from these proposal constants or untrusted model text.
-        const candidateBackendId=ownerD1AdkProposal
+        const candidateBackendId=signedOfflineFrontendTestProbe?"r151-frontend-semantic-editor":ownerD1AdkProposal
           ?"r151-dynamic-backend-source":"r150-owner-backend-repair";
         const candidateTestId=ownerD1AdkProposal
           ?"r151-dynamic-docker-validation":"r150-owner-test-fresh";
@@ -817,16 +822,16 @@ try{
               assert.equal(input.feedback.failed_phase,signedOfflineSemanticProbe
                 ?semanticFailurePhase:"typecheck");
               if(signedOfflineSemanticProbe){
-                if(signedOfflineBackendTestProbe){
-                  assert.equal(input.feedback.project_test_failure?.phase,"backend_tests");
+                if(signedOfflineProjectTestProbe){
+                  assert.equal(input.feedback.project_test_failure?.phase,semanticFailurePhase);
                   assert.ok(input.feedback.project_test_failure.failed_test_file_count>0);
                 }else assert.deepEqual(input.feedback.acceptance_failure,{
                   failed_checks:["service_persistence"],timed_out:false,unclassified_failure:false});
                 assert.equal(input.diagnostic_candidates?.status,
-                  signedOfflineBackendTestProbe?"verified_original_project_test_repair_scope":"verified_original_acceptance_repair_scope");
+                  signedOfflineProjectTestProbe?"verified_original_project_test_repair_scope":"verified_original_acceptance_repair_scope");
                 assert.equal(input.diagnostic_target,undefined);
                 assert.ok(input.diagnostic_candidates.candidates.some(candidate=>
-                  candidate.role==="backend"&&candidate.resource===fileResource));
+                  candidate.role===fixtureEditorRole&&candidate.resource===fileResource));
               }else assert.ok(input.feedback.typecheck_error_codes.includes("TS2820"));
               assert.equal(input.feedback.remaining_repair_epochs,2);
               if(multiTypecheckProbe){
@@ -860,17 +865,17 @@ try{
                 ]};
               }
               return {tasks:[
-                {id:candidateBackendId,agent_id:"backend",
+                {id:candidateBackendId,agent_id:fixtureEditorRole,
                  title:signedOfflineSemanticProbe
-                   ?(signedOfflineBackendTestProbe?"Repair Backend lifecycle persistence": "Preserve email during account lifecycle transitions")
+                   ?(signedOfflineProjectTestProbe?"Repair original "+fixtureEditorRole+" lifecycle behavior": "Preserve email during account lifecycle transitions")
                    :"Fix real observed Backend typecheck regression",
                  description:signedOfflineSemanticProbe
-                   ?"Read the failed revision and correct the semantic defect in the original signed Backend source"
+                   ?"Read the failed revision and correct the semantic defect in the original signed "+fixtureEditorRole+" source"
                    :"Correct the signed Backend source only",
                  depends_on:[],permissions:signedOfflineSemanticProbe
-                   ?input.diagnostic_candidates.candidates.filter(candidate=>candidate.role==="backend")
+                   ?input.diagnostic_candidates.candidates.filter(candidate=>candidate.role===fixtureEditorRole)
                      .flatMap(candidate=>["read_file","update_file"].map(operation=>({
-                       resource:candidate.resource,operation,reason:"Investigate within original signed Backend scope"})))
+                       resource:candidate.resource,operation,reason:"Investigate within original signed editor scope"})))
                    :[
                     {resource:fileResource,operation:"read_file",reason:"Inspect already approved source"},
                     {resource:fileResource,operation:"update_file",reason:"Repair only the original approved file"}]},
@@ -1030,7 +1035,7 @@ try{
               // Acceptance editors may investigate several originally signed
               // sources together. The compiler probe keeps its proven shape.
               if(found.length<1||found.length>8||
-                 (!["researcher_acceptance","backend_tests"].includes(signal.first_failed_phase)&&found.length!==1))
+                 (!["researcher_acceptance","backend_tests","frontend_tests"].includes(signal.first_failed_phase)&&found.length!==1))
                 throw Error("D1 editor source files outside supported signed scope");
               filesByTask.set(task.id,{role:task.agent_id,path:found[0],paths:found});
             }
@@ -1039,7 +1044,7 @@ try{
               ?selectSignedNativeMultiD1Tasks({
                 epoch:epochs[1],planDigest:epochs[1].plan_digest,
                 branchUri:branchResource,
-                requireBothRoles:!["researcher_acceptance","backend_tests"].includes(signal.first_failed_phase),
+                requireBothRoles:!["researcher_acceptance","backend_tests","frontend_tests"].includes(signal.first_failed_phase),
                 originalFilesByRole:Object.fromEntries(
                   ["backend","frontend"].map(role=>[role,
                     roleFiles[role].map(path=>
@@ -1241,16 +1246,16 @@ try{
         const otherImplementations={...referenceFiles};
         for(const path of derivedPaths)delete otherImplementations[path];
         if(signedOfflineSemanticProbe){
-          const targets=roleFiles.backend.filter(path=>
+          const targets=roleFiles[fixtureEditorRole].filter(path=>
             !derivedPaths.includes(path)&&
             typeof otherImplementations[path]==="string"&&
-            otherImplementations[path].includes(ACCEPTANCE_ORIGINAL)&&
+            otherImplementations[path].includes(fixtureSemanticMarker)&&
             ["read_file","update_file"].every(operation=>approvedRows.some(g=>
-              g.agent_id==="backend"&&g.operation===operation&&
+              g.agent_id===fixtureEditorRole&&g.operation===operation&&
               g.resource===canonicalFileUri(repo,workBranch,path))));
           assert.equal(targets.length,1,"One originally approved semantic fixture source is required");
           acceptanceFaultPath=targets[0];
-          otherImplementations[acceptanceFaultPath]=(signedOfflineBackendTestProbe?injectProjectTestFault:injectAcceptanceFault)(
+          otherImplementations[acceptanceFaultPath]=(signedOfflineFrontendTestProbe?injectFrontendTestFault:signedOfflineBackendTestProbe?injectProjectTestFault:injectAcceptanceFault)(
             otherImplementations[acceptanceFaultPath]);
         }
         if(signedOfflineTypecheckProbe){
@@ -1343,7 +1348,7 @@ try{
         offlineTypecheckProbe:signedOfflineTypecheckProbe,
         offlineMultiTypecheckProbe:multiTypecheckProbe,
         offlineAcceptanceProbe:signedOfflineAcceptanceProbe,
-        offlineProjectTestProbe:signedOfflineBackendTestProbe,
+        offlineProjectTestProbe:signedOfflineProjectTestProbe,
         offlineMultiTest:signedOfflineMultiTest,
         scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
@@ -1399,7 +1404,7 @@ try{
           // revocation and exact-SHA Runner PASS. Never merge.
           const draft=await ownerD1Witness.openSignedReviewOnlyDraft({
             title:signedOfflineSemanticProbe
-              ?(signedOfflineBackendTestProbe?"Review repaired Backend test regression":"Review repaired account-suspension email preservation regression")
+              ?(signedOfflineProjectTestProbe?"Review repaired "+fixtureEditorRole+" test regression":"Review repaired account-suspension email preservation regression")
               :"Review repaired account-suspension TypeScript regression",
             body:"Signed Engineer-approved repair epoch D1.\n"+
               "Independent Gateway/Runner Docker PASS on exact Gitea SHA: "+

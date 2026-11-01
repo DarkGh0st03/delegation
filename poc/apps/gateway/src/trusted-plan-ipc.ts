@@ -255,7 +255,7 @@ function boundedTestFailure(
     fail("invalid Gateway acceptance failure receipt");
   const project=r.project_test_failure===undefined?undefined
     :safeProjectTestFailureDiagnostic(r.project_test_failure);
-  if(r.project_test_failure!==undefined&&(!project||project.phase!=="backend_tests"||
+  if(r.project_test_failure!==undefined&&(!project||!["backend_tests","frontend_tests"].includes(project.phase)||
      project.phase!==r.first_failed_phase||(r.typecheck_error_codes as string[]).length!==0))
     fail("invalid Gateway project-test failure receipt");
   return Object.freeze({

@@ -25,8 +25,18 @@ test("Unclassified failures still cannot authorize repair diagnostics",()=>{
   {...summary,failed_test_file_count:9},{...summary,source:"PRIVATE"},
   {...summary,phase:"frontend_tests"}])
    assert.equal(eligible("backend_tests",[],undefined,bad),false);
- assert.equal(eligible("frontend_tests",[],undefined,{...summary,phase:"frontend_tests"}),false);
+ assert.equal(eligible("frontend_tests",[],undefined,{...summary,phase:"frontend_tests"}),true);
  assert.equal(eligible("backend_tests",["TS2339"],undefined,summary),false);
  assert.equal(eligible("backend_tests",[],{},summary),false);
  assert.equal(eligible("typecheck",["TS2339"],undefined,summary),false);
  });
+
+test("Frontend diagnostics cannot be mixed with Backend phase or acceptance/code metadata",()=>{
+ const summary={phase:"frontend_tests",failed_test_file_count:1};
+ for(const bad of [undefined,{...summary,phase:"backend_tests"},
+  {...summary,failed_test_file_count:0},{...summary,failed_test_file_count:9},
+  {...summary,source:"PRIVATE"}])assert.equal(eligible("frontend_tests",[],undefined,bad),false);
+ assert.equal(eligible("frontend_tests",["TS2339"],undefined,summary),false);
+ assert.equal(eligible("frontend_tests",[],{},summary),false);
+ assert.equal(eligible("build",[],undefined,summary),false);
+});

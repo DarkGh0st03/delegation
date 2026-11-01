@@ -48,3 +48,32 @@ test("Backend fixture changes only the actual lifecycle save and restores source
  assert.throws(()=>repairProjectTestFault(source),/NO-GO/);
  assert.throws(()=>repairProjectTestFault(faulty+faulty),/NO-GO/);
 });
+
+test("Frontend test failures select only original Frontend source writers and keep Backend excluded",()=>{
+ const frontTest="tests/frontend/controls.test.tsx";
+ const frontRows=[...rows,...perms(frontTest,"frontend")];
+ const frontEffect={...effect,failing_test_files:[frontTest],phases:effect.phases.map((p,i)=>({
+  phase:p.phase,status:i<3?"pass":i===3?"fail":"skipped"}))};
+ const frontConfig={...config,effect:frontEffect,approvedRows:frontRows,rootPermissions:frontRows,
+  observedWrites:{...config.observedWrites,frontend:new Set([ui,frontTest])}};
+ const collected=collect(frontConfig);
+ assert.deepEqual(collected.candidates,[{role:"frontend",resource:base+ui}]);
+ assert.deepEqual(collected.project_test_failure,{phase:"frontend_tests",failed_test_file_count:1});
+ assert.equal(JSON.stringify(collected).includes(frontTest),false);
+ for(const bad of [
+  {...frontConfig,effect:{...frontEffect,failing_test_files:[testFile]}},
+  {...frontConfig,effect:{...frontEffect,phases:frontEffect.phases.map(p=>p.phase==="backend_tests"?{...p,status:"fail"}:p)}},
+  {...frontConfig,observedWrites:{...frontConfig.observedWrites,backend:new Set([file,ui])}},
+  {...frontConfig,approvedRows:frontRows.map(g=>g.resource===base+ui?{...g,agent_id:"backend"}:g)},
+  {...frontConfig,effect:{...frontEffect,phases:"PRIVATE"}}
+ ])assert.throws(()=>collect(bad),/NO-GO/);
+});
+test("Frontend fixture inverts only the observed lifecycle UI condition and repairs exact source",async()=>{
+ const {injectFrontendTestFault,repairFrontendTestFault,FRONTEND_TEST_FAULT}=await import("./offline-project-test-repair-fixture.mjs");
+ const source=reference["apps/frontend/src/pages/UserDetailPage.tsx"],fault=injectFrontendTestFault(source);
+ assert.ok(fault.includes(FRONTEND_TEST_FAULT));
+ assert.equal(repairFrontendTestFault(fault),source);
+ assert.throws(()=>injectFrontendTestFault(fault),/NO-GO/);
+ assert.throws(()=>repairFrontendTestFault(source),/NO-GO/);
+ assert.throws(()=>repairFrontendTestFault(fault+fault),/NO-GO/);
+});

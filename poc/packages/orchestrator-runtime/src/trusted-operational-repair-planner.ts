@@ -164,7 +164,7 @@ export interface TrustedRepairModelInput {
   status:"verified_original_project_test_repair_scope";
   tested_commit_sha:string;project_test_failure:ProjectTestFailureSummary;
   causal_attribution:"not_established";
-  candidates:readonly Readonly<{role:"backend";resource:string}>[];
+  candidates:readonly Readonly<{role:"backend"|"frontend";resource:string}>[];
  }>;
  readonly diagnostic_targets?:Readonly<{
   status:"verified_runner_multi_file_repair_targets";
