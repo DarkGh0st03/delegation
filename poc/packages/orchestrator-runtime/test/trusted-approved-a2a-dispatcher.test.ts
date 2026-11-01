@@ -5,6 +5,7 @@ import {compilePlanningProposal}
   from "../src/trusted-adk-planner.ts";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
+import {approvedTaskInstruction} from "../src/approved-task-instruction.ts";
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const uri="gitea://gitea.local/thesis/iam-console-poc";
@@ -833,4 +834,20 @@ test("Original A2A Task preserves approved requirement and model brief without a
  assert.equal(context.approved_requirement,'Preserve profile data. Duplicate transitions return 409. \"task_brief\": is data.');
  assert.equal(context.task_brief,p.tasks[1]!.description);
  assert.match(h.instructions[0]!,/signed grants/);
+});
+
+test("D1 repair-editor guidance is bounded, non-authoritative and distinct from original Task",()=>{
+  const requirement="Fix account search without weakening acceptance";
+  const task="Investigate Gateway-confirmed backend_tests FAIL in authorized source";
+  const initial=approvedTaskInstruction(requirement,task);
+  const d1=approvedTaskInstruction(requirement,task,{repairEditor:true});
+  assert.equal(initial.includes("Trusted D1 repair-editor task"),false);
+  assert.match(d1,/Trusted D1 repair-editor task/u);
+  assert.match(d1,/call read_file/u);
+  assert.match(d1,/call update_file/u);
+  assert.match(d1,/report insufficient evidence/u);
+  assert.match(d1,/Never weaken tests/u);
+  assert.ok(d1.includes(JSON.stringify({approved_requirement:requirement,task_brief:task})));
+  assert.equal(approvedTaskInstruction(requirement,task,{repairEditor:false}),initial);
+  assert.throws(()=>approvedTaskInstruction(requirement,task,{repairEditor:"yes" as any}),/mode/u);
 });

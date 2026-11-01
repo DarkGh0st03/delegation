@@ -116,7 +116,8 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
     (config.role!=="test"&&runTests))
   fail("incompatible repair Agent role or oversized file scope");
  const subtask:DeterministicSubtask={
-  subtask_id:config.taskId,instruction:approvedTaskInstruction(current.plan.requirement,task.description),
+  subtask_id:config.taskId,instruction:approvedTaskInstruction(current.plan.requirement,task.description,
+   {repairEditor:filePermissions.some(p=>p.operation==="update_file")}),
   branch,relevant_paths:[...relevant],
   approved_file_permissions:filePermissions,
   ...(config.role==="test"?{approved_run_tests:runTests}:{})
