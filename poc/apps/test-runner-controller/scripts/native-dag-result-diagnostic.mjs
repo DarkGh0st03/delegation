@@ -1,3 +1,4 @@
+import {safeProjectE2eFailureDiagnostic} from "./project-e2e-failure-diagnostic.mjs";
 import {safeProjectTestFailureDiagnostic} from "./project-test-failure-diagnostic.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
@@ -40,6 +41,14 @@ function parseExact(marker){
        marker.project_tests!=="pass"||marker.researcher_acceptance!=="fail")return null;
     acceptanceFailure=safeAcceptanceFailureSummary(marker.acceptance_failure);
     if(!acceptanceFailure)return null;
+  }
+  let projectE2eFailure;
+  if(marker.project_e2e_failure!==undefined){
+    projectE2eFailure=safeProjectE2eFailureDiagnostic(marker.project_e2e_failure);
+    if(!projectE2eFailure||firstFailed?.phase!=="playwright_e2e"||
+       marker.status!=="fail"||marker.project_tests!=="fail"||
+       marker.researcher_acceptance!=="skipped"||
+       statuses.some((p,i)=>p.status!==(i<5?"pass":i===5?"fail":"skipped")))return null;
   }
   let projectTestFailure;
   if(marker.project_test_failure!==undefined){
@@ -96,6 +105,7 @@ function parseExact(marker){
     phases:Object.freeze(statuses),
     project_tests:marker.project_tests,
     researcher_acceptance:marker.researcher_acceptance,
+    ...(projectE2eFailure?{project_e2e_failure:projectE2eFailure}:{}),
     ...(projectTestFailure?{project_test_failure:projectTestFailure}:{}),
     ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
     ...(typecheckCodes?{typecheck_error_codes:typecheckCodes}:{}),

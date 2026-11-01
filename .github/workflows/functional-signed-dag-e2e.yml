@@ -64,6 +64,7 @@ on:
       - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
       - 'poc/apps/test-runner-controller/scripts/native-preliminary-environment.mjs'
       - 'poc/apps/test-runner-controller/scripts/project-test-failure-diagnostic.mjs'
+      - 'poc/apps/test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs'
       - 'poc/apps/test-runner-controller/scripts/native-dag-result-diagnostic.mjs'
       - 'poc/apps/test-runner-controller/scripts/gemini-pilot-safe-docker-evidence.mjs'
       - 'poc/apps/test-runner-controller/src/**'
@@ -174,7 +175,7 @@ jobs:
       - name: R151.81 preliminary rehearsal excludes inherited paid repair (NO AI)
         run: node --experimental-strip-types --test poc/apps/test-runner-controller/test/native-preliminary-environment.test.ts
       - name: Project test diagnostics through real Runner decoder and public double filter
-        run: node --experimental-strip-types --test poc/apps/gateway/test/gitea-executor.test.ts poc/apps/test-runner-controller/test/gemini-pilot-safe-docker-evidence.test.ts
+        run: node --experimental-strip-types --test poc/apps/gateway/test/gitea-executor.test.ts poc/apps/test-runner-controller/test/gemini-pilot-safe-docker-evidence.test.ts poc/apps/test-runner-controller/test/project-e2e-failure-diagnostic.test.ts poc/apps/test-runner-controller/test/isolated-executor.test.ts
       - name: R151.79 semantic acceptance fixture and original signed writer scope (NO AI)
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/offline-acceptance-repair-fixture.test.mjs poc/apps/gateway/native-test/acceptance-repair-candidate-scope.test.mjs
       - name: R150.9 fresh owner Test Task cannot replay terminal signed offline Task (NO AI)

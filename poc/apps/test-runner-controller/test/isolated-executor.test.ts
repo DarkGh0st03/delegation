@@ -52,7 +52,9 @@ test("Phase 6B Playwright phase boots the controlled app services before E2E", (
   assert.match(command, /npm run dev -w @iam\/frontend/u);
   assert.match(command, /wait_port 3000/u);
   assert.match(command, /wait_port 5173/u);
-  assert.match(command, /npm run test:e2e/u);
+  // One shared mutable Backend is used by all project specs. Baseline
+  // ACTIVE observations must not overlap the suspension transition.
+  assert.match(command, /npm run test:e2e -- --workers=1(?:$|[ ;])/u);
 });
 
 test("Phase 6C mounts researcher acceptance read-only and reports a separate verdict", async () => {
@@ -477,4 +479,28 @@ test("Acceptance FAIL preserves check IDs on the exact SHA and still cleans the 
   assert.deepEqual(result.acceptance_failure,summary);
   assert.ok(cleaned);
   assert.doesNotMatch(JSON.stringify(result),/PRIVATE_ASSERTION/u);
+});
+
+test("A real Playwright command failure produces sanitized locations on exact SHA and cleans up",async()=>{
+  let fetched=0,cleaned=false;
+  const worker=new IsolatedDockerRunnerExecutor(config,{
+    fetch_fn:async()=>++fetched===1
+      ?new Response(JSON.stringify({commit:{id:request.commit_sha}}),{status:200})
+      :new Response(Buffer.from("test-archive"),{status:200}),
+    command_runner:async(_command,args)=>{
+      if(args[0]==="rm")cleaned=true;
+      if(args[0]==="exec"&&String(args[4]).includes("npm run test:e2e"))
+        return {exit_code:1,timed_out:false,stdout:
+          "tests/e2e/user-profile.spec.ts:8:55\nexpect(locator).toBeVisible() failed\nPRIVATE_SOURCE",
+          stderr:"PRIVATE_CREDENTIAL"};
+      return {exit_code:0,timed_out:false,stdout:"",stderr:""};
+    }
+  });
+  const result=await worker.run(request);
+  assert.equal(result.tested_commit_sha,request.commit_sha);
+  assert.equal(result.phases.find(p=>p.phase==="playwright_e2e")?.status,"fail");
+  assert.equal(result.researcher_acceptance?.status,"skipped");
+  assert.equal(result.project_e2e_failure?.locations[0]?.check_id,"baseline_user_profile");
+  assert.equal(cleaned,true);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_SOURCE|PRIVATE_CREDENTIAL/);
 });

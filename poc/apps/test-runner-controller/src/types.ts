@@ -59,6 +59,7 @@ export interface RunnerRunResult {
   typecheck_error_codes?: string[];
   /** Vitest FAIL paths only; no assertion text. Filter through signed read grants. */
   failing_test_files?: string[];
+  project_e2e_failure?: NonNullable<ReturnType<typeof import("../scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
 }
 
 export interface RunnerExecutor {

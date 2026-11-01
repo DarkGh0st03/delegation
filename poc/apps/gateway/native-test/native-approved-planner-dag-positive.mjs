@@ -1,3 +1,4 @@
+import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
 import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
 import {collectAcceptanceRepairCandidateScope} from "./acceptance-repair-candidate-scope.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
@@ -719,6 +720,8 @@ export async function runNativePositiveApprovedDag({
               phases:effect.phases?.map(x=>({phase:x.phase,status:x.status})),
               project_tests:effect.project_tests?.status,
               researcher_acceptance:effect.researcher_acceptance?.status,
+              ...(failedProjectPhase==="playwright_e2e"&&safeProjectE2eFailureDiagnostic(effect.project_e2e_failure)
+                ?{project_e2e_failure:safeProjectE2eFailureDiagnostic(effect.project_e2e_failure)}:{}),
               ...(projectFailure?{project_test_failure:projectFailure}:{}),
               ...(effect.status==="fail"&&effect.project_tests?.status==="pass"&&
                 effect.researcher_acceptance?.status==="fail"&&

@@ -469,10 +469,12 @@ test("unbound legacy requests cannot choose another feature branch even with val
 
 // The real transport decoder must retain safe failure locations through the
 // provider boundary, without interpreting them as new signed Task grants.
-test("Vitest failure files survive real RunnerClient and GiteaExecutor only for the first failed test phase",async()=>{
+test("Project-test diagnostics survive real RunnerClient and GiteaExecutor only for the matching first failed phase",async()=>{
   const sha="e".repeat(40),secret="PRIVATE_ASSERTION_AND_SOURCE";
   const client={async getBranchMetadata(){return {commit_sha:sha};}} as unknown as GiteaClient;
-  for(const failed of ["backend_tests","frontend_tests","typecheck"]){
+  const e2e={locations:[{check_id:"baseline_user_profile",line:8,column:55}],
+    failure_kinds:["visibility"],timed_out:false,unclassified_failure:false};
+  for(const failed of ["backend_tests","frontend_tests","typecheck","playwright_e2e"]){
     const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
       "build","playwright_e2e","researcher_acceptance"];
     const index=phases.indexOf(failed);
@@ -486,6 +488,7 @@ test("Vitest failure files survive real RunnerClient and GiteaExecutor only for 
           failing_test_files:["tests/backend/users.test.ts","tests/frontend/access.test.tsx",
             "../private/password.test.ts","tests/backend/users.test.ts",
             "tests/backend/secret.test.ts\n"+secret],
+          project_e2e_failure:e2e,
           raw_assertion:secret
         }),{status:200});
       }});
@@ -498,6 +501,7 @@ test("Vitest failure files survive real RunnerClient and GiteaExecutor only for 
     assert.deepEqual(result.failing_test_files,failed==="backend_tests"
       ?["tests/backend/users.test.ts"]:failed==="frontend_tests"
         ?["tests/frontend/access.test.tsx"]:undefined);
+    assert.deepEqual(result.project_e2e_failure,failed==="playwright_e2e"?e2e:undefined);
     assert.doesNotMatch(JSON.stringify(result),/PRIVATE_ASSERTION|password/);
   }
 });

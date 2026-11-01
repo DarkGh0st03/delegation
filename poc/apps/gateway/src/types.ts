@@ -358,6 +358,7 @@ export interface RunnerExecutionResult {
   typecheck_error_codes?: string[];
   /** Bounded Vitest failed file paths, never text or source. */
   failing_test_files?: string[];
+  project_e2e_failure?: NonNullable<ReturnType<typeof import("../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
   acceptance_failure?: import("../../test-runner-controller/src/types.ts").RunnerRunResult["acceptance_failure"];
 }
 

@@ -1,3 +1,4 @@
+import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import { ProviderUnavailableError } from "./errors.ts";
 import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
@@ -45,6 +46,7 @@ export interface RunnerClientResult {
   typecheck_diagnostics?: TypecheckLocation[];
   typecheck_error_codes?: string[];
   failing_test_files?: string[];
+  project_e2e_failure?: NonNullable<ReturnType<typeof import("../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
 }
 
 const PHASES = new Set([
@@ -204,7 +206,10 @@ export class RunnerClient {
     const firstFailedPhase=parsePhases(body.phases).find(p=>p.status==="fail")?.phase;
     const vitestFailurePhase=firstFailedPhase==="backend_tests"||firstFailedPhase==="frontend_tests"
       ?firstFailedPhase:null;
+    const projectE2eFailure=status==="fail"&&firstFailedPhase==="playwright_e2e"
+      ?safeProjectE2eFailureDiagnostic(body.project_e2e_failure):null;
     const result: RunnerClientResult = {
+      ...(projectE2eFailure?{project_e2e_failure:projectE2eFailure}:{}),
       ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
       request_id: string(body.request_id, "request_id"),
       repository: string(body.repository, "repository"),

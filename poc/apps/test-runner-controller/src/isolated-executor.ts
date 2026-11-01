@@ -1,3 +1,4 @@
+import {extractProjectE2eFailureDiagnostic} from "../scripts/project-e2e-failure-diagnostic.mjs";
 import {extractAcceptanceFailureSummary} from "./acceptance-diagnostics.ts";
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -75,7 +76,7 @@ const FIXED_PHASES: ReadonlyArray<{
       "cleanup() { kill \"$backend_pid\" \"$frontend_pid\" 2>/dev/null || true; }; " +
       "trap cleanup EXIT; " +
       "wait_port() { for _ in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/\"$1\") >/dev/null 2>&1 && return 0; sleep 0.5; done; echo \"Timed out waiting for port $1\" >&2; return 1; }; " +
-      "wait_port 3000; wait_port 5173; npm run test:e2e"
+      "wait_port 3000; wait_port 5173; npm run test:e2e -- --workers=1"
   }
 ];
 
@@ -265,6 +266,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     let typecheckDiagnostics:ReturnType<typeof extractTypecheckLocations>=[];
     let typecheckErrorCodes:string[]=[];
     let failingTestFiles:string[]=[];
+    let projectE2eFailure:ReturnType<typeof extractProjectE2eFailureDiagnostic>=null;
     let acceptanceFailure:ReturnType<typeof extractAcceptanceFailureSummary>=null;
     let containerCreateAttempted = false;
     let failed = false;
@@ -373,6 +375,9 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         if (result.exit_code === 0 && !result.timed_out) {
           phases.push({ phase: fixed.phase, status: "pass" });
         } else {
+          if(fixed.phase==="playwright_e2e")
+            projectE2eFailure=extractProjectE2eFailureDiagnostic(
+              result.stdout,result.stderr,result.timed_out);
           if(fixed.phase==="typecheck"&&!result.timed_out){
             typecheckDiagnostics=extractTypecheckLocations(result.stdout,result.stderr);
             typecheckErrorCodes=extractTypecheckErrorCodes(result.stdout,result.stderr);
@@ -457,6 +462,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           ?{typecheck_error_codes:typecheckErrorCodes}:{}),
         ...(failingTestFiles.length>0
           ?{failing_test_files:failingTestFiles}:{}),
+        ...(projectE2eFailure?{project_e2e_failure:projectE2eFailure}:{}),
         ...(acceptanceFailure ? {acceptance_failure: acceptanceFailure} : {}),
         project_tests: {
           status: projectStatus,
