@@ -742,3 +742,89 @@ test("Generated failing Test files are only provenance, not causality or new D1 
   assert.equal(unused.requests.length,0);
  }
 });
+
+const testGeneratedUri=runner+"/files/tests/backend/generated.test.ts";
+const generatedTestInput={...backendTestInput,already_delegated_grants:[
+ ...backendTestInput.already_delegated_grants,
+ {resource:testGeneratedUri,operation:"read_file"},
+ {resource:testGeneratedUri,operation:"update_file"}
+]};
+const generatedTestScope={
+ status:"verified_original_generated_test_edit_scope" as const,
+ tested_commit_sha:backendTestInput.feedback.tested_commit_sha,
+ project_test_failure:backendTestInput.feedback.project_test_failure,
+ causal_attribution:"not_established" as const,
+ candidates:[{role:"test" as const,resource:testGeneratedUri}]
+};
+function generatedTestDraft(){
+ return {tasks:[
+  {id:"investigate-generated-test",agent_id:"test",title:"Investigate generated test",
+   description:"Inspect the approved requirement and correct only a demonstrably wrong assertion",
+   depends_on:[],permissions:[
+    {resource:testGeneratedUri,operation:"read_file",reason:"Inspect original generated test"},
+    {resource:testGeneratedUri,operation:"update_file",reason:"Correct authorized test if needed"}
+   ]},
+  {id:"validate-new-sha",agent_id:"test",title:"Run independent project tests",
+   description:"Validate the new Gitea SHA",depends_on:["investigate-generated-test"],
+   permissions:[{resource:runner,operation:"run_tests",reason:"Verify exact SHA"}]}
+ ]};
+}
+test("Generated Test D1 model sees only signed test read/update and run permissions",async()=>{
+ const model=new ScriptedModel(generatedTestDraft());
+ const planner=new TrustedAdkOperationalRepairProposer({model,
+  taskShape:"bounded_generated_test_edit",
+  readVerifiedRepairTarget:async()=>generatedTestScope
+ });
+ assert.deepEqual(await planner.propose(generatedTestInput),generatedTestDraft());
+ assert.equal(model.requests.length,1);
+ const inputText=model.requests[0]!.contents!.at(-1)!.parts!
+  .find(p=>typeof p.text==="string")!.text!;
+ const received=JSON.parse(inputText);
+ assert.deepEqual(received.agents,["test"]);
+ assert.deepEqual(received.diagnostic_candidates,generatedTestScope);
+ assert.deepEqual(received.already_delegated_grants,[
+  {resource:testGeneratedUri,operation:"read_file"},
+  {resource:testGeneratedUri,operation:"update_file"},
+  {resource:runner,operation:"run_tests"}
+ ]);
+ assert.match(JSON.stringify(model.requests[0]?.config?.systemInstruction),
+  /Creation and failure do NOT establish/);
+});
+test("Generated Test D1 never calls a model without original signed test authority",async()=>{
+ const cases=[
+  {input:{...generatedTestInput,already_delegated_grants:
+   generatedTestInput.already_delegated_grants.filter(g=>g.operation!=="update_file"||g.resource!==testGeneratedUri)},
+   target:generatedTestScope},
+  {input:generatedTestInput,target:{...generatedTestScope,candidates:[
+   {role:"test",resource:runner+"/files/tests/backend/unapproved.test.ts"}]}},
+  {input:generatedTestInput,target:{...generatedTestScope,causal_attribution:"test_incorrect"}},
+  {input:generatedTestInput,target:{...generatedTestScope,tested_commit_sha:"b".repeat(40)}},
+  {input:generatedTestInput,target:{...generatedTestScope,
+   project_test_failure:{phase:"backend_tests",failed_test_file_count:1}}}
+ ];
+ for(const c of cases){
+  const model=new ScriptedModel(generatedTestDraft());
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model,taskShape:"bounded_generated_test_edit",
+   readVerifiedRepairTarget:async()=>c.target as any
+  }).propose(c.input as any),/NO-GO/);
+  assert.equal(model.requests.length,0);
+ }
+});
+test("Generated Test D1 rejects Test-only grant escalation and missing validator dependency",async()=>{
+ const valid=generatedTestDraft();
+ const bad=[
+  {tasks:[{...valid.tasks[0],agent_id:"backend"},valid.tasks[1]]},
+  {tasks:[valid.tasks[0],{...valid.tasks[1],depends_on:[]}]},
+  {tasks:[{...valid.tasks[0],permissions:valid.tasks[0].permissions.filter(p=>p.operation!=="read_file")},valid.tasks[1]]},
+  {tasks:[{...valid.tasks[0],permissions:[...valid.tasks[0].permissions,
+   {resource:testGeneratedUri,operation:"create_file",reason:"Expand"}]},valid.tasks[1]]},
+  {tasks:[valid.tasks[0],{...valid.tasks[1],permissions:[{resource:runner,operation:"create_pull_request",reason:"skip"}]}]}
+ ];
+ for(const proposal of bad){
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({
+   model:new ScriptedModel(proposal),taskShape:"bounded_generated_test_edit",
+   readVerifiedRepairTarget:async()=>generatedTestScope
+  }).propose(generatedTestInput),/NO-GO/);
+ }
+});
