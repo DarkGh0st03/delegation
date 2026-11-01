@@ -243,7 +243,14 @@ type TrustedRunnerRepairTarget=Readonly<
  |{status:"verified_original_project_test_repair_scope";
    tested_commit_sha:string;project_test_failure:import("../../../apps/test-runner-controller/src/repair-failure-eligibility.ts").ProjectTestFailureSummary;
    causal_attribution:"not_established";
-   candidates:readonly Readonly<{role:"backend"|"frontend";resource:string}>[]}
+   candidates:readonly Readonly<{role:"backend"|"frontend";resource:string}>[];
+   test_failure_provenance?:Readonly<{
+    failed_test_written_by_test_count:number;
+    failed_test_created_by_test_count:number;
+    created_test_without_approved_rewrite_count:number;
+    causal_attribution:"not_established"
+   }>;
+  }
  |{status:"verified_runner_multi_file_repair_targets";
    tested_commit_sha:string;targets:ReadonlyArray<Readonly<{
      role:"backend"|"frontend";resource:string
@@ -364,7 +371,17 @@ export class TrustedAdkOperationalRepairProposer {
      projectScope.causal_attribution!=="not_established"||
      JSON.stringify(projectScope.project_test_failure)!==JSON.stringify(input.feedback.project_test_failure)||
      !Array.isArray(projectScope.candidates)||
-     projectScope.candidates.some(x=>!x||x.role!==projectRole)))
+     projectScope.candidates.some(x=>!x||x.role!==projectRole)||
+     (projectScope.test_failure_provenance!==undefined&&(()=>{
+       const p=projectScope.test_failure_provenance;
+       const n=projectScope.project_test_failure.failed_test_file_count;
+       return p.causal_attribution!=="not_established"||
+        ![p.failed_test_written_by_test_count,p.failed_test_created_by_test_count,
+          p.created_test_without_approved_rewrite_count].every(v=>
+           Number.isSafeInteger(v)&&v>=0&&v<=n)||
+        p.failed_test_created_by_test_count>p.failed_test_written_by_test_count||
+        p.created_test_without_approved_rewrite_count>p.failed_test_created_by_test_count;
+     })())))
    deny("project-test candidate scope differs from verified failure or original phase-matching role");
   if(["backend_tests","frontend_tests"].includes(projectPhase)&&!projectScope)
    deny("Project tests require verified original source candidate scope");
@@ -515,6 +532,12 @@ export class TrustedAdkOperationalRepairProposer {
      `Select a bounded subset of original ${projectRole} candidates. Produce 1-8 ${projectRole} source editor Tasks and exactly one Test Task using only run_tests.`,
      "Each editor must read its authorized source at the failed revision before writing. It may investigate several originally authorized sources without changing every one.",
      "Investigate the requested behavior; do not change test files, test commands, acceptance assertions or permissions to force a PASS.",
+     ...(projectScope.test_failure_provenance?.failed_test_created_by_test_count?[
+      "Runner confirms some failed tests were created by the Test Agent in this signed workflow.",
+      "Test authorship does NOT establish a faulty test or a faulty Backend/Frontend implementation.",
+      "The candidate source files are NOT proven causal. Do not invent a source rewrite merely to make a generated test pass.",
+      "This bounded DAG cannot edit tests. If a test itself is faulty, that requires a separately authorized Test edit path or Engineer approval."
+     ]:[]),
      "The new Test must depend on all editors. No PR, new root, branch creation or extra grants. Unknown failure causality is not permission to widen scope."
     ]:[]),
     ...(multiMode&&!semanticScope?[
