@@ -34,9 +34,22 @@ export const SIGNED_GEMINI_PILOT = Object.freeze({
 const SHA=/^[0-9a-f]{40}$/u;
 const ID=/^[1-9][0-9]{0,19}$/u;
 const CONSENT="I AUTHORIZE GEMINI API CHARGES";
+export const REPAIR_CONSENT="I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH";
+export const REPAIR_DISABLED="NO ADDITIONAL REPAIR AUTHORIZED";
 export const BILLING_ACK=
   "I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES";
 function deny(){throw Error("Signed Gemini pilot preflight NO-GO");}
+/** Never silently disable paid D1 recovery when the operator supplied a
+ * near-match with leading/trailing whitespace. No implicit authorization,
+ * trimming, or model requests are permitted from an ambiguous choice. */
+function verifiedRepairSelection(env){
+  const choice=env.DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION;
+  const enabled=env.DELEGATION_SIGNED_GEMINI_REPAIR_D1;
+  if(choice===undefined&&enabled===undefined)return "not_supplied";
+  if(choice===REPAIR_CONSENT&&enabled==="1")return "authorized";
+  if(choice===REPAIR_DISABLED&&enabled==="0")return "disabled";
+  deny();
+}
 export function verifySignedGeminiPilotConsent(env,{requireApiKey=false}={}){
   if(!env||typeof env!=="object"||Array.isArray(env)||
      env.GITHUB_ACTIONS!=="true"||
@@ -54,6 +67,7 @@ export function verifySignedGeminiPilotConsent(env,{requireApiKey=false}={}){
      env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1"||
      env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1")
     deny();
+  const repairSelection=verifiedRepairSelection(env);
   // This checks presence only. Never publish, return, hash or print the key.
   if(requireApiKey&&
      (typeof env.GEMINI_API_KEY!=="string"||
@@ -76,7 +90,8 @@ export function verifySignedGeminiPilotConsent(env,{requireApiKey=false}={}){
     spending_cap_enforced_by_this_check:false,
     actual_api_access_verified:false,
     engineer_review:"signed_test_fixture_not_human",
-    paid_execution_authorized_by_this_receipt:false
+    paid_execution_authorized_by_this_receipt:false,
+    repair_epoch_configuration:repairSelection
   });
 }
 if(process.argv[1]&&

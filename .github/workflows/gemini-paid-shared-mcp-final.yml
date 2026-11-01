@@ -101,6 +101,8 @@ jobs:
           DELEGATION_SIGNED_GEMINI_PILOT: "1"
           DELEGATION_PINNED_COMMIT_SHA: ${{ inputs.pinned_commit_sha }}
           DELEGATION_BILLING_CAP_ACK: ${{ inputs.billing_cap_acknowledgement }}
+          DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION: ${{ inputs.repair_authorization }}
+          DELEGATION_SIGNED_GEMINI_REPAIR_D1: ${{ inputs.repair_authorization == 'I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH' && '1' || '0' }}
         run: |
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = workflow_dispatch
@@ -123,6 +125,8 @@ jobs:
           DELEGATION_SIGNED_GEMINI_PILOT: "1"
           DELEGATION_PINNED_COMMIT_SHA: ${{ inputs.pinned_commit_sha }}
           DELEGATION_BILLING_CAP_ACK: ${{ inputs.billing_cap_acknowledgement }}
+          DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION: ${{ inputs.repair_authorization }}
+          DELEGATION_SIGNED_GEMINI_REPAIR_D1: ${{ inputs.repair_authorization == 'I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH' && '1' || '0' }}
         run: |
           set -euo pipefail
           node --test poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs

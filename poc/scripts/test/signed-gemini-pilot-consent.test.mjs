@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
-import {SIGNED_GEMINI_PILOT,BILLING_ACK,verifySignedGeminiPilotConsent}
+import {SIGNED_GEMINI_PILOT,BILLING_ACK,REPAIR_CONSENT,REPAIR_DISABLED,
+  verifySignedGeminiPilotConsent}
   from "../signed-gemini-pilot-consent.mjs";
 const valid=()=>({
   GITHUB_ACTIONS:"true",GITHUB_EVENT_NAME:"workflow_dispatch",
@@ -13,7 +14,9 @@ const valid=()=>({
   DELEGATION_BILLING_CAP_ACK:BILLING_ACK,
   DELEGATION_SIGNED_GEMINI_PILOT:"1",
   DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
-  DELEGATION_GEMINI_MODEL:"gemini-3.8-flash"
+  DELEGATION_GEMINI_MODEL:"gemini-3.8-flash",
+  DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION:REPAIR_DISABLED,
+  DELEGATION_SIGNED_GEMINI_REPAIR_D1:"0"
 });
 test("manual pilot produces ONLY a redacted zero-inference receipt",()=>{
   const env={...valid(),GEMINI_API_KEY:"SECRET_NEVER_TO_APPEAR"};
@@ -71,6 +74,36 @@ test("manual consent is fail closed for wrong event, branch, run or model",()=>{
     }
   }
 });
+test("D1 authorization requires exact text and a matching flag before billing",()=>{
+  assert.equal(verifySignedGeminiPilotConsent(valid()).repair_epoch_configuration,"disabled");
+  assert.equal(verifySignedGeminiPilotConsent({
+    ...valid(),
+    DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION:REPAIR_CONSENT,
+    DELEGATION_SIGNED_GEMINI_REPAIR_D1:"1"
+  }).repair_epoch_configuration,"authorized");
+  for(const [choice,flag] of [
+    [" "+REPAIR_CONSENT,"0"], // Regression: November 1 paid pilot.
+    [REPAIR_CONSENT+" ","0"],
+    [REPAIR_CONSENT,"0"],
+    [REPAIR_DISABLED,"1"],
+    ["","0"],
+    ["I AUTHORIZE GEMINI REPAIR","0"],
+    [REPAIR_CONSENT,undefined],
+    [undefined,"1"]
+  ]){
+    assert.throws(()=>verifySignedGeminiPilotConsent({
+      ...valid(),
+      DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION:choice,
+      DELEGATION_SIGNED_GEMINI_REPAIR_D1:flag
+    }),/NO-GO/u,"Invalid repair choice must never silently disable D1");
+  }
+  assert.equal(verifySignedGeminiPilotConsent({
+    ...valid(),
+    DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION:undefined,
+    DELEGATION_SIGNED_GEMINI_REPAIR_D1:undefined
+  }).repair_epoch_configuration,"not_supplied");
+});
+
 test("offline recovery and repeated Test fixtures cannot enter paid pilot",()=>{
   for(const field of [
     "APPROVED_RUNNER_SIGNED_DAG_RECOVERY",
@@ -113,6 +146,9 @@ test("actual relative-path CLI cannot bypass manual consent (zero provider calls
       DELEGATION_PINNED_COMMIT_SHA:"b".repeat(40)}],
     [["--preflight-no-inference"],{DELEGATION_BILLING_CAP_ACK:""}],
     [["--preflight-no-inference"],{GITHUB_EVENT_NAME:"push"}],
+    [["--preflight-no-inference"],{
+      DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION:" "+REPAIR_CONSENT,
+      DELEGATION_SIGNED_GEMINI_REPAIR_D1:"0"}],
     [["--require-key-no-inference"],{GEMINI_API_KEY:""}],
     [[],{}],
     [["--unknown"],{}]
