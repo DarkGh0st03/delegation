@@ -17,7 +17,7 @@ export function createBoundedD1GeminiInvestigationChoice({
     typeof requirement!=="string"||
     !requirement.trim()||requirement.length>4000||
     !Number.isSafeInteger(maxCallMs)||
-    maxCallMs<1000||maxCallMs>120000)fail();
+    maxCallMs<1000||maxCallMs>180000)fail();
  let attempted=false;
  return async function chooseInvestigation(observation){
   if(attempted)fail();attempted=true;
