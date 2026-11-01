@@ -1,0 +1,12 @@
+{
+  "schema": "delegation-full-ci-checkpoint-v1",
+  "checkpoint": "R151.91",
+  "candidate_parent_sha": "94dc15b9e829cb5a9115a82f2785727b19c4286a",
+  "purpose": "Run three offline full acceptance workflows at the new checkpoint SHA using a user-authorized GitHub connector commit",
+  "workflows": [
+    "cumulative-refactoring-offline.yml",
+    "shared-mcp-real-positive-e2e.yml",
+    "functional-signed-dag-e2e.yml"
+  ],
+  "paid_model_invocation": false
+}

@@ -7,17 +7,25 @@ pure pilot-gate/diagnostic tests. It makes no paid provider calls and does not
 build Rust or launch Gitea/OPA/Anvil/Docker. Type-only audits are not a full tsc
 compilation of every project. This is a fast regression sample, not full coverage.
 
-Run the three existing full workflows manually at a frozen candidate SHA:
+The linked GitHub app can issue a normal git commit but cannot dispatch
+workflow_dispatch directly. To request a full checkpoint without human UI clicks,
+the assistant updates ONLY `.github/ci-checkpoints/full-ci-request.json` in a checkpoint
+commit with the fixed `[full-ci]` label. The resulting push automatically
+runs these existing workflows on that exact branch/SHA:
 
 - cumulative-refactoring-offline.yml
 - shared-mcp-real-positive-e2e.yml
 - functional-signed-dag-e2e.yml
 
-All jobs and assertions are preserved. Shared MCP still runs for main/spike
-pushes and PRs. Its PR filters are unchanged. The standalone R139 real Docker
-repair workflow is also manual on the development branch to avoid a fourth
-long automatic Docker run. Specific security workflows retain their existing
-triggers; they can still run for relevant code changes.
+Only this exact file path triggers Cumulative and Functional on development.
+Shared MCP retains its original main/spike and PR event filters; development
+source pushes may create a skipped Shared MCP run, but never start its expensive
+Docker job without a matching checkpoint file change and commit label.
+Other heavy R139 Docker repair CI remains manual. No test or assertion in the
+three full workflows is removed. Each checkpoint commit produces a NEW SHA,
+so the exact-SHA pilot gate must verify that SHA, not its parent.
+No Gemini inference is initiated by a checkpoint push.
+
 
 The Gemini gate remains unchanged: Fast CI cannot replace the three full
 SUCCESS runs on the same SHA. workflow_dispatch provenance is already accepted.

@@ -2,6 +2,10 @@
 # The optional live Gemini workflow is intentionally not called here.
 name: Cumulative Offline Refactoring Validation
 on:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/ci-checkpoints/full-ci-request.json'
   workflow_dispatch:
 permissions:
   contents: read

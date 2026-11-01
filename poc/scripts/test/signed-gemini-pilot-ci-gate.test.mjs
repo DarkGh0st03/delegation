@@ -28,15 +28,31 @@ const valid=()=>({
   DELEGATION_GEMINI_MODEL:"gemini-3.8-flash",
   DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES"
 });
-test("full checkpoint CI is manual on development and never replaced by Fast CI",()=>{
+test("R151.91 a checkpoint file starts exactly three offline full CI workflows, not Gemini",()=>{
+  const marker=".github/ci-checkpoints/full-ci-request.json";
   for(const name of ["functional-signed-dag-e2e","cumulative-refactoring-offline",
-    "shared-mcp-real-positive-e2e","r139-real-docker-repair-e2e"]){
+    "shared-mcp-real-positive-e2e"]){
     const yaml=readFileSync(new URL("../../../.github/workflows/"+name+".yml",import.meta.url),"utf8");
-    assert.ok(yaml.includes("workflow_dispatch:"));
-    const triggers=yaml.slice(yaml.indexOf("on:"),yaml.indexOf("permissions:"));
-    assert.ok(!triggers.includes("refactor/post-prof-plan-contracts-20261021"));
-    assert.ok(yaml.includes("jobs:"),"All full jobs remain available");
+    const start=yaml.indexOf("\non:");
+    const end=yaml.indexOf("\npermissions:",start);
+    assert.ok(start>=0&&end>start,"Expected GitHub trigger block");
+    const triggers=yaml.slice(start,end);
+    assert.ok(triggers.includes("workflow_dispatch:"));
+    assert.ok(triggers.includes("refactor/post-prof-plan-contracts-20261021"));
+    assert.ok(triggers.includes("- '"+marker+"'"),"Missing explicit checkpoint trigger");
+    if(name==="shared-mcp-real-positive-e2e"){
+      assert.ok(triggers.includes("feat/shared-mcp-spike, main"));
+      assert.ok(triggers.includes("pull_request:"),"PR checks must stay automatic");
+      assert.ok(yaml.includes("contains(github.event.head_commit.message, '[full-ci]')"),
+        "Normal development push must skip costly Docker job");
+    }else{
+      assert.ok(!triggers.includes("poc/**"),"Heavy CI cannot run on every source change");
+    }
   }
+  const r139=readFileSync(new URL("../../../.github/workflows/r139-real-docker-repair-e2e.yml",import.meta.url),"utf8");
+  assert.ok(r139.includes("workflow_dispatch:"));
+  assert.ok(!r139.includes("branches: [refactor/post-prof-plan-contracts-20261021]"));
+  assert.equal(verifyExactShaOfflineCiRuns(paths.map(green),sha).independent_workflows_verified,3);
   assert.equal(verifyExactShaOfflineCiRuns(paths.map(p=>({...green(p),event:"workflow_dispatch"})),sha).independent_workflows_verified,3);
   assert.throws(()=>verifyExactShaOfflineCiRuns([{...green(paths[0]),path:".github/workflows/fast-ci.yml"}],sha));
 });
