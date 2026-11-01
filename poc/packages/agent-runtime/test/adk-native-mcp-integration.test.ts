@@ -182,3 +182,45 @@ test("Native ADK MCPToolset preserves worker authorization denial and cannot for
 test("Native shared MCP roundtrip retains synthetic signature after the function response",async()=>{
   await exercise(true,true);
 });
+
+test("Frontend rejection reasons cross real shared MCP without changing grants",async()=>{
+ const {Client}=await import("@modelcontextprotocol/sdk/client/index.js");
+ const {StreamableHTTPClientTransport}=await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+ const {normalizeMcpReadFileOutcome}=await import("../src/mcp-read-result.ts");
+ const {normalizeMcpUpdateFileOutcome}=await import("../src/mcp-write-result.ts");
+ const k=keypair(),branch="feature/account-suspension",path="apps/frontend/src/Profile.tsx";
+ let effects=0;
+ const active=new PrivateMcpTaskRegistry({role:"frontend",signingPrivateKeyPem:k.privateKey,signingPublicKeyPem:k.publicKey});
+ active.begin("frontend-diagnostic",{invoke:async(tool,input)=>{
+  effects++;return {...result,...input,tool};
+ }},undefined,{approvedBranch:branch,allowedPaths:[path],allowedFilePermissions:[{operation:"read_file",path}],allowUpdateFile:true});
+ const app=express();attachPrivateMcpWorker(app,active);
+ const worker=app.listen(0,"127.0.0.1");
+ await new Promise<void>(resolve=>worker.once("listening",resolve));
+ const baseUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
+ const shared=createSharedMcpHttpServer({verificationKeys:{backend:k.publicKey,frontend:k.publicKey,test:k.publicKey},
+  router:new TaskRouter({backend:{baseUrl},frontend:{baseUrl},test:{baseUrl}})});
+ const client=new Client({name:"offline-diagnostic",version:"1"});
+ try{
+  const url=await serverAddress(shared);
+  await client.connect(new StreamableHTTPClientTransport(new URL(url+"/mcp"),{
+   requestInit:{headers:{authorization:"Bearer "+active.bearerFor("frontend-diagnostic")}}
+  }));
+  for(const [name,input,reason] of [
+   ["read_file",{branch,path:"../SECRET"},"invalid_arguments"],
+   ["read_file",{branch:"feature/wrong",path},"branch_mismatch"],
+   ["read_file",{branch,path:"apps/frontend/src/Other.tsx"},"path_outside_signed_scope"],
+   ["update_file",{branch,path,content:"SECRET"},"operation_not_granted"]
+  ] as const){
+   const reply=await client.callTool({name,arguments:input});
+   const normalized=name==="read_file"?normalizeMcpReadFileOutcome(reply,input):normalizeMcpUpdateFileOutcome(reply,input);
+   assert.equal(normalized.ok,false);
+   if(!normalized.ok)assert.equal(normalized.error.reason,reason);
+   assert.doesNotMatch(JSON.stringify(reply),/SECRET|Other.tsx|Profile.tsx/);
+  }
+  assert.equal(effects,0);
+  const reply=await client.callTool({name:"read_file",arguments:{branch,path}});
+  assert.equal(normalizeMcpReadFileOutcome(reply,{branch,path}).ok,true);
+  assert.equal(effects,1);
+ }finally{await client.close();await close(shared);await close(worker);active.end("frontend-diagnostic");}
+});

@@ -297,3 +297,25 @@ test("crypto challenge concurrency budget permits 12 sequential proofs but never
    }),/inactive_task/);
  }finally{reg.end("bounded-crypto");}
 });
+
+test("diagnostic reasons distinguish signed Frontend rejections before any effect",async()=>{
+ const k=keys();let effects=0;
+ const reg=new PrivateMcpTaskRegistry({role:"frontend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub});
+ const branch="feature/account-suspension",path="apps/frontend/src/Profile.tsx";
+ reg.begin("diagnostic",{invoke:async()=>{effects++;return {ok:true};}},undefined,{
+  approvedBranch:branch,allowedPaths:[path],allowedFilePermissions:[{operation:"read_file",path}],allowUpdateFile:true
+ });
+ const bearer="Bearer "+reg.bearerFor("diagnostic");
+ for(const [tool,args,reason] of [
+  ["read_file",{branch,path,extra:"SECRET"},"invalid_arguments"],
+  ["read_file",{branch:"feature/wrong",path},"branch_mismatch"],
+  ["read_file",{branch,path:"apps/frontend/src/Other.tsx"},"path_outside_signed_scope"],
+  ["update_file",{branch,path,content:"SECRET"},"operation_not_granted"]
+ ] as const){
+  await assert.rejects(reg.invoke(bearer,{tool,arguments:args}),
+   (e:any)=>e.kind==="invalid_tool_call"&&e.reason===reason);
+ }
+ assert.equal(effects,0);
+ await reg.invoke(bearer,{tool:"read_file",arguments:{branch,path}});
+ assert.equal(effects,1);reg.end("diagnostic");
+});

@@ -1,3 +1,4 @@
+import {toolFailureReasonFields} from "./tool-failure-reason.ts";
 import {MCP_CREATE_PRESENTATION} from "./crypto-catalog.ts";
 import {createServer, type ServerResponse} from "node:http";
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -76,7 +77,8 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
           "authorization_denied","invalid_tool_call","inactive_task",
           "unauthorized","tool_unavailable","tests_failed"
         ].includes(candidate)?candidate:"tool_unavailable";
-        const payload={ok:false,error:{kind}};
+        const payload={ok:false,error:{kind,...toolFailureReasonFields(e),
+          ...(candidate==="invalid_tool_arguments"?{reason:"invalid_arguments"}:{})}};
         return {isError:true,content:[{type:"text" as const,text:JSON.stringify(payload)}],
           structuredContent:payload};
       }
@@ -102,7 +104,8 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
           "authorization_denied","invalid_tool_call","inactive_task",
           "unauthorized","tool_unavailable","tests_failed"
         ].includes(candidate)?candidate:"tool_unavailable";
-        const payload={ok:false,error:{kind}};
+        const payload={ok:false,error:{kind,...toolFailureReasonFields(e),
+          ...(candidate==="invalid_tool_arguments"?{reason:"invalid_arguments"}:{})}};
         return {isError:true,content:[{type:"text" as const,text:JSON.stringify(payload)}],
           structuredContent:payload};
       }
@@ -127,7 +130,8 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
           "authorization_denied","invalid_tool_call","inactive_task",
           "unauthorized","tool_unavailable","tests_failed"
         ].includes(candidate)?candidate:"tool_unavailable";
-        const payload={ok:false,error:{kind}};
+        const payload={ok:false,error:{kind,...toolFailureReasonFields(e),
+          ...(candidate==="invalid_tool_arguments"?{reason:"invalid_arguments"}:{})}};
         return {isError:true,
           content:[{type:"text" as const,text:JSON.stringify(payload)}],
           structuredContent:payload};

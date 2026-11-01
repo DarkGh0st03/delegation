@@ -277,3 +277,22 @@ test("re-sanitizing an error with absent optional 400 metadata keeps its evidenc
   assert.equal(combined.role_evidence.backend.agent_failure.category,
     "api_invalid_request");
 });
+
+test("tool rejection histogram survives both sanitizers without leaking arbitrary data",()=>{
+ const raw=[
+  ["read_file","path_outside_signed_scope"],
+  ["read_file","path_outside_signed_scope"],
+  ["read_file","invalid_arguments"],
+  ["read_file","SECRET/PATH"],
+  ["update_file","gateway_prepare_rejected"]
+ ].map(([tool,reason])=>JSON.stringify({event:"adk_tool_timing",role:"frontend",
+  tool,reason,error_kind:"invalid_tool_call",success:false,path:"SECRET/PATH",content:"PRIVATE"})).join("\n");
+ const sanitized=agentObservations(raw);
+ const forwarded=sanitized.map(x=>"[trusted-positive-ci] gemini_agent_observation "+JSON.stringify(x)).join("\n");
+ const summary=agentSummary(forwarded);
+ assert.deepEqual(summary.role_evidence.frontend.failed_operations,{
+  read_file:{invalid_arguments:1,path_outside_signed_scope:2,unclassified:1},
+  update_file:{gateway_prepare_rejected:1}
+ });
+ assert.doesNotMatch(JSON.stringify(summary),/SECRET|PRIVATE/);
+});

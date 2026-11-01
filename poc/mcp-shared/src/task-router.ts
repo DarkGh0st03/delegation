@@ -1,3 +1,4 @@
+import {toolFailureReasonFields} from "./tool-failure-reason.ts";
 import {parseCreatePresentationArgs,type CreatePresentationArgs} from "./crypto-catalog.ts";
 import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes,
   type TypecheckLocation}
@@ -101,7 +102,7 @@ export class TaskRouter {
         // The controlled Runner may take minutes. Other MCP operations remain at 10s.
         signal:AbortSignal.timeout(tool==="run_tests"?990_000:10_000)
       });
-    } catch { throw new Error("task_worker_unavailable"); }
+    } catch { throw Object.assign(new Error("task_worker_unavailable"), {reason:"upstream_unavailable"}); }
     if (Number(response.headers.get("content-length"))>2_000_000) throw new Error("task_worker_invalid_result");
     let parsed: unknown;
     try {
@@ -143,8 +144,8 @@ export class TaskRouter {
         throw new WorkerTestsFailedError(validPhase,diagnostics,
           newApproval===true,codes,scope);
       }
-      throw new Error(typeof candidate==="string"&&safe.includes(candidate)
-        ?candidate:"task_worker_rejected");
+      throw Object.assign(new Error(typeof candidate==="string"&&safe.includes(candidate)
+        ?candidate:"task_worker_rejected"), toolFailureReasonFields(failure));
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
         (parsed as Record<string,unknown>).ok !== true || !("result" in parsed)) {

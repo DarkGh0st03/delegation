@@ -103,7 +103,7 @@ test("signed Test HTTP worker relays source-free typecheck codes and fails close
     });
     assert.equal(forbidden.status,400);
     assert.deepEqual(await forbidden.json(),{
-      ok:false,error:{kind:"invalid_tool_call"}
+      ok:false,error:{kind:"invalid_tool_call",reason:"path_outside_signed_scope"}
     });
     assert.equal(toolCalls,2);
 

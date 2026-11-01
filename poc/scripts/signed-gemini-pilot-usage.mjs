@@ -154,6 +154,9 @@ const MODEL_ERRORS=["model_turn_budget","model_output_truncated",
   "sdk_model_exception","adk_event_error"];
 const TOOL_ERRORS=["authorization_denied","tests_failed",
   "tool_unavailable","invalid_tool_call","iteration_limit"];
+const TOOL_FAILURE_REASONS=["invalid_arguments","branch_mismatch",
+  "path_outside_signed_scope","operation_not_granted",
+  "gateway_prepare_rejected","upstream_unavailable"];
 const AGENT_TOOLS=["read_file","update_file","create_file","run_tests"];
 const SAFE_400_CAUSES=["missing_thought_signature",
   "function_call_response_order","invalid_tool_schema",
@@ -170,7 +173,8 @@ function safeAgentObservation(x){
        (x.error_kind!==null&&!TOOL_ERRORS.includes(x.error_kind)))
       return null;
     return {event:x.event,role:x.role,tool:x.tool,
-      success:x.success,error_kind:x.error_kind};
+      success:x.success,error_kind:x.error_kind,
+      ...(!x.success&&TOOL_FAILURE_REASONS.includes(x.reason)?{reason:x.reason}:{})};
   }
   if(x.event==="adk_llm_timing"){
     if(!valid(x.turn,SIGNED_GEMINI_PILOT.maxTurnsPerTask[x.role])||
@@ -275,6 +279,11 @@ export function extractSafeGeminiPilotAgentSummary(log){
         ])),
       observed_function_tool_successes:successfulTools.length,
       observed_function_tool_failures:failedTools.length,
+      failed_operations:Object.fromEntries(AGENT_TOOLS
+        .filter(tool=>failedTools.some(x=>x.tool===tool))
+        .map(tool=>[tool,Object.fromEntries([...TOOL_FAILURE_REASONS,"unclassified"]
+          .map(reason=>[reason,failedTools.filter(x=>x.tool===tool&&
+            (x.reason??"unclassified")===reason).length]).filter(([,count])=>count>0))])),
       last_function_tool_error:failedTools.length
         ?{tool:failedTools.at(-1).tool,
           error_kind:failedTools.at(-1).error_kind}:null,

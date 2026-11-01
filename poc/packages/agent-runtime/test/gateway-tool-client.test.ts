@@ -156,3 +156,18 @@ test("Gateway wrapper converts Runner failure into a controlled tests_failed out
       !JSON.stringify(error.details).includes("acceptance failed")
   );
 });
+
+test("prepare diagnostics preserve rejection semantics and never execute",async()=>{
+ for(const status of [400,403,500,0]){
+  let calls=0;
+  const client=new GatewayControlledToolClient({gatewayBaseUrl:"http://gateway.local",
+   agentRole:"frontend",taskId:"diagnostic",evidenceHandler:evidenceHandler(),
+   fetchFn:async()=>{calls++;if(!status)throw new Error("PRIVATE");
+    return new Response(JSON.stringify({error:"PRIVATE"}),{status});}
+  });
+  await assert.rejects(client.invoke("read_file",{
+   branch:"feature/account-suspension",path:"apps/frontend/src/Profile.tsx"
+  }),(e:any)=>e.reason===(status>=500||status===0?"upstream_unavailable":"gateway_prepare_rejected"));
+  assert.equal(calls,1);
+ }
+});

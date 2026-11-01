@@ -1,3 +1,4 @@
+import {toolFailureReasonFields} from "../../../mcp-shared/src/tool-failure-reason.ts";
 import type {Express} from "express";
 import express from "express";
 import {ControlledToolError} from "./controlled-errors.ts";
@@ -18,10 +19,10 @@ export function attachPrivateMcpWorker(app:Express,registry:PrivateMcpTaskRegist
         if(error instanceof PrivateMcpTaskError){
           const status=error.kind==="unauthorized"?401:
             error.kind==="inactive_task"?403:400;
-          res.status(status).json({ok:false,error:{kind:error.kind}});
+          res.status(status).json({ok:false,error:{kind:error.kind,...toolFailureReasonFields(error)}});
         }else if(error instanceof ControlledToolError){
           res.status(error.kind==="authorization_denied"?403:503)
-            .json({ok:false,error:{kind:error.kind}});
+            .json({ok:false,error:{kind:error.kind,...toolFailureReasonFields(error)}});
         }else{
           res.status(503).json({ok:false,error:{kind:"tool_unavailable"}});
         }
@@ -36,7 +37,7 @@ export function attachPrivateMcpWorker(app:Express,registry:PrivateMcpTaskRegist
     } catch(error) {
       if (error instanceof PrivateMcpTaskError) {
         const status=error.kind==="unauthorized"?401:error.kind==="inactive_task"?403:400;
-        res.status(status).json({ok:false,error:{kind:error.kind}});
+        res.status(status).json({ok:false,error:{kind:error.kind,...toolFailureReasonFields(error)}});
       } else if (error instanceof ControlledToolError) {
         const status=error.kind==="authorization_denied"?403:
           error.kind==="invalid_tool_call"?400:
@@ -46,7 +47,7 @@ export function attachPrivateMcpWorker(app:Express,registry:PrivateMcpTaskRegist
         const hint=error.kind==="tests_failed"
           ?safeRunnerFailedPhaseHint(error.details):undefined;
         res.status(status).json({ok:false,error:{
-          kind:error.kind,...(hint?{details:hint}:{})
+          kind:error.kind,...toolFailureReasonFields(error),...(hint?{details:hint}:{})
         }});
       } else {
         res.status(503).json({ok:false,error:{kind:"tool_unavailable"}});

@@ -1,3 +1,4 @@
+import {toolFailureReasonFields} from "../../../mcp-shared/src/tool-failure-reason.ts";
 import {ControlledToolError,controlledToolErrorPayload} from "./controlled-errors.ts";
 
 /**
@@ -7,8 +8,8 @@ import {ControlledToolError,controlledToolErrorPayload} from "./controlled-error
 export function normalizeMcpCreateFileOutcome(
   response:unknown,args:Record<string,unknown>
 ):{ok:true;result:unknown}|ReturnType<typeof controlledToolErrorPayload>{
-  function reject(kind:"authorization_denied"|"invalid_tool_call"|"tool_unavailable"){
-    return controlledToolErrorPayload(new ControlledToolError(kind,"MCP "+kind));
+  function reject(kind:"authorization_denied"|"invalid_tool_call"|"tool_unavailable", failure?:unknown){
+    return controlledToolErrorPayload(new ControlledToolError(kind,"MCP "+kind, toolFailureReasonFields(failure)));
   }
   function record(v:unknown):Record<string,unknown>|null{
     return v!==null && typeof v==="object" && !Array.isArray(v)
@@ -18,9 +19,9 @@ export function normalizeMcpCreateFileOutcome(
   const payload=record(envelope?.structuredContent);
   if(envelope?.isError===true || payload?.ok!==true){
     const kind=record(payload?.error)?.kind;
-    if(kind==="authorization_denied")return reject("authorization_denied");
-    if(kind==="invalid_tool_call")return reject("invalid_tool_call");
-    return reject("tool_unavailable");
+    if(kind==="authorization_denied")return reject("authorization_denied", record(payload?.error));
+    if(kind==="invalid_tool_call")return reject("invalid_tool_call", record(payload?.error));
+    return reject("tool_unavailable", record(payload?.error));
   }
   const result=record(payload.result);
   const sha=/^[a-f0-9]{40}$/u;

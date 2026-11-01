@@ -1,3 +1,4 @@
+import {toolFailureReasonFields} from "../../../mcp-shared/src/tool-failure-reason.ts";
 import { FunctionTool, LlmAgent, MCPToolset, type BaseLlm, type LlmAgentConfig, type StreamableHTTPConnectionParams } from "@google/adk";
 import { normalizeMcpReadFileOutcome } from "./mcp-read-result.ts";
 import { normalizeMcpUpdateFileOutcome } from "./mcp-write-result.ts";
@@ -61,7 +62,8 @@ export function safeMcpToolTiming(
     allowed.has(payload.error.kind)?payload.error.kind:null;
   return Object.freeze({
     event:"adk_tool_timing" as const,role,tool,
-    success:payload.ok,error_kind:kind,duration_ms:null
+    success:payload.ok,error_kind:kind,
+    ...(!payload.ok?toolFailureReasonFields(payload.error):{}),duration_ms:null
   });
 }
 

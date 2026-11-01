@@ -139,7 +139,8 @@ export class GatewayControlledToolClient {
     } catch (error) {
       throw new ControlledToolError(
         "tool_unavailable",
-        `Gateway prepare is unavailable: ${error instanceof Error ? error.message : String(error)}`
+        `Gateway prepare is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        {reason:"upstream_unavailable"}
       );
     }
 
@@ -152,7 +153,8 @@ export class GatewayControlledToolClient {
           `Gateway prepare failed with HTTP ${prepareResponse.status}`
         ),
         {
-          statusCode: prepareResponse.status
+          statusCode: prepareResponse.status,
+          reason: prepareResponse.status >= 500 ? "upstream_unavailable" : "gateway_prepare_rejected"
         }
       );
     }

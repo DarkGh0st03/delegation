@@ -1,11 +1,12 @@
+import {toolFailureReasonFields} from "../../../mcp-shared/src/tool-failure-reason.ts";
 import {ControlledToolError,controlledToolErrorPayload} from "./controlled-errors.ts";
 
 /** Reject any MCP write output not backed by an exact Gateway Gitea commit. */
 export function normalizeMcpUpdateFileOutcome(
   response:unknown,args:Record<string,unknown>
 ):{ok:true;result:unknown}|ReturnType<typeof controlledToolErrorPayload>{
-  function error(kind:"authorization_denied"|"invalid_tool_call"|"tool_unavailable"){
-    return controlledToolErrorPayload(new ControlledToolError(kind,"MCP "+kind));
+  function error(kind:"authorization_denied"|"invalid_tool_call"|"tool_unavailable", failure?:unknown){
+    return controlledToolErrorPayload(new ControlledToolError(kind,"MCP "+kind, toolFailureReasonFields(failure)));
   }
   function record(v:unknown):Record<string,unknown>|null{
     return v!==null&&typeof v==="object"&&!Array.isArray(v)
@@ -41,7 +42,7 @@ export function normalizeMcpUpdateFileOutcome(
         const failure=record(decoded?.error);
         if(decoded?.ok===false&&failure&&
            Object.keys(decoded).sort().join(",")==="error,ok"&&
-           Object.keys(failure).join(",")==="kind"&&
+           Object.keys(failure).every(key=>key==="kind"||key==="reason")&&
            typeof failure.kind==="string")payload=decoded;
       }catch{/* SDK tool text is never trusted as a write receipt. */}
     }
@@ -68,9 +69,9 @@ export function normalizeMcpUpdateFileOutcome(
       ?envelope?.isError===true?"unstructured_mcp_error":"missing_structured_content"
       :"upstream_failure",
       typeof kind==="string"&&safeKinds.has(kind)?kind:"unknown");
-    if(kind==="authorization_denied")return error("authorization_denied");
-    if(kind==="invalid_tool_call")return error("invalid_tool_call");
-    return error("tool_unavailable");
+    if(kind==="authorization_denied")return error("authorization_denied", record(payload?.error));
+    if(kind==="invalid_tool_call")return error("invalid_tool_call", record(payload?.error));
+    return error("tool_unavailable", record(payload?.error));
   }
   const result=record(payload.result);
   const sha=/^[a-f0-9]{40}$/u;

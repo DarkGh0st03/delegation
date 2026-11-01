@@ -1,3 +1,4 @@
+import {safeToolFailureReason, type ToolFailureReason} from "../../../mcp-shared/src/tool-failure-reason.ts";
 import { randomUUID } from "node:crypto";
 import {parseCreatePresentationArgs} from "../../../mcp-shared/src/crypto-catalog.ts";
 import type {DelegationEvidenceHandler, PreparedGatewayAuthorization} from "./delegation-evidence-handler.ts";
@@ -10,9 +11,11 @@ import type { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 
 export class PrivateMcpTaskError extends Error {
   readonly kind: "unauthorized" | "inactive_task" | "invalid_tool_call";
-  constructor(kind: "unauthorized" | "inactive_task" | "invalid_tool_call") {
+  readonly reason?: ToolFailureReason;
+  constructor(kind: "unauthorized" | "inactive_task" | "invalid_tool_call", reason?: ToolFailureReason) {
     super(kind);
     this.kind = kind;
+    this.reason = safeToolFailureReason(reason);
   }
 }
 
@@ -273,11 +276,11 @@ export class PrivateMcpTaskRegistry {
     }
 
     if (request === null || typeof request !== "object" || Array.isArray(request)) {
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      throw new PrivateMcpTaskError("invalid_tool_call", "invalid_arguments");
     }
     const payload = request as Record<string,unknown>;
     if (Object.keys(payload).sort().join(",") !== "arguments,tool" || (payload.tool !== "read_file" && payload.tool !== "update_file" && payload.tool !== "create_file" && payload.tool !== "run_tests")) {
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      throw new PrivateMcpTaskError("invalid_tool_call", "invalid_arguments");
     }
     let args;
     try {
@@ -288,34 +291,34 @@ export class PrivateMcpTaskRegistry {
           : payload.tool === "create_file"
             ? parseCreateFileArgs(payload.arguments,"approved")
             : parseRunTestsArgs(payload.arguments,"approved");
-    } catch { throw new PrivateMcpTaskError("invalid_tool_call"); }
+    } catch { throw new PrivateMcpTaskError("invalid_tool_call", "invalid_arguments"); }
     if(args.branch!==(task.approvedBranch??LEGACY_A2A_BRANCH))
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      throw new PrivateMcpTaskError("invalid_tool_call", "branch_mismatch");
     if(payload.tool!=="run_tests"&&task.allowedPaths!==undefined&&
        !("path" in args && task.allowedPaths.has(args.path))){
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      throw new PrivateMcpTaskError("invalid_tool_call", "path_outside_signed_scope");
     }
     if(payload.tool!=="run_tests"&&
        task.allowedFilePermissions!==undefined&&
        !("path" in args &&task.allowedFilePermissions.has(
          payload.tool+"\0"+args.path))){
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      throw new PrivateMcpTaskError("invalid_tool_call", "operation_not_granted");
     }
     if (payload.tool === "update_file" &&
         (!task.allowUpdateFile ||
          (task.approvedBranch===undefined&&!SPECIALIZED_AGENT_PROFILES[this.#role].writable_paths.includes(args.path)))) {
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      throw new PrivateMcpTaskError("invalid_tool_call", "operation_not_granted");
     }
 
     if (payload.tool === "create_file" &&
         (!task.allowCreateFile || this.#role!=="test" ||
          (task.approvedBranch===undefined&&!SPECIALIZED_AGENT_PROFILES.test.creatable_paths.includes(args.path)))) {
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      throw new PrivateMcpTaskError("invalid_tool_call", "operation_not_granted");
     }
     if(payload.tool === "run_tests" &&
        (!task.allowRunTests || this.#role!=="test" ||
         !SPECIALIZED_AGENT_PROFILES.test.can_run_tests)){
-      throw new PrivateMcpTaskError("invalid_tool_call");
+      throw new PrivateMcpTaskError("invalid_tool_call", "operation_not_granted");
     }
     const result = await task.client.invoke(payload.tool, args);
     // If cancellation raced with the network call, never advertise success.
