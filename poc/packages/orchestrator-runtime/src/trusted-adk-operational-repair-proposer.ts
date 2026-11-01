@@ -349,7 +349,7 @@ export class TrustedAdkOperationalRepairProposer {
   thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
   /** Only for the first bounded native D1: no multi-agent expansion or PR
    * from the model. The trusted owner separately handles review-only PR. */
-  taskShape?:"backend_test"|"backend_or_frontend_test"|"bounded_multi_edit_test"|"bounded_auto_edit_test";
+  taskShape?:"backend_test"|"backend_or_frontend_test"|"bounded_multi_edit_test"|"bounded_auto_edit_test"|"bounded_generated_test_edit";
   onObservation?:(event:Observe)=>void;
   readVerifiedRepairTarget?:(input:Readonly<TrustedRepairModelInput>)=>
    Promise<TrustedRunnerRepairTarget>;
