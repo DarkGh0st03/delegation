@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {collectProjectTestRepairCandidateScope as collect} from "./project-test-repair-candidate-scope.mjs";
-import {injectProjectTestFault,repairProjectTestFault,PROJECT_TEST_FAULT} from "./offline-project-test-repair-fixture.mjs";
+import {injectProjectTestFault,repairProjectTestFault,PROJECT_TEST_FAULT,
+ injectGeneratedTestAssertionFault,repairGeneratedTestAssertionFault,
+ GENERATED_TEST_WRONG_ASSERTION} from "./offline-project-test-repair-fixture.mjs";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES as reference} from "../../test-runner-controller/fixtures/account-suspension-reference.mjs";
 const repo={authority:"gitea.local",owner:"tenant",repository:"billing"},branch="feature/behavior";
 const sha="a".repeat(40),base="gitea://gitea.local/tenant/billing/branches/feature%2Fbehavior/files/";
@@ -128,4 +130,18 @@ test("Generated failing tests get provenance-only counts, not edit grants or cau
  assert.equal(permitted.test_failure_provenance.causal_attribution,"not_established");
  assert.throws(()=>collect({...input,observedTestCreates:new Set(["foreign.test.ts"])}),
   /creation provenance/);
+});
+
+
+test("Wrong generated Test assertion is distinguishable from a broken Backend source",()=>{
+ const originalTest=reference["tests/backend/user.service.test.ts"];
+ const originalBackend=reference["apps/backend/src/users/user.service.ts"];
+ const faultyTest=injectGeneratedTestAssertionFault(originalTest);
+ assert.ok(faultyTest.includes(GENERATED_TEST_WRONG_ASSERTION));
+ assert.notEqual(faultyTest,originalTest);
+ assert.equal(repairGeneratedTestAssertionFault(faultyTest),originalTest);
+ assert.equal(reference["apps/backend/src/users/user.service.ts"],originalBackend,
+  "The source is unchanged: failing test files alone cannot blame Backend");
+ assert.throws(()=>injectGeneratedTestAssertionFault(faultyTest),/NO-GO/);
+ assert.throws(()=>repairGeneratedTestAssertionFault(originalTest),/NO-GO/);
 });
