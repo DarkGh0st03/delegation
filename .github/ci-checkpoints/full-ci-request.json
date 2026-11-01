@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R151.92",
-  "candidate_parent_sha": "a49989d5a93445f682eba99767aa109b909359d5",
-  "purpose": "Validate R151.92 generated-test scope, approved task context and D1 owner phases through offline full acceptance on a single SHA",
+  "checkpoint": "R151.92 - full offline gate",
+  "candidate_parent_sha": "806ff855fc8e278efaf277c605fcf8c24737f6a2",
+  "purpose": "Run three offline full CI validations on the same checkpoint commit, including real Docker scripted recovery; no paid Gemini",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
