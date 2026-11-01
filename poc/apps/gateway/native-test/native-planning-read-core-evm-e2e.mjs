@@ -35,6 +35,7 @@ import {createTrustedPlanIpcServer,TrustedPlanIpcClient} from "../src/trusted-pl
 import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {selectTrustedD1RepairScope} from "./trusted-d1-repair-scope-choice.mjs";
+import {createBoundedD1GeminiInvestigationChoice} from "./trusted-d1-gemini-investigation-choice.mjs";
 import {TrustedAdkOperationalRepairProposer} from
   "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
 import {selectSignedNativeD1Tasks,selectSignedNativeMultiD1Tasks} from
@@ -1000,15 +1001,33 @@ try{
                    !readVerifiedGeneratedTestEditScope)
                   throw Error("D1 owner has no bound verified Runner scopes");
                 const original=readVerifiedRepairTarget();
-                // Do not silently replace a stale original source target:
-                // mismatched signed evidence is a fail-closed condition.
-                const generated=original?null:
-                  await readVerifiedGeneratedTestEditScope();
-                const selected=selectTrustedD1RepairScope({
-                  testedSha:input.feedback.tested_commit_sha,
-                  sourceTarget:original,generatedTestTarget:generated
-                });
+                // Project-test FAIL may have BOTH originally authorized
+                // source and generated-Test candidates. Give Gemini a
+                // bounded investigation choice, never inferred authority.
+                // If source evidence is stale, the selector denies it even
+                // when a generated Test candidate is available.
+                const projectFailure=["backend_tests","frontend_tests"]
+                  .includes(input.feedback.failed_phase);
+                const generated=projectFailure
+                  ?await readVerifiedGeneratedTestEditScope():null;
                 if(geminiPilot)pilotDelegatedPhase="d1_scope_selection";
+                const selected=await selectTrustedD1RepairScope({
+                  testedSha:input.feedback.tested_commit_sha,
+                  sourceTarget:original,generatedTestTarget:generated,
+                  chooseInvestigation:async observation=>{
+                    // One extra source-free model choice ONLY if both
+                    // options exist. Never paid without explicit D1 consent.
+                    const decision=createBoundedD1GeminiInvestigationChoice({
+                      model:createGeminiAdkModel({
+                        apiKey:process.env.GEMINI_API_KEY,
+                        model:process.env.DELEGATION_GEMINI_MODEL
+                      }),
+                      requirement:input.requirement,
+                      maxCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs
+                    });
+                    return decision(observation);
+                  }
+                });
                 return selected.mode==="original_source"
                   ?ownerRepairProposer.propose(input)
                   :generatedTestOwnerProposer.propose(input);
