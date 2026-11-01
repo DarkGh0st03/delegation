@@ -465,7 +465,7 @@ export class TrustedAdkOperationalRepairProposer {
         p.created_test_without_approved_rewrite_count>p.failed_test_created_by_test_count;
      })())))
    deny("project-test candidate scope differs from verified failure or original phase-matching role");
-  if(["backend_tests","frontend_tests"].includes(projectPhase)&&!projectScope)
+  if(["backend_tests","frontend_tests"].includes(projectPhase)&&!projectScope&&!generatedScope)
    deny("Project tests require verified original source candidate scope");
   const semanticScope=acceptanceScope??projectScope;
   const single=target?.status==="verified_runner_single_file_repair_target"
