@@ -54,5 +54,5 @@ jobs:
           node --experimental-strip-types --test --test-name-pattern='R148 one original Test FAIL|R135 signed repair grants' poc/apps/gateway/test/operational-epoch-gateway.test.ts
       - name: Generated Test edit, fresh validation and final acceptance selection (no model calls)
         run: |
-          node --experimental-strip-types --test poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs poc/apps/gateway/native-test/d1-editor-revision.test.mjs poc/packages/orchestrator-runtime/test/repair-final-test-task.test.ts
+          node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs poc/apps/gateway/native-test/d1-editor-revision.test.mjs poc/packages/orchestrator-runtime/test/repair-final-test-task.test.ts
           node --experimental-strip-types --test --test-name-pattern='Generated Test D1 selector|R137 signed DAG|R141 original root capture|R142|R145' poc/apps/gateway/test/operational-epoch-gateway.test.ts
