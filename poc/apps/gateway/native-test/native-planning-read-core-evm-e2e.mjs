@@ -829,6 +829,34 @@ try{
           ?"r151-dynamic-docker-validation":"r150-owner-test-fresh";
         const candidateFrontendId="r151-multi-frontend-repair";
         const nativeOwnerRepairDraft=async input=>{
+              if(signedOfflineGeneratedTestProbe){
+                assert.equal(input.feedback.failed_phase,"backend_tests");
+                assert.equal(input.diagnostic_candidates?.status,
+                  "verified_original_generated_test_edit_scope");
+                assert.equal(input.diagnostic_candidates?.tested_commit_sha,
+                  input.feedback.tested_commit_sha);
+                const resource=canonicalFileUri(repo,workBranch,
+                  generatedBackendTestFile);
+                assert.deepEqual(input.diagnostic_candidates.candidates,
+                  [{role:"test",resource}]);
+                const editorId="r151-signed-generated-test-editor";
+                return {tasks:[
+                  {id:editorId,agent_id:"test",
+                   title:"Investigate incorrect generated Test assertion",
+                   description:"Read the originally approved generated Test and correct the invalid assertion without changing application behavior",
+                   depends_on:[],permissions:[
+                    {resource,operation:"read_file",reason:"Inspect verified original Test"},
+                    {resource,operation:"update_file",reason:"Correct bounded signed Test"}
+                   ]},
+                  {id:candidateTestId,agent_id:"test",
+                   title:"Independently rerun Docker after signed Test correction",
+                   description:"Verify the corrected SHA and independent researcher acceptance",
+                   depends_on:[editorId],permissions:[
+                    {resource:branchResource,operation:"run_tests",
+                     reason:"Test exact repaired Git revision"}
+                   ]}
+                ]};
+              }
               // The zero-billing test selects existing grants, not a new
               // capability. A future model may propose a different bounded
               // plan, which still faces the same Rust + Gateway admission.
@@ -928,7 +956,17 @@ try{
             maxSessionMs:240000,
             maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
             thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
-            ...((multiTypecheckProbe||signedOfflineSemanticProbe)?{
+            ...(signedOfflineGeneratedTestProbe?{
+              taskShape:"bounded_generated_test_edit",
+              readVerifiedRepairTarget:async input=>{
+                if(!readVerifiedGeneratedTestEditScope)
+                  throw Error("Offline signed Test D1 needs original Runner scope");
+                const target=await readVerifiedGeneratedTestEditScope();
+                if(target?.tested_commit_sha!==input.feedback.tested_commit_sha)
+                  throw Error("Signed generated Test scope has stale SHA");
+                return target;
+              }
+            }:(multiTypecheckProbe||signedOfflineSemanticProbe)?{
               taskShape:"bounded_auto_edit_test",
               readVerifiedRepairTarget:async input=>{
                 if(!readVerifiedRepairTarget)
@@ -1077,7 +1115,7 @@ try{
               throw Error("Paid recovery requires private signed generated-Test scope");
             if(paidGeminiRecovery||multiTypecheckProbe||signedOfflineSemanticProbe)
               readVerifiedRepairTarget=ports.getVerifiedRepairTarget;
-            if(paidGeminiRecovery)
+            if(paidGeminiRecovery||signedOfflineGeneratedTestProbe)
               readVerifiedGeneratedTestEditScope=ports.getVerifiedGeneratedTestEditScope;
             originalA2APorts=Object.freeze({
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
