@@ -1,3 +1,4 @@
+import {retainFailureEvidence} from "./failure-evidence.ts";
 import {extractProjectE2eFailureDiagnostic} from "../scripts/project-e2e-failure-diagnostic.mjs";
 import {extractAcceptanceFailureSummary} from "./acceptance-diagnostics.ts";
 import { randomUUID } from "node:crypto";
@@ -30,6 +31,7 @@ export interface IsolatedRunnerConfig {
   phase_timeout_ms: number;
   total_timeout_ms?: number;
   log_dir: string;
+  failure_evidence_dir?: string;
   acceptance_enabled?: boolean;
   acceptance_dir?: string;
 }
@@ -447,6 +449,10 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
         { mode: 0o600 }
       );
 
+      if(failed&&this.#config.failure_evidence_dir){
+        await retainFailureEvidence({directory:this.#config.failure_evidence_dir,
+          archivePath,log:logs.join("\n"),request,phases});
+      }
       signal.throwIfAborted();
       return {
         request_id: request.request_id,
