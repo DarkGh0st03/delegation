@@ -6,7 +6,7 @@ const PHASES=["dependency_install","typecheck","backend_tests","frontend_tests",
  "build","playwright_e2e","researcher_acceptance"];
 const deny=why=>{throw Error("Project test repair scope NO-GO: "+why);};
 export function collectProjectTestRepairCandidateScope({effect,testedSha,repo,branch,
- approvedRows,rootPermissions,observedWrites}){
+ approvedRows,rootPermissions,observedWrites,observedTestCreates}){
  const phase=Array.isArray(effect?.phases)?effect.phases.find(p=>p?.status==="fail")?.phase:undefined;
  const supported=phase==="backend_tests"||phase==="frontend_tests";
  const role=phase==="frontend_tests"?"frontend":"backend";
@@ -23,6 +23,9 @@ export function collectProjectTestRepairCandidateScope({effect,testedSha,repo,br
     !Array.isArray(approvedRows)||!Array.isArray(rootPermissions)||
     !["backend","frontend","test"].every(role=>observedWrites?.[role] instanceof Set))
   deny("classified project test Runner failure and original write ledger required");
+ if(observedTestCreates!==undefined&&(!(observedTestCreates instanceof Set)||
+     [...observedTestCreates].some(path=>!observedWrites.test.has(path))))
+  deny("test creation provenance must belong to the observed Test write ledger");
  // Failed test paths are Runner evidence, not proposed read/write resources.
  // Only the bounded count leaves this collector. Requiring read_file here
  // prevents recovery after a create_file-only Test Task, although discovery
@@ -51,8 +54,30 @@ export function collectProjectTestRepairCandidateScope({effect,testedSha,repo,br
  }
  if(candidates.length<1||candidates.length>8)deny("bounded original source candidates unavailable");
  candidates.sort((a,b)=>a.resource.localeCompare(b.resource));
+ // Authorship is not causality: a failing generated test is not necessarily
+ // incorrect. These counts never authorize disclosure or mutation of tests.
+ // In particular a create_file grant does not imply read_file/update_file.
+ const provenance=observedTestCreates===undefined?undefined:(()=>{
+  const created=files.filter(path=>observedTestCreates.has(path));
+  const canRewrite=path=>{
+   const resource=canonicalFileUri(repo,branch,path);
+   const signed=approvedRows.filter(g=>g.agent_id==="test"&&
+     g.resource===resource&&["read_file","update_file"].includes(g.operation));
+   return new Set(signed.map(g=>g.task_id)).size===1&&
+    ["read_file","update_file"].every(operation=>
+      signed.some(g=>g.operation===operation)&&
+      rootPermissions.some(g=>g.operation===operation&&g.resource===resource));
+  };
+  return Object.freeze({
+   failed_test_written_by_test_count:files.filter(path=>observedWrites.test.has(path)).length,
+   failed_test_created_by_test_count:created.length,
+   created_test_without_approved_rewrite_count:created.filter(path=>!canRewrite(path)).length,
+   causal_attribution:"not_established"
+  });
+ })();
  return Object.freeze({status:"verified_original_project_test_repair_scope",
   tested_commit_sha:testedSha,
   project_test_failure:Object.freeze({phase,failed_test_file_count:files.length}),
-  causal_attribution:"not_established",candidates:Object.freeze(candidates)});
+  causal_attribution:"not_established",candidates:Object.freeze(candidates),
+  ...(provenance?{test_failure_provenance:provenance}:{})});
 }
