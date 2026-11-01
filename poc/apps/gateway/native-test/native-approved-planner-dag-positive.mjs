@@ -114,7 +114,7 @@ export async function runNativePositiveApprovedDag({
   approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
   offlineTypecheckProbe=false,offlineMultiTypecheckProbe=false,
   offlineAcceptanceProbe=false,offlineProjectTestProbe=false,
-  offlineMultiTest=false,onPilotPhase,onPilotError,
+  offlineGeneratedTestProbe=false,offlineMultiTest=false,onPilotPhase,onPilotError,
   /** Owner-private capability supplied ONLY by an authenticated trusted
    * host. Never from Gemini, A2A, MCP, CLI arguments or plan JSON.
    * The owner must have already armed the original Rust-root-bound intake
@@ -126,11 +126,12 @@ export async function runNativePositiveApprovedDag({
   if(offlineRecovery&&(realGeminiPilot||
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Signed-DAG recovery is a host-selected offline fixture only");
-  if(offlineMultiTest&&(!offlineRecovery||realGeminiPilot||
+  if(offlineMultiTest&&(!(offlineRecovery||offlineGeneratedTestProbe)||realGeminiPilot||
      typeof approvedAgentModelFactory!=="function"))
     throw Error("Multiple Test A2A Tasks require signed offline recovery fixture");
   if(offlineSemanticProbe&&(realGeminiPilot||offlineTypecheckProbe||offlineRecovery||
-     offlineMultiTest||!trustedOwnerRecovery||typeof approvedAgentModelFactory!=="function"))
+     (offlineMultiTest&&!offlineGeneratedTestProbe)||
+     !trustedOwnerRecovery||typeof approvedAgentModelFactory!=="function"))
     throw Error("Acceptance repair probe requires a separate original zero-billing owner");
   if(offlineTypecheckProbe&&(realGeminiPilot||offlineRecovery||offlineMultiTest||
      typeof approvedAgentModelFactory!=="function"))
