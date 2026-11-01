@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {compilePlanningProposal}
   from "../../../packages/orchestrator-runtime/src/trusted-adk-planner.ts";
+import {makeOfflineReviewableDag}
+  from "../../../packages/orchestrator-runtime/test/fixtures/offline-planning-dag.mjs";
+import {injectGeneratedTestAssertionFault,repairGeneratedTestAssertionFault}
+  from "./offline-project-test-repair-fixture.mjs";
 import {makeApproval,assertApprovedPlanScope}
   from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
@@ -413,4 +417,60 @@ test("Real Google ADK Runner executes two signed Test Tasks on one role model wi
   assert.equal(effects.filter(x=>x.taskId==="prepare-regression").length,2);
   assert.equal(effects.filter(x=>x.taskId==="checks").length,6);
   assert.equal(model.calls,10);
+});
+
+test("signed generated-Test fixture executes D0 create/read/Runner FAIL without early repair",()=>{
+  const testPath="tests/backend/generated-status.test.ts";
+  const scoped={...snapshot,directories:[...snapshot.directories,"tests/backend"]};
+  const sketch=makeOfflineReviewableDag({
+    snapshot:scoped,
+    edits:{backend:["apps/backend/user.ts"],frontend:["apps/frontend/list.tsx"]},
+    newTestFile:"tests/search.spec.ts",
+    generatedBackendTestFile:testPath,
+    splitTestTasks:true
+  });
+  const proposed=compilePlanningProposal(sketch,{
+    ...{snapshot:scoped,requirement:"Account status transition",
+       planId:"signed-generated-test",workBranch:"feature/search",agents}
+  });
+  const plan=proposed.plan;
+  const approval=makeApproval(plan,{
+    allowedOperations:new Set(RUST_OPERATIONS),
+    decision_id:"generated-test",approved_by:eng,
+    approved_at:"2026-10-27T12:00:00Z",
+    approved_permission_ids:plan.requested_permissions.map(x=>x.id)
+  });
+  const approvedRows=assertApprovedPlanScope(plan,approval,{
+    allowedOperations:new Set(RUST_OPERATIONS),expectedEngineerDid:eng
+  });
+  const correct='expect(service.suspendUser("usr-001").status).toBe("SUSPENDED");';
+  const broken=injectGeneratedTestAssertionFault(correct);
+  const scripts=buildOfflineAdkScriptsFromApprovedPlan({
+    plan,approvedRows,repo,branch:"feature/search",
+    implementationContents:{...content,[testPath]:broken},
+    initialFailedGeneratedTestPaths:[testPath]
+  });
+  assert.deepEqual(scripts.test.map(call=>call.name),[
+    "create_file","create_file","read_file","run_tests"
+  ]);
+  assert.equal(scripts.test[1].args.content,broken);
+  assert.equal(scripts.test[2].args.path,testPath);
+  assert.equal(scripts.test.some(call=>
+    call.name==="update_file"&&call.args.path===testPath),false);
+  assert.equal(repairGeneratedTestAssertionFault(broken),correct);
+  assert.equal(Object.isFrozen(scripts.test[1].args),true);
+});
+test("generated Test fault flag cannot bypass separately approved creation or validation",()=>{
+  const d=planned(),p="tests/backend/generated-status.test.ts";
+  const input={plan:d.plan,approvedRows:d.approvedRows,repo,
+    branch:d.workBranch,implementationContents:{...content,[p]:"broken"}};
+  for(const invalid of [
+    [p],["../../secret.test.ts"],["tests/backend/ambiguous.ts"],
+    ["tests/backend/a.test.ts","tests/backend/a.test.ts"],
+    Array(5).fill("tests/backend/a.test.ts")
+  ]){
+    assert.throws(()=>buildOfflineAdkScriptsFromApprovedPlan({
+      ...input,initialFailedGeneratedTestPaths:invalid
+    }),/NO-GO/);
+  }
 });
