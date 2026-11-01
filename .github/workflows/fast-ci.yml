@@ -65,3 +65,20 @@ jobs:
         run: |
           node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs poc/apps/gateway/native-test/d1-editor-revision.test.mjs poc/packages/orchestrator-runtime/test/repair-final-test-task.test.ts
           node --experimental-strip-types --test --test-name-pattern='Generated Test D1 selector|R137 signed DAG|R141 original root capture|R142|R145' poc/apps/gateway/test/operational-epoch-gateway.test.ts
+  runner-evidence-docker:
+    name: Real Docker failure evidence round trip (no AI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+      - name: Prepare fixed Runner image
+        run: docker pull node:22.15.0-bookworm
+      - name: Docker FAIL, retain, encrypt, discard plaintext and recover
+        env:
+          RUNNER_EVIDENCE_REAL_DOCKER: '1'
+        run: node --experimental-strip-types --test poc/apps/test-runner-controller/test/failure-evidence-docker.test.ts

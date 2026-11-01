@@ -21,3 +21,11 @@ Without the secret, retention remains disabled. Encrypted artifacts expire after
 Do not publish the key or decrypted output. This code does not configure the
 repository secret or initiate a paid pilot. No historical failed source can be recovered by
 this feature. Tests use injected Docker commands, not a real Docker replay.
+
+Fast CI includes a separate free Docker round-trip test. It injects a Gitea-shaped
+archive response, runs the real isolated Docker executor with a missing-lockfile
+fixture, expects dependency_install FAIL, seals the retained bundle, deletes the
+plaintext directory and verifies recovered archive bytes, log hash and tested SHA.
+The encryption key is ephemeral and no artifact is uploaded by this test. This
+checks real Docker evidence retention, not live Gitea, Gemini or application D1.
+Locally opt in with `RUNNER_EVIDENCE_REAL_DOCKER=1` after pulling the fixed image.
