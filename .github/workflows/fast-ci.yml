@@ -50,7 +50,7 @@ jobs:
       - name: Recovery scope, signed task context and owner handoff (no model calls)
         run: |
           node --experimental-strip-types --test poc/apps/gateway/native-test/project-test-repair-candidate-scope.test.mjs poc/packages/orchestrator-runtime/test/trusted-approved-a2a-dispatcher.test.ts poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts
-          node --experimental-strip-types --test poc/apps/gateway/native-test/native-owner-d1-task-selection.test.mjs poc/packages/orchestrator-runtime/test/trusted-adk-operational-repair-proposer.test.ts
+          node --experimental-strip-types --test poc/apps/gateway/native-test/native-owner-d1-task-selection.test.mjs poc/apps/gateway/native-test/verified-failed-generated-test-selection.test.mjs poc/packages/orchestrator-runtime/test/trusted-adk-operational-repair-proposer.test.ts
           node --experimental-strip-types --test --test-name-pattern='R148 one original Test FAIL|R135 signed repair grants' poc/apps/gateway/test/operational-epoch-gateway.test.ts
       - name: Generated Test edit, fresh validation and final acceptance selection (no model calls)
         run: |
