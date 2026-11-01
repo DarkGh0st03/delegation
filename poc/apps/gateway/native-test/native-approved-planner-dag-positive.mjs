@@ -1,5 +1,6 @@
 import {selectSignedNativeTestEditD1Tasks} from "./native-owner-d1-task-selection.mjs";
 import {verifiedFailedCreatedTestPaths} from "./verified-failed-generated-test-selection.mjs";
+import {collectSignedGeneratedTestEditScope} from "./verified-generated-test-edit-scope.mjs";
 import {verifyD1EditorRevision} from "./d1-editor-revision.mjs";
 import {collectProjectTestRepairCandidateScope} from "./project-test-repair-candidate-scope.mjs";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
@@ -935,6 +936,36 @@ export async function runNativePositiveApprovedDag({
       await trustedOwnerRecovery.bindOriginalA2APorts({
         agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
         getVerifiedRepairTarget:()=>verifiedRepairTarget,
+        // Owner-only alternative repair scope. No model, A2A or shared MCP
+        // can request new grants: this only provides eligible original Test
+        // files whose creation and failure were observed by real providers.
+        async getVerifiedGeneratedTestEditScope(){
+          if(runnerRuns!==1||runnerOutcome?.status!=="fail"||
+             !["backend_tests","frontend_tests"].includes(
+               runnerOutcome.phases?.find(p=>p.status==="fail")?.phase)||
+             observedCreatedPaths.size===0)
+            return null;
+          const existing=grants.filter(g=>g.agent_id==="test"&&
+            ["read_file","update_file"].includes(g.operation));
+          const root=coordinator.trustedOperationalAuthority().permissions;
+          const eligible=observedCreatedPaths.some(path=>{
+            const resource=canonicalFileUri(repo,branch,path);
+            const rows=existing.filter(g=>g.resource===resource);
+            return new Set(rows.map(g=>g.task_id)).size===1&&
+              ["read_file","update_file"].every(operation=>
+                rows.some(g=>g.operation===operation)&&
+                root.some(g=>g.resource===resource&&g.operation===operation));
+          });
+          if(!eligible)return null;
+          const head=await reader.getBranchMetadata(branch);
+          if(head.commit_sha!==runnerOutcome.tested_commit_sha)
+            throw Error("Test-edit scope stale after signed Docker FAIL");
+          return collectSignedGeneratedTestEditScope({
+            runnerOutcome,originalCreatedPaths:observedCreatedPaths,
+            branch,failedSha:runnerOutcome.tested_commit_sha,repo,
+            approvedRows:grants,rootPermissions:root
+          });
+        },
         selectTestEditD1:epoch=>{
           const failedGeneratedPaths=verifiedFailedCreatedTestPaths({
             runnerOutcome,originalCreatedPaths:observedCreatedPaths,
