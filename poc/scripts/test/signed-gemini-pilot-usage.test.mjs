@@ -316,3 +316,18 @@ test("R151.89 trusted prepare rejection stages survive double sanitization",()=>
  for(const reason of reasons)assert.equal(summary.role_evidence.frontend.failed_operations.read_file[reason],1);
  assert.doesNotMatch(JSON.stringify(summary),/PRIVATE/);
 });
+
+
+test("D1 confirmed-effect counts survive double sanitization with strict bounds",()=>{
+ for(const role of ["backend","frontend","test"]){
+  const raw=JSON.stringify({event:"d1_editor_revision",role,
+   category:"no_confirmed_editor_write",task_write_count:0,runtime_write_count:1,
+   head_changed:true,path:"SECRET",credentialId:"PRIVATE"});
+  const forwarded=agentObservations(raw).map(x=>"[trusted-positive-ci] gemini_agent_observation "+JSON.stringify(x)).join("\n");
+  assert.deepEqual(agentSummary(forwarded).role_evidence[role].d1_revision_evidence,
+   {task_write_count:0,runtime_write_count:1,head_changed:true});
+  assert.doesNotMatch(forwarded,/SECRET|PRIVATE/);
+  const invalid=agentObservations(raw.replace('"task_write_count":0','"task_write_count":-1'));
+  assert.equal("task_write_count" in invalid[0],false);
+ }
+});

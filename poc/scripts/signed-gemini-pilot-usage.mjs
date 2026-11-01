@@ -170,9 +170,12 @@ function safeAgentObservation(x){
   if(!x||typeof x!=="object"||Array.isArray(x)||
      !AGENT_ROLES.includes(x.role)||!AGENT_TYPES.includes(x.event))
     return null;
-  if(x.event==="d1_editor_revision")return ["backend","frontend"].includes(x.role)&&
+  if(x.event==="d1_editor_revision")return ["backend","frontend","test"].includes(x.role)&&
     D1_REVISION_CATEGORIES.includes(x.category)
-    ?{event:x.event,role:x.role,category:x.category}:null;
+    ?{event:x.event,role:x.role,category:x.category,
+      ...Object.fromEntries(["task_write_count","runtime_write_count"].filter(k=>
+        Number.isSafeInteger(x[k])&&x[k]>=0&&x[k]<=10000).map(k=>[k,x[k]])),
+      ...(typeof x.head_changed==="boolean"?{head_changed:x.head_changed}:{})}:null;
   if(x.event==="adk_tool_timing"){
     if(!AGENT_TOOLS.includes(x.tool)||typeof x.success!=="boolean"||
        (x.error_kind!==null&&!TOOL_ERRORS.includes(x.error_kind)))
@@ -275,7 +278,10 @@ export function extractSafeGeminiPilotAgentSummary(log){
     const latest=failures.at(-1);
     roles[role]={
       ...(own.some(x=>x.event==="d1_editor_revision")?{
-        d1_revision_failure:own.filter(x=>x.event==="d1_editor_revision").at(-1).category}:{}),
+        d1_revision_failure:own.filter(x=>x.event==="d1_editor_revision").at(-1).category,
+        d1_revision_evidence:Object.fromEntries(Object.entries(
+          own.filter(x=>x.event==="d1_editor_revision").at(-1))
+          .filter(([k])=>["task_write_count","runtime_write_count","head_changed"].includes(k)))}:{}),
       model_turns_with_shape_metadata:modelCalls.length,
       observed_function_call_parts:modelCalls.reduce((n,x)=>n+x.function_call_parts,0),
       observed_text_parts:modelCalls.reduce((n,x)=>n+x.text_parts,0),

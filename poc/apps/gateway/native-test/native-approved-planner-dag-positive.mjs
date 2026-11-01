@@ -1030,14 +1030,19 @@ export async function runNativePositiveApprovedDag({
         async verifyD1EditorRevision(task,previousSha){
           const binding=task.role==="backend"?admittedBackendRepair:task.role==="frontend"?admittedFrontendRepair:admittedTestEdit;
           const head=await reader.getBranchMetadata(branch);
+          const writes=[...(task.role==="test"?observedTestEditEffects:observedImplementationWriteKeys).values()];
           try{
             return verifyD1EditorRevision({task,binding,branch,previousSha,
-              headSha:head.commit_sha,writes:[...(task.role==="test"?observedTestEditEffects:observedImplementationWriteKeys).values()]});
+              headSha:head.commit_sha,writes});
           }catch(error){
             const categories=["revision_baseline_mismatch","no_confirmed_editor_write",
               "editor_effect_binding_mismatch","provider_head_mismatch","unchanged_editor_revision"];
             if(categories.includes(error.category))process.stderr.write(JSON.stringify({
-              event:"d1_editor_revision",role:task.role,category:error.category
+              event:"d1_editor_revision",role:task.role,category:error.category,
+              // Confirmed effects only: these do not count model attempts.
+              task_write_count:writes.filter(x=>x.taskId===task.task_id).length,
+              runtime_write_count:writes.filter(x=>x.runtimeTaskId===task.runtime_task_id).length,
+              head_changed:head.commit_sha!==previousSha
             })+"\n");
             throw error;
           }
