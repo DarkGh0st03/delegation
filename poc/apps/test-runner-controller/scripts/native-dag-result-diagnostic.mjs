@@ -1,3 +1,4 @@
+import {safeProjectTestFailureDiagnostic} from "./project-test-failure-diagnostic.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
  * Structured, secret-free failure diagnostics for the disposable native
@@ -39,6 +40,15 @@ function parseExact(marker){
        marker.project_tests!=="pass"||marker.researcher_acceptance!=="fail")return null;
     acceptanceFailure=safeAcceptanceFailureSummary(marker.acceptance_failure);
     if(!acceptanceFailure)return null;
+  }
+  let projectTestFailure;
+  if(marker.project_test_failure!==undefined){
+    projectTestFailure=safeProjectTestFailureDiagnostic(marker.project_test_failure);
+    if(!projectTestFailure||firstFailed?.phase!==projectTestFailure.phase||
+       marker.status!=="fail"||marker.project_tests!=="fail"||
+       marker.researcher_acceptance!=="skipped"||
+       statuses.some((p,i)=>p.status!==(i<PHASES.indexOf(firstFailed.phase)
+         ?"pass":i===PHASES.indexOf(firstFailed.phase)?"fail":"skipped")))return null;
   }
   let typecheckCodes;
   if(marker.typecheck_error_codes!==undefined){
@@ -86,6 +96,7 @@ function parseExact(marker){
     phases:Object.freeze(statuses),
     project_tests:marker.project_tests,
     researcher_acceptance:marker.researcher_acceptance,
+    ...(projectTestFailure?{project_test_failure:projectTestFailure}:{}),
     ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
     ...(typecheckCodes?{typecheck_error_codes:typecheckCodes}:{}),
     ...(scopeAudit?{typecheck_permission_scope_audit:scopeAudit}:{}),

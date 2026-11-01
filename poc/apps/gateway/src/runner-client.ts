@@ -201,6 +201,9 @@ export class RunnerClient {
       parsePhases(body.phases).every(p=>p.phase==="researcher_acceptance"
         ?p.status==="fail":p.status==="pass")
       ?safeAcceptanceFailureSummary(body.acceptance_failure):null;
+    const firstFailedPhase=parsePhases(body.phases).find(p=>p.status==="fail")?.phase;
+    const vitestFailurePhase=firstFailedPhase==="backend_tests"||firstFailedPhase==="frontend_tests"
+      ?firstFailedPhase:null;
     const result: RunnerClientResult = {
       ...(acceptanceFailure?{acceptance_failure:acceptanceFailure}:{}),
       request_id: string(body.request_id, "request_id"),
@@ -235,10 +238,9 @@ export class RunnerClient {
          parsePhases(body.phases).some(p=>p.phase==="typecheck"&&p.status==="fail")
         ?{typecheck_error_codes:sanitizeTypecheckErrorCodes(body.typecheck_error_codes)}
         :{}),
-      ...(status==="fail"&&body.failing_test_files!==undefined
+      ...(status==="fail"&&vitestFailurePhase&&body.failing_test_files!==undefined
         ?{failing_test_files:sanitizeVitestFailureFiles(body.failing_test_files,
-           parsePhases(body.phases).some(p=>p.phase==="frontend_tests"&&p.status==="fail")
-             ?"frontend_tests":"backend_tests")}: {})
+           vitestFailurePhase)}: {})
     };
 
     if (

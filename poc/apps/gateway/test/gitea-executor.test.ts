@@ -466,3 +466,38 @@ test("unbound legacy requests cannot choose another feature branch even with val
  })),ProviderOperationUnavailableError);
  assert.equal(touched,false);
 });
+
+// The real transport decoder must retain safe failure locations through the
+// provider boundary, without interpreting them as new signed Task grants.
+test("Vitest failure files survive real RunnerClient and GiteaExecutor only for the first failed test phase",async()=>{
+  const sha="e".repeat(40),secret="PRIVATE_ASSERTION_AND_SOURCE";
+  const client={async getBranchMetadata(){return {commit_sha:sha};}} as unknown as GiteaClient;
+  for(const failed of ["backend_tests","frontend_tests","typecheck"]){
+    const phases=["dependency_install","typecheck","backend_tests","frontend_tests",
+      "build","playwright_e2e","researcher_acceptance"];
+    const index=phases.indexOf(failed);
+    const runner=new RunnerClient({baseUrl:"http://runner.internal:8095",
+      gatewayToken:"private-token",fetchFn:async(_url,init)=>{
+        const body=JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({
+          request_id:body.request_id,repository:body.repository,branch:body.branch,
+          tested_commit_sha:sha,runner_profile:"poc-default",status:"fail",
+          phases:phases.map((phase,i)=>({phase,status:i<index?"pass":i===index?"fail":"skipped"})),
+          failing_test_files:["tests/backend/users.test.ts","tests/frontend/access.test.tsx",
+            "../private/password.test.ts","tests/backend/users.test.ts",
+            "tests/backend/secret.test.ts\n"+secret],
+          raw_assertion:secret
+        }),{status:200});
+      }});
+    const result=await new GiteaExecutor(client,runner,
+      "gitea://gitea.local/thesis/iam-console-poc").execute(record({tool:"run_tests",
+        arguments:{branch:"feature/account-suspension",profile:"poc-default"}}));
+    assert.equal(result.tool,"run_tests");
+    if(result.tool!=="run_tests")throw Error("Unexpected provider result");
+    assert.equal(result.tested_commit_sha,sha);
+    assert.deepEqual(result.failing_test_files,failed==="backend_tests"
+      ?["tests/backend/users.test.ts"]:failed==="frontend_tests"
+        ?["tests/frontend/access.test.tsx"]:undefined);
+    assert.doesNotMatch(JSON.stringify(result),/PRIVATE_ASSERTION|password/);
+  }
+});

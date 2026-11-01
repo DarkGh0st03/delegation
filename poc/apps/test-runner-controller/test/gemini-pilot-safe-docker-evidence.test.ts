@@ -137,3 +137,26 @@ test("Acceptance check IDs survive pilot double filtering only with acceptance F
     {...sample("typecheck"),acceptance_failure}
   ])assert.equal(safe(prefix+JSON.stringify(bad)),null);
 });
+
+test("Backend and Frontend diagnostics survive both filters as counts only, with coherent phase order",()=>{
+  for(const phase of ["backend_tests","frontend_tests"]){
+    const summary={phase,failed_test_file_count:2};
+    const event={...sample(phase),project_test_failure:summary,
+      failing_test_files:["tests/backend/private.test.ts"],assertion:"PRIVATE_SOURCE"};
+    assert.deepEqual(safe(prefix+JSON.stringify(event))?.project_test_failure,summary);
+    assert.doesNotMatch(JSON.stringify(safe(prefix+JSON.stringify(event))),
+      /tests\/|PRIVATE_SOURCE|assertion|failing_test_files/);
+    for(const badSummary of [
+      {...summary,source:"LEAK"},{...summary,phase:"typecheck"},
+      {...summary,failed_test_file_count:0},{...summary,failed_test_file_count:9},
+      {...summary,failed_test_file_count:1.5},{...summary,failed_test_file_count:"2"}
+    ])assert.equal(safe(prefix+JSON.stringify({...event,project_test_failure:badSummary})),null);
+    for(const bad of [
+      {...event,project_tests:"pass"},
+      {...event,researcher_acceptance:"fail"},
+      {...sample("typecheck"),project_test_failure:summary},
+      {...event,phases:event.phases.map(p=>p.phase==="dependency_install"?{...p,status:"skipped"}:p)},
+      {...event,phases:event.phases.map(p=>p.phase==="build"?{...p,status:"pass"}:p)}
+    ])assert.equal(safe(prefix+JSON.stringify(bad)),null);
+  }
+});

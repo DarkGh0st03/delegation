@@ -7,6 +7,7 @@ test("Only classified non-timeout acceptance checks or real TS codes are repair 
  assert.equal(eligible("researcher_acceptance",[],summary),true);
  assert.equal(eligible("typecheck",["TS2820"],undefined),true);
  for(const [phase,codes,acceptance] of [
+  ["backend_tests",[],summary],["frontend_tests",[],summary],
   ["dependency_install",[],summary],["researcher_acceptance",["TS2820"],summary],
   ["researcher_acceptance",[],{...summary,timed_out:true}],
   ["researcher_acceptance",[],{...summary,unclassified_failure:true}],

@@ -31,6 +31,8 @@ export function extractSafeGeminiPilotDockerEvidence(log){
         phases:data.phases,
         project_tests:data.project_tests,
         researcher_acceptance:data.researcher_acceptance,
+        ...(data.project_test_failure!==undefined
+          ?{project_test_failure:data.project_test_failure}:{}),
         ...(data.acceptance_failure!==undefined
           ?{acceptance_failure:data.acceptance_failure}:{}),
         ...(data.typecheck_error_codes!==undefined

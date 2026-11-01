@@ -1,3 +1,4 @@
+import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
 import {collectAcceptanceRepairCandidateScope} from "./acceptance-repair-candidate-scope.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 /**
@@ -707,12 +708,18 @@ export async function runNativePositiveApprovedDag({
               repairNomination
             });
           }
+          const failedProjectPhase=effect.phases?.find(p=>p.status==="fail")?.phase;
+          const projectFailure=(failedProjectPhase==="backend_tests"||failedProjectPhase==="frontend_tests")
+            ?safeProjectTestFailureDiagnostic({phase:failedProjectPhase,
+              failed_test_file_count:sanitizeVitestFailureFiles(
+                effect.failing_test_files,failedProjectPhase).length}):null;
           process.stderr.write("[native-dag-adk] docker_phase_status "+
             JSON.stringify({
               status:effect.status,
               phases:effect.phases?.map(x=>({phase:x.phase,status:x.status})),
               project_tests:effect.project_tests?.status,
               researcher_acceptance:effect.researcher_acceptance?.status,
+              ...(projectFailure?{project_test_failure:projectFailure}:{}),
               ...(effect.status==="fail"&&effect.project_tests?.status==="pass"&&
                 effect.researcher_acceptance?.status==="fail"&&
                 safeAcceptanceFailureSummary(effect.acceptance_failure)

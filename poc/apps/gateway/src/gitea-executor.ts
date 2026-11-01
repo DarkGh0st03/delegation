@@ -232,6 +232,8 @@ export class GiteaExecutor implements ExecutionPort {
           : { log_reference: run.log_reference }),
         ...(run.acceptance_failure===undefined
           ?{}:{acceptance_failure:run.acceptance_failure}),
+        ...(run.failing_test_files===undefined
+          ?{}:{failing_test_files:[...run.failing_test_files]}),
         ...(run.typecheck_diagnostics===undefined
           ?{}
           :{typecheck_diagnostics:run.typecheck_diagnostics}),
