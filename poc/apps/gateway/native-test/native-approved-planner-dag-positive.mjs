@@ -945,10 +945,21 @@ export async function runNativePositiveApprovedDag({
                runnerOutcome.phases?.find(p=>p.status==="fail")?.phase)||
              observedCreatedPaths.size===0)
             return null;
+          const failedPhase=runnerOutcome.phases.find(p=>p.status==="fail")?.phase;
+          const rawFailed=runnerOutcome.failing_test_files;
+          const failedPaths=sanitizeVitestFailureFiles(rawFailed,failedPhase);
+          if(!Array.isArray(rawFailed)||rawFailed.length===0||
+             failedPaths.length!==rawFailed.length)
+            throw Error("Generated Test scope requires complete trusted Runner failures");
+          // A Test-created file that did NOT fail is not an investigation
+          // candidate. The absence of overlap is ordinary ineligibility,
+          // not an error that may suppress a valid Backend source repair.
+          const failedCreatedPaths=failedPaths.filter(path=>observedCreatedPaths.has(path));
+          if(failedCreatedPaths.length===0)return null;
           const existing=grants.filter(g=>g.agent_id==="test"&&
             ["read_file","update_file"].includes(g.operation));
           const root=coordinator.trustedOperationalAuthority().permissions;
-          const eligible=[...observedCreatedPaths].some(path=>{
+          const eligible=failedCreatedPaths.some(path=>{
             const resource=canonicalFileUri(repo,branch,path);
             const rows=existing.filter(g=>g.resource===resource);
             return new Set(rows.map(g=>g.task_id)).size===1&&
