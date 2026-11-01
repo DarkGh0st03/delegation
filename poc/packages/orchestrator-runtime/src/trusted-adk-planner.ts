@@ -195,6 +195,7 @@ export function compilePlanningProposal(
   const root=canonicalRepositoryUri(cfg.snapshot.repository);
   const files=new Set(cfg.snapshot.files),dirs=new Set(cfg.snapshot.directories);
   const tasks:any[]=[],requested_permissions:any[]=[];
+  const futureFileReads:Array<{taskId:string;resource:string}>=[];
   const roles=new Set<Role>();
   for(const rawTask of draft.tasks){
     const task=obj(rawTask);
@@ -227,7 +228,14 @@ export function compilePlanningProposal(
           const parent=target.includes("/")?target.slice(0,target.lastIndexOf("/")):"";
           if(!dirs.has(parent)||files.has(target))
             fail("create_file outside authorized discovery directories");
-        }else if(!files.has(target))fail("file absent from trusted Planning snapshot");
+        }else if(!files.has(target)){
+          // A future file can be read/updated ONLY after a distinct signed
+          // ancestor Task has explicitly created that exact canonical file.
+          // This is neither a new grant nor an implicit directory privilege.
+          futureFileReads.push({
+            taskId,resource:canonicalFileUri(cfg.snapshot.repository,branch,target)
+          });
+        }
         resource=canonicalFileUri(cfg.snapshot.repository,branch,target);
       }
       if(!resources.includes(resource))resources.push(resource);
@@ -282,6 +290,17 @@ export function compilePlanningProposal(
     return !!task?.depends_on.some((parent:string)=>
       parent===ancestor||isAncestor(ancestor,parent,seen));
   };
+  // Snapshot-external reads/updates are never free-standing. Creation must
+  // be approved for the same URI, exactly once, in a predecessor Task.
+  // The read/update operations must also appear as explicit Task grants.
+  for(const future of futureFileReads){
+    const creators=requested_permissions.filter(p=>
+      p.operation==="create_file"&&p.resource===future.resource);
+    if(creators.length!==1||
+       creators[0].task_id===future.taskId||
+       !isAncestor(creators[0].task_id,future.taskId))
+      fail("file absent from trusted Planning snapshot");
+  }
   for(const permission of requested_permissions){
     const key=[permission.task_id,permission.operation,permission.resource]
       .join("\u0000");
