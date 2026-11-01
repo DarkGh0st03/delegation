@@ -1013,11 +1013,13 @@ try{
             // a separate real Child DC and Gateway predecessor attestation.
             if(!originalA2APorts)
               throw Error("R150.7 original protected A2A ports not bound");
+            if(geminiPilot)pilotDelegatedPhase="d1_repair_planning";
             await armed.continueWithinActiveRoot(signal);
             const epochs=await armed.intake.verifiedEpochHistory();
             assert.deepEqual(epochs.map(e=>e.epoch),[1,2]);
             assert.equal(epochs[0].root_credential_id,operationalId);
             assert.equal(epochs[1].root_credential_id,operationalId);
+            if(geminiPilot)pilotDelegatedPhase="d1_epoch_admitted";
             // Derive the actual repair target from the *admitted* D1 grants.
             // Never let Gemini select a path, Task ID or operation outside
             // the original Engineer-approved, Rust-issued root.
@@ -1126,6 +1128,7 @@ try{
                   const armRepair=editing.role==="frontend"
                     ?originalA2APorts.armVerifiedD1FrontendRepair
                     :originalA2APorts.armVerifiedD1BackendRepair;
+                  if(geminiPilot)pilotDelegatedPhase="d1_editor_preparation";
                   await armRepair({
                     taskId:issued.task_id,role:issued.role,
                     runtimeTaskId:issued.runtime_task_id,
@@ -1136,6 +1139,7 @@ try{
                 }else if(issued.role==="test"&&
                          issued.task_id===selected.testTaskId&&
                          /^[a-f0-9]{40}$/u.test(verifiedRepairedSha??"")){
+                  if(geminiPilot)pilotDelegatedPhase="d1_test_preparation";
                   await originalA2APorts.armVerifiedD1TestRun({
                     taskId:issued.task_id,role:issued.role,
                     runtimeTaskId:issued.runtime_task_id,
@@ -1150,11 +1154,13 @@ try{
                 if(filesByTask.get(task.task_id)?.role===task.role){
                   verifiedRepairedSha=await originalA2APorts.verifyD1EditorRevision(
                     task,verifiedRepairedSha??signal.tested_commit_sha);
+                  if(geminiPilot)pilotDelegatedPhase="d1_editor_revision_verified";
                 }else if(task.role==="test"&&
                          task.task_id===selected.testTaskId){
                   const head=await liveClient.getBranchMetadata(workBranch);
                   assert.equal(head.commit_sha,verifiedRepairedSha,
                     "Fresh Test may not silently mutate repaired SHA");
+                  if(geminiPilot)pilotDelegatedPhase="d1_test_gateway_confirmed";
                 }else{
                   throw Error("R151.10 unexpected Gateway-confirmed role");
                 }

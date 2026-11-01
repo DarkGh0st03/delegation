@@ -155,6 +155,7 @@ jobs:
       - name: Validate sanitized Gemini usage diagnostics (NO API access)
         run: |
           node --test poc/scripts/test/signed-gemini-pilot-usage.test.mjs
+          node --test poc/scripts/test/signed-gemini-pilot-failure-observation.test.mjs
           node --test poc/apps/gateway/native-test/native-approved-dag-failure-category.test.mjs
       - name: R150.4 owner recovery must retire original Rust root on every outcome (NO AI)
         run: node --test poc/apps/gateway/native-test/native-owner-verified-failure-handoff.test.mjs

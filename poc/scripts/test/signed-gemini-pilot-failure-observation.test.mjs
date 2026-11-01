@@ -162,3 +162,34 @@ test("R74 paid failure workflow actually writes noncausal observation from sanit
   assert.ok(yml.includes("docker_phase_evidence:dockerEvidence"));
   assert.ok(!yml.includes("causal_attribution:\"model_reasoning_failure\""));
 });
+
+// Two independent public filters must preserve trusted-owner D1 progress,
+// while arbitrary model text, paths and credentials stay outside the allowlist.
+test("R151.88 trusted D1 milestones survive both diagnostic whitelists",()=>{
+  const root=new URL("../../../",import.meta.url);
+  const native=readFileSync(new URL("poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs",root),"utf8");
+  const workflow=readFileSync(new URL(".github/workflows/gemini-paid-shared-mcp-final.yml",root),"utf8");
+  const owner=readFileSync(new URL("poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs",root),"utf8");
+  function allowlist(source){
+    const anchor='["not_started"';
+    const start=source.indexOf(anchor);
+    const end=start<0?-1:source.indexOf("].includes(item.delegated_phase)",start);
+    assert.ok(start>=0&&end>start&&end-start<1200,
+      "Trusted delegated-phase allowlist must be an explicit bounded literal");
+    return JSON.parse("["+source.slice(start+1,end)+"]");
+  }
+  const child=allowlist(native),artifact=allowlist(workflow);
+  assert.deepEqual(child,artifact,"Both public filters must agree");
+  const milestones=["trusted_owner_repair_handoff","d1_repair_planning",
+    "d1_epoch_admitted","d1_editor_preparation",
+    "d1_editor_revision_verified","d1_test_preparation",
+    "d1_test_gateway_confirmed"];
+  for(const phase of milestones){
+    assert.ok(child.includes(phase),"Missing safe D1 phase: "+phase);
+    if(phase!=="trusted_owner_repair_handoff")
+      assert.ok(owner.includes('pilotDelegatedPhase="'+phase+'"'),
+        "Trusted owner does not produce phase: "+phase);
+  }
+  for(const unsafe of ["PRIVATE_SOURCE","model_selected_phase","d1_unknown"])
+    assert.ok(!child.includes(unsafe));
+});
