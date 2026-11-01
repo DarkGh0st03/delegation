@@ -12,7 +12,7 @@ export function approvedTaskInstruction(requirement:string,description:string,
  const trustedRepairGuidance=options.repairEditor===true
   ? "\nTrusted D1 repair-editor task: the previous Docker Runner reported a failure, "+
     "but that failure alone does NOT prove source or test culpability. "+
-    "Investigate by calling read_file for the authorized source in THIS fresh Task. "+
+    "First call read_file to inspect the authorized source in THIS fresh Task. "+
     "When the authorized source and original requirement support a real correction, "+
     "call update_file with the COMPLETE corrected file content under the exact signed grants. "+
     "A read-only response, proposed patch in prose, or claim of completion is NOT "+
