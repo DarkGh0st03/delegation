@@ -109,7 +109,8 @@ test("ADK Planner reads real Gateway-shaped pinned source, returning only a draf
 });
 test("Planner guidance encourages source-grounded tests without granting new tools",()=>{
   assert.ok(Object.isFrozen(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE));
-  assert.equal(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE.length,6);
+  assert.ok(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE.some(line=>line.includes("self-contained brief")));
+  assert.ok(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE.some(line=>line.includes("expectations consistent")));
   const text=TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE.join("\n");
   assert.match(text,/discovered directory/);
   assert.match(text,/uncertainty rather than invent/);

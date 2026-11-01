@@ -166,6 +166,8 @@ function uniqueStrings(x:unknown,max:number):string[] {
  * tools, expand discovered paths or substitute Engineer review.
  */
 export const TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE=Object.freeze([
+  "Make each Task description a self-contained brief: objective, relevant observed interfaces, required behavior, error cases and concrete verification criteria, within the description size limit.",
+  "Derive briefs from the original requirement and inspected contracts; keep Backend, Frontend and Test expectations consistent. Do not invent status codes or business rules; report unresolved contradictions as uncertainties.",
   "Plan the requested implementation AND concrete regression tests when behavior changes; merely calling run_tests is not a regression-test implementation.",
   "Use a Test Agent task to read and update an existing discovered test file, or create a new test only inside a discovered directory, then run tests on the resulting feature branch.",
   "Inspect relevant existing test conventions before proposing new test-file paths; if the test directory is unavailable, report uncertainty rather than invent a resource.",

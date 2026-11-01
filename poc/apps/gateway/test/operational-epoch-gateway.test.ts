@@ -1575,6 +1575,7 @@ test("R112 transport error still retires root despite a real Runner FAIL",async(
  */
 test("R148 one original Test FAIL reaches owner and admits the next signed epoch under live root",async t=>{
  let liveChecks=0,proposalCalls=0;
+ const repairPhases:string[]=[];
  const issued:string[]=[],sent:string[]=[];
  let childJournal:TrustedChildIssuanceJournal|undefined;
  const x=await r112Dispatcher(t,{
@@ -1630,6 +1631,7 @@ test("R148 one original Test FAIL reaches owner and admits the next signed epoch
    const {journal,adapterBaseUrl,orchestratorToken,fetchFn,
     agentBaseUrls,a2a,credentialForTask}=ports;
    return armTrustedOwnerOperationalRecovery({
+    onRepairPhase:phase=>{repairPhases.push(phase);throw Error("Private observer failure");},
     gateway,coordinator:h.coordinator,signedApprovals:h.signedStore,
     epochDirectory:join(h.dir,"epochs"),
     running:{readiness:{
@@ -1680,6 +1682,9 @@ test("R148 one original Test FAIL reaches owner and admits the next signed epoch
  assert.deepEqual(epochs[1].plan.tasks.map(task=>task.id),
   ["repair-implementation","repair-validation"]);
  assert.equal(proposalCalls,1);
+ assert.deepEqual(repairPhases,["d1_feedback_verification","d1_history_verification",
+  "d1_planner_preflight","d1_model_proposal","d1_validation_reservation",
+  "d1_gateway_admission","d1_admitted_execution"]);
  assert.ok(liveChecks>=4,
   "Owner liveness must be checked before and between delegated repair Tasks");
  assert.deepEqual(sent,["repair-implementation","repair-validation"],
@@ -3611,6 +3616,9 @@ test("R135 signed repair grants + original Agent Card -> exactly one Rust DC -> 
   [{operation:"update_file",path:"src/invoices.ts"}]);
  assert.deepEqual(seen[0].subtask.relevant_paths,["src/invoices.ts"]);
  assert.equal(seen[0].subtask.branch,branch);
+ const brief=JSON.parse(seen[0].subtask.instruction.split("\n").slice(1).join("\n"));
+ assert.equal(brief.approved_requirement,"Update invoice service and test");
+ assert.ok(brief.task_brief.length>0);
  assert.equal(seen[0].delegation_evidence.credential_id,
   f.args.credential.credential_id);
  assert.deepEqual(JSON.parse(seen[0].delegation_evidence.credential)

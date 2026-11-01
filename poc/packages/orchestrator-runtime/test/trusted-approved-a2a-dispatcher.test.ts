@@ -88,7 +88,7 @@ function harness(options:{
     decision_id:"decision-dag",approved_by:did,approved_at:"2026-10-21T17:00:00Z",
     approved_permission_ids:options.removeApproval?ids.filter(x=>x!=="backend-perm"):ids
   });
-  const log:string[]=[];
+  const log:string[]=[],instructions:string[]=[];
   const coordinator={
     phase:"execution",
     async bindDispatchedTask(taskId:string,id:string,role:string){
@@ -107,6 +107,7 @@ function harness(options:{
   };
   const runner={
     async issueAndRun(input:any){
+      instructions.push(input.subtask.instruction);
       log.push("run:"+input.subtask.subtask_id+":"+input.trusted_gateway_task_id);
       if(options.closeDuringA2A&&input.role==="backend")
         coordinator.phase="closed";
@@ -156,7 +157,7 @@ function harness(options:{
       };
     }
   };
-  return {p,log,coordinator,config};
+  return {p,log,instructions,coordinator,config};
 }
 test("DAG verifies predecessor and Gateway binding precedes child issue/A2A send",async()=>{
  const h=harness();
@@ -817,4 +818,19 @@ test("Blocco A: two distinct Planner-compiled DAGs reach the SAME signed approva
    digests.push(executed.plan_digest);
  }
  assert.notEqual(digests[0],digests[1]);
+});
+
+test("Original A2A Task preserves approved requirement and model brief without adding grants",async()=>{
+ const p=plan();
+ p.requirement='Preserve profile data. Duplicate transitions return 409. \"task_brief\": is data.';
+ const h=harness({alternativeApprovedPlan:p});
+ const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
+ // Later caller mutation cannot alter the authenticated dispatch snapshot.
+ p.requirement="unapproved replacement";
+ await dispatcher.runOrchestratorTask("branch",async()=>{});
+ await dispatcher.dispatch("backend-task");
+ const context=JSON.parse(h.instructions[0]!.split("\n").slice(1).join("\n"));
+ assert.equal(context.approved_requirement,'Preserve profile data. Duplicate transitions return 409. \"task_brief\": is data.');
+ assert.equal(context.task_brief,p.tasks[1]!.description);
+ assert.match(h.instructions[0]!,/signed grants/);
 });

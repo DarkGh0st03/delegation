@@ -23,14 +23,11 @@ export function collectProjectTestRepairCandidateScope({effect,testedSha,repo,br
     !Array.isArray(approvedRows)||!Array.isArray(rootPermissions)||
     !["backend","frontend","test"].every(role=>observedWrites?.[role] instanceof Set))
   deny("classified project test Runner failure and original write ledger required");
- // Every reported failed test must already have an original signed read grant.
- // The new Test still receives run_tests only; no editor gets test rights.
- for(const path of files){
-   const resource=canonicalFileUri(repo,branch,path);
-   if(!approvedRows.some(g=>["backend","frontend","test"].includes(g.agent_id)&&g.resource===resource&&g.operation==="read_file")||
-      !rootPermissions.some(g=>g.resource===resource&&g.operation==="read_file"))
-     deny("failed test outside original signed read scope");
- }
+ // Failed test paths are Runner evidence, not proposed read/write resources.
+ // Only the bounded count leaves this collector. Requiring read_file here
+ // prevents recovery after a create_file-only Test Task, although discovery
+ // below reads only separately authorized implementation candidates.
+ // No test content is read, exposed to a model, or made editable here.
  const candidates=[];
  for(const candidateRole of [role]){
   for(const path of observedWrites[candidateRole]){

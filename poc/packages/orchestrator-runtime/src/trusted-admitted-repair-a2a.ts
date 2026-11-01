@@ -1,3 +1,4 @@
+import {approvedTaskInstruction} from "./approved-task-instruction.ts";
 /**
  * R135: owner-only, one-shot A2A dispatch for a fresh R133-admitted repair
  * Task. Reuses R134's actual Rust child issuance and the ordinary protected
@@ -115,7 +116,7 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
     (config.role!=="test"&&runTests))
   fail("incompatible repair Agent role or oversized file scope");
  const subtask:DeterministicSubtask={
-  subtask_id:config.taskId,instruction:task.description,
+  subtask_id:config.taskId,instruction:approvedTaskInstruction(current.plan.requirement,task.description),
   branch,relevant_paths:[...relevant],
   approved_file_permissions:filePermissions,
   ...(config.role==="test"?{approved_run_tests:runTests}:{})

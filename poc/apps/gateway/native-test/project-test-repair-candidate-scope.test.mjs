@@ -25,10 +25,10 @@ test("Backend Runner failure yields original source candidates, without exposing
  assert.ok(Object.isFrozen(result.candidates));
  assert.equal(JSON.stringify(result).includes(testFile),false);
 });
-test("Wrong phase, missing locations, unsupported test scope and ambiguous writers cannot authorize project repair",()=>{
+test("Wrong phase, missing locations and ambiguous writers cannot authorize project repair",()=>{
  for(const bad of [
   {...config,effect:{...effect,failing_test_files:[]}},
-  {...config,effect:{...effect,failing_test_files:["tests/backend/outside.test.ts"]}},
+  {...config,effect:{...effect,failing_test_files:["tests/backend/../outside.test.ts"]}},
   {...config,effect:{...effect,typecheck_error_codes:["TS2339"]}},
   {...config,effect:{...effect,revision:"b".repeat(40)}},
   {...config,effect:{...effect,project_tests:{status:"pass"}}},
@@ -77,3 +77,24 @@ test("Frontend fixture inverts only the observed lifecycle UI condition and repa
  assert.throws(()=>repairFrontendTestFault(source),/NO-GO/);
  assert.throws(()=>repairFrontendTestFault(fault+fault),/NO-GO/);
 });
+
+ test("Two failed generated tests without read grants remain evidence, never permissions",()=>{
+  const generated=["tests/backend/generated-a.test.ts","tests/backend/generated-b.test.ts"];
+  const createGrants=generated.map(path=>({task_id:"tests",agent_id:"test",
+   resource:base+path,operation:"create_file"}));
+  const sourceRows=perms(file,"backend");
+  const result=collect({...config,effect:{...effect,failing_test_files:generated},
+   approvedRows:[...sourceRows,...createGrants],rootPermissions:[...sourceRows,...createGrants],
+   observedWrites:{backend:new Set([file]),frontend:new Set(),test:new Set(generated)}});
+  assert.deepEqual(result.candidates,[{role:"backend",resource:base+file}]);
+  assert.equal(result.project_test_failure.failed_test_file_count,2);
+  assert.equal(result.causal_attribution,"not_established");
+  for(const path of generated)assert.equal(JSON.stringify(result).includes(path),false);
+  // Diagnostics cannot add a source read or write grant to either ledger.
+  for(const operation of ["read_file","update_file"]){
+   for(const ledger of ["approvedRows","rootPermissions"]){
+    assert.throws(()=>collect({...config,effect:{...effect,failing_test_files:generated},
+     [ledger]:rows.filter(g=>!(g.resource===base+file&&g.operation===operation))}),/NO-GO/);
+   }
+  }
+ });

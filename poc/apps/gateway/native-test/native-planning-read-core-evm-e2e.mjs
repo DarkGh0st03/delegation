@@ -934,10 +934,12 @@ try{
             readVerifiedRepairTarget:async input=>{
               if(!readVerifiedRepairTarget)
                 throw Error("No trusted Runner attribution after Test FAIL");
+              if(geminiPilot)pilotDelegatedPhase="d1_scope_selection";
               const target=readVerifiedRepairTarget();
               if(!target||target.tested_commit_sha!==
                  input.feedback.tested_commit_sha)
                 throw Error("Repair scope not bound to failed Gateway SHA");
+              if(geminiPilot)pilotDelegatedPhase="d1_model_proposal";
               return target;
             },
             model:createGeminiAdkModel({
@@ -952,6 +954,7 @@ try{
           })
           :trustedOwnerRepairAdk;
         const armed=await armTrustedOwnerOperationalRecovery({
+          onRepairPhase:phase=>{if(geminiPilot)pilotDelegatedPhase=phase;},
           gateway:gatewayOwner,coordinator,signedApprovals:signedStore,
           epochDirectory:ownerEpochDir,
           running:{readiness:{

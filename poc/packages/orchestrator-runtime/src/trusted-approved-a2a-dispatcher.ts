@@ -1,3 +1,4 @@
+import {approvedTaskInstruction} from "./approved-task-instruction.ts";
 /**
  * Opt-in dispatcher for the immutable, Engineer-approved A2A Task DAG.
  *
@@ -40,7 +41,7 @@ interface PlanTask{
 interface ApprovedSnapshot{
   plan: {
     session_id:string;repository:{authority:string;owner:string;repository:string};
-    base_revision:string;tasks:PlanTask[];
+    base_revision:string;requirement:string;tasks:PlanTask[];
   };
   approvedRows:{task_id:string;agent_id:string;operation:string;resource:string}[];
   digest:string;
@@ -376,7 +377,7 @@ export class TrustedApprovedA2ADispatcher {
         trusted_gateway_task_id:dispatchId,
         subtask:{
           subtask_id:task.id,
-          instruction:task.description,
+          instruction:approvedTaskInstruction(this.#snapshot.plan.requirement,task.description),
           branch:this.#snapshot.approvedBranch,
           relevant_paths:[...new Set(paths)],
           // Operation-specific, non-authoritative hints: reading a context

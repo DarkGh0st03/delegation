@@ -1147,6 +1147,9 @@ async function main(){
                     model_turns_started:item.model_turns_started,
                     ...(["not_started","model_binding","dag_preflight","baseline_reads","agent_bootstrap","dispatcher_setup","a2a_dispatch","result_verification",
                       "trusted_owner_repair_handoff","d1_repair_planning",
+                      "d1_feedback_verification","d1_history_verification","d1_discovery",
+                      "d1_planner_preflight","d1_scope_selection","d1_model_proposal",
+                      "d1_validation_reservation","d1_gateway_admission","d1_admitted_execution",
                       "d1_epoch_admitted","d1_editor_preparation",
                       "d1_editor_revision_verified","d1_test_preparation",
                       "d1_test_gateway_confirmed"].includes(item.delegated_phase)

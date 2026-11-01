@@ -190,6 +190,10 @@ test("R151.88 trusted D1 milestones survive both diagnostic whitelists",()=>{
       assert.ok(owner.includes('pilotDelegatedPhase="'+phase+'"'),
         "Trusted owner does not produce phase: "+phase);
   }
+  for(const phase of ["d1_feedback_verification","d1_history_verification","d1_discovery",
+    "d1_planner_preflight","d1_scope_selection","d1_model_proposal",
+    "d1_validation_reservation","d1_gateway_admission","d1_admitted_execution"])
+    assert.ok(child.includes(phase),"Missing bounded recovery substep: "+phase);
   for(const unsafe of ["PRIVATE_SOURCE","model_selected_phase","d1_unknown"])
     assert.ok(!child.includes(unsafe));
 });

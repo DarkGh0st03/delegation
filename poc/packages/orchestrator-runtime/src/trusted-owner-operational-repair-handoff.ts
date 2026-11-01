@@ -63,7 +63,14 @@ export function isTrustedOwnerRepairPlannerConfig(config:unknown):boolean{
   (c.admitReservedEpoch===undefined||typeof c.admitReservedEpoch==="boolean");
 }
 
+export type TrustedOwnerRepairPhase=
+ "d1_feedback_verification"|"d1_history_verification"|"d1_discovery"|
+ "d1_planner_preflight"|"d1_model_proposal"|"d1_validation_reservation"|
+ "d1_gateway_admission"|"d1_admitted_execution";
+
 export async function armTrustedOwnerOperationalRecovery(config:{
+ /** Trusted owner telemetry only; never receives errors, source or credentials. */
+ onRepairPhase?:(phase:TrustedOwnerRepairPhase)=>void;
  coordinator:Pick<TrustedExecutionCoordinator,
   "phase"|"trustedOperationalAuthority"> &
   Partial<Pick<TrustedExecutionCoordinator,"closeExecution">>;
@@ -209,6 +216,9 @@ export async function armTrustedOwnerOperationalRecovery(config:{
  if(history.length!==1||history[0].plan_digest!==r.plan_digest||
     history[0].root_credential_id!==root.credential_id)
   fail("initial signed epoch was not durably reserved");
+ const observe=(phase:TrustedOwnerRepairPhase)=>{
+  try{config.onRepairPhase?.(phase);}catch{/* telemetry cannot affect authority or cleanup */}
+ };
  let started=false;
  return Object.freeze({
   gateway:config.gateway,intake,
@@ -223,6 +233,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     fail("dispatcher feedback does not match signed owner session");
    // Re-attest only an ALREADY FINALIZED failure from the ACTUAL Gateway.
    // No second terminal finalization and no model-invented failure receipt.
+   observe("d1_feedback_verification");
    const proof=await prepareTrustedRemoteRepairFeedback({
     gateway:config.gateway,intake,coordinator:config.coordinator,
     sessionId:r.session_id,runtimeTestTaskId:signal.failed_runtime_task_id,
@@ -236,6 +247,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
     // R124: the signed Engineer's exact ORIGINAL candidates/repository
     // are the only provenance for identities and work branch. The proposed
     // DAG may add NEW Task IDs but never pairs outside the issued Rust root.
+    observe("d1_history_verification");
     const before=await intake.verifiedEpochHistory();
     if(before.length!==proof.failed_epoch||
        before[0]?.plan_digest!==r.plan_digest)
@@ -251,6 +263,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       task_id:string;runtime_task_id:string;resource:string;
     }>|undefined;
     if(paired||remotePorts||prepareRemotePorts||config.planRepairEpoch!.dispatchRemoteDiscovery){
+      observe("d1_discovery");
       try{
         await config.verifyLiveRun?.();
         if(remotePorts||prepareRemotePorts){
@@ -284,6 +297,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
         fail("dynamic discovery failed closed before model repair proposal");
       }
     }
+    observe("d1_planner_preflight");
     const planner=new TrustedOperationalRepairPlanner({
      gateway:config.gateway,coordinator:config.coordinator,
      intake,sessionId:r.session_id,
@@ -303,9 +317,14 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       giteaClient:config.planRepairEpoch!.giteaClient,
       intake,repository:record.plan.repository
      }),
-     proposeRepairPlan:typedAdk
-       ?input=>config.planRepairEpoch!.trustedAdkProposer!.propose(input)
-       :config.planRepairEpoch!.proposeRepairPlan!
+     proposeRepairPlan:async input=>{
+       observe("d1_model_proposal");
+       const draft=await (typedAdk
+        ?config.planRepairEpoch!.trustedAdkProposer!.propose(input)
+        :config.planRepairEpoch!.proposeRepairPlan!(input));
+       observe("d1_validation_reservation");
+       return draft;
+     }
     });
     const reserved=await planner.proposeAndReserve();
     if(reserved.status!=="repair_epoch_reserved_no_execution_authority"||
@@ -323,6 +342,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
      // The real remote Gateway MUST already hold a separately valid
      // original-root-bound intake. Never upload the proposed plan or
      // treat this source-free IPC request as a grant of authority.
+     observe("d1_gateway_admission");
      const admission=await config.gateway.admitVerifiedOperationalEpoch({
       session_id:r.session_id,root_plan_digest:r.plan_digest,
       plan_digest:reserved.plan_digest,epoch:reserved.epoch
@@ -333,6 +353,7 @@ export async function armTrustedOwnerOperationalRecovery(config:{
       fail("Gateway epoch admission did not match reserved signed DAG");
      if(config.planRepairEpoch!.executeAdmittedRepairDag){
       await config.verifyLiveRun!();
+      observe("d1_admitted_execution");
       const report=await executeTrustedAdmittedRepairDag({
        ...config.planRepairEpoch!.executeAdmittedRepairDag,
        sessionId:r.session_id,epoch:reserved.epoch,
