@@ -34,6 +34,7 @@ import {TrustedGatewayRootVpVerifier} from "../src/trusted-root-vp-verification.
 import {createTrustedPlanIpcServer,TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
 import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
+import {selectTrustedD1RepairScope} from "./trusted-d1-repair-scope-choice.mjs";
 import {TrustedAdkOperationalRepairProposer} from
   "../../../packages/orchestrator-runtime/src/trusted-adk-operational-repair-proposer.ts";
 import {selectSignedNativeD1Tasks,selectSignedNativeMultiD1Tasks} from
@@ -929,6 +930,7 @@ try{
           })
           :undefined;
         let readVerifiedRepairTarget;
+        let readVerifiedGeneratedTestEditScope;
         const ownerRepairProposer=paidGeminiRecovery
           ?new TrustedAdkOperationalRepairProposer({
             readVerifiedRepairTarget:async input=>{
@@ -953,6 +955,30 @@ try{
             taskShape:"bounded_auto_edit_test"
           })
           :trustedOwnerRepairAdk;
+        // This second proposer is inactive unless the independently verified
+        // original source-correction scope is unavailable. It does not infer
+        // Test causality, issue authority or perform an extra model call.
+        const generatedTestOwnerProposer=paidGeminiRecovery
+          ?new TrustedAdkOperationalRepairProposer({
+            readVerifiedRepairTarget:async input=>{
+              if(!readVerifiedGeneratedTestEditScope)
+                throw Error("No owner-private generated Test scope");
+              const target=await readVerifiedGeneratedTestEditScope();
+              if(target?.tested_commit_sha!==input.feedback.tested_commit_sha)
+                throw Error("Generated Test scope differs from failed SHA");
+              return target;
+            },
+            model:createGeminiAdkModel({
+              apiKey:process.env.GEMINI_API_KEY,
+              model:process.env.DELEGATION_GEMINI_MODEL
+            }),
+            maxCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
+            maxSessionMs:240000,
+            maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
+            thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
+            taskShape:"bounded_generated_test_edit"
+          })
+          :undefined;
         const armed=await armTrustedOwnerOperationalRecovery({
           onRepairPhase:phase=>{if(geminiPilot)pilotDelegatedPhase=phase;},
           gateway:gatewayOwner,coordinator,signedApprovals:signedStore,
@@ -968,7 +994,26 @@ try{
           },
           planRepairEpoch:{
             giteaClient:liveClient,
-            ...(ownerRepairProposer
+            ...(ownerRepairProposer&&generatedTestOwnerProposer
+              ?{proposeRepairPlan:async input=>{
+                if(!readVerifiedRepairTarget||
+                   !readVerifiedGeneratedTestEditScope)
+                  throw Error("D1 owner has no bound verified Runner scopes");
+                const original=readVerifiedRepairTarget();
+                // Do not silently replace a stale original source target:
+                // mismatched signed evidence is a fail-closed condition.
+                const generated=original?null:
+                  await readVerifiedGeneratedTestEditScope();
+                const selected=selectTrustedD1RepairScope({
+                  testedSha:input.feedback.tested_commit_sha,
+                  sourceTarget:original,generatedTestTarget:generated
+                });
+                if(geminiPilot)pilotDelegatedPhase="d1_scope_selection";
+                return selected.mode==="original_source"
+                  ?ownerRepairProposer.propose(input)
+                  :generatedTestOwnerProposer.propose(input);
+              }}
+              :ownerRepairProposer
               ?{trustedAdkProposer:ownerRepairProposer}
               :{proposeRepairPlan:nativeOwnerRepairDraft}),
             admitReservedEpoch:true
@@ -997,8 +1042,13 @@ try{
             if((paidGeminiRecovery||multiTypecheckProbe||signedOfflineSemanticProbe)&&
                typeof ports.getVerifiedRepairTarget!=="function")
               throw Error("Paid repair requires original Runner attribution");
+            if(paidGeminiRecovery&&
+               typeof ports.getVerifiedGeneratedTestEditScope!=="function")
+              throw Error("Paid recovery requires private signed generated-Test scope");
             if(paidGeminiRecovery||multiTypecheckProbe||signedOfflineSemanticProbe)
               readVerifiedRepairTarget=ports.getVerifiedRepairTarget;
+            if(paidGeminiRecovery)
+              readVerifiedGeneratedTestEditScope=ports.getVerifiedGeneratedTestEditScope;
             originalA2APorts=Object.freeze({
               agentBaseUrls:Object.freeze({...ports.agentBaseUrls}),
               a2a:ports.a2a,
