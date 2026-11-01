@@ -1384,7 +1384,27 @@ try{
           :signedDerivedPaths;
         const otherImplementations={...referenceFiles};
         for(const path of derivedPaths)delete otherImplementations[path];
-        if(signedOfflineSemanticProbe){
+        if(signedOfflineGeneratedTestProbe){
+          // A real Vitest assertion is wrong while the independently
+          // verified Backend implementation remains correct. No test file
+          // is inserted into the original Gitea snapshot or approved as a
+          // future write unless the signed DAG explicitly contains grants.
+          const correctGeneratedTest=[
+            'import { describe, expect, it } from "vitest";',
+            'import { InMemoryUserRepository } from "../../apps/backend/src/users/user.repository.js";',
+            'import { UserService } from "../../apps/backend/src/users/user.service.js";',
+            'describe("Generated account lifecycle regression", () => {',
+            '  it("checks the approved suspended state", () => {',
+            '    const service = new UserService(new InMemoryUserRepository());',
+            '    '+GENERATED_TEST_CORRECT_ASSERTION,
+            '  });',
+            '});',
+            ''
+          ].join("\n");
+          otherImplementations[generatedBackendTestFile]=
+            injectGeneratedTestAssertionFault(correctGeneratedTest);
+        }
+        if(signedOfflineSemanticProbe&&!signedOfflineGeneratedTestProbe){
           const targets=roleFiles[fixtureEditorRole].filter(path=>
             !derivedPaths.includes(path)&&
             typeof otherImplementations[path]==="string"&&
@@ -1436,9 +1456,12 @@ try{
         const offlineCalls=geminiPilot?null:
           buildOfflineAdkScriptsFromApprovedPlan({
             plan:reviewed.plan,approvedRows,repo,branch:workBranch,
-            implementationContents:derivedPaths.length
+            implementationContents:derivedPaths.length||signedOfflineGeneratedTestProbe
               ?otherImplementations:referenceFiles,
             ...(derivedPaths.length?{sourceDerivedPaths:derivedPaths}:{}),
+            ...(signedOfflineGeneratedTestProbe?{
+              initialFailedGeneratedTestPaths:[generatedBackendTestFile]
+            }:{}),
             ...(signedOfflineRecovery?{recoveryFixture:{
               path:testRepairFile,
               failedContent:referenceFiles[testRepairFile]+
