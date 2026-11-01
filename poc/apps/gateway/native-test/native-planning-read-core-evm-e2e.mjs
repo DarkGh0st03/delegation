@@ -1511,6 +1511,7 @@ try{
         offlineMultiTypecheckProbe:multiTypecheckProbe,
         offlineAcceptanceProbe:signedOfflineAcceptanceProbe,
         offlineProjectTestProbe:signedOfflineProjectTestProbe,
+        offlineGeneratedTestProbe:signedOfflineGeneratedTestProbe,
         offlineMultiTest:signedOfflineMultiTest,
         scenarioId:scenario.id,repo,
         giteaBase:disposableBase,readerToken:disposableToken,
