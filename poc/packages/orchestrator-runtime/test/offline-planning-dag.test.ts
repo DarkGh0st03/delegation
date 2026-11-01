@@ -108,3 +108,42 @@ test("generated project-Test authority is never inferred from Test creation alon
     generatedBackendTestFile:"tests/backend/generated-status.test.ts"
   }),/Offline Planning intent/);
 });
+
+test("newly-created Test file may be edited only after its signed creator Task",()=>{
+ const scoped={...snapshot,directories:[...snapshot.directories,"tests/backend"]};
+ const base={
+  snapshot:scoped,edits,newTestFile:"tests/e2e/inventory.spec.ts",
+  generatedBackendTestFile:"tests/backend/generated-status.test.ts",
+  splitTestTasks:true
+ };
+ const permitted=makeOfflineReviewableDag(base);
+ assert.equal(compilePlanningProposal(permitted,{...config,snapshot:scoped})
+  .status,"unapproved_proposal");
+ const invalidCases=[
+  // No original create permission for the same file: a future path alone
+  // is NEVER permission to read or write a speculative repository resource.
+  sketch=>{
+   sketch.tasks.find(t=>t.id==="test-preparation").permissions=
+    sketch.tasks.find(t=>t.id==="test-preparation").permissions.filter(p=>
+     p.path!=="tests/backend/generated-status.test.ts");
+  },
+  // A Test validator that runs without the create Task as an ancestor must
+  // fail, even though both Task descriptions refer to the same path.
+  sketch=>{
+   sketch.tasks.find(t=>t.id==="test").depends_on=["backend","frontend"];
+  },
+  // A later Test may not claim read/write of a DIFFERENT uncreated file.
+  sketch=>{
+   for(const permission of sketch.tasks.find(t=>t.id==="test").permissions){
+    if(permission.path==="tests/backend/generated-status.test.ts")
+     permission.path="tests/backend/uncreated.test.ts";
+   }
+  }
+ ];
+ for(const mutate of invalidCases){
+  const draft=structuredClone(permitted);
+  mutate(draft);
+  assert.throws(()=>compilePlanningProposal(draft,{...config,snapshot:scoped}),
+    /file absent from trusted Planning snapshot/);
+ }
+});
