@@ -4,42 +4,75 @@ import {selectTrustedD1RepairScope as select}
  from "./trusted-d1-repair-scope-choice.mjs";
 
 const sha="a".repeat(40);
+const failure=Object.freeze({phase:"backend_tests",failed_test_file_count:1});
 const source=Object.freeze({
  status:"verified_original_project_test_repair_scope",
  tested_commit_sha:sha,
+ project_test_failure:failure,causal_attribution:"not_established",
  candidates:[{role:"backend",resource:"gitea://test/repo/file.ts"}]
 });
 const generated=Object.freeze({
  status:"verified_original_generated_test_edit_scope",
  tested_commit_sha:sha,
+ project_test_failure:failure,
  candidates:[{role:"test",resource:"gitea://test/repo/test.ts"}],
  causal_attribution:"not_established"
 });
 
-test("source remains preferred when both verified scopes exist",()=>{
- const x=select({testedSha:sha,sourceTarget:source,generatedTestTarget:generated});
- assert.equal(x.mode,"original_source");
- assert.equal(x.target,source);
+test("both verified routes allow model to choose source investigation",async()=>{
+ let calls=0;
+ const x=await select({testedSha:sha,sourceTarget:source,
+  generatedTestTarget:generated,chooseInvestigation:async observation=>{
+   calls++;
+   assert.deepEqual(observation,{
+    tested_commit_sha:sha,failed_phase:"backend_tests",
+    source_candidate_count:1,test_candidate_count:1,
+    causal_attribution:"not_established"
+   });
+   return "original_source";
+  }});
+ assert.equal(calls,1);assert.equal(x.target,source);
+ assert.equal(x.causal_attribution,"not_established");
 });
-test("independent generated Test candidate is usable only if source unavailable",()=>{
- const x=select({testedSha:sha,sourceTarget:null,generatedTestTarget:generated});
- assert.equal(x.mode,"generated_test_investigation");
+test("both verified routes allow model to choose Test investigation",async()=>{
+ const x=await select({testedSha:sha,sourceTarget:source,
+  generatedTestTarget:generated,chooseInvestigation:async()=>"generated_test_investigation"});
  assert.equal(x.target,generated);
+ assert.equal(x.causal_attribution,"not_established");
 });
-test("stale source fails closed rather than silently becoming a Test repair",()=>{
- assert.throws(()=>select({testedSha:sha,sourceTarget:{...source,tested_commit_sha:"b".repeat(40)},generatedTestTarget:generated}),/NO-GO/);
+test("one available scope needs no model call",async()=>{
+ const noCall=()=>{throw Error("model must not run");};
+ assert.equal((await select({testedSha:sha,sourceTarget:source,
+  chooseInvestigation:noCall})).target,source);
+ assert.equal((await select({testedSha:sha,generatedTestTarget:generated,
+  chooseInvestigation:noCall})).target,generated);
 });
-test("rejects forged generated scope and stale SHA",()=>{
- for(const candidate of [
-  {...generated,status:"agent_claimed_test_incorrect"},
-  {...generated,tested_commit_sha:"b".repeat(40)},
-  {...generated,candidates:[]},
-  {...generated,candidates:Array(9).fill(generated.candidates[0])}
- ]){
-  assert.throws(()=>select({testedSha:sha,generatedTestTarget:candidate}),/NO-GO/);
+test("both routes without decision fail closed, never bias source",async()=>{
+ await assert.rejects(select({testedSha:sha,sourceTarget:source,
+  generatedTestTarget:generated}),/NO-GO/);
+ for(const value of ["backend","test","unsure",null,{},["original_source"]]){
+  await assert.rejects(select({testedSha:sha,sourceTarget:source,
+   generatedTestTarget:generated,chooseInvestigation:async()=>value}),/NO-GO/);
  }
 });
-test("no source or generated scope cannot trigger a model proposal",()=>{
- assert.throws(()=>select({testedSha:sha}),/NO-GO/);
- assert.throws(()=>select({testedSha:"bad",sourceTarget:source}),/NO-GO/);
+test("stale or inconsistent evidence fails before model inference",async()=>{
+ let calls=0;const chooseInvestigation=async()=>{calls++;return "original_source";};
+ for(const bad of [
+  {sourceTarget:{...source,tested_commit_sha:"b".repeat(40)},generatedTestTarget:generated},
+  {sourceTarget:source,generatedTestTarget:{...generated,tested_commit_sha:"b".repeat(40)}},
+  {sourceTarget:source,generatedTestTarget:{...generated,project_test_failure:{phase:"frontend_tests",failed_test_file_count:1}}},
+  {sourceTarget:source,generatedTestTarget:{...generated,causal_attribution:"test_incorrect"}},
+  {sourceTarget:source,generatedTestTarget:{...generated,candidates:[]}},
+  {sourceTarget:source,generatedTestTarget:{...generated,candidates:Array(9).fill(generated.candidates[0])}}
+ ]){
+  await assert.rejects(select({testedSha:sha,...bad,chooseInvestigation}),/NO-GO/);
+ }
+ assert.equal(calls,0);
+});
+test("unsupported mixed modes and absent authority fail closed",async()=>{
+ await assert.rejects(select({testedSha:sha,sourceTarget:{
+  ...source,status:"verified_runner_single_file_repair_target"
+ },generatedTestTarget:generated,chooseInvestigation:async()=>"original_source"}),/NO-GO/);
+ await assert.rejects(select({testedSha:sha}),/NO-GO/);
+ await assert.rejects(select({testedSha:"bad",sourceTarget:source}),/NO-GO/);
 });
