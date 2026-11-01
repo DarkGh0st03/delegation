@@ -648,7 +648,8 @@ export async function runNativePositiveApprovedDag({
              ["backend_tests","frontend_tests"].includes(effect.phases?.find(p=>p.status==="fail")?.phase)){
             try{verifiedRepairTarget=collectProjectTestRepairCandidateScope({
               effect,testedSha:pinned.commit_sha,repo,branch,approvedRows:grants,
-              rootPermissions:coordinator.trustedOperationalAuthority().permissions,observedWrites:writePaths
+              rootPermissions:coordinator.trustedOperationalAuthority().permissions,
+              observedWrites:writePaths,observedTestCreates:observedCreatedPaths
             });}catch{verifiedRepairTarget=null;}
             if(offlineProjectTestProbe)assert.ok(verifiedRepairTarget,"Real project test failure needs original signed candidates");
           }
