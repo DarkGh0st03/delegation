@@ -211,6 +211,21 @@ jobs:
           set -euo pipefail
           test -n "${GEMINI_API_KEY:-}" || { echo "Missing Gemini secret; no model call"; exit 1; }
           node poc/scripts/check-gemini-planner-model-access.mjs --check-model-access
+      - name: Configure optional encrypted failure evidence
+        id: private_evidence
+        env:
+          RUNNER_EVIDENCE_KEY_HEX: ${{ secrets.RUNNER_EVIDENCE_KEY_HEX }}
+        run: |
+          node --input-type=module -e '
+            import {appendFileSync,mkdirSync} from "node:fs";
+            const key=process.env.RUNNER_EVIDENCE_KEY_HEX;
+            if(!key)process.exit(0);
+            if(!/^[a-f0-9]{64}$/i.test(key))throw Error("Invalid evidence key configuration");
+            const dir=process.env.RUNNER_TEMP+"/private-runner-evidence";
+            mkdirSync(dir,{mode:0o700});
+            appendFileSync(process.env.GITHUB_ENV,"TEST_RUNNER_FAILURE_EVIDENCE_DIR="+dir+"\n");
+            appendFileSync(process.env.GITHUB_OUTPUT,"enabled=true\n");
+          '
       - name: ONE explicitly authorized real Gemini signed-DAG Account Suspension pilot
         env:
           GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
@@ -377,6 +392,19 @@ jobs:
             writeFileSync("/tmp/four-gemini-signed-pilot.json",
               JSON.stringify(receipt,null,2)+"\n",{flag:"wx",mode:0o600});
           '
+      - name: Seal private Runner failure evidence
+        if: always() && steps.private_evidence.outputs.enabled == 'true'
+        env:
+          RUNNER_EVIDENCE_KEY_HEX: ${{ secrets.RUNNER_EVIDENCE_KEY_HEX }}
+        run: node poc/scripts/seal-runner-evidence.mjs "$RUNNER_TEMP/private-runner-evidence" "$RUNNER_TEMP/runner-evidence.enc"
+      - name: Upload encrypted evidence only
+        if: always() && steps.private_evidence.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-runner-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/runner-evidence.enc
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload only sanitized pilot success or failure evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -1467,6 +1467,7 @@ async function main(){
       gitea_token:creds.readToken,
       docker_image:nodeImage,phase_timeout_ms:300000,
       log_dir:logs,acceptance_enabled:true,
+      failure_evidence_dir:process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR || undefined,
       acceptance_dir:acceptanceDir
     });
     // Engineer Ed25519 approval is verified by the Gateway plan registry.

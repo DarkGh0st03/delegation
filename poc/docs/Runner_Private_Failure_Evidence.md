@@ -11,6 +11,13 @@ files 0600. Failed writes remove the incomplete bundle and fail the run.
 These files contain repository source and untrusted test output. They are not
 included in Runner responses, agent context, or public GitHub artifacts. Configure
 an operator-controlled persistent volume or restricted collection mechanism and
-retention policy before enabling this on disposable CI. The current public pilot
-workflow does not upload them. No historical failed source can be recovered by
+retention policy before enabling this on disposable CI. The public pilot uploads only an AES-256-GCM encrypted envelope when the
+repository secret `RUNNER_EVIDENCE_KEY_HEX` is configured (32 random bytes, 64 hex
+characters). Keep a separate secure copy of this key to decrypt downloaded files.
+The key is passed only to configuration and sealing steps, not to agent processes.
+Without the secret, retention remains disabled. Encrypted artifacts expire after
+7 days. The envelope can be decrypted with `unseal` exported by
+`poc/scripts/seal-runner-evidence.mjs`; its JSON contains base64 file contents.
+Do not publish the key or decrypted output. This code does not configure the
+repository secret or initiate a paid pilot. No historical failed source can be recovered by
 this feature. Tests use injected Docker commands, not a real Docker replay.
