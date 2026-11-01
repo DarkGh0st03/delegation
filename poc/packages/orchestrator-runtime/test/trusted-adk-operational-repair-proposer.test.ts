@@ -706,3 +706,39 @@ test("Frontend test repair rejects Backend writer substitution and Test source-w
   assert.equal(model.requests.length,0);
  }
 });
+
+
+test("Generated failing Test files are only provenance, not causality or new D1 authority",async()=>{
+ const provenance={failed_test_written_by_test_count:2,
+  failed_test_created_by_test_count:2,
+  created_test_without_approved_rewrite_count:2,
+  causal_attribution:"not_established" as const};
+ const scoped={...backendTestScope,test_failure_provenance:provenance};
+ const model=new ScriptedModel(boundedDraft());
+ const draft=await new TrustedAdkOperationalRepairProposer({model,
+  taskShape:"bounded_auto_edit_test",
+  readVerifiedRepairTarget:async()=>scoped
+ }).propose(backendTestInput);
+ assert.deepEqual(draft,boundedDraft());
+ const sent=JSON.parse(model.requests[0]!.contents!.at(-1)!.parts!
+  .find(p=>typeof p.text==="string")!.text!);
+ assert.deepEqual(sent.diagnostic_candidates,scoped);
+ assert.match(JSON.stringify(model.requests[0]?.config?.systemInstruction),
+  /Test authorship does NOT establish/);
+ assert.ok(sent.already_delegated_grants.every(
+  (p:{operation:string})=>p.operation!=="create_file"));
+ // Corrupted provenance cannot be laundered into Gemini's private input.
+ for(const bad of [
+  {...provenance,failed_test_created_by_test_count:3},
+  {...provenance,created_test_without_approved_rewrite_count:3},
+  {...provenance,causal_attribution:"test_is_wrong"},
+  {...provenance,failed_test_written_by_test_count:-1}
+ ]){
+  const unused=new ScriptedModel(boundedDraft());
+  await assert.rejects(new TrustedAdkOperationalRepairProposer({model:unused,
+   taskShape:"bounded_auto_edit_test",
+   readVerifiedRepairTarget:async()=>({...scoped,test_failure_provenance:bad}) as any
+  }).propose(backendTestInput),/project-test candidate scope differs/);
+  assert.equal(unused.requests.length,0);
+ }
+});
