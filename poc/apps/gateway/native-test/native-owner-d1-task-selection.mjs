@@ -151,3 +151,88 @@ export function selectSignedNativeMultiD1Tasks({
   orderedTaskIds:Object.freeze(ordered)
  });
 }
+
+
+/**
+ * A signed D1 may repair a generated test only when the ORIGINAL Engineer
+ * root and original signed Test grants already include exact read/update
+ * permissions. This selector grants nothing: it returns IDs and verified
+ * paths from the independently admitted signed epoch.
+ *
+ * Creating a test is not permission to read or update that test later.
+ * A Runner FAIL or model attribution is not permission either.
+ * This deliberately handles one test editor followed by a separate,
+ * newly signed run-only Test Task; execution needs its own trusted ports.
+ */
+export function selectSignedNativeTestEditD1Tasks({
+ epoch,planDigest,branchUri,originalCreatedTestFileUris,
+ originalApprovedTestGrants,originalRootPermissions
+}={}){
+ const tasks=epoch?.plan?.tasks,grants=epoch?.plan?.requested_permissions;
+ if(epoch?.epoch!==2||epoch?.plan_digest!==planDigest||
+    !DIGEST.test(planDigest??"")||
+    typeof branchUri!=="string"||!branchUri.startsWith("gitea://")||
+    !Array.isArray(tasks)||tasks.length!==2||
+    !Array.isArray(grants)||grants.length<3||grants.length>17||
+    !Array.isArray(originalCreatedTestFileUris)||
+    originalCreatedTestFileUris.length<1||originalCreatedTestFileUris.length>8||
+    !Array.isArray(originalApprovedTestGrants)||
+    !Array.isArray(originalRootPermissions))
+  deny();
+ const created=new Set(originalCreatedTestFileUris);
+ if(created.size!==originalCreatedTestFileUris.length||
+    [...created].some(uri=>typeof uri!=="string"||
+      !uri.startsWith(branchUri+"/files/")||
+      uri.length>1024))
+  deny();
+ const [edit,retest]=tasks;
+ if(!edit||!retest||!ID.test(edit.id)||!ID.test(retest.id)||
+    edit.id===retest.id||edit.agent_id!=="test"||
+    retest.agent_id!=="test"||
+    !Array.isArray(edit.depends_on)||edit.depends_on.length!==0||
+    !Array.isArray(retest.depends_on)||retest.depends_on.length!==1||
+    retest.depends_on[0]!==edit.id)
+  deny();
+ const edits=grants.filter(g=>g.task_id===edit.id);
+ const checks=grants.filter(g=>g.task_id===retest.id);
+ if(edits.length<2||edits.length>16||edits.length%2!==0||
+    checks.length!==1||checks[0].agent_id!=="test"||
+    checks[0].resource!==branchUri||checks[0].operation!=="run_tests"||
+    grants.length!==edits.length+1)
+  deny();
+ const perFile=new Map();
+ const unique=new Set();
+ for(const g of edits){
+  if(g.agent_id!=="test"||!created.has(g.resource)||
+     !["read_file","update_file"].includes(g.operation))
+   deny();
+  const key=JSON.stringify([g.resource,g.operation]);
+  if(unique.has(key))deny();
+  unique.add(key);
+  const ops=perFile.get(g.resource)??new Set();
+  ops.add(g.operation);perFile.set(g.resource,ops);
+ }
+ if(perFile.size<1||perFile.size>8)deny();
+ for(const [uri,ops] of perFile){
+  if(ops.size!==2||!ops.has("read_file")||!ops.has("update_file"))
+   deny();
+  const signed=originalApprovedTestGrants.filter(g=>
+   g.agent_id==="test"&&g.resource===uri&&
+   ["read_file","update_file"].includes(g.operation));
+  if(new Set(signed.map(g=>g.task_id)).size!==1||
+     !["read_file","update_file"].every(op=>
+       signed.some(g=>g.operation===op)&&
+       originalRootPermissions.some(g=>g.resource===uri&&g.operation===op)))
+   deny();
+ }
+ if(!originalApprovedTestGrants.some(g=>g.agent_id==="test"&&
+    g.resource===branchUri&&g.operation==="run_tests")||
+    !originalRootPermissions.some(g=>g.resource===branchUri&&
+    g.operation==="run_tests"))
+  deny();
+ return Object.freeze({
+  testEditTaskId:edit.id,testRunTaskId:retest.id,
+  fileUris:Object.freeze([...perFile.keys()].sort()),
+  orderedTaskIds:Object.freeze([edit.id,retest.id])
+ });
+}
