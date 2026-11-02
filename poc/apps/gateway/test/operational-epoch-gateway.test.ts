@@ -196,6 +196,10 @@ async function harness(t:import("node:test").TestContext,
   options.withInlineRead?initialWithInlineRead():
   options.withRead?initialWithTrustedRead():
   options.withTestWrite?initialWithTestFileWrite():initial();
+ if(options.withGeneratedTest&&options.withRead){
+  parent.requested_permissions.push({id:"backend-diagnostic-read",task_id:"backend-original",
+   agent_id:"backend",resource:file,operation:"read_file",reason:"Explicit original diagnostic read"});
+ }
  if(options.requirement!==undefined)parent.requirement=options.requirement;
  const dir=await mkdtemp(join(tmpdir(),"delegation-gateway-epoch-"));
  t.after(()=>rm(dir,{recursive:true,force:true}));
@@ -1466,7 +1470,7 @@ test("R109 denies discovery Task admission without a matching durable Adapter AC
  * Docker, not an A2A "failed" string or a model-generated claim. */
 async function r112Dispatcher(t:import("node:test").TestContext,
  options:{testFail:boolean;message?:string;optIn?:boolean;remote?:boolean;
-  remoteEpoch?:boolean;
+  remoteEpoch?:boolean;withGeneratedTest?:boolean;
   ownerArmer?:(h:Awaited<ReturnType<typeof harness>>,
    client:TrustedPlanIpcClient)=>Promise<Awaited<ReturnType<
     typeof armTrustedOwnerOperationalRecovery>>>;
@@ -1474,7 +1478,8 @@ async function r112Dispatcher(t:import("node:test").TestContext,
  if(options.ownerArmer&&!options.remote)
   throw Error("R148 owner handoff requires a durable IPC Gateway");
  const h=await harness(t,{withReview:true,withDurable:options.remote,
-  withRemoteEpoch:options.remoteEpoch});
+  withRemoteEpoch:options.remoteEpoch,withGeneratedTest:options.withGeneratedTest,
+  withRead:options.withGeneratedTest});
  // The owner reserves original epoch 1 itself in the SAME durable journal.
  if(!options.ownerArmer)await h.intake.reserveInitialEpoch();
  await h.gates.activate(session,sha);
@@ -1528,7 +1533,11 @@ async function r112Dispatcher(t:import("node:test").TestContext,
     }
     if(input.role==="test"){
      failedRuntimeId=input.trusted_gateway_task_id;
-     if(options.testFail)h.setRunnerFailure();
+     if(options.withGeneratedTest){
+      await h.invoke(input.trusted_gateway_task_id,"test","create_file",
+       {branch,path:generatedTestPath,content:"// scripted ambiguous failing test"});
+      h.setBackendTestFailure([generatedTestPath]);
+     }else if(options.testFail)h.setRunnerFailure();
      await h.invoke(input.trusted_gateway_task_id,"test","run_tests",runner);
      throw Error(options.message??"Protected A2A task ended without completion");
     }
@@ -5275,3 +5284,55 @@ test("R151.89 runtime grant preflight compares exact signed pairs without provid
    coordinator:f.h.coordinator,intake:f.h.intake});
   await assert.rejects(executeTrustedAdmittedRepairDag(args),/cannot replay/);
  });
+
+
+test("T4 insufficient evidence crosses owner IPC without reserving or executing a repair epoch",async t=>{
+ const {selectTrustedD1RepairScope,trustedD1ScopeStopCategory}=await import("../native-test/trusted-d1-repair-scope-choice.mjs");
+ const {createBoundedD1GeminiInvestigationChoice}=await import("../native-test/trusted-d1-gemini-investigation-choice.mjs");
+ let decisions=0,repairProposals=0;
+ const x=await r112Dispatcher(t,{testFail:true,remote:true,remoteEpoch:true,withGeneratedTest:true,
+  ownerArmer:async(h,gateway)=>armTrustedOwnerOperationalRecovery({
+   gateway,coordinator:h.coordinator,signedApprovals:h.signedStore,
+   epochDirectory:join(h.dir,"epochs"),
+   running:{readiness:{session_id:session,base_revision:sha,
+    plan_digest:planDigest(h.parent),authenticated_engineer_did:engineer},
+    operational_root_id:h.rootAuthority.credential_id},
+   verifyLiveRun:async()=>{assert.equal(h.coordinator.phase,"execution");},
+   planRepairEpoch:{giteaClient:r124HeadClient(),admitReservedEpoch:true,
+    proposeRepairPlan:async input=>{
+     assert.equal(input.feedback.failed_phase,"backend_tests");
+     const summary=input.feedback.project_test_failure;
+     assert.deepEqual(summary,{phase:"backend_tests",failed_test_file_count:1});
+     // Both exact candidate pairs must already belong to the signed root.
+     for(const resource of [file,generatedTestUri])for(const operation of ["read_file","update_file"])
+      assert.ok(input.already_delegated_grants.some(g=>g.resource===resource&&g.operation===operation));
+     const common={tested_commit_sha:input.feedback.tested_commit_sha,
+      project_test_failure:summary,causal_attribution:"not_established"};
+     const chooseInvestigation=createBoundedD1GeminiInvestigationChoice({requirement:input.requirement,
+      model:{model:"scripted-no-network",async *generateContentAsync(){
+       decisions++;yield {content:{parts:[{text:'{"mode":"insufficient_evidence"}'}]}};
+      }}});
+     await selectTrustedD1RepairScope({testedSha:input.feedback.tested_commit_sha,
+      sourceTarget:{...common,status:"verified_original_project_test_repair_scope",candidates:[{role:"backend",resource:file}]},
+      generatedTestTarget:{...common,status:"verified_original_generated_test_edit_scope",candidates:[{role:"test",resource:generatedTestUri}]},
+      chooseInvestigation});
+     repairProposals++;return repairDraft();
+    }}
+  })
+ });
+ const outcome=await x.result;
+ assert.equal(outcome.status,"verified_test_failure_suspended");
+ const effects=x.h.provider;
+ await assert.rejects(x.armed!.continueWithinActiveRoot(outcome.verified_test_failure!),
+  error=>trustedD1ScopeStopCategory(error)==="repair_insufficient_evidence");
+ assert.equal(decisions,1);assert.equal(repairProposals,0);
+ assert.equal(x.h.provider,effects,"No repair write, Runner rerun or PR effect");
+ const epochs=await x.armed!.intake.verifiedEpochHistory();
+ assert.deepEqual(epochs.map(e=>e.epoch),[1]);
+ assert.equal((await x.h.journal.records()).length,1);
+ await assert.rejects(x.armed!.continueWithinActiveRoot(outcome.verified_test_failure!),/one-use/);
+ // The native pilot caller closes execution on this propagated stop.
+ await x.h.coordinator.closeExecution();
+ assert.equal(x.h.coordinator.phase,"closed");
+ await assert.rejects(x.armed!.intake.verifiedEpochHistory(),/operational root is not active/);
+});
