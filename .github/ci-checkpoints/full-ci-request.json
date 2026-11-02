@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "Post R151.95 - consolidated D0 contract, immutable D1 objective and T4 stop",
-  "candidate_parent_sha": "c4379c27f5c27748b27a4648370cc2c1bca9094c",
-  "purpose": "Consolidated no-billing validation: complete demo requirement, unchanged approved requirement across repair epochs, owner IPC insufficient-evidence stop, existing real Gitea/Docker source and generated-test repair paths, and private failure evidence encryption round trip. All three Full CI must pass this exact checkpoint SHA before any paid-pilot readiness claim.",
+  "checkpoint": "Post R151.95 - scoped Runner assertion context through proposer and protected editor",
+  "candidate_parent_sha": "298987905b2a6e4fd2b1236bf47a5b76becbbd4b",
+  "purpose": "Validate the consolidated no-billing tree: explicit D0 lifecycle requirement, immutable D1 objective, insufficient-evidence stop, private Vitest diagnostics bound to exact Runner reference/SHA, original-role and admitted-Task read-scope projection into proposer/A2A editor, real Docker repair PASS, and encrypted private-evidence recovery. All three Full CI must succeed on this exact checkpoint SHA. No model provider access.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
