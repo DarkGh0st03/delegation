@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "F3 - trusted ADK integration review and source-free dynamic Test brief",
-  "candidate_parent_sha": "5aefb5d2540908e278e820b9a83595b45e0f5945",
-  "purpose": "No-billing same-SHA validation of F3 original-Orchestrator Google ADK integration review using only F2 Gateway corroborated file-effect metadata, strict checks code allowlist, immutable Engineer-approved DAG and exact Test Task grants. Offline scripted reviewer only; no Gemini provider charges.",
+  "checkpoint": "F4 — verified project-test provenance and exact-SHA controlled retest observation",
+  "candidate_parent_sha": "548e4f5b3b4dcd1a8e57723989314806feb73b1b",
+  "purpose": "Zero-billing 4/4 same-SHA regression for F4. Preserve the signed DAG, Gateway, VP, Rust, OPA, D0/D1 recovery, real Docker Runner and independent acceptance while adding noncausal source/test-generated investigation provenance and one-write controlled retest observation. No Gemini invocation, no authority expansion.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
