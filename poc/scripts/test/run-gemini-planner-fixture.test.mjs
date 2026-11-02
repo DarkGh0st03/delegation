@@ -6,7 +6,8 @@ import {resolve,dirname} from "node:path";
 import {getApprovedOfflineScenario} from
   "../../apps/test-runner-controller/fixtures/approved-scenarios.mjs";
 import {makeIsolatedPlanningFixture,assertBillableFixtureOptIn,
-  runIsolatedGeminiFixture,classifyPlannerProbeFailure,FIXTURE_SCENARIOS,CONSENT}
+  runIsolatedGeminiFixture,classifyPlannerProbeFailure,
+  summarizeIsolatedPlannerGate,FIXTURE_SCENARIOS,CONSENT}
   from "../run-gemini-planner-fixture.mjs";
 
 const script=resolve(dirname(fileURLToPath(import.meta.url)),
@@ -102,4 +103,50 @@ test("Account Suspension isolated manual probe matches original real pilot domai
  assert.ok(!f.snapshot.files.includes(original.planning_intent.newTestFile));
  assert.ok(f.snapshot.directories.includes("tests/e2e"));
  assert.equal(f.spec.gradeAs,"account-suspension");
+});
+
+test("Planner-only accepted and rejected gates emit bounded evidence without private paths",()=>{
+ const secret="PRIVATE_REPO_PATH_AND_KEY_SHOULD_NOT_APPEAR";
+ const rejected=[
+  {kind:"model_turn",status:"started",turn:1,private_text:secret},
+  {kind:"read",status:"verified",tool:"read_file",path:secret},
+  {kind:"plan_rejection",stage:"contract",
+   reason:"execution_pr_before_runner",payload:secret},
+  {kind:"model_turn",status:"started",turn:2},
+  {kind:"plan_rejection",stage:"contract",
+   reason:"execution_update_without_read",payload:secret},
+  {kind:"model_usage",source:"provider_reported",turn:1,
+   input_tokens:200,output_tokens:100}
+ ];
+ const result=summarizeIsolatedPlannerGate({observations:rejected});
+ assert.equal(result.outcome,"proposal_rejected");
+ assert.equal(result.rejection_events,2);
+ assert.equal(result.last_rejection_stage,"contract");
+ assert.equal(result.last_rejection_reason,"execution_update_without_read");
+ assert.equal(result.model_turns_started,2);
+ assert.equal(result.verified_source_file_reads,1);
+ assert.equal(result.provider_usage_reports,1);
+ assert.equal(result.cost_and_invoice,"not_measured");
+ assert.equal(result.operational_execution_authorized,false);
+ assert.equal(JSON.stringify(result).includes(secret),false);
+ const accepted=summarizeIsolatedPlannerGate({
+  observations:[...rejected,{kind:"proposal",status:"unapproved",digest:secret}],
+  accepted:true,benchmarkPass:true});
+ assert.equal(accepted.outcome,"native_executable_dag_admitted");
+ assert.equal(accepted.benchmark_technical_preflight_pass,true);
+ assert.equal(accepted.rejection_events,2);
+ assert.equal(JSON.stringify(accepted).includes(secret),false);
+});
+test("Planner-only rejects model failure strings and unknown diagnostic payloads",()=>{
+ const diagnostics=summarizeIsolatedPlannerGate({observations:[
+  {kind:"plan_rejection",stage:"contract",reason:"PRIVATE_SOURCE"},
+  {kind:"model_failure",category:"private API key",phase:"delegate_exception"},
+  {kind:"read",status:"denied",tool:"read_file",path:"private/secrets.env"}
+ ]});
+ assert.equal(diagnostics.outcome,"model_or_provider_failure");
+ assert.equal(diagnostics.last_rejection_reason,"contract_validation_other");
+ assert.equal(diagnostics.model_failure_category,"unknown");
+ assert.ok(!JSON.stringify(diagnostics).includes("private API key"));
+ assert.ok(!JSON.stringify(diagnostics).includes("private/secrets.env"));
+ assert.throws(()=>summarizeIsolatedPlannerGate({observations:null}),/invalid/);
 });

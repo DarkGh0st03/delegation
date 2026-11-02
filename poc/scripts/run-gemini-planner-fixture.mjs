@@ -176,6 +176,78 @@ export function classifyPlannerProbeFailure(error){
   });
 }
 
+
+/** Safe F5->D0 gate telemetry. The only diagnostic strings permitted here
+ * are closed, host-defined categories from the trusted Planner. Paths,
+ * prompt text, error messages, provider request/response bodies and cost
+ * estimates never enter the published gate outcome. */
+const SAFE_PLANNER_GATE_REASONS=new Set([
+  "ungrounded_or_missing_output","invalid_json","invalid_proposal_shape",
+  "invalid_task_count","invalid_task_identity","unsupported_agent_role",
+  "unsupported_tool_for_role","unauthorized_existing_file",
+  "unauthorized_new_file","invalid_path","invalid_permission_path",
+  "missing_branch_task","missing_branch_dependency",
+  "conflicting_unordered_writes","duplicate_task_permission",
+  "incorrect_work_branch","invalid_dependencies","invalid_permissions",
+  "execution_dag_incompatible","execution_unsupported_bounds",
+  "execution_duplicate_task_ids","execution_missing_specialist",
+  "execution_permission_not_in_task","execution_duplicate_permission",
+  "execution_task_without_grants","execution_required_operation_count",
+  "execution_first_branch","execution_cycle","execution_unknown_task",
+  "execution_branch_dependency","execution_pr_before_runner",
+  "execution_update_without_read","execution_unordered_writes",
+  "execution_runner_before_edit","execution_pr_before_edit",
+  "execution_duplicate_creation","execution_read_before_creation",
+  "execution_wrong_runner_branch","execution_bad_file_resource",
+  "contract_validation_other"
+]);
+const SAFE_MODEL_FAILURE_CATEGORIES=new Set([
+  "authentication","permission_or_billing","quota_or_rate_limit",
+  "model_or_endpoint_not_found","invalid_request_or_tool_schema",
+  "provider_server_error","transport_or_timeout","unknown"
+]);
+export function summarizeIsolatedPlannerGate({observations,accepted=false,
+ benchmarkPass=null}={}){
+  if(!Array.isArray(observations)||observations.length>512||
+     typeof accepted!=="boolean"||
+     (benchmarkPass!==null&&typeof benchmarkPass!=="boolean"))
+    throw Error("invalid trusted Planner gate observations");
+  const rejections=observations.filter(e=>e?.kind==="plan_rejection");
+  const last=rejections.at(-1);
+  const modelFailures=observations.filter(e=>e?.kind==="model_failure");
+  const lastModelFailure=modelFailures.at(-1);
+  const started=observations.filter(e=>e?.kind==="model_turn"&&e.status==="started");
+  const verifiedReads=observations.filter(e=>e?.kind==="read"&&
+    e.status==="verified"&&e.tool==="read_file");
+  const usage=observations.filter(e=>e?.kind==="model_usage"&&
+    e.source==="provider_reported");
+  const rejectionReason=SAFE_PLANNER_GATE_REASONS.has(last?.reason)
+    ?last.reason:last?"contract_validation_other":null;
+  const phase=["contract","json","grounding"].includes(last?.stage)
+    ?last.stage:last?"unknown":null;
+  const modelCategory=SAFE_MODEL_FAILURE_CATEGORIES.has(lastModelFailure?.category)
+    ?lastModelFailure.category:lastModelFailure?"unknown":null;
+  const outcome=accepted?"native_executable_dag_admitted":
+    lastModelFailure?"model_or_provider_failure":
+    last?"proposal_rejected":"no_accepted_proposal";
+  return Object.freeze({
+    schema_version:"1.0.0",
+    outcome,
+    last_rejection_stage:phase,
+    last_rejection_reason:rejectionReason,
+    rejection_events:rejections.length,
+    model_failure_category:modelCategory,
+    model_turns_started:started.length,
+    verified_source_file_reads:verifiedReads.length,
+    provider_usage_reports:usage.length,
+    benchmark_technical_preflight_pass:benchmarkPass,
+    operational_execution_authorized:false,
+    cost_and_invoice:"not_measured",
+    model_turns_not_provider_billing_evidence:true,
+    untrusted_source_or_model_text_recorded:false
+  });
+}
+
 async function createPrivateDirectory(directory){
   await mkdir(directory,{recursive:false,mode:0o700});
   const stat=await lstat(directory);
@@ -247,6 +319,9 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
     await persistJson(outputDir,"proposal.json",proposal);
     await persistJson(outputDir,"observations.json",observations);
     await persistJson(outputDir,"evaluation.json",report);
+    await persistJson(outputDir,"planner-gate-outcome.json",
+      summarizeIsolatedPlannerGate({observations,accepted:true,
+        benchmarkPass:report.technical_preflight_pass}));
     status="unapproved_isolated_proposal";
     return {status,report};
   }catch(error){
@@ -265,6 +340,8 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       failure_from:"model_boundary"
     }:{...classified,failure_from:"planner_outer_boundary"};
     await persistJson(outputDir,"failure-diagnostics.json",diagnostics);
+    await persistJson(outputDir,"planner-gate-outcome.json",
+      summarizeIsolatedPlannerGate({observations}));
     throw error;
   }finally{
     // Preserve ONLY bounded observer metadata even when Gemini is unable to

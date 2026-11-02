@@ -165,6 +165,16 @@ jobs:
             echo "- Execution mode: $PLANNER_EXECUTION_MODE"
             echo "- Baseline: synthetic in-memory IAM fixture, NOT a real Gitea SHA"
             echo "- No code writes, Engineer approval or delegated Execution"
+            if [[ -f "$DELEGATION_PLANNER_OUTPUT_DIR/planner-gate-outcome.json" ]]; then
+              echo "- Native D0 gate: $(jq -r '.outcome' "$DELEGATION_PLANNER_OUTPUT_DIR/planner-gate-outcome.json")"
+              echo "- Last DAG rejection category: $(jq -r '.last_rejection_reason // "none"' "$DELEGATION_PLANNER_OUTPUT_DIR/planner-gate-outcome.json")"
+              echo "- Last rejection stage: $(jq -r '.last_rejection_stage // "none"' "$DELEGATION_PLANNER_OUTPUT_DIR/planner-gate-outcome.json")"
+              echo "- Rejection events: $(jq -r '.rejection_events' "$DELEGATION_PLANNER_OUTPUT_DIR/planner-gate-outcome.json")"
+              echo "- ADK model turns started: $(jq -r '.model_turns_started' "$DELEGATION_PLANNER_OUTPUT_DIR/planner-gate-outcome.json")"
+              echo "- Verified source reads: $(jq -r '.verified_source_file_reads' "$DELEGATION_PLANNER_OUTPUT_DIR/planner-gate-outcome.json")"
+              echo "- Provider usage reports: $(jq -r '.provider_usage_reports' "$DELEGATION_PLANNER_OUTPUT_DIR/planner-gate-outcome.json")"
+              echo "- Model failure category: $(jq -r '.model_failure_category // "none"' "$DELEGATION_PLANNER_OUTPUT_DIR/planner-gate-outcome.json")"
+            fi
             if [[ -f "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json" ]]; then
               echo "- Evaluator technical preflight: $(jq -r '.technical_preflight_pass' "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json")"
               echo "- Provider tokens (if supplied): evidence artifact only"
