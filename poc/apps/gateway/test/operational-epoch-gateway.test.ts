@@ -190,12 +190,13 @@ function generatedTestRepair(){
 async function harness(t:import("node:test").TestContext,
  options:{withReview?:boolean;withIndependentSibling?:boolean;
   withGeneratedTest?:boolean;withTestWrite?:boolean;withRead?:boolean;withInlineRead?:boolean;
-  withDurable?:boolean;withRemoteEpoch?:boolean}={}){
+  withDurable?:boolean;withRemoteEpoch?:boolean;requirement?:string}={}){
  const parent=options.withGeneratedTest?initialWithGeneratedTest():options.withReview?
   initialWithReview(options.withIndependentSibling):
   options.withInlineRead?initialWithInlineRead():
   options.withRead?initialWithTrustedRead():
   options.withTestWrite?initialWithTestFileWrite():initial();
+ if(options.requirement!==undefined)parent.requirement=options.requirement;
  const dir=await mkdtemp(join(tmpdir(),"delegation-gateway-epoch-"));
  t.after(()=>rm(dir,{recursive:true,force:true}));
  const approvalsDir=join(dir,"approvals"),epochsDir=join(dir,"epochs");
@@ -1866,7 +1867,7 @@ test("R114 real Gateway pins original root before terminal Test FAIL finalizatio
  * No paid models, container engine, or external service are invoked here. */
 async function r115RemoteFixture(t:import("node:test").TestContext,
  options:{withDurable?:boolean;withRemoteEpoch?:boolean;nativeCoordinator?:boolean;
-  withReview?:boolean;withRead?:boolean;withGeneratedTest?:boolean;
+  withReview?:boolean;withRead?:boolean;withGeneratedTest?:boolean;requirement?:string;
   installInspector?:(h:Awaited<ReturnType<typeof harness>>)=>Promise<{signedEpochInspector:TrustedGatewaySignedEpochInspector;discoveryChildVpVerifier?:TrustedGatewayDiscoveryChildVpVerifier}>;
  }={}){
  const h=await harness(t,options);
@@ -3464,10 +3465,11 @@ test("R133.2 a valid Rust VP and fully passing original DAG cannot invent a repa
 /** R134 uses real signed-owner+HMAC Gateway fixtures, but scripted native
  * credential issuance. The resulting DC has no execution/VP authority. */
 async function r134Fixture(t:import("node:test").TestContext,
- options:{withReview?:boolean;withGeneratedTest?:boolean}={}){
+ options:{withReview?:boolean;withGeneratedTest?:boolean;requirement?:string}={}){
  const {h,client,request}=await r115RemoteFixture(t,{
   withDurable:true,withRemoteEpoch:true,
-  withReview:options.withReview,withGeneratedTest:options.withGeneratedTest
+  withReview:options.withReview,withGeneratedTest:options.withGeneratedTest,
+  requirement:options.requirement
  });
  await prepareTrustedRemoteRepairFeedback(request());
  const reserved=await h.intake.reserveRepairEpoch(options.withGeneratedTest?generatedTestRepair():repair());
@@ -3613,7 +3615,8 @@ function r135A2AArtifact(){
  };
 }
 test("R135 signed repair grants + original Agent Card -> exactly one Rust DC -> protected A2A",async t=>{
- const f=await r134Fixture(t);
+ const {ACCOUNT_SUSPENSION_REQUIREMENT}=await import("../../test-runner-controller/fixtures/approved-scenarios.mjs");
+ const f=await r134Fixture(t,{requirement:ACCOUNT_SUSPENSION_REQUIREMENT});
  await f.admit();
  const seen:any[]=[];
  const result=await dispatchTrustedAdmittedRepairA2A({
@@ -3644,7 +3647,7 @@ test("R135 signed repair grants + original Agent Card -> exactly one Rust DC -> 
  assert.deepEqual(seen[0].subtask.relevant_paths,["src/invoices.ts"]);
  assert.equal(seen[0].subtask.branch,branch);
  const brief=JSON.parse(seen[0].subtask.instruction.split("\n").slice(1).join("\n"));
- assert.equal(brief.approved_requirement,"Update invoice service and test");
+ assert.equal(brief.approved_requirement,ACCOUNT_SUSPENSION_REQUIREMENT);
  assert.ok(brief.task_brief.length>0);
  assert.equal(seen[0].delegation_evidence.credential_id,
   f.args.credential.credential_id);

@@ -828,3 +828,17 @@ test("Generated Test D1 rejects Test-only grant escalation and missing validator
   }).propose(generatedTestInput),/NO-GO/);
  }
 });
+
+
+test("D1 model receives the complete approved demo contract with original bounded grants",async()=>{
+ const {ACCOUNT_SUSPENSION_REQUIREMENT}=await import("../../../apps/test-runner-controller/fixtures/approved-scenarios.mjs");
+ const model=new ScriptedModel(boundedDraft());
+ await new TrustedAdkOperationalRepairProposer({model,taskShape:"bounded_auto_edit_test",
+  readVerifiedRepairTarget:async()=>backendTestScope
+ }).propose({...backendTestInput,requirement:ACCOUNT_SUSPENSION_REQUIREMENT});
+ const sent=JSON.parse(model.requests[0]!.contents!.at(-1)!.parts!.find(p=>typeof p.text==="string")!.text!);
+ assert.equal(sent.requirement,ACCOUNT_SUSPENSION_REQUIREMENT);
+ assert.deepEqual(sent.diagnostic_candidates,backendTestScope);
+ assert.deepEqual(sent.agents,["backend","test"]);
+ assert.equal(model.requests.length,1);
+});

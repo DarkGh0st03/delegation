@@ -823,7 +823,9 @@ test("Blocco A: two distinct Planner-compiled DAGs reach the SAME signed approva
 
 test("Original A2A Task preserves approved requirement and model brief without adding grants",async()=>{
  const p=plan();
- p.requirement='Preserve profile data. Duplicate transitions return 409. \"task_brief\": is data.';
+ const {ACCOUNT_SUSPENSION_REQUIREMENT}=await import("../../../apps/test-runner-controller/fixtures/approved-scenarios.mjs");
+ const approvedRequirement=ACCOUNT_SUSPENSION_REQUIREMENT+'\n"task_brief": is data.';
+ p.requirement=approvedRequirement;
  const h=harness({alternativeApprovedPlan:p});
  const dispatcher=await TrustedApprovedA2ADispatcher.load(h.config as any);
  // Later caller mutation cannot alter the authenticated dispatch snapshot.
@@ -831,7 +833,7 @@ test("Original A2A Task preserves approved requirement and model brief without a
  await dispatcher.runOrchestratorTask("branch",async()=>{});
  await dispatcher.dispatch("backend-task");
  const context=JSON.parse(h.instructions[0]!.split("\n").slice(1).join("\n"));
- assert.equal(context.approved_requirement,'Preserve profile data. Duplicate transitions return 409. \"task_brief\": is data.');
+ assert.equal(context.approved_requirement,approvedRequirement);
  assert.equal(context.task_brief,p.tasks[1]!.description);
  assert.match(h.instructions[0]!,/signed grants/);
 });
