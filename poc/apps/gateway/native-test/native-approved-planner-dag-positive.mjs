@@ -1232,6 +1232,8 @@ export async function runNativePositiveApprovedDag({
       approvals:reviewGate,coordinator,sessionId,
       expectedPlanDigest:planDigest,baseRevision:baseSha,
       expectedEngineerDid:engineerDid,agentBaseUrls:urls,
+      verifiedImplementationRead:async pins=>
+        approvedPlans.readVerifiedImplementationSummary(pins),
       // No recovery is enabled unless the trusted host supplies BOTH the
       // original Gateway and independently validated same-root epoch intake.
       // Dispatcher.load additionally enforces their exact owner binding.

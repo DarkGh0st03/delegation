@@ -79,6 +79,22 @@ export interface TrustedCompletionEvidence {
 export interface TrustedTaskCompletionAttestor {
   confirmCompleted(evidence:Readonly<TrustedCompletionEvidence>):Promise<boolean>;
 }
+/** F2: Gateway-owned, owner-private projection. It is neither an A2A
+ * assertion nor a new permission; no source bytes or bearer material. */
+export interface VerifiedImplementationSummary {
+  readonly status:"gateway_verified_implementation";
+  readonly session_id:string;
+  readonly plan_digest:string;
+  readonly plan_task_id:string;
+  readonly runtime_task_id:string;
+  readonly role:"backend"|"frontend";
+  readonly branch:string;
+  readonly revision:string;
+  readonly changed_files:readonly Readonly<{
+    path:string;operation:"update_file"|"create_file";commit_sha:string;
+  }>[];
+  readonly gateway_provider_effect_count:number;
+}
 
 interface RuntimeTaskBinding {
   readonly runtimeTaskId: string;
@@ -159,6 +175,7 @@ export class TrustedApprovedExecutionPlans {
   readonly #attestor:TrustedTaskCompletionAttestor;
   readonly #sessions=new Map<string,ActivePlan>();
   readonly #bindings=new Map<string,RuntimeTaskBinding>();
+  readonly #verifiedImplementations=new Map<string,VerifiedImplementationSummary>();
   readonly #closedSessionIds=new Set<string>();
   // A trusted retirement fences an in-flight activation even if the
   // signed approval load is still pending.
@@ -1079,10 +1096,78 @@ export class TrustedApprovedExecutionPlans {
            lastMutation.commit_sha===run.tested_commit_sha)))
         session.testedFeatureSha=run.tested_commit_sha;
     }
+    // F2: create a source-free projection ONLY from the frozen effects
+    // already accepted by the independent Gateway completion attestor.
+    // The role-specific artifact is an observation and cannot create
+    // writes or grant scope. No entry exists for unattested completions.
+    let implementation:VerifiedImplementationSummary|undefined;
+    if((binding.agent==="backend"||binding.agent==="frontend")&&
+       observation?.source==="trusted_a2a_poll"){
+      const artifact=observation.artifact;
+      if(!artifact||observation.runtime_task_id!==runtimeTaskId||
+         artifact.branch!==session.workBranch||!SHA.test(artifact.revision)||
+         artifact.commit_sha!==artifact.revision)
+        denied("F2 completion lacks pinned trusted implementation artifact");
+      const edits:VerifiedImplementationSummary["changed_files"][number][]=[];
+      for(const [,effect] of attestedRequests){
+        if(effect.tool!=="update_file"&&effect.tool!=="create_file")continue;
+        const e=effect.execution;
+        if(e.provider!=="gitea"||e.performed!==true||
+           !("path" in e)||!("branch" in e)||!("commit_sha" in e)||
+           e.branch!==session.workBranch||!SHA.test(e.commit_sha)||
+           typeof e.path!=="string"||!e.path)
+          denied("F2 mutation lacks exact Gitea provider effect");
+        edits.push(Object.freeze({path:e.path,
+          operation:effect.tool as "update_file"|"create_file",
+          commit_sha:e.commit_sha}));
+      }
+      const claimed=[...artifact.files_modified.map(path=>"update_file\\0"+path),
+                     ...artifact.files_created.map(path=>"create_file\\0"+path)].sort();
+      const effects=[...new Set(edits.map(x=>x.operation+"\\0"+x.path))].sort();
+      if(JSON.stringify(claimed)!==JSON.stringify(effects)||
+         (edits.length>0&&edits.at(-1)?.commit_sha!==artifact.revision)||
+         (edits.length===0&&
+          !attestedRequests.some(([,e])=>e.tool==="read_file"&&
+            e.execution.provider==="gitea"&&
+            "revision" in e.execution&&e.execution.revision===artifact.revision)))
+        denied("F2 implementation summary not corroborated at exact revision");
+      implementation=Object.freeze({
+        status:"gateway_verified_implementation" as const,
+        session_id:session.sessionId,plan_digest:session.digest,
+        plan_task_id:binding.planTaskId,runtime_task_id:runtimeTaskId,
+        role:binding.agent,branch:session.workBranch,
+        revision:artifact.revision,
+        changed_files:Object.freeze(edits),
+        gateway_provider_effect_count:attestedRequests.length
+      });
+    }
     binding.completed=true;
     session.completedPlanTasks.add(binding.planTaskId);
+    if(implementation)this.#verifiedImplementations.set(runtimeTaskId,implementation);
   }
 
+  /** F2 owner-private read; unavailable to A2A, MCP and public Gateway HTTP.
+   * All caller pins must match an independently completed Gateway Task. */
+  readVerifiedImplementationSummary(pins:Readonly<{
+    session_id:string;plan_digest:string;plan_task_id:string;
+    runtime_task_id:string;role:"backend"|"frontend";
+    branch:string;revision:string;
+  }>):VerifiedImplementationSummary {
+    if(!pins||!ensureId(pins.session_id,"session ID")||
+       !ensureId(pins.plan_task_id,"plan task ID")||
+       !ensureId(pins.runtime_task_id,"runtime task ID")||
+       !/^[a-f0-9]{64}$/u.test(pins.plan_digest)||!SHA.test(pins.revision))
+      denied("F2 invalid verified implementation query");
+    const {session,binding}=this.#activeBinding(pins.runtime_task_id);
+    const verified=this.#verifiedImplementations.get(pins.runtime_task_id);
+    if(!verified||!binding.completed||binding.completing||
+       session.sessionId!==pins.session_id||session.digest!==pins.plan_digest||
+       binding.planTaskId!==pins.plan_task_id||binding.agent!==pins.role||
+       session.workBranch!==pins.branch||verified.revision!==pins.revision||
+       verified.runtime_task_id!==pins.runtime_task_id)
+      denied("F2 no matching completed trusted implementation");
+    return structuredClone(verified);
+  }
 
   /**
    * R151.43: owner-only independent POST-completion discovery read receipt.

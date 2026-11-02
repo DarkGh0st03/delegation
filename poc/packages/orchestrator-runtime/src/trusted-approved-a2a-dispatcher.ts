@@ -15,7 +15,8 @@ import {assertApprovedPlanScope,planDigest} from "../../../packages/plan-contrac
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {observedA2ACompletion} from "./trusted-a2a-observer.ts";
 import {approvedWorkBranch} from "../../../packages/plan-contracts/src/approved-work-branch.mjs";
-import {TrustedApprovedExecutionPlans,type AuthenticatedPlanStore}
+import {TrustedApprovedExecutionPlans,type AuthenticatedPlanStore,
+ type VerifiedImplementationSummary}
  from "../../../apps/gateway/src/approved-execution-plans.ts";
 import {TrustedOperationalEpochIntake} from "./trusted-operational-epoch-intake.ts";
 import {prepareTrustedRepairFeedback,prepareTrustedRemoteRepairFeedback,
@@ -77,6 +78,13 @@ export interface TrustedApprovedA2ADispatcherConfig{
    * and the original signed Rust-root intake can preserve an active root
    * after an independently corroborated terminal failed Test.
    */
+  /** F2 optional owner-private provider corroboration hook. Only a trusted
+   * Gateway store can return this: A2A/model content is never accepted. */
+  verifiedImplementationRead?:(
+    pins:Readonly<{session_id:string;plan_digest:string;plan_task_id:string;
+      runtime_task_id:string;role:"backend"|"frontend";
+      branch:string;revision:string}>
+  )=>Promise<VerifiedImplementationSummary>;
   verifiedTestFailureRecovery?:Readonly<{
     gateway:TrustedApprovedExecutionPlans|TrustedPlanIpcClient;
     intake:TrustedOperationalEpochIntake;
@@ -87,6 +95,7 @@ export class TrustedApprovedA2ADispatcher {
   readonly #config:TrustedApprovedA2ADispatcherConfig;
   readonly #snapshot:ApprovedSnapshot;
   readonly #completed=new Set<string>();
+  readonly #verifiedImplementations=new Map<string,VerifiedImplementationSummary>();
   readonly #started=new Set<string>();
   #busy=false;
   #terminal=false;
@@ -188,6 +197,9 @@ export class TrustedApprovedA2ADispatcher {
   }
 
   get completedTaskIds():readonly string[]{return [...this.#completed];}
+  get verifiedImplementationSummaries():readonly VerifiedImplementationSummary[]{
+    return [...this.#verifiedImplementations.values()].map(x=>structuredClone(x));
+  }
   get approvedBranch():string{return this.#snapshot.approvedBranch;}
 
   /**
@@ -402,6 +414,30 @@ export class TrustedApprovedA2ADispatcher {
       // dependent node based on a confirmation from a closed session.
       if(this.#config.coordinator.phase!=="execution")
         throw Error("Trusted A2A confirmation raced operational shutdown");
+      // F2 is read-only and AFTER Gateway attestation. A missing or
+      // mismatched owner receipt never unlocks the downstream Test Task.
+      if((role==="backend"||role==="frontend")&&
+         this.#config.verifiedImplementationRead){
+        const pins={session_id:this.#config.sessionId,
+          plan_digest:this.#snapshot.digest,plan_task_id:task.id,
+          runtime_task_id:dispatchId,role,branch:this.#snapshot.approvedBranch,
+          revision:result.artifact.revision};
+        const receipt=await this.#config.verifiedImplementationRead(pins);
+        const claims=[
+          ...result.artifact.files_modified.map(path=>"update_file\\0"+path),
+          ...result.artifact.files_created.map(path=>"create_file\\0"+path)
+        ].sort();
+        const effects=receipt?.changed_files?.map(x=>x.operation+"\\0"+x.path).sort();
+        if(receipt?.status!=="gateway_verified_implementation"||
+           receipt.session_id!==pins.session_id||receipt.plan_digest!==pins.plan_digest||
+           receipt.plan_task_id!==pins.plan_task_id||
+           receipt.runtime_task_id!==pins.runtime_task_id||
+           receipt.role!==role||receipt.branch!==pins.branch||
+           receipt.revision!==pins.revision||
+           JSON.stringify(claims)!==JSON.stringify([...new Set(effects)]?.sort()))
+          throw Error("F2 trusted implementation projection mismatch");
+        this.#verifiedImplementations.set(task.id,structuredClone(receipt));
+      }
       this.#completed.add(task.id);
       return result;
     }catch(error){

@@ -5,6 +5,7 @@ import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {TrustedApprovedExecutionPlans,
   type TrustedCompletionEvidence} from "../src/approved-execution-plans.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
+import {GatewayCorroboratedTaskAttestor} from "../src/trusted-task-observation.ts";
 import {InMemoryAuditSink,InMemoryRequestStore} from "../src/prepare.ts";
 import {MockExecutor} from "../src/mock-executor.ts";
 import {GatewayError} from "../src/errors.ts";
@@ -58,6 +59,7 @@ function harness(options:{
   approvedIds?:string[];
   correctEngineer?:boolean;
   attestation?:boolean;
+  actualGatewayAttestor?:boolean;
   onAttestation?:(planTaskId:string,evidence:Readonly<TrustedCompletionEvidence>)=>Promise<void>;
   simulated?:boolean;
   wrongPresenter?:boolean;
@@ -92,6 +94,8 @@ function harness(options:{
       assert.match(e.plan_digest,/^[a-f0-9]{64}$/u);
       assert.ok(e.successful_gateway_request_ids.length>0);
       if(options.onAttestation)await options.onAttestation(e.plan_task_id,e);
+      if(options.actualGatewayAttestor)
+        return new GatewayCorroboratedTaskAttestor().confirmCompleted(e);
       return options.attestation!==false;
     }}
   });
@@ -846,4 +850,63 @@ test("R97.3 lease expiration must NOT impersonate trusted Gateway shutdown for p
     session_id:"session-approval",task_id:"tests",
     branch,tested_commit_sha:sha
   }),/retired signed Test acceptance/u);
+});
+
+test("F2 real Gateway attestor projects actual Backend effects only after completed exact-bound Task",async()=>{
+ const h=harness({actualGatewayAttestor:true});
+ await activated(h);
+ const pin={session_id:"session-approval",plan_digest:planDigest(plan()),
+   plan_task_id:"backend-task",runtime_task_id:"a2a-backend",
+   role:"backend" as const,branch,revision:sha};
+ assert.throws(()=>h.gates.readVerifiedImplementationSummary(pin),/completed|trusted|binding/i);
+ await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+ await h.gates.confirmTaskCompletion("a2a-bootstrap",{
+  source:"trusted_orchestrator",runtime_task_id:"a2a-bootstrap",
+  state:"completed",role:"orchestrator"
+ });
+ await h.invoke("a2a-backend","backend","update_file",updateArgs);
+ assert.throws(()=>h.gates.readVerifiedImplementationSummary(pin),/completed|trusted/i);
+ await h.gates.confirmTaskCompletion("a2a-backend",{
+  source:"trusted_a2a_poll",runtime_task_id:"a2a-backend",
+  state:"completed",role:"backend",
+  artifact:{branch,revision:sha,commit_sha:sha,
+   files_modified:["apps/backend/user.ts"],files_created:[],test_outcome:"not_run"}
+ });
+ const summary=h.gates.readVerifiedImplementationSummary(pin);
+ assert.equal(summary.status,"gateway_verified_implementation");
+ assert.equal(summary.gateway_provider_effect_count,1);
+ assert.deepEqual(summary.changed_files,[{
+  path:"apps/backend/user.ts",operation:"update_file",commit_sha:sha
+ }]);
+ assert.equal(summary.runtime_task_id,"a2a-backend");
+ assert.ok(!JSON.stringify(summary).includes("PRIVATE_REPOSITORY_SOURCE"));
+ summary.changed_files[0]!.path="forged" as string;
+ assert.equal(h.gates.readVerifiedImplementationSummary(pin).changed_files[0]!.path,
+  "apps/backend/user.ts");
+ for(const bad of [
+  {...pin,plan_task_id:"tests"}, {...pin,role:"frontend" as const},
+  {...pin,session_id:"another"}, {...pin,revision:"b".repeat(40)},
+  {...pin,branch:"feature/foreign"}, {...pin,plan_digest:"b".repeat(64)}
+ ]) assert.throws(()=>h.gates.readVerifiedImplementationSummary(bad),/F2/);
+});
+test("F2 rejected or uncorroborated A2A file claim cannot create a summary",async()=>{
+ const h=harness({actualGatewayAttestor:true});
+ await activated(h);
+ await h.invoke("a2a-bootstrap","orchestrator","create_branch",branchArgs);
+ await h.gates.confirmTaskCompletion("a2a-bootstrap",{
+  source:"trusted_orchestrator",runtime_task_id:"a2a-bootstrap",
+  state:"completed",role:"orchestrator"
+ });
+ await h.invoke("a2a-backend","backend","update_file",updateArgs);
+ await assert.rejects(h.gates.confirmTaskCompletion("a2a-backend",{
+  source:"trusted_a2a_poll",runtime_task_id:"a2a-backend",
+  state:"completed",role:"backend",
+  artifact:{branch,revision:sha,commit_sha:sha,
+   files_modified:["apps/backend/forged.ts"],files_created:[],test_outcome:"not_run"}
+ }),/attestation/);
+ assert.throws(()=>h.gates.readVerifiedImplementationSummary({
+  session_id:"session-approval",plan_digest:planDigest(plan()),
+  plan_task_id:"backend-task",runtime_task_id:"a2a-backend",
+  role:"backend",branch,revision:sha
+ }),/F2/);
 });
