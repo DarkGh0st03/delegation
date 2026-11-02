@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "Final F1 paid-Planning-only manual gate: exact SHA after all code fixes (no AI)",
-  "candidate_parent_sha": "2f8ab5a022cb39cce6dee84981ab3ff82687669d",
-  "purpose": "Final and ONLY free 3-workflow gate after all F1 manual-dispatch routing and fail-closed D0 selector fixes are complete. Fast CI and targeted F1 manual guard SUCCESS on parent 2f8ab5a0. F2-F5 previous full gate 3/3 SUCCESS on a52d77a9. Verify same new source SHA without any Gemini API invocation; subsequent paid Planning-only requires separate explicit user consent.",
+  "checkpoint": "F1 final consolidated offline 3/3 gate after Gemini failure diagnostics + structural instructions",
+  "candidate_parent_sha": "bd06c406d40033d86df57839698090e26255f465",
+  "purpose": "Exactly one free final exact-SHA three-workflow validation after completing all F1 paid-planner postmortem fixes: correct UTF-8 error diagnostics, safe bounded history of three rejection categories, and initial trusted DAG structural instructions. Fast CI #41517905526 SUCCESS, native Gateway/Core #41517905545 SUCCESS, operation catalog #41517905498 SUCCESS, F1 real-Gitea script #41517905620 SUCCESS on candidate parent. All model generation and paid Gemini disabled. No additional Full CI until concrete failure demands consolidated fix.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
