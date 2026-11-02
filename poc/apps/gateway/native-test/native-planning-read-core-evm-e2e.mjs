@@ -68,6 +68,7 @@ import {makeOfflineReviewableDag} from
   "../../../packages/orchestrator-runtime/test/fixtures/offline-planning-dag.mjs";
 import {BaseLlm} from "@google/adk";
 import {accountSuspensionPlanningConfig} from "../../../scripts/account-suspension-planning-config.mjs";
+import {realPlanningParityManifest} from "../../../scripts/f1-real-planning-parity-manifest.mjs";
 import {SIGNED_GEMINI_PILOT,verifySignedGeminiPilotConsent}
   from "../../../scripts/signed-gemini-pilot-consent.mjs";
 import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
@@ -546,6 +547,16 @@ try{
     })
     :new ScriptedReadPlanner();
   if(geminiPilot)pilotStage="gemini_planning";
+  // Both paths hash the same trusted model-facing requirement, repository
+  // snapshot, work branch, plan identity, compiler, preflight and budget.
+  // Source content is committed by the immutable pinned Git revision.
+  const parityManifest=(geminiPilot||realPlanningOnly)
+    ?realPlanningParityManifest({snapshot,
+      requirement:scenario.requirement,workBranch,
+      planId:"native-planning-proposal"}):null;
+  if(parityManifest)process.stdout.write(JSON.stringify({
+    event:"f1_real_planning_input_manifest",...parityManifest
+  })+"\n");
   const proposed=await new TrustedAdkReadOnlyPlanner({
     model,snapshot,workBranch,
     requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
@@ -687,6 +698,7 @@ try{
     process.stdout.write(JSON.stringify({
       event:"f1_real_gitea_pilot_parity",status:"pass",
       source_revision:baseSha,
+      input_manifest_digest:parityManifest.manifest_digest,
       verified_source_reads:proposed.verified_source_reads,
       approved_task_count:proposed.plan.tasks.length,
       approved_permission_count:proposed.plan.requested_permissions.length,
