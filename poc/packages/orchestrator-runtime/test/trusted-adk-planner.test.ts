@@ -6,7 +6,7 @@ import {
 import {validatePlan} from "../../plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {compilePlanningProposal,TrustedAdkReadOnlyPlanner,
-  TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE,safeExecutionPreflightRejection}
+  TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE,safeExecutionPreflightRejection,safePlanningRejection}
   from "../src/trusted-adk-planner.ts";
 
 const FILE="src/billing/invoice.ts";
@@ -849,7 +849,7 @@ test("model receives only sanitized exact DAG preflight feedback for bounded sam
     yield {content:{role:"model",parts:[{functionCall:{id:"read",name:"read_file",
      args:{branch:"main",path:FILE}}}]}};return;
    }
-   yield {content:{role:"model",parts:[{text:JSON.stringify(draft())}]}}; 
+   yield {content:{role:"model",parts:[{text:JSON.stringify(draft())}]}};
   }
   override connect(_r:LlmRequest):Promise<BaseLlmConnection>{return Promise.reject(Error("offline"));}
  }
@@ -899,4 +899,60 @@ test("branch/PR narratives cannot contradict the trusted feature branch",()=>{
   /Task branch name conflicts with trusted work branch/);
  wrongPr.tasks[2].description="Open PR from feature/invoice-sort to main";
  assert.doesNotThrow(()=>compilePlanningProposal(wrongPr,cfg));
+});
+
+ test("shape diagnostics distinguish type and level without exposing model values",()=>{
+ const cases:Array<[string,(d:any)=>unknown]>=[
+ ["shape_proposal_object",()=>null],
+ ["shape_proposal_fields",d=>({...d,PRIVATE_VALUE:"secret"})],
+ ["shape_proposal_list",d=>({...d,assumptions:"PRIVATE_VALUE"})],
+ ["shape_proposal_string",d=>({...d,assumptions:["x".repeat(401)]})],
+ ["shape_task_object",d=>({...d,tasks:[null,d.tasks[1]]})],
+ ["shape_task_fields",d=>{delete d.tasks[0].title;return d;}],
+ ["shape_task_list",d=>{d.tasks[0].depends_on=["x","x"];return d;}],
+ ["shape_task_string",d=>{d.tasks[0].description="x".repeat(1801);return d;}],
+ ["shape_permission_object",d=>{d.tasks[0].permissions=[null];return d;}],
+ ["shape_permission_fields",d=>{delete d.tasks[0].permissions[0].path;return d;}],
+ ["shape_permission_string",d=>{d.tasks[0].permissions[0].reason="";return d;}]
+ ];
+ for(const [reason,mutate] of cases){
+ assert.throws(()=>compilePlanningProposal(mutate(draft()),cfg),e=>{
+ assert.equal(safePlanningRejection(e),reason);
+ assert.ok(!String(e).includes("PRIVATE_VALUE"));return true;
+ });
+ }
+ assert.doesNotThrow(()=>compilePlanningProposal(draft(),cfg));
+ assert.equal(safePlanningRejection(Error("Unapproved Planning: shape_private_secret")),"contract_validation_other");
+ });
+test("shape feedback reaches model and permits bounded same-session correction",async()=>{
+ const requests:LlmRequest[]=[];
+ class Retry extends BaseLlm{
+  count=0;
+  constructor(){super({model:"offline-fixed-preflight-feedback"});}
+  override async *generateContentAsync(r:LlmRequest):AsyncGenerator<LlmResponse,void>{
+   requests.push(r);this.count++;
+   if(this.count===1){
+    yield {content:{role:"model",parts:[{functionCall:{id:"read",name:"read_file",
+     args:{branch:"main",path:FILE}}}]}};return;
+   }
+   yield {content:{role:"model",parts:[{text:JSON.stringify(this.count===2?{...draft(),assumptions:"PRIVATE_VALUE"}:draft())}]}};
+  }
+  override connect(_r:LlmRequest):Promise<BaseLlmConnection>{return Promise.reject(Error("offline"));}
+ }
+ const observations:any[]=[];let attempts=0;
+ const result=await new TrustedAdkReadOnlyPlanner({
+  ...cfg,model:new Retry(),maxProposalRevisions:1,maxModelTurns:4,
+  readPort:{async invoke(tool:string){return {provider:"gitea",performed:true,tool,
+   branch:"main",path:FILE,revision:SNAPSHOT.base_revision,content:"source"};}},
+  onObservation:o=>observations.push(o)
+ }).propose();
+ assert.equal(result.status,"unapproved_proposal");
+ assert.deepEqual(observations.filter(o=>o.kind==="plan_rejection"),[
+  {kind:"plan_rejection",stage:"contract",reason:"shape_proposal_list"}]);
+ const feedback=JSON.stringify(requests[2].contents.at(-1));
+ assert.ok(feedback.includes("shape_proposal_list"));
+ assert.ok(feedback.includes("Check the proposal structure: list"));
+ assert.ok(feedback.includes("no new authority"));
+ assert.ok(!feedback.includes("PRIVATE_SOURCE_CONTENT"));
+ assert.ok(!JSON.stringify(observations).includes("private"));
 });

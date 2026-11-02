@@ -94,6 +94,7 @@ export interface UnapprovedPlanProposal {
 
 export const TRUSTED_PLANNING_REJECTION_REASONS=Object.freeze([
   "ungrounded_or_missing_output","invalid_json","invalid_proposal_shape",
+  "shape_proposal_fields","shape_proposal_object","shape_proposal_list","shape_proposal_string","shape_task_fields","shape_task_object","shape_task_list","shape_task_string","shape_permission_fields","shape_permission_object","shape_permission_string",
   "invalid_task_count","invalid_task_identity","unsupported_agent_role",
   "unsupported_tool_for_role","unauthorized_existing_file",
   "unauthorized_new_file","invalid_path","invalid_permission_path",
@@ -150,9 +151,13 @@ const SAFE_REJECTIONS:Readonly<Record<string,TrustedPlanningRejectionReason>>=
     "permission count outside bounds":"invalid_permissions",
     "too many permission requests":"invalid_permissions"
   });
-function safePlanningRejection(error:unknown):TrustedPlanningRejectionReason {
+export function safePlanningRejection(error:unknown):TrustedPlanningRejectionReason {
   const msg=error instanceof Error?error.message:"";
   const prefix="Unapproved Planning: ";
+  const code=msg.slice(prefix.length);
+  if(msg.startsWith(prefix)&&code.startsWith("shape_")&&
+     (TRUSTED_PLANNING_REJECTION_REASONS as readonly string[]).includes(code))
+    return code as TrustedPlanningRejectionReason;
   return msg.startsWith(prefix)
     ?SAFE_REJECTIONS[msg.slice(prefix.length)]??"contract_validation_other"
     :"contract_validation_other";
@@ -229,33 +234,38 @@ const TRUSTED_EXECUTION_STRUCTURE_HINTS:Readonly<Partial<
     "Use the EXACT trusted work_branch provided in the session request in any branch-creation or pull-request instructions. Do not name a different feature branch. The trusted branch and grants cannot be changed."
 });
 function trustedStructureHint(reason:TrustedPlanningRejectionReason):string {
+  if(reason.startsWith("shape_")){
+    const [,level,kind]=reason.split("_");
+    return `Check the ${level} structure: ${kind}. Use exactly the documented fields, objects, unique string arrays and nonempty strings within the documented length limits. Do not change scope.`;
+  }
   return TRUSTED_EXECUTION_STRUCTURE_HINTS[reason]??
     "Recheck the indicated structural constraint against the trusted snapshot; do not add undiscovered files or permissions.";
 }
 function fail(reason:string):never {throw Error("Unapproved Planning: "+reason);}
-function obj(x:unknown):Record<string,unknown> {
-  if(!x||typeof x!=="object"||Array.isArray(x))fail("expected object");
+type ShapeLevel="proposal"|"task"|"permission";
+function obj(x:unknown,level?:ShapeLevel):Record<string,unknown> {
+  if(!x||typeof x!=="object"||Array.isArray(x))fail(level?`shape_${level}_object`:"expected object");
   return x as Record<string,unknown>;
 }
-function keys(x:Record<string,unknown>,names:string[]):void {
+function keys(x:Record<string,unknown>,names:string[],level?:ShapeLevel):void {
   if(Object.keys(x).some(k=>!names.includes(k))||
-     names.some(k=>!Object.hasOwn(x,k)))fail("unexpected/missing fields");
+     names.some(k=>!Object.hasOwn(x,k)))fail(level?`shape_${level}_fields`:"unexpected/missing fields");
 }
-function str(x:unknown,max:number):string {
-  if(typeof x!=="string"||!x.trim()||x.length>max)fail("invalid string");
+function str(x:unknown,max:number,level?:ShapeLevel):string {
+  if(typeof x!=="string"||!x.trim()||x.length>max)fail(level?`shape_${level}_string`:"invalid string");
   return x;
 }
 function path(x:unknown):string {
-  const p=str(x,240);
+  const p=str(x,240,"permission");
   if(p!==p.trim()||p.startsWith("/")||p.includes("\\")||p.includes("%")||
      p.includes("//")||/[\x00-\x1f\x7f]/u.test(p)||
      p.split("/").some(s=>!s||s==="."||s===".."))fail("noncanonical path");
   return p;
 }
-function uniqueStrings(x:unknown,max:number):string[] {
+function uniqueStrings(x:unknown,max:number,level?:ShapeLevel):string[] {
   if(!Array.isArray(x)||x.length>max||
      x.some(s=>typeof s!=="string")||new Set(x).size!==x.length)
-    fail("invalid list");
+    fail(level?`shape_${level}_list`:"invalid list");
   return x;
 }
 
@@ -289,9 +299,9 @@ export function compilePlanningProposal(
   if(!id.test(cfg.planId)||!cfg.requirement?.trim()||
      cfg.requirement.length>8000)fail("invalid trusted plan settings");
   const branch=validatePrivateApprovedBranch(cfg.workBranch);
-  const draft=obj(raw);keys(draft,["tasks","assumptions","uncertainties"]);
-  const assumptions=uniqueStrings(draft.assumptions,16).map(s=>str(s,400));
-  const uncertainties=uniqueStrings(draft.uncertainties,16).map(s=>str(s,400));
+  const draft=obj(raw,"proposal");keys(draft,["tasks","assumptions","uncertainties"],"proposal");
+  const assumptions=uniqueStrings(draft.assumptions,16,"proposal").map(s=>str(s,400,"proposal"));
+  const uncertainties=uniqueStrings(draft.uncertainties,16,"proposal").map(s=>str(s,400,"proposal"));
   if(!Array.isArray(draft.tasks)||draft.tasks.length<2||
      draft.tasks.length>12)fail("Task count outside bounds");
   const root=canonicalRepositoryUri(cfg.snapshot.repository);
@@ -300,21 +310,21 @@ export function compilePlanningProposal(
   const futureFileReads:Array<{taskId:string;resource:string}>=[];
   const roles=new Set<Role>();
   for(const rawTask of draft.tasks){
-    const task=obj(rawTask);
-    keys(task,["id","agent_id","title","description","depends_on","permissions"]);
-    const taskId=str(task.id,128);
+    const task=obj(rawTask,"task");
+    keys(task,["id","agent_id","title","description","depends_on","permissions"],"task");
+    const taskId=str(task.id,128,"task");
     if(!id.test(taskId))fail("invalid Task id");
-    const role=str(task.agent_id,16) as Role|"orchestrator";
+    const role=str(task.agent_id,16,"task") as Role|"orchestrator";
     if(!Object.hasOwn(roleOps,role))fail("unsupported Agent role");
     if(role!=="orchestrator")roles.add(role);
-    const depends_on=uniqueStrings(task.depends_on,12);
+    const depends_on=uniqueStrings(task.depends_on,12,"task");
     if(depends_on.some(d=>!id.test(d)))fail("invalid dependency");
     if(!Array.isArray(task.permissions)||task.permissions.length<1||
        task.permissions.length>16)fail("permission count outside bounds");
     const resources:string[]=[];
     for(const candidate of task.permissions){
-      const p=obj(candidate);keys(p,["operation","path","reason"]);
-      const operation=str(p.operation,64) as Op;
+      const p=obj(candidate,"permission");keys(p,["operation","path","reason"],"permission");
+      const operation=str(p.operation,64,"permission") as Op;
       if(!operations.has(operation)||!roleOps[role].has(operation))
         fail("tool is not supported for proposed Agent role");
       let resource:string;
@@ -344,12 +354,12 @@ export function compilePlanningProposal(
       requested_permissions.push({
         id:"permission-"+(requested_permissions.length+1),
         task_id:taskId,agent_id:role,operation,resource,
-        reason:str(p.reason,300)
+        reason:str(p.reason,300,"permission")
       });
       if(requested_permissions.length>64)fail("too many permission requests");
     }
-    const title=str(task.title,200);
-    const description=str(task.description,1800);
+    const title=str(task.title,200,"task");
+    const description=str(task.description,1800,"task");
     // The runtime derives actual branch authority from canonical resources,
     // not these UNTRUSTED words. However a contradictory feature-branch
     // name can mislead downstream Agents even when the grants are correct.

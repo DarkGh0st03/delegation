@@ -197,7 +197,7 @@ export function classifyPlannerProbeFailure(error){
  * prompt text, error messages, provider request/response bodies and cost
  * estimates never enter the published gate outcome. */
 const SAFE_PLANNER_GATE_REASONS=new Set([
-  "ungrounded_or_missing_output","invalid_json","invalid_proposal_shape",
+  "ungrounded_or_missing_output","invalid_json","invalid_proposal_shape","shape_proposal_fields","shape_proposal_object","shape_proposal_list","shape_proposal_string","shape_task_fields","shape_task_object","shape_task_list","shape_task_string","shape_permission_fields","shape_permission_object","shape_permission_string",
   "invalid_task_count","invalid_task_identity","unsupported_agent_role",
   "unsupported_tool_for_role","unauthorized_existing_file",
   "unauthorized_new_file","invalid_path","invalid_permission_path",
