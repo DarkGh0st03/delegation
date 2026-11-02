@@ -150,3 +150,24 @@ test("Planner-only rejects model failure strings and unknown diagnostic payloads
  assert.ok(!JSON.stringify(diagnostics).includes("private/secrets.env"));
  assert.throws(()=>summarizeIsolatedPlannerGate({observations:null}),/invalid/);
 });
+
+test("paid run 41464279775 exhausted local model budget, not a DAG preflight",()=>{
+ const observations=Array.from({length:10},(_,i)=>[
+  {kind:"model_turn",status:"started",turn:i+1},
+  {kind:"read",status:"verified",tool:"read_file",path:"PRIVATE_FILE_"+i},
+  {kind:"model_turn",status:"completed",turn:i+1}
+ ]).flat();
+ observations.push({kind:"budget_exhausted",budget:"model_turns",
+  completed_turns:10,max_model_turns:10});
+ observations.push({kind:"model_failure",phase:"adk_runner_error",
+  category:"unknown",turn:11,http_status:null});
+ observations.push({kind:"plan_rejection",stage:"grounding",
+  reason:"ungrounded_or_missing_output"});
+ const outcome=summarizeIsolatedPlannerGate({observations});
+ assert.equal(outcome.outcome,"local_model_turn_budget_exhausted");
+ assert.equal(outcome.local_turn_budget_exhausted,true);
+ assert.equal(outcome.local_max_model_turns,10);
+ assert.equal(outcome.verified_source_file_reads,10);
+ assert.equal(outcome.rejection_events,1);
+ assert.ok(!JSON.stringify(outcome).includes("PRIVATE_FILE"));
+});

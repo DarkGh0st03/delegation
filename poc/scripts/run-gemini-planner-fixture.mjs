@@ -227,7 +227,13 @@ export function summarizeIsolatedPlannerGate({observations,accepted=false,
     ?last.stage:last?"unknown":null;
   const modelCategory=SAFE_MODEL_FAILURE_CATEGORIES.has(lastModelFailure?.category)
     ?lastModelFailure.category:lastModelFailure?"unknown":null;
+  const exhausted=observations.find(e=>e?.kind==="budget_exhausted"&&
+    e.budget==="model_turns"&&
+    Number.isSafeInteger(e.completed_turns)&&e.completed_turns>=0&&
+    Number.isSafeInteger(e.max_model_turns)&&e.max_model_turns>=1&&
+    e.completed_turns===e.max_model_turns);
   const outcome=accepted?"native_executable_dag_admitted":
+    exhausted?"local_model_turn_budget_exhausted":
     lastModelFailure?"model_or_provider_failure":
     last?"proposal_rejected":"no_accepted_proposal";
   return Object.freeze({
@@ -238,6 +244,8 @@ export function summarizeIsolatedPlannerGate({observations,accepted=false,
     rejection_events:rejections.length,
     model_failure_category:modelCategory,
     model_turns_started:started.length,
+    local_turn_budget_exhausted:!accepted&&Boolean(exhausted),
+    local_max_model_turns:exhausted?.max_model_turns??null,
     verified_source_file_reads:verifiedReads.length,
     provider_usage_reports:usage.length,
     benchmark_technical_preflight_pass:benchmarkPass,
@@ -293,7 +301,10 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       onObservation(e){observations.push(e);},
       // High limits are failsafes, not normal stopping targets.
       // The model should stop as soon as its complete proposal is ready.
-      maxModelTurns:originalD0?10:96,maxModelCallMs:120000,
+      // Paid #41464279775: ten file reads consumed all ten turns.
+      // Fourteen allows ten reads, draft and two bounded corrections.
+      // Still one consented session; no automatic paid retry.
+      maxModelTurns:originalD0?14:96,maxModelCallMs:120000,
       maxPlanningMs:originalD0?180000:900000,
       maxOutputTokens:originalD0?12000:16384,
       thinkingLevel:originalD0?"LOW":"MEDIUM",
@@ -358,7 +369,7 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       engineer_approval:"not_requested",
       operational_delegations:"not_issued",
       can_authorize_execution:false,
-      planner_safety_budgets:{max_model_turns:scenario==="account-suspension"?10:96,
+      planner_safety_budgets:{max_model_turns:scenario==="account-suspension"?14:96,
         max_read_calls:64,max_total_read_bytes:524288,
         max_planning_ms:scenario==="account-suspension"?180000:900000,
         max_model_call_ms:120000,

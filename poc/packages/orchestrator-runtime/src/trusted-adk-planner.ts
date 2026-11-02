@@ -55,7 +55,9 @@ export type PlanningObservation =
      task_count:number;permission_count:number;verified_source_reads:number}
   /** Only static diagnostic categories: never model output, file paths or source. */
   | {kind:"plan_rejection";stage:"grounding"|"json"|"contract";
-     reason:TrustedPlanningRejectionReason};
+     reason:TrustedPlanningRejectionReason}
+  | {kind:"budget_exhausted";budget:"model_turns";
+     completed_turns:number;max_model_turns:number};
 export interface TrustedAdkPlannerConfig {
   model:BaseLlm;
   snapshot:TrustedPlanningSnapshot;
@@ -478,7 +480,13 @@ class BudgetedModel extends BaseLlm {
     if(this.planningSignal.aborted)
       fail("Planning session deadline exceeded");
     const turn=++this.turns;
-    if(turn>this.limit)fail("model turn budget exceeded");
+    if(turn>this.limit){
+      this.onObservation?.(Object.freeze({
+        kind:"budget_exhausted",budget:"model_turns",
+        completed_turns:turn-1,max_model_turns:this.limit
+      }));
+      fail("model turn budget exceeded");
+    }
     // Counts actual delegate invocation attempts, not provider-billed usage.
     this.onObservation?.(Object.freeze({kind:"model_turn",status:"started",turn}));
     // Per-call and session budgets are independent and both must hold.
@@ -690,6 +698,10 @@ export class TrustedAdkReadOnlyPlanner {
         "Inspect authorized files incrementally using the read-only tools.",
         "When sufficient relevant files are understood, stop reading and produce the full JSON plan.",
         "Do not repeatedly inspect the same file or directory unless justified by a new dependency.",
+        "Your total MODEL CALL budget is "+(cfg.maxModelTurns??96)+
+          ". Reserve THREE calls for drafting a COMPLETE JSON proposal and "+
+          "possible trusted corrections; stop tool exploration before the "+
+          "remaining model-call budget reaches three.",
         "Reserve the final reasoning turn for your complete plan; do not exhaust the budget on exploration.",
         "Never request secrets, write tools, extra scope or operations on main.",
         "Return only strict JSON keys: tasks, assumptions, uncertainties.",

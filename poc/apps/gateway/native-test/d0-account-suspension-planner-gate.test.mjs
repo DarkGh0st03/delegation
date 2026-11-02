@@ -98,3 +98,58 @@ test("native pilot preflight still rejects wrong PR ordering and missing read",(
   assert.equal(safeExecutionPreflightRejection(e),"execution_update_without_read");return true;
  });
 });
+
+class TenReadsThenDag extends BaseLlm{
+ constructor(dag,paths){super({model:"scripted-ten-read-gemini-replay"});
+  this.dag=dag;this.paths=paths;this.calls=0;}
+ async *generateContentAsync(){
+  const n=++this.calls;
+  if(n<=this.paths.length){
+   yield {content:{role:"model",parts:[{functionCall:{
+    id:"read-"+n,name:"read_file",args:{
+     branch:"main",path:this.paths[n-1]}
+   }}]}};return;
+  }
+  yield {content:{role:"model",parts:[{text:JSON.stringify(this.dag)}]}};
+ }
+ connect(){return Promise.reject(Error("No network model"));}
+}
+test("replay ten verified file reads: 10 turns fails, 14 allows a complete valid D0 DAG",async()=>{
+ const ten=files.slice(0,10);
+ assert.equal(ten.length,10);
+ const run=limit=>{
+  const model=new TenReadsThenDag(draft(),ten),reads=[],events=[];
+  const attempt=new TrustedAdkReadOnlyPlanner({
+   ...config,model,validateProposedPlan:gate,
+   maxModelTurns:limit,maxProposalRevisions:2,
+   maxOutputTokens:12000,thinkingLevel:"LOW",
+   onObservation:e=>events.push(e),
+   readPort:{async invoke(tool,args){
+    assert.equal(tool,"read_file");
+    assert.ok(ten.includes(args.path));
+    reads.push(args.path);
+    return {provider:"gitea",performed:true,tool,
+     branch:"main",path:args.path,revision:base_revision,
+     content:scenario.files[args.path]};
+   }}
+  }).propose();
+  return {attempt,model,reads,events};
+ };
+ const old=run(10);
+ await assert.rejects(old.attempt,/no verified read-only grounded proposal/);
+ assert.equal(old.reads.length,10);
+ assert.equal(old.model.calls,10);
+ assert.deepEqual(old.events.filter(e=>e.kind==="budget_exhausted"),[
+  {kind:"budget_exhausted",budget:"model_turns",completed_turns:10,
+   max_model_turns:10}
+ ]);
+ assert.equal(old.events.some(e=>e.kind==="proposal"),false);
+ const fixed=run(14);
+ const proposal=await fixed.attempt;
+ assert.equal(fixed.model.calls,11);
+ assert.equal(fixed.reads.length,10);
+ assert.equal(proposal.verified_source_reads,10);
+ assert.equal(gate(proposal).approvedTaskCount,5);
+ assert.equal(fixed.events.some(e=>e.kind==="budget_exhausted"),false);
+ assert.equal(fixed.events.filter(e=>e.kind==="proposal").length,1);
+});
