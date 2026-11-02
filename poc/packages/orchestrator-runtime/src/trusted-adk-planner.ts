@@ -285,6 +285,10 @@ export const TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE=Object.freeze([
   "Inspect relevant existing test conventions before proposing new test-file paths; if the test directory is unavailable, report uncertainty rather than invent a resource.",
   "Specify test cases derived from the requirement, including positive, negative and authorization cases where relevant; never copy a prewritten solution.",
   "Make the Test Agent task depend on every implementation Task whose changes it validates; make Pull Request creation depend on the completed Test Agent task.",
+  "For EVERY update_file grant in a Task, add a read_file grant for the EXACT same path IN THAT SAME Task. A different Task's read does not satisfy the signed native DAG preflight.",
+  "For the signed pilot include exactly ONE root orchestrator create_branch Task with zero dependencies, exactly ONE Test run_tests grant, and exactly ONE orchestrator create_pull_request grant. Include at least one Task for each Backend, Frontend and Test specialist.",
+  "The final run_tests Task must depend transitively on every other file-writing Task. The create_pull_request Task must depend transitively on the final run_tests Task AND every file-writing Task. Do not leave a Test Agent edit after the final Runner.",
+  "If two Tasks update the same authorized file, order the Tasks with explicit dependencies; never propose unordered or overlapping writes. Creating a new test file and reading it must occur in distinct Tasks, with the read downstream of creation.",
   "Verify the proposed Task dependency graph includes implementation, tests and review; keep all permissions minimal and within discovered source."
 ] as const);
 

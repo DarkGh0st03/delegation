@@ -109,6 +109,12 @@ test("ADK Planner reads real Gateway-shaped pinned source, returning only a draf
   assert.ok(system.includes("one shared behavioral contract"));
   assert.ok(system.includes("existing invariants to preserve"));
   assert.ok(system.includes("record the specific uncertainty"));
+  // These are host-owned preflight constraints, not extra grants or model
+  // autonomy. An unapproved live draft gets at most two repair attempts.
+  assert.ok(system.includes("IN THAT SAME Task"));
+  assert.ok(system.includes("exactly ONE Test run_tests grant"));
+  assert.ok(system.includes("depend transitively on the final run_tests Task"));
+  assert.ok(system.includes("never propose unordered or overlapping writes"));
 });
 test("Planner guidance encourages source-grounded tests without granting new tools",()=>{
   assert.ok(Object.isFrozen(TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE));
@@ -118,6 +124,10 @@ test("Planner guidance encourages source-grounded tests without granting new too
   assert.match(text,/discovered directory/);
   assert.match(text,/uncertainty rather than invent/);
   assert.match(text,/authorization cases/);
+  assert.match(text,/read_file grant for the EXACT same path/);
+  assert.match(text,/zero dependencies/);
+  assert.match(text,/final run_tests Task/);
+  assert.match(text,/distinct Tasks/);
   assert.doesNotMatch(text,/apps\/backend\/src\/users|by-department|golden/i);
 });
 
