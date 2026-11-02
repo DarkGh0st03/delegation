@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "F2 final no-billing same-SHA full validation",
-  "candidate_parent_sha": "b9047cacf5f044adbf5d90105697cf54e4adfd15",
-  "purpose": "Strict zero-billing F2 final same-SHA validation. Gateway private projected implementation effects, trusted dispatcher read-only follow-up and preserved preexisting D0/D1 security. No Gemini inference.",
+  "checkpoint": "F3 - trusted ADK integration review and source-free dynamic Test brief",
+  "candidate_parent_sha": "5aefb5d2540908e278e820b9a83595b45e0f5945",
+  "purpose": "No-billing same-SHA validation of F3 original-Orchestrator Google ADK integration review using only F2 Gateway corroborated file-effect metadata, strict checks code allowlist, immutable Engineer-approved DAG and exact Test Task grants. Offline scripted reviewer only; no Gemini provider charges.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
