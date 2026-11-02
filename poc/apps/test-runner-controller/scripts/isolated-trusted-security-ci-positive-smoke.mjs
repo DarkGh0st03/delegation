@@ -798,7 +798,12 @@ async function main(){
       const result=output.split(/\r?\n/u).filter(Boolean).map(line=>{
         try{return JSON.parse(line);}catch{return null;}
       }).find(event=>event?.event==="f1_real_gitea_pilot_parity");
+      const manifest=output.split(/\r?\n/u).filter(Boolean).map(line=>{
+        try{return JSON.parse(line);}catch{return null;}
+      }).find(event=>event?.event==="f1_real_planning_input_manifest");
       assert.equal(result?.status,"pass");
+      assert.equal(result?.input_manifest_digest,manifest?.manifest_digest);
+      assert.equal(manifest?.source_revision,fixture.mainSha);
       assert.equal(result?.real_gateway_core_opa_gitea_reads,true);
       assert.equal(result?.source_revision,fixture.mainSha);
       assert.equal(result?.approval_created,false);
@@ -822,6 +827,7 @@ async function main(){
       process.stdout.write(JSON.stringify({
         event:"f1_real_gitea_planning_only_verified",status:"pass",
         source_revision:fixture.mainSha,
+        input_manifest_digest:result.input_manifest_digest,
         same_native_bootstrap_as_full_pilot:true,
         approval_created:false,operational_root_issued:false,
         provider_writes:0,pr_created:false,gemini_calls:0
