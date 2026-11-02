@@ -59,15 +59,19 @@ test("wrong workflow, SHA, event, re-run, cap, consent, agent repair and missing
   x=>{x.DELEGATION_GEMINI_MODEL="other-model";},
   x=>{x.APPROVED_RUNNER_SCENARIO="department-directory";},
   x=>{x.DELEGATION_SIGNED_GEMINI_REPAIR_D1="1";},
-  x=>{x.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1="1";},
-  x=>{x.PLANNING_REAL_GITEA_ONLY="0";},
-  x=>{x.APPROVED_RUNNER_REAL_GITEA_PLANNING_ONLY="0";}
+  x=>{x.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1="1";}
  ];
  for(const mutate of choices){
    const env=paid();mutate(env);
    assert.throws(()=>verifyRealGiteaPlanningMode(env),/NO-GO/);
    assert.throws(()=>verifyRealGiteaPlanningMode(env,{parent:true}),/NO-GO/);
  }
+});
+test("parent and child cannot enable paid mode without their own opt-in",()=>{
+ const env=paid();env.PLANNING_REAL_GITEA_ONLY="0";
+ assert.throws(()=>verifyRealGiteaPlanningMode(env),/NO-GO/);
+ const other=paid();other.APPROVED_RUNNER_REAL_GITEA_PLANNING_ONLY="0";
+ assert.throws(()=>verifyRealGiteaPlanningMode(other,{parent:true}),/NO-GO/);
 });
 test("no planning-only flag leaves other test paths unchanged",()=>{
  assert.equal(verifyRealGiteaPlanningMode({
