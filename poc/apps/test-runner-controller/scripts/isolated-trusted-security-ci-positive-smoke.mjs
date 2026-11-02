@@ -760,6 +760,74 @@ async function main(){
     const fixture=await stage("commit_reference_implementation",
       ()=>pushReferenceApp(base,workingDir,
         basic(adminUser,adminPassword)),300000);
+    // F1: exact paid-pilot Gitea bootstrap + same native host and read path.
+    // This one-shot zero-billing mode stops BEFORE fixture Engineer approval.
+    if(process.env.APPROVED_RUNNER_REAL_GITEA_PLANNING_ONLY==="1"){
+      if(process.env.APPROVED_RUNNER_NATIVE_EVM!=="1"||
+         scenario.id!=="account-suspension"||
+         process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1"||
+         Boolean(process.env.GEMINI_API_KEY)||
+         process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1"||
+         process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1")
+        throw Error("F1 real Gitea Planning-only refuses paid/recovery execution");
+      const planningScript=fileURLToPath(new URL(
+        "../../gateway/native-test/native-planning-read-core-evm-e2e.mjs",
+        import.meta.url
+      ));
+      const output=await stage("f1_same_bootstrap_planning_only",()=>
+        execFileSync(process.execPath,[
+          "--experimental-strip-types",planningScript
+        ],{
+          cwd:process.cwd(),encoding:"utf8",
+          timeout:300000,maxBuffer:2*1024*1024,
+          env:{...process.env,
+            OPA_URL:opaBaseUrl,
+            PLANNING_DISPOSABLE_GITEA_URL:base,
+            PLANNING_DISPOSABLE_GITEA_READ_TOKEN:creds.readToken,
+            PLANNING_DISPOSABLE_GITEA_WRITE_TOKEN:creds.statusToken,
+            PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha,
+            PLANNING_NATIVE_SIGNED_HANDOFF:"1",
+            PLANNING_NATIVE_POSITIVE_DAG:"1",
+            PLANNING_REAL_GITEA_ONLY:"1",
+            APPROVED_RUNNER_NATIVE_MCP:"1",
+            APPROVED_RUNNER_SCENARIO:scenario.id,
+            DELEGATION_SIGNED_GEMINI_PILOT:"0",
+            GEMINI_API_KEY:""
+          }
+        }),330000);
+      const result=output.split(/\r?\n/u).filter(Boolean).map(line=>{
+        try{return JSON.parse(line);}catch{return null;}
+      }).find(event=>event?.event==="f1_real_gitea_pilot_parity");
+      assert.equal(result?.status,"pass");
+      assert.equal(result?.real_gateway_core_opa_gitea_reads,true);
+      assert.equal(result?.source_revision,fixture.mainSha);
+      assert.equal(result?.approval_created,false);
+      assert.equal(result?.operational_root_issued,false);
+      assert.equal(result?.child_dc_issued,0);
+      assert.equal(result?.a2a_tasks_dispatched,0);
+      assert.equal(result?.provider_writes,0);
+      assert.equal(result?.preliminary_root_revoked,true);
+      assert.equal(result?.gemini_calls,0);
+      assert.equal((await api(base,repository+"/branches/main",{
+        authorization:creds.admin,label:"f1_verify_unchanged_main"
+      })).commit.id,fixture.mainSha);
+      assert.equal((await api(base,repository+"/branches/"+
+        encodeURIComponent(branch),{
+        authorization:creds.admin,label:"f1_verify_unchanged_reference"
+      })).commit.id,fixture.featureSha);
+      const prs=await api(base,repository+"/pulls?state=all",{
+        authorization:creds.admin,label:"f1_verify_no_pr"
+      });
+      assert.deepEqual(prs,[]);
+      process.stdout.write(JSON.stringify({
+        event:"f1_real_gitea_planning_only_verified",status:"pass",
+        source_revision:fixture.mainSha,
+        same_native_bootstrap_as_full_pilot:true,
+        approval_created:false,operational_root_issued:false,
+        provider_writes:0,pr_created:false,gemini_calls:0
+      })+"\n");
+      return; // main() finally tears down isolated Docker and OPA.
+    }
     // R45: exercise the same owner-private, source-free SHA comparison
     // used by an audited fresh recovery against REAL disposable Gitea.
     // Compare the original pinned main to the existing independently
