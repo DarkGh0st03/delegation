@@ -6,6 +6,8 @@ export const REAL_GITEA_PLANNER_WORKFLOW=
   "Gemini Real Gitea Planning-only (Manual, Billed)";
 export const REGISTERED_SIGNED_PILOT_WORKFLOW=
   "Gemini Real - Refactor Signed DAG Account Suspension Pilot (Manual Only)";
+export const DEFAULT_REGISTERED_WORKFLOW=
+  "Gemini Paid - Shared MCP Full E2E (Manual Only)";
 const fail=()=>{throw Error("F1 Gitea Planning-only consent NO-GO");};
 export function verifyRealGiteaPlanningMode(env,{parent=false}={}){
   if(!env||typeof env!=="object"||Array.isArray(env))fail();
@@ -22,7 +24,8 @@ export function verifyRealGiteaPlanningMode(env,{parent=false}={}){
     // dispatch events on GitHub. Reuse the existing default-registered pilot
     // workflow as the paid F1 entrypoint, but only in the explicit F1 mode.
     if(!(env.GITHUB_WORKFLOW===REAL_GITEA_PLANNER_WORKFLOW||
-         (env.GITHUB_WORKFLOW===REGISTERED_SIGNED_PILOT_WORKFLOW&&
+         ([REGISTERED_SIGNED_PILOT_WORKFLOW,DEFAULT_REGISTERED_WORKFLOW]
+          .includes(env.GITHUB_WORKFLOW)&&
           env.DELEGATION_F1_EXECUTION_MODE==="planning-only"))||
        env.DELEGATION_SIGNED_GEMINI_PILOT!=="1"||
        env.APPROVED_RUNNER_SCENARIO!=="account-suspension")
