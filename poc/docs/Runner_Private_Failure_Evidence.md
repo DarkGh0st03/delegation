@@ -15,7 +15,8 @@ retention policy before enabling this on disposable CI. The public pilot uploads
 repository secret `RUNNER_EVIDENCE_KEY_HEX` is configured (32 random bytes, 64 hex
 characters). Keep a separate secure copy of this key to decrypt downloaded files.
 The key is passed only to configuration and sealing steps, not to agent processes.
-Without the secret, retention remains disabled. Encrypted artifacts expire after
+The manual paid pilot refuses to proceed without this secret before provider access.
+The general Runner retention option remains disabled by default. Encrypted artifacts expire after
 7 days. The envelope can be decrypted with `unseal` exported by
 `poc/scripts/seal-runner-evidence.mjs`; its JSON contains base64 file contents.
 Do not publish the key or decrypted output. This code does not configure the

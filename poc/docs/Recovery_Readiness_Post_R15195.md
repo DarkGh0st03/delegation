@@ -35,8 +35,8 @@ readiness. A cancelled or skipped job is not a successful validation.
 
 For a future explicitly authorized paid pilot, configure and retain a separate
 secure copy of `RUNNER_EVIDENCE_KEY_HEX` before enabling encrypted failure evidence.
-No secret was created by this checkpoint. Without it, the paid workflow leaves
-retention disabled and the next failure may again lack recoverable source/logs.
+No secret was created by this checkpoint. Without it, the paid workflow now stops before provider access; this prevents
+repeating a billed failure without recoverable source/logs.
 Provider billing limits and paid execution consent remain separate prerequisites.
 No source/test defect from historical Gemini failures has been conclusively
 reconstructed from the sanitized artifacts available in this thread.
