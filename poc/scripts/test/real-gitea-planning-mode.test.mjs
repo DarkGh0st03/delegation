@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {verifyRealGiteaPlanningMode,REAL_GITEA_PLANNER_WORKFLOW,
-  REGISTERED_SIGNED_PILOT_WORKFLOW}
+  REGISTERED_SIGNED_PILOT_WORKFLOW,DEFAULT_REGISTERED_WORKFLOW}
   from "../real-gitea-planning-mode.mjs";
 const sha="a".repeat(40);
 const paid=()=>({
@@ -41,6 +41,12 @@ test("default-registered paid pilot can host F1 ONLY with explicit planning sele
    DELEGATION_F1_EXECUTION_MODE:"planning-only"};
  assert.equal(verifyRealGiteaPlanningMode(env),"gemini");
  assert.equal(verifyRealGiteaPlanningMode(env,{parent:true}),"gemini");
+ assert.equal(verifyRealGiteaPlanningMode({
+   ...env,GITHUB_WORKFLOW:DEFAULT_REGISTERED_WORKFLOW
+ }),"gemini");
+ assert.equal(verifyRealGiteaPlanningMode({
+   ...env,GITHUB_WORKFLOW:DEFAULT_REGISTERED_WORKFLOW
+ },{parent:true}),"gemini");
  for(const selector of [undefined,"full-d0","", "planning_only"]){
    const bad={...env,DELEGATION_F1_EXECUTION_MODE:selector};
    assert.throws(()=>verifyRealGiteaPlanningMode(bad),/NO-GO/);
