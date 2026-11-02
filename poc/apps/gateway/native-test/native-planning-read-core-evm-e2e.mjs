@@ -1620,6 +1620,10 @@ try{
         }
       }else{
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);
+      assert.equal(globalThis.__nativeDagPositive
+        .f5_original_f2_f3_test_handoff_verified,true);
+      assert.equal(globalThis.__nativeDagPositive
+        .f5_f3_review_mode,"offline_deterministic_adk_metadata_only");
       const sourceWitnessMode=
         process.env.APPROVED_RUNNER_NATIVE_SOURCE_WITNESS==="1";
       const derivedRoutesMode=

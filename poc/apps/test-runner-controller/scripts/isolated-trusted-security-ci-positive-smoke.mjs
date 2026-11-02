@@ -1318,6 +1318,25 @@ async function main(){
         }
         assert.equal(positive?.positive_dag?.project_tests,"pass");
         assert.equal(positive?.positive_dag?.researcher_acceptance,"pass");
+        // F5: do not allow a green native Docker/PR without evidence
+        // that the very same run passed F2 and original-ADK F3 first.
+        assert.equal(positive?.positive_dag
+          ?.f5_original_f2_f3_test_handoff_verified,true);
+        assert.equal(positive?.positive_dag
+          ?.f5_f3_review_mode,"offline_deterministic_adk_metadata_only");
+        assert.equal(positive?.positive_dag
+          ?.f5_f3_test_brief_structural_only,true);
+        const f5Implementers=positive?.positive_dag?.f5_f2_implementation_task_count;
+        const f5Reviews=positive?.positive_dag?.f5_f3_adk_review_count;
+        assert.ok(Number.isSafeInteger(f5Implementers)&&f5Implementers>=2&&
+          f5Implementers<=10);
+        assert.ok(Number.isSafeInteger(f5Reviews)&&f5Reviews>=1&&f5Reviews<=4);
+        assert.ok(Number.isSafeInteger(positive?.positive_dag
+          ?.f5_f2_attested_provider_mutations));
+        if(!realGeminiPilot){
+          assert.equal(f5Implementers,2);
+          assert.equal(f5Reviews,split?2:1);
+        }
         assert.equal(positive?.positive_dag?.tested_commit_sha,
           positive?.positive_dag?.approved_branch_sha);
         if(realGeminiPilot){

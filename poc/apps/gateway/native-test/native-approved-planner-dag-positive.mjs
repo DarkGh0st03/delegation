@@ -346,6 +346,9 @@ export async function runNativePositiveApprovedDag({
     runnerRuns=0,runnerOutcome=null,latestSha=baseSha;
   const runnerHistory=[];
   let firstF4Provenance=null,firstF4WriteSequence=null;
+  // F5: owner-private proof of actually executed F3 reviews. Only digest,
+  // signed Task IDs and counts may leave this host; no prompts or paths.
+  const f5IntegrationReviewReceipts=[];
   let createdPr=null;
   const childIds={},activeChildByRole={},activeTaskByRole={},
     servers=[],urls={},models={};
@@ -1280,8 +1283,18 @@ export async function runNativePositiveApprovedDag({
       // Zero-billing ADK integration review. A future generative reviewer
       // requires its own separately authorized model/budget; the current
       // real pilot must NOT silently gain additional paid calls.
-      integrationReview:input=>new TrustedAdkIntegrationReviewer(
-        new OfflineIntegrationReviewModel()).review(input),
+      integrationReview:async input=>{
+        const review=await new TrustedAdkIntegrationReviewer(
+          new OfflineIntegrationReviewModel()).review(input);
+        // The signed dispatcher independently re-verifies this result
+        // before issuing any Test Child DC or constructing Test instruction.
+        f5IntegrationReviewReceipts.push(Object.freeze({
+          taskId:input.test_task_id,planDigest:review.plan_digest,
+          evidenceDigest:review.evidence_digest,
+          sourceTaskIds:Object.freeze(review.source_tasks.map(x=>x.task_id))
+        }));
+        return review;
+      },
       // No recovery is enabled unless the trusted host supplies BOTH the
       // original Gateway and independently validated same-root epoch intake.
       // Dispatcher.load additionally enforces their exact owner binding.
@@ -1520,6 +1533,44 @@ export async function runNativePositiveApprovedDag({
       new Set(signed.plan.tasks.map(t=>t.id))
     );
     assert.ok(createdPr,"A signed, provider-confirmed PR must be opened");
+    // F5 acceptance gate: the very same signed real-Gitea/Docker run
+    // must attest F2 -> F3 -> completed Test for every original Task.
+    // Scripted ADK has fixture outputs: this is a TRANSPORT/CONTRACT
+    // proof, never an independently generated software correctness claim.
+    const f5Implementations=dispatcher.verifiedImplementationSummaries;
+    const f5ImplementerTasks=signed.plan.tasks.filter(t=>
+      t.agent_id==="backend"||t.agent_id==="frontend");
+    const f5TestTasks=signed.plan.tasks.filter(t=>t.agent_id==="test");
+    assert.equal(f5Implementations.length,f5ImplementerTasks.length,
+      "F5 every signed implementation must have exact Gateway F2 evidence");
+    assert.deepEqual(
+      [...new Set(f5Implementations.map(x=>x.plan_task_id))].sort(),
+      f5ImplementerTasks.map(x=>x.id).sort()
+    );
+    assert.ok(f5Implementations.every(x=>
+      x.status==="gateway_verified_implementation"&&
+      x.plan_digest===planDigest&&x.branch===branch&&
+      x.session_id===sessionId&&SHA.test(x.revision)&&
+      x.gateway_provider_effect_count>=1&&
+      Array.isArray(x.changed_files)&&x.changed_files.every(file=>
+        SHA.test(file.commit_sha)&&
+        ["update_file","create_file"].includes(file.operation))));
+    assert.equal(f5IntegrationReviewReceipts.length,f5TestTasks.length,
+      "F5 every signed Test must receive an ADK integration review");
+    assert.deepEqual(
+      f5IntegrationReviewReceipts.map(x=>x.taskId).sort(),
+      f5TestTasks.map(x=>x.id).sort()
+    );
+    assert.ok(f5IntegrationReviewReceipts.every(x=>
+      x.planDigest===planDigest&&
+      /^[a-f0-9]{64}$/u.test(x.evidenceDigest)&&
+      x.sourceTaskIds.length>0&&
+      x.sourceTaskIds.every(id=>f5Implementations.some(v=>
+        v.plan_task_id===id))));
+    const f5VerifiedMutations=f5Implementations.reduce(
+      (count,x)=>count+x.changed_files.length,0);
+    assert.ok(f5VerifiedMutations<=32*f5Implementations.length,
+      "F5 bounded verified provider mutation evidence required");
     if(realGeminiPilot){
       assert.deepEqual(
         new Set(result.specialized_results.map(x=>x.role)),new Set(ROLES));
@@ -1743,6 +1794,12 @@ export async function runNativePositiveApprovedDag({
     return {
       status:"pass",signed_dag_completed:true,
       retired_gateway_runner_proof_verified:true,
+      f5_original_f2_f3_test_handoff_verified:true,
+      f5_f2_implementation_task_count:f5Implementations.length,
+      f5_f2_attested_provider_mutations:f5VerifiedMutations,
+      f5_f3_adk_review_count:f5IntegrationReviewReceipts.length,
+      f5_f3_review_mode:"offline_deterministic_adk_metadata_only",
+      f5_f3_test_brief_structural_only:true,
       scenario_id:scenarioId,approved_work_branch:branch,
       completed_task_ids:result.completed_task_ids,
       real_a2a_sdk:true,
