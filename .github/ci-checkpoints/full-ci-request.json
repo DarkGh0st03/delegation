@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "D0 unsolved source + proposed-grant readiness, free exact-SHA full CI",
-  "candidate_parent_sha": "bcd5311c884f444c312a27a358c37f5fee9c7b65",
-  "purpose": "Validate current D0 unsolved baseline pinned to real IAM main, account-suspension source grant readiness, native signed-DAG functional Gitea Docker positive and repair, shared MCP real Docker and cumulative offline. Same SHA, no paid inference, no merge, no main change.",
+  "checkpoint": "D0 full Gemini pilot: trusted narrative branch coherence (offline signed gate)",
+  "candidate_parent_sha": "b906f6a28dfeb34efbadf4bd38c0e889d4adf958",
+  "purpose": "Exact-SHA three free CI release gates for native Gemini full pilot after rejecting contradictory feature-branch references in planner branch/PR Task descriptions. Verify scripted ADK/A2A, signed Rust/OPA/Gitea/Docker and acceptance; no billable model calls and no merge.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
