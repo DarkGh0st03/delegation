@@ -11,7 +11,11 @@ const denied=()=>{throw Error("F4 project-test provenance NO-GO");};
 const validPath=p=>typeof p==="string"&&p.length>0&&p.length<=300&&
  !p.startsWith("/")&&!p.includes("\\")&&!p.includes("//")&&
  p.split("/").every(s=>s.length>0&&s!=="."&&s!=="..");
-const testPath=p=>/(?:^|\\/)(?:tests?|__tests__)(?:\\/|$)|\\.(?:test|spec)\\.[^/]+$/iu.test(p);
+const testPath=p=>p.split("/").some(s=>["test","tests","__tests__"].includes(s))||
+ [".test.",".spec."].some(ext=>{
+  const at=p.lastIndexOf(ext);
+  return at>=0&&p.slice(at+ext.length).length>0;
+ });
 export function corroborateF4ProjectTestProvenance({
  runnerOutcome,testedSha,branch,observedWrites,observedTestCreates
 }={}){
