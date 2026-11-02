@@ -18,6 +18,9 @@ import {ACCOUNT_SUSPENSION_REQUIREMENT,getApprovedOfflineScenario} from
 import {evaluatePlannerFeasibility} from "./planner-feasibility-eval.mjs";
 
 export const CONSENT="I AUTHORIZE GEMINI API CHARGES";
+// One source of truth for the manual Account Suspension Planner probe.
+// Bounded model calls are NOT a monetary billing limit.
+export const ACCOUNT_SUSPENSION_PLANNER_MAX_TURNS=20;
 export const FIXTURE_SCENARIOS=Object.freeze({
   "account-suspension":{
     requirement:ACCOUNT_SUSPENSION_REQUIREMENT,
@@ -302,9 +305,11 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       // High limits are failsafes, not normal stopping targets.
       // The model should stop as soon as its complete proposal is ready.
       // Paid #41464279775: ten file reads consumed all ten turns.
-      // Fourteen allows ten reads, draft and two bounded corrections.
+      // Twenty allow the same pinned discovery, a full draft and two
+      // bounded corrections. More turns can increase provider charges.
       // Still one consented session; no automatic paid retry.
-      maxModelTurns:originalD0?14:96,maxModelCallMs:120000,
+      maxModelTurns:originalD0?ACCOUNT_SUSPENSION_PLANNER_MAX_TURNS:96,
+      maxModelCallMs:120000,
       maxPlanningMs:originalD0?180000:900000,
       maxOutputTokens:originalD0?12000:16384,
       thinkingLevel:originalD0?"LOW":"MEDIUM",
@@ -369,7 +374,8 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       engineer_approval:"not_requested",
       operational_delegations:"not_issued",
       can_authorize_execution:false,
-      planner_safety_budgets:{max_model_turns:scenario==="account-suspension"?14:96,
+      planner_safety_budgets:{max_model_turns:scenario==="account-suspension"?
+        ACCOUNT_SUSPENSION_PLANNER_MAX_TURNS:96,
         max_read_calls:64,max_total_read_bytes:524288,
         max_planning_ms:scenario==="account-suspension"?180000:900000,
         max_model_call_ms:120000,

@@ -114,7 +114,7 @@ class TenReadsThenDag extends BaseLlm{
  }
  connect(){return Promise.reject(Error("No network model"));}
 }
-test("replay ten verified file reads: 10 turns fails, 14 allows a complete valid D0 DAG",async()=>{
+test("replay ten verified file reads: 10 turns fails, 20 allows a complete valid D0 DAG",async()=>{
  const ten=files.slice(0,10);
  assert.equal(ten.length,10);
  const run=limit=>{
@@ -144,7 +144,7 @@ test("replay ten verified file reads: 10 turns fails, 14 allows a complete valid
    max_model_turns:10}
  ]);
  assert.equal(old.events.some(e=>e.kind==="proposal"),false);
- const fixed=run(14);
+ const fixed=run(20);
  const proposal=await fixed.attempt;
  assert.equal(fixed.model.calls,11);
  assert.equal(fixed.reads.length,10);

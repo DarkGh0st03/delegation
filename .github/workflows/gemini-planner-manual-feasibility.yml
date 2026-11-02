@@ -62,7 +62,8 @@ jobs:
       PLANNER_AUTHORIZATION: ${{ inputs.authorization }}
       PLANNER_BILLING_CAP_ACKNOWLEDGEMENT: ${{ inputs.billing_cap_acknowledgement }}
       DELEGATION_PLANNER_MODEL: gemini-3.8-flash
-      # Planner fixture pins MEDIUM and bounded 96 turns, 64 reads, 15 minutes.
+      # Account Suspension: LOW, 20 model turns, 2 plan revisions, 180 seconds.
+      # Other scenarios retain their independent settings; max turns is NOT a billing cap.
       DELEGATION_PLANNER_OUTPUT_DIR: /tmp/planner-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout selected development branch without persisted credentials

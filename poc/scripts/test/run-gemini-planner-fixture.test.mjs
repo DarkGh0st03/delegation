@@ -7,7 +7,8 @@ import {getApprovedOfflineScenario} from
   "../../apps/test-runner-controller/fixtures/approved-scenarios.mjs";
 import {makeIsolatedPlanningFixture,assertBillableFixtureOptIn,
   runIsolatedGeminiFixture,classifyPlannerProbeFailure,
-  summarizeIsolatedPlannerGate,FIXTURE_SCENARIOS,CONSENT}
+  summarizeIsolatedPlannerGate,FIXTURE_SCENARIOS,CONSENT,
+  ACCOUNT_SUSPENSION_PLANNER_MAX_TURNS}
   from "../run-gemini-planner-fixture.mjs";
 
 const script=resolve(dirname(fileURLToPath(import.meta.url)),
@@ -170,4 +171,8 @@ test("paid run 41464279775 exhausted local model budget, not a DAG preflight",()
  assert.equal(outcome.verified_source_file_reads,10);
  assert.equal(outcome.rejection_events,1);
  assert.ok(!JSON.stringify(outcome).includes("PRIVATE_FILE"));
+});
+
+test("Account Suspension manual probe budget remains exactly 20 turns, not a billing cap",()=>{
+ assert.equal(ACCOUNT_SUSPENSION_PLANNER_MAX_TURNS,20);
 });
