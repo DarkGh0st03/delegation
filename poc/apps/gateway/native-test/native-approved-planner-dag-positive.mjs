@@ -5,6 +5,8 @@ import {collectSignedGeneratedTestEditScope} from "./verified-generated-test-edi
 import {verifyD1EditorRevision} from "./d1-editor-revision.mjs";
 import {D1GatewayOperationAudit} from "./d1-gateway-operation-audit.mjs";
 import {collectProjectTestRepairCandidateScope} from "./project-test-repair-candidate-scope.mjs";
+import {corroborateF4ProjectTestProvenance}
+ from "./f4-project-test-provenance.mjs";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
 import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
 import {collectAcceptanceRepairCandidateScope} from "./acceptance-repair-candidate-scope.mjs";
@@ -674,6 +676,20 @@ export async function runNativePositiveApprovedDag({
           }
           if((realGeminiPilot||offlineProjectTestProbe)&&runnerRuns===0&&effect.status==="fail"&&
              ["backend_tests","frontend_tests"].includes(effect.phases?.find(p=>p.status==="fail")?.phase)){
+            // F4: owner-private, source-free observation; a failing test
+            // never establishes implementation or test fault causality.
+            // No model request, signed grant, repair Task or provider call.
+            try{
+              const f4=corroborateF4ProjectTestProvenance({
+                runnerOutcome:effect,testedSha:pinned.commit_sha,branch,
+                observedWrites:writePaths,observedTestCreates:observedCreatedPaths
+              });
+              process.stderr.write("[native-dag-adk] f4_project_test_evidence "+
+                JSON.stringify(f4)+"\\n");
+            }catch{
+              process.stderr.write("[native-dag-adk] f4_project_test_evidence "+
+                JSON.stringify({status:"unavailable",causal_attribution:"not_established"})+"\\n");
+            }
             try{verifiedRepairTarget=collectProjectTestRepairCandidateScope({
               effect,testedSha:pinned.commit_sha,repo,branch,approvedRows:grants,
               rootPermissions:coordinator.trustedOperationalAuthority().permissions,
