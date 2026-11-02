@@ -8,6 +8,9 @@ on:
     paths:
       - '.github/workflows/d0-account-suspension-planner-preflight.yml'
       - 'poc/apps/gateway/native-test/d0-account-suspension-planner-gate.test.mjs'
+      - 'poc/scripts/run-gemini-planner-fixture.mjs'
+      - 'poc/scripts/test/run-gemini-planner-fixture.test.mjs'
+      - '.github/workflows/gemini-planner-manual-feasibility.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,3 +32,5 @@ jobs:
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
       - name: Test ADK read-only revision and exact executable DAG preflight
         run: node --experimental-strip-types --test poc/apps/gateway/native-test/d0-account-suspension-planner-gate.test.mjs
+      - name: No-billing manual Gemini fixture contract regressions
+        run: node --test poc/scripts/test/run-gemini-planner-fixture.test.mjs
