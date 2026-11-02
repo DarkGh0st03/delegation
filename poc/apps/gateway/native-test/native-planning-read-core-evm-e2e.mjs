@@ -838,6 +838,11 @@ try{
                   input.feedback.tested_commit_sha);
                 const resource=canonicalFileUri(repo,workBranch,
                   generatedBackendTestFile);
+                if(process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR){
+                  assert.ok(input.diagnostic_assertions?.assertions.some(a=>
+                    a.role==="test"&&a.resource===resource),
+                    "Real generated-Test FAIL must reach the scripted D1 model through original read grants");
+                }
                 assert.deepEqual(input.diagnostic_candidates.candidates,
                   [{role:"test",resource}]);
                 const editorId="r151-signed-generated-test-editor";
@@ -931,8 +936,14 @@ try{
               ]};
 
         };
+        let readVerifiedRepairTarget;
+        let readVerifiedRunnerAssertions;
+        let readVerifiedGeneratedTestEditScope;
+        const readAssertions=async roles=>readVerifiedRunnerAssertions
+          ?readVerifiedRunnerAssertions(roles):null;
         const trustedOwnerRepairAdk=ownerD1AdkProposal
           ?new TrustedAdkOperationalRepairProposer({
+            readVerifiedAssertionContext:readAssertions,
             model:new class extends BaseLlm{
               constructor(){super({model:"r151-native-owner-offline-proposal"});}
               async *generateContentAsync(request){
@@ -980,10 +991,9 @@ try{
             }:{taskShape:"backend_test"})
           })
           :undefined;
-        let readVerifiedRepairTarget;
-        let readVerifiedGeneratedTestEditScope;
         const ownerRepairProposer=paidGeminiRecovery
           ?new TrustedAdkOperationalRepairProposer({
+            readVerifiedAssertionContext:readAssertions,
             readVerifiedRepairTarget:async input=>{
               if(!readVerifiedRepairTarget)
                 throw Error("No trusted Runner attribution after Test FAIL");
@@ -1011,6 +1021,7 @@ try{
         // Test causality, issue authority or perform an extra model call.
         const generatedTestOwnerProposer=paidGeminiRecovery
           ?new TrustedAdkOperationalRepairProposer({
+            readVerifiedAssertionContext:readAssertions,
             readVerifiedRepairTarget:async input=>{
               if(!readVerifiedGeneratedTestEditScope)
                 throw Error("No owner-private generated Test scope");
@@ -1065,7 +1076,7 @@ try{
                   testedSha:input.feedback.tested_commit_sha,
                   sourceTarget:original,generatedTestTarget:generated,
                   chooseInvestigation:async observation=>{
-                    // One extra source-free model choice ONLY if both
+                    // One extra bounded model choice ONLY if both
                     // options exist. Never paid without explicit D1 consent.
                     const decision=createBoundedD1GeminiInvestigationChoice({
                       model:createGeminiAdkModel({
@@ -1073,6 +1084,11 @@ try{
                         model:process.env.DELEGATION_GEMINI_MODEL
                       }),
                       requirement:input.requirement,
+                      branch:input.feedback.work_branch,
+                      assertionContext:await readAssertions([...new Set([
+                        ...(original?.candidates??[]).map(c=>c.role),
+                        ...(generated?.candidates??[]).map(c=>c.role)
+                      ])]),
                       maxCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs
                     });
                     return decision(observation);
@@ -1116,6 +1132,7 @@ try{
               throw Error("Paid recovery requires private signed generated-Test scope");
             if(paidGeminiRecovery||multiTypecheckProbe||signedOfflineSemanticProbe)
               readVerifiedRepairTarget=ports.getVerifiedRepairTarget;
+            readVerifiedRunnerAssertions=ports.getVerifiedRunnerAssertionContext;
             if(paidGeminiRecovery||signedOfflineGeneratedTestProbe)
               readVerifiedGeneratedTestEditScope=ports.getVerifiedGeneratedTestEditScope;
             originalA2APorts=Object.freeze({

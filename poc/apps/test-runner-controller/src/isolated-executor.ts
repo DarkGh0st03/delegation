@@ -464,7 +464,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
 
       if(failed&&this.#config.failure_evidence_dir){
         await retainFailureEvidence({directory:this.#config.failure_evidence_dir,
-          archivePath,log:logs.join("\n"),request,phases,privateVitestFailure});
+          archivePath,log:logs.join("\n"),request,phases,privateVitestFailure,logReference});
       }
       signal.throwIfAborted();
       return {

@@ -1,3 +1,4 @@
+import {loadTrustedRunnerAssertionContext} from "../../../packages/orchestrator-runtime/src/trusted-runner-assertion-context.ts";
 import {selectSignedNativeTestEditD1Tasks} from "./native-owner-d1-task-selection.mjs";
 import {verifiedFailedCreatedTestPaths} from "./verified-failed-generated-test-selection.mjs";
 import {collectSignedGeneratedTestEditScope} from "./verified-generated-test-edit-scope.mjs";
@@ -938,6 +939,11 @@ export async function runNativePositiveApprovedDag({
       await trustedOwnerRecovery.bindOriginalA2APorts({
         agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
         getVerifiedRepairTarget:()=>verifiedRepairTarget,
+        getVerifiedRunnerAssertionContext:roles=>loadTrustedRunnerAssertionContext({
+          directory:process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR,effect:runnerOutcome,
+          repo,branch,approvedRows:grants,
+          rootPermissions:coordinator.trustedOperationalAuthority().permissions,roles
+        }),
         // Owner-only alternative repair scope. No model, A2A or shared MCP
         // can request new grants: this only provides eligible original Test
         // files whose creation and failure were observed by real providers.

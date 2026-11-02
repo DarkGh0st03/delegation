@@ -8,6 +8,7 @@ import type {RunnerRunRequest,RunnerPhaseResult} from "./types.ts";
  * Hashes establish bundle consistency, not independent provider attestation. */
 export async function retainFailureEvidence(input:{directory:string;archivePath:string;
  log:string;request:RunnerRunRequest;phases:RunnerPhaseResult[];
+ logReference?:string;
  privateVitestFailure?:ReturnType<typeof import("./private-vitest-failures.ts").extractPrivateVitestFailures>}):Promise<void>{
  if(!input.phases.some(p=>p.status==="fail"))throw Error("Failure evidence requires a failed phase");
  await mkdir(input.directory,{recursive:true,mode:0o700});
@@ -20,7 +21,9 @@ export async function retainFailureEvidence(input:{directory:string;archivePath:
   await writeFile(join(directory,"runner.log"),log,{mode:0o600,flag:"wx"});
   // Write manifest last: incomplete directories are never complete bundles.
   await writeFile(join(directory,"manifest.json"),JSON.stringify({
-   schema:"runner-private-failure-v1",repository:input.request.repository,
+   schema:"runner-private-failure-v1",
+   ...(input.logReference?{log_reference:input.logReference}:{}),
+   repository:input.request.repository,
    branch:input.request.branch,tested_commit_sha:input.request.commit_sha,
    profile:input.request.profile,phases:input.phases.map(({phase,status})=>({phase,status})),
    archive_sha256:hash(archive),log_sha256:hash(log),

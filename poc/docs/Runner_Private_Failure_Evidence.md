@@ -39,8 +39,8 @@ expected/actual values and stack text; these are test-controlled, untrusted,
 private data. Missing, oversized or malformed reports yield `unavailable` rather
 than invented assertions. They do not change Runner PASS/FAIL or causal attribution.
 The existing encrypted manifest carries these fields; public Runner responses and
-agent/model context do not. A future authorized disclosure path is still required
-before using the assertion details in D1 model reasoning. This is not a complete
+the public Runner response does not. The scoped host disclosure path described
+below controls which bounded headers may enter D1 model reasoning. This is not a complete
 VerifiedFailureContext or an autonomous diagnosis implementation.
 
 
@@ -59,3 +59,20 @@ The native approved DAG has its own Runner constructor. It explicitly receives
 executor does not enable retention on native D0/D1. Functional CI checks both
 Backend and Frontend native FAIL bundles for captured Vitest assertion diagnostics
 before publishing its counts-only recovery receipt. Assertions remain private.
+
+
+The native host now exposes a private loader to the D1 proposer. It matches the
+exact Runner log reference, tested revision, repository and branch, verifies the
+retained log hash, and restricts assertion files to Runner-reported failures with
+original read grants for the selected role in both the signed plan and issued
+root. It discloses only a bounded test ID and the first AssertionError line,
+never stack text or raw logs. The in-process context is branded and immutable;
+serialized or model-supplied copies are rejected before inference. The initial
+route chooser may receive up to two such bounded headers under the union of the
+verified candidate roles; the selected proposer reloads under only its roles.
+A failed assertion remains untrusted evidence and does not establish culpability.
+
+This uses the original authorized Runner effect and host-private retained files;
+it does not perform a new Gateway source read or issue a read credential. With no
+private retention or no exact original read grant, no assertion text is disclosed.
+Existing bundles without the Runner reference cannot supply model context.
