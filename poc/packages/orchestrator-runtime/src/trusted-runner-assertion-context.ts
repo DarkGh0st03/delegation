@@ -81,3 +81,13 @@ export function verifyTrustedRunnerAssertionContext(value:unknown,sha:string,bra
     context.assertions.some(a=>!roles.includes(a.role)))deny();
  return context;
 }
+
+/** Narrow disclosure again at the actual newly admitted Task boundary. */
+export function projectTrustedRunnerAssertionsForTask(value:unknown,sha:string,branch:string,
+ role:string,grants:readonly {operation:string;resource:string}[]):TrustedRunnerAssertionContext|null{
+ const context=verifyTrustedRunnerAssertionContext(value,sha,branch,[role]);
+ const assertions=context.assertions.filter(a=>grants.some(g=>g.operation==="read_file"&&g.resource===a.resource));
+ if(!assertions.length)return null;
+ const projected=Object.freeze({...context,assertions:Object.freeze(assertions)});
+ issued.add(projected);return projected;
+}

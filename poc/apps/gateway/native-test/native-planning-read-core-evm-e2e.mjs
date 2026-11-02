@@ -1248,6 +1248,8 @@ try{
               orchestratorToken:token,
               agentBaseUrls:originalA2APorts.agentBaseUrls,
               a2a:originalA2APorts.a2a,
+              failureContext:{testedSha:signal.tested_commit_sha,
+                loadForRole:role=>readAssertions([role])},
               verifyLiveRun:async()=>{
                 assert.equal(coordinator.phase,"execution");
                 await gatewayOwner.renewLease(session,packet.plan_digest);

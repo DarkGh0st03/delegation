@@ -86,3 +86,11 @@ in the actual scripted model input before generating D1; a fresh Docker PASS and
 review-only draft PR remain required by the original scenario. The workflow
 recovers the private bundle and uploads only a bounded receipt. Its distinct
 workflow path is deliberately excluded from the paid pilot Full CI gate.
+
+
+After D1 admission, the protected A2A dispatcher narrows the private context again
+to that exact signed Task role and `read_file` resources. Only an editor with
+matching read grants receives assertion headers in the JSON Task instruction.
+A run-only validator receives none. The failed SHA is pinned by the owner; no
+permission is inferred from the context. The native generated-Test regression
+also checks this boundary before its real protected A2A send.

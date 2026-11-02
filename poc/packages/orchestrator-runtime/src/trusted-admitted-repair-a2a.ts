@@ -1,3 +1,4 @@
+import {projectTrustedRunnerAssertionsForTask,type TrustedRunnerAssertionContext} from "./trusted-runner-assertion-context.ts";
 import {approvedTaskInstruction} from "./approved-task-instruction.ts";
 /**
  * R135: owner-only, one-shot A2A dispatch for a fresh R133-admitted repair
@@ -31,6 +32,7 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
  Omit<RepairInput,"runtimeTaskId">&{
   agentBaseUrls:Readonly<Record<Role,string>>;
   a2a:ProtectedA2AClientPort;
+  failureContext?:Readonly<{testedSha:string;loadForRole:(role:Role)=>Promise<TrustedRunnerAssertionContext|null>}>;
   /** Owner-private, one-shot hookup after real Rust issuance and BEFORE
    * the protected A2A send. Cannot bind, issue, or grant permissions. */
   beforeProtectedSend?:(issued:Readonly<{
@@ -115,9 +117,16 @@ export async function dispatchTrustedAdmittedRepairA2A(config:
     (config.role==="test"&&!runTests&&!filePermissions.length)||
     (config.role!=="test"&&runTests))
   fail("incompatible repair Agent role or oversized file scope");
+ let assertionContext:TrustedRunnerAssertionContext|null=null;
+ if(config.failureContext&&filePermissions.some(p=>p.operation==="update_file")){
+  const context=await config.failureContext.loadForRole(config.role);
+  if(context)assertionContext=projectTrustedRunnerAssertionsForTask(context,
+    config.failureContext.testedSha,branch,config.role,rows);
+ }
  const subtask:DeterministicSubtask={
   subtask_id:config.taskId,instruction:approvedTaskInstruction(current.plan.requirement,task.description,
-   {repairEditor:filePermissions.some(p=>p.operation==="update_file")}),
+   {repairEditor:filePermissions.some(p=>p.operation==="update_file"),
+    ...(assertionContext?{assertionContext}:{})}),
   branch,relevant_paths:[...relevant],
   approved_file_permissions:filePermissions,
   ...(config.role==="test"?{approved_run_tests:runTests}:{})

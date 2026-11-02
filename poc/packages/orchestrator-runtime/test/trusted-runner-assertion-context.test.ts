@@ -81,3 +81,21 @@ test("route selection sees only verified bounded assertion headers before decidi
  await assert.rejects(createBoundedD1GeminiInvestigationChoice({model,requirement:"Reject duplicates",branch,assertionContext:structuredClone(context)})(observation),/NO-GO/);
  assert.equal(requests.length,1);
 });
+
+
+test("A2A editor context is narrowed to the new Task read grants",async t=>{
+ const f=await fixture(t),context=await load(f.args);
+ const {projectTrustedRunnerAssertionsForTask:project}=await import("../src/trusted-runner-assertion-context.ts");
+ const {approvedTaskInstruction}=await import("../src/approved-task-instruction.ts");
+ assert.equal(project(context,sha,branch,"test",[{resource,operation:"update_file"}]),null);
+ assert.equal(project(context,sha,branch,"test",[{resource:runner,operation:"run_tests"}]),null);
+ assert.equal(project(context,sha,branch,"test",[{resource:resource+"x",operation:"read_file"}]),null);
+ const scoped=project(context,sha,branch,"test",[{resource,operation:"read_file"}]);assert.ok(scoped);
+ const instruction=approvedTaskInstruction("Reject duplicates","Investigate the scoped assertion",{repairEditor:true,assertionContext:scoped});
+ const payload=JSON.parse(instruction.split("\n")[1]);
+ assert.equal(payload.diagnostic_assertions.assertions[0].resource,resource);
+ assert.match(instruction,/untrusted test output/);
+ assert.doesNotMatch(instruction,/SECRET_STACK/);
+ assert.throws(()=>approvedTaskInstruction("Reject duplicates","Run tests",{assertionContext:scoped}),/repair editor/);
+ assert.throws(()=>project(context,sha,branch,"backend",[{resource,operation:"read_file"}]),/NO-GO/);
+});

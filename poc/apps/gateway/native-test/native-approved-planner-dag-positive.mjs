@@ -931,6 +931,14 @@ export async function runNativePositiveApprovedDag({
       const role=["backend","frontend","test"].find(role=>
         activeTaskByRole[role]===request.subtask.subtask_id);
       assert.ok(role,"Preflight requires current trusted role Task");
+      if(offlineGeneratedTestProbe&&process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR&&
+         admittedTestEdit?.taskId===request.subtask.subtask_id){
+        const diagnostic=JSON.parse(request.subtask.instruction.split("\n")[1]).diagnostic_assertions;
+        assert.ok(diagnostic?.assertions.some(a=>a.role==="test"&&
+          request.subtask.approved_file_permissions.some(p=>p.operation==="read_file"&&
+            canonicalFileUri(repo,branch,p.path)===a.resource)),
+          "The protected Test-editor A2A message must carry only Task-readable assertions");
+      }
       approvedPlans.assertRuntimeFileGrants(request.trusted_gateway_task_id,role,
         request.subtask.branch,request.subtask.approved_file_permissions??[]);
       return protectedTransport.sendProtectedTask(request);

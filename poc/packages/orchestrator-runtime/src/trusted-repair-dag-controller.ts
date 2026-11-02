@@ -1,3 +1,4 @@
+import type {TrustedRunnerAssertionContext} from "./trusted-runner-assertion-context.ts";
 /**
  * R137 — trusted owner drives the CURRENT signed repair DAG in dependency
  * order, one Task at a time. This is not an ADK tool, A2A route or MCP API.
@@ -48,6 +49,7 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
  fetchFn?:typeof fetch;
  agentBaseUrls:Readonly<Record<Role,string>>;
  a2a:ProtectedA2AClientPort;
+ failureContext?:Readonly<{testedSha:string;loadForRole:(role:Role)=>Promise<TrustedRunnerAssertionContext|null>}>;
  /** R138: independent original GitHub run check; never a model port. */
  verifyLiveRun?:()=>Promise<void>;
  /** Local trusted owner supplies unique native child ID/status per task;
@@ -191,6 +193,7 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
    ...(config.fetchFn?{fetchFn:config.fetchFn}:{}),
    credential:credentials.get(task.id)!,
    agentBaseUrls:config.agentBaseUrls,a2a:config.a2a,
+   ...(config.failureContext?{failureContext:config.failureContext}:{}),
    ...(config.beforeProtectedSend?{
     beforeProtectedSend:config.beforeProtectedSend
    }:{})
