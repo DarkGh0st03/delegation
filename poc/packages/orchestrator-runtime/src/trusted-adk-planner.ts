@@ -98,7 +98,28 @@ export const TRUSTED_PLANNING_REJECTION_REASONS=Object.freeze([
   "missing_branch_task","missing_branch_dependency",
   "conflicting_unordered_writes","duplicate_task_permission",
   "incorrect_work_branch","invalid_dependencies","invalid_permissions",
-  "execution_dag_incompatible","contract_validation_other"
+  "execution_dag_incompatible",
+  "execution_unsupported_bounds",
+  "execution_duplicate_task_ids",
+  "execution_missing_specialist",
+  "execution_permission_not_in_task",
+  "execution_duplicate_permission",
+  "execution_task_without_grants",
+  "execution_required_operation_count",
+  "execution_first_branch",
+  "execution_cycle",
+  "execution_unknown_task",
+  "execution_branch_dependency",
+  "execution_pr_before_runner",
+  "execution_update_without_read",
+  "execution_unordered_writes",
+  "execution_runner_before_edit",
+  "execution_pr_before_edit",
+  "execution_duplicate_creation",
+  "execution_read_before_creation",
+  "execution_wrong_runner_branch",
+  "execution_bad_file_resource",
+  "contract_validation_other"
 ] as const);
 export type TrustedPlanningRejectionReason=
   typeof TRUSTED_PLANNING_REJECTION_REASONS[number];
@@ -132,6 +153,45 @@ function safePlanningRejection(error:unknown):TrustedPlanningRejectionReason {
   return msg.startsWith(prefix)
     ?SAFE_REJECTIONS[msg.slice(prefix.length)]??"contract_validation_other"
     :"contract_validation_other";
+}
+/** Pure host-owned Pilot DAG diagnostics. Match only exact audited static
+ * errors: no task IDs, paths, model text or arbitrary exception data escapes. */
+const SAFE_EXECUTION_PREFLIGHT_REJECTIONS:Readonly<
+ Record<string,TrustedPlanningRejectionReason>
+>=Object.freeze({
+  "unsupported pilot bounds":"execution_unsupported_bounds",
+  "duplicate Task IDs":"execution_duplicate_task_ids",
+  "bounded pilot requires signed backend Task":"execution_missing_specialist",
+  "bounded pilot requires signed frontend Task":"execution_missing_specialist",
+  "bounded pilot requires signed test Task":"execution_missing_specialist",
+  "permission outside approved Task":"execution_permission_not_in_task",
+  "duplicate Task permission":"execution_duplicate_permission",
+  "Task without approved grants":"execution_task_without_grants",
+  "expected one orchestrator create_branch":"execution_required_operation_count",
+  "expected one orchestrator create_pull_request":"execution_required_operation_count",
+  "expected one test run_tests":"execution_required_operation_count",
+  "first Task must create branch":"execution_first_branch",
+  "cyclic DAG":"execution_cycle",
+  "unknown DAG Task":"execution_unknown_task",
+  "Task not downstream of branch":"execution_branch_dependency",
+  "PR must depend on final Runner":"execution_pr_before_runner",
+  "signed update missing same-Task read":"execution_update_without_read",
+  "unordered or overlapping file writes":"execution_unordered_writes",
+  "Runner must follow every file edit":"execution_runner_before_edit",
+  "PR must follow every file edit":"execution_pr_before_edit",
+  "file created twice":"execution_duplicate_creation",
+  "read of new file before creation":"execution_read_before_creation",
+  "invalid Runner branch":"execution_wrong_runner_branch",
+  "file resource outside branch":"execution_bad_file_resource",
+  "invalid canonical file path":"execution_bad_file_resource",
+  "noncanonical file resource":"execution_bad_file_resource"
+});
+export function safeExecutionPreflightRejection(error:unknown):TrustedPlanningRejectionReason {
+ const msg=error instanceof Error?error.message:"";
+ const prefix="Pilot DAG preflight: ";
+ return msg.startsWith(prefix)
+  ?SAFE_EXECUTION_PREFLIGHT_REJECTIONS[msg.slice(prefix.length)]??"execution_dag_incompatible"
+  :"execution_dag_incompatible";
 }
 function fail(reason:string):never {throw Error("Unapproved Planning: "+reason);}
 function obj(x:unknown):Record<string,unknown> {
@@ -690,7 +750,7 @@ export class TrustedAdkReadOnlyPlanner {
       }catch(error){
         const rejection={stage:"contract" as const,
           reason:executionValidationStarted
-            ? "execution_dag_incompatible" as const
+            ? safeExecutionPreflightRejection(error)
             : safePlanningRejection(error)};
         cfg.onObservation?.(Object.freeze({kind:"plan_rejection",...rejection}));
         if(revisions<maxRevisions&&model.turns<model.limit&&!planningDeadline.aborted){

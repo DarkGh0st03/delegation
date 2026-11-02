@@ -294,7 +294,27 @@ jobs:
                       "duplicate_task_permission","incorrect_work_branch",
                       "invalid_dependencies","invalid_permissions",
                       "execution_dag_incompatible",
-                       "contract_validation_other"
+                      "execution_unsupported_bounds",
+                      "execution_duplicate_task_ids",
+                      "execution_missing_specialist",
+                      "execution_permission_not_in_task",
+                      "execution_duplicate_permission",
+                      "execution_task_without_grants",
+                      "execution_required_operation_count",
+                      "execution_first_branch",
+                      "execution_cycle",
+                      "execution_unknown_task",
+                      "execution_branch_dependency",
+                      "execution_pr_before_runner",
+                      "execution_update_without_read",
+                      "execution_unordered_writes",
+                      "execution_runner_before_edit",
+                      "execution_pr_before_edit",
+                      "execution_duplicate_creation",
+                      "execution_read_before_creation",
+                      "execution_wrong_runner_branch",
+                      "execution_bad_file_resource",
+                      "contract_validation_other"
                     ];
                     const rejection=item.planning_rejection;
                     const planningRejection=rejection&&

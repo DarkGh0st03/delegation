@@ -6,7 +6,7 @@ import {
 import {validatePlan} from "../../plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {compilePlanningProposal,TrustedAdkReadOnlyPlanner,
-  TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE}
+  TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE,safeExecutionPreflightRejection}
   from "../src/trusted-adk-planner.ts";
 
 const FILE="src/billing/invoice.ts";
@@ -818,4 +818,53 @@ test("trusted host-owned execution preflight rejects a model DAG before approval
   assert.ok(observations.some(e=>e.kind==="plan_rejection"&&
     e.stage==="contract"&&e.reason==="execution_dag_incompatible"));
   assert.ok(!JSON.stringify(observations).includes("private untrusted"));
+});
+
+test("native pilot DAG preflight uses only static actionable diagnostic classes",()=>{
+ const known=[
+  ["Pilot DAG preflight: expected one test run_tests","execution_required_operation_count"],
+  ["Pilot DAG preflight: PR must depend on final Runner","execution_pr_before_runner"],
+  ["Pilot DAG preflight: Runner must follow every file edit","execution_runner_before_edit"],
+  ["Pilot DAG preflight: signed update missing same-Task read","execution_update_without_read"],
+  ["Pilot DAG preflight: unordered or overlapping file writes","execution_unordered_writes"],
+  ["Pilot DAG preflight: read of new file before creation","execution_read_before_creation"],
+  ["Pilot DAG preflight: bounded pilot requires signed frontend Task","execution_missing_specialist"]
+ ];
+ for(const [message,category] of known)
+  assert.equal(safeExecutionPreflightRejection(Error(message)),category);
+ const arbitrary="Pilot DAG preflight: SECRET_TASK_OR_FILE";
+ assert.equal(safeExecutionPreflightRejection(Error(arbitrary)),"execution_dag_incompatible");
+ assert.equal(safeExecutionPreflightRejection(Error("private untrusted diagnostic must not escape")),
+  "execution_dag_incompatible");
+});
+
+test("model receives only sanitized exact DAG preflight feedback for bounded same-session revision",async()=>{
+ const requests:LlmRequest[]=[];
+ class Retry extends BaseLlm{
+  count=0;
+  constructor(){super({model:"offline-fixed-preflight-feedback"});}
+  override async *generateContentAsync(r:LlmRequest):AsyncGenerator<LlmResponse,void>{
+   requests.push(r);this.count++;
+   if(this.count===1){
+    yield {content:{role:"model",parts:[{functionCall:{id:"read",name:"read_file",
+     args:{branch:"main",path:FILE}}}]}};return;
+   }
+   yield {content:{role:"model",parts:[{text:JSON.stringify(draft())}]}}; 
+  }
+  override connect(_r:LlmRequest):Promise<BaseLlmConnection>{return Promise.reject(Error("offline"));}
+ }
+ const observations:any[]=[];let attempts=0;
+ const result=await new TrustedAdkReadOnlyPlanner({
+  ...cfg,model:new Retry(),maxProposalRevisions:1,maxModelTurns:4,
+  readPort:{async invoke(tool:string){return {provider:"gitea",performed:true,tool,
+   branch:"main",path:FILE,revision:SNAPSHOT.base_revision,content:"source"};}},
+  validateProposedPlan:()=>{if(++attempts===1)
+    throw Error("Pilot DAG preflight: PR must depend on final Runner");},
+  onObservation:o=>observations.push(o)
+ }).propose();
+ assert.equal(result.status,"unapproved_proposal");assert.equal(attempts,2);
+ assert.deepEqual(observations.filter(o=>o.kind==="plan_rejection"),[
+  {kind:"plan_rejection",stage:"contract",reason:"execution_pr_before_runner"}]);
+ assert.ok(JSON.stringify(requests[2].contents.at(-1)).includes("execution_pr_before_runner"));
+ assert.ok(!JSON.stringify(observations).includes("private"));
 });
