@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
+      TEST_RUNNER_FAILURE_EVIDENCE_DIR: ${{ runner.temp }}/functional-private-evidence
       ADAPTER_TRUST_PROFILE: evm
       ADAPTER_CALLER_ENGINEER: local-native-engineer-ci
       ADAPTER_CALLER_GATEWAY: local-native-gateway-ci
@@ -512,11 +513,47 @@ jobs:
           # The authenticated owner's journal reserves and the SAME Gateway
           # independently admits signed D1; no repair A2A PASS/PR is claimed.
           npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
+      - name: Recover private evidence from application FAIL scenarios (NO AI)
+        run: |
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            import {randomBytes,createHash} from "node:crypto";
+            import {readFile,rm,writeFile} from "node:fs/promises";
+            import {sealDirectory,unseal} from "./poc/scripts/seal-runner-evidence.mjs";
+            const directory=process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR;
+            const output=process.env.RUNNER_TEMP+"/functional-private-evidence.enc";
+            const key=randomBytes(32).toString("hex");
+            assert.equal(await sealDirectory(directory,output,key),true);
+            const recovered=JSON.parse(unseal(await readFile(output),key));
+            const phases={};
+            for(const bundle of recovered.bundles){
+              const manifest=JSON.parse(Buffer.from(bundle.files["manifest.json"],"base64"));
+              assert.match(manifest.tested_commit_sha,/^[a-f0-9]{40}$/);
+              for(const [file,field] of [["source.tar.gz","archive_sha256"],["runner.log","log_sha256"]]){
+                const bytes=Buffer.from(bundle.files[file],"base64");
+                assert.equal(createHash("sha256").update(bytes).digest("hex"),manifest[field]);
+              }
+              const phase=manifest.phases.find(p=>p.status==="fail")?.phase;
+              assert.ok(phase);
+              phases[phase]=(phases[phase]??0)+1;
+            }
+            assert.ok(phases.backend_tests>=1&&phases.frontend_tests>=1,
+              "Both application test failure paths must retain recoverable evidence");
+            await writeFile("/tmp/functional-private-evidence-receipt.json",JSON.stringify({
+              schema:"functional-private-evidence-roundtrip-v1",status:"PASS",
+              recovered_bundles:recovered.bundles.length,failed_phase_counts:phases,
+              framework_sha:process.env.GITHUB_SHA,raw_evidence_uploaded:false
+            },null,2)+"\n");
+            await rm(directory,{recursive:true,force:true});
+            await rm(output);
+          '
       - name: Upload sanitized functional evidence - not model/runner logs
         uses: actions/upload-artifact@v4
         with:
           name: functional-signed-dag-account-suspension
-          path: /tmp/functional-evidence.json
+          path: |
+            /tmp/functional-evidence.json
+            /tmp/functional-private-evidence-receipt.json
           if-no-files-found: error
           retention-days: 14
       - name: Report strictly limited service status on failure

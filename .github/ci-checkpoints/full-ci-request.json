@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R151.95 - D1 signed repair-editor guidance after real Gemini no-write FAIL",
-  "candidate_parent_sha": "fa538a7523bb44d9b559cf154fdaa14c8cb6e6c4",
-  "purpose": "After paid pilot 41342947143 backend_tests FAIL and D1 no_confirmed_editor_write, validate owner-derived D1 repair-editor instructions without changing signed scope, Rust authority, Runner attestation, or the existing signed A2A JSON context contract. Strictly NO Gemini inference.",
+  "checkpoint": "Post R151.95 - application D1 recovery and private evidence round trip",
+  "candidate_parent_sha": "d00dc90c74b0b2fcf1cfd2792e70d4ce12b983d8",
+  "purpose": "Validate existing generated Test, Backend and Frontend real Gitea/Docker D1 FAIL-to-PASS scenarios and recover their private failure archives/logs through encryption. No paid model calls. Public artifacts contain only bounded counts.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
