@@ -42,3 +42,13 @@ The existing encrypted manifest carries these fields; public Runner responses an
 agent/model context do not. A future authorized disclosure path is still required
 before using the assertion details in D1 model reasoning. This is not a complete
 VerifiedFailureContext or an autonomous diagnosis implementation.
+
+
+The free Docker evidence job also runs the real Vitest 3.2.7 JSON reporter (the
+version in immutable IAM baseline 405748b1), captures a synthetic 200-versus-409
+assertion using the production phase command plus private reporter flags, seals
+the private manifest and checks the recovered assertion. This isolates reporter
+compatibility; it injects fixture repository metadata and is not a full IAM
+application or live Gitea validation. npm fetches the pinned version in disposable
+Docker; no model key is used. npm transitive resolution for this compatibility
+fixture is not the IAM lockfile install.

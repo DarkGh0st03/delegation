@@ -37,7 +37,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: shared-mcp-real-positive-e2e-${{ github.ref }}
+  # A skipped development push must not cancel an active full checkpoint.
+  group: shared-mcp-real-positive-e2e-${{ github.event_name == 'push' && github.ref == 'refs/heads/refactor/post-prof-plan-contracts-20261021' && !contains(github.event.head_commit.message, '[full-ci]') && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
