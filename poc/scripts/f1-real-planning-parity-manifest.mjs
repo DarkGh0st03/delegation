@@ -5,9 +5,9 @@ import {createHash} from "node:crypto";
 import {accountSuspensionPlanningConfig}
   from "./account-suspension-planning-config.mjs";
 const hash=value=>createHash("sha256").update(JSON.stringify(value)).digest("hex");
-function canonicalInventory(items){
+function canonicalInventory(items,{allowRoot=false}={}){
   if(!Array.isArray(items)||items.some(v=>typeof v!=="string"||
-     !v||v.length>240)||new Set(items).size!==items.length)
+     (v===""&&!allowRoot)||v.length>240)||new Set(items).size!==items.length)
     throw Error("Invalid trusted F1 input inventory");
   return [...items].sort();
 }
@@ -26,7 +26,7 @@ export function realPlanningParityManifest({snapshot,requirement,workBranch,
     repository_digest:hash(snapshot.repository),
     inventory_digest:hash({
       files:canonicalInventory(snapshot.files),
-      directories:canonicalInventory(snapshot.directories)
+      directories:canonicalInventory(snapshot.directories,{allowRoot:true})
     }),
     work_branch_digest:hash(workBranch),
     plan_id_digest:hash(planId),
