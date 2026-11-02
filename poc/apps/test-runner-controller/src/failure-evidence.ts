@@ -7,7 +7,8 @@ import type {RunnerRunRequest,RunnerPhaseResult} from "./types.ts";
  * The configured directory must be retained by the operator across CI teardown.
  * Hashes establish bundle consistency, not independent provider attestation. */
 export async function retainFailureEvidence(input:{directory:string;archivePath:string;
- log:string;request:RunnerRunRequest;phases:RunnerPhaseResult[]}):Promise<void>{
+ log:string;request:RunnerRunRequest;phases:RunnerPhaseResult[];
+ privateVitestFailure?:ReturnType<typeof import("./private-vitest-failures.ts").extractPrivateVitestFailures>}):Promise<void>{
  if(!input.phases.some(p=>p.status==="fail"))throw Error("Failure evidence requires a failed phase");
  await mkdir(input.directory,{recursive:true,mode:0o700});
  const directory=await mkdtemp(join(input.directory,"failure-"));
@@ -22,7 +23,10 @@ export async function retainFailureEvidence(input:{directory:string;archivePath:
    schema:"runner-private-failure-v1",repository:input.request.repository,
    branch:input.request.branch,tested_commit_sha:input.request.commit_sha,
    profile:input.request.profile,phases:input.phases.map(({phase,status})=>({phase,status})),
-   archive_sha256:hash(archive),log_sha256:hash(log)
+   archive_sha256:hash(archive),log_sha256:hash(log),
+   ...(input.privateVitestFailure?{private_vitest_failure:{
+    provenance:"runner_captured_test_controlled_report",
+    causal_attribution:"not_established",...input.privateVitestFailure}}:{})
   },null,2)+"\n",{mode:0o600,flag:"wx"});
  }catch(error){await rm(directory,{recursive:true,force:true});throw error;}
 }

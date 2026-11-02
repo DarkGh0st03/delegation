@@ -1,3 +1,4 @@
+import {extractPrivateVitestFailures} from "./private-vitest-failures.ts";
 import {retainFailureEvidence} from "./failure-evidence.ts";
 import {extractProjectE2eFailureDiagnostic} from "../scripts/project-e2e-failure-diagnostic.mjs";
 import {extractAcceptanceFailureSummary} from "./acceptance-diagnostics.ts";
@@ -272,6 +273,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
     let acceptanceFailure:ReturnType<typeof extractAcceptanceFailureSummary>=null;
     let containerCreateAttempted = false;
     let failed = false;
+    let privateVitestFailure:ReturnType<typeof extractPrivateVitestFailures>|undefined;
 
     try {
       signal.throwIfAborted();
@@ -365,9 +367,14 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
           continue;
         }
 
+        const privateVitest=this.#config.failure_evidence_dir&&
+          (fixed.phase==="backend_tests"||fixed.phase==="frontend_tests");
+        const reportPath="/tmp/private-"+fixed.phase+"-vitest.json";
+        const command=privateVitest?fixed.command+
+          " --reporter=default --reporter=json --outputFile="+reportPath:fixed.command;
         const result = await executeCommand(
           "docker",
-          ["exec", containerName, "bash", "-lc", fixed.command]
+          ["exec", containerName, "bash", "-lc", command]
       );
 
         logs.push(
@@ -388,6 +395,12 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
              !result.timed_out)
             failingTestFiles=extractVitestFailureFiles(
               result.stdout,result.stderr,fixed.phase);
+          if(privateVitest&&(fixed.phase==="backend_tests"||fixed.phase==="frontend_tests")){
+            // A fixed Runner-owned path, never a path supplied by an agent.
+            const report=await executeCommand("docker",["exec",containerName,"cat",reportPath]);
+            privateVitestFailure=extractPrivateVitestFailures(
+              report.exit_code===0&&!report.timed_out?report.stdout:"",fixed.phase);
+          }
           failed = true;
           phases.push({
             phase: fixed.phase,
@@ -451,7 +464,7 @@ export class IsolatedDockerRunnerExecutor implements RunnerExecutor {
 
       if(failed&&this.#config.failure_evidence_dir){
         await retainFailureEvidence({directory:this.#config.failure_evidence_dir,
-          archivePath,log:logs.join("\n"),request,phases});
+          archivePath,log:logs.join("\n"),request,phases,privateVitestFailure});
       }
       signal.throwIfAborted();
       return {

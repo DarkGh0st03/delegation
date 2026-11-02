@@ -29,3 +29,16 @@ plaintext directory and verifies recovered archive bytes, log hash and tested SH
 The encryption key is ephemeral and no artifact is uploaded by this test. This
 checks real Docker evidence retention, not live Gitea, Gemini or application D1.
 Locally opt in with `RUNNER_EVIDENCE_REAL_DOCKER=1` after pulling the fixed image.
+
+
+When private retention is enabled, project test phases additionally use Vitest
+JSON reporting at fixed container-local paths while preserving default terminal
+reporting. On a failed phase, the Runner captures up to 16 failed assertion IDs
+and their bounded failure messages into the private manifest. Messages may include
+expected/actual values and stack text; these are test-controlled, untrusted,
+private data. Missing, oversized or malformed reports yield `unavailable` rather
+than invented assertions. They do not change Runner PASS/FAIL or causal attribution.
+The existing encrypted manifest carries these fields; public Runner responses and
+agent/model context do not. A future authorized disclosure path is still required
+before using the assertion details in D1 model reasoning. This is not a complete
+VerifiedFailureContext or an autonomous diagnosis implementation.
