@@ -100,6 +100,10 @@ for(const v of [token,engineerToken,engineerDid]){
 }
 // Strict opt-in: normal signed-DAG CI stays zero-billing and byte-identical.
 const geminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
+// F1: run the very same native host on real disposable Gitea, but
+// stop after trusted Planning; never stage or sign Engineer approval.
+const realPlanningOnly=process.env.PLANNING_REAL_GITEA_ONLY==="1";
+const PLANNING_ONLY_COMPLETED=Symbol("completed preliminary Planning");
 const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1"&&
   process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
 const signedOfflineTypecheckProbe=
@@ -152,6 +156,12 @@ if(process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1"&&
       "I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH"))
   throw Error("R151.12 paid repair epoch requires separate explicit billing consent");
 const ownerRecoveryEnabled=ownerD1Probe||paidGeminiRecovery;
+if(realPlanningOnly&&(geminiPilot||Boolean(process.env.GEMINI_API_KEY)||
+   !realGitea||!positiveDag||!signedHandoff||
+   scenario.id!=="account-suspension"||ownerRecoveryEnabled||
+   signedOfflineRecovery||signedOfflineTypecheckProbe||
+   signedOfflineSemanticProbe||signedOfflineMultiTest))
+  throw Error("F1 Planning-only must be unbilled, signed-preliminary and real Gitea");
 // The isolated Docker smoke script executes several independent native
 // subprocesses. Its opt-in flag is inherited by ALL of them, while only
 // the explicit owner-D1 subprocess can run the R151 proposal path.
@@ -540,8 +550,8 @@ try{
     model,snapshot,workBranch,
     requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
     planId:"native-planning-proposal",agents,readPort:port,
-    ...(geminiPilot?{
-      ...accountSuspensionPlanningConfig("pilot"),
+    ...((geminiPilot||realPlanningOnly)?{
+      ...accountSuspensionPlanningConfig(realPlanningOnly?"real-planning-only":"pilot"),
       validateProposedPlan:proposal=>{
         // These proposed rows are NOT signed grants or execution authority.
         preflightApprovedPilotDag({
@@ -658,6 +668,38 @@ try{
       "signed_vp","delegation_evidence","credential_status"]){
       assert.ok(!visible.includes(secret),"Planner leaked private authority");
     }
+  }
+  if(realPlanningOnly){
+    // All proposal compilation and the exact pilot preflight already ran.
+    // No operational root, signed approval or Agent task has been created.
+    assert.equal(coordinator.phase,"planning");
+    assert.equal(log.prepares,log.adapterPresentations);
+    assert.equal(log.executions,log.adapterPresentations);
+    assert.equal((await liveClient.getBranchMetadata("main")).commit_sha,baseSha);
+    assert.equal((await liveClient.getBranchMetadata(scenario.fixtureBranch)).commit_sha,
+      originalFeature);
+    await authorityClient.revokeRoot(rootId);
+    revoked=true;
+    revisions.end(session);
+    const beforeDenied=log.giteaReads;
+    await assert.rejects(port.invoke("read_file",{branch:"main",path:file}));
+    assert.equal(log.giteaReads,beforeDenied);
+    process.stdout.write(JSON.stringify({
+      event:"f1_real_gitea_pilot_parity",status:"pass",
+      source_revision:baseSha,
+      verified_source_reads:proposed.verified_source_reads,
+      approved_task_count:proposed.plan.tasks.length,
+      approved_permission_count:proposed.plan.requested_permissions.length,
+      real_gateway_core_opa_gitea_reads:true,
+      approval_created:false,operational_root_issued:false,
+      child_dc_issued:0,a2a_tasks_dispatched:0,
+      provider_writes:0,preliminary_root_revoked:true,
+      main_unchanged:true,gemini_calls:0,
+      planning_profile:"real-planning-only"
+    })+"\n");
+    // Top-level ESM has no return; a unique sentinel guarantees that the
+    // module finally block still disposes owner-private temporary files.
+    throw PLANNING_ONLY_COMPLETED;
   }
   // Obtain a second bounded challenge and JWT BEFORE revocation, so the
   // post-revocation failure exercises the native Rust verifier directly,
@@ -1848,6 +1890,7 @@ try{
     ...(ownerRecoveryEnabled?{owner_repair_review:ownerD1ReviewEvidence}:{})
   }));
 }catch(error){
+  if(error!==PLANNING_ONLY_COMPLETED){
   if(geminiPilot){
     // A fixed-vocabulary diagnostic only; never forward provider exception
     // text, model prompts, repository source, tool args, or authorization.
@@ -1888,6 +1931,7 @@ try{
     })+"\n");
   }
   throw error;
+  }
 }finally{
   try{
     if(issued&&!revoked)await authorityClient.revokeRoot(rootId);
