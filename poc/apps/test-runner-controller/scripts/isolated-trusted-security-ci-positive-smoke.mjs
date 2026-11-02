@@ -50,6 +50,8 @@ import {TrustedGiteaPriorDiffReader}
   from "../../../packages/orchestrator-runtime/src/trusted-gitea-prior-diff-reader.ts";
 import {safeNativeDockerFailureDiagnostic}
   from "./native-dag-result-diagnostic.mjs";
+import {verifyRealGiteaPlanningMode}
+  from "../../../scripts/real-gitea-planning-mode.mjs";
 import {safeGeminiPilotChildObservations,
   safeGeminiPilotAgentObservations}
   from "../../../scripts/signed-gemini-pilot-usage.mjs";
@@ -763,23 +765,21 @@ async function main(){
     // F1: exact paid-pilot Gitea bootstrap + same native host and read path.
     // This one-shot zero-billing mode stops BEFORE fixture Engineer approval.
     if(process.env.APPROVED_RUNNER_REAL_GITEA_PLANNING_ONLY==="1"){
+      const f1PlanningMode=verifyRealGiteaPlanningMode(process.env,{parent:true});
+      const paidOnly=f1PlanningMode==="gemini";
       if(process.env.APPROVED_RUNNER_NATIVE_EVM!=="1"||
-         scenario.id!=="account-suspension"||
-         process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1"||
-         Boolean(process.env.GEMINI_API_KEY)||
-         process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1"||
-         process.env.APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1==="1")
-        throw Error("F1 real Gitea Planning-only refuses paid/recovery execution");
+         scenario.id!=="account-suspension")
+        throw Error("F1 real Gitea Planning-only refuses noncanonical scenario");
       const planningScript=fileURLToPath(new URL(
         "../../gateway/native-test/native-planning-read-core-evm-e2e.mjs",
         import.meta.url
       ));
-      const output=await stage("f1_same_bootstrap_planning_only",()=>
-        execFileSync(process.execPath,[
+      const output=await stage("f1_same_bootstrap_planning_only",()=>{
+        try{return execFileSync(process.execPath,[
           "--experimental-strip-types",planningScript
         ],{
           cwd:process.cwd(),encoding:"utf8",
-          timeout:300000,maxBuffer:2*1024*1024,
+          timeout:paidOnly?900000:300000,maxBuffer:2*1024*1024,
           env:{...process.env,
             OPA_URL:opaBaseUrl,
             PLANNING_DISPOSABLE_GITEA_URL:base,
@@ -791,10 +791,47 @@ async function main(){
             PLANNING_REAL_GITEA_ONLY:"1",
             APPROVED_RUNNER_NATIVE_MCP:"1",
             APPROVED_RUNNER_SCENARIO:scenario.id,
-            DELEGATION_SIGNED_GEMINI_PILOT:"0",
-            GEMINI_API_KEY:""
+            DELEGATION_SIGNED_GEMINI_PILOT:paidOnly?"1":"0",
+            GEMINI_API_KEY:paidOnly?process.env.GEMINI_API_KEY:""
           }
-        }),330000);
+        });}catch(error){
+          // One strictly limited, non-source-bearing diagnostic. The raw
+          // child stdout/stderr is NEVER printed to GitHub Action logs.
+          if(paidOnly){
+            const raw=Buffer.isBuffer(error?.stderr)
+              ?error.stderr.toString("utf8"):"";
+            const prefix="[signed-gemini-pilot] ";
+            for(const line of raw.split(/\r?\n/u).filter(x=>
+              x.startsWith(prefix)&&x.length<4096).slice(-12)){
+              try{
+                const event=JSON.parse(line.slice(prefix.length));
+                const stages=["setup","gemini_planning","gemini_plan_proposed"];
+                const categories=["planner_contract_rejected",
+                  "model_provider_failure","test_assertion","unclassified_failure"];
+                if(stages.includes(event.stage)&&
+                   categories.includes(event.category)&&
+                   Number.isSafeInteger(event.model_turns_started)&&
+                   event.model_turns_started>=0&&
+                   event.model_turns_started<=24){
+                  const reason=event.planning_rejection?.reason;
+                  const safeReason=typeof reason==="string"&&
+                    /^(?:shape_(?:proposal|task|permission)_(?:fields|object|list|string)|invalid_[a-z_]+|execution_[a-z_]+)$/u.test(reason)
+                    ?reason:"unclassified";
+                  process.stderr.write("[f1-real-gemini] "+JSON.stringify({
+                    stage:event.stage,category:event.category,
+                    rejection_category:safeReason,
+                    model_turns_started:event.model_turns_started,
+                    approval_created:false,operational_root_issued:false
+                  })+"\n");
+                }
+              }catch{/* Arbitrary child output is never published */}
+            }
+            for(const item of safeGeminiPilotChildObservations(error?.stdout))
+              process.stderr.write("[f1-real-gemini] "+JSON.stringify(item)+"\n");
+          }
+          throw Error("F1 preliminary-only child failed closed; raw logs withheld");
+        }
+      },paidOnly?960000:330000);
       const result=output.split(/\r?\n/u).filter(Boolean).map(line=>{
         try{return JSON.parse(line);}catch{return null;}
       }).find(event=>event?.event==="f1_real_gitea_pilot_parity");
@@ -812,7 +849,11 @@ async function main(){
       assert.equal(result?.a2a_tasks_dispatched,0);
       assert.equal(result?.provider_writes,0);
       assert.equal(result?.preliminary_root_revoked,true);
-      assert.equal(result?.gemini_calls,0);
+      assert.equal(result?.model_source,paidOnly?"real_gemini":"offline_scripted");
+      if(paidOnly){
+        assert.ok(Number.isSafeInteger(result?.gemini_calls));
+        assert.ok(result.gemini_calls>0&&result.gemini_calls<=24);
+      }else assert.equal(result?.gemini_calls,0);
       assert.equal((await api(base,repository+"/branches/main",{
         authorization:creds.admin,label:"f1_verify_unchanged_main"
       })).commit.id,fixture.mainSha);
@@ -830,7 +871,9 @@ async function main(){
         input_manifest_digest:result.input_manifest_digest,
         same_native_bootstrap_as_full_pilot:true,
         approval_created:false,operational_root_issued:false,
-        provider_writes:0,pr_created:false,gemini_calls:0
+        provider_writes:0,pr_created:false,
+        gemini_calls:result.gemini_calls,
+        model_source:result.model_source
       })+"\n");
       return; // main() finally tears down isolated Docker and OPA.
     }
