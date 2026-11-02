@@ -13,10 +13,17 @@ import {isAbsolute,normalize,resolve,join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
   "../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
+import {ACCOUNT_SUSPENSION_REQUIREMENT,getApprovedOfflineScenario} from
+  "../apps/test-runner-controller/fixtures/approved-scenarios.mjs";
 import {evaluatePlannerFeasibility} from "./planner-feasibility-eval.mjs";
 
 export const CONSENT="I AUTHORIZE GEMINI API CHARGES";
 export const FIXTURE_SCENARIOS=Object.freeze({
+  "account-suspension":{
+    requirement:ACCOUNT_SUSPENSION_REQUIREMENT,
+    workBranch:getApprovedOfflineScenario("account-suspension").workBranch,
+    gradeAs:"account-suspension"
+  },
   "department-directory":{
     requirement:"Enable an administrator to search the IAM user directory by department (case-insensitive), with an authenticated API, accessible frontend and meaningful tests. Preserve existing account suspension/reactivation semantics.",
     workBranch:"feature/experiment-department-directory",
@@ -61,9 +68,14 @@ export function makeIsolatedPlanningFixture(scenario){
       throw Error("baseline already includes the requested accessibility semantics");
   }
 
-  const paths=entries.map(([p])=>p);
+  const allPaths=entries.map(([p])=>p);
+  // The complete original pilot reference contains the E2E expected output,
+  // but the disposable baseline presents that file as NOT YET CREATED.
+  const paths=scenario==="account-suspension"?
+    allPaths.filter(p=>p!==getApprovedOfflineScenario("account-suspension")
+      .planning_intent.newTestFile):allPaths;
   const dirs=new Set([""]);
-  for(const p of paths){
+  for(const p of allPaths){
     const parts=p.split("/");
     for(let i=1;i<parts.length;i++)dirs.add(parts.slice(0,i).join("/"));
   }
@@ -90,7 +102,8 @@ export function makeIsolatedPlanningFixture(scenario){
         return {...common,default_branch:"main",full_name:"thesis/iam-console-poc"};
       if((tool==="list_directory"||tool==="read_file")&&
           args.branch==="main"&&typeof args.path==="string"){
-        if(tool==="read_file"&&Object.hasOwn(files,args.path))
+        if(tool==="read_file"&&paths.includes(args.path)&&
+           Object.hasOwn(files,args.path))
           return {...common,branch:"main",path:args.path,content:files[args.path]};
         if(tool==="list_directory"&&dirs.has(args.path)){
           const prefix=args.path?args.path+"/":"";
@@ -194,6 +207,12 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
   let status="failed_closed";
   try{
     const model=createGeminiAdkModel({apiKey,model:modelName});
+    const originalD0=scenario==="account-suspension";
+    // Only this scenario uses the same EXECUTABLE DAG validation and bounded
+    // same-session correction feedback as the original failed paid pilot.
+    const executablePreflight=originalD0?
+      (await import("../apps/gateway/native-test/approved-dag-preflight.mjs"))
+        .preflightApprovedPilotDag:null;
     const planner=new TrustedAdkReadOnlyPlanner({
       model,snapshot:fixture.snapshot,requirement:fixture.spec.requirement,
       planId:"isolated_"+scenario.replaceAll("-","_")+"_v1",
@@ -202,9 +221,18 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       onObservation(e){observations.push(e);},
       // High limits are failsafes, not normal stopping targets.
       // The model should stop as soon as its complete proposal is ready.
-      maxModelTurns:96,maxModelCallMs:120000,
-      maxPlanningMs:900000,maxOutputTokens:16384,
-      thinkingLevel:"MEDIUM"
+      maxModelTurns:originalD0?10:96,maxModelCallMs:120000,
+      maxPlanningMs:originalD0?180000:900000,
+      maxOutputTokens:originalD0?12000:16384,
+      thinkingLevel:originalD0?"LOW":"MEDIUM",
+      ...(originalD0?{
+        maxProposalRevisions:2,
+        validateProposedPlan:p=>executablePreflight({
+          plan:p.plan,grants:p.plan.requested_permissions,
+          repo:fixture.snapshot.repository,
+          branch:fixture.spec.workBranch
+        })
+      }:{})
     });
     const proposal=await planner.propose();
     // This benchmark checks model feasibility only. The in-memory port
@@ -212,8 +240,10 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
     const report=evaluatePlannerFeasibility({
       scenario:fixture.spec.gradeAs,
       expectedBaseRevision:fixture.snapshot.base_revision,
-      proposal,observations
+      proposal,observations,
+      ...(originalD0?{trustedSnapshot:fixture.snapshot}:{})
     });
+    if(originalD0)report.native_executable_dag_preflight="pass";
     await persistJson(outputDir,"proposal.json",proposal);
     await persistJson(outputDir,"observations.json",observations);
     await persistJson(outputDir,"evaluation.json",report);
@@ -251,10 +281,13 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       engineer_approval:"not_requested",
       operational_delegations:"not_issued",
       can_authorize_execution:false,
-      planner_safety_budgets:{max_model_turns:96,max_read_calls:64,
-        max_total_read_bytes:524288,max_planning_ms:900000,
-        max_model_call_ms:120000,max_output_tokens:16384,
-        thinking_level:"MEDIUM"},
+      planner_safety_budgets:{max_model_turns:scenario==="account-suspension"?10:96,
+        max_read_calls:64,max_total_read_bytes:524288,
+        max_planning_ms:scenario==="account-suspension"?180000:900000,
+        max_model_call_ms:120000,
+        max_output_tokens:scenario==="account-suspension"?12000:16384,
+        thinking_level:scenario==="account-suspension"?"LOW":"MEDIUM",
+        max_proposal_revisions:scenario==="account-suspension"?2:0},
       provider_tokens_and_cost:"not_measured"
     });
   }
@@ -264,7 +297,7 @@ async function main(){
   const [flag,scenario]=process.argv.slice(2);
   if(process.argv.length!==4||
      !["--dry-run","--execute"].includes(flag))
-    throw Error("usage: --dry-run|--execute department-directory|suspension-feedback");
+    throw Error("usage: --dry-run|--execute account-suspension|department-directory|suspension-feedback");
   const fixture=makeIsolatedPlanningFixture(scenario);
   if(flag==="--dry-run"){
     process.stdout.write(JSON.stringify({
