@@ -68,6 +68,8 @@ import {makeOfflineReviewableDag} from
   "../../../packages/orchestrator-runtime/test/fixtures/offline-planning-dag.mjs";
 import {BaseLlm} from "@google/adk";
 import {accountSuspensionPlanningConfig} from "../../../scripts/account-suspension-planning-config.mjs";
+import {verifyRealGiteaPlanningMode}
+  from "../../../scripts/real-gitea-planning-mode.mjs";
 import {realPlanningParityManifest} from "../../../scripts/f1-real-planning-parity-manifest.mjs";
 import {SIGNED_GEMINI_PILOT,verifySignedGeminiPilotConsent}
   from "../../../scripts/signed-gemini-pilot-consent.mjs";
@@ -104,6 +106,8 @@ const geminiPilot=process.env.DELEGATION_SIGNED_GEMINI_PILOT==="1";
 // F1: run the very same native host on real disposable Gitea, but
 // stop after trusted Planning; never stage or sign Engineer approval.
 const realPlanningOnly=process.env.PLANNING_REAL_GITEA_ONLY==="1";
+const f1PlanningMode=verifyRealGiteaPlanningMode(process.env);
+const paidPlanningOnly=f1PlanningMode==="gemini";
 const PLANNING_ONLY_COMPLETED=Symbol("completed preliminary Planning");
 const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1"&&
   process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
@@ -173,7 +177,7 @@ if(ownerD1AdkProposal&&geminiPilot)
 const signedOfflineMultiTest=positiveDag&&
   (process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1"||
    signedOfflineGeneratedTestProbe);
-if(realPlanningOnly&&(geminiPilot||Boolean(process.env.GEMINI_API_KEY)||
+if(realPlanningOnly&&(!["gemini","scripted"].includes(f1PlanningMode)||
    !realGitea||!positiveDag||!signedHandoff||
    scenario.id!=="account-suspension"||ownerRecoveryEnabled||
    signedOfflineRecovery||signedOfflineTypecheckProbe||
@@ -706,7 +710,8 @@ try{
       approval_created:false,operational_root_issued:false,
       child_dc_issued:0,a2a_tasks_dispatched:0,
       provider_writes:0,preliminary_root_revoked:true,
-      main_unchanged:true,gemini_calls:0,
+      main_unchanged:true,gemini_calls:geminiPilot?pilotModelTurns:0,
+      model_source:geminiPilot?"real_gemini":"offline_scripted",
       planning_profile:"real-planning-only"
     })+"\n");
     // Top-level ESM has no return; a unique sentinel guarantees that the
