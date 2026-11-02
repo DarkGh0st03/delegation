@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "Real Gitea Gemini Planning-only: final zero-billing same-SHA release gate",
-  "candidate_parent_sha": "f1094e52e319feff64b543bef98bfa6afe093aab",
-  "purpose": "Validate one frozen source snapshot after adding a strictly manual paid real-Gitea Planning-only mode. Existing F1 offline path must remain zero-billing. Preserve signed D0 F2-F5, real OPA/VP and Rust, Gitea/Docker independent acceptance, immutable SHA, and no approval or automatic Gemini invocations. This is the one final 3-workflow free gate before any separately consented isolated Gemini attempt.",
+  "checkpoint": "F1 registered manual Gemini-only Gitea Planner: final exact-SHA free release gates",
+  "candidate_parent_sha": "9449ff187ef479314686c0dfbcd91d0e388b8e75",
+  "purpose": "One final 3-CC offline gate after registering the new dev-only manual workflow with a free push guard (#41505046954 SUCCESS, paid job SKIPPED). Guarantee exact SHA across signed Rust/OPA, independent ADK/A2A/MCP, disposable Gitea/Docker Acceptance, F2-F5 integrated D0, no model generation, no approval and no merge. For manual consented Planning-only later; no paid Gemini in this checkpoint.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
