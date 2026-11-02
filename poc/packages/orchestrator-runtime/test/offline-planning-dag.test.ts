@@ -147,3 +147,33 @@ test("newly-created Test file may be edited only after its signed creator Task",
     /file absent from trusted Planning snapshot/);
  }
 });
+
+test("demo lifecycle contract survives plan approval and initial/D1 task instructions",async()=>{
+ const {getApprovedOfflineScenario}=await import("../../../apps/test-runner-controller/fixtures/approved-scenarios.mjs");
+ const {makeApproval,assertApprovedPlanScope}=await import("../../plan-contracts/src/plan.mjs");
+ const {RUST_OPERATIONS}=await import("../../../apps/gateway/src/operation-catalog.ts");
+ const {approvedTaskInstruction}=await import("../src/approved-task-instruction.ts");
+ const requirement=getApprovedOfflineScenario("account-suspension").requirement;
+ assert.ok(requirement.length<4000,"fits both Planner and D1 requirement budgets");
+ for(const invariant of ["HTTP 409","disable","delayed","profile","x-demo-role: admin","/reactivate"])
+  assert.ok(requirement.includes(invariant),invariant);
+ const sketch=makeOfflineReviewableDag({snapshot,edits,newTestFile:"tests/e2e/inventory.spec.ts"});
+ const proposal=compilePlanningProposal(sketch,{...config,requirement});
+ const allowedOperations=new Set(RUST_OPERATIONS);
+ const approval=makeApproval(proposal.plan,{allowedOperations,
+  decision_id:"lifecycle-review",approved_by:"did:example:engineer",
+  approved_at:"2026-11-02T00:00:00Z",
+  approved_permission_ids:proposal.plan.requested_permissions.map(p=>p.id)});
+ assertApprovedPlanScope(proposal.plan,approval,{allowedOperations,expectedEngineerDid:"did:example:engineer"});
+ for(const task of proposal.plan.tasks.filter(t=>t.agent_id!=="orchestrator")){
+  for(const repairEditor of [false,true]){
+   const instruction=approvedTaskInstruction(proposal.plan.requirement,task.description,{repairEditor});
+   const data=JSON.parse(instruction.split("\n")[1]);
+   assert.equal(data.approved_requirement,requirement);
+   assert.equal(data.task_brief,task.description);
+  }
+ }
+ const altered=structuredClone(proposal.plan);
+ altered.requirement="Accept repeated transitions silently";
+ assert.throws(()=>assertApprovedPlanScope(altered,approval,{allowedOperations,expectedEngineerDid:"did:example:engineer"}));
+});

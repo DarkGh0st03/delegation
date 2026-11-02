@@ -176,9 +176,20 @@ const IAM_EDIT_INTENT=Object.freeze({
   ])
 });
 const IAM_TEST_FILE="tests/e2e/account-suspension.spec.ts";
+// Domain input shared by scripted replay and the real Planner. This describes
+// observable behavior; reference implementations and grants remain separate.
+export const ACCOUNT_SUSPENSION_REQUIREMENT=[
+  "Implement account suspension and reactivation in the IAM Console for the demo administrator.",
+  "Shared lifecycle contract: ACTIVE can become SUSPENDED through POST /api/users/:id/suspend; SUSPENDED can become ACTIVE through POST /api/users/:id/reactivate. Preserve the existing admin authorization convention (x-demo-role: admin), user lookup and profile-edit behavior.",
+  "A successful transition must persist in the existing repository and be observable through GET /api/users/:id and the UI. Preserve all unrelated user profile fields. Follow the inspected response contract consistently across Backend, Frontend and Test; the existing project expects HTTP 200 with updated user details.",
+  "Reject repeated suspension of a SUSPENDED account and repeated reactivation of an ACTIVE account with HTTP 409, without changing its state. Preserve existing unauthenticated-request rejection and unknown-user error behavior; inspect the authorized source before changing error payloads.",
+  "On the user detail page, display the current status and the corresponding accessible action: Suspend account for ACTIVE, Reactivate account for SUSPENDED. After success, show the persisted next status and matching action without losing profile functionality.",
+  "While a lifecycle request is pending, disable its action and prevent duplicate submissions even when the response is delayed. On failure, retain the previous status, show an error and allow a retry after the request settles.",
+  "Add regression coverage for both successful transitions, persistence and profile preservation, both duplicate-transition conflicts, authorization, UI state changes, delayed responses and error recovery. Keep test expectations aligned with this requirement and inspected shared interfaces; report unresolved contract ambiguities instead of inventing incompatible expectations."
+].join("\n");
 export const APPROVED_OFFLINE_SCENARIOS=Object.freeze({
   "account-suspension":Object.freeze({
-    id:"account-suspension",requirement:"Implement account suspension and reactivation",
+    id:"account-suspension",requirement:ACCOUNT_SUSPENSION_REQUIREMENT,
     fixtureBranch:"feature/account-suspension",workBranch:"feature/native-planning-read",
     statusIndexBase:18071,
     files:ACCOUNT_SUSPENSION_REFERENCE_FILES,
