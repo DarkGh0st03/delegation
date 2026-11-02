@@ -13,6 +13,8 @@ import {isAbsolute,normalize,resolve,join} from "node:path";
 import {pathToFileURL} from "node:url";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
   "../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
+import {ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES}
+ from "../apps/test-runner-controller/fixtures/account-suspension-unsolved-baseline.mjs";
 import {ACCOUNT_SUSPENSION_REQUIREMENT,getApprovedOfflineScenario} from
   "../apps/test-runner-controller/fixtures/approved-scenarios.mjs";
 import {evaluatePlannerFeasibility} from "./planner-feasibility-eval.mjs";
@@ -50,7 +52,11 @@ const validPath=p=>typeof p==="string"&&p.length>0&&
 
 export function makeIsolatedPlanningFixture(scenario){
   const spec=requireCase(scenario);
-  const files=ACCOUNT_SUSPENSION_REFERENCE_FILES;
+  // Match the real disposable Gitea's *unsolved* main, not the
+  // fully implemented reference output used to score Docker acceptance.
+  const files=scenario==="account-suspension"?
+    ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES:
+    ACCOUNT_SUSPENSION_REFERENCE_FILES;
   const entries=Object.entries(files).sort(([a],[b])=>a.localeCompare(b));
   if(entries.length<5||entries.some(([p,body])=>!validPath(p)||
        typeof body!=="string"||!body))
@@ -71,7 +77,11 @@ export function makeIsolatedPlanningFixture(scenario){
       throw Error("baseline already includes the requested accessibility semantics");
   }
 
-  const allPaths=entries.map(([p])=>p);
+  // Future E2E target is NOT readable as an existing source file. Its
+  // parent directory remains on the allowlist for legitimate test creation.
+  const allPaths=scenario==="account-suspension"?
+    Object.keys(ACCOUNT_SUSPENSION_REFERENCE_FILES).sort():
+    entries.map(([p])=>p);
   // The complete original pilot reference contains the E2E expected output,
   // but the disposable baseline presents that file as NOT YET CREATED.
   const paths=scenario==="account-suspension"?

@@ -5,6 +5,13 @@ import {fileURLToPath} from "node:url";
 import {resolve,dirname} from "node:path";
 import {getApprovedOfflineScenario} from
   "../../apps/test-runner-controller/fixtures/approved-scenarios.mjs";
+import {createHash} from "node:crypto";
+import {ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES,
+ ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT,
+ ACCOUNT_SUSPENSION_BASELINE_GIT_BLOB_HASHES}
+ from "../../apps/test-runner-controller/fixtures/account-suspension-unsolved-baseline.mjs";
+import {ACCOUNT_SUSPENSION_REFERENCE_FILES}
+ from "../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
 import {makeIsolatedPlanningFixture,assertBillableFixtureOptIn,
   runIsolatedGeminiFixture,classifyPlannerProbeFailure,
   summarizeIsolatedPlannerGate,FIXTURE_SCENARIOS,CONSENT,
@@ -175,4 +182,44 @@ test("paid run 41464279775 exhausted local model budget, not a DAG preflight",()
 
 test("Account Suspension manual probe budget remains exactly 20 turns, not a billing cap",()=>{
  assert.equal(ACCOUNT_SUSPENSION_PLANNER_MAX_TURNS,20);
+});
+
+test("D0 unsolved main is byte-pinned and never exposes a solved answer to Gemini",async()=>{
+ assert.equal(ACCOUNT_SUSPENSION_BASELINE_PUBLIC_COMMIT,
+  "405748b1e77992b6bd8630a3ab6f990658d32f6b");
+ const expected=getApprovedOfflineScenario("account-suspension");
+ const existing=Object.keys(ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES).sort();
+ const future=expected.planning_intent.newTestFile;
+ assert.equal(existing.length,10);
+ assert.deepEqual([...existing,future].sort(),Object.keys(expected.files).sort());
+ assert.equal(Object.keys(ACCOUNT_SUSPENSION_BASELINE_GIT_BLOB_HASHES).length,10);
+ for(const path of existing){
+  const source=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[path];
+  const blob=createHash("sha1")
+   .update("blob "+Buffer.byteLength(source,"utf8")+"\0")
+   .update(source,"utf8").digest("hex");
+  assert.equal(blob,ACCOUNT_SUSPENSION_BASELINE_GIT_BLOB_HASHES[path],
+   "immutable Git blob mismatch for "+path);
+ }
+ const source=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES;
+ assert.doesNotMatch(source["apps/backend/src/users/user.service.ts"],
+  /suspendUser\(|reactivateUser\(/u);
+ assert.doesNotMatch(source["apps/backend/src/users/user.routes.ts"],
+  /\/:id\/(?:suspend|reactivate)/u);
+ assert.doesNotMatch(source["apps/frontend/src/api/users-api.ts"],
+  /suspendUser\(|reactivateUser\(/u);
+ assert.doesNotMatch(source["apps/frontend/src/pages/UserDetailPage.tsx"],
+  /changeStatus\(/u);
+ assert.match(ACCOUNT_SUSPENSION_REFERENCE_FILES[
+  "apps/backend/src/users/user.routes.ts"],/\/:id\/suspend/u);
+ const fixture=makeIsolatedPlanningFixture("account-suspension");
+ assert.equal(fixture.snapshot.files.length,10);
+ assert.ok(fixture.snapshot.directories.includes("tests/e2e"));
+ assert.ok(!fixture.snapshot.files.includes(future));
+ for(const path of existing){
+  const r=await fixture.readPort.invoke("read_file",{branch:"main",path});
+  assert.equal(r.content,source[path]);
+ }
+ assert.deepEqual([...new Set(fixture.invokedReads.filter(x=>x.tool==="read_file")
+  .map(x=>x.path))].sort(),existing);
 });

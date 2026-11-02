@@ -1,5 +1,7 @@
 # ONE-SHOT MANUAL ONLY — no push, schedule, PR or automatic paid inference.
 # Scientific Planning-only probe over the isolated IAM source fixture.
+# Account Suspension uses the pinned UNSOLVED source on public main (405748b1),
+# NOT the reference solution intended for independent Docker acceptance.
 # NO operational DCs, no actual Gateway/OPA/Gitea authority, no code writes.
 name: Gemini Planner — Manual Feasibility Experiment
 
