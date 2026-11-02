@@ -853,3 +853,54 @@ test("D1 repair-editor guidance is bounded, non-authoritative and distinct from 
   assert.equal(approvedTaskInstruction(requirement,task,{repairEditor:false}),initial);
   assert.throws(()=>approvedTaskInstruction(requirement,task,{repairEditor:"yes" as any}),/mode/u);
 });
+
+test("F2 dispatcher requires private Gateway summary and preserves signed Task boundaries",async()=>{
+ const h=harness();
+ const seen:any[]=[];
+ const d=await TrustedApprovedA2ADispatcher.load({
+  ...h.config,verifiedImplementationRead:async (pins:any)=>{
+   seen.push(structuredClone(pins));
+   return {status:"gateway_verified_implementation",
+    ...pins,changed_files:[],gateway_provider_effect_count:1};
+  }
+ } as any);
+ await d.runOrchestratorTask("branch",async id=>{h.log.push("provider:"+id);});
+ await d.dispatch("backend-task");
+ assert.deepEqual(d.completedTaskIds,["branch","backend-task"]);
+ await d.dispatch("frontend-task");
+ assert.equal(seen.length,2);
+ assert.deepEqual(seen.map(x=>x.plan_task_id),["backend-task","frontend-task"]);
+ assert.equal(seen[0]!.role,"backend");
+ assert.equal(seen[1]!.role,"frontend");
+ assert.equal(seen[0]!.branch,branch);
+ assert.match(seen[0]!.runtime_task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+ assert.notEqual(seen[0]!.runtime_task_id,seen[1]!.runtime_task_id);
+ const summaries=d.verifiedImplementationSummaries;
+ assert.equal(summaries.length,2);
+ assert.ok(summaries.every(x=>x.status==="gateway_verified_implementation"));
+ assert.ok(!JSON.stringify(summaries).includes("validated by A2A"));
+});
+
+test("F2 forged Gateway receipt fails closed before unlocking subsequent Task",async()=>{
+ for(const corrupt of [
+  (p:any)=>({...p,plan_digest:"b".repeat(64)}),
+  (p:any)=>({...p,revision:"b".repeat(40)}),
+  (p:any)=>({...p,role:"frontend"}),
+  (p:any)=>({...p,changed_files:[{path:"private/secret.ts",operation:"update_file",commit_sha:sha}]})
+ ]){
+  const h=harness();
+  const d=await TrustedApprovedA2ADispatcher.load({
+   ...h.config,verifiedImplementationRead:async (pins:any)=>corrupt({
+    status:"gateway_verified_implementation",...pins,
+    changed_files:[],gateway_provider_effect_count:1
+   })
+  } as any);
+  await d.runOrchestratorTask("branch",async id=>{h.log.push("provider:"+id);});
+  await assert.rejects(d.dispatch("backend-task"),/F2 trusted implementation projection mismatch/);
+  assert.deepEqual(d.completedTaskIds,["branch"]);
+  assert.equal(d.verifiedImplementationSummaries.length,0);
+  assert.equal(h.coordinator.phase,"closed");
+  await assert.rejects(d.dispatch("frontend-task"),/inactive|dependencies/);
+  assert.ok(!h.log.some(x=>x.startsWith("run:frontend-task:")));
+ }
+});

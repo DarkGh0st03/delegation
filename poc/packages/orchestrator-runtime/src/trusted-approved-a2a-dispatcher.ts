@@ -427,14 +427,15 @@ export class TrustedApprovedA2ADispatcher {
           ...result.artifact.files_modified.map(path=>"update_file\\0"+path),
           ...result.artifact.files_created.map(path=>"create_file\\0"+path)
         ].sort();
-        const effects=receipt?.changed_files?.map(x=>x.operation+"\\0"+x.path).sort();
-        if(receipt?.status!=="gateway_verified_implementation"||
+        const effects=receipt?.changed_files?.map(x=>x.operation+"\\0"+x.path);
+        if(!Array.isArray(effects)||
+           receipt?.status!=="gateway_verified_implementation"||
            receipt.session_id!==pins.session_id||receipt.plan_digest!==pins.plan_digest||
            receipt.plan_task_id!==pins.plan_task_id||
            receipt.runtime_task_id!==pins.runtime_task_id||
            receipt.role!==role||receipt.branch!==pins.branch||
            receipt.revision!==pins.revision||
-           JSON.stringify(claims)!==JSON.stringify([...new Set(effects)]?.sort()))
+           JSON.stringify(claims)!==JSON.stringify([...new Set(effects)].sort()))
           throw Error("F2 trusted implementation projection mismatch");
         this.#verifiedImplementations.set(task.id,structuredClone(receipt));
       }
