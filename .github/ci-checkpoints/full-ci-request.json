@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R151.96 - signed D1 operation provenance and denied/update distinction",
-  "candidate_parent_sha": "e94ee27122765dc02ff2f01dda04cb1f5fa7e3bb",
-  "purpose": "Validate no-billing same-SHA full CI after adding private trusted Gateway operation-level D1 audit. Distinguish no update attempt, denied, incomplete provider effect, provider effect not correlated to the signed repair Task, and confirmed update. Preserve existing D0 planning, signed delegated A2A/VP Rust/OPA/Gitea, real Docker recovery, private assertion context, and encrypted evidence. Never invoke Gemini.",
+  "checkpoint": "Post run 41422395907 - actionable trusted Gemini DAG preflight categories",
+  "candidate_parent_sha": "64ff4bddc84bec21d178eb91b1197b86332695c0",
+  "purpose": "Validate same-SHA free CI with strict static-only execution DAG preflight reason classification and bounded same-session Planner correction feedback. Preserve signed approval, Rust/OPA/VP, Gateway A2A, Gitea/Docker and private failure evidence. No Gemini API calls or billed execution.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
