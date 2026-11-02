@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {extractSafeGeminiPilotUsage as extract,
   safeGeminiPilotChildObservations as sanitizeChild,
   safeGeminiPilotAgentObservations as agentObservations,
+  safeF1RealGiteaPlanningFailure as safeF1Failure,
   extractSafeGeminiPilotAgentSummary as agentSummary} from
   "../signed-gemini-pilot-usage.mjs";
 const event=obj=>JSON.stringify(obj);
@@ -347,4 +348,57 @@ test("D1 task-level attempts and provider effects survive safe double sanitizati
   assert.equal(evidence.update_provider_confirmed,1);
   assert.doesNotMatch(forwarded,/SECRET|PRIVATE/);
  }
+});
+
+test("F1 paid child failures preserve ONLY static diagnostics for string and Buffer stderr",()=>{
+  const privateToken="PRIVATE_CREDENTIAL_DO_NOT_ECHO";
+  const observation="[signed-gemini-pilot] "+JSON.stringify({
+    stage:"gemini_planning",category:"planner_contract_rejected",
+    planning_rejection:{stage:"contract",reason:"execution_update_without_read",
+      secret:privateToken},
+    model_turns_started:13,model_failure:"none",
+    reason:privateToken,raw_response:privateToken,
+    assertion_location:{module:"planning_harness",line:709},
+    approved_task_counts:{backend:42,secret:privateToken}
+  });
+  const raw="invalid error "+privateToken+"\n"+observation+"\n"+
+    "[signed-gemini-pilot] {bad-json}\n";
+  const fromString=safeF1Failure(raw);
+  const fromBuffer=safeF1Failure(Buffer.from(raw));
+  assert.deepEqual(fromString,fromBuffer);
+  assert.deepEqual(fromString,[{
+    stage:"gemini_planning",category:"planner_contract_rejected",
+    rejection_category:"execution_update_without_read",
+    model_failure:"none",model_turns_started:13,
+    approval_created:false,operational_root_issued:false,
+    assertion_location:{module:"planning_harness",line:709}
+  }]);
+  assert.ok(!JSON.stringify(fromString).includes(privateToken));
+  assert.ok(Object.isFrozen(fromString));
+  assert.ok(Object.isFrozen(fromString[0]));
+});
+test("F1 diagnostic does not publish arbitrary provider text, paths or spoofed errors",()=>{
+  const secret="PRIVATE_STUFF_NEVER_ECHO";
+  const encoded=event=>"[signed-gemini-pilot] "+JSON.stringify(event);
+  const rows=[
+    encoded({stage:"gemini_planning",category:secret,
+      model_turns_started:1}),
+    encoded({stage:secret,category:"unclassified_failure",
+      model_turns_started:1}),
+    encoded({stage:"gemini_planning",category:"model_provider_failure",
+      model_turns_started:999}),
+    encoded({stage:"gemini_planning",category:"model_provider_failure",
+      model_turns_started:7,model_failure:secret,
+      planning_rejection:{reason:secret},
+      assertion_location:{module:secret,line:1}})
+  ];
+  const safe=safeF1Failure(rows.join("\n"));
+  assert.equal(safe.length,1);
+  assert.equal(safe[0].rejection_category,"not_reported");
+  assert.equal(safe[0].model_failure,"unknown");
+  assert.equal(Object.hasOwn(safe[0],"assertion_location"),false);
+  assert.ok(!JSON.stringify(safe).includes(secret));
+  assert.deepEqual(safeF1Failure(null),[]);
+  assert.deepEqual(safeF1Failure({toString:()=>secret}),[]);
+  assert.deepEqual(safeF1Failure("x".repeat(2_200_001)),[]);
 });

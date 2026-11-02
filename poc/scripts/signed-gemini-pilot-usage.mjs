@@ -1,3 +1,75 @@
+/** Only fixed-vocabulary, source-free diagnostic fields can escape a paid
+ * F1 child. execFileSync({encoding:"utf8"}) returns stderr as a STRING,
+ * whereas the unencoded version returns a Buffer. Both are valid here. */
+const F1_FAILURE_STAGES=new Set(["setup","gemini_planning","gemini_plan_proposed"]);
+const F1_FAILURE_CATEGORIES=new Set(["planner_contract_rejected",
+  "model_provider_failure","test_assertion","unclassified_failure"]);
+const F1_MODEL_FAILURES=new Set(["none","authentication",
+  "permission_or_billing","quota_or_rate_limit",
+  "model_or_endpoint_not_found","invalid_request_or_tool_schema",
+  "provider_server_error","transport_or_timeout","unknown"]);
+const F1_PLANNING_REJECTIONS=new Set([
+  "ungrounded_or_missing_output","invalid_json","invalid_proposal_shape",
+  "shape_proposal_fields","shape_proposal_object","shape_proposal_list",
+  "shape_proposal_string","shape_task_fields","shape_task_object",
+  "shape_task_list","shape_task_string","shape_permission_fields",
+  "shape_permission_object","shape_permission_string",
+  "invalid_task_count","invalid_task_identity","unsupported_agent_role",
+  "unsupported_tool_for_role","unauthorized_existing_file",
+  "unauthorized_new_file","invalid_path","invalid_permission_path",
+  "missing_branch_task","missing_branch_dependency",
+  "conflicting_unordered_writes","duplicate_task_permission",
+  "incorrect_work_branch","invalid_dependencies","invalid_permissions",
+  "execution_dag_incompatible","execution_unsupported_bounds",
+  "execution_duplicate_task_ids","execution_missing_specialist",
+  "execution_permission_not_in_task","execution_duplicate_permission",
+  "execution_task_without_grants","execution_required_operation_count",
+  "execution_first_branch","execution_cycle","execution_unknown_task",
+  "execution_branch_dependency","execution_pr_before_runner",
+  "execution_update_without_read","execution_unordered_writes",
+  "execution_runner_before_edit","execution_pr_before_edit",
+  "execution_duplicate_creation","execution_read_before_creation",
+  "execution_wrong_runner_branch","execution_bad_file_resource",
+  "contract_validation_other"
+]);
+export function safeF1RealGiteaPlanningFailure(stderr){
+  const raw=typeof stderr==="string"?stderr:
+    Buffer.isBuffer(stderr)?stderr.toString("utf8"):"";
+  if(Buffer.byteLength(raw,"utf8")>2_200_000)return Object.freeze([]);
+  const safe=[];
+  const prefix="[signed-gemini-pilot] ";
+  for(const line of raw.split(/\r?\n/u)){
+    if(safe.length>=12)break;
+    if(!line.startsWith(prefix)||line.length>4096)continue;
+    let event;
+    try{event=JSON.parse(line.slice(prefix.length));}
+    catch{continue;}
+    if(!event||typeof event!=="object"||Array.isArray(event)||
+       !F1_FAILURE_STAGES.has(event.stage)||
+       !F1_FAILURE_CATEGORIES.has(event.category)||
+       !Number.isSafeInteger(event.model_turns_started)||
+       event.model_turns_started<0||event.model_turns_started>24)continue;
+    const reason=event.planning_rejection?.reason;
+    const modelFailure=event.model_failure;
+    const result={
+      stage:event.stage,category:event.category,
+      rejection_category:F1_PLANNING_REJECTIONS.has(reason)
+        ?reason:"not_reported",
+      model_failure:F1_MODEL_FAILURES.has(modelFailure)
+        ?modelFailure:"unknown",
+      model_turns_started:event.model_turns_started,
+      approval_created:false,operational_root_issued:false
+    };
+    const loc=event.assertion_location;
+    if(loc&&typeof loc==="object"&&!Array.isArray(loc)&&
+       ["signed_dag_harness","planning_harness"].includes(loc.module)&&
+       Number.isSafeInteger(loc.line)&&loc.line>0&&loc.line<2000)
+      result.assertion_location={module:loc.module,line:loc.line};
+    safe.push(Object.freeze(result));
+  }
+  return Object.freeze(safe);
+}
+
 /**
  * Pure, prompt-free usage summarizer for the private manual Gemini pilot log.
  * Token counts are OPTIONAL provider metadata, NOT a bill or USD spend cap.

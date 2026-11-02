@@ -53,7 +53,8 @@ import {safeNativeDockerFailureDiagnostic}
 import {verifyRealGiteaPlanningMode}
   from "../../../scripts/real-gitea-planning-mode.mjs";
 import {safeGeminiPilotChildObservations,
-  safeGeminiPilotAgentObservations}
+  safeGeminiPilotAgentObservations,
+  safeF1RealGiteaPlanningFailure}
   from "../../../scripts/signed-gemini-pilot-usage.mjs";
 import {inspectF1RealGiteaPlannerReadiness}
   from "../../../scripts/f1-real-gitea-planner-readiness.mjs";
@@ -798,34 +799,11 @@ async function main(){
           // One strictly limited, non-source-bearing diagnostic. The raw
           // child stdout/stderr is NEVER printed to GitHub Action logs.
           if(paidOnly){
-            const raw=Buffer.isBuffer(error?.stderr)
-              ?error.stderr.toString("utf8"):"";
-            const prefix="[signed-gemini-pilot] ";
-            for(const line of raw.split(/\r?\n/u).filter(x=>
-              x.startsWith(prefix)&&x.length<4096).slice(-12)){
-              try{
-                const event=JSON.parse(line.slice(prefix.length));
-                const stages=["setup","gemini_planning","gemini_plan_proposed"];
-                const categories=["planner_contract_rejected",
-                  "model_provider_failure","test_assertion","unclassified_failure"];
-                if(stages.includes(event.stage)&&
-                   categories.includes(event.category)&&
-                   Number.isSafeInteger(event.model_turns_started)&&
-                   event.model_turns_started>=0&&
-                   event.model_turns_started<=24){
-                  const reason=event.planning_rejection?.reason;
-                  const safeReason=typeof reason==="string"&&
-                    /^(?:shape_(?:proposal|task|permission)_(?:fields|object|list|string)|invalid_[a-z_]+|execution_[a-z_]+)$/u.test(reason)
-                    ?reason:"unclassified";
-                  process.stderr.write("[f1-real-gemini] "+JSON.stringify({
-                    stage:event.stage,category:event.category,
-                    rejection_category:safeReason,
-                    model_turns_started:event.model_turns_started,
-                    approval_created:false,operational_root_issued:false
-                  })+"\n");
-                }
-              }catch{/* Arbitrary child output is never published */}
-            }
+            // execFileSync with encoding:utf8 produces STRING stderr.
+            // Never publish raw provider errors, credentials or source code.
+            for(const diagnostic of safeF1RealGiteaPlanningFailure(error?.stderr))
+              process.stderr.write("[f1-real-gemini] "+
+                JSON.stringify(diagnostic)+"\n");
             for(const item of safeGeminiPilotChildObservations(error?.stdout))
               process.stderr.write("[f1-real-gemini] "+JSON.stringify(item)+"\n");
           }
