@@ -7,6 +7,8 @@ import {D1GatewayOperationAudit} from "./d1-gateway-operation-audit.mjs";
 import {collectProjectTestRepairCandidateScope} from "./project-test-repair-candidate-scope.mjs";
 import {corroborateF4ProjectTestProvenance}
  from "./f4-project-test-provenance.mjs";
+import {corroborateF4ControlledRetest}
+ from "./f4-controlled-retest-evidence.mjs";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
 import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
 import {collectAcceptanceRepairCandidateScope} from "./acceptance-repair-candidate-scope.mjs";
@@ -343,6 +345,7 @@ export async function runNativePositiveApprovedDag({
   let testCalls=0,testCreates=0,testUpdates=0,testReads=0,
     runnerRuns=0,runnerOutcome=null,latestSha=baseSha;
   const runnerHistory=[];
+  let firstF4Provenance=null,firstF4WriteSequence=null;
   let createdPr=null;
   const childIds={},activeChildByRole={},activeTaskByRole={},
     servers=[],urls={},models={};
@@ -684,6 +687,8 @@ export async function runNativePositiveApprovedDag({
                 runnerOutcome:effect,testedSha:pinned.commit_sha,branch,
                 observedWrites:writePaths,observedTestCreates:observedCreatedPaths
               });
+              firstF4Provenance=f4;
+              firstF4WriteSequence=implementationWriteSequence;
               process.stderr.write("[native-dag-adk] f4_project_test_evidence "+
                 JSON.stringify(f4)+"\\n");
             }catch{
@@ -813,6 +818,26 @@ export async function runNativePositiveApprovedDag({
           const verdict=verifyPilotRunnerOutcome(effect,pinned.commit_sha);
           runnerRuns++;runnerOutcome=effect;
           runnerHistory.push(effect);
+          if(firstF4Provenance&&runnerRuns===2&&effect.status==="pass"){
+            // F4: a second independently attested Docker PASS is an
+            // observation, not unique proof of the initial defect.
+            const fresh=[
+              ...observedImplementationWriteKeys.values(),
+              ...observedTestEditEffects.values()
+            ].filter(x=>Number.isSafeInteger(x.sequence)&&
+              x.sequence>firstF4WriteSequence);
+            try{
+              const differential=corroborateF4ControlledRetest({
+                firstRunner:runnerHistory[0],recoveredRunner:effect,
+                firstProvenance:firstF4Provenance,branch,repairWrites:fresh
+              });
+              process.stderr.write("[native-dag-adk] f4_controlled_retest "+
+                JSON.stringify(differential)+"\\n");
+            }catch{
+              process.stderr.write("[native-dag-adk] f4_controlled_retest "+
+                JSON.stringify({status:"inconclusive",causal_attribution:"not_established"})+"\\n");
+            }
+          }
           if(!verdict.passed){
             process.stderr.write("[native-dag-adk] runner_failed "+
               JSON.stringify({category:"functional_acceptance_failure"})+"\n");
