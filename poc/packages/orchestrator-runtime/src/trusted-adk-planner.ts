@@ -145,6 +145,7 @@ const SAFE_REJECTIONS:Readonly<Record<string,TrustedPlanningRejectionReason>>=
     "independent Tasks cannot modify the same file":"conflicting_unordered_writes",
     "duplicate Task permission":"duplicate_task_permission",
     "proposal does not encode the exact trusted work branch":"incorrect_work_branch",
+    "Task branch name conflicts with trusted work branch":"incorrect_work_branch",
     "invalid dependency":"invalid_dependencies",
     "permission count outside bounds":"invalid_permissions",
     "too many permission requests":"invalid_permissions"
@@ -223,7 +224,9 @@ const TRUSTED_EXECUTION_STRUCTURE_HINTS:Readonly<Partial<
   execution_wrong_runner_branch:
     "Keep run_tests on the exact trusted feature branch.",
   execution_missing_specialist:
-    "A bounded pilot needs at least one Backend, Frontend and Test Task; use only the discovered allowed roles and resources."
+    "A bounded pilot needs at least one Backend, Frontend and Test Task; use only the discovered allowed roles and resources.",
+  incorrect_work_branch:
+    "Use the EXACT trusted work_branch provided in the session request in any branch-creation or pull-request instructions. Do not name a different feature branch. The trusted branch and grants cannot be changed."
 });
 function trustedStructureHint(reason:TrustedPlanningRejectionReason):string {
   return TRUSTED_EXECUTION_STRUCTURE_HINTS[reason]??
@@ -345,9 +348,25 @@ export function compilePlanningProposal(
       });
       if(requested_permissions.length>64)fail("too many permission requests");
     }
+    const title=str(task.title,200);
+    const description=str(task.description,1800);
+    // The runtime derives actual branch authority from canonical resources,
+    // not these UNTRUSTED words. However a contradictory feature-branch
+    // name can mislead downstream Agents even when the grants are correct.
+    // Reject the DRAFT and let Gemini revise within the same bounded session;
+    // never silently rewrite the text, sign it or expand permissions.
+    if(role==="orchestrator"&&task.permissions.some(
+      (p:Record<string,unknown>)=>p.operation==="create_branch"||
+        p.operation==="create_pull_request"
+    )){
+      const mentions=[...title,...description].join("").match(
+        /\bfeature\/[A-Za-z0-9._/-]+/gu
+      )??[];
+      if(mentions.some(v=>v.replace(/[.,;:]+$/u,"")!==branch))
+        fail("Task branch name conflicts with trusted work branch");
+    }
     tasks.push({
-      id:taskId,agent_id:role,title:str(task.title,200),
-      description:str(task.description,1800),depends_on,resources
+      id:taskId,agent_id:role,title,description,depends_on,resources
     });
   }
   const branchTasks=requested_permissions.filter(p=>p.operation==="create_branch");
@@ -714,6 +733,7 @@ export class TrustedAdkReadOnlyPlanner {
         "Use existing files from the supplied list for read/update.",
         "Create files only in the supplied directories; no other operations.",
         "The first Task creates a branch; every later Task depends on it.",
+        "When naming a feature branch in the create_branch or create_pull_request Task title/description, use ONLY the exact work_branch string given in the trusted user input. A different feature branch name in those Tasks makes the plan invalid even if permissions look correct.",
         "Do not return any DIDs, authority claims, URLs, signatures or approvals.",
         "If scope is insufficient, report uncertainty; do not invent permissions."
       ].join("\n"),

@@ -872,3 +872,31 @@ test("model receives only sanitized exact DAG preflight feedback for bounded sam
  assert.ok(!feedback.includes("PRIVATE_SOURCE_CONTENT"));
  assert.ok(!JSON.stringify(observations).includes("private"));
 });
+
+test("branch/PR narratives cannot contradict the trusted feature branch",()=>{
+ const valid=draft();
+ valid.tasks[0].description=
+  "Create feature/invoice-sort from the pinned main; do not merge";
+ assert.doesNotThrow(()=>compilePlanningProposal(valid,cfg));
+ const wrongBranch=draft();
+ wrongBranch.tasks[0].description="Create feature/other-release instead";
+ assert.throws(()=>compilePlanningProposal(wrongBranch,cfg),
+  /Task branch name conflicts with trusted work branch/);
+ const wrongTitle=draft();
+ wrongTitle.tasks[0].title="Create feature/other-release";
+ assert.throws(()=>compilePlanningProposal(wrongTitle,cfg),
+  /Task branch name conflicts with trusted work branch/);
+ const wrongPr=draft();
+ wrongPr.tasks.push({
+  id:"pr",agent_id:"orchestrator",
+  title:"Open PR for review",
+  description:"Open PR from feature/other-release to main",
+  depends_on:["backend"],
+  permissions:[{operation:"create_pull_request",path:null,
+   reason:"Request a review only"}]
+ });
+ assert.throws(()=>compilePlanningProposal(wrongPr,cfg),
+  /Task branch name conflicts with trusted work branch/);
+ wrongPr.tasks[2].description="Open PR from feature/invoice-sort to main";
+ assert.doesNotThrow(()=>compilePlanningProposal(wrongPr,cfg));
+});
