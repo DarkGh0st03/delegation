@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {resolve,dirname} from "node:path";
+import {getApprovedOfflineScenario} from
+  "../../apps/test-runner-controller/fixtures/approved-scenarios.mjs";
 import {makeIsolatedPlanningFixture,assertBillableFixtureOptIn,
   runIsolatedGeminiFixture,classifyPlannerProbeFailure,FIXTURE_SCENARIOS,CONSENT}
   from "../run-gemini-planner-fixture.mjs";
@@ -62,7 +64,7 @@ test("no paid execute action without exact operator phrase and fresh evidence lo
 });
 
 test("unknown or satisfied scenario cannot be silently substituted",()=>{
-  assert.throws(()=>makeIsolatedPlanningFixture("account-suspension"),/unsupported/);
+  assert.throws(()=>makeIsolatedPlanningFixture("account-suspension-unknown"),/unsupported/);
   assert.throws(()=>makeIsolatedPlanningFixture("__proto__"),/unsupported/);
 });
 
@@ -89,4 +91,15 @@ test("API failure evidence uses a closed classification and never copies raw sec
   assert.equal(classifyPlannerProbeFailure({response:{status:401}}).cause,"authentication");
   assert.equal(classifyPlannerProbeFailure({code:404}).cause,"model_or_endpoint_not_found");
   assert.equal(classifyPlannerProbeFailure(new Error("Unknown")).cause,"unknown");
+});
+
+test("Account Suspension isolated manual probe matches original real pilot domain and missing E2E",()=>{
+ const f=makeIsolatedPlanningFixture("account-suspension");
+ const original=getApprovedOfflineScenario("account-suspension");
+ assert.equal(f.spec.requirement,original.requirement);
+ assert.equal(f.spec.workBranch,original.workBranch);
+ assert.ok(f.snapshot.files.includes("apps/backend/src/users/user.service.ts"));
+ assert.ok(!f.snapshot.files.includes(original.planning_intent.newTestFile));
+ assert.ok(f.snapshot.directories.includes("tests/e2e"));
+ assert.equal(f.spec.gradeAs,"account-suspension");
 });
