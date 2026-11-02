@@ -359,9 +359,9 @@ export function compilePlanningProposal(
       (p:Record<string,unknown>)=>p.operation==="create_branch"||
         p.operation==="create_pull_request"
     )){
-      const mentions=[...title,...description].join("").match(
-        /\bfeature\/[A-Za-z0-9._/-]+/gu
-      )??[];
+      const mentions=[title,description].flatMap(value=>
+        value.match(/\bfeature\/[A-Za-z0-9._/-]+/gu)??[]
+      );
       if(mentions.some(v=>v.replace(/[.,;:]+$/u,"")!==branch))
         fail("Task branch name conflicts with trusted work branch");
     }
