@@ -57,3 +57,15 @@ and attested metadata, not a generative semantic diff review.
 
 Planner unit suite and fixture/failure-observation regressions executed locally.
 Local Node: 24.22.1 (CI remains pinned to 22.15.0); CI validation remains required.
+
+## Shared configuration follow-up
+
+`account-suspension-planning-config.mjs` is now consumed by both existing
+entrypoints. It preserves their previous budgets exactly. The reserved
+`real-planning-only` profile equals the pilot profile field for field.
+This profile does not enable execution or authorize billing.
+
+23 focused config/fixture/consent tests pass locally. The parity tests are
+included in Planner Feasibility CI. The real-Gitea stop-before-approval mode
+and its end-to-end proof are still pending; configuration equality alone is
+not input or transport equivalence.

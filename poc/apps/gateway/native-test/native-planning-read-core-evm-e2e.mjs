@@ -67,6 +67,7 @@ import {getApprovedOfflineScenario} from
 import {makeOfflineReviewableDag} from
   "../../../packages/orchestrator-runtime/test/fixtures/offline-planning-dag.mjs";
 import {BaseLlm} from "@google/adk";
+import {accountSuspensionPlanningConfig} from "../../../scripts/account-suspension-planning-config.mjs";
 import {SIGNED_GEMINI_PILOT,verifySignedGeminiPilotConsent}
   from "../../../scripts/signed-gemini-pilot-consent.mjs";
 import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
@@ -540,9 +541,7 @@ try{
     requirement:positiveDag?scenario.requirement:"Improve authorized backend behavior",
     planId:"native-planning-proposal",agents,readPort:port,
     ...(geminiPilot?{
-      maxModelTurns:SIGNED_GEMINI_PILOT.maxTurnsPerTask.planner,
-      // Reserve a bounded second revision after invalid JSON for DAG shape.
-      maxProposalRevisions:2,
+      ...accountSuspensionPlanningConfig("pilot"),
       validateProposedPlan:proposal=>{
         // These proposed rows are NOT signed grants or execution authority.
         preflightApprovedPilotDag({
@@ -551,10 +550,6 @@ try{
           repo,branch:workBranch
         });
       },
-      maxOutputTokens:SIGNED_GEMINI_PILOT.maxOutputTokensPerCall,
-      thinkingLevel:SIGNED_GEMINI_PILOT.thinkingLevel,
-      maxModelCallMs:SIGNED_GEMINI_PILOT.maxModelCallMs,
-      maxPlanningMs:SIGNED_GEMINI_PILOT.maxPlanningMs,
       onObservation:observation=>{
         if(observation?.kind==="plan_rejection"){
           pilotPlanningRejection={stage:observation.stage,

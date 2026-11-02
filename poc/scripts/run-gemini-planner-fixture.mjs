@@ -24,7 +24,8 @@ import {assessAccountSuspensionSourceGrantCoverage}
 export const CONSENT="I AUTHORIZE GEMINI API CHARGES";
 // One source of truth for the manual Account Suspension Planner probe.
 // Bounded model calls are NOT a monetary billing limit.
-export const ACCOUNT_SUSPENSION_PLANNER_MAX_TURNS=20;
+export {ACCOUNT_SUSPENSION_PLANNER_MAX_TURNS} from "./account-suspension-planning-config.mjs";
+import {accountSuspensionPlanningConfig} from "./account-suspension-planning-config.mjs";
 export const FIXTURE_SCENARIOS=Object.freeze({
   "account-suspension":{
     requirement:ACCOUNT_SUSPENSION_REQUIREMENT,
@@ -320,11 +321,10 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       // Twenty allow the same pinned discovery, a full draft and two
       // bounded corrections. More turns can increase provider charges.
       // Still one consented session; no automatic paid retry.
-      maxModelTurns:originalD0?ACCOUNT_SUSPENSION_PLANNER_MAX_TURNS:96,
-      maxModelCallMs:120000,
-      maxPlanningMs:originalD0?180000:900000,
-      maxOutputTokens:originalD0?12000:16384,
-      thinkingLevel:originalD0?"LOW":"MEDIUM",
+      ...(originalD0?accountSuspensionPlanningConfig("fixture"):{
+        maxModelTurns:96,maxModelCallMs:120000,maxPlanningMs:900000,
+        maxOutputTokens:16384,thinkingLevel:"MEDIUM"
+      }),
       ...(originalD0?{
         maxProposalRevisions:2,
         validateProposedPlan:p=>executablePreflight({
