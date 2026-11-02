@@ -402,3 +402,50 @@ test("F1 diagnostic does not publish arbitrary provider text, paths or spoofed e
   assert.deepEqual(safeF1Failure({toString:()=>secret}),[]);
   assert.deepEqual(safeF1Failure("x".repeat(2_200_001)),[]);
 });
+
+test("F1 diagnostic records all three trusted rejected drafts without source",()=>{
+  const secret="PRIVATE_MODEL_TEXT_AND_GITEA_TOKEN";
+  const history=[
+    {stage:"contract",reason:"execution_update_without_read",model_text:secret},
+    {stage:"contract",reason:"execution_pr_before_runner",path:secret},
+    {stage:"json",reason:"invalid_json",raw:secret}
+  ];
+  const log="[signed-gemini-pilot] "+JSON.stringify({
+    stage:"gemini_planning",category:"planner_contract_rejected",
+    model_turns_started:13,model_failure:"none",
+    planning_rejection:history[2],planning_rejections:history,
+    stack:secret,source:secret
+  });
+  const safe=safeF1Failure(log);
+  assert.equal(safe.length,1);
+  assert.deepEqual(safe[0].rejection_history,[
+    {stage:"contract",reason:"execution_update_without_read"},
+    {stage:"contract",reason:"execution_pr_before_runner"},
+    {stage:"json",reason:"invalid_json"}
+  ]);
+  assert.equal(safe[0].rejection_category,"invalid_json");
+  assert.ok(!JSON.stringify(safe).includes(secret));
+  assert.ok(Object.isFrozen(safe[0].rejection_history));
+  assert.ok(safe[0].rejection_history.every(Object.isFrozen));
+});
+test("F1 rejects entire malformed draft rejection history without leaking",()=>{
+  const secret="EXTRA_PRIVATE_PATH";
+  const failures=[
+    [{stage:"contract",reason:secret}],
+    Array.from({length:4},()=>({stage:"json",reason:"invalid_json"})),
+    [{stage:secret,reason:"invalid_json"}],
+    [{stage:"contract",reason:"invalid_json"},{stage:"contract",reason:secret}],
+    "contract_validation_other"
+  ];
+  for(const history of failures){
+    const log="[signed-gemini-pilot] "+JSON.stringify({
+      stage:"gemini_planning",category:"planner_contract_rejected",
+      model_turns_started:13,model_failure:"none",
+      planning_rejections:history
+    });
+    const safe=safeF1Failure(log);
+    assert.equal(safe.length,1);
+    assert.equal(Object.hasOwn(safe[0],"rejection_history"),false);
+    assert.ok(!JSON.stringify(safe).includes(secret));
+  }
+});

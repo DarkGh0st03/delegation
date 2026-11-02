@@ -521,6 +521,8 @@ let pilotStage="setup",pilotModelTurns=0,pilotModelFailure="none";
 let nativeOwnerIpcServer,ownerD1ReviewEvidence;
 let pilotDelegatedPhase="not_started",pilotDelegatedFailure="none";
 let pilotPlanningRejection=null,pilotTaskCounts=null;
+// Static, bounded rejection categories for all three draft attempts.
+let pilotPlanningRejectionHistory=[];
 try{
   const started=await coordinator.beginPlanning(root);
   issued=true;
@@ -579,6 +581,11 @@ try{
         if(observation?.kind==="plan_rejection"){
           pilotPlanningRejection={stage:observation.stage,
             reason:observation.reason};
+          // Never retain the LLM draft, prompts, requested grants or paths.
+          // Keep only the most recent 3 host-validated reason codes.
+          if(pilotPlanningRejectionHistory.length===3)
+            pilotPlanningRejectionHistory.shift();
+          pilotPlanningRejectionHistory.push(pilotPlanningRejection);
         }
         if(observation?.kind==="model_turn"&&
            observation.status==="started"){
@@ -1941,6 +1948,8 @@ try{
       model_failure:pilotModelFailure,
       ...(pilotPlanningRejection
         ?{planning_rejection:pilotPlanningRejection}:{}),
+      ...(pilotPlanningRejectionHistory.length
+        ?{planning_rejections:pilotPlanningRejectionHistory}:{}),
       model_turns_started:pilotModelTurns,
       ...(pilotTaskCounts?{approved_task_counts:pilotTaskCounts}:{}),
       signature_type:"ed25519_test_fixture_not_human",

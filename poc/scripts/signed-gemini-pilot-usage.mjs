@@ -60,6 +60,16 @@ export function safeF1RealGiteaPlanningFailure(stderr){
       model_turns_started:event.model_turns_started,
       approval_created:false,operational_root_issued:false
     };
+    // Only the bounded, host-generated stage/reason codes may survive.
+    // Unknown, malformed or oversized histories are dropped in full.
+    const history=event.planning_rejections;
+    if(Array.isArray(history)&&history.length>0&&history.length<=3&&
+       history.every(item=>item&&typeof item==="object"&&
+         !Array.isArray(item)&&
+         ["grounding","json","contract"].includes(item.stage)&&
+         F1_PLANNING_REJECTIONS.has(item.reason)))
+      result.rejection_history=Object.freeze(history.map(item=>
+        Object.freeze({stage:item.stage,reason:item.reason})));
     const loc=event.assertion_location;
     if(loc&&typeof loc==="object"&&!Array.isArray(loc)&&
        ["signed_dag_harness","planning_harness"].includes(loc.module)&&
