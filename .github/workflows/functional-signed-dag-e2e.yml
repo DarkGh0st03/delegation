@@ -526,7 +526,7 @@ jobs:
             const key=randomBytes(32).toString("hex");
             assert.equal(await sealDirectory(directory,output,key),true);
             const recovered=JSON.parse(unseal(await readFile(output),key));
-            const phases={};
+            const phases={},assertionPhases={};
             for(const bundle of recovered.bundles){
               const manifest=JSON.parse(Buffer.from(bundle.files["manifest.json"],"base64"));
               assert.match(manifest.tested_commit_sha,/^[a-f0-9]{40}$/);
@@ -537,12 +537,18 @@ jobs:
               const phase=manifest.phases.find(p=>p.status==="fail")?.phase;
               assert.ok(phase);
               phases[phase]=(phases[phase]??0)+1;
+              if(manifest.private_vitest_failure?.status==="captured"&&
+                 manifest.private_vitest_failure.failures?.length>0)
+                assertionPhases[phase]=(assertionPhases[phase]??0)+1;
             }
             assert.ok(phases.backend_tests>=1&&phases.frontend_tests>=1,
               "Both application test failure paths must retain recoverable evidence");
+            assert.ok(assertionPhases.backend_tests>=1&&assertionPhases.frontend_tests>=1,
+              "Native application failures must retain real Vitest assertion diagnostics");
             await writeFile("/tmp/functional-private-evidence-receipt.json",JSON.stringify({
               schema:"functional-private-evidence-roundtrip-v1",status:"PASS",
               recovered_bundles:recovered.bundles.length,failed_phase_counts:phases,
+              private_assertion_phase_counts:assertionPhases,
               framework_sha:process.env.GITHUB_SHA,raw_evidence_uploaded:false
             },null,2)+"\n");
             await rm(directory,{recursive:true,force:true});

@@ -306,6 +306,7 @@ export async function runNativePositiveApprovedDag({
     docker_image:process.env.TEST_RUNNER_DOCKER_IMAGE??"node:22.15.0-bookworm",
     phase_timeout_ms:300000,total_timeout_ms:840000,
     log_dir:runLogs,acceptance_enabled:true,
+    failure_evidence_dir:process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR || undefined,
     acceptance_dir:fileURLToPath(new URL("../../../runner/acceptance/",import.meta.url))
   });
   const runnerServer=createRunnerHttpServer({

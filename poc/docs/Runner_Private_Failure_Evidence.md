@@ -52,3 +52,10 @@ compatibility; it injects fixture repository metadata and is not a full IAM
 application or live Gitea validation. npm fetches the pinned version in disposable
 Docker; no model key is used. npm transitive resolution for this compatibility
 fixture is not the IAM lockfile install.
+
+
+The native approved DAG has its own Runner constructor. It explicitly receives
+`TEST_RUNNER_FAILURE_EVIDENCE_DIR`; configuring only the outer positive-smoke
+executor does not enable retention on native D0/D1. Functional CI checks both
+Backend and Frontend native FAIL bundles for captured Vitest assertion diagnostics
+before publishing its counts-only recovery receipt. Assertions remain private.
