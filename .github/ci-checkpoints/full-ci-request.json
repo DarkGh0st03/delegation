@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "Post R151.95 - scoped Runner assertion context through proposer and protected editor",
-  "candidate_parent_sha": "298987905b2a6e4fd2b1236bf47a5b76becbbd4b",
-  "purpose": "Validate the consolidated no-billing tree: explicit D0 lifecycle requirement, immutable D1 objective, insufficient-evidence stop, private Vitest diagnostics bound to exact Runner reference/SHA, original-role and admitted-Task read-scope projection into proposer/A2A editor, real Docker repair PASS, and encrypted private-evidence recovery. All three Full CI must succeed on this exact checkpoint SHA. No model provider access.",
+  "checkpoint": "R151.96 - signed D1 operation provenance and denied/update distinction",
+  "candidate_parent_sha": "e94ee27122765dc02ff2f01dda04cb1f5fa7e3bb",
+  "purpose": "Validate no-billing same-SHA full CI after adding private trusted Gateway operation-level D1 audit. Distinguish no update attempt, denied, incomplete provider effect, provider effect not correlated to the signed repair Task, and confirmed update. Preserve existing D0 planning, signed delegated A2A/VP Rust/OPA/Gitea, real Docker recovery, private assertion context, and encrypted evidence. Never invoke Gemini.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
