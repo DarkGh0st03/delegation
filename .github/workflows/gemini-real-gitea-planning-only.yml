@@ -3,6 +3,12 @@
 # but stops before Engineer approval, operational root, Agent A2A and PR.
 name: Gemini Real Gitea Planning-only (Manual, Billed)
 on:
+  # Branch-only registration: free, no secrets, no model construction.
+  # The billed job below is gated EXCLUSIVELY on workflow_dispatch.
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/workflows/gemini-real-gitea-planning-only.yml'
   workflow_dispatch:
     inputs:
       authorization:
@@ -25,6 +31,31 @@ concurrency:
   group: refactor-one-use-four-gemini-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  register-no-inference:
+    if: github.event_name == 'push'
+    name: Register branch workflow and test F1 consent without inference
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.15.0"
+      - name: Fail-closed F1 operator consent unit tests (NO GEMINI KEY)
+        env:
+          DELEGATION_F1_PAID_PLANNING_ONLY: "0"
+          DELEGATION_SIGNED_GEMINI_PILOT: "0"
+          GEMINI_API_KEY: ""
+        run: |
+          set -euo pipefail
+          test -z "${GEMINI_API_KEY:-}"
+          node --test poc/scripts/test/real-gitea-planning-mode.test.mjs
+          node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
+          node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
   real-planner:
     if: >-
       github.event_name == 'workflow_dispatch' &&
