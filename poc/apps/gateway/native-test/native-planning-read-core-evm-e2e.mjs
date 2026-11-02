@@ -157,12 +157,6 @@ if(process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1"&&
       "I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH"))
   throw Error("R151.12 paid repair epoch requires separate explicit billing consent");
 const ownerRecoveryEnabled=ownerD1Probe||paidGeminiRecovery;
-if(realPlanningOnly&&(geminiPilot||Boolean(process.env.GEMINI_API_KEY)||
-   !realGitea||!positiveDag||!signedHandoff||
-   scenario.id!=="account-suspension"||ownerRecoveryEnabled||
-   signedOfflineRecovery||signedOfflineTypecheckProbe||
-   signedOfflineSemanticProbe||signedOfflineMultiTest))
-  throw Error("F1 Planning-only must be unbilled, signed-preliminary and real Gitea");
 // The isolated Docker smoke script executes several independent native
 // subprocesses. Its opt-in flag is inherited by ALL of them, while only
 // the explicit owner-D1 subprocess can run the R151 proposal path.
@@ -179,6 +173,12 @@ if(ownerD1AdkProposal&&geminiPilot)
 const signedOfflineMultiTest=positiveDag&&
   (process.env.APPROVED_RUNNER_SIGNED_DAG_MULTI_TEST_TASKS==="1"||
    signedOfflineGeneratedTestProbe);
+if(realPlanningOnly&&(geminiPilot||Boolean(process.env.GEMINI_API_KEY)||
+   !realGitea||!positiveDag||!signedHandoff||
+   scenario.id!=="account-suspension"||ownerRecoveryEnabled||
+   signedOfflineRecovery||signedOfflineTypecheckProbe||
+   signedOfflineSemanticProbe||signedOfflineMultiTest))
+  throw Error("F1 Planning-only must be unbilled, signed-preliminary and real Gitea");
 if(signedOfflineSemanticProbe&&(!ownerD1Probe||!ownerD1AdkProposal||
    signedOfflineTypecheckProbe||signedOfflineRecovery||
    (signedOfflineMultiTest&&!signedOfflineGeneratedTestProbe)||
