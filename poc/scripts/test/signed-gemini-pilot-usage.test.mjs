@@ -331,3 +331,20 @@ test("D1 confirmed-effect counts survive double sanitization with strict bounds"
   assert.equal("task_write_count" in invalid[0],false);
  }
 });
+
+
+test("D1 task-level attempts and provider effects survive safe double sanitization",()=>{
+ for(const status of ["no_update_attempted","update_denied","update_not_confirmed","effect_correlation_failure"]){
+  const raw=JSON.stringify({event:"d1_editor_revision",role:"frontend",category:"no_confirmed_editor_write",
+   d1_operation_status:status,read_attempts:2,read_confirmed:1,read_denied:1,
+   update_attempts:1,update_denied:0,update_provider_confirmed:1,
+   runtimeTaskId:"SECRET",request_id:"PRIVATE"});
+  const forwarded=agentObservations(raw).map(x=>
+   "[trusted-positive-ci] gemini_agent_observation "+JSON.stringify(x)).join("\\n");
+  const evidence=agentSummary(forwarded).role_evidence.frontend.d1_revision_evidence;
+  assert.equal(evidence.d1_operation_status,status);
+  assert.equal(evidence.read_attempts,2);
+  assert.equal(evidence.update_provider_confirmed,1);
+  assert.doesNotMatch(forwarded,/SECRET|PRIVATE/);
+ }
+});

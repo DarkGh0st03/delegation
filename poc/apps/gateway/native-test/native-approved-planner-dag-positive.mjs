@@ -3,6 +3,7 @@ import {selectSignedNativeTestEditD1Tasks} from "./native-owner-d1-task-selectio
 import {verifiedFailedCreatedTestPaths} from "./verified-failed-generated-test-selection.mjs";
 import {collectSignedGeneratedTestEditScope} from "./verified-generated-test-edit-scope.mjs";
 import {verifyD1EditorRevision} from "./d1-editor-revision.mjs";
+import {D1GatewayOperationAudit} from "./d1-gateway-operation-audit.mjs";
 import {collectProjectTestRepairCandidateScope} from "./project-test-repair-candidate-scope.mjs";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
 import {safeProjectTestFailureDiagnostic} from "../../test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
@@ -367,6 +368,7 @@ export async function runNativePositiveApprovedDag({
   const observedTestWriteKeys=new Set();
   const observedImplementationWriteKeys=new Map();
   const observedTestEditEffects=new Map();
+  const d1GatewayAudit=new D1GatewayOperationAudit();
   let implementationWriteSequence=0;
   const writeKey=(taskId,operation,path)=>
     taskId+"\0"+operation+"\0"+canonicalFileUri(repo,branch,path);
@@ -385,11 +387,16 @@ export async function runNativePositiveApprovedDag({
     if(!target.startsWith(adkGatewayBase+"/v1/authorization/"))
       throw Error("ADK attempted unknown transport");
     let prepareStage="request_validation_rejected";
+    let d1Prepare=null,d1ExecuteRequestId=null;
     try{
       const request=JSON.parse(String(options?.body));
+      if(target===adkGatewayBase+"/v1/authorization/execute"&&typeof request.request_id==="string")
+        d1ExecuteRequestId=request.request_id;
       if(target===adkGatewayBase+"/v1/authorization/prepare"){
         prepareStage="runtime_scope_rejected";
         assert.equal(request.agent_role,role);
+        if(d1GatewayAudit.attempt({role,runtimeTaskId:request.task_id,tool:request.tool}))
+          d1Prepare={runtimeTaskId:request.task_id,tool:request.tool};
         const repair=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:admittedTestRepair??admittedTestEdit;
         if(repair)assert.equal(request.task_id,repair.runtimeTaskId,
           "D1 request must use its active runtime Task binding");
@@ -464,7 +471,9 @@ export async function runNativePositiveApprovedDag({
           }
         }
         prepareStage="gateway_prepare_unclassified";
-        return reply(gateway.prepare(request),201);
+        const prepared=gateway.prepare(request);
+        if(d1Prepare){d1GatewayAudit.prepared({...d1Prepare,requestId:prepared.request_id});d1Prepare=null;}
+        return reply(prepared,201);
       }
       if(target===adkGatewayBase+"/v1/authorization/execute"){
         const repairBinding=role==="backend"?admittedBackendRepair:role==="frontend"?admittedFrontendRepair:admittedTestRepair??admittedTestEdit;
@@ -476,6 +485,8 @@ export async function runNativePositiveApprovedDag({
         assert.equal(executed.verified_delegation.credential_id,
           activeChildByRole[role]);
         const effect=executed.execution;
+        d1GatewayAudit.confirmed({requestId:request.request_id,effect});
+        d1ExecuteRequestId=null;
         if(role!=="test"){
           assert.equal(effect.provider,"gitea");
           assert.ok((effect.tool==="read_file"
@@ -793,6 +804,8 @@ export async function runNativePositiveApprovedDag({
       }
       throw Error("Unsupported trusted Gateway route");
     }catch(error){
+      if(d1Prepare)d1GatewayAudit.rejectedPrepare(d1Prepare);
+      if(d1ExecuteRequestId)d1GatewayAudit.rejectedExecute(d1ExecuteRequestId);
       // The model sees a generic denied result, never raw provider exceptions,
       // confidential request arguments, VP, source data or service tokens.
       process.stderr.write("[native-dag-adk] controlled_denial "+
@@ -1038,6 +1051,7 @@ export async function runNativePositiveApprovedDag({
           const mode=selectTrustedD1AgentModelActivation({role:"test",taskId,model:models.test,
             scriptedModelClass:OfflineApprovedAdkModel,allowGenerative:realGeminiPilot});
           if(mode.needs_scripted_arming)models.test.armTrustedD1GeneratedTestRepair({branch,path,paths,failedSha,taskId});
+          d1GatewayAudit.begin({role,taskId,runtimeTaskId});
           admittedTestEdit=Object.freeze({taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha});
           activeTaskByRole.test=taskId;activeChildByRole.test=credentialId;
           for(const p of paths)expectedTestWriteKeys.add(writeKey(taskId,"update_file",p));
@@ -1046,6 +1060,9 @@ export async function runNativePositiveApprovedDag({
           const binding=task.role==="backend"?admittedBackendRepair:task.role==="frontend"?admittedFrontendRepair:admittedTestEdit;
           const head=await reader.getBranchMetadata(branch);
           const writes=[...(task.role==="test"?observedTestEditEffects:observedImplementationWriteKeys).values()];
+          const taskWriteCount=writes.filter(x=>x.taskId===task.task_id).length;
+          const d1Audit=d1GatewayAudit.snapshot({role:task.role,taskId:task.task_id,
+            runtimeTaskId:task.runtime_task_id,taskWriteCount,headChanged:head.commit_sha!==previousSha});
           try{
             return verifyD1EditorRevision({task,binding,branch,previousSha,
               headSha:head.commit_sha,writes});
@@ -1055,9 +1072,10 @@ export async function runNativePositiveApprovedDag({
             if(categories.includes(error.category))process.stderr.write(JSON.stringify({
               event:"d1_editor_revision",role:task.role,category:error.category,
               // Confirmed effects only: these do not count model attempts.
-              task_write_count:writes.filter(x=>x.taskId===task.task_id).length,
+              task_write_count:taskWriteCount,
               runtime_write_count:writes.filter(x=>x.runtimeTaskId===task.runtime_task_id).length,
-              head_changed:head.commit_sha!==previousSha
+              head_changed:head.commit_sha!==previousSha,
+              ...d1Audit
             })+"\n");
             throw error;
           }
@@ -1152,6 +1170,7 @@ export async function runNativePositiveApprovedDag({
             if(typeof arm!=="function")throw Error("Offline D1 fixture repair method missing");
             arm.call(models.backend,{branch,path,paths,failedSha,taskId});
           }
+          d1GatewayAudit.begin({role,taskId,runtimeTaskId});
           admittedBackendRepair=Object.freeze({
             taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha
           });
@@ -1198,6 +1217,7 @@ export async function runNativePositiveApprovedDag({
               models.frontend.armTrustedD1TypecheckRepair({branch,path,failedSha,taskId});
             }
           }
+          d1GatewayAudit.begin({role,taskId,runtimeTaskId});
           admittedFrontendRepair=Object.freeze({
             taskId,runtimeTaskId,credentialId,path,paths:Object.freeze([...paths]),failedSha
           });

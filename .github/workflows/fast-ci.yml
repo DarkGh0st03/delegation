@@ -46,7 +46,7 @@ jobs:
       - name: Pilot gate and bounded diagnostics without inference
         run: |
           node --test poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs poc/scripts/test/private-evidence-workflow-preflight.test.mjs poc/scripts/test/signed-gemini-pilot-consent.test.mjs poc/scripts/test/signed-gemini-pilot-usage.test.mjs poc/scripts/test/signed-gemini-pilot-failure-observation.test.mjs
-          node --test poc/apps/gateway/native-test/d1-editor-revision.test.mjs
+          node --test poc/apps/gateway/native-test/d1-editor-revision.test.mjs poc/apps/gateway/native-test/d1-gateway-operation-audit.test.mjs
       - name: Private Runner evidence without inference
         run: node --experimental-strip-types --test poc/apps/test-runner-controller/test/failure-evidence.test.ts poc/apps/test-runner-controller/test/private-vitest-failures.test.ts poc/scripts/test/seal-runner-evidence.test.mjs
       - name: Recovery scope, signed task context and owner handoff (no model calls)

@@ -140,6 +140,10 @@ export function safeGeminiPilotChildObservations(raw){
 const AGENT_ROLES=["backend","frontend","test"];
 const D1_REVISION_CATEGORIES=["revision_baseline_mismatch","no_confirmed_editor_write",
   "editor_effect_binding_mismatch","provider_head_mismatch","unchanged_editor_revision"];
+const D1_OPERATION_STATUSES=["confirmed","no_update_attempted","update_denied",
+  "update_not_confirmed","effect_correlation_failure"];
+const D1_OPERATION_COUNTERS=["read_attempts","read_confirmed","read_denied",
+  "update_attempts","update_denied","update_provider_confirmed"];
 const AGENT_TYPES=["d1_editor_revision","adk_task_outcome","adk_safe_diagnostic",
   "adk_tool_timing","adk_llm_timing"];
 const SAFE_FINISH_REASONS=["STOP","MAX_TOKENS","SAFETY","RECITATION",
@@ -173,9 +177,10 @@ function safeAgentObservation(x){
   if(x.event==="d1_editor_revision")return ["backend","frontend","test"].includes(x.role)&&
     D1_REVISION_CATEGORIES.includes(x.category)
     ?{event:x.event,role:x.role,category:x.category,
-      ...Object.fromEntries(["task_write_count","runtime_write_count"].filter(k=>
+      ...Object.fromEntries([...D1_OPERATION_COUNTERS,"task_write_count","runtime_write_count"].filter(k=>
         Number.isSafeInteger(x[k])&&x[k]>=0&&x[k]<=10000).map(k=>[k,x[k]])),
-      ...(typeof x.head_changed==="boolean"?{head_changed:x.head_changed}:{})}:null;
+      ...(typeof x.head_changed==="boolean"?{head_changed:x.head_changed}:{}),
+      ...(D1_OPERATION_STATUSES.includes(x.d1_operation_status)?{d1_operation_status:x.d1_operation_status}:{})}:null;
   if(x.event==="adk_tool_timing"){
     if(!AGENT_TOOLS.includes(x.tool)||typeof x.success!=="boolean"||
        (x.error_kind!==null&&!TOOL_ERRORS.includes(x.error_kind)))
@@ -281,7 +286,8 @@ export function extractSafeGeminiPilotAgentSummary(log){
         d1_revision_failure:own.filter(x=>x.event==="d1_editor_revision").at(-1).category,
         d1_revision_evidence:Object.fromEntries(Object.entries(
           own.filter(x=>x.event==="d1_editor_revision").at(-1))
-          .filter(([k])=>["task_write_count","runtime_write_count","head_changed"].includes(k)))}:{}),
+          .filter(([k])=>[...D1_OPERATION_COUNTERS,"task_write_count","runtime_write_count",
+            "head_changed","d1_operation_status"].includes(k)))}:{}),
       model_turns_with_shape_metadata:modelCalls.length,
       observed_function_call_parts:modelCalls.reduce((n,x)=>n+x.function_call_parts,0),
       observed_text_parts:modelCalls.reduce((n,x)=>n+x.text_parts,0),
