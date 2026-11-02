@@ -197,3 +197,18 @@ test("R151.88 trusted D1 milestones survive both diagnostic whitelists",()=>{
   for(const unsafe of ["PRIVATE_SOURCE","model_selected_phase","d1_unknown"])
     assert.ok(!child.includes(unsafe));
 });
+
+
+test("D1 insufficient evidence preserves original Docker failure without claiming culpability",()=>{
+ const diagnostic={stage:"delegated_agents_gitea_docker",delegated_phase:"d1_scope_selection",
+  category:"repair_insufficient_evidence",detail:"SECRET"};
+ const report=classifySafeGeminiPilotFailure({docker_phase_evidence:docker("backend_tests"),
+  gemini_pilot_diagnostic:diagnostic});
+ assert.deepEqual(report,{observed_failure:"docker_other_phase_failure",first_failed_phase:"backend_tests",
+  recovery_stop:"insufficient_evidence",causal_attribution:"not_established"});
+ assert.equal(classifySafeGeminiPilotFailure({gemini_pilot_diagnostic:diagnostic}).observed_failure,
+  "repair_stopped_insufficient_evidence");
+ for(const bad of [{...diagnostic,stage:"setup"},{...diagnostic,delegated_phase:"d1_editor_preparation"}])
+  assert.equal("recovery_stop" in classifySafeGeminiPilotFailure({gemini_pilot_diagnostic:bad}),false);
+ assert.doesNotMatch(JSON.stringify(report),/SECRET/);
+});

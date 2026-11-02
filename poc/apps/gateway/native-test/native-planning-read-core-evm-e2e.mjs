@@ -34,7 +34,7 @@ import {TrustedGatewayRootVpVerifier} from "../src/trusted-root-vp-verification.
 import {createTrustedPlanIpcServer,TrustedPlanIpcClient} from "../src/trusted-plan-ipc.ts";
 import {armTrustedOwnerOperationalRecovery} from
   "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
-import {selectTrustedD1RepairScope} from "./trusted-d1-repair-scope-choice.mjs";
+import {selectTrustedD1RepairScope,trustedD1ScopeStopCategory} from "./trusted-d1-repair-scope-choice.mjs";
 import {assertSignedD1ScheduledTask} from "./trusted-d1-signed-task-schedule.mjs";
 import {createBoundedD1GeminiInvestigationChoice} from "./trusted-d1-gemini-investigation-choice.mjs";
 import {TrustedAdkOperationalRepairProposer} from
@@ -1833,12 +1833,12 @@ try{
   if(geminiPilot){
     // A fixed-vocabulary diagnostic only; never forward provider exception
     // text, model prompts, repository source, tool args, or authorization.
-    const category=error?.code==="ERR_ASSERTION"?"test_assertion":
+    const category=trustedD1ScopeStopCategory(error)??(error?.code==="ERR_ASSERTION"?"test_assertion":
       typeof error?.message==="string"&&
       error.message.startsWith("Unapproved Planning:")?
         "planner_contract_rejected":
         pilotModelFailure!=="none"?"model_provider_failure":
-          "unclassified_failure";
+          "unclassified_failure");
     // The only stack information permitted outside the private child is a
     // numeric line of OUR public harness, never the exception message or
     // stack text (which could contain source or credentials).

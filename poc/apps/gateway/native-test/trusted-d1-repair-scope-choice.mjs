@@ -16,6 +16,13 @@ const SOURCE_STATUSES=new Set([
 ]);
 const TEST_STATUS="verified_original_generated_test_edit_scope";
 const PROJECT_PHASES=new Set(["backend_tests","frontend_tests"]);
+class InsufficientD1Evidence extends Error {
+ constructor(){super("Trusted D1 repair scope routing NO-GO: insufficient evidence");}
+}
+// Recognize only our own stop, never a provider/model-supplied category string.
+export function trustedD1ScopeStopCategory(error){
+ return error instanceof InsufficientD1Evidence?"repair_insufficient_evidence":null;
+}
 const deny=()=>{throw Error("Trusted D1 repair scope routing NO-GO");};
 
 export async function selectTrustedD1RepairScope({
@@ -55,6 +62,7 @@ export async function selectTrustedD1RepairScope({
   });
   // Only the two exact, pre-verified routes are acceptable. No fallbacks.
   const mode=await chooseInvestigation(observation);
+  if(mode==="insufficient_evidence")throw new InsufficientD1Evidence();
   if(mode!=="original_source"&&mode!=="generated_test_investigation")deny();
   return Object.freeze({
    mode,target:mode==="original_source"?source:test,

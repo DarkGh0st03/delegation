@@ -1098,7 +1098,7 @@ async function main(){
                   "signed_test_review","activation_dc_vp",
                   "delegated_agents_gitea_docker","complete"].includes(item.stage)&&
                    ["test_assertion","planner_contract_rejected",
-                    "model_provider_failure","unclassified_failure"]
+                    "model_provider_failure","unclassified_failure","repair_insufficient_evidence"]
                     .includes(item.category)&&
                    ["none","authentication","permission_or_billing",
                     "quota_or_rate_limit","model_or_endpoint_not_found",

@@ -32,11 +32,12 @@ test("single bounded inference chooses only an investigation route",async()=>{
 test("source route can be selected for investigation without proving cause",async()=>{
  assert.equal(await choose({model:model("original_source"),requirement:"Implement API"})(observation),"original_source");
 });
-test("uncertainty cannot be silently converted into authorization",async()=>{
- await assert.rejects(
-  async()=>{const route=await choose({model:model("insufficient_evidence"),requirement:"API"})(observation);
-   if(!["original_source","generated_test_investigation"].includes(route))
-    throw Error("D1 choice NO-GO");},/NO-GO/);
+test("uncertainty is a valid bounded model response, not a repair route",async()=>{
+ const stub=model("insufficient_evidence");
+ const decision=choose({model:stub,requirement:"API"});
+ assert.equal(await decision(observation),"insufficient_evidence");
+ assert.equal(stub.seen.length,1);
+ await assert.rejects(decision(observation),/NO-GO/);
 });
 test("unknown response and forged candidate observations fail closed",async()=>{
  for(const mode of ["backend","test",null,undefined,3]){

@@ -35,17 +35,21 @@ function observedDockerFailure(raw){
 
 export function classifySafeGeminiPilotFailure({docker_phase_evidence,
   gemini_pilot_diagnostic}={}){
+  const diagnostic=record(gemini_pilot_diagnostic)?gemini_pilot_diagnostic:null;
+  const recoveryStop=diagnostic?.stage==="delegated_agents_gitea_docker"&&
+    diagnostic?.delegated_phase==="d1_scope_selection"&&
+    diagnostic?.category==="repair_insufficient_evidence"
+      ?{recovery_stop:"insufficient_evidence"}:{};
   const observed=observedDockerFailure(docker_phase_evidence);
   if(observed){
     return Object.freeze({
       observed_failure:observed==="typecheck"
         ?"docker_typecheck_failure":"docker_other_phase_failure",
       first_failed_phase:observed,
+      ...recoveryStop,
       causal_attribution:"not_established"
     });
   }
-  const diagnostic=record(gemini_pilot_diagnostic)
-    ?gemini_pilot_diagnostic:null;
   if(diagnostic?.category==="model_provider_failure"&&
      PROVIDER_ERRORS.has(diagnostic.model_failure)){
     return Object.freeze({
@@ -65,7 +69,9 @@ export function classifySafeGeminiPilotFailure({docker_phase_evidence,
   }
   if(diagnostic?.stage==="delegated_agents_gitea_docker"){
     return Object.freeze({
-      observed_failure:"delegated_execution_failure_unclassified",
+      observed_failure:Object.keys(recoveryStop).length
+        ?"repair_stopped_insufficient_evidence":"delegated_execution_failure_unclassified",
+      ...recoveryStop,
       causal_attribution:"not_established"
     });
   }

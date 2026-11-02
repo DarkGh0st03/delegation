@@ -7,7 +7,7 @@
  * whether the product code or the generated assertion is wrong.
  */
 const SHA=/^[a-f0-9]{40}$/u;
-const MODES=new Set(["original_source","generated_test_investigation"]);
+const MODES=new Set(["original_source","generated_test_investigation","insufficient_evidence"]);
 const fail=()=>{throw Error("D1 Gemini investigation choice NO-GO");};
 
 export function createBoundedD1GeminiInvestigationChoice({

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {selectTrustedD1RepairScope as select}
+import {selectTrustedD1RepairScope as select,trustedD1ScopeStopCategory}
  from "./trusted-d1-repair-scope-choice.mjs";
 
 const sha="a".repeat(40);
@@ -75,4 +75,24 @@ test("unsupported mixed modes and absent authority fail closed",async()=>{
  },generatedTestTarget:generated,chooseInvestigation:async()=>"original_source"}),/NO-GO/);
  await assert.rejects(select({testedSha:sha}),/NO-GO/);
  await assert.rejects(select({testedSha:"bad",sourceTarget:source}),/NO-GO/);
+});
+
+
+test("bounded uncertain model response stops before invoking a repair proposer",async()=>{
+ const {createBoundedD1GeminiInvestigationChoice}=await import("./trusted-d1-gemini-investigation-choice.mjs");
+ let modelCalls=0,proposals=0;
+ const chooseInvestigation=createBoundedD1GeminiInvestigationChoice({requirement:"Preserve profile fields",
+  model:{model:"offline-no-network",async *generateContentAsync(){
+   modelCalls++;yield {content:{parts:[{text:'{"mode":"insufficient_evidence"}'}]}};
+  }}});
+ await assert.rejects(async()=>{
+  await select({testedSha:sha,sourceTarget:source,generatedTestTarget:generated,chooseInvestigation});
+  proposals++;
+ },error=>trustedD1ScopeStopCategory(error)==="repair_insufficient_evidence");
+ assert.equal(modelCalls,1);assert.equal(proposals,0);
+ assert.equal(trustedD1ScopeStopCategory({category:"repair_insufficient_evidence"}),null);
+ assert.equal(trustedD1ScopeStopCategory(Error("insufficient_evidence SECRET")),null);
+ await assert.rejects(select({testedSha:sha,sourceTarget:source,generatedTestTarget:generated,
+  chooseInvestigation:async()=>{throw {category:"repair_insufficient_evidence"};}}),
+  error=>trustedD1ScopeStopCategory(error)===null);
 });
