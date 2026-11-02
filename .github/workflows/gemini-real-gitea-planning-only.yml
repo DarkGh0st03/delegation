@@ -9,6 +9,10 @@ on:
     branches: [refactor/post-prof-plan-contracts-20261021]
     paths:
       - '.github/workflows/gemini-real-gitea-planning-only.yml'
+      - '.github/workflows/gemini-paid-shared-mcp-final.yml'
+      - 'poc/scripts/real-gitea-planning-mode.mjs'
+      - 'poc/scripts/test/real-gitea-planning-mode.test.mjs'
+      - 'poc/scripts/test/f1-registered-manual-workflow.test.mjs'
   workflow_dispatch:
     inputs:
       authorization:
@@ -54,6 +58,7 @@ jobs:
           set -euo pipefail
           test -z "${GEMINI_API_KEY:-}"
           node --test poc/scripts/test/real-gitea-planning-mode.test.mjs
+          node --test poc/scripts/test/f1-registered-manual-workflow.test.mjs
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
   real-planner:
