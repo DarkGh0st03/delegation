@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "D0 full Gemini pilot: trusted narrative branch coherence (offline signed gate)",
-  "candidate_parent_sha": "b906f6a28dfeb34efbadf4bd38c0e889d4adf958",
-  "purpose": "Exact-SHA three free CI release gates for native Gemini full pilot after rejecting contradictory feature-branch references in planner branch/PR Task descriptions. Verify scripted ADK/A2A, signed Rust/OPA/Gitea/Docker and acceptance; no billable model calls and no merge.",
+  "checkpoint": "F1 real-Gitea stop-before-approval PASS -> F2-F5 signed scripted D0 acceptance",
+  "candidate_parent_sha": "010f8687987bb4c3d57c2f8c5cc6cc7b7467ce34",
+  "purpose": "Once-only SAME SHA offline acceptance gate after F1 real-Gitea Planning-only PASS (#41493897152), Fast CI PASS (#41493897149), and diagnostic planner checks. Verify F2 Gateway-verified A2A artifacts, F3 metadata-only ADK Integration Review into Test, F4 Runner failure evidence, F5 signed DAG Gitea/Docker/independent acceptance/PR, precise tested SHA, and revocation. No provider Gemini calls, no extra Agent, no merge. Full suites requested only for this checkpoint; no automatic paid pilot.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
