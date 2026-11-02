@@ -51,7 +51,8 @@ test("F3 forged Task, SHA and scope never become accepted review evidence",async
   /F3 trusted integration review/);
 });
 class Forbidden extends BaseLlm{
- constructor(readonly output:unknown){super({model:"invalid-integration-review"});}
+ readonly output:unknown;
+ constructor(output:unknown){super({model:"invalid-integration-review"});this.output=output;}
  override async *generateContentAsync(_r:LlmRequest):AsyncGenerator<LlmResponse,void>{
   yield {content:{role:"model",parts:[{text:JSON.stringify(this.output)}]}};
  }
