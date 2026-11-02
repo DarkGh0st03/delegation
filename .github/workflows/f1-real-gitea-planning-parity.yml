@@ -4,6 +4,10 @@ on:
     branches: [refactor/post-prof-plan-contracts-20261021]
     paths:
       - '.github/workflows/f1-real-gitea-planning-parity.yml'
+      - 'poc/scripts/f1-real-planning-parity-manifest.mjs'
+      - 'poc/scripts/test/f1-real-planning-parity-manifest.test.mjs'
+      - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
+      - 'poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs'
   workflow_dispatch:
 permissions:
   contents: read
