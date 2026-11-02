@@ -930,7 +930,7 @@ test("F3 Test dispatch includes only signed-ancestor verified review context",as
  assert.equal(seen[0].implementations.length,2);
  assert.deepEqual(seen[0].implementations.map((x:any)=>x.role),["backend","frontend"]);
  const instruction=h.instructions.at(-1)!;
- const context=JSON.parse(instruction.split("\\n")[1]);
+ const context=JSON.parse(instruction.split("\n")[1]);
  assert.equal(context.approved_requirement,h.p.requirement);
  assert.equal(context.task_brief,h.p.tasks.find(t=>t.id==="tests")?.description);
  assert.equal(context.integration_review.status,"trusted_metadata_based_integration_review");
