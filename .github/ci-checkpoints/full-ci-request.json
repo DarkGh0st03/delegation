@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "F5 — original signed D0 F2/F3 handoff verified with exact-SHA Docker and no-merge PR",
-  "candidate_parent_sha": "4173822d6cc511677ab28aa3c32503281f6d247a",
-  "purpose": "Run same-SHA four FREE CI gates with native F5 proof: every original Backend/Frontend Task completed with trusted F2 Gateway corroboration, every Test Task received zero-billing ADK F3 metadata review, then exact-SHA real Docker and independent acceptance PASS, signed review-only PR, main unchanged and Rust root revoked. No Gemini or other billed inference.",
+  "checkpoint": "D0 unsolved source + proposed-grant readiness, free exact-SHA full CI",
+  "candidate_parent_sha": "bcd5311c884f444c312a27a358c37f5fee9c7b65",
+  "purpose": "Validate current D0 unsolved baseline pinned to real IAM main, account-suspension source grant readiness, native signed-DAG functional Gitea Docker positive and repair, shared MCP real Docker and cumulative offline. Same SHA, no paid inference, no merge, no main change.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
