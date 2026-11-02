@@ -1103,6 +1103,12 @@ export class TrustedApprovedExecutionPlans {
     let implementation:VerifiedImplementationSummary|undefined;
     if((binding.agent==="backend"||binding.agent==="frontend")&&
        observation?.source==="trusted_a2a_poll"){
+      // F2 is a projection, NOT an additional completion attestor. Older
+      // legitimate signed/recovery paths may use a less detailed artifact.
+      // Preserve their existing Gateway decision; such a Task simply has
+      // NO F2 receipt. The opt-in owner/dispatcher F2 reader then denies
+      // downstream Test dispatch until evidence is sufficient.
+      try{
       const artifact=observation.artifact;
       if(!artifact||observation.runtime_task_id!==runtimeTaskId||
          artifact.branch!==session.workBranch||!SHA.test(artifact.revision)||
@@ -1140,6 +1146,9 @@ export class TrustedApprovedExecutionPlans {
         changed_files:Object.freeze(edits),
         gateway_provider_effect_count:attestedRequests.length
       });
+      }catch{
+        implementation=undefined;
+      }
     }
     binding.completed=true;
     session.completedPlanTasks.add(binding.planTaskId);
