@@ -37,6 +37,8 @@ import {createRunnerHttpServer} from
 
 import {TrustedApprovedA2ADispatcher} from
   "../../../packages/orchestrator-runtime/src/trusted-approved-a2a-dispatcher.ts";
+import {TrustedAdkIntegrationReviewer,OfflineIntegrationReviewModel}
+ from "../../../packages/orchestrator-runtime/src/trusted-adk-integration-review.ts";
 import {completeNativeVerifiedFailureHandoff} from
   "./native-owner-verified-failure-handoff.mjs";
 import {startSpecializedAgentServer} from
@@ -1234,6 +1236,11 @@ export async function runNativePositiveApprovedDag({
       expectedEngineerDid:engineerDid,agentBaseUrls:urls,
       verifiedImplementationRead:async pins=>
         approvedPlans.readVerifiedImplementationSummary(pins),
+      // Zero-billing ADK integration review. A future generative reviewer
+      // requires its own separately authorized model/budget; the current
+      // real pilot must NOT silently gain additional paid calls.
+      integrationReview:input=>new TrustedAdkIntegrationReviewer(
+        new OfflineIntegrationReviewModel()).review(input),
       // No recovery is enabled unless the trusted host supplies BOTH the
       // original Gateway and independently validated same-root epoch intake.
       // Dispatcher.load additionally enforces their exact owner binding.

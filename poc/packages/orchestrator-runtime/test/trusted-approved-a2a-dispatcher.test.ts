@@ -6,6 +6,8 @@ import {compilePlanningProposal}
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
 import {approvedTaskInstruction} from "../src/approved-task-instruction.ts";
+import {TrustedAdkIntegrationReviewer,OfflineIntegrationReviewModel}
+ from "../src/trusted-adk-integration-review.ts";
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const uri="gitea://gitea.local/thesis/iam-console-poc";
@@ -903,4 +905,59 @@ test("F2 forged Gateway receipt fails closed before unlocking subsequent Task",a
   await assert.rejects(d.dispatch("frontend-task"),/inactive|dependencies/);
   assert.ok(!h.log.some(x=>x.startsWith("run:frontend-task:")));
  }
+});
+
+test("F3 Test dispatch includes only signed-ancestor verified review context",async()=>{
+ const h=harness();
+ const seen:any[]=[];
+ const d=await TrustedApprovedA2ADispatcher.load({
+  ...h.config,
+  verifiedImplementationRead:async (pins:any)=>({
+   status:"gateway_verified_implementation",...pins,
+   changed_files:[],gateway_provider_effect_count:1
+  }),
+  integrationReview:async (input:any)=>{
+   seen.push(input);
+   return new TrustedAdkIntegrationReviewer(new OfflineIntegrationReviewModel()).review(input);
+  }
+ } as any);
+ await d.runOrchestratorTask("branch",async id=>{h.log.push("provider:"+id);});
+ await d.dispatch("backend-task");
+ await d.dispatch("frontend-task");
+ const result=await d.dispatch("tests");
+ assert.equal(result.role,"test");
+ assert.equal(seen.length,1);
+ assert.equal(seen[0].implementations.length,2);
+ assert.deepEqual(seen[0].implementations.map((x:any)=>x.role),["backend","frontend"]);
+ const instruction=h.instructions.at(-1)!;
+ const context=JSON.parse(instruction.split("\\n")[1]);
+ assert.equal(context.approved_requirement,h.p.requirement);
+ assert.equal(context.task_brief,h.p.tasks.find(t=>t.id==="tests")?.description);
+ assert.equal(context.integration_review.status,"trusted_metadata_based_integration_review");
+ assert.deepEqual(context.integration_review.source_tasks.map((x:any)=>x.task_id),
+  ["backend-task","frontend-task"]);
+ assert.ok(!JSON.stringify(context).includes("create_pull_request"));
+});
+
+test("F3 forged review blocks Test before any Child DC or A2A call",async()=>{
+ const h=harness();
+ const d=await TrustedApprovedA2ADispatcher.load({
+  ...h.config,
+  verifiedImplementationRead:async(pins:any)=>({
+   status:"gateway_verified_implementation",...pins,
+   changed_files:[],gateway_provider_effect_count:1
+  }),
+  integrationReview:async(input:any)=>({
+   ...(await new TrustedAdkIntegrationReviewer(
+     new OfflineIntegrationReviewModel()).review(input)),
+   plan_digest:"c".repeat(64)
+  })
+ } as any);
+ await d.runOrchestratorTask("branch",async id=>{h.log.push("provider:"+id);});
+ await d.dispatch("backend-task");
+ await d.dispatch("frontend-task");
+ await assert.rejects(d.dispatch("tests"),/F3 trusted integration review/);
+ assert.ok(!h.log.some(x=>x==="allocate:tests"));
+ assert.ok(!h.log.some(x=>x.startsWith("run:tests:")));
+ assert.equal(h.coordinator.phase,"closed");
 });

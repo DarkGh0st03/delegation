@@ -1,4 +1,7 @@
 import {approvedTaskInstruction} from "./approved-task-instruction.ts";
+import {verifyTrustedIntegrationTestBrief,
+ type TrustedIntegrationReviewInput,type TrustedIntegrationTestBrief}
+ from "./trusted-adk-integration-review.ts";
 /**
  * Opt-in dispatcher for the immutable, Engineer-approved A2A Task DAG.
  *
@@ -80,6 +83,12 @@ export interface TrustedApprovedA2ADispatcherConfig{
    */
   /** F2 optional owner-private provider corroboration hook. Only a trusted
    * Gateway store can return this: A2A/model content is never accepted. */
+
+  /** F3: optional authenticated-owner ADK review. It can suggest only
+   * test-focus codes from already-attested F2 metadata, never new grants. */
+  integrationReview?:(
+    input:TrustedIntegrationReviewInput
+  )=>Promise<TrustedIntegrationTestBrief>;
   verifiedImplementationRead?:(
     pins:Readonly<{session_id:string;plan_digest:string;plan_task_id:string;
       runtime_task_id:string;role:"backend"|"frontend";
@@ -382,6 +391,37 @@ export class TrustedApprovedA2ADispatcher {
     // a lost network reply can otherwise conceal an active A2A side effect.
     this.#started.add(task.id);
     try{
+      let integration:TrustedIntegrationTestBrief|undefined;
+      if(role==="test"&&this.#config.integrationReview){
+        if(!this.#config.verifiedImplementationRead)
+          throw Error("F3 requires mandatory trusted F2 implementation receipts");
+        const ancestors=new Set<string>();
+        const visit=(id:string):void=>{
+          if(ancestors.has(id))return;
+          const prev=this.#snapshot.plan.tasks.find(t=>t.id===id);
+          if(!prev)throw Error("F3 unknown signed dependency");
+          ancestors.add(id);
+          for(const parent of prev.depends_on)visit(parent);
+        };
+        for(const parent of task.depends_on)visit(parent);
+        const implementers=this.#snapshot.plan.tasks.filter(t=>
+          ancestors.has(t.id)&&(t.agent_id==="backend"||t.agent_id==="frontend"));
+        if(!implementers.length)throw Error("F3 no signed implementation dependency");
+        const implementations=implementers.map(t=>{
+          const confirmed=this.#verifiedImplementations.get(t.id);
+          if(!confirmed||!this.#completed.has(t.id))
+            throw Error("F3 missing earlier Gateway-confirmed implementation");
+          return structuredClone(confirmed);
+        });
+        const input:TrustedIntegrationReviewInput={
+          session_id:this.#config.sessionId,plan_digest:this.#snapshot.digest,
+          test_task_id:task.id,branch:this.#snapshot.approvedBranch,
+          requirement:this.#snapshot.plan.requirement,task_brief:task.description,
+          implementations
+        };
+        integration=verifyTrustedIntegrationTestBrief(
+          await this.#config.integrationReview(input),input);
+      }
       const authority=await this.#config.authorityForTask(task.id,role);
       await this.#config.coordinator.bindDispatchedTask(task.id,dispatchId,role);
       const result=await this.#config.roleRunner.issueAndRun({
@@ -389,7 +429,8 @@ export class TrustedApprovedA2ADispatcher {
         trusted_gateway_task_id:dispatchId,
         subtask:{
           subtask_id:task.id,
-          instruction:approvedTaskInstruction(this.#snapshot.plan.requirement,task.description),
+          instruction:approvedTaskInstruction(this.#snapshot.plan.requirement,task.description,
+            ...(integration? [{integrationReview:integration}]:[])),
           branch:this.#snapshot.approvedBranch,
           relevant_paths:[...new Set(paths)],
           // Operation-specific, non-authoritative hints: reading a context
