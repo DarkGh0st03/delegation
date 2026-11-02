@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "Post R151.95 - application D1 recovery and private evidence round trip",
-  "candidate_parent_sha": "d00dc90c74b0b2fcf1cfd2792e70d4ce12b983d8",
-  "purpose": "Validate existing generated Test, Backend and Frontend real Gitea/Docker D1 FAIL-to-PASS scenarios and recover their private failure archives/logs through encryption. No paid model calls. Public artifacts contain only bounded counts.",
+  "checkpoint": "Post R151.95 - consolidated D0 contract, immutable D1 objective and T4 stop",
+  "candidate_parent_sha": "c4379c27f5c27748b27a4648370cc2c1bca9094c",
+  "purpose": "Consolidated no-billing validation: complete demo requirement, unchanged approved requirement across repair epochs, owner IPC insufficient-evidence stop, existing real Gitea/Docker source and generated-test repair paths, and private failure evidence encryption round trip. All three Full CI must pass this exact checkpoint SHA before any paid-pilot readiness claim.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
