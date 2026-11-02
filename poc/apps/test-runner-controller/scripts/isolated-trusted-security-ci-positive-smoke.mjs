@@ -832,6 +832,12 @@ async function main(){
           throw Error("F1 preliminary-only child failed closed; raw logs withheld");
         }
       },paidOnly?960000:330000);
+      // Keep only bounded numeric model-usage records; never forward the
+      // provider's raw model text, tool arguments or repository contents.
+      if(paidOnly)
+        for(const item of safeGeminiPilotChildObservations(output))
+          process.stdout.write("[signed-gemini-pilot] "+
+            JSON.stringify(item)+"\n");
       const result=output.split(/\r?\n/u).filter(Boolean).map(line=>{
         try{return JSON.parse(line);}catch{return null;}
       }).find(event=>event?.event==="f1_real_gitea_pilot_parity");
