@@ -17,7 +17,9 @@ test("default-registered workflow offers explicit F1 choice without an automatic
  assert.ok(beforeD0.includes("actions: read"));
 });
 test("F1 selection cannot run the old four-model D0 job",()=>{
- assert.ok(d0.includes("inputs.execution_mode != 'planning-only'"));
+ assert.ok(d0.includes("inputs.execution_mode == 'full-d0'"),
+   "Absent or unknown mode must not start four-model D0 billing");
+ assert.ok(!d0.includes("inputs.execution_mode != 'planning-only'"));
  assert.ok(!d0.includes("DELEGATION_F1_EXECUTION_MODE: planning-only"));
  assert.ok(isolated.includes("inputs.execution_mode == 'planning-only'"));
  assert.ok(isolated.includes("inputs.repair_authorization == 'NO ADDITIONAL REPAIR AUTHORIZED'"));
