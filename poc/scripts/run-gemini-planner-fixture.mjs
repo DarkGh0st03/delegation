@@ -18,6 +18,8 @@ import {ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES}
 import {ACCOUNT_SUSPENSION_REQUIREMENT,getApprovedOfflineScenario} from
   "../apps/test-runner-controller/fixtures/approved-scenarios.mjs";
 import {evaluatePlannerFeasibility} from "./planner-feasibility-eval.mjs";
+import {assessAccountSuspensionSourceGrantCoverage}
+ from "./account-suspension-source-readiness.mjs";
 
 export const CONSENT="I AUTHORIZE GEMINI API CHARGES";
 // One source of truth for the manual Account Suspension Planner probe.
@@ -341,7 +343,17 @@ export async function runIsolatedGeminiFixture({scenario,apiKey,modelName,
       proposal,observations,
       ...(originalD0?{trustedSnapshot:fixture.snapshot}:{})
     });
-    if(originalD0)report.native_executable_dag_preflight="pass";
+    if(originalD0){
+      report.native_executable_dag_preflight="pass";
+      // Different evidence axes: the native gate accepts STRUCTURE, this
+      // bounded advisory checks whether proposed role permissions can reach
+      // still-missing lifecycle interfaces on the actual unsolved baseline.
+      // A positive assessment never approves a plan or proves code quality.
+      report.account_suspension_source_grant_advisory=
+        assessAccountSuspensionSourceGrantCoverage({
+          plan:proposal.plan,workBranch:fixture.spec.workBranch
+        });
+    }
     await persistJson(outputDir,"proposal.json",proposal);
     await persistJson(outputDir,"observations.json",observations);
     await persistJson(outputDir,"evaluation.json",report);

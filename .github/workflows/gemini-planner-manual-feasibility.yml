@@ -180,6 +180,11 @@ jobs:
             fi
             if [[ -f "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json" ]]; then
               echo "- Evaluator technical preflight: $(jq -r '.technical_preflight_pass' "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json")"
+              if jq -e '.account_suspension_source_grant_advisory' "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json" > /dev/null; then
+                echo "- Unsolved source grant advisory: $(jq -r '.account_suspension_source_grant_advisory.status' "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json")"
+                echo "- Missing known-interface grants: $(jq -r '.account_suspension_source_grant_advisory.missing_same_task_read_and_update | length' "$DELEGATION_PLANNER_OUTPUT_DIR/evaluation.json")"
+                echo "- Source readiness is advisory; NO engineer approval, correctness claim or new grants"
+              fi
               echo "- Provider tokens (if supplied): evidence artifact only"
             elif [[ -f "$DELEGATION_PLANNER_OUTPUT_DIR/failure-diagnostics.json" ]]; then
               echo "- Outcome: no completed Planner proposal"

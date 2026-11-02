@@ -12,6 +12,8 @@ import {ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES,
  from "../../apps/test-runner-controller/fixtures/account-suspension-unsolved-baseline.mjs";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES}
  from "../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs";
+import {assessAccountSuspensionSourceGrantCoverage}
+ from "../account-suspension-source-readiness.mjs";
 import {makeIsolatedPlanningFixture,assertBillableFixtureOptIn,
   runIsolatedGeminiFixture,classifyPlannerProbeFailure,
   summarizeIsolatedPlannerGate,FIXTURE_SCENARIOS,CONSENT,
@@ -222,4 +224,79 @@ test("D0 unsolved main is byte-pinned and never exposes a solved answer to Gemin
  }
  assert.deepEqual([...new Set(fixture.invokedReads.filter(x=>x.tool==="read_file")
   .map(x=>x.path))].sort(),existing);
+});
+
+test("D0 unsolved source flags structurally admissible but functionally restricted old grants",()=>{
+ const root="gitea://gitea.local/thesis/iam-console-poc";
+ const branch="feature/native-planning-read";
+ const file=path=>root+"/branches/"+encodeURIComponent(branch)+"/files/"+path;
+ const tasks=[
+  {id:"branch",agent_id:"orchestrator"},
+  {id:"backend",agent_id:"backend"},
+  {id:"frontend",agent_id:"frontend"},
+  {id:"test",agent_id:"test"}
+ ];
+ const partial=[
+  {agent_id:"backend",task_id:"backend",operation:"read_file",
+   resource:file("apps/backend/src/users/user.service.ts")},
+  {agent_id:"backend",task_id:"backend",operation:"update_file",
+   resource:file("apps/backend/src/users/user.service.ts")},
+  {agent_id:"frontend",task_id:"frontend",operation:"read_file",
+   resource:file("apps/frontend/src/pages/UserDetailPage.tsx")},
+  {agent_id:"frontend",task_id:"frontend",operation:"update_file",
+   resource:file("apps/frontend/src/pages/UserDetailPage.tsx")}
+ ];
+ const p={repository:{authority:"gitea.local",owner:"thesis",
+  repository:"iam-console-poc"},tasks,requested_permissions:partial};
+ const result=assessAccountSuspensionSourceGrantCoverage({
+  plan:p,workBranch:branch});
+ assert.equal(result.status,"manual_source_grant_review_required");
+ assert.equal(result.contract_surfaces_missing_on_baseline,6);
+ assert.equal(result.corresponding_read_and_update_capabilities,2);
+ assert.deepEqual(result.missing_same_task_read_and_update,[
+  "packages/shared/src/account-status.ts",
+  "apps/backend/src/users/user.controller.ts",
+  "apps/backend/src/users/user.routes.ts",
+  "apps/frontend/src/api/users-api.ts"
+ ]);
+ assert.equal(result.advisory_only,true);
+ assert.equal(result.permission_grants_issued,false);
+ assert.equal(result.authorization_or_billing_gate,false);
+ // Missing read in the SAME signed Task never counts as safe write authority.
+ const broken={...p,requested_permissions:[
+  ...partial.filter(x=>x.operation!=="read_file"||
+   !x.resource.endsWith("user.service.ts")),
+  {agent_id:"backend",task_id:"test",operation:"read_file",
+   resource:file("apps/backend/src/users/user.service.ts")}
+ ]};
+ const denied=assessAccountSuspensionSourceGrantCoverage({
+  plan:broken,workBranch:branch});
+ assert.ok(denied.missing_same_task_read_and_update.includes(
+  "apps/backend/src/users/user.service.ts"));
+});
+test("D0 source coverage is role- and Task-bound, not a new approval",()=>{
+ const root="gitea://gitea.local/thesis/iam-console-poc";
+ const branch="feature/native-planning-read";
+ const plan={repository:{authority:"gitea.local",owner:"thesis",
+  repository:"iam-console-poc"},
+  tasks:[{id:"backend",agent_id:"backend"},
+   {id:"frontend",agent_id:"frontend"}],
+  requested_permissions:[]};
+ for(const [role,files] of [
+  ["backend",["packages/shared/src/account-status.ts",
+   "apps/backend/src/users/user.service.ts",
+   "apps/backend/src/users/user.controller.ts",
+   "apps/backend/src/users/user.routes.ts"]],
+  ["frontend",["apps/frontend/src/api/users-api.ts",
+   "apps/frontend/src/pages/UserDetailPage.tsx"]]]){
+  for(const path of files)for(const operation of ["read_file","update_file"])
+   plan.requested_permissions.push({task_id:role,agent_id:role,
+    operation,resource:root+"/branches/"+encodeURIComponent(branch)+"/files/"+path});
+ }
+ const report=assessAccountSuspensionSourceGrantCoverage({plan,workBranch:branch});
+ assert.equal(report.status,"observed_capabilities_cover_known_missing_interfaces");
+ assert.equal(report.corresponding_read_and_update_capabilities,6);
+ assert.deepEqual(report.missing_same_task_read_and_update,[]);
+ assert.equal(report.functional_correctness_not_proven,true);
+ assert.equal(report.permission_grants_issued,false);
 });
