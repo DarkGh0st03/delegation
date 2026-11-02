@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "F2 - Gateway-verified implementation summaries and trusted dispatcher projection",
-  "candidate_parent_sha": "f236fb260f849e0e85aac1967dc7b025e690dcbe",
-  "purpose": "Run all four free CI gates on one same-SHA checkpoint after verified Backend/Frontend implementation summary projection. Preserve existing Rust/VP/OPA/DC security; require independent Gateway-correlated artifacts, parent Task/SHA/branch pins, exact Test Runner evidence, and fail-closed downstream dispatch. Never invoke Gemini or billed provider.",
+  "checkpoint": "F2 final no-billing same-SHA full validation",
+  "candidate_parent_sha": "b9047cacf5f044adbf5d90105697cf54e4adfd15",
+  "purpose": "Strict zero-billing F2 final same-SHA validation. Gateway private projected implementation effects, trusted dispatcher read-only follow-up and preserved preexisting D0/D1 security. No Gemini inference.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
