@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "F1 real-Gitea stop-before-approval PASS -> F2-F5 signed scripted D0 acceptance",
-  "candidate_parent_sha": "010f8687987bb4c3d57c2f8c5cc6cc7b7467ce34",
-  "purpose": "Once-only SAME SHA offline acceptance gate after F1 real-Gitea Planning-only PASS (#41493897152), Fast CI PASS (#41493897149), and diagnostic planner checks. Verify F2 Gateway-verified A2A artifacts, F3 metadata-only ADK Integration Review into Test, F4 Runner failure evidence, F5 signed DAG Gitea/Docker/independent acceptance/PR, precise tested SHA, and revocation. No provider Gemini calls, no extra Agent, no merge. Full suites requested only for this checkpoint; no automatic paid pilot.",
+  "checkpoint": "Real Gitea Gemini Planning-only: final zero-billing same-SHA release gate",
+  "candidate_parent_sha": "f1094e52e319feff64b543bef98bfa6afe093aab",
+  "purpose": "Validate one frozen source snapshot after adding a strictly manual paid real-Gitea Planning-only mode. Existing F1 offline path must remain zero-billing. Preserve signed D0 F2-F5, real OPA/VP and Rust, Gitea/Docker independent acceptance, immutable SHA, and no approval or automatic Gemini invocations. This is the one final 3-workflow free gate before any separately consented isolated Gemini attempt.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
