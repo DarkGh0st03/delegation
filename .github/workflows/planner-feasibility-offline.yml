@@ -17,6 +17,7 @@ on:
       - "poc/scripts/test/check-gemini-planner-model-access.test.mjs"
       - "poc/packages/orchestrator-runtime/src/trusted-adk-planner.ts"
       - "poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts"
+      - "poc/apps/gateway/native-test/f1-planner-ablation.test.mjs"
       - "poc/apps/test-runner-controller/fixtures/**"
   workflow_dispatch:
 permissions:
@@ -47,6 +48,8 @@ jobs:
         run: node --experimental-strip-types --test poc/scripts/test/f1-planner-offline-comparison.test.mjs
       - name: Validate actual ADK read-only Planner contract using scripted model
         run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-adk-planner.test.ts
+      - name: F1 frozen old/new requirement x guidance (no inference)
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/f1-planner-ablation.test.mjs
       - name: Assert no Gemini API key or manual billable execution in this workflow
         run: |
           test -z "${GEMINI_API_KEY:-}"

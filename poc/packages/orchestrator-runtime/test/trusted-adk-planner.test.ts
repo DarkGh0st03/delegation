@@ -865,6 +865,10 @@ test("model receives only sanitized exact DAG preflight feedback for bounded sam
  assert.equal(result.status,"unapproved_proposal");assert.equal(attempts,2);
  assert.deepEqual(observations.filter(o=>o.kind==="plan_rejection"),[
   {kind:"plan_rejection",stage:"contract",reason:"execution_pr_before_runner"}]);
- assert.ok(JSON.stringify(requests[2].contents.at(-1)).includes("execution_pr_before_runner"));
+ const feedback=JSON.stringify(requests[2].contents.at(-1));
+ assert.ok(feedback.includes("execution_pr_before_runner"));
+ assert.ok(feedback.includes("create_pull_request Task transitively depend on the Test Task owning run_tests"));
+ assert.ok(feedback.includes("no new authority"));
+ assert.ok(!feedback.includes("PRIVATE_SOURCE_CONTENT"));
  assert.ok(!JSON.stringify(observations).includes("private"));
 });

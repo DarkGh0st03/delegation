@@ -193,6 +193,40 @@ export function safeExecutionPreflightRejection(error:unknown):TrustedPlanningRe
   ?SAFE_EXECUTION_PREFLIGHT_REJECTIONS[msg.slice(prefix.length)]??"execution_dag_incompatible"
   :"execution_dag_incompatible";
 }
+/** Advisory feedback only. No Task, permission, path or DAG mutation occurs here.
+ * Keep it static: no model/provider error payload may enter a repair hint. */
+const TRUSTED_EXECUTION_STRUCTURE_HINTS:Readonly<Partial<
+  Record<TrustedPlanningRejectionReason,string>
+>>=Object.freeze({
+  execution_required_operation_count:
+    "Include exactly one create_branch, exactly one run_tests, and exactly one create_pull_request operation, each in the matching specialist Task.",
+  execution_first_branch:
+    "Make the first Task create_branch with zero dependencies.",
+  execution_branch_dependency:
+    "Make every later Task transitively depend on the first create_branch Task.",
+  execution_pr_before_runner:
+    "Make the create_pull_request Task transitively depend on the Test Task owning run_tests.",
+  execution_runner_before_edit:
+    "Make the final run_tests Task transitively depend on every Task that writes a file, without changing granted scope.",
+  execution_pr_before_edit:
+    "Make create_pull_request transitively depend on every file-writing Task.",
+  execution_update_without_read:
+    "An update_file permission requires a read_file permission for the SAME file in the SAME Task; if the file is not already authorized, report insufficient scope.",
+  execution_unordered_writes:
+    "Avoid conflicting writes to the same file across unordered Tasks; order already-authorized Tasks or remove a redundant edit without extending scope.",
+  execution_read_before_creation:
+    "A file created by a Task may be read only by a downstream Task whose own read_file grant explicitly covers it.",
+  execution_duplicate_creation:
+    "Only one Task may create a given new file.",
+  execution_wrong_runner_branch:
+    "Keep run_tests on the exact trusted feature branch.",
+  execution_missing_specialist:
+    "A bounded pilot needs at least one Backend, Frontend and Test Task; use only the discovered allowed roles and resources."
+});
+function trustedStructureHint(reason:TrustedPlanningRejectionReason):string {
+  return TRUSTED_EXECUTION_STRUCTURE_HINTS[reason]??
+    "Recheck the indicated structural constraint against the trusted snapshot; do not add undiscovered files or permissions.";
+}
 function fail(reason:string):never {throw Error("Unapproved Planning: "+reason);}
 function obj(x:unknown):Record<string,unknown> {
   if(!x||typeof x!=="object"||Array.isArray(x))fail("expected object");
@@ -696,6 +730,7 @@ export class TrustedAdkReadOnlyPlanner {
           "Your preceding UNAPPROVED draft failed trusted contract validation.",
           "Rejected stage: "+feedback.stage,
           "Rejected category: "+feedback.reason,
+          "Trusted structural correction (advisory, no new authority): "+trustedStructureHint(feedback.reason),
           "Return the COMPLETE corrected JSON plan with exact required keys.",
           "Use only the approved read-only snapshot and authorized role operations.",
           "Never expand permissions or use undiscovered file paths.",
