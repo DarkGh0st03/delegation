@@ -8,7 +8,9 @@ import {ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES}
 
 const CONTRACT_SURFACES=Object.freeze([
  {role:"backend",path:"packages/shared/src/account-status.ts",
-  absent:/\bSUSPENDED\b/u},
+  // The baseline comment mentions SUSPENDED but the exported status
+  // constant/type do not implement it. Test the ACTUAL declaration.
+  absent:/\bSUSPENDED\s*:\s*["']SUSPENDED["']/u},
  {role:"backend",path:"apps/backend/src/users/user.service.ts",
   absent:/\bsuspendUser\s*\(/u},
  {role:"backend",path:"apps/backend/src/users/user.controller.ts",
