@@ -1,0 +1,264 @@
+# Narrow no-billing integration; deliberately excluded from the paid Full CI gate.
+name: D1 Private Assertions - Real Gitea Docker (No AI Billing)
+'on':
+  push:
+    branches:
+    - refactor/post-prof-plan-contracts-20261021
+    paths:
+    - .github/ci-checkpoints/d1-assertion-ci-request.json
+    - .github/workflows/d1-private-assertion-e2e.yml
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: d1-private-assertions-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  generated-test-diagnosis:
+    name: "Generated Test FAIL \u2192 scoped assertions \u2192 signed D1 \u2192 Docker PASS"
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TEST_RUNNER_FAILURE_EVIDENCE_DIR: /tmp/d1-private-assertions
+      ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_CALLER_ENGINEER: local-native-engineer-ci
+      ADAPTER_CALLER_GATEWAY: local-native-gateway-ci
+      ADAPTER_CALLER_ORCHESTRATOR: local-native-orchestrator-ci
+      ADAPTER_CALLER_BACKEND: local-native-backend-ci
+      ADAPTER_CALLER_FRONTEND: local-native-frontend-ci
+      ADAPTER_CALLER_TEST: local-native-test-ci
+      ADAPTER_ID_GATEWAY: urn:thesis:service:gateway
+      ADAPTER_BIND_ADDR: 127.0.0.1:8090
+      GATEWAY_BIND_ADDR: 127.0.0.1:8080
+      GATEWAY_VERIFIER_MODE: core-rust
+      GATEWAY_PROVIDER_MODE: mock
+      GATEWAY_AUDIENCE: cloud-access-gateway
+      GATEWAY_REQUEST_TTL_MS: '120000'
+      GATEWAY_RESOURCE_AUTHORITY: gitea.local
+      GITEA_OWNER: thesis
+      GITEA_REPOSITORY: iam-console-poc
+      OPA_URL: http://127.0.0.1:8181
+      OPA_TIMEOUT_MS: '2000'
+      RPC_URL: http://127.0.0.1:8545
+      CHAIN_ID: '31337'
+      ADAPTER_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_PUBLIC_ARTIFACT_DIR: /tmp/delegation-native-public
+      CORE_RUST_RPC_URL: http://127.0.0.1:8545
+      CORE_RUST_CHAIN_ID: '31337'
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@1.99.0
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22.15.0
+        cache: npm
+        cache-dependency-path: poc/package-lock.json
+    - uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: v1.8.4
+    - name: Validate functional checkpoint parser on checked-out source
+      run: node --test poc/scripts/test/functional-signed-dag-evidence.test.mjs
+    - name: Refuse unauthorized Gemini pilot configurations (NO API access)
+      run: node --test poc/scripts/test/signed-gemini-pilot-consent.test.mjs
+    - name: Validate sanitized Gemini usage diagnostics (NO API access)
+      run: |
+        node --test poc/scripts/test/signed-gemini-pilot-usage.test.mjs
+        node --test poc/scripts/test/signed-gemini-pilot-failure-observation.test.mjs
+        node --test poc/apps/gateway/native-test/native-approved-dag-failure-category.test.mjs
+    - name: R150.4 owner recovery must retire original Rust root on every outcome (NO AI)
+      run: node --test poc/apps/gateway/native-test/native-owner-verified-failure-handoff.test.mjs
+    - name: Reject unverified same-SHA Gemini billing preflight (NO API)
+      run: node --test poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
+    - name: Install pinned local Node and DID dependencies
+      run: |
+        npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+        npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
+        node poc/scripts/init-local-env.mjs --force
+    - name: Verify real HTTP A2A preserves signed Test no-Runner metadata
+      run: node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-a2a-dispatch-id.test.ts
+    - name: Validate independent signed Test preparation and final A2A Runner artifacts
+      run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/a2a-workflow.test.ts
+    - name: Block B signed Task -> independent ADK model binding (zero provider calls)
+      run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-agent-model-binding.test.mjs
+    - name: Block B source-witnessed ADK offline model fail-closed unit tests
+      run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-witnessed-offline-adk-model.test.mjs
+    - name: R150.8 source-derived Backend D1 repair exact-SHA and write proof (NO AI)
+      run: node --experimental-strip-types --test poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs
+    - name: R151.81 preliminary rehearsal excludes inherited paid repair (NO AI)
+      run: node --experimental-strip-types --test poc/apps/test-runner-controller/test/native-preliminary-environment.test.ts
+    - name: Project test diagnostics through real Runner decoder and public double filter
+      run: node --experimental-strip-types --test poc/apps/gateway/test/gitea-executor.test.ts poc/apps/test-runner-controller/test/gemini-pilot-safe-docker-evidence.test.ts poc/apps/test-runner-controller/test/project-e2e-failure-diagnostic.test.ts
+        poc/apps/test-runner-controller/test/isolated-executor.test.ts
+    - name: R151.79 semantic acceptance fixture and original signed writer scope (NO AI)
+      run: node --experimental-strip-types --test poc/apps/gateway/native-test/offline-acceptance-repair-fixture.test.mjs poc/apps/gateway/native-test/acceptance-repair-candidate-scope.test.mjs
+        poc/apps/gateway/native-test/project-test-repair-candidate-scope.test.mjs
+    - name: R150.9 fresh owner Test Task cannot replay terminal signed offline Task (NO AI)
+      run: node --test poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs
+    - name: R151 one-use untrusted Gemini repair DAG proposal (NO API, NO BILLING)
+      run: node --test poc/packages/orchestrator-runtime/test/trusted-gemini-repair-proposer.test.mjs
+    - name: R151.3 trusted original-root ADK repair owner binding (NO API, NO BILLING)
+      run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-owner-gemini-repair-binding.test.mjs
+    - name: R151.9 signed-epoch dynamic Backend/Test IDs and exact scope (NO API)
+      run: node --test poc/apps/gateway/native-test/native-owner-d1-task-selection.test.mjs
+    - name: R151.11 generative repair model owner-bound selection (NO API, NO BILLING)
+      run: node --test poc/apps/gateway/native-test/trusted-d1-agent-model-activation.test.mjs
+    - name: Block B approved-DAG action selection and source-derived route tests (zero Gemini cost)
+      run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs
+    - name: Account Suspension controller source-derivation and denial tests
+      run: node --test poc/apps/gateway/native-test/source-derived-controller-edits.test.mjs
+    - name: Account Suspension status model source-derivation tests
+      run: node --test poc/apps/gateway/native-test/source-derived-status-edits.test.mjs
+    - name: Account Suspension Frontend API source-derivation and denial tests
+      run: node --test poc/apps/gateway/native-test/source-derived-frontend-api-edits.test.mjs
+    - name: Source-derived file selection only from actual approved DAG grants
+      run: node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-source-target-selection.test.mjs
+    - name: Offline Gemini Planning-to-Execution bridge regression (zero model calls)
+      run: |
+        node --experimental-strip-types --test \
+          poc/apps/orchestrator/test/trusted-gemini-execution-binding.test.mjs \
+          poc/apps/orchestrator/test/trusted-gemini-owner-dispatch.test.mjs \
+          poc/apps/orchestrator/test/run-trusted-gemini-owner.test.mjs
+    - name: Start only disposable Anvil and OPA
+      run: |
+        docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
+        for i in {1..90}; do
+          if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 &&
+             curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1; then
+            exit 0
+          fi
+          sleep 0.5
+        done
+        docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
+        exit 1
+    - name: Generate disposable public test identities
+      run: |
+        local_key() { printf '0x%064x' "$1"; }
+        deployer_key="$(local_key 1)"
+        deployer_address="$(cast wallet address --private-key "$deployer_key")"
+        cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$deployer_address" 0x56BC75E2D63100000 >/dev/null
+        echo "ANVIL_DEPLOYER_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+        echo "GOVERNANCE_PRIVATE_KEY=$deployer_key" >> "$GITHUB_ENV"
+        for entry in ENGINEER:2 ORCHESTRATOR:3 BACKEND:4 FRONTEND:5 TEST:6; do
+          role="${entry%%:*}"
+          n="${entry##*:}"
+          key="$(local_key "$n")"
+          address="$(cast wallet address --private-key "$key")"
+          cast rpc --rpc-url "$RPC_URL" anvil_setBalance "$address" 0x56BC75E2D63100000 >/dev/null
+          echo "ADAPTER_EVM_PRIVATE_KEY_${role}=$key" >> "$GITHUB_ENV"
+          echo "ADAPTER_ID_${role}=did:ethr:0x7a69:${address}" >> "$GITHUB_ENV"
+        done
+    - name: Deploy public DID and EVM trust registries
+      run: |
+        bash poc/scripts/bootstrap-trust.sh
+        set -a
+        source poc/infra/runtime/trust.env
+        set +a
+        for key in DID_REGISTRY_ADDRESS ENTERPRISE_TRUST_REGISTRY_ADDRESS ISSUER_REGISTRY_ADDRESS; do
+          echo "$key=${!key}" >> "$GITHUB_ENV"
+        done
+        echo "CORE_RUST_DID_REGISTRY_ADDRESS=$DID_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+        echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+        echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
+        echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
+    - name: Build signed-credential Adapter and native Core Rust addon
+      run: |
+        cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
+        cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
+        mkdir -p poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
+        cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
+    - name: Start Adapter with public-only shared verification artifacts
+      run: |
+        cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
+        echo $! > /tmp/native-evm-adapter.pid
+        for i in {1..100}; do
+          if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then exit 0; fi
+          sleep 0.5
+        done
+        cat /tmp/native-evm-adapter.log
+        exit 1
+    - name: Start Gateway using only the native Rust Core verifier
+      run: |
+        npm --prefix poc run gateway:start > /tmp/native-evm-gateway.log 2>&1 &
+        echo $! > /tmp/native-evm-gateway.pid
+        for i in {1..100}; do
+          if curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1; then exit 0; fi
+          sleep 0.5
+        done
+        cat /tmp/native-evm-gateway.log
+        exit 1
+    - name: Preload disposable Gitea, OPA and Docker acceptance images
+      run: |
+        docker pull docker.gitea.com/gitea:28.0.0
+        docker pull node:22.15.0-bookworm
+        docker pull openpolicyagent/opa:1.21.1
+    - name: Signed generated Backend Test FAIL - new D1 Test-edit - fresh Docker PASS and draft PR (NO AI)
+      env:
+        APPROVED_RUNNER_NATIVE_EVM: '1'
+        APPROVED_RUNNER_THREE_AGENT_DAG: '1'
+        APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS: '1'
+        APPROVED_RUNNER_SOURCE_DERIVED_ROUTES: '1'
+        APPROVED_RUNNER_SIGNED_DAG_GENERATED_TEST_PROBE: '1'
+        APPROVED_RUNNER_NATIVE_OWNER_REPAIR_D1: '1'
+        APPROVED_RUNNER_NATIVE_OWNER_ADK_REPAIR_PROPOSAL: '1'
+        APPROVED_RUNNER_SCENARIO: account-suspension
+        GITEA_ADMIN_USER: isolated_admin
+        GITEA_ADMIN_PASSWORD: local-generated-test-d1-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+        GITEA_IMAGE: docker.gitea.com/gitea:28.0.0
+        TEST_RUNNER_DOCKER_IMAGE: node:22.15.0-bookworm
+        OPA_IMAGE: openpolicyagent/opa:1.21.1
+      run: |
+        set -euo pipefail
+        test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+        test -z "${GEMINI_API_KEY:-}"
+        # Intentionally wrong Test-created Vitest assertion; application
+        # source remains correct. No new root grant, Gemini API or merge.
+        npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller
+    - name: Verify and recover private assertion evidence without publishing raw content
+      run: |
+        node --input-type=module -e '
+          import assert from "node:assert/strict";
+          import {readFile,writeFile,rm} from "node:fs/promises";
+          import {randomBytes,createHash} from "node:crypto";
+          import {sealDirectory,unseal} from "./poc/scripts/seal-runner-evidence.mjs";
+          const directory=process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR;
+          const output=process.env.RUNNER_TEMP+"/d1-assertions.enc";
+          const key=randomBytes(32).toString("hex");
+          assert.equal(await sealDirectory(directory,output,key),true);
+          const recovered=JSON.parse(unseal(await readFile(output),key));
+          let failures=0;
+          for(const bundle of recovered.bundles){
+            const manifest=JSON.parse(Buffer.from(bundle.files["manifest.json"],"base64"));
+            assert.match(manifest.tested_commit_sha,/^[a-f0-9]{40}$/);
+            assert.match(manifest.log_reference,/^runner-log:\/\/[a-f0-9-]{36}$/);
+            for(const [file,field] of [["source.tar.gz","archive_sha256"],["runner.log","log_sha256"]])
+              assert.equal(createHash("sha256").update(Buffer.from(bundle.files[file],"base64")).digest("hex"),manifest[field]);
+            if(manifest.phases.find(p=>p.status==="fail")?.phase==="backend_tests"&&
+               manifest.private_vitest_failure?.status==="captured"&&manifest.private_vitest_failure.failures.length>0)failures++;
+          }
+          assert.ok(failures>=1,"Generated-Test FAIL must retain real private assertions");
+          await writeFile("/tmp/d1-assertion-evidence.json",JSON.stringify({
+            schema:"d1-private-assertion-e2e-v1",status:"PASS",framework_sha:process.env.GITHUB_SHA,
+            run_id:process.env.GITHUB_RUN_ID,recovered_failure_bundles:failures,
+            scripted_models:true,gemini_calls:0,raw_evidence_uploaded:false,
+            proof:"native_generated_test_assertion_context_and_repaired_docker_pass",
+            full_ci_gate_satisfied_by_this_workflow:false
+          },null,2)+"\n");
+          await rm(directory,{recursive:true,force:true});await rm(output);
+        '
+    - name: Upload bounded proof only
+      uses: actions/upload-artifact@v4
+      with:
+        name: d1-private-assertions-${{ github.run_id }}
+        path: /tmp/d1-assertion-evidence.json
+        if-no-files-found: error
+        retention-days: 7
+    - name: Stop disposable services
+      if: always()
+      run: |
+        kill "$(cat /tmp/native-evm-gateway.pid)" 2>/dev/null || true
+        kill "$(cat /tmp/native-evm-adapter.pid)" 2>/dev/null || true
+        if [[ -f poc/infra/.env ]]; then
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
+        fi

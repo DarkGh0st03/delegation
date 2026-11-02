@@ -76,3 +76,13 @@ This uses the original authorized Runner effect and host-private retained files;
 it does not perform a new Gateway source read or issue a read credential. With no
 private retention or no exact original read grant, no assertion text is disclosed.
 Existing bundles without the Runner reference cannot supply model context.
+
+
+`d1-private-assertion-e2e.yml` isolates the generated-Test diagnostic transfer
+using the original native Gitea/Rust/OPA/A2A/Docker host and scripted ADK proposer.
+Its dedicated request marker starts only this integration, with a separate
+concurrency group. The native fixture requires the filtered assertion to appear
+in the actual scripted model input before generating D1; a fresh Docker PASS and
+review-only draft PR remain required by the original scenario. The workflow
+recovers the private bundle and uploads only a bounded receipt. Its distinct
+workflow path is deliberately excluded from the paid pilot Full CI gate.

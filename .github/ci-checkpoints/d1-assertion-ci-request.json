@@ -1,0 +1,6 @@
+{
+  "schema": "delegation-d1-assertion-checkpoint-v1",
+  "candidate_parent_sha": "51c5d17d4c42f4434e6782670546077a8f464e91",
+  "purpose": "Exercise original native generated-Test FAIL, exact private Runner context filtered by signed Test read grants, signed D1 edit, fresh Docker PASS and bounded recoverable evidence.",
+  "paid_model_invocation": false
+}

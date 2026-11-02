@@ -138,3 +138,13 @@ test("GitHub errors and secret-bearing bodies are never echoed",async()=>{
     });
   }
 });
+
+test("narrow assertion E2E success never substitutes a required Full CI workflow",()=>{
+ const narrow=green(".github/workflows/d1-private-assertion-e2e.yml");
+ for(const missing of paths){
+  assert.throws(()=>verifyExactShaOfflineCiRuns([
+   ...paths.filter(path=>path!==missing).map(green),narrow
+  ],sha),/NO-GO/);
+ }
+ assert.equal(verifyExactShaOfflineCiRuns([...paths.map(green),narrow],sha).independent_workflows_verified,3);
+});
