@@ -73,6 +73,9 @@ export function preflightNextOperationalEpoch(input,{allowedOperations}={}){
  if(originalSignedPlan.session_id!==previousEpochPlan.session_id||
     originalSignedPlan.session_id!==candidatePlan.session_id)
   fail("session changed");
+ if(originalSignedPlan.requirement!==previousEpochPlan.requirement||
+    originalSignedPlan.requirement!==candidatePlan.requirement)
+  fail("approved requirement changed");
  const branch=approvedWorkBranch(originalSignedPlan);
  if(approvedWorkBranch(previousEpochPlan)!==branch||
     approvedWorkBranch(candidatePlan)!==branch)fail("working branch changed");

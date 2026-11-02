@@ -56,7 +56,7 @@ function nextPlan(n:number,role:"backend"|"frontend"|"test",id:string){
  return {
   schema_version:"1.0.0",plan_id:"invoice-epoch-"+n,
   session_id:SESSION,version:n,repository:REPO,base_revision:SHA,
-  requirement:"Correct invoice logic after Runner feedback",
+  requirement:initial().requirement,
   candidate_agents:[agent],
   tasks:[{id,agent_id:role,title:"Repair/validate",
    description:"Do only a task in issued root scope",depends_on:[],resources:[resource]}],
@@ -377,4 +377,17 @@ test("R109 root without read_file grant rejects new discovery even if operation 
  await assert.rejects(owner.preflightRepairDiscovery({
   sessionId:SESSION,taskId:"read-other-task",agentId:"backend",resource:FILE
  }),/operational root is not active/);
+});
+
+
+test("repair requirement substitution is rejected before reserving an epoch",async t=>{
+ const e=await env(t),owner=e.makeOwner();
+ await owner.reserveInitialEpoch();
+ const candidate=nextPlan(2,"backend","changed-objective");
+ candidate.requirement="Replace the approved objective";
+ await assert.rejects(owner.reserveRepairEpoch(candidate),/approved requirement changed/);
+ assert.equal((await owner.verifiedEpochHistory()).length,1);
+ const valid=nextPlan(2,"backend","valid-objective");
+ await owner.reserveRepairEpoch(valid);
+ assert.equal((await owner.verifiedEpochHistory())[1].plan.requirement,e.plan.requirement);
 });

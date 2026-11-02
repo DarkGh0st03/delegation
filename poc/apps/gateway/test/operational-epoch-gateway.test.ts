@@ -3472,7 +3472,9 @@ async function r134Fixture(t:import("node:test").TestContext,
   requirement:options.requirement
  });
  await prepareTrustedRemoteRepairFeedback(request());
- const reserved=await h.intake.reserveRepairEpoch(options.withGeneratedTest?generatedTestRepair():repair());
+ const candidate=options.withGeneratedTest?generatedTestRepair():repair();
+ candidate.requirement=h.parent.requirement;
+ const reserved=await h.intake.reserveRepairEpoch(candidate);
  const dir=join(h.dir,"r134-child-journal");
  await mkdir(dir,{mode:0o700});
  const journal=new TrustedChildIssuanceJournal({

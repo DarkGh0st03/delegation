@@ -88,3 +88,17 @@ test("denies replayed Task ID, replayed plan, untrusted Task history",()=>{
  duplicate.permissions=[...parent.permissions,parent.permissions[0]];
  assert.throws(()=>check({...args(repair),operationalRoot:duplicate}),/duplicate/);
 });
+
+
+test("repair epochs preserve the original approved requirement verbatim",()=>{
+ const repair=plan("repair-2",2,"backend","backend-repair");
+ const changed=structuredClone(repair);
+ changed.requirement="Silently accept duplicate transitions";
+ assert.throws(()=>check(args(changed)),/approved requirement changed/);
+ const previous=structuredClone(original);
+ previous.requirement="A substituted requirement in prior history";
+ assert.throws(()=>check({...args(repair),previousEpochPlan:previous}),/approved requirement changed/);
+ // New repair briefs may differ while the original objective stays fixed.
+ repair.tasks[0].description="Read the failing implementation and repair the confirmed defect";
+ assert.equal(check(args(repair)).execution_authorized,false);
+});
