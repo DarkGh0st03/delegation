@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "Post run 41422395907 - actionable trusted Gemini DAG preflight categories",
-  "candidate_parent_sha": "64ff4bddc84bec21d178eb91b1197b86332695c0",
-  "purpose": "Validate same-SHA free CI with strict static-only execution DAG preflight reason classification and bounded same-session Planner correction feedback. Preserve signed approval, Rust/OPA/VP, Gateway A2A, Gitea/Docker and private failure evidence. No Gemini API calls or billed execution.",
+  "checkpoint": "F2 - Gateway-verified implementation summaries and trusted dispatcher projection",
+  "candidate_parent_sha": "f236fb260f849e0e85aac1967dc7b025e690dcbe",
+  "purpose": "Run all four free CI gates on one same-SHA checkpoint after verified Backend/Frontend implementation summary projection. Preserve existing Rust/VP/OPA/DC security; require independent Gateway-correlated artifacts, parent Task/SHA/branch pins, exact Test Runner evidence, and fail-closed downstream dispatch. Never invoke Gemini or billed provider.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
