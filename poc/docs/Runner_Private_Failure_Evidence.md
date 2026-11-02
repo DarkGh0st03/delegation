@@ -94,3 +94,11 @@ matching read grants receives assertion headers in the JSON Task instruction.
 A run-only validator receives none. The failed SHA is pinned by the owner; no
 permission is inferred from the context. The native generated-Test regression
 also checks this boundary before its real protected A2A send.
+
+
+The first focused integration passed on 6d2ed160 (run 41411762301), covering
+filtered proposer input, native signed Test correction and fresh Docker PASS.
+Receipt schema v2 distinguishes the subsequent check that also requires the
+actual protected editor A2A instruction to contain only Task-readable headers.
+The dedicated checkpoint selects application parent b8e293b4 for that validation;
+its result must be checked separately before claiming the new boundary passed.

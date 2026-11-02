@@ -239,10 +239,10 @@ jobs:
           }
           assert.ok(failures>=1,"Generated-Test FAIL must retain real private assertions");
           await writeFile("/tmp/d1-assertion-evidence.json",JSON.stringify({
-            schema:"d1-private-assertion-e2e-v1",status:"PASS",framework_sha:process.env.GITHUB_SHA,
+            schema:"d1-private-assertion-e2e-v2",status:"PASS",framework_sha:process.env.GITHUB_SHA,
             run_id:process.env.GITHUB_RUN_ID,recovered_failure_bundles:failures,
             scripted_models:true,gemini_calls:0,raw_evidence_uploaded:false,
-            proof:"native_generated_test_assertion_context_and_repaired_docker_pass",
+            proof:"native_scoped_proposer_and_editor_context_then_docker_pass",
             full_ci_gate_satisfied_by_this_workflow:false
           },null,2)+"\n");
           await rm(directory,{recursive:true,force:true});await rm(output);
