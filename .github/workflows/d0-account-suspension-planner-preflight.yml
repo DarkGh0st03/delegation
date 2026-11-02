@@ -1,0 +1,31 @@
+# Scripted ADK model only. NO API keys, write tools or billed generation.
+name: D0 Account Suspension Planner Preflight (Offline)
+on:
+  push:
+    branches:
+      - refactor/post-prof-plan-contracts-20261021
+      - experiment/account-suspension-planning-gate-20261102
+    paths:
+      - '.github/workflows/d0-account-suspension-planner-preflight.yml'
+      - 'poc/apps/gateway/native-test/d0-account-suspension-planner-gate.test.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline:
+    name: Same Account Suspension requirement and native DAG gate (NO AI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.15.0'
+          cache: npm
+          cache-dependency-path: poc/package-lock.json
+      - name: Install pinned dependencies without scripts
+        run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
+      - name: Test ADK read-only revision and exact executable DAG preflight
+        run: node --experimental-strip-types --test poc/apps/gateway/native-test/d0-account-suspension-planner-gate.test.mjs
