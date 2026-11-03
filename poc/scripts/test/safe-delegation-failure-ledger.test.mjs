@@ -104,3 +104,83 @@ test("Paid workflow actually constructs the common ledger and runs without sourc
  assert.match(workflow,/failure_ledger:failureLedger/);
  assert.match(child,/safePublishedNativeTrace/);
 });
+
+test("R153 cross-stage ledger identifies D0 and D1 as different opaque signed Tasks",()=>{
+ const d0="a".repeat(16),d1="b".repeat(16);
+ const operations=(read,update)=>({
+  read_file:{attempted:read,confirmed:read,rejected:0},
+  update_file:{attempted:update,confirmed:update,rejected:0},
+  create_file:{attempted:0,confirmed:0,rejected:0},
+  run_tests:{attempted:0,confirmed:0,rejected:0}
+ });
+ const r=report({agent_failure_evidence:{
+  schema:"signed-gemini-agent-failure-v1",role_evidence:{
+   frontend:{
+    task_evidence:[
+     {task_ref:d0,observed_model_calls:3,observed_tool_successes:2,
+      observed_tool_failures:0,tool_operations:operations(1,1),
+      observed_function_call_parts:2,observed_text_parts:1,
+      last_model_finish_reason:"STOP"},
+     {task_ref:d1,observed_model_calls:2,observed_tool_successes:2,
+      observed_tool_failures:0,tool_operations:operations(2,0),
+      observed_function_call_parts:2,observed_text_parts:1,
+      last_model_finish_reason:"STOP",
+      last_observed_failure:"no_confirmed_editor_write",
+      d1_editor_revision:"no_confirmed_editor_write"}
+    ],
+    d1_revision_failure:"no_confirmed_editor_write",
+    d1_revision_evidence:{task_ref:d1,read_attempts:2,
+     read_confirmed:2,update_attempts:0,head_changed:false}
+   }
+  }
+ }});
+ assert.equal(r.signed_task_observations.length,2);
+ assert.deepEqual(r.signed_task_observations.map(x=>x.task_ref),[d0,d1]);
+ assert.deepEqual(r.signed_task_observations.map(x=>x.epoch_observation),
+  ["epoch_not_independently_classified","signed_d1_recovery"]);
+ assert.equal(r.signed_task_observations[1].observed_stop_explanation,
+  "no_update_tool_attempt_observed");
+ assert.equal(r.signed_task_observations[1].last_model_finish_reason,"STOP");
+ assert.equal(r.signed_task_observations[0].tool_operations.update_file.confirmed,1);
+ assert.equal(r.signed_task_observations[1].tool_operations.update_file.attempted,0);
+ const blocker=r.observed_events.find(x=>x.observed_code==="no_confirmed_editor_write");
+ assert.equal(blocker.task_ref,d1);
+ assert.equal(blocker.causal_attribution,"not_established");
+});
+test("R153 unknown and inconsistent task metadata fails closed without exposing source",()=>{
+ const secret="DO_NOT_EXPOSE_GITEA_PATH_OR_MODEL_OUTPUT";
+ const baseline={observed_model_calls:1,observed_tool_successes:0,
+  observed_tool_failures:0,observed_function_call_parts:0,
+  observed_text_parts:1,last_model_finish_reason:"STOP",
+  tool_operations:{
+   read_file:{attempted:0,confirmed:0,rejected:0},
+   update_file:{attempted:0,confirmed:0,rejected:0},
+   create_file:{attempted:0,confirmed:0,rejected:0},
+   run_tests:{attempted:0,confirmed:0,rejected:0}
+  }
+ };
+ const r=report({agent_failure_evidence:{
+  schema:"signed-gemini-agent-failure-v1",
+  role_evidence:{backend:{task_evidence:[
+   {...baseline,task_ref:secret,source:secret},
+   {...baseline,task_ref:"a".repeat(16),
+    last_model_finish_reason:secret},
+   {...baseline,task_ref:"b".repeat(16),
+    tool_operations:{...baseline.tool_operations,
+     read_file:{attempted:1,confirmed:0,rejected:0}}},
+   {...baseline,task_ref:"c".repeat(16)}
+  ]}}
+ }});
+ assert.equal(r.signed_task_observations.length,1);
+ assert.equal(r.signed_task_observations[0].task_ref,"c".repeat(16));
+ assert.equal(r.causal_attribution,"not_established");
+ assert.doesNotMatch(JSON.stringify(r),/DO_NOT_EXPOSE|GITEA_PATH/u);
+});
+test("R153 provider error reports precise fixed category, not provider exception text",()=>{
+ const r=report({gemini_pilot_diagnostic:{stage:"gemini_planning",
+  category:"model_provider_failure",model_failure:"quota_or_rate_limit",
+  private_exception:"SENSITIVE_KEY"}});
+ assert.ok(r.observed_events.some(x=>x.reporting_component==="gemini_provider"&&
+  x.observed_code==="quota_or_rate_limit"));
+ assert.doesNotMatch(JSON.stringify(r),/SENSITIVE_KEY/u);
+});

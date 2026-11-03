@@ -60,9 +60,95 @@ const DETAILS=Object.freeze({
  repair_insufficient_evidence:"The original approved scope or failure context is insufficient",
  unclassified:"The public evidence does not identify a specific cause"
 });
+const TASK_REFS=/^[a-f0-9]{16}$/u;
+const FINISH_REASONS=["STOP","MAX_TOKENS","SAFETY","RECITATION",
+ "LANGUAGE","OTHER","BLOCKLIST","PROHIBITED_CONTENT","SPII",
+ "MALFORMED_FUNCTION_CALL","UNEXPECTED_TOOL_CALL","NO_IMAGE",
+ "FINISH_REASON_UNSPECIFIED","UNKNOWN"];
+const PROVIDER_FAILURES=["authentication","permission_or_billing",
+ "quota_or_rate_limit","model_or_endpoint_not_found",
+ "invalid_request_or_tool_schema","provider_server_error",
+ "transport_or_timeout","unknown"];
 const isObject=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
 const known=(v,items)=>typeof v==="string"&&items.includes(v);
 const integer=(v,max=10000)=>Number.isSafeInteger(v)&&v>=0&&v<=max;
+
+/**
+ * Per-signed-Task diagnostic record, not per-role totals. A STOP response
+ * can establish that no update tool call was observed; it cannot establish
+ * the model's private reason or the application's true fault origin.
+ * These only use doubly sanitized ADK metadata and opaque dispatch hashes.
+ */
+function safeTaskObservations(role,rows){
+ if(!Array.isArray(rows)||rows.length>12)return [];
+ const records=[],seen=new Set();
+ for(const raw of rows){
+  if(!isObject(raw)||!TASK_REFS.test(raw.task_ref??"")||
+     seen.has(raw.task_ref))continue;
+  const calls=raw.observed_model_calls,ok=raw.observed_tool_successes,
+    failed=raw.observed_tool_failures;
+  if(!integer(calls,100)||!integer(ok,300)||!integer(failed,300))
+   continue;
+  const ops=raw.tool_operations;
+  if(!isObject(ops))continue;
+  const toolOperations={};
+  let totalOk=0,totalFailed=0;
+  let invalid=false;
+  for(const tool of TOOLS){
+   const c=ops[tool];
+   if(!isObject(c)||!integer(c.attempted,300)||
+      !integer(c.confirmed,300)||!integer(c.rejected,300)||
+      c.confirmed+c.rejected!==c.attempted){invalid=true;break;}
+   totalOk+=c.confirmed;totalFailed+=c.rejected;
+   toolOperations[tool]=Object.freeze({
+    attempted:c.attempted,confirmed:c.confirmed,rejected:c.rejected
+   });
+  }
+  if(invalid||totalOk!==ok||totalFailed!==failed)continue;
+  const last=raw.last_model_finish_reason;
+  if(last!==null&&!known(last,FINISH_REASONS))continue;
+  if(!integer(raw.observed_function_call_parts,1000)||
+     !integer(raw.observed_text_parts,1000))continue;
+  if(raw.last_observed_failure!==undefined&&
+     !known(raw.last_observed_failure,[...RECOVERY,...MODEL_CATEGORIES]))
+   continue;
+  if(raw.d1_editor_revision!==undefined&&
+     !known(raw.d1_editor_revision,RECOVERY))continue;
+  const lastRejected=raw.last_rejected_tool;
+  if(lastRejected!==undefined&&(!isObject(lastRejected)||
+     !known(lastRejected.operation,TOOLS)||
+     !known(lastRejected.error_kind,TOOL_KINDS)||
+     (lastRejected.reason!==undefined&&
+      !known(lastRejected.reason,TOOL_REASONS))||
+     toolOperations[lastRejected.operation].rejected===0))continue;
+  const isD1=known(raw.d1_editor_revision,RECOVERY);
+  const noWrite=isD1&&raw.d1_editor_revision==="no_confirmed_editor_write"&&
+    toolOperations.update_file.attempted===0;
+  records.push(Object.freeze({
+   task_ref:raw.task_ref,role,
+   epoch_observation:isD1?"signed_d1_recovery":"epoch_not_independently_classified",
+   observed_model_calls:calls,
+   tool_operations:Object.freeze(toolOperations),
+   observed_function_call_parts:raw.observed_function_call_parts,
+   observed_text_parts:raw.observed_text_parts,
+   last_model_finish_reason:last,
+   ...(raw.last_observed_failure!==undefined
+     ?{last_observed_failure:raw.last_observed_failure}:{}),
+   ...(isD1?{d1_revision_failure:raw.d1_editor_revision}:{}),
+   ...(lastRejected?{last_rejected_tool:Object.freeze({
+     operation:lastRejected.operation,error_kind:lastRejected.error_kind,
+     ...(lastRejected.reason?{reason:lastRejected.reason}:{})
+   })}:{}),
+   observed_stop_explanation:noWrite
+     ?"no_update_tool_attempt_observed":
+      isD1?"consult_signed_revision_evidence":
+      "no_verified_task_stop_reason",
+   causal_attribution:"not_established"
+  }));
+  seen.add(raw.task_ref);
+ }
+ return records;
+}
 
 /** Only fixed source module names and numeric line coordinates are published. */
 export function safePublishedNativeTrace(raw){
@@ -121,6 +207,12 @@ export function buildSafeDelegationFailureLedger({
   if(known(d.category,["test_assertion","planner_contract_rejected",
       "model_provider_failure","repair_insufficient_evidence","unclassified_failure"])){
    add(phase,component,null,null,d.category,"trusted_phase_diagnostic");
+   // The provider's *fixed* error classification can answer which upstream
+   // failure was reported. Raw provider exception text never crosses here.
+   if(d.category==="model_provider_failure"&&
+      known(d.model_failure,PROVIDER_FAILURES))
+    add(phase,"gemini_provider",null,null,d.model_failure,
+     "verified_provider_error_category");
   }
   if(phase==="execution"&&known(d.delegated_failure,DELEGATED)&&
      d.delegated_failure!=="none"&&d.delegated_failure!=="unclassified"){
@@ -148,6 +240,11 @@ export function buildSafeDelegationFailureLedger({
   agent_failure_evidence.schema==="signed-gemini-agent-failure-v1"&&
   isObject(agent_failure_evidence.role_evidence)?
    agent_failure_evidence.role_evidence:null;
+ const taskObservations=[];
+ if(roles)for(const role of ROLES){
+  taskObservations.push(...safeTaskObservations(role,
+    roles[role]?.task_evidence));
+ }
  if(roles)for(const role of ROLES){
   const r=roles[role];if(!isObject(r))continue;
   if(isObject(r.failed_operations))for(const tool of TOOLS){
@@ -180,7 +277,7 @@ export function buildSafeDelegationFailureLedger({
    add("recovery_d1","trusted_revision_verifier",role,"update_file",
     r.d1_revision_failure,"signed_d1_effect_audit",
     {operation_evidence:Object.freeze(counts),
-     ...(typeof v.task_ref==="string"&&/^[a-f0-9]{16}$/u.test(v.task_ref)
+     ...(typeof v.task_ref==="string"&&TASK_REFS.test(v.task_ref)
        ?{task_ref:v.task_ref}:{})});
   }
  }
@@ -214,6 +311,7 @@ export function buildSafeDelegationFailureLedger({
   causal_attribution:"not_established",
   primary_blocker_event_id:primary.event_id,
   observed_events:Object.freeze(events),
+  signed_task_observations:Object.freeze(taskObservations),
   missing_evidence:Object.freeze(missing),
   private_detail_required:missing.length>0,
   interpretation:"Reporting component, role and operation identify the observed failure; application root cause is not inferred."

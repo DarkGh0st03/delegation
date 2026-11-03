@@ -375,10 +375,31 @@ export function extractSafeGeminiPilotAgentSummary(log){
         const tool=scoped.filter(x=>x.event==="adk_tool_timing");
         const latest=scoped.filter(x=>["adk_safe_diagnostic",
           "adk_task_outcome","d1_editor_revision"].includes(x.event)).at(-1);
+        const lastModel=llm.at(-1);
+        const rejected=tool.filter(x=>!x.success);
+        const lastRejected=rejected.at(-1);
+        // Correlate observations to the signed Task, never to an entire
+        // role across D0 and D1. All fields survived strict double sanitization.
+        const toolOperations=Object.fromEntries(AGENT_TOOLS.map(name=>
+          [name,Object.freeze({
+            attempted:tool.filter(x=>x.tool===name).length,
+            confirmed:tool.filter(x=>x.tool===name&&x.success).length,
+            rejected:tool.filter(x=>x.tool===name&&!x.success).length
+          })]));
         return Object.freeze({
           task_ref:taskRef,observed_model_calls:llm.length,
           observed_tool_successes:tool.filter(x=>x.success).length,
-          observed_tool_failures:tool.filter(x=>!x.success).length,
+          observed_tool_failures:rejected.length,
+          tool_operations:Object.freeze(toolOperations),
+          last_model_finish_reason:lastModel?.finish_reason??null,
+          observed_function_call_parts:llm.reduce(
+            (n,x)=>n+x.function_call_parts,0),
+          observed_text_parts:llm.reduce((n,x)=>n+x.text_parts,0),
+          ...(lastRejected?{last_rejected_tool:Object.freeze({
+            operation:lastRejected.tool,
+            error_kind:lastRejected.error_kind,
+            ...(lastRejected.reason?{reason:lastRejected.reason}:{})
+          })}:{}),
           ...(latest?{last_observed_failure:latest.category}:{}),
           ...(latest?.event==="d1_editor_revision"
             ?{d1_editor_revision:latest.category}:{})

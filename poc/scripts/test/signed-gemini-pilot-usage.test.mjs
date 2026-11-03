@@ -478,3 +478,38 @@ test("R152 signed Task reference survives both public filters and separates same
  })).length,0);
 });
 
+test("R153 signed Task tool and model-stop shapes remain distinct across one role",()=>{
+ const a="a".repeat(16),b="b".repeat(16);
+ const rows=[
+  {event:"adk_llm_timing",role:"frontend",task_ref:a,turn:1,
+   function_call_parts:1,text_parts:0,finish_reason:"STOP"},
+  {event:"adk_tool_timing",role:"frontend",task_ref:a,
+   tool:"update_file",success:true,error_kind:null},
+  {event:"adk_tool_timing",role:"frontend",task_ref:b,
+   tool:"read_file",success:true,error_kind:null},
+  {event:"adk_tool_timing",role:"frontend",task_ref:b,
+   tool:"read_file",success:true,error_kind:null},
+  {event:"adk_llm_timing",role:"frontend",task_ref:b,turn:1,
+   function_call_parts:0,text_parts:1,finish_reason:"STOP"},
+  {event:"d1_editor_revision",role:"frontend",task_ref:b,
+   category:"no_confirmed_editor_write",read_attempts:2,
+   read_confirmed:2,update_attempts:0,head_changed:false}
+ ].map(event).join("\n");
+ const observed=agentObservations(rows);
+ const log=observed.map(x=>"[trusted-positive-ci] gemini_agent_observation "+
+  event(x)).join("\n");
+ const tasks=agentSummary(log).role_evidence.frontend.task_evidence;
+ assert.equal(tasks.length,2);
+ assert.equal(tasks[0].task_ref,a);
+ assert.deepEqual(tasks[0].tool_operations.update_file,
+  {attempted:1,confirmed:1,rejected:0});
+ assert.equal(tasks[1].task_ref,b);
+ assert.deepEqual(tasks[1].tool_operations.read_file,
+  {attempted:2,confirmed:2,rejected:0});
+ assert.deepEqual(tasks[1].tool_operations.update_file,
+  {attempted:0,confirmed:0,rejected:0});
+ assert.equal(tasks[1].last_model_finish_reason,"STOP");
+ assert.equal(tasks[1].observed_text_parts,1);
+ assert.equal(tasks[1].d1_editor_revision,"no_confirmed_editor_write");
+ assert.doesNotMatch(JSON.stringify(tasks),/PRIVATE|dispatch_/u);
+});
