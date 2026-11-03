@@ -13,6 +13,8 @@
 import type {CredentialStatusInput,IssuedDelegationCredential}
   from "./authority-client.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
+import {createOwnerPrivateChildMcpSession}
+  from "../../../mcp-shared/src/owner-private-child-mcp.ts";
 
 type FetchLike=typeof fetch;
 export interface ExactTrustedChildIssuance {
@@ -64,6 +66,26 @@ export function createRustAdapterChildCryptographyPort(
     throw Error("Trusted child DC: Adapter rejected exact signed Task child issuance");
    try{return await response.json() as IssuedDelegationCredential;}
    catch{throw Error("Trusted child DC: Adapter child issuance response is malformed");}
+  }
+ });
+}
+
+/**
+ * R162: real MCP SDK exchange inside the trusted owner process.
+ * The existing Rust Adapter is the sole issuer and revocation authority;
+ * no new keys, status registry or model-facing tool are created.
+ */
+export function createOwnerPrivateMcpChildCryptographyPort(
+ config:RustAdapterChildPortConfig
+):TrustedChildCryptographyPort{
+ const rust=createRustAdapterChildCryptographyPort(config);
+ return Object.freeze({
+  kind:"owner-private-crypto-mcp" as const,
+  async issueChild(request:Readonly<ExactTrustedChildIssuance>){
+   const session=createOwnerPrivateChildMcpSession(
+     ()=>rust.issueChild(request)
+   );
+   return session.invokeOnce();
   }
  });
 }

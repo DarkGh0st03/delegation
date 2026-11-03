@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedPlanChildAuthorityIssuer} from "../src/trusted-approved-child-issuer.ts";
+import {createOwnerPrivateMcpChildCryptographyPort}
+ from "../src/trusted-child-crypto-port.ts";
 import type {ExactTrustedChildIssuance,TrustedChildCryptographyPort}
  from "../src/trusted-child-crypto-port.ts";
 import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
@@ -507,4 +509,44 @@ test("R161 private crypto port cannot amplify signed permissions or authorize A2
  assert.equal(calls,1);
  await assert.rejects(issuer.issueSpecializedChild(child()),/already attempted/);
  assert.equal(calls,1);
+});
+
+test("R162 scoped owner Child DC crosses real in-memory MCP and original Rust Adapter once",async()=>{
+ const e=fixture();
+ const privateCryptoPort=createOwnerPrivateMcpChildCryptographyPort(e.config);
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer.create({
+  ...e.config,privateCryptoPort
+ } as any);
+ const issued=await issuer.issueSpecializedChild(child());
+ assert.equal(issued.role,"backend");
+ assert.equal(issued.credential.id,"urn:issued:backend-child");
+ assert.equal(e.calls.length,1,"Rust Adapter must remain sole issuing authority");
+ assert.equal(e.calls[0].url,"http://127.0.0.1:9988/v1/credentials/child");
+ assert.equal(e.calls[0].headers.get("authorization"),
+  "Bearer private-orchestrator-bearer");
+ assert.deepEqual(e.calls[0].body.permissions,[
+   {resource:FILE,operation:"update_file"},
+   {resource:FILE,operation:"read_file"}
+ ]);
+ await assert.rejects(issuer.issueSpecializedChild(child()),/already attempted/);
+ assert.equal(e.calls.length,1);
+});
+
+test("R162 owner MCP signer fault leaves one-shot issuance intent spent",async()=>{
+ const e=fixture();
+ let attempts=0;
+ const privateCryptoPort=createOwnerPrivateMcpChildCryptographyPort({
+  ...e.config,
+  fetchFn:async()=>{attempts++;throw Error("PRIVATE_ADAPTER_SIGNING_KEY");}
+ });
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer.create({
+   ...e.config,privateCryptoPort
+ } as any);
+ await assert.rejects(issuer.issueSpecializedChild(child()),error=>{
+  assert.doesNotMatch(String(error),/PRIVATE_ADAPTER_SIGNING_KEY/);
+  return /Owner-private MCP child issuance unavailable/.test(String(error));
+ });
+ assert.equal(attempts,1);
+ await assert.rejects(issuer.issueSpecializedChild(child()),/already attempted/);
+ assert.equal(attempts,1);
 });

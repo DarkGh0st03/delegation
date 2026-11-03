@@ -32,6 +32,8 @@ import type {
   ProtectedA2AClientPort
 } from "./a2a-workflow.ts";
 import {TrustedApprovedPlanChildAuthorityIssuer} from "./trusted-approved-child-issuer.ts";
+import {createOwnerPrivateMcpChildCryptographyPort}
+  from "./trusted-child-crypto-port.ts";
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 
 const SHA=/^[a-f0-9]{40}$/u;
@@ -146,7 +148,10 @@ export class TrustedApprovedA2ADispatcher {
     const authorityIssuer=await TrustedApprovedPlanChildAuthorityIssuer.create({
       approvals:base.approvals,coordinator:base.coordinator,
       sessionId:base.sessionId,engineerDid:base.expectedEngineerDid,
-      ...adapter
+      ...adapter,
+      // R162: owner-only in-process MCP SDK; the Rust Adapter still owns
+      // issuer identities, keys and revocation. Nothing is registered for ADK.
+      privateCryptoPort:createOwnerPrivateMcpChildCryptographyPort(adapter)
     });
     return new TrustedApprovedA2ADispatcher({
       ...base,roleRunner:new DelegatedA2ARoleRunner({
