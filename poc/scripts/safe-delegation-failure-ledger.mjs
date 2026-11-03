@@ -5,6 +5,12 @@
  * The reporting component is NOT necessarily the origin of the application
  * defect. A reason is a verified stop condition, not speculative causality.
  */
+import {safeProjectTestFailureDiagnostic}
+ from "../apps/test-runner-controller/scripts/project-test-failure-diagnostic.mjs";
+import {safeProjectE2eFailureDiagnostic}
+ from "../apps/test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
+import {safeAcceptanceFailureSummary}
+ from "../runner/acceptance/failure-catalog.mjs";
 const ROLES=["backend","frontend","test"];
 const TOOLS=["read_file","update_file","create_file","run_tests"];
 const STAGES=["setup","gemini_planning","gemini_plan_proposed",
@@ -290,9 +296,33 @@ export function buildSafeDelegationFailureLedger({
     docker_phase_evidence.typecheck_error_codes.every(code=>
       typeof code==="string"&&/^TS[0-9]{4,5}$/u.test(code))
       ?[...new Set(docker_phase_evidence.typecheck_error_codes)]:[];
+  // Native Runner and CI revalidate these receipts independently. Project
+  // failure details are rechecked here and never copied from raw test output.
+  const detail={runner_phase:failed,
+   ...(tsCodes.length?{typecheck_error_codes:tsCodes}:{})};
+  if(["backend_tests","frontend_tests"].includes(failed)&&
+     docker_phase_evidence.project_tests==="fail"&&
+     docker_phase_evidence.researcher_acceptance==="skipped"){
+   const safe=safeProjectTestFailureDiagnostic(
+     docker_phase_evidence.project_test_failure);
+   if(safe?.phase===failed)detail.project_test_failure=safe;
+  }
+  if(failed==="playwright_e2e"&&
+     docker_phase_evidence.project_tests==="fail"&&
+     docker_phase_evidence.researcher_acceptance==="skipped"){
+   const safe=safeProjectE2eFailureDiagnostic(
+     docker_phase_evidence.project_e2e_failure);
+   if(safe)detail.project_e2e_failure=safe;
+  }
+  if(failed==="researcher_acceptance"&&
+     docker_phase_evidence.project_tests==="pass"&&
+     docker_phase_evidence.researcher_acceptance==="fail"){
+   const safe=safeAcceptanceFailureSummary(
+     docker_phase_evidence.acceptance_failure);
+   if(safe)detail.acceptance_failure=safe;
+  }
   add("docker_runner","trusted_runner",null,"run_tests",
-   failed,"runner_verified_phase",
-   {runner_phase:failed,...(tsCodes.length?{typecheck_error_codes:tsCodes}:{})});
+   failed,"runner_verified_phase",detail);
  }
  if(!events.length)add("unknown","workflow",null,null,"unclassified",
   "insufficient_public_diagnostics");
@@ -314,6 +344,22 @@ export function buildSafeDelegationFailureLedger({
   missing.add("specific_failure_category_not_established");
  if(events.some(e=>e.observed_code==="test_assertion"))
   missing.add("failed_assertion_detail_not_in_public_receipt");
+ const runner=events.find(e=>e.phase==="docker_runner"&&
+   e.reporting_component==="trusted_runner");
+ if(runner?.observed_code==="typecheck"&&
+    !runner.typecheck_error_codes)
+  missing.add("runner_compiler_error_codes_not_in_public_receipt");
+ if(["backend_tests","frontend_tests"].includes(runner?.observed_code)&&
+    !runner.project_test_failure)
+  missing.add("runner_project_test_failure_detail_not_in_public_receipt");
+ if(runner?.observed_code==="playwright_e2e"&&
+    (!runner.project_e2e_failure||
+     runner.project_e2e_failure.unclassified_failure))
+  missing.add("runner_e2e_failure_detail_not_classified");
+ if(runner?.observed_code==="researcher_acceptance"&&
+    (!runner.acceptance_failure||
+     runner.acceptance_failure.unclassified_failure))
+  missing.add("runner_acceptance_failure_detail_not_classified");
  if(events.some(e=>e.observed_code==="model_provider_failure")&&
     !events.some(x=>x.reporting_component==="gemini_provider"&&
      x.observed_code!=="unknown"))
