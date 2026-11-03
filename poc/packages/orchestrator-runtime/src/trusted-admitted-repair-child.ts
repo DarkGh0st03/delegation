@@ -11,6 +11,8 @@ import {TrustedOperationalEpochIntake}
  from "./trusted-operational-epoch-intake.ts";
 import {TrustedApprovedPlanChildAuthorityIssuer}
  from "./trusted-approved-child-issuer.ts";
+import {createOwnerPrivateMcpChildCryptographyPort}
+ from "./trusted-child-crypto-port.ts";
 import {TrustedChildIssuanceJournal}
  from "./trusted-child-issuance-journal.mjs";
 import {TrustedPlanIpcClient}
@@ -98,7 +100,15 @@ export async function issueAdmittedRepairTaskChild(config:{
    sessionId:config.sessionId,engineerDid:config.engineerDid,
    adapterBaseUrl:config.adapterBaseUrl,
    bearerToken:config.orchestratorToken,
-   ...(config.fetchFn?{fetchFn:config.fetchFn}:{})
+   ...(config.fetchFn?{fetchFn:config.fetchFn}:{}),
+   // A signed and Gateway-admitted D1 Task uses the SAME owner-private
+   // in-process MCP signer as the original D0 approved DAG. The Rust Adapter
+   // remains the sole issuer, while the fsynced intent stays in the issuer.
+   privateCryptoPort:createOwnerPrivateMcpChildCryptographyPort({
+    adapterBaseUrl:config.adapterBaseUrl,
+    bearerToken:config.orchestratorToken,
+    ...(config.fetchFn?{fetchFn:config.fetchFn}:{})
+   })
   });
  // R133 is the gate: no admitted plan, no Gateway bind, no Child DC.
  // A failed/broken ACK leaves the Task unusable rather than issuing

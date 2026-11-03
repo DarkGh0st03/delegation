@@ -2,6 +2,8 @@
  * created at startup, only after the original Gateway has attested Test FAIL.
  * Operator ports are configuration, never an authorization source. */
 import {TrustedApprovedPlanChildAuthorityIssuer} from "./trusted-approved-child-issuer.ts";
+import {createOwnerPrivateMcpChildCryptographyPort}
+ from "./trusted-child-crypto-port.ts";
 import {TrustedRemoteDiscoveryA2AHandoff} from "./trusted-remote-discovery-a2a-handoff.ts";
 import {TrustedRemoteDiscoveryOwnerBindings} from "./trusted-remote-discovery-owner-bindings.ts";
 
@@ -35,6 +37,13 @@ export async function assembleTrustedRemoteDiscoveryOwner(
  const issuer=await TrustedApprovedPlanChildAuthorityIssuer.createForRemoteRepairDiscovery({
   adapterBaseUrl:ports.adapterBaseUrl,bearerToken:ports.bearerToken,
   issuanceJournal:ports.issuanceJournal,fetchFn:ports.fetchFn,timeoutMs:ports.timeoutMs,
+  // R163: discovery uses the same private MCP SDK and single Rust signer as
+  // D0 + admitted D1. It must never expose issuer material to Backend ADK.
+  privateCryptoPort:createOwnerPrivateMcpChildCryptographyPort({
+   adapterBaseUrl:ports.adapterBaseUrl,bearerToken:ports.bearerToken,
+   ...(ports.fetchFn?{fetchFn:ports.fetchFn}:{}),
+   ...(ports.timeoutMs?{timeoutMs:ports.timeoutMs}:{})
+  }),
   coordinator:context.coordinator,gateway:context.gateway,intake:context.intake,
   sessionId:context.sessionId,engineerDid:context.engineerDid,
   failedRuntimeTestTaskId:context.failedRuntimeTestTaskId,

@@ -3535,7 +3535,7 @@ async function r134Fixture(t:import("node:test").TestContext,
   }
  };
 }
-test("R134 remote R133 Gateway admission precedes exact Rust repair Child DC; no A2A or provider",async t=>{
+test("R163 admitted D1 Child uses private MCP after Gateway bind, then original Rust signer; no A2A",async t=>{
  const f=await r134Fixture(t);
  await assert.rejects(issueAdmittedRepairTaskChild(f.args),
   /Gateway trusted control denied/);
@@ -4933,7 +4933,7 @@ async function r154DispatchedDiscovery(t:import("node:test").TestContext){
  assert.equal(sent,1);assert.equal(fenced,1);assert.equal(sourceTaken,1);
  return {h,owner,result,read};
 }
-test("R151.54 native Coordinator discovery reaches Gateway provider ledger and one-use private source",async t=>{
+test("R163 remote D1 discovery crosses owner-private MCP and preserves one-use Gateway source evidence",async t=>{
  const {h,owner,result,read}=await r154DispatchedDiscovery(t);
  const pins={task_id:result.task_id,runtime_task_id:result.runtime_task_id,resource:file};
  assert.equal(await owner.loadCompletedDiscoverySource(pins),read.content);
