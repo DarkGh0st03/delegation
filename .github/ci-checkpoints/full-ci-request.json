@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "F1 final consolidated offline 3/3 gate after Gemini failure diagnostics + structural instructions",
-  "candidate_parent_sha": "bd06c406d40033d86df57839698090e26255f465",
-  "purpose": "Exactly one free final exact-SHA three-workflow validation after completing all F1 paid-planner postmortem fixes: correct UTF-8 error diagnostics, safe bounded history of three rejection categories, and initial trusted DAG structural instructions. Fast CI #41517905526 SUCCESS, native Gateway/Core #41517905545 SUCCESS, operation catalog #41517905498 SUCCESS, F1 real-Gitea script #41517905620 SUCCESS on candidate parent. All model generation and paid Gemini disabled. No additional Full CI until concrete failure demands consolidated fix.",
+  "checkpoint": "D1 TS2724 offline source-derived repair -> signed Backend D1 -> Gitea/Docker PASS consolidated gate",
+  "candidate_parent_sha": "035cb398edbbe2654f181f5b9fc4543d269c4b60",
+  "purpose": "One free exact-SHA consolidated validation for independently signed D1 Backend repair of real TS2724 under reusable original Rust/Gateway root. Targeted Docker D1 #41598918267 SUCCESS and Fast CI #41598918265 SUCCESS on parent SHA. Planner and paid Gemini workflow unchanged. Gemini, paid D1 and new grant escalation disabled. Review before any separate paid experiment.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
