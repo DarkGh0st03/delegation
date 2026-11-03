@@ -1,13 +1,13 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "N5 final candidate — N1 verified compiler context + N2 signed scope + N3 diagnostic-sensitive ADK input",
-  "candidate_parent_sha": "f70f11a20b8f45b919b5bdf389bb466a91063f85",
-  "purpose": "One FINAL offline same-SHA pre-pilot gate following Fast CI #41623540747 SUCCESS: original Planner unchanged, N1 private TS2724 evidence, N2 signed per-Task read boundaries, N3 true Backend ADK input and source-derived diagnostic-sensitive scripted behavior. Preserves original protected D0 + maximum one separately-authorized D1. All three offline workflows must independently finish SUCCESS on THIS marker commit; no Gemini calls. Functional old #41622383750 is NOT evidence for the new SHA.",
+  "checkpoint": "R0/R3/R4 architecture migration — direct signed Gateway FunctionTools + crypto-only MCP",
+  "candidate_parent_sha": "7032f5dee0b5005564c2fa3758005c69641352d4",
+  "purpose": "One consolidated free CI gate for the signed DAG migration after two Fast CI successes. Functional Signed DAG must demonstrate direct ADK FunctionTools -> Gateway with crypto-only MCP, and retain signed-plan/OPA/Rust/Docker/acceptance behavior. Historic Shared MCP suite remains a baseline only and is NOT counted as proof of the new architecture. This checkpoint does not claim Engineer-native root issuance, Child-DC crypto MCP issuance, or provider batch reads are complete. No Gemini calls.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
     "functional-signed-dag-e2e.yml"
   ],
   "paid_model_invocation": false,
-  "activation_note": "Head commit must contain literal [full-ci] so Shared MCP executes; this marker intentionally triggers exactly one consolidated three-workflow check, instead of per-commit lengthy Full CI. Do not call paid Gemini from this workflow."
+  "activation_note": "[full-ci] marker intentionally triggers one three-workflow free checkpoint instead of running expensive suites on every incremental commit."
 }
