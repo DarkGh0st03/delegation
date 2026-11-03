@@ -2,6 +2,8 @@
 /**
  * Manual paid pilot gate: refuse to invoke ANY model unless all independent
  * offline CI workflows SUCCEEDED on the EXACT checked-out commit SHA.
+ * R168: third workflow now proves admitted signed D1 recovery end-to-end,
+ * rather than the deprecated sequential MCP coordinator acceptance baseline.
  * GitHub API calls only; does not import or contact a Gemini SDK/provider.
  */
 import {pathToFileURL} from "node:url";
@@ -9,7 +11,7 @@ import {resolve} from "node:path";
 import {verifySignedGeminiPilotConsent} from "./signed-gemini-pilot-consent.mjs";
 const REQUIRED=Object.freeze([
   ".github/workflows/functional-signed-dag-e2e.yml",
-  ".github/workflows/shared-mcp-real-positive-e2e.yml",
+  ".github/workflows/ts2724-signed-d1-targeted.yml",
   ".github/workflows/cumulative-refactoring-offline.yml"
 ]);
 const REPO="DarkGh0st03/delegation";

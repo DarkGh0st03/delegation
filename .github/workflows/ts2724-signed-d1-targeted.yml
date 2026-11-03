@@ -6,6 +6,9 @@ on:
     branches: [refactor/post-prof-plan-contracts-20261021]
     paths:
       - '.github/workflows/ts2724-signed-d1-targeted.yml'
+      # R168: the focused signed D1 real-Docker recovery is one of the
+      # mandatory SAME-SHA free pilot gates; do not run on every commit.
+      - '.github/ci-checkpoints/full-ci-request.json'
       - 'poc/apps/gateway/native-test/ts2724-backend-fault-fixture.mjs'
       - 'poc/apps/gateway/native-test/ts2724-backend-fault-fixture.test.mjs'
       - 'poc/apps/gateway/native-test/source-derived-route-offline-adk-model.mjs'

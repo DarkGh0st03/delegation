@@ -7,7 +7,7 @@ const sha="a".repeat(40),REPO="DarkGh0st03/delegation",
   BRANCH="refactor/post-prof-plan-contracts-20261021";
 const paths=[
   ".github/workflows/functional-signed-dag-e2e.yml",
-  ".github/workflows/shared-mcp-real-positive-e2e.yml",
+  ".github/workflows/ts2724-signed-d1-targeted.yml",
   ".github/workflows/cumulative-refactoring-offline.yml"
 ];
 const green=(path)=>({
@@ -28,10 +28,10 @@ const valid=()=>({
   DELEGATION_GEMINI_MODEL:"gemini-3.8-flash",
   DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES"
 });
-test("R151.91 a checkpoint file starts exactly three offline full CI workflows, not Gemini",()=>{
+test("R168 checkpoint requires Cumulative + signed-DAG + real D1 recovery; never paid Gemini",()=>{
   const marker=".github/ci-checkpoints/full-ci-request.json";
   for(const name of ["functional-signed-dag-e2e","cumulative-refactoring-offline",
-    "shared-mcp-real-positive-e2e"]){
+    "ts2724-signed-d1-targeted"]){
     const yaml=readFileSync(new URL("../../../.github/workflows/"+name+".yml",import.meta.url),"utf8");
     const start=yaml.indexOf("\non:");
     const end=yaml.indexOf("\npermissions:",start);
@@ -40,15 +40,21 @@ test("R151.91 a checkpoint file starts exactly three offline full CI workflows, 
     assert.ok(triggers.includes("workflow_dispatch:"));
     assert.ok(triggers.includes("refactor/post-prof-plan-contracts-20261021"));
     assert.ok(triggers.includes("- '"+marker+"'"),"Missing explicit checkpoint trigger");
-    if(name==="shared-mcp-real-positive-e2e"){
-      assert.ok(triggers.includes("feat/shared-mcp-spike, main"));
-      assert.ok(triggers.includes("pull_request:"),"PR checks must stay automatic");
-      assert.ok(yaml.includes("contains(github.event.head_commit.message, '[full-ci]')"),
-        "Normal development push must skip costly Docker job");
-    }else{
-      assert.ok(!triggers.includes("poc/**"),"Heavy CI cannot run on every source change");
+    assert.ok(!triggers.includes("poc/**"),"Heavy CI cannot run on every source change");
+    if(name==="ts2724-signed-d1-targeted"){
+      assert.ok(triggers.includes("'.github/ci-checkpoints/full-ci-request.json'"));
+      assert.ok(!triggers.includes("pull_request:"),
+        "Targeted D1 must use verified SHA only on push/dispatch");
     }
   }
+  const historical=readFileSync(new URL("../../../.github/workflows/shared-mcp-real-positive-e2e.yml",import.meta.url),"utf8");
+  const historicHeader=historical.slice(0,historical.indexOf("\npermissions:"));
+  assert.ok(historicHeader.includes("feat/shared-mcp-spike, main"));
+  assert.ok(!historicHeader.includes(
+    "feat/shared-mcp-spike, main, refactor/post-prof-plan-contracts-20261021"),
+    "Historical sequential MCP must not run on development checkpoints");
+  assert.ok(historicHeader.includes("pull_request:"));
+  assert.ok(historicHeader.includes("workflow_dispatch:"));
   const r139=readFileSync(new URL("../../../.github/workflows/r139-real-docker-repair-e2e.yml",import.meta.url),"utf8");
   assert.ok(r139.includes("workflow_dispatch:"));
   assert.ok(!r139.includes("branches: [refactor/post-prof-plan-contracts-20261021]"));
@@ -147,4 +153,14 @@ test("narrow assertion E2E success never substitutes a required Full CI workflow
   ],sha),/NO-GO/);
  }
  assert.equal(verifyExactShaOfflineCiRuns([...paths.map(green),narrow],sha).independent_workflows_verified,3);
+});
+
+test("R168 green legacy MCP must never substitute actual signed D1 recovery",()=>{
+ const legacyPath=".github/workflows/shared-mcp-real-positive-e2e.yml";
+ const missingD1=paths.filter(p=>p!==
+   ".github/workflows/ts2724-signed-d1-targeted.yml").map(green);
+ assert.throws(()=>verifyExactShaOfflineCiRuns([...missingD1,green(legacyPath)],sha),
+  /NO-GO/);
+ assert.equal(verifyExactShaOfflineCiRuns([...paths.map(green),green(legacyPath)],sha)
+  .independent_workflows_verified,3);
 });

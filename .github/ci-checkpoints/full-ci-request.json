@@ -1,13 +1,13 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R166/R167 canonical crypto MCP isolation and trusted D0/D1 Engineer issuance; consolidate free integration",
-  "candidate_parent_sha": "1615e7cfd72206e9da0af8898c257d29cc07f9c9",
-  "purpose": "Consolidated FREE same-SHA checkpoint after R166 crypto-only MCP module isolation, R164 Engineer root issuance/revocation through owner-private MCP and R163 D1 child issuance. Functional Signed DAG is the canonical proof for signed plan, FunctionTools→Gateway, native Rust/OPA/Gitea/Docker, crypto-only VP MCP and acceptance. Historic Shared MCP real-positive remains historical reproducibility only, never canonical proof. No paid Gemini; no main change.",
+  "checkpoint": "R168 canonical paid pilot preflight — Cumulative + Functional Signed DAG + signed D1 Docker recovery (no AI)",
+  "candidate_parent_sha": "9513944e674d5d83ccf042dcfce422fb37ea8771",
+  "purpose": "Use three independent, FREE, same-SHA CI proofs directly relevant to the post-professor architecture: Cumulative Offline, Functional Signed DAG with direct ADK FunctionTools/Gateway/native Rust/OPA/crypto MCP, and signed D1 TS2724 failure-to-repair in real Docker. Historical Shared MCP sequential regression is no longer a mandatory paid pilot gate. Paid Gemini remains strictly manual and requires separate explicit authorization and cost acknowledgment. Do not merge to main.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
-    "shared-mcp-real-positive-e2e.yml",
-    "functional-signed-dag-e2e.yml"
+    "functional-signed-dag-e2e.yml",
+    "ts2724-signed-d1-targeted.yml"
   ],
   "paid_model_invocation": false,
-  "activation_note": "[full-ci] explicitly triggers three pre-existing zero-billing Full CI workflows on the same SHA. Branch main unchanged."
+  "activation_note": "[full-ci] one consolidated no-billing checkpoint; signed D1 triggers on this marker, not every commit."
 }

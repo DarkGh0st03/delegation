@@ -46,3 +46,27 @@ Do not merge to main, allow a model to issue root DCs, bypass OPA/native Rust, t
 - Historical ADK/A2A scripts and tests explicitly select legacy, so older reproducibility remains available. Their workflow `shared-mcp-real-positive-e2e.yml` remains a historical baseline in the three-workflow release gate; its PASS must not be mistaken for the canonical signed DAG proof.
 - **Not yet deletion-safe:** `sequential-coordinator.ts`, `legacy-authority-client.ts`, the private repository worker and legacy routing tests still have known real imports and CI callers. Physical removal before migrating those historical tests would destroy reproducibility, not improve the canonical path.
 - R166 requires zero-billing Fast CI and crypto-only MCP tests. The next consolidated free Full CI should specifically verify the Functional Signed DAG's `approved_shared_mcp_enabled:false`, `direct_gateway_function_tools_enabled:true`, `approved_crypto_mcp_enabled:true` and real provider evidence on a single SHA. A historical Shared MCP PASS is corroboration only.
+
+## R168 — canonical three-workflow gate replaces legacy requirement
+
+Following successful R167 verification on SHA `9513944e`, the paid Gemini
+preflight no longer requires a successful run of the *historical sequential*
+Shared MCP Real Docker baseline as one of the three independent CI proofs.
+
+The exact-SHA release gate now requires **all three**:
+1. `cumulative-refactoring-offline.yml` — offline architectural regression.
+2. `functional-signed-dag-e2e.yml` — signed approved DAG with direct
+   FunctionTools → Gateway, native Rust/OPA/Gitea/Docker and crypto-only MCP.
+3. `ts2724-signed-d1-targeted.yml` — real Docker TypeScript failure through
+   newly authorized Backend D1 and independent fresh acceptance PASS.
+
+The signed D1 workflow now listens to the same explicit `full-ci-request.json`
+checkpoint marker. Ordinary development commits do not trigger expensive
+full suites. The legacy Shared MCP suite is still retained for **main/spike,
+PR, or explicit workflow_dispatch** but is not counted as proof of canonical
+signed-DAG operation, and no longer runs as a refactor branch push gate.
+
+The proof is scripted/no-AI only: it establishes that infrastructure and
+signed recovery authorization work, **not** that a live Gemini model autonomously
+derives a semantic fix. The manual paid workflow, human approval limitations,
+consent guard and cost risks remain unchanged.
