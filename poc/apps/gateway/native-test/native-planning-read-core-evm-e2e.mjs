@@ -67,6 +67,8 @@ import {getApprovedOfflineScenario} from
 import {makeOfflineReviewableDag} from
   "../../../packages/orchestrator-runtime/test/fixtures/offline-planning-dag.mjs";
 import {BaseLlm} from "@google/adk";
+import {injectTs2724BackendImportFault}
+  from "./ts2724-backend-fault-fixture.mjs";
 import {accountSuspensionPlanningConfig} from "../../../scripts/account-suspension-planning-config.mjs";
 import {verifyRealGiteaPlanningMode}
   from "../../../scripts/real-gitea-planning-mode.mjs";
@@ -113,6 +115,9 @@ const signedOfflineRecovery=process.env.APPROVED_RUNNER_SIGNED_DAG_RECOVERY==="1
   process.env.PLANNING_NATIVE_POSITIVE_DAG==="1";
 const signedOfflineTypecheckProbe=
   process.env.APPROVED_RUNNER_SIGNED_DAG_TYPECHECK_PROBE==="1";
+const signedOfflineTs2724Probe=
+  process.env.APPROVED_RUNNER_SIGNED_DAG_TS2724_PROBE==="1";
+const expectedOfflineTypecheckCode=signedOfflineTs2724Probe?"TS2724":"TS2820";
 const signedOfflineAcceptanceProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_ACCEPTANCE_PROBE==="1";
 const signedOfflineBackendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE==="1";
 const signedOfflineFrontendTestProbe=process.env.APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE==="1";
@@ -160,6 +165,11 @@ if(process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1"&&
     process.env.DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION!==
       "I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH"))
   throw Error("R151.12 paid repair epoch requires separate explicit billing consent");
+if(signedOfflineTs2724Probe&&
+   (!signedOfflineTypecheckProbe||!ownerD1Probe||geminiPilot||
+    signedOfflineSemanticProbe||
+    process.env.APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE==="1"))
+  throw Error("TS2724 fixture requires ONLY the no-billing single Backend signed D1");
 const ownerRecoveryEnabled=ownerD1Probe||paidGeminiRecovery;
 // The isolated Docker smoke script executes several independent native
 // subprocesses. Its opt-in flag is inherited by ALL of them, while only
@@ -940,7 +950,7 @@ try{
                 assert.equal(input.diagnostic_target,undefined);
                 assert.ok(input.diagnostic_candidates.candidates.some(candidate=>
                   candidate.role===fixtureEditorRole&&candidate.resource===fileResource));
-              }else assert.ok(input.feedback.typecheck_error_codes.includes("TS2820"));
+              }else assert.ok(input.feedback.typecheck_error_codes.includes(expectedOfflineTypecheckCode));
               assert.equal(input.feedback.remaining_repair_epochs,2);
               if(multiTypecheckProbe){
                 const proven=input.diagnostic_targets;
@@ -1509,7 +1519,10 @@ try{
               g.resource===canonicalFileUri(repo,workBranch,path)));
           if(!target||typeof otherImplementations[target]!=="string")
             throw Error("No approved Backend TypeScript target for fault probe");
-          otherImplementations[target]+=
+          if(signedOfflineTs2724Probe)
+            otherImplementations[target]=injectTs2724BackendImportFault(
+              otherImplementations[target]);
+          else otherImplementations[target]+=
             '\nconst __delegation_typecheck_probe: "ACTIVE" | "SUSPENDED" = "SUSPEND";\n';
           if(multiTypecheckProbe){
             const frontendTarget=roleFiles.frontend.find(path=>
@@ -1589,6 +1602,7 @@ try{
         }:{}),
         offlineRecovery:signedOfflineRecovery,
         offlineTypecheckProbe:signedOfflineTypecheckProbe,
+        offlineTypecheckExpectedCode:expectedOfflineTypecheckCode,
         offlineMultiTypecheckProbe:multiTypecheckProbe,
         offlineAcceptanceProbe:signedOfflineAcceptanceProbe,
         offlineProjectTestProbe:signedOfflineProjectTestProbe,
@@ -1677,7 +1691,7 @@ try{
         assert.equal(proof.pr_created,false);
         assert.equal(proof.operational_root_revoked,true);
         assert.equal(proof.main_unchanged,true);
-        assert.deepEqual(proof.typecheck_error_codes,["TS2820"]);
+        assert.deepEqual(proof.typecheck_error_codes,[expectedOfflineTypecheckCode]);
         }
       }else{
       assert.equal(globalThis.__nativeDagPositive.signed_dag_completed,true);

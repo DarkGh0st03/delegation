@@ -121,6 +121,7 @@ export async function runNativePositiveApprovedDag({
   /** Trusted owner-only factory for non-fixture ADK models; never CLI/env. */
   approvedAgentModelFactory,realGeminiPilot=false,offlineRecovery=false,
   offlineTypecheckProbe=false,offlineMultiTypecheckProbe=false,
+  offlineTypecheckExpectedCode="TS2820",
   offlineAcceptanceProbe=false,offlineProjectTestProbe=false,
   offlineGeneratedTestProbe=false,offlineMultiTest=false,onPilotPhase,onPilotError,
   /** Owner-private capability supplied ONLY by an authenticated trusted
@@ -130,6 +131,10 @@ export async function runNativePositiveApprovedDag({
   trustedOwnerRecovery
 }){
   const offlineSemanticProbe=offlineAcceptanceProbe||offlineProjectTestProbe;
+  if(!["TS2820","TS2724"].includes(offlineTypecheckExpectedCode)||
+     (offlineTypecheckExpectedCode==="TS2724"&&
+       (!offlineTypecheckProbe||offlineMultiTypecheckProbe||realGeminiPilot)))
+    throw Error("Unsupported trusted offline typecheck fixture");
   if(offlineProjectTestProbe&&offlineAcceptanceProbe)throw Error("Separate semantic fixture modes required");
   if(offlineRecovery&&(realGeminiPilot||
      typeof approvedAgentModelFactory!=="function"))
@@ -724,7 +729,7 @@ export async function runNativePositiveApprovedDag({
           }
           if(offlineTypecheckProbe&&!admittedTestRepair){
             assert.equal(effect.status,"fail");
-            assert.deepEqual(typecheckCodes,["TS2820"]);
+            assert.deepEqual(typecheckCodes,[offlineTypecheckExpectedCode]);
             assert.ok(scopeAudit&&revisionComparison,
               "Signed-root coverage and pinned-revision evidence required");
             assert.equal(scopeAudit.outside_planning_snapshot,0);

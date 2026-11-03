@@ -317,3 +317,43 @@ test("Backend test editor reads the real failed revision and repairs only the ob
  assert.equal(write.name,"update_file");assert.equal(write.args.content,source);
  assert.throws(()=>m.armTrustedD1ProjectTestRepair(args),/NO-GO/);
 });
+test("R151 TS2724 source-derived Backend D1 reads failed SHA and corrects only authorized import",async()=>{
+ const {injectTs2724BackendImportFault,TS2724_BACKEND_IMPORT_FAULT}
+  =await import("./ts2724-backend-fault-fixture.mjs");
+ const m=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
+ await next(m,{});await next(m,input({ok:true,result:data}));await next(m,{});
+ const path="apps/backend/src/users/user.service.ts",failedSha="b".repeat(40);
+ m.armTrustedD1TypecheckRepair({branch,path,failedSha,taskId:"d1-ts2724-backend"});
+ assert.equal((await next(m,{})).functionCall.name,"read_file");
+ const original='export const value = 1;\\n';
+ const injected=injectTs2724BackendImportFault(original);
+ const update=(await next(m,input({ok:true,result:{
+  ...data,path,revision:failedSha,content:injected
+ }}))).functionCall;
+ assert.equal(update.name,"update_file");
+ assert.equal(update.args.path,path);
+ assert.equal(update.args.content,original+"\\n");
+ assert.ok(!update.args.content.includes(TS2724_BACKEND_IMPORT_FAULT));
+ const written=await next(m,{contents:[{parts:[{functionResponse:{
+  name:"update_file",response:{ok:true,result:{
+    provider:"gitea",performed:true,tool:"update_file",
+    branch,path,commit_sha:"c".repeat(40)
+  }}
+ }}]}]});
+ assert.match(written.text,/confirmed through protected Gateway/u);
+});
+test("R151 TS2724 D1 denies unobserved and ambiguous repair payloads",async()=>{
+ const {injectTs2724BackendImportFault,TS2724_BACKEND_IMPORT_FAULT}
+  =await import("./ts2724-backend-fault-fixture.mjs");
+ const m=new SourceDerivedRouteOfflineAdkModel({context,calls:script});
+ await next(m,{});await next(m,input({ok:true,result:data}));await next(m,{});
+ const path="apps/backend/src/users/user.service.ts";
+ m.armTrustedD1TypecheckRepair({branch,path,
+  failedSha:"b".repeat(40),taskId:"d1-ts2724-denial"});
+ await next(m,{});
+ await assert.rejects(()=>next(m,input({ok:true,result:{
+  ...data,path,revision:"b".repeat(40),
+  content:injectTs2724BackendImportFault("export const x = 1;\\n")+
+    TS2724_BACKEND_IMPORT_FAULT
+ }})),/NO-GO/u);
+});

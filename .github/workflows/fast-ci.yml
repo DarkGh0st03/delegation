@@ -61,6 +61,8 @@ jobs:
           node --check poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.mjs
           node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
           node --experimental-strip-types --test poc/apps/test-runner-controller/test/native-preliminary-environment.test.ts
+          node --test poc/apps/gateway/native-test/ts2724-backend-fault-fixture.test.mjs
+          node --experimental-strip-types --test poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs
       - name: Generated Test edit, fresh validation and final acceptance selection (no model calls)
         run: |
           node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.test.mjs poc/apps/gateway/native-test/offline-approved-adk-model.test.mjs poc/apps/gateway/native-test/d1-editor-revision.test.mjs poc/packages/orchestrator-runtime/test/repair-final-test-task.test.ts

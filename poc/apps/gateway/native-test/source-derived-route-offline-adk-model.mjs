@@ -6,6 +6,8 @@ import {repairAcceptanceFault,ACCEPTANCE_FAULT} from "./offline-acceptance-repai
  * All other edits remain prepackaged offline fixtures.
  */
 import {BaseLlm} from "@google/adk";
+import {TS2724_BACKEND_IMPORT_FAULT,repairTs2724BackendImportFault}
+  from "./ts2724-backend-fault-fixture.mjs";
 import {createHash} from "node:crypto";
 import {applyApprovedControllerInstructions,parseApprovedControllerInstructions}
   from "./source-derived-controller-edits.mjs";
@@ -232,13 +234,15 @@ export class SourceDerivedRouteOfflineAdkModel extends BaseLlm{
           }}]}};
           return;
         }
-        if(!semantic&&source.split(FAULT).length!==2)
+        if(!semantic&&[FAULT,TS2724_BACKEND_IMPORT_FAULT].filter(marker=>
+          source.split(marker).length===2).length!==1)
           deny("unsupported or changed real TypeScript fault");
         repair.stage=2;
         // A tiny deterministic fixture corrects precisely the observed
         // injected TS2820 line. This is NOT independent AI-generated code.
         const corrected=repair.kind==="project_test"?repairProjectTestFault(source):repair.kind==="acceptance"
-          ?repairAcceptanceFault(source):source.replace(FAULT,"\n");
+          ?repairAcceptanceFault(source):source.includes(TS2724_BACKEND_IMPORT_FAULT)
+          ?repairTs2724BackendImportFault(source):source.replace(FAULT,"\n");
         yield {content:{role:"model",parts:[{functionCall:{
           id:"r150-d1-backend-update",
           name:"update_file",
