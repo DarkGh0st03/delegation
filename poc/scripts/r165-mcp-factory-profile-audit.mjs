@@ -15,7 +15,7 @@ import {resolve} from "node:path";
 import {fileURLToPath,pathToFileURL} from "node:url";
 
 const FACTORY=/\bcreateSharedMcpHttpServer\s*\(\s*\{/gu;
-const PROFILE=/\bprofile\s*:\s*(?:"(legacy|crypto)"|'(legacy|crypto)'|(toolProfile))\b?/u;
+const PROFILE=/\bprofile\s*:\s*(?:"(legacy|crypto)"|'(legacy|crypto)'|(toolProfile))/u;
 const SCAN_BYTES=350;
 const allowedLegacy=path=>
   path.startsWith("poc/mcp-shared/test/")||
