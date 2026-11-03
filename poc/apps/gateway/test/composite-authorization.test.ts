@@ -277,6 +277,10 @@ test("R158 approved read composite executes two pinned Gateway reads only after 
  assert.deepEqual(verifier.calls[0].required_permissions,
   prepared.required_permissions);
  assert.equal(policy.calls.length,2);
+ assert.ok(policy.calls.every(p=>
+   p.approved_plan_digest==="b".repeat(64)&&
+   p.approved_work_branch==="feature/demo"&&
+   p.pinned_revision===pinned));
  assert.equal(calls.length,2);
  assert.deepEqual(events.map(x=>Array.isArray(x)?x[0]:x),
   ["begin","record","record","end"]);
@@ -330,4 +334,16 @@ test("R158 OPA second permission denial produces zero read effects",async()=>{
  await rejected(executeReadCompositeAuthorization(
   authorization(prepared.request_id),obj),403,"policy_denied");
  assert.equal(performed,0);
+});
+
+test("R159 composite auth-only receipt cannot impersonate signed operational OPA context",async()=>{
+ const policy=new Policy(),{deps}=fixture(new Verifier(),policy);
+ const input={task_id:"backend-task",agent_role:"backend",actions:[
+  {tool:"read_file",arguments:{branch:"feature/demo",path:"src/a.ts"}},
+  {tool:"read_file",arguments:{branch:"feature/demo",path:"src/b.ts"}}
+ ]};
+ const p=prepareCompositeAuthorization(input,deps);
+ await verifyCompositeAuthorization(authorization(p.request_id),deps);
+ assert.ok(policy.calls.every(x=>x.approved_plan_digest===undefined&&
+  x.approved_work_branch===undefined&&x.pinned_revision===undefined));
 });

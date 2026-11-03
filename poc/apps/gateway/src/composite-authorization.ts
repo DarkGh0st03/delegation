@@ -242,22 +242,26 @@ async function verifyCompositeInternal(
   }
 
   const policies: PolicyDecision[]=[];
-  for(const action of record.actions) {
-    // buildPolicyInput expects a prepared single-action record; this temporary
-    // object has the exact derived permission for the current composite action.
-    const policyRecord:PreparedRequestRecord={
-      request_id:record.request_id,
-      task_id:record.task_id,
-      agent_role:record.agent_role,
-      request:action.request,
-      required_permission:action.permission,
-      audience:record.audience,
-      challenge:record.challenge,
-      request_fingerprint:"",
-      created_at_ms:record.created_at_ms,
-      expires_at_ms:record.expires_at_ms,
-      consumed:true
-    };
+  for(const [index,action] of record.actions.entries()) {
+    // Executable reads MUST carry the actual authenticated plan digest,
+    // trusted work branch and exact pinned SHA into OPA, exactly as the
+    // single-operation Gateway execution does. The authorization-only
+    // historical path retains its old policy projection.
+    const policyRecord:PreparedRequestRecord=record.read_execution
+      ? record.read_execution.actions[index]!
+      : {
+        request_id:record.request_id,
+        task_id:record.task_id,
+        agent_role:record.agent_role,
+        request:action.request,
+        required_permission:action.permission,
+        audience:record.audience,
+        challenge:record.challenge,
+        request_fingerprint:"",
+        created_at_ms:record.created_at_ms,
+        expires_at_ms:record.expires_at_ms,
+        consumed:true
+      };
     let decision:PolicyDecision;
     try {
       decision=await deps.policy.evaluate(buildPolicyInput(
@@ -371,7 +375,8 @@ export async function prepareReadCompositeAuthorization(raw:unknown,
     consumed:true
   }));
   record.read_execution=Object.freeze({
-    pinned_revision:revision,guard:planningRevision?"planning":"approved",
+    pinned_revision:revision,
+    guard:planningRevision?"planning" as const:"approved" as const,
     actions:Object.freeze(actionRecords)
   });
   return {...prepared,authorization_only:false as const,pinned_revision:revision};
@@ -413,7 +418,7 @@ export async function executeReadCompositeAuthorization(raw:unknown,
       "Trusted read binding is no longer authorized");
   }
   const release=read.guard==="approved"
-    ?deps.approvedPlans!.beginProviderEffect(read.actions[0]):undefined;
+    ?deps.approvedPlans!.beginProviderEffect(read.actions[0]!):undefined;
   const results:import("./types.ts").ExecutionResult[]=[];
   let total=0;
   try{
@@ -425,16 +430,20 @@ export async function executeReadCompositeAuthorization(raw:unknown,
         deps.planningRevisions!.assertActiveForExecution(action);
       else deps.approvedPlans!.assertAuthorizedForExecution(
         action,verified.presenter_id,verified.credential_id);
+      const requested=action.request;
+      if(requested.tool!=="read_file"&&requested.tool!=="list_directory")
+        throw new GatewayError(403,"composite_read_only",
+          "Trusted read bundle has an invalid operation");
       const result=await deps.executor.execute(action,deps.signal);
       if(result.provider!=="gitea"||result.performed!==true||
-         result.tool!==action.request.tool||
+         result.tool!==requested.tool||
          !("revision" in result)||result.revision!==read.pinned_revision||
-         !("branch" in result)||result.branch!==action.request.arguments.branch||
-         (result.tool==="read_file"&&
-          (result.path!==action.request.arguments.path||
+         !("branch" in result)||result.branch!==requested.arguments.branch||
+         (result.tool==="read_file"&&requested.tool==="read_file"&&
+          (result.path!==requested.arguments.path||
            result.encoding!=="utf-8"))||
-         (result.tool==="list_directory"&&
-          result.path!==action.request.arguments.path))
+         (result.tool==="list_directory"&&requested.tool==="list_directory"&&
+          result.path!==requested.arguments.path))
         throw new GatewayError(503,"composite_provider_mismatch",
           "Read provider returned a mismatched immutable result");
       total+=Buffer.byteLength(JSON.stringify(result),"utf8");
@@ -446,7 +455,7 @@ export async function executeReadCompositeAuthorization(raw:unknown,
     if(read.guard==="approved"){
       for(let i=0;i<results.length;i++)
         deps.approvedPlans!.recordProviderSuccess(
-          read.actions[i],results[i],verified.presenter_id,verified.credential_id);
+          read.actions[i]!,results[i]!,verified.presenter_id,verified.credential_id);
     }
     audit("allow","all_reads_completed","success");
     return {request_id:record.request_id,decision:"allow" as const,
