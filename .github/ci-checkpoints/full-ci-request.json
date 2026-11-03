@@ -1,12 +1,13 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
   "checkpoint": "N1 private TS2724 compiler context + N2 signed ADK scope matrix consolidated free validation",
-  "candidate_parent_sha": "58ebbc4a20b837e5000fd96e945548e15312a36f",
+  "candidate_parent_sha": "902b5891804c71616357ce1b48881d6b113b78f4",
   "purpose": "One offline same-SHA gate for N1 verified compiler-message transport to Backend D1 (targeted TS2724 #41618869640 SUCCESS, Fast #41618869751 SUCCESS on source parent), plus N2 signed ADK context availability matrix (Fast #41621634547 SUCCESS on candidate parent). No Planner/paid-workflow/grant changes. Root scope is NOT automatic signed Task scope; exporter unreadability is an explicit generative limitation, not permission to auto-escalate. No paid model invocation.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
     "functional-signed-dag-e2e.yml"
   ],
-  "paid_model_invocation": false
+  "paid_model_invocation": false,
+  "activation_note": "Shared MCP full CI requires literal [full-ci] in the head commit message; prior N4 checkpoint push skipped this job. This commit is the one final corrected same-SHA free gate, no source or authorization change."
 }
