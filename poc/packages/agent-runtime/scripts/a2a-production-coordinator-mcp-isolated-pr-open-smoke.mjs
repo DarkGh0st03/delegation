@@ -371,6 +371,7 @@ async function main(){
     });
     const ports=Object.fromEntries(await Promise.all(roles.map(async r=>[r,await freePort()])));
     sharedServer=createSharedMcpHttpServer({
+    profile:"legacy",
       verificationKeys:Object.fromEntries(roles.map(r=>[r,pairs[r].publicKey])),
       router:new TaskRouter(Object.fromEntries(roles.map(r=>[r,{
         baseUrl:"http://127.0.0.1:"+ports[r]

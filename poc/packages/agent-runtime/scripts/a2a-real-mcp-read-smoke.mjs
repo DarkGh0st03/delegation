@@ -206,6 +206,7 @@ async function main(){
   const port=await unusedPort();
   const agentUrl="http://127.0.0.1:"+port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{
       backend:backend.publicKey,frontend:frontend.publicKey,
       test:testing.publicKey

@@ -330,6 +330,7 @@ async function main(){
     await new Promise(resolve=>agentServer.once("listening",resolve));
     const agentUrl="http://127.0.0.1:"+agentServer.address().port;
     sharedServer=createSharedMcpHttpServer({
+    profile:"legacy",
       verificationKeys:{
         backend:b.publicKey,frontend:f.publicKey,test:t.publicKey
       },

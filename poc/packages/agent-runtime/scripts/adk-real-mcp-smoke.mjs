@@ -149,6 +149,7 @@ async function main(){
     await new Promise(resolve=>worker.once("listening",resolve));
     const workerUrl="http://127.0.0.1:"+worker.address().port;
     shared=createSharedMcpHttpServer({
+    profile:"legacy",
       verificationKeys:{backend:backend.publicKey,
         frontend:frontend.publicKey,test:testing.publicKey},
       router:new TaskRouter({backend:{baseUrl:workerUrl},

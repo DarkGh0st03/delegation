@@ -235,6 +235,7 @@ async function main(){
   const ports={};
   for(const role of roles)ports[role]=await unusedPort();
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:Object.fromEntries(
       roles.map(role=>[role,keypairs[role].publicKey])
     ),
