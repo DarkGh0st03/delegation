@@ -24,12 +24,12 @@ const allowedLegacy=path=>
   path.startsWith("poc/packages/agent-runtime/scripts/");
 const codeFile=path=>/^poc\//u.test(path)&&/\.(?:mjs|js|ts)$/u.test(path);
 
-export function inspectMcpFactoryCalls(root:string){
+export function inspectMcpFactoryCalls(root){
  const tracked=execFileSync("git",["ls-files","--cached","-z"],{
   cwd:root,encoding:"utf8"
  }).split("\0").filter(codeFile).sort();
- const calls:Array<{file:string;line:number;profile:string}>=[];
- const errors:string[]=[];
+ const calls=[];
+ const errors=[];
  for(const file of tracked){
   const source=readFileSync(resolve(root,file),"utf8");
   for(const match of source.matchAll(FACTORY)){
