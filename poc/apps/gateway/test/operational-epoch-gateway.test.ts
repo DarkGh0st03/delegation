@@ -3596,6 +3596,32 @@ test("R134 no second credential after Task binding, even with a fresh credential
  assert.equal(f.calls.length,1,"Cannot mint new child by retrying bound Task");
  assert.equal((await f.journal.records()).length,1);
 });
+test("R163 uncertain D1 MCP/Rust issuance remains journalled, unrepeatable and undispatched",async t=>{
+ const f=await r134Fixture(t);
+ await f.admit();
+ let attempted=0;
+ const injected={...f.args,fetchFn:async()=>{
+  attempted++;
+  throw Error("PRIVATE_ISSUER_BEARER_CREDENTIAL_MUST_NOT_ESCAPE");
+ }};
+ await assert.rejects(issueAdmittedRepairTaskChild(injected),error=>{
+  assert.doesNotMatch(String(error),/PRIVATE_ISSUER_BEARER_CREDENTIAL/);
+  return /Owner-private MCP child issuance unavailable/.test(String(error));
+ });
+ assert.equal(attempted,1);
+ assert.equal(f.calls.length,0);
+ const recorded=await f.journal.records();
+ assert.equal(recorded.length,1);
+ assert.equal(recorded[0].observation,"issuance_uncertain");
+ await assert.rejects(issueAdmittedRepairTaskChild({
+  ...injected,runtimeTaskId:"r163-unauthorized-retry",
+  credential:{...f.args.credential,credential_id:"urn:r163:attempted-retry"}
+ }),/Gateway trusted control denied/);
+ assert.equal(attempted,1);
+ assert.equal((await f.journal.records()).length,1);
+ assert.equal(f.h.provider,3,"Failed D1 signing must not change Gitea");
+});
+
 test("R134 revocation during native child issuance leaves no dispatch authority",async t=>{
  const f=await r134Fixture(t);
  await f.admit();
@@ -4929,6 +4955,8 @@ async function r154DispatchedDiscovery(t:import("node:test").TestContext){
   gateway:h.f.client,intake:h.f.h.intake,sessionId:session,
   engineerDid:engineer,failedRuntimeTestTaskId:"task-test"});
  const result=await owner.dispatchRemoteDiscovery();
+ assert.equal(h.calls.length,1,"Remote discovery issues one Child via original Rust signer");
+ assert.equal((await h.journal.records())[0].observation,"adapter_response_verified");
  assert.equal(result.gateway_provider_corroborated,true);
  assert.equal(sent,1);assert.equal(fenced,1);assert.equal(sourceTaken,1);
  return {h,owner,result,read};
