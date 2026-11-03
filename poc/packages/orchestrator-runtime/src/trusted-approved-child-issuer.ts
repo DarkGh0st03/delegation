@@ -22,6 +22,8 @@ import type {AuthenticatedPlanStore} from
 import type {TrustedExecutionCoordinator} from "./trusted-execution-coordinator.ts";
 import type {ChildIssuanceInput,IssuedDelegationCredential} from "./authority-client.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
+import {createRustAdapterChildCryptographyPort,
+  type TrustedChildCryptographyPort} from "./trusted-child-crypto-port.ts";
 
 type FetchLike=typeof fetch;
 type ScopedInput=ChildIssuanceInput;
@@ -73,6 +75,9 @@ export interface ApprovedChildIssuerConfig{
   bearerToken:string;
   fetchFn?:FetchLike;
   timeoutMs?:number;
+  /** Trusted owner-only transport override. Never supplied by A2A or ADK.
+   * Current production owner still uses the existing Rust Adapter signer. */
+  privateCryptoPort?:TrustedChildCryptographyPort;
   /** Optional in legacy tests; trusted R5 host provisions a durable journal. */
   issuanceJournal?:TrustedChildIssuanceJournal;
 }
@@ -80,10 +85,7 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
   readonly #sessionId:string;
   readonly #engineerDid:string;
   readonly #coordinator:ApprovedChildIssuerConfig["coordinator"];
-  readonly #adapterBaseUrl:string;
-  readonly #bearerToken:string;
-  readonly #fetch:FetchLike;
-  readonly #timeoutMs:number;
+  readonly #cryptoPort:TrustedChildCryptographyPort;
   readonly #rootId:string;
   readonly #digest:string;
   readonly #journal?:TrustedChildIssuanceJournal;
@@ -97,10 +99,8 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     this.#sessionId=c.sessionId;
     this.#engineerDid=c.engineerDid;
     this.#coordinator=c.coordinator;
-    this.#adapterBaseUrl=c.adapterBaseUrl.replace(/\/+$/u,"");
-    this.#bearerToken=c.bearerToken;
-    this.#fetch=c.fetchFn??fetch;
-    this.#timeoutMs=c.timeoutMs??5000;
+    this.#cryptoPort=c.privateCryptoPort ??
+      createRustAdapterChildCryptographyPort(c);
     this.#rootId=root.credential_id;
     this.#digest=root.plan_digest;
     this.#journal=c.issuanceJournal;
@@ -429,27 +429,15 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     // A durable intent remains non-retryable if this live remote fence fails.
     await this.#remoteDiscoveryFence?.();
     this.assertActiveBeforeA2ASend();
-    const response=await this.#fetch(
-      this.#adapterBaseUrl+"/v1/credentials/child",{
-        method:"POST",
-        headers:{authorization:"Bearer "+this.#bearerToken,
-          "content-type":"application/json",accept:"application/json"},
-        body:JSON.stringify({
-          parent_credential_id:this.#rootId,credential_id:input.credential_id,
-          delegatee:role,valid_from:input.valid_from,
-          validity_seconds:input.validity_seconds,
-          credential_status:input.credential_status,
-          permissions
-        }),
-        signal:AbortSignal.timeout(this.#timeoutMs)
-      }
-    );
-    if(!response.ok){
-      reject("Adapter rejected exact signed Task child issuance");
-    }
-    let credential:IssuedDelegationCredential;
-    try{credential=await response.json() as IssuedDelegationCredential;}
-    catch{reject("Adapter child issuance response is malformed");}
+    // This transport is not an authority provider. It receives one already
+    // bounded, journalled command; no model-selected permissions or tokens.
+    const credential=await this.#cryptoPort.issueChild(Object.freeze({
+      parent_credential_id:this.#rootId,credential_id:input.credential_id,
+      delegatee:role,valid_from:input.valid_from,
+      validity_seconds:input.validity_seconds,
+      credential_status:Object.freeze({...input.credential_status}),
+      permissions:Object.freeze(permissions.map(p=>Object.freeze({...p})))
+    }));
     if(!credential||credential.id!==input.credential_id||
        !exactCredentialPermissions(credential,permissions)){
       reject("Adapter child response differs from exact approved permissions");

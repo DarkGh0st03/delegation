@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {makeApproval,planDigest} from "../../../packages/plan-contracts/src/plan.mjs";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {TrustedApprovedPlanChildAuthorityIssuer} from "../src/trusted-approved-child-issuer.ts";
+import type {ExactTrustedChildIssuance,TrustedChildCryptographyPort}
+ from "../src/trusted-child-crypto-port.ts";
 import {TrustedApprovedA2ADispatcher} from "../src/trusted-approved-a2a-dispatcher.ts";
 import {DelegatedA2ARoleRunner} from "../src/a2a-workflow.ts";
 import {TaskState} from "@a2a-js/sdk";
@@ -434,4 +436,75 @@ test("R5 failed Adapter response leaves durable may-have-issued intent and canno
   await assert.rejects(second.issueSpecializedChild(child()),/NO-GO/);
   assert.equal((await journal.records()).length,1);
  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test("R161 owner-private crypto transport receives only signed child grants after durable admission",async()=>{
+ const e=fixture();
+ let count=0;
+ let issued:ExactTrustedChildIssuance|undefined;
+ const privateCryptoPort:TrustedChildCryptographyPort={
+  kind:"owner-private-crypto-mcp",
+  async issueChild(command){
+   count++;issued=command;
+   assert.equal(Object.isFrozen(command),true);
+   assert.equal(Object.isFrozen(command.permissions),true);
+   assert.ok(command.permissions.every(p=>Object.isFrozen(p)));
+   return {
+    "@context":["https://www.w3.org/ns/credentials/v2"],
+    type:["VerifiableCredential","DelegationCredential"],
+    id:command.credential_id,issuer:"did:thesis:orchestrator",
+    validFrom:command.valid_from,
+    credentialSubject:{sub:"did:thesis:"+command.delegatee,
+      per:command.permissions.map(p=>({...p}))}
+   };
+  }
+ };
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer.create({
+  ...e.config,privateCryptoPort
+ } as any);
+ await assert.rejects(issuer.issueSpecializedChild(child({
+  approved_task_id:"not-approved"
+ })),/Task\/role not authorized/);
+ assert.equal(count,0);
+ const result=await issuer.issueSpecializedChild(child());
+ assert.equal(count,1);
+ assert.equal(result.credential.id,"urn:issued:backend-child");
+ assert.deepEqual(issued?.permissions,[
+  {resource:FILE,operation:"update_file"},
+  {resource:FILE,operation:"read_file"}
+ ]);
+ assert.equal(issued?.parent_credential_id,"urn:issued:operational-root");
+ assert.equal(e.calls.length,0,"Only one selected signer port may run");
+ await assert.rejects(issuer.issueSpecializedChild(child({
+  credential_id:"urn:issued:second-child"
+ })),/already attempted/);
+ assert.equal(count,1);
+});
+
+test("R161 private crypto port cannot amplify signed permissions or authorize A2A",async()=>{
+ const e=fixture();
+ let calls=0;
+ const privateCryptoPort:TrustedChildCryptographyPort={
+  kind:"owner-private-crypto-mcp",
+  async issueChild(c){
+   calls++;
+   return {
+     "@context":["https://www.w3.org/ns/credentials/v2"],
+     type:["VerifiableCredential","DelegationCredential"],
+     id:c.credential_id,issuer:"did:thesis:orchestrator",
+     validFrom:c.valid_from,
+     credentialSubject:{sub:"did:thesis:"+c.delegatee,
+       per:[...c.permissions.map(p=>({...p})),
+         {resource:URI,operation:"create_pull_request"}]}
+   };
+  }
+ };
+ const issuer=await TrustedApprovedPlanChildAuthorityIssuer.create({
+   ...e.config,privateCryptoPort
+ } as any);
+ await assert.rejects(issuer.issueSpecializedChild(child()),
+   /response differs from exact approved permissions/);
+ assert.equal(calls,1);
+ await assert.rejects(issuer.issueSpecializedChild(child()),/already attempted/);
+ assert.equal(calls,1);
 });
