@@ -76,6 +76,8 @@ export interface TrustedAdkPlannerConfig {
   /** Host-owned, pure execution-shape check before proposal acceptance.
    * It cannot approve, sign, delegate or grant authority. */
   validateProposedPlan?:(proposal:UnapprovedPlanProposal)=>void;
+  /** Pilot-specific shape instructions, never an authority grant. */
+  pilotFullDag?:boolean;
   /** Explicit Gemini thinking level; unset for scripted/non-Gemini models. */
   thinkingLevel?:"LOW"|"MEDIUM"|"HIGH";
   /** Per-inference cancellation bound; does not itself guarantee a provider stops billing. */
@@ -276,21 +278,27 @@ function uniqueStrings(x:unknown,max:number,level?:ShapeLevel):string[] {
  */
 export const TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE=Object.freeze([
   "Make each Task description a self-contained brief: objective, relevant observed interfaces, required behavior, error cases and concrete verification criteria, within the description size limit.",
-  "Derive briefs from the original requirement and inspected contracts; keep Backend, Frontend and Test expectations consistent. Do not invent status codes or business rules; report unresolved contradictions as uncertainties.",
+  "Derive briefs from the original requirement and inspected contracts; keep expectations consistent among the specialists actually selected. Do not invent status codes or business rules; report unresolved contradictions as uncertainties.",
   "Before writing individual briefs, reconcile one shared behavioral contract from the requirement and authorized source reads: actors, preconditions, state transitions, payloads, return values and error cases. Repeat the relevant agreed contract in each consuming Task brief; agents do not share an implicit conversation.",
   "Each brief must identify existing invariants to preserve, the producer Task or observed interface it depends on, and observable verification criteria. Add a dependency on a producer when the consumer needs its changed contract; do not serialize unrelated work.",
   "Separate observed behavior from requested changes. If a contract cannot be established within authorized reads, record the specific uncertainty instead of assigning incompatible assumptions to Backend, Frontend and Test. Test expectations must follow the approved requirement and shared contract, not incidental implementation details.",
   "Plan the requested implementation AND concrete regression tests when behavior changes; merely calling run_tests is not a regression-test implementation.",
-  "Use a Test Agent task to read and update an existing discovered test file, or create a new test only inside a discovered directory, then run tests on the resulting feature branch.",
+  "When the requirement calls for changed tests, use an authorized Test Agent to read/update existing discovered test files or create a new test only inside a discovered directory, then run tests on the resulting feature branch.",
   "Inspect relevant existing test conventions before proposing new test-file paths; if the test directory is unavailable, report uncertainty rather than invent a resource.",
   "Specify test cases derived from the requirement, including positive, negative and authorization cases where relevant; never copy a prewritten solution.",
-  "Make the Test Agent task depend on every implementation Task whose changes it validates; make Pull Request creation depend on the completed Test Agent task.",
+  "If a Test Agent task is selected, make it depend on every implementation Task whose changes it validates; when a PR requires verified tests, it must depend on the completed Test Agent task.",
   "For EVERY update_file grant in a Task, add a read_file grant for the EXACT same path IN THAT SAME Task. A different Task's read does not satisfy the signed native DAG preflight.",
-  "For the signed pilot include exactly ONE root orchestrator create_branch Task with zero dependencies, exactly ONE Test run_tests grant, and exactly ONE orchestrator create_pull_request grant. Include at least one Task for each Backend, Frontend and Test specialist.",
-  "The final run_tests Task must depend transitively on every other file-writing Task. The create_pull_request Task must depend transitively on the final run_tests Task AND every file-writing Task. Do not leave a Test Agent edit after the final Runner.",
+  "For a repository-editing workflow, begin with one root orchestrator create_branch Task with zero dependencies. Select only the specialists needed by the requirement and available Agent Cards; do not impose a fixed Backend/Frontend/Test order.",
+  "When a final run_tests Task is required, it must depend transitively on every other file-writing Task. Any create_pull_request Task must follow the required final run_tests Task and all file-writing Tasks. Do not leave a Test Agent edit after the final Runner.",
   "If two Tasks update the same authorized file, order the Tasks with explicit dependencies; never propose unordered or overlapping writes. Creating a new test file and reading it must occur in distinct Tasks, with the read downstream of creation.",
-  "Verify the proposed Task dependency graph includes implementation, tests and review; keep all permissions minimal and within discovered source."
+  "Verify the proposed Task dependency graph includes the implementation, validation and review actually needed; keep all permissions minimal and within discovered source."
 ] as const);
+
+/** These structural requirements belong ONLY to the Account Suspension
+ * full pilot, not to the generic Planner compiler or agent selection. */
+const TRUSTED_BOUNDED_PILOT_GUIDANCE=Object.freeze([
+  "For the signed pilot include exactly ONE root orchestrator create_branch Task with zero dependencies, exactly ONE Test run_tests grant, and exactly ONE orchestrator create_pull_request grant. Include at least one Task for each Backend, Frontend and Test specialist."
+]);
 
 /** Model controls task proposal only. Canonical resources and identity come
  * exclusively from the trusted session/snapshot and trusted Agent registry.
@@ -600,6 +608,7 @@ export class TrustedAdkReadOnlyPlanner {
        ![0,1,2].includes(config.maxProposalRevisions??0)||
        (config.validateProposedPlan!==undefined&&
          typeof config.validateProposedPlan!=="function")||
+       (config.pilotFullDag!==undefined&&typeof config.pilotFullDag!=="boolean")||
        !Number.isSafeInteger(config.maxModelCallMs??120000)||
        (config.maxModelCallMs??120000)<1000||
        (config.maxModelCallMs??60000)>360000||
@@ -744,6 +753,7 @@ export class TrustedAdkReadOnlyPlanner {
         "Only orchestrator can create_branch/create_pull_request.",
         "Backend/Frontend: read_file/update_file. Test: read_file/update_file/create_file/run_tests.",
         ...TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE,
+        ...(cfg.pilotFullDag?TRUSTED_BOUNDED_PILOT_GUIDANCE:[]),
         "Use existing files from the supplied list for read/update.",
         "Create files only in the supplied directories; no other operations.",
         "The first Task creates a branch; every later Task depends on it.",

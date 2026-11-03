@@ -584,6 +584,7 @@ try{
     planId:"native-planning-proposal",agents,readPort:port,
     ...((geminiPilot||realPlanningOnly)?{
       ...accountSuspensionPlanningConfig(realPlanningOnly?"real-planning-only":"pilot"),
+      pilotFullDag:true,
       validateProposedPlan:proposal=>{
         // These proposed rows are NOT signed grants or execution authority.
         preflightApprovedPilotDag({

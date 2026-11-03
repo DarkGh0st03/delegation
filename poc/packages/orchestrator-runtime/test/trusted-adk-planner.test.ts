@@ -87,7 +87,7 @@ test("ADK Planner reads real Gateway-shaped pinned source, returning only a draf
       revision:SNAPSHOT.base_revision,content:"export const invoices = [];"};
   }};
   const result=await new TrustedAdkReadOnlyPlanner({
-    ...cfg,model,readPort:port
+    ...cfg,model,readPort:port,pilotFullDag:true
   }).propose();
   assert.equal(result.verified_source_reads,1);
   assert.deepEqual(portCalls,[{tool:"read_file",args:{branch:"main",path:FILE}}]);
@@ -128,6 +128,7 @@ test("Planner guidance encourages source-grounded tests without granting new too
   assert.match(text,/zero dependencies/);
   assert.match(text,/final run_tests Task/);
   assert.match(text,/distinct Tasks/);
+  assert.doesNotMatch(text,/Include at least one Task for each Backend, Frontend and Test specialist/u);
   assert.doesNotMatch(text,/apps\/backend\/src\/users|by-department|golden/i);
 });
 
@@ -965,4 +966,29 @@ test("shape feedback reaches model and permits bounded same-session correction",
  assert.ok(feedback.includes("no new authority"));
  assert.ok(!feedback.includes("PRIVATE_SOURCE_CONTENT"));
  assert.ok(!JSON.stringify(observations).includes("private"));
+});
+
+test("R160 generic Planner selects only Task-relevant specialists; pilot shape is explicit",async()=>{
+ const port={async invoke(tool:string){
+  return {provider:"gitea",performed:true,tool,path:FILE,branch:"main",
+   revision:SNAPSHOT.base_revision,content:"export const invoices=[];"};
+ }};
+ const genericModel=new Scripted({branch:"main",path:FILE},draft());
+ const generic=await new TrustedAdkReadOnlyPlanner({
+   ...cfg,model:genericModel,readPort:port
+ }).propose();
+ assert.deepEqual(generic.plan.candidate_agents.map(a=>a.agent_id),["backend"]);
+ assert.deepEqual(generic.plan.tasks.map(a=>a.agent_id),["orchestrator","backend"]);
+ const prompt=JSON.stringify(genericModel.requests[0]?.config?.systemInstruction??{});
+ assert.match(prompt,/Select only the specialists needed by the requirement/);
+ assert.doesNotMatch(prompt,/Include at least one Task for each Backend, Frontend and Test specialist/);
+ const pilotModel=new Scripted({branch:"main",path:FILE},draft());
+ await new TrustedAdkReadOnlyPlanner({
+  ...cfg,model:pilotModel,readPort:port,pilotFullDag:true
+ }).propose();
+ assert.match(JSON.stringify(pilotModel.requests[0]?.config?.systemInstruction??{}),
+   /Include at least one Task for each Backend, Frontend and Test specialist/);
+ assert.throws(()=>new TrustedAdkReadOnlyPlanner({
+   ...cfg,model:pilotModel,readPort:port,pilotFullDag:"yes" as never
+ }),/invalid trusted Planning config/);
 });
