@@ -12,6 +12,8 @@ on:
       - 'poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs'
       - 'poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs'
       - 'poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs'
+      - 'poc/apps/test-runner-controller/scripts/native-preliminary-environment.mjs'
+      - 'poc/apps/test-runner-controller/test/native-preliminary-environment.test.ts'
   workflow_dispatch:
 permissions:
   contents: read
@@ -145,6 +147,7 @@ jobs:
         run: |
           test -z "${GEMINI_API_KEY:-}"
           test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
+          node --experimental-strip-types --test poc/apps/test-runner-controller/test/native-preliminary-environment.test.ts
           node --test poc/apps/gateway/native-test/ts2724-backend-fault-fixture.test.mjs
           node --experimental-strip-types --test poc/apps/gateway/native-test/source-derived-route-offline-adk-model.test.mjs
       - name: TS2724 real Docker FAIL -> signed Backend D1 -> fresh TypeScript PASS
