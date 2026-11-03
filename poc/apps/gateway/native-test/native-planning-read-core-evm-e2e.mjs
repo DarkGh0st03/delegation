@@ -1013,6 +1013,7 @@ try{
         };
         let readVerifiedRepairTarget;
         let readVerifiedRunnerAssertions;
+        let readVerifiedRunnerTypecheck;
         let readVerifiedGeneratedTestEditScope;
         const readAssertions=async roles=>readVerifiedRunnerAssertions
           ?readVerifiedRunnerAssertions(roles):null;
@@ -1208,6 +1209,7 @@ try{
             if(paidGeminiRecovery||multiTypecheckProbe||signedOfflineSemanticProbe)
               readVerifiedRepairTarget=ports.getVerifiedRepairTarget;
             readVerifiedRunnerAssertions=ports.getVerifiedRunnerAssertionContext;
+            readVerifiedRunnerTypecheck=ports.getVerifiedRunnerTypecheckContext;
             if(paidGeminiRecovery||signedOfflineGeneratedTestProbe)
               readVerifiedGeneratedTestEditScope=ports.getVerifiedGeneratedTestEditScope;
             originalA2APorts=Object.freeze({
@@ -1324,7 +1326,8 @@ try{
               agentBaseUrls:originalA2APorts.agentBaseUrls,
               a2a:originalA2APorts.a2a,
               failureContext:{testedSha:signal.tested_commit_sha,
-                loadForRole:role=>readAssertions([role])},
+                loadForRole:role=>readAssertions([role]),
+                loadTypecheckForRole:role=>readVerifiedRunnerTypecheck?readVerifiedRunnerTypecheck([role]):Promise.resolve(null)},
               verifyLiveRun:async()=>{
                 assert.equal(coordinator.phase,"execution");
                 await gatewayOwner.renewLease(session,packet.plan_digest);

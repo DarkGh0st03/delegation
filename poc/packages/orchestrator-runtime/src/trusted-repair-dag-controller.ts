@@ -1,3 +1,4 @@
+import {type TrustedRunnerTypecheckContext} from "./trusted-runner-typecheck-context.ts";
 import type {TrustedRunnerAssertionContext} from "./trusted-runner-assertion-context.ts";
 /**
  * R137 — trusted owner drives the CURRENT signed repair DAG in dependency
@@ -49,7 +50,7 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
  fetchFn?:typeof fetch;
  agentBaseUrls:Readonly<Record<Role,string>>;
  a2a:ProtectedA2AClientPort;
- failureContext?:Readonly<{testedSha:string;loadForRole:(role:Role)=>Promise<TrustedRunnerAssertionContext|null>}>;
+ failureContext?:Readonly<{testedSha:string;loadForRole:(role:Role)=>Promise<TrustedRunnerAssertionContext|null>;loadTypecheckForRole?:(role:Role)=>Promise<TrustedRunnerTypecheckContext|null>}>;
  /** R138: independent original GitHub run check; never a model port. */
  verifyLiveRun?:()=>Promise<void>;
  /** Local trusted owner supplies unique native child ID/status per task;

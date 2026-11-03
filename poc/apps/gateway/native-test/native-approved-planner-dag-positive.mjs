@@ -1,3 +1,4 @@
+import {loadTrustedRunnerTypecheckContext} from "../../../packages/orchestrator-runtime/src/trusted-runner-typecheck-context.ts";
 import {loadTrustedRunnerAssertionContext} from "../../../packages/orchestrator-runtime/src/trusted-runner-assertion-context.ts";
 import {selectSignedNativeTestEditD1Tasks} from "./native-owner-d1-task-selection.mjs";
 import {verifiedFailedCreatedTestPaths} from "./verified-failed-generated-test-selection.mjs";
@@ -1011,6 +1012,11 @@ export async function runNativePositiveApprovedDag({
       await trustedOwnerRecovery.bindOriginalA2APorts({
         agentBaseUrls:Object.freeze({...urls}),a2a:protectedA2A,
         getVerifiedRepairTarget:()=>verifiedRepairTarget,
+        getVerifiedRunnerTypecheckContext:roles=>loadTrustedRunnerTypecheckContext({
+          directory:process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR,effect:runnerOutcome,
+          repo,branch,approvedRows:grants,
+          rootPermissions:coordinator.trustedOperationalAuthority().permissions,roles
+        }),
         getVerifiedRunnerAssertionContext:roles=>loadTrustedRunnerAssertionContext({
           directory:process.env.TEST_RUNNER_FAILURE_EVIDENCE_DIR,effect:runnerOutcome,
           repo,branch,approvedRows:grants,

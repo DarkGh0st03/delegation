@@ -5370,3 +5370,26 @@ test("D1 private assertion reaches protected Test editor only under its admitted
  assert.equal(f.calls.length,1);
  assert.deepEqual(f.calls[0].body.permissions.map((g:any)=>g.operation).sort(),["read_file","update_file"]);
 });
+
+test("N1 compiler context crosses admitted repair dispatch with unchanged signed Test-editor grants",async t=>{
+ const {retainFailureEvidence}=await import("../../test-runner-controller/src/failure-evidence.ts");
+ const {loadTrustedRunnerTypecheckContext}=await import("../../../packages/orchestrator-runtime/src/trusted-runner-typecheck-context.ts");
+ const f=await r134Fixture(t,{withGeneratedTest:true});await f.admit();
+ const archivePath=join(f.h.dir,"compiler-source.tar.gz"),directory=join(f.h.dir,"compiler-evidence");await writeFile(archivePath,"fixture");
+ const logReference="runner-log://11111111-1111-4111-8111-111111111111",phases=[{phase:"typecheck" as const,status:"fail" as const}];
+ await retainFailureEvidence({directory,archivePath,logReference,request:{request_id:"compiler",repository:root,branch,commit_sha:sha,profile:"poc-default"},phases,
+  log:`=== typecheck ===\n${generatedTestPath}(1,2): error TS2724: Module has no exported member 'MissingSymbol'.\nPRIVATE_STACK\n`});
+ const seen:any[]=[],artifact=r135A2AArtifact();(artifact.artifacts![0].parts[0].content as any).value.role="test";
+ await dispatchTrustedAdmittedRepairA2A({...f.args,role:"test",taskId:"test-edit",credential:{...f.args.credential,credential_id:"urn:compiler:test-editor"},
+  failureContext:{testedSha:sha,loadForRole:async()=>null,loadTypecheckForRole:role=>loadTrustedRunnerTypecheckContext({directory,repo,branch,approvedRows:f.h.parent.requested_permissions,rootPermissions:f.h.rootAuthority.permissions,roles:[role],
+   effect:{provider:"runner",performed:true,tool:"run_tests",status:"fail",branch,revision:sha,tested_commit_sha:sha,log_reference:logReference,phases,typecheck_diagnostics:[{path:generatedTestPath,line:1,column:2,code:"TS2724"}]}})},
+  agentBaseUrls:{backend:"http://backend.local",frontend:"http://frontend.local",test:"http://test.local"},
+  a2a:{async sendProtectedTask(request){seen.push(request);return {card:{name:"Test"},task:artifact as never};}}
+ });
+ assert.equal(seen.length,1);const payload=JSON.parse(seen[0].subtask.instruction.split("\n")[1]);
+ assert.equal(payload.diagnostic_typecheck.tested_commit_sha,sha);
+ assert.equal(payload.diagnostic_typecheck.diagnostics[0].resource,generatedTestUri);
+ assert.match(payload.diagnostic_typecheck.diagnostics[0].message,/MissingSymbol/);
+ assert.doesNotMatch(seen[0].subtask.instruction,/PRIVATE_STACK/);
+ assert.equal(f.calls.length,1);assert.deepEqual(f.calls[0].body.permissions.map((g:any)=>g.operation).sort(),["read_file","update_file"]);
+});
