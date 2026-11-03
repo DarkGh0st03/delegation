@@ -38,3 +38,11 @@ It does not claim paid Gemini E2E success, or that every milestone is finished.
 ## Safety rules
 
 Do not merge to main, allow a model to issue root DCs, bypass OPA/native Rust, turn a failure report into authority, claim a human approval in CI, or invoke paid Gemini without fresh consent. The check is offline and uses scripted models.
+
+## R166 — historical entrypoint isolation (2026-11-03)
+
+- The canonical signed-DAG path still uses `profile:"crypto"` and direct ADK FunctionTools → Gateway; existing signed-plan and D1 recovery tests remain intact.
+- Repository/Runner MCP registrations (`read_file`, `update_file`, `create_file`, `run_tests`) have been moved to `poc/mcp-shared/src/legacy-repository-tools.ts`. The shared HTTP factory imports this module but invokes it **only** after an explicit `profile:"legacy"` selection; no implicit fallback is permitted.
+- Historical ADK/A2A scripts and tests explicitly select legacy, so older reproducibility remains available. Their workflow `shared-mcp-real-positive-e2e.yml` remains a historical baseline in the three-workflow release gate; its PASS must not be mistaken for the canonical signed DAG proof.
+- **Not yet deletion-safe:** `sequential-coordinator.ts`, `legacy-authority-client.ts`, the private repository worker and legacy routing tests still have known real imports and CI callers. Physical removal before migrating those historical tests would destroy reproducibility, not improve the canonical path.
+- R166 requires zero-billing Fast CI and crypto-only MCP tests. The next consolidated free Full CI should specifically verify the Functional Signed DAG's `approved_shared_mcp_enabled:false`, `direct_gateway_function_tools_enabled:true`, `approved_crypto_mcp_enabled:true` and real provider evidence on a single SHA. A historical Shared MCP PASS is corroboration only.
