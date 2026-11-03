@@ -165,11 +165,15 @@ if(process.env.DELEGATION_SIGNED_GEMINI_REPAIR_D1==="1"&&
     process.env.DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION!==
       "I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH"))
   throw Error("R151.12 paid repair epoch requires separate explicit billing consent");
+// The isolated Gitea harness launches preliminary native subprocesses
+// before its explicit owner-D1 child. The fixture flag is inherited, but
+// only the signed positive DAG invokes D1. Do not require D1 in every child.
+// The original owner-only repair gate remains independently enforced.
 if(signedOfflineTs2724Probe&&
-   (!signedOfflineTypecheckProbe||!ownerD1Probe||geminiPilot||
+   (!signedOfflineTypecheckProbe||geminiPilot||
     signedOfflineSemanticProbe||
     process.env.APPROVED_RUNNER_NATIVE_D1_MULTI_TYPECHECK_PROBE==="1"))
-  throw Error("TS2724 fixture requires ONLY the no-billing single Backend signed D1");
+  throw Error("TS2724 fixture requires zero-billing single Backend scope");
 const ownerRecoveryEnabled=ownerD1Probe||paidGeminiRecovery;
 // The isolated Docker smoke script executes several independent native
 // subprocesses. Its opt-in flag is inherited by ALL of them, while only

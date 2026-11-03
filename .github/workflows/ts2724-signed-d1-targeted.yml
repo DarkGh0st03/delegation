@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      TEST_RUNNER_FAILURE_EVIDENCE_DIR: /tmp/functional-private-evidence
+      TEST_RUNNER_FAILURE_EVIDENCE_DIR: /tmp/ts2724-private-evidence
       ADAPTER_TRUST_PROFILE: evm
       ADAPTER_CALLER_ENGINEER: local-native-engineer-ci
       ADAPTER_CALLER_GATEWAY: local-native-gateway-ci
