@@ -1,6 +1,7 @@
 import {MCP_CREATE_PRESENTATION} from "./crypto-catalog.ts";
 import {createServer, type ServerResponse} from "node:http";
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
+import {z} from "zod";
 import {StreamableHTTPServerTransport} from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {bearerToken, verifyTaskToken, type VerificationKeys} from "./task-token.ts";
 import {TaskRouter} from "./task-router.ts";
