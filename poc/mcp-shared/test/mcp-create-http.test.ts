@@ -56,6 +56,7 @@ test("shared MCP create_file requires active Test task, explicit opt-in and exac
   await new Promise<void>(r=>worker.once("listening",r));
   const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{
       backend:backend.publicKey,frontend:front.publicKey,test:testKey.publicKey
     },

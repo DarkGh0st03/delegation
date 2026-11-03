@@ -88,6 +88,7 @@ async function exercise(authorized:boolean,signedFirstCall=false) {
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const workerBaseUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{
       backend:backend.publicKey,frontend:frontend.publicKey,test:testing.publicKey
     },
@@ -198,7 +199,8 @@ test("Frontend rejection reasons cross real shared MCP without changing grants",
  const worker=app.listen(0,"127.0.0.1");
  await new Promise<void>(resolve=>worker.once("listening",resolve));
  const baseUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
- const shared=createSharedMcpHttpServer({verificationKeys:{backend:k.publicKey,frontend:k.publicKey,test:k.publicKey},
+ const shared=createSharedMcpHttpServer({
+    profile:"legacy",verificationKeys:{backend:k.publicKey,frontend:k.publicKey,test:k.publicKey},
   router:new TaskRouter({backend:{baseUrl},frontend:{baseUrl},test:{baseUrl}})});
  const client=new Client({name:"offline-diagnostic",version:"1"});
  try{

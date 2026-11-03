@@ -65,6 +65,7 @@ test("native ADK Test Agent create_file invokes shared MCP, not legacy FunctionT
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{
       backend:b.publicKey,frontend:f.publicKey,test:t.publicKey
     },

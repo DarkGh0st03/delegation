@@ -41,6 +41,7 @@ test("native MCP Streamable HTTP tools/list and tools/call reuse one shared serv
     }),{status:200,headers:{"content-type":"application/json"}});
   });
   const server=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{
       backend:backend.publicKey,frontend:frontend.publicKey,test:testing.publicKey
     },

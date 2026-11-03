@@ -64,6 +64,7 @@ test("ONE shared MCP update_file routes only permitted active task writes to pri
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{backend:b.public,frontend:f.public,test:t.public},
     router:new TaskRouter({backend:{baseUrl:url},frontend:{baseUrl:url},test:{baseUrl:url}})
   });
@@ -132,6 +133,7 @@ test("signed feature branch goes through real MCP HTTP, private worker and exact
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{backend:b.public,frontend:f.public,test:t.public},
     router:new TaskRouter({
       backend:{baseUrl:workerUrl},frontend:{baseUrl:workerUrl},

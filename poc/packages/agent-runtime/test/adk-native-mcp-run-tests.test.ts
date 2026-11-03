@@ -59,6 +59,7 @@ test("native ADK Test Agent calls run_tests via shared MCP and verifies Runner P
   await new Promise<void>(res=>worker.once("listening",res));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{backend:b.publicKey,frontend:f.publicKey,test:t.publicKey},
     router:new TaskRouter({backend:{baseUrl:workerUrl},
       frontend:{baseUrl:workerUrl},test:{baseUrl:workerUrl}})
@@ -145,6 +146,7 @@ test("ADK cannot replay Docker run_tests after fresh-review referral",async()=>{
   await new Promise<void>(res=>worker.once("listening",res));
   const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{backend:b.publicKey,frontend:f.publicKey,test:t.publicKey},
     router:new TaskRouter({backend:{baseUrl:url},frontend:{baseUrl:url},test:{baseUrl:url}})
   });
@@ -236,6 +238,7 @@ test("R120 failed Test Task cannot retry Docker through MCP",async()=>{
  await new Promise<void>(resolve=>worker.once("listening",resolve));
  const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
  const shared=createSharedMcpHttpServer({
+    profile:"legacy",
   verificationKeys:{backend:k.publicKey,frontend:f.publicKey,test:t.publicKey},
   router:new TaskRouter({backend:{baseUrl:url},frontend:{baseUrl:url},
    test:{baseUrl:url}})

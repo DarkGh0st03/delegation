@@ -103,6 +103,7 @@ test("shared MCP -> private active task -> Gateway prepare -> Adapter VP -> Gate
   const agentUrl="http://127.0.0.1:"+(agentServer.address() as AddressInfo).port;
 
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{backend:backend.public,frontend:frontend.public,test:testing.public},
     router:new TaskRouter({
       backend:{baseUrl:agentUrl},frontend:{baseUrl:agentUrl},test:{baseUrl:agentUrl}

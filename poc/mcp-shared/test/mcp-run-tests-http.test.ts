@@ -69,6 +69,7 @@ test("one shared MCP run_tests routes only opted-in active Test role through pri
   await new Promise<void>(res=>worker.once("listening",res));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{backend:b.public,frontend:f.public,test:t.public},
     router:new TaskRouter({
       backend:{baseUrl:workerUrl},frontend:{baseUrl:workerUrl},test:{baseUrl:workerUrl}

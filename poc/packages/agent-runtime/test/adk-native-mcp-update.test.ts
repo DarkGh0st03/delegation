@@ -55,6 +55,7 @@ test("Native ADK update_file uses opted-in MCPToolset without direct FunctionToo
   await new Promise<void>(r=>worker.once("listening",r));
   const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{backend:b.public,frontend:f.public,test:t.public},
     router:new TaskRouter({backend:{baseUrl:url},frontend:{baseUrl:url},test:{baseUrl:url}})
   });
@@ -175,6 +176,7 @@ test("reviewed Test Agent read -> update existing regression -> run_tests remain
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:{backend:b.public,frontend:f.public,test:t.public},
     router:new TaskRouter({backend:{baseUrl:workerUrl},
       frontend:{baseUrl:workerUrl},test:{baseUrl:workerUrl}})

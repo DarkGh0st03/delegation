@@ -339,6 +339,7 @@ test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved 
     backend:k.publicKey,frontend:front.publicKey,test:testKey.publicKey
   };
   const shared=createSharedMcpHttpServer({
+    profile:"legacy",
     verificationKeys:keysByRole,router:route
   });
   const crypto=createSharedMcpHttpServer({
