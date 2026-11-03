@@ -325,14 +325,14 @@ test("R151 TS2724 source-derived Backend D1 reads failed SHA and corrects only a
  const path="apps/backend/src/users/user.service.ts",failedSha="b".repeat(40);
  m.armTrustedD1TypecheckRepair({branch,path,failedSha,taskId:"d1-ts2724-backend"});
  assert.equal((await next(m,{})).functionCall.name,"read_file");
- const original='export const value = 1;\\n';
+ const original='export const value = 1;\n';
  const injected=injectTs2724BackendImportFault(original);
  const update=(await next(m,input({ok:true,result:{
   ...data,path,revision:failedSha,content:injected
  }}))).functionCall;
  assert.equal(update.name,"update_file");
  assert.equal(update.args.path,path);
- assert.equal(update.args.content,original+"\\n");
+ assert.equal(update.args.content,original+"\n");
  assert.ok(!update.args.content.includes(TS2724_BACKEND_IMPORT_FAULT));
  const written=await next(m,{contents:[{parts:[{functionResponse:{
   name:"update_file",response:{ok:true,result:{
@@ -353,7 +353,7 @@ test("R151 TS2724 D1 denies unobserved and ambiguous repair payloads",async()=>{
  await next(m,{});
  await assert.rejects(()=>next(m,input({ok:true,result:{
   ...data,path,revision:"b".repeat(40),
-  content:injectTs2724BackendImportFault("export const x = 1;\\n")+
+  content:injectTs2724BackendImportFault("export const x = 1;\n")+
     TS2724_BACKEND_IMPORT_FAULT
  }})),/NO-GO/u);
 });

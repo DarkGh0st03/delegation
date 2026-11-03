@@ -12,8 +12,7 @@ test("TS2724 fixture adds exactly one misspelled import to an existing Backend s
   const failed=injectTs2724BackendImportFault(source);
   assert.ok(failed.endsWith(TS2724_BACKEND_IMPORT_FAULT));
   assert.equal(failed.slice(0,-TS2724_BACKEND_IMPORT_FAULT.length),source);
-  assert.equal(repairTs2724BackendImportFault(failed),source.endsWith("\n")
-    ?source+"\n":source+"\n");
+  assert.equal(repairTs2724BackendImportFault(failed),source+"\n");
   assert.throws(()=>injectTs2724BackendImportFault(failed),/NO-GO/u);
   assert.throws(()=>repairTs2724BackendImportFault(source),/NO-GO/u);
   assert.throws(()=>repairTs2724BackendImportFault(
