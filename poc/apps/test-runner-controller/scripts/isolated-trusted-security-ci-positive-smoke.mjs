@@ -1192,7 +1192,8 @@ async function main(){
               typeof error?.stderr==="string"?error.stderr:"";
             const prefix="[signed-gemini-pilot] ";
             const matches=raw.slice(-262144).split(/\r?\n/u)
-              .filter(line=>line.startsWith(prefix)&&line.length<1024);
+              // Bounded safe trace adds several fixed-category first-party frames.
+              .filter(line=>line.startsWith(prefix)&&line.length<4096);
             for(const line of matches.reverse()){
               try{
                 const item=JSON.parse(line.slice(prefix.length));
