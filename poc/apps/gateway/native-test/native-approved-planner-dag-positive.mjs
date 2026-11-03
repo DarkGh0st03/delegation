@@ -72,6 +72,7 @@ import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
 import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {classifyApprovedDagFailure,safeApprovedDagFailureTrace} from "./native-approved-dag-failure-category.mjs";
+import {safeSignedTaskRef} from "../../../packages/agent-runtime/src/signed-task-diagnostic-ref.mjs";
 import {verifyPilotRunnerOutcome} from "./verified-pilot-runner-outcome.mjs";
 import {compareTrustedTypecheckRevisions}
   from "../../test-runner-controller/scripts/typecheck-revision-comparison.mjs";
@@ -1139,6 +1140,8 @@ export async function runNativePositiveApprovedDag({
               "editor_effect_binding_mismatch","provider_head_mismatch","unchanged_editor_revision"];
             if(categories.includes(error.category))process.stderr.write(JSON.stringify({
               event:"d1_editor_revision",role:task.role,category:error.category,
+              ...(safeSignedTaskRef(task.runtime_task_id)
+                ?{task_ref:safeSignedTaskRef(task.runtime_task_id)}:{}),
               // Confirmed effects only: these do not count model attempts.
               task_write_count:taskWriteCount,
               runtime_write_count:writes.filter(x=>x.runtimeTaskId===task.runtime_task_id).length,

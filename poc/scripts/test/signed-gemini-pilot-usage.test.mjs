@@ -449,3 +449,32 @@ test("F1 rejects entire malformed draft rejection history without leaking",()=>{
     assert.ok(!JSON.stringify(safe).includes(secret));
   }
 });
+test("R152 signed Task reference survives both public filters and separates same-role Tasks",()=>{
+ const a="a".repeat(16),b="b".repeat(16);
+ const raw=[
+  {event:"adk_tool_timing",role:"frontend",tool:"read_file",
+   success:true,error_kind:null,task_ref:a},
+  {event:"adk_llm_timing",role:"frontend",turn:1,
+   function_call_parts:1,text_parts:0,finish_reason:"STOP",task_ref:a},
+  {event:"adk_tool_timing",role:"frontend",tool:"read_file",
+   success:true,error_kind:null,task_ref:b},
+  {event:"d1_editor_revision",role:"frontend",
+   category:"no_confirmed_editor_write",read_attempts:1,
+   read_confirmed:1,update_attempts:0,head_changed:false,task_ref:b}
+ ].map(event).join("\n");
+ const child=agentObservations(raw);
+ assert.equal(child.length,4);
+ const log=child.map(x=>"[trusted-positive-ci] gemini_agent_observation "+
+  event(x)).join("\n");
+ const summary=agentSummary(log);
+ assert.deepEqual(summary.role_evidence.frontend.task_evidence.map(x=>x.task_ref),[a,b]);
+ assert.equal(summary.role_evidence.frontend.d1_revision_evidence.task_ref,b);
+ assert.equal(summary.role_evidence.frontend.task_evidence[1].d1_editor_revision,
+  "no_confirmed_editor_write");
+ assert.doesNotMatch(JSON.stringify(summary),/dispatch_|PRIVATE_SOURCE/u);
+ assert.equal(agentObservations(event({
+  event:"adk_tool_timing",role:"frontend",tool:"read_file",
+  success:true,error_kind:null,task_ref:"PRIVATE_TASK_ID"
+ })).length,0);
+});
+

@@ -40,6 +40,7 @@ jobs:
           node --experimental-strip-types --test poc/apps/gateway/test/prepare.test.ts poc/apps/gateway/test/operation-catalog.test.ts poc/apps/gateway/test/planning-revision-pinning.test.ts
       - name: ADK, A2A and real loopback shared MCP
         run: |
+          node --test poc/packages/agent-runtime/test/signed-task-diagnostic-ref.test.mjs
           node --experimental-strip-types --test poc/packages/agent-runtime/test/gateway-tool-client.test.ts poc/packages/agent-runtime/test/private-mcp-task-registry.test.ts poc/packages/agent-runtime/test/adk-specialized-agents.test.ts poc/packages/agent-runtime/test/adk-native-mcp-integration.test.ts poc/packages/agent-runtime/test/n2-signed-context-sufficiency.test.ts
           npm --prefix poc/mcp-shared test
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/a2a-workflow.test.ts poc/packages/orchestrator-runtime/test/trusted-gemini-repair-proposer.test.mjs

@@ -16,6 +16,7 @@ import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA
 import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
 import {TrustedBackendDiscoveryTaskSlot} from "./trusted-backend-discovery-task-slot.ts";
 import { createAdkSpecializedAgent, type AdkControlledToolOutcome, type AdkGenerationConfig } from "./adk-specialized-agents.ts";
+import {safeSignedTaskRef} from "./signed-task-diagnostic-ref.mjs";
 import type { DeterministicTaskHandler } from "./executor.ts";
 import { inspectAdkFailure, type AdkFailureCategory, type AdkSafeFailureDiagnostic } from "./adk-failure-categories.ts";
 import { AdkToolProgress } from "./adk-tool-progress.ts";
@@ -243,6 +244,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // capability from its Test role or from another Task's permission.
     const signedTask=context.trusted_gateway_task_id!==undefined&&
       context.subtask.approved_file_permissions!==undefined;
+    const taskRef=signedTask?safeSignedTaskRef(context.task_id):null;
     // Older prebound scripted test fixtures do not send this new hint;
     // their Gateway still enforces the signed run_tests grant. An explicit
     // false from the current trusted dispatcher MUST hide and deny Runner.
@@ -252,6 +254,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       (durationMs, inputTokens, outputTokens, thinkingTokens, turn, responseShape) => {
         process.stdout.write(JSON.stringify({
           event:"adk_llm_timing",role:context.role,turn,
+          ...(taskRef?{task_ref:taskRef}:{}),
           duration_ms:durationMs,input_tokens:inputTokens,
           output_tokens:outputTokens,thinking_tokens:thinkingTokens,
           ...responseShape,
@@ -345,6 +348,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
             ...(context.subtask.approved_file_permissions!==undefined
               ? {trustedFilePermissions:context.subtask.approved_file_permissions}:{})
           }:{}),
+      ...(taskRef?{diagnosticTaskRef:taskRef}:{}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     });
     const {agent, mcpToolset} = configured;
@@ -367,6 +371,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       // A2A Task, even if the model later emits "done" or tests "passed".
       process.stderr.write(JSON.stringify({
         event:"adk_task_outcome",role:context.role,
+        ...(taskRef?{task_ref:taskRef}:{}),
         category:"repair_requires_new_approval",model_turns:model.turns,
         ...(progress.typecheckScopeSummary
           ?{typecheck_scope_summary:progress.typecheckScopeSummary}:{}),
@@ -380,6 +385,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       process.stderr.write(JSON.stringify({
         event: "adk_safe_diagnostic",
         role: context.role,
+        ...(taskRef?{task_ref:taskRef}:{}),
         category,
         // Numeric HTTP status is present ONLY if supplied as a structured
         // provider field. Textual "503" never becomes http_status=503.
@@ -541,6 +547,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         .map(e=>e.name).filter(name=>staticTools.has(name)))].sort();
       process.stderr.write(JSON.stringify({
         event:"adk_task_outcome",role:context.role,
+        ...(taskRef?{task_ref:taskRef}:{}),
         category:errors.length > 0 ? "controlled_tool_failures" : "no_confirmed_revision",
         model_turns:model.turns,
         failed_error_kinds:failedKinds,

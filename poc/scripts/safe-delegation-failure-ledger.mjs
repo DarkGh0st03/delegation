@@ -179,12 +179,23 @@ export function buildSafeDelegationFailureLedger({
    if(typeof v.head_changed==="boolean")counts.head_changed=v.head_changed;
    add("recovery_d1","trusted_revision_verifier",role,"update_file",
     r.d1_revision_failure,"signed_d1_effect_audit",
-    {operation_evidence:Object.freeze(counts)});
+    {operation_evidence:Object.freeze(counts),
+     ...(typeof v.task_ref==="string"&&/^[a-f0-9]{16}$/u.test(v.task_ref)
+       ?{task_ref:v.task_ref}:{})});
   }
  }
  const failed=validDocker(docker_phase_evidence);
- if(failed)add("docker_runner","trusted_runner",null,"run_tests",
-  failed,"runner_verified_phase",{runner_phase:failed});
+ if(failed){
+  const tsCodes=failed==="typecheck"&&
+    Array.isArray(docker_phase_evidence.typecheck_error_codes)&&
+    docker_phase_evidence.typecheck_error_codes.length<=8&&
+    docker_phase_evidence.typecheck_error_codes.every(code=>
+      typeof code==="string"&&/^TS[0-9]{4,5}$/u.test(code))
+      ?[...new Set(docker_phase_evidence.typecheck_error_codes)]:[];
+  add("docker_runner","trusted_runner",null,"run_tests",
+   failed,"runner_verified_phase",
+   {runner_phase:failed,...(tsCodes.length?{typecheck_error_codes:tsCodes}:{})});
+ }
  if(!events.length)add("unknown","workflow",null,null,"unclassified",
   "insufficient_public_diagnostics");
  const primary=events.findLast(e=>

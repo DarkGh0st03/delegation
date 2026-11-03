@@ -256,9 +256,13 @@ function safeAgentObservation(x){
   if(!x||typeof x!=="object"||Array.isArray(x)||
      !AGENT_ROLES.includes(x.role)||!AGENT_TYPES.includes(x.event))
     return null;
+  if(x.task_ref!==undefined&&
+     (typeof x.task_ref!=="string"||!/^[a-f0-9]{16}$/u.test(x.task_ref)))
+    return null;
+  const taskFields=x.task_ref?{task_ref:x.task_ref}:{};
   if(x.event==="d1_editor_revision")return ["backend","frontend","test"].includes(x.role)&&
     D1_REVISION_CATEGORIES.includes(x.category)
-    ?{event:x.event,role:x.role,category:x.category,
+    ?{event:x.event,role:x.role,category:x.category,...taskFields,
       ...Object.fromEntries([...D1_OPERATION_COUNTERS,"task_write_count","runtime_write_count"].filter(k=>
         Number.isSafeInteger(x[k])&&x[k]>=0&&x[k]<=10000).map(k=>[k,x[k]])),
       ...(typeof x.head_changed==="boolean"?{head_changed:x.head_changed}:{}),
@@ -267,7 +271,7 @@ function safeAgentObservation(x){
     if(!AGENT_TOOLS.includes(x.tool)||typeof x.success!=="boolean"||
        (x.error_kind!==null&&!TOOL_ERRORS.includes(x.error_kind)))
       return null;
-    return {event:x.event,role:x.role,tool:x.tool,
+    return {event:x.event,role:x.role,tool:x.tool,...taskFields,
       success:x.success,error_kind:x.error_kind,
       ...(!x.success&&TOOL_FAILURE_REASONS.includes(x.reason)?{reason:x.reason}:{})};
   }
@@ -277,14 +281,14 @@ function safeAgentObservation(x){
        !valid(x.text_parts,200)||
        (x.finish_reason!==null&&!SAFE_FINISH_REASONS.includes(x.finish_reason)))
       return null;
-    return {event:x.event,role:x.role,turn:x.turn,
+    return {event:x.event,role:x.role,turn:x.turn,...taskFields,
       function_call_parts:x.function_call_parts,
       text_parts:x.text_parts,finish_reason:x.finish_reason};
   }
   if(!valid(x.model_turns,SIGNED_GEMINI_PILOT.maxTurnsPerTask[x.role])||
      !(x.event==="adk_task_outcome"?AGENT_ERRORS:MODEL_ERRORS)
        .includes(x.category))return null;
-  const y={event:x.event,role:x.role,category:x.category,
+  const y={event:x.event,role:x.role,category:x.category,...taskFields,
     model_turns:x.model_turns};
   for(const key of AGENT_METRICS){
     if(!valid(x[key],300))return null;
@@ -363,13 +367,29 @@ export function extractSafeGeminiPilotAgentSummary(log){
     const failures=own.filter(x=>x.event==="adk_safe_diagnostic"||
       x.event==="adk_task_outcome");
     const latest=failures.at(-1);
+    const taskRefs=[...new Set(own.map(x=>x.task_ref).filter(Boolean))].slice(0,12);
     roles[role]={
+      ...(taskRefs.length?{task_evidence:taskRefs.map(taskRef=>{
+        const scoped=own.filter(x=>x.task_ref===taskRef);
+        const llm=scoped.filter(x=>x.event==="adk_llm_timing");
+        const tool=scoped.filter(x=>x.event==="adk_tool_timing");
+        const latest=scoped.filter(x=>["adk_safe_diagnostic",
+          "adk_task_outcome","d1_editor_revision"].includes(x.event)).at(-1);
+        return Object.freeze({
+          task_ref:taskRef,observed_model_calls:llm.length,
+          observed_tool_successes:tool.filter(x=>x.success).length,
+          observed_tool_failures:tool.filter(x=>!x.success).length,
+          ...(latest?{last_observed_failure:latest.category}:{}),
+          ...(latest?.event==="d1_editor_revision"
+            ?{d1_editor_revision:latest.category}:{})
+        });
+      })}:{}),
       ...(own.some(x=>x.event==="d1_editor_revision")?{
         d1_revision_failure:own.filter(x=>x.event==="d1_editor_revision").at(-1).category,
         d1_revision_evidence:Object.fromEntries(Object.entries(
           own.filter(x=>x.event==="d1_editor_revision").at(-1))
           .filter(([k])=>[...D1_OPERATION_COUNTERS,"task_write_count","runtime_write_count",
-            "head_changed","d1_operation_status"].includes(k)))}:{}),
+            "head_changed","d1_operation_status","task_ref"].includes(k)))}:{}),
       model_turns_with_shape_metadata:modelCalls.length,
       observed_function_call_parts:modelCalls.reduce((n,x)=>n+x.function_call_parts,0),
       observed_text_parts:modelCalls.reduce((n,x)=>n+x.text_parts,0),

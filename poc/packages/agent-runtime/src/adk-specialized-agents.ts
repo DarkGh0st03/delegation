@@ -52,7 +52,7 @@ export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: R
 export function safeMcpToolTiming(
   role:SpecializedAgentRole,
   tool:"read_file"|"update_file"|"create_file",
-  payload:AdkControlledToolOutcome["payload"]
+  payload:AdkControlledToolOutcome["payload"],taskRef?:string
 ){
   const allowed=new Set<ControlledToolErrorKind>([
     "authorization_denied","tests_failed","tool_unavailable",
@@ -62,6 +62,8 @@ export function safeMcpToolTiming(
     allowed.has(payload.error.kind)?payload.error.kind:null;
   return Object.freeze({
     event:"adk_tool_timing" as const,role,tool,
+    ...(typeof taskRef==="string"&&/^[a-f0-9]{16}$/u.test(taskRef)
+      ?{task_ref:taskRef}:{}),
     success:payload.ok,error_kind:kind,
     ...(!payload.ok?toolFailureReasonFields(payload.error):{}),duration_ms:null
   });
@@ -77,6 +79,8 @@ export type AdkGenerationConfig = NonNullable<LlmAgentConfig["generateContentCon
 
 export interface AdkSpecializedAgentConfig {
   onToolOutcome?: (outcome: AdkControlledToolOutcome) => void;
+  /** Opaque diagnostic correlation of a trusted signed dispatch only. */
+  diagnosticTaskRef?:string;
   signal?: AbortSignal;
   generateContentConfig?: AdkGenerationConfig;
   /** Model-facing enumerated path hints only; Gateway/OPA/DC remain authoritative. */
@@ -139,6 +143,9 @@ export function createAdkSpecializedAgent(
   if(config.mcpRunTests && (!config.mcpReadFile || config.role!=="test")){
     throw new Error("MCP run_tests requires shared MCP and Test Agent role");
   }
+  const taskRef=typeof config.diagnosticTaskRef==="string"&&
+    /^[a-f0-9]{16}$/u.test(config.diagnosticTaskRef)
+      ?config.diagnosticTaskRef:null;
   const baseline=SPECIALIZED_AGENT_PROFILES[config.role];
   if(!baseline)throw new Error("Unknown specialized agent role");
   const branch=validatePrivateApprovedBranch(config.trustedBranch??LEGACY_A2A_BRANCH);
@@ -366,6 +373,7 @@ export function createAdkSpecializedAgent(
           // file content, prompts, status-list tokens, DC or signed VP.
           process.stdout.write(JSON.stringify({
             event: "adk_tool_timing", role: config.role, tool: name,
+            ...(taskRef?{task_ref:taskRef}:{}),
             success, error_kind:errorKind,
             duration_ms: Math.round(performance.now() - started)
           }) + "\n");
@@ -453,6 +461,7 @@ export function createAdkSpecializedAgent(
             }
             process.stdout.write(JSON.stringify({
               event:"adk_tool_timing",role:config.role,tool:"run_tests",
+              ...(taskRef?{task_ref:taskRef}:{}),
               success:outcome?.ok===true,
               error_kind:outcome?.ok===false?outcome.error.kind:null,
               duration_ms:Math.round(performance.now()-started)
@@ -484,7 +493,7 @@ export function createAdkSpecializedAgent(
          (name==="read_file"||name==="update_file"||name==="create_file")){
         config.onToolOutcome?.({name,arguments:args,payload});
         process.stdout.write(JSON.stringify(
-          safeMcpToolTiming(config.role,name,payload))+"\n");
+          safeMcpToolTiming(config.role,name,payload,taskRef??undefined))+"\n");
       }
       return undefined;
     }} : {}),
