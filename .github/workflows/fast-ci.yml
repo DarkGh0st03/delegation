@@ -34,6 +34,7 @@ jobs:
           npm --prefix poc run check:imports
           npm --prefix poc run audit:r6:types
           npm --prefix poc run audit:r6:runtime-named
+          node --test poc/scripts/test/r165-mcp-factory-profile-audit.test.mjs
       - name: Authorization plan contracts and Gateway
         run: |
           node --test poc/packages/plan-contracts/test/*.test.mjs

@@ -11,8 +11,8 @@ import {MCP_READ_FILE,MCP_UPDATE_FILE,MCP_CREATE_FILE,MCP_RUN_TESTS,MAX_MCP_UPDA
 export interface SharedMcpConfig {
   verificationKeys:VerificationKeys;
   router:TaskRouter;
-  /** Legacy is retained only until the paid baseline is safely migrated. */
-  profile?:"legacy"|"crypto";
+  /** R165: never expose historical repo tools without explicit opt-in. */
+  profile:"legacy"|"crypto";
 }
 function reply(res:ServerResponse,status:number,body:unknown) {
   res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});
@@ -20,9 +20,11 @@ function reply(res:ServerResponse,status:number,body:unknown) {
 }
 /** One long-running shared HTTP listener; stateless per-request MCP transports. */
 export function createSharedMcpHttpServer(config:SharedMcpConfig) {
+  if(config?.profile!=="legacy"&&config?.profile!=="crypto")
+    throw Error("explicit_mcp_profile_required");
   return createServer(async(req,res)=>{
     if (req.method==="GET" && req.url==="/health") {
-      reply(res,200,{status:"ok",service:"thesis-shared-mcp",tool_count:config.profile==="crypto"?1:4,profile:config.profile??"legacy"}); return;
+      reply(res,200,{status:"ok",service:"thesis-shared-mcp",tool_count:config.profile==="crypto"?1:4,profile:config.profile}); return;
     }
     if (req.url!=="/mcp") {reply(res,404,{error:"not_found"});return;}
     // MCP Streamable HTTP requires protecting local listeners from
@@ -57,7 +59,7 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
     const mcp=new McpServer({name:"thesis-shared-mcp",version:"0.1.0"});
     // A tool schema validates syntax, not grant: active Task worker is authoritative.
     const featureBranch=z.string().max(120).refine(isMcpFeatureBranch);
-    if(config.profile!=="crypto") {
+    if(config.profile==="legacy") {
     mcp.registerTool(MCP_READ_FILE.name,{
       description:MCP_READ_FILE.description,
       inputSchema:{

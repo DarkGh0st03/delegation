@@ -209,3 +209,12 @@ test("crypto bearer and task lifecycle prevent calls after cancellation",async()
   finish("signed.jwt.rejected");
   await assert.rejects(pending,/inactive_task/);
 });
+
+test("R165 shared MCP factory refuses implicit legacy fallback",()=>{
+ assert.throws(()=>createSharedMcpHttpServer({
+  verificationKeys:{},router:{} as TaskRouter
+ } as never),/explicit_mcp_profile_required/);
+ assert.throws(()=>createSharedMcpHttpServer({
+  verificationKeys:{},router:{} as TaskRouter,profile:"repository" as never
+ }),/explicit_mcp_profile_required/);
+});
