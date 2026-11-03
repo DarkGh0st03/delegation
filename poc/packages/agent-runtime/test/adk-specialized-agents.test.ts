@@ -774,3 +774,30 @@ test("Signed implementation Tasks include generic type-safety self-review withou
   assert.doesNotMatch(testAgent.profile.system_prompt,/known union\/enum literal values/u);
   assert.deepEqual(testAgent.agent.tools.map(tool=>tool.name),["run_tests"]);
 });
+
+test("R157 signed A2A Agent capabilities use generic role tools, not demo path templates",()=>{
+ const target="services/reviews/src/review.ts";
+ const signed=({role,rights}:{role:SpecializedAgentRole;
+  rights:Array<{operation:"read_file"|"update_file"|"create_file";path:string}>})=>
+  createAdkSpecializedAgent({
+   role,model:new ScriptedAdkLlm("read_file",{
+    branch:"feature/review-queue",path:target
+   }),
+   gatewayClient:{invoke:async()=>({})} as never,
+   trustedBranch:"feature/review-queue",
+   trustedTaskPaths:[target],
+   trustedFilePermissions:rights
+  });
+ for(const role of ["backend","frontend"] as const){
+  const built=signed({role,rights:[{operation:"read_file",path:target},
+   {operation:"update_file",path:target}]});
+  assert.deepEqual(built.profile.tools,["read_file","update_file"]);
+  assert.deepEqual(built.profile.writable_paths,[target]);
+  assert.doesNotMatch(built.profile.system_prompt,/Account Suspension|account-suspension/u);
+  assert.ok(!built.profile.system_prompt.includes("user.service.ts"));
+ }
+ const testAgent=signed({role:"test",rights:[{operation:"create_file",path:target}]});
+ assert.deepEqual(testAgent.profile.tools,["read_file","update_file","create_file","run_tests"]);
+ assert.deepEqual(testAgent.agent.tools.map(t=>t.name),["create_file","run_tests"]);
+ assert.doesNotMatch(testAgent.profile.system_prompt,/Account Suspension|account-suspension/u);
+});

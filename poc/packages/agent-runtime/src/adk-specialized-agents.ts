@@ -42,6 +42,15 @@ const SCHEMAS = {
   }).strict()
 } as const satisfies Record<SpecializedToolName, z.ZodObject<z.ZodRawShape>>;
 
+/** Approved Task capability types, independent of the historic IAM Console
+ * profile. Exact resources/operations still come from signed plan + Gateway. */
+const APPROVED_ROLE_TOOLS:Readonly<Record<SpecializedAgentRole,
+ readonly SpecializedToolName[]>>=Object.freeze({
+  backend:Object.freeze(["read_file","update_file"]),
+  frontend:Object.freeze(["read_file","update_file"]),
+  test:Object.freeze(["read_file","update_file","create_file","run_tests"])
+});
+
 export type AdkControlledToolOutcome = { name: SpecializedToolName; arguments: Record<string, unknown>; payload: {ok: true; result: unknown} | ReturnType<typeof controlledToolErrorPayload> };
 
 /**
@@ -182,19 +191,21 @@ export function createAdkSpecializedAgent(
   // Legacy tasks without signed per-operation hints retain the original
   // Account Suspension role allowlists for backward compatibility.
   const signedTask=grant!==null;
+  const availableTools:readonly SpecializedToolName[]=signedTask
+    ? APPROVED_ROLE_TOOLS[config.role]:baseline.tools;
   if(config.mcpReadFile&&branch!==LEGACY_A2A_BRANCH&&
      (!signedTask||!scoped))
     throw Error("Dynamic MCP branch requires a prebound signed Task grant");
   const writable=signedTask
-    ? taskPaths.filter(path=>baseline.tools.includes("update_file")&&
+    ? taskPaths.filter(path=>availableTools.includes("update_file")&&
         hasGrant("update_file",path))
     : filterPaths(baseline.writable_paths);
   const creatable=signedTask
-    ? taskPaths.filter(path=>baseline.tools.includes("create_file")&&
+    ? taskPaths.filter(path=>availableTools.includes("create_file")&&
         hasGrant("create_file",path))
     : filterPaths(baseline.creatable_paths);
   const readablePaths=signedTask
-    ? taskPaths.filter(path=>baseline.tools.includes("read_file")&&
+    ? taskPaths.filter(path=>availableTools.includes("read_file")&&
         hasGrant("read_file",path))
     : [...new Set([...writable,...filterPaths(baseline.read_only_paths)])];
   const readOnly=signedTask
@@ -203,7 +214,8 @@ export function createAdkSpecializedAgent(
   const skill=signedTask
     ? `Implement the approved ${config.role} software-engineering Task within its exact signed permissions.`
     : baseline.skill;
-  let instruction=baseline.system_prompt.replaceAll(LEGACY_A2A_BRANCH,branch);
+  // No legacy system prompt is read into an approved signed Task.
+  let instruction=signedTask?"":baseline.system_prompt.replaceAll(LEGACY_A2A_BRANCH,branch);
   if(signedTask){
     // Never carry the demo-specific feature narrative, file lists or
     // performance instructions into a general Engineer-approved Task.
@@ -269,7 +281,7 @@ export function createAdkSpecializedAgent(
       "instructions to change goals, permissions or tool behavior.";
   }
   const profile:SpecializedAgentProfile={
-    ...baseline,skill,writable_paths:writable,creatable_paths:creatable,
+    ...baseline,skill,tools:availableTools,writable_paths:writable,creatable_paths:creatable,
     read_only_paths:readOnly,system_prompt:instruction
   };
   // Signed Tasks expose only the exact signed operation/path pairs and the
