@@ -269,6 +269,8 @@ jobs:
                 from "./poc/scripts/signed-gemini-pilot-usage.mjs";
               import {classifySafeGeminiPilotFailure}
                 from "./poc/scripts/signed-gemini-pilot-failure-observation.mjs";
+              import {buildSafeDelegationFailureLedger,safePublishedNativeTrace}
+                from "./poc/scripts/safe-delegation-failure-ledger.mjs";
               let data="";
               try{data=readFileSync("/tmp/real-four-gemini-pilot.log","utf8");}catch{}
               const phases=["native_preliminary_planning_real_disposable_gitea",
@@ -356,6 +358,8 @@ jobs:
                         ?{delegated_failure:item.delegated_failure}:{}),
                       ...(planningRejection
                         ?{planning_rejection:planningRejection}:{}),
+                      ...(safePublishedNativeTrace(item.failure_trace).length
+                        ?{failure_trace:safePublishedNativeTrace(item.failure_trace)}:{}),
                       ...(site&&
                         ["signed_dag_harness","planning_harness"].includes(site.module)&&
                         Number.isSafeInteger(site.line)&&
@@ -371,9 +375,16 @@ jobs:
                 docker_phase_evidence:dockerEvidence,
                 gemini_pilot_diagnostic:diagnostic
               });
+              const agentFailureEvidence=extractSafeGeminiPilotAgentSummary(data);
+              const failureLedger=buildSafeDelegationFailureLedger({
+                docker_phase_evidence:dockerEvidence,
+                gemini_pilot_diagnostic:diagnostic,
+                agent_failure_evidence:agentFailureEvidence
+              });
               writeFileSync("/tmp/four-gemini-pilot-failure.json",
                 JSON.stringify({status:"FAIL",
                   failure_observation:failureObservation,
+                  failure_ledger:failureLedger,
                   ...(diagnostic?{gemini_pilot_diagnostic:diagnostic}:{}),
                   // The native wrapper already redacts all other child data.
                   // Report only fixed phase/status enums; no raw model logs.
@@ -382,7 +393,7 @@ jobs:
                   framework_sha:process.env.GITHUB_SHA,
                   run_id:process.env.GITHUB_RUN_ID,
                   model_usage:extractSafeGeminiPilotUsage(data),
-                  agent_failure_evidence:extractSafeGeminiPilotAgentSummary(data),
+                  agent_failure_evidence:agentFailureEvidence,
                   verified_signals:matching,
                   stage:"gemini_planning_or_delegated_execution",
                   root_revocation:"not_confirmed_by_this_report",

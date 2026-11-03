@@ -56,6 +56,7 @@ import {safeGeminiPilotChildObservations,
   safeGeminiPilotAgentObservations,
   safeF1RealGiteaPlanningFailure}
   from "../../../scripts/signed-gemini-pilot-usage.mjs";
+import {safePublishedNativeTrace} from "../../../scripts/safe-delegation-failure-ledger.mjs";
 import {inspectF1RealGiteaPlannerReadiness}
   from "../../../scripts/f1-real-gitea-planner-readiness.mjs";
 import {buildF1RealGiteaResearchPlanningPort}
@@ -1260,6 +1261,8 @@ async function main(){
                     ...(["none","a2a_task_not_completed","a2a_artifact_invalid","controlled_tool_failure","no_confirmed_revision","a2a_dispatch_failed","orchestrator_task_failed","root_revocation_unconfirmed","dependency_denied","adk_model_failure","a2a_result_mismatch","attestation_effect_race","approved_plan_denied","test_assertion","unclassified"].includes(item.delegated_failure)
                       ?{delegated_failure:item.delegated_failure}:{}),
                     ...(location?{assertion_location:location}:{}),
+                    ...(safePublishedNativeTrace(item.failure_trace).length
+                      ?{failure_trace:safePublishedNativeTrace(item.failure_trace)}:{}),
                     ...(planningRejection
                       ?{planning_rejection:planningRejection}:{})
                   };

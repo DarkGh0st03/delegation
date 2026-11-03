@@ -52,6 +52,7 @@ import {TrustedApprovedA2ADispatcher} from
 import {GatewayCorroboratedTaskAttestor} from
   "../src/trusted-task-observation.ts";
 import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
+import {safeApprovedDagFailureTrace} from "./native-approved-dag-failure-category.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
 import {SourceWitnessedOfflineAdkModel}
@@ -1967,6 +1968,7 @@ try{
       }:{}),
       ...(assertionLocation?{assertion_location:assertionLocation}:{}),
       model_failure:pilotModelFailure,
+      failure_trace:safeApprovedDagFailureTrace(error).slice(0,3),
       ...(pilotPlanningRejection
         ?{planning_rejection:pilotPlanningRejection}:{}),
       ...(pilotPlanningRejectionHistory.length
