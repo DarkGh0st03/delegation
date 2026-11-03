@@ -244,7 +244,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     // capability from its Test role or from another Task's permission.
     const signedTask=context.trusted_gateway_task_id!==undefined&&
       context.subtask.approved_file_permissions!==undefined;
-    const taskRef=signedTask?safeSignedTaskRef(context.task_id):null;
+    const taskRef=signedTask?safeSignedTaskRef(context.trusted_gateway_task_id):null;
     // Older prebound scripted test fixtures do not send this new hint;
     // their Gateway still enforces the signed run_tests grant. An explicit
     // false from the current trusted dispatcher MUST hide and deny Runner.
