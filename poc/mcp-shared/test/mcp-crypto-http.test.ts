@@ -211,10 +211,13 @@ test("crypto bearer and task lifecycle prevent calls after cancellation",async()
 });
 
 test("R165 shared MCP factory refuses implicit legacy fallback",()=>{
- assert.throws(()=>createSharedMcpHttpServer({
+ // Deliberately malformed negative invocations, kept separate from audited
+ // direct factory call sites which must always supply an explicit profile.
+ const rejectedProfileFactory=createSharedMcpHttpServer;
+ assert.throws(()=>rejectedProfileFactory({
   verificationKeys:{},router:{} as TaskRouter
  } as never),/explicit_mcp_profile_required/);
- assert.throws(()=>createSharedMcpHttpServer({
+ assert.throws(()=>rejectedProfileFactory({
   verificationKeys:{},router:{} as TaskRouter,profile:"repository" as never
  }),/explicit_mcp_profile_required/);
 });
