@@ -13,6 +13,7 @@ const parent={ADAPTER_TRUST_PROFILE:"evm",GATEWAY_VERIFIER_MODE:"core-rust",
  DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
  APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE:"1",APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE:"1",
  APPROVED_RUNNER_SIGNED_DAG_GENERATED_TEST_PROBE:"1",
+ APPROVED_RUNNER_SIGNED_DAG_TS2724_PROBE:"1",
  GEMINI_API_KEY:"fixture-key-not-for-provider-use",APPROVED_RUNNER_SCENARIO:"account-suspension"};
 
 test("R151.81 reproduce the exact old inherited-repair guard without API access",()=>{
@@ -33,6 +34,7 @@ test("R151.81 preliminary child clears both paid switches, acknowledgements and 
  assert.equal(child.APPROVED_RUNNER_SIGNED_DAG_BACKEND_TEST_PROBE,"0");
  assert.equal(child.APPROVED_RUNNER_SIGNED_DAG_FRONTEND_TEST_PROBE,"0");
  assert.equal(child.APPROVED_RUNNER_SIGNED_DAG_GENERATED_TEST_PROBE,"0");
+ assert.equal(child.APPROVED_RUNNER_SIGNED_DAG_TS2724_PROBE,"0");
  assert.equal(child.DELEGATION_SIGNED_GEMINI_PILOT,"0");
  assert.equal(child.DELEGATION_SIGNED_GEMINI_REPAIR_D1,"0");
  assert.equal(child.DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION,"NO ADDITIONAL REPAIR AUTHORIZED");
@@ -55,4 +57,5 @@ test("R151.81 rehearsal does not disable the later explicitly authorized parent 
  assert.equal(laterOperationalChild.DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION,
   "I AUTHORIZE ONE ADDITIONAL GEMINI REPAIR EPOCH");
  assert.equal(laterOperationalChild.GEMINI_API_KEY,parent.GEMINI_API_KEY);
+ assert.equal(laterOperationalChild.APPROVED_RUNNER_SIGNED_DAG_TS2724_PROBE,"1");
 });
