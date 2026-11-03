@@ -99,3 +99,51 @@ test("A2A editor context is narrowed to the new Task read grants",async t=>{
  assert.throws(()=>approvedTaskInstruction("Reject duplicates","Run tests",{assertionContext:scoped}),/repair editor/);
  assert.throws(()=>project(context,sha,branch,"backend",[{resource,operation:"read_file"}]),/NO-GO/);
 });
+
+test("N1 private scoped feedback survives the specialist ADK model boundary without provider calls",async t=>{
+ const f=await fixture(t),context=await load(f.args);
+ const {projectTrustedRunnerAssertionsForTask:project}=await import("../src/trusted-runner-assertion-context.ts");
+ const {approvedTaskInstruction}=await import("../src/approved-task-instruction.ts");
+ const {createAdkSpecializedAgent}=await import("../../agent-runtime/src/adk-specialized-agents.ts");
+ const {Runner,InMemorySessionService}=await import("@google/adk");
+ class Capture extends BaseLlm{
+  requests:LlmRequest[]=[];
+  constructor(){super({model:"offline-n1-editor-boundary"});}
+  override async *generateContentAsync(request:LlmRequest):AsyncGenerator<LlmResponse,void>{
+   this.requests.push({...request,contents:structuredClone(request.contents)});
+   yield {content:{role:"model",parts:[{text:"Evidence inspected; no repair or Runner success claimed."}]}};
+  }
+  override connect(_request:LlmRequest):Promise<BaseLlmConnection>{throw Error("No provider");}
+ }
+ const model=new Capture(),grants=[{resource,operation:"read_file"},{resource,operation:"update_file"}];
+ const scoped=project(context,sha,branch,"test",grants);assert.ok(scoped);
+ const instruction=approvedTaskInstruction("Reject duplicate transitions","Investigate the scoped assertion",{repairEditor:true,assertionContext:scoped});
+ let providerCalls=0;
+ const built=createAdkSpecializedAgent({role:"test",model,trustedBranch:branch,
+  trustedTaskPaths:[path],trustedFilePermissions:[{path,operation:"read_file"},{path,operation:"update_file"}],
+  trustedRunTestsAllowed:false,
+  gatewayClient:{invoke:async()=>{providerCalls++;throw Error("No effect expected");}} as never});
+ const sessions=new InMemorySessionService(),appName="n1_editor_boundary",userId="owner",sessionId="fresh-d1";
+ await sessions.createSession({appName,userId,sessionId});
+ const runner=new Runner({agent:built.agent,appName,sessionService:sessions});
+ for await(const _event of runner.runAsync({userId,sessionId,newMessage:{role:"user",parts:[{text:JSON.stringify({task_id:"fresh-editor",role:"test",subtask:{instruction,branch,relevant_paths:[path],approved_file_permissions:[{path,operation:"read_file"},{path,operation:"update_file"}],approved_run_tests:false}})}]}})){assert.equal(_event.errorMessage,undefined,JSON.stringify(_event));}
+ assert.equal(model.requests.length,1);assert.equal(providerCalls,0);
+ const text=model.requests[0].contents!.flatMap(c=>c.parts??[]).find(p=>typeof p.text==="string"&&p.text.includes('"task_id"'))!.text!;
+ const received=JSON.parse(text),payload=JSON.parse(received.subtask.instruction.split("\n")[1]);
+ assert.equal(received.task_id,"fresh-editor");
+ assert.equal(payload.diagnostic_assertions.tested_commit_sha,sha);
+ assert.equal(payload.diagnostic_assertions.branch,branch);
+ assert.deepEqual(payload.diagnostic_assertions.assertions,scoped.assertions);
+ assert.doesNotMatch(JSON.stringify(model.requests),/SECRET_STACK|private log|runner-log:\/\//);
+ assert.equal(project(context,sha,branch,"test",[{resource,operation:"update_file"}]),null);
+});
+
+test("N1 compiler failures have no private Vitest assertion projection (coverage boundary)",async t=>{
+ const f=await fixture(t);
+ const context=await load({...f.args,effect:{...f.args.effect,
+  phases:[{phase:"typecheck",status:"fail"}],
+  typecheck_diagnostics:[{path:"apps/backend/src/service.ts",line:2,column:10,code:"TS2724"}]}});
+ // This characterizes a missing compiler-specific channel, NOT successful
+ // delivery of TS2724 to the editor. Do not reinterpret this PASS as N1 closed.
+ assert.equal(context,null);
+});
