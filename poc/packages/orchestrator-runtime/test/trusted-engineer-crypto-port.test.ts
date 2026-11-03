@@ -1,0 +1,125 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {createOwnerPrivateMcpEngineerCredentialPort}
+ from "../src/trusted-engineer-crypto-port.ts";
+import {TrustedEngineerAuthoritySession}
+ from "../src/trusted-engineer-authority.ts";
+import {makeApproval} from "../../plan-contracts/src/plan.mjs";
+import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+
+const repository={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
+const uri="gitea://gitea.local/thesis/iam-console-poc";
+const file=uri+"/branches/feature%2Freview/files/apps/backend/user.ts";
+const DID="did:thesis:engineer",time="2026-10-21T09:00:00Z";
+const root=(id:string,index:string,seconds:number)=>({
+ credential_id:id,valid_from:time,validity_seconds:seconds,
+ credential_status:{
+  type:"BitstringStatusListEntry" as const,
+  statusPurpose:"revocation" as const,
+  statusListIndex:index,statusListCredential:"https://status.example/root"
+ }
+});
+function fixture(denyRevoke=false){
+ const calls:{method:string;path:string;body:any;auth:string|null}[]=[];
+ const scoped=createOwnerPrivateMcpEngineerCredentialPort({
+  adapterBaseUrl:"http://127.0.0.1:8090",
+  bearerToken:"PRIVATE_ENGINEER_BEARER",
+  fetchFn:async(url,opts)=>{
+   const u=new URL(String(url)),body=JSON.parse(String(opts?.body));
+   calls.push({method:String(opts?.method),path:u.pathname,body,
+    auth:new Headers(opts?.headers).get("authorization")});
+   if(u.pathname==="/v1/credentials/status"){
+    if(denyRevoke)throw Error("PRIVATE_ADAPTER_REVOCATION_KEY");
+    return new Response(JSON.stringify({
+     credential_id:body.credential_id,status_set:true,
+     status_purpose:"revocation"
+    }),{status:200});
+   }
+   return new Response(JSON.stringify({
+    "@context":["https://www.w3.org/ns/credentials/v2"],
+    type:["VerifiableCredential","DelegationCredential"],
+    id:body.credential_id,issuer:"did:thesis:rust",
+    validFrom:body.valid_from,
+    credentialSubject:{sub:"did:thesis:orchestrator",per:body.permissions}
+   }),{status:201});
+  }
+ });
+ const plan={
+  schema_version:"1.0.0",plan_id:"r164-plan",session_id:"r164-session",
+  version:1,repository,base_revision:"a".repeat(40),
+  requirement:"Implement approved backend change",
+  candidate_agents:[{agent_id:"backend",did:"did:thesis:backend",
+    card_ref:"trusted:backend"}],
+  tasks:[
+   {id:"branch",agent_id:"orchestrator",title:"Branch",
+    description:"Approved branch",depends_on:[],resources:[uri]},
+   {id:"backend",agent_id:"backend",title:"Update",
+    description:"Approved edit",depends_on:["branch"],resources:[file]}
+  ],
+  requested_permissions:[
+   {id:"p1",task_id:"branch",agent_id:"orchestrator",
+    operation:"create_branch",resource:uri,reason:"Approved branch"},
+   {id:"p2",task_id:"backend",agent_id:"backend",
+    operation:"update_file",resource:file,reason:"Approved implementation"}
+  ],assumptions:[],uncertainties:[]
+ };
+ const approved=makeApproval(plan,{allowedOperations:new Set(RUST_OPERATIONS),
+  decision_id:"r164-approval",approved_by:DID,approved_at:time,
+  approved_permission_ids:["p1","p2"]});
+ const session=new TrustedEngineerAuthoritySession({
+  credentials:scoped,
+  snapshot:{session_id:"r164-session",repository,base_revision:"a".repeat(40),
+   directories:[""],files:[]},
+  approvals:{async loadAuthenticatedApproval(){
+   return {plan,approval:approved,authenticated_engineer_did:DID}
+  }},
+  authenticatedEngineerDid:DID
+ });
+ return {calls,session};
+}
+
+test("R164 two independent Root DCs use one trusted MCP transport and same Rust issuer with confirmed revocation between",async()=>{
+ const {calls,session}=fixture();
+ const early=await session.startPlanning(root("urn:r164:prelim","810",600));
+ assert.equal(early.phase,"planning");
+ assert.deepEqual(early.permissions.map(p=>p.operation),
+   ["read_repository","list_directory"]);
+ const active=await session.approveAndIssueOperationalRoot(
+  root("urn:r164:operational","811",3600));
+ assert.equal(session.phase,"operational");
+ assert.deepEqual(calls.map(c=>c.path),
+  ["/v1/credentials/root","/v1/credentials/status",
+   "/v1/credentials/root"]);
+ assert.deepEqual(calls.map(c=>c.body.credential_id),
+  ["urn:r164:prelim","urn:r164:prelim","urn:r164:operational"]);
+ assert.ok(calls.every(c=>c.auth==="Bearer PRIVATE_ENGINEER_BEARER"));
+ assert.deepEqual(calls[0].body.permissions.map((p:{operation:string})=>p.operation),
+   ["read_repository","list_directory"]);
+ assert.deepEqual(calls[2].body.permissions.map((p:{operation:string})=>p.operation),
+   ["create_branch","update_file"]);
+ assert.ok(calls[1].body.status_set);
+ assert.notEqual(early.credential_id,active.credential_id);
+ assert.equal(calls[0].body.delegatee,"orchestrator");
+ assert.equal(calls[2].body.delegatee,"orchestrator");
+});
+test("R164 failed private Rust root revocation prevents second root and masks secrets",async()=>{
+ const {calls,session}=fixture(true);
+ await session.startPlanning(root("urn:r164:prelim","810",600));
+ await assert.rejects(()=>session.approveAndIssueOperationalRoot(
+  root("urn:r164:operational","811",3600)),e=>{
+  assert.doesNotMatch(String(e),/PRIVATE_ADAPTER_REVOCATION_KEY/);
+  return /revocation not confirmed/.test(String(e));
+ });
+ assert.equal(session.phase,"failed_closed");
+ assert.deepEqual(calls.map(c=>c.path),
+  ["/v1/credentials/root","/v1/credentials/status"]);
+ await assert.rejects(()=>session.approveAndIssueOperationalRoot(
+  root("urn:r164:retry","812",3600)));
+ assert.equal(calls.length,2);
+});
+test("R164 rejected invalid preliminary privileges never reach MCP or Rust",async()=>{
+ const {calls,session}=fixture();
+ await assert.rejects(()=>session.startPlanning(
+  root("urn:r164:too-long","810",3600)),/time budget/);
+ assert.equal(calls.length,0);
+});

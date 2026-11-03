@@ -1,0 +1,42 @@
+/**
+ * R164: trusted Engineer-only Root DC and revocation transport.
+ *
+ * The Engineer session decides exact preliminary vs operational grants from
+ * trusted Gitea pins + authenticated signed approval, NOT from an MCP call.
+ * Each operation uses one in-process MCP SDK exchange with a random opaque
+ * ref; the existing Rust Adapter remains the ONLY issuer/status registry.
+ * Neither root permission lists, credential IDs, bearer tokens nor DCs are
+ * MCP tool parameters or results. No ADK/A2A accessible listener exists.
+ */
+import {createOwnerPrivateCryptographicMcpSession}
+ from "../../../mcp-shared/src/owner-private-child-mcp.ts";
+import {SoftwareEngineerAuthorityBootstrap}
+ from "./authority-client.ts";
+import type {AdapterClientConfig} from "./authority-adapter-transport.ts";
+import type {EngineerCredentialPort,RootParameters}
+ from "./trusted-engineer-authority.ts";
+import type {DelegatedPermission} from "./delegated-permission.ts";
+
+export function createOwnerPrivateMcpEngineerCredentialPort(
+ config:AdapterClientConfig
+):EngineerCredentialPort{
+ const rust=new SoftwareEngineerAuthorityBootstrap(config);
+ return Object.freeze({
+  async issueScopedOrchestratorRoot(
+   input:RootParameters&{permissions:readonly DelegatedPermission[]}
+  ){
+   // Snapshot before the first async boundary: a mutable caller cannot
+   // change the root ID or grants while a private MCP session initializes.
+   const pinned=structuredClone(input);
+   return createOwnerPrivateCryptographicMcpSession(
+    "root_issue",()=>rust.issueScopedOrchestratorRoot(pinned)
+   ).invokeOnce();
+  },
+  async revokeRoot(credentialId:string){
+   // Credential IDs and Rust revocation bearer stay inside the owner.
+   return createOwnerPrivateCryptographicMcpSession(
+    "root_revoke",()=>rust.revokeRoot(credentialId)
+   ).invokeOnce();
+  }
+ });
+}

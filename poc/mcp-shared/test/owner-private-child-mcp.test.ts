@@ -46,3 +46,33 @@ test("R162 private MCP does not start an HTTP listener or accept unauthenticated
  await assert.rejects(()=>service.invokeOnce());
  assert.equal(calls,0);
 });
+
+test("R164 owner-private MCP accepts root issue and revocation only as separate opaque one-shot calls",async()=>{
+ const {createOwnerPrivateCryptographicMcpSession}=await import(
+  "../src/owner-private-child-mcp.ts");
+ let calls=0;
+ const result={id:"urn:engineer:root",per:[{operation:"read_repository"}]};
+ const issue=createOwnerPrivateCryptographicMcpSession("root_issue",async()=>{
+  calls++;return result;
+ });
+ const issued=await issue.invokeOnce();
+ assert.equal(issued,result);
+ await assert.rejects(issue.invokeOnce(),/root issuance unavailable/);
+ const revoke=createOwnerPrivateCryptographicMcpSession("root_revoke",async()=>{
+  calls++;return undefined;
+ });
+ assert.equal(await revoke.invokeOnce(),undefined);
+ await assert.rejects(revoke.invokeOnce(),/root revocation unavailable/);
+ assert.equal(calls,2);
+});
+test("R164 private root MCP errors never reveal Adapter secrets",async()=>{
+ const {createOwnerPrivateCryptographicMcpSession}=await import(
+  "../src/owner-private-child-mcp.ts");
+ const s=createOwnerPrivateCryptographicMcpSession("root_revoke",async()=>{
+  throw Error("SECRET_ADAPTER_REVOCATION_TOKEN");
+ });
+ await assert.rejects(s.invokeOnce(),error=>{
+  assert.doesNotMatch(String(error),/SECRET_ADAPTER_REVOCATION_TOKEN/);
+  return /root revocation unavailable/.test(String(error));
+ });
+});

@@ -14,13 +14,28 @@ import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {InMemoryTransport} from "@modelcontextprotocol/sdk/inMemory.js";
 import {z} from "zod";
 
-const TOOL="delegation_issue_child_owner_private";
-const ERROR="Owner-private MCP child issuance unavailable";
-export function createOwnerPrivateChildMcpSession<T>(
- issueTrustedChild:()=>Promise<T>
+export type OwnerPrivateCryptoOperation="child_issue"|"root_issue"|"root_revoke";
+const OPERATIONS=Object.freeze({
+ child_issue:Object.freeze({tool:"delegation_issue_child_owner_private",
+   error:"Owner-private MCP child issuance unavailable"}),
+ root_issue:Object.freeze({tool:"delegation_issue_root_owner_private",
+   error:"Owner-private MCP root issuance unavailable"}),
+ root_revoke:Object.freeze({tool:"delegation_revoke_root_owner_private",
+   error:"Owner-private MCP root revocation unavailable"})
+});
+/**
+ * The allowed operation is selected in trusted owner code, never MCP args.
+ * One opaque request_ref is the only tool argument. No credentials or
+ * revocation targets are encoded in the request_ref or acknowledgement.
+ */
+export function createOwnerPrivateCryptographicMcpSession<T>(
+ operation:OwnerPrivateCryptoOperation,privateEffect:()=>Promise<T>
 ):Readonly<{invokeOnce():Promise<T>;close():Promise<void>}>{
- if(typeof issueTrustedChild!=="function")throw Error(ERROR);
- const requestRef="owner_issue_"+randomUUID();
+ const selected=OPERATIONS[operation];
+ if(!selected||typeof privateEffect!=="function")
+   throw Error("Owner-private MCP operation unavailable");
+ const TOOL=selected.tool,ERROR=selected.error;
+ const requestRef="owner_crypto_"+randomUUID();
  let issued=false,started=false,closed=false,completed=false;
  let credential:T|undefined;
  const server=new McpServer({
@@ -34,7 +49,7 @@ export function createOwnerPrivateChildMcpSession<T>(
    return {isError:true,content:[{type:"text" as const,text:"request_denied"}]};
   issued=true; // reserve BEFORE invoking possibly irreversible Rust signer
   try{
-   credential=await issueTrustedChild();
+   credential=await privateEffect();
    completed=true;
    // The signed credential remains in this private process only.
    // The MCP protocol contains an opaque ACK, never the credential.
@@ -83,4 +98,12 @@ export function createOwnerPrivateChildMcpSession<T>(
   },
   close
  });
+}
+
+/** Backward-compatible Child port; same one-use SDK mechanism and fail-closed
+ * private transport, no change to signed D0/D1 authorization. */
+export function createOwnerPrivateChildMcpSession<T>(
+ issueTrustedChild:()=>Promise<T>
+):Readonly<{invokeOnce():Promise<T>;close():Promise<void>}>{
+ return createOwnerPrivateCryptographicMcpSession("child_issue",issueTrustedChild);
 }
