@@ -105,7 +105,7 @@ test("ADK Planner reads real Gateway-shaped pinned source, returning only a draf
   const system=JSON.stringify(model.requests[0]?.config?.systemInstruction??{});
   assert.ok(system.includes("concrete regression tests"));
   assert.ok(system.includes("merely calling run_tests"));
-  assert.ok(system.includes("Pull Request creation"));
+  assert.ok(system.includes("PR requires verified tests"));
   assert.ok(system.includes("one shared behavioral contract"));
   assert.ok(system.includes("existing invariants to preserve"));
   assert.ok(system.includes("record the specific uncertainty"));
@@ -113,7 +113,7 @@ test("ADK Planner reads real Gateway-shaped pinned source, returning only a draf
   // autonomy. An unapproved live draft gets at most two repair attempts.
   assert.ok(system.includes("IN THAT SAME Task"));
   assert.ok(system.includes("exactly ONE Test run_tests grant"));
-  assert.ok(system.includes("depend transitively on the final run_tests Task"));
+  assert.ok(system.includes("must follow the required final run_tests Task"));
   assert.ok(system.includes("never propose unordered or overlapping writes"));
 });
 test("Planner guidance encourages source-grounded tests without granting new tools",()=>{
