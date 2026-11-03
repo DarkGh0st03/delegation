@@ -51,3 +51,25 @@ test("manual paid D0 uploads sanitized fallback with explicit step IDs",()=>{
   assert.ok(d0.includes("steps."+id+".outcome"));
  }
 });
+
+test("R154 omitted workflow steps are a diagnostic gap, not implicit success",()=>{
+ const unknown=classify({checkout:"success"});
+ assert.equal(unknown.observed_failure,"no_failure_observed");
+ assert.equal(unknown.evidence_completeness,"partial_public_evidence");
+ assert.ok(unknown.missing_evidence.includes("unreported_step_outcomes"));
+ assert.equal(unknown.failure_ordering,"no_failed_step_observed");
+ const x=classify({checkout:"success",dependencies:"failure",
+  gateway_start:"failure"});
+ assert.equal(x.failed_step_id,"dependencies");
+ assert.equal(x.failure_ordering,"earlier_step_outcomes_missing");
+ assert.equal(x.causal_attribution,"not_established");
+});
+
+test("R154 complete predecessor outcomes allow only an ordered observation",()=>{
+ const x=classify({checkout:"success",rust_toolchain:"success",
+  node_setup:"success",private_evidence:"success",
+  foundry_setup:"success",dependencies:"failure"});
+ assert.equal(x.failed_step_id,"dependencies");
+ assert.equal(x.failure_ordering,"first_reported_failed_step_in_workflow_order");
+ assert.equal(x.root_cause,"not_established_by_public_step_status");
+});

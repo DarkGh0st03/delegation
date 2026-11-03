@@ -184,3 +184,79 @@ test("R153 provider error reports precise fixed category, not provider exception
   x.observed_code==="quota_or_rate_limit"));
  assert.doesNotMatch(JSON.stringify(r),/SENSITIVE_KEY/u);
 });
+
+test("R154 missing public evidence is explicit across planning, approval, activation and execution",()=>{
+ for(const stage of ["gemini_planning","signed_test_review",
+   "activation_dc_vp","delegated_agents_gitea_docker","complete"]){
+  const x=report({gemini_pilot_diagnostic:{
+   stage,category:"unclassified_failure",
+   private_debug:"PRIVATE_MODEL_AND_SOURCE"}});
+  assert.equal(x.evidence_completeness,"partial_public_evidence");
+  assert.equal(x.private_detail_required,true);
+  assert.ok(x.missing_evidence.includes(
+   "specific_failure_category_not_established"));
+  assert.equal(x.causal_attribution,"not_established");
+  assert.doesNotMatch(JSON.stringify(x),/PRIVATE_MODEL_AND_SOURCE/u);
+ }
+ const absent=report();
+ assert.ok(absent.missing_evidence.includes(
+  "specific_failure_category_not_established"));
+});
+
+test("R154 unverified provider and generic test assertions never count as complete diagnoses",()=>{
+ const provider=report({gemini_pilot_diagnostic:{
+  stage:"gemini_planning",category:"model_provider_failure",
+  model_failure:"unknown",raw_exception:"PRIVATE_API_KEY"}});
+ assert.ok(provider.missing_evidence.includes(
+  "provider_failure_category_not_verified"));
+ assert.doesNotMatch(JSON.stringify(provider),/PRIVATE_API_KEY/u);
+ const assertion=report({gemini_pilot_diagnostic:{
+  stage:"signed_test_review",category:"test_assertion"}});
+ assert.ok(assertion.missing_evidence.includes(
+  "failed_assertion_detail_not_in_public_receipt"));
+});
+
+test("R154 D1 and D0 failures identify missing signed-Task correlation independently",()=>{
+ const r=report({agent_failure_evidence:{
+  schema:"signed-gemini-agent-failure-v1",role_evidence:{
+   backend:{agent_failure:{category:"sdk_model_exception",model_turns:1}},
+   frontend:{d1_revision_failure:"no_confirmed_editor_write",
+    d1_revision_evidence:{read_attempts:2,read_confirmed:2,
+     update_attempts:0,head_changed:false}}
+  }}});
+ assert.ok(r.missing_evidence.includes("failed_agent_signed_task_not_correlated"));
+ assert.ok(r.missing_evidence.includes("d1_recovery_task_evidence_not_correlated"));
+ assert.equal(r.private_detail_required,true);
+ assert.ok(r.observed_events.some(e=>e.affected_role==="backend"));
+ assert.ok(r.observed_events.some(e=>e.affected_role==="frontend"));
+});
+
+test("R154 malformed Runner failure is not disguised as an absence of errors",()=>{
+ const x=report({docker_phase_evidence:{
+  status:"fail",first_failed_phase:"typecheck",
+  phases:[{phase:"typecheck",status:"fail",output:"PRIVATE_TS_ERROR"}]}});
+ assert.ok(x.missing_evidence.includes(
+  "runner_phase_receipt_invalid_or_incomplete"));
+ assert.equal(x.evidence_completeness,"partial_public_evidence");
+ assert.doesNotMatch(JSON.stringify(x),/PRIVATE_TS_ERROR/u);
+});
+
+test("R154 bounded event overflow is reported, not silently discarded",()=>{
+ const reasons=["invalid_arguments","branch_mismatch","path_outside_signed_scope",
+   "operation_not_granted","gateway_prepare_rejected","upstream_unavailable",
+   "request_validation_rejected","task_binding_rejected",
+   "signed_permission_rejected","dependency_rejected",
+   "task_inactive_or_expired","runtime_scope_rejected",
+   "source_witness_missing","gateway_prepare_unclassified","unclassified"];
+ const failures=Object.fromEntries(reasons.map(k=>[k,1]));
+ const x=report({agent_failure_evidence:{
+  schema:"signed-gemini-agent-failure-v1",
+  role_evidence:{test:{failed_operations:{
+   read_file:failures,update_file:failures,run_tests:failures
+  }}}
+ }});
+ assert.equal(x.observed_events.length,24);
+ assert.ok(x.missing_evidence.includes(
+  "public_event_limit_truncated_diagnostics"));
+ assert.equal(x.private_detail_required,true);
+});

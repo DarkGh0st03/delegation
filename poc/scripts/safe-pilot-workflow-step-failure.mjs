@@ -7,13 +7,13 @@ const STATUS=new Set(["success","failure","skipped","cancelled",""]);
 export function safePaidWorkflowStepFailure(outcomes){
  if(!outcomes||typeof outcomes!=="object"||Array.isArray(outcomes))
   throw Error("Trusted paid workflow outcome map required");
- let success=0,skipped=0,missing=0,first=null;
+ let success=0,skipped=0,missing=0,first=null,unreportedBeforeFailure=0;
  for(const [id,phase,component] of STEPS){
   const status=outcomes[id]??"";
   if(!STATUS.has(status))throw Error("Invalid trusted workflow step status");
   if(status==="success")success++;
   else if(status==="skipped")skipped++;
-  else if(status==="")missing++;
+  else if(status===""){missing++;if(!first)unreportedBeforeFailure++;}
   else if(!first)first={id,phase,component,status};
  }
  return Object.freeze({
@@ -30,7 +30,17 @@ export function safePaidWorkflowStepFailure(outcomes){
    next_evidence:"inspect_restricted_github_step_log"
   }:{}),
   completed_step_count:success,skipped_step_count:skipped,
-  unreported_step_count:missing,causal_attribution:"not_established"
+  unreported_step_count:missing,
+  evidence_completeness:missing?"partial_public_evidence":
+    "all_tracked_step_outcomes_reported",
+  ...(missing?{missing_evidence:Object.freeze([
+    "unreported_step_outcomes"
+  ])}:{}),
+  failure_ordering:first
+    ?(unreportedBeforeFailure?"earlier_step_outcomes_missing":
+      "first_reported_failed_step_in_workflow_order")
+    :"no_failed_step_observed",
+  causal_attribution:"not_established"
  });
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){

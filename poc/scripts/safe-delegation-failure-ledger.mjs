@@ -183,8 +183,9 @@ export function buildSafeDelegationFailureLedger({
  gemini_pilot_diagnostic,agent_failure_evidence,docker_phase_evidence
 }={}){
  const events=[];
+ let eventsTruncated=false;
  function add(phase,reportedBy,role,operation,code,evidence,detail={}){
-  if(events.length>=24)return;
+  if(events.length>=24){eventsTruncated=true;return;}
   events.push(Object.freeze({
    event_id:"F"+(events.length+1),phase,reporting_component:reportedBy,
    affected_role:role,operation,observed_code:code,
@@ -299,12 +300,36 @@ export function buildSafeDelegationFailureLedger({
     e.phase==="recovery_d1"&&e.reporting_component==="trusted_revision_verifier")??
    events.findLast(e=>e.phase==="docker_runner")??
    events.findLast(e=>e.phase==="agent_task")??events.at(-1);
- const missing=[];
+ // Every incomplete diagnosis is explicitly flagged. An absent receipt
+ // cannot be interpreted as a successful stage or an established root cause.
+ const missing=new Set();
  if(!failed&&events.some(e=>e.operation==="run_tests"||
     e.phase==="recovery_d1"))
-  missing.push("runner_phase_not_in_public_receipt");
+  missing.add("runner_phase_not_in_public_receipt");
+ if(isObject(docker_phase_evidence)&&
+    docker_phase_evidence.status==="fail"&&!failed)
+  missing.add("runner_phase_receipt_invalid_or_incomplete");
+ if(events.some(e=>["unclassified","unclassified_failure"].includes(
+   e.observed_code)))
+  missing.add("specific_failure_category_not_established");
+ if(events.some(e=>e.observed_code==="test_assertion"))
+  missing.add("failed_assertion_detail_not_in_public_receipt");
+ if(events.some(e=>e.observed_code==="model_provider_failure")&&
+    !events.some(x=>x.reporting_component==="gemini_provider"&&
+     x.observed_code!=="unknown"))
+  missing.add("provider_failure_category_not_verified");
+ if(events.some(e=>e.phase==="agent_task"&&e.affected_role&&
+    !taskObservations.some(x=>x.role===e.affected_role)))
+  missing.add("failed_agent_signed_task_not_correlated");
+ if(events.some(e=>e.phase==="recovery_d1"&&
+    e.reporting_component==="trusted_revision_verifier"&&
+    !(e.task_ref&&taskObservations.some(x=>
+      x.role===e.affected_role&&x.task_ref===e.task_ref))))
+  missing.add("d1_recovery_task_evidence_not_correlated");
  if(events.some(e=>e.observed_code==="no_confirmed_editor_write"))
-  missing.push("model_reason_for_no_edit_not_independently_verified");
+  missing.add("model_reason_for_no_edit_not_independently_verified");
+ if(eventsTruncated)missing.add("public_event_limit_truncated_diagnostics");
+ const evidenceGaps=Object.freeze([...missing]);
  return Object.freeze({
   schema:"delegation-failure-ledger-v1",
   ordering:"grouped_by_evidence_not_chronological",
@@ -312,8 +337,10 @@ export function buildSafeDelegationFailureLedger({
   primary_blocker_event_id:primary.event_id,
   observed_events:Object.freeze(events),
   signed_task_observations:Object.freeze(taskObservations),
-  missing_evidence:Object.freeze(missing),
-  private_detail_required:missing.length>0,
+  missing_evidence:evidenceGaps,
+  evidence_completeness:evidenceGaps.length
+    ?"partial_public_evidence":"classified_public_observation",
+  private_detail_required:evidenceGaps.length>0,
   interpretation:"Reporting component, role and operation identify the observed failure; application root cause is not inferred."
  });
 }
