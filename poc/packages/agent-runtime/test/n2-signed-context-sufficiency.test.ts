@@ -17,7 +17,8 @@ const importerGrants=[
 
 class OneReadModel extends BaseLlm{
  readonly requests:LlmRequest[]=[];
- constructor(readonly path:string){super({model:"n2-offline-adk-read"});}
+ readonly path:string;
+ constructor(path:string){super({model:"n2-offline-adk-read"});this.path=path;}
  override async *generateContentAsync(request:LlmRequest):
  AsyncGenerator<LlmResponse,void>{
   this.requests.push(request);
