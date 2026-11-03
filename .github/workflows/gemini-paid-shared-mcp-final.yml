@@ -84,10 +84,13 @@ jobs:
       CORE_RUST_CHAIN_ID: "31337"
     steps:
       - uses: actions/checkout@v4
+        id: checkout
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@1.99.0
+        id: rust_toolchain
       - uses: actions/setup-node@v4
+        id: node_setup
         with:
           node-version: "22.15.0"
           cache: npm
@@ -108,14 +111,17 @@ jobs:
             appendFileSync(process.env.GITHUB_OUTPUT,"enabled=true\n");
           '
       - uses: foundry-rs/foundry-toolchain@v1
+        id: foundry_setup
         with:
           version: v1.8.4
       - name: Install pinned local Node and DID dependencies
+        id: dependencies
         run: |
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
           node poc/scripts/init-local-env.mjs --force
       - name: Verify one-use manual charge consent and source identity (no Gemini call)
+        id: billing_consent
         env:
           DELEGATION_GEMINI_MODEL: ${{ inputs.model }}
           DELEGATION_GEMINI_CHARGE_CONFIRMATION: ${{ inputs.authorization }}
@@ -139,6 +145,7 @@ jobs:
           node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
           node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-agent-model-binding.test.mjs
       - name: Block billed Gemini pilot unless SAME SHA passed all three offline CI gates
+        id: offline_ci_gate
         env:
           GITHUB_TOKEN: ${{ github.token }}
           DELEGATION_GEMINI_MODEL: ${{ inputs.model }}
@@ -153,6 +160,7 @@ jobs:
           node --test poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
           node poc/scripts/signed-gemini-pilot-ci-gate.mjs --check-ci-no-inference
       - name: Start only disposable Anvil and OPA
+        id: anvil_opa
         run: |
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
           for i in {1..90}; do
@@ -165,6 +173,7 @@ jobs:
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
           exit 1
       - name: Generate disposable public test identities
+        id: identities
         run: |
           local_key() { printf '0x%064x' "$1"; }
           deployer_key="$(local_key 1)"
@@ -182,6 +191,7 @@ jobs:
             echo "ADAPTER_ID_${role}=did:ethr:0x7a69:${address}" >> "$GITHUB_ENV"
           done
       - name: Deploy public DID and EVM trust registries
+        id: trust_registry
         run: |
           bash poc/scripts/bootstrap-trust.sh
           set -a
@@ -195,12 +205,14 @@ jobs:
           echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
           echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
       - name: Build signed-credential Adapter and native Core Rust addon
+        id: adapter_build
         run: |
           cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
           cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
           mkdir -p poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
       - name: Start Adapter with public-only shared verification artifacts
+        id: adapter_start
         run: |
           cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
           echo $! > /tmp/native-evm-adapter.pid
@@ -211,6 +223,7 @@ jobs:
           cat /tmp/native-evm-adapter.log
           exit 1
       - name: Start Gateway using only the native Rust Core verifier
+        id: gateway_start
         run: |
           npm --prefix poc run gateway:start > /tmp/native-evm-gateway.log 2>&1 &
           echo $! > /tmp/native-evm-gateway.pid
@@ -221,11 +234,13 @@ jobs:
           cat /tmp/native-evm-gateway.log
           exit 1
       - name: Preload disposable Gitea, OPA and Docker acceptance images
+        id: gitea_resources
         run: |
           docker pull docker.gitea.com/gitea:28.0.0
           docker pull node:22.15.0-bookworm
           docker pull openpolicyagent/opa:1.21.1
       - name: Verify configured Gemini key and model metadata (NO generation)
+        id: provider_preflight
         env:
           GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
         run: |
@@ -233,6 +248,7 @@ jobs:
           test -n "${GEMINI_API_KEY:-}" || { echo "Missing Gemini secret; no model call"; exit 1; }
           node poc/scripts/check-gemini-planner-model-access.mjs --check-model-access
       - name: ONE explicitly authorized real Gemini signed-DAG Account Suspension pilot
+        id: signed_pilot
         env:
           GEMINI_API_KEY: ${{ secrets.Delegation_Thesis_Gemini }}
           DELEGATION_GEMINI_MODEL: ${{ inputs.model }}
@@ -430,11 +446,13 @@ jobs:
               JSON.stringify(receipt,null,2)+"\n",{flag:"wx",mode:0o600});
           '
       - name: Seal private Runner failure evidence
+        id: seal_private
         if: always() && steps.private_evidence.outputs.enabled == 'true'
         env:
           RUNNER_EVIDENCE_KEY_HEX: ${{ secrets.RUNNER_EVIDENCE_KEY_HEX }}
         run: node poc/scripts/seal-runner-evidence.mjs "$RUNNER_TEMP/private-runner-evidence" "$RUNNER_TEMP/runner-evidence.enc"
       - name: Upload encrypted evidence only
+        id: upload_encrypted
         if: always() && steps.private_evidence.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -442,6 +460,31 @@ jobs:
           path: ${{ runner.temp }}/runner-evidence.enc
           if-no-files-found: ignore
           retention-days: 7
+      # Always report a fixed phase/component for preflight and infrastructure
+      # failures as well as D0/D1. Never export raw step outputs.
+      - name: Record cross-phase GitHub Actions failure attribution
+        if: failure()
+        env:
+          DELEGATION_STEP_CHECKOUT: ${{ steps.checkout.outcome }}
+          DELEGATION_STEP_RUST_TOOLCHAIN: ${{ steps.rust_toolchain.outcome }}
+          DELEGATION_STEP_NODE_SETUP: ${{ steps.node_setup.outcome }}
+          DELEGATION_STEP_PRIVATE_EVIDENCE: ${{ steps.private_evidence.outcome }}
+          DELEGATION_STEP_FOUNDRY_SETUP: ${{ steps.foundry_setup.outcome }}
+          DELEGATION_STEP_DEPENDENCIES: ${{ steps.dependencies.outcome }}
+          DELEGATION_STEP_BILLING_CONSENT: ${{ steps.billing_consent.outcome }}
+          DELEGATION_STEP_OFFLINE_CI_GATE: ${{ steps.offline_ci_gate.outcome }}
+          DELEGATION_STEP_ANVIL_OPA: ${{ steps.anvil_opa.outcome }}
+          DELEGATION_STEP_IDENTITIES: ${{ steps.identities.outcome }}
+          DELEGATION_STEP_TRUST_REGISTRY: ${{ steps.trust_registry.outcome }}
+          DELEGATION_STEP_ADAPTER_BUILD: ${{ steps.adapter_build.outcome }}
+          DELEGATION_STEP_ADAPTER_START: ${{ steps.adapter_start.outcome }}
+          DELEGATION_STEP_GATEWAY_START: ${{ steps.gateway_start.outcome }}
+          DELEGATION_STEP_GITEA_RESOURCES: ${{ steps.gitea_resources.outcome }}
+          DELEGATION_STEP_PROVIDER_PREFLIGHT: ${{ steps.provider_preflight.outcome }}
+          DELEGATION_STEP_SIGNED_PILOT: ${{ steps.signed_pilot.outcome }}
+          DELEGATION_STEP_SEAL_PRIVATE: ${{ steps.seal_private.outcome }}
+          DELEGATION_STEP_UPLOAD_ENCRYPTED: ${{ steps.upload_encrypted.outcome }}
+        run: node poc/scripts/safe-pilot-workflow-step-failure.mjs
       - name: Upload only sanitized pilot success or failure evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -450,6 +493,7 @@ jobs:
           path: |
             /tmp/four-gemini-signed-pilot.json
             /tmp/four-gemini-pilot-failure.json
+            /tmp/four-gemini-pilot-step-failure.json
           if-no-files-found: warn
           retention-days: 14
       - name: Report strictly limited service status on failure
