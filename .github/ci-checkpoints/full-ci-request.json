@@ -1,8 +1,8 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "D1 TS2724 offline source-derived repair -> signed Backend D1 -> Gitea/Docker PASS consolidated gate",
-  "candidate_parent_sha": "035cb398edbbe2654f181f5b9fc4543d269c4b60",
-  "purpose": "One free exact-SHA consolidated validation for independently signed D1 Backend repair of real TS2724 under reusable original Rust/Gateway root. Targeted Docker D1 #41598918267 SUCCESS and Fast CI #41598918265 SUCCESS on parent SHA. Planner and paid Gemini workflow unchanged. Gemini, paid D1 and new grant escalation disabled. Review before any separate paid experiment.",
+  "checkpoint": "N1 private TS2724 compiler context + N2 signed ADK scope matrix consolidated free validation",
+  "candidate_parent_sha": "58ebbc4a20b837e5000fd96e945548e15312a36f",
+  "purpose": "One offline same-SHA gate for N1 verified compiler-message transport to Backend D1 (targeted TS2724 #41618869640 SUCCESS, Fast #41618869751 SUCCESS on source parent), plus N2 signed ADK context availability matrix (Fast #41621634547 SUCCESS on candidate parent). No Planner/paid-workflow/grant changes. Root scope is NOT automatic signed Task scope; exporter unreadability is an explicit generative limitation, not permission to auto-escalate. No paid model invocation.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
