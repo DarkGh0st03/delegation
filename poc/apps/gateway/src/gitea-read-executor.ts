@@ -15,6 +15,10 @@ export class GiteaReadOnlyExecutor implements ExecutionPort {
     this.#client = client;
   }
 
+  async resolveReadRevision(branch:string):Promise<string>{
+    return (await this.#client.getBranchMetadata(branch)).commit_sha;
+  }
+
   async execute(record: PreparedRequestRecord): Promise<ExecutionResult> {
     if (record.request.tool === "read_repository") {
       const snapshot = await this.#client.readRepository(record.pinned_revision);

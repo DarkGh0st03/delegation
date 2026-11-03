@@ -82,6 +82,24 @@ export function createGatewayHttpServer(runtime: GatewayRuntime): Server {
         return;
       }
 
+      if (method === "POST" && url === "/v1/authorization/prepare-read-composite") {
+        const body=await readJson(request);
+        json(response,201,await runtime.prepareReadComposite(body));
+        return;
+      }
+
+      if (method === "POST" && url === "/v1/authorization/execute-read-composite") {
+        const body=await readJson(request);
+        const controller=new AbortController();
+        const onPrematureClose=()=>{if(!response.writableEnded)controller.abort();};
+        response.once("close",onPrematureClose);
+        try{
+          const result=await runtime.executeReadComposite(body,controller.signal);
+          if(!response.destroyed)json(response,200,result);
+        }finally{response.removeListener("close",onPrematureClose);}
+        return;
+      }
+
       if (method === "POST" && url === "/v1/authorization/execute") {
         const body = await readJson(request);
         const controller=new AbortController();

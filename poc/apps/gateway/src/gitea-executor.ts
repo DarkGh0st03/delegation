@@ -52,6 +52,11 @@ export class GiteaExecutor implements ExecutionPort {
     this.#runnerRepositoryUri = runnerRepositoryUri;
   }
 
+  /** Resolve once before composite authorization; individual reads pass SHA. */
+  async resolveReadRevision(branch:string):Promise<string>{
+    return (await this.#client.getBranchMetadata(branch)).commit_sha;
+  }
+
   providerFor(record: PreparedRequestRecord): "gitea" | "runner" {
     return record.request.tool === "run_tests" ? "runner" : "gitea";
   }

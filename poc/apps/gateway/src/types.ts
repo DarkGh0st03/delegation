@@ -179,7 +179,14 @@ export interface CompositeAuthorizationAuditEvent {
 export type AuditEvent =
   | PrepareAuditEvent
   | ExecuteAuditEvent
-  | CompositeAuthorizationAuditEvent;
+  | CompositeAuthorizationAuditEvent
+  | {
+      event:"composite_read_executed";
+      timestamp:string;request_id:string;task_id:string;agent_role:AgentRole;
+      permission_count:number;decision:"allow"|"deny";
+      reason:string;provider_result:"success"|"error"|"not_called";
+      pinned_revision:string;
+    };
 
 export interface AuditSink {
   emit(event: AuditEvent): void;
@@ -377,6 +384,8 @@ export interface ExecutionPort {
   readonly provider: "mock" | "gitea";
   providerFor?(record: PreparedRequestRecord): "mock" | "gitea" | "runner";
   execute(record: PreparedRequestRecord, signal?: AbortSignal): Promise<ExecutionResult>;
+  /** Trusted provider's immutable commit for an authorized read-only bundle. */
+  resolveReadRevision?(branch:string):Promise<string>;
 }
 
 export interface ExecuteAuthorizationResponse {

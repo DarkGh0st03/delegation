@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   InMemoryCompositeStore,
   prepareCompositeAuthorization,
-  verifyCompositeAuthorization
+  verifyCompositeAuthorization,
+  prepareReadCompositeAuthorization,
+  executeReadCompositeAuthorization
 } from "../src/composite-authorization.ts";
 import { InMemoryAuditSink } from "../src/prepare.ts";
 import { GatewayRuntime } from "../src/runtime.ts";
@@ -217,4 +219,115 @@ test("HTTP composite verification checks two policies, never invokes provider",a
     await new Promise<void>((resolve,reject)=>
       server.close(error=>error?reject(error):resolve()));
   }
+});
+
+test("R158 approved read composite executes two pinned Gateway reads only after multi-VP and OPA",async()=>{
+ const verifier=new Verifier(),policy=new Policy(),audit=new InMemoryAuditSink();
+ const calls:unknown[]=[],events:unknown[]=[];
+ const pinned="a".repeat(40);
+ const binding={
+  authorizePrepare(_task:string,_role:string,_permission:unknown,req:{arguments:{branch:string}}){
+   assert.equal(req.arguments.branch,"feature/demo");
+   return {plan_digest:"b".repeat(64),plan_task_id:"approved-read",
+     work_branch:"feature/demo"};
+  },
+  assertAuthorizedForExecution(rec:{approved_plan_digest:string;pinned_revision:string}){
+   assert.equal(rec.approved_plan_digest,"b".repeat(64));
+   assert.equal(rec.pinned_revision,pinned);
+  },
+  beginProviderEffect(){events.push("begin");return ()=>events.push("end");},
+  recordProviderSuccess(rec:{request_id:string},result:unknown){
+   events.push(["record",rec.request_id,result]);
+  }
+ };
+ const executor:ExecutionPort={
+  provider:"gitea",
+  async resolveReadRevision(branch){assert.equal(branch,"feature/demo");return pinned;},
+  async execute(record){
+   calls.push(record);
+   assert.equal(record.pinned_revision,pinned);
+   const req=record.request;
+   assert.equal(req.tool,"read_file");
+   const path=req.arguments.path;
+   return {provider:"gitea",performed:true,tool:"read_file",
+    branch:"feature/demo",path,revision:pinned,blob_sha:"c".repeat(40),
+    last_commit_sha:pinned,size:5,encoding:"utf-8",content:"hello"};
+  }
+ };
+ const rt=new GatewayRuntime({
+  bind_host:"127.0.0.1",bind_port:0,prepare:config,
+  adapter_url:"http://unused",adapter_gateway_token:"unused",
+  opa_url:"http://unused",opa_timeout_ms:1000,provider_mode:"mock",
+  gitea_timeout_ms:1000
+ },{verifier,policy,executor,audit,approvedPlans:binding as never});
+ const input={task_id:"backend-task",agent_role:"backend",actions:[
+  {tool:"read_file",arguments:{branch:"feature/demo",path:"src/one.ts"}},
+  {tool:"read_file",arguments:{branch:"feature/demo",path:"src/two.ts"}}
+ ]};
+ const prepared=await rt.prepareReadComposite(input);
+ assert.equal(prepared.authorization_only,false);
+ assert.equal(prepared.pinned_revision,pinned);
+ assert.equal(calls.length,0);
+ await rejected(rt.verifyComposite(authorization(prepared.request_id)),403,
+  "composite_mode_denied");
+ const result=await rt.executeReadComposite(authorization(prepared.request_id));
+ assert.equal(result.executions.length,2);
+ assert.deepEqual(result.executions.map(x=>x.tool),["read_file","read_file"]);
+ assert.equal(verifier.calls.length,1);
+ assert.deepEqual(verifier.calls[0].required_permissions,
+  prepared.required_permissions);
+ assert.equal(policy.calls.length,2);
+ assert.equal(calls.length,2);
+ assert.deepEqual(events.map(x=>Array.isArray(x)?x[0]:x),
+  ["begin","record","record","end"]);
+ assert.equal(audit.events.at(-1)?.event,"composite_read_executed");
+ assert.equal(audit.events.at(-1)?.provider_result,"success");
+ await rejected(rt.executeReadComposite(authorization(prepared.request_id)),
+  409,"replay_detected");
+});
+
+test("R158 read composites reject unsigned scopes, writes and mixed branches before provider I/O",async()=>{
+ const {deps}=fixture();
+ const ops={...deps,executor:{
+  provider:"gitea",async resolveReadRevision(){return "a".repeat(40);},
+  async execute(){throw Error("Must not read unapproved resources");}
+ } as ExecutionPort};
+ const good={task_id:"backend-task",agent_role:"backend",actions:[
+  {tool:"read_file",arguments:{branch:"feature/demo",path:"src/one.ts"}},
+  {tool:"read_file",arguments:{branch:"feature/demo",path:"src/two.ts"}}
+ ]};
+ await rejected(prepareReadCompositeAuthorization(good,ops),403,
+  "composite_trusted_binding_required");
+ await rejected(prepareReadCompositeAuthorization({...good,actions:[
+  ...good.actions.slice(0,1),{tool:"update_file",
+   arguments:{branch:"feature/demo",path:"src/two.ts",content:"x"}}
+ ]},ops),403,"composite_read_only");
+ await rejected(prepareReadCompositeAuthorization({...good,actions:[
+  good.actions[0],{tool:"read_file",arguments:{
+   branch:"feature/other",path:"src/two.ts"}}
+ ]},ops),403,"composite_branch_mismatch");
+});
+
+test("R158 OPA second permission denial produces zero read effects",async()=>{
+ const policy=new Policy();policy.decision=(i)=>i===1;
+ const {deps}=fixture(new Verifier(),policy);
+ let performed=0;
+ const obj={...deps,approvedPlans:{
+  authorizePrepare(){return {plan_digest:"d".repeat(64),
+    plan_task_id:"one",work_branch:"feature/demo"};},
+  assertAuthorizedForExecution(){},
+  beginProviderEffect(){throw Error("Forbidden before OPA");},
+  recordProviderSuccess(){throw Error("Must not be called");}
+ } as never,executor:{provider:"gitea",
+  async resolveReadRevision(){return "a".repeat(40);},
+  async execute(){performed++;throw Error("must not read");}
+ } as ExecutionPort};
+ const input={task_id:"backend-task",agent_role:"backend",actions:[
+  {tool:"read_file",arguments:{branch:"feature/demo",path:"src/a.ts"}},
+  {tool:"read_file",arguments:{branch:"feature/demo",path:"src/b.ts"}}
+ ]};
+ const prepared=await prepareReadCompositeAuthorization(input,obj);
+ await rejected(executeReadCompositeAuthorization(
+  authorization(prepared.request_id),obj),403,"policy_denied");
+ assert.equal(performed,0);
 });

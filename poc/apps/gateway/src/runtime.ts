@@ -3,7 +3,9 @@ import {loadDirectCoreRustVerifier} from "./direct-core-loader.ts";
 import {
   InMemoryCompositeStore,
   prepareCompositeAuthorization,
-  verifyCompositeAuthorization
+  verifyCompositeAuthorization,
+  prepareReadCompositeAuthorization,
+  executeReadCompositeAuthorization
 } from "./composite-authorization.ts";
 import type { GatewayRuntimeConfig } from "./config.ts";
 import { executeAuthorization } from "./execute.ts";
@@ -158,6 +160,28 @@ export class GatewayRuntime {
       verifier:this.#verifier,
       policy:this.#policy,
       config:this.#config.prepare
+    });
+  }
+
+  /** One read-only executable composite pinned to a trusted revision. */
+  async prepareReadComposite(raw:unknown){
+    return prepareReadCompositeAuthorization(raw,{
+      store:this.#compositeStore,audit:this.#audit,verifier:this.#verifier,
+      policy:this.#policy,config:this.#config.prepare,
+      executor:this.#executor,
+      ...(this.#planningRevisions?{planningRevisions:this.#planningRevisions}:{}),
+      ...(this.#approvedPlans?{approvedPlans:this.#approvedPlans}:{})
+    });
+  }
+
+  async executeReadComposite(raw:unknown,signal?:AbortSignal){
+    return executeReadCompositeAuthorization(raw,{
+      store:this.#compositeStore,audit:this.#audit,verifier:this.#verifier,
+      policy:this.#policy,config:this.#config.prepare,
+      executor:this.#executor,
+      ...(this.#planningRevisions?{planningRevisions:this.#planningRevisions}:{}),
+      ...(this.#approvedPlans?{approvedPlans:this.#approvedPlans}:{}),
+      ...(signal?{signal}:{})
     });
   }
 

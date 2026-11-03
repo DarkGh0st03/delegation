@@ -11,6 +11,8 @@ import { deriveRequiredPermission } from "./canonical.ts";
 import { GatewayError, VerificationRejectedError, VerificationUnavailableError } from "./errors.ts";
 import { buildPolicyInput } from "./policy-input.ts";
 import { validatePrepareAuthorizationRequest } from "./validation.ts";
+import type {TrustedPlanningRevisions} from "./planning-revisions.ts";
+import type {TrustedApprovedExecutionPlans} from "./approved-execution-plans.ts";
 import type {
   AgentRole, AuditSink, GatewayPrepareConfig, NormalizedToolRequest,
   Permission, PolicyDecision, PolicyPort, PreparedRequestRecord,
@@ -34,6 +36,12 @@ interface CompositeRecord {
   created_at_ms: number;
   expires_at_ms: number;
   consumed: boolean;
+  /** Opt-in executable reads: never inferred from an authorization-only receipt. */
+  read_execution?:Readonly<{
+    pinned_revision:string;
+    guard:"planning"|"approved";
+    actions:readonly PreparedRequestRecord[];
+  }>;
 }
 
 export interface PreparedCompositeResponse {
@@ -70,6 +78,10 @@ export interface CompositeDependencies {
   nowMs?: () => number;
   requestId?: () => string;
   challenge?: () => string;
+  planningRevisions?:TrustedPlanningRevisions;
+  approvedPlans?:TrustedApprovedExecutionPlans;
+  executor?:import("./types.ts").ExecutionPort;
+  signal?:AbortSignal;
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -177,15 +189,9 @@ export function prepareCompositeAuthorization(
   };
 }
 
-export async function verifyCompositeAuthorization(
-  raw: unknown, deps: CompositeDependencies
-): Promise<{
-  request_id:string;
-  decision:"allow";
-  authorization_only:true;
-  required_permissions:Permission[];
-  policies:PolicyDecision[];
-}> {
+async function verifyCompositeInternal(
+  raw: unknown, deps: CompositeDependencies, readExecution:boolean
+) {
   const input=object(raw,"composite verification");
   exact(input,["request_id","signed_vp"]);
   const id=nonempty(input.request_id,"request_id");
@@ -195,6 +201,9 @@ export async function verifyCompositeAuthorization(
   }
   const record=deps.store.get(id);
   if(!record)throw new GatewayError(404,"unknown_request","Composite request not found");
+  if(Boolean(record.read_execution)!==readExecution)
+    throw new GatewayError(403,"composite_mode_denied",
+      "Composite approval cannot change its prepared execution mode");
   if(record.consumed)throw new GatewayError(409,"replay_detected","Composite request already consumed");
   record.consumed=true; // before the first await: one-time request even with concurrency
   const now=(deps.nowMs ?? Date.now)();
@@ -272,6 +281,180 @@ export async function verifyCompositeAuthorization(
     decision:"allow",
     authorization_only:true,
     required_permissions:requirements,
-    policies
+    policies,
+    record,verified
   };
+}
+
+export async function verifyCompositeAuthorization(raw:unknown,deps:CompositeDependencies){
+  const {record,policies}=await verifyCompositeInternal(raw,deps,false);
+  return {request_id:record.request_id,decision:"allow" as const,
+    authorization_only:true as const,
+    required_permissions:record.actions.map(x=>x.permission),policies};
+}
+
+/**
+ * Prepare an executable READ-ONLY bundle. All operation/path grants are
+ * independently checked against the active Planning session or signed Task.
+ * The trusted provider pins one immutable SHA; no unapproved execution mode,
+ * write, mixed branch or live-HEAD fallback is accepted.
+ */
+export async function prepareReadCompositeAuthorization(raw:unknown,
+  deps:CompositeDependencies){
+  const input=object(raw,"read composite prepare");
+  exact(input,["task_id","agent_role","actions"]);
+  if(!Array.isArray(input.actions)||input.actions.length<2||
+     input.actions.length>MAX_COMPOSITE_ACTIONS)
+    throw new GatewayError(400,"invalid_request","Read composite needs 2-12 actions");
+  const taskId=nonempty(input.task_id,"task_id");
+  const role=nonempty(input.agent_role,"agent_role") as AgentRole;
+  const actions=input.actions.map((rawAction:unknown)=>{
+    const action=object(rawAction,"read action");
+    exact(action,["tool","arguments"]);
+    const normalized=validatePrepareAuthorizationRequest({
+      task_id:taskId,agent_role:role,tool:action.tool,arguments:action.arguments
+    });
+    if(!["read_file","list_directory"].includes(normalized.request.tool))
+      throw new GatewayError(403,"composite_read_only",
+        "Executable composite requests support read_file/list_directory only");
+    return normalized.request;
+  });
+  const branches=actions.map(a=>"branch" in a.arguments?a.arguments.branch:null);
+  if(branches.some(b=>!b||b!==branches[0]))
+    throw new GatewayError(403,"composite_branch_mismatch",
+      "Read composite must use one trusted branch");
+  let planningRevision:string|undefined;
+  let operational:ReturnType<TrustedApprovedExecutionPlans["authorizePrepare"]>|undefined;
+  for(const request of actions){
+    const permission=deriveRequiredPermission(deps.config.repository,request);
+    const planning=deps.planningRevisions?.authorizePrepare(taskId,role,request);
+    if(planning){
+      if(operational||(planningRevision&&planningRevision!==planning))
+        throw new GatewayError(403,"composite_binding_mismatch","Read scopes cannot be mixed");
+      planningRevision=planning;
+    }else{
+      if(planningRevision||!deps.approvedPlans)
+        throw new GatewayError(403,"composite_trusted_binding_required",
+          "Read composite requires a trusted planning or signed Task binding");
+      const next=deps.approvedPlans.authorizePrepare(taskId,role,permission,request);
+      if(operational&&(
+        next.plan_digest!==operational.plan_digest||
+        next.plan_task_id!==operational.plan_task_id||
+        next.work_branch!==operational.work_branch))
+        throw new GatewayError(403,"composite_binding_mismatch","Read scopes cannot be mixed");
+      operational=next;
+    }
+  }
+  if(operational&&operational.work_branch!==branches[0])
+    throw new GatewayError(403,"composite_branch_mismatch",
+      "Read branch differs from signed plan");
+  // Planning pins are already verified by the trusted Gateway session.
+  // Operational bundles resolve HEAD via the actual Gitea provider once.
+  const revision=planningRevision??
+    await deps.executor?.resolveReadRevision?.(branches[0]!);
+  if(typeof revision!=="string"||!/^[a-f0-9]{40}$/u.test(revision))
+    throw new GatewayError(503,"composite_revision_unavailable",
+      "Trusted immutable Gitea revision is unavailable");
+  // Ensure no stale trusted binding was admitted during asynchronous HEAD read.
+  const prepared=prepareCompositeAuthorization(raw,deps);
+  const record=deps.store.get(prepared.request_id)!;
+  const actionRecords=record.actions.map((a,i):PreparedRequestRecord=>({
+    request_id:record.request_id+"."+i,
+    task_id:record.task_id,agent_role:record.agent_role,
+    request:a.request,required_permission:a.permission,
+    audience:record.audience,challenge:record.challenge,
+    request_fingerprint:"",pinned_revision:revision,
+    ...(operational?{approved_plan_digest:operational.plan_digest,
+      approved_plan_task_id:operational.plan_task_id,
+      approved_work_branch:operational.work_branch}:{}),
+    created_at_ms:record.created_at_ms,expires_at_ms:record.expires_at_ms,
+    consumed:true
+  }));
+  record.read_execution=Object.freeze({
+    pinned_revision:revision,guard:planningRevision?"planning":"approved",
+    actions:Object.freeze(actionRecords)
+  });
+  return {...prepared,authorization_only:false as const,pinned_revision:revision};
+}
+
+/**
+ * Verify one signed multipermission VP and ALL OPA decisions before reading
+ * anything. Reads are pinned, bounded, and emitted only as one complete result.
+ * Trusted Task effect accounting remains private; no batch grants are minted.
+ */
+export async function executeReadCompositeAuthorization(raw:unknown,
+ deps:CompositeDependencies){
+  const {record,verified,policies}=await verifyCompositeInternal(raw,deps,true);
+  const read=record.read_execution!;
+  const audit=(decision:"allow"|"deny",reason:string,
+    provider_result:"success"|"error"|"not_called")=>
+    deps.audit.emit({event:"composite_read_executed",
+      timestamp:new Date((deps.nowMs??Date.now)()).toISOString(),
+      request_id:record.request_id,task_id:record.task_id,
+      agent_role:record.agent_role,permission_count:read.actions.length,
+      decision,reason,provider_result,pinned_revision:read.pinned_revision});
+  if(!deps.executor||!deps.planningRevisions&&read.guard==="planning"||
+    !deps.approvedPlans&&read.guard==="approved"){
+    audit("deny","trusted_boundary_unavailable","not_called");
+    throw new GatewayError(503,"composite_boundary_unavailable",
+      "Trusted read execution dependency unavailable");
+  }
+  // Check every Task's immutable permission immediately before provider IO.
+  try{
+    for(const action of read.actions){
+      if(read.guard==="planning")
+        deps.planningRevisions!.assertActiveForExecution(action);
+      else deps.approvedPlans!.assertAuthorizedForExecution(
+        action,verified.presenter_id,verified.credential_id);
+    }
+  }catch{
+    audit("deny","trusted_binding_denied","not_called");
+    throw new GatewayError(403,"composite_binding_denied",
+      "Trusted read binding is no longer authorized");
+  }
+  const release=read.guard==="approved"
+    ?deps.approvedPlans!.beginProviderEffect(read.actions[0]):undefined;
+  const results:import("./types.ts").ExecutionResult[]=[];
+  let total=0;
+  try{
+    for(const action of read.actions){
+      deps.signal?.throwIfAborted();
+      // An in-flight fence blocks epoch retirement; recheck role and grants
+      // for each action to prevent use after completion or revocation.
+      if(read.guard==="planning")
+        deps.planningRevisions!.assertActiveForExecution(action);
+      else deps.approvedPlans!.assertAuthorizedForExecution(
+        action,verified.presenter_id,verified.credential_id);
+      const result=await deps.executor.execute(action,deps.signal);
+      if(result.provider!=="gitea"||result.performed!==true||
+         result.tool!==action.request.tool||
+         !("revision" in result)||result.revision!==read.pinned_revision||
+         !("branch" in result)||result.branch!==action.request.arguments.branch||
+         (result.tool==="read_file"&&
+          (result.path!==action.request.arguments.path||
+           result.encoding!=="utf-8"))||
+         (result.tool==="list_directory"&&
+          result.path!==action.request.arguments.path))
+        throw new GatewayError(503,"composite_provider_mismatch",
+          "Read provider returned a mismatched immutable result");
+      total+=Buffer.byteLength(JSON.stringify(result),"utf8");
+      if(total>2*1024*1024)
+        throw new GatewayError(413,"composite_result_too_large",
+          "Combined read result exceeds 2 MiB");
+      results.push(result);
+    }
+    if(read.guard==="approved"){
+      for(let i=0;i<results.length;i++)
+        deps.approvedPlans!.recordProviderSuccess(
+          read.actions[i],results[i],verified.presenter_id,verified.credential_id);
+    }
+    audit("allow","all_reads_completed","success");
+    return {request_id:record.request_id,decision:"allow" as const,
+      pinned_revision:read.pinned_revision,policies,executions:results};
+  }catch(error){
+    audit("deny",error instanceof GatewayError?error.code:"provider_unavailable","error");
+    if(error instanceof GatewayError)throw error;
+    throw new GatewayError(503,"composite_provider_unavailable",
+      "Composite Gitea read failed closed");
+  }finally{release?.();}
 }
