@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {DirectCoreRustVerifier,type CoreRustBinding} from "../src/direct-core-verifier.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
-import {parseGatewayVerifierMode} from "../src/config.ts";
+import {parseGatewayVerifierMode,gatewayConfigFromEnv} from "../src/config.ts";
 import {
   VerificationRejectedError,VerificationUnavailableError
 } from "../src/errors.ts";
@@ -164,4 +164,29 @@ test("gateway-level integration still requires OPA after direct-mode verifier ou
   }));
   assert.deepEqual(events,["rust_core","opa"]);
   assert.ok(!events.includes("provider"));
+});
+
+test("R159 standalone Gateway defaults to native Rust, not issuing Adapter verification",()=>{
+ const keys=["GATEWAY_VERIFIER_MODE","DELEGATION_ADAPTER_URL",
+  "ADAPTER_CALLER_GATEWAY","OPA_URL"] as const;
+ const snapshot=new Map(keys.map(k=>[k,process.env[k]]));
+ try{
+  delete process.env.GATEWAY_VERIFIER_MODE;
+  delete process.env.DELEGATION_ADAPTER_URL;
+  delete process.env.ADAPTER_CALLER_GATEWAY;
+  process.env.OPA_URL="http://127.0.0.1:8181";
+  const native=gatewayConfigFromEnv();
+  assert.equal(native.verifier_mode,"core-rust");
+  assert.equal(native.adapter_url,undefined);
+  assert.equal(native.adapter_gateway_token,undefined);
+  // Compatibility is explicit, not an accidental fallback.
+  process.env.GATEWAY_VERIFIER_MODE="adapter";
+  assert.throws(()=>gatewayConfigFromEnv(),/DELEGATION_ADAPTER_URL/);
+ }finally{
+  for(const k of keys){
+   const old=snapshot.get(k);
+   if(old===undefined)delete process.env[k];
+   else process.env[k]=old;
+  }
+ }
 });

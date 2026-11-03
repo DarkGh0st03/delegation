@@ -1,15 +1,22 @@
-# Shared MCP Server — active ADK/A2A integration
+# MCP Cryptographic Service — post-20 October architecture
 
-## Phase 7 — Cryptographic-only MCP profile (opt-in)
+## Canonical crypto-only listener
 
-The future architecture uses MCP as an interface for **delegation cryptography**
-rather than a general router for repository modification. To avoid breaking
-the previously validated Account Suspension E2E, this branch introduces a
-separate profile selected at startup:
+The standalone MCP service now **defaults to `crypto`** and exposes
+cryptographic delegation operations rather than routing repository or Runner
+tools. The historical `legacy` profile must be selected explicitly:
 
 ```sh
-MCP_TOOL_PROFILE=crypto npm --prefix poc/mcp-shared start
+npm --prefix poc/mcp-shared start
+# Historical routing regression only:
+MCP_TOOL_PROFILE=legacy npm --prefix poc/mcp-shared start
 ```
+
+The signed approved-plan DAG uses direct ADK FunctionTools → Gateway for
+`read_file`, `update_file`, `create_file` and `run_tests`. Its
+cryptographic MCP bridge remains private and Task-bound. The old sequential
+MCP workflow is still kept for historical comparison until the broader
+migration is completed.
 
 The **new `crypto` profile** advertises **only**
 `delegation_create_presentation`. It accepts an existing Gateway
@@ -35,27 +42,24 @@ Gitea/Runner credentials are stored in the shared MCP process. Neither
 MCP profile grants permissions: the Gateway, Rust verifier and OPA
 enforce them independently.
 
-**Migration boundary:** the `legacy` profile is the default during
-this stage to preserve the historical scripted/live workflows.
-It exposes the original four tools through the original worker path.
-Do **not** point those ADK clients at `MCP_TOOL_PROFILE=crypto` yet:
-the current ADK tool configuration still expects `read_file`,
-`update_file`, `create_file` and `run_tests`. The trusted Gateway
-prepare → crypto-MCP proof-ref → Gateway execute wiring is now implemented
-**as a separate opt-in path**, via
-`poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts`
-and `GatewayControlledToolClient.cryptoPresentation`. The native Core Rust
-Gateway mode has also been implemented and tested separately.
-This does NOT mean the new combined ADK/Gemini/approval E2E has been
-validated; keep the legacy default until the trusted execution-plan
-enforcement is integrated.
+**Migration boundary:** the `legacy` profile still exists for the
+historical MCP routing tests but is no longer the standalone default.
+It exposes the old four tools only after an explicit
+`MCP_TOOL_PROFILE=legacy` choice. Never point a historical MCPToolset client
+at the crypto-only listener: its tool catalog is intentionally different.
+
+The canonical signed-plan scripted CI now validates the combined direct
+Gateway FunctionTools + crypto-MCP path with native Rust, OPA, Gitea and
+Docker. This does not yet establish autonomous success with paid Gemini,
+nor does it mean Child DC or Engineer root issuance has migrated out of
+the Rust Adapter process.
 
 The dedicated `Cryptographic MCP Profile (Offline)` workflow tests
 both profiles with the official MCP SDK and the existing protected
 ADK/A2A agent unit suites. It uses **no paid AI calls**.
 
 
-One shared **Streamable HTTP MCP** server exposes four agent-facing operations: `read_file`, `update_file`, `create_file` and `run_tests`. Google ADK exposes `read_file`, `update_file` and `create_file` through `MCPToolset`. For `run_tests`, a dedicated ADK `FunctionTool` still calls this same shared MCP endpoint with the MCP SDK and an explicit bounded request timeout, rather than bypassing MCP. The Orchestrator's `create_branch` and `create_pull_request` are **direct Gateway calls**, not MCP tools.
+The **historical `legacy` profile** of the Streamable HTTP MCP server exposes four agent-facing operations: `read_file`, `update_file`, `create_file` and `run_tests`. Google ADK exposes `read_file`, `update_file` and `create_file` through `MCPToolset`. For `run_tests`, a dedicated ADK `FunctionTool` still calls this same shared MCP endpoint with the MCP SDK and an explicit bounded request timeout, rather than bypassing MCP. The Orchestrator's `create_branch` and `create_pull_request` are **direct Gateway calls**, not MCP tools.
 
 ## Trusted Gateway crypto bridge — opt-in integration
 
@@ -85,16 +89,17 @@ and OPA response. They demonstrate the transport and proof custody but
 not yet the final full flow with Gemini, authenticated Engineer approval
 and per-effect approved-plan compliance.
 
-## Actual secure path
+## Current signed-DAG path
 
 ```text
-Google ADK Agent → MCPToolset / bounded MCP SDK run_tests → Shared MCP Server
-    → TaskRouter → private Agent Worker
-    → task-specific GatewayControlledToolClient
-    → Gateway prepare → signed VP (Rust Adapter)
-    → Gateway execute → Rust verification → OPA decision
-    → Gitea or exact-SHA Controlled Docker Runner
+Google ADK Agent → FunctionTool → Gateway prepare
+       → private crypto-only MCP → task-bound trusted VP signer (Rust Adapter)
+       → Gateway execute → native Rust verification → OPA
+       → Gitea or exact-SHA Controlled Docker Runner
 ```
+
+The legacy MCPToolset → Shared MCP repository route belongs only to the
+historical baseline, not the new signed-DAG execution path.
 
 - `src/catalog.ts`: controlled tool names and argument schemas.
 - `src/http-server.ts`: shared MCP server/transport.

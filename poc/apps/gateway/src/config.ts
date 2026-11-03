@@ -58,7 +58,7 @@ function providerMode(value: string): GatewayProviderMode {
 export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
   const bind = bindAddress(process.env.GATEWAY_BIND_ADDR ?? "0.0.0.0:8080");
   const mode = providerMode(process.env.GATEWAY_PROVIDER_MODE ?? "mock");
-  const verifierMode = parseGatewayVerifierMode(process.env.GATEWAY_VERIFIER_MODE ?? "adapter");
+  const verifierMode = parseGatewayVerifierMode(process.env.GATEWAY_VERIFIER_MODE ?? "core-rust");
 
   return {
     bind_host: bind.host,
@@ -76,8 +76,9 @@ export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
       }
     },
     verifier_mode: verifierMode,
-    // Adapter mode remains the validated default. In core-rust mode the
-    // Gateway must never send signed VPs to the issuing Adapter.
+    // Direct Core Rust is the production default. The historical Adapter
+    // verifier requires an explicit environment opt-in; native mode never
+    // sends signed VPs to the issuing Adapter.
     ...(verifierMode==="adapter" ? {
       adapter_url:required("DELEGATION_ADAPTER_URL"),
       adapter_gateway_token:required("ADAPTER_CALLER_GATEWAY")
