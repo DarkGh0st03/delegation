@@ -1,13 +1,13 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "N1 private TS2724 compiler context + N2 signed ADK scope matrix consolidated free validation",
-  "candidate_parent_sha": "902b5891804c71616357ce1b48881d6b113b78f4",
-  "purpose": "One offline same-SHA gate for N1 verified compiler-message transport to Backend D1 (targeted TS2724 #41618869640 SUCCESS, Fast #41618869751 SUCCESS on source parent), plus N2 signed ADK context availability matrix (Fast #41621634547 SUCCESS on candidate parent). No Planner/paid-workflow/grant changes. Root scope is NOT automatic signed Task scope; exporter unreadability is an explicit generative limitation, not permission to auto-escalate. No paid model invocation.",
+  "checkpoint": "N5 final candidate — N1 verified compiler context + N2 signed scope + N3 diagnostic-sensitive ADK input",
+  "candidate_parent_sha": "f70f11a20b8f45b919b5bdf389bb466a91063f85",
+  "purpose": "One FINAL offline same-SHA pre-pilot gate following Fast CI #41623540747 SUCCESS: original Planner unchanged, N1 private TS2724 evidence, N2 signed per-Task read boundaries, N3 true Backend ADK input and source-derived diagnostic-sensitive scripted behavior. Preserves original protected D0 + maximum one separately-authorized D1. All three offline workflows must independently finish SUCCESS on THIS marker commit; no Gemini calls. Functional old #41622383750 is NOT evidence for the new SHA.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "shared-mcp-real-positive-e2e.yml",
     "functional-signed-dag-e2e.yml"
   ],
   "paid_model_invocation": false,
-  "activation_note": "Shared MCP full CI requires literal [full-ci] in the head commit message; prior N4 checkpoint push skipped this job. This commit is the one final corrected same-SHA free gate, no source or authorization change."
+  "activation_note": "Head commit must contain literal [full-ci] so Shared MCP executes; this marker intentionally triggers exactly one consolidated three-workflow check, instead of per-commit lengthy Full CI. Do not call paid Gemini from this workflow."
 }
