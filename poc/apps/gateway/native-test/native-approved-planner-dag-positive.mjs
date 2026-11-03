@@ -1004,6 +1004,17 @@ export async function runNativePositiveApprovedDag({
             canonicalFileUri(repo,branch,p.path)===a.resource)),
           "The protected Test-editor A2A message must carry only Task-readable assertions");
       }
+      if(offlineTypecheckProbe&&offlineTypecheckExpectedCode==="TS2724"&&
+         runnerRuns===1&&role==="backend"){
+        const diagnostic=JSON.parse(request.subtask.instruction.split("\n")[1]).diagnostic_typecheck;
+        assert.equal(diagnostic?.tested_commit_sha,runnerOutcome.tested_commit_sha);
+        assert.equal(diagnostic?.branch,branch);
+        assert.ok(diagnostic.diagnostics.some(d=>d.role==="backend"&&d.code==="TS2724"&&
+          d.message.includes("ACCOUNT_STATU")&&
+          request.subtask.approved_file_permissions.some(p=>p.operation==="read_file"&&
+            canonicalFileUri(repo,branch,p.path)===d.resource)),
+          "TS2724 protected Backend D1 must receive the verified scoped compiler message");
+      }
       approvedPlans.assertRuntimeFileGrants(request.trusted_gateway_task_id,role,
         request.subtask.branch,request.subtask.approved_file_permissions??[]);
       return protectedTransport.sendProtectedTask(request);
