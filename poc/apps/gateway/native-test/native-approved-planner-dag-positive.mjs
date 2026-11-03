@@ -359,18 +359,18 @@ export async function runNativePositiveApprovedDag({
   let createdPr=null;
   const childIds={},activeChildByRole={},activeTaskByRole={},
     servers=[],urls={},models={};
-  // Explicit opt-in makes the SAME real-provider test exercise the
-  // production shared MCP and private A2A worker rather than FunctionTool
-  // transport. Agent model instructions and signed plan are unchanged.
-  const sharedMcpEnabled=process.env.APPROVED_RUNNER_NATIVE_MCP==="1";
-  let normalMcpCalls=0,privateCryptoMcpCalls=0;
+  // R156: the signed DAG uses ADK FunctionTools directly against Gateway.
+  // Only the separately authenticated, task-bound cryptographic MCP remains.
+  // The historic repository-routing MCP is not started by this entry point.
+  const cryptoMcpEnabled=process.env.APPROVED_RUNNER_NATIVE_MCP==="1";
+  let privateCryptoMcpCalls=0;
   let signedTestOutOfScopeDenied=false;
   let observedTypecheckProbe=null;
   let verifiedRepairTarget=null;
   let deniedCrossRoleTestProbes=0;
   const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
-  let mcpSharedUrl,mcpCryptoUrl;
+  let mcpCryptoUrl;
   let admittedBackendRepair=null,admittedFrontendRepair=null,admittedTestEdit=null,admittedTestRepair=null;
   const activeD1Repair=()=>admittedBackendRepair??admittedFrontendRepair??admittedTestEdit;
   const isSignedImplementationTask=(role,id)=>taskIdsByRole[role].includes(id)||
@@ -870,9 +870,10 @@ export async function runNativePositiveApprovedDag({
   };
   if(realGeminiPilot)onPilotPhase?.("agent_bootstrap");
   try{
-    if(sharedMcpEnabled){
-      // All ports and public keys are created by the trusted offline host.
-      // No MCP server receives an Adapter caller token or credential bytes.
+    if(cryptoMcpEnabled){
+      // All keys belong to the trusted offline host; they never enter ADK.
+      // Only the crypto MCP is started. The private worker issues a VP
+      // against an exact, already prepared Gateway challenge.
       for(const role of ROLES){
         const keys=generateKeyPairSync("ed25519");
         roleMcpKeys[role]={
@@ -893,27 +894,19 @@ export async function runNativePositiveApprovedDag({
           baseUrl:"http://127.0.0.1:"+rolePorts[role]
         }])
       ));
-      for(const profile of ["legacy","crypto"]){
-        const server=createSharedMcpHttpServer({
-          verificationKeys,router,
-          ...(profile==="crypto"?{profile:"crypto"}:{})
-        });
-        server.on("request",req=>{
-          if(req.method==="POST"&&req.url==="/mcp"){
-            if(profile==="crypto")privateCryptoMcpCalls++;
-            else normalMcpCalls++;
-          }
-        });
-        await new Promise((resolve,reject)=>{
-          server.once("error",reject);
-          server.listen(0,"127.0.0.1",resolve);
-        });
-        mcpServers.push(server);
-        const endpoint="http://127.0.0.1:"+server.address().port+"/mcp";
-        if(profile==="crypto")mcpCryptoUrl=endpoint;
-        else mcpSharedUrl=endpoint;
-      }
-      assert.ok(mcpSharedUrl&&mcpCryptoUrl);
+      const server=createSharedMcpHttpServer({
+        verificationKeys,router,profile:"crypto"
+      });
+      server.on("request",req=>{
+        if(req.method==="POST"&&req.url==="/mcp")privateCryptoMcpCalls++;
+      });
+      await new Promise((resolve,reject)=>{
+        server.once("error",reject);
+        server.listen(0,"127.0.0.1",resolve);
+      });
+      mcpServers.push(server);
+      mcpCryptoUrl="http://127.0.0.1:"+server.address().port+"/mcp";
+      assert.ok(mcpCryptoUrl);
     }
     for(const role of EDIT_ROLES){
       const targets=files[role];
@@ -925,15 +918,13 @@ export async function runNativePositiveApprovedDag({
       models[role]=model;
       const server=await startSpecializedAgentServer({
         role,host:"127.0.0.1",
-        port:sharedMcpEnabled?rolePorts[role]:await freePort(),
+        port:cryptoMcpEnabled?rolePorts[role]:await freePort(),
         delegatedAuthorization:true,capabilityProfile:"approved-plan",
-        ...(sharedMcpEnabled?{mcpTaskSigning:roleMcpKeys[role]}:{}),
+        ...(cryptoMcpEnabled?{mcpTaskSigning:roleMcpKeys[role]}:{}),
         adk:{
           model,gatewayBaseUrl:adkGatewayBase,adapterBaseUrl:adapterUrl,
           adapterToken:agentTokens[role],fetchFn:adkFetchFor(role),
-          ...(sharedMcpEnabled?{
-            mcpSharedUrl,mcpCryptoUrl,mcpUpdateFile:true
-          }:{}),
+          ...(cryptoMcpEnabled?{mcpCryptoUrl}:{}),
           maxModelTurns:realGeminiPilot
             ?SIGNED_GEMINI_PILOT.maxTurnsPerTask[role]
             :scripted?scripted.length+2:24,
@@ -960,17 +951,13 @@ export async function runNativePositiveApprovedDag({
     models.test=testModel;
     const testAgent=await startSpecializedAgentServer({
       role:"test",host:"127.0.0.1",
-      port:sharedMcpEnabled?rolePorts.test:await freePort(),
+      port:cryptoMcpEnabled?rolePorts.test:await freePort(),
       delegatedAuthorization:true,capabilityProfile:"approved-plan",
-      ...(sharedMcpEnabled?{mcpTaskSigning:roleMcpKeys.test}:{}),
+      ...(cryptoMcpEnabled?{mcpTaskSigning:roleMcpKeys.test}:{}),
       adk:{
         model:testModel,gatewayBaseUrl:adkGatewayBase,adapterBaseUrl:adapterUrl,
         adapterToken:agentTokens.test,fetchFn:adkFetchFor("test"),
-        ...(sharedMcpEnabled?{
-          mcpSharedUrl,mcpCryptoUrl,
-          mcpUpdateFile:updatedTestFiles.length>0,
-          mcpCreateFile:createdTestFiles.length>0,mcpRunTests:true
-        }:{}),
+        ...(cryptoMcpEnabled?{mcpCryptoUrl}:{}),
         maxModelTurns:realGeminiPilot
           ?SIGNED_GEMINI_PILOT.maxTurnsPerTask.test:hostModels?24:4,
         maxModelCallMs:realGeminiPilot
@@ -1659,20 +1646,14 @@ export async function runNativePositiveApprovedDag({
       assert.equal(models.frontend.calls,2*files.frontend.length+1);
       assert.equal(models.test.calls,3);
     }
-    // This is the proof that the same signed DAG actually used both the
-    // normal shared MCP and separate private cryptographic MCP. A green
-    // FunctionTool fallback alone cannot satisfy this gate.
-    if(sharedMcpEnabled){
-      // Optional read-only context is not guaranteed to be visited by a
-      // model. Count mandatory source reads + the Test edit/Runner sequence.
-      // Count the actual mandatory operations, not a fixed one-file Test
-      // edit; a Test Runner-only DAG still has one mandatory MCP call.
-      const minMcpRequests=reads.backend+reads.frontend+
+    // R156: repository and Runner FunctionTools have been verified by the
+    // trusted Gateway counters above. Each confirmed operation must still
+    // produce a cryptographic VP via the separate private crypto MCP.
+    if(cryptoMcpEnabled){
+      const mandatoryOperations=reads.backend+reads.frontend+
         writes.backend+writes.frontend+testReads+testCalls+runnerRuns;
-      assert.ok(normalMcpCalls>=minMcpRequests,
-        "Approved ADK tools must traverse real shared MCP HTTP");
-      assert.ok(privateCryptoMcpCalls>=minMcpRequests,
-        "Adapter VP generation must traverse the crypto MCP boundary");
+      assert.ok(privateCryptoMcpCalls>=mandatoryOperations,
+        "Every confirmed direct Gateway tool operation requires crypto MCP");
     }
     if(!hostModels)assert.ok(result.specialized_results.every(x=>
       x.artifact.model_id?.startsWith("offline-signed-approved-plan-")));
@@ -1892,8 +1873,10 @@ export async function runNativePositiveApprovedDag({
       real_gemini_pilot:realGeminiPilot,
       engineer_review_type:realGeminiPilot
         ? "signed_test_fixture_not_human":"offline_fixture",
-      approved_shared_mcp_enabled:sharedMcpEnabled,
-      shared_mcp_http_requests:normalMcpCalls,
+      approved_shared_mcp_enabled:false,
+      approved_crypto_mcp_enabled:cryptoMcpEnabled,
+      direct_gateway_function_tools_enabled:true,
+      shared_mcp_http_requests:0,
       private_crypto_mcp_http_requests:privateCryptoMcpCalls,
       adk_model_turns:{
         backend:models.backend instanceof OfflineApprovedAdkModel||

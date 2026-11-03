@@ -1061,8 +1061,8 @@ async function main(){
             PLANNING_DISPOSABLE_GITEA_MAIN_SHA:fixture.mainSha,
             PLANNING_NATIVE_SIGNED_HANDOFF:"1",
             PLANNING_NATIVE_POSITIVE_DAG:"1",
-            // Same real Gitea/Docker/Rust/OPA positive DAG, but all
-            // model-facing tools and VP issuance now use shared MCP.
+            // Signed DAG: FunctionTools access Gateway directly, while
+            // private delegated VP generation uses crypto-only MCP.
             APPROVED_RUNNER_NATIVE_MCP:"1",
             APPROVED_RUNNER_SCENARIO:scenario.id
           }
@@ -1382,14 +1382,16 @@ async function main(){
         assert.equal(positive?.positive_dag?.scenario_id,scenario.id);
         assert.equal(positive?.positive_dag?.approved_work_branch,
           scenario.workBranch);
-        assert.equal(positive?.positive_dag?.approved_shared_mcp_enabled,true);
-        // Signed-DAG inner evidence already ties MCP calls to actual
-        // authorized operations. Live plans need not make 21 fixture calls.
-        const minimumMcpRequests=realGeminiPilot?1:21;
-        assert.ok(positive?.positive_dag?.shared_mcp_http_requests>=
-          minimumMcpRequests);
+        assert.equal(positive?.positive_dag?.approved_shared_mcp_enabled,false,
+          "Signed DAG must not start legacy repository MCP");
+        assert.equal(positive?.positive_dag?.direct_gateway_function_tools_enabled,true);
+        assert.equal(positive?.positive_dag?.approved_crypto_mcp_enabled,true);
+        assert.equal(positive?.positive_dag?.shared_mcp_http_requests,0);
+        // Crypto VP confirmation remains mandatory even though normal
+        // repository and Runner tools now invoke the Gateway directly.
+        const minimumCryptoRequests=realGeminiPilot?1:21;
         assert.ok(positive?.positive_dag?.private_crypto_mcp_http_requests>=
-          minimumMcpRequests);
+          minimumCryptoRequests);
         assert.equal(positive?.positive_dag?.real_a2a_sdk,true);
         if(realGeminiPilot){
           // The real Planner can assign several Task IDs to one role.
