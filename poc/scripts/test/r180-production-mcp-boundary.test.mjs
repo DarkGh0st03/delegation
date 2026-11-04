@@ -48,11 +48,17 @@ test("R221 isolated legacy crypto HTTP compatibility modules remain testable but
  assert.match(bridge,/takeSignedPresentation/u);
 });
 
-test("R185 signed approved-plan library entrypoint also rejects legacy repository MCP",()=>{
+test("R222 canonical A2A library excludes every Shared MCP and HTTP worker route",()=>{
  const server=read("poc/packages/agent-runtime/src/server.ts");
+ const handler=read("poc/packages/agent-runtime/src/adk-a2a-handler.ts");
  assert.match(server,/legacy_repository_mcp_retired/u);
  assert.match(server,/Object\.prototype\.hasOwnProperty\.call\(options\.adk,key\)/u);
- assert.match(server,/attachPrivateMcpWorker\(/u);
+ assert.match(server,/legacy_crypto_http_mcp_retired/u);
+ assert.doesNotMatch(server,/attachPrivateMcpWorker\(/u);
+ assert.doesNotMatch(server,/import \{ attachPrivateMcpWorker \}/u);
+ assert.match(handler,/new LocalCryptoMcpBridge\(/u);
+ assert.match(handler,/legacy_crypto_http_mcp_retired/u);
+ assert.doesNotMatch(handler,/new TrustedCryptoMcpBridge\(/u);
 });
 
 test("R196 orphaned repository MCP transports and normalizers remain absent",()=>{
