@@ -51,7 +51,8 @@ export class TrustedGatewayNativeRootStatusReader{
   // No HTTP fallback is possible after a native transport/permission denial.
   const socket=nativePath;
   this.#fetch=socket
-   ? (async(input,init)=>{
+   ? (async(input:Parameters<typeof fetch>[0],
+                init?:Parameters<typeof fetch>[1]):Promise<Response>=>{
       const path=new URL(String(input)).pathname;
       const op=path==="/v1/credentials/root/inspect"
        ?"read_issued_root"
