@@ -1,10 +1,11 @@
 {
   "schema": "delegation-native-engineer-checkpoint-v1",
-  "checkpoint": "R228 direct Engineer Node-API Rust sole-owner compilation and native Child/VP gate",
-  "candidate_parent_sha": "1840db6b89f0da9517527005f4597d4b1d0366c5",
+  "checkpoint": "R232 direct Engineer Node-API + native Gateway root/status inspection (single Rust issuer, zero billing)",
+  "candidate_parent_sha": "45215a341b6911f8aac577bd34525199f9a79caa",
   "workflow": "engineer-direct-native-contract.yml",
-  "purpose": "One free compile and native root/child/VP/revocation test using same Rust CryptoRuntime embedded in Software Engineer process; no HTTP Adapter. Reject root issuance over delegate-only socket; validate offline Engineer grant binding. Does not run Gemini or modify main.",
+  "purpose": "ONE free same-SHA Rust compile + native in-memory integration for direct Engineer Root -> Gateway root issuer inventory -> Orchestrator Child DC -> Backend signed VP -> direct Engineer revocation -> Gateway signed status; negative role and HTTP-fallback checks. This does NOT replace future live EVM/Gitea/Docker signed DAG. No Gemini or paid API calls.",
   "paid_model_invocation": false,
   "activate_once": true,
-  "expected_mode": "ENGINEER_CORE_NATIVE_MODE=1"
+  "expected_mode": "ENGINEER_CORE_NATIVE_MODE=1; Gateway private status via sole owner native IPC; Gateway public VP verifier remains direct Node-API",
+  "activation_note": "[engineer-core-ci] R232 one free native Rust owner/Gateway read gate; no AI billing"
 }
