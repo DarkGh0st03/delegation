@@ -47,9 +47,14 @@ pub fn run(config: AdapterConfig) -> Result<(), String> {
     // Running two separate signing runtimes would invalidate parent lookup.
     #[cfg(unix)]
     let native = match std::env::var("ADAPTER_ENGINEER_NATIVE_SOCKET") {
-        Ok(path) if !path.trim().is_empty() =>
-            Some(crate::engineer_native::NativeEngineerSocket::bind(&path)?),
-        Ok(_) => return Err(String::from("Engineer native socket path must not be empty")),
+        Ok(path) if !path.trim().is_empty() => {
+            Some(crate::engineer_native::NativeEngineerSocket::bind(&path)?)
+        }
+        Ok(_) => {
+            return Err(String::from(
+                "Engineer native socket path must not be empty",
+            ));
+        }
         Err(_) => None,
     };
     #[cfg(not(unix))]
@@ -65,7 +70,7 @@ pub fn run(config: AdapterConfig) -> Result<(), String> {
             socket.poll(&config, &mut crypto)?;
             match server.recv_timeout(std::time::Duration::from_millis(25)) {
                 Ok(Some(request)) => handle_request(request, &config, &mut crypto),
-                Ok(None) => {},
+                Ok(None) => {}
                 Err(_) => return Err(String::from("Delegation Adapter HTTP listener unavailable")),
             }
         }

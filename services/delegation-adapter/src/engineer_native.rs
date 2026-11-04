@@ -41,7 +41,9 @@ pub struct NativeEngineerSocket {
 impl NativeEngineerSocket {
     pub fn bind(raw: &str) -> Result<Self, String> {
         let path = PathBuf::from(raw);
-        if !path.is_absolute() || raw.trim() != raw || raw.contains('\0')
+        if !path.is_absolute()
+            || raw.trim() != raw
+            || raw.contains('\0')
             || path.as_os_str().len() > 100
         {
             return Err(String::from("Invalid trusted Engineer native socket path"));
@@ -49,21 +51,23 @@ impl NativeEngineerSocket {
         // Never unlink an existing path: stale sockets and preplaced symlinks
         // must be operator-reconciled, not silently clobbered.
         if fs::symlink_metadata(&path).is_ok() {
-            return Err(String::from("Trusted Engineer native socket path already exists"));
+            return Err(String::from(
+                "Trusted Engineer native socket path already exists",
+            ));
         }
         let listener = UnixListener::bind(&path)
             .map_err(|_| String::from("Could not bind trusted Engineer native socket"))?;
         let socket = Self { listener, path };
         fs::set_permissions(&socket.path, Permissions::from_mode(0o600))
             .map_err(|_| String::from("Could not protect trusted Engineer native socket"))?;
-        socket.listener.set_nonblocking(true)
+        socket
+            .listener
+            .set_nonblocking(true)
             .map_err(|_| String::from("Could not configure Engineer native socket"))?;
         Ok(socket)
     }
 
-    pub fn poll(&self, config: &AdapterConfig, crypto: &mut CryptoRuntime)
-        -> Result<(), String>
-    {
+    pub fn poll(&self, config: &AdapterConfig, crypto: &mut CryptoRuntime) -> Result<(), String> {
         match self.listener.accept() {
             Ok((mut stream, _)) => {
                 Self::handle(&mut stream, config, crypto);
@@ -96,9 +100,7 @@ impl NativeEngineerSocket {
         }
     }
 
-    fn dispatch(req: EngineerRequest, config: &AdapterConfig,
-        crypto: &mut CryptoRuntime) -> Value
-    {
+    fn dispatch(req: EngineerRequest, config: &AdapterConfig, crypto: &mut CryptoRuntime) -> Value {
         // Never accept authority from request fields, MCP claims or model output.
         let caller = match config.callers.authenticate(&req.token) {
             Ok(caller) if caller.role() == CallerRole::Engineer => caller,
@@ -108,8 +110,10 @@ impl NativeEngineerSocket {
             "issue_root" => serde_json::from_value::<IssueRootRequest>(req.body)
                 .map_err(|_| String::from("invalid request"))
                 .and_then(|input| crypto.issue_root(caller, &config.callers, input))
-                .and_then(|issued| serde_json::to_value(issued)
-                    .map_err(|_| String::from("serialization unavailable"))),
+                .and_then(|issued| {
+                    serde_json::to_value(issued)
+                        .map_err(|_| String::from("serialization unavailable"))
+                }),
             "revoke_root" => serde_json::from_value::<UpdateCredentialStatusRequest>(req.body)
                 .map_err(|_| String::from("invalid request"))
                 .and_then(|input| {
@@ -118,8 +122,10 @@ impl NativeEngineerSocket {
                     }
                     crypto.update_credential_status(caller, input)
                 })
-                .and_then(|receipt| serde_json::to_value(receipt)
-                    .map_err(|_| String::from("serialization unavailable"))),
+                .and_then(|receipt| {
+                    serde_json::to_value(receipt)
+                        .map_err(|_| String::from("serialization unavailable"))
+                }),
             _ => return json!({"ok":false,"error":"engineer_native_denied"}),
         };
         match outcome {
@@ -143,27 +149,28 @@ mod tests {
 
     #[test]
     fn native_socket_never_removes_preexisting_path() {
-        let directory = std::env::temp_dir().join(
-            format!("delegation-r170-{}", std::process::id())
-        );
+        let directory =
+            std::env::temp_dir().join(format!("delegation-r170-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
-        let path=directory.join("existing.sock");
-        fs::write(&path,b"sentinel").unwrap();
+        let path = directory.join("existing.sock");
+        fs::write(&path, b"sentinel").unwrap();
         assert!(NativeEngineerSocket::bind(path.to_str().unwrap()).is_err());
-        assert_eq!(fs::read(&path).unwrap(),b"sentinel");
+        assert_eq!(fs::read(&path).unwrap(), b"sentinel");
         fs::remove_file(path).unwrap();
         fs::remove_dir(directory).unwrap();
     }
 
     #[test]
     fn native_socket_is_owner_only_and_is_removed_on_drop() {
-        let dir=std::env::temp_dir().join(
-            format!("delegation-r170-bound-{}", std::process::id())
-        );
+        let dir =
+            std::env::temp_dir().join(format!("delegation-r170-bound-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let path=dir.join("engineer.sock");
-        let service=NativeEngineerSocket::bind(path.to_str().unwrap()).unwrap();
-        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777,0o600);
+        let path = dir.join("engineer.sock");
+        let service = NativeEngineerSocket::bind(path.to_str().unwrap()).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         assert!(NativeEngineerSocket::bind(path.to_str().unwrap()).is_err());
         drop(service);
         assert!(!path.exists());
