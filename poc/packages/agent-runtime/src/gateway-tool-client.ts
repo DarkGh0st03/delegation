@@ -1,6 +1,6 @@
 import {safeToolFailureReason} from "../../../mcp-shared/src/tool-failure-reason.ts";
 import type { SpecializedAgentRole } from "./contracts.ts";
-import type { CryptoPresentationPort } from "./trusted-crypto-mcp-bridge.ts";
+import type { CryptoPresentationPort } from "./crypto-presentation-port.ts";
 import { ControlledToolError } from "./controlled-errors.ts";
 import { safeRunnerFailureDetails } from "./safe-runner-failure.ts";
 import {
