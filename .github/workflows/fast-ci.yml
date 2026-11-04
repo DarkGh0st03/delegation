@@ -45,6 +45,7 @@ jobs:
           node --test poc/scripts/test/r241-core-public-reader-provisioning.test.mjs
           node --test poc/scripts/test/r242-deployed-gateway-native-proof-selection.test.mjs
           node --test poc/apps/gateway/native-test/native-signed-dag-phase-diagnostic.test.mjs
+          node --test poc/apps/gateway/native-test/native-planning-guarded-entrypoint.test.mjs
           node --test poc/scripts/test/r180-production-mcp-boundary.test.mjs
           node --test poc/scripts/test/r226-legacy-crypto-import-audit.test.mjs
           node --test poc/apps/test-runner-controller/test/direct-engineer-owner-pass-selector.test.mjs
