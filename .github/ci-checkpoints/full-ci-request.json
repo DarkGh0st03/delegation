@@ -1,13 +1,13 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R177 canonical same-SHA full integration: native Rust Engineer root/retirement, signed DAG and real D1 recovery after R169–176 legacy removal",
-  "candidate_parent_sha": "843213c004d97f55eb8b094d162c6ff646790af9",
-  "purpose": "FREE final consolidated integration after removing old sequential Coordinator, fixed IAM template issuer, outdated MCP workflows, and configuring native Rust Engineer Unix socket in all canonical full/paid jobs. Cumulative, signed Functional DAG, and signed D1 real Docker on same SHA. No model calls, no paid Gemini, no main change.",
+  "checkpoint": "R179 post-legacy-retirement canonical same-SHA verification: R178 migrated audit and Gitea regression suites",
+  "candidate_parent_sha": "76857a62587ca797a3a10fddcc0c409e63bd11f1",
+  "purpose": "Final FREE integration checkpoint after R178 repaired 31 stale history-dependent tests without bringing back removed sequential MCP/coordinator code. Verify Cumulative Offline, native signed Functional DAG, and signed D1 TS2724 recovery on the identical checked-out SHA. Rust Engineer root+revocation via owner-private Unix socket. No Gemini paid inference and no main changes.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "functional-signed-dag-e2e.yml",
     "ts2724-signed-d1-targeted.yml"
   ],
   "paid_model_invocation": false,
-  "activation_note": "[full-ci] one consolidated zero-billing checkpoint; manual paid Gemini requires a separate explicit consent after all three PASS"
+  "activation_note": "[full-ci] one consolidated zero-billing checkpoint; historic shared MCP code/workflows remain deleted; signed Gemini manual-only consent remains unchanged"
 }
