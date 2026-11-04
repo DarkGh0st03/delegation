@@ -83,7 +83,7 @@ const adk = engine === "adk"
           })
         : new OpenAIAdkModel({ apiKey: required("OPENAI_API_KEY") }),
       gatewayBaseUrl: required("GATEWAY_URL"),
-      adapterBaseUrl: required("DELEGATION_ADAPTER_URL"),
+      // One native Rust crypto socket handles Child DC and VP; no Adapter HTTP URL.
       adapterToken: required(roleToken),
       maxModelTurns: turnsFromEnvironment(),
       maxModelCallMs: modelCallTimeoutFromEnvironment(),
