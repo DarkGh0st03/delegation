@@ -71,7 +71,9 @@ export function createSpecializedAgentCard(
   } = {}
 ): AgentCard {
   const config = ROLE_CONFIG[role];
-  const approved = options.capabilityProfile === "approved-plan";
+  // General role capabilities are the default for all new A2A discovery.
+  // The account-suspension card survives ONLY as an explicit legacy fixture.
+  const approved = options.capabilityProfile !== "legacy";
   const skill = approved ? APPROVED_PLAN_SKILLS[role] : undefined;
   const delegatedAuthorization = options.delegatedAuthorization ?? true;
 

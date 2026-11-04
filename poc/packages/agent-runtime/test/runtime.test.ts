@@ -53,17 +53,19 @@ test("approved-plan Agent Cards advertise reusable skills, never Task permission
   }
 });
 
-test("legacy Agent Card content is preserved by default",()=>{
-  const card=createSpecializedAgentCard("backend","http://127.0.0.1:9000");
-  assert.equal(card.skills[0]?.id,"backend-account-lifecycle");
-  assert.ok(card.skills[0]?.tags?.includes("account-suspension"));
-  assert.ok(card.description?.includes("Account Suspension"));
-  const generic=createSpecializedAgentCard("backend","http://127.0.0.1:9000",{
-    capabilityProfile:"approved-plan"
-  });
+test("R199 default A2A Agent Cards advertise generic roles; legacy requires opt-in",()=>{
+  const generic=createSpecializedAgentCard("backend","http://127.0.0.1:9000");
   assert.equal(generic.skills[0]?.id,"backend-software-engineering");
+  assert.ok(!JSON.stringify(generic).includes("Account Suspension"));
+  assert.ok(!JSON.stringify(generic).includes("account-suspension"));
+  const legacy=createSpecializedAgentCard("backend","http://127.0.0.1:9000",{
+    capabilityProfile:"legacy"
+  });
+  assert.equal(legacy.skills[0]?.id,"backend-account-lifecycle");
+  assert.ok(legacy.skills[0]?.tags?.includes("account-suspension"));
+  assert.ok(legacy.description?.includes("Account Suspension"));
   assert.equal(generic.capabilities.extensions?.[0]?.params?.agentDid,
-    card.capabilities.extensions?.[0]?.params?.agentDid);
+    legacy.capabilities.extensions?.[0]?.params?.agentDid);
 });
 
 test("deterministic A2A flow performs discovery -> Message -> Task -> Artifact without leaking authority", async () => {

@@ -44,3 +44,18 @@ test("R198 signed ADK factory binds generic baseline before dynamically using gr
   /Account Suspension/u);
  assert.equal(typeof createAdkSpecializedAgent,"function");
 });
+
+test("R199 generic Agent Card is the default and scenario content is an explicit fixture",async()=>{
+ const {createSpecializedAgentCard}=await import("../src/cards.ts");
+ for(const role of ["backend","frontend","test"] as const){
+  const card=createSpecializedAgentCard(role,"http://127.0.0.1:9000");
+  assert.equal(card.skills[0]?.tags?.includes("delegated-authorization"),true);
+  assert.doesNotMatch(JSON.stringify(card),/Account Suspension|account-suspension|feature\/account-suspension/u);
+  const archived=createSpecializedAgentCard(role,"http://127.0.0.1:9000",{
+   capabilityProfile:"legacy"
+  });
+  assert.match(JSON.stringify(archived),/account-suspension|Account Suspension/u);
+  assert.equal(card.capabilities.extensions?.[0]?.params?.agentDid,
+   archived.capabilities.extensions?.[0]?.params?.agentDid);
+ }
+});
