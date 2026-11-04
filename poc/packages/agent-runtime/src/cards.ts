@@ -7,31 +7,13 @@ import {
   type SpecializedAgentRole
 } from "./contracts.ts";
 
+import {LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_CONTENT}
+ from "./fixtures/account-suspension-agent-cards.ts";
+
 const ROLE_CONFIG = {
-  backend: {
-    name: "Backend Development Agent",
-    did: "did:thesis:backend-agent",
-    skillId: "backend-account-lifecycle",
-    skillName: "Backend Account Lifecycle",
-    description:
-      "Deterministic Phase 7 backend agent for the IAM Account Suspension workflow."
-  },
-  frontend: {
-    name: "Frontend Development Agent",
-    did: "did:thesis:frontend-agent",
-    skillId: "frontend-account-lifecycle",
-    skillName: "Frontend Account Lifecycle",
-    description:
-      "Deterministic Phase 7 frontend agent for the IAM Account Suspension workflow."
-  },
-  test: {
-    name: "Software Testing Agent",
-    did: "did:thesis:test-agent",
-    skillId: "test-account-lifecycle",
-    skillName: "Account Suspension Validation",
-    description:
-      "Deterministic Phase 7 testing agent for the IAM Account Suspension workflow."
-  }
+  backend:{name:"Backend Development Agent",did:"did:thesis:backend-agent"},
+  frontend:{name:"Frontend Development Agent",did:"did:thesis:frontend-agent"},
+  test:{name:"Software Testing Agent",did:"did:thesis:test-agent"}
 } as const;
 
 // Agent Cards advertise generic ROLE CAPABILITIES only. Per-Task file and
@@ -72,14 +54,15 @@ export function createSpecializedAgentCard(
 ): AgentCard {
   const config = ROLE_CONFIG[role];
   // General role capabilities are the default for all new A2A discovery.
-  // The account-suspension card survives ONLY as an explicit legacy fixture.
+  // Historical scenario Card descriptions are explicit opt-in test fixtures.
   const approved = options.capabilityProfile !== "legacy";
   const skill = approved ? APPROVED_PLAN_SKILLS[role] : undefined;
+  const legacy = !approved ? LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_CONTENT[role] : undefined;
   const delegatedAuthorization = options.delegatedAuthorization ?? true;
 
   return {
     name: config.name,
-    description: skill?.description ?? config.description,
+    description: skill?.description ?? legacy!.description,
     supportedInterfaces: [
       {
         url: `${baseUrl.replace(/\/+$/u, "")}/a2a/rest`,
@@ -118,21 +101,13 @@ export function createSpecializedAgentCard(
     defaultOutputModes: ["application/json"],
     skills: [
       {
-        id: skill?.id ?? config.skillId,
-        name: skill?.name ?? config.skillName,
-        description: skill?.description ?? config.description,
+        id: skill?.id ?? legacy!.skillId,
+        name: skill?.name ?? legacy!.skillName,
+        description: skill?.description ?? legacy!.description,
         tags: approved
           ? ["thesis", "software-engineering", "delegated-authorization", role]
           : ["thesis", "iam", "account-suspension", role],
-        examples: [
-          skill?.example ?? (
-            role === "backend"
-              ? "Implement the backend account suspension lifecycle."
-              : role === "frontend"
-                ? "Implement administrator Suspend/Reactivate controls."
-                : "Validate the Account Suspension workflow."
-          )
-        ],
+        examples: [skill?.example ?? legacy!.example],
         inputModes: ["application/json"],
         outputModes: ["application/json"],
         securityRequirements: []
