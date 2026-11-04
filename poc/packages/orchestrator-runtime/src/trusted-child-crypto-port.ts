@@ -15,6 +15,7 @@ import type {CredentialStatusInput,IssuedDelegationCredential}
 import type {DelegatedPermission} from "./delegated-permission.ts";
 import {createOwnerPrivateChildMcpSession}
   from "../../../mcp-shared/src/owner-private-child-mcp.ts";
+import {invokeNativeCrypto} from "../../agent-runtime/src/native-crypto-ipc.ts";
 
 type FetchLike=typeof fetch;
 export interface ExactTrustedChildIssuance {
@@ -27,7 +28,7 @@ export interface ExactTrustedChildIssuance {
   permissions:readonly DelegatedPermission[];
 }
 export interface TrustedChildCryptographyPort {
-  readonly kind:"rust-adapter"|"owner-private-crypto-mcp";
+  readonly kind:"rust-adapter"|"rust-native"|"owner-private-crypto-mcp";
   issueChild(request:Readonly<ExactTrustedChildIssuance>):Promise<IssuedDelegationCredential>;
 }
 export interface RustAdapterChildPortConfig {
