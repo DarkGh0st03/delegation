@@ -71,7 +71,6 @@ jobs:
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
           node poc/scripts/init-local-env.mjs --force
-      - name: Verify real HTTP A2A preserves signed Test no-Runner metadata
       - name: Start only disposable Anvil and OPA
         run: |
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
