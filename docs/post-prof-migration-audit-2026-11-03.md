@@ -292,3 +292,14 @@ The `begin` method still accepts historical scope-option fields for
 compatibility with old internal ADK config. Those inert options and the
 dormant ADK `mcpSharedUrl`/MCPToolset code are separate cleanups; this
 stage does not change the trusted Gateway Task authorization itself.
+
+## R191 — retire three obsolete private repository MCP opt-in fixtures
+
+The final legacy `PrivateMcpTaskRegistry.invoke`-dependent opt-in
+tests for `create_file`, `run_tests` and `update_file` were deleted
+after R190 physically removed that method. Their negative requirements
+are tested through the **signed Gateway FunctionTool** and approved-Task
+suites, and the crypto worker now directly proves it has no repository
+HTTP route. The R6 inventory requires those three old fixture files
+to remain absent. Do not reinstate the dead registry method to satisfy
+the old test suites.

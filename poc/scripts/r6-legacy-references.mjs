@@ -53,7 +53,10 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/agent-runtime/test/adk-native-mcp-create.test.ts",
   "poc/packages/agent-runtime/test/adk-native-mcp-update.test.ts",
   "poc/packages/agent-runtime/test/adk-native-mcp-run-tests.test.ts",
-  "poc/packages/agent-runtime/test/adk-native-mcp-integration.test.ts"
+  "poc/packages/agent-runtime/test/adk-native-mcp-integration.test.ts",
+  "poc/packages/agent-runtime/test/mcp-create-opt-in.test.ts",
+  "poc/packages/agent-runtime/test/mcp-run-tests-opt-in.test.ts",
+  "poc/packages/agent-runtime/test/mcp-write-opt-in.test.ts"
 ]);
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
@@ -91,7 +94,10 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   "poc/packages/agent-runtime/test/adk-native-mcp-create.test.ts",
   "poc/packages/agent-runtime/test/adk-native-mcp-update.test.ts",
   "poc/packages/agent-runtime/test/adk-native-mcp-run-tests.test.ts",
-  "poc/packages/agent-runtime/test/adk-native-mcp-integration.test.ts"
+  "poc/packages/agent-runtime/test/adk-native-mcp-integration.test.ts",
+  "poc/packages/agent-runtime/test/mcp-create-opt-in.test.ts",
+  "poc/packages/agent-runtime/test/mcp-run-tests-opt-in.test.ts",
+  "poc/packages/agent-runtime/test/mcp-write-opt-in.test.ts"
 ]);
 
 
