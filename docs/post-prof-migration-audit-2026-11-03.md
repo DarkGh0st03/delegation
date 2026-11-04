@@ -316,3 +316,13 @@ contract and the **separate** `crypto-catalog.ts` remain intact.
 
 All four removed paths are checked by the R6 negative-reference inventory.
 This is a historical code deletion, not evidence of Gemini model success.
+
+## R193 — fix false-positive retirement audit configured command matching
+
+R192/R192.1 failed the R6 audit because the former `configuredMatch`
+used `command.includes(leaf)`: active `operation-catalog.test.ts`
+was incorrectly classified as a caller of the deleted file
+`catalog.test.ts`. It now requires an **exact command token or
+slash-delimited path leaf**, with a Fast CI regression for the suffix
+collision and for genuine configured launchers. This preserves
+fail-closed checks without falsely blocking safe removal.

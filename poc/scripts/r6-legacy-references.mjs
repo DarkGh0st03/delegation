@@ -345,9 +345,14 @@ export function unexpectedHistoricalReferenceScopeCallers(
 const TEXT_SOURCE=/\.(?:js|mjs|cjs|ts|tsx|json|ya?ml|sh|toml|md|Dockerfile)$/u;
 
 /** A configured command mention is not automatically executed by a job. */
-function configuredMatch(command,target){
+export function configuredMatch(command,target){
+  if(command.includes(target))return true;
   const leaf=target.split("/").at(-1);
-  return command.includes(target)||command.includes(leaf);
+  // Exact command-token or slash-prefixed leaf only; e.g.
+  // operation-catalog.test.ts MUST NOT match deleted catalog.test.ts.
+  const tokens=command.split(/[\\s"'\x60=,;:(){}\\[\\]<>|&]+/u);
+  return tokens.some(token=>token===leaf||
+    token.endsWith("/"+leaf)||token.endsWith("\\\\"+leaf));
 }
 function workflowCommands(contents){
   const lines=contents.split("\n");
