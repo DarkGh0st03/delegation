@@ -71,7 +71,7 @@ export interface ApprovedChildIssuerConfig{
   sessionId:string;
   engineerDid:string;
   /** Only this trusted service holds the Orchestrator's Adapter bearer. */
-  adapterBaseUrl:string;
+  adapterBaseUrl?:string;
   bearerToken:string;
   fetchFn?:FetchLike;
   timeoutMs?:number;
@@ -99,8 +99,14 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
     this.#sessionId=c.sessionId;
     this.#engineerDid=c.engineerDid;
     this.#coordinator=c.coordinator;
+    // The canonical signed Child issuer uses a task-local trusted crypto
+    // port backed by the SAME Rust owner as Software Engineer. No Adapter
+    // HTTP address is part of the approved Task or native transport.
+    // Legacy fixtures may still explicitly choose their HTTP issuer.
     this.#cryptoPort=c.privateCryptoPort ??
-      createRustAdapterChildCryptographyPort(c);
+      createRustAdapterChildCryptographyPort({
+        ...c,adapterBaseUrl:c.adapterBaseUrl??""
+      });
     this.#rootId=root.credential_id;
     this.#digest=root.plan_digest;
     this.#journal=c.issuanceJournal;
@@ -110,7 +116,7 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
   static async create(config:ApprovedChildIssuerConfig){
     if(config.coordinator.phase!=="execution"||
        !ID.test(config.sessionId)||!config.engineerDid.startsWith("did:")||
-       !config.adapterBaseUrl||!config.bearerToken||
+       (!config.privateCryptoPort&&!config.adapterBaseUrl)||!config.bearerToken||
        !Number.isFinite(config.timeoutMs??5000)||
        (config.timeoutMs??5000)<=0){
       reject("missing active trusted Coordinator, approval context or private Adapter");
@@ -175,7 +181,7 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
        !Number.isSafeInteger(config.epochVersion)||config.epochVersion<2||
        config.coordinator.phase!=="execution"||
        !ID.test(config.sessionId)||!config.engineerDid.startsWith("did:")||
-       !config.adapterBaseUrl||!config.bearerToken)
+       (!config.privateCryptoPort&&!config.adapterBaseUrl)||!config.bearerToken)
       reject("trusted current epoch and durable child-issuance journal required");
     config.intake.assertSameCoordinator(config.coordinator);
     const root=config.coordinator.trustedOperationalAuthority();
@@ -239,7 +245,7 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
        !ID.test(config.sessionId)||!ID.test(config.discoveryTaskId)||
        !ROLES.has(config.role)||
        !config.engineerDid.startsWith("did:")||
-       !config.adapterBaseUrl||!config.bearerToken||
+       (!config.privateCryptoPort&&!config.adapterBaseUrl)||!config.bearerToken||
        config.coordinator.phase!=="execution")
       reject("trusted parent, Gateway failed Test and issuance journal required");
     config.intake.assertSameCoordinator(config.coordinator);
@@ -305,7 +311,7 @@ export class TrustedApprovedPlanChildAuthorityIssuer {
        !(c.gateway instanceof TrustedPlanIpcClient)||
        !(c.issuanceJournal instanceof TrustedChildIssuanceJournal)||
        c.role!=="backend"||!ID.test(c.sessionId)||!ID.test(c.discoveryTaskId)||
-       !c.engineerDid.startsWith("did:")||!c.adapterBaseUrl||!c.bearerToken||
+       !c.engineerDid.startsWith("did:")||(!c.privateCryptoPort&&!c.adapterBaseUrl)||!c.bearerToken||
        !Number.isFinite(c.timeoutMs??5000)||(c.timeoutMs??5000)<=0||
        c.coordinator.phase!=="execution")
       reject("remote discovery requires trusted owner, Backend and durable journal");
