@@ -1,19 +1,20 @@
 {
   "schema": "delegation-embedded-engineer-signed-dag-checkpoint-v1",
-  "checkpoint": "R279 — post-F1 native Engineer release candidate, exact-SHA free validation",
-  "candidate_parent_sha": "f7bb80281215ecd2763a316ef936fba38c935892",
+  "checkpoint": "R280 — paid manual DID script preflight readiness fix; exact-SHA four free native verification",
+  "candidate_parent_sha": "75bb066df63fd2fe3c2106699427171418fd4867",
   "workflow": "engineer-embedded-signed-dag-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
   "mode": "ENGINEER_CORE_NATIVE_MODE=1; sole Engineer Rust issuer; native Gateway verifier; Adapter HTTP off",
-  "trigger_reason": "F1 R278 SUCCESS + Fast CI R278 SUCCESS; confirm entire signed DAG on R279 exact SHA",
+  "trigger_reason": "R279 4/4 completed/success on 75bb066d. R280 changes ONLY manual Gemini D0/F1 DID script path configuration, its no-network static test, and checkpoint evidence. Verify one final exact-SHA zero-model release gate before any separately authorized pilot.",
   "purpose": "One free Gitea/OPA/Anvil/Docker end-to-end scripted ADK DAG: Software Engineer root via in-process Rust Node-API; agent child/VP via one native Rust owner; Gateway public-only Rust EVM verification and OPA; backend/frontend/test A2A; real Docker acceptance and unmerged PR; no competing Adapter HTTP, no Shared MCP HTTP, no paid model.",
   "exclusions": [
-    "No Gemini/OpenAI API calls",
-    "No automated merge",
-    "No main mutation",
-    "Scripted ADK proof only; do not assert autonomous LLM success"
+    "No paid Gemini/OpenAI API calls",
+    "No main mutation or merge",
+    "No legacy HTTP issuer",
+    "No automatic human approval"
   ],
   "verification_scope": "One embedded Engineer Rust signed Gitea/Docker DAG; no LLM",
-  "f1_free_same_owner_proof_run_id": 41919029715
+  "f1_free_same_owner_proof_run_id": 41919029715,
+  "r279_previous_same_sha_success_run_id": 41921999104
 }

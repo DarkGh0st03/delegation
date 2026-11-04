@@ -15,6 +15,23 @@ R278 proved the no-AI real-Gitea F1 Planning-only path on the direct Engineer na
 
 F1 deliberately stops **before** Engineer approval. It does not test a signed operational DAG, a repaired D1 Task or live Gemini inference. This final free checkpoint covers the first two using scripted ADK and independently exercises real Rust/EVM/Gitea/Docker.
 
+## Verified R279 results — all four successful
+
+The same R279 commit `75bb066df63fd2fe3c2106699427171418fd4867`
+was independently verified by all four required GitHub Actions:
+
+- Fast CI: **SUCCESS** — https://github.com/DarkGh0st03/delegation/actions/runs/41921999098
+- Direct Engineer native Rust EVM / VP: **SUCCESS** — https://github.com/DarkGh0st03/delegation/actions/runs/41921999157
+- Signed Gitea/Docker DAG: **SUCCESS** — https://github.com/DarkGh0st03/delegation/actions/runs/41921999104
+- Signed Gitea/Docker recovery D1: **SUCCESS** — https://github.com/DarkGh0st03/delegation/actions/runs/41921999063
+
+This closes the R279 **scripted/native architecture** checkpoint, without
+claiming any real Gemini agent success. A subsequent R280 patch to the
+manual-only paid workflow pins the trusted Rust DID publisher and resolver
+paths in *both* manual jobs, matching the successful no-AI F1 R278 proof.
+The paid manual gate requires another free exact-SHA verification after that
+workflow change; no paid execution is authorized by this document.
+
 ## Exact-SHA independent free release gate
 
 | Required workflow | Checkpoint trigger | Status |

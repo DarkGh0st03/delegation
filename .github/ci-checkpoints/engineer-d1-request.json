@@ -1,17 +1,18 @@
 {
-  "checkpoint": "R279 — post-F1 native Engineer release candidate, exact-SHA free validation",
-  "candidate_parent_sha": "f7bb80281215ecd2763a316ef936fba38c935892",
+  "checkpoint": "R280 — paid manual DID script preflight readiness fix; exact-SHA four free native verification",
+  "candidate_parent_sha": "75bb066df63fd2fe3c2106699427171418fd4867",
   "workflow": "engineer-embedded-signed-d1-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
   "verification_scope": "One embedded Engineer Rust signed D1 recovery and unmerged review PR; no LLM",
   "historical_positive_dag_run_id": 41899589143,
   "f1_free_same_owner_proof_run_id": 41919029715,
-  "trigger_reason": "Run one nonbillable signed D1 recovery verification on same frozen candidate as EVM/DAG/Fast CI",
+  "trigger_reason": "R279 4/4 completed/success on 75bb066d. R280 changes ONLY manual Gemini D0/F1 DID script path configuration, its no-network static test, and checkpoint evidence. Verify one final exact-SHA zero-model release gate before any separately authorized pilot.",
   "exclusions": [
-    "No Gemini/OpenAI API calls",
-    "No automated merge",
-    "No main mutation",
-    "No permission expansion beyond signed approved plan"
-  ]
+    "No paid Gemini/OpenAI API calls",
+    "No main mutation or merge",
+    "No legacy HTTP issuer",
+    "No automatic human approval"
+  ],
+  "r279_previous_same_sha_success_run_id": 41921999063
 }

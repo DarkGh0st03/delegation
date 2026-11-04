@@ -58,6 +58,9 @@ jobs:
     timeout-minutes: 120
     env:
       ADAPTER_TRUST_PROFILE: evm
+      # R280: absolute DID scripts are required by direct Rust issuer in npm-workspace children.
+      ADAPTER_DID_PUBLISHER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/publish-ed25519.mjs
+      ADAPTER_DID_RESOLVER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/resolve-did-json.mjs
       ENGINEER_CORE_NATIVE_MODE: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
       APPROVED_RUNNER_NATIVE_EVM: "1"
@@ -225,6 +228,11 @@ jobs:
         run: |
           test "$ENGINEER_CORE_NATIVE_MODE" = 1
           test "$APPROVED_RUNNER_NATIVE_MCP" = 1
+          # Ensure native EVM publication cannot silently depend on process cwd.
+          case "$ADAPTER_DID_PUBLISHER_SCRIPT" in /*) ;; *) exit 1 ;; esac
+          case "$ADAPTER_DID_RESOLVER_SCRIPT" in /*) ;; *) exit 1 ;; esac
+          test -f "$ADAPTER_DID_PUBLISHER_SCRIPT"
+          test -f "$ADAPTER_DID_RESOLVER_SCRIPT"
           test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
           test ! -e /tmp/native-evm-adapter.pid
           if curl -fsS --connect-timeout 1 http://127.0.0.1:8090/health >/dev/null 2>&1; then
@@ -539,6 +547,9 @@ jobs:
     timeout-minutes: 65
     env:
       ADAPTER_TRUST_PROFILE: evm
+      # R280: absolute DID scripts are required by direct Rust issuer in npm-workspace children.
+      ADAPTER_DID_PUBLISHER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/publish-ed25519.mjs
+      ADAPTER_DID_RESOLVER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/resolve-did-json.mjs
       ENGINEER_CORE_NATIVE_MODE: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
       APPROVED_RUNNER_NATIVE_EVM: "1"
@@ -663,6 +674,11 @@ jobs:
         run: |
           test "$ENGINEER_CORE_NATIVE_MODE" = 1
           test "$APPROVED_RUNNER_NATIVE_MCP" = 1
+          # Ensure native EVM publication cannot silently depend on process cwd.
+          case "$ADAPTER_DID_PUBLISHER_SCRIPT" in /*) ;; *) exit 1 ;; esac
+          case "$ADAPTER_DID_RESOLVER_SCRIPT" in /*) ;; *) exit 1 ;; esac
+          test -f "$ADAPTER_DID_PUBLISHER_SCRIPT"
+          test -f "$ADAPTER_DID_RESOLVER_SCRIPT"
           test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
           test ! -e /tmp/native-evm-adapter.pid
           if curl -fsS --connect-timeout 1 http://127.0.0.1:8090/health >/dev/null 2>&1; then

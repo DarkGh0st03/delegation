@@ -182,3 +182,22 @@ test("R267 historical HTTP Adapter CI cannot masquerade as native proof",()=>{
     ...historical.map(green)
   ],sha),/NO-GO/u);
 });
+
+test("R280 both manual billed jobs use the native owner DID script paths proven by free F1",()=>{
+ const paid=readFileSync(new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url),"utf8");
+ const free=readFileSync(new URL("../../../.github/workflows/f1-real-gitea-planning-parity.yml",import.meta.url),"utf8");
+ const signed=readFileSync(new URL("../../../.github/workflows/engineer-embedded-signed-dag-e2e.yml",import.meta.url),"utf8");
+ for(const [name,file] of [
+   ["ADAPTER_DID_PUBLISHER_SCRIPT","publish-ed25519.mjs"],
+   ["ADAPTER_DID_RESOLVER_SCRIPT","resolve-did-json.mjs"]
+ ]){
+   const path=name+": "+"$"+"{{ github.workspace }}/blockchain/did-client/"+file;
+   assert.ok(free.includes(path),"Free F1 path reference must exist");
+   assert.ok(signed.includes(path),"Free signed DAG path reference must exist");
+   assert.equal(paid.split(path).length-1,2,"D0 and paid F1 must both pin "+name);
+   assert.equal(paid.split('test -f "$'+name+'"').length-1,2);
+   assert.equal(paid.split('case "$'+name+'" in /*) ;; *) exit 1 ;; esac').length-1,2);
+ }
+ assert.match(paid,/Block billed Gemini pilot unless SAME SHA passed all four native\/free CI gates/u);
+ assert.doesNotMatch(paid,/\n  push:\s*\n/u);
+});
