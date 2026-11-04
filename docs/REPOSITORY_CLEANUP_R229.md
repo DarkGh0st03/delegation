@@ -101,3 +101,26 @@ corresponding tests until this replacement has a genuine EVM signed-DAG
 test. This is a functional architecture gap, not only cosmetic cleanup.
 The direct Engineer Node-API gate and all R229 deletions remain
 separate, reversible changes while this boundary is resolved.
+
+## R231 — status of R230 root-inspection blocker
+
+The **implementation** blocker described above is now addressed in the
+new native Engineer-owner mode. The one Rust runtime's socket supports
+authenticated `read_issued_root` and `read_credential_status` for the
+Gateway role only; `TrustedGatewayNativeRootStatusReader` selects
+this source automatically with `ENGINEER_CORE_NATIVE_MODE=1`, and
+fails closed on missing native transport rather than making Adapter
+HTTP inspection requests.
+
+The Gateway's native public verifier remains independent and direct;
+this issuer-only inspection is separate corroboration. No
+`/v1/credentials/*/inspect` HTTP service is necessary for this
+read-only gate when the new mode is enabled. Existing noncanonical
+compatibility fixtures still retain their HTTP path.
+
+**Validation remains open:** Rust compilation and single-owner native
+smoke, Fast CI, and *live* EVM-anchored root status / signed DAG with the
+old Adapter service completely absent must all pass. Until then
+`services/delegation-adapter/src/http.rs` and its legacy tests are
+still retained. R231 is not a claim that the full HTTP Adapter is
+physically removed from deployment.
