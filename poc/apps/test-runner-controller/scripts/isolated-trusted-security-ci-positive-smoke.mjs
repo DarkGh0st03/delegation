@@ -705,6 +705,31 @@ async function verifyR139DisposableRealRepair({base,workTree,creds,
  })+"\n");
  return Object.freeze({failedSha,repairedSha,prNumber:pr.number});
 }
+async function verifyNativeReview(base,creds,fixture,main,prs,nativePrEvidence){
+  assert.ok(nativePrEvidence,
+    "Missing immutable native DAG PR evidence");
+  assert.equal(prs.length,1,
+    "Signed DAG must open one real PR after exact-SHA acceptance");
+  const pr=prs[0];
+  // The signed DAG and independent Security CI intentionally operate
+  // on DIFFERENT feature branches. Do not compare the PR to the latter.
+  assert.equal(pr.state,"open");
+  assert.equal(pr.merged,false);
+  assert.equal(pr.number,nativePrEvidence.number);
+  assert.equal(pr.head?.ref,nativePrEvidence.branch);
+  assert.equal(pr.head?.sha,nativePrEvidence.sha);
+  assert.equal(pr.base?.ref,"main");
+  if(nativePrEvidence.url!==null){
+    assert.equal(pr.html_url,nativePrEvidence.url);
+  }
+  const nativeHead=await api(base,repository+"/branches/"+
+    encodeURIComponent(nativePrEvidence.branch),{
+      authorization:creds.admin,label:"verify_native_pr_exact_head"
+    });
+  assert.equal(nativeHead.commit.id,nativePrEvidence.sha);
+  assert.equal(main.commit.id,fixture.mainSha);
+}
+
 async function main(){
   const acceptanceDir=fileURLToPath(new URL(
     "../../../runner/acceptance/",import.meta.url
@@ -1606,6 +1631,16 @@ async function main(){
       },realGeminiPilot?3700000:1020000);
       if(typecheckProbe||semanticProbe)return; // Expected negative test; do not run positive PR CI.
       if(realGeminiPilot)return; // One Gemini E2E; skip additional scripted CI.
+      if(process.env.APPROVED_RUNNER_VERIFY_EMBEDDED_DAG_ONLY==="1"){
+        assert.equal(process.env.ENGINEER_CORE_NATIVE_MODE,"1");
+        assert.equal(process.env.APPROVED_RUNNER_THREE_AGENT_DAG,"1");
+        const [main,prs]=await Promise.all([
+          api(base,repository+"/branches/main",{authorization:creds.admin,label:"verify_immutable_main"}),
+          api(base,repository+"/pulls?state=all",{authorization:creds.admin,label:"verify_signed_dag_pull_request"})
+        ]);
+        await verifyNativeReview(base,creds,fixture,main,prs,nativePrEvidence);
+        return;
+      }
     }
     logs=await mkdtemp(join(tmpdir(),"thesis-positive-runner-"));
     const executor=new IsolatedDockerRunnerExecutor({
@@ -1737,28 +1772,7 @@ async function main(){
     assert.ok(Array.isArray(prs));
     const signedDag=process.env.APPROVED_RUNNER_THREE_AGENT_DAG==="1";
     if(signedDag){
-      assert.ok(nativePrEvidence,
-        "Missing immutable native DAG PR evidence");
-      assert.equal(prs.length,1,
-        "Signed DAG must open one real PR after exact-SHA acceptance");
-      const pr=prs[0];
-      // The signed DAG and independent Security CI intentionally operate
-      // on DIFFERENT feature branches. Do not compare the PR to the latter.
-      assert.equal(pr.state,"open");
-      assert.equal(pr.merged,false);
-      assert.equal(pr.number,nativePrEvidence.number);
-      assert.equal(pr.head?.ref,nativePrEvidence.branch);
-      assert.equal(pr.head?.sha,nativePrEvidence.sha);
-      assert.equal(pr.base?.ref,"main");
-      if(nativePrEvidence.url!==null){
-        assert.equal(pr.html_url,nativePrEvidence.url);
-      }
-      const nativeHead=await api(base,repository+"/branches/"+
-        encodeURIComponent(nativePrEvidence.branch),{
-          authorization:creds.admin,label:"verify_native_pr_exact_head"
-        });
-      assert.equal(nativeHead.commit.id,nativePrEvidence.sha);
-      assert.equal(main.commit.id,fixture.mainSha);
+      await verifyNativeReview(base,creds,fixture,main,prs,nativePrEvidence);
     }else{
       assert.deepEqual(prs,[],
         "Non-DAG security regression must not create a PR");
