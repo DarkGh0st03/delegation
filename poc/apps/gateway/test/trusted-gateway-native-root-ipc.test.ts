@@ -98,3 +98,26 @@ test("R231 malformed socket and dual-transport Gateway issuer config reject at s
   fetchFn:async()=>{throw Error("HTTP must not be called");}
  }),/native issuer socket/u);
 });
+
+test("R231 canonical embedded Engineer owner never downgrades Gateway root inspection to HTTP",()=>{
+ const prevMode=process.env.ENGINEER_CORE_NATIVE_MODE;
+ const prevSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ process.env.ENGINEER_CORE_NATIVE_MODE="1";
+ delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ try{
+  assert.throws(()=>new TrustedGatewayNativeRootStatusReader({
+   baseUrl:"http://127.0.0.1:8090",gatewayToken:GATEWAY_TOKEN,
+   fetchFn:async()=>{throw Error("Adapter HTTP must not be used");}
+  }),/canonical Engineer Core mode requires native issuer inspection socket/u);
+  process.env.ADAPTER_ENGINEER_NATIVE_SOCKET="/tmp/r231-forced-native.sock";
+  assert.throws(()=>new TrustedGatewayNativeRootStatusReader({
+   baseUrl:"http://127.0.0.1:8090",gatewayToken:GATEWAY_TOKEN,
+   fetchFn:async()=>{throw Error("Adapter HTTP must not be used");}
+  }),/native issuer socket must be an absolute/u);
+ }finally{
+  if(prevMode===undefined)delete process.env.ENGINEER_CORE_NATIVE_MODE;
+  else process.env.ENGINEER_CORE_NATIVE_MODE=prevMode;
+  if(prevSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=prevSocket;
+ }
+});
