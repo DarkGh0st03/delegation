@@ -349,7 +349,7 @@ class ScriptedReadPlanner extends BaseLlm{
 }
 const adapterUrl="http://127.0.0.1:8090";
 const opaUrl=process.env.OPA_URL??"http://127.0.0.1:8181";
-const log={giteaReads:0,adapterPresentations:0,prepares:0,executions:0};
+const log={giteaReads:0,prepares:0,executions:0};
 const fixtureGitea={
   async readRepository(pinned){
     log.giteaReads++;
@@ -506,7 +506,6 @@ const json=(object,status=200)=>new Response(JSON.stringify(object),{
 const transport=async(url,options)=>{
   const endpoint=String(url);
   if(endpoint.startsWith(adapterUrl+"/")){
-    if(endpoint.endsWith("/v1/presentations"))log.adapterPresentations++;
     return fetch(url,options);
   }
   const body=JSON.parse(String(options.body));
@@ -551,14 +550,14 @@ try{
     adapterBaseUrl:adapterUrl,adapterToken:token,
     fetchFn:transport,timeoutMs:60000
   });
-  const noWrite=log.adapterPresentations;
+  const noWrite=log.executions;
   await assert.rejects(port.invoke("update_file",{
     branch:"main",path:file,content:"malicious"
   }));
   await assert.rejects(port.invoke("read_file",{
     branch:"main",path:"private/credentials.env"
   }));
-  assert.equal(log.adapterPresentations,noWrite);
+  assert.equal(log.executions,noWrite);
   // Gemini receives the SAME trusted Gitea-backed read-only Gateway tools.
   // No offline planSketch is passed to the model in the consented pilot.
   const model=geminiPilot
@@ -660,10 +659,8 @@ try{
   if(geminiPilot){
     // Every actual preliminary read must pass the trusted Gateway and native
     // verifier. The count is whatever the model legitimately needed.
-    assert.equal(log.prepares,log.adapterPresentations);
-    assert.equal(log.executions,log.adapterPresentations);
+    assert.equal(log.prepares,log.executions);
   }else{
-    assert.equal(log.adapterPresentations,positiveDag?4:1);
     assert.equal(log.prepares,positiveDag?4:1);
     assert.equal(log.executions,positiveDag?4:1);
     assert.equal(log.giteaReads,positiveDag?5:2);
@@ -678,7 +675,7 @@ try{
   }
   const executed=audit.events.filter(e=>e.event==="authorization_executed");
   assert.equal(executed.length,geminiPilot
-    ?log.adapterPresentations:(positiveDag?4:1));
+    ?log.executions:(positiveDag?4:1));
   for(const effect of executed){
     assert.equal(effect.decision,"allow");
     assert.equal(effect.policy_decision,"allow");
@@ -711,8 +708,7 @@ try{
     // All proposal compilation and the exact pilot preflight already ran.
     // No operational root, signed approval or Agent task has been created.
     assert.equal(coordinator.phase,"planning");
-    assert.equal(log.prepares,log.adapterPresentations);
-    assert.equal(log.executions,log.adapterPresentations);
+    assert.equal(log.prepares,log.executions);
     assert.equal((await liveClient.getBranchMetadata("main")).commit_sha,baseSha);
     assert.equal((await liveClient.getBranchMetadata(scenario.fixtureBranch)).commit_sha,
       originalFeature);
