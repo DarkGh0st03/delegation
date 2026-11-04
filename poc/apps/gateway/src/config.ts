@@ -59,6 +59,8 @@ export function gatewayConfigFromEnv(): GatewayRuntimeConfig {
   const bind = bindAddress(process.env.GATEWAY_BIND_ADDR ?? "0.0.0.0:8080");
   const mode = providerMode(process.env.GATEWAY_PROVIDER_MODE ?? "mock");
   const verifierMode = parseGatewayVerifierMode(process.env.GATEWAY_VERIFIER_MODE ?? "core-rust");
+  if(process.env.ENGINEER_CORE_NATIVE_MODE==="1"&&verifierMode!=="core-rust")
+    throw new Error("Direct Engineer Core cannot use legacy Adapter Gateway verifier");
 
   return {
     bind_host: bind.host,

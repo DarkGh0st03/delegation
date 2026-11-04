@@ -22,6 +22,7 @@ import {TrustedGatewayRootVpVerifier}
 import {TrustedRootVpSocketClient}
  from "../../../packages/orchestrator-runtime/src/trusted-root-vp-private-ipc.ts";
 import {AdapterVerifierClient} from "./adapter-client.ts";
+import {loadDirectCoreRustVerifier} from "./direct-core-loader.ts";
 import {GiteaClient} from "./gitea-client.ts";
 import type {GatewayRuntimeConfig} from "./config.ts";
 
@@ -110,20 +111,36 @@ export async function trustedPlanDeploymentFromEnv(config:GatewayRuntimeConfig){
    throw Error("Native issued root scope requires pinned Orchestrator DID and anchored status");
   if(inspectNative!==undefined&&inspectNative!=="1")
    throw Error("Invalid native Rust root status inspection flag");
-  if(inspectNative==="1"&&(!sharedDir||
-     !config.adapter_url||!config.adapter_gateway_token))
-   throw Error("Native root status requires signed epoch journal and authenticated Adapter");
+  const directCore=process.env.ENGINEER_CORE_NATIVE_MODE==="1";
+  // Production Gateway must not silently substitute issuer-proxied
+  // verification or issuer inspection after the Engineer moves to Rust
+  // Node-API. All authorization is still independently checked by Core.
+  if(directCore&&config.verifier_mode!=="core-rust")
+   throw Error("Direct Engineer deployment requires independent Core Rust Gateway verifier");
+  const issuerInspectToken=directCore
+   ?process.env.ADAPTER_CALLER_GATEWAY
+   :config.adapter_gateway_token;
+  const issuerSocket=directCore
+   ?process.env.ADAPTER_ENGINEER_NATIVE_SOCKET
+   :undefined;
+  if(inspectNative==="1"&&(!sharedDir||!issuerInspectToken||
+     (directCore?!issuerSocket:!config.adapter_url)))
+   throw Error("Native root status requires signed epoch journal and authenticated Rust issuer transport");
   const nativeRootStatus=inspectNative==="1"?
    new TrustedGatewayNativeRootStatusReader({
-    baseUrl:config.adapter_url!,gatewayToken:config.adapter_gateway_token!
+    ...(directCore?{nativeSocketPath:issuerSocket!}:{baseUrl:config.adapter_url!}),
+    gatewayToken:issuerInspectToken!
    }):undefined;
-  // Gateway holds ONLY the HMAC socket client. It NEVER gets the
-  // Orchestrator Adapter bearer or constructs an Orchestrator signer.
+  // Gateway holds ONLY a public-only independent Rust VP verifier and
+  // the authenticated root-VP HMAC socket. No issuer signing keys or
+  // privileged Orchestrator bearer are available to the Gateway.
   const rootVpVerifier=inspectVp==="1"?
    new TrustedGatewayRootVpVerifier({
-    verifier:new AdapterVerifierClient({
-     baseUrl:config.adapter_url!,gatewayToken:config.adapter_gateway_token!
-    }),
+    verifier:directCore
+     ?loadDirectCoreRustVerifier()
+     :new AdapterVerifierClient({
+       baseUrl:config.adapter_url!,gatewayToken:config.adapter_gateway_token!
+      }),
     signer:await TrustedRootVpSocketClient.connect({
      socketPath:process.env.TRUSTED_PLAN_ROOT_VP_SOCKET!,
      secretFile:process.env.TRUSTED_PLAN_ROOT_VP_SECRET_FILE!

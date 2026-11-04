@@ -350,3 +350,27 @@ and is **not** yet retriggered by these source changes.
 Future work: get Fast CI green on the final SHA; only then trigger
 the expensive signed Gitea/Docker gate exactly once and inspect its
 real results before staging D1 / further deletes. No paid model APIs.
+
+## R242 — remove last deployed Gateway owner-proof dependency on Adapter HTTP
+
+Code review of `trusted-plan-deployment.ts` found a different, formerly
+untested pathway from the in-process/mocked R231 Gateway status reader:
+the **deployed** Gateway still required `config.adapter_url` to
+corroborate original root scope and verify a signed Orchestrator root VP.
+
+With `ENGINEER_CORE_NATIVE_MODE=1` the deployed owner proof now:
+- reads the original issuer root and status over the authenticated
+  **Gateway role on the Engineer-owned native socket**;
+- verifies nonce-bound original-root VP using the independently loaded
+  **public-only Core Rust verifier** (live DID/EVM/status/artifact source);
+- rejects an unavailable socket, missing Gateway role token or a
+  `GATEWAY_VERIFIER_MODE=adapter` downgrade;
+- leaves the old Adapter root-status and verifier explicitly available
+  **only to historical, noncanonical fixtures**, not the direct route.
+
+A Fast CI source-contract check and existing Unix-socket Gateway
+positive/negative tests enforce the linkage. No new issuer, signing
+key, HTTP service or developer-controlled credential override was
+introduced. The live deployed signed-D1 workflow still requires
+verification against an exact successful SHA before HTTP legacy files
+can be deleted.
