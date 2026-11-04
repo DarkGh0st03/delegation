@@ -21,6 +21,10 @@ jobs:
     timeout-minutes: 50
     env:
       ADAPTER_TRUST_PROFILE: evm
+      # Rust cryptographic DID publisher runs from npm workspace cwd.
+      # Pin both executable script paths to the trusted checkout root.
+      ADAPTER_DID_PUBLISHER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/publish-ed25519.mjs
+      ADAPTER_DID_RESOLVER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/resolve-did-json.mjs
       ENGINEER_CORE_NATIVE_MODE: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
       APPROVED_RUNNER_NATIVE_EVM: "1"
@@ -123,6 +127,10 @@ jobs:
         run: |
           test "$ENGINEER_CORE_NATIVE_MODE" = 1
           test "$APPROVED_RUNNER_NATIVE_MCP" = 1
+          case "$ADAPTER_DID_PUBLISHER_SCRIPT" in /*) ;; *) exit 1 ;; esac
+          case "$ADAPTER_DID_RESOLVER_SCRIPT" in /*) ;; *) exit 1 ;; esac
+          test -f "$ADAPTER_DID_PUBLISHER_SCRIPT"
+          test -f "$ADAPTER_DID_RESOLVER_SCRIPT"
           test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
           test ! -e /tmp/native-evm-adapter.pid
           if curl -fsS --connect-timeout 1 http://127.0.0.1:8090/health >/dev/null 2>&1; then

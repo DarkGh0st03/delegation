@@ -30,3 +30,25 @@ test("R276 F1 zero-billing Gitea planning uses the same direct Rust Engineer own
  assert.match(parent,/PLANNING_REAL_GITEA_ONLY:"1"/u);
  assert.match(parent,/APPROVED_RUNNER_NATIVE_MCP:"1"/u);
 });
+
+test("R278 F1 issuer pins DID publisher and resolver to absolute checked-out paths",()=>{
+ const workflow=read(".github/workflows/f1-real-gitea-planning-parity.yml");
+ const canonical=read(".github/workflows/engineer-embedded-signed-dag-e2e.yml");
+ for(const [key,file] of [
+  ["ADAPTER_DID_PUBLISHER_SCRIPT","publish-ed25519.mjs"],
+  ["ADAPTER_DID_RESOLVER_SCRIPT","resolve-did-json.mjs"]
+ ]){
+   const value=key+': ${{ github.workspace }}/blockchain/did-client/'+file;
+   assert.ok(workflow.includes(value),"F1 must set absolute "+key);
+   assert.ok(canonical.includes(value),"F1 must match canonical DAG "+key);
+   assert.ok(workflow.includes('test -f "$'+key+'"'));
+   assert.ok(workflow.includes('case "$'+key+'" in /*) ;; *) exit 1 ;; esac'));
+ }
+ const runner=read("poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs");
+ assert.match(runner,/cwd:process.cwd\(\),encoding:"utf8"/u);
+ const config=read("services/delegation-adapter/src/config.rs");
+ assert.match(config,/did_publisher_script: env::var\("ADAPTER_DID_PUBLISHER_SCRIPT"\)/u);
+ assert.match(config,/did_resolver_script: env::var\("ADAPTER_DID_RESOLVER_SCRIPT"\)/u);
+ const issuer=read("services/delegation-adapter/src/evm_profile.rs");
+ assert.match(issuer,/\.arg\(&config.did_publisher_script\)/u);
+});
