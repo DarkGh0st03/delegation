@@ -519,7 +519,7 @@ test("R178 private Gateway transport stays hidden from ADK and the public barrel
  const {fileURLToPath}=await import("node:url");
  const root=fileURLToPath(new URL("../../../",import.meta.url));
  const src=readFileSync(new URL(
-  "poc/packages/orchestrator-runtime/src/index.ts",import.meta.url),"utf8");
+  "poc/packages/orchestrator-runtime/src/index.ts",new URL("../../../",import.meta.url)),"utf8");
  assert.doesNotMatch(src,/OrchestratorGatewayTransport/u);
  const inventory=collectLegacyReferences(root,gitTrackedFiles(root));
  assert.deepEqual(unexpectedPrivateGatewayTransportCallers(inventory),[]);
@@ -534,7 +534,7 @@ test("R178 remaining scenario fixture is only a focused regression, not signed P
  const audit=collectLegacyReferences(root,gitTrackedFiles(root));
  assert.deepEqual(unexpectedHistoricalPreflightCallers(audit),[]);
  const preflight=readFileSync(new URL(
-   "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",import.meta.url),"utf8");
+   "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",new URL("../../../",import.meta.url)),"utf8");
  assert.match(preflight,/checkAccountSuspensionPreflight/u);
 });
 
