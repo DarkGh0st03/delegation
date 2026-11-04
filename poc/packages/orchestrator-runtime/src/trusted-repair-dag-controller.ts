@@ -46,7 +46,7 @@ export async function executeTrustedAdmittedRepairDag(config:Readonly<{
  gateway:TrustedPlanIpcClient;
  journal:TrustedChildIssuanceJournal;
  engineerDid:string;
- adapterBaseUrl:string;orchestratorToken:string;
+ adapterBaseUrl?:string;orchestratorToken:string;
  fetchFn?:typeof fetch;
  agentBaseUrls:Readonly<Record<Role,string>>;
  a2a:ProtectedA2AClientPort;
