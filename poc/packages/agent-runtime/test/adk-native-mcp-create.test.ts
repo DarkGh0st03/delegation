@@ -60,7 +60,7 @@ test("native ADK Test Agent create_file invokes shared MCP, not legacy FunctionT
     }
   },undefined,{allowCreateFile:true});
   const app=express();
-  attachPrivateMcpWorker(app,registry);
+  attachPrivateMcpWorker(app,registry,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;

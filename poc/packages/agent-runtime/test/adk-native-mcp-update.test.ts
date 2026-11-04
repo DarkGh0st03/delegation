@@ -50,7 +50,7 @@ test("Native ADK update_file uses opted-in MCPToolset without direct FunctionToo
       return confirmed;
     }
   },undefined,{allowUpdateFile:true});
-  const app=express();attachPrivateMcpWorker(app,active);
+  const app=express();attachPrivateMcpWorker(app,active,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(r=>worker.once("listening",r));
   const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
@@ -171,7 +171,7 @@ test("reviewed Test Agent read -> update existing regression -> run_tests remain
     ],
     allowUpdateFile:true,allowCreateFile:false,allowRunTests:true
   });
-  const app=express();attachPrivateMcpWorker(app,registry);
+  const app=express();attachPrivateMcpWorker(app,registry,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;

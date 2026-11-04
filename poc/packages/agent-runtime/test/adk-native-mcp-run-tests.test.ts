@@ -54,7 +54,7 @@ test("native ADK Test Agent calls run_tests via shared MCP and verifies Runner P
     }
   },undefined,{allowRunTests:true});
   const app=express();
-  attachPrivateMcpWorker(app,tasks);
+  attachPrivateMcpWorker(app,tasks,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(res=>worker.once("listening",res));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
@@ -141,7 +141,7 @@ test("ADK cannot replay Docker run_tests after fresh-review referral",async()=>{
     }
   },undefined,{allowRunTests:true});
   const app=express();
-  attachPrivateMcpWorker(app,registry);
+  attachPrivateMcpWorker(app,registry,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(res=>worker.once("listening",res));
   const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
@@ -233,7 +233,7 @@ test("R120 failed Test Task cannot retry Docker through MCP",async()=>{
   allowedFilePermissions:[{path:"tests/backend/user.service.test.ts",
    operation:"read_file"},{path:"tests/backend/user.service.test.ts",
    operation:"update_file"}],approvedBranch:args.branch});
- const app=express();attachPrivateMcpWorker(app,privateRegistry);
+ const app=express();attachPrivateMcpWorker(app,privateRegistry,"legacy");
  const worker=app.listen(0,"127.0.0.1");
  await new Promise<void>(resolve=>worker.once("listening",resolve));
  const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
