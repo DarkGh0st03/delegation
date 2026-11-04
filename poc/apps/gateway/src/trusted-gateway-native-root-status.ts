@@ -17,7 +17,7 @@ export class TrustedGatewayNativeRootStatusReader{
  readonly #token:string;
  readonly #timeout:number;
  readonly #fetch:typeof fetch;
- constructor(options:{baseUrl:string;gatewayToken:string;timeoutMs?:number;
+ constructor(options:{baseUrl?:string;gatewayToken:string;timeoutMs?:number;
   nativeSocketPath?:string;
   fetchFn?:typeof fetch}){
   // Canonical Engineer-owned Rust mode MUST select the existing in-process
@@ -35,7 +35,11 @@ export class TrustedGatewayNativeRootStatusReader{
       options.fetchFn!==undefined))
    reject("native issuer socket must be an absolute, private fixed path without HTTP fallback");
   let url:URL;
-  try{url=new URL(options?.baseUrl);}catch{reject("invalid fixed Adapter URL");}
+  // The native issuer branch MUST NOT depend on the former Adapter URL,
+  // even as a required configuration value. This synthetic origin is only
+  // used to construct internal Response-compatible route identifiers.
+  try{url=new URL(nativePath?"http://native-issuer.invalid":options.baseUrl);}
+  catch{reject("invalid fixed Adapter URL");}
   if(!["http:","https:"].includes(url.protocol)||
      !url.hostname||url.username||url.password||url.search||url.hash||
      url.pathname!=="/"||
