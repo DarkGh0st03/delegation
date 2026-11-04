@@ -98,6 +98,7 @@ import {TrustedPlanningGatewayReadPort} from
 import {TrustedAdkReadOnlyPlanner} from
   "../../../packages/orchestrator-runtime/src/trusted-adk-planner.ts";
 
+globalThis.__nativeDagBootstrapStage="configuration_validation";
 if(process.env.ADAPTER_TRUST_PROFILE!=="evm" ||
    process.env.GATEWAY_VERIFIER_MODE!=="core-rust")
   throw Error("This test requires live EVM trust and native Core Rust verification");
@@ -238,6 +239,7 @@ const liveClient=realGitea?new GiteaClient({
   baseUrl:disposableBase,token:disposableToken,owner:"thesis",
   repository:"iam-console-poc",timeoutMs:10000
 }):undefined;
+globalThis.__nativeDagBootstrapStage="disposable_gitea_bootstrap";
 const originalMain=liveClient?await liveClient.readRepository():undefined;
 if(liveClient&&(originalMain?.default_branch!=="main"||
     originalMain?.revision!==disposableSha||
@@ -445,6 +447,7 @@ const signedStore=receiptDir?new SignedEngineerApprovalFileStore({
 // public-only verifier. This publishes native DID/EVM public material
 // without launching a competing HTTP Adapter or another process.
 // Later Engineer root/revocation operations reuse this exact addon state.
+globalThis.__nativeDagBootstrapStage="native_issuer_initialization";
 if(process.env.ENGINEER_CORE_NATIVE_MODE==="1"){
   const {loadDirectRustEngineerCore}=await import(
     "../../../packages/orchestrator-runtime/src/trusted-engineer-direct-core-port.ts");
@@ -497,6 +500,7 @@ const approvedPlans=reviewGate?new TrustedApprovedExecutionPlans({
     }
   }
 }):undefined;
+globalThis.__nativeDagBootstrapStage="gateway_crypto_bootstrap";
 const config={bind_host:"127.0.0.1",bind_port:0,
   prepare:{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
   opa_url:opaUrl,opa_timeout_ms:15000,
@@ -573,6 +577,7 @@ let pilotDelegatedPhase="not_started",pilotDelegatedFailure="none";
 let pilotPlanningRejection=null,pilotTaskCounts=null;
 // Static, bounded rejection categories for all three draft attempts.
 let pilotPlanningRejectionHistory=[];
+globalThis.__nativeDagBootstrapStage="root_issuance";
 try{
   const started=await coordinator.beginPlanning(root);
   issued=true;
@@ -1970,6 +1975,7 @@ try{
 }catch(error){
   if(error!==PLANNING_ONLY_COMPLETED){
   if(!geminiPilot){
+    globalThis.__nativeDagPhaseReported=true;
     process.stderr.write(NATIVE_DAG_FAILURE_PREFIX+
       JSON.stringify(safeNativePhaseFailure(error,nativeDagStage))+"\n");
   }
