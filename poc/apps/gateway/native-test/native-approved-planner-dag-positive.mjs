@@ -68,7 +68,7 @@ import {assertApprovedPlanScope,planDigest as hashApprovedPlan} from
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
   from "../src/canonical.ts";
-import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
+import {CryptoWorkerRouter} from "../../../mcp-shared/src/crypto-worker-router.ts";
 import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {classifyApprovedDagFailure,safeApprovedDagFailureTrace} from "./native-approved-dag-failure-category.mjs";
@@ -889,7 +889,7 @@ export async function runNativePositiveApprovedDag({
       const verificationKeys=Object.fromEntries(
         ROLES.map(role=>[role,roleMcpKeys[role].signingPublicKeyPem])
       );
-      const router=new TaskRouter(Object.fromEntries(
+      const router=new CryptoWorkerRouter(Object.fromEntries(
         ROLES.map(role=>[role,{
           baseUrl:"http://127.0.0.1:"+rolePorts[role]
         }])
