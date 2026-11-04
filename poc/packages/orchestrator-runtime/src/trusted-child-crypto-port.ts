@@ -110,7 +110,10 @@ export function createNativeRustChildCryptographyPort(
 export function createOwnerPrivateMcpChildCryptographyPort(
  config:RustAdapterChildPortConfig
 ):TrustedChildCryptographyPort{
- const rust=createRustAdapterChildCryptographyPort(config);
+ const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ const rust=socketPath
+  ?createNativeRustChildCryptographyPort(config,socketPath)
+  :createRustAdapterChildCryptographyPort(config);
  return Object.freeze({
   kind:"owner-private-crypto-mcp" as const,
   async issueChild(request:Readonly<ExactTrustedChildIssuance>){
