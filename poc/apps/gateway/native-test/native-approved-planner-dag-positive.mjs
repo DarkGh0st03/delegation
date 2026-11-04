@@ -68,7 +68,6 @@ import {assertApprovedPlanScope,planDigest as hashApprovedPlan} from
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
   from "../src/canonical.ts";
-import {CryptoWorkerRouter} from "../../../mcp-shared/src/crypto-worker-router.ts";
 import {analyzeApprovedTestEdits} from "./approved-test-edits.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {classifyApprovedDagFailure,safeApprovedDagFailureTrace} from "./native-approved-dag-failure-category.mjs";
@@ -84,8 +83,6 @@ import {sanitizeTypecheckLocations,sanitizeTypecheckErrorCodes} from
   "../../test-runner-controller/src/typecheck-diagnostics.ts";
 import {sanitizeVitestFailureFiles} from
   "../../test-runner-controller/src/vitest-failure-files.ts";
-import {createSharedMcpHttpServer}
-  from "../../../mcp-shared/src/http-server.ts";
 
 const adapterUrl="http://127.0.0.1:8090";
 const EDIT_ROLES=["backend","frontend"];
@@ -368,9 +365,7 @@ export async function runNativePositiveApprovedDag({
   let observedTypecheckProbe=null;
   let verifiedRepairTarget=null;
   let deniedCrossRoleTestProbes=0;
-  const mcpServers=[];
   const roleMcpKeys={},rolePorts={};
-  let mcpCryptoUrl;
   let admittedBackendRepair=null,admittedFrontendRepair=null,admittedTestEdit=null,admittedTestRepair=null;
   const activeD1Repair=()=>admittedBackendRepair??admittedFrontendRepair??admittedTestEdit;
   const isSignedImplementationTask=(role,id)=>taskIdsByRole[role].includes(id)||
@@ -871,9 +866,7 @@ export async function runNativePositiveApprovedDag({
   if(realGeminiPilot)onPilotPhase?.("agent_bootstrap");
   try{
     if(cryptoMcpEnabled){
-      // All keys belong to the trusted offline host; they never enter ADK.
-      // Only the crypto MCP is started. The private worker issues a VP
-      // against an exact, already prepared Gateway challenge.
+      // Task-local in-process cryptographic MCP; no shared HTTP listener.
       for(const role of ROLES){
         const keys=generateKeyPairSync("ed25519");
         roleMcpKeys[role]={
@@ -886,27 +879,6 @@ export async function runNativePositiveApprovedDag({
         };
         rolePorts[role]=await freePort();
       }
-      const verificationKeys=Object.fromEntries(
-        ROLES.map(role=>[role,roleMcpKeys[role].signingPublicKeyPem])
-      );
-      const router=new CryptoWorkerRouter(Object.fromEntries(
-        ROLES.map(role=>[role,{
-          baseUrl:"http://127.0.0.1:"+rolePorts[role]
-        }])
-      ));
-      const server=createSharedMcpHttpServer({
-        verificationKeys,router,profile:"crypto"
-      });
-      server.on("request",req=>{
-        if(req.method==="POST"&&req.url==="/mcp")privateCryptoMcpCalls++;
-      });
-      await new Promise((resolve,reject)=>{
-        server.once("error",reject);
-        server.listen(0,"127.0.0.1",resolve);
-      });
-      mcpServers.push(server);
-      mcpCryptoUrl="http://127.0.0.1:"+server.address().port+"/mcp";
-      assert.ok(mcpCryptoUrl);
     }
     for(const role of EDIT_ROLES){
       const targets=files[role];
@@ -924,7 +896,6 @@ export async function runNativePositiveApprovedDag({
         adk:{
           model,gatewayBaseUrl:adkGatewayBase,adapterBaseUrl:adapterUrl,
           adapterToken:agentTokens[role],fetchFn:adkFetchFor(role),
-          ...(cryptoMcpEnabled?{mcpCryptoUrl}:{}),
           maxModelTurns:realGeminiPilot
             ?SIGNED_GEMINI_PILOT.maxTurnsPerTask[role]
             :scripted?scripted.length+2:24,
@@ -957,7 +928,6 @@ export async function runNativePositiveApprovedDag({
       adk:{
         model:testModel,gatewayBaseUrl:adkGatewayBase,adapterBaseUrl:adapterUrl,
         adapterToken:agentTokens.test,fetchFn:adkFetchFor("test"),
-        ...(cryptoMcpEnabled?{mcpCryptoUrl}:{}),
         maxModelTurns:realGeminiPilot
           ?SIGNED_GEMINI_PILOT.maxTurnsPerTask.test:hostModels?24:4,
         maxModelCallMs:realGeminiPilot
@@ -1650,10 +1620,12 @@ export async function runNativePositiveApprovedDag({
     // trusted Gateway counters above. Each confirmed operation must still
     // produce a cryptographic VP via the separate private crypto MCP.
     if(cryptoMcpEnabled){
+      privateCryptoMcpCalls=servers.reduce((n,server)=>
+        n+(server.cryptoProofCount?.()??0),0);
       const mandatoryOperations=reads.backend+reads.frontend+
         writes.backend+writes.frontend+testReads+testCalls+runnerRuns;
       assert.ok(privateCryptoMcpCalls>=mandatoryOperations,
-        "Every confirmed direct Gateway tool operation requires crypto MCP");
+        "Every confirmed direct Gateway tool operation requires local crypto MCP");
     }
     if(!hostModels)assert.ok(result.specialized_results.every(x=>
       x.artifact.model_id?.startsWith("offline-signed-approved-plan-")));
@@ -1877,7 +1849,8 @@ export async function runNativePositiveApprovedDag({
       approved_crypto_mcp_enabled:cryptoMcpEnabled,
       direct_gateway_function_tools_enabled:true,
       shared_mcp_http_requests:0,
-      private_crypto_mcp_http_requests:privateCryptoMcpCalls,
+      private_crypto_mcp_http_requests:0,
+      private_crypto_mcp_local_proofs:privateCryptoMcpCalls,
       adk_model_turns:{
         backend:models.backend instanceof OfflineApprovedAdkModel||
           models.backend instanceof SourceDerivedRouteOfflineAdkModel
@@ -1893,11 +1866,6 @@ export async function runNativePositiveApprovedDag({
     try{
       for(const server of servers.reverse())await server.close();
     }finally{
-      for(const server of mcpServers.reverse()){
-        await new Promise((resolve,reject)=>
-          server.close(error=>error?reject(error):resolve())
-        );
-      }
       await new Promise(resolve=>runnerServer.close(resolve));
       await rm(runLogs,{recursive:true,force:true});
     }
