@@ -1,13 +1,13 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R214 canonical task-local MCP, single native Rust issuer and signed D1 integration gate",
-  "candidate_parent_sha": "b7934f25017a36283097f6d49026d1fbc4150ca9",
-  "purpose": "One FREE same-SHA final gate after R198-R213: generic signed specialists, task-local private MCP crypto, no Shared MCP/private HTTP worker in canonical signed DAG, native Rust root/child/VP and Gateway verification. Verify cumulative, real Gitea/Docker signed DAG, and signed D1. No paid model API, no main mutation.",
+  "checkpoint": "R219 canonical native Rust VP no-HTTP downgrade and signed D1 same-SHA free gate",
+  "candidate_parent_sha": "d4fc58103e49e8490eae45e2bdff574dec9fb962",
+  "purpose": "One FREE same-SHA post-R215-R218 integration gate. Verify canonical Rust Engineer root, Orchestrator child and root VP, Task-local MCP signed specialist VPs, direct Gateway FunctionTools, OPA, live EVM/Gitea/Docker acceptance and signed D1 recovery. No remote crypto MCP/HTTP issuing downgrade, no paid model calls, no main mutation.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "functional-signed-dag-e2e.yml",
     "ts2724-signed-d1-targeted.yml"
   ],
   "paid_model_invocation": false,
-  "activation_note": "[full-ci] one zero-billing integration checkpoint, no Gemini pilot or merge main"
+  "activation_note": "[full-ci] one zero-billing R219 integration checkpoint; Gemini paid workflows not authorized"
 }
