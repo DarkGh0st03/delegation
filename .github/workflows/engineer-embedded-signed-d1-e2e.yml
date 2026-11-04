@@ -184,6 +184,9 @@ jobs:
           test "${DELEGATION_SIGNED_GEMINI_PILOT:-0}" != 1
           test -z "${GEMINI_API_KEY:-}"
           test -z "${OPENAI_API_KEY:-}"
+          receipt_dir=$(mktemp -d "$RUNNER_TEMP/d1-review.XXXXXXXX")
+          trap 'rm -rf "$receipt_dir"' EXIT
+          export EMBEDDED_D1_REVIEW_RECEIPT="$receipt_dir/verified-review.json"
           if ! npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller >/tmp/r237-d1-private.log 2>&1; then
             node --input-type=module <<'NODE'
           import {readFileSync} from "node:fs";
@@ -199,7 +202,7 @@ jobs:
           import {strict as assert} from "node:assert";
           import {safeEmbeddedEngineerD1Success}
             from "./poc/apps/test-runner-controller/scripts/signed-d1-gate-observation.mjs";
-          const raw=readFileSync("/tmp/r237-d1-private.log","utf8");
+          const raw=readFileSync(process.env.EMBEDDED_D1_REVIEW_RECEIPT,"utf8");
           const proof=safeEmbeddedEngineerD1Success(raw);
           assert.ok(proof,"Strict signed D1 review receipt not verified");
           process.stdout.write(JSON.stringify(proof)+"\n");
