@@ -182,6 +182,15 @@ jobs:
           const log=readFileSync("/tmp/r235-signed-dag-private.log","utf8");
           const line=log.split(/\r?\n/u).findLast(x=>x.startsWith("[trusted-positive-ci] native_dag_failure "));
           let diagnostic={event:"r235_embedded_engineer_signed_dag",status:"FAIL",category:"unknown"};
+          const outer=log.split(/\r?\n/u).map(x=>
+            /^\[trusted-positive-ci\] outer_failure (assertion|exception) (\d{1,5})$/u.exec(x)
+          ).filter(Boolean).at(-1);
+          if(outer){
+            diagnostic.category="outer_smoke_failure";
+            diagnostic.outer_kind=outer[1];
+            diagnostic.outer_module="isolated-trusted-security-ci-positive-smoke.mjs";
+            diagnostic.outer_line=Number(outer[2]);
+          }
           if(line){
             try{
               const v=JSON.parse(line.slice("[trusted-positive-ci] native_dag_failure ".length));
