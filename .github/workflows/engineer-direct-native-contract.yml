@@ -52,4 +52,4 @@ jobs:
       - name: Offline Engineer grant and downgrade rejection contracts
         run: |
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
-          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
