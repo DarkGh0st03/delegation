@@ -1,4 +1,5 @@
 import {buildNativePreliminaryEnvironment} from "./native-preliminary-environment.mjs";
+import {selectNativeOwnerPasses} from "./direct-engineer-owner-pass-selector.mjs";
 /**
  * REAL positive exact-SHA CI integration — isolated disposable Gitea.
  *
@@ -1019,6 +1020,8 @@ async function main(){
           "../../gateway/native-test/native-planning-read-core-evm-e2e.mjs",
           import.meta.url
         ));
+        const ownerPasses=selectNativeOwnerPasses(process.env);
+        if(ownerPasses.preliminaryReadOnlyProcess){
         const output=execFileSync(process.execPath,[
           "--experimental-strip-types",planningScript
         ],{
@@ -1045,6 +1048,9 @@ async function main(){
         assert.equal(result?.child_dc_issued,0);
         assert.equal(result?.real_provider_mutations,0);
         assert.equal(result?.provider_writes,0);
+        }
+        // R235: a single direct Engineer-owned Rust instance must be the
+        // only issuer/publisher used by this signed DAG on this EVM chain.
         let positiveOutput;
         try{
           positiveOutput=execFileSync(process.execPath,[
