@@ -19,7 +19,7 @@ import {signEngineerApproval} from "../../../packages/plan-contracts/src/signed-
 import {RUST_OPERATIONS} from "../src/operation-catalog.ts";
 import {SignedEngineerApprovalFileStore} from
   "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
-import {createOwnerPrivateMcpEngineerCredentialPort} from
+import {createTrustedEngineerCredentialPort} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {TrustedEngineerAuthoritySession} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
@@ -163,7 +163,7 @@ let coordinator;
 let executedMock=false,deniedExtra=false;
 try{
   await awaitGateway();
-  const credentials=createOwnerPrivateMcpEngineerCredentialPort({
+  const credentials=createTrustedEngineerCredentialPort({
     adapterBaseUrl:adapter,bearerToken:engineerToken,timeoutMs:30_000
   });
   const authority=new TrustedEngineerAuthoritySession({

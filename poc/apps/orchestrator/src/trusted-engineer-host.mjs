@@ -45,7 +45,7 @@ import {isTrustedOwnerRepairPlannerConfig}
   from "../../../packages/orchestrator-runtime/src/trusted-owner-operational-repair-handoff.ts";
 import {SignedEngineerApprovalFileStore}
   from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
-import {createOwnerPrivateMcpEngineerCredentialPort}
+import {createTrustedEngineerCredentialPort}
   from "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {createAuthenticatedEngineerServer}
   from "./engineer-approval-server.mjs";
@@ -805,7 +805,7 @@ async function strictRecoveringHost(config){
     deny("private Gateway must expose actual Planning registry retirement");
   if(!gateway.planningRetirementDurableConfigured())
     deny("private Gateway must persist Planning retirement across restarts");
-  const credentials=createOwnerPrivateMcpEngineerCredentialPort({
+  const credentials=createTrustedEngineerCredentialPort({
     adapterBaseUrl:recovery.adapterBaseUrl,bearerToken:recovery.adapterToken
   });
   return startTrustedEngineerLocalHost({

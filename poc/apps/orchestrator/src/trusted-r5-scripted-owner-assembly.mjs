@@ -20,7 +20,7 @@ import {SignedEngineerApprovalFileStore}
   from "../../../packages/orchestrator-runtime/src/signed-approval-store.ts";
 import {TrustedPlanningReviewGate}
   from "../../../packages/orchestrator-runtime/src/trusted-planning-review-gate.ts";
-import {createOwnerPrivateMcpEngineerCredentialPort}
+import {createTrustedEngineerCredentialPort}
   from "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {R5ScriptedNoProviderPlanningModel}
   from "../../../packages/orchestrator-runtime/src/trusted-r5-scripted-planning-model.ts";
@@ -109,7 +109,7 @@ async function assembleProtectedOwnerPlanningCore({
      !client.planningRetirementConfigured()||
      !client.planningRetirementDurableConfigured())
     deny("Gateway has no durable operational/Planning recovery and lease");
-  const credentials=createOwnerPrivateMcpEngineerCredentialPort({
+  const credentials=createTrustedEngineerCredentialPort({
     adapterBaseUrl:recovery.adapterBaseUrl,
     bearerToken:recovery.adapterToken
   });

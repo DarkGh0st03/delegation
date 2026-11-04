@@ -84,7 +84,7 @@ import {GiteaClient} from "../src/gitea-client.ts";
 import {OpaPolicyClient} from "../src/policy-client.ts";
 import {TrustedPlanningRevisions} from "../src/planning-revisions.ts";
 import {InMemoryAuditSink} from "../src/prepare.ts";
-import {createOwnerPrivateMcpEngineerCredentialPort} from
+import {createTrustedEngineerCredentialPort} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-crypto-port.ts";
 import {TrustedEngineerAuthoritySession} from
   "../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts";
@@ -479,7 +479,7 @@ const runtime=new GatewayRuntime(config,{
   // even after genuine operational authority is issued by Rust.
   executor:new GiteaReadOnlyExecutor(gitea)
 });
-const authorityClient=createOwnerPrivateMcpEngineerCredentialPort({
+const authorityClient=createTrustedEngineerCredentialPort({
   adapterBaseUrl:adapterUrl,bearerToken:engineerToken,timeoutMs:60000
 });
 const authority=new TrustedEngineerAuthoritySession({
