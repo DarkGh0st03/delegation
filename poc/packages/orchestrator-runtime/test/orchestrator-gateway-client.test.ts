@@ -122,7 +122,6 @@ test("R218 Orchestrator Gateway uses native Rust VP and never downgrades on nati
   };
   const client=new OrchestratorGatewayTransport({
    gatewayBaseUrl:"http://trusted-gateway.invalid",
-   adapterBaseUrl:"http://legacy-adapter.invalid",
    adapterToken:"PRIVATE_ORCHESTRATOR_BEARER",
    rootCredentialId:"urn:root:orchestrator",
    fetchFn
@@ -163,7 +162,6 @@ test("R218 canonical Orchestrator refuses a missing native socket before Gateway
  try{
   assert.throws(()=>new OrchestratorGatewayTransport({
    gatewayBaseUrl:"http://trusted-gateway.invalid",
-   adapterBaseUrl:"http://legacy-adapter.invalid",
    adapterToken:"PRIVATE_ORCHESTRATOR_BEARER",
    rootCredentialId:"urn:root:orchestrator",
    fetchFn:async()=>{throw Error("Forbidden Gateway request");}
@@ -173,5 +171,24 @@ test("R218 canonical Orchestrator refuses a missing native socket before Gateway
   else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=oldSocket;
   if(oldFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
   else process.env.APPROVED_RUNNER_NATIVE_MCP=oldFlag;
+ }
+});
+
+test("R240 historical Orchestrator HTTP signer requires explicit Adapter URL when native socket absent",()=>{
+ const priorSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ const priorFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ try{
+  delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  assert.throws(()=>new OrchestratorGatewayTransport({
+   gatewayBaseUrl:"http://trusted-gateway.invalid",
+   adapterToken:"PRIVATE_ORCHESTRATOR_BEARER",
+   rootCredentialId:"urn:r240:root"
+  }),/Historical Orchestrator HTTP signing requires explicit Adapter URL/u);
+ }finally{
+  if(priorSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=priorSocket;
+  if(priorFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=priorFlag;
  }
 });
