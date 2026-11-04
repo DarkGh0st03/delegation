@@ -21,6 +21,9 @@ assert.equal(typeof binding.start_engineer_core,"function");
 assert.equal(typeof binding.issue_engineer_root,"function");
 assert.equal(typeof binding.revoke_engineer_root,"function");
 
+const liveEvm=process.env.R233_NATIVE_EVM==="1";
+if(liveEvm&&process.env.ADAPTER_TRUST_PROFILE!=="evm")
+ throw Error("R233 EVM native proof requires actual EVM issuer configuration");
 const tokens=Object.freeze({
  engineer:"r225-native-engineer",
  gateway:"r225-native-gateway",
@@ -32,13 +35,15 @@ const tokens=Object.freeze({
 for(const [role,token] of Object.entries(tokens)){
  process.env["ADAPTER_CALLER_"+role.toUpperCase()]=token;
 }
-process.env.ADAPTER_ID_ENGINEER="did:thesis:engineer";
-process.env.ADAPTER_ID_ORCHESTRATOR="did:thesis:orchestrator";
-process.env.ADAPTER_ID_BACKEND="did:thesis:backend";
-process.env.ADAPTER_ID_FRONTEND="did:thesis:frontend";
-process.env.ADAPTER_ID_TEST="did:thesis:test";
-process.env.ADAPTER_ID_GATEWAY="urn:thesis:service:gateway";
-process.env.ADAPTER_TRUST_PROFILE="in-memory";
+if(!liveEvm){
+ process.env.ADAPTER_ID_ENGINEER="did:thesis:engineer";
+ process.env.ADAPTER_ID_ORCHESTRATOR="did:thesis:orchestrator";
+ process.env.ADAPTER_ID_BACKEND="did:thesis:backend";
+ process.env.ADAPTER_ID_FRONTEND="did:thesis:frontend";
+ process.env.ADAPTER_ID_TEST="did:thesis:test";
+ process.env.ADAPTER_ID_GATEWAY="urn:thesis:service:gateway";
+ process.env.ADAPTER_TRUST_PROFILE="in-memory";
+}
 
 const folder=mkdtempSync(join(tmpdir(),"eng-r225-"));
 const socketPath=join(folder,"owner.sock");
@@ -86,7 +91,12 @@ try{
  assert.equal(inspected.result.delegatee_id,process.env.ADAPTER_ID_ORCHESTRATOR);
  assert.deepEqual(inspected.result.permissions,[permission]);
  assert.equal(inspected.result.status.status_set,false);
- assert.equal(inspected.result.status.source,"adapter_memory_only");
+ assert.equal(inspected.result.status.source,
+  liveEvm?"evm_anchored_signed_jwt":"adapter_memory_only");
+ if(liveEvm){
+  assert.ok(Number.isSafeInteger(inspected.result.status.anchor_version));
+  assert.ok(inspected.result.status.anchor_version>=0);
+ }
  const forbiddenInspector=await invokeSocket(tokens.backend,"read_issued_root",{
   credential_id:root.credential_id
  });
@@ -113,6 +123,28 @@ try{
  assert.equal(typeof proof.result.signed_vp,"string");
  assert.ok(proof.result.signed_vp.length>16);
 
+ // Live mode uses the independently loaded PUBLIC-only Gateway Core Rust
+ // verifier to check signed VP, EVM trust, DID, accumulator and Status List.
+ // No JS verification, mock proof, HTTP Adapter or privileged issuer key.
+ let verifier;
+ const challenge="r225-native-gateway-challenge";
+ if(liveEvm){
+  const {loadDirectCoreRustVerifier}=await import(
+   "../../../apps/gateway/src/direct-core-loader.ts");
+  verifier=loadDirectCoreRustVerifier();
+  const checked=await verifier.verify({
+   presenter:"backend",audience:"cloud-access-gateway",challenge,
+   required_permission:permission,signed_vp:proof.result.signed_vp
+  });
+  assert.equal(checked.presenter_id,process.env.ADAPTER_ID_BACKEND);
+  assert.equal(checked.credential_id,child.credential_id);
+  await assert.rejects(()=>verifier.verify({
+   presenter:"backend",audience:"cloud-access-gateway",
+   challenge:"r233-invalid-challenge",
+   required_permission:permission,signed_vp:proof.result.signed_vp
+  }),/Rust Core rejected|VerificationRejected|rejected/u);
+ }
+
  // Ownership must not accidentally be re-exposed to the private socket.
  const forbidden=await invokeSocket(tokens.engineer,"issue_root",{
   ...root,credential_id:"urn:r225:illicit-socket-root",
@@ -129,6 +161,15 @@ try{
  assert.equal(observedRevocation.ok,true);
  assert.equal(observedRevocation.result.status_set,true);
  assert.equal(observedRevocation.result.status_purpose,"revocation");
+ assert.equal(observedRevocation.result.source,
+  liveEvm?"evm_anchored_signed_jwt":"adapter_memory_only");
+ if(liveEvm){
+  assert.ok(Number.isSafeInteger(observedRevocation.result.anchor_version));
+  await assert.rejects(()=>verifier.verify({
+   presenter:"backend",audience:"cloud-access-gateway",challenge,
+   required_permission:permission,signed_vp:proof.result.signed_vp
+  }),/Rust Core rejected|VerificationRejected|rejected/u);
+ }
 
  await assert.rejects(()=>binding.issue_engineer_root(
   tokens.backend,JSON.stringify({...root,credential_id:"urn:r225:wrong-role",
@@ -139,7 +180,10 @@ try{
   root_direct:true,child_native:true,signed_vp:true,root_socket_denied:true,
   root_revoked:true,cross_role_denied:true,no_http_adapter:true,
   same_issuer_gateway_inspected:true,gateway_status_revocation:true,
-  unauthorized_inspector_denied:true
+  unauthorized_inspector_denied:true,
+  mode:liveEvm?"live-evm":"in-memory",
+  evm_anchored_status:liveEvm,
+  independent_native_gateway_verification:liveEvm
  })+"\n");
 }finally{
  // The private Rust runtime belongs to this Node process, not to an HTTP
