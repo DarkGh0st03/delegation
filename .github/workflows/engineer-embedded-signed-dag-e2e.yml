@@ -242,6 +242,36 @@ jobs:
               }
             }catch{}
           }
+          const knownStages=new Set([
+            "create_org","create_empty_repo","grant_",
+            "create_reader_pat","create_publisher_pat","validate_publisher_identity",
+            "clone_immutable_public_baseline","inspect_repo_after_push","wait_post_receive_repository_state",
+            "inspect_post_receive_state","verify_isolated_main","verify_isolated_feature",
+            "protect_disposable_main","r150_gateway_opa_authorized_real_gitea_update","r150_gateway_new_test_real_docker_pass",
+            "r150_real_docker_typecheck_original_fail","r139_no_pr_after_fail","isolated_gitea_ready",
+            "isolated_opa_ready","disposable_accounts","commit_reference_implementation",
+            "f1_same_bootstrap_planning_only","f1_verify_unchanged_main","f1_verify_unchanged_reference",
+            "f1_verify_no_pr","r45_gitea_retired_branch_diff_audit","r45_check_unchanged_main",
+            "r45_check_unchanged_feature","source_derived_adk_real_gitea_no_golden","f1_gitea_pinned_unsolved_main",
+            "f1_gitea_full_readonly_research_snapshot","f1_real_gitea_gemini_probe_dry_run","f1_actual_adk_planner_scripted_on_real_gitea",
+            "native_preliminary_planning_real_disposable_gitea","activate_signed_gateway_test_task","real_docker_project_and_researcher_acceptance",
+            "verify_immutable_main","verify_exact_feature","read_real_security_statuses",
+            "verify_signed_dag_pull_request","verify_native_pr_exact_head","r139_disposable_two_sha_real_docker",
+            "complete_positive_security_ci_smoke"
+          ]);
+          const active=[];
+          let lastCompleted;
+          for(const entry of log.split(/\r?\n/u)){
+            const mark=/^\[trusted-positive-ci\] (start|ok) ([a-z0-9_]+)$/u.exec(entry);
+            if(!mark || !knownStages.has(mark[2]))continue;
+            if(mark[1]==="start")active.push(mark[2]);
+            else{
+              const index=active.lastIndexOf(mark[2]);
+              if(index>=0){active.splice(index,1);lastCompleted=mark[2];}
+            }
+          }
+          diagnostic.outer_stage=active.at(-1)??"unknown";
+          diagnostic.last_completed_stage=lastCompleted??"unknown";
           process.stderr.write(JSON.stringify(diagnostic)+"\n");
           NODE
             exit 1
