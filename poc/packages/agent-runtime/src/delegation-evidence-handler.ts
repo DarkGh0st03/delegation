@@ -1,5 +1,6 @@
 import type { DelegationEvidence } from "./contracts.ts";
 import { ControlledToolError } from "./controlled-errors.ts";
+import {invokeNativeCrypto} from "./native-crypto-ipc.ts";
 
 type FetchLike = typeof fetch;
 
@@ -19,6 +20,7 @@ export interface DelegationEvidenceHandlerConfig {
   adapterToken: string;
   evidence: DelegationEvidence;
   timeoutMs?: number;
+  nativeSocketPath?: string;
   fetchFn?: FetchLike;
   signal?: AbortSignal;
 }
@@ -28,6 +30,7 @@ export class DelegationEvidenceHandler {
   readonly #adapterToken: string;
   readonly #evidence: DelegationEvidence;
   readonly #timeoutMs: number;
+  readonly #nativeSocketPath?:string;
   readonly #fetch: FetchLike;
   readonly #signal?: AbortSignal;
 
@@ -46,6 +49,7 @@ export class DelegationEvidenceHandler {
     this.#adapterToken = config.adapterToken;
     this.#evidence = structuredClone(config.evidence);
     this.#timeoutMs = config.timeoutMs ?? 5_000;
+    this.#nativeSocketPath=config.nativeSocketPath;
     this.#fetch = config.fetchFn ?? fetch;
     this.#signal = config.signal;
   }
