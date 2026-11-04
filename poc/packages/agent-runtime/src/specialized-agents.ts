@@ -4,6 +4,9 @@ import { AgentController, type AgentRuntimeAuditSink } from "./agent-controller.
 import { ControlledToolRegistry } from "./tool-registry.ts";
 import type { GatewayControlledToolClient, SpecializedToolName } from "./gateway-tool-client.ts";
 
+import {LEGACY_ACCOUNT_SUSPENSION_PROFILES}
+ from "./fixtures/account-suspension-agent-profiles.ts";
+
 export interface SpecializedAgentProfile {
   role: SpecializedAgentRole;
   skill: string;
@@ -17,9 +20,6 @@ export interface SpecializedAgentProfile {
 
 // Compatibility only for explicitly historical, unsigned fixture tests.
 // Engineer-approved A2A Tasks use scenario-neutral approved role profiles.
-import {LEGACY_ACCOUNT_SUSPENSION_PROFILES}
- from "./fixtures/account-suspension-agent-profiles.ts";
-
 export const SPECIALIZED_AGENT_PROFILES:Readonly<
  Record<SpecializedAgentRole,SpecializedAgentProfile>
 >=LEGACY_ACCOUNT_SUSPENSION_PROFILES;
