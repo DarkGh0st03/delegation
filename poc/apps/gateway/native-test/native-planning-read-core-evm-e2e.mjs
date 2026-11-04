@@ -77,6 +77,7 @@ import {realPlanningParityManifest} from "../../../scripts/f1-real-planning-pari
 import {SIGNED_GEMINI_PILOT,verifySignedGeminiPilotConsent}
   from "../../../scripts/signed-gemini-pilot-consent.mjs";
 import {createGeminiAdkModel} from "../../../packages/agent-runtime/src/gemini-adk-model.ts";
+import {invokeNativeCrypto} from "../../../packages/agent-runtime/src/native-crypto-ipc.ts";
 import {GatewayRuntime} from "../src/runtime.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
 import {GiteaReadOnlyExecutor} from "../src/gitea-read-executor.ts";
@@ -348,6 +349,34 @@ class ScriptedReadPlanner extends BaseLlm{
   connect(){return Promise.reject(Error("Live LLM forbidden in offline test"));}
 }
 const adapterUrl="http://127.0.0.1:8090";
+async function signTrustedOrchestratorVp(body){
+  const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  if(socketPath){
+    // Root authority and presentation must use the SAME Rust CryptoRuntime
+    // as the canonical signed child/Agent route, without HTTP fallback.
+    const result=await invokeNativeCrypto({
+      socketPath,token,timeoutMs:30000
+    },"create_presentation",body);
+    const signed=result&&typeof result==="object"&&!Array.isArray(result)
+      ?result.signed_vp:undefined;
+    if(typeof signed!=="string"||signed.length<16)
+      throw Error("Native Rust Orchestrator root presentation unavailable");
+    return signed;
+  }
+  if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
+    throw Error("Canonical signed DAG requires native Rust root VP signing");
+  // Only non-canonical, historical offline fixtures may use Adapter HTTP.
+  const response=await fetch(adapterUrl+"/v1/presentations",{
+    method:"POST",headers:{
+      authorization:"Bearer "+token,"content-type":"application/json"
+    },body:JSON.stringify(body)
+  });
+  if(!response.ok)throw Error("Historical root VP signing rejected");
+  const parsed=await response.json();
+  if(typeof parsed.signed_vp!=="string"||parsed.signed_vp.length<16)
+    throw Error("Historical root VP signing malformed");
+  return parsed.signed_vp;
+}
 const opaUrl=process.env.OPA_URL??"http://127.0.0.1:8181";
 const log={giteaReads:0,prepares:0,executions:0};
 const fixtureGitea={
@@ -427,21 +456,11 @@ const ownerGatewayInspector=ownerDir?new TrustedGatewaySignedEpochInspector({
     audience:"urn:thesis:gateway:r133",
     verifier:loadDirectCoreRustVerifier(),
     signer:{async present(input){
-      const response=await fetch(adapterUrl+"/v1/presentations",{
-        method:"POST",headers:{
-          authorization:"Bearer "+token,"content-type":"application/json"
-        },
-        body:JSON.stringify({
-          credential_id:input.credential_id,
-          disclosed_permissions:input.disclosed_permissions,
-          audience:input.audience,challenge:input.challenge
-        })
+      return signTrustedOrchestratorVp({
+        credential_id:input.credential_id,
+        disclosed_permissions:input.disclosed_permissions,
+        audience:input.audience,challenge:input.challenge
       });
-      if(!response.ok)throw Error("Native owner original root VP signing failed");
-      const payload=await response.json();
-      if(typeof payload.signed_vp!=="string"||payload.signed_vp.length<16)
-        throw Error("Native owner original root VP missing");
-      return payload.signed_vp;
     }}
   })
 }):undefined;
@@ -742,17 +761,11 @@ try{
   // not merely the Adapter refusing to issue another JWT.
   const waiting=runtime.prepare({task_id:session,agent_role:"orchestrator",
     tool:"read_file",arguments:{branch:"main",path:file}});
-  const jwtResponse=await fetch(adapterUrl+"/v1/presentations",{
-    method:"POST",
-    headers:{authorization:"Bearer "+token,"content-type":"application/json"},
-    body:JSON.stringify({
-      credential_id:rootId,
-      disclosed_permissions:[waiting.required_permission],
-      audience:waiting.audience,challenge:waiting.challenge
-    })
+  const signedBeforeRevoke=await signTrustedOrchestratorVp({
+    credential_id:rootId,
+    disclosed_permissions:[waiting.required_permission],
+    audience:waiting.audience,challenge:waiting.challenge
   });
-  assert.equal(jwtResponse.status,200);
-  const signedBeforeRevoke=(await jwtResponse.json()).signed_vp;
   assert.ok(typeof signedBeforeRevoke==="string"&&signedBeforeRevoke.length>100);
   let operationalRootId,revocationChecked=false;
   if(signedHandoff){
@@ -1834,18 +1847,11 @@ try{
           }
         });
         branchRequestId=prepared.request_id;
-        const signed=await fetch(adapterUrl+"/v1/presentations",{
-          method:"POST",
-          headers:{authorization:"Bearer "+token,
-            "content-type":"application/json"},
-          body:JSON.stringify({
-            credential_id:opId,
-            disclosed_permissions:[prepared.required_permission],
-            audience:prepared.audience,challenge:prepared.challenge
-          })
+        const jwt=await signTrustedOrchestratorVp({
+          credential_id:opId,
+          disclosed_permissions:[prepared.required_permission],
+          audience:prepared.audience,challenge:prepared.challenge
         });
-        assert.equal(signed.status,200);
-        const jwt=(await signed.json()).signed_vp;
         assert.ok(typeof jwt==="string"&&jwt.length>100);
         await runtime.execute({request_id:prepared.request_id,signed_vp:jwt});
       }
