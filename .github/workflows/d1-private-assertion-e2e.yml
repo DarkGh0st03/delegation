@@ -6,7 +6,6 @@ name: D1 Private Assertions - Real Gitea Docker (No AI Billing)
     - refactor/post-prof-plan-contracts-20261021
     paths:
     - .github/ci-checkpoints/d1-assertion-ci-request.json
-    - .github/workflows/d1-private-assertion-e2e.yml
   workflow_dispatch: {}
 permissions:
   contents: read
@@ -164,13 +163,13 @@ jobs:
         echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
     - name: Build signed-credential Adapter and native Core Rust addon
       run: |
-        cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
+        cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked --features legacy-http
         cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
         mkdir -p poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
         cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
     - name: Start Adapter with public-only shared verification artifacts
       run: |
-        cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
+        cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked --features legacy-http > /tmp/native-evm-adapter.log 2>&1 &
         echo $! > /tmp/native-evm-adapter.pid
         for i in {1..100}; do
           if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then exit 0; fi

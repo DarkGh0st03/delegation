@@ -1,3 +1,18 @@
+> **R271 — Historical HTTP-only compatibility.** The canonical signed DAG
+> does not start this service. The `delegation-adapter` crate is still the
+> shared Rust `CryptoRuntime` used by the trusted Engineer Node-API addon,
+> but the network HTTP module and standalone executable now require the
+> explicit Cargo feature `legacy-http`. Use
+> `cargo run --manifest-path services/delegation-adapter/Cargo.toml --features legacy-http`
+> **only** for old isolated compatibility tests. In direct Engineer mode,
+> the executable additionally rejects startup to avoid a competing issuer.
+> Do not expose the old HTTP Adapter to ADK, A2A agents, or the Gateway.
+>
+> Normal `cargo build` / `cargo test` of this Rust library and its
+> native dependent crates do not need the feature. For isolated historical
+> HTTP tests, use `cargo test --manifest-path
+> services/delegation-adapter/Cargo.toml --features legacy-http`.
+
 # Rust Delegation Adapter
 
 The Delegation Adapter is the internal Rust service that exposes the existing delegated-authorization framework to the current trusted TypeScript Gateway and private Agent runtimes.

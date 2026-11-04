@@ -9,7 +9,6 @@ on:
       - "src/delegation/local/mod.rs"
       - "services/delegation-adapter/src/config.rs"
       - "services/delegation-adapter/src/evm_profile.rs"
-      - ".github/workflows/public-verification-artifacts-offline.yml"
   pull_request:
     paths:
       - "src/delegation/local/file_public_artifact_store.rs"
@@ -37,4 +36,4 @@ jobs:
       - name: Verify public material, accumulator and Status List tests
         run: cargo test --locked --all-features
       - name: Verify Adapter EVM and legacy regressions
-        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml --locked
+        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml --locked --features legacy-http

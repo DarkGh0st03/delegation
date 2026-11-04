@@ -112,7 +112,7 @@ jobs:
         run: |
           # This command must reject BEFORE EVM signing keys or an HTTP server
           # are initialized. A build failure is not accepted as a pass.
-          if cargo run --quiet --manifest-path services/delegation-adapter/Cargo.toml >/tmp/r233-retired-adapter-guard.log 2>&1; then
+          if cargo run --quiet --manifest-path services/delegation-adapter/Cargo.toml --features legacy-http >/tmp/r233-retired-adapter-guard.log 2>&1; then
             echo "Forbidden: legacy Adapter accepted native Engineer mode" >&2
             exit 1
           fi

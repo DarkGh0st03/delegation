@@ -97,7 +97,7 @@ jobs:
       - name: All Core Rust features including multipermission and public materials
         run: cargo test --locked --all-features
       - name: Rust Adapter backwards compatibility and EVM profile
-        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml --locked
+        run: cargo test --manifest-path services/delegation-adapter/Cargo.toml --locked --features legacy-http
       - name: Foundry smart contract tests
         run: forge test --root blockchain
 
@@ -208,7 +208,7 @@ jobs:
           echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
       - name: Build signed-credential Adapter and native Core Rust addon
         run: |
-          cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
+          cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked --features legacy-http
           cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
           mkdir -p poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
@@ -219,7 +219,7 @@ jobs:
           export ADAPTER_ENGINEER_NATIVE_SOCKET="$RUNNER_TEMP/delegation-engineer-$GITHUB_RUN_ID.sock"
           echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$ADAPTER_ENGINEER_NATIVE_SOCKET" >> "$GITHUB_ENV"
           test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
-          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
+          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked --features legacy-http > /tmp/native-evm-adapter.log 2>&1 &
           echo $! > /tmp/native-evm-adapter.pid
           for i in {1..100}; do
             if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1 &&
