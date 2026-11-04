@@ -53,7 +53,10 @@ async function invokeSocket(token,operation,body){
  return new Promise((resolve,reject)=>{
   const socket=createConnection({path:socketPath,allowHalfOpen:true});
   let raw="";
-  socket.setTimeout(15000,()=>socket.destroy(Error("socket timeout")));
+  // EVM-anchored Status List publication can require multiple disposable
+  // local chain transactions; keep a bounded but realistic smoke timeout.
+  socket.setTimeout(liveEvm?60_000:15_000,
+   ()=>socket.destroy(Error("socket timeout")));
   socket.on("connect",()=>socket.end(JSON.stringify({token,operation,body})));
   socket.on("data",chunk=>raw+=chunk.toString("utf8"));
   socket.once("error",reject);
