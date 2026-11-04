@@ -386,3 +386,18 @@ A new Fast CI audit regression verifies that allowlist is exactly three
 paths and rejects new static/dynamic/configured callers. This is an
 isolated test exception, not an expanded runtime authorization permission.
 The signed Rust/Gateway/OPA controls remain unchanged.
+
+## R246 — observed R245 signed-DAG child crash now yields bounded root-cause metadata
+
+R245 #41869314083 passed Rust builds, DID/EVM bootstrap, direct Gateway
+startup and reached the signed Gitea/Docker DAG before failing. The
+public wrapper reported only `first_failed_phase: unknown`, because the
+trusted subprocess did not emit a structured Docker-phase receipt.
+R246 instruments its trusted execution boundaries with a finite phase
+name (root, planning, Engineer approval, ADK model binding, signed A2A,
+DAG assertions). The child sanitizes category, kind, code and trusted
+module/line; the parent revalidates these fields before CI emits fixed
+enums. No raw error messages, source, tokens, provider payloads or stacks
+are published. Fast CI tests normal and adversarial diagnostic envelopes.
+Do not claim this fixes the underlying R245 runtime failure until the
+next independent full E2E identifies its source.

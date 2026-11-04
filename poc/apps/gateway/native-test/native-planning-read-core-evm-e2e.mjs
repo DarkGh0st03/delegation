@@ -53,6 +53,8 @@ import {GatewayCorroboratedTaskAttestor} from
   "../src/trusted-task-observation.ts";
 import {runNativePositiveApprovedDag} from "./native-approved-planner-dag-positive.mjs";
 import {safeApprovedDagFailureTrace} from "./native-approved-dag-failure-category.mjs";
+import {PREFIX as NATIVE_DAG_FAILURE_PREFIX,safeNativePhaseFailure}
+ from "./native-signed-dag-phase-diagnostic.mjs";
 import {preflightApprovedPilotDag} from "./approved-dag-preflight.mjs";
 import {OfflineApprovedAdkModel} from "./offline-approved-adk-model.mjs";
 import {SourceWitnessedOfflineAdkModel}
@@ -564,6 +566,7 @@ const root={
     statusListCredential:"https://status.example/lists/native-planning-read"}
 };
 let issued=false,revoked=false;
+let nativeDagStage="root_issuance";
 let pilotStage="setup",pilotModelTurns=0,pilotModelFailure="none";
 let nativeOwnerIpcServer,ownerD1ReviewEvidence;
 let pilotDelegatedPhase="not_started",pilotDelegatedFailure="none";
@@ -594,6 +597,7 @@ try{
   assert.equal(log.executions,noWrite);
   // Gemini receives the SAME trusted Gitea-backed read-only Gateway tools.
   // No offline planSketch is passed to the model in the consented pilot.
+  nativeDagStage="planning_scope";
   const model=geminiPilot
     ?createGeminiAdkModel({
       apiKey:process.env.GEMINI_API_KEY,
@@ -784,6 +788,7 @@ try{
   assert.ok(typeof signedBeforeRevoke==="string"&&signedBeforeRevoke.length>100);
   let operationalRootId,revocationChecked=false;
   if(signedHandoff){
+    nativeDagStage="engineer_review_and_root";
     if(geminiPilot)pilotStage="signed_test_review";
     const packet=reviewGate.stageTrustedProposal(proposed);
     assert.equal(packet.status,"awaiting_engineer_signature");
@@ -1474,6 +1479,7 @@ try{
           }
         };
       }
+      nativeDagStage="agent_model_binding";
       let approvedAgentModelFactory,acceptanceFaultPath;
       if(geminiPilot||
          process.env.APPROVED_RUNNER_HOST_SELECTED_ADK_MODELS==="1"){
@@ -1623,6 +1629,7 @@ try{
         };
       }
       if(geminiPilot)pilotStage="delegated_agents_gitea_docker";
+      nativeDagStage="signed_a2a_dispatch";
       globalThis.__nativeDagPositive=await runNativePositiveApprovedDag({
         coordinator,reviewGate,approvedPlans,
         ...(approvedAgentModelFactory?{approvedAgentModelFactory}:{}),
@@ -1652,6 +1659,7 @@ try{
           test:process.env.ADAPTER_CALLER_TEST
         }
       });
+      nativeDagStage="positive_dag_assertions";
       if(signedOfflineTypecheckProbe||signedOfflineSemanticProbe||
          (paidGeminiRecovery&&globalThis.__nativeDagPositive?.status===
            "trusted_owner_repair_handoff_retired")){
@@ -1961,6 +1969,10 @@ try{
   }));
 }catch(error){
   if(error!==PLANNING_ONLY_COMPLETED){
+  if(!geminiPilot){
+    process.stderr.write(NATIVE_DAG_FAILURE_PREFIX+
+      JSON.stringify(safeNativePhaseFailure(error,nativeDagStage))+"\n");
+  }
   if(geminiPilot){
     // A fixed-vocabulary diagnostic only; never forward provider exception
     // text, model prompts, repository source, tool args, or authorization.

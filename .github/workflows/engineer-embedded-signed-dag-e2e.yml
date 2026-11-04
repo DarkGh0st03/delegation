@@ -189,7 +189,27 @@ jobs:
                  first_failed_phase:typeof v.first_failed_phase==="string"&&
                    ["dependency_install","typecheck","backend_tests","frontend_tests",
                     "build","playwright_e2e","researcher_acceptance"].includes(v.first_failed_phase)
-                   ?v.first_failed_phase:"unknown"};
+                   ?v.first_failed_phase:"unknown",
+                 native_stage:["root_issuance","planning_scope","engineer_review_and_root",
+                  "agent_model_binding","signed_a2a_dispatch","positive_dag_assertions",
+                  "root_revocation"].includes(v.native_phase_failure?.stage)
+                  ?v.native_phase_failure.stage:"unknown",
+                 native_cause:["a2a_dispatch_failed","orchestrator_task_failed",
+                  "root_revocation_unconfirmed","dependency_denied","adk_model_failure",
+                  "controlled_tool_failure","no_confirmed_revision","a2a_task_not_completed",
+                  "a2a_artifact_invalid","a2a_result_mismatch","attestation_effect_race",
+                  "approved_plan_denied","test_assertion","unclassified"]
+                  .includes(v.native_phase_failure?.category)
+                  ?v.native_phase_failure.category:"unknown",
+                 native_kind:["Error","AssertionError","TypeError","RangeError",
+                  "SyntaxError","AbortError","TimeoutError","AggregateError","unknown"]
+                  .includes(v.native_phase_failure?.kind)
+                  ?v.native_phase_failure.kind:"unknown",
+                 native_code:["ERR_ASSERTION","approved_plan_denied","ERR_INVALID_ARG_TYPE",
+                  "ERR_HTTP_HEADERS_SENT","ECONNRESET","ETIMEDOUT","ECONNREFUSED",
+                  "ABORT_ERR","ERR_INVALID_STATE","unknown"]
+                  .includes(v.native_phase_failure?.code)
+                  ?v.native_phase_failure.code:"unknown"};
               }
             }catch{}
           }

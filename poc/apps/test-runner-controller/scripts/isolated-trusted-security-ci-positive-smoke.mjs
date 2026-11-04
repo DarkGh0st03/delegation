@@ -1,5 +1,7 @@
 import {buildNativePreliminaryEnvironment} from "./native-preliminary-environment.mjs";
 import {selectNativeOwnerPasses} from "./direct-engineer-owner-pass-selector.mjs";
+import {readNativePhaseFailure}
+ from "../../gateway/native-test/native-signed-dag-phase-diagnostic.mjs";
 /**
  * REAL positive exact-SHA CI integration — isolated disposable Gitea.
  *
@@ -1086,6 +1088,7 @@ async function main(){
           const childStderr=Buffer.isBuffer(error?.stderr)?
             error.stderr.toString("utf8"):
             typeof error?.stderr==="string"?error.stderr:"";
+          const nativePhaseFailure=readNativePhaseFailure(childStderr);
           if(realGeminiPilot){
             // Re-emit only bounded, parsed usage observations: no raw stdout.
             for(const event of safeGeminiPilotChildObservations(error?.stdout))
@@ -1284,6 +1287,7 @@ async function main(){
               ...(evidence??{diagnosis:"no_structured_phase_status"}),
               ...(offlineLocation?{assertion_location:offlineLocation}:{}),
               ...(multiTestDiagnostic?{multi_test_diagnostic:multiTestDiagnostic}:{}),
+              ...(nativePhaseFailure?{native_phase_failure:nativePhaseFailure}:{}),
               ...(geminiDiagnostic?{gemini_pilot_diagnostic:geminiDiagnostic}:{}),
               signed_dag_completed:false,
               permissions_bypassed:false
