@@ -536,3 +536,38 @@ nor do they establish a paid Gemini autonomous repair success.
 same-SHA zero-billing Full CI release request. Avoid treating prior
 R219 (or R214) results as evidence for the new source SHA. No paid
 workflow is authorized, and `main` is unchanged.
+
+## R221–R222 — standalone Shared MCP and private worker retired from canonical runtime
+
+The historic `poc/mcp-shared/src/main.ts` is now an unconditional
+fail-closed executable stub. Running its existing npm start command fails
+with `standalone_shared_mcp_launcher_retired` before any Shared MCP
+HTTP listener is constructed. This is intentional: stale service launch
+commands cannot revive repository or crypto HTTP routing.
+
+The production A2A launcher was already native-only in R220. R222 extends
+the boundary into the generic A2A library:
+
+- `adk-a2a-handler.ts` now constructs **only**
+  `LocalCryptoMcpBridge` for configured Task MCP, and rejects
+  `mcpCryptoUrl` even when a stale JavaScript caller supplies an empty value.
+- `server.ts` no longer imports/mounts `attachPrivateMcpWorker` and
+  refuses stale remote crypto configuration before opening its A2A listener.
+  The role-specific A2A REST and Agent Card routes remain.
+- The historical `http-server.ts`, `crypto-worker-router.ts`,
+  `private-mcp-worker-http.ts` and `TrustedCryptoMcpBridge` source
+  modules are preserved **only for explicit legacy SDK unit tests**.
+  Their presence is not evidence that they run inside the canonical DAG.
+
+Negative regression tests verify that the stale standalone executable
+cannot start and that an A2A server refuses the old remote-MCP flag.
+The R165 factory scanner is updated to enforce *absence* of the standalone
+launcher call instead of requiring its former presence; R180's production
+audit now rejects all A2A private HTTP worker mounts.
+
+**Proof boundary:** these are committed source/test changes; no passing
+Fast CI or full same-SHA integration evidence for R221/R222 has yet been
+independently confirmed. A new free CI checkpoint must be prepared on a
+stable SHA once focused validation passes. Retaining historical test-only
+code until CI confirmation does not create an active Shared MCP service.
+No paid inference is authorized and `main` remains unchanged.
