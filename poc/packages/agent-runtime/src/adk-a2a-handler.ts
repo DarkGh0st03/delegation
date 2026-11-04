@@ -11,6 +11,7 @@ import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
 import {TrustedCryptoMcpBridge} from "./trusted-crypto-mcp-bridge.ts";
+import {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
 import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A,
  type TrustedBackendDiscoveryA2ABinding} from "./trusted-backend-discovery-a2a-binding.ts";
 import type { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
@@ -195,8 +196,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   if(["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
        .some(key=>Object.prototype.hasOwnProperty.call(config,key)))
     throw Error("legacy_repository_mcp_retired");
-  if(Boolean(config.mcpCryptoUrl)!==Boolean(config.mcpTaskRegistry))
-    throw Error("MCP service requires a private task registry");
+  if(config.mcpCryptoUrl&&!config.mcpTaskRegistry)
+    throw Error("Remote MCP service requires a private task registry");
   if (!config.adapterToken?.trim() || !config.adapterBaseUrl?.trim() || !config.gatewayBaseUrl?.trim()) {
     throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
   }
@@ -268,11 +269,15 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       createPresentation:(p:import("./delegation-evidence-handler.ts")
        .PreparedGatewayAuthorization)=>selectedDiscovery.createSignedPresentation(p)
     }:undefined;
-    const cryptoPresentation = config.mcpCryptoUrl && config.mcpTaskRegistry
-      ? new TrustedCryptoMcpBridge({
-          endpoint:config.mcpCryptoUrl,registry:config.mcpTaskRegistry,
-          taskId:context.task_id
-        })
+    const cryptoPresentation = config.mcpTaskRegistry
+      ? (config.mcpCryptoUrl
+          ? new TrustedCryptoMcpBridge({
+              endpoint:config.mcpCryptoUrl,registry:config.mcpTaskRegistry,
+              taskId:context.task_id
+            })
+          : new LocalCryptoMcpBridge({
+              registry:config.mcpTaskRegistry,taskId:context.task_id
+            }))
       : selectedDiscovery;
     const gatewayClient = new GatewayControlledToolClient({
       gatewayBaseUrl: config.gatewayBaseUrl,

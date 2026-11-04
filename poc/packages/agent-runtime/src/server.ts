@@ -110,7 +110,10 @@ export async function startSpecializedAgentServer(
   );
 
   const app = express();
-  if (mcpTaskRegistry) attachPrivateMcpWorker(app,mcpTaskRegistry);
+  // Task-local crypto SDK transport has no HTTP worker. Only the
+  // explicitly configured external compatibility path mounts this route.
+  if (mcpTaskRegistry&&options.adk?.mcpCryptoUrl)
+    attachPrivateMcpWorker(app,mcpTaskRegistry);
   app.use(
     `/${AGENT_CARD_PATH}`,
     agentCardHandler({ agentCardProvider: requestHandler })

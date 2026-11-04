@@ -24,3 +24,5 @@ export {TrustedBackendDiscoveryTaskSlot} from "./trusted-backend-discovery-task-
 export {createTrustedBackendDiscoveryTaskBindingServer,TrustedBackendDiscoveryTaskBindingSocketClient} from "./trusted-backend-discovery-task-binding-ipc.ts";
 
 export {startTrustedBackendDiscoveryHost} from "./trusted-backend-discovery-host.ts";
+
+export {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
