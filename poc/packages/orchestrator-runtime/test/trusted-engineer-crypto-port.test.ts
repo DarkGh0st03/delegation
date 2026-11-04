@@ -4,6 +4,8 @@ import {createOwnerPrivateMcpEngineerCredentialPort,createTrustedEngineerCredent
  from "../src/trusted-engineer-crypto-port.ts";
 import {createOwnerPrivateMcpChildCryptographyPort}
  from "../src/trusted-child-crypto-port.ts";
+import {createDirectRustEngineerCredentialPort}
+ from "../src/trusted-engineer-direct-core-port.ts";
 import {TrustedEngineerAuthoritySession}
  from "../src/trusted-engineer-authority.ts";
 import {makeApproval} from "../../plan-contracts/src/plan.mjs";
@@ -144,6 +146,87 @@ test("R218 canonical root and child DC fail closed without a native Rust socket"
  }finally{
   if(previousFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
   else process.env.APPROVED_RUNNER_NATIVE_MCP=previousFlag;
+  if(previousSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=previousSocket;
+ }
+});
+
+test("R225 Engineer directly calls embedded Rust API for prelim/operational roots and revocation",async()=>{
+ const calls:{op:string;token:string;body:Record<string,unknown>}[]=[];
+ const secret="PRIVATE_ENGINEER_BEARER";
+ const binding={
+  start_engineer_core(){throw Error("Injected offline binding must not auto-start");},
+  async issue_engineer_root(token:string,payload:string){
+   const body=JSON.parse(payload) as Record<string,unknown>;
+   calls.push({op:"issue_root",token,body});
+   return JSON.stringify({id:body.credential_id,
+    credentialSubject:{per:body.permissions}});
+  },
+  async revoke_engineer_root(token:string,payload:string){
+   const body=JSON.parse(payload) as Record<string,unknown>;
+   calls.push({op:"revoke_root",token,body});
+   return JSON.stringify({credential_id:body.credential_id,
+    status_set:true,status_purpose:"revocation"});
+  }
+ };
+ const port=createDirectRustEngineerCredentialPort({
+  adapterBaseUrl:"http://127.0.0.1:1",
+  bearerToken:secret,
+  fetchFn:async()=>{throw Error("Adapter HTTP must not be invoked");}
+ },binding);
+ const request={...root("urn:r225:preliminary","925",600),
+  permissions:[{operation:"read_repository",resource:uri}]};
+ const issued=await port.issueScopedOrchestratorRoot(request);
+ assert.equal(issued.id,"urn:r225:preliminary");
+ assert.deepEqual(calls[0]?.body.permissions,request.permissions);
+ assert.equal(calls[0]?.body.delegatee,"orchestrator");
+ await port.revokeRoot("urn:r225:preliminary");
+ assert.deepEqual(calls[1]?.body,{
+  credential_id:"urn:r225:preliminary",status_set:true});
+ await port.issueScopedOrchestratorRoot({
+  ...root("urn:r225:operational","926",3600),
+  permissions:[{operation:"update_file",resource:file}]
+ });
+ assert.deepEqual(calls.map(c=>c.op),
+  ["issue_root","revoke_root","issue_root"]);
+ assert.ok(calls.every(c=>c.token===secret));
+});
+
+test("R225 direct Rust Engineer rejects changed grants and private signer failures without HTTP fallback",async()=>{
+ const config={adapterBaseUrl:"http://127.0.0.1:1",
+  bearerToken:"PRIVATE_ENGINEER_BEARER"};
+ const initial={...root("urn:r225:root","927",600),
+  permissions:[{operation:"read_repository",resource:uri}]};
+ const altered=createDirectRustEngineerCredentialPort(config,{
+  start_engineer_core(){},
+  async issue_engineer_root(){return JSON.stringify({
+   id:initial.credential_id,
+   credentialSubject:{per:[{operation:"update_file",resource:uri}]}
+  });},
+  async revoke_engineer_root(){throw Error("PRIVATE_SIGNER_KEY");}
+ });
+ await assert.rejects(()=>altered.issueScopedOrchestratorRoot(initial),
+  /Trusted Software Engineer direct Rust Core unavailable/u);
+ await assert.rejects(()=>altered.revokeRoot(initial.credential_id),
+  error=>{
+   assert.match(String(error),/Trusted Software Engineer direct Rust Core unavailable/u);
+   assert.doesNotMatch(String(error),/PRIVATE_SIGNER_KEY/u);
+   return true;
+  });
+});
+
+test("R225 direct Engineer selector never silently downgrades when native addon is unavailable",()=>{
+ const previousMode=process.env.ENGINEER_CORE_NATIVE_MODE;
+ const previousSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ try{
+  process.env.ENGINEER_CORE_NATIVE_MODE="1";
+  process.env.ADAPTER_ENGINEER_NATIVE_SOCKET="relative.sock";
+  assert.throws(()=>createTrustedEngineerCredentialPort({
+   adapterBaseUrl:"http://127.0.0.1:1",bearerToken:"PRIVATE_ENGINEER_BEARER"
+  }),/Direct Engineer Core requires sole native Rust delegate socket/u);
+ }finally{
+  if(previousMode===undefined)delete process.env.ENGINEER_CORE_NATIVE_MODE;
+  else process.env.ENGINEER_CORE_NATIVE_MODE=previousMode;
   if(previousSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
   else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=previousSocket;
  }
