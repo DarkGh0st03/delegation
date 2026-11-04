@@ -76,3 +76,38 @@ signed DAG with the old Adapter process disabled before the project
 can switch its default deployment from socket-issuer to direct Engineer
 binding, retire the Adapter HTTP executable, or claim migration
 complete.
+
+## R231 — authenticated Gateway read-only issuer inspection
+
+The Engineer-owned Rust process now exposes two additional **read-only**
+operations on the **same local native Unix socket**:
+`read_issued_root` and `read_credential_status`. Both are restricted
+by Rust to an authenticated **Gateway** caller with
+`VerifyPresentation` capability. The Rust implementation reads its
+existing credential registry and, in EVM mode, verifies the current
+anchored signed Status List JWT; it does **not** duplicate signing
+material or create a second issuer.
+
+`TrustedGatewayNativeRootStatusReader` uses that socket instead of
+the Adapter HTTP endpoints when `ENGINEER_CORE_NATIVE_MODE=1`.
+It rejects an absent native socket, a request to install an HTTP
+`fetchFn` fallback alongside native mode, malformed records and
+revoked/unanchored status. In the current implementation it internally
+wraps the native result as a `Response` to reuse the preexisting
+root/status JSON validation. That is an **in-process JS object**, not
+an HTTP request.
+
+**Important distinction:** the direct public-only Gateway Rust addon
+remains responsible for cryptographically verifying signed VP, DID,
+EVM accumulators and live status. The new read-only issuer socket is
+strictly an *additional issuer-inventory corroboration* used by the
+signed planning/owner gate. It must never be substituted for VP
+verification or OPA/Task authorization.
+
+The new in-memory Rust smoke tests native root issuance, Gateway-only
+root inspection and observable revocation; separate Gateway Node
+tests exercise the EVM-anchored record *shape and fail-closed
+transport semantics* with a synthetic native responder. An actual
+EVM-anchored Engineer-owned source + live signed DAG with **no Adapter
+HTTP process** remains a future CI gate. No independent EVM success is
+claimed by the synthetic fixture.
