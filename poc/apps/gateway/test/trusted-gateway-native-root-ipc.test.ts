@@ -57,7 +57,7 @@ test("R231 Gateway reads real native issuer observation API without Adapter HTTP
   rmSync(folder,{recursive:true,force:true});
  });
  const reader=new TrustedGatewayNativeRootStatusReader({
-  baseUrl:"http://127.0.0.1:1",gatewayToken:GATEWAY_TOKEN,
+  gatewayToken:GATEWAY_TOKEN,
   nativeSocketPath:socketPath,timeoutMs:1000
  });
  const issued=await reader.readIssuedRoot(ROOT_ID);
