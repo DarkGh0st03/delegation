@@ -1,0 +1,14 @@
+{
+  "schema": "delegation-native-engineer-evm-checkpoint-v1",
+  "checkpoint": "R234 — direct Software Engineer Rust Node-API + native Gateway signed EVM VP and revocation",
+  "candidate_parent_sha": "0df6f47ea4f8de3975e692da4bb033376045df81",
+  "workflow": "engineer-direct-native-evm-e2e.yml",
+  "paid_model_invocation": false,
+  "activate_once": true,
+  "purpose": "One zero-LLM-billing live EVM Anvil/DID/Status List proof for direct Engineer root/DC revocation, same Rust issuer delegated Child and signed Backend VP, Gateway issuer inspection through native IPC, independent Core Rust Gateway VP verification and wrong nonce/after-revocation denial. Never launch legacy Adapter HTTP or Gemini.",
+  "scope_exclusions": [
+    "No paid API",
+    "No main mutation",
+    "No Gitea/Docker full signed DAG until this native EVM gate passes"
+  ]
+}
