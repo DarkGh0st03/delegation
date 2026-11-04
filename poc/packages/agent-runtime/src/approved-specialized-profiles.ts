@@ -6,7 +6,7 @@
  * lists belong to an approved specialist role profile.
  *
  * The historical Account Suspension fixture lives separately in
- * specialized-agents.ts for old deterministic, UNSIGNED regression tests.
+ * fixtures/account-suspension-agent-profiles.ts for UNSIGNED regression tests.
  */
 import type {SpecializedAgentRole} from "./contracts.ts";
 import type {SpecializedAgentProfile} from "./specialized-agents.ts";
