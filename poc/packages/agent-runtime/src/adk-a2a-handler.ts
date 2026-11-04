@@ -10,7 +10,6 @@ import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
 import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
-import {TrustedCryptoMcpBridge} from "./trusted-crypto-mcp-bridge.ts";
 import {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
 import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A,
  type TrustedBackendDiscoveryA2ABinding} from "./trusted-backend-discovery-a2a-binding.ts";
@@ -39,8 +38,6 @@ export interface AdkA2ATaskHandlerConfig {
   gatewayTimeoutMs?: number;
   /** Private Task signer for one-shot crypto VP proofs; not model tools. */
   mcpTaskRegistry?:PrivateMcpTaskRegistry;
-  /** Crypto-only MCP service; never included in ADK model-visible tools. */
-  mcpCryptoUrl?:string;
   /** Opt-in private Child signer for one exact Gateway-bound Backend read. */
   trustedBackendDiscovery?:TrustedBackendDiscoveryA2ABinding;
   /** Trusted Backend host's dynamic, one-use owner-prebound discovery slot. */
@@ -196,14 +193,16 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   if(["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
        .some(key=>Object.prototype.hasOwnProperty.call(config,key)))
     throw Error("legacy_repository_mcp_retired");
-  if(config.mcpCryptoUrl&&!config.mcpTaskRegistry)
-    throw Error("Remote MCP service requires a private task registry");
+  // Reject even an empty retired field supplied by a stale JavaScript
+  // launcher. The ADK executor has no remote cryptographic MCP transport.
+  if(Object.prototype.hasOwnProperty.call(config,"mcpCryptoUrl"))
+    throw Error("legacy_crypto_http_mcp_retired");
   // The canonical approved DAG uses only task-local MCP crypto and the
   // SAME native Rust issuer holding the root/child credential state.
   // Reject absent native signer and remote MCP configurations at bootstrap.
   if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&(
        !process.env.ADAPTER_ENGINEER_NATIVE_SOCKET||
-       !config.mcpTaskRegistry||config.mcpCryptoUrl))
+       !config.mcpTaskRegistry))
     throw Error("Canonical signed A2A requires native Rust and task-local crypto MCP");
   if (!config.adapterToken?.trim() || !config.adapterBaseUrl?.trim() || !config.gatewayBaseUrl?.trim()) {
     throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
@@ -271,9 +270,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(signal ? {signal} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
-    // The MCP crypto worker and direct Gateway client use the SAME
-    // exact-Child presentation. Never fall back to the generic Adapter
-    // bearer on this Task, including when shared MCP is enabled.
+    // The task-local crypto MCP and direct Gateway client use the SAME
+    // exact-Child presentation. Never fall back to a generic Adapter bearer.
     const discoveryEvidence=selectedDiscovery?{
       credentialId:context.delegation_evidence.credential_id,
       presenterId:context.delegation_evidence.presenter_id,
@@ -281,14 +279,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
        .PreparedGatewayAuthorization)=>selectedDiscovery.createSignedPresentation(p)
     }:undefined;
     const cryptoPresentation = config.mcpTaskRegistry
-      ? (config.mcpCryptoUrl
-          ? new TrustedCryptoMcpBridge({
-              endpoint:config.mcpCryptoUrl,registry:config.mcpTaskRegistry,
-              taskId:context.task_id
-            })
-          : new LocalCryptoMcpBridge({
-              registry:config.mcpTaskRegistry,taskId:context.task_id
-            }))
+      ? new LocalCryptoMcpBridge({
+          registry:config.mcpTaskRegistry,taskId:context.task_id
+        })
       : selectedDiscovery;
     const gatewayClient = new GatewayControlledToolClient({
       gatewayBaseUrl: config.gatewayBaseUrl,
