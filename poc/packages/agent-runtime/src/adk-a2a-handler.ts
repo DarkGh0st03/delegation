@@ -29,7 +29,8 @@ type FetchLike = typeof fetch;
 export interface AdkA2ATaskHandlerConfig {
   model: BaseLlm;
   gatewayBaseUrl: string;
-  adapterBaseUrl: string;
+  /** Optional for native task-local Rust; legacy unsigned HTTP fixtures only. */
+  adapterBaseUrl?: string;
   adapterToken: string;
   maxModelTurns?: number;
   maxModelCallMs?: number;
@@ -204,8 +205,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
        !process.env.ADAPTER_ENGINEER_NATIVE_SOCKET||
        !config.mcpTaskRegistry))
     throw Error("Canonical signed A2A requires native Rust and task-local crypto MCP");
-  if (!config.adapterToken?.trim() || !config.adapterBaseUrl?.trim() || !config.gatewayBaseUrl?.trim()) {
-    throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
+  if (!config.adapterToken?.trim() || !config.gatewayBaseUrl?.trim() ||
+      (process.env.APPROVED_RUNNER_NATIVE_MCP!=="1"&&!config.adapterBaseUrl?.trim())) {
+    throw new Error("ADK protected task handler requires Gateway, role token and an available cryptographic transport");
   }
   const turnLimit = config.maxModelTurns ?? 8;
   const maxModelCallMs = config.maxModelCallMs ?? 60_000;
