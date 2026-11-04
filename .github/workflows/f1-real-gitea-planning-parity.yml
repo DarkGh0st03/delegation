@@ -159,7 +159,7 @@ jobs:
           node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
           if ! npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller > /tmp/f1-real-gitea-only.log 2>&1; then
             echo "::error::F1 real-Gitea Planning-only failed; private log not published"
-            grep -E '^\[trusted-positive-ci\] (start|ok|docker_failure) ' /tmp/f1-real-gitea-only.log || true
+            grep -E '^\[trusted-positive-ci\] (start|ok|docker_failure|f1_offline_child_failure) ' /tmp/f1-real-gitea-only.log || true
             exit 1
           fi
           node --input-type=module <<'NODE'

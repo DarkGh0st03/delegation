@@ -2,6 +2,8 @@ import {buildNativePreliminaryEnvironment} from "./native-preliminary-environmen
 import {selectNativeOwnerPasses} from "./direct-engineer-owner-pass-selector.mjs";
 import {safeDisposableDockerFailure}
  from "./disposable-docker-safe-diagnostic.mjs";
+import {safeF1OfflinePlanningFailure}
+ from "./f1-safe-offline-planning-failure.mjs";
 import {readNativePhaseFailure}
  from "../../gateway/native-test/native-signed-dag-phase-diagnostic.mjs";
 /**
@@ -838,6 +840,11 @@ async function main(){
         });}catch(error){
           // One strictly limited, non-source-bearing diagnostic. The raw
           // child stdout/stderr is NEVER printed to GitHub Action logs.
+          if(!paidOnly){
+            const diagnostic=safeF1OfflinePlanningFailure(error?.stderr);
+            process.stderr.write("[trusted-positive-ci] f1_offline_child_failure "+
+              JSON.stringify(diagnostic)+"\n");
+          }
           if(paidOnly){
             // execFileSync with encoding:utf8 produces STRING stderr.
             // Never publish raw provider errors, credentials or source code.
