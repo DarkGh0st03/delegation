@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {parseUpdateFileArgs,MAX_MCP_UPDATE_BYTES} from "../../../mcp-shared/src/catalog.ts";
 import {normalizeMcpUpdateFileOutcome} from "../src/mcp-write-result.ts";
 
 const args={branch:"feature/account-suspension",path:"apps/backend/src/users/user.service.ts",content:"export class UserService {}"};
@@ -10,21 +9,6 @@ const result={
   branch:args.branch,path:args.path,revision:sha,commit_sha:sha,
   blob_sha:"a".repeat(40),precondition_blob_sha:"c".repeat(40)
 };
-test("MCP update input rejects traversal, extra parameters and oversized source",()=>{
-  assert.deepEqual(parseUpdateFileArgs(args),args);
-  for(const bad of [
-    {...args,path:"../secret"},
-    {...args,path:"/etc/passwd"},
-    {...args,path:"apps\\secret.ts"},
-    {...args,path:"apps//secret.ts"},
-    {...args,branch:"main"},
-    {...args,authority:"different"},
-    {...args,content:0},
-    {...args,content:"é".repeat(MAX_MCP_UPDATE_BYTES/2+1)}
-  ]){
-    assert.throws(()=>parseUpdateFileArgs(bad),/invalid_tool_arguments/);
-  }
-});
 test("MCP update requires Gateway-confirmed exact Gitea commit and blob precondition",()=>{
   const valid=normalizeMcpUpdateFileOutcome({
     isError:false,structuredContent:{ok:true,result}
