@@ -34,16 +34,20 @@ There is **no** `poc/mcp-shared/src/main.ts` executable or npm `start`
 command. The obsolete remote `TrustedCryptoMcpBridge` SDK client has
 also been physically removed.
 
-## Compatibility remaining outside the canonical runtime
+## Retired remote compatibility paths
 
-The legacy `poc/mcp-shared/src/http-server.ts`,
-`crypto-worker-router.ts`, and the agent's
-`private-mcp-worker-http.ts` are retained only by isolated historical
-HTTP regressions. They do **not** run in the signed A2A/Engineer DAG.
-Do not re-enable an HTTP MCP listener, Adapter URL or model-facing
-repository MCP tool to make an old fixture pass. The historical Rust
-Adapter HTTP implementation also remains pending its own deletion gate;
-its underlying Rust `CryptoRuntime` library must be preserved.
+R264 physically removes the old `poc/mcp-shared/src/http-server.ts`,
+`crypto-worker-router.ts`, and
+`poc/packages/agent-runtime/src/private-mcp-worker-http.ts`,
+plus their obsolete HTTP integration tests. The formerly remote
+`TrustedCryptoMcpBridge` client was removed at R262.
+Canonical A2A startup regressions continue checking that the private
+crypto and repository HTTP worker routes are absent.
+
+The historical Rust Adapter HTTP executable and separately selected
+older credential transports still exist pending their own architecture
+gate. They are **not** the canonical signed Engineer/Gateway path.
+The underlying Rust `CryptoRuntime` crate must be preserved.
 
 ## Verification
 

@@ -25,23 +25,20 @@ test("R180 production A2A cannot register model-facing repository MCP tools",()=
  assert.match(flags,/production_adk_requires_native_rust_crypto/u);
  assert.match(flags,/production_adk_requires_task_local_crypto_mcp/u);
 });
-test("R262 remote crypto bridge retired; legacy HTTP compatibility remains isolated",()=>{
- assert.equal(existsSync(new URL("poc/mcp-shared/src/main.ts",root)),false);
- const listener=read("poc/mcp-shared/src/http-server.ts");
- const worker=read("poc/packages/agent-runtime/src/private-mcp-worker-http.ts");
+test("R264 obsolete Shared MCP HTTP and private worker modules are absent",()=>{
+ for(const path of [
+  "poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts",
+  "poc/packages/agent-runtime/src/private-mcp-worker-http.ts",
+  "poc/mcp-shared/src/http-server.ts",
+  "poc/mcp-shared/src/crypto-worker-router.ts"
+ ])assert.equal(existsSync(new URL(path,root)),false,
+   "Retired remote MCP module unexpectedly present: "+path);
  const localBridge=read("poc/packages/agent-runtime/src/local-crypto-mcp-bridge.ts");
- assert.equal(existsSync(new URL("poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts",root)),false);
-
- assert.doesNotMatch(listener,/^import \{registerLegacyRepositoryTools\}/mu);
- assert.match(listener,/router\.createPresentation\(claims,token,args\)/u);
- assert.match(worker,/\/internal\/mcp-crypto-call/u);
- assert.doesNotMatch(worker,/\/internal\/mcp-tool-call/u);
- assert.doesNotMatch(worker,/registry\.invoke\(/u);
  const registry=read("poc/packages/agent-runtime/src/private-mcp-task-registry.ts");
- assert.doesNotMatch(registry,/async invoke\(/u);
- assert.match(registry,/async invokeCrypto\(/u);
  assert.match(localBridge,/stageGatewayChallenge\(taskId,prepared\)/u);
  assert.match(localBridge,/takeSignedPresentation\(taskId,value\.proof_ref\)/u);
+ assert.match(registry,/async invokeCrypto\(/u);
+ assert.doesNotMatch(registry,/async invoke\(/u);
 });
 
 test("R222 canonical A2A library excludes every Shared MCP and HTTP worker route",()=>{

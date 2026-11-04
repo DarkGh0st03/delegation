@@ -1,20 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync,existsSync} from "node:fs";
-test("R188 crypto-only factory cannot register repository MCP or deleted router",()=>{
- const source=readFileSync(new URL("../src/http-server.ts",import.meta.url),"utf8");
- assert.equal(existsSync(new URL("../src/main.ts",import.meta.url)),false);
- assert.match(source,/MCP_CREATE_PRESENTATION\.name/u);
- assert.match(source,/config\?\.profile!=="crypto"/u);
- assert.doesNotMatch(source,/TaskRouter|legacy-repository-tools|registerLegacyRepositoryTools/u);
- assert.doesNotMatch(source,/MCP_(READ_FILE|UPDATE_FILE|CREATE_FILE|RUN_TESTS)\.name/u);
- assert.doesNotMatch(source,/config\.router\.(readFile|updateFile|createFile|runTests)/u);
- for(const f of ["task-router.ts","legacy-repository-tools.ts"])
-  assert.equal(existsSync(new URL("../src/"+f,import.meta.url)),false);
-});
 
-test("R229 old Shared MCP executable and npm start entrypoint are removed",()=>{
- assert.equal(existsSync(new URL("../src/main.ts",import.meta.url)),false);
+test("R264 Shared MCP executable, HTTP listener and obsolete repository routing are absent",()=>{
+ for(const path of [
+  "../src/main.ts",
+  "../src/http-server.ts",
+  "../src/crypto-worker-router.ts",
+  "../src/task-router.ts",
+  "../src/legacy-repository-tools.ts"
+ ])assert.equal(existsSync(new URL(path,import.meta.url)),false,path);
  const pkg=JSON.parse(readFileSync(new URL("../package.json",import.meta.url),"utf8"));
  assert.equal(Object.hasOwn(pkg.scripts,"start"),false);
+ const local=readFileSync(new URL("../../packages/agent-runtime/src/local-crypto-mcp-bridge.ts",import.meta.url),"utf8");
+ assert.match(local,/registerTool\("delegation_create_presentation"/u);
+ assert.match(local,/InMemoryTransport\.createLinkedPair\(/u);
+ assert.doesNotMatch(local,/registerTool\("(read_file|update_file|create_file|run_tests)"/u);
 });

@@ -2,58 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync} from "node:crypto";
 import type {AddressInfo} from "node:net";
-import express from "express";
-import {PrivateMcpTaskRegistry} from "../src/private-mcp-task-registry.ts";
-import {attachPrivateMcpWorker} from "../src/private-mcp-worker-http.ts";
 import {startSpecializedAgentServer} from "../src/server.ts";
 import type {AdkA2ATaskHandlerConfig} from "../src/adk-a2a-handler.ts";
 import type {BaseLlm} from "@google/adk";
-
-test("R189 signed Task worker has no repository route even with a valid bearer",async()=>{
- const kp=generateKeyPairSync("ed25519");
- const privateKey=kp.privateKey.export({format:"pem",type:"pkcs8"}).toString();
- const publicKey=kp.publicKey.export({format:"pem",type:"spki"}).toString();
- const registry=new PrivateMcpTaskRegistry({
-  role:"backend",signingPrivateKeyPem:privateKey,signingPublicKeyPem:publicKey
- });
- let gatewayCalls=0;
- registry.begin("signed-task",
-  {invoke:async()=>{gatewayCalls++;return {ok:true};}});
- const app=express();
- attachPrivateMcpWorker(app,registry);
- const http=app.listen(0,"127.0.0.1");
- await new Promise<void>(resolve=>http.once("listening",resolve));
- const url="http://127.0.0.1:"+(http.address() as AddressInfo).port;
- try{
-  const denied=await fetch(url+"/internal/mcp-tool-call",{
-   method:"POST",headers:{
-    authorization:"Bearer "+registry.bearerFor("signed-task"),
-    "content-type":"application/json"
-   },
-   body:JSON.stringify({tool:"read_file",
-    arguments:{branch:"feature/signed",path:"src/private.ts"}})
-  });
-  assert.equal(denied.status,404,
-    "No repository MCP worker endpoint may survive R189");
-  assert.equal(gatewayCalls,0);
-  const crypto=await fetch(url+"/internal/mcp-crypto-call",{
-   method:"POST",headers:{
-    authorization:"Bearer forged",
-    "content-type":"application/json"
-   },
-   body:JSON.stringify({tool:"delegation_create_presentation",
-    arguments:{request_id:"req-1"}})
-  });
-  assert.equal(crypto.status,401);
-  const payload=await crypto.json() as {error?:{kind?:string}};
-  assert.equal(payload.error?.kind,"unauthorized");
-  assert.equal(gatewayCalls,0);
- }finally{
-  registry.end("signed-task");
-  await new Promise<void>((resolve,reject)=>
-   http.close(error=>error?reject(error):resolve()));
- }
-});
 
 test("R222 canonical A2A server rejects a remote crypto HTTP worker before listening",async()=>{
  const stale={mcpCryptoUrl:"http://127.0.0.1:8097/mcp"};
