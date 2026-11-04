@@ -202,7 +202,10 @@ mod tests {
                 CallerRole::Orchestrator,
                 "native-orchestrator",
                 "did:thesis:orchestrator",
-                vec![CallerCapability::IssueChild, CallerCapability::CreatePresentation],
+                vec![
+                    CallerCapability::IssueChild,
+                    CallerCapability::CreatePresentation,
+                ],
             ),
             record(
                 CallerRole::Backend,
@@ -290,10 +293,20 @@ mod tests {
             "challenge":"native-cryptographic-test-challenge"
         });
         assert_eq!(
-            send("native-engineer", "create_presentation", request.clone(), &mut crypto)["ok"],
+            send(
+                "native-engineer",
+                "create_presentation",
+                request.clone(),
+                &mut crypto
+            )["ok"],
             false
         );
-        let issued_vp = send("native-backend", "create_presentation", request, &mut crypto);
+        let issued_vp = send(
+            "native-backend",
+            "create_presentation",
+            request,
+            &mut crypto,
+        );
         assert_eq!(issued_vp["ok"], true, "{issued_vp:?}");
         let signed_vp = issued_vp["result"]["signed_vp"]
             .as_str()
