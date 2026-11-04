@@ -303,3 +303,16 @@ suites, and the crypto worker now directly proves it has no repository
 HTTP route. The R6 inventory requires those three old fixture files
 to remain absent. Do not reinstate the dead registry method to satisfy
 the old test suites.
+
+## R192 — remove archived repository MCP argument catalog
+
+Removed the old `mcp-shared/src/catalog.ts` (repository/Runner
+`read_file`/`update_file`/`create_file`/`run_tests` MCP tool schemas)
+and its three isolated parser-test fixtures. The corresponding HTTP
+factory, TaskRouter and private worker invoker were retired in R188–R190.
+No model-facing repository MCP endpoint or named caller remains in the
+canonical path. Gateway operation validation, the signed approved-plan
+contract and the **separate** `crypto-catalog.ts` remain intact.
+
+All four removed paths are checked by the R6 negative-reference inventory.
+This is a historical code deletion, not evidence of Gemini model success.
