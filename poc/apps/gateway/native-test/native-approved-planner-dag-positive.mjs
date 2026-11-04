@@ -918,7 +918,9 @@ export async function runNativePositiveApprovedDag({
         delegatedAuthorization:true,capabilityProfile:"approved-plan",
         ...(cryptoMcpEnabled?{mcpTaskSigning:roleMcpKeys[role]}:{}),
         adk:{
-          model,gatewayBaseUrl:adkGatewayBase,adapterBaseUrl:adapterUrl,
+          model,gatewayBaseUrl:adkGatewayBase,
+           ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+             ? {}:{adapterBaseUrl:adapterUrl}),
           adapterToken:agentTokens[role],fetchFn:adkFetchFor(role),
           maxModelTurns:realGeminiPilot
             ?SIGNED_GEMINI_PILOT.maxTurnsPerTask[role]
@@ -950,7 +952,9 @@ export async function runNativePositiveApprovedDag({
       delegatedAuthorization:true,capabilityProfile:"approved-plan",
       ...(cryptoMcpEnabled?{mcpTaskSigning:roleMcpKeys.test}:{}),
       adk:{
-        model:testModel,gatewayBaseUrl:adkGatewayBase,adapterBaseUrl:adapterUrl,
+        model:testModel,gatewayBaseUrl:adkGatewayBase,
+         ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+           ? {}:{adapterBaseUrl:adapterUrl}),
         adapterToken:agentTokens.test,fetchFn:adkFetchFor("test"),
         maxModelTurns:realGeminiPilot
           ?SIGNED_GEMINI_PILOT.maxTurnsPerTask.test:hostModels?24:4,
@@ -1309,7 +1313,9 @@ export async function runNativePositiveApprovedDag({
         intake:trustedOwnerRecovery.intake
       }}:{}),
       a2a:protectedA2A,
-      adapter:{adapterBaseUrl:adapterUrl,
+      adapter:{
+        ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+          ? {}:{adapterBaseUrl:adapterUrl}),
         bearerToken:orchestratorToken,timeoutMs:30000},
       async authorityForTask(taskId,role){
         assert.ok(ROLES.includes(role));
