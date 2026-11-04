@@ -10,6 +10,8 @@
  */
 import {createOwnerPrivateCryptographicMcpSession}
  from "../../../mcp-shared/src/owner-private-child-mcp.ts";
+import {createNativeRustEngineerCredentialPort}
+ from "./trusted-engineer-native-port.ts";
 import {SoftwareEngineerAuthorityBootstrap}
  from "./authority-client.ts";
 import type {AdapterClientConfig} from "./authority-adapter-transport.ts";
@@ -39,4 +41,22 @@ export function createOwnerPrivateMcpEngineerCredentialPort(
    ).invokeOnce();
   }
  });
+}
+
+/**
+ * Canonical trusted-owner selector. When the SAME Rust CryptoRuntime exposes
+ * its root-only Unix socket, use it directly; never fall back to HTTP after a
+ * native failure. Historical offline fixtures may still use MCP -> Adapter.
+ */
+export function createTrustedEngineerCredentialPort(
+ config:AdapterClientConfig
+):EngineerCredentialPort{
+ const path=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ if(path!==undefined){
+  if(!path.trim())throw Error("Engineer native socket required");
+  return createNativeRustEngineerCredentialPort({
+   ...config,nativeSocketPath:path
+  });
+ }
+ return createOwnerPrivateMcpEngineerCredentialPort(config);
 }
