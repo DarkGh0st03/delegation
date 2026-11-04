@@ -12,6 +12,8 @@ import {createOwnerPrivateCryptographicMcpSession}
  from "../../../mcp-shared/src/owner-private-child-mcp.ts";
 import {createNativeRustEngineerCredentialPort}
  from "./trusted-engineer-native-port.ts";
+import {createDirectRustEngineerCredentialPort}
+ from "./trusted-engineer-direct-core-port.ts";
 import {SoftwareEngineerAuthorityBootstrap}
  from "./authority-client.ts";
 import type {AdapterClientConfig} from "./authority-adapter-transport.ts";
@@ -52,6 +54,16 @@ export function createTrustedEngineerCredentialPort(
  config:AdapterClientConfig
 ):EngineerCredentialPort{
  const path=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ const direct=process.env.ENGINEER_CORE_NATIVE_MODE;
+ if(direct!==undefined&&direct!=="1")
+  throw Error("Unknown trusted Engineer Core mode");
+ if(direct==="1"){
+  if(!path||!path.startsWith("/")||path.length>100||path.trim()!==path)
+   throw Error("Direct Engineer Core requires sole native Rust delegate socket");
+  // This is an in-process Node-API call to the sole Rust issuer owned by
+  // the Engineer host; the socket remains for Orchestrator/Agent only.
+  return createDirectRustEngineerCredentialPort(config);
+ }
  if(path!==undefined){
   if(!path.trim())throw Error("Engineer native socket required");
   return createNativeRustEngineerCredentialPort({
