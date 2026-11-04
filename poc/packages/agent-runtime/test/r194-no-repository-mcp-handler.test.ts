@@ -16,10 +16,10 @@ test("R194 ADK Task rejects stale repository MCP options",()=>{
     /legacy_repository_mcp_retired/);
  }
 });
-test("R194 private crypto-MCP endpoint requires its Task registry",()=>{
+test("R241 obsolete private crypto-MCP HTTP endpoint is rejected, even with a Task registry",()=>{
  assert.throws(()=>createAdkA2ATaskHandler({
   ...base,mcpCryptoUrl:"http://127.0.0.1:8097/mcp"
- }),/MCP service requires a private task registry/);
+ }),/legacy_crypto_http_mcp_retired/);
 });
 test("R194 direct Gateway Task handler needs no repository MCP",()=>{
  assert.equal(typeof createAdkA2ATaskHandler(base),"function");
