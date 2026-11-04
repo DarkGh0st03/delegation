@@ -438,6 +438,16 @@ const signedStore=receiptDir?new SignedEngineerApprovalFileStore({
  * independently verifies the original EVM-issued Rust root, its fresh
  * multi-permission VP and the owner's durable signed-epoch journal.
  * This is opt-in ZERO-BILLING integration, not a model/agent permission. */
+// R235: the trusted Software Engineer process MUST own and initialize
+// its sole Rust CryptoRuntime BEFORE the Gateway creates its independent
+// public-only verifier. This publishes native DID/EVM public material
+// without launching a competing HTTP Adapter or another process.
+// Later Engineer root/revocation operations reuse this exact addon state.
+if(process.env.ENGINEER_CORE_NATIVE_MODE==="1"){
+  const {loadDirectRustEngineerCore}=await import(
+    "../../../packages/orchestrator-runtime/src/trusted-engineer-direct-core-port.ts");
+  loadDirectRustEngineerCore();
+}
 const ownerDir=ownerRecoveryEnabled?
   await mkdtemp(join(tmpdir(),"delegation-native-owner-d1-")):undefined;
 const ownerEpochDir=ownerDir?join(ownerDir,"epochs"):undefined;
