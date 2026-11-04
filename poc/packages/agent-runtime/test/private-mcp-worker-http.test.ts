@@ -5,6 +5,8 @@ import type {AddressInfo} from "node:net";
 import express from "express";
 import {PrivateMcpTaskRegistry} from "../src/private-mcp-task-registry.ts";
 import {attachPrivateMcpWorker} from "../src/private-mcp-worker-http.ts";
+import {startSpecializedAgentServer} from "../src/server.ts";
+import type {AdkA2ATaskHandlerConfig} from "../src/adk-a2a-handler.ts";
 
 test("R189 signed Task worker has no repository route even with a valid bearer",async()=>{
  const kp=generateKeyPairSync("ed25519");
@@ -50,4 +52,12 @@ test("R189 signed Task worker has no repository route even with a valid bearer",
   await new Promise<void>((resolve,reject)=>
    http.close(error=>error?reject(error):resolve()));
  }
+});
+
+test("R222 canonical A2A server rejects a remote crypto HTTP worker before listening",async()=>{
+ const stale={mcpCryptoUrl:"http://127.0.0.1:8097/mcp"};
+ await assert.rejects(()=>startSpecializedAgentServer({
+  role:"backend",port:38177,
+  adk:stale as unknown as AdkA2ATaskHandlerConfig
+ }),/legacy_crypto_http_mcp_retired/u);
 });
