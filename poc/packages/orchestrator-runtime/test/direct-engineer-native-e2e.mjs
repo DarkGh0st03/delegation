@@ -87,7 +87,6 @@ try{
   const {createTrustedEngineerCredentialPort}=await import(
    "../src/trusted-engineer-crypto-port.ts");
   engineerPort=createTrustedEngineerCredentialPort({
-   adapterBaseUrl:"http://127.0.0.1:1",
    bearerToken:tokens.engineer
   });
  }else{
