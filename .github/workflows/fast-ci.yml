@@ -45,6 +45,7 @@ jobs:
           node --test poc/scripts/test/r271-adapter-legacy-feature-boundary.test.mjs
           node --test poc/apps/test-runner-controller/test/disposable-docker-safe-diagnostic.test.mjs
           node --test poc/apps/test-runner-controller/test/f1-safe-offline-planning-failure.test.mjs
+          node --test poc/scripts/test/r276-f1-native-owner-workflow.test.mjs
           node --test poc/scripts/test/r241-core-public-reader-provisioning.test.mjs
           node --test poc/scripts/test/r242-deployed-gateway-native-proof-selection.test.mjs
           node --test poc/apps/gateway/native-test/native-signed-dag-phase-diagnostic.test.mjs
