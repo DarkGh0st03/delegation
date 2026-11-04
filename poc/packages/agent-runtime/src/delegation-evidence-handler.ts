@@ -45,6 +45,10 @@ export class DelegationEvidenceHandler {
       throw new Error("Delegation credential id cannot be empty");
     }
 
+    // Signed canonical Tasks must not fall back to the old Adapter HTTP
+    // presenter when the native Rust socket is absent.
+    if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&!config.nativeSocketPath)
+      throw Error("Canonical signed Task VP requires native Rust signer socket");
     this.#adapterBaseUrl = config.adapterBaseUrl.replace(/\/+$/u, "");
     this.#adapterToken = config.adapterToken;
     this.#evidence = structuredClone(config.evidence);
