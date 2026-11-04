@@ -374,3 +374,15 @@ key, HTTP service or developer-controlled credential override was
 introduced. The live deployed signed-D1 workflow still requires
 verification against an exact successful SHA before HTTP legacy files
 can be deleted.
+
+## R243 — direct Gateway transport audit correctly distinguishes test from production
+
+Fast CI R242 failed its R6 safety inventory because the explicit offline
+`orchestrator-gateway-client.test.ts` loopback signer regression statically
+imports the private Gateway VP transport. The audit had two production
+callers and no test exemption. The third, **exactly named test-only file**
+is now permitted; no ADK, A2A, MCP or other production caller is permitted.
+A new Fast CI audit regression verifies that allowlist is exactly three
+paths and rejects new static/dynamic/configured callers. This is an
+isolated test exception, not an expanded runtime authorization permission.
+The signed Rust/Gateway/OPA controls remain unchanged.

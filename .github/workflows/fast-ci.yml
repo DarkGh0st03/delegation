@@ -34,6 +34,7 @@ jobs:
           npm --prefix poc run check:imports
           npm --prefix poc run audit:r6:references
           node --experimental-vm-modules --test poc/scripts/test/r6-configured-command.test.mjs
+          node --experimental-vm-modules --test poc/scripts/test/r243-private-gateway-transport-audit.test.mjs
           npm --prefix poc run audit:r6:types
           npm --prefix poc run audit:r6:runtime-named
           node --test poc/scripts/test/r165-mcp-factory-profile-audit.test.mjs
