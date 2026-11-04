@@ -32,7 +32,8 @@ export interface TrustedChildCryptographyPort {
   issueChild(request:Readonly<ExactTrustedChildIssuance>):Promise<IssuedDelegationCredential>;
 }
 export interface RustAdapterChildPortConfig {
-  adapterBaseUrl:string;
+  /** Only the retired HTTP issuer needs a base URL. Native Rust needs none. */
+  adapterBaseUrl?:string;
   bearerToken:string;
   fetchFn?:FetchLike;
   timeoutMs?:number;
@@ -41,14 +42,15 @@ export interface RustAdapterChildPortConfig {
 export function createRustAdapterChildCryptographyPort(
  config:RustAdapterChildPortConfig
 ):TrustedChildCryptographyPort {
- if(typeof config.adapterBaseUrl!=="string"||
-    !/^https?:\/\//u.test(config.adapterBaseUrl)||
-    !config.adapterBaseUrl.trim()||
+ const adapterUrl=config.adapterBaseUrl;
+ if(typeof adapterUrl!=="string"||
+    !/^https?:\/\//u.test(adapterUrl)||
+    !adapterUrl.trim()||
     !config.bearerToken.trim()||
     !Number.isSafeInteger(config.timeoutMs??5000)||
     (config.timeoutMs??5000)<1)
    throw Error("Private Rust Adapter issuance transport unavailable");
- const base=config.adapterBaseUrl.replace(/\/+$/u,"");
+ const base=adapterUrl.replace(/\/+$/u,"");
  const send=config.fetchFn??fetch;
  const timeout=config.timeoutMs??5000;
  return Object.freeze({
