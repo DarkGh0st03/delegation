@@ -33,13 +33,15 @@ export function requireProductionDirectGatewayTools(
 export function requireProductionNativeCrypto(
  env:Record<string,string|undefined>,engine:"adk"|"deterministic"
 ):void {
+ // Even a deterministic production launcher must not accidentally keep
+ // a legacy remote crypto-MCP endpoint mounted in its environment.
+ if(env.ADK_MCP_CRYPTO_URL!==undefined)
+  throw Error("production_adk_requires_task_local_crypto_mcp");
  if(engine!=="adk")return;
  const path=env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  if(typeof path!=="string"||!path.startsWith("/")||
     path.length>100||path.trim()!==path)
   throw Error("production_adk_requires_native_rust_crypto");
- if(env.ADK_MCP_CRYPTO_URL!==undefined)
-  throw Error("production_adk_requires_task_local_crypto_mcp");
  if(env.APPROVED_RUNNER_NATIVE_MCP!==undefined&&
     env.APPROVED_RUNNER_NATIVE_MCP!=="1")
   throw Error("production_adk_requires_native_rust_crypto");
