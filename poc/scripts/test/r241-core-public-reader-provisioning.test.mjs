@@ -12,6 +12,16 @@ test("R241 both live Engineer-owned workflows provision public Rust artifact tre
  ];
  for(const path of expected){
   const workflow=read(path);
+  for(const [variable,file] of [
+   ["ADAPTER_DID_PUBLISHER_SCRIPT","publish-ed25519.mjs"],
+   ["ADAPTER_DID_RESOLVER_SCRIPT","resolve-did-json.mjs"]
+  ]){
+   const relativePath="blockchain/did-client/"+file;
+   assert.ok(workflow.split("\n").includes(
+    "      "+variable+": ${{ github.workspace }}/"+relativePath
+   ),path+" must resolve "+variable+" from the checkout");
+   assert.ok(read(relativePath).length>0,relativePath);
+  }
   assert.match(workflow,/install -d -m 0700 "\$ADAPTER_PUBLIC_ARTIFACT_DIR"/u,path);
   assert.match(workflow,/\$ADAPTER_PUBLIC_ARTIFACT_DIR\/accumulators/u,path);
   assert.match(workflow,/\$ADAPTER_PUBLIC_ARTIFACT_DIR\/status-lists/u,path);
