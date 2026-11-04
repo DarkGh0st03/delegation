@@ -525,6 +525,8 @@ const json=(object,status=200)=>new Response(JSON.stringify(object),{
 const transport=async(url,options)=>{
   const endpoint=String(url);
   if(endpoint.startsWith(adapterUrl+"/")){
+    if(process.env.ENGINEER_CORE_NATIVE_MODE==="1")
+      throw Error("Direct Engineer signed DAG forbids Adapter HTTP requests");
     return fetch(url,options);
   }
   const body=JSON.parse(String(options.body));
