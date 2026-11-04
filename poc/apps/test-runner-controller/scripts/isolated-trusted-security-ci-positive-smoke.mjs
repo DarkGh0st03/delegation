@@ -1814,6 +1814,16 @@ async function main(){
 try{
   await stage("complete_positive_security_ci_smoke",main,2700000);
 }catch(error){
+  if(process.env.ENGINEER_CORE_NATIVE_MODE==="1"){
+    const frame=error instanceof Error && typeof error.stack==="string"
+      ?error.stack.split("\n").find(line=>line.trimStart().startsWith("at ") &&
+        line.includes(import.meta.url+":")):undefined;
+    const suffix=frame?.split(import.meta.url+":").pop();
+    const match=suffix?.match(/^(\d{1,5}):\d+\)?$/u);
+    const kind=error?.code==="ERR_ASSERTION"?"assertion":"exception";
+    process.stderr.write("[trusted-positive-ci] outer_failure "+kind+" "+
+      (match?Number(match[1]):0)+"\n");
+  }
   process.stderr.write("[trusted-positive-ci] ERROR "+
     (error instanceof Error?error.message:"Unclassified failure")+"\n");
   process.exitCode=1;
