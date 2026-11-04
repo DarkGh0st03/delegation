@@ -38,7 +38,7 @@ export class TrustedGatewayNativeRootStatusReader{
   // The native issuer branch MUST NOT depend on the former Adapter URL,
   // even as a required configuration value. This synthetic origin is only
   // used to construct internal Response-compatible route identifiers.
-  try{url=new URL(nativePath?"http://native-issuer.invalid":options.baseUrl);}
+  try{url=new URL(nativePath?"http://native-issuer.invalid":options.baseUrl??"");}
   catch{reject("invalid fixed Adapter URL");}
   if(!["http:","https:"].includes(url.protocol)||
      !url.hostname||url.username||url.password||url.search||url.hash||
