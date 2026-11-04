@@ -1,23 +1,17 @@
-import {createSharedMcpHttpServer} from "./http-server.ts";
-import {CryptoWorkerRouter} from "./crypto-worker-router.ts";
-import {requireProductionCryptoMcpProfile} from "./profile.ts";
-import type {AgentRole, VerificationKeys} from "./task-token.ts";
-function required(name:string) {
-  const v=process.env[name]?.trim();
-  if (!v) throw new Error("Missing shared MCP configuration: "+name);
-  return v.replaceAll("\\n","\n");
-}
-const roles=["backend","frontend","test"] as const satisfies readonly AgentRole[];
-const verificationKeys=Object.fromEntries(roles.map(r=>[r,required("MCP_"+r.toUpperCase()+"_PUBLIC_KEY")])) as VerificationKeys;
-const workers=Object.fromEntries(roles.map(r=>[r,{baseUrl:required("MCP_"+r.toUpperCase()+"_WORKER_URL")}])) as ConstructorParameters<typeof CryptoWorkerRouter>[0];
-const host=process.env.MCP_BIND_HOST??"127.0.0.1";
-const port=Number(process.env.MCP_BIND_PORT??"8097");
-if (!Number.isInteger(port)||port<1||port>65535) throw new Error("Invalid MCP port");
-// Reject opt-in repository routing in the executable MCP launcher.
-const toolProfile=requireProductionCryptoMcpProfile(process.env.MCP_TOOL_PROFILE);
-const server=createSharedMcpHttpServer({
-  verificationKeys,router:new CryptoWorkerRouter(workers),profile:toolProfile
-});
-server.listen(port,host,()=>{
-  process.stdout.write(JSON.stringify({event:"mcp_shared_started",host,port,profile:toolProfile})+"\n");
-});
+/**
+ * RETIRED standalone Shared MCP HTTP launcher.
+ *
+ * The canonical architecture is:
+ * - ADK FunctionTools -> Gateway for repository and Runner effects;
+ * - task-local in-process MCP SDK for approved cryptographic VP requests;
+ * - one native Rust CryptoRuntime for Engineer root, Orchestrator child
+ *   and delegated VP issuance, with Gateway/Core Rust verification.
+ *
+ * No Shared MCP HTTP service or private HTTP worker may be started from
+ * this production package entrypoint. Historical compatibility modules
+ * remain importable only by explicitly isolated migration tests.
+ *
+ * Keep this fail-closed stub instead of silently removing the npm script:
+ * stale deployment commands must fail immediately and visibly.
+ */
+throw new Error("standalone_shared_mcp_launcher_retired");
