@@ -9,7 +9,7 @@ import express from "express";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {createSharedMcpHttpServer} from "../../../mcp-shared/src/http-server.ts";
-import {TaskRouter} from "../../../mcp-shared/src/task-router.ts";
+import {CryptoWorkerRouter} from "../../../mcp-shared/src/crypto-worker-router.ts";
 import {createGatewayHttpServer} from "../../../apps/gateway/src/http.ts";
 import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
 import {InMemoryAuditSink} from "../../../apps/gateway/src/prepare.ts";
@@ -96,7 +96,7 @@ test("Gateway Prepare -> trusted crypto MCP SDK -> private Adapter VP -> Gateway
   const shared=createSharedMcpHttpServer({
     profile:"crypto",
     verificationKeys:{backend:k.publicKey,frontend:other.publicKey,test:third.publicKey},
-    router:new TaskRouter({
+    router:new CryptoWorkerRouter({
       backend:{baseUrl:privateUrl},frontend:{baseUrl:privateUrl},test:{baseUrl:privateUrl}
     })
   });
@@ -214,7 +214,7 @@ test("fail-closed: crypto MCP outage does not fall back to direct Adapter signin
 });
 
 
-test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved Gateway before provider effects",async()=>{
+test("R184 signed nonlegacy Task uses direct Gateway FunctionTool with private crypto-only MCP proof before provider effects",async()=>{
   // The same GatewayRuntime instance owns the immutable Engineer-reviewed
   // plan and normal HTTP Prepare/Execute routes. Crypto/OPA/provider adapters
   // are instrumented fixtures; no Gemini, network Gitea or billed inference.
@@ -326,26 +326,25 @@ test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved 
     role:"backend",signingPrivateKeyPem:k.privateKey,signingPublicKeyPem:k.publicKey
   });
   const worker=express();
-  attachPrivateMcpWorker(worker,registry,"legacy");
+  attachPrivateMcpWorker(worker,registry,"crypto");
   const privateListener=worker.listen(0,"127.0.0.1");
   await new Promise<void>(resolve=>privateListener.once("listening",resolve));
   const workerUrl="http://127.0.0.1:"+
     (privateListener.address() as AddressInfo).port;
-  const route=new TaskRouter({
+  // The signed Task exercises *only* the production crypto-only router.
+  // Repository changes reach Gateway via ControlledToolClient FunctionTools,
+  // not a model-visible MCP repository/Runner tool.
+  const route=new CryptoWorkerRouter({
     backend:{baseUrl:workerUrl},frontend:{baseUrl:workerUrl},
     test:{baseUrl:workerUrl}
   });
   const keysByRole={
     backend:k.publicKey,frontend:front.publicKey,test:testKey.publicKey
   };
-  const shared=createSharedMcpHttpServer({
-    profile:"legacy",
-    verificationKeys:keysByRole,router:route
-  });
   const crypto=createSharedMcpHttpServer({
     profile:"crypto",verificationKeys:keysByRole,router:route
   });
-  const sharedUrl=await start(shared),cryptoUrl=await start(crypto);
+  const cryptoUrl=await start(crypto);
   const cancelled=new AbortController();
   let conn:Client|undefined;
   try{
@@ -374,23 +373,27 @@ test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved 
       evidenceHandler:evidence,cryptoPresentation:cryptoBroker,
       signal:cancelled.signal
     });
-    registry.begin(taskId,controlled,cancelled.signal,{
-      approvedBranch:branch,allowedPaths:[path],
-      allowedFilePermissions:[{operation:"update_file",path}],
-      allowUpdateFile:true,evidenceHandler:evidence
-    });
+    registry.begin(taskId,controlled,cancelled.signal,{evidenceHandler:evidence});
     const transport=new StreamableHTTPClientTransport(
-      new URL(sharedUrl+"/mcp"),{
+      new URL(cryptoUrl+"/mcp"),{
         requestInit:{headers:{authorization:"Bearer "+registry.bearerFor(taskId)}}
       }
     );
     conn=new Client({
-      name:"reviewed-branch-gateway-bridge",version:"1.0.0"
+      name:"reviewed-branch-crypto-only-bridge",version:"1.0.0"
     },{capabilities:{}});
     await conn.connect(transport);
+    assert.deepEqual((await conn.listTools()).tools.map(x=>x.name),
+      ["delegation_create_presentation"]);
+    const forbiddenRoute=await fetch(workerUrl+"/internal/mcp-tool-call",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({tool:"update_file",arguments:{branch,path}})
+    });
+    assert.equal(forbiddenRoute.status,404,
+      "Crypto-only private worker must not expose repository editing MCP");
     const approvedCall={branch,path,content:"export const sortedInvoices=true;"};
-    const ok=await conn.callTool({name:"update_file",arguments:approvedCall});
-    assert.notEqual(ok.isError,true);
+    const ok=await controlled.invoke("update_file",approvedCall);
+    assert.equal((ok as {tool:string}).tool,"update_file");
     assert.equal(providerCalls,1);
     assert.equal(adapterCalls,1);
     assert.equal(coreCalls,1);
@@ -398,45 +401,46 @@ test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved 
     assert.doesNotMatch(JSON.stringify(ok),
       /opaque\.private\.adapter\.vp|private-dc-material|private-adapter-token|proof_/u);
 
-    // All three are denied in the private worker or MCP parser BEFORE
-    // another Gateway Prepare / Adapter / provider operation.
+    // The signed Gateway plan, not a repository MCP parser, rejects
+    // wrong branch/path/operation BEFORE provider execution.
     for(const rejected of [
-      {name:"update_file",arguments:{
+      {name:"update_file" as const,arguments:{
         ...approvedCall,branch:"feature/attacker"}},
-      {name:"update_file",arguments:{
+      {name:"update_file" as const,arguments:{
         ...approvedCall,path:"src/billing/tax.ts"}},
-      {name:"create_file",arguments:approvedCall},
-      {name:"update_file",arguments:{...approvedCall,branch:"main"}}
+      {name:"create_file" as const,arguments:approvedCall},
+      {name:"update_file" as const,arguments:{...approvedCall,branch:"main"}}
     ]){
-      const denial=await conn.callTool(rejected);
-      assert.equal(denial.isError,true);
+      await assert.rejects(
+        controlled.invoke(rejected.name,rejected.arguments),
+        (e:unknown)=>e instanceof ControlledToolError&&
+          ["invalid_tool_call","authorization_denied"].includes(e.kind)
+      );
     }
     assert.equal(adapterCalls,1);
     assert.equal(providerCalls,1);
 
-    // An exact Task operation and file are not enough if OPA denies.
+    // An exact Task operation/file is insufficient when OPA denies.
     opaAllows=false;
-    const opaDenied=await conn.callTool({
-      name:"update_file",arguments:approvedCall
-    });
-    assert.equal(opaDenied.isError,true);
+    await assert.rejects(controlled.invoke("update_file",approvedCall),
+      (e:unknown)=>e instanceof ControlledToolError&&
+       e.kind==="authorization_denied");
     assert.equal(opaCalls,2);
     assert.equal(providerCalls,1);
     opaAllows=true;
 
-    // Trust-session termination blocks even the same signed Task bearer.
+    // Trust-session termination also blocks the exact signed Task.
     approvedPlans.closeSession(sessionId);
-    const afterClose=await conn.callTool({
-      name:"update_file",arguments:approvedCall
-    });
-    assert.equal(afterClose.isError,true);
+    await assert.rejects(controlled.invoke("update_file",approvedCall),
+      (e:unknown)=>e instanceof ControlledToolError&&
+        ["invalid_tool_call","authorization_denied"].includes(e.kind));
     assert.equal(adapterCalls,2);
     assert.equal(providerCalls,1);
   } finally {
     cancelled.abort();
     registry.end(taskId);
     if(conn)await conn.close();
-    await stop(crypto);await stop(shared);
+    await stop(crypto);
     await stop(privateListener);await stop(gateway);
     await rm(approvalDirectory,{recursive:true,force:true});
   }
