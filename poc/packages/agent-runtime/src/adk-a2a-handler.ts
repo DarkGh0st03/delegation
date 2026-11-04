@@ -257,6 +257,10 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       adapterBaseUrl: config.adapterBaseUrl,
       adapterToken: config.adapterToken,
       evidence: context.delegation_evidence,
+      // R204: trusted signed Tasks use native Rust issuance when the
+      // shared CryptoRuntime socket is mounted. Native failure is terminal.
+      ...(context.trusted_gateway_task_id&&process.env.ADAPTER_ENGINEER_NATIVE_SOCKET
+        ?{nativeSocketPath:process.env.ADAPTER_ENGINEER_NATIVE_SOCKET}:{}),
       ...(signal ? {signal} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
