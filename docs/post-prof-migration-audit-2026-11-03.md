@@ -505,3 +505,34 @@ acceptance, and scripted D1 does not prove autonomous Gemini repair.
 separately executable old crypto-only HTTP services are retained only for
 noncanonical fixtures; do not physically delete them before checking their
 remaining executable callers. No main merge or paid model run is authorized.
+
+## R220 — production A2A cannot silently restore the remote crypto-MCP hop
+
+The canonical full-ci request at R219 remains a historical checkpoint for
+that exact SHA. Subsequent source changes require new, separate validation.
+
+The deployable `poc/apps/a2a-agent/src/main.ts` ADK launcher is now
+**native-only and task-local by construction**: it rejects a missing/invalid
+`ADAPTER_ENGINEER_NATIVE_SOCKET`, any
+`ADK_MCP_CRYPTO_URL` (including an empty value), and explicitly disabled
+canonical mode. It provisions only a per-process in-memory MCP Task signer
+and enables `APPROVED_RUNNER_NATIVE_MCP=1` before constructing an ADK
+server. Direct repository/Runner FunctionTools still pass through Gateway;
+no root/child cryptographic authority is exposed as a model tool.
+
+Deterministic historical A2A fixtures remain possible without a native Rust
+socket, but even those production launchers reject a stale remote
+crypto-MCP URL. Standalone crypto HTTP compatibility sources are intentionally
+not deleted here: their remaining explicit tests must be handled separately,
+and they are no longer activated by the production A2A launcher.
+
+Fast CI includes the updated `mcp-tool-flags.test.ts` and
+`r180-production-mcp-boundary.test.mjs` checks. These enforce the
+negative startup boundary and non-reachability via the production
+launcher; they do not themselves prove running native EVM/Gitea/Docker,
+nor do they establish a paid Gemini autonomous repair success.
+
+**Gate:** Fast CI on the R220 source must pass before a new
+same-SHA zero-billing Full CI release request. Avoid treating prior
+R219 (or R214) results as evidence for the new source SHA. No paid
+workflow is authorized, and `main` is unchanged.
