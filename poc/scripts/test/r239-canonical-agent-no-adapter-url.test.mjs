@@ -19,7 +19,7 @@ test("R239 native Task VP requires role token and signed Rust socket, not HTTP U
  const handler=read("poc/packages/agent-runtime/src/adk-a2a-handler.ts");
  assert.match(evidence,/adapterBaseUrl\?: string/u);
  assert.match(evidence,/!config\.nativeSocketPath && !config\.adapterBaseUrl\?\.trim\(\)/u);
- assert.match(evidence,/if\(this\.\#nativeSocketPath\)/u);
+ assert.match(evidence,/if\(this\.#nativeSocketPath\)/u);
  assert.match(evidence,/invokeNativeCrypto\(/u);
  assert.match(evidence,/Canonical signed Task VP requires native Rust signer socket/u);
  assert.match(handler,/adapterBaseUrl\?: string/u);
