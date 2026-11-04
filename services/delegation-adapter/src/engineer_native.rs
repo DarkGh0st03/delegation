@@ -179,6 +179,153 @@ mod tests {
     use super::*;
 
     #[test]
+    fn native_owner_crypto_reuses_one_runtime_for_root_child_and_presentation() {
+        use crate::auth::{CallerCapability, CallerRecord, CallerRegistry};
+        use crate::config::AdapterTrustProfile;
+        use crate::crypto::VerifyPresentationRequest;
+        use delegation::delegation::authorization::operation::Operation;
+        use delegation::delegation::authorization::permission::Permission;
+        use delegation::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
+        use delegation::delegation::status::model::status_purpose::StatusPurpose;
+
+        let record = |role: CallerRole, token: &str, did: &str, grants| {
+            CallerRecord::new(role, token.to_string(), did.to_string(), grants).unwrap()
+        };
+        let callers = CallerRegistry::new(vec![
+            record(
+                CallerRole::Engineer,
+                "native-engineer",
+                "did:thesis:engineer",
+                vec![CallerCapability::IssueRoot, CallerCapability::ManageStatus],
+            ),
+            record(
+                CallerRole::Orchestrator,
+                "native-orchestrator",
+                "did:thesis:orchestrator",
+                vec![CallerCapability::IssueChild, CallerCapability::CreatePresentation],
+            ),
+            record(
+                CallerRole::Backend,
+                "native-backend",
+                "did:thesis:backend",
+                vec![CallerCapability::CreatePresentation],
+            ),
+            record(
+                CallerRole::Gateway,
+                "native-gateway",
+                "did:thesis:gateway",
+                vec![CallerCapability::VerifyPresentation],
+            ),
+        ])
+        .unwrap();
+        let config = AdapterConfig {
+            bind_addr: "127.0.0.1:0".to_string(),
+            callers,
+            trust_profile: AdapterTrustProfile::InMemory,
+            evm: None,
+        };
+        let mut crypto = CryptoRuntime::new(&config.callers).unwrap();
+        let permission = Permission::new(
+            "gitea://gitea.local/thesis/iam-console-poc".to_string(),
+            Operation::ReadFile,
+        )
+        .unwrap();
+        let status = |index: u64| {
+            BitstringStatusListEntry::new(
+                None,
+                StatusPurpose::Revocation,
+                index.to_string(),
+                "https://status.example/lists/native-owner".to_string(),
+            )
+            .unwrap()
+        };
+        let send = |token: &str, operation: &str, body: Value, crypto: &mut CryptoRuntime| {
+            NativeEngineerSocket::dispatch(
+                EngineerRequest {
+                    token: token.to_string(),
+                    operation: operation.to_string(),
+                    body,
+                },
+                &config,
+                crypto,
+            )
+        };
+        let root = json!({
+            "credential_id":"urn:credential:native-root",
+            "delegatee":"orchestrator",
+            "valid_from":"2026-01-01T00:00:00Z",
+            "validity_seconds":94608000,
+            "credential_status":status(400),
+            "permissions":[permission.clone()]
+        });
+        assert_eq!(
+            send("native-backend", "issue_root", root.clone(), &mut crypto)["ok"],
+            false
+        );
+        let root_result = send("native-engineer", "issue_root", root, &mut crypto);
+        assert_eq!(root_result["ok"], true, "{root_result:?}");
+        assert_eq!(root_result["result"]["id"], "urn:credential:native-root");
+
+        let child = json!({
+            "parent_credential_id":"urn:credential:native-root",
+            "credential_id":"urn:credential:native-child",
+            "delegatee":"backend",
+            "valid_from":"2026-01-01T00:00:00Z",
+            "validity_seconds":31536000,
+            "credential_status":status(401),
+            "permissions":[permission.clone()]
+        });
+        assert_eq!(
+            send("native-engineer", "issue_child", child.clone(), &mut crypto)["ok"],
+            false
+        );
+        let child_result = send("native-orchestrator", "issue_child", child, &mut crypto);
+        assert_eq!(child_result["ok"], true, "{child_result:?}");
+        assert_eq!(child_result["result"]["id"], "urn:credential:native-child");
+
+        let request = json!({
+            "credential_id":"urn:credential:native-child",
+            "disclosed_permissions":[permission.clone()],
+            "audience":"cloud-access-gateway",
+            "challenge":"native-cryptographic-test-challenge"
+        });
+        assert_eq!(
+            send("native-engineer", "create_presentation", request.clone(), &mut crypto)["ok"],
+            false
+        );
+        let issued_vp = send("native-backend", "create_presentation", request, &mut crypto);
+        assert_eq!(issued_vp["ok"], true, "{issued_vp:?}");
+        let signed_vp = issued_vp["result"]["signed_vp"]
+            .as_str()
+            .expect("native signed VP missing");
+        assert!(!signed_vp.is_empty());
+
+        let verified = crypto
+            .verify_presentation(
+                config.callers.record_for_role(CallerRole::Gateway).unwrap(),
+                &config.callers,
+                VerifyPresentationRequest {
+                    presenter: CallerRole::Backend,
+                    audience: "cloud-access-gateway".to_string(),
+                    challenge: "native-cryptographic-test-challenge".to_string(),
+                    required_permission: permission,
+                    signed_vp: signed_vp.to_string(),
+                },
+            )
+            .expect("Gateway's Rust verifier must accept the same native issuer");
+        assert_eq!(verified.hierarchy_depth(), 1);
+        assert_eq!(
+            send(
+                "forged-identity",
+                "create_presentation",
+                json!({}),
+                &mut crypto
+            )["ok"],
+            false
+        );
+    }
+
+    #[test]
     fn native_socket_never_removes_preexisting_path() {
         let directory =
             std::env::temp_dir().join(format!("delegation-r170-{}", std::process::id()));
