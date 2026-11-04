@@ -1,12 +1,12 @@
 {
   "schema": "delegation-embedded-engineer-signed-dag-checkpoint-v1",
-  "checkpoint": "R254 — signed DAG with outer smoke failure diagnostics",
-  "candidate_parent_sha": "a62ffdaf1160ded50ea98b562e4cfa0215f00932",
+  "checkpoint": "R256 — signed DAG with bounded stage evidence",
+  "candidate_parent_sha": "660268a0bf71b800e3a8aa054472f4f32780c171",
   "workflow": "engineer-embedded-signed-dag-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
   "mode": "ENGINEER_CORE_NATIVE_MODE=1; sole Engineer Rust issuer; native Gateway verifier; Adapter HTTP off",
-  "trigger_reason": "R253 Fast CI 41885267512 passed. Exercise one free DAG with outer failure location reporting.",
+  "trigger_reason": "Fast CI 41887571257 passed; exercise signed DAG with unfinished-stage reporting.",
   "purpose": "One free Gitea/OPA/Anvil/Docker end-to-end scripted ADK DAG: Software Engineer root via in-process Rust Node-API; agent child/VP via one native Rust owner; Gateway public-only Rust EVM verification and OPA; backend/frontend/test A2A; real Docker acceptance and unmerged PR; no competing Adapter HTTP, no Shared MCP HTTP, no paid model.",
   "exclusions": [
     "No Gemini/OpenAI API calls",
