@@ -72,9 +72,24 @@ impl NativeEngineerSocket {
     }
 
     pub fn poll(&self, config: &AdapterConfig, crypto: &mut CryptoRuntime) -> Result<(), String> {
+        self.poll_with_owner_rights(config, crypto, true)
+    }
+
+    /// R225: when the sole Rust CryptoRuntime is embedded in the Software
+    /// Engineer process, its socket serves ONLY Orchestrator and Agents.
+    /// Engineer roots/revocations must use the direct Node-API binding.
+    pub fn poll_delegates_only(
+        &self, config: &AdapterConfig, crypto: &mut CryptoRuntime,
+    ) -> Result<(), String> {
+        self.poll_with_owner_rights(config, crypto, false)
+    }
+
+    fn poll_with_owner_rights(
+        &self, config: &AdapterConfig, crypto: &mut CryptoRuntime, owner_allowed: bool,
+    ) -> Result<(), String> {
         match self.listener.accept() {
             Ok((mut stream, _)) => {
-                Self::handle(&mut stream, config, crypto);
+                Self::handle(&mut stream, config, crypto, owner_allowed);
                 Ok(())
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
@@ -82,7 +97,10 @@ impl NativeEngineerSocket {
         }
     }
 
-    fn handle(stream: &mut UnixStream, config: &AdapterConfig, crypto: &mut CryptoRuntime) {
+    fn handle(
+        stream: &mut UnixStream, config: &AdapterConfig,
+        crypto: &mut CryptoRuntime, owner_allowed: bool,
+    ) {
         let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
         let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
         let mut bytes = Vec::new();
@@ -90,7 +108,15 @@ impl NativeEngineerSocket {
         let answer = match read {
             Ok(_) if !bytes.is_empty() && bytes.len() as u64 <= MAX_REQUEST => {
                 match serde_json::from_slice::<EngineerRequest>(&bytes) {
-                    Ok(req) => Self::dispatch(req, config, crypto),
+                    Ok(req) => {
+                        if !owner_allowed &&
+                            (req.operation == "issue_root" || req.operation == "revoke_root")
+                        {
+                            json!({"ok":false,"error":"engineer_native_denied"})
+                        } else {
+                            Self::dispatch(req, config, crypto)
+                        }
+                    },
                     Err(_) => json!({"ok":false,"error":"engineer_native_invalid_request"}),
                 }
             }
