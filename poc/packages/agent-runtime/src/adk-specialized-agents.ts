@@ -1,11 +1,5 @@
 import {toolFailureReasonFields} from "../../../mcp-shared/src/tool-failure-reason.ts";
-import { FunctionTool, LlmAgent, MCPToolset, type BaseLlm, type LlmAgentConfig, type StreamableHTTPConnectionParams } from "@google/adk";
-import { normalizeMcpReadFileOutcome } from "./mcp-read-result.ts";
-import { normalizeMcpUpdateFileOutcome } from "./mcp-write-result.ts";
-import { normalizeMcpCreateFileOutcome } from "./mcp-create-result.ts";
-import { normalizeMcpRunTestsOutcome } from "./mcp-run-tests-result.ts";
-import { createTaskBearerFetch } from "./mcp-task-fetch.ts";
-import {callTimedMcpRunTests} from "./timed-mcp-run-tests.ts";
+import { FunctionTool, LlmAgent, type BaseLlm, type LlmAgentConfig } from "@google/adk";
 import { z } from "zod";
 import {LEGACY_A2A_BRANCH,validatePrivateApprovedBranch} from "./approved-branch.ts";
 import type { SpecializedAgentRole, ApprovedTaskFilePermission } from "./contracts.ts";
@@ -106,17 +100,6 @@ export interface AdkSpecializedAgentConfig {
   trustedFilePermissions?:readonly ApprovedTaskFilePermission[];
   model: BaseLlm;
   gatewayClient: GatewayControlledToolClient;
-  /** Shared MCP read_file opt-in. Credentials never enter model args. */
-  mcpReadFile?: {
-    endpoint: string;
-    bearerForRequest: () => string;
-  };
-  /** Independent opt-in: route update_file through the same shared MCP toolset. */
-  mcpUpdateFile?: boolean;
-  /** Independent opt-in: Test Agent may create its E2E test via shared MCP. */
-  mcpCreateFile?: boolean;
-  /** Test Agent only; use the same MCP server for the controlled Runner. */
-  mcpRunTests?: boolean;
   /** Trusted prebound Test Task hint, not a grant: Gateway enforces it. */
   trustedRunTestsAllowed?: boolean;
 }
@@ -125,7 +108,6 @@ export interface AdkSpecializedAgent {
   profile: SpecializedAgentProfile;
   registry: ControlledToolRegistry;
   agent: LlmAgent;
-  mcpToolset?: MCPToolset;
 }
 
 /**
@@ -140,18 +122,13 @@ export interface AdkSpecializedAgent {
 export function createAdkSpecializedAgent(
   config: AdkSpecializedAgentConfig
 ): AdkSpecializedAgent {
-  if(config.mcpUpdateFile && !config.mcpReadFile){
-    throw new Error("MCP update_file requires a configured shared MCP endpoint");
-  }
-  if(config.mcpCreateFile && (!config.mcpReadFile || config.role!=="test")){
-    throw new Error("MCP create_file requires shared MCP and Test Agent role");
-  }
+  // Reject stale JS callers that try to reinstate repository MCP tools.
+  if(["mcpReadFile","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
+       .some(key=>Object.prototype.hasOwnProperty.call(config,key)))
+    throw Error("legacy_repository_mcp_retired");
   if(config.trustedRunTestsAllowed!==undefined&&
      (config.role!=="test"||config.trustedFilePermissions===undefined))
     throw Error("Runner task hint requires signed Test file permissions");
-  if(config.mcpRunTests && (!config.mcpReadFile || config.role!=="test")){
-    throw new Error("MCP run_tests requires shared MCP and Test Agent role");
-  }
   const taskRef=typeof config.diagnosticTaskRef==="string"&&
     /^[a-f0-9]{16}$/u.test(config.diagnosticTaskRef)
       ?config.diagnosticTaskRef:null;
@@ -193,9 +170,6 @@ export function createAdkSpecializedAgent(
   const signedTask=grant!==null;
   const availableTools:readonly SpecializedToolName[]=signedTask
     ? APPROVED_ROLE_TOOLS[config.role]:baseline.tools;
-  if(config.mcpReadFile&&branch!==LEGACY_A2A_BRANCH&&
-     (!signedTask||!scoped))
-    throw Error("Dynamic MCP branch requires a prebound signed Task grant");
   const writable=signedTask
     ? taskPaths.filter(path=>availableTools.includes("update_file")&&
         hasGrant("update_file",path))
@@ -308,13 +282,7 @@ export function createAdkSpecializedAgent(
       (definition.name==="read_file"&&readablePaths.length>0) ||
       (definition.name==="update_file"&&writable.length>0) ||
       (definition.name==="create_file"&&creatable.length>0))
-    // Default remains read_file-only: enabling the write tool is explicit.
-    .filter(definition => !config.mcpReadFile || (
-      definition.name !== "read_file" &&
-      !(config.mcpUpdateFile && definition.name === "update_file") &&
-      !(config.mcpCreateFile && definition.name === "create_file") &&
-      !(config.mcpRunTests && definition.name === "run_tests")
-    ))
+    // All declared model tools run through the signed Gateway FunctionTools.
     .map((definition) => {
     const name = definition.name as SpecializedToolName;
     const restrictPaths=scoped||config.scopeModelPaths===true;
@@ -394,126 +362,17 @@ export function createAdkSpecializedAgent(
     });
   });
 
-  let mcpToolset: MCPToolset | undefined;
-  if (config.mcpReadFile) {
-    // The bearer rotates per HTTP call. No token is stored in Gemini state.
-    const authorizedFetch = createTaskBearerFetch(
-      config.mcpReadFile.endpoint, config.mcpReadFile.bearerForRequest
-    );
-    const params: StreamableHTTPConnectionParams = {
-      type: "StreamableHTTPConnectionParams",
-      url: config.mcpReadFile.endpoint,
-      transportOptions: { fetch: authorizedFetch }
-    };
-    const visibleMcpTools=[
-      ...(!scoped||readablePaths.length>0?["read_file"]:[]),
-      ...(config.mcpUpdateFile&&(!scoped||writable.length>0)
-        ? ["update_file"]:[]),
-      ...(config.mcpCreateFile&&(!scoped||creatable.length>0)
-        ? ["create_file"]:[])
-      // run_tests uses the bounded FunctionTool below.
-    ];
-    if(visibleMcpTools.length>0){
-      // Shared MCP's catalog is static. The private, token-bound
-      // task registry checks the signed Task path ceiling on every call;
-      // the ADK model prompt and tool names are minimized here.
-      mcpToolset=new MCPToolset(params,visibleMcpTools);
-    }
-  }
-
-  // R120: private failure latch is shared with the controlled MCP tool.
-  const timedMcpRunTests = config.mcpRunTests &&
-    config.trustedRunTestsAllowed!==false && config.mcpReadFile
-    ? new FunctionTool({
-        name:"run_tests",
-        description: registry.modelTools.find(tool=>tool.name==="run_tests")?.description
-          ?? "Execute controlled project tests and independent researcher acceptance",
-        parameters:schemaFor("run_tests"),
-        execute: async (args) => {
-          const started=performance.now();
-          const argumentsRecord=args as Record<string,unknown>;
-          let outcome:AdkControlledToolOutcome["payload"] | undefined;
-          try {
-            if(terminalTestFailure){
-              outcome=terminalTestFailure;
-              return {isError:true,structuredContent:outcome,
-                content:[{type:"text",text:JSON.stringify(outcome)}]};
-            }
-            const response=await callTimedMcpRunTests({
-              endpoint:config.mcpReadFile!.endpoint,
-              bearerForRequest:config.mcpReadFile!.bearerForRequest,
-              args:args as {branch:string;profile:"poc-default"},
-              ...(config.signal ? {signal:config.signal} : {})
-            });
-            outcome=normalizeMcpRunTestsOutcome(response,argumentsRecord,
-              config.trustedFilePermissions?.filter(p=>p.operation==="read_file")
-                .map(p=>p.path)??[],
-              config.trustedFilePermissions?.filter(p=>p.operation==="update_file")
-                .map(p=>p.path)??[]);
-            if(outcome.ok)return response;
-            if(outcome.error.kind==="tests_failed")
-              terminalTestFailure=outcome;
-            // MCP tool-call errors must be visible as safe, fixed-vocabulary
-            // feedback to the model, not as raw Runner/Gateway responses.
-            // ADK may report failure, but a NEW signed Task is required
-            // for another Docker invocation. No secret data is forwarded.
-            return {isError:true,structuredContent:outcome,
-              content:[{type:"text",text:JSON.stringify(outcome)}]};
-          }catch{
-            // Only a fixed classification reaches the LLM; never expose
-            // raw SDK errors, URLs, tokens or HTTP transport diagnostics.
-            outcome=controlledToolErrorPayload(new ControlledToolError(
-              "tool_unavailable","Controlled MCP run_tests transport unavailable"
-            ));
-            return {isError:true,structuredContent:outcome,
-              content:[{type:"text",text:"Controlled MCP run_tests unavailable"}]};
-          }finally{
-            if(outcome!==undefined){
-              config.onToolOutcome?.({name:"run_tests",arguments:argumentsRecord,payload:outcome});
-            }
-            process.stdout.write(JSON.stringify({
-              event:"adk_tool_timing",role:config.role,tool:"run_tests",
-              ...(taskRef?{task_ref:taskRef}:{}),
-              success:outcome?.ok===true,
-              error_kind:outcome?.ok===false?outcome.error.kind:null,
-              duration_ms:Math.round(performance.now()-started)
-            })+"\n");
-          }
-        }
-      })
-    : undefined;
-
   const agent = new LlmAgent({
     name: signedTask ? `delegated_${config.role}` : `account_suspension_${config.role}`,
     description: profile.skill,
     model: config.model,
     instruction: profile.system_prompt,
-    tools: [...tools, ...(mcpToolset ? [mcpToolset] : []),
-      ...(timedMcpRunTests ? [timedMcpRunTests] : [])],
-    // MCP calls must produce the same redacted success/failure telemetry as
-    // direct FunctionTools, while preserving the existing ADK tool response.
-    ...(mcpToolset ? {afterToolCallback: ({tool, args, response}) => {
-      const name=tool.name;
-      let payload:AdkControlledToolOutcome["payload"]|undefined;
-      if(name==="read_file")
-        payload=normalizeMcpReadFileOutcome(response,args);
-      else if(name==="update_file"&&config.mcpUpdateFile)
-        payload=normalizeMcpUpdateFileOutcome(response,args);
-      else if(name==="create_file"&&config.mcpCreateFile)
-        payload=normalizeMcpCreateFileOutcome(response,args);
-      if(payload!==undefined&&
-         (name==="read_file"||name==="update_file"||name==="create_file")){
-        config.onToolOutcome?.({name,arguments:args,payload});
-        process.stdout.write(JSON.stringify(
-          safeMcpToolTiming(config.role,name,payload,taskRef??undefined))+"\n");
-      }
-      return undefined;
-    }} : {}),
+    tools,
     // Opt in only for the explicitly configured live Gemini Backend.
     ...(config.generateContentConfig
       ? {generateContentConfig: config.generateContentConfig} : {}),
     disallowTransferToParent: true,
     disallowTransferToPeers: true
   });
-  return { profile, registry, agent, ...(mcpToolset ? {mcpToolset} : {}) };
+  return { profile, registry, agent };
 }

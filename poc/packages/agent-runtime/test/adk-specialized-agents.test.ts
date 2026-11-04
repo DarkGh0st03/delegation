@@ -329,23 +329,15 @@ test("32,000-token Gemini 3.8 LOW budget reaches each role's native ADK requests
   }
 });
 
-test("MCP-enabled Test Agent exposes run_tests once as a controlled FunctionTool",()=>{
-  // Check the ADK tool registry, not source-file spelling/formatting.
-  // The separate timeout tests verify the MCP SDK request options.
-  const built=createAdkSpecializedAgent({
-    role:"test",
-    model:new ScriptedAdkLlm("run_tests",{branch:BRANCH,profile:"poc-default"}),
-    gatewayClient:{invoke:async()=>({})} as never,
-    mcpReadFile:{
-      endpoint:"http://127.0.0.1:8097/mcp",
-      bearerForRequest:()=>"test-task-bearer"
-    },
-    mcpRunTests:true
-  });
-  assert.ok(built.mcpToolset);
-  const bounded= built.agent.tools.filter(tool=>tool.name==="run_tests");
-  assert.equal(bounded.length,1);
-  assert.ok(bounded[0] instanceof FunctionTool);
+test("R195 Test Agent has exactly one direct Gateway run_tests FunctionTool",()=>{
+ const built=createAdkSpecializedAgent({
+   role:"test",model:new ScriptedAdkLlm("run_tests",{
+     branch:BRANCH,profile:"poc-default"
+   }),gatewayClient:{invoke:async()=>({})} as never
+ });
+ const found=built.agent.tools.filter(t=>t.name==="run_tests");
+ assert.equal(found.length,1);
+ assert.ok(found[0] instanceof FunctionTool);
 });
 
 test("Engineer-approved branch is exposed as an exact ADK tool argument, not as authority",async()=>{
@@ -366,7 +358,7 @@ test("Engineer-approved branch is exposed as an exact ADK tool argument, not as 
     gatewayClient:{invoke:async()=>({})} as never,
     trustedBranch:b,
     mcpReadFile:{endpoint:"http://127.0.0.1:9999",bearerForRequest:()=>"unused"}
-  }),/requires a prebound signed Task grant/);
+  }),/legacy_repository_mcp_retired/);
 });
 
 
@@ -430,38 +422,26 @@ test("Signed Test-only Task exposes run_tests but no file read/write tools",()=>
     /tests\/backend\/user\.service\.test\.ts/u);
 });
 
-test("Signed preparatory Test Task excludes run_tests even when the shared worker enables it",()=>{
-  const target="apps/backend/tests/account-suspension.test.ts";
-  const built=createAdkSpecializedAgent({
-    role:"test",
-    model:new ScriptedAdkLlm("create_file",{
-      branch:BRANCH,path:target,content:"test content"
-    }),
-    gatewayClient:{invoke:async()=>({})} as never,
-    trustedBranch:BRANCH,
-    trustedTaskPaths:[target],
-    trustedFilePermissions:[{operation:"create_file",path:target}],
-    trustedRunTestsAllowed:false,
-    mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",
-      bearerForRequest:()=>"private-task-bearer"},
-    mcpCreateFile:true,mcpRunTests:true
-  });
-  assert.deepEqual(built.profile.creatable_paths,[target]);
-  assert.ok(built.mcpToolset);
-  assert.equal(built.agent.tools.some(tool=>tool.name==="run_tests"),false);
-  assert.ok(built.profile.system_prompt.includes("cannot invoke run_tests"));
-  const final=createAdkSpecializedAgent({
-    role:"test",
-    model:new ScriptedAdkLlm("run_tests",{branch:BRANCH,profile:"poc-default"}),
-    gatewayClient:{invoke:async()=>({})} as never,
-    trustedBranch:BRANCH,trustedTaskPaths:[],
-    trustedFilePermissions:[],trustedRunTestsAllowed:true,
-    mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",
-      bearerForRequest:()=>"private-task-bearer"},
-    mcpRunTests:true
-  });
-  assert.deepEqual(final.agent.tools.map(tool=>tool.name),["run_tests"]);
-  assert.equal(final.mcpToolset,undefined);
+test("R195 signed Test preparation cannot call Docker until fresh authorization",()=>{
+ const path="apps/backend/tests/account-suspension.test.ts";
+ const pending=createAdkSpecializedAgent({
+   role:"test",model:new ScriptedAdkLlm("create_file",{
+     branch:BRANCH,path,content:"test content"
+   }),gatewayClient:{invoke:async()=>({})} as never,
+   trustedBranch:BRANCH,trustedTaskPaths:[path],
+   trustedFilePermissions:[{operation:"create_file",path}],
+   trustedRunTestsAllowed:false
+ });
+ assert.deepEqual(pending.agent.tools.map(t=>t.name),["create_file"]);
+ assert.ok(pending.profile.system_prompt.includes("cannot invoke run_tests"));
+ const final=createAdkSpecializedAgent({
+   role:"test",model:new ScriptedAdkLlm("run_tests",{
+     branch:BRANCH,profile:"poc-default"
+   }),gatewayClient:{invoke:async()=>({})} as never,
+   trustedBranch:BRANCH,trustedTaskPaths:[],
+   trustedFilePermissions:[],trustedRunTestsAllowed:true
+ });
+ assert.deepEqual(final.agent.tools.map(t=>t.name),["run_tests"]);
 });
 
 test("Signed role refuses path not included in its Task-scoped tool enum",async()=>{
@@ -488,43 +468,34 @@ test("Signed role refuses path not included in its Task-scoped tool enum",async(
   assert.equal(gatewayCalls,0);
 });
 
-test("Signed Task path hints fail closed on traversal, controls and unsupported MCP",()=>{
-  const make=(paths:readonly string[],mcp=false)=>createAdkSpecializedAgent({
-    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
-    gatewayClient:{invoke:async()=>({})} as never,
-    trustedTaskPaths:paths,
-    ...(mcp?{mcpReadFile:{
-      endpoint:"http://127.0.0.1:9999/mcp",
-      bearerForRequest:()=>"private-bearer"
-    }}:{})
-  });
-  for(const invalid of ["../secret.ts","/tmp/secret","apps//thing.ts",
-    "apps/file\u0000.ts","apps\\secret.ts","apps/./secret.ts"," apps/file.ts"]){
-    assert.throws(()=>make([invalid]),/Invalid private approved Task path hints/u);
-  }
-  const withMcp=make(["apps/backend/src/users/user.service.ts"],true);
-  assert.ok(withMcp.mcpToolset,
-    "Approved Task may retain shared MCP; private registry enforces path grants");
-  assert.equal(withMcp.agent.tools.filter(t=>t.name==="update_file").length,1);
-  assert.equal(withMcp.agent.tools.length,2);
+test("R195 signed path hints stay strict and obsolete MCP options fail closed",()=>{
+ const make=(paths:readonly string[])=>createAdkSpecializedAgent({
+   role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+   gatewayClient:{invoke:async()=>({})} as never,
+   trustedTaskPaths:paths
+ });
+ for(const invalid of ["../secret.ts","/tmp/secret","apps//thing.ts",
+   "apps/file\u0000.ts","apps\\secret.ts","apps/./secret.ts"," apps/file.ts"])
+  assert.throws(()=>make([invalid]),/Invalid private approved Task path hints/u);
+ const signed=make(["apps/backend/src/users/user.service.ts"]);
+ assert.deepEqual(signed.agent.tools.map(t=>t.name),["read_file","update_file"]);
+ assert.throws(()=>createAdkSpecializedAgent({
+   role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+   gatewayClient:{invoke:async()=>({})} as never,
+   mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",bearerForRequest:()=>"x"}
+ } as never),/legacy_repository_mcp_retired/);
 });
 
-
-test("Approved Test-only MCP profile exposes timed run_tests but no file MCP tools",()=>{
+test("R195 signed Test-only Task exposes only direct run_tests",()=>{
  const built=createAdkSpecializedAgent({
    role:"test",model:new ScriptedAdkLlm("run_tests",{
      branch:BRANCH,profile:"poc-default"
-   }),
-   gatewayClient:{invoke:async()=>({})} as never,
-   trustedTaskPaths:[],
-   mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",
-     bearerForRequest:()=>"private-task-bearer"},
-   mcpRunTests:true
+   }),gatewayClient:{invoke:async()=>({})} as never,
+   trustedTaskPaths:[]
  });
- assert.equal(built.mcpToolset,undefined);
  assert.deepEqual(built.agent.tools.map(t=>t.name),["run_tests"]);
+ assert.ok(built.agent.tools[0] instanceof FunctionTool);
 });
-
 
 test("Approved read-only context cannot become a write tool, even for a normally writable role file",async()=>{
  const target="apps/backend/src/users/user.service.ts";
@@ -700,25 +671,20 @@ test("Unsigned A2A path hints still cannot expand Account Suspension static role
   }),/Invalid signed Task operation-specific file hints/);
 });
 
-test("ADK offers signed dynamic-branch MCP tools only with exact operation grants",()=>{
-  const branch="feature/invoice-sort",path="src/billing/invoice.ts";
-  const built=createAdkSpecializedAgent({
-    role:"backend",model:new ScriptedAdkLlm("read_file",{}),
-    gatewayClient:{invoke:async()=>({})} as never,
-    trustedBranch:branch,trustedTaskPaths:[path],
-    trustedFilePermissions:[
-      {operation:"read_file",path},{operation:"update_file",path}
-    ],
-    mcpReadFile:{endpoint:"http://127.0.0.1:8097/mcp",
-      bearerForRequest:()=>"offline-test-token"},
-    mcpUpdateFile:true
-  });
-  assert.ok(built.mcpToolset);
-  assert.deepEqual(built.profile.read_only_paths,[]);
-  assert.deepEqual(built.profile.writable_paths,[path]);
-  assert.equal(built.agent.name,"delegated_backend");
-  assert.match(built.profile.system_prompt,/feature\/invoice-sort/);
-  assert.doesNotMatch(built.profile.system_prompt,/account suspension/i);
+test("R195 dynamic-branch Gateway FunctionTools follow signed grants",()=>{
+ const branch="feature/invoice-sort",path="src/billing/invoice.ts";
+ const built=createAdkSpecializedAgent({
+   role:"backend",model:new ScriptedAdkLlm("read_file",{}),
+   gatewayClient:{invoke:async()=>({})} as never,
+   trustedBranch:branch,trustedTaskPaths:[path],
+   trustedFilePermissions:[{operation:"read_file",path},{operation:"update_file",path}]
+ });
+ assert.deepEqual(built.agent.tools.map(t=>t.name),["read_file","update_file"]);
+ assert.deepEqual(built.profile.read_only_paths,[]);
+ assert.deepEqual(built.profile.writable_paths,[path]);
+ assert.equal(built.agent.name,"delegated_backend");
+ assert.match(built.profile.system_prompt,/feature\/invoice-sort/);
+ assert.doesNotMatch(built.profile.system_prompt,/account suspension/i);
 });
 
 test("shared MCP ADK tool telemetry keeps only role, operation and outcome",()=>{

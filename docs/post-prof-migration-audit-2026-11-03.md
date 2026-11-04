@@ -341,3 +341,17 @@ registry and is never exposed as a repository/Runner MCP tool.
 The standalone ADK specialized-agent MCPToolset implementation remains
 in the source and has dedicated historical tests; remove it separately
 after migrating its signed-path denial tests to the canonical FunctionTools.
+
+## R195 — remove standalone ADK MCPToolset
+
+`createAdkSpecializedAgent` no longer imports or instantiates
+`MCPToolset`, constructs a model-facing repository/Runner MCP tool, or
+calls the obsolete timed repository MCP Runner. All model tool requests
+are direct Gateway FunctionTools. Signed dynamic-branch permission
+enums, the one-failed-Test terminal latch and redacted tool telemetry
+remain unchanged. Stale JavaScript config keys now fail closed.
+
+The historical MCP-enabled agent tests have been migrated to the direct
+Gateway path, including preparatory Test withholding `run_tests`
+and exact signed file/branch grants. Crypto-only VP signing remains in
+the separate trusted Task MCP bridge; this is not a live Gemini pilot.
