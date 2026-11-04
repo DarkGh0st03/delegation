@@ -130,6 +130,32 @@ impl NativeEngineerSocket {
                     serde_json::to_value(receipt)
                         .map_err(|_| String::from("serialization unavailable"))
                 }),
+            "issue_child" if caller.role() == CallerRole::Orchestrator => {
+                serde_json::from_value::<IssueChildRequest>(req.body)
+                    .map_err(|_| String::from("invalid request"))
+                    .and_then(|input| crypto.issue_child(caller, &config.callers, input))
+                    .and_then(|issued| {
+                        serde_json::to_value(issued)
+                            .map_err(|_| String::from("serialization unavailable"))
+                    })
+            }
+            "create_presentation"
+                if matches!(
+                    caller.role(),
+                    CallerRole::Orchestrator
+                        | CallerRole::Backend
+                        | CallerRole::Frontend
+                        | CallerRole::Test
+                ) =>
+            {
+                serde_json::from_value::<CreatePresentationRequest>(req.body)
+                    .map_err(|_| String::from("invalid request"))
+                    .and_then(|input| crypto.create_presentation(caller, input))
+                    .and_then(|signed| {
+                        serde_json::to_value(signed)
+                            .map_err(|_| String::from("serialization unavailable"))
+                    })
+            }
             _ => return json!({"ok":false,"error":"engineer_native_denied"}),
         };
         match outcome {
