@@ -83,25 +83,19 @@ test("R6 catches deleted local files and missing checked entrypoints",t=>{
     ["missing local module","missing audited script"]);
 });
 
-test("R172 excludes physically retired sequential Coordinator scripts",()=>{
-  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,9);
-  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,9);
-  for(const removed of ["a2a-production-coordinator-mcp-gemini-live.mjs",
-   "a2a-production-coordinator-mcp-isolated-real-positive.mjs",
-   "a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
-   "a2a-production-coordinator-mcp-isolated-smoke.mjs"])
-    assert.ok(!HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>x.endsWith("/"+removed)));
-  assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
-    x.endsWith("/scripts/human-merge.mjs")));
-  assert.ok(!HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
-    x.endsWith("/scripts/assert-current-authority-boundaries.mjs")));
-  for(const name of ["adk-real-mcp-smoke.mjs","adk-isolated-mcp-create-smoke.mjs","adk-isolated-mcp-write-smoke.mjs","adk-isolated-mcp-real-runner-smoke.mjs","a2a-real-mcp-read-smoke.mjs","a2a-three-roles-shared-mcp-read-smoke.mjs","a2a-shared-mcp-isolated-sequential-write-smoke.mjs","assert-researcher-acceptance-negative.mjs"]) {
-    assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>x.endsWith("/"+name)),
-      "Missing offline historical A2A/MCP or Researcher check: "+name);
-  }
-
+test("R186 historical entrypoint checks only retained Researcher and human merge programs",()=>{
+ assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,2);
+ assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,2);
+ assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
+   x.endsWith("/scripts/assert-researcher-acceptance-negative.mjs")));
+ assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
+   x.endsWith("/scripts/human-merge.mjs")));
+ const retired=["adk-real-mcp-smoke.mjs","adk-isolated-mcp-create-smoke.mjs","adk-isolated-mcp-write-smoke.mjs","adk-isolated-mcp-real-runner-smoke.mjs","a2a-real-mcp-read-smoke.mjs","a2a-three-roles-shared-mcp-read-smoke.mjs","a2a-shared-mcp-isolated-sequential-write-smoke.mjs"];
+ for(const name of retired){
+   assert.ok(!HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>x.endsWith("/"+name)),
+     "Retired MCP smoke must not remain an executable audit entry: "+name);
+ }
 });
-
 
 test("R6 finds a legitimate export after regex with quotes and template delimiter",t=>{
   const f=fixture(t,{
@@ -238,17 +232,26 @@ test("R6 native ADK smoke fails when private MCP worker export was renamed",t=>{
   })),[{symbol:"attachPrivateMcpWorker",reason:"missing runtime named export"}]);
 });
 
-test("R6 ADK/MCP docker smokes remain source audited rather than executed by import",()=>{
-  for(const name of [
-    "adk-real-mcp-smoke.mjs",
-    "adk-isolated-mcp-create-smoke.mjs",
-    "adk-isolated-mcp-write-smoke.mjs",
-    "adk-isolated-mcp-real-runner-smoke.mjs"
-  ]){
-    assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.filter(e=>e.endsWith("/"+name)).length,1,
-      "Each effectful smoke must be audited once, not executed: "+name);
-  }
+test("R186 retired real ADK/MCP smoke binaries cannot be required as executable entrypoints",async()=>{
+ const {existsSync}=await import("node:fs");
+ const {R6_RETIRED_TARGETS}=await import("../r6-legacy-references.mjs");
+ const root=new URL("../../../",import.meta.url);
+ const retired=["poc/packages/agent-runtime/scripts/adk-real-mcp-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/adk-isolated-mcp-create-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/adk-isolated-mcp-write-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/adk-isolated-mcp-real-runner-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-real-mcp-read-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-three-roles-shared-mcp-read-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-shared-mcp-isolated-sequential-write-smoke.mjs",
+  "poc/mcp-shared/scripts/real-read-smoke.mjs"];
+ for(const path of retired){
+  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.includes(path),false);
+  assert.equal(R6_RETIRED_TARGETS.includes(path),true,
+    "Retired MCP entrypoint missing from negative audit: "+path);
+  assert.equal(existsSync(new URL(path,root)),false);
+ }
 });
+
 test("R6 rejects a fake value export inside a multiline block comment",t=>{
   const f=fixture(t,{
     [entry]:"import {Phantom} from '../src/phantom.ts';",

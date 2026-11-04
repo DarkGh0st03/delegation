@@ -207,3 +207,21 @@ security certification or a live Gemini autonomous-repair success.
 remaining historical fixtures in a separate bounded change. Re-run the
 consolidated three zero-billing Full CI on a common SHA only after those
 runtime/test changes. No paid Gemini workflow is authorized by this audit.
+
+## R186 — archived ADK/A2A repo-MCP smoke launchers physically retired
+
+Removed **eight historical executable smoke files** (7 ADK/A2A script
+launchers plus shared MCP `real-read-smoke.mjs`) and their npm commands.
+The last active workflows no longer reference these scripts. All eight now
+appear in both the R6 candidate and required-absent retirement inventories,
+which inspect remaining executable references. Git history preserves their
+previous implementation and reproduction details; the signed DAG's direct
+FunctionTools, the crypto-only MCP bridge and independent Runner/Gateway
+tests remain the required test path.
+
+This is an intentionally **bounded R186 stage**, not a claim that the legacy
+repository-MCP source or historical test routes have been deleted:
+`mcp-shared/src/task-router.ts`, `legacy-repository-tools.ts`,
+`private-mcp-worker-http.ts`'s opted-in repo route, and opt-in ADK
+MCPToolset fixtures still need targeted migration. Do not remove the
+crypto-only private worker, one-shot proof ref or Task bearer registry.
