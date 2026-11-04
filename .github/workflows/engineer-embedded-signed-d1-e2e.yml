@@ -22,6 +22,8 @@ jobs:
     env:
       TEST_RUNNER_FAILURE_EVIDENCE_DIR: /tmp/functional-private-evidence
       ADAPTER_TRUST_PROFILE: evm
+      ADAPTER_DID_PUBLISHER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/publish-ed25519.mjs
+      ADAPTER_DID_RESOLVER_SCRIPT: ${{ github.workspace }}/blockchain/did-client/resolve-did-json.mjs
       ENGINEER_CORE_NATIVE_MODE: "1"
       APPROVED_RUNNER_NATIVE_EVM: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
