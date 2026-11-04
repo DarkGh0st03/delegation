@@ -1,18 +1,22 @@
-//! R170: trusted Engineer's LOCAL Rust cryptographic entrypoint.
+//! R201: trusted LOCAL Rust cryptography for Engineer and signed A2A Tasks.
 //!
 //! The same process-local CryptoRuntime holds root and child credential objects,
 //! issuer accumulators, EVM status anchors and private signing material. The
 //! optional Unix listener does NOT create another issuer or another authority.
 //! It is NOT an MCP endpoint, HTTP endpoint, ADK tool or an agent capability.
-//! Authenticated Engineer-only calls use the existing Rust CallerRegistry and
-//! issue_root/update_credential_status implementations (Core Rust inside).
+//! CallerRegistry checks role and Core Rust capabilities for every operation.
+//! The Unix socket is NOT MCP, A2A, a model tool or a public interface.
 //!
 //! The socket pathname is provisioned by the trusted owner; 0600 on Unix.
-//! One bounded request per connection; no private keys or VPs in responses.
+//! One bounded request per connection; keys never leave Rust. Signed VPs
+//! return only to authenticated trusted local callers.
 
 use crate::auth::CallerRole;
 use crate::config::AdapterConfig;
-use crate::crypto::{CryptoRuntime, IssueRootRequest, UpdateCredentialStatusRequest};
+use crate::crypto::{
+    CreatePresentationRequest, CryptoRuntime, IssueChildRequest, IssueRootRequest,
+    UpdateCredentialStatusRequest,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::fs::{self, Permissions};
@@ -103,18 +107,18 @@ impl NativeEngineerSocket {
     fn dispatch(req: EngineerRequest, config: &AdapterConfig, crypto: &mut CryptoRuntime) -> Value {
         // Never accept authority from request fields, MCP claims or model output.
         let caller = match config.callers.authenticate(&req.token) {
-            Ok(caller) if caller.role() == CallerRole::Engineer => caller,
+            Ok(caller) => caller,
             _ => return json!({"ok":false,"error":"engineer_native_denied"}),
         };
         let outcome = match req.operation.as_str() {
-            "issue_root" => serde_json::from_value::<IssueRootRequest>(req.body)
+            "issue_root" if caller.role() == CallerRole::Engineer => serde_json::from_value::<IssueRootRequest>(req.body)
                 .map_err(|_| String::from("invalid request"))
                 .and_then(|input| crypto.issue_root(caller, &config.callers, input))
                 .and_then(|issued| {
                     serde_json::to_value(issued)
                         .map_err(|_| String::from("serialization unavailable"))
                 }),
-            "revoke_root" => serde_json::from_value::<UpdateCredentialStatusRequest>(req.body)
+            "revoke_root" if caller.role() == CallerRole::Engineer => serde_json::from_value::<UpdateCredentialStatusRequest>(req.body)
                 .map_err(|_| String::from("invalid request"))
                 .and_then(|input| {
                     if !input.status_set {
