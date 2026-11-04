@@ -112,3 +112,20 @@ test("R213 signed VP handler never falls back to Adapter HTTP when native socket
  assert.equal(httpRequests,0);
  assert.equal(denied.calls.length,1);
 });
+
+test("R218 canonical signed VP handler rejects missing native socket before HTTP",()=>{
+ const oldFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+ try{
+  assert.throws(()=>new DelegationEvidenceHandler({
+   adapterBaseUrl:"http://127.0.0.1:8090",
+   adapterToken:"PRIVATE_BACKEND_TOKEN",
+   evidence:{credential:"private.opaque.child",credential_id:"urn:child:42",
+    presenter_id:"did:thesis:backend"},
+   fetchFn:(async()=>{throw Error("HTTP fallback forbidden");}) as typeof fetch
+  }),/Canonical signed Task VP requires native Rust signer socket/u);
+ }finally{
+  if(oldFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=oldFlag;
+ }
+});
