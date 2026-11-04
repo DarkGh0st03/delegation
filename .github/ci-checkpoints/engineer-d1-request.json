@@ -1,6 +1,6 @@
 {
-  "checkpoint": "R259 — signed D1 recovery after verified embedded DAG",
-  "candidate_parent_sha": "5571d70d237b2d917fce0abe386f281d5736d397",
+  "checkpoint": "R261 — validate dedicated D1 review receipt",
+  "candidate_parent_sha": "fab58cc24cacd34a3e61f3bb511d18c7c5802a81",
   "positive_dag_run_id": 41889765977,
   "workflow": "engineer-embedded-signed-d1-e2e.yml",
   "paid_model_invocation": false,
