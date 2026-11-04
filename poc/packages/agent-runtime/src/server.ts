@@ -21,7 +21,6 @@ import {
 import type { SpecializedAgentRole } from "./contracts.ts";
 import { createAdkA2ATaskHandler, type AdkA2ATaskHandlerConfig } from "./adk-a2a-handler.ts";
 import { PrivateMcpTaskRegistry } from "./private-mcp-task-registry.ts";
-import { attachPrivateMcpWorker } from "./private-mcp-worker-http.ts";
 
 import {startTrustedBackendDiscoveryHost} from "./trusted-backend-discovery-host.ts";
 
@@ -73,6 +72,8 @@ export async function startSpecializedAgentServer(
   if(options.adk&&["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
        .some(key=>Object.prototype.hasOwnProperty.call(options.adk,key)))
     throw Error("legacy_repository_mcp_retired");
+  if(options.adk&&Object.prototype.hasOwnProperty.call(options.adk,"mcpCryptoUrl"))
+    throw Error("legacy_crypto_http_mcp_retired");
   if (options.mcpTaskSigning && !options.adk) {
     throw new Error("Private MCP task worker requires a configured ADK runtime");
   }
@@ -111,11 +112,9 @@ export async function startSpecializedAgentServer(
     executor
   );
 
+  // Only the A2A service listener remains. Crypto presentations are
+  // one-use task-local MCP SDK calls; no /internal/mcp-crypto-call route.
   const app = express();
-  // Task-local crypto SDK transport has no HTTP worker. Only the
-  // explicitly configured external compatibility path mounts this route.
-  if (mcpTaskRegistry&&options.adk?.mcpCryptoUrl)
-    attachPrivateMcpWorker(app,mcpTaskRegistry);
   app.use(
     `/${AGENT_CARD_PATH}`,
     agentCardHandler({ agentCardProvider: requestHandler })
