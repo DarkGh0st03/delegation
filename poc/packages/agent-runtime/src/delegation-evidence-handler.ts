@@ -66,6 +66,31 @@ export class DelegationEvidenceHandler {
     prepared: PreparedGatewayAuthorization
   ): Promise<string> {
     this.#signal?.throwIfAborted();
+    // Native path uses the SAME Rust CryptoRuntime as the Engineer root
+    // and the Orchestrator child. NEVER fall back to HTTP after native denial.
+    if(this.#nativeSocketPath){
+      let issued:unknown;
+      try{
+        issued=await invokeNativeCrypto({
+          socketPath:this.#nativeSocketPath,token:this.#adapterToken,
+          timeoutMs:this.#timeoutMs
+        },"create_presentation",{
+          credential_id:this.#evidence.credential_id,
+          disclosed_permissions:[prepared.required_permission],
+          audience:prepared.audience,challenge:prepared.challenge
+        });
+      }catch{
+        throw new ControlledToolError("tool_unavailable",
+          "Native Rust cryptographic presentation unavailable");
+      }
+      this.#signal?.throwIfAborted();
+      const signed=issued&&typeof issued==="object"&&!Array.isArray(issued)
+        ?(issued as {signed_vp?:unknown}).signed_vp:undefined;
+      if(typeof signed!=="string"||!signed.trim())
+        throw new ControlledToolError("tool_unavailable",
+          "Native Rust cryptographic presentation malformed");
+      return signed;
+    }
     let response: Response;
     try {
       response = await this.#fetch(`${this.#adapterBaseUrl}/v1/presentations`, {
