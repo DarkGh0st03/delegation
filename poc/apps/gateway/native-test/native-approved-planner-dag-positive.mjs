@@ -33,6 +33,7 @@ import {GatewayRuntime} from "../src/runtime.ts";
 import {GiteaClient} from "../src/gitea-client.ts";
 import {GiteaExecutor} from "../src/gitea-executor.ts";
 import {RunnerClient} from "../src/runner-client.ts";
+import {invokeNativeCrypto} from "../../../packages/agent-runtime/src/native-crypto-ipc.ts";
 import {OpaPolicyClient} from "../src/policy-client.ts";
 import {loadDirectCoreRustVerifier} from "../src/direct-core-loader.ts";
 import {IsolatedDockerRunnerExecutor} from
@@ -89,16 +90,33 @@ const EDIT_ROLES=["backend","frontend"];
 const ROLES=[...EDIT_ROLES,"test"];
 const SHA=/^[0-9a-f]{40}$/u;
 async function signedVp(credentialId,challenge,token){
+  const body={
+    credential_id:credentialId,
+    disclosed_permissions:[challenge.required_permission],
+    audience:challenge.audience,challenge:challenge.challenge
+  };
+  const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  if(socketPath){
+    // The canonical signed DAG must sign the Orchestrator's own Gateway
+    // operations through the SAME Rust issuer used for root/child DCs.
+    // A native denial is terminal: do not attempt the Adapter HTTP route.
+    const issued=await invokeNativeCrypto({socketPath,token,timeoutMs:30000},
+      "create_presentation",body);
+    const signed=issued&&typeof issued==="object"&&!Array.isArray(issued)
+      ?issued.signed_vp:undefined;
+    assert.ok(typeof signed==="string"&&signed.length>100,
+      "Native Rust Orchestrator VP was not signed");
+    return signed;
+  }
+  if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
+    throw Error("Canonical signed DAG requires native Rust Orchestrator VP signing");
+  // Historical offline fixtures without the canonical native-MCP flag.
   const response=await fetch(adapterUrl+"/v1/presentations",{
     method:"POST",headers:{authorization:"Bearer "+token,
       "content-type":"application/json"},
-    body:JSON.stringify({
-      credential_id:credentialId,
-      disclosed_permissions:[challenge.required_permission],
-      audience:challenge.audience,challenge:challenge.challenge
-    })
+    body:JSON.stringify(body)
   });
-  assert.equal(response.status,200,"Native Adapter must sign exact permission");
+  assert.equal(response.status,200,"Historical Rust Adapter must sign exact permission");
   const signed_vp=(await response.json()).signed_vp;
   assert.ok(typeof signed_vp==="string"&&signed_vp.length>100);
   return signed_vp;
@@ -360,6 +378,9 @@ export async function runNativePositiveApprovedDag({
   // Only the separately authenticated, task-bound cryptographic MCP remains.
   // The historic repository-routing MCP is not started by this entry point.
   const cryptoMcpEnabled=process.env.APPROVED_RUNNER_NATIVE_MCP==="1";
+  if(cryptoMcpEnabled&&(!process.env.ADAPTER_ENGINEER_NATIVE_SOCKET||
+     !process.env.ADAPTER_ENGINEER_NATIVE_SOCKET.startsWith("/")))
+    throw Error("Canonical signed DAG requires the native Rust issuer socket");
   let privateCryptoMcpCalls=0;
   let signedTestOutOfScopeDenied=false;
   let observedTypecheckProbe=null;
