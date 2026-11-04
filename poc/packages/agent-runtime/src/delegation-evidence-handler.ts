@@ -16,7 +16,8 @@ export interface PreparedGatewayAuthorization {
 }
 
 export interface DelegationEvidenceHandlerConfig {
-  adapterBaseUrl: string;
+  /** Historical unsigned HTTP fixture only; native Rust VP needs no Adapter URL. */
+  adapterBaseUrl?: string;
   adapterToken: string;
   evidence: DelegationEvidence;
   timeoutMs?: number;
@@ -35,7 +36,7 @@ export class DelegationEvidenceHandler {
   readonly #signal?: AbortSignal;
 
   constructor(config: DelegationEvidenceHandlerConfig) {
-    if (config.adapterBaseUrl.trim().length === 0) {
+    if (!config.nativeSocketPath && !config.adapterBaseUrl?.trim()) {
       throw new Error("Delegation Adapter base URL cannot be empty");
     }
     if (config.adapterToken.trim().length === 0) {
@@ -49,7 +50,7 @@ export class DelegationEvidenceHandler {
     // presenter when the native Rust socket is absent.
     if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&!config.nativeSocketPath)
       throw Error("Canonical signed Task VP requires native Rust signer socket");
-    this.#adapterBaseUrl = config.adapterBaseUrl.replace(/\/+$/u, "");
+    this.#adapterBaseUrl = (config.adapterBaseUrl??"").replace(/\/+$/u, "");
     this.#adapterToken = config.adapterToken;
     this.#evidence = structuredClone(config.evidence);
     this.#timeoutMs = config.timeoutMs ?? 5_000;
