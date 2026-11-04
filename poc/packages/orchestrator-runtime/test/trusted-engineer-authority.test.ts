@@ -9,7 +9,7 @@ import {
 import type {
   IssuedDelegationCredential
 } from "../src/authority-client.ts";
-import type {DelegatedPermission} from "../src/permission-templates.ts";
+import type {DelegatedPermission} from "../src/delegated-permission.ts";
 
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 const rootUri="gitea://gitea.local/thesis/iam-console-poc";

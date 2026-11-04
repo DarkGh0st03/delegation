@@ -3,7 +3,7 @@
  *
  * This type does NOT grant authority. The active Engineer-signed plan,
  * scoped Rust DC/VP, Gateway and OPA independently enforce authorization.
- * Static Account Suspension matrices live only in permission-templates.ts.
+ * No static Account Suspension role-permission templates are authorized.
  */
 export type TemplateOperation =
   | "read_repository"
