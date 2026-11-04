@@ -50,6 +50,8 @@ export interface SpecializedAgentServer {
   card: AgentCard;
   executor: DeterministicSpecializedAgentExecutor;
   server: Server;
+  /** Host-only evidence counter, never a public A2A or ADK capability. */
+  cryptoProofCount?:()=>number;
   /** Owner/Gateway bootstrap selectors; never included in the Agent Card. */
   privateDiscoveryPorts?:Pick<Awaited<ReturnType<typeof startTrustedBackendDiscoveryHost>>,
     "ownerBinding"|"gatewaySigner">;
@@ -162,6 +164,7 @@ export async function startSpecializedAgentServer(
     card,
     executor,
     server,
+    ...(mcpTaskRegistry?{cryptoProofCount:()=>mcpTaskRegistry.completedCryptoProofs}:{}),
     close: () => closing??=(async()=>{
       // close() fences the private holder before its first await.
       const results=await Promise.allSettled([discovery?.close(),
