@@ -54,6 +54,9 @@ export class PrivateMcpTaskRegistry {
   readonly #signingKey: string;
   readonly #verificationKey: string;
   readonly #active = new Map<string, ActiveTask>();
+  #completedCryptoProofs=0;
+  /** Trusted host-only count; never a model/Agent Card output. */
+  get completedCryptoProofs():number{return this.#completedCryptoProofs;}
 
   constructor(config: {
     role: AgentRole;
@@ -251,6 +254,7 @@ export class PrivateMcpTaskRegistry {
     }
     const proof_ref="proof_"+randomUUID();
     task.signedProofs.set(proof_ref,signed);
+    this.#completedCryptoProofs++;
     return {
       request_id:requestId,proof_ref,prepared:true,
       credential_id:task.evidenceHandler.credentialId,
