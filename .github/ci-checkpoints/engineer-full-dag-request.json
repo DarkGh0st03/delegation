@@ -1,18 +1,19 @@
 {
   "schema": "delegation-embedded-engineer-signed-dag-checkpoint-v1",
-  "checkpoint": "R270 — final native preflight after paid workflow direct-Rust migration",
-  "candidate_parent_sha": "ea523820967396f9bbc5fd672877a578ae373ec1",
+  "checkpoint": "R279 — post-F1 native Engineer release candidate, exact-SHA free validation",
+  "candidate_parent_sha": "f7bb80281215ecd2763a316ef936fba38c935892",
   "workflow": "engineer-embedded-signed-dag-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
   "mode": "ENGINEER_CORE_NATIVE_MODE=1; sole Engineer Rust issuer; native Gateway verifier; Adapter HTTP off",
-  "trigger_reason": "Fast CI R269 succeeded; confirm native EVM/DAG/D1 on one post-migration SHA",
+  "trigger_reason": "F1 R278 SUCCESS + Fast CI R278 SUCCESS; confirm entire signed DAG on R279 exact SHA",
   "purpose": "One free Gitea/OPA/Anvil/Docker end-to-end scripted ADK DAG: Software Engineer root via in-process Rust Node-API; agent child/VP via one native Rust owner; Gateway public-only Rust EVM verification and OPA; backend/frontend/test A2A; real Docker acceptance and unmerged PR; no competing Adapter HTTP, no Shared MCP HTTP, no paid model.",
   "exclusions": [
     "No Gemini/OpenAI API calls",
     "No automated merge",
     "No main mutation",
-    "Do not assert Gemini autonomous recovery or D1 from positive proof"
+    "Scripted ADK proof only; do not assert autonomous LLM success"
   ],
-  "verification_scope": "One embedded Engineer Rust signed Gitea/Docker DAG; no LLM"
+  "verification_scope": "One embedded Engineer Rust signed Gitea/Docker DAG; no LLM",
+  "f1_free_same_owner_proof_run_id": 41919029715
 }

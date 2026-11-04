@@ -1,9 +1,17 @@
 {
-  "checkpoint": "R270 — final native preflight after paid workflow direct-Rust migration",
-  "candidate_parent_sha": "ea523820967396f9bbc5fd672877a578ae373ec1",
+  "checkpoint": "R279 — post-F1 native Engineer release candidate, exact-SHA free validation",
+  "candidate_parent_sha": "f7bb80281215ecd2763a316ef936fba38c935892",
   "workflow": "engineer-embedded-signed-d1-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
   "verification_scope": "One embedded Engineer Rust signed D1 recovery and unmerged review PR; no LLM",
-  "historical_positive_dag_run_id": 41897153003
+  "historical_positive_dag_run_id": 41899589143,
+  "f1_free_same_owner_proof_run_id": 41919029715,
+  "trigger_reason": "Run one nonbillable signed D1 recovery verification on same frozen candidate as EVM/DAG/Fast CI",
+  "exclusions": [
+    "No Gemini/OpenAI API calls",
+    "No automated merge",
+    "No main mutation",
+    "No permission expansion beyond signed approved plan"
+  ]
 }

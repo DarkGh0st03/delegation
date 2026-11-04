@@ -5,6 +5,14 @@
 **Inspected source baseline:** R276 `1fe6e3ed6667127bc060aea40293aa0b721505a5`  
 **Reference completed release checkpoint:** R270 `7cd438b43d0ddcce42fae92af6a9a8c4e4ae3b1e`
 
+> **R279 status update (2026-11-04):** R278 zero-billing real-Gitea F1 is
+> **SUCCESS** on SHA `f7bb80281215ecd2763a316ef936fba38c935892`: [run #41919029715](https://github.com/DarkGh0st03/delegation/actions/runs/41919029715).
+> Fast CI on that SHA also passed ([#41919029553](https://github.com/DarkGh0st03/delegation/actions/runs/41919029553)).
+> The R276 failure and R277 draft details below are retained as historical
+> observations; see [RELEASE_NATIVE_R279.md](RELEASE_NATIVE_R279.md) for
+> current release readiness. Free EVM, signed DAG, D1 and Fast CI must pass
+> on the single **R279** SHA before this checkpoint is closed.
+>
 > This register supersedes the *status* (not the historical audit trail) in
 > `post-prof-migration-audit-2026-11-03.md` and
 > `REPOSITORY_CLEANUP_R229.md`. Earlier headers describe R197–R229

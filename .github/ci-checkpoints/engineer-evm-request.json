@@ -1,15 +1,17 @@
 {
   "schema": "delegation-native-engineer-evm-checkpoint-v1",
-  "checkpoint": "R270 — final native preflight after paid workflow direct-Rust migration",
-  "candidate_parent_sha": "ea523820967396f9bbc5fd672877a578ae373ec1",
+  "checkpoint": "R279 — post-F1 native Engineer release candidate, exact-SHA free validation",
+  "candidate_parent_sha": "f7bb80281215ecd2763a316ef936fba38c935892",
   "workflow": "engineer-direct-native-evm-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
   "purpose": "One zero-LLM-billing live EVM Anvil/DID/Status List proof for direct Engineer root/DC revocation, same Rust issuer delegated Child and signed Backend VP, Gateway issuer inspection through native IPC, independent Core Rust Gateway VP verification and wrong nonce/after-revocation denial. Never launch legacy Adapter HTTP or Gemini.",
   "scope_exclusions": [
-    "No paid API",
-    "No main mutation",
-    "No Gitea/Docker full signed DAG until this native EVM gate passes"
+    "No billed Gemini/OpenAI calls",
+    "No main mutation or merge",
+    "No Adapter HTTP service; no duplicated crypto issuer"
   ],
-  "verification_scope": "Independent direct Rust EVM issuer/VP/revocation proof; no LLM"
+  "verification_scope": "Independent direct Rust EVM issuer/VP/revocation proof; no LLM",
+  "f1_free_same_owner_proof_run_id": 41919029715,
+  "trigger_reason": "F1 R278 SUCCESS after direct Rust engineer DID absolute path fix; verify same-SHA final native EVM issuer/VP/revocation proof"
 }
