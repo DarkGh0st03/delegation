@@ -79,13 +79,18 @@ impl NativeEngineerSocket {
     /// Engineer process, its socket serves ONLY Orchestrator and Agents.
     /// Engineer roots/revocations must use the direct Node-API binding.
     pub fn poll_delegates_only(
-        &self, config: &AdapterConfig, crypto: &mut CryptoRuntime,
+        &self,
+        config: &AdapterConfig,
+        crypto: &mut CryptoRuntime,
     ) -> Result<(), String> {
         self.poll_with_owner_rights(config, crypto, false)
     }
 
     fn poll_with_owner_rights(
-        &self, config: &AdapterConfig, crypto: &mut CryptoRuntime, owner_allowed: bool,
+        &self,
+        config: &AdapterConfig,
+        crypto: &mut CryptoRuntime,
+        owner_allowed: bool,
     ) -> Result<(), String> {
         match self.listener.accept() {
             Ok((mut stream, _)) => {
@@ -98,8 +103,10 @@ impl NativeEngineerSocket {
     }
 
     fn handle(
-        stream: &mut UnixStream, config: &AdapterConfig,
-        crypto: &mut CryptoRuntime, owner_allowed: bool,
+        stream: &mut UnixStream,
+        config: &AdapterConfig,
+        crypto: &mut CryptoRuntime,
+        owner_allowed: bool,
     ) {
         let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
         let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
@@ -109,14 +116,14 @@ impl NativeEngineerSocket {
             Ok(_) if !bytes.is_empty() && bytes.len() as u64 <= MAX_REQUEST => {
                 match serde_json::from_slice::<EngineerRequest>(&bytes) {
                     Ok(req) => {
-                        if !owner_allowed &&
-                            (req.operation == "issue_root" || req.operation == "revoke_root")
+                        if !owner_allowed
+                            && (req.operation == "issue_root" || req.operation == "revoke_root")
                         {
                             json!({"ok":false,"error":"engineer_native_denied"})
                         } else {
                             Self::dispatch(req, config, crypto)
                         }
-                    },
+                    }
                     Err(_) => json!({"ok":false,"error":"engineer_native_invalid_request"}),
                 }
             }
@@ -170,18 +177,24 @@ impl NativeEngineerSocket {
             // signed VPs still uses the Gateway's PUBLIC-only Core Rust addon.
             // These read commands observe the SAME issuer/state instance that
             // minted the root, including live anchored EVM status.
-            "read_issued_root" if caller.role() == CallerRole::Gateway =>
+            "read_issued_root" if caller.role() == CallerRole::Gateway => {
                 serde_json::from_value::<ReadCredentialStatusRequest>(req.body)
                     .map_err(|_| String::from("invalid request"))
                     .and_then(|input| crypto.read_issued_root(caller, &config.callers, input))
-                    .and_then(|observation| serde_json::to_value(observation)
-                        .map_err(|_| String::from("serialization unavailable"))),
-            "read_credential_status" if caller.role() == CallerRole::Gateway =>
+                    .and_then(|observation| {
+                        serde_json::to_value(observation)
+                            .map_err(|_| String::from("serialization unavailable"))
+                    })
+            }
+            "read_credential_status" if caller.role() == CallerRole::Gateway => {
                 serde_json::from_value::<ReadCredentialStatusRequest>(req.body)
                     .map_err(|_| String::from("invalid request"))
                     .and_then(|input| crypto.read_credential_status(caller, &config.callers, input))
-                    .and_then(|observation| serde_json::to_value(observation)
-                        .map_err(|_| String::from("serialization unavailable"))),
+                    .and_then(|observation| {
+                        serde_json::to_value(observation)
+                            .map_err(|_| String::from("serialization unavailable"))
+                    })
+            }
             "create_presentation"
                 if matches!(
                     caller.role(),
