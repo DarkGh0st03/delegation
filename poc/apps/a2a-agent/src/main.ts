@@ -6,6 +6,7 @@ import {
   type SpecializedAgentRole
 } from "@thesis/agent-runtime";
 import {requireProductionDirectGatewayTools} from "./mcp-tool-flags.ts";
+import {generateKeyPairSync} from "node:crypto";
 
 function roleFromEnvironment(value: string | undefined): SpecializedAgentRole {
   if (
@@ -99,9 +100,17 @@ if (cryptoMcpUrl && engine !== "adk") {
 function pemSecret(name: string): string {
   return required(name).replaceAll("\\n", "\n");
 }
-const mcpTaskSigning = cryptoMcpUrl
-  ? {signingPrivateKeyPem:pemSecret("MCP_TASK_SIGNING_PRIVATE_KEY"),
-     signingPublicKeyPem:pemSecret("MCP_TASK_SIGNING_PUBLIC_KEY")}
+// Default ADK: ephemeral in-process crypto MCP, no Shared MCP network hop.
+const localKeys=engine==="adk"&&!cryptoMcpUrl
+  ? generateKeyPairSync("ed25519") : undefined;
+const mcpTaskSigning = engine==="adk"
+  ? (cryptoMcpUrl
+     ? {signingPrivateKeyPem:pemSecret("MCP_TASK_SIGNING_PRIVATE_KEY"),
+        signingPublicKeyPem:pemSecret("MCP_TASK_SIGNING_PUBLIC_KEY")}
+     : {signingPrivateKeyPem:localKeys!.privateKey.export({
+          format:"pem",type:"pkcs8"}).toString(),
+        signingPublicKeyPem:localKeys!.publicKey.export({
+          format:"pem",type:"spki"}).toString()})
   : undefined;
 const runtime = await startSpecializedAgentServer({
   role,
