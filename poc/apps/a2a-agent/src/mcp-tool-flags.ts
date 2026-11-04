@@ -1,12 +1,8 @@
-import type {SpecializedAgentRole} from "@thesis/agent-runtime";
-
-/** Production launcher: no write/test MCP tools are enabled by default. */
-export interface McpToolFlags{
-  mcpUpdateFile?: true;
-  mcpCreateFile?: true;
-  mcpRunTests?: true;
-}
-type Engine="deterministic"|"adk";
+/**
+ * R187 — production A2A has NO MCP repository tool flag selector.
+ * Any configured shared repository MCP endpoint or active legacy tool flag
+ * fails closed. The separate crypto-only VP bridge is unaffected.
+ */
 function enabled(env:Record<string,string|undefined>,name:string):boolean{
   const value=env[name];
   if(value===undefined || value==="" || value==="false")return false;
@@ -36,10 +32,8 @@ export function resolveMcpToolFlags(
 }
 
 /**
- * R180 deployment boundary: the model-visible repository MCP route is
- * no longer a supported A2A production configuration. This does NOT disable
- * ADK FunctionTools -> Gateway or the trusted crypto-only MCP bridge.
- * Archived test harnesses may still call resolveMcpToolFlags directly.
+ * Enforce FunctionTools -> Gateway for repository and Runner operations.
+ * Never install a repository/Runner MCPToolset from the A2A launcher.
  */
 export function requireProductionDirectGatewayTools(
  env:Record<string,string|undefined>

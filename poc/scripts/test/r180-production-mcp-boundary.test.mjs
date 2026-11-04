@@ -18,6 +18,7 @@ test("R180 production A2A cannot register model-facing repository MCP tools",()=
  const flags=read("poc/apps/a2a-agent/src/mcp-tool-flags.ts");
  assert.match(app,/requireProductionDirectGatewayTools\(process\.env\)/u);
  assert.match(flags,/env\.ADK_MCP_SHARED_URL!==undefined/u);
+ assert.doesNotMatch(flags,/export function resolveMcpToolFlags\(/u);
  assert.doesNotMatch(app,/mcpSharedUrl\s*:/u);
  assert.doesNotMatch(app,/mcpReadFile\s*:/u);
  assert.match(app,/mcpCryptoUrl\s*:/u);

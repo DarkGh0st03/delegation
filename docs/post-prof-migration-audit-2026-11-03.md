@@ -225,3 +225,17 @@ repository-MCP source or historical test routes have been deleted:
 `private-mcp-worker-http.ts`'s opted-in repo route, and opt-in ADK
 MCPToolset fixtures still need targeted migration. Do not remove the
 crypto-only private worker, one-shot proof ref or Task bearer registry.
+
+## R187 — remove deployable legacy A2A MCP flag resolver
+
+Removed `resolveMcpToolFlags`, a dormant selector which could previously
+return model-facing repository `mcpUpdateFile`/`mcpCreateFile`/
+`mcpRunTests` capabilities. The production launcher calls only
+`requireProductionDirectGatewayTools` and continues to reject
+`ADK_MCP_SHARED_URL` or any enabled legacy repository flag. Explicit
+`false` remains accepted to avoid breaking configurations that still
+supply disabled flags; unknown values fail closed. The `ADK_MCP_CRYPTO_URL`
+VP-only bridge remains supported. The old resolver is not an agent API.
+
+This stage removes an obsolete production-facing configuration surface,
+not the remaining internal `TaskRouter`/legacy ADK MCPToolset test fixtures.
