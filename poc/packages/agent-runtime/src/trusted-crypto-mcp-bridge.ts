@@ -1,6 +1,7 @@
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type {PreparedGatewayAuthorization} from "./delegation-evidence-handler.ts";
+import type {CryptoPresentationPort} from "./crypto-presentation-port.ts";
 import {ControlledToolError} from "./controlled-errors.ts";
 import {PrivateMcpTaskRegistry} from "./private-mcp-task-registry.ts";
 
@@ -14,9 +15,8 @@ import {PrivateMcpTaskRegistry} from "./private-mcp-task-registry.ts";
  * delegated DC never leave the private Agent runtime (except to the trusted
  * Gateway execute endpoint, which must verify the VP).
  */
-export interface CryptoPresentationPort {
-  createSignedPresentation(prepared:PreparedGatewayAuthorization):Promise<string>;
-}
+// Historical remote bridge remains test-only until dependency-free deletion.
+export type {CryptoPresentationPort} from "./crypto-presentation-port.ts";
 
 const PROOF_REF=/^proof_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const REQUEST_ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
