@@ -509,7 +509,9 @@ const runtime=new GatewayRuntime(config,{
   executor:new GiteaReadOnlyExecutor(gitea)
 });
 const authorityClient=createTrustedEngineerCredentialPort({
-  adapterBaseUrl:adapterUrl,bearerToken:engineerToken,timeoutMs:60000
+  ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+    ? {}:{adapterBaseUrl:adapterUrl}),
+  bearerToken:engineerToken,timeoutMs:60000
 });
 const authority=new TrustedEngineerAuthoritySession({
   snapshot,credentials:authorityClient,
