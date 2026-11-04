@@ -22,3 +22,25 @@ export function requireProductionDirectGatewayTools(
   if(enabled(env,name))
    throw Error("production_agent_requires_direct_gateway_tools");
 }
+
+
+/**
+ * A production ADK launcher is a canonical signed Task participant, not a
+ * legacy crypto-only HTTP compatibility fixture. Its VP must come from the
+ * SAME authenticated native Rust issuer that owns root/child DC state.
+ * The caller enables APPROVED_RUNNER_NATIVE_MCP only after this validation.
+ */
+export function requireProductionNativeCrypto(
+ env:Record<string,string|undefined>,engine:"adk"|"deterministic"
+):void {
+ if(engine!=="adk")return;
+ const path=env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ if(typeof path!=="string"||!path.startsWith("/")||
+    path.length>100||path.trim()!==path)
+  throw Error("production_adk_requires_native_rust_crypto");
+ if(env.ADK_MCP_CRYPTO_URL!==undefined)
+  throw Error("production_adk_requires_task_local_crypto_mcp");
+ if(env.APPROVED_RUNNER_NATIVE_MCP!==undefined&&
+    env.APPROVED_RUNNER_NATIVE_MCP!=="1")
+  throw Error("production_adk_requires_native_rust_crypto");
+}
