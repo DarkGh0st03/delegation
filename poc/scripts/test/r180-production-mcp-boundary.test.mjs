@@ -31,5 +31,5 @@ test("R180 cryptographic MCP worker remains reachable, not deleted as legacy",()
  assert.match(listener,/router\.createPresentation\(claims,token,args\)/u);
  assert.match(worker,/\/internal\/mcp-crypto-call/u);
  assert.match(bridge,/stageGatewayChallenge\(this\.#taskId,prepared\)/u);
- assert.match(bridge,/takeSignedProof/u);
+ assert.match(bridge,/takeSignedPresentation/u);
 });
