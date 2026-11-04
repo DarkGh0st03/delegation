@@ -1,9 +1,9 @@
 {
-  "checkpoint": "R266 — same-SHA native architecture gate after MCP HTTP retirement",
-  "candidate_parent_sha": "4c3f7eff2f5b67dd56e8483c8c80d13b3c8e8e53",
-  "positive_dag_run_id": 41889765977,
+  "checkpoint": "R270 — final native preflight after paid workflow direct-Rust migration",
+  "candidate_parent_sha": "ea523820967396f9bbc5fd672877a578ae373ec1",
   "workflow": "engineer-embedded-signed-d1-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
-  "verification_scope": "Native Engineer Rust signed D1 repair; same SHA as R266 native EVM and DAG checkpoints"
+  "verification_scope": "One embedded Engineer Rust signed D1 recovery and unmerged review PR; no LLM",
+  "historical_positive_dag_run_id": 41897153003
 }
