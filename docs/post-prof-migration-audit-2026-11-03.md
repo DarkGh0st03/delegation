@@ -473,3 +473,35 @@ can complete Account Suspension and the signed D1 recovery in real
 Gitea/Docker, without Shared MCP repository or crypto HTTP routing.
 Do not assert completion before all checks finish successfully;
 no paid Gemini pilot is authorized.
+
+## R215–R218 — native Rust presentation route and canonical fail-closed gates (4 November 2026)
+
+The following **source changes are committed**, but do not constitute a passing
+same-SHA CI result until the canonical release checks finish:
+
+- R215: Orchestrator create-branch and pull-request VP signing uses the
+  authenticated native Unix socket in the canonical DAG; a native denial
+  never falls back to issuing Adapter HTTP.
+- R216–R217: the trusted Planning Gateway transport and owner-side root VP
+  checks (including pre-revocation proofs and denied provider operations)
+  select the same native CryptoRuntime. Historical, explicitly noncanonical
+  offline fixtures retain their former HTTP compatibility path.
+- R218: canonical mode `APPROVED_RUNNER_NATIVE_MCP=1` fails closed if
+  `ADAPTER_ENGINEER_NATIVE_SOCKET` is missing for Engineer root DC,
+  approved Child DC, Orchestrator Gateway VP or Agent VP. The canonical
+  ADK A2A handler additionally requires its task-local MCP registry and
+  forbids a remote crypto-MCP endpoint in this mode.
+- R218 adds tests for missing native root/Child/Agent signers and a loopback
+  Unix-socket Orchestrator prepare -> signed VP -> Gateway execute positive
+  and negative regression. Fast CI now includes the Orchestrator regression.
+
+**Evidence limitations:** GitHub Actions push-run state has not been established
+from the available commit status API. No Fast CI or Full CI is declared green
+for R218. The three zero-billing full workflows must all report SUCCESS for
+the *same new checkpoint SHA*. Source checks alone do not prove Gitea/Docker
+acceptance, and scripted D1 does not prove autonomous Gemini repair.
+
+**Remaining compatibility boundary:** HTTP Adapter root/Child/VP and the
+separately executable old crypto-only HTTP services are retained only for
+noncanonical fixtures; do not physically delete them before checking their
+remaining executable callers. No main merge or paid model run is authorized.
