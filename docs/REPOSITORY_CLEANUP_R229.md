@@ -203,3 +203,36 @@ recovery. An independently reviewed D1/repair-E2E on the new topology,
 and the final cleanup of test-only legacy components, are still
 required. Do not delete the Rust `CryptoRuntime` library while
 removing the historical HTTP executable.
+
+## R237 — direct-Rust trusted owner signed D1 repair staged, not yet claimed
+
+The R236 positive Account Suspension signed Gitea/Docker DAG remains the
+first required independent integration gate; its GitHub Actions results
+have not yet been verified.
+
+The new `.github/workflows/engineer-embedded-signed-d1-e2e.yml` is
+staged **without creating its CI checkpoint**. It is a separate
+zero-model-billing proof on the same single in-process Engineer
+`CryptoRuntime`, not a reuse of the historical Adapter HTTP pipeline.
+It opts into a real signed Backend-tests failure and a **new owner-approved
+signed D1 epoch**, runs the repaired files through disposable Gitea and
+Docker, and requires proof of an unmerged draft PR and retired original
+root. The workflow never configures Gemini or an HTTP Adapter issuer.
+
+The D1 gate considers PASS only an independently validated receipt
+containing: original Rust root verified, D1 admission, original root
+revoked, corrected exact 40-hex SHA, repaired Docker PASS, review-only PR,
+no merge and zero billed-model calls. `signed-d1-gate-observation.mjs`
+projects a minimal sanitized result out of private run output. On
+failure, it publishes only a bounded known phase/cause and an
+allowlisted module/line (when verified), never raw source, bearer,
+private compiler messages, provider output or model content.
+
+Fast CI now checks both the R237 workflow architecture and the safe
+receipt/error parsers. Do not activate the new costly Full CI via
+`.github/ci-checkpoints/engineer-d1-request.json` until native Rust
+compile / R236 positive dependencies have been resolved and the source
+SHA is stable. The absence of visible push-run statuses is NOT
+equivalent to green. The old Rust Adapter HTTP implementation and its
+isolated historical tests remain deliberately untouched pending those
+gates.
