@@ -1023,6 +1023,14 @@ async function main(){
           import.meta.url
         ));
         const ownerPasses=selectNativeOwnerPasses(process.env);
+        // Only the unbilled direct-Rust DAG needs the bootstrap guard.
+        // Historical and consent-gated model paths are unchanged.
+        const signedNativeScript=process.env.ENGINEER_CORE_NATIVE_MODE==="1"&&
+          !realGeminiPilot
+          ?fileURLToPath(new URL(
+            "../../gateway/native-test/native-planning-guarded-entrypoint.mjs",
+            import.meta.url))
+          :planningScript;
         if(ownerPasses.preliminaryReadOnlyProcess){
         const output=execFileSync(process.execPath,[
           "--experimental-strip-types",planningScript
@@ -1056,7 +1064,7 @@ async function main(){
         let positiveOutput;
         try{
           positiveOutput=execFileSync(process.execPath,[
-            "--experimental-strip-types",planningScript
+            "--experimental-strip-types",signedNativeScript
           ],{
           cwd:process.cwd(),encoding:"utf8",
           timeout:realGeminiPilot?3600000:980000,
