@@ -5,6 +5,9 @@
  */
 import type {SpecializedAgentRole} from "../contracts.ts";
 
+export const LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_TAGS:
+ readonly string[]=Object.freeze(["thesis","iam","account-suspension"]);
+
 export const LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_CONTENT:Readonly<
  Record<SpecializedAgentRole,{
   skillId:string;skillName:string;description:string;example:string;
