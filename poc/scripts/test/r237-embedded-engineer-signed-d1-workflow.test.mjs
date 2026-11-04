@@ -26,12 +26,19 @@ test("R237 embedded Engineer D1 runs single Rust owner, signed repair and no pai
  assert.match(workflow,/\bengineer-direct-native\/Cargo\.toml\b|services\/delegation-engineer-node\/Cargo\.toml/u);
  assert.match(workflow,/libdelegation_core_node\.so/u);
  assert.match(workflow,/GITEA_IMAGE: docker\.gitea\.com\/gitea:28\.0\.0/u);
- assert.match(workflow,/repaired_docker_pass_verified/u);
- assert.match(workflow,/independently_admitted_repair_epoch/u);
- assert.match(workflow,/original_root_retired/u);
- assert.match(workflow,/draft_pr_review_only/u);
- assert.match(workflow,/automated_merge_calls/u);
- assert.match(workflow,/found\.gemini_calls,0/u);
+ assert.match(workflow,/safeEmbeddedEngineerD1Success/u);
+ assert.match(workflow,/safeEmbeddedEngineerD1Failure/u);
+ const validator=read("poc/apps/test-runner-controller/scripts/signed-d1-gate-observation.mjs");
+ for(const property of [
+  "repaired_docker_pass_verified",
+  "independently_admitted_repair_epoch",
+  "original_root_retired",
+  "draft_pr_review_only",
+  "automated_merge_calls",
+  "gemini_calls"
+ ])assert.ok(validator.includes(property),property);
+ assert.match(validator,/first_failed_phase/u);
+ assert.match(validator,/cause_category/u);
  assert.match(workflow,/test -z "\$\{GEMINI_API_KEY:-\}"/u);
  assert.match(workflow,/test -z "\$\{OPENAI_API_KEY:-\}"/u);
  assert.doesNotMatch(workflow,/\bcargo run[^\n]*services\/delegation-adapter\/Cargo\.toml/u);
