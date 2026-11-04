@@ -1,3 +1,4 @@
+import {verifySignedGeminiPilotConsent} from "../../../scripts/signed-gemini-pilot-consent.mjs";
 /**
  * R235 — signed DAG owner topology gate.
  *
@@ -23,8 +24,14 @@ export function selectNativeOwnerPasses(env){
      env.ADAPTER_TRUST_PROFILE!=="evm"||
      env.GATEWAY_VERIFIER_MODE!=="core-rust")
    throw Error("Direct Engineer signed DAG requires sole native issuer and Core Rust Gateway");
-  if(env.DELEGATION_SIGNED_GEMINI_PILOT==="1")
-   throw Error("Direct Engineer migration proof forbids paid model pilot");
+  if(env.DELEGATION_SIGNED_GEMINI_PILOT==="1"){
+   // Never enable inference from a native topology selector. It only
+   // checks that the outer paid workflow has the exact one-use manual
+   // consent and GitHub source identity. Its CI gate remains independent.
+   verifySignedGeminiPilotConsent(env,{requireApiKey:false});
+   if(env.APPROVED_RUNNER_NATIVE_EVM!=="1")
+    throw Error("Direct Engineer billed pilot requires native EVM trust");
+  }
  }
  return Object.freeze({
   preliminaryReadOnlyProcess:!direct,

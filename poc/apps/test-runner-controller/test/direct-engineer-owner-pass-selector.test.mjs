@@ -30,7 +30,7 @@ test("R235 embedded Engineer issuer runs one signed DAG process per EVM chain",(
  });
 });
 
-test("R235 owner guard rejects missing native socket, unsafe modes, wrong verifier and paid pilot",()=>{
+test("R268 native Engineer guard rejects missing socket, wrong trust and unconsented paid pilot",()=>{
  const correct={
   ENGINEER_CORE_NATIVE_MODE:"1",
   ADAPTER_ENGINEER_NATIVE_SOCKET:"/tmp/engineer-r235.sock",
@@ -52,7 +52,40 @@ test("R235 owner guard rejects missing native socket, unsafe modes, wrong verifi
  }
  assert.throws(()=>selectNativeOwnerPasses({...correct,
   DELEGATION_SIGNED_GEMINI_PILOT:"1"}),
-  /forbids paid model pilot/u);
+  /NO-GO/u);
  assert.throws(()=>selectNativeOwnerPasses({ENGINEER_CORE_NATIVE_MODE:"legacy"}),
   /Unknown native Engineer owner mode/u);
+});
+
+test("R268 only explicitly approved manual native paid owner is selectable, no model call",()=>{
+ const env={
+  ENGINEER_CORE_NATIVE_MODE:"1",
+  ADAPTER_ENGINEER_NATIVE_SOCKET:"/tmp/engineer-r268.sock",
+  APPROVED_RUNNER_NATIVE_MCP:"1",
+  APPROVED_RUNNER_NATIVE_EVM:"1",
+  ADAPTER_TRUST_PROFILE:"evm",GATEWAY_VERIFIER_MODE:"core-rust",
+  DELEGATION_SIGNED_GEMINI_PILOT:"1",
+  GITHUB_ACTIONS:"true",GITHUB_EVENT_NAME:"workflow_dispatch",
+  GITHUB_RUN_ATTEMPT:"1",GITHUB_REPOSITORY:"DarkGh0st03/delegation",
+  GITHUB_REF:"refs/heads/refactor/post-prof-plan-contracts-20261021",
+  GITHUB_SHA:"a".repeat(40),GITHUB_RUN_ID:"40699999999",
+  DELEGATION_PINNED_COMMIT_SHA:"a".repeat(40),
+  DELEGATION_BILLING_CAP_ACK:"I VERIFIED PROJECT SPEND CAP AND UNDERSTAND POSSIBLE OVERAGES",
+  DELEGATION_GEMINI_CHARGE_CONFIRMATION:"I AUTHORIZE GEMINI API CHARGES",
+  DELEGATION_GEMINI_MODEL:"gemini-3.8-flash",
+  DELEGATION_GEMINI_REPAIR_CHARGE_CONFIRMATION:"NO ADDITIONAL REPAIR AUTHORIZED",
+  DELEGATION_SIGNED_GEMINI_REPAIR_D1:"0"
+ };
+ const selected=selectNativeOwnerPasses(env);
+ assert.deepEqual(selected,{
+  preliminaryReadOnlyProcess:false,signedDagOwnerProcess:true,
+  soleEmbeddedRustIssuer:true
+ });
+ for(const patch of [
+  {APPROVED_RUNNER_NATIVE_EVM:"0"},
+  {DELEGATION_GEMINI_CHARGE_CONFIRMATION:"not approved"},
+  {GITHUB_EVENT_NAME:"push"},
+  {DELEGATION_PINNED_COMMIT_SHA:"b".repeat(40)},
+  {DELEGATION_SIGNED_GEMINI_REPAIR_D1:"1"}
+ ])assert.throws(()=>selectNativeOwnerPasses({...env,...patch}));
 });

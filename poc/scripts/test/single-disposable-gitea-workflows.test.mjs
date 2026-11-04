@@ -20,7 +20,14 @@ for(const name of [
   assert.match(workflow,/GITEA_IMAGE: docker\.gitea\.com\/gitea:28\.0\.0/u);
   assert.match(workflow,/APPROVED_RUNNER_NATIVE_EVM: "1"/u);
   assert.match(workflow,/ADAPTER_ENGINEER_NATIVE_SOCKET/u);
-  assert.match(workflow,/test -S "\$ADAPTER_ENGINEER_NATIVE_SOCKET"/u);
+  if(name==="gemini-paid-shared-mcp-final.yml"){
+   // Native Rust owner socket appears inside its one signed-DAG process;
+   // the workflow itself must not launch a second HTTP Adapter issuer.
+   assert.match(workflow,/ENGINEER_CORE_NATIVE_MODE: "1"/u);
+   assert.match(workflow,/libdelegation_engineer_node\.so/u);
+   assert.match(workflow,/test ! -e "\$ADAPTER_ENGINEER_NATIVE_SOCKET"/u);
+   assert.doesNotMatch(workflow,/cargo run --manifest-path services\/delegation-adapter\/Cargo.toml/u);
+  }else assert.match(workflow,/test -S "\$ADAPTER_ENGINEER_NATIVE_SOCKET"/u);
   assert.match(workflow,/docker compose --env-file poc\/infra\/\.env -f poc\/infra\/docker-compose\.yml up -d anvil opa/u);
   assert.doesNotMatch(workflow,/a2a-production-coordinator-mcp-isolated|a2a-production-coordinator-mcp-gemini-live/u);
   if(name==="gemini-paid-shared-mcp-final.yml"){
