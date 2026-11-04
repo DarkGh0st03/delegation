@@ -11,7 +11,7 @@ test("R188 crypto-only factory cannot register repository MCP or deleted router"
  assert.doesNotMatch(source,/TaskRouter|legacy-repository-tools|registerLegacyRepositoryTools/u);
  assert.doesNotMatch(source,/MCP_(READ_FILE|UPDATE_FILE|CREATE_FILE|RUN_TESTS)\.name/u);
  assert.doesNotMatch(source,/config\.router\.(readFile|updateFile|createFile|runTests)/u);
- assert.doesNotMatch(main,/new CryptoWorkerRouter\\(workers\\)/u);
+ assert.doesNotMatch(main,/new CryptoWorkerRouter\(workers\)/u);
  assert.match(main,/standalone_shared_mcp_launcher_retired/u);
  for(const f of ["task-router.ts","legacy-repository-tools.ts"])
   assert.equal(existsSync(new URL("../src/"+f,import.meta.url)),false);
