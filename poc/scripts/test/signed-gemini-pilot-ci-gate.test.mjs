@@ -1,5 +1,5 @@
 import test from "node:test";
-import {existsSync,readFileSync} from "node:fs";
+import {readFileSync} from "node:fs";
 import assert from "node:assert/strict";
 import {verifyExactShaOfflineCiRuns,checkSignedGeminiCiGate} from
   "../signed-gemini-pilot-ci-gate.mjs";
@@ -47,9 +47,6 @@ test("R168 checkpoint requires Cumulative + signed-DAG + real D1 recovery; never
         "Targeted D1 must use verified SHA only on push/dispatch");
     }
   }
-  assert.equal(existsSync(new URL(
-    "../../../.github/workflows/shared-mcp-real-positive-e2e.yml",import.meta.url)),false,
-    "Obsolete sequential MCP full CI must remain physically retired");
   const r139=readFileSync(new URL("../../../.github/workflows/r139-real-docker-repair-e2e.yml",import.meta.url),"utf8");
   assert.ok(r139.includes("workflow_dispatch:"));
   assert.ok(!r139.includes("branches: [refactor/post-prof-plan-contracts-20261021]"));
@@ -151,7 +148,7 @@ test("narrow assertion E2E success never substitutes a required Full CI workflow
 });
 
 test("R168 green legacy MCP must never substitute actual signed D1 recovery",()=>{
- const legacyPath=".github/workflows/shared-mcp-real-positive-e2e.yml";
+ const legacyPath=".github/workflows/obsolete-sequential-mcp.yml";
  const missingD1=paths.filter(p=>p!==
    ".github/workflows/ts2724-signed-d1-targeted.yml").map(green);
  assert.throws(()=>verifyExactShaOfflineCiRuns([...missingD1,green(legacyPath)],sha),

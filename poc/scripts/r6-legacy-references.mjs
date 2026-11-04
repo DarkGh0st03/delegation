@@ -32,7 +32,8 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   ".github/workflows/shared-mcp-production-coordinator.yml",
   ".github/workflows/shared-mcp-real-positive-e2e.yml",
   "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs"
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
+  ".github/workflows/disposable-simulated-approval-merge.yml"
 ]);
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
@@ -49,7 +50,8 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   "poc/packages/orchestrator-runtime/src/legacy-authority-client.ts",
   "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts",
   "poc/packages/orchestrator-runtime/src/permission-templates.ts",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs"
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
+  ".github/workflows/disposable-simulated-approval-merge.yml"
 ]);
 
 

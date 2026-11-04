@@ -141,3 +141,18 @@ negative checks accidentally excluded some deleted modules from
 The old allowlists for sequential, workflow and legacy Gateway static
 imports have been emptied: no new executable may silently revive them.
 The audit is part of the free Cumulative Offline workflow.
+
+## R176 — final retired-script references removed
+
+The historical `disposable-simulated-approval-merge.yml` workflow still
+contained TWO live commands pointing at the deleted sequential ADK/MCP
+positive script. It is retired: the signed-DAG Functional and native
+D1 Docker workflows already provide the modern approval/acceptance path,
+without simulated approval or merge of user resources.
+
+The old `gemini-live-no-synthetic-merge` test read a physically deleted
+billed sequential script. It now inspects the real signed/manual-only Gemini
+workflow, exact pinned SHA guard and synthetic-merge exclusions.
+The signed Gemini CI-gate negative test uses a deliberately unknown
+workflow path rather than referencing the deleted historical workflow.
+The R6 retired-asset audit is the single source of truth for absence.
