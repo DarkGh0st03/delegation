@@ -1,5 +1,7 @@
 import {buildNativePreliminaryEnvironment} from "./native-preliminary-environment.mjs";
 import {selectNativeOwnerPasses} from "./direct-engineer-owner-pass-selector.mjs";
+import {safeDisposableDockerFailure}
+ from "./disposable-docker-safe-diagnostic.mjs";
 import {readNativePhaseFailure}
  from "../../gateway/native-test/native-signed-dag-phase-diagnostic.mjs";
 /**
@@ -96,7 +98,15 @@ function docker(args,label){
   try{
     return execFileSync("docker",args,{encoding:"utf8",timeout:120000,
       stdio:["ignore","pipe","pipe"]}).trim();
-  }catch{throw Error("Disposable Docker operation failed: "+label);}
+  }catch(error){
+    // F1 publishes only a fixed taxonomy and bounded numeric status.
+    // Docker stderr may contain credentials, image URLs or provider data.
+    if(process.env.APPROVED_RUNNER_REAL_GITEA_PLANNING_ONLY==="1"){
+      process.stderr.write("[trusted-positive-ci] docker_failure "+
+        JSON.stringify(safeDisposableDockerFailure(error,label))+"\n");
+    }
+    throw Error("Disposable Docker operation failed: "+label);
+  }
 }
 function git(args,{cwd,auth,timeout=180000,label="Git step"}={}){
   const env={...process.env,GIT_TERMINAL_PROMPT:"0",
@@ -762,11 +772,12 @@ async function main(){
     await stage("isolated_gitea_ready",()=>ready(base),125000);
     // Real OPA, no shared docker-compose names, no persistent volumes.
     const opaDir=fileURLToPath(new URL("../../../opa/",import.meta.url));
-    docker(["run","--rm","--detach","--name",opaContainer,
+    await stage("isolated_opa_docker_start",()=>docker([
+      "run","--rm","--detach","--name",opaContainer,
       "--publish","127.0.0.1::8181/tcp",
       "--volume",opaDir+":/policy:ro",
-      opaImage,"run","--server","--addr=0.0.0.0:8181","/policy"],
-      "start disposable real OPA policy server");
+      opaImage,"run","--server","--addr=0.0.0.0:8181","/policy"
+    ],"start disposable real OPA policy server"),150000);
     opaStarted=true;
     const opaPortInfo=docker(["port",opaContainer,"8181/tcp"],
       "inspect isolated OPA localhost port");
