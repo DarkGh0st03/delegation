@@ -214,6 +214,18 @@ mod tests {
                 vec![CallerCapability::CreatePresentation],
             ),
             record(
+                CallerRole::Frontend,
+                "native-frontend",
+                "did:thesis:frontend",
+                vec![CallerCapability::CreatePresentation],
+            ),
+            record(
+                CallerRole::Test,
+                "native-test",
+                "did:thesis:test",
+                vec![CallerCapability::CreatePresentation],
+            ),
+            record(
                 CallerRole::Gateway,
                 "native-gateway",
                 "did:thesis:gateway",
