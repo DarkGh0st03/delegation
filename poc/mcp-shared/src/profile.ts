@@ -8,3 +8,11 @@ export function selectMcpToolProfile(raw:string|undefined):"crypto"|"legacy"{
    throw new Error("MCP_TOOL_PROFILE must be crypto or legacy");
  return selected;
 }
+
+/** Public production MCP process MUST expose only crypto. Historical legacy
+ * factory fixtures are not a deployable service and cannot opt in here. */
+export function requireProductionCryptoMcpProfile(raw:string|undefined):"crypto"{
+ const selected=selectMcpToolProfile(raw);
+ if(selected!=="crypto")throw Error("production_mcp_crypto_only");
+ return selected;
+}

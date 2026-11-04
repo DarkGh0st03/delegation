@@ -5,7 +5,7 @@ import {
   startSpecializedAgentServer,
   type SpecializedAgentRole
 } from "@thesis/agent-runtime";
-import {resolveMcpToolFlags} from "./mcp-tool-flags.ts";
+import {requireProductionDirectGatewayTools} from "./mcp-tool-flags.ts";
 
 function roleFromEnvironment(value: string | undefined): SpecializedAgentRole {
   if (
@@ -90,27 +90,25 @@ const adk = engine === "adk"
     }
   : undefined;
 
-// MCP is opt-in. All existing workflows remain on local FunctionTools by default.
-const sharedMcpUrl = process.env.ADK_MCP_SHARED_URL?.trim();
+// Only a trusted cryptographic MCP bridge remains deployable.
+requireProductionDirectGatewayTools(process.env);
 const cryptoMcpUrl = process.env.ADK_MCP_CRYPTO_URL?.trim();
-if ((sharedMcpUrl || cryptoMcpUrl) && engine !== "adk") {
-  throw new Error("ADK MCP services require AGENT_RUNTIME_ENGINE=adk");
+if (cryptoMcpUrl && engine !== "adk") {
+  throw new Error("ADK crypto MCP requires AGENT_RUNTIME_ENGINE=adk");
 }
 function pemSecret(name: string): string {
   return required(name).replaceAll("\\n", "\n");
 }
-const mcpTaskSigning = (sharedMcpUrl || cryptoMcpUrl)
+const mcpTaskSigning = cryptoMcpUrl
   ? {signingPrivateKeyPem:pemSecret("MCP_TASK_SIGNING_PRIVATE_KEY"),
      signingPublicKeyPem:pemSecret("MCP_TASK_SIGNING_PUBLIC_KEY")}
   : undefined;
-const mcpToolFlags=resolveMcpToolFlags(process.env,role,engine,sharedMcpUrl);
 const runtime = await startSpecializedAgentServer({
   role,
   port,
   host: process.env.AGENT_BIND_HOST ?? "127.0.0.1",
-  ...(adk ? { adk: {...adk, ...(sharedMcpUrl ? {mcpSharedUrl:sharedMcpUrl} : {}),
-    ...(cryptoMcpUrl ? {mcpCryptoUrl:cryptoMcpUrl} : {}),
-    ...mcpToolFlags} } : {}),
+  ...(adk ? { adk: {...adk,
+    ...(cryptoMcpUrl ? {mcpCryptoUrl:cryptoMcpUrl} : {})} } : {}),
   ...(mcpTaskSigning ? {mcpTaskSigning} : {})
 });
 

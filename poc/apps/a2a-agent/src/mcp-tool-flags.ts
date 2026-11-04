@@ -34,3 +34,19 @@ export function resolveMcpToolFlags(
     ...(runTests?{mcpRunTests:true as const}:{})
   };
 }
+
+/**
+ * R180 deployment boundary: the model-visible repository MCP route is
+ * no longer a supported A2A production configuration. This does NOT disable
+ * ADK FunctionTools -> Gateway or the trusted crypto-only MCP bridge.
+ * Archived test harnesses may still call resolveMcpToolFlags directly.
+ */
+export function requireProductionDirectGatewayTools(
+ env:Record<string,string|undefined>
+):void{
+ if(env.ADK_MCP_SHARED_URL!==undefined)
+  throw Error("production_agent_requires_direct_gateway_tools");
+ for(const name of ["ADK_MCP_UPDATE_FILE","ADK_MCP_CREATE_FILE","ADK_MCP_RUN_TESTS"])
+  if(enabled(env,name))
+   throw Error("production_agent_requires_direct_gateway_tools");
+}

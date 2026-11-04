@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {resolveMcpToolFlags} from "../src/mcp-tool-flags.ts";
+import {resolveMcpToolFlags,requireProductionDirectGatewayTools} from "../src/mcp-tool-flags.ts";
 
 const endpoint="http://127.0.0.1:8131/mcp";
 test("MCP specialized agent tools remain disabled by default",()=>{
@@ -40,4 +40,22 @@ test("Invalid flag text cannot silently enable or disable policy",()=>{
     assert.throws(()=>resolveMcpToolFlags({ADK_MCP_RUN_TESTS:value},
       "test","adk",endpoint),/must be exactly true or false/);
   }
+});
+
+test("R180 production ADK uses FunctionTools for repository operations, never shared MCP",()=>{
+ for(const env of [
+   {ADK_MCP_SHARED_URL:"http://127.0.0.1:8131/mcp"},
+   {ADK_MCP_SHARED_URL:""},
+   {ADK_MCP_UPDATE_FILE:"true"},
+   {ADK_MCP_CREATE_FILE:"true"},
+   {ADK_MCP_RUN_TESTS:"true"},
+   {ADK_MCP_RUN_TESTS:"yes"}
+ ])
+  assert.throws(()=>requireProductionDirectGatewayTools(env),
+   /production_agent_requires_direct_gateway_tools|must be exactly true or false/);
+ assert.doesNotThrow(()=>requireProductionDirectGatewayTools({
+  ADK_MCP_CRYPTO_URL:"http://127.0.0.1:8097/mcp",
+  ADK_MCP_CREATE_FILE:"false",ADK_MCP_RUN_TESTS:"false"
+ }));
+ assert.doesNotThrow(()=>requireProductionDirectGatewayTools({}));
 });

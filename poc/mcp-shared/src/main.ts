@@ -1,6 +1,6 @@
 import {createSharedMcpHttpServer} from "./http-server.ts";
 import {TaskRouter} from "./task-router.ts";
-import {selectMcpToolProfile} from "./profile.ts";
+import {requireProductionCryptoMcpProfile} from "./profile.ts";
 import type {AgentRole, VerificationKeys} from "./task-token.ts";
 function required(name:string) {
   const v=process.env[name]?.trim();
@@ -13,7 +13,8 @@ const workers=Object.fromEntries(roles.map(r=>[r,{baseUrl:required("MCP_"+r.toUp
 const host=process.env.MCP_BIND_HOST??"127.0.0.1";
 const port=Number(process.env.MCP_BIND_PORT??"8097");
 if (!Number.isInteger(port)||port<1||port>65535) throw new Error("Invalid MCP port");
-const toolProfile=selectMcpToolProfile(process.env.MCP_TOOL_PROFILE);
+// Reject opt-in repository routing in the executable MCP launcher.
+const toolProfile=requireProductionCryptoMcpProfile(process.env.MCP_TOOL_PROFILE);
 const server=createSharedMcpHttpServer({
   verificationKeys,router:new TaskRouter(workers),profile:toolProfile
 });
