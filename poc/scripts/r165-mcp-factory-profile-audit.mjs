@@ -10,7 +10,7 @@
  * new accidental legacy exposure before GitHub Actions executes any tool.
  */
 import {execFileSync} from "node:child_process";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 import {resolve} from "node:path";
 import {fileURLToPath,pathToFileURL} from "node:url";
 
@@ -62,11 +62,10 @@ export function inspectMcpFactoryCalls(root){
  // R221: the old executable is intentionally fail-closed. Historical
  // crypto HTTP factories can remain in explicitly isolated tests, but a
  // runnable Shared MCP entrypoint must NEVER reappear.
- const launcher=readFileSync(resolve(root,"poc/mcp-shared/src/main.ts"),"utf8");
- if(!launcher.includes('throw new Error("standalone_shared_mcp_launcher_retired")')||
-    /\bcreateSharedMcpHttpServer\b|\bCryptoWorkerRouter\b|\.listen\(/u.test(launcher))
-  errors.push("retired Shared MCP launcher must fail closed");
- if(calls.some(c=>c.file==="poc/mcp-shared/src/main.ts"))
+ const oldEntrypoint="poc/mcp-shared/src/main.ts";
+ if(existsSync(resolve(root,oldEntrypoint)))
+  errors.push("retired Shared MCP executable must be physically absent");
+ if(calls.some(c=>c.file===oldEntrypoint))
   errors.push("retired Shared MCP launcher instantiated an HTTP listener");
  return {tracked:tracked.length,calls,errors};
 }
