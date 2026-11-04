@@ -1,11 +1,15 @@
 /**
- * R127: Gateway-only observation against the ALREADY-EXISTING Rust Adapter
- * POST /v1/credentials/status/inspect. Only the Gateway bearer may call it.
+ * Gateway-only issuer registry observation, distinct from Gateway's DIRECT
+ * public-only Core Rust VP verifier. In canonical Engineer-owned mode,
+ * inspect the SAME issuer state through authenticated native Unix IPC,
+ * NOT Adapter HTTP. The issuer's Rust code checks live EVM-anchored signed
+ * Status List JWTs and returns its original root grants/status.
  *
- * In EVM profile the Rust Adapter reads its own issued-credential registry
- * and verifies anchored signed Status List JWT revocation. This does NOT
- * return, verify or grant root DC permission contents or validity bounds.
+ * This response is corroborating evidence, never an authorization grant.
+ * Historical fixtures may use Adapter HTTP until the signed DAG is migrated.
  */
+import {invokeNativeCrypto}
+ from "../../../packages/agent-runtime/src/native-crypto-ipc.ts";
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
 const reject=(m:string):never=>{throw Error("Native Rust root status NO-GO: "+m);};
 export class TrustedGatewayNativeRootStatusReader{
@@ -14,7 +18,14 @@ export class TrustedGatewayNativeRootStatusReader{
  readonly #timeout:number;
  readonly #fetch:typeof fetch;
  constructor(options:{baseUrl:string;gatewayToken:string;timeoutMs?:number;
+  nativeSocketPath?:string;
   fetchFn?:typeof fetch}){
+  if(options.nativeSocketPath!==undefined&&(
+      !options.nativeSocketPath.startsWith("/")||
+      options.nativeSocketPath.trim()!==options.nativeSocketPath||
+      options.nativeSocketPath.length>100||
+      options.fetchFn!==undefined))
+   reject("native issuer socket must be an absolute, private fixed path without HTTP fallback");
   let url:URL;
   try{url=new URL(options?.baseUrl);}catch{reject("invalid fixed Adapter URL");}
   if(!["http:","https:"].includes(url.protocol)||
@@ -27,7 +38,32 @@ export class TrustedGatewayNativeRootStatusReader{
    reject("trusted Adapter URL, private Gateway bearer and bounded timeout required");
   this.#baseUrl=url.origin;this.#token=options.gatewayToken;
   this.#timeout=options.timeoutMs??3000;
-  this.#fetch=options.fetchFn??fetch;
+  // A Response wrapper preserves the exact established root-status
+  // validation below; its input goes to a LOCAL Rust socket, NEVER fetch().
+  // No HTTP fallback is possible after a native transport/permission denial.
+  const socket=options.nativeSocketPath;
+  this.#fetch=socket
+   ? (async(input,init)=>{
+      const path=new URL(String(input)).pathname;
+      const op=path==="/v1/credentials/root/inspect"
+       ?"read_issued_root"
+       :path==="/v1/credentials/status/inspect"
+         ?"read_credential_status"
+         :null;
+      if(!op||init?.method!=="POST")
+       reject("unsupported private Rust inspection operation");
+      let body:unknown;
+      try{body=JSON.parse(String(init?.body));}
+      catch{reject("malformed private Rust inspection request");}
+      const observation=await invokeNativeCrypto({
+       socketPath:socket,token:options.gatewayToken,
+       timeoutMs:options.timeoutMs??3000
+      },op,body);
+      return new Response(JSON.stringify(observation),{
+       status:200,headers:{"content-type":"application/json"}
+      });
+     }) as typeof fetch
+   : options.fetchFn??fetch;
  }
  /** R128: root issuer's own grant array, lifetime and anchored current status;
   * NOT a cryptographically verified signed presentation or permission grant.
