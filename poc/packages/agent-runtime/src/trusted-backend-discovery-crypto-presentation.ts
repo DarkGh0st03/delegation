@@ -7,7 +7,7 @@
  * Gateway must STILL independently check native Rust VP, OPA, exact bound
  * Task, issuer, child ID and source resource before contacting Gitea.
  */
-import type {CryptoPresentationPort} from "./trusted-crypto-mcp-bridge.ts";
+import type {CryptoPresentationPort} from "./crypto-presentation-port.ts";
 import type {PreparedGatewayAuthorization} from "./delegation-evidence-handler.ts";
 import {TrustedBackendDiscoveryChildPresenter} from
  "./trusted-backend-discovery-presenter.ts";
