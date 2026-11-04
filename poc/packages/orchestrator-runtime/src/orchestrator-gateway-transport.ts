@@ -21,7 +21,8 @@ interface PreparedAuthorization {
 
 export interface OrchestratorGatewayTransportConfig {
   gatewayBaseUrl: string;
-  adapterBaseUrl: string;
+  /** Required for historical HTTP fixtures only; native Rust issuer needs no URL. */
+  adapterBaseUrl?: string;
   adapterToken: string;
   rootCredentialId: string;
   timeoutMs?: number;
@@ -94,10 +95,11 @@ export class OrchestratorGatewayTransport {
       config.gatewayBaseUrl,
       "Gateway base URL"
     ).replace(/\/+$/u, "");
-    this.#adapterBaseUrl = nonEmptyString(
-      config.adapterBaseUrl,
-      "Delegation Adapter base URL"
-    ).replace(/\/+$/u, "");
+    // Native Rust VP issuance does not depend on any Adapter HTTP address.
+    // Legacy HTTP fixtures must still specify one explicitly.
+    this.#adapterBaseUrl = config.adapterBaseUrl?.trim()
+      ? config.adapterBaseUrl.replace(/\/+$/u, "")
+      : "";
     this.#adapterToken = nonEmptyString(
       config.adapterToken,
       "Orchestrator Adapter token"
@@ -121,6 +123,9 @@ export class OrchestratorGatewayTransport {
       // signing after a canonical native socket has been omitted.
       throw new OrchestratorGatewayClientError(
         "Canonical signed DAG requires native Rust Orchestrator signer socket");
+    }else if(!this.#adapterBaseUrl){
+      throw new OrchestratorGatewayClientError(
+        "Historical Orchestrator HTTP signing requires explicit Adapter URL");
     }
   }
 
