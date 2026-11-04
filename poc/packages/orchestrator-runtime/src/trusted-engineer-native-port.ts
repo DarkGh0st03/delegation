@@ -13,7 +13,7 @@ import type {EngineerCredentialPort,RootParameters}
 import type {DelegatedPermission} from "./delegated-permission.ts";
 import type {IssuedDelegationCredential} from "./authority-client.ts";
 
-interface NativeConfig extends AdapterClientConfig {
+interface NativeConfig extends Pick<AdapterClientConfig,"bearerToken"|"timeoutMs"> {
  nativeSocketPath:string;
 }
 const FAIL="Trusted Engineer native Rust issuer unavailable";
