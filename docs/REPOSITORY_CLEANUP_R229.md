@@ -124,3 +124,40 @@ old Adapter service completely absent must all pass. Until then
 `services/delegation-adapter/src/http.rs` and its legacy tests are
 still retained. R231 is not a claim that the full HTTP Adapter is
 physically removed from deployment.
+
+## R233 — no-Adapter-HTTP real EVM integration candidate
+
+A separate **zero-model-billing** integration workflow is now available
+as `.github/workflows/engineer-direct-native-evm-e2e.yml`. It differs
+from the R232 in-memory native smoke:
+
+- It boots disposable Anvil, funds deterministic **test-only** DID keys,
+  and deploys the public DID, enterprise trust and issuer registries,
+  using the existing pinned bootstrap.
+- It builds both the Engineer's **direct in-process native Node-API
+  issuer** and the Gateway's separate **public-only native verifier**.
+  It does **not** run or expose the Adapter HTTP executable; in fact
+  it checks that the legacy binary refuses startup under
+  `ENGINEER_CORE_NATIVE_MODE=1` and port 8090 is unbound.
+- The actual trusted Engineer production selector issues the root
+  through the Node-API addon. That **same Rust owner** signs a Child
+  credential and an Agent VP via authenticated local delegate IPC.
+  The real Gateway issuer-observation class reads the root and live
+  EVM-anchored revocation **without any Adapter URL**.
+- The independently built Gateway Core Rust verifier checks signed VP
+  under live EVM/DID/accumulator/status sources. It rejects a wrong
+  nonce and must reject the old proof after confirmed root revocation.
+- It preserves an explicit negative test for unauthorized private
+  role access to issuer inventory and Engineer-only root mutation.
+
+**Limits:** A checked-in workflow and pending trigger are NOT proof
+of its success. A green R233 establishes the direct native issuer,
+public Gateway verifier, real EVM and role separation, but it still
+does NOT demonstrate the complete real Gitea/Docker signed DAG,
+ADK Planning and D1 recovery on the new Engineer-owned topology.
+That separate gate must remain open before deleting the historical
+Adapter HTTP implementation or claiming full migration.
+
+Only the dedicated `engineer-evm-request.json` checkpoint triggers
+R233 on `push`; ordinary commits do not launch this expensive
+integration. No Google Gemini / paid LLM workflow is involved.
