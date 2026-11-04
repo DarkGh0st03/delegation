@@ -37,6 +37,7 @@ jobs:
           npm --prefix poc run audit:r6:types
           npm --prefix poc run audit:r6:runtime-named
           node --test poc/scripts/test/r165-mcp-factory-profile-audit.test.mjs
+          node --experimental-strip-types --test poc/packages/agent-runtime/test/approved-specialized-profiles.test.ts
           node --test poc/scripts/test/r180-production-mcp-boundary.test.mjs
           node --experimental-strip-types --test poc/apps/a2a-agent/test/mcp-tool-flags.test.ts poc/mcp-shared/test/profile.test.ts
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/check-local-imports.test.mjs poc/scripts/test/protected-gitea-bootstrap.test.mjs poc/scripts/test/single-disposable-gitea-workflows.test.mjs

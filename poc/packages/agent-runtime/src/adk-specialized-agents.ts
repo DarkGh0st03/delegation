@@ -10,6 +10,7 @@ import {
 } from "./controlled-errors.ts";
 import type { GatewayControlledToolClient, SpecializedToolName } from "./gateway-tool-client.ts";
 import { SPECIALIZED_AGENT_PROFILES, type SpecializedAgentProfile } from "./specialized-agents.ts";
+import {APPROVED_SPECIALIZED_AGENT_PROFILES} from "./approved-specialized-profiles.ts";
 import { ControlledToolRegistry } from "./tool-registry.ts";
 
 // These are only model-facing argument schemas. Gateway/Verifier/OPA remain authoritative.
@@ -132,7 +133,13 @@ export function createAdkSpecializedAgent(
   const taskRef=typeof config.diagnosticTaskRef==="string"&&
     /^[a-f0-9]{16}$/u.test(config.diagnosticTaskRef)
       ?config.diagnosticTaskRef:null;
-  const baseline=SPECIALIZED_AGENT_PROFILES[config.role];
+  // R198: an authenticated signed Task must NEVER derive its role identity,
+  // skill or tool description from the frozen Account Suspension fixture.
+  // Unsigned historical A2A cases remain explicit regression compatibility.
+  const signedTask=config.trustedFilePermissions!==undefined;
+  const baseline=signedTask
+    ? APPROVED_SPECIALIZED_AGENT_PROFILES[config.role]
+    : SPECIALIZED_AGENT_PROFILES[config.role];
   if(!baseline)throw new Error("Unknown specialized agent role");
   const branch=validatePrivateApprovedBranch(config.trustedBranch??LEGACY_A2A_BRANCH);
   const scoped=config.trustedTaskPaths!==undefined;
@@ -167,7 +174,6 @@ export function createAdkSpecializedAgent(
   // (already derived privately from the signed plan) is the file profile.
   // Legacy tasks without signed per-operation hints retain the original
   // Account Suspension role allowlists for backward compatibility.
-  const signedTask=grant!==null;
   const availableTools:readonly SpecializedToolName[]=signedTask
     ? APPROVED_ROLE_TOOLS[config.role]:baseline.tools;
   const writable=signedTask

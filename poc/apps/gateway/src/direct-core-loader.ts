@@ -6,8 +6,11 @@
  * loaded from a fixed build artifact within this repository's Gateway
  * package; users cannot choose an arbitrary library path via HTTP or env.
  *
- * Native addon build + shared public-material/status resolvers are not yet
- * implemented. Selecting core-rust mode currently fails startup closed.
+ * The real Node-API addon is built from services/delegation-core-node and
+ * reads independent DID/EVM/accumulator/status evidence. The deployment must
+ * place its build artifact at ./native/delegation-core.node before startup.
+ * Missing artifacts or unavailable trust material fail startup CLOSED; never
+ * fall back to the HTTP issuing Adapter.
  */
 import { createRequire } from "node:module";
 import type {CoreRustBinding,CoreRustIdentityMap} from "./direct-core-verifier.ts";
