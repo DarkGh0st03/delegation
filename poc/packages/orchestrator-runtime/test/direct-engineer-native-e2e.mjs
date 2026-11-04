@@ -1,0 +1,126 @@
+/**
+ * R225 DIRECT Engineer -> native Core Rust in-process smoke.
+ * No provider, LLM, network HTTP or Adapter process. This test only runs
+ * AFTER the new Node-API addon has been compiled and packaged by CI.
+ *
+ * Assert that the SAME Rust CryptoRuntime answers direct Engineer calls
+ * and local delegated Orchestrator/Agent commands, without permitting the
+ * Engineer to issue a root through the socket.
+ */
+import assert from "node:assert/strict";
+import {createRequire} from "node:module";
+import {createConnection} from "node:net";
+import {mkdtempSync,rmSync} from "node:fs";
+import {join} from "node:path";
+import {tmpdir} from "node:os";
+import {setTimeout as delay} from "node:timers/promises";
+
+const requireAddon=createRequire(import.meta.url);
+const binding=requireAddon("../src/native/delegation-engineer.node");
+assert.equal(typeof binding.start_engineer_core,"function");
+assert.equal(typeof binding.issue_engineer_root,"function");
+assert.equal(typeof binding.revoke_engineer_root,"function");
+
+const tokens=Object.freeze({
+ engineer:"r225-native-engineer",
+ gateway:"r225-native-gateway",
+ orchestrator:"r225-native-orchestrator",
+ backend:"r225-native-backend",
+ frontend:"r225-native-frontend",
+ test:"r225-native-test"
+});
+for(const [role,token] of Object.entries(tokens)){
+ process.env["ADAPTER_CALLER_"+role.toUpperCase()]=token;
+}
+process.env.ADAPTER_ID_ENGINEER="did:thesis:engineer";
+process.env.ADAPTER_ID_ORCHESTRATOR="did:thesis:orchestrator";
+process.env.ADAPTER_ID_BACKEND="did:thesis:backend";
+process.env.ADAPTER_ID_FRONTEND="did:thesis:frontend";
+process.env.ADAPTER_ID_TEST="did:thesis:test";
+process.env.ADAPTER_ID_GATEWAY="urn:thesis:service:gateway";
+process.env.ADAPTER_TRUST_PROFILE="in-memory";
+
+const folder=mkdtempSync(join(tmpdir(),"eng-r225-"));
+const socketPath=join(folder,"owner.sock");
+process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=socketPath;
+
+async function invokeSocket(token,operation,body){
+ return new Promise((resolve,reject)=>{
+  const socket=createConnection({path:socketPath,allowHalfOpen:true});
+  let raw="";
+  socket.setTimeout(15000,()=>socket.destroy(Error("socket timeout")));
+  socket.on("connect",()=>socket.end(JSON.stringify({token,operation,body})));
+  socket.on("data",chunk=>raw+=chunk.toString("utf8"));
+  socket.once("error",reject);
+  socket.once("end",()=>{
+   try{resolve(JSON.parse(raw));}catch(e){reject(e);}
+  });
+ });
+}
+const status=index=>({
+ type:"BitstringStatusListEntry",statusPurpose:"revocation",
+ statusListIndex:String(index),statusListCredential:"https://status.example/r225"
+});
+const now="2026-01-01T00:00:00Z",lifetime=94608000;
+const permission={operation:"read_file",
+ resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fnative/files/apps/backend/user.ts"};
+const root={
+ credential_id:"urn:r225:root:single-owner",
+ delegatee:"orchestrator",
+ valid_from:now,validity_seconds:lifetime,
+ credential_status:status(1915),permissions:[permission]
+};
+try{
+ binding.start_engineer_core();
+ await delay(20);
+ const rootIssued=JSON.parse(await binding.issue_engineer_root(
+  tokens.engineer,JSON.stringify(root)));
+ assert.equal(rootIssued.id,root.credential_id);
+
+ // If this root were registered in a second private CryptoRuntime,
+ // the next Child issuance would fail: the signer needs its parent.
+ const child={
+  parent_credential_id:root.credential_id,
+  credential_id:"urn:r225:child:shared-runtime",
+  delegatee:"backend",
+  valid_from:now,validity_seconds:lifetime,
+  credential_status:status(1916),permissions:[permission]
+ };
+ const issuedChild=await invokeSocket(tokens.orchestrator,"issue_child",child);
+ assert.equal(issuedChild.ok,true,"Child must resolve direct Engineer root");
+ assert.equal(issuedChild.result.id,child.credential_id);
+
+ const proof=await invokeSocket(tokens.backend,"create_presentation",{
+  credential_id:child.credential_id,disclosed_permissions:[permission],
+  audience:"cloud-access-gateway",challenge:"r225-native-gateway-challenge"
+ });
+ assert.equal(proof.ok,true,"Agent VP must use the SAME single issuer");
+ assert.equal(typeof proof.result.signed_vp,"string");
+ assert.ok(proof.result.signed_vp.length>16);
+
+ // Ownership must not accidentally be re-exposed to the private socket.
+ const forbidden=await invokeSocket(tokens.engineer,"issue_root",{
+  ...root,credential_id:"urn:r225:illicit-socket-root",
+  credential_status:status(1917)
+ });
+ assert.equal(forbidden.ok,false,"Only direct Engineer API may issue root");
+ const revoked=JSON.parse(await binding.revoke_engineer_root(
+  tokens.engineer,JSON.stringify({credential_id:root.credential_id,status_set:true})));
+ assert.equal(revoked.credential_id,root.credential_id);
+ assert.equal(revoked.status_set,true);
+ assert.equal(revoked.status_purpose,"revocation");
+
+ await assert.rejects(()=>binding.issue_engineer_root(
+  tokens.backend,JSON.stringify({...root,credential_id:"urn:r225:wrong-role",
+   credential_status:status(1918)})),/Native Engineer Core operation denied/u);
+
+ process.stdout.write(JSON.stringify({
+  event:"r225_direct_engineer_single_rust_owner",
+  root_direct:true,child_native:true,signed_vp:true,root_socket_denied:true,
+  root_revoked:true,cross_role_denied:true,no_http_adapter:true
+ })+"\n");
+}finally{
+ // The private Rust runtime belongs to this Node process, not to an HTTP
+ // Adapter service. On exit the socket is destroyed by the Rust Drop impl.
+ rmSync(folder,{recursive:true,force:true});
+}
