@@ -10,7 +10,7 @@ test("failure is assigned to each trusted workflow component without speculation
   ["billing_consent","manual_billing_consent","billing_gate"],
   ["offline_ci_gate","same_sha_ci_validation","billing_gate"],
   ["anvil_opa","isolated_anvil_opa","infrastructure"],
-  ["adapter_start","adapter_start","evm_adapter"],
+  ["adapter_start","retired_adapter_absent","native_engineer"],
   ["gateway_start","rust_gateway_start","rust_gateway"],
   ["provider_preflight","gemini_key_model_probe","gemini_provider"],
   ["signed_pilot","gemini_signed_dag_execution","trusted_orchestrator"],

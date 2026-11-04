@@ -2,17 +2,19 @@
 /**
  * Manual paid pilot gate: refuse to invoke ANY model unless all independent
  * offline CI workflows SUCCEEDED on the EXACT checked-out commit SHA.
- * R168: third workflow now proves admitted signed D1 recovery end-to-end,
- * rather than the deprecated sequential MCP coordinator acceptance baseline.
+ * R267: proofs require native Engineer Rust EVM, a real signed Gitea/Docker
+ * DAG, signed D1, and Fast CI on one SHA. Legacy Adapter HTTP E2Es
+ * cannot substitute for this direct-Rust paid pilot preflight.
  * GitHub API calls only; does not import or contact a Gemini SDK/provider.
  */
 import {pathToFileURL} from "node:url";
 import {resolve} from "node:path";
 import {verifySignedGeminiPilotConsent} from "./signed-gemini-pilot-consent.mjs";
 const REQUIRED=Object.freeze([
-  ".github/workflows/functional-signed-dag-e2e.yml",
-  ".github/workflows/ts2724-signed-d1-targeted.yml",
-  ".github/workflows/cumulative-refactoring-offline.yml"
+  ".github/workflows/engineer-direct-native-evm-e2e.yml",
+  ".github/workflows/engineer-embedded-signed-dag-e2e.yml",
+  ".github/workflows/engineer-embedded-signed-d1-e2e.yml",
+  ".github/workflows/fast-ci.yml"
 ]);
 const REPO="DarkGh0st03/delegation";
 const BRANCH="refactor/post-prof-plan-contracts-20261021";

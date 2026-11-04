@@ -18,7 +18,7 @@ on:
         required: true
         default: 'gemini-3.8-flash'
       pinned_commit_sha:
-        description: 'Paste the exact 40-character commit SHA verified by all three offline CIs'
+        description: 'Paste the exact 40-character commit SHA verified by all four native/free CIs'
         type: string
         required: true
       billing_cap_acknowledgement:
@@ -58,6 +58,11 @@ jobs:
     timeout-minutes: 120
     env:
       ADAPTER_TRUST_PROFILE: evm
+      ENGINEER_CORE_NATIVE_MODE: "1"
+      APPROVED_RUNNER_NATIVE_MCP: "1"
+      APPROVED_RUNNER_NATIVE_EVM: "1"
+      APPROVED_RUNNER_NATIVE_SOURCE_WITNESS: "1"
+      APPROVED_RUNNER_SOURCE_DERIVED_ROUTES: "1"
       ADAPTER_CALLER_ENGINEER: local-native-engineer-ci
       ADAPTER_CALLER_GATEWAY: local-native-gateway-ci
       ADAPTER_CALLER_ORCHESTRATOR: local-native-orchestrator-ci
@@ -144,7 +149,7 @@ jobs:
           node --check poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs
           node --check poc/apps/test-runner-controller/scripts/isolated-trusted-security-ci-positive-smoke.mjs
           node --experimental-strip-types --test poc/apps/gateway/native-test/approved-plan-agent-model-binding.test.mjs
-      - name: Block billed Gemini pilot unless SAME SHA passed all three offline CI gates
+      - name: Block billed Gemini pilot unless SAME SHA passed all four native/free CI gates
         id: offline_ci_gate
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -204,33 +209,32 @@ jobs:
           echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
           echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
           echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
-      - name: Build signed-credential Adapter and native Core Rust addon
+      - name: Build trusted Engineer Rust and public-only Gateway verifier
         id: adapter_build
         run: |
-          cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
+          cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
+          cargo build --release --manifest-path services/delegation-engineer-node/Cargo.toml
           cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
-          mkdir -p poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
+          mkdir -p poc/packages/orchestrator-runtime/src/native poc/apps/gateway/src/native
+          install -d -m 0700 "$ADAPTER_PUBLIC_ARTIFACT_DIR" "$ADAPTER_PUBLIC_ARTIFACT_DIR/accumulators" "$ADAPTER_PUBLIC_ARTIFACT_DIR/status-lists"
+          cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
-      - name: Start Adapter with public-only shared verification artifacts
+          echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$RUNNER_TEMP/paid-one-engineer-$GITHUB_RUN_ID.sock" >> "$GITHUB_ENV"
+      - name: Verify retired Adapter HTTP is stopped before native owner execution
         id: adapter_start
         run: |
-          # Local Engineer-only native Rust socket uses the SAME issuer,
-          # credential registry, EVM status and child/VP state as this Adapter.
-          export ADAPTER_ENGINEER_NATIVE_SOCKET="$RUNNER_TEMP/delegation-engineer-$GITHUB_RUN_ID.sock"
-          echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$ADAPTER_ENGINEER_NATIVE_SOCKET" >> "$GITHUB_ENV"
+          test "$ENGINEER_CORE_NATIVE_MODE" = 1
+          test "$APPROVED_RUNNER_NATIVE_MCP" = 1
           test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
-          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
-          echo $! > /tmp/native-evm-adapter.pid
-          for i in {1..100}; do
-            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1 &&
-                test -S "$ADAPTER_ENGINEER_NATIVE_SOCKET"; then exit 0; fi
-            sleep 0.5
-          done
-          cat /tmp/native-evm-adapter.log
-          exit 1
+          test ! -e /tmp/native-evm-adapter.pid
+          if curl -fsS --connect-timeout 1 http://127.0.0.1:8090/health >/dev/null 2>&1; then
+            echo "Forbidden legacy Adapter HTTP is live" >&2
+            exit 1
+          fi
       - name: Start Gateway using only the native Rust Core verifier
         id: gateway_start
         run: |
+          node -e 'require("./poc/apps/gateway/src/native/delegation-core.node").assert_verification_ready()'
           npm --prefix poc run gateway:start > /tmp/native-evm-gateway.log 2>&1 &
           echo $! > /tmp/native-evm-gateway.pid
           for i in {1..100}; do
@@ -511,7 +515,6 @@ jobs:
         if: always()
         run: |
           kill "$(cat /tmp/native-evm-gateway.pid)" 2>/dev/null || true
-          kill "$(cat /tmp/native-evm-adapter.pid)" 2>/dev/null || true
           rm -f "${ADAPTER_ENGINEER_NATIVE_SOCKET:-}" 2>/dev/null || true
           if [[ -f poc/infra/.env ]]; then
             docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
@@ -536,6 +539,11 @@ jobs:
     timeout-minutes: 65
     env:
       ADAPTER_TRUST_PROFILE: evm
+      ENGINEER_CORE_NATIVE_MODE: "1"
+      APPROVED_RUNNER_NATIVE_MCP: "1"
+      APPROVED_RUNNER_NATIVE_EVM: "1"
+      APPROVED_RUNNER_NATIVE_SOURCE_WITNESS: "1"
+      APPROVED_RUNNER_SOURCE_DERIVED_ROUTES: "1"
       ADAPTER_CALLER_ENGINEER: local-native-engineer-ci
       ADAPTER_CALLER_GATEWAY: local-native-gateway-ci
       ADAPTER_CALLER_ORCHESTRATOR: local-native-orchestrator-ci
@@ -641,30 +649,29 @@ jobs:
           echo "CORE_RUST_ENTERPRISE_REGISTRY_ADDRESS=$ENTERPRISE_TRUST_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
           echo "CORE_RUST_ISSUER_REGISTRY_ADDRESS=$ISSUER_REGISTRY_ADDRESS" >> "$GITHUB_ENV"
           echo "CORE_RUST_DID_RESOLVER_SCRIPT=$GITHUB_WORKSPACE/blockchain/did-client/resolve-did-json.mjs" >> "$GITHUB_ENV"
-      - name: Build signed-credential Adapter and native Core Rust addon
+      - name: Build trusted Engineer Rust and public-only Gateway verifier
         run: |
-          cargo build --manifest-path services/delegation-adapter/Cargo.toml --locked
+          cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
+          cargo build --release --manifest-path services/delegation-engineer-node/Cargo.toml
           cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
-          mkdir -p poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
+          mkdir -p poc/packages/orchestrator-runtime/src/native poc/apps/gateway/src/native
+          install -d -m 0700 "$ADAPTER_PUBLIC_ARTIFACT_DIR" "$ADAPTER_PUBLIC_ARTIFACT_DIR/accumulators" "$ADAPTER_PUBLIC_ARTIFACT_DIR/status-lists"
+          cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
-      - name: Start Adapter with public-only shared verification artifacts
+          echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$RUNNER_TEMP/paid-one-engineer-$GITHUB_RUN_ID.sock" >> "$GITHUB_ENV"
+      - name: Verify retired Adapter HTTP is stopped before native owner execution
         run: |
-          # Local Engineer-only native Rust socket uses the SAME issuer,
-          # credential registry, EVM status and child/VP state as this Adapter.
-          export ADAPTER_ENGINEER_NATIVE_SOCKET="$RUNNER_TEMP/delegation-engineer-$GITHUB_RUN_ID.sock"
-          echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$ADAPTER_ENGINEER_NATIVE_SOCKET" >> "$GITHUB_ENV"
+          test "$ENGINEER_CORE_NATIVE_MODE" = 1
+          test "$APPROVED_RUNNER_NATIVE_MCP" = 1
           test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
-          cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
-          echo $! > /tmp/native-evm-adapter.pid
-          for i in {1..100}; do
-            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1 &&
-                test -S "$ADAPTER_ENGINEER_NATIVE_SOCKET"; then exit 0; fi
-            sleep 0.5
-          done
-          cat /tmp/native-evm-adapter.log
-          exit 1
+          test ! -e /tmp/native-evm-adapter.pid
+          if curl -fsS --connect-timeout 1 http://127.0.0.1:8090/health >/dev/null 2>&1; then
+            echo "Forbidden legacy Adapter HTTP is live" >&2
+            exit 1
+          fi
       - name: Start Gateway using only the native Rust Core verifier
         run: |
+          node -e 'require("./poc/apps/gateway/src/native/delegation-core.node").assert_verification_ready()'
           npm --prefix poc run gateway:start > /tmp/native-evm-gateway.log 2>&1 &
           echo $! > /tmp/native-evm-gateway.pid
           for i in {1..100}; do
@@ -739,7 +746,6 @@ jobs:
         if: always()
         run: |
           kill "$(cat /tmp/native-evm-gateway.pid)" 2>/dev/null || true
-          kill "$(cat /tmp/native-evm-adapter.pid)" 2>/dev/null || true
           rm -f "${ADAPTER_ENGINEER_NATIVE_SOCKET:-}" 2>/dev/null || true
           if [[ -f poc/infra/.env ]]; then
             docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
