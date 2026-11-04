@@ -236,3 +236,44 @@ SHA is stable. The absence of visible push-run statuses is NOT
 equivalent to green. The old Rust Adapter HTTP implementation and its
 isolated historical tests remain deliberately untouched pending those
 gates.
+
+## R238–R239 — permanent agent role generalization and native-only ADK launch
+
+**R238 separated permanent skills from historical scenario content:**
+
+- `poc/packages/agent-runtime/src/specialized-agents.ts` no longer
+  embeds the Account Suspension prompt, file allowlists, Test E2E path
+  or Frontend-specific acceptance hints. They are now in
+  `src/fixtures/account-suspension-agent-profiles.ts`.
+- `src/cards.ts` now advertises role-specific *general* skills without
+  embedding the Account Suspension Card narrative, skills or tags.
+  Legacy deterministic Card content is retained only in
+  `src/fixtures/account-suspension-agent-cards.ts` and is explicitly
+  selected with `capabilityProfile:"legacy"`.
+- `createAdkSpecializedAgent` deliberately selects
+  `APPROVED_SPECIALIZED_AGENT_PROFILES` for prebound signed Tasks, and
+  the isolated historical fixture only for older unsigned tests.
+  This relocation is not an authorization change: signed Task grants,
+  Gateway, Rust verification and OPA remain authoritative.
+- R238 adds explicit scenario-isolation and historical-compatibility
+  regressions to Fast CI.
+
+**R239 removes a previously hidden runtime dependency:**
+The production `poc/apps/a2a-agent/src/main.ts` no longer requires
+`DELEGATION_ADAPTER_URL`. An approved A2A Task uses the native Rust
+issuer socket plus the role token, with task-local crypto MCP and direct
+Gateway FunctionTools. `DelegationEvidenceHandler` and the ADK A2A
+configuration now accept *no Adapter URL* when native crypto is
+configured. Missing native signing authority still fails closed: no
+HTTP downgrade is permitted. Explicit historical Backend discovery
+startup retains its old URL requirement instead of silently
+recreating the removed HTTP service. A Unix-socket transport regression
+and static production-boot contract test were added to Fast CI.
+
+**Still pending:** This is source refactoring, not an independently
+confirmed green CI result. The unsigned compatibility fixtures, older
+private HTTP worker/router modules, old Rust Adapter executable,
+and historical workflow must still be retired **after** direct-Rust
+EVM, R236 signed Gitea/Docker positive DAG and R237 signed D1
+are proven on stable SHAs. No new long CI or paid Gemini run was
+requested by R238–R239; `main` is unchanged.
