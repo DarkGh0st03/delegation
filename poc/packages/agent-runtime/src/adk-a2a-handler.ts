@@ -36,17 +36,10 @@ export interface AdkA2ATaskHandlerConfig {
   generateContentConfig?: AdkGenerationConfig;
   scopeModelPaths?: boolean;
   gatewayTimeoutMs?: number;
-  /** Optional shared-MCP spike: trusted Agent worker task registry. */
-  mcpTaskRegistry?: PrivateMcpTaskRegistry;
-  mcpSharedUrl?: string;
-  /** Separate crypto-only MCP service; never included in the ADK tool list. */
-  mcpCryptoUrl?: string;
-  /** Explicitly opt update_file into MCP; read_file remains the default. */
-  mcpUpdateFile?: boolean;
-  /** Test Agent only: opt-in to MCP create_file for the one allowed E2E path. */
-  mcpCreateFile?: boolean;
-  /** Test Agent only: route controlled run_tests via the shared MCP server. */
-  mcpRunTests?: boolean;
+  /** Private Task signer for one-shot crypto VP proofs; not model tools. */
+  mcpTaskRegistry?:PrivateMcpTaskRegistry;
+  /** Crypto-only MCP service; never included in ADK model-visible tools. */
+  mcpCryptoUrl?:string;
   /** Opt-in private Child signer for one exact Gateway-bound Backend read. */
   trustedBackendDiscovery?:TrustedBackendDiscoveryA2ABinding;
   /** Trusted Backend host's dynamic, one-use owner-prebound discovery slot. */
@@ -197,18 +190,13 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   if(config.trustedBackendDiscoverySlot&&
      !(config.trustedBackendDiscoverySlot instanceof TrustedBackendDiscoveryTaskSlot))
     throw Error("Untrusted Backend discovery dynamic slot");
-  if (config.mcpUpdateFile && !config.mcpSharedUrl) {
-    throw new Error("Shared MCP update_file requires MCP to be configured");
-  }
-  if (config.mcpCreateFile && !config.mcpSharedUrl) {
-    throw new Error("Shared MCP create_file requires MCP to be configured");
-  }
-  if (config.mcpRunTests && !config.mcpSharedUrl) {
-    throw new Error("Shared MCP run_tests requires MCP to be configured");
-  }
-  if (Boolean(config.mcpSharedUrl || config.mcpCryptoUrl) !== Boolean(config.mcpTaskRegistry)) {
-    throw new Error("MCP service requires a private task registry");
-  }
+  // Reject stale JavaScript configurations rather than silently ignoring
+  // authority-bearing options removed from the TypeScript interface.
+  if(["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
+       .some(key=>Object.prototype.hasOwnProperty.call(config,key)))
+    throw Error("legacy_repository_mcp_retired");
+  if(Boolean(config.mcpCryptoUrl)!==Boolean(config.mcpTaskRegistry))
+    throw Error("MCP service requires a private task registry");
   if (!config.adapterToken?.trim() || !config.adapterBaseUrl?.trim() || !config.gatewayBaseUrl?.trim()) {
     throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
   }
@@ -305,21 +293,16 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(cryptoPresentation ? {cryptoPresentation} : {}),
       ...(signal ? {signal} : {}),
       ...(config.gatewayTimeoutMs !== undefined ? {timeoutMs: config.gatewayTimeoutMs} : {}),
-      // A signed Test Task can invoke the real 7-phase Docker Runner through
-      // the regular ADK FunctionTool, not only through the legacy MCP path.
-      // This changes transport timeout only; it does not grant run_tests.
-      ...(config.mcpRunTests ||
-        (context.role==="test"&&context.trusted_gateway_task_id)
-        ? {runnerExecuteTimeoutMs: 960_000} : {}),
+      // Signed Test Tasks invoke Docker through the Gateway FunctionTool.
+      // Timeout does not grant run_tests or widen signed permissions.
+      ...(context.role==="test"&&context.trusted_gateway_task_id
+        ? {runnerExecuteTimeoutMs:960_000} : {}),
       ...(config.fetchFn ? { fetchFn: config.fetchFn } : {})
     });
     // Register only the ACTIVE A2A task. The registry retains this task-scoped
     // Gateway client and its private evidence; MCP never receives them.
     config.mcpTaskRegistry?.begin(context.task_id, gatewayClient, signal,
-      {allowUpdateFile: config.mcpUpdateFile === true,
-       allowCreateFile: config.mcpCreateFile === true && context.role==="test",
-       allowRunTests: config.mcpRunTests === true && mayRunTests,
-       ...(context.trusted_gateway_task_id
+      { ...(context.trusted_gateway_task_id
          ? {
              allowedPaths:context.subtask.relevant_paths,
              ...(context.subtask.approved_file_permissions!==undefined
@@ -330,15 +313,8 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
        evidenceHandler:discoveryEvidence??evidenceHandler});
     const configured = createAdkSpecializedAgent({
       role: context.role, model, gatewayClient, signal,
-      ...(config.mcpUpdateFile ? {mcpUpdateFile:true} : {}),
-      ...(config.mcpCreateFile ? {mcpCreateFile:true} : {}),
-      ...(config.mcpRunTests && mayRunTests ? {mcpRunTests:true} : {}),
       ...(signedTask&&context.role==="test"
         ?{trustedRunTestsAllowed:mayRunTests}:{}),
-      ...(config.mcpSharedUrl && config.mcpTaskRegistry ? {mcpReadFile:{
-        endpoint:config.mcpSharedUrl,
-        bearerForRequest: () => config.mcpTaskRegistry!.bearerFor(context.task_id)
-      }} : {}),
       ...(config.generateContentConfig ? {generateContentConfig: config.generateContentConfig} : {}),
       ...(config.scopeModelPaths ? {scopeModelPaths: true} : {}),
       ...(context.trusted_gateway_task_id
@@ -351,7 +327,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
       ...(taskRef?{diagnosticTaskRef:taskRef}:{}),
       onToolOutcome: event => { events.push(event); progress.observe(event); }
     });
-    const {agent, mcpToolset} = configured;
+    const {agent} = configured;
     const appName = context.trusted_gateway_task_id &&
       context.subtask.approved_file_permissions !== undefined
       ? "delegated_adk_" + context.role
@@ -425,9 +401,6 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
           model.lastFinishReason);
       reportFailure(category, model.budgetExceeded ? null : diagnostic);
       throw new Error("ADK protected model failure: " + category);
-    } finally {
-      // ADK holds MCP sessions; release them on success, denial or model failure.
-      await mcpToolset?.close();
     }
     if(context.role==="test"&&progress.requiresFreshEngineerApproval)
       failForFreshReview();

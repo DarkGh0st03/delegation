@@ -326,3 +326,18 @@ was incorrectly classified as a caller of the deleted file
 slash-delimited path leaf**, with a Fast CI regression for the suffix
 collision and for genuine configured launchers. This preserves
 fail-closed checks without falsely blocking safe removal.
+
+## R194 — ADK A2A handler cannot opt into retired repository MCP
+
+Removed `mcpSharedUrl`, `mcpUpdateFile`, `mcpCreateFile` and
+`mcpRunTests` from the A2A Task handler contract and all forwarding
+paths. Any JavaScript caller supplying one of these retired keys now
+fails closed, including a falsely disabled flag. The general server
+applies the same guard before serving a request. The signed Test Task
+continues to use a Gateway FunctionTool with bounded Docker timeout.
+Crypto-only MCP proof generation still requires the trusted per-Task
+registry and is never exposed as a repository/Runner MCP tool.
+
+The standalone ADK specialized-agent MCPToolset implementation remains
+in the source and has dedicated historical tests; remove it separately
+after migrating its signed-path denial tests to the canonical FunctionTools.

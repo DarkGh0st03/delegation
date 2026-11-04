@@ -66,18 +66,11 @@ export async function startSpecializedAgentServer(
     capabilityProfile: options.capabilityProfile
   });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
-  // R185: the trusted reviewed DAG must never opt back into the repository
-  // MCP tool route, even through an internal library caller bypassing the
-  // standalone production launcher. Signed agents use Gateway FunctionTools
-  // and only the private crypto-MCP presentation bridge.
-  if(options.capabilityProfile==="approved-plan"&&options.adk?.mcpSharedUrl)
-    throw Error("approved_plan_requires_direct_gateway_tools");
-  if (options.adk?.mcpCreateFile && options.role!=="test") {
-    throw new Error("Only Test Agent may enable shared MCP create_file");
-  }
-  if (options.adk?.mcpRunTests && options.role!=="test") {
-    throw new Error("Only Test Agent may enable shared MCP run_tests");
-  }
+  // R194 reject retired repository/Runner MCP options for EVERY profile,
+  // including direct JS library callers rather than only production launchers.
+  if(options.adk&&["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
+       .some(key=>Object.prototype.hasOwnProperty.call(options.adk,key)))
+    throw Error("legacy_repository_mcp_retired");
   if (options.mcpTaskSigning && !options.adk) {
     throw new Error("Private MCP task worker requires a configured ADK runtime");
   }
