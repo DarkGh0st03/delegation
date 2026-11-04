@@ -346,13 +346,20 @@ const TEXT_SOURCE=/\.(?:js|mjs|cjs|ts|tsx|json|ya?ml|sh|toml|md|Dockerfile)$/u;
 
 /** A configured command mention is not automatically executed by a job. */
 export function configuredMatch(command,target){
-  if(command.includes(target))return true;
+  // Compare whole command tokens, not substring matches of retired basenames.
+  // For example, operation-catalog.test.ts must NOT match catalog.test.ts.
+  const separators=new Set([32,10,9,34,39,96,61,44,59,58,40,41,123,125,91,93,60,62,124,38]);
+  const tokens=[];
+  let token="";
+  for(const ch of command){
+    if(separators.has(ch.codePointAt(0))){
+      if(token){tokens.push(token);token="";}
+    }else token+=ch;
+  }
+  if(token)tokens.push(token);
   const leaf=target.split("/").at(-1);
-  // Exact command-token or slash-prefixed leaf only; e.g.
-  // operation-catalog.test.ts MUST NOT match deleted catalog.test.ts.
-  const tokens=command.split(/[\\s"'\x60=,;:(){}\\[\\]<>|&]+/u);
-  return tokens.some(token=>token===leaf||
-    token.endsWith("/"+leaf)||token.endsWith("\\\\"+leaf));
+  return tokens.some(value=>value===target||value===leaf||
+    value.endsWith("/"+leaf));
 }
 function workflowCommands(contents){
   const lines=contents.split("\n");
