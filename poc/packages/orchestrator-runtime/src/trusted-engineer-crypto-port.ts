@@ -51,7 +51,8 @@ export function createOwnerPrivateMcpEngineerCredentialPort(
  * native failure. Historical offline fixtures may still use MCP -> Adapter.
  */
 export function createTrustedEngineerCredentialPort(
- config:AdapterClientConfig
+ config:Pick<AdapterClientConfig,"bearerToken"|"timeoutMs">&
+  {adapterBaseUrl?:string;fetchFn?:AdapterClientConfig["fetchFn"]}
 ):EngineerCredentialPort{
  const path=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
  const direct=process.env.ENGINEER_CORE_NATIVE_MODE;
@@ -75,5 +76,9 @@ export function createTrustedEngineerCredentialPort(
  // Explicit historical fixtures without this flag retain their old route.
  if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
   throw Error("Canonical Engineer root requires native Rust issuer socket");
- return createOwnerPrivateMcpEngineerCredentialPort(config);
+ if(!config.adapterBaseUrl?.trim())
+  throw Error("Legacy HTTP Engineer fixture requires explicit Adapter URL");
+ return createOwnerPrivateMcpEngineerCredentialPort({
+  ...config,adapterBaseUrl:config.adapterBaseUrl
+ });
 }
