@@ -3,6 +3,7 @@
  * Never handed to ADK and never re-exported by the canonical runtime index.
  * Source encapsulation does not replace native Rust DC/VP and OPA policy.
  */
+import {invokeNativeCrypto} from "../../agent-runtime/src/native-crypto-ipc.ts";
 type FetchLike = typeof fetch;
 
 
@@ -86,6 +87,7 @@ export class OrchestratorGatewayTransport {
   readonly #rootCredentialId: string;
   readonly #timeoutMs: number;
   readonly #fetch: FetchLike;
+  readonly #nativeSocketPath?:string;
 
   constructor(config: OrchestratorGatewayTransportConfig) {
     this.#gatewayBaseUrl = nonEmptyString(
@@ -106,6 +108,15 @@ export class OrchestratorGatewayTransport {
     );
     this.#timeoutMs = config.timeoutMs ?? 10_000;
     this.#fetch = config.fetchFn ?? fetch;
+    // Canonical trusted-owner path shares the SAME Rust issuer as Engineer,
+    // Child DC and Agent VP. Bad socket configuration fails closed.
+    const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+    if(socketPath!==undefined){
+      if(!socketPath.startsWith("/")||socketPath.length>100||
+         socketPath.trim()!==socketPath)
+        throw new OrchestratorGatewayClientError("Native Rust signer socket invalid");
+      this.#nativeSocketPath=socketPath;
+    }
   }
 
 
@@ -230,6 +241,35 @@ export class OrchestratorGatewayTransport {
   async #createPresentation(
     prepared: PreparedAuthorization,signal?:AbortSignal
   ): Promise<string> {
+    const input={
+      credential_id:this.#rootCredentialId,
+      disclosed_permissions:[prepared.required_permission],
+      audience:prepared.audience,
+      challenge:prepared.challenge
+    };
+    if(this.#nativeSocketPath){
+      this.#assertActive(signal);
+      let proof:unknown;
+      try{
+        proof=await invokeNativeCrypto({
+          socketPath:this.#nativeSocketPath,token:this.#adapterToken,
+          timeoutMs:this.#timeoutMs
+        },"create_presentation",input);
+      }catch{
+        // Native rejection cannot downgrade to Adapter HTTP.
+        throw new OrchestratorGatewayClientError(
+          "Native Rust Orchestrator presentation denied");
+      }
+      this.#assertActive(signal);
+      if(!proof||typeof proof!=="object"||Array.isArray(proof))
+        throw new OrchestratorGatewayClientError(
+          "Native Rust Orchestrator presentation malformed");
+      return nonEmptyString((proof as {signed_vp?:unknown}).signed_vp,
+        "Native Rust signed_vp");
+    }
+    if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
+      throw new OrchestratorGatewayClientError(
+        "Canonical signed DAG requires native Rust Orchestrator signing");
     let response: Response;
     try {
       response = await this.#fetch(
@@ -241,12 +281,7 @@ export class OrchestratorGatewayTransport {
             "content-type": "application/json",
             accept: "application/json"
           },
-          body: JSON.stringify({
-            credential_id: this.#rootCredentialId,
-            disclosed_permissions: [prepared.required_permission],
-            audience: prepared.audience,
-            challenge: prepared.challenge
-          }),
+          body: JSON.stringify(input),
           signal: this.#requestSignal(signal)
         }
       );
