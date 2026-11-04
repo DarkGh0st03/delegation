@@ -20,10 +20,18 @@ export class TrustedGatewayNativeRootStatusReader{
  constructor(options:{baseUrl:string;gatewayToken:string;timeoutMs?:number;
   nativeSocketPath?:string;
   fetchFn?:typeof fetch}){
-  if(options.nativeSocketPath!==undefined&&(
-      !options.nativeSocketPath.startsWith("/")||
-      options.nativeSocketPath.trim()!==options.nativeSocketPath||
-      options.nativeSocketPath.length>100||
+  // Canonical Engineer-owned Rust mode MUST select the existing in-process
+  // issuer's authenticated socket. An omitted option cannot downgrade to
+  // the retired Adapter HTTP service, even at an older Gateway call site.
+  const direct=process.env.ENGINEER_CORE_NATIVE_MODE==="1";
+  const nativePath=options.nativeSocketPath??(direct
+   ? process.env.ADAPTER_ENGINEER_NATIVE_SOCKET:undefined);
+  if(direct&&!nativePath)
+   reject("canonical Engineer Core mode requires native issuer inspection socket");
+  if(nativePath!==undefined&&(
+      !nativePath.startsWith("/")||
+      nativePath.trim()!==nativePath||
+      nativePath.length>100||
       options.fetchFn!==undefined))
    reject("native issuer socket must be an absolute, private fixed path without HTTP fallback");
   let url:URL;
@@ -41,7 +49,7 @@ export class TrustedGatewayNativeRootStatusReader{
   // A Response wrapper preserves the exact established root-status
   // validation below; its input goes to a LOCAL Rust socket, NEVER fetch().
   // No HTTP fallback is possible after a native transport/permission denial.
-  const socket=options.nativeSocketPath;
+  const socket=nativePath;
   this.#fetch=socket
    ? (async(input,init)=>{
       const path=new URL(String(input)).pathname;
