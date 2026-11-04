@@ -6,10 +6,11 @@ import {readFileSync,existsSync} from "node:fs";
 const root=new URL("../../../",import.meta.url);
 const read=path=>readFileSync(new URL(path,root),"utf8");
 
-test("R180 production MCP entrypoint can no longer select repository routing",()=>{
+test("R221 retired Shared MCP HTTP entrypoint cannot start its legacy listener",()=>{
  const launcher=read("poc/mcp-shared/src/main.ts");
  const profile=read("poc/mcp-shared/src/profile.ts");
- assert.match(launcher,/requireProductionCryptoMcpProfile\(process\.env\.MCP_TOOL_PROFILE\)/u);
+ assert.match(launcher,/throw new Error\("standalone_shared_mcp_launcher_retired"\)/u);
+ assert.doesNotMatch(launcher,/createSharedMcpHttpServer|CryptoWorkerRouter|\.listen\(/u);
  assert.match(profile,/if\(selected!=="crypto"\)throw Error\("production_mcp_crypto_only"\)/u);
  assert.doesNotMatch(launcher,/selectMcpToolProfile\(process\.env\.MCP_TOOL_PROFILE\)/u);
 });
@@ -27,12 +28,13 @@ test("R180 production A2A cannot register model-facing repository MCP tools",()=
  assert.match(flags,/production_adk_requires_native_rust_crypto/u);
  assert.match(flags,/production_adk_requires_task_local_crypto_mcp/u);
 });
-test("R180 cryptographic MCP worker remains reachable, not deleted as legacy",()=>{
+test("R221 isolated legacy crypto HTTP compatibility modules remain testable but not deployable",()=>{
  const main=read("poc/mcp-shared/src/main.ts");
  const listener=read("poc/mcp-shared/src/http-server.ts");
  const worker=read("poc/packages/agent-runtime/src/private-mcp-worker-http.ts");
  const bridge=read("poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts");
- assert.match(main,/new CryptoWorkerRouter\(workers\)/u);
+ assert.doesNotMatch(main,/new CryptoWorkerRouter\(workers\)/u);
+ assert.match(main,/standalone_shared_mcp_launcher_retired/u);
  assert.doesNotMatch(main,/new TaskRouter\(workers\)/u);
  assert.doesNotMatch(listener,/^import \{registerLegacyRepositoryTools\}/mu);
  assert.match(listener,/router\.createPresentation\(claims,token,args\)/u);
