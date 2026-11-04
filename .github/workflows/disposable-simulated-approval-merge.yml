@@ -101,7 +101,7 @@ jobs:
           npm --prefix poc run orchestrator-runtime:test
 
       - name: Verify exact 11-file Account Suspension delegation scopes
-        run: node --experimental-strip-types poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs
+        run: node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts
 
       - name: Generate job-local development fixtures
         run: node poc/scripts/init-local-env.mjs --force

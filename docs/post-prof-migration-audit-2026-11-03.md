@@ -119,3 +119,14 @@ contracts and read-only Planning Gateway boundary rather than asserting
 obsolete behavior. The R6 executable inventory marks all physically
 removed files as **required absent** and still denies live imports/commands
 to those paths. Account Suspension's scripted signed acceptance remains.
+
+## R174 — static 11-file Account Suspension authority preflight removed
+
+`check-account-suspension-reference-scope.mjs` and
+`permission-templates.test.ts` were the two remaining imports of the
+physically retired `permission-templates.ts`. They encoded a fixed
+eleven-file role/permission ceiling, unsuitable for generic signed Tasks.
+Both are physically deleted. Cumulative, disposable-merge and PoC-baseline
+workflows now run `trusted-engineer-authority.test.ts`, covering the
+Engineer-derived approval and delegation boundaries instead. Current signed
+DAG and researcher Account Suspension acceptance remain untouched.

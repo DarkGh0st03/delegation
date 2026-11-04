@@ -42,7 +42,8 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
   ".github/workflows/shared-mcp-production-coordinator.yml",
   ".github/workflows/shared-mcp-real-positive-e2e.yml",
-  "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs"
+  "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs",
+  "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs"
 ]);
 
 
@@ -265,12 +266,9 @@ export function unexpectedHistoricalPreflightCallers(
  * new imports of a side-effect-only checker into signed ADK/DAG source.
  * An invocation checks fixed IAM fixtures; it does not authorize a tool.
  */
-export const R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS=Object.freeze([
-  ".github/workflows/cumulative-refactoring-offline.yml",
-  ".github/workflows/gemini-paid-shared-mcp-final.yml",
-  ".github/workflows/disposable-simulated-approval-merge.yml",
-  ".github/workflows/poc-baseline.yml"
-]);
+export const R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS=Object.freeze([]);
+/** The frozen 11-file preflight is retired: NO executable can call it.
+ * Canonical authorization comes from immutable signed Task and Rust/OPA. */
 export function unexpectedHistoricalReferenceScopeCallers(
   inventory,allowed=R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS
 ){

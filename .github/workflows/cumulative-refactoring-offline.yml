@@ -64,7 +64,7 @@ jobs:
         run: |
           npm --prefix poc run test -w @thesis/test-runner-controller
           node --experimental-vm-modules --experimental-strip-types --test poc/scripts/test/*.test.mjs
-          node --experimental-strip-types poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs
+          node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts
       - name: GUI mock + exact plan digest contract
         run: |
           node --test poc/workflow-ui/tests/ui-contract.test.mjs
