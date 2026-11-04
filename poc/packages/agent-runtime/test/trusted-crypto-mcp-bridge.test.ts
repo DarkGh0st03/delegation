@@ -89,7 +89,7 @@ test("Gateway Prepare -> trusted crypto MCP SDK -> private Adapter VP -> Gateway
   const gateway=createGatewayHttpServer(runtime);
   const gatewayUrl=await start(gateway);
   const worker=express();
-  attachPrivateMcpWorker(worker,registry);
+  attachPrivateMcpWorker(worker,registry,"crypto");
   const privateListener=worker.listen(0,"127.0.0.1");
   await new Promise<void>(resolve=>privateListener.once("listening",resolve));
   const privateUrl="http://127.0.0.1:"+(privateListener.address() as AddressInfo).port;
@@ -326,7 +326,7 @@ test("R1 signed nonlegacy Task traverses real MCP HTTP, private VP and approved 
     role:"backend",signingPrivateKeyPem:k.privateKey,signingPublicKeyPem:k.publicKey
   });
   const worker=express();
-  attachPrivateMcpWorker(worker,registry);
+  attachPrivateMcpWorker(worker,registry,"legacy");
   const privateListener=worker.listen(0,"127.0.0.1");
   await new Promise<void>(resolve=>privateListener.once("listening",resolve));
   const workerUrl="http://127.0.0.1:"+
