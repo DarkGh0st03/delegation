@@ -571,3 +571,27 @@ independently confirmed. A new free CI checkpoint must be prepared on a
 stable SHA once focused validation passes. Retaining historical test-only
 code until CI confirmation does not create an active Shared MCP service.
 No paid inference is authorized and `main` remains unchanged.
+
+## R223 — running canonical A2A server has no private crypto HTTP route
+
+A zero-inference integration regression now starts the actual A2A Express
+server with a task-local signed MCP registry and canonical native Rust
+configuration (socket selection only; no actual crypto work in this test).
+It sends POST requests to both retired private worker paths and requires
+HTTP 404 for `/internal/mcp-crypto-call` and `/internal/mcp-tool-call`.
+
+The route test is included in the existing Fast CI
+`private-mcp-worker-http.test.ts` command. This strengthens the previous
+static R221/R222 proof without starting a paid model or assuming a
+running Gitea/EVM/Docker provider.
+
+The three zero-billing full-gate workflows have been re-inspected:
+each accepts only an explicit checkpoint-file change for its normal
+push trigger; the signed DAG and TS2724 jobs explicitly reject any
+Gemini API key or paid-pilot environment. Their signed execution
+fixtures use the native Engineer socket in the job.
+
+The pending next step is a **single same-SHA release candidate** after
+these source-level revisions, not a long suite on every patch.
+Results must be read from the GitHub Actions runs; an empty connector
+commit-status result does not establish success or failure.
