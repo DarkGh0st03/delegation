@@ -546,7 +546,7 @@ test("R178 protected human merge is never a model-exposed Orchestrator capabilit
  const readiness=readFileSync(new URL(
   "poc/packages/orchestrator-runtime/src/merge-readiness.ts",base),"utf8");
  const workflow=readFileSync(new URL(
-  ".github/workflows/protected-gitea-merge.yml",base),"utf8");
+  ".github/workflows/human-approved-gitea-merge.yml",base),"utf8");
  assert.doesNotMatch(index,/GiteaMergeReadinessVerifier|MergeReadinessDenied/u);
  assert.match(readiness,/export class GiteaMergeReadinessVerifier/u);
  assert.match(workflow,/workflow_dispatch:/u);
