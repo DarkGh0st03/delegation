@@ -42,10 +42,39 @@ pub fn run(config: AdapterConfig) -> Result<(), String> {
 
     eprintln!("Delegation Adapter listening on {}", config.bind_addr);
 
+    // Optional trusted Engineer Unix IPC shares this EXACT Rust CryptoRuntime
+    // with Child issuance, revocation, VP signing and root inspections.
+    // Running two separate signing runtimes would invalidate parent lookup.
+    #[cfg(unix)]
+    let native = match std::env::var("ADAPTER_ENGINEER_NATIVE_SOCKET") {
+        Ok(path) if !path.trim().is_empty() =>
+            Some(crate::engineer_native::NativeEngineerSocket::bind(&path)?),
+        Ok(_) => return Err(String::from("Engineer native socket path must not be empty")),
+        Err(_) => None,
+    };
+    #[cfg(not(unix))]
+    if std::env::var_os("ADAPTER_ENGINEER_NATIVE_SOCKET").is_some() {
+        return Err(String::from("Engineer native socket requires Unix"));
+    }
+
+    #[cfg(unix)]
+    if let Some(socket) = &native {
+        loop {
+            // No cross-thread Rc or duplicated issuer state. The same event
+            // loop serializes native Engineer and legacy Adapter operations.
+            socket.poll(&config, &mut crypto)?;
+            match server.recv_timeout(std::time::Duration::from_millis(25)) {
+                Ok(Some(request)) => handle_request(request, &config, &mut crypto),
+                Ok(None) => {},
+                Err(_) => return Err(String::from("Delegation Adapter HTTP listener unavailable")),
+            }
+        }
+    }
+    // Legacy/public Adapter child and presentation endpoints remain usable
+    // during the migration, without enabling native root operations by default.
     for request in server.incoming_requests() {
         handle_request(request, &config, &mut crypto);
     }
-
     Ok(())
 }
 
