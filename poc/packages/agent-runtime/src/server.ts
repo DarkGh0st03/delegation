@@ -80,8 +80,12 @@ export async function startSpecializedAgentServer(
   if(options.backendDiscovery&&(options.role!=="backend"||!options.adk||
      options.adk.trustedBackendDiscovery||options.adk.trustedBackendDiscoverySlot))
     throw Error("Private discovery host requires one Backend ADK signing source");
+  // Historical discovery host still uses legacy Adapter HTTP. Never
+  // silently reintroduce it for the canonical socket-only ADK launcher.
+  if(options.backendDiscovery&&!options.adk?.adapterBaseUrl?.trim())
+    throw Error("Legacy Backend discovery host requires explicit historical Adapter URL");
   const discovery=options.backendDiscovery?await startTrustedBackendDiscoveryHost({
-    ...options.backendDiscovery,adapterBaseUrl:options.adk!.adapterBaseUrl,
+    ...options.backendDiscovery,adapterBaseUrl:options.adk!.adapterBaseUrl!,
     backendToken:options.adk!.adapterToken,
     ...(options.adk!.fetchFn?{fetchFn:((url,init)=>
       options.adk!.fetchFn!(String(url),init)) as typeof fetch}:{})
