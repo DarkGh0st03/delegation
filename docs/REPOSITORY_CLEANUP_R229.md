@@ -66,3 +66,38 @@ instance, EVM trust/status and the signed delegated credential chain.
 The Node-API native mode is **implemented but opt-in** while its own CI
 gate is pending. A successful source edit or a green *older* R224 run
 does not substitute for direct-Engineer EVM integration evidence.
+
+## R230 — discovered blocker: Gateway still inspects issuer root via Adapter HTTP
+
+Reviewing the actual canonical `poc/apps/gateway/native-test/
+native-planning-read-core-evm-e2e.mjs` exposed an additional integration
+dependency that must be migrated before deleting Rust Adapter HTTP:
+
+- `poc/apps/gateway/src/trusted-gateway-native-root-status.ts`
+  currently POSTs to the Adapter endpoints
+  `/v1/credentials/root/inspect` and
+  `/v1/credentials/status/inspect` to corroborate an issued
+  preliminary/operational root and EVM-anchored revocation.
+- The public-only `services/delegation-core-node` verifier already
+  checks signed VPs directly using Core Rust, EVM/DID and status sources,
+  but its exposed ABI does NOT itself replace that issuer-local root
+  inventory/inspection contract.
+- Therefore, merely switching the Engineer's own root issuer from
+  the socket to the Node-API addon is NOT enough to run the current
+  complete signed DAG without Adapter HTTP. The existing root-status
+  audit and ownership must be explicitly migrated.
+
+**Required design before removing the old HTTP process:** identify the
+minimum trusted issuer-root evidence required by Planning/Owner D1;
+make it available to the Gateway through a directly linked, public
+Rust verification/source interface (or replace the dependency with
+cryptographically verified issuer evidence), preserving live
+EVM-anchored status checks and the original root identity/grants.
+Never replace it with a JS boolean, a model claim, or an unauthenticated
+cache. Maintain independent verifier and issuer roles.
+
+Do **not** remove `trusted-gateway-native-root-status.ts` or its
+corresponding tests until this replacement has a genuine EVM signed-DAG
+test. This is a functional architecture gap, not only cosmetic cleanup.
+The direct Engineer Node-API gate and all R229 deletions remain
+separate, reversible changes while this boundary is resolved.
