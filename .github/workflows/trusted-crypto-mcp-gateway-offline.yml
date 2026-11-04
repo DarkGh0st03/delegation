@@ -5,10 +5,10 @@ on:
     branches:
       - refactor/post-prof-plan-contracts-20261021
     paths:
-      - "poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts"
+      - "poc/packages/agent-runtime/src/local-crypto-mcp-bridge.ts"
       - "poc/packages/agent-runtime/src/gateway-tool-client.ts"
       - "poc/packages/agent-runtime/src/adk-a2a-handler.ts"
-      - "poc/packages/agent-runtime/test/trusted-crypto-mcp-bridge.test.ts"
+      - "poc/packages/agent-runtime/test/local-crypto-mcp-bridge.test.ts"
       - "poc/apps/a2a-agent/src/main.ts"
       - "poc/mcp-shared/src/**"
       - "poc/packages/agent-runtime/src/private-mcp-*"
@@ -35,9 +35,12 @@ jobs:
           cache-dependency-path: poc/package-lock.json
       - name: Install pinned offline packages (no paid model)
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
-      - name: Gateway preparation through SDK crypto profile, private VP, Gateway execution
-        run: node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-crypto-mcp-bridge.test.ts
+      - name: Approved task-local MCP proof and direct Gateway DAG boundary
+        run: |
+          node --experimental-strip-types --test \
+            poc/packages/agent-runtime/test/local-crypto-mcp-bridge.test.ts \
+            poc/apps/gateway/native-test/approved-dag-crypto-route.test.mjs
       - name: Verify task role, bearer and proof lifecycle security
         run: npm --prefix poc/mcp-shared test
-      - name: Verify direct legacy path and protected ADK/A2A regressions
+      - name: Verify approved ADK/A2A direct Gateway regressions
         run: npm --prefix poc run agent-runtime:test
