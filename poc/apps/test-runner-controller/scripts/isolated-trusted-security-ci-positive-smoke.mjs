@@ -1361,7 +1361,7 @@ async function main(){
               review.draft_pr_number>0);
             assert.match(review?.tested_commit_sha??"",/^[a-f0-9]{40}$/u);
             assert.notEqual(review.tested_commit_sha,proof.original_test_sha);
-            process.stdout.write(JSON.stringify({
+            const receipt=JSON.stringify({
               event:generatedTestProbe?"signed_owner_d1_real_generated_test_edit_review":
                 frontendTestProbe?"signed_owner_d1_real_frontend_test_repair_review":
                 backendTestProbe?"signed_owner_d1_real_backend_test_repair_review":
@@ -1374,7 +1374,11 @@ async function main(){
               corrected_exact_sha:review.tested_commit_sha,
               draft_pr_review_only:true,merged:false,
               automated_merge_calls:0,gemini_calls:0
-            })+"\n");
+            })+"\n";
+            if(backendTestProbe && process.env.EMBEDDED_D1_REVIEW_RECEIPT){
+              await writeFile(process.env.EMBEDDED_D1_REVIEW_RECEIPT,receipt,{flag:"wx",mode:0o600});
+            }
+            process.stdout.write(receipt);
             return;
           }
           assert.equal(proof?.typecheck_probe_verified,true);
