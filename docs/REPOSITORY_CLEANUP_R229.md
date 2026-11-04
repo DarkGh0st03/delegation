@@ -277,3 +277,47 @@ and historical workflow must still be retired **after** direct-Rust
 EVM, R236 signed Gitea/Docker positive DAG and R237 signed D1
 are proven on stable SHAs. No new long CI or paid Gemini run was
 requested by R238–R239; `main` is unchanged.
+
+## R240 — remove obsolete Adapter URL from ALL native software-engineering roles
+
+The final R239 agent launcher no longer requires `DELEGATION_ADAPTER_URL`,
+but R240 found **additional synthetic Adapter-address dependencies** in
+the trusted Engineer owner, Orchestrator Planning read transport,
+signed Child DC issuer, signed A2A dispatcher and D1 repair chain.
+
+R240 now permits an authenticated local Rust signer socket / direct
+Node-API Engineer module with **no HTTP Adapter URL** in:
+
+- `createTrustedEngineerCredentialPort` and
+  `createDirectRustEngineerCredentialPort` for root issuance/revocation;
+- `OrchestratorGatewayTransport` and
+  `TrustedPlanningGatewayReadPort` for signed root VP and
+  revision-pinned read-only Gateway/OPA/Gitea Planning;
+- `createOwnerPrivateMcpChildCryptographyPort`,
+  `TrustedApprovedPlanChildAuthorityIssuer`, and the
+  `TrustedApprovedA2ADispatcher` for signed attenuated Child DCs;
+- `issueAdmittedRepairTaskChild` and
+  `executeTrustedAdmittedRepairDag` for D1 signed recovery;
+- both real-EVM Gitea/Docker scripted host paths, which now omit the
+  old Adapter URL in direct Engineer mode rather than passing
+  `http://127.0.0.1` placeholders.
+
+Historical unsigned HTTP fixtures still require an explicit base URL
+and never obtain a hidden URL default. A missing native socket while
+the signed canonical flag is enabled remains a terminal denial with no
+HTTP downgrade. Existing signed permission, immutable approved Task,
+parent status, Gateway Rust VP and OPA enforcement is unchanged.
+
+Added a real loopback Unix-socket Child DC regression checking
+precise role token and unchanged signed grants, plus explicit
+negative legacy/no-socket cases. Updated Engineering root and
+Orchestrator VP regressions to work **without** an Adapter URL.
+Fast CI includes these tests and a cross-module source-contract audit
+(`r240-direct-rust-issuer-config.test.mjs`).
+
+**Remaining release gate:** R240 source changes must compile and pass
+Fast CI before the costly native EVM / signed Gitea Docker / signed D1
+workflows are re-enabled or treated as successful. We have not obtained
+CI run results through the available connector. Historical HTTP
+executables and regression modules are still present as intentional
+pending deletions, not active canonical deployment requirements.
