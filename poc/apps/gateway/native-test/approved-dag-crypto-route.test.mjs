@@ -22,12 +22,13 @@ test("R210 signed DAG uses only private in-process crypto MCP and direct Gateway
  assert.match(outer,/positive\?\.positive_dag\?\.shared_mcp_http_requests,0/);
  assert.match(outer,/positive\?\.positive_dag\?\.approved_crypto_mcp_enabled,true/);
 });
-test("R156 protected ADK keeps direct FunctionTools and private task-bound crypto bridge",()=>{
+test("R244 approved ADK keeps direct FunctionTools and task-local crypto MCP with no HTTP bridge",()=>{
  assert.match(adk,/new GatewayControlledToolClient\(/);
- assert.match(adk,/new TrustedCryptoMcpBridge\(/);
+ assert.doesNotMatch(adk,/new TrustedCryptoMcpBridge\(/);
  assert.match(adk,/new LocalCryptoMcpBridge\(/);
  assert.match(adk,/const configured = createAdkSpecializedAgent\(/);
- assert.match(adk,/mcpCryptoUrl/);
+ assert.match(adk,/legacy_crypto_http_mcp_retired/);
+ assert.match(adk,/mcpTaskRegistry\?\.begin\(/);
  assert.match(adk,/mcpTaskRegistry/);
  assert.match(host,/privateCryptoMcpCalls>=mandatoryOperations/);
 });
