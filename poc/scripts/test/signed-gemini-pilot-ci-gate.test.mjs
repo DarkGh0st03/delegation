@@ -156,3 +156,25 @@ test("R168 green legacy MCP must never substitute actual signed D1 recovery",()=
  assert.equal(verifyExactShaOfflineCiRuns([...paths.map(green),green(legacyPath)],sha)
   .independent_workflows_verified,3);
 });
+
+test("R177 canonical signed DAG and manual Gemini configure SAME native Rust Engineer issuer",()=>{
+ for(const [name,expected] of [
+  ["functional-signed-dag-e2e.yml",1],
+  ["cumulative-refactoring-offline.yml",1],
+  ["gemini-paid-shared-mcp-final.yml",2]
+ ]){
+  const workflow=readFileSync(new URL("../../../.github/workflows/"+name,import.meta.url),"utf8");
+  const count=text=>(workflow.split(text).length-1);
+  assert.equal(count('export ADAPTER_ENGINEER_NATIVE_SOCKET='),expected,
+    name+" must start EXACTLY one local root socket per Adapter");
+  assert.equal(count('echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$ADAPTER_ENGINEER_NATIVE_SOCKET" >> "$GITHUB_ENV"'),expected,
+    name+" must bind the trusted owner to the native socket");
+  assert.equal(count('test -S "$ADAPTER_ENGINEER_NATIVE_SOCKET"'),expected,
+    name+" must prove the socket exists before trusting any Engineer issuance");
+  assert.equal(count('rm -f "${ADAPTER_ENGINEER_NATIVE_SOCKET:-}"'),expected);
+ }
+ const paid=readFileSync(new URL("../../../.github/workflows/gemini-paid-shared-mcp-final.yml",import.meta.url),"utf8");
+ const triggers=/^on:\s*\n([\s\S]*?)^permissions:/mu.exec(paid);
+ assert.ok(triggers&&triggers[1].includes("workflow_dispatch:"));
+ assert.doesNotMatch(triggers[1],/^  (push|schedule|pull_request):/mu);
+});

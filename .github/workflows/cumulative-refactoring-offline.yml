@@ -214,10 +214,16 @@ jobs:
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
       - name: Start Adapter with public-only shared verification artifacts
         run: |
+          # Local Engineer-only native Rust socket uses the SAME issuer,
+          # credential registry, EVM status and child/VP state as this Adapter.
+          export ADAPTER_ENGINEER_NATIVE_SOCKET="$RUNNER_TEMP/delegation-engineer-$GITHUB_RUN_ID.sock"
+          echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$ADAPTER_ENGINEER_NATIVE_SOCKET" >> "$GITHUB_ENV"
+          test ! -e "$ADAPTER_ENGINEER_NATIVE_SOCKET"
           cargo run --manifest-path services/delegation-adapter/Cargo.toml --locked > /tmp/native-evm-adapter.log 2>&1 &
           echo $! > /tmp/native-evm-adapter.pid
           for i in {1..100}; do
-            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1; then exit 0; fi
+            if curl -fsS http://127.0.0.1:8090/health >/dev/null 2>&1 &&
+                test -S "$ADAPTER_ENGINEER_NATIVE_SOCKET"; then exit 0; fi
             sleep 0.5
           done
           cat /tmp/native-evm-adapter.log
@@ -284,6 +290,7 @@ jobs:
         run: |
           kill "$(cat /tmp/native-evm-gateway.pid)" 2>/dev/null || true
           kill "$(cat /tmp/native-evm-adapter.pid)" 2>/dev/null || true
+          rm -f "${ADAPTER_ENGINEER_NATIVE_SOCKET:-}" 2>/dev/null || true
           if [[ -f poc/infra/.env ]]; then
             docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml down || true
           fi

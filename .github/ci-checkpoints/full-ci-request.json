@@ -1,13 +1,13 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R168 canonical paid pilot preflight — Cumulative + Functional Signed DAG + signed D1 Docker recovery (no AI)",
-  "candidate_parent_sha": "9513944e674d5d83ccf042dcfce422fb37ea8771",
-  "purpose": "Use three independent, FREE, same-SHA CI proofs directly relevant to the post-professor architecture: Cumulative Offline, Functional Signed DAG with direct ADK FunctionTools/Gateway/native Rust/OPA/crypto MCP, and signed D1 TS2724 failure-to-repair in real Docker. Historical Shared MCP sequential regression is no longer a mandatory paid pilot gate. Paid Gemini remains strictly manual and requires separate explicit authorization and cost acknowledgment. Do not merge to main.",
+  "checkpoint": "R177 canonical same-SHA full integration: native Rust Engineer root/retirement, signed DAG and real D1 recovery after R169–176 legacy removal",
+  "candidate_parent_sha": "843213c004d97f55eb8b094d162c6ff646790af9",
+  "purpose": "FREE final consolidated integration after removing old sequential Coordinator, fixed IAM template issuer, outdated MCP workflows, and configuring native Rust Engineer Unix socket in all canonical full/paid jobs. Cumulative, signed Functional DAG, and signed D1 real Docker on same SHA. No model calls, no paid Gemini, no main change.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "functional-signed-dag-e2e.yml",
     "ts2724-signed-d1-targeted.yml"
   ],
   "paid_model_invocation": false,
-  "activation_note": "[full-ci] one consolidated no-billing checkpoint; signed D1 triggers on this marker, not every commit."
+  "activation_note": "[full-ci] one consolidated zero-billing checkpoint; manual paid Gemini requires a separate explicit consent after all three PASS"
 }
