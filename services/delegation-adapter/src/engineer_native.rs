@@ -111,34 +111,35 @@ impl NativeEngineerSocket {
             _ => return json!({"ok":false,"error":"engineer_native_denied"}),
         };
         let outcome = match req.operation.as_str() {
-            "issue_root" if caller.role() == CallerRole::Engineer => serde_json::from_value::<IssueRootRequest>(req.body)
-                .map_err(|_| String::from("invalid request"))
-                .and_then(|input| crypto.issue_root(caller, &config.callers, input))
-                .and_then(|issued| {
-                    serde_json::to_value(issued)
-                        .map_err(|_| String::from("serialization unavailable"))
-                }),
-            "revoke_root" if caller.role() == CallerRole::Engineer => serde_json::from_value::<UpdateCredentialStatusRequest>(req.body)
-                .map_err(|_| String::from("invalid request"))
-                .and_then(|input| {
-                    if !input.status_set {
-                        return Err(String::from("root revocation cannot be cleared"));
-                    }
-                    crypto.update_credential_status(caller, input)
-                })
-                .and_then(|receipt| {
-                    serde_json::to_value(receipt)
-                        .map_err(|_| String::from("serialization unavailable"))
-                }),
-            "issue_child" if caller.role() == CallerRole::Orchestrator => {
-                serde_json::from_value::<IssueChildRequest>(req.body)
-                    .map_err(|_| String::from("invalid request"))
-                    .and_then(|input| crypto.issue_child(caller, &config.callers, input))
-                    .and_then(|issued| {
-                        serde_json::to_value(issued)
-                            .map_err(|_| String::from("serialization unavailable"))
-                    })
-            }
+            "issue_root" if caller.role() == CallerRole::Engineer => serde_json::from_value::<
+                IssueRootRequest,
+            >(req.body)
+            .map_err(|_| String::from("invalid request"))
+            .and_then(|input| crypto.issue_root(caller, &config.callers, input))
+            .and_then(|issued| {
+                serde_json::to_value(issued).map_err(|_| String::from("serialization unavailable"))
+            }),
+            "revoke_root" if caller.role() == CallerRole::Engineer => serde_json::from_value::<
+                UpdateCredentialStatusRequest,
+            >(req.body)
+            .map_err(|_| String::from("invalid request"))
+            .and_then(|input| {
+                if !input.status_set {
+                    return Err(String::from("root revocation cannot be cleared"));
+                }
+                crypto.update_credential_status(caller, input)
+            })
+            .and_then(|receipt| {
+                serde_json::to_value(receipt).map_err(|_| String::from("serialization unavailable"))
+            }),
+            "issue_child" if caller.role() == CallerRole::Orchestrator => serde_json::from_value::<
+                IssueChildRequest,
+            >(req.body)
+            .map_err(|_| String::from("invalid request"))
+            .and_then(|input| crypto.issue_child(caller, &config.callers, input))
+            .and_then(|issued| {
+                serde_json::to_value(issued).map_err(|_| String::from("serialization unavailable"))
+            }),
             "create_presentation"
                 if matches!(
                     caller.role(),
