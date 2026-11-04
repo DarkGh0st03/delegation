@@ -51,7 +51,7 @@ test("signed Test HTTP worker relays source-free typecheck codes and fails close
   });
   const bearer="Bearer "+registry.bearerFor(taskId);
   const app=express();
-  attachPrivateMcpWorker(app,registry);
+  attachPrivateMcpWorker(app,registry,"legacy");
   const server=app.listen(0,"127.0.0.1");
   try{
     await once(server,"listening");

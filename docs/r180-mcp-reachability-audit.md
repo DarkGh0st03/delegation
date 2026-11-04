@@ -49,3 +49,18 @@ Il test di integrazione MCP crittografico usa direttamente il nuovo router.
 I vecchi router/fixture restano nei test storici fino alla migrazione delle
 suite. I confini active Task, challenge del Gateway, autorizzazione Core Rust
 e OPA non sono sostituiti da questa separazione.
+
+## R182 — Private Worker operativo: nessuna route repository
+
+Il server A2A adesso registra il worker privato in modalità
+`crypto` quando il Task usa soltanto `ADK_MCP_CRYPTO_URL`:
+in questo caso viene esposta `/internal/mcp-crypto-call`, mentre
+`/internal/mcp-tool-call` **non è registrata**. La modalità `legacy`
+è esplicita soltanto nei fixture/test storici; il launcher operativo
+R180 non consente l'endpoint MCP repository che la richiederebbe.
+
+Il test HTTP crittografico reale verifica inoltre che il percorso
+repository risponda 404 pur mantenendo funzionante l'emissione
+della VP e la restituzione privata one-shot. Le API storiche rimangono
+fisicamente presenti solo per le suite di regressione da migrare;
+non sono state confuse con il worker crittografico necessario.

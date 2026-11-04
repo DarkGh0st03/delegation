@@ -6,7 +6,10 @@ import {safeRunnerFailedPhaseHint} from "./safe-runner-failure.ts";
 import {PrivateMcpTaskError,PrivateMcpTaskRegistry} from "./private-mcp-task-registry.ts";
 
 /** The only bridge from the shared MCP service into private per-A2A-task state. */
-export function attachPrivateMcpWorker(app:Express,registry:PrivateMcpTaskRegistry):void {
+export function attachPrivateMcpWorker(
+ app:Express,registry:PrivateMcpTaskRegistry,
+ profile:"crypto"|"legacy"="crypto"
+):void {
   // The crypto profile never receives signing keys or signed VP bytes.
   // It calls this authenticated private worker, which returns only proof_ref.
   app.post("/internal/mcp-crypto-call",
@@ -29,6 +32,9 @@ export function attachPrivateMcpWorker(app:Express,registry:PrivateMcpTaskRegist
       }
     }
   );
+  // Repo and Runner routing is archival only: never register it for a
+  // crypto-only Agent runtime, even if a valid task bearer is presented.
+  if(profile!=="legacy")return;
   app.post("/internal/mcp-tool-call",express.json({limit:"128kb",strict:true}),async(req,res)=>{
     res.setHeader("cache-control","no-store");
     try {

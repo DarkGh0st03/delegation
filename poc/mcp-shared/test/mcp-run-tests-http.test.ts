@@ -64,7 +64,7 @@ test("one shared MCP run_tests routes only opted-in active Test role through pri
   registry.begin("test-active",gateway,undefined,{allowRunTests:true});
   registry.begin("test-readonly",gateway);
   const app=express();
-  attachPrivateMcpWorker(app,registry);
+  attachPrivateMcpWorker(app,registry,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(res=>worker.once("listening",res));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;

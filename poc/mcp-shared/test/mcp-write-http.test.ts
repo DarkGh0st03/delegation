@@ -59,7 +59,7 @@ test("ONE shared MCP update_file routes only permitted active task writes to pri
     }
   },undefined,{allowUpdateFile:true});
   const app=express();
-  attachPrivateMcpWorker(app,registry);
+  attachPrivateMcpWorker(app,registry,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
@@ -128,7 +128,7 @@ test("signed feature branch goes through real MCP HTTP, private worker and exact
       {operation:"read_file",path},{operation:"update_file",path}
     ]
   });
-  const app=express();attachPrivateMcpWorker(app,registry);
+  const app=express();attachPrivateMcpWorker(app,registry,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const workerUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;

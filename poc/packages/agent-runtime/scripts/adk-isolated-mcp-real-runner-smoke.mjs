@@ -372,7 +372,7 @@ async function main(){
     });
     active.begin(taskId,client,undefined,{allowRunTests:true});
     const app=express();
-    attachPrivateMcpWorker(app,active);
+    attachPrivateMcpWorker(app,active,"legacy");
     agentServer=app.listen(0,"127.0.0.1");
     await new Promise(resolve=>agentServer.once("listening",resolve));
     const agentUrl="http://127.0.0.1:"+agentServer.address().port;

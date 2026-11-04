@@ -51,7 +51,7 @@ test("shared MCP create_file requires active Test task, explicit opt-in and exac
   registry.begin("test-inactive-create",mock);
   registry.begin("test-create",mock,undefined,{allowCreateFile:true});
   const app=express();
-  attachPrivateMcpWorker(app,registry);
+  attachPrivateMcpWorker(app,registry,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(r=>worker.once("listening",r));
   const url="http://127.0.0.1:"+(worker.address() as AddressInfo).port;

@@ -67,10 +67,18 @@ test("crypto profile publishes only delegation_create_presentation, holds signed
   reg.stageGatewayChallenge("task-A",prepared());
 
   const app=express();
-  attachPrivateMcpWorker(app,reg);
+  attachPrivateMcpWorker(app,reg,"crypto");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(r=>worker.once("listening",r));
   const endpoint="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
+  const unsafeRoute=await fetch(endpoint+"/internal/mcp-tool-call",{
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({tool:"read_file",arguments:{}})
+  });
+  assert.equal(unsafeRoute.status,404,
+    "Crypto-only Agent worker must not register the obsolete repository route");
+
   const router=new CryptoWorkerRouter({
     backend:{baseUrl:endpoint},frontend:{baseUrl:endpoint},test:{baseUrl:endpoint}
   });

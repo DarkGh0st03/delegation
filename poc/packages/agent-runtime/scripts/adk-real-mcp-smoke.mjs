@@ -142,7 +142,7 @@ async function main(){
   });
   active.begin(taskId,authorizedClient);
   const app=express();
-  attachPrivateMcpWorker(app,active);
+  attachPrivateMcpWorker(app,active,"legacy");
   let worker,shared,built;
   try{
     worker=app.listen(0,"127.0.0.1");

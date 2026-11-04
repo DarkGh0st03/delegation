@@ -97,7 +97,7 @@ test("shared MCP -> private active task -> Gateway prepare -> Adapter VP -> Gate
   registry.begin("task-A",gateway);
 
   const agentApp=express();
-  attachPrivateMcpWorker(agentApp,registry);
+  attachPrivateMcpWorker(agentApp,registry,"legacy");
   const agentServer=agentApp.listen(0,"127.0.0.1");
   await new Promise<void>(r=>agentServer.once("listening",r));
   const agentUrl="http://127.0.0.1:"+(agentServer.address() as AddressInfo).port;

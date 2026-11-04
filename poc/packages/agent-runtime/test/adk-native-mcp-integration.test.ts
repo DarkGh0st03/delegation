@@ -83,7 +83,7 @@ async function exercise(authorized:boolean,signedFirstCall=false) {
     }
   });
   const app=express();
-  attachPrivateMcpWorker(app,active);
+  attachPrivateMcpWorker(app,active,"legacy");
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(resolve=>worker.once("listening",resolve));
   const workerBaseUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
@@ -195,7 +195,7 @@ test("Frontend rejection reasons cross real shared MCP without changing grants",
  active.begin("frontend-diagnostic",{invoke:async(tool,input)=>{
   effects++;return {...result,...input,tool};
  }},undefined,{approvedBranch:branch,allowedPaths:[path],allowedFilePermissions:[{operation:"read_file",path}],allowUpdateFile:true});
- const app=express();attachPrivateMcpWorker(app,active);
+ const app=express();attachPrivateMcpWorker(app,active,"legacy");
  const worker=app.listen(0,"127.0.0.1");
  await new Promise<void>(resolve=>worker.once("listening",resolve));
  const baseUrl="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
