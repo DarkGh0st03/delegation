@@ -1,0 +1,10 @@
+{
+  "schema": "delegation-native-engineer-checkpoint-v1",
+  "checkpoint": "R228 direct Engineer Node-API Rust sole-owner compilation and native Child/VP gate",
+  "candidate_parent_sha": "1840db6b89f0da9517527005f4597d4b1d0366c5",
+  "workflow": "engineer-direct-native-contract.yml",
+  "purpose": "One free compile and native root/child/VP/revocation test using same Rust CryptoRuntime embedded in Software Engineer process; no HTTP Adapter. Reject root issuance over delegate-only socket; validate offline Engineer grant binding. Does not run Gemini or modify main.",
+  "paid_model_invocation": false,
+  "activate_once": true,
+  "expected_mode": "ENGINEER_CORE_NATIVE_MODE=1"
+}
