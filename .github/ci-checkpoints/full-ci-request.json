@@ -1,13 +1,13 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R197 final same-SHA free integration gate after R186–R196 physical repository MCP retirement",
-  "candidate_parent_sha": "46d1592b9cf966b1e2cc6f9ab257602052ae1837",
-  "purpose": "Release validation: all canonical repository/Runner MCP routing and orphaned test entrypoints physically retired. Direct ADK FunctionTools -> Gateway/Rust/OPA; crypto-only MCP VP bridge. Run the three FREE canonical cumulative, signed Functional DAG, and signed D1 TS2724 Docker workflows on the identical R197 SHA. No paid inference, no main branch modification.",
+  "checkpoint": "R214 canonical task-local MCP, single native Rust issuer and signed D1 integration gate",
+  "candidate_parent_sha": "b7934f25017a36283097f6d49026d1fbc4150ca9",
+  "purpose": "One FREE same-SHA final gate after R198-R213: generic signed specialists, task-local private MCP crypto, no Shared MCP/private HTTP worker in canonical signed DAG, native Rust root/child/VP and Gateway verification. Verify cumulative, real Gitea/Docker signed DAG, and signed D1. No paid model API, no main mutation.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "functional-signed-dag-e2e.yml",
     "ts2724-signed-d1-targeted.yml"
   ],
   "paid_model_invocation": false,
-  "activation_note": "[full-ci] one zero-billing release checkpoint after final migration; do not dispatch Gemini paid or merge main"
+  "activation_note": "[full-ci] one zero-billing integration checkpoint, no Gemini pilot or merge main"
 }

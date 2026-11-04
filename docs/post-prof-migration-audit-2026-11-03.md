@@ -406,3 +406,70 @@ the final R197 *same-SHA free* Full CI release gate. This is a bounded
 source/entrypoint audit; it is not a proof of zero undiscovered
 runtime dependencies or a paid-model autonomous recovery success.
 No production `main` change or paid inference is authorized here.
+
+## R198–R214 — canonical task-local cryptographic MCP and native Rust issuer (4 November 2026)
+
+**Branch:** `refactor/post-prof-plan-contracts-20261021`. This is a
+constrained migration of the architecture presented to the professor.
+Keep `main` unchanged; no Gemini model calls or paid pilot are
+authorized by the work described here.
+
+- **R198–R199:** the approved signed A2A agents now use generic,
+  reusable Backend/Frontend/Test role profiles and default Agent Cards.
+  Account Suspension descriptions remain explicitly isolated historical
+  fixtures, not the approved role baseline or the Task source of truth.
+- **R200–R210:** approved execution uses ADK FunctionTools directly
+  against the Gateway for repository and Runner effects. A task-bound
+  **in-process MCP SDK** provides only cryptographic VP creation to the
+  trusted runtime. The signed DAG no longer starts the Shared MCP HTTP
+  listener or a CryptoWorkerRouter/private HTTP worker; confirmed VP
+  proofs, not HTTP requests, are recorded by the private host.
+  Legacy standalone crypto-only HTTP server and worker modules still
+  exist for explicit compatibility tests and must not be mistaken for
+  part of the canonical signed DAG.
+- **R201–R205:** the *same* Rust `CryptoRuntime` that handles
+  Software Engineer roots now exposes role-authenticated native Unix
+  socket commands for approved Orchestrator Child DC issuance and
+  specialist VP signing. The Engineer's root issue/revoke remains
+  Engineer-only; Orchestrator child issuance and specialist VP signing
+  are role- and capability-restricted. This does NOT add a second
+  issuer, private key store or revocation registry.
+- **R206–R213:** private Node IPC and local MCP SDK unit tests verify
+  one-shot challenge binding, denial/cancellation, redaction and the
+  lack of HTTP Adapter fallback **when the native socket is selected**.
+  The native Rust unit test issues a root and a Child DC, signs a
+  specialist VP and verifies it in the same Rust trust state. It also
+  denies cross-role issuance. Rust Multipermission CI #41822750909
+  and Fast CI #41823385281 were SUCCESS after these corrections.
+  Earlier R210 Fast CI #41821407153 also passed.
+
+**Rust Gateway:** `services/delegation-core-node` is an already
+implemented native Node-API addon calling the Rust verifier, with
+independent public/EVM credential sources. Do not rebuild it.
+`direct-core-loader.ts` now accurately describes this behavior.
+
+**Important boundaries still pending final proof:**
+(1) The canonical full signed DAG/Runner/Gitea/OPA/EVM validation
+must pass on one SHA with task-local MCP and the native Rust issue/VP
+path. (2) Compatibility code still permits the older HTTP Adapter
+transport when the native signer socket is not configured; an
+architecture-complete deployment must explicitly configure and
+enforce the native path before the HTTP issuing API can be retired.
+(3) Physical deletion of the separately executable legacy
+crypto-only HTTP service and worker is deferred until no CI or
+explicit compatibility entrypoint needs them. Their mere existence
+does not imply the canonical DAG invokes them. (4) Signed D1
+scripted success is not real Gemini autonomous software repair.
+
+## R214 — full same-SHA integration gate
+
+The free release candidate will trigger the three canonical checks
+on **one commit**: `cumulative-refactoring-offline.yml`,
+`functional-signed-dag-e2e.yml`, and
+`ts2724-signed-d1-targeted.yml`. None calls Gemini/OpenAI API.
+The gate checks whether canonical signed ADK/Task → Gateway/OPA →
+public-only native Rust verifier and private local crypto signer
+can complete Account Suspension and the signed D1 recovery in real
+Gitea/Docker, without Shared MCP repository or crypto HTTP routing.
+Do not assert completion before all checks finish successfully;
+no paid Gemini pilot is authorized.
