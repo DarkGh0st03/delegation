@@ -36,8 +36,8 @@ export function inspectMcpFactoryCalls(root){
    calls.push({file,line,profile});
    if(profile==="missing")
     errors.push(file+":"+line+": missing explicit MCP profile");
-   else if(profile==="toolProfile"&&file!=="poc/mcp-shared/src/main.ts")
-    errors.push(file+":"+line+": dynamic profile outside validated launcher");
+   else if(profile==="toolProfile")
+    errors.push(file+":"+line+": dynamic profile cannot activate retired Shared MCP launcher");
    else if(profile==="legacy")
     errors.push(file+":"+line+": obsolete repository MCP profile forbidden");
    else if(file==="poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs"&&profile!=="crypto")
@@ -59,8 +59,15 @@ export function inspectMcpFactoryCalls(root){
     !/registerTool\("delegation_create_presentation"/u.test(local)||
     !/InMemoryTransport\.createLinkedPair\(/u.test(local))
   errors.push("signed DAG task-local crypto MCP proof path not found");
- if(!calls.some(c=>c.file==="poc/mcp-shared/src/main.ts"&&c.profile==="toolProfile"))
-  errors.push("validated MCP standalone launcher not found");
+ // R221: the old executable is intentionally fail-closed. Historical
+ // crypto HTTP factories can remain in explicitly isolated tests, but a
+ // runnable Shared MCP entrypoint must NEVER reappear.
+ const launcher=readFileSync(resolve(root,"poc/mcp-shared/src/main.ts"),"utf8");
+ if(!launcher.includes('throw new Error("standalone_shared_mcp_launcher_retired")')||
+    /\bcreateSharedMcpHttpServer\b|\bCryptoWorkerRouter\b|\.listen\(/u.test(launcher))
+  errors.push("retired Shared MCP launcher must fail closed");
+ if(calls.some(c=>c.file==="poc/mcp-shared/src/main.ts"))
+  errors.push("retired Shared MCP launcher instantiated an HTTP listener");
  return {tracked:tracked.length,calls,errors};
 }
 function main(){
