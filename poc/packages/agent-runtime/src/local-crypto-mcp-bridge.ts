@@ -4,7 +4,7 @@ import {InMemoryTransport} from "@modelcontextprotocol/sdk/inMemory.js";
 import {z} from "zod";
 import {ControlledToolError} from "./controlled-errors.ts";
 import type {PreparedGatewayAuthorization} from "./delegation-evidence-handler.ts";
-import type {CryptoPresentationPort} from "./trusted-crypto-mcp-bridge.ts";
+import type {CryptoPresentationPort} from "./crypto-presentation-port.ts";
 import {PrivateMcpTaskRegistry} from "./private-mcp-task-registry.ts";
 
 /**
