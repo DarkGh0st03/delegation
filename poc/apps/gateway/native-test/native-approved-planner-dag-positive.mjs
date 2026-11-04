@@ -415,8 +415,11 @@ export async function runNativePositiveApprovedDag({
   // and Gitea/Docker provider effects for EVERY operation.
   const adkFetchFor=role=>async(url,options)=>{
     const target=String(url);
-    if(target.startsWith(adapterUrl+"/"))
+    if(target.startsWith(adapterUrl+"/")){
+      if(process.env.ENGINEER_CORE_NATIVE_MODE==="1")
+        throw Error("Canonical signed A2A cannot contact retired Adapter HTTP");
       return fetch(url,options);
+    }
     if(!target.startsWith(adkGatewayBase+"/v1/authorization/"))
       throw Error("ADK attempted unknown transport");
     let prepareStage="request_validation_rejected";
