@@ -3,6 +3,8 @@ import {safeApprovedDagFailureTrace,classifyApprovedDagFailure}
  from "./native-approved-dag-failure-category.mjs";
 export const PREFIX="[native-dag-adk] trusted_native_dag_phase_failure ";
 export const PHASES=Object.freeze([
+ "entrypoint_bootstrap","configuration_validation","disposable_gitea_bootstrap",
+ "native_issuer_initialization","gateway_crypto_bootstrap",
  "root_issuance","planning_scope","engineer_review_and_root",
  "agent_model_binding","signed_a2a_dispatch","positive_dag_assertions",
  "root_revocation"
@@ -48,7 +50,7 @@ export function safeNativePhaseFailure(error,stage){
  const first=trace?.[0]??{kind:"unknown",code:"unknown",site:null};
  const category=classifyApprovedDagFailure(error);
  return Object.freeze({
-  stage:phases.has(stage)?stage:"root_issuance",
+  stage:phases.has(stage)?stage:"entrypoint_bootstrap",
   category:cats.has(category)?category:"unclassified",
   kind:first.kind,code:first.code,
   ...(first.site?{assertion_location:first.site}:{}),
