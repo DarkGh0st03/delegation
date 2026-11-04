@@ -372,3 +372,37 @@ callers, while the R180 Fast CI boundary checks their absence.
 The crypto-only MCP SDK client, private proof-ref and signed Task
 bearer are NOT part of this deletion. This does not establish
 real-model autonomous D1 success or revalidate the full CI on this SHA.
+
+## R197 — source-level MCP retirement audit closeout and free release gate
+
+**Current production architecture:** direct ADK FunctionTools →
+Gateway + Rust + OPA for repository/Runner effects, with the
+crypto-only MCP `delegation_create_presentation` path available to
+a trusted VP signer. R186–R196 physically removed the seven obsolete
+ADK/A2A repository MCP smoke scripts, old shared read smoke, factory
+repository router, repository tool catalog, private repository HTTP
+route, private registry repository invoker, model-facing ADK
+`MCPToolset`, and orphaned transport/result normalization helpers.
+The remaining `PrivateMcpTaskRegistry` provides signed Task bearer,
+private challenge staging, and one-shot proof custody. Any residual
+compatibility fields within the trusted registry do **not** dispatch
+repository operations or provide a model tool; they can be considered
+separate cleanup, not a production routing path.
+
+**Docs corrected:** the shared MCP README no longer instructs users
+to set `MCP_TOOL_PROFILE=legacy`, which is now rejected, and no
+longer describes deleted `TaskRouter`/`MCPToolset` components as
+running code. Older entries in this chronological handoff are historical
+and must not be read as the newest architecture.
+
+**Evidence:** R193 Fast CI, R194 Fast/crypto/prebound-A2A tests, R195
+Fast/prebound-A2A tests, R196 Fast CI are green on their respective
+SHAs. The older R179 3/3 Full CI success was on SHA `23ce3411`.
+Those historical runs do NOT attest the full R197 revision.
+
+**Verdict:** the identified executable repository MCP routing path
+and its attached legacy fixtures are physically retired, subject to
+the final R197 *same-SHA free* Full CI release gate. This is a bounded
+source/entrypoint audit; it is not a proof of zero undiscovered
+runtime dependencies or a paid-model autonomous recovery success.
+No production `main` change or paid inference is authorized here.
