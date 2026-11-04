@@ -5,7 +5,7 @@ import {
   startSpecializedAgentServer,
   type SpecializedAgentRole
 } from "@thesis/agent-runtime";
-import {requireProductionDirectGatewayTools} from "./mcp-tool-flags.ts";
+import {requireProductionDirectGatewayTools,requireProductionNativeCrypto} from "./mcp-tool-flags.ts";
 import {generateKeyPairSync} from "node:crypto";
 
 function roleFromEnvironment(value: string | undefined): SpecializedAgentRole {
@@ -91,33 +91,23 @@ const adk = engine === "adk"
     }
   : undefined;
 
-// Only a trusted cryptographic MCP bridge remains deployable.
+// Production ADK must use direct Gateway FunctionTools and task-local crypto
+// backed by ONE native Rust issuer; no remote MCP worker or HTTP downgrade.
 requireProductionDirectGatewayTools(process.env);
-const cryptoMcpUrl = process.env.ADK_MCP_CRYPTO_URL?.trim();
-if (cryptoMcpUrl && engine !== "adk") {
-  throw new Error("ADK crypto MCP requires AGENT_RUNTIME_ENGINE=adk");
-}
-function pemSecret(name: string): string {
-  return required(name).replaceAll("\\n", "\n");
-}
-// Default ADK: ephemeral in-process crypto MCP, no Shared MCP network hop.
-const localKeys=engine==="adk"&&!cryptoMcpUrl
-  ? generateKeyPairSync("ed25519") : undefined;
-const mcpTaskSigning = engine==="adk"
-  ? (cryptoMcpUrl
-     ? {signingPrivateKeyPem:pemSecret("MCP_TASK_SIGNING_PRIVATE_KEY"),
-        signingPublicKeyPem:pemSecret("MCP_TASK_SIGNING_PUBLIC_KEY")}
-     : {signingPrivateKeyPem:localKeys!.privateKey.export({
-          format:"pem",type:"pkcs8"}).toString(),
-        signingPublicKeyPem:localKeys!.publicKey.export({
-          format:"pem",type:"spki"}).toString()})
+requireProductionNativeCrypto(process.env,engine);
+if(engine==="adk")process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+const localKeys=engine==="adk" ? generateKeyPairSync("ed25519") : undefined;
+const mcpTaskSigning=localKeys
+  ? {signingPrivateKeyPem:localKeys.privateKey.export({
+       format:"pem",type:"pkcs8"}).toString(),
+     signingPublicKeyPem:localKeys.publicKey.export({
+       format:"pem",type:"spki"}).toString()}
   : undefined;
 const runtime = await startSpecializedAgentServer({
   role,
   port,
   host: process.env.AGENT_BIND_HOST ?? "127.0.0.1",
-  ...(adk ? { adk: {...adk,
-    ...(cryptoMcpUrl ? {mcpCryptoUrl:cryptoMcpUrl} : {})} } : {}),
+  ...(adk ? { adk } : {}),
   ...(mcpTaskSigning ? {mcpTaskSigning} : {})
 });
 
