@@ -41,7 +41,7 @@ export async function issueAdmittedRepairTaskChild(config:{
  gateway:TrustedPlanIpcClient;
  journal:TrustedChildIssuanceJournal;
  engineerDid:string;
- adapterBaseUrl:string;
+ adapterBaseUrl?:string;
  orchestratorToken:string;
  credential:Pick<ChildIssuanceInput,
   "credential_id"|"valid_from"|"validity_seconds"|"credential_status">;
@@ -66,7 +66,8 @@ export async function issueAdmittedRepairTaskChild(config:{
     config.coordinator?.phase!=="execution"||
     typeof config.coordinator.trustedOperationalAuthority!=="function"||
     !config.engineerDid?.startsWith("did:")||
-    !config.adapterBaseUrl||!config.orchestratorToken)
+    (!config.adapterBaseUrl&&!process.env.ADAPTER_ENGINEER_NATIVE_SOCKET)||
+    !config.orchestratorToken)
   fail("active owner, durable Gateway IPC and pinned repair Task required");
  config.intake.assertSameCoordinator(config.coordinator);
  const history=await config.intake.verifiedEpochHistory();
