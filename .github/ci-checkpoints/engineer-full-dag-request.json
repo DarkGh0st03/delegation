@@ -1,0 +1,16 @@
+{
+  "schema": "delegation-embedded-engineer-signed-dag-checkpoint-v1",
+  "checkpoint": "R236 — first zero-model full Account Suspension signed DAG on direct Software Engineer Rust topology",
+  "candidate_parent_sha": "8ab0894d473ebdc8b101153ae86b68d75d7d7c12",
+  "workflow": "engineer-embedded-signed-dag-e2e.yml",
+  "paid_model_invocation": false,
+  "activate_once": true,
+  "mode": "ENGINEER_CORE_NATIVE_MODE=1; one Rust issuer in Software Engineer process; Adapter HTTP off",
+  "purpose": "One free Gitea/OPA/Anvil/Docker end-to-end scripted ADK DAG: Software Engineer root via in-process Rust Node-API; agent child/VP via one native Rust owner; Gateway public-only Rust EVM verification and OPA; backend/frontend/test A2A; real Docker acceptance and unmerged PR; no competing Adapter HTTP, no Shared MCP HTTP, no paid model.",
+  "exclusions": [
+    "No Gemini/OpenAI API calls",
+    "No automated merge",
+    "No main mutation",
+    "Do not assert Gemini autonomous recovery or D1 from positive proof"
+  ]
+}
