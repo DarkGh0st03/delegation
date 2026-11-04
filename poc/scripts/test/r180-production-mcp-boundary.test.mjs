@@ -35,6 +35,9 @@ test("R180 cryptographic MCP worker remains reachable, not deleted as legacy",()
  assert.match(worker,/\/internal\/mcp-crypto-call/u);
  assert.doesNotMatch(worker,/\/internal\/mcp-tool-call/u);
  assert.doesNotMatch(worker,/registry\.invoke\(/u);
+ const registry=read("poc/packages/agent-runtime/src/private-mcp-task-registry.ts");
+ assert.doesNotMatch(registry,/async invoke\(/u);
+ assert.match(registry,/async invokeCrypto\(/u);
  assert.match(bridge,/stageGatewayChallenge\(this\.#taskId,prepared\)/u);
  assert.match(bridge,/takeSignedPresentation/u);
 });

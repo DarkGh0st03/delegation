@@ -274,3 +274,21 @@ tests these negative properties directly.
 `PrivateMcpTaskRegistry.invoke` remains as an unexposed legacy unit-test
 method; the present patch removes its HTTP reachability, not yet that
 internal implementation. The crypto proof_ref lifecycle is unchanged.
+
+## R190 — private Task registry no longer dispatches legacy repository tools
+
+Removed the now unreachable `PrivateMcpTaskRegistry.invoke` method and
+its legacy repository argument parsers, leaving only the crypto-only
+`invokeCrypto`, signed-task bearer verification, Gateway challenge
+staging and one-shot in-memory `proof_ref` retrieval. Existing tests
+which dispatched arbitrary repository/Runner MCP tools were replaced
+with task/role isolation, forged identity, cancellation and proof replay
+checks against the cryptographic interface. The concurrency/one-shot
+12+ proofs regression is preserved. Legacy direct Gateway permission
+ceiling remains tested in approved-plan/Gateway suites, not in this
+removed repository MCP entry point.
+
+The `begin` method still accepts historical scope-option fields for
+compatibility with old internal ADK config. Those inert options and the
+dormant ADK `mcpSharedUrl`/MCPToolset code are separate cleanups; this
+stage does not change the trusted Gateway Task authorization itself.
