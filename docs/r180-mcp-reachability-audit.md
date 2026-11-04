@@ -34,3 +34,18 @@ poi eliminare `legacy-repository-tools.ts`, il ramo `MCPToolset` repository,
 l'inoltro `/internal/mcp-tool-call` e i metodi solo legacy del router/registry.
 Verificare successivamente Cumulative + Functional Signed DAG + D1 sulla
 **stessa nuova SHA**. Nessuna esecuzione Gemini a pagamento senza consenso.
+
+## R181 — isolato anche il codice caricato dal listener in produzione
+
+Il listener MCP di produzione ora costruisce `CryptoWorkerRouter` con il
+solo metodo `createPresentation` e la sola rotta privata
+`/internal/mcp-crypto-call`. Non importa/istanzia più `TaskRouter`,
+che include `readFile/updateFile/createFile/runTests`.
+La factory `http-server.ts` carica `legacy-repository-tools.ts`
+**dinamicamente e solo** nel ramo storico `profile:"legacy"`;
+il comando operativo R180 può usare soltanto `profile:"crypto"`.
+
+Il test di integrazione MCP crittografico usa direttamente il nuovo router.
+I vecchi router/fixture restano nei test storici fino alla migrazione delle
+suite. I confini active Task, challenge del Gateway, autorizzazione Core Rust
+e OPA non sono sostituiti da questa separazione.

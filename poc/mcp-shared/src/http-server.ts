@@ -4,15 +4,15 @@ import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {z} from "zod";
 import {StreamableHTTPServerTransport} from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {bearerToken, verifyTaskToken, type VerificationKeys} from "./task-token.ts";
-import {TaskRouter} from "./task-router.ts";
-import {registerLegacyRepositoryTools} from "./legacy-repository-tools.ts";
+import type {TaskRouter} from "./task-router.ts";
 
-export interface SharedMcpConfig {
+/** Crypto-only in production; TaskRouter remains a historical fixture. */
+export type SharedMcpConfig={
   verificationKeys:VerificationKeys;
-  router:TaskRouter;
-  /** R165: never expose historical repo tools without explicit opt-in. */
-  profile:"legacy"|"crypto";
-}
+} & (
+ {profile:"crypto";router:Pick<TaskRouter,"createPresentation">}
+ |{profile:"legacy";router:TaskRouter}
+);
 function reply(res:ServerResponse,status:number,body:unknown) {
   res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});
   res.end(JSON.stringify(body));
@@ -59,6 +59,8 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
     if(config.profile==="legacy") {
       // Historical-only tools: completely separate module, never enabled by
       // default or by the signed-DAG crypto MCP listener.
+      // Not loaded by the production crypto-only process at all.
+      const {registerLegacyRepositoryTools}=await import("./legacy-repository-tools.ts");
       registerLegacyRepositoryTools(mcp,config.router,claims,token);
     } else {
       // Crypto-only surface: no general read/write/run_test tools.

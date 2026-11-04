@@ -6,7 +6,8 @@ import express from "express";
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {createSharedMcpHttpServer} from "../src/http-server.ts";
-import {TaskRouter} from "../src/task-router.ts";
+import {CryptoWorkerRouter} from "../src/crypto-worker-router.ts";
+import type {TaskRouter} from "../src/task-router.ts";
 import {issueTaskToken} from "../src/task-token.ts";
 import {PrivateMcpTaskRegistry,PrivateMcpTaskError} from
   "../../packages/agent-runtime/src/private-mcp-task-registry.ts";
@@ -70,7 +71,7 @@ test("crypto profile publishes only delegation_create_presentation, holds signed
   const worker=app.listen(0,"127.0.0.1");
   await new Promise<void>(r=>worker.once("listening",r));
   const endpoint="http://127.0.0.1:"+(worker.address() as AddressInfo).port;
-  const router=new TaskRouter({
+  const router=new CryptoWorkerRouter({
     backend:{baseUrl:endpoint},frontend:{baseUrl:endpoint},test:{baseUrl:endpoint}
   });
   const shared=createSharedMcpHttpServer({

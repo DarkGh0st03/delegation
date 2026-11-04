@@ -27,7 +27,9 @@ test("R180 cryptographic MCP worker remains reachable, not deleted as legacy",()
  const listener=read("poc/mcp-shared/src/http-server.ts");
  const worker=read("poc/packages/agent-runtime/src/private-mcp-worker-http.ts");
  const bridge=read("poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts");
- assert.match(main,/new TaskRouter\(workers\)/u);
+ assert.match(main,/new CryptoWorkerRouter\(workers\)/u);
+ assert.doesNotMatch(main,/new TaskRouter\(workers\)/u);
+ assert.doesNotMatch(listener,/^import \{registerLegacyRepositoryTools\}/mu);
  assert.match(listener,/router\.createPresentation\(claims,token,args\)/u);
  assert.match(worker,/\/internal\/mcp-crypto-call/u);
  assert.match(bridge,/stageGatewayChallenge\(this\.#taskId,prepared\)/u);
