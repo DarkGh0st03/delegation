@@ -813,8 +813,14 @@ async function main(){
       if(process.env.APPROVED_RUNNER_NATIVE_EVM!=="1"||
          scenario.id!=="account-suspension")
         throw Error("F1 real Gitea Planning-only refuses noncanonical scenario");
-      const planningScript=fileURLToPath(new URL(
+      // R277: only the free scripted F1 uses the pre-import diagnostic
+      // wrapper; explicitly consented billed F1 retains its original entry.
+      // Both invoke the same real planning module and immutable Gitea inputs.
+      const planningScript=fileURLToPath(paidOnly?new URL(
         "../../gateway/native-test/native-planning-read-core-evm-e2e.mjs",
+        import.meta.url
+      ):new URL(
+        "../../gateway/native-test/f1-offline-planning-entry.mjs",
         import.meta.url
       ));
       const output=await stage("f1_same_bootstrap_planning_only",()=>{

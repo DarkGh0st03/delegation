@@ -1,5 +1,14 @@
 # Delegation — repository cleanup register (R229, 2026-11-04)
 
+> **Current status (2026-11-04):** This is a chronological baseline audit, not
+> the up-to-date completion matrix. See
+> [POST_PROF_ARCHITECTURE_ACCEPTANCE_R277.md](POST_PROF_ARCHITECTURE_ACCEPTANCE_R277.md)
+> for direct Rust Engineer, task-local crypto MCP, public Gateway verifier,
+> canonical R270 4/4 green proof, R271–R276 legacy migration, and the
+> still-unresolved zero-billing F1 subprocess diagnostic.
+> Do not use the older TODO tables below as present-tense implementation status.
+
+
 ## Goal and ownership boundaries
 
 The repository must implement the professor's *actual* architecture, not

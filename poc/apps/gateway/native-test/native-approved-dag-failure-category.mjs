@@ -32,6 +32,7 @@ export function classifyApprovedDagFailure(error){
  */
 const TRUSTED_SITES=Object.freeze(new Set([
   "native-approved-planner-dag-positive.mjs",
+  "native-planning-read-core-evm-e2e.mjs",
   "trusted-approved-a2a-dispatcher.ts",
   "a2a-workflow.ts",
   "orchestrator.ts",
@@ -51,7 +52,9 @@ const TRUSTED_SITES=Object.freeze(new Set([
 const KNOWN_CODES=new Set([
   "ERR_ASSERTION","approved_plan_denied","ERR_INVALID_ARG_TYPE",
   "ERR_HTTP_HEADERS_SENT","ECONNRESET","ETIMEDOUT","ECONNREFUSED",
-  "ABORT_ERR","ERR_INVALID_STATE"
+  "ABORT_ERR","ERR_INVALID_STATE","ERR_MODULE_NOT_FOUND",
+  "MODULE_NOT_FOUND","ERR_DLOPEN_FAILED","ERR_UNKNOWN_FILE_EXTENSION",
+  "ENOENT","EACCES"
 ]);
 const KNOWN_KINDS=new Set([
   "Error","AssertionError","TypeError","RangeError","SyntaxError",

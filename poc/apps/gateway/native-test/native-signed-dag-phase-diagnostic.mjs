@@ -21,7 +21,9 @@ const kinds=new Set(["Error","AssertionError","TypeError","RangeError",
  "SyntaxError","AbortError","TimeoutError","AggregateError","unknown"]);
 const codes=new Set(["ERR_ASSERTION","approved_plan_denied","ERR_INVALID_ARG_TYPE",
  "ERR_HTTP_HEADERS_SENT","ECONNRESET","ETIMEDOUT","ECONNREFUSED","ABORT_ERR",
- "ERR_INVALID_STATE","unknown"]);
+ "ERR_INVALID_STATE","ERR_MODULE_NOT_FOUND","MODULE_NOT_FOUND",
+ "ERR_DLOPEN_FAILED","ERR_UNKNOWN_FILE_EXTENSION","ENOENT","EACCES",
+ "unknown"]);
 const modules=new Set(["native-planning-read-core-evm-e2e.mjs",
  "native-approved-planner-dag-positive.mjs","trusted-approved-a2a-dispatcher.ts",
  "a2a-workflow.ts","orchestrator.ts","executor.ts",
