@@ -77,6 +77,21 @@ try{
   tokens.engineer,JSON.stringify(root)));
  assert.equal(rootIssued.id,root.credential_id);
 
+ const inspected=await invokeSocket(tokens.gateway,"read_issued_root",{
+  credential_id:root.credential_id
+ });
+ assert.equal(inspected.ok,true,"Gateway must inspect the SAME Rust owner");
+ assert.equal(inspected.result.credential_id,root.credential_id);
+ assert.equal(inspected.result.issuer_id,process.env.ADAPTER_ID_ENGINEER);
+ assert.equal(inspected.result.delegatee_id,process.env.ADAPTER_ID_ORCHESTRATOR);
+ assert.deepEqual(inspected.result.permissions,[permission]);
+ assert.equal(inspected.result.status.status_set,false);
+ assert.equal(inspected.result.status.source,"adapter_memory_only");
+ const forbiddenInspector=await invokeSocket(tokens.backend,"read_issued_root",{
+  credential_id:root.credential_id
+ });
+ assert.equal(forbiddenInspector.ok,false,"Only Gateway may inspect issuer inventory");
+
  // If this root were registered in a second private CryptoRuntime,
  // the next Child issuance would fail: the signer needs its parent.
  const child={
@@ -109,6 +124,11 @@ try{
  assert.equal(revoked.credential_id,root.credential_id);
  assert.equal(revoked.status_set,true);
  assert.equal(revoked.status_purpose,"revocation");
+ const observedRevocation=await invokeSocket(tokens.gateway,
+  "read_credential_status",{credential_id:root.credential_id});
+ assert.equal(observedRevocation.ok,true);
+ assert.equal(observedRevocation.result.status_set,true);
+ assert.equal(observedRevocation.result.status_purpose,"revocation");
 
  await assert.rejects(()=>binding.issue_engineer_root(
   tokens.backend,JSON.stringify({...root,credential_id:"urn:r225:wrong-role",
@@ -117,7 +137,9 @@ try{
  process.stdout.write(JSON.stringify({
   event:"r225_direct_engineer_single_rust_owner",
   root_direct:true,child_native:true,signed_vp:true,root_socket_denied:true,
-  root_revoked:true,cross_role_denied:true,no_http_adapter:true
+  root_revoked:true,cross_role_denied:true,no_http_adapter:true,
+  same_issuer_gateway_inspected:true,gateway_status_revocation:true,
+  unauthorized_inspector_denied:true
  })+"\n");
 }finally{
  // The private Rust runtime belongs to this Node process, not to an HTTP
