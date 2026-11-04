@@ -66,6 +66,12 @@ export async function startSpecializedAgentServer(
     capabilityProfile: options.capabilityProfile
   });
   if (options.adk && options.taskHandler) throw new Error("Choose either ADK or custom taskHandler");
+  // R185: the trusted reviewed DAG must never opt back into the repository
+  // MCP tool route, even through an internal library caller bypassing the
+  // standalone production launcher. Signed agents use Gateway FunctionTools
+  // and only the private crypto-MCP presentation bridge.
+  if(options.capabilityProfile==="approved-plan"&&options.adk?.mcpSharedUrl)
+    throw Error("approved_plan_requires_direct_gateway_tools");
   if (options.adk?.mcpCreateFile && options.role!=="test") {
     throw new Error("Only Test Agent may enable shared MCP create_file");
   }

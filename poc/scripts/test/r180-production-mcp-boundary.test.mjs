@@ -35,3 +35,10 @@ test("R180 cryptographic MCP worker remains reachable, not deleted as legacy",()
  assert.match(bridge,/stageGatewayChallenge\(this\.#taskId,prepared\)/u);
  assert.match(bridge,/takeSignedPresentation/u);
 });
+
+test("R185 signed approved-plan library entrypoint also rejects legacy repository MCP",()=>{
+ const server=read("poc/packages/agent-runtime/src/server.ts");
+ assert.match(server,/options\.capabilityProfile==="approved-plan"&&options\.adk\?\.mcpSharedUrl/u);
+ assert.match(server,/throw Error\("approved_plan_requires_direct_gateway_tools"\)/u);
+ assert.match(server,/attachPrivateMcpWorker\(/u);
+});

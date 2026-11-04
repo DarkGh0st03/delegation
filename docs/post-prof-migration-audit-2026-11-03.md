@@ -156,3 +156,54 @@ workflow, exact pinned SHA guard and synthetic-merge exclusions.
 The signed Gemini CI-gate negative test uses a deliberately unknown
 workflow path rather than referencing the deleted historical workflow.
 The R6 retired-asset audit is the single source of truth for absence.
+
+## R184–R185 — MCP legacy reachability audit closure (4 November 2026)
+
+**Verified branch**: `refactor/post-prof-plan-contracts-20261021`.
+**R184 proof commit**: `60d886aab8294c5c22128f6a3383f4e61efc7a9c`.
+On that SHA, Fast CI `41802434175` and Trusted Crypto MCP Gateway
+Bridge `41802434220` both completed **SUCCESS**. The earlier consolidated
+R179 baseline (`23ce3411`) also has the three free signed-DAG, cumulative
+and signed-D1 runs **SUCCESS** on that historical SHA. Do not claim those
+three runs validate a newer SHA.
+
+### Reachable production entrypoints and dispositions
+
+| Component | Decision | Observed actual route / constraint |
+| --- | --- | --- |
+| `poc/mcp-shared/src/main.ts` | **KEEP** | `requireProductionCryptoMcpProfile` rejects `legacy`; instantiates `CryptoWorkerRouter`, not `TaskRouter`. |
+| `poc/mcp-shared/src/crypto-worker-router.ts` | **KEEP** | Routes only `delegation_create_presentation` to authenticated `/internal/mcp-crypto-call`. |
+| `poc/apps/a2a-agent/src/main.ts` and `mcp-tool-flags.ts` | **KEEP** | Production A2A refuses `ADK_MCP_SHARED_URL` and legacy write/create/run-test flags. Agent repository/Runner operations use FunctionTools → Gateway. |
+| `poc/packages/agent-runtime/src/server.ts` | **MODIFIED R185** | Trusted `approved-plan` instances now explicitly refuse `mcpSharedUrl` even if invoked directly as a library, preventing an accidental switch back to the archived worker route. |
+| `poc/packages/agent-runtime/src/private-mcp-task-registry.ts` and `private-mcp-worker-http.ts` | **KEEP crypto half; ARCHIVE legacy half** | The registry's short-lived Task bearer and one-shot private VP lookup are needed. Production mounts crypto endpoint; repository endpoint is registered only in explicitly opted-in legacy fixtures. |
+| `poc/mcp-shared/src/http-server.ts` | **KEEP split factory** | Only the `crypto` profile is deployable through `main.ts`; historical `legacy` registration is a dynamic import isolated from the production process. |
+| `poc/mcp-shared/src/legacy-repository-tools.ts`, `task-router.ts` | **ARCHIVE / REMOVE AFTER FIXTURE MIGRATION** | Remain reachable from explicitly opted-in historical tests, but not from the production launcher. Do not mistake source-file presence for runtime reachability or claim physical R6 deletion. |
+| `poc/packages/agent-runtime/src/adk-specialized-agents.ts` | **KEEP canonical FunctionTools; MIGRATE legacy MCPToolset option** | Signed Tasks expose Gateway-controlled operations. Legacy MCP configuration still exists for archived ADK regression fixtures; the production A2A launcher does not supply it. |
+
+### R184 positive security proof
+
+The prior signed invoice Task test still ran repository `update_file`
+through historical MCP. It was rewritten to issue `update_file` through
+the signed Gateway client while using only crypto-MCP for a private VP.
+It asserts: the only MCP tool visible is
+`delegation_create_presentation`; the private repository worker route is
+**404**; the signed Gateway allows the approved operation exactly once and
+blocks unauthorized branch/path/operation changes, an OPA deny and a
+closed review session. The two R184 free CI workflows passed on the same SHA.
+
+### Audit verdict and bounded remaining work
+
+**Deployment/runtime reachability audit: CLOSED** for the identified canonical
+A2A launcher, MCP launcher and approved-plan library route. Crypto-only MCP
+and direct Gateway are now the permitted route; the old repository mode is
+not a production option. **Physical legacy deletion: NOT FINISHED**:
+historical ADK/MCP test harnesses still depend on archived `TaskRouter`,
+`legacy-repository-tools` and private legacy worker route. Removing them
+without migrating those fixtures would eliminate regressions rather than
+prove the signed pipeline. This is a scoped inventory verdict, not a blanket
+security certification or a live Gemini autonomous-repair success.
+
+**Next gate**: validate the new R185 guard in Fast CI, then migrate/delete the
+remaining historical fixtures in a separate bounded change. Re-run the
+consolidated three zero-billing Full CI on a common SHA only after those
+runtime/test changes. No paid Gemini workflow is authorized by this audit.
