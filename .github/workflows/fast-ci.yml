@@ -45,7 +45,7 @@ jobs:
       - name: Authorization plan contracts and Gateway
         run: |
           node --test poc/packages/plan-contracts/test/*.test.mjs
-          node --experimental-strip-types --test poc/apps/gateway/test/prepare.test.ts poc/apps/gateway/test/operation-catalog.test.ts poc/apps/gateway/test/planning-revision-pinning.test.ts
+          node --experimental-strip-types --test poc/apps/gateway/test/prepare.test.ts poc/apps/gateway/test/operation-catalog.test.ts poc/apps/gateway/test/planning-revision-pinning.test.ts poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: ADK, A2A and real loopback shared MCP
         run: |
           node --test poc/packages/agent-runtime/test/signed-task-diagnostic-ref.test.mjs
