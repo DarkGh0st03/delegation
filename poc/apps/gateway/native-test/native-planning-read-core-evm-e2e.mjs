@@ -580,8 +580,9 @@ try{
   const port=new TrustedPlanningGatewayReadPort({
     coordinator,snapshot,
     gatewayBaseUrl:"http://native-planning-gateway",
-    adapterBaseUrl:adapterUrl,adapterToken:token,
-    fetchFn:transport,timeoutMs:60000
+    ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+      ? {}:{adapterBaseUrl:adapterUrl}),
+    adapterToken:token,fetchFn:transport,timeoutMs:60000
   });
   const noWrite=log.executions;
   await assert.rejects(port.invoke("update_file",{
