@@ -125,7 +125,11 @@ jobs:
           cargo test --manifest-path services/delegation-engineer-node/Cargo.toml --lib
           cargo build --release --manifest-path services/delegation-engineer-node/Cargo.toml
           cargo build --release --manifest-path services/delegation-core-node/Cargo.toml
-          mkdir -p poc/packages/orchestrator-runtime/src/native poc/apps/gateway/src/native "$ADAPTER_PUBLIC_ARTIFACT_DIR"
+          mkdir -p poc/packages/orchestrator-runtime/src/native poc/apps/gateway/src/native
+          # Rust Core's read-only Gateway verifier rejects missing public
+          # accumulators/ and status-lists/; this is operator provisioning,
+          # never synthetic trust material or a second signing authority.
+          install -d -m 0700 "$ADAPTER_PUBLIC_ARTIFACT_DIR" "$ADAPTER_PUBLIC_ARTIFACT_DIR/accumulators" "$ADAPTER_PUBLIC_ARTIFACT_DIR/status-lists"
           cp services/delegation-engineer-node/target/release/libdelegation_engineer_node.so poc/packages/orchestrator-runtime/src/native/delegation-engineer.node
           cp services/delegation-core-node/target/release/libdelegation_core_node.so poc/apps/gateway/src/native/delegation-core.node
           echo "ADAPTER_ENGINEER_NATIVE_SOCKET=$RUNNER_TEMP/r235-one-engineer-$GITHUB_RUN_ID.sock" >> "$GITHUB_ENV"
@@ -139,6 +143,10 @@ jobs:
           fi
       - name: Start Gateway with only direct Core Rust verifier and OPA
         run: |
+          # Exercise the actual public-only Rust preflight before HTTP startup.
+          # Both this verifier and the later Gateway independently reject
+          # missing public sources; no HTTP Adapter fallback is available.
+          node -e 'require("./poc/apps/gateway/src/native/delegation-core.node").assert_verification_ready()'
           npm --prefix poc run gateway:start >/tmp/r235-direct-gateway.log 2>&1 &
           echo $! > /tmp/r235-direct-gateway.pid
           for i in {1..100}; do

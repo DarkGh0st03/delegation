@@ -321,3 +321,32 @@ workflows are re-enabled or treated as successful. We have not obtained
 CI run results through the available connector. Historical HTTP
 executables and regression modules are still present as intentional
 pending deletions, not active canonical deployment requirements.
+
+## R241 — fix observed R236 Gateway startup failure, not a speculation
+
+GitHub Actions R236 #41847564256 failed at the **Gateway startup** step;
+all previous Rust addon / EVM bootstrap and preparatory checks passed.
+Review of Rust `FilePublicArtifactStore::open_read_only` identified a
+missing operator-provisioned tree: the old R235 workflow created the
+artifact **root** but not its mandatory `accumulators/` and
+`status-lists/` subdirectories. The real public-only Rust Gateway
+preflight intentionally refuses startup if either does not exist.
+
+Both signed Gitea/Docker positive DAG and signed D1 workflows now
+provision these directories under mode 0700 and run the actual native
+`assert_verification_ready()` before starting the Gateway. No fake
+EVM anchors, status JWT, accumulators, private keys or signing issuer
+were added. A Fast CI source regression ties this provisioning to the
+Rust verifier's independently enforced directory contract.
+
+Also fixed an invalid Unicode regular-expression escape in the R239
+static test that caused Fast CI R240 #41859935872 to fail before
+running other assertions. Updated two stale R194/R200 tests to
+expect explicit retirement of old HTTP crypto-MCP instead of its
+former private registry route. R234 #41844536603 is independently
+verified SUCCESS; R236 #41847564256 is independently verified FAILURE,
+and is **not** yet retriggered by these source changes.
+
+Future work: get Fast CI green on the final SHA; only then trigger
+the expensive signed Gitea/Docker gate exactly once and inspect its
+real results before staging D1 / further deletes. No paid model APIs.
