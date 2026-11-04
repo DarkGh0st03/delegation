@@ -58,5 +58,10 @@ export function createTrustedEngineerCredentialPort(
    ...config,nativeSocketPath:path
   });
  }
+ // A canonical signed DAG must never downgrade root issuance/revocation
+ // to the HTTP Adapter just because its trusted native socket is missing.
+ // Explicit historical fixtures without this flag retain their old route.
+ if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
+  throw Error("Canonical Engineer root requires native Rust issuer socket");
  return createOwnerPrivateMcpEngineerCredentialPort(config);
 }
