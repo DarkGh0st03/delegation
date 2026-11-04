@@ -72,6 +72,37 @@ export function createRustAdapterChildCryptographyPort(
 }
 
 /**
+ * Native Child DC signing in the SAME Rust process as the Engineer's root.
+ * The caller supplied exact grants have already been checked against a
+ * signed approved Task. Rust enforces parent/role/capability independently.
+ */
+export function createNativeRustChildCryptographyPort(
+ config:RustAdapterChildPortConfig,socketPath:string
+):TrustedChildCryptographyPort {
+ if(!config.bearerToken?.trim()||!socketPath.startsWith("/"))
+  throw Error("Trusted native Child DC transport unavailable");
+ return Object.freeze({
+  kind:"rust-native" as const,
+  async issueChild(request:Readonly<ExactTrustedChildIssuance>){
+   const result=await invokeNativeCrypto({
+    socketPath,token:config.bearerToken,timeoutMs:config.timeoutMs??10000
+   },"issue_child",request);
+   if(!result||typeof result!=="object"||Array.isArray(result)||
+      (result as {id?:unknown}).id!==request.credential_id)
+    throw Error("Native Rust Child DC identity mismatch");
+   const subject=(result as {credentialSubject?:{per?:unknown}}).credentialSubject;
+   const rights=subject?.per;
+   if(!Array.isArray(rights)||rights.length!==request.permissions.length||
+      rights.some((p,i)=>!p||typeof p!=="object"||
+       (p as {resource?:unknown}).resource!==request.permissions[i]!.resource||
+       (p as {operation?:unknown}).operation!==request.permissions[i]!.operation))
+    throw Error("Native Rust Child DC changed signed permissions");
+   return result as IssuedDelegationCredential;
+  }
+ });
+}
+
+/**
  * R162: real MCP SDK exchange inside the trusted owner process.
  * The existing Rust Adapter is the sole issuer and revocation authority;
  * no new keys, status registry or model-facing tool are created.
