@@ -63,5 +63,8 @@ test("R237 long CI runs only with explicit zero-model-billing checkpoint",()=>{
  assert.match(harness,/independently_admitted_repair_epoch:true/u);
  const selector=read("poc/apps/test-runner-controller/scripts/direct-engineer-owner-pass-selector.mjs");
  assert.match(selector,/preliminaryReadOnlyProcess:!direct/u);
- assert.match(selector,/Direct Engineer migration proof forbids paid model pilot/u);
+ // Scripted D1 forbids inference through empty model API keys; the
+ // separate manual pilot may select native Rust only with fresh consent.
+ assert.match(selector,/verifySignedGeminiPilotConsent\(env,\{requireApiKey:false\}\)/u);
+ assert.match(selector,/Direct Engineer billed pilot requires native EVM trust/u);
 });
