@@ -7,10 +7,12 @@ test("R188 all tracked factory calls use crypto-only",()=>{
  const root=fileURLToPath(new URL("../../../",import.meta.url));
  const report=inspectMcpFactoryCalls(root);
  assert.deepEqual(report.errors,[]);
- assert.ok(report.calls.length>=4);
+ // The canonical DAG no longer contributes a Shared HTTP factory call.
+ assert.ok(report.calls.length>=3);
  assert.ok(report.calls.every(c=>c.profile!=="legacy"));
  assert.ok(report.calls.some(c=>c.profile==="crypto"));
  assert.deepEqual(report.calls.filter(c=>
   c.file==="poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs"
- ).map(c=>c.profile),["crypto"]);
+ ).map(c=>c.profile),[]);
+ assert.ok(report.errors.every(error=>!error.includes("task-local crypto MCP")));
 });

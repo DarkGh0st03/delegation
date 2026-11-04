@@ -44,8 +44,21 @@ export function inspectMcpFactoryCalls(root){
     errors.push(file+":"+line+": signed DAG must use crypto-only MCP");
   }
  }
- if(!calls.some(c=>c.file==="poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs"&&c.profile==="crypto"))
-  errors.push("signed DAG crypto-only listener not found");
+ // R209: the canonical DAG is now task-local MCP SDK, not Shared HTTP.
+ // An accidental shared listener/worker must FAIL this audit.
+ const dag=readFileSync(resolve(root,
+  "poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs"),"utf8");
+ const local=readFileSync(resolve(root,
+  "poc/packages/agent-runtime/src/local-crypto-mcp-bridge.ts"),"utf8");
+ if(calls.some(c=>c.file===
+   "poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs"))
+  errors.push("signed DAG must not instantiate Shared MCP HTTP");
+ if(/\bCryptoWorkerRouter\b|\bcreateSharedMcpHttpServer\b|\bmcpCryptoUrl\b/u.test(dag))
+  errors.push("signed DAG retained Shared MCP HTTP routing");
+ if(!/cryptoProofCount/u.test(dag)||
+    !/registerTool\("delegation_create_presentation"/u.test(local)||
+    !/InMemoryTransport\.createLinkedPair\(/u.test(local))
+  errors.push("signed DAG task-local crypto MCP proof path not found");
  if(!calls.some(c=>c.file==="poc/mcp-shared/src/main.ts"&&c.profile==="toolProfile"))
   errors.push("validated MCP standalone launcher not found");
  return {tracked:tracked.length,calls,errors};
