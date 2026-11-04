@@ -42,4 +42,4 @@ jobs:
       - name: Historical Adapter HTTP regressions (explicit feature)
         run: cargo test --manifest-path services/delegation-adapter/Cargo.toml --locked --features legacy-http
       - name: Native Engineer Core compiles against default Rust library only
-        run: cargo check --manifest-path services/delegation-engineer-node/Cargo.toml --locked
+        run: cargo check --manifest-path services/delegation-engineer-node/Cargo.toml
