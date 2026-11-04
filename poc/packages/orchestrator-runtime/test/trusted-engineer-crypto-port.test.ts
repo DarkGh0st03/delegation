@@ -175,7 +175,7 @@ test("R225 Engineer directly calls embedded Rust API for prelim/operational root
   fetchFn:async()=>{throw Error("Adapter HTTP must not be invoked");}
  },binding);
  const request={...root("urn:r225:preliminary","925",600),
-  permissions:[{operation:"read_repository",resource:uri}]};
+  permissions:[{operation:"read_repository" as const,resource:uri}]};
  const issued=await port.issueScopedOrchestratorRoot(request);
  assert.equal(issued.id,"urn:r225:preliminary");
  assert.deepEqual(calls[0]?.body.permissions,request.permissions);
@@ -185,7 +185,7 @@ test("R225 Engineer directly calls embedded Rust API for prelim/operational root
   credential_id:"urn:r225:preliminary",status_set:true});
  await port.issueScopedOrchestratorRoot({
   ...root("urn:r225:operational","926",3600),
-  permissions:[{operation:"update_file",resource:file}]
+  permissions:[{operation:"update_file" as const,resource:file}]
  });
  assert.deepEqual(calls.map(c=>c.op),
   ["issue_root","revoke_root","issue_root"]);
@@ -196,7 +196,7 @@ test("R225 direct Rust Engineer rejects changed grants and private signer failur
  const config={adapterBaseUrl:"http://127.0.0.1:1",
   bearerToken:"PRIVATE_ENGINEER_BEARER"};
  const initial={...root("urn:r225:root","927",600),
-  permissions:[{operation:"read_repository",resource:uri}]};
+  permissions:[{operation:"read_repository" as const,resource:uri}]};
  const altered=createDirectRustEngineerCredentialPort(config,{
   start_engineer_core(){},
   async issue_engineer_root(){return JSON.stringify({
