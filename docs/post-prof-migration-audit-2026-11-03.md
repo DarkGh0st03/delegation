@@ -88,3 +88,18 @@ Engineer-only native Rust signer while leaving child issuance and VP signing
 in a separate Adapter would break the chain. Native migration must transfer
 the **single** issuer/state owner, not merely duplicate root-signing keys.
 R169 does not claim an unsafe Engineer-native switch.
+
+## R172 — physically retire the hard-coded sequential Orchestrator and workflows
+
+After the successful R167/R168 same-SHA canonical scripted signed-DAG gates,
+the old fixed Backend→Frontend→Test `AccountSuspensionSequentialCoordinator`,
+its dedicated workflow state machine, three executable old MCP smoke scripts,
+their two GitHub Actions workflows and two unit test files were **deleted**.
+The historical paid-Gemini sequential script was already deleted at R169.
+
+The exact archived experiment remains reconstructible from Git commit history;
+current executable entry points are the signed approved-plan DAG and D1 tests.
+The R6 source inventory now marks removed executables as **expected absent**,
+but still errors if any tracked runnable module imports or configures them.
+Remaining legacy repository MCP per-tool test fixtures and static template
+issuer wrappers are handled separately; they must not re-enter canonical code.

@@ -83,11 +83,14 @@ test("R6 catches deleted local files and missing checked entrypoints",t=>{
     ["missing local module","missing audited script"]);
 });
 
-test("R169 excludes physically deleted billed sequential MCP entrypoint",()=>{
-  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,13);
-  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,13);
-  assert.ok(!HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
-    x.endsWith("/a2a-production-coordinator-mcp-gemini-live.mjs")));
+test("R172 excludes physically retired sequential Coordinator scripts",()=>{
+  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,10);
+  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,10);
+  for(const removed of ["a2a-production-coordinator-mcp-gemini-live.mjs",
+   "a2a-production-coordinator-mcp-isolated-real-positive.mjs",
+   "a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
+   "a2a-production-coordinator-mcp-isolated-smoke.mjs"])
+    assert.ok(!HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>x.endsWith("/"+removed)));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/human-merge.mjs")));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>

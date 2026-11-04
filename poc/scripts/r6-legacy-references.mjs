@@ -32,6 +32,18 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   ".github/workflows/shared-mcp-production-coordinator.yml",
   ".github/workflows/shared-mcp-real-positive-e2e.yml"
 ]);
+/** R172 physically deleted executables. Keep negative reference inventory:
+ * absence and zero runnable import/configured callers are release criteria. */
+export const R6_RETIRED_TARGETS=Object.freeze([
+  "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
+  "poc/packages/orchestrator-runtime/src/workflow.ts",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
+  ".github/workflows/shared-mcp-production-coordinator.yml",
+  ".github/workflows/shared-mcp-real-positive-e2e.yml"
+]);
+
 
 /**
  * R6 CI boundary: only five explicit historical modules may statically
@@ -40,9 +52,6 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
  * Parsed ESM static edges only; dynamic/external callers still need audit.
  */
 export const R6_ALLOWED_SEQUENTIAL_IMPORTERS=Object.freeze([
-  "poc/packages/orchestrator-runtime/test/sequential-coordinator.test.ts",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs"
 ]);
 export function unexpectedSequentialImporters(inventory,allowed=R6_ALLOWED_SEQUENTIAL_IMPORTERS){
@@ -86,7 +95,6 @@ export function unexpectedSequentialRuntimeReferences(
  * Canonical approved-plan code must never import it via the public barrel.
  */
 export const R6_ALLOWED_HISTORICAL_WORKFLOW_CALLERS=Object.freeze([
-  "poc/packages/orchestrator-runtime/src/sequential-coordinator.ts",
   "poc/packages/orchestrator-runtime/test/workflow.test.ts"
 ]);
 export function unexpectedHistoricalWorkflowCallers(
@@ -115,9 +123,6 @@ export function unexpectedHistoricalWorkflowCallers(
  */
 export const R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS=Object.freeze([
   "poc/packages/orchestrator-runtime/test/authority-client.test.ts",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
 ]);
 export function unexpectedHistoricalAuthorityCallers(
   inventory,allowed=R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS
@@ -174,9 +179,6 @@ export function unexpectedTrustedTemplateCallers(inventory){
  */
 export const R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS=Object.freeze([
   "poc/packages/orchestrator-runtime/test/orchestrator-gateway-client.test.ts",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
   "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs"
 ]);
 export function unexpectedHistoricalGatewayCallers(
@@ -267,8 +269,6 @@ export function unexpectedHistoricalPreflightCallers(
  */
 export const R6_ALLOWED_REFERENCE_SCOPE_WORKFLOWS=Object.freeze([
   ".github/workflows/cumulative-refactoring-offline.yml",
-  ".github/workflows/shared-mcp-production-coordinator.yml",
-  ".github/workflows/shared-mcp-real-positive-e2e.yml",
   ".github/workflows/gemini-paid-shared-mcp-final.yml",
   ".github/workflows/disposable-simulated-approval-merge.yml",
   ".github/workflows/poc-baseline.yml"
@@ -587,6 +587,16 @@ function main(){
   }
   console.log("Unresolved runtime indirections="+
     result.unresolvedRuntimeIndirections.length);
+  const retiredSet=new Set(R6_RETIRED_TARGETS);
+  const retiredDangling=result.candidates.filter(x=>retiredSet.has(x.target))
+    .flatMap(x=>[
+      ...x.staticImporters.map(e=>({target:x.target,source:e.source})),
+      ...x.runtimeIndirectionHints.map(e=>({target:x.target,source:e.source})),
+      ...x.configuredCallers.map(e=>({target:x.target,source:e.source}))
+    ]);
+  for(const ref of retiredDangling)
+    console.error("R172 removed legacy executable still referenced: "+
+      ref.source+" -> "+ref.target);
   const forbidden=unexpectedSequentialImporters(result);
   for(const edge of forbidden)
     console.error("R6 blocked legacy coordinator import: "+edge.source+
@@ -631,7 +641,8 @@ function main(){
      templateCallers.length>0||gatewayCallers.length>0||
      privateTransportCallers.length>0||historicalPreflightCallers.length>0||
      scopeCheckerCallers.length>0||
-     result.candidates.some(x=>!x.exists))
+     retiredDangling.length>0||
+     result.candidates.some(x=>retiredSet.has(x.target)?x.exists:!x.exists))
     process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)

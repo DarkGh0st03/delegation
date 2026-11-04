@@ -17,7 +17,6 @@ on:
       - 'poc/packages/orchestrator-runtime/src/trusted-merge.ts'
       - 'poc/packages/orchestrator-runtime/src/merge-readiness.ts'
       - 'poc/packages/orchestrator-runtime/test/trusted-merge.test.ts'
-      - 'poc/packages/orchestrator-runtime/src/sequential-coordinator.ts'
       - 'poc/mcp-shared/**'
       - 'poc/apps/gateway/**'
       - 'poc/apps/test-runner-controller/**'
