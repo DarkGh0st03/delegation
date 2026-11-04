@@ -111,6 +111,8 @@ export function createOwnerPrivateMcpChildCryptographyPort(
  config:RustAdapterChildPortConfig
 ):TrustedChildCryptographyPort{
  const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ if(!socketPath&&process.env.APPROVED_RUNNER_NATIVE_MCP==="1")
+  throw Error("Canonical signed Child DC requires native Rust issuer socket");
  const rust=socketPath
   ?createNativeRustChildCryptographyPort(config,socketPath)
   :createRustAdapterChildCryptographyPort(config);
