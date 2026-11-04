@@ -1390,8 +1390,11 @@ async function main(){
         // Crypto VP confirmation remains mandatory even though normal
         // repository and Runner tools now invoke the Gateway directly.
         const minimumCryptoRequests=realGeminiPilot?1:21;
-        assert.ok(positive?.positive_dag?.private_crypto_mcp_http_requests>=
-          minimumCryptoRequests);
+        assert.equal(positive?.positive_dag?.private_crypto_mcp_http_requests,0,
+          "Canonical signed Tasks must never call a private crypto worker");
+        assert.ok(positive?.positive_dag?.private_crypto_mcp_local_proofs>=
+          minimumCryptoRequests,
+          "Every signed Gateway effect needs a successful task-local MCP VP");
         assert.equal(positive?.positive_dag?.real_a2a_sdk,true);
         if(realGeminiPilot){
           // The real Planner can assign several Task IDs to one role.

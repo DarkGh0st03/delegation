@@ -10,20 +10,22 @@ const adk=readFileSync(new URL(
  "../../../packages/agent-runtime/src/adk-a2a-handler.ts",
  import.meta.url),"utf8");
 
-test("R156 signed DAG starts crypto MCP only and passes no repo MCP endpoint to ADK",()=>{
- assert.match(host,/profile:"crypto"/);
- assert.doesNotMatch(host,/profile:"legacy"/);
- assert.doesNotMatch(host,/mcpSharedUrl/);
- assert.match(host,/\.\.\.\(cryptoMcpEnabled\?\{mcpCryptoUrl\}:\{\}\)/);
+test("R210 signed DAG uses only private in-process crypto MCP and direct Gateway",()=>{
+ assert.doesNotMatch(host,/profile:"legacy"|profile:"crypto"/);
+ assert.doesNotMatch(host,/createSharedMcpHttpServer|CryptoWorkerRouter|mcpCryptoUrl|mcpSharedUrl/);
+ assert.match(host,/cryptoProofCount\?\.\(\)/);
  assert.match(host,/direct_gateway_function_tools_enabled:true/);
  assert.match(host,/approved_shared_mcp_enabled:false/);
  assert.match(host,/shared_mcp_http_requests:0/);
+ assert.match(host,/private_crypto_mcp_http_requests:0/);
+ assert.match(host,/private_crypto_mcp_local_proofs:privateCryptoMcpCalls/);
  assert.match(outer,/positive\?\.positive_dag\?\.shared_mcp_http_requests,0/);
  assert.match(outer,/positive\?\.positive_dag\?\.approved_crypto_mcp_enabled,true/);
 });
 test("R156 protected ADK keeps direct FunctionTools and private task-bound crypto bridge",()=>{
  assert.match(adk,/new GatewayControlledToolClient\(/);
  assert.match(adk,/new TrustedCryptoMcpBridge\(/);
+ assert.match(adk,/new LocalCryptoMcpBridge\(/);
  assert.match(adk,/const configured = createAdkSpecializedAgent\(/);
  assert.match(adk,/mcpCryptoUrl/);
  assert.match(adk,/mcpTaskRegistry/);
