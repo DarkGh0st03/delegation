@@ -198,6 +198,13 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     throw Error("legacy_repository_mcp_retired");
   if(config.mcpCryptoUrl&&!config.mcpTaskRegistry)
     throw Error("Remote MCP service requires a private task registry");
+  // The canonical approved DAG uses only task-local MCP crypto and the
+  // SAME native Rust issuer holding the root/child credential state.
+  // Reject absent native signer and remote MCP configurations at bootstrap.
+  if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"&&(
+       !process.env.ADAPTER_ENGINEER_NATIVE_SOCKET||
+       !config.mcpTaskRegistry||config.mcpCryptoUrl))
+    throw Error("Canonical signed A2A requires native Rust and task-local crypto MCP");
   if (!config.adapterToken?.trim() || !config.adapterBaseUrl?.trim() || !config.gatewayBaseUrl?.trim()) {
     throw new Error("ADK protected task handler requires Gateway and Adapter service configuration");
   }
