@@ -15,7 +15,7 @@ use crate::auth::CallerRole;
 use crate::config::AdapterConfig;
 use crate::crypto::{
     CreatePresentationRequest, CryptoRuntime, IssueChildRequest, IssueRootRequest,
-    UpdateCredentialStatusRequest,
+    ReadCredentialStatusRequest, UpdateCredentialStatusRequest,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -166,6 +166,22 @@ impl NativeEngineerSocket {
             .and_then(|issued| {
                 serde_json::to_value(issued).map_err(|_| String::from("serialization unavailable"))
             }),
+            // Authenticated Gateway-only issuer inspection. Verification of
+            // signed VPs still uses the Gateway's PUBLIC-only Core Rust addon.
+            // These read commands observe the SAME issuer/state instance that
+            // minted the root, including live anchored EVM status.
+            "read_issued_root" if caller.role() == CallerRole::Gateway =>
+                serde_json::from_value::<ReadCredentialStatusRequest>(req.body)
+                    .map_err(|_| String::from("invalid request"))
+                    .and_then(|input| crypto.read_issued_root(caller, &config.callers, input))
+                    .and_then(|observation| serde_json::to_value(observation)
+                        .map_err(|_| String::from("serialization unavailable"))),
+            "read_credential_status" if caller.role() == CallerRole::Gateway =>
+                serde_json::from_value::<ReadCredentialStatusRequest>(req.body)
+                    .map_err(|_| String::from("invalid request"))
+                    .and_then(|input| crypto.read_credential_status(caller, &config.callers, input))
+                    .and_then(|observation| serde_json::to_value(observation)
+                        .map_err(|_| String::from("serialization unavailable"))),
             "create_presentation"
                 if matches!(
                     caller.role(),
