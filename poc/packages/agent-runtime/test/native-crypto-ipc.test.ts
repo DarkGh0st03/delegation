@@ -129,3 +129,37 @@ test("R218 canonical signed VP handler rejects missing native socket before HTTP
   else process.env.APPROVED_RUNNER_NATIVE_MCP=oldFlag;
  }
 });
+
+test("R239 native approved Task VP works without any Adapter HTTP URL",async t=>{
+ const native=await fixture(t,request=>({
+  ok:true,result:{signed_vp:"r239-signed-rust-vp"}
+ }));
+ const old=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ process.env.APPROVED_RUNNER_NATIVE_MCP="1";
+ try{
+  const signed=new DelegationEvidenceHandler({
+   adapterToken:"R239_PRIVATE_BACKEND",
+   nativeSocketPath:native.path,
+   evidence:{credential:"opaque.private.child",credential_id:"urn:r239:child",
+    presenter_id:"did:thesis:backend"}
+  });
+  const result=await signed.createPresentation({
+   request_id:"r239-req",audience:"cloud-access-gateway",
+   challenge:"r239-nonce",expires_at:new Date(Date.now()+20000).toISOString(),
+   required_permission:{resource:"gitea://trusted/files/feature.ts",operation:"read_file"}
+  });
+  assert.equal(result,"r239-signed-rust-vp");
+  assert.equal(native.calls.length,1);
+  assert.equal(native.calls[0].operation,"create_presentation");
+  assert.equal(native.calls[0].token,"R239_PRIVATE_BACKEND");
+  assert.equal(typeof native.calls[0].body,"object");
+  assert.throws(()=>new DelegationEvidenceHandler({
+   adapterToken:"R239_PRIVATE_BACKEND",
+   evidence:{credential:"opaque.private.child",credential_id:"urn:r239:child",
+    presenter_id:"did:thesis:backend"}
+  }),/base URL|native Rust signer socket/u);
+ }finally{
+  if(old===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=old;
+ }
+});
