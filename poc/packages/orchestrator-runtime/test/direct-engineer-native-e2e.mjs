@@ -127,8 +127,22 @@ try{
  // verifier to check signed VP, EVM trust, DID, accumulator and Status List.
  // No JS verification, mock proof, HTTP Adapter or privileged issuer key.
  let verifier;
+ let rootReader;
  const challenge="r225-native-gateway-challenge";
  if(liveEvm){
+  // Exercise the actual Gateway's issuer-observation class, not only raw
+  // socket RPC, with no historical Adapter HTTP address configured.
+  const {TrustedGatewayNativeRootStatusReader}=await import(
+   "../../../apps/gateway/src/trusted-gateway-native-root-status.ts");
+  rootReader=new TrustedGatewayNativeRootStatusReader({
+   gatewayToken:tokens.gateway,nativeSocketPath:socketPath
+  });
+  const observed=await rootReader.readIssuedRoot(root.credential_id);
+  assert.equal(observed.credential_id,root.credential_id);
+  assert.equal(observed.issuer_id,process.env.ADAPTER_ID_ENGINEER);
+  assert.deepEqual(observed.permissions,[permission]);
+  assert.ok(Number.isSafeInteger(observed.anchor_version));
+
   const {loadDirectCoreRustVerifier}=await import(
    "../../../apps/gateway/src/direct-core-loader.ts");
   verifier=loadDirectCoreRustVerifier();
@@ -165,6 +179,11 @@ try{
   liveEvm?"evm_anchored_signed_jwt":"adapter_memory_only");
  if(liveEvm){
   assert.ok(Number.isSafeInteger(observedRevocation.result.anchor_version));
+  const rootObservedRevoked=await rootReader.readRevokedRoot(root.credential_id);
+  assert.equal(rootObservedRevoked.root_credential_id,root.credential_id);
+  assert.equal(rootObservedRevoked.execution_authorized,false);
+  await assert.rejects(()=>rootReader.readActiveRoot(root.credential_id),
+   /Native Rust root status NO-GO/u);
   await assert.rejects(()=>verifier.verify({
    presenter:"backend",audience:"cloud-access-gateway",challenge,
    required_permission:permission,signed_vp:proof.result.signed_vp
@@ -183,7 +202,9 @@ try{
   unauthorized_inspector_denied:true,
   mode:liveEvm?"live-evm":"in-memory",
   evm_anchored_status:liveEvm,
-  independent_native_gateway_verification:liveEvm
+  independent_native_gateway_verification:liveEvm,
+  native_gateway_issued_root_reader:liveEvm,
+  native_gateway_live_revocation_reader:liveEvm
  })+"\n");
 }finally{
  // The private Rust runtime belongs to this Node process, not to an HTTP
