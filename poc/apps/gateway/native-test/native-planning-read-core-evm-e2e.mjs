@@ -1347,7 +1347,9 @@ try{
             const report=await executeTrustedAdmittedRepairDag({
               sessionId:session,epoch:2,planDigest:epochs[1].plan_digest,
               coordinator,intake:armed.intake,gateway:gatewayOwner,
-              journal,engineerDid,adapterBaseUrl:adapterUrl,
+              journal,engineerDid,
+              ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+                ? {}:{adapterBaseUrl:adapterUrl}),
               orchestratorToken:token,
               agentBaseUrls:originalA2APorts.agentBaseUrls,
               a2a:originalA2APorts.a2a,
@@ -1825,7 +1827,11 @@ try{
         a2aSends++;
         throw Error("A2A dispatch before verified branch provider effect");
       }},
-      adapter:{adapterBaseUrl:adapterUrl,bearerToken:token,timeoutMs:60000},
+      adapter:{
+        ...(process.env.ENGINEER_CORE_NATIVE_MODE==="1"
+          ? {}:{adapterBaseUrl:adapterUrl}),
+        bearerToken:token,timeoutMs:60000
+      },
       async authorityForTask(){
         childAllocations++;
         throw Error("Cannot allocate a child before verified branch creation");
