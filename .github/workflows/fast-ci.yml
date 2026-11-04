@@ -49,6 +49,9 @@ jobs:
           node --experimental-strip-types --test poc/packages/agent-runtime/test/gateway-tool-client.test.ts poc/packages/agent-runtime/test/private-mcp-task-registry.test.ts poc/packages/agent-runtime/test/adk-specialized-agents.test.ts poc/packages/agent-runtime/test/adk-native-mcp-integration.test.ts poc/packages/agent-runtime/test/n2-signed-context-sufficiency.test.ts
           npm --prefix poc/mcp-shared test
           node --test poc/mcp-shared/test/legacy-isolation.test.mjs
+          # R183: the R182 cryptographic worker must remain usable while
+          # archived MCP repository fixtures are explicit opt-ins only.
+          node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-crypto-mcp-bridge.test.ts poc/packages/agent-runtime/test/adk-native-mcp-create.test.ts poc/packages/agent-runtime/test/adk-native-mcp-update.test.ts poc/packages/agent-runtime/test/adk-native-mcp-run-tests.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/a2a-workflow.test.ts poc/packages/orchestrator-runtime/test/trusted-gemini-repair-proposer.test.mjs
       - name: Pilot gate and bounded diagnostics without inference
