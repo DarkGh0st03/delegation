@@ -177,55 +177,22 @@ jobs:
           if ! npm --prefix poc run security-ci:isolated-positive-smoke -w @thesis/test-runner-controller >/tmp/r237-d1-private.log 2>&1; then
             node --input-type=module <<'NODE'
           import {readFileSync} from "node:fs";
+          import {safeEmbeddedEngineerD1Failure}
+            from "./poc/apps/test-runner-controller/scripts/signed-d1-gate-observation.mjs";
           const raw=readFileSync("/tmp/r237-d1-private.log","utf8");
-          const prefix="[trusted-positive-ci] native_dag_failure ";
-          const match=raw.split(/\r?\n/u).findLast(line=>line.startsWith(prefix));
-          let safe={event:"r237_embedded_engineer_signed_d1",status:"FAIL",category:"unknown"};
-          if(match){
-            try{
-              const obj=JSON.parse(match.slice(prefix.length));
-              const allowed=new Set(["dependency_install","typecheck","backend_tests","frontend_tests",
-                "build","playwright_e2e","researcher_acceptance"]);
-              safe={...safe,category:"native_dag_failure",
-                first_failed_phase:allowed.has(obj.first_failed_phase)?obj.first_failed_phase:"unknown"};
-            }catch{}
-          }
-          process.stderr.write(JSON.stringify(safe)+"\n");
+          process.stderr.write(JSON.stringify(safeEmbeddedEngineerD1Failure(raw))+"\n");
           NODE
             exit 1
           fi
           node --input-type=module <<'NODE'
           import {readFileSync} from "node:fs";
           import {strict as assert} from "node:assert";
+          import {safeEmbeddedEngineerD1Success}
+            from "./poc/apps/test-runner-controller/scripts/signed-d1-gate-observation.mjs";
           const raw=readFileSync("/tmp/r237-d1-private.log","utf8");
-          // Only bounded fields from our own exact-schema signed D1 event
-          // may leave private logs. Never print source, credentials, or LLM.
-          const events=raw.split(/\r?\n/u).filter(line=>line.length<4096&&line.startsWith("{"));
-          const found=events.map(line=>{
-            try{return JSON.parse(line);}catch{return null;}
-          }).findLast(event=>event?.event==="signed_owner_d1_real_backend_test_repair_review");
-          assert.ok(found,"Signed D1 repair review receipt missing");
-          assert.equal(found.status,"PASS");
-          assert.equal(found.original_rust_root_verified,true);
-          assert.equal(found.independently_admitted_repair_epoch,true);
-          assert.equal(found.original_root_retired,true);
-          assert.equal(found.repaired_docker_pass_verified,true);
-          assert.match(found.corrected_exact_sha,/^[a-f0-9]{40}$/u);
-          assert.equal(found.draft_pr_review_only,true);
-          assert.equal(found.merged,false);
-          assert.equal(found.automated_merge_calls,0);
-          assert.equal(found.gemini_calls,0);
-          process.stdout.write(JSON.stringify({
-            event:"r237_embedded_engineer_signed_d1",status:"PASS",
-            native_rust_owner:"single_in_process_engineer",
-            original_root_revoked:true,
-            signed_d1_epoch_admitted:true,
-            same_epoch_repair_docker_pass:true,
-            repaired_exact_sha:found.corrected_exact_sha,
-            unmerged_draft_review_only:true,
-            no_adapter_http:true,
-            paid_model_calls:0
-          })+"\n");
+          const proof=safeEmbeddedEngineerD1Success(raw);
+          assert.ok(proof,"Strict signed D1 review receipt not verified");
+          process.stdout.write(JSON.stringify(proof)+"\n");
           NODE
       - name: Assert old Adapter HTTP service stayed stopped
         run: |
