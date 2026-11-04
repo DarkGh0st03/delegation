@@ -58,15 +58,15 @@ jobs:
         run: |
           node --test poc/packages/plan-contracts/test/*.test.mjs
           node --experimental-strip-types --test poc/apps/gateway/test/prepare.test.ts poc/apps/gateway/test/operation-catalog.test.ts poc/apps/gateway/test/planning-revision-pinning.test.ts poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
-      - name: ADK, A2A and real loopback shared MCP
+      - name: ADK, A2A and task-local cryptographic MCP
         run: |
           node --test poc/packages/agent-runtime/test/signed-task-diagnostic-ref.test.mjs
           node --experimental-strip-types --test poc/packages/agent-runtime/test/gateway-tool-client.test.ts poc/packages/agent-runtime/test/private-mcp-task-registry.test.ts poc/packages/agent-runtime/test/adk-specialized-agents.test.ts poc/packages/agent-runtime/test/n2-signed-context-sufficiency.test.ts
           npm --prefix poc/mcp-shared test
           node --test poc/mcp-shared/test/legacy-isolation.test.mjs
-          # R188: obsolete repository MCP test fixtures retired.
-          # Crypto-only VP and signed Gateway FunctionTools remain covered.
-          node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-crypto-mcp-bridge.test.ts poc/packages/agent-runtime/test/private-mcp-worker-http.test.ts
+          # R264: no remote MCP HTTP listener or private worker remains.
+          # Retain canonical A2A no-route and local crypto VP regression coverage.
+          node --experimental-strip-types --test poc/packages/agent-runtime/test/canonical-a2a-no-http-worker.test.ts poc/packages/agent-runtime/test/local-crypto-mcp-bridge.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts poc/packages/orchestrator-runtime/test/orchestrator-gateway-client.test.ts poc/packages/orchestrator-runtime/test/native-child-no-adapter-url.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/a2a-workflow.test.ts poc/packages/orchestrator-runtime/test/trusted-gemini-repair-proposer.test.mjs
       - name: Pilot gate and bounded diagnostics without inference
