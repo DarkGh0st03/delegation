@@ -30,7 +30,9 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/workflow-ui/mock-plan.js",
   ".github/workflows/gemini-paid-shared-mcp-final.yml",
   ".github/workflows/shared-mcp-production-coordinator.yml",
-  ".github/workflows/shared-mcp-real-positive-e2e.yml"
+  ".github/workflows/shared-mcp-real-positive-e2e.yml",
+  "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs"
 ]);
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
@@ -43,7 +45,11 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   ".github/workflows/shared-mcp-production-coordinator.yml",
   ".github/workflows/shared-mcp-real-positive-e2e.yml",
   "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs",
-  "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs"
+  "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
+  "poc/packages/orchestrator-runtime/src/legacy-authority-client.ts",
+  "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts",
+  "poc/packages/orchestrator-runtime/src/permission-templates.ts",
+  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs"
 ]);
 
 
@@ -53,9 +59,7 @@ export const R6_RETIRED_TARGETS=Object.freeze([
  * code must use the signed approved-DAG dispatcher instead.
  * Parsed ESM static edges only; dynamic/external callers still need audit.
  */
-export const R6_ALLOWED_SEQUENTIAL_IMPORTERS=Object.freeze([
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs"
-]);
+export const R6_ALLOWED_SEQUENTIAL_IMPORTERS=Object.freeze([]);
 export function unexpectedSequentialImporters(inventory,allowed=R6_ALLOWED_SEQUENTIAL_IMPORTERS){
   const target="poc/packages/orchestrator-runtime/src/sequential-coordinator.ts";
   const entry=inventory.candidates.find(x=>x.target===target);
@@ -96,9 +100,7 @@ export function unexpectedSequentialRuntimeReferences(
  * historical sequential coordinator and its own regression test.
  * Canonical approved-plan code must never import it via the public barrel.
  */
-export const R6_ALLOWED_HISTORICAL_WORKFLOW_CALLERS=Object.freeze([
-  "poc/packages/orchestrator-runtime/test/workflow.test.ts"
-]);
+export const R6_ALLOWED_HISTORICAL_WORKFLOW_CALLERS=Object.freeze([]);
 export function unexpectedHistoricalWorkflowCallers(
   inventory, allowed=R6_ALLOWED_HISTORICAL_WORKFLOW_CALLERS
 ){
@@ -178,9 +180,7 @@ export function unexpectedTrustedTemplateCallers(inventory){
  * shared with legacy code; never permit a signed canonical caller to
  * import the legacy opt-in gateway wrapper.
  */
-export const R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS=Object.freeze([
-  "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs"
-]);
+export const R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS=Object.freeze([]);
 export function unexpectedHistoricalGatewayCallers(
   inventory,allowed=R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS
 ){

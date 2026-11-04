@@ -130,3 +130,14 @@ Both are physically deleted. Cumulative, disposable-merge and PoC-baseline
 workflows now run `trusted-engineer-authority.test.ts`, covering the
 Engineer-derived approval and delegation boundaries instead. Current signed
 DAG and researcher Account Suspension acceptance remain untouched.
+
+## R175 — make legacy retirement audit executable
+
+The R6 audit now enumerates **every** physically retired sequential
+Coordinator, old paid Gemini script, static-template credential issuer,
+fixed branch/PR writer and obsolete authority-boundary probe. Previous
+negative checks accidentally excluded some deleted modules from
+`R6_LEGACY_CANDIDATES` or `R6_RETIRED_TARGETS`.
+The old allowlists for sequential, workflow and legacy Gateway static
+imports have been emptied: no new executable may silently revive them.
+The audit is part of the free Cumulative Offline workflow.
