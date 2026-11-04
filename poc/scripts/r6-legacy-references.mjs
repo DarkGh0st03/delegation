@@ -41,7 +41,8 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
   ".github/workflows/shared-mcp-production-coordinator.yml",
-  ".github/workflows/shared-mcp-real-positive-e2e.yml"
+  ".github/workflows/shared-mcp-real-positive-e2e.yml",
+  "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs"
 ]);
 
 
@@ -122,7 +123,6 @@ export function unexpectedHistoricalWorkflowCallers(
  * neither is exported through the canonical runtime index.
  */
 export const R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS=Object.freeze([
-  "poc/packages/orchestrator-runtime/test/authority-client.test.ts",
 ]);
 export function unexpectedHistoricalAuthorityCallers(
   inventory,allowed=R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS
@@ -178,7 +178,6 @@ export function unexpectedTrustedTemplateCallers(inventory){
  * import the legacy opt-in gateway wrapper.
  */
 export const R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS=Object.freeze([
-  "poc/packages/orchestrator-runtime/test/orchestrator-gateway-client.test.ts",
   "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs"
 ]);
 export function unexpectedHistoricalGatewayCallers(
@@ -213,7 +212,6 @@ export function unexpectedHistoricalGatewayCallers(
  */
 export const R6_ALLOWED_PRIVATE_GATEWAY_TRANSPORT_CALLERS=Object.freeze([
   "poc/packages/orchestrator-runtime/src/orchestrator-gateway-client.ts",
-  "poc/packages/orchestrator-runtime/src/legacy-orchestrator-gateway-client.ts",
   "poc/packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts"
 ]);
 export function unexpectedPrivateGatewayTransportCallers(

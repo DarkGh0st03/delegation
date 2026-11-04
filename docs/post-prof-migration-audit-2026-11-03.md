@@ -103,3 +103,19 @@ The R6 source inventory now marks removed executables as **expected absent**,
 but still errors if any tracked runnable module imports or configures them.
 Remaining legacy repository MCP per-tool test fixtures and static template
 issuer wrappers are handled separately; they must not re-enter canonical code.
+
+## R173 — frozen IAM Console delegation and protected-Gateway wrappers retired
+
+Deleted the old static `LegacySoftwareEngineerAuthorityBootstrap` /
+`DeterministicOrchestratorAuthorityIssuer` module and its fixed
+`permission-templates.ts` matrix. The legacy fixed branch/PR
+`OrchestratorProtectedGatewayClient` wrapper and its no-longer-invoked
+real-Adapter authority-boundary probe were also removed. The canonical
+`TrustedEngineerAuthoritySession`, immutable signed Task DAG, direct
+Gateway FunctionTools, Rust verifier, OPA and generic Planner remain intact.
+
+Updated legacy regression tests to exercise the current scoped Engineer
+contracts and read-only Planning Gateway boundary rather than asserting
+obsolete behavior. The R6 executable inventory marks all physically
+removed files as **required absent** and still denies live imports/commands
+to those paths. Account Suspension's scripted signed acceptance remains.

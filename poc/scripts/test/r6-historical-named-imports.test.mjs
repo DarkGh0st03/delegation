@@ -84,8 +84,8 @@ test("R6 catches deleted local files and missing checked entrypoints",t=>{
 });
 
 test("R172 excludes physically retired sequential Coordinator scripts",()=>{
-  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,10);
-  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,10);
+  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,9);
+  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,9);
   for(const removed of ["a2a-production-coordinator-mcp-gemini-live.mjs",
    "a2a-production-coordinator-mcp-isolated-real-positive.mjs",
    "a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
@@ -93,7 +93,7 @@ test("R172 excludes physically retired sequential Coordinator scripts",()=>{
     assert.ok(!HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>x.endsWith("/"+removed)));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/human-merge.mjs")));
-  assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
+  assert.ok(!HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/assert-current-authority-boundaries.mjs")));
   for(const name of ["adk-real-mcp-smoke.mjs","adk-isolated-mcp-create-smoke.mjs","adk-isolated-mcp-write-smoke.mjs","adk-isolated-mcp-real-runner-smoke.mjs","a2a-real-mcp-read-smoke.mjs","a2a-three-roles-shared-mcp-read-smoke.mjs","a2a-shared-mcp-isolated-sequential-write-smoke.mjs","assert-researcher-acceptance-negative.mjs"]) {
     assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>x.endsWith("/"+name)),

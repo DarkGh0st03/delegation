@@ -10,7 +10,6 @@ import {dirname,relative,resolve} from "node:path";
 import {fileURLToPath,pathToFileURL} from "node:url";
 
 export const HISTORICAL_RUNTIME_ENTRYPOINTS=Object.freeze([
-  "poc/packages/agent-runtime/scripts/assert-current-authority-boundaries.mjs",
   "poc/packages/agent-runtime/scripts/a2a-real-mcp-read-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-three-roles-shared-mcp-read-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-shared-mcp-isolated-sequential-write-smoke.mjs",
