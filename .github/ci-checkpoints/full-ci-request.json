@@ -1,13 +1,13 @@
 {
   "schema": "delegation-full-ci-checkpoint-v1",
-  "checkpoint": "R219 canonical native Rust VP no-HTTP downgrade and signed D1 same-SHA free gate",
-  "candidate_parent_sha": "d4fc58103e49e8490eae45e2bdff574dec9fb962",
-  "purpose": "One FREE same-SHA post-R215-R218 integration gate. Verify canonical Rust Engineer root, Orchestrator child and root VP, Task-local MCP signed specialist VPs, direct Gateway FunctionTools, OPA, live EVM/Gitea/Docker acceptance and signed D1 recovery. No remote crypto MCP/HTTP issuing downgrade, no paid model calls, no main mutation.",
+  "checkpoint": "R224 final native Rust signed DAG and retired Shared MCP HTTP zero-billing same-SHA gate",
+  "candidate_parent_sha": "346553e18905ef40aec45663e01199d9c9ee4568",
+  "purpose": "ONE free same-SHA release candidate after R220-R223: production ADK native-only, local task MCP, standalone Shared MCP executable retired, no A2A HTTP worker, real Gitea/Docker/EVM/OPA signed DAG, Rust core, and signed D1. Full CI must pass before legacy source deletion. No Gemini/OpenAI API use, no main merge.",
   "workflows": [
     "cumulative-refactoring-offline.yml",
     "functional-signed-dag-e2e.yml",
     "ts2724-signed-d1-targeted.yml"
   ],
   "paid_model_invocation": false,
-  "activation_note": "[full-ci] one zero-billing R219 integration checkpoint; Gemini paid workflows not authorized"
+  "activation_note": "[full-ci] R224 one release-candidate free integrated gate, never a Gemini-paid workflow"
 }
