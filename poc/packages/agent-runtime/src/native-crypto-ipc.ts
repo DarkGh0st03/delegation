@@ -8,7 +8,7 @@ import {createConnection} from "node:net";
  */
 export async function invokeNativeCrypto(
  config:{socketPath:string;token:string;timeoutMs?:number},
- operation:"issue_child"|"create_presentation",body:unknown
+ operation:"issue_child"|"create_presentation"|"read_issued_root"|"read_credential_status",body:unknown
 ):Promise<unknown>{
  const {socketPath,token}=config,timeout=config.timeoutMs??10_000;
  if(typeof socketPath!=="string"||!socketPath.startsWith("/")||
