@@ -170,9 +170,7 @@ test("R225 Engineer directly calls embedded Rust API for prelim/operational root
   }
  };
  const port=createDirectRustEngineerCredentialPort({
-  adapterBaseUrl:"http://127.0.0.1:1",
-  bearerToken:secret,
-  fetchFn:async()=>{throw Error("Adapter HTTP must not be invoked");}
+  bearerToken:secret
  },binding);
  const request={...root("urn:r225:preliminary","925",600),
   permissions:[{operation:"read_repository" as const,resource:uri}]};
@@ -193,8 +191,7 @@ test("R225 Engineer directly calls embedded Rust API for prelim/operational root
 });
 
 test("R225 direct Rust Engineer rejects changed grants and private signer failures without HTTP fallback",async()=>{
- const config={adapterBaseUrl:"http://127.0.0.1:1",
-  bearerToken:"PRIVATE_ENGINEER_BEARER"};
+ const config={bearerToken:"PRIVATE_ENGINEER_BEARER"};
  const initial={...root("urn:r225:root","927",600),
   permissions:[{operation:"read_repository" as const,resource:uri}]};
  const altered=createDirectRustEngineerCredentialPort(config,{
@@ -222,12 +219,38 @@ test("R225 direct Engineer selector never silently downgrades when native addon 
   process.env.ENGINEER_CORE_NATIVE_MODE="1";
   process.env.ADAPTER_ENGINEER_NATIVE_SOCKET="relative.sock";
   assert.throws(()=>createTrustedEngineerCredentialPort({
-   adapterBaseUrl:"http://127.0.0.1:1",bearerToken:"PRIVATE_ENGINEER_BEARER"
+   bearerToken:"PRIVATE_ENGINEER_BEARER"
   }),/Direct Engineer Core requires sole native Rust delegate socket/u);
  }finally{
   if(previousMode===undefined)delete process.env.ENGINEER_CORE_NATIVE_MODE;
   else process.env.ENGINEER_CORE_NATIVE_MODE=previousMode;
   if(previousSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
   else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=previousSocket;
+ }
+});
+
+test("R240 legacy HTTP Engineer fixture needs explicit URL, native direct mode does not",()=>{
+ const priorMode=process.env.ENGINEER_CORE_NATIVE_MODE;
+ const priorSocket=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+ const priorFlag=process.env.APPROVED_RUNNER_NATIVE_MCP;
+ try{
+  delete process.env.ENGINEER_CORE_NATIVE_MODE;
+  delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  assert.throws(()=>createTrustedEngineerCredentialPort({
+   bearerToken:"PRIVATE_ENGINEER_BEARER"
+  }),/Legacy HTTP Engineer fixture requires explicit Adapter URL/u);
+  process.env.ENGINEER_CORE_NATIVE_MODE="1";
+  process.env.ADAPTER_ENGINEER_NATIVE_SOCKET="relative.sock";
+  assert.throws(()=>createTrustedEngineerCredentialPort({
+   bearerToken:"PRIVATE_ENGINEER_BEARER"
+  }),/Direct Engineer Core requires sole native Rust delegate socket/u);
+ }finally{
+  if(priorMode===undefined)delete process.env.ENGINEER_CORE_NATIVE_MODE;
+  else process.env.ENGINEER_CORE_NATIVE_MODE=priorMode;
+  if(priorSocket===undefined)delete process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
+  else process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=priorSocket;
+  if(priorFlag===undefined)delete process.env.APPROVED_RUNNER_NATIVE_MCP;
+  else process.env.APPROVED_RUNNER_NATIVE_MCP=priorFlag;
  }
 });
