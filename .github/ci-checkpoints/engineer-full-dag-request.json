@@ -1,12 +1,12 @@
 {
   "schema": "delegation-embedded-engineer-signed-dag-checkpoint-v1",
-  "checkpoint": "R258 — verify dedicated embedded DAG and independent Gitea review",
-  "candidate_parent_sha": "628294a4731218806678fe3916c8a2416bc0785c",
+  "checkpoint": "R266 — same-SHA native architecture gate after MCP HTTP retirement",
+  "candidate_parent_sha": "4c3f7eff2f5b67dd56e8483c8c80d13b3c8e8e53",
   "workflow": "engineer-embedded-signed-dag-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
   "mode": "ENGINEER_CORE_NATIVE_MODE=1; sole Engineer Rust issuer; native Gateway verifier; Adapter HTTP off",
-  "trigger_reason": "R257 Fast CI passed. Verify the dedicated DAG through independent PR and exact head validation.",
+  "trigger_reason": "R265 Fast CI passed; native signed DAG regression after physical Shared MCP HTTP removal",
   "purpose": "One free Gitea/OPA/Anvil/Docker end-to-end scripted ADK DAG: Software Engineer root via in-process Rust Node-API; agent child/VP via one native Rust owner; Gateway public-only Rust EVM verification and OPA; backend/frontend/test A2A; real Docker acceptance and unmerged PR; no competing Adapter HTTP, no Shared MCP HTTP, no paid model.",
   "exclusions": [
     "No Gemini/OpenAI API calls",

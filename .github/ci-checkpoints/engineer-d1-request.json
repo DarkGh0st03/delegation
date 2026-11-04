@@ -1,8 +1,9 @@
 {
-  "checkpoint": "R261 — validate dedicated D1 review receipt",
-  "candidate_parent_sha": "fab58cc24cacd34a3e61f3bb511d18c7c5802a81",
+  "checkpoint": "R266 — same-SHA native architecture gate after MCP HTTP retirement",
+  "candidate_parent_sha": "4c3f7eff2f5b67dd56e8483c8c80d13b3c8e8e53",
   "positive_dag_run_id": 41889765977,
   "workflow": "engineer-embedded-signed-d1-e2e.yml",
   "paid_model_invocation": false,
-  "activate_once": true
+  "activate_once": true,
+  "verification_scope": "Native Engineer Rust signed D1 repair; same SHA as R266 native EVM and DAG checkpoints"
 }

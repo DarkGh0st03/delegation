@@ -1,7 +1,7 @@
 {
   "schema": "delegation-native-engineer-evm-checkpoint-v1",
-  "checkpoint": "R234 — direct Software Engineer Rust Node-API + native Gateway signed EVM VP and revocation",
-  "candidate_parent_sha": "0df6f47ea4f8de3975e692da4bb033376045df81",
+  "checkpoint": "R266 — same-SHA native architecture gate after MCP HTTP retirement",
+  "candidate_parent_sha": "4c3f7eff2f5b67dd56e8483c8c80d13b3c8e8e53",
   "workflow": "engineer-direct-native-evm-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
@@ -10,5 +10,6 @@
     "No paid API",
     "No main mutation",
     "No Gitea/Docker full signed DAG until this native EVM gate passes"
-  ]
+  ],
+  "verification_scope": "Native Engineer Rust EVM/DC/VP verification; same SHA as R266 signed DAG and D1 checkpoints"
 }
