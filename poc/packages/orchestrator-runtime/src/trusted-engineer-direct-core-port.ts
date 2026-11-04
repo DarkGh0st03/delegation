@@ -56,7 +56,7 @@ export function loadDirectRustEngineerCore():EngineerRustCoreBinding{
 
 /** Injected binding is for OFFLINE tests only; production loads fixed addon. */
 export function createDirectRustEngineerCredentialPort(
- config:AdapterClientConfig, injectedBinding?:EngineerRustCoreBinding
+ config:Pick<AdapterClientConfig,"bearerToken">, injectedBinding?:EngineerRustCoreBinding
 ):EngineerCredentialPort{
  const token=config.bearerToken;
  if(typeof token!=="string"||!token.trim())
