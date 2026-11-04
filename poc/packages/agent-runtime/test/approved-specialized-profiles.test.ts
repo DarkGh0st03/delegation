@@ -38,7 +38,7 @@ test("R198 signed ADK factory binds generic baseline before dynamically using gr
  const {readFileSync}=await import("node:fs");
  const src=readFileSync(new URL("../src/adk-specialized-agents.ts",import.meta.url),"utf8");
  assert.match(src,/signedTask\s*\?\s*APPROVED_SPECIALIZED_AGENT_PROFILES\[config\.role\]/u);
- assert.match(src,/: SPECIALIZED_AGENT_PROFILES\[config\.role\]/u);
+ assert.match(src,/: LEGACY_ACCOUNT_SUSPENSION_PROFILES\[config\.role\]/u);
  assert.match(src,/trustedFilePermissions!==undefined/u);
  assert.doesNotMatch(APPROVED_SPECIALIZED_AGENT_PROFILES.frontend.system_prompt,
   /Account Suspension/u);
