@@ -161,3 +161,45 @@ Adapter HTTP implementation or claiming full migration.
 Only the dedicated `engineer-evm-request.json` checkpoint triggers
 R233 on `push`; ordinary commits do not launch this expensive
 integration. No Google Gemini / paid LLM workflow is involved.
+
+## R235 — first real Gitea/Docker signed DAG on the embedded Engineer topology
+
+The historical `functional-signed-dag-e2e.yml` remains intact and still
+boots the OLD Adapter for backward-compatibility evidence. Its results
+must not be misrepresented as the new architecture.
+
+The new `.github/workflows/engineer-embedded-signed-dag-e2e.yml`
+is intentionally separate and invoked only by an explicit free CI
+checkpoint. It boots disposable Anvil + OPA + real Gitea/Docker
+services, compiles both Rust Node-API addons and starts the public-only
+Gateway. It NEVER starts the old Adapter HTTP process. The trusted
+Account Suspension planner, signed DAG dispatcher, real A2A specialist
+servers and Docker acceptance run with:
+`ENGINEER_CORE_NATIVE_MODE=1` +
+`APPROVED_RUNNER_NATIVE_MCP=1` +
+`GATEWAY_VERIFIER_MODE=core-rust`.
+
+The old combined Gitea harness ran TWO separate planning Node
+processes against one chain, safe only when one long-lived Adapter
+owned private issuer material. In embedded-Engineer mode this would
+create two different Rust signers/status registries and invalidate the
+authority chain. R235 now gates the historical preliminary process
+OFF and runs one final signed-DAG process, whose Software Engineer
+initializes the sole Rust CryptoRuntime **before** any Gateway public
+verifier construction. The parent test maintains the same Gitea/Docker
+fixture but does not own an issuer and does not call Gemini.
+
+Both planning and A2A in-process Gateway transports fail closed
+if an Adapter HTTP URL is requested under direct mode. Fast CI tests
+the startup decision and code/configuration boundaries. The new
+workflow checks real Docker acceptance and unmerged review-only PR,
+not just static source assertions; it filters raw child diagnostic
+logs rather than publishing model, source or bearer details.
+
+**Important:** This remains a **scripted zero-model** Account Suspension
+proof with signed roles. Even its eventual CI success does not prove
+that Gemini autonomously produced correct code or completed D1
+recovery. An independently reviewed D1/repair-E2E on the new topology,
+and the final cleanup of test-only legacy components, are still
+required. Do not delete the Rust `CryptoRuntime` library while
+removing the historical HTTP executable.
