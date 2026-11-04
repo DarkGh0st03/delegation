@@ -9,7 +9,8 @@ import {
   type ControlledToolErrorKind
 } from "./controlled-errors.ts";
 import type { GatewayControlledToolClient, SpecializedToolName } from "./gateway-tool-client.ts";
-import { SPECIALIZED_AGENT_PROFILES, type SpecializedAgentProfile } from "./specialized-agents.ts";
+import type {SpecializedAgentProfile} from "./specialized-agents.ts";
+import {LEGACY_ACCOUNT_SUSPENSION_PROFILES} from "./fixtures/account-suspension-agent-profiles.ts";
 import {APPROVED_SPECIALIZED_AGENT_PROFILES} from "./approved-specialized-profiles.ts";
 import { ControlledToolRegistry } from "./tool-registry.ts";
 
@@ -139,7 +140,7 @@ export function createAdkSpecializedAgent(
   const signedTask=config.trustedFilePermissions!==undefined;
   const baseline=signedTask
     ? APPROVED_SPECIALIZED_AGENT_PROFILES[config.role]
-    : SPECIALIZED_AGENT_PROFILES[config.role];
+    : LEGACY_ACCOUNT_SUSPENSION_PROFILES[config.role];
   if(!baseline)throw new Error("Unknown specialized agent role");
   const branch=validatePrivateApprovedBranch(config.trustedBranch??LEGACY_A2A_BRANCH);
   const scoped=config.trustedTaskPaths!==undefined;
