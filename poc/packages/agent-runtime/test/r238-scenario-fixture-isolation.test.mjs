@@ -34,7 +34,7 @@ test("R238 signed ADK profile and immutable trusted grants are independent of th
  assert.match(adk,/signedTask\s*\?\s*APPROVED_SPECIALIZED_AGENT_PROFILES\[config\.role\]/u);
  assert.match(adk,/: LEGACY_ACCOUNT_SUSPENSION_PROFILES\[config\.role\]/u);
  assert.match(adk,/const grant=permissions===undefined\?null:new Set/u);
- assert.match(adk,/Gateway\/OPA\/DC remain authoritative/u);
+ assert.match(adk,/Gateway\/Verifier\/OPA remain authoritative/u);
  assert.doesNotMatch(roles,/const BRANCH\s*=|Suspend\/Reactivate|frontend\.tsx/iu);
  assert.match(roles,/trusted Orchestrator/u);
 });
