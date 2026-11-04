@@ -70,5 +70,7 @@ test("R200 local crypto MCP cannot expose repository or Docker tools",async()=>{
  assert.match(src,/registerTool\("delegation_create_presentation"/u);
  assert.doesNotMatch(src,/registerTool\("(read_file|update_file|create_file|run_tests)"/u);
  const runtime=readFileSync(new URL("../src/server.ts",import.meta.url),"utf8");
- assert.match(runtime,/mcpTaskRegistry&&options\.adk\?\.mcpCryptoUrl/u);
+ assert.match(runtime,/const mcpTaskRegistry = options\\.mcpTaskSigning/u);
+ assert.match(runtime,/mcpTaskRegistry \\? \\{mcpTaskRegistry\\}/u);
+ assert.doesNotMatch(runtime,/attachPrivateMcpWorker\\(/u);
 });
