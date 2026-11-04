@@ -116,6 +116,11 @@ export class OrchestratorGatewayTransport {
          socketPath.trim()!==socketPath)
         throw new OrchestratorGatewayClientError("Native Rust signer socket invalid");
       this.#nativeSocketPath=socketPath;
+    }else if(process.env.APPROVED_RUNNER_NATIVE_MCP==="1"){
+      // Refuse before Gateway prepare, rather than trying legacy Adapter
+      // signing after a canonical native socket has been omitted.
+      throw new OrchestratorGatewayClientError(
+        "Canonical signed DAG requires native Rust Orchestrator signer socket");
     }
   }
 
