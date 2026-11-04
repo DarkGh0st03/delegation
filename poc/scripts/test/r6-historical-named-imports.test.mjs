@@ -83,10 +83,10 @@ test("R6 catches deleted local files and missing checked entrypoints",t=>{
     ["missing local module","missing audited script"]);
 });
 
-test("R6 audit pins fourteen distinct historical ADK/A2A/MCP, boundary and human merge entrypoints",()=>{
-  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,14);
-  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,14);
-  assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
+test("R169 excludes physically deleted billed sequential MCP entrypoint",()=>{
+  assert.equal(HISTORICAL_RUNTIME_ENTRYPOINTS.length,13);
+  assert.equal(new Set(HISTORICAL_RUNTIME_ENTRYPOINTS).size,13);
+  assert.ok(!HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/a2a-production-coordinator-mcp-gemini-live.mjs")));
   assert.ok(HISTORICAL_RUNTIME_ENTRYPOINTS.some(x=>
     x.endsWith("/scripts/human-merge.mjs")));

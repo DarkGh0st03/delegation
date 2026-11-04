@@ -70,3 +70,21 @@ The proof is scripted/no-AI only: it establishes that infrastructure and
 signed recovery authorization work, **not** that a live Gemini model autonomously
 derives a semantic fix. The manual paid workflow, human approval limitations,
 consent guard and cost risks remain unchanged.
+
+## R169 — obsolete sequential paid-Gemini executable physically deleted
+
+Deleted `poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs` after the signed-DAG paid workflow
+replaced its capability. Updated the two offline workflow syntax checks and
+the protected-merge workflow to use the signed manual-consent and exact-SHA
+CI-gate tests instead. Updated both R6 audit inventories. The canonical
+Gemini workflow is still exclusively manual; no billed inference was invoked.
+
+**R2 blocker identified in real Rust source**: `CryptoRuntime.credentials`
+is a process-local `HashMap` in
+`services/delegation-adapter/src/crypto.rs`. `issue_child`,
+`update_credential_status` and `create_presentation` all resolve their
+parent/target credentials from that same map. Creating an isolated
+Engineer-only native Rust signer while leaving child issuance and VP signing
+in a separate Adapter would break the chain. Native migration must transfer
+the **single** issuer/state owner, not merely duplicate root-signing keys.
+R169 does not claim an unsafe Engineer-native switch.

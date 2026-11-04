@@ -23,7 +23,6 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/orchestrator-runtime/src/account-suspension-preflight.ts",
   "poc/packages/orchestrator-runtime/src/workflow.ts",
   "poc/packages/orchestrator-runtime/scripts/check-account-suspension-reference-scope.mjs",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
@@ -42,7 +41,6 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
  */
 export const R6_ALLOWED_SEQUENTIAL_IMPORTERS=Object.freeze([
   "poc/packages/orchestrator-runtime/test/sequential-coordinator.test.ts",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs"
@@ -117,7 +115,6 @@ export function unexpectedHistoricalWorkflowCallers(
  */
 export const R6_ALLOWED_HISTORICAL_AUTHORITY_IMPORTERS=Object.freeze([
   "poc/packages/orchestrator-runtime/test/authority-client.test.ts",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
@@ -177,7 +174,6 @@ export function unexpectedTrustedTemplateCallers(inventory){
  */
 export const R6_ALLOWED_HISTORICAL_GATEWAY_IMPORTERS=Object.freeze([
   "poc/packages/orchestrator-runtime/test/orchestrator-gateway-client.test.ts",
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
@@ -243,7 +239,6 @@ export function unexpectedPrivateGatewayTransportCallers(
  * may import/load it. The file is retained, not a deletion candidate.
  */
 export const R6_ALLOWED_ACCOUNT_SUSPENSION_PREFLIGHT_CALLERS=Object.freeze([
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
   "poc/packages/orchestrator-runtime/test/account-suspension-preflight.test.ts"
 ]);
 export function unexpectedHistoricalPreflightCallers(

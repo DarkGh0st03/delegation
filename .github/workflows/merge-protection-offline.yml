@@ -14,7 +14,6 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-merge.test.ts'
       - 'poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts'
       - '.github/workflows/gemini-paid-shared-mcp-final.yml'
-      - 'poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs'
       - 'poc/scripts/gemini-thinking-policy.mjs'
   pull_request:
     paths:
@@ -27,7 +26,6 @@ on:
       - 'poc/packages/orchestrator-runtime/test/trusted-merge.test.ts'
       - 'poc/packages/orchestrator-runtime/test/manual-merge-intent.test.ts'
       - '.github/workflows/gemini-paid-shared-mcp-final.yml'
-      - 'poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs'
       - 'poc/scripts/gemini-thinking-policy.mjs'
   workflow_dispatch:
 
@@ -57,70 +55,29 @@ jobs:
         run: npm --prefix poc run orchestrator-runtime:test
       - name: Check human CLI syntax
         run: node --check poc/packages/orchestrator-runtime/scripts/human-merge.mjs
-      - name: Check new paid shared-MCP entrypoint syntax
-        run: node --check poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs
-      - name: Assert live shared-MCP Gemini rejects automatic push
-        shell: bash
-        env:
-          GITHUB_ACTIONS: "true"
-          GITHUB_EVENT_NAME: "push"
-          THESIS_PAID_GEMINI_CONFIRM: "I AUTHORIZE GEMINI API CHARGES"
+      - name: Validate signed Gemini manual-only and exact-SHA preflight (zero inference)
         run: |
-          if node --experimental-strip-types poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs > /tmp/shared-mcp-gemini-guard.log 2>&1; then
-            echo "ERROR: billed shared-MCP entrypoint accepted an automatic push"
-            exit 1
-          fi
-          if ! grep -q 'Live Gemini requires explicitly authorized manual GitHub dispatch' /tmp/shared-mcp-gemini-guard.log; then
-            echo "ERROR: unexpected paid shared-MCP guard failure"
-            exit 1
-          fi
-          echo "PASS: automatic shared-MCP paid inference refused"
-      - name: Verify manual Gemini fails before inference when API key is absent
-        shell: bash
-        env:
-          GITHUB_ACTIONS: "true"
-          GITHUB_EVENT_NAME: workflow_dispatch
-          GITHUB_RUN_ATTEMPT: "1"
-          GITHUB_REPOSITORY: DarkGh0st03/delegation
-          GITHUB_REF: refs/heads/feat/shared-mcp-spike
-          THESIS_PAID_GEMINI_CONFIRM: "I AUTHORIZE GEMINI API CHARGES"
-        run: |
-          unset GEMINI_API_KEY
-          # env -i prevents inherited GitHub event metadata from a push job
-          # from overriding this synthetic, zero-credential dispatch test.
-          if env -i PATH="$PATH" HOME="$HOME" \
-              GITHUB_ACTIONS=true GITHUB_EVENT_NAME=workflow_dispatch \
-              GITHUB_RUN_ATTEMPT=1 GITHUB_REPOSITORY=DarkGh0st03/delegation \
-              GITHUB_REF=refs/heads/feat/shared-mcp-spike \
-              THESIS_PAID_GEMINI_CONFIRM="I AUTHORIZE GEMINI API CHARGES" \
-              node --experimental-strip-types poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs > /tmp/paid-no-key.log 2>&1; then
-            echo "ERROR: manual Gemini run proceeded without credential"
-            exit 1
-          fi
-          if ! grep -q 'Missing Gemini API key for manual run' /tmp/paid-no-key.log; then
-            echo "ERROR: expected missing-key preflight was not reached"
-            grep -m1 'Error:' /tmp/paid-no-key.log | cut -c1-170 || true
-            exit 1
-          fi
-          echo "PASS: manual paid run requires an explicit API credential"
-
-      - name: Assert manual paid workflow has no automatic trigger
+          node --test poc/scripts/test/signed-gemini-pilot-consent.test.mjs
+          node --test poc/scripts/test/signed-gemini-pilot-ci-gate.test.mjs
+          node --check poc/scripts/signed-gemini-pilot-consent.mjs
+          node --check poc/scripts/signed-gemini-pilot-ci-gate.mjs
+      - name: Prohibit automatically triggered paid Gemini workflows
         shell: bash
         run: |
           node - <<'NODE'
           const fs=require("node:fs"),assert=require("node:assert/strict");
           const text=fs.readFileSync(".github/workflows/gemini-paid-shared-mcp-final.yml","utf8");
-          const match=/^on:\s*\n([\s\S]*?)^permissions:/m.exec(text);
-          assert.ok(match,"Manual Gemini workflow trigger block missing");
-          assert.match(match[1],/^  workflow_dispatch:/m);
-          assert.doesNotMatch(match[1],/^  (push|schedule|pull_request|workflow_run|workflow_call):/m);
-          const source=fs.readFileSync("poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs","utf8");
-          assert.doesNotMatch(source,/ACCOUNT_SUSPENSION_REFERENCE_FILES|FixedRoleModel/);
-          assert.match(source,/createGeminiAdkModel/);
-          assert.match(source,/createSharedMcpHttpServer/);
+          const triggers=/^on:\s*\n([\s\S]*?)^permissions:/m.exec(text);
+          assert.ok(triggers,"paid workflow trigger missing");
+          assert.match(triggers[1],/^  workflow_dispatch:/m);
+          assert.doesNotMatch(triggers[1],/^  (push|schedule|pull_request|workflow_run|workflow_call):/m);
           assert.match(text,/github\.run_attempt == 1/);
           assert.match(text,/inputs\.authorization == 'I AUTHORIZE GEMINI API CHARGES'/);
-          console.log("PASS: current paid workflow is manual-only");
+          const consent=fs.readFileSync("poc/scripts/signed-gemini-pilot-consent.mjs","utf8");
+          const gate=fs.readFileSync("poc/scripts/signed-gemini-pilot-ci-gate.mjs","utf8");
+          assert.match(consent,/GITHUB_EVENT_NAME!=="workflow_dispatch"/);
+          assert.match(gate,/verifySignedGeminiPilotConsent/);
+          console.log("PASS: signed-DAG Gemini remains manual-only, with consent and exact-SHA gate");
           NODE
       - name: Prove CLI denies accidental untrusted local execution
         shell: bash

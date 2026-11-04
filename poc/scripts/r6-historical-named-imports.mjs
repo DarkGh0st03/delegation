@@ -10,7 +10,6 @@ import {dirname,relative,resolve} from "node:path";
 import {fileURLToPath,pathToFileURL} from "node:url";
 
 export const HISTORICAL_RUNTIME_ENTRYPOINTS=Object.freeze([
-  "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-gemini-live.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-real-positive.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-pr-open-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-production-coordinator-mcp-isolated-smoke.mjs",
