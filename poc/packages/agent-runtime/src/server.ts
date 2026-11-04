@@ -117,9 +117,7 @@ export async function startSpecializedAgentServer(
   );
 
   const app = express();
-  if (mcpTaskRegistry) attachPrivateMcpWorker(
-    app,mcpTaskRegistry,options.adk?.mcpSharedUrl?"legacy":"crypto"
-  );
+  if (mcpTaskRegistry) attachPrivateMcpWorker(app,mcpTaskRegistry);
   app.use(
     `/${AGENT_CARD_PATH}`,
     agentCardHandler({ agentCardProvider: requestHandler })

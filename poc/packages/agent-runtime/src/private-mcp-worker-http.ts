@@ -2,13 +2,11 @@ import {toolFailureReasonFields} from "../../../mcp-shared/src/tool-failure-reas
 import type {Express} from "express";
 import express from "express";
 import {ControlledToolError} from "./controlled-errors.ts";
-import {safeRunnerFailedPhaseHint} from "./safe-runner-failure.ts";
 import {PrivateMcpTaskError,PrivateMcpTaskRegistry} from "./private-mcp-task-registry.ts";
 
 /** The only bridge from the shared MCP service into private per-A2A-task state. */
 export function attachPrivateMcpWorker(
- app:Express,registry:PrivateMcpTaskRegistry,
- profile:"crypto"|"legacy"="crypto"
+ app:Express,registry:PrivateMcpTaskRegistry
 ):void {
   // The crypto profile never receives signing keys or signed VP bytes.
   // It calls this authenticated private worker, which returns only proof_ref.
@@ -32,32 +30,4 @@ export function attachPrivateMcpWorker(
       }
     }
   );
-  // Repo and Runner routing is archival only: never register it for a
-  // crypto-only Agent runtime, even if a valid task bearer is presented.
-  if(profile!=="legacy")return;
-  app.post("/internal/mcp-tool-call",express.json({limit:"128kb",strict:true}),async(req,res)=>{
-    res.setHeader("cache-control","no-store");
-    try {
-      const result=await registry.invoke(req.header("authorization"),req.body);
-      res.status(200).json({ok:true,result});
-    } catch(error) {
-      if (error instanceof PrivateMcpTaskError) {
-        const status=error.kind==="unauthorized"?401:error.kind==="inactive_task"?403:400;
-        res.status(status).json({ok:false,error:{kind:error.kind,...toolFailureReasonFields(error)}});
-      } else if (error instanceof ControlledToolError) {
-        const status=error.kind==="authorization_denied"?403:
-          error.kind==="invalid_tool_call"?400:
-          error.kind==="tests_failed"?422:503;
-        // Only the already-whitelisted Runner phase may cross the private
-        // worker boundary. Never forward diagnostics/logs/source/code.
-        const hint=error.kind==="tests_failed"
-          ?safeRunnerFailedPhaseHint(error.details):undefined;
-        res.status(status).json({ok:false,error:{
-          kind:error.kind,...toolFailureReasonFields(error),...(hint?{details:hint}:{})
-        }});
-      } else {
-        res.status(503).json({ok:false,error:{kind:"tool_unavailable"}});
-      }
-    }
-  });
 }

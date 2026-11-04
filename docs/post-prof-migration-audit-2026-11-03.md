@@ -257,3 +257,20 @@ MCPToolset branch, the unused private repository worker endpoint and
 `PrivateMcpTaskRegistry.invoke`. These require migration/removal of
 legacy unit fixtures without touching the crypto task token/proof reference
 path. This does not demonstrate a billed Gemini E2E pilot.
+
+## R189 — remove private MCP repository/Runner HTTP worker route
+
+Deleted the optional `/internal/mcp-tool-call` route from
+`private-mcp-worker-http.ts`. `startSpecializedAgentServer` now
+always mounts the authenticated, VP-only
+`/internal/mcp-crypto-call` endpoint when its trusted Task registry is
+present, regardless of any old internal MCP configuration. The old
+worker-side parser and Runner failure-hint forwarding were removed from
+this HTTP bridge; the canonical Gateway/Runner diagnostic code is kept
+elsewhere. A valid signed bearer cannot reach the deleted repository
+endpoint (404); forged crypto bearers fail closed (401). Fast CI now
+tests these negative properties directly.
+
+`PrivateMcpTaskRegistry.invoke` remains as an unexposed legacy unit-test
+method; the present patch removes its HTTP reachability, not yet that
+internal implementation. The crypto proof_ref lifecycle is unchanged.

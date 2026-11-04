@@ -51,7 +51,7 @@ jobs:
           node --test poc/mcp-shared/test/legacy-isolation.test.mjs
           # R188: obsolete repository MCP test fixtures retired.
           # Crypto-only VP and signed Gateway FunctionTools remain covered.
-          node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-crypto-mcp-bridge.test.ts
+          node --experimental-strip-types --test poc/packages/agent-runtime/test/trusted-crypto-mcp-bridge.test.ts poc/packages/agent-runtime/test/private-mcp-worker-http.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-engineer-crypto-port.test.ts poc/packages/orchestrator-runtime/test/trusted-engineer-authority.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/a2a-workflow.test.ts poc/packages/orchestrator-runtime/test/trusted-gemini-repair-proposer.test.mjs
       - name: Pilot gate and bounded diagnostics without inference
