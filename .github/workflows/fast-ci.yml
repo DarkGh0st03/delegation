@@ -37,7 +37,8 @@ jobs:
           npm --prefix poc run audit:r6:types
           npm --prefix poc run audit:r6:runtime-named
           node --test poc/scripts/test/r165-mcp-factory-profile-audit.test.mjs
-          node --experimental-strip-types --test poc/packages/agent-runtime/test/approved-specialized-profiles.test.ts poc/packages/agent-runtime/test/local-crypto-mcp-bridge.test.ts poc/packages/agent-runtime/test/native-crypto-ipc.test.ts
+          node --experimental-strip-types --test poc/packages/agent-runtime/test/approved-specialized-profiles.test.ts poc/packages/agent-runtime/test/specialized-agents.test.ts poc/packages/agent-runtime/test/local-crypto-mcp-bridge.test.ts poc/packages/agent-runtime/test/native-crypto-ipc.test.ts
+          node --test poc/packages/agent-runtime/test/r238-scenario-fixture-isolation.test.mjs
           node --test poc/scripts/test/r180-production-mcp-boundary.test.mjs
           node --test poc/scripts/test/r226-legacy-crypto-import-audit.test.mjs
           node --test poc/apps/test-runner-controller/test/direct-engineer-owner-pass-selector.test.mjs
