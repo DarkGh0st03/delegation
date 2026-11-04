@@ -7,8 +7,10 @@ import {
   type SpecializedAgentRole
 } from "./contracts.ts";
 
-import {LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_CONTENT}
- from "./fixtures/account-suspension-agent-cards.ts";
+import {
+ LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_CONTENT,
+ LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_TAGS
+} from "./fixtures/account-suspension-agent-cards.ts";
 
 const ROLE_CONFIG = {
   backend:{name:"Backend Development Agent",did:"did:thesis:backend-agent"},
@@ -106,7 +108,7 @@ export function createSpecializedAgentCard(
         description: skill?.description ?? legacy!.description,
         tags: approved
           ? ["thesis", "software-engineering", "delegated-authorization", role]
-          : ["thesis", "iam", "account-suspension", role],
+          : [...LEGACY_ACCOUNT_SUSPENSION_AGENT_CARD_TAGS, role],
         examples: [skill?.example ?? legacy!.example],
         inputModes: ["application/json"],
         outputModes: ["application/json"],
