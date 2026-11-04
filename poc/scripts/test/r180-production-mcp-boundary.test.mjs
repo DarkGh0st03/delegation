@@ -25,11 +25,12 @@ test("R180 production A2A cannot register model-facing repository MCP tools",()=
  assert.match(flags,/production_adk_requires_native_rust_crypto/u);
  assert.match(flags,/production_adk_requires_task_local_crypto_mcp/u);
 });
-test("R221 isolated legacy crypto HTTP compatibility modules remain testable but not deployable",()=>{
+test("R262 remote crypto bridge retired; legacy HTTP compatibility remains isolated",()=>{
  assert.equal(existsSync(new URL("poc/mcp-shared/src/main.ts",root)),false);
  const listener=read("poc/mcp-shared/src/http-server.ts");
  const worker=read("poc/packages/agent-runtime/src/private-mcp-worker-http.ts");
- const bridge=read("poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts");
+ const localBridge=read("poc/packages/agent-runtime/src/local-crypto-mcp-bridge.ts");
+ assert.equal(existsSync(new URL("poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts",root)),false);
 
  assert.doesNotMatch(listener,/^import \{registerLegacyRepositoryTools\}/mu);
  assert.match(listener,/router\.createPresentation\(claims,token,args\)/u);
@@ -39,8 +40,8 @@ test("R221 isolated legacy crypto HTTP compatibility modules remain testable but
  const registry=read("poc/packages/agent-runtime/src/private-mcp-task-registry.ts");
  assert.doesNotMatch(registry,/async invoke\(/u);
  assert.match(registry,/async invokeCrypto\(/u);
- assert.match(bridge,/stageGatewayChallenge\(this\.#taskId,prepared\)/u);
- assert.match(bridge,/takeSignedPresentation/u);
+ assert.match(localBridge,/stageGatewayChallenge\(taskId,prepared\)/u);
+ assert.match(localBridge,/takeSignedPresentation\(taskId,value\.proof_ref\)/u);
 });
 
 test("R222 canonical A2A library excludes every Shared MCP and HTTP worker route",()=>{

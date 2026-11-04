@@ -1,89 +1,58 @@
-# Shared MCP — cryptographic delegation only (R197)
+# Delegation — cryptographic MCP boundary (R262)
 
-## Supported architecture
+## Canonical approved-plan architecture
 
-The standalone MCP service is **crypto-only**. It advertises exactly
-`delegation_create_presentation`, bound to an authenticated signed Task.
-The former MCP repository/Runner tools (`read_file`, `update_file`,
-`create_file`, `run_tests`) were physically retired from this server
-and its private Agent Worker. They are implemented as controlled ADK
-**FunctionTools → Gateway → Rust verifier → OPA**, independently of MCP.
+The approved signed DAG uses **task-local, in-process MCP**, not a
+standalone Shared MCP HTTP service:
 
 ```text
-Signed approved Task / ADK specialized agent
-   ├─ FunctionTools → Gateway prepare → verification/OPA
-   │                              └─ Gateway execute → Gitea / exact-SHA Docker Runner
-   └─ TrustedCryptoMcpBridge → crypto-only MCP → private Task worker
-                                        └─ trusted Rust Adapter evidence signer
-                                             → opaque proof_ref (VP never exposed to model)
+Software Engineer (trusted host)
+   → delegation-engineer.node → one Rust CryptoRuntime
+   → preliminary/operational root DC issue/revoke (Engineer only)
+
+Orchestrator → trusted signed Task DAG
+   → owner-private, one-shot crypto MCP → authenticated native Rust Child DC
+Backend / Frontend / Test (signed A2A Task)
+   ├─ approved Gateway FunctionTools → Gateway → public Rust verifier → OPA
+   │                                      → Gitea / exact-SHA Docker Runner
+   └─ LocalCryptoMcpBridge (one-shot MCP SDK) → private task registry
+        → role-authenticated native Rust socket (same CryptoRuntime)
+        → signed VP used privately for Gateway Execute
 ```
 
-For each signing request, the trusted Gateway-prepared challenge is
-registered in `PrivateMcpTaskRegistry` by the private runtime.
-The MCP client may only supply the previously staged `request_id`,
-not the credential, operation, audience, resource URI or challenge.
-The private worker validates the signed Task bearer, role, active Task
-and single-use challenge before invoking its trusted signer. Signed VP
-bytes remain in the private process; MCP returns an opaque
-`proof_ref` and safe metadata. Only the trusted in-process consumer
-may retrieve the VP once using
-`takeSignedPresentation(taskId,proofRef)`.
+The native Gateway verifier is **public-only** and independent of the
+Engineer-owned signer. The model cannot call root issuance, alter delegated
+permissions, read signing keys or access VP bytes. The MCP catalog offers
+only `delegation_create_presentation`; repository/Runner tools belong to
+the Gateway FunctionTools, with signed plan and OPA enforcement.
 
-The shared service has no delegated credential, status-list secret,
-Adapter bearer, Git provider token, source-file contents or Docker
-Runner execution authority. Gateway + Core Rust + OPA remain
-authoritative; a Task routing JWT is not a delegated permission.
+Production implementation: `poc/packages/agent-runtime/src/local-crypto-mcp-bridge.ts`,
+`private-mcp-task-registry.ts`, `native-crypto-ipc.ts`,
+`poc/mcp-shared/src/owner-private-child-mcp.ts`, and
+`poc/packages/orchestrator-runtime/src/trusted-engineer-direct-core-port.ts`.
+There is **no** `poc/mcp-shared/src/main.ts` executable or npm `start`
+command. The obsolete remote `TrustedCryptoMcpBridge` SDK client has
+also been physically removed.
 
-## Run the supported server
+## Compatibility remaining outside the canonical runtime
 
-```sh
-npm --prefix poc/mcp-shared ci --ignore-scripts --no-audit --no-fund
-npm --prefix poc/mcp-shared test
-MCP_TOOL_PROFILE=crypto npm --prefix poc/mcp-shared start
-```
+The legacy `poc/mcp-shared/src/http-server.ts`,
+`crypto-worker-router.ts`, and the agent's
+`private-mcp-worker-http.ts` are retained only by isolated historical
+HTTP regressions. They do **not** run in the signed A2A/Engineer DAG.
+Do not re-enable an HTTP MCP listener, Adapter URL or model-facing
+repository MCP tool to make an old fixture pass. The historical Rust
+Adapter HTTP implementation also remains pending its own deletion gate;
+its underlying Rust `CryptoRuntime` library must be preserved.
 
-The default profile is also `crypto`. `MCP_TOOL_PROFILE=legacy`
-is **rejected**, not a supported opt-in. Configure
-`MCP_BACKEND_PUBLIC_KEY`, `MCP_FRONTEND_PUBLIC_KEY`,
-`MCP_TEST_PUBLIC_KEY` and the authenticated
-`MCP_<ROLE>_WORKER_URL` endpoints before starting the listener.
-The default bind address is loopback `127.0.0.1:8097`.
+## Verification
 
-On the A2A side, the only supported MCP endpoint configuration is
-`ADK_MCP_CRYPTO_URL` plus the corresponding trusted Task signing keys.
-`ADK_MCP_SHARED_URL` and the old `ADK_MCP_UPDATE_FILE`,
-`ADK_MCP_CREATE_FILE`, `ADK_MCP_RUN_TESTS` selectors cannot
-enable repository MCP routing. Internal ADK library callers supplying
-retired repository MCP options also fail closed.
+Use the **free** task-local MCP and native Rust regressions, Fast CI,
+and the Engineer-embedded signed Gitea/Docker DAG and D1 workflows.
+The 4 November R258 positive DAG and R261 D1 both succeeded on their
+respective SHAs; a new source change still needs its own green Fast CI
+and a final consolidated same-SHA checkpoint. These scripted tests
+do not certify autonomous Gemini repair.
 
-Key source boundaries:
-- `src/main.ts`: validated crypto-only launcher
-- `src/http-server.ts`: official MCP SDK server; one crypto tool
-- `src/crypto-catalog.ts`: strict presentation request schema
-- `src/crypto-worker-router.ts`: role/task-bound private crypto worker
-- `src/task-token.ts`: short-lived signed Task JWT
-- `poc/packages/agent-runtime/src/private-mcp-worker-http.ts`:
-  `/internal/mcp-crypto-call` only
-- `poc/packages/agent-runtime/src/private-mcp-task-registry.ts`:
-  active-task challenge and one-time private VP custody
-
-There is no `task-router.ts`, `legacy-repository-tools.ts`,
-repository `/internal/mcp-tool-call` route, model-facing
-`MCPToolset`, or repository MCP argument catalog in this supported
-implementation. Historic source and experiment results remain in Git
-history, not in executable entrypoints.
-
-## Verification and limits
-
-The free `Cryptographic MCP Profile (Offline)`,
-`Trusted Crypto MCP Gateway Bridge (Offline)`, Fast CI and signed
-Functional DAG/Recovery workflows test the relevant components and
-negative authorization behavior. Earlier successful runs validate
-their **own** commit hashes, not newer changes. The R197 same-SHA
-full integration checkpoint is the release verification gate.
-
-These scripted tests do not establish that Gemini has successfully
-completed a fully autonomous paid end-to-end execution and repair.
-Neither an MCP routing token nor a Task-scoped cryptographic VP
-proves a model's internal reasoning or establishes automatic merge
-authority. All paid Gemini workflows require separate explicit consent.
+No paid Gemini invocation, `main` merge, automatic PR merge or new
+experiment is authorized by this cleanup.

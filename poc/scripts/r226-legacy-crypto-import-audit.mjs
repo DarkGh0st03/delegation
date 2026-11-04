@@ -17,7 +17,6 @@ const RETIRED=Object.freeze([
  "mcp-shared/src/crypto-worker-router.ts"
 ]);
 const COMPAT=Object.freeze(new Set([
- "poc/packages/agent-runtime/src/trusted-crypto-mcp-bridge.ts",
  "poc/packages/agent-runtime/src/private-mcp-worker-http.ts",
  "poc/mcp-shared/src/http-server.ts",
  "poc/mcp-shared/src/crypto-worker-router.ts",
