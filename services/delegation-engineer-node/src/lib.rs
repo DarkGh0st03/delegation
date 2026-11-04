@@ -136,7 +136,7 @@ fn run_owned_runtime(
         }
         // The same runtime handles only Orchestrator/Agent commands here;
         // root operations arrive solely over the native Engineer API above.
-        if listener.poll(&config, &mut crypto).is_err() {
+        if listener.poll_delegates_only(&config, &mut crypto).is_err() {
             return;
         }
         thread::sleep(Duration::from_millis(10));
