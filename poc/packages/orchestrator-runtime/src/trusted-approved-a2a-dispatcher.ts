@@ -129,7 +129,7 @@ export class TrustedApprovedA2ADispatcher {
       "roleRunner"|"coordinator"> & {
       coordinator:TrustedExecutionCoordinator;
       a2a:ProtectedA2AClientPort;
-      adapter:{adapterBaseUrl:string;bearerToken:string;
+      adapter:{adapterBaseUrl?:string;bearerToken:string;
         fetchFn?:typeof fetch;timeoutMs?:number};
     }
   ){
