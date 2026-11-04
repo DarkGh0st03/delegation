@@ -1,7 +1,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
+import {readFileSync,existsSync} from "node:fs";
 
 const root=new URL("../../../",import.meta.url);
 const read=path=>readFileSync(new URL(path,root),"utf8");
@@ -47,4 +47,10 @@ test("R185 signed approved-plan library entrypoint also rejects legacy repositor
  assert.match(server,/legacy_repository_mcp_retired/u);
  assert.match(server,/Object\.prototype\.hasOwnProperty\.call\(options\.adk,key\)/u);
  assert.match(server,/attachPrivateMcpWorker\(/u);
+});
+
+test("R196 orphaned repository MCP transports and normalizers remain absent",()=>{
+ const names=["poc/packages/agent-runtime/src/mcp-create-result.ts","poc/packages/agent-runtime/test/mcp-create-result.test.ts","poc/packages/agent-runtime/src/mcp-read-result.ts","poc/packages/agent-runtime/test/mcp-read-result.test.ts","poc/packages/agent-runtime/src/mcp-run-tests-result.ts","poc/packages/agent-runtime/test/mcp-run-tests-result.test.ts","poc/packages/agent-runtime/src/mcp-write-result.ts","poc/packages/agent-runtime/test/mcp-write-result.test.ts","poc/packages/agent-runtime/src/mcp-task-fetch.ts","poc/packages/agent-runtime/test/mcp-task-fetch.test.ts","poc/packages/agent-runtime/src/timed-mcp-run-tests.ts","poc/packages/agent-runtime/test/timed-mcp-run-tests.test.ts"];
+ for(const path of names)
+  assert.equal(existsSync(new URL(path,root)),false,"Unexpected retired MCP module "+path);
 });

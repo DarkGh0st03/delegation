@@ -355,3 +355,20 @@ The historical MCP-enabled agent tests have been migrated to the direct
 Gateway path, including preparatory Test withholding `run_tests`
 and exact signed file/branch grants. Crypto-only VP signing remains in
 the separate trusted Task MCP bridge; this is not a live Gemini pilot.
+
+## R196 — delete orphaned repository MCP transport and normalization modules
+
+Following R195's removal of the only runtime import graph, the six
+old repository/Runner MCP helper modules and their six coupled unit
+test files are deleted: `mcp-read-result`, `mcp-write-result`,
+`mcp-create-result`, `mcp-run-tests-result`,
+`mcp-task-fetch` and `timed-mcp-run-tests`.
+The transport/callback code had previously been removed from the ADK
+model-facing agent, and current Gateway direct tools and Runner
+diagnostics remain in their active modules and test suites.
+
+R6 explicitly checks these twelve removed files have no executable
+callers, while the R180 Fast CI boundary checks their absence.
+The crypto-only MCP SDK client, private proof-ref and signed Task
+bearer are NOT part of this deletion. This does not establish
+real-model autonomous D1 success or revalidate the full CI on this SHA.

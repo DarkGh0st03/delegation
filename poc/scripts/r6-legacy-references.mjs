@@ -60,7 +60,19 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/mcp-shared/src/catalog.ts",
   "poc/mcp-shared/test/catalog.test.ts",
   "poc/mcp-shared/test/mcp-create-catalog.test.ts",
-  "poc/mcp-shared/test/mcp-run-tests-catalog.test.ts"
+  "poc/mcp-shared/test/mcp-run-tests-catalog.test.ts",
+  "poc/packages/agent-runtime/src/mcp-create-result.ts",
+  "poc/packages/agent-runtime/test/mcp-create-result.test.ts",
+  "poc/packages/agent-runtime/src/mcp-read-result.ts",
+  "poc/packages/agent-runtime/test/mcp-read-result.test.ts",
+  "poc/packages/agent-runtime/src/mcp-run-tests-result.ts",
+  "poc/packages/agent-runtime/test/mcp-run-tests-result.test.ts",
+  "poc/packages/agent-runtime/src/mcp-write-result.ts",
+  "poc/packages/agent-runtime/test/mcp-write-result.test.ts",
+  "poc/packages/agent-runtime/src/mcp-task-fetch.ts",
+  "poc/packages/agent-runtime/test/mcp-task-fetch.test.ts",
+  "poc/packages/agent-runtime/src/timed-mcp-run-tests.ts",
+  "poc/packages/agent-runtime/test/timed-mcp-run-tests.test.ts"
 ]);
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
@@ -105,7 +117,19 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   "poc/mcp-shared/src/catalog.ts",
   "poc/mcp-shared/test/catalog.test.ts",
   "poc/mcp-shared/test/mcp-create-catalog.test.ts",
-  "poc/mcp-shared/test/mcp-run-tests-catalog.test.ts"
+  "poc/mcp-shared/test/mcp-run-tests-catalog.test.ts",
+  "poc/packages/agent-runtime/src/mcp-create-result.ts",
+  "poc/packages/agent-runtime/test/mcp-create-result.test.ts",
+  "poc/packages/agent-runtime/src/mcp-read-result.ts",
+  "poc/packages/agent-runtime/test/mcp-read-result.test.ts",
+  "poc/packages/agent-runtime/src/mcp-run-tests-result.ts",
+  "poc/packages/agent-runtime/test/mcp-run-tests-result.test.ts",
+  "poc/packages/agent-runtime/src/mcp-write-result.ts",
+  "poc/packages/agent-runtime/test/mcp-write-result.test.ts",
+  "poc/packages/agent-runtime/src/mcp-task-fetch.ts",
+  "poc/packages/agent-runtime/test/mcp-task-fetch.test.ts",
+  "poc/packages/agent-runtime/src/timed-mcp-run-tests.ts",
+  "poc/packages/agent-runtime/test/timed-mcp-run-tests.test.ts"
 ]);
 
 
