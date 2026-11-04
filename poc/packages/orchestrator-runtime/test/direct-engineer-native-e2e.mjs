@@ -79,10 +79,25 @@ const root={
  credential_status:status(1915),permissions:[permission]
 };
 try{
- binding.start_engineer_core();
+ // The live EVM proof goes through the SAME production selector used by
+ // TrustedEngineerAuthoritySession, rather than calling the addon only as
+ // a raw test fixture. This also checks native-mode bootstrapping.
+ let engineerPort;
+ if(liveEvm){
+  const {createTrustedEngineerCredentialPort}=await import(
+   "../src/trusted-engineer-crypto-port.ts");
+  engineerPort=createTrustedEngineerCredentialPort({
+   adapterBaseUrl:"http://127.0.0.1:1",
+   bearerToken:tokens.engineer
+  });
+ }else{
+  binding.start_engineer_core();
+ }
  await delay(20);
- const rootIssued=JSON.parse(await binding.issue_engineer_root(
-  tokens.engineer,JSON.stringify(root)));
+ const rootIssued=liveEvm
+  ? await engineerPort.issueScopedOrchestratorRoot(root)
+  : JSON.parse(await binding.issue_engineer_root(
+     tokens.engineer,JSON.stringify(root)));
  assert.equal(rootIssued.id,root.credential_id);
 
  const inspected=await invokeSocket(tokens.gateway,"read_issued_root",{
@@ -168,11 +183,16 @@ try{
   credential_status:status(1917)
  });
  assert.equal(forbidden.ok,false,"Only direct Engineer API may issue root");
- const revoked=JSON.parse(await binding.revoke_engineer_root(
-  tokens.engineer,JSON.stringify({credential_id:root.credential_id,status_set:true})));
- assert.equal(revoked.credential_id,root.credential_id);
- assert.equal(revoked.status_set,true);
- assert.equal(revoked.status_purpose,"revocation");
+ if(liveEvm){
+  // Trusted Engineer credential port validates the Rust revocation receipt.
+  await engineerPort.revokeRoot(root.credential_id);
+ }else{
+  const revoked=JSON.parse(await binding.revoke_engineer_root(
+   tokens.engineer,JSON.stringify({credential_id:root.credential_id,status_set:true})));
+  assert.equal(revoked.credential_id,root.credential_id);
+  assert.equal(revoked.status_set,true);
+  assert.equal(revoked.status_purpose,"revocation");
+ }
  const observedRevocation=await invokeSocket(tokens.gateway,
   "read_credential_status",{credential_id:root.credential_id});
  assert.equal(observedRevocation.ok,true);
@@ -207,7 +227,8 @@ try{
   evm_anchored_status:liveEvm,
   independent_native_gateway_verification:liveEvm,
   native_gateway_issued_root_reader:liveEvm,
-  native_gateway_live_revocation_reader:liveEvm
+  native_gateway_live_revocation_reader:liveEvm,
+  production_engineer_core_selector:liveEvm
  })+"\n");
 }finally{
  // The private Rust runtime belongs to this Node process, not to an HTTP
