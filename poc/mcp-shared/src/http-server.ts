@@ -4,26 +4,25 @@ import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {z} from "zod";
 import {StreamableHTTPServerTransport} from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {bearerToken, verifyTaskToken, type VerificationKeys} from "./task-token.ts";
-import type {TaskRouter} from "./task-router.ts";
+import type {CryptoWorkerRouter} from "./crypto-worker-router.ts";
 
-/** Crypto-only in production; TaskRouter remains a historical fixture. */
+/** R188 no repository/Runner routing in the shared MCP factory. */
 export type SharedMcpConfig={
-  verificationKeys:VerificationKeys;
-} & (
- {profile:"crypto";router:Pick<TaskRouter,"createPresentation">}
- |{profile:"legacy";router:TaskRouter}
-);
+ verificationKeys:VerificationKeys;
+ profile:"crypto";
+ router:Pick<CryptoWorkerRouter,"createPresentation">;
+};
 function reply(res:ServerResponse,status:number,body:unknown) {
   res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});
   res.end(JSON.stringify(body));
 }
 /** One long-running shared HTTP listener; stateless per-request MCP transports. */
 export function createSharedMcpHttpServer(config:SharedMcpConfig) {
-  if(config?.profile!=="legacy"&&config?.profile!=="crypto")
+  if(config?.profile!=="crypto")
     throw Error("explicit_mcp_profile_required");
   return createServer(async(req,res)=>{
     if (req.method==="GET" && req.url==="/health") {
-      reply(res,200,{status:"ok",service:"thesis-shared-mcp",tool_count:config.profile==="crypto"?1:4,profile:config.profile}); return;
+      reply(res,200,{status:"ok",service:"thesis-shared-mcp",tool_count:1,profile:config.profile}); return;
     }
     if (req.url!=="/mcp") {reply(res,404,{error:"not_found"});return;}
     // MCP Streamable HTTP requires protecting local listeners from
@@ -56,13 +55,6 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
       reply(res,400,{error:"invalid_or_oversized_mcp_json"});return;
     }
     const mcp=new McpServer({name:"thesis-shared-mcp",version:"0.1.0"});
-    if(config.profile==="legacy") {
-      // Historical-only tools: completely separate module, never enabled by
-      // default or by the signed-DAG crypto MCP listener.
-      // Not loaded by the production crypto-only process at all.
-      const {registerLegacyRepositoryTools}=await import("./legacy-repository-tools.ts");
-      registerLegacyRepositoryTools(mcp,config.router,claims,token);
-    } else {
       // Crypto-only surface: no general read/write/run_test tools.
       // All signing material and the VP stay inside the private task worker.
       mcp.registerTool(MCP_CREATE_PRESENTATION.name,{
@@ -92,7 +84,6 @@ export function createSharedMcpHttpServer(config:SharedMcpConfig) {
           };
         }
       });
-    }
     const transport=new StreamableHTTPServerTransport({
       sessionIdGenerator:undefined,enableJsonResponse:true
     });

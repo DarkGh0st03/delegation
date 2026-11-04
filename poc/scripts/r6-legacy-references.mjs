@@ -41,7 +41,19 @@ export const R6_LEGACY_CANDIDATES=Object.freeze([
   "poc/packages/agent-runtime/scripts/a2a-real-mcp-read-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-three-roles-shared-mcp-read-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-shared-mcp-isolated-sequential-write-smoke.mjs",
-  "poc/mcp-shared/scripts/real-read-smoke.mjs"
+  "poc/mcp-shared/scripts/real-read-smoke.mjs",
+  "poc/mcp-shared/src/task-router.ts",
+  "poc/mcp-shared/src/legacy-repository-tools.ts",
+  "poc/mcp-shared/test/task-router.test.ts",
+  "poc/mcp-shared/test/mcp-http.test.ts",
+  "poc/mcp-shared/test/mcp-worker-bridge.test.ts",
+  "poc/mcp-shared/test/mcp-write-http.test.ts",
+  "poc/mcp-shared/test/mcp-run-tests-http.test.ts",
+  "poc/mcp-shared/test/mcp-create-http.test.ts",
+  "poc/packages/agent-runtime/test/adk-native-mcp-create.test.ts",
+  "poc/packages/agent-runtime/test/adk-native-mcp-update.test.ts",
+  "poc/packages/agent-runtime/test/adk-native-mcp-run-tests.test.ts",
+  "poc/packages/agent-runtime/test/adk-native-mcp-integration.test.ts"
 ]);
 /** R172 physically deleted executables. Keep negative reference inventory:
  * absence and zero runnable import/configured callers are release criteria. */
@@ -67,7 +79,19 @@ export const R6_RETIRED_TARGETS=Object.freeze([
   "poc/packages/agent-runtime/scripts/a2a-real-mcp-read-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-three-roles-shared-mcp-read-smoke.mjs",
   "poc/packages/agent-runtime/scripts/a2a-shared-mcp-isolated-sequential-write-smoke.mjs",
-  "poc/mcp-shared/scripts/real-read-smoke.mjs"
+  "poc/mcp-shared/scripts/real-read-smoke.mjs",
+  "poc/mcp-shared/src/task-router.ts",
+  "poc/mcp-shared/src/legacy-repository-tools.ts",
+  "poc/mcp-shared/test/task-router.test.ts",
+  "poc/mcp-shared/test/mcp-http.test.ts",
+  "poc/mcp-shared/test/mcp-worker-bridge.test.ts",
+  "poc/mcp-shared/test/mcp-write-http.test.ts",
+  "poc/mcp-shared/test/mcp-run-tests-http.test.ts",
+  "poc/mcp-shared/test/mcp-create-http.test.ts",
+  "poc/packages/agent-runtime/test/adk-native-mcp-create.test.ts",
+  "poc/packages/agent-runtime/test/adk-native-mcp-update.test.ts",
+  "poc/packages/agent-runtime/test/adk-native-mcp-run-tests.test.ts",
+  "poc/packages/agent-runtime/test/adk-native-mcp-integration.test.ts"
 ]);
 
 

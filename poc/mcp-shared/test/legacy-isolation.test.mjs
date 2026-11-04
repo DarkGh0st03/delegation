@@ -1,19 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {readFileSync} from "node:fs";
-
-/** Static entrypoint boundary; runtime catalog tests are in mcp-crypto-http,
- * mcp-http, mcp-create-http, mcp-write-http and mcp-run-tests-http.
- * No model/provider calls. */
-test("R166 crypto listener registers only a VP tool; legacy tool wiring is isolated",()=>{
- const http=readFileSync(new URL("../src/http-server.ts",import.meta.url),"utf8");
- const historic=readFileSync(new URL("../src/legacy-repository-tools.ts",import.meta.url),"utf8");
- assert.match(http,/if\(config\.profile==="legacy"\)/u);
- assert.match(http,/registerLegacyRepositoryTools\(mcp,config\.router,claims,token\)/u);
- assert.match(http,/MCP_CREATE_PRESENTATION\.name/u);
- assert.doesNotMatch(http,/MCP_(READ_FILE|UPDATE_FILE|CREATE_FILE|RUN_TESTS)\.name/u);
- assert.doesNotMatch(http,/config\.router\.(readFile|updateFile|createFile|runTests)/u);
- for(const entry of ["MCP_READ_FILE","MCP_UPDATE_FILE","MCP_CREATE_FILE","MCP_RUN_TESTS"])
-  assert.match(historic,new RegExp(entry+"\\.name","u"));
- assert.doesNotMatch(historic,/delegation_create_presentation|MCP_CREATE_PRESENTATION/u);
+import {readFileSync,existsSync} from "node:fs";
+test("R188 crypto-only factory cannot register repository MCP or deleted router",()=>{
+ const source=readFileSync(new URL("../src/http-server.ts",import.meta.url),"utf8");
+ const main=readFileSync(new URL("../src/main.ts",import.meta.url),"utf8");
+ assert.match(source,/MCP_CREATE_PRESENTATION\.name/u);
+ assert.match(source,/config\?\.profile!=="crypto"/u);
+ assert.doesNotMatch(source,/TaskRouter|legacy-repository-tools|registerLegacyRepositoryTools/u);
+ assert.doesNotMatch(source,/MCP_(READ_FILE|UPDATE_FILE|CREATE_FILE|RUN_TESTS)\.name/u);
+ assert.doesNotMatch(source,/config\.router\.(readFile|updateFile|createFile|runTests)/u);
+ assert.match(main,/new CryptoWorkerRouter\(workers\)/u);
+ for(const f of ["task-router.ts","legacy-repository-tools.ts"])
+  assert.equal(existsSync(new URL("../src/"+f,import.meta.url)),false);
 });

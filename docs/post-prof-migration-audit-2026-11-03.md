@@ -239,3 +239,21 @@ VP-only bridge remains supported. The old resolver is not an agent API.
 
 This stage removes an obsolete production-facing configuration surface,
 not the remaining internal `TaskRouter`/legacy ADK MCPToolset test fixtures.
+
+## R188 — physical removal of Shared MCP repository routing
+
+Deleted `poc/mcp-shared/src/task-router.ts` and
+`poc/mcp-shared/src/legacy-repository-tools.ts` together with their
+obsolete repository HTTP fixtures (6 tests) and old native ADK MCPToolset
+integration fixtures (4 tests). The Shared MCP HTTP factory now has
+**only** the `crypto` profile; the production selector rejects legacy.
+Signed Task→Gateway FunctionTool and crypto-MCP private VP tests remain
+active, including negative authorization and permission-boundary checks.
+The R6 inventory requires all removed files absent; R165 rejects any
+new legacy Shared MCP factory call in tracked JS/TS.
+
+**Not yet removed**: the separate optional ADK legacy `mcpSharedUrl`
+MCPToolset branch, the unused private repository worker endpoint and
+`PrivateMcpTaskRegistry.invoke`. These require migration/removal of
+legacy unit fixtures without touching the crypto task token/proof reference
+path. This does not demonstrate a billed Gemini E2E pilot.

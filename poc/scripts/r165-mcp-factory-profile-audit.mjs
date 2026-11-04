@@ -17,11 +17,6 @@ import {fileURLToPath,pathToFileURL} from "node:url";
 const FACTORY=/\bcreateSharedMcpHttpServer\s*\(\s*\{/gu;
 const PROFILE=/\bprofile\s*:\s*(?:"(legacy|crypto)"|'(legacy|crypto)'|(toolProfile))/u;
 const SCAN_BYTES=350;
-const allowedLegacy=path=>
-  path.startsWith("poc/mcp-shared/test/")||
-  path.startsWith("poc/mcp-shared/scripts/")||
-  path.startsWith("poc/packages/agent-runtime/test/")||
-  path.startsWith("poc/packages/agent-runtime/scripts/");
 const codeFile=path=>/^poc\//u.test(path)&&/\.(?:mjs|js|ts)$/u.test(path);
 
 export function inspectMcpFactoryCalls(root){
@@ -43,8 +38,8 @@ export function inspectMcpFactoryCalls(root){
     errors.push(file+":"+line+": missing explicit MCP profile");
    else if(profile==="toolProfile"&&file!=="poc/mcp-shared/src/main.ts")
     errors.push(file+":"+line+": dynamic profile outside validated launcher");
-   else if(profile==="legacy"&&!allowedLegacy(file))
-    errors.push(file+":"+line+": legacy MCP route outside historical fixtures");
+   else if(profile==="legacy")
+    errors.push(file+":"+line+": obsolete repository MCP profile forbidden");
    else if(file==="poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs"&&profile!=="crypto")
     errors.push(file+":"+line+": signed DAG must use crypto-only MCP");
   }

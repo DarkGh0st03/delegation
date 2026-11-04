@@ -7,7 +7,7 @@ import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {createSharedMcpHttpServer} from "../src/http-server.ts";
 import {CryptoWorkerRouter} from "../src/crypto-worker-router.ts";
-import type {TaskRouter} from "../src/task-router.ts";
+
 import {issueTaskToken} from "../src/task-token.ts";
 import {PrivateMcpTaskRegistry,PrivateMcpTaskError} from
   "../../packages/agent-runtime/src/private-mcp-task-registry.ts";
