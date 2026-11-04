@@ -293,7 +293,11 @@ export function unexpectedHistoricalGatewayCallers(
  */
 export const R6_ALLOWED_PRIVATE_GATEWAY_TRANSPORT_CALLERS=Object.freeze([
   "poc/packages/orchestrator-runtime/src/orchestrator-gateway-client.ts",
-  "poc/packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts"
+  "poc/packages/orchestrator-runtime/src/trusted-approved-branch-gateway.ts",
+  // Test-only, exact-path exception: adversarial loopback Rust VP signing
+  // and no-HTTP-downgrade checks need the private transport's constructor.
+  // It is never exported through the canonical runtime or exposed to ADK.
+  "poc/packages/orchestrator-runtime/test/orchestrator-gateway-client.test.ts"
 ]);
 export function unexpectedPrivateGatewayTransportCallers(
   inventory,allowed=R6_ALLOWED_PRIVATE_GATEWAY_TRANSPORT_CALLERS
