@@ -21,7 +21,11 @@ test("R180 production A2A cannot register model-facing repository MCP tools",()=
  assert.doesNotMatch(flags,/export function resolveMcpToolFlags\(/u);
  assert.doesNotMatch(app,/mcpSharedUrl\s*:/u);
  assert.doesNotMatch(app,/mcpReadFile\s*:/u);
- assert.match(app,/mcpCryptoUrl\s*:/u);
+ assert.doesNotMatch(app,/mcpCryptoUrl\s*:/u);
+ assert.match(app,/requireProductionNativeCrypto\(process\.env,engine\)/u);
+ assert.match(app,/process\.env\.APPROVED_RUNNER_NATIVE_MCP="1"/u);
+ assert.match(flags,/production_adk_requires_native_rust_crypto/u);
+ assert.match(flags,/production_adk_requires_task_local_crypto_mcp/u);
 });
 test("R180 cryptographic MCP worker remains reachable, not deleted as legacy",()=>{
  const main=read("poc/mcp-shared/src/main.ts");
