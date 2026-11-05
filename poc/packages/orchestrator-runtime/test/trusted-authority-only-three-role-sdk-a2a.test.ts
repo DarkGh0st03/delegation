@@ -83,7 +83,11 @@ const root={
 };
 class ScriptedAgent extends BaseLlm{
  readonly requests:LlmRequest[]=[];
- constructor(readonly role:Role){super({model:"r328-scripted-"+role+"-no-api"});}
+ readonly role:Role;
+ constructor(role:Role){
+  super({model:"r328-scripted-"+role+"-no-api"});
+  this.role=role;
+ }
  override async *generateContentAsync(req:LlmRequest):
  AsyncGenerator<LlmResponse,void>{
   this.requests.push(req);
