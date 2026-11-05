@@ -98,6 +98,11 @@ const receipt=signAuthorityOnlyGrant({
  allowedOperations:new Set(RUST_OPERATIONS)
 });
 const parent=await mkdtemp(join(tmpdir(),"delegation-r292-"));
+// Native owner demands an owner-private socket directory. A shared runner
+// temp directory is deliberately not trusted for Rust credential IPC.
+// Match the already-green R233 fixture's private socket provisioning.
+const socketPath=join(parent,"owner.sock");
+process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=socketPath;
 const path=name=>join(parent,name);
 const names=["approvals","root-journal","coordinator-tasks","gateway-tasks",
  "gateway-activation","child-intents","gateway-child-intents"];
@@ -160,8 +165,7 @@ try{
   base_revision:baseRevision,branch,task_id:taskId,epoch:1,
   agent_id:"backend",depends_on:[],permissions:[grantPermission]
  });
- const socketPath=process.env.ADAPTER_ENGINEER_NATIVE_SOCKET;
- assert.ok(socketPath?.startsWith("/"));
+ assert.ok(socketPath.startsWith("/"));
  const nativePort=createNativeRustChildCryptographyPort({
   bearerToken:tokens.orchestrator,timeoutMs:60000
  },socketPath);
