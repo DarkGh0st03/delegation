@@ -503,11 +503,11 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   gateway_execution_authorized:false
  }>>{
   const root=this.#live();
+  if(this.#sequential.has(taskId))
+   deny("sequential Task completion must use explicit finalization");
   if(!(this.#effectFenceJournal instanceof DurableAuthorityOnlyTaskFenceJournal)||
      !(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver))
    deny("trusted completion observer or owner-private journal missing");
-  if(this.#sequential.has(taskId))
-   deny("sequential Task completion must use explicit finalization");
   if(this.#completionInFlight||this.#completed.has(taskId))
    deny("concurrent or duplicate Task completion attestation");
   const bound=this.#tasks.get(runtimeTaskId);
