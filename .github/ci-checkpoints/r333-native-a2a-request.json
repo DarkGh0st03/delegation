@@ -1,0 +1,15 @@
+{
+  "revision": "R333.2",
+  "request": "single-native-three-stage-role-isolated-ADK-A2A-Rust-EVM-OPA-Gitea-Docker",
+  "base_commit": "f7ae2cc0d452781cd525856a7ebad6354cd56a8e",
+  "paid_model_calls": false,
+  "production_effects": false,
+  "exact_expected": [
+    "three role-bound stage Unix sockets + six unique HMAC keys",
+    "three native Child VPs via local crypto MCP",
+    "Backend Frontend Test Google ADK A2A SDK",
+    "two provider Gitea CAS and independent attestations",
+    "Docker runner controlled Test PASS at pinned Frontend HEAD",
+    "no legacy Adapter and no unsigned authority"
+  ]
+}
