@@ -42,8 +42,8 @@ const SCHEMAS = {
  * profile. Exact resources/operations still come from signed plan + Gateway. */
 const APPROVED_ROLE_TOOLS:Readonly<Record<SpecializedAgentRole,
  readonly SpecializedToolName[]>>=Object.freeze({
-  backend:Object.freeze(["read_file","update_file"]),
-  frontend:Object.freeze(["read_file","update_file"]),
+  backend:Object.freeze(["read_file","update_file","create_file"]),
+  frontend:Object.freeze(["read_file","update_file","create_file"]),
   test:Object.freeze(["read_file","update_file","create_file","run_tests"])
 });
 

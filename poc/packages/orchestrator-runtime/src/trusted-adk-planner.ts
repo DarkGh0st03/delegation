@@ -16,6 +16,8 @@ import {canonicalRepositoryUri,canonicalBranchUri,canonicalFileUri}
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
 import {validatePrivateApprovedBranch}
   from "../../agent-runtime/src/approved-branch.ts";
+import {createSpecializedAgentCard}
+  from "../../agent-runtime/src/cards.ts";
 import {preliminaryReadPermissions,type TrustedPlanningSnapshot}
   from "./trusted-engineer-authority.ts";
 
@@ -28,8 +30,8 @@ const sha=/^[a-f0-9]{40}$/u;
 const id=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const roleOps:Record<Role|"orchestrator",Set<Op>>={
   orchestrator:new Set(["create_branch","create_pull_request"]),
-  backend:new Set(["read_file","update_file"]),
-  frontend:new Set(["read_file","update_file"]),
+  backend:new Set(["read_file","update_file","create_file"]),
+  frontend:new Set(["read_file","update_file","create_file"]),
   test:new Set(["read_file","update_file","create_file","run_tests"])
 };
 export interface PlanningReadPort {
@@ -636,6 +638,7 @@ export class TrustedAdkReadOnlyPlanner {
       cfg.maxModelCallMs??120000,planningDeadline,cfg.onObservation);
     const files=new Set(sp.files),directories=new Set(sp.directories);
     let calls=0,bytes=0,readCount=0,denied=false;
+    let cardReadCount=0;
     const read=async(tool:ReadTool,args:Record<string,unknown>)=>{
       const refuse=(reason:string)=>{
         denied=true;
@@ -699,6 +702,32 @@ export class TrustedAdkReadOnlyPlanner {
       }
     };
     const tools=[
+      // The same approved-plan Card factory as A2A; host-only skill lookup.
+      // The trusted registry pins DID/card_ref; no model-controlled URL.
+      new FunctionTool({
+        name:"read_agent_card",
+        description:"Read a registered A2A Agent Card's specialist skills; this never grants authority.",
+        parameters:z.object({role:z.enum(["backend","frontend","test"])}).strict(),
+        execute:async(args)=>{
+          if(planningDeadline.aborted)return {ok:false,error:"planning_deadline"};
+          if(++cardReadCount>6)return {ok:false,error:"agent_card_budget"};
+          const role=args.role as Role;
+          const registered=cfg.agents[role];
+          if(!registered||!registered.did?.startsWith("did:")||
+             !registered.card_ref||registered.card_ref.length>256)
+            return {ok:false,error:"unregistered_agent_card"};
+          const card=createSpecializedAgentCard(role,"http://127.0.0.1",{
+            capabilityProfile:"approved-plan"
+          });
+          return {
+            ok:true,role,card_ref:registered.card_ref,
+            name:card.name,description:card.description,
+            skills:card.skills.map(skill=>({
+              id:skill.id,name:skill.name,description:skill.description
+            }))
+          };
+        }
+      }),
       new FunctionTool({
         name:"read_repository",
         description:"Read only pinned trusted repository metadata.",
@@ -751,7 +780,8 @@ export class TrustedAdkReadOnlyPlanner {
         "Each permission has: operation, path, reason.",
         "File operations need a path string; repository/test operations use path:null.",
         "Only orchestrator can create_branch/create_pull_request.",
-        "Backend/Frontend: read_file/update_file. Test: read_file/update_file/create_file/run_tests.",
+        "Backend/Frontend: read_file/update_file/create_file. Test: read_file/update_file/create_file/run_tests. Every action still needs an exact signed permission.",
+        "Before assigning specialist work, inspect the trusted read_agent_card skill descriptions. Cards describe capabilities, not permissions; never infer a grant or DID from a Card.",
         ...TRUSTED_PLANNER_FUNCTIONAL_GUIDANCE,
         ...(cfg.pilotFullDag?TRUSTED_BOUNDED_PILOT_GUIDANCE:[]),
         "Use existing files from the supplied list for read/update.",

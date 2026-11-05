@@ -18,7 +18,9 @@ test("R198 approved specialist identities contain only reusable role skills",()=
   assert.notEqual(p.system_prompt,SPECIALIZED_AGENT_PROFILES[role].system_prompt);
  }
  assert.deepEqual(APPROVED_SPECIALIZED_AGENT_PROFILES.backend.tools,
-  ["read_file","update_file"]);
+  ["read_file","update_file","create_file"]);
+ assert.deepEqual(APPROVED_SPECIALIZED_AGENT_PROFILES.frontend.tools,
+  ["read_file","update_file","create_file"]);
  assert.deepEqual(APPROVED_SPECIALIZED_AGENT_PROFILES.test.tools,
   ["read_file","update_file","create_file","run_tests"]);
 });

@@ -33,9 +33,9 @@ export const APPROVED_SPECIALIZED_AGENT_PROFILES:Readonly<
  Record<SpecializedAgentRole,SpecializedAgentProfile>
 >=Object.freeze({
  backend:role("backend","Backend application logic, data contracts and server-side integration",
-  ["read_file","update_file"],false),
+  ["read_file","update_file","create_file"],false),
  frontend:role("frontend","Frontend user interface, accessibility and API integration",
-  ["read_file","update_file"],false),
+  ["read_file","update_file","create_file"],false),
  test:role("test","Automated tests, validation evidence and controlled test execution",
   ["read_file","update_file","create_file","run_tests"],true)
 });

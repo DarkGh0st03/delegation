@@ -992,3 +992,61 @@ test("R160 generic Planner selects only Task-relevant specialists; pilot shape i
    ...cfg,model:pilotModel,readPort:port,pilotFullDag:"yes" as never
  }),/invalid trusted Planning config/);
 });
+
+test("R282 approved Backend and Frontend can propose new source files in trusted directories",()=>{
+ for(const role of ["backend","frontend"] as const){
+  const d=draft();
+  d.tasks[1].agent_id=role;
+  d.tasks[1].permissions=[{operation:"create_file",
+    path:"src/billing/new-module.ts",reason:"Implement the approved module"}];
+  const result=compilePlanningProposal(d,cfg);
+  assert.equal(result.plan.requested_permissions[1].agent_id,role);
+  assert.equal(result.plan.requested_permissions[1].operation,"create_file");
+  validatePlan(result.plan,{allowedOperations:new Set(RUST_OPERATIONS)});
+  d.tasks[1].permissions[0].path="private/outside/new-module.ts";
+  assert.throws(()=>compilePlanningProposal(d,cfg),/authorized discovery directories/);
+  d.tasks[1].permissions[0].operation="run_tests";
+  d.tasks[1].permissions[0].path=null;
+  assert.throws(()=>compilePlanningProposal(d,cfg),/not supported for proposed Agent role/);
+ }
+});
+
+test("R282 Planner really uses a host-only published approved-plan Agent Card FunctionTool",async()=>{
+ class CardAware extends BaseLlm{
+  requests:LlmRequest[]=[];
+  constructor(){super({model:"offline-agent-card-discovery"});}
+  override async *generateContentAsync(req:LlmRequest):AsyncGenerator<LlmResponse,void>{
+   this.requests.push(req);
+   const turn=this.requests.length;
+   if(turn===1)yield {content:{role:"model",parts:[{functionCall:{
+     id:"agent-card-read",name:"read_agent_card",args:{role:"backend"}
+   }}]}};
+   else if(turn===2)yield {content:{role:"model",parts:[{functionCall:{
+     id:"pinned-source-read",name:"read_file",args:{branch:"main",path:FILE}
+   }}]}};
+   else yield {content:{role:"model",parts:[{text:JSON.stringify(draft())}]}};
+  }
+  override connect():Promise<BaseLlmConnection>{
+   return Promise.reject(Error("No paid model in card discovery test"));
+  }
+ }
+ const model=new CardAware();
+ const reads:string[]=[];
+ const result=await new TrustedAdkReadOnlyPlanner({...cfg,model,
+  readPort:{async invoke(tool:string,args:Record<string,unknown>){
+   reads.push(tool);
+   return {provider:"gitea",performed:true,tool,branch:"main",path:args.path,
+    revision:SNAPSHOT.base_revision,content:"export const safe=true;"};
+  }}
+ }).propose();
+ assert.equal(result.status,"unapproved_proposal");
+ assert.deepEqual(reads,["read_file"]);
+ assert.equal(result.verified_source_reads,1);
+ assert.equal(result.plan.candidate_agents[0].did,AGENTS.backend.did);
+ const declarations=JSON.stringify(model.requests[0].config?.tools);
+ assert.ok(declarations.includes("read_agent_card"));
+ const next=JSON.stringify(model.requests[1].contents);
+ assert.ok(next.includes("Backend Software Engineering"));
+ assert.ok(next.includes(AGENTS.backend.card_ref));
+ assert.ok(!next.includes("private_key"));
+});

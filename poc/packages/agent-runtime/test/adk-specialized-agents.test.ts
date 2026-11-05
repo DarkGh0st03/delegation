@@ -757,7 +757,7 @@ test("R157 signed A2A Agent capabilities use generic role tools, not demo path t
  for(const role of ["backend","frontend"] as const){
   const built=signed({role,rights:[{operation:"read_file",path:target},
    {operation:"update_file",path:target}]});
-  assert.deepEqual(built.profile.tools,["read_file","update_file"]);
+  assert.deepEqual(built.profile.tools,["read_file","update_file","create_file"]);
   assert.deepEqual(built.profile.writable_paths,[target]);
   assert.doesNotMatch(built.profile.system_prompt,/Account Suspension|account-suspension/u);
   assert.ok(!built.profile.system_prompt.includes("user.service.ts"));
@@ -766,4 +766,24 @@ test("R157 signed A2A Agent capabilities use generic role tools, not demo path t
  assert.deepEqual(testAgent.profile.tools,["read_file","update_file","create_file","run_tests"]);
  assert.deepEqual(testAgent.agent.tools.map(t=>t.name),["create_file","run_tests"]);
  assert.doesNotMatch(testAgent.profile.system_prompt,/Account Suspension|account-suspension/u);
+});
+
+test("R282 signed Backend/Frontend create_file requires exact private approved Task grant",()=>{
+ const path="services/billing/src/invoice-helper.ts";
+ for(const role of ["backend","frontend"] as const){
+  const make=(rights:Array<{operation:"read_file"|"update_file"|"create_file";path:string}>)=>
+   createAdkSpecializedAgent({
+    role,model:new ScriptedAdkLlm("create_file",{
+     branch:"feature/invoice-sort",path,content:"export const helper=true;"
+    }),gatewayClient:{invoke:async()=>({commit_sha:"a".repeat(40)})} as never,
+    trustedBranch:"feature/invoice-sort",trustedTaskPaths:[path],
+    trustedFilePermissions:rights
+   });
+  const granted=make([{operation:"create_file",path}]);
+  assert.deepEqual(granted.agent.tools.map(x=>x.name),["create_file"]);
+  assert.deepEqual(granted.profile.creatable_paths,[path]);
+  const notGranted=make([{operation:"read_file",path}]);
+  assert.deepEqual(notGranted.agent.tools.map(x=>x.name),["read_file"]);
+  assert.deepEqual(notGranted.profile.creatable_paths,[]);
+ }
 });
