@@ -1,0 +1,17 @@
+{
+  "revision": "R305",
+  "scenario": "single Engineer permission-only approval -> Backend file CAS -> independent Frontend file CAS -> signed Test Child -> real Docker and researcher acceptance",
+  "checks": [
+    "native Rust/EVM VP",
+    "OPA",
+    "two independent Gitea HEAD CAS writes",
+    "separate Child DCs",
+    "durable Task completion",
+    "exact latest tested SHA",
+    "unmerged main"
+  ],
+  "allowed_model_calls": 0,
+  "production_mutations": false,
+  "reference_implementation_provenance": "CI owner fixture, not LLM agents",
+  "approval": "no paid AI"
+}
