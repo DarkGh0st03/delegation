@@ -71,7 +71,6 @@ impl VerifiedDelegation {
     }
 }
 
-
 #[cfg(test)]
 mod root_provenance_tests {
     use super::VerifiedDelegation;
