@@ -2,7 +2,10 @@ import { gatewayConfigFromEnv } from "./config.ts";
 import { createGatewayHttpServer } from "./http.ts";
 import { GatewayRuntime } from "./runtime.ts";
 import {trustedPlanDeploymentFromEnv} from "./trusted-plan-deployment.ts";
+import {assertLegacyGatewayEntrypoint} from "./trusted-authority-only-host.ts";
 
+// A legacy CLI must NEVER silently boot when authority-only was requested.
+assertLegacyGatewayEntrypoint(process.env.DELEGATION_GATEWAY_ARCHITECTURE);
 const config = gatewayConfigFromEnv();
 const trusted = await trustedPlanDeploymentFromEnv(config);
 const runtime = new GatewayRuntime(config,
