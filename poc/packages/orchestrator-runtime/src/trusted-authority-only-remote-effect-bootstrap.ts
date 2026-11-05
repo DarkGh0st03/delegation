@@ -60,6 +60,8 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
  readonly #registry:TrustedOwnerEffectStagingRegistry;
  readonly #attempted=new Set<string>();
  readonly #pending=new Set<string>();
+ /** Only remotely ACKed, not yet terminally fenced bindings. */
+ readonly #bound=new Set<string>();
  readonly #cancelled=new Set<string>();
  #closed=false;
  #closing?:Promise<void>;
@@ -143,6 +145,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
       receipt.runtime_task_id!==opts.runtimeTaskId)
     deny("private prebind receipt is not exact and cannot authorize execution");
    bound=true;
+   this.#bound.add(opts.runtimeTaskId);
    if(this.#closed||this.#cancelled.has(opts.runtimeTaskId))
     deny("owner Task cancelled or retired during remote bind");
    return await opts.dispatch();
@@ -152,6 +155,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
    // registered entry. A failed binding remains unretryable by this host.
    if(bound){
     await this.#owner.fence(opts.runtimeTaskId);
+    this.#bound.delete(opts.runtimeTaskId);
    }else{
     // Failed bind may be ambiguous: revoke remote capability if present.
     try{await this.#owner.fence(opts.runtimeTaskId);}catch{
@@ -175,6 +179,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   this.#cancelled.add(runtimeTaskId);
   try{
    await this.#owner.fence(runtimeTaskId);
+   this.#bound.delete(runtimeTaskId);
   }catch(error){
    if(this.#pending.has(runtimeTaskId)){
     // Binding may not have allocated a local slot yet. Completion of
@@ -190,7 +195,10 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   for(const id of this.#attempted)this.#cancelled.add(id);
   this.#registry.retireAll(); // synchronously block EVERY future stage
   this.#closing=(async()=>{
-   const names=[...this.#attempted];
+   // A denied prebind may never allocate a local owner slot and
+   // cannot be remotely fenced. R323 already made that attempt terminal.
+   // Only ACKed, still-active remote slots require close acknowledgements.
+   const names=[...this.#bound];
    const results=await Promise.allSettled([
     ...names.map(id=>this.#owner.fence(id)),
     this.#server.close()
