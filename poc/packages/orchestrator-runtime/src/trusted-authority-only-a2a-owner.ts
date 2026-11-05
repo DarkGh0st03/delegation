@@ -87,8 +87,9 @@ export class TrustedAuthorityOnlyA2AOwner {
      !opts.agentBaseUrls||Object.keys(opts.agentBaseUrls).sort().join(",")!==
         "backend,frontend,test")
     deny("original owner, active private bind and protected A2A client required");
-  const urls=Object.fromEntries(ROLES.map(r=>[r,endpoint(opts.agentBaseUrls[r])]))
-    as Record<SpecializedAgentRole,string>;
+  const urls=(Object.fromEntries(
+    ROLES.map(r=>[r,endpoint(opts.agentBaseUrls[r])])
+  )) as Record<SpecializedAgentRole,string>;
   if(new Set(Object.values(urls)).size!==3)
     deny("each specialized agent must have a distinct pinned endpoint");
   this.#coordinator=opts.coordinator;this.#issuer=opts.childIssuer;
