@@ -65,6 +65,8 @@ jobs:
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/signed-authority-only-store.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-engineer-session.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-sequential-effect-journal.test.ts
+          # R310: canonical Gateway owner startup and R309 runtime NO-GO guards.
+          node --experimental-strip-types --test poc/apps/gateway/test/runtime.test.ts poc/apps/gateway/test/trusted-authority-only-host.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/trusted-authority-only-gitea-evidence.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/gitea-update-head-cas.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/trusted-gitea-mutation-evidence.test.ts
