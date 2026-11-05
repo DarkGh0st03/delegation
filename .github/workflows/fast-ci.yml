@@ -106,6 +106,7 @@ jobs:
           node --check poc/packages/orchestrator-runtime/test/r301-sequential-hierarchical-gitea-e2e.mjs
           node --check poc/apps/gateway/native-test/r302-gitea-atomic-head-cas-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r302-authority-only-gitea-update-native-e2e.mjs
+          node --check poc/packages/orchestrator-runtime/test/r303-native-gitea-docker-test-agent-e2e.mjs
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs
           node --check poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.mjs
