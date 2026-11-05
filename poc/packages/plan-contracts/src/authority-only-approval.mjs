@@ -204,6 +204,33 @@ export function verifyAuthorityOnlyGrant(receipt,{trustedKeys,
  return verified;
 }
 /**
+ * Trusted-root preflight of an already VERIFIED signature receipt.
+ * Only a locally verified, non-expired object is admitted; raw JSON with
+ * authenticated:true is never proof. This does NOT issue any credential.
+ */
+export function assertVerifiedAuthorityOnlyGrant(verified,{allowedOperations,
+ nowMs=Date.now()}={}){
+ if(!verified||typeof verified!=="object"||
+    !authenticatedReceipts.has(verified)||verified.authenticated!==true||
+    typeof verified.authenticated_engineer_did!=="string"||
+    !verified.authenticated_engineer_did.startsWith("did:")||
+    typeof verified.authority_digest!=="string"||
+    !SHA64.test(verified.authority_digest))
+   deny("unverified Engineer authority");
+ if(!Number.isFinite(nowMs)||typeof verified.expires_at!=="string"||
+    !Number.isFinite(Date.parse(verified.expires_at))||
+    nowMs>=Date.parse(verified.expires_at))
+   deny("authenticated authority expired");
+ const grant=verified.authorization;
+ validateAuthorityOnlyGrant(grant,{allowedOperations});
+ if(verified.authority_digest!==authorityOnlyDigest(grant,{allowedOperations}))
+   deny("authority digest mismatch");
+ return Object.freeze({authorization:structuredClone(grant),
+   authority_digest:verified.authority_digest,
+   authenticated_engineer_did:verified.authenticated_engineer_did,
+   expires_at:verified.expires_at});
+}
+/**
  * Candidate Executor preflight only. A Task DAG may evolve after signing,
  * but its permissions must be a STRICT exact-pair subset. No root issuance,
  * branch writes or Gateway registration occurs here.
