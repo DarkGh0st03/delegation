@@ -122,3 +122,22 @@ test("R322 forged A2A Child cannot claim an authenticated remotely prebound port
   assert.deepEqual(x.calls,[]);
  }finally{await x.close();}
 });
+
+// R329.1: production Gateway emits req_<UUIDv4>; the original
+// validation pattern already permits this form. Keep an integrated
+// regression so a fixture-only ID cannot hide a future mismatch.
+test("R329.1 production req_UUID propagates through real owner Unix staging",async()=>{
+ const x=await fixtures();
+ try{
+  const requestId="req_12345678-1234-4123-8123-1234567890ab";
+  x.owner.bindTask(runtime,{stage:async id=>{
+   assert.equal(id,requestId);x.calls.push(id);
+  }});
+  await x.client.bindTask(pins);
+  const local=x.agent.selectFor(task());
+  await local.stage(requestId);
+  assert.deepEqual(x.calls,[requestId]);
+  await assert.rejects(x.remote.stage(runtime,requestId),
+   /Authenticated private effect operation denied/u);
+ }finally{await x.close();}
+});
