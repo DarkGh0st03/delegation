@@ -103,3 +103,27 @@ test("R303 refuses missing, malformed or shared trusted owner stores",async()=>{
   assert.equal((await readdir(directory)).length,1);
  });
 });
+
+test("R303.3 verified PASS may finish exactly once after durable POST attempt",async()=>{
+ await fixture(async({directory,journal})=>{
+  await journal.reserve(intent);
+  await assert.rejects(journal.reserveCompletedEvidence(intent,
+   "f".repeat(64)),/no such file|ENOENT|no protected original/);
+  await journal.reserveAttempt(intent);
+  await assert.rejects(journal.reserveCompletedEvidence(intent,
+   "invalid-digest"),/invalid independently verified/);
+  await journal.reserveCompletedEvidence(intent,"f".repeat(64));
+  const files=await readdir(directory);
+  assert.equal(files.length,3);
+  const record=JSON.parse(await readFile(join(directory,
+   files.find(x=>x.endsWith(".completed.json"))!),"utf8"));
+  assert.equal(record.verified_evidence_sha256,"f".repeat(64));
+  assert.equal(record.request_id,intent.request_id);
+  await assert.rejects(journal.reserveCompletedEvidence(intent,
+   "d".repeat(64)),/EEXIST/);
+  const restarted=new DurableAuthorityOnlyRunnerIntentJournal(directory);
+  await assert.rejects(restarted.reserveAttempt(intent),/EEXIST/);
+  await assert.rejects(restarted.reserveCompletedEvidence(intent,
+   "f".repeat(64)),/EEXIST/);
+ });
+});

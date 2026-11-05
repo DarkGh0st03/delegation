@@ -816,6 +816,75 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
+  * R303.3 check an ACTUALLY consumed Test Agent Prepare against the
+  * independently Rust-verified native Child and R293 durable effect flight.
+  * Invoked only after real OPA allow. Never trusts Runner output on its own.
+  */
+ assertTrustedCompletedRunnerEvidenceBinding(
+  record:PreparedRequestRecord,verified:VerifiedDelegation
+ ):Readonly<TrustedCompletionExpectation>{
+  const root=this.#live();
+  if(!record||record.consumed!==true||
+     !record.authority_only_digest||
+     record.authority_only_digest!==root.authority_digest||
+     record.request.tool!=="run_tests"||
+     record.agent_role!=="test"||
+     record.expires_at_ms<=this.#now()||
+     this.#flightInFlight||this.#completionInFlight)
+   deny("Runner completion requires live consumed Test Agent Prepare");
+  const bound=this.#tasks.get(record.task_id);
+  const child=this.#enrolledChildren.get(record.task_id);
+  const taskId=bound?.row.task_id;
+  if(!bound||!child||!taskId||!verified||
+     !Array.isArray(verified.permissions)||
+     bound.row.agent_id!=="test"||
+     record.authority_only_plan_task_id!==taskId||
+     record.authority_only_agent_did!==bound.row.agent_did||
+     verified.presenter_id!==bound.row.agent_did||
+     verified.credential_id!==child.credential_id||
+     verified.root_credential_id!==root.root_credential_id||
+     !Number.isSafeInteger(verified.hierarchy_depth)||
+     verified.hierarchy_depth<1||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.agent_did!==bound.row.agent_did||
+     child.agent_id!=="test"||
+     child.epoch!==bound.row.epoch||
+     this.#now()>=Date.parse(child.expires_at)||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
+     this.#sequential.has(taskId)||this.#completed.has(taskId))
+   deny("Test result lacks live registered native Child and dependencies");
+  const flight=this.#flights.get(taskId);
+  if(!flight||
+     flight.session_id!==root.session_id||
+     flight.authority_digest!==root.authority_digest||
+     flight.root_credential_id!==root.root_credential_id||
+     flight.task_id!==taskId||
+     flight.runtime_task_id!==record.task_id||
+     flight.epoch!==bound.row.epoch||
+     flight.credential_id!==child.credential_id||
+     flight.request_id!==record.request_id||
+     flight.request_fingerprint!==record.request_fingerprint)
+   deny("Runner has no original durably reserved Task flight");
+  const canonical=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  const fingerprint=createHash("sha256").update(JSON.stringify({
+   task_id:record.task_id,agent_role:record.agent_role,
+   request:record.request
+  })).digest("hex");
+  if(fingerprint!==record.request_fingerprint||
+     pair(canonical.required_permission)!==pair(record.required_permission)||
+     record.request.arguments.profile!=="poc-default"||
+     record.request.arguments.branch!==root.branch||
+     !verified.permissions.some(p=>giteaPermissionCovers(
+       p,record.required_permission)))
+   deny("Runner VP permission or canonical tested Task changed");
+  return Object.freeze({...structuredClone(flight),
+   agent_did:bound.row.agent_did});
+ }
+ /**
   * R303.1 owner-only Test Agent enrollment and original Gateway Prepare.
   * This yields ONLY a signed Task/Child binding for a future pinned Runner
   * intent; it is not permission to launch Docker or trust a test result.

@@ -60,7 +60,7 @@ export class DurableAuthorityOnlyRunnerIntentJournal{
      (typeof process.getuid==="function"&&st.uid!==process.getuid()))
    deny("unsafe shared Runner journal directory");
  }
- #filename(intent:TrustedAuthorityOnlyRunnerIntent,kind:"intent"|"attempt"){
+ #filename(intent:TrustedAuthorityOnlyRunnerIntent,kind:"intent"|"attempt"|"completed"){
   return SHA256(intent.session_id+"\n"+intent.task_id)+"."+kind+".json";
  }
  async #read(name:string):Promise<unknown>{
@@ -119,6 +119,38 @@ export class DurableAuthorityOnlyRunnerIntentJournal{
      intent.branch.includes("..")||intent.branch.includes("//")||
      intent.branch.startsWith("feature/r302-internal-"))
    deny("Runner intent is not a canonical native Task/Child binding");
+ }
+ /**
+  * Store only the hash of the authenticated, independently re-checked
+  * successful Runner receipt. No FAIL response may call this method.
+  */
+ async reserveCompletedEvidence(
+  intent:TrustedAuthorityOnlyRunnerIntent,evidenceSha256:string
+ ):Promise<void>{
+  if(!SHA64.test(evidenceSha256))
+   deny("invalid independently verified Runner evidence digest");
+  await this.assertReserved(intent);
+  const raw=await this.#read(this.#filename(intent,"attempt"));
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))
+   deny("no protected original Runner attempt");
+  const attempt=raw as Record<string,unknown>;
+  if(attempt.schema!=="authority-only-runner-attempt-v1"||
+     attempt.session_id!==intent.session_id||
+     attempt.task_id!==intent.task_id||
+     attempt.authority_digest!==intent.authority_digest||
+     attempt.credential_id!==intent.credential_id||
+     attempt.request_id!==intent.request_id||
+     attempt.request_fingerprint!==intent.request_fingerprint||
+     attempt.expected_head_sha!==intent.expected_head_sha||
+     attempt.runner_profile!==intent.runner_profile)
+   deny("completion differs from original irretrievable Runner attempt");
+  await this.#write(this.#filename(intent,"completed"),{
+   schema:"authority-only-runner-completion-v1",
+   session_id:intent.session_id,task_id:intent.task_id,
+   request_id:intent.request_id,
+   request_fingerprint:intent.request_fingerprint,
+   verified_evidence_sha256:evidenceSha256
+  });
  }
  async reserve(intent:TrustedAuthorityOnlyRunnerIntent):Promise<void>{
   DurableAuthorityOnlyRunnerIntentJournal.assertValid(intent);

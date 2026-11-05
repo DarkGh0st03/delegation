@@ -2,6 +2,8 @@ import { GiteaExecutor } from "./gitea-executor.ts";
 import { OpaPolicyClient } from "./policy-client.ts";
 import {TrustedAuthorityOnlyGiteaMutationExecutor}
  from "./trusted-authority-only-mutation-executor.ts";
+import {TrustedAuthorityOnlyRunnerExecutor}
+ from "./trusted-authority-only-runner-executor.ts";
 import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
 import {giteaPermissionCovers}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
@@ -115,6 +117,9 @@ export interface ExecuteDependencies {
   /** Owner-only, opt-in atomic HEAD-CAS mutation; never the legacy PUT. */
   authorityOnlyMutationExecutor?:TrustedAuthorityOnlyGiteaMutationExecutor;
   authorityOnlyMutationEnabled?:boolean;
+  /** Opt-in owner-controlled native Test Runner; never the legacy Runner. */
+  authorityOnlyRunnerExecutor?:TrustedAuthorityOnlyRunnerExecutor;
+  authorityOnlyRunnerEnabled?:boolean;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -128,6 +133,12 @@ export async function executeAuthorization(
      (dependencies.planningRevisions||dependencies.approvedPlans))
     throw new GatewayError(403,"authority_only_binding_denied",
       "Authority-only and legacy Gateway modes cannot share provider effects");
+  if(dependencies.authorityOnlyRunnerExecutor&&
+     (!dependencies.authorityOnlyAdmissions||
+      !dependencies.authorityOnlyRunnerExecutor.isForAdmissions(
+       dependencies.authorityOnlyAdmissions)))
+    throw new GatewayError(403,"authority_only_binding_denied",
+      "Runner Test Agent owner differs from trusted Gateway authority");
   if(dependencies.authorityOnlyMutationExecutor&&
      (!dependencies.authorityOnlyAdmissions||
       !dependencies.authorityOnlyMutationExecutor.isForAdmissions(
@@ -325,6 +336,21 @@ export async function executeAuthorization(
         // legacy signed DAG, or unsupported provider may write here.
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedMutationEvidenceBinding(
           record,verified);
+      }else if(record.request.tool==="run_tests"&&
+         record.agent_role==="test"&&
+         dependencies.authorityOnlyRunnerEnabled===true&&
+         dependencies.authorityOnlyRunnerExecutor instanceof
+           TrustedAuthorityOnlyRunnerExecutor&&
+         dependencies.authorityOnlyRunnerExecutor.isForAdmissions(
+           dependencies.authorityOnlyAdmissions)&&
+         dependencies.verifier instanceof DirectCoreRustVerifier&&
+         dependencies.policy instanceof OpaPolicyClient&&
+         dependencies.executor instanceof GiteaExecutor&&
+         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+        // Exactly the pre-enrolled Test Child + immutable Runner commit,
+        // never a legacy RunnerClient fallback or agent-chosen tested SHA.
+        dependencies.authorityOnlyAdmissions.assertTrustedCompletedRunnerEvidenceBinding(
+          record,verified);
       }else{
         dependencies.authorityOnlyAdmissions.assertVerifiedVpAndPolicyForExecution(
           record,verified);
@@ -398,6 +424,14 @@ export async function executeAuthorization(
           "Signed authority-only mutation executor is not configured");
       execution=await dependencies.authorityOnlyMutationExecutor
         .executeAfterVerifiedRustOpa(record,verified,policyDecision);
+    }else if(record.authority_only_digest&&record.request.tool==="run_tests"){
+      if(dependencies.authorityOnlyRunnerEnabled!==true||
+         !dependencies.authorityOnlyRunnerExecutor)
+        throw new ProviderOperationUnavailableError(
+          "Signed Test Agent Runner executor is not configured");
+      // A FAIL or ambiguous provider response is terminal, never retried.
+      execution=await dependencies.authorityOnlyRunnerExecutor
+        .executeAfterVerifiedRustOpa(record,verified,policyDecision);
     }else{
       execution = await dependencies.executor.execute(
         record,dependencies.signal);
@@ -467,24 +501,30 @@ export async function executeAuthorization(
   // GiteaExecutor success (it carries a private WeakMap result witness).
   // Only the explicitly enabled read gate above can reach this hook.
   if(record.authority_only_digest){
-    if(execution.provider!=="gitea"||execution.performed!==true)
+    if(execution.performed!==true)
       throw new GatewayError(403,"authority_only_binding_denied",
        "Authority-only provider result cannot be authenticated");
-    if(execution.tool==="read_file"){
+    if(execution.provider==="gitea"&&execution.tool==="read_file"){
       if(!dependencies.authorityOnlyReceiptWriter)
         throw new GatewayError(403,"authority_only_binding_denied",
          "Authority-only read lacks trusted result publisher");
       await dependencies.authorityOnlyReceiptWriter.publishSuccessfulRead({
        record,verified,policy:policyDecision,execution
       });
-    }else if(execution.tool!=="update_file"||
-             !dependencies.authorityOnlyMutationExecutor||
-             dependencies.authorityOnlyMutationEnabled!==true){
+    }else if(execution.provider==="gitea"&&
+             execution.tool==="update_file"&&
+             !!dependencies.authorityOnlyMutationExecutor&&
+             dependencies.authorityOnlyMutationEnabled===true){
+      // Already independently attested and fsync'd in mutation executor.
+    }else if(execution.provider==="runner"&&
+             execution.tool==="run_tests"&&execution.status==="pass"&&
+             !!dependencies.authorityOnlyRunnerExecutor&&
+             dependencies.authorityOnlyRunnerEnabled===true){
+      // Runner PASS receipt already independently attested and sealed.
+    }else{
       throw new GatewayError(403,"authority_only_binding_denied",
        "Unauthorized authority-only provider result");
     }
-    // Atomic update results have already been independently attested and
-    // fsync'd inside the trusted mutation executor BEFORE returning here.
   }
   const providerMs = elapsed(providerStarted, durationNow);
   const totalMs = elapsed(totalStarted, durationNow);
