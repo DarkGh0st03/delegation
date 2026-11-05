@@ -141,6 +141,7 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
    socketPath:stageSocket,secretFile:stageSecret
   });
   for(const role of roles){
+   const c=configs[role];
    const secretFile=join(dir,role+".hex");
    const socketPath=join(dir,role+".sock");
    await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
@@ -156,7 +157,6 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
    const fetchFn=(async(url:unknown,opts?:RequestInit)=>{
     const target=String(url);
     const body=JSON.parse(String(opts?.body));
-    const c=configs[role];
     if(target.endsWith("/v1/authorization/prepare")){
      events.push("prepare:"+role);
      const operation=role==="test"?"run_tests":"update_file";

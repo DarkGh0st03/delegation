@@ -118,7 +118,8 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   for(let i=0;i<secrets.length;i++)
    for(let j=i+1;j<secrets.length;j++)
     if(timingSafeEqual(secrets[i]!,secrets[j]!))
-     deny("stage and per-role bind HMAC keys must differ");
+     deny(multi?"stage and per-role bind HMAC keys must differ":
+       "stage and bind HMAC keys must differ");
   // Confirm the Engineer root BEFORE opening a private listener.
   opts.coordinator.assertTrustedGatewayAuthorityBinding();
   const registry=new TrustedOwnerEffectStagingRegistry();
