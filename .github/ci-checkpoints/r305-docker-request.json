@@ -1,5 +1,5 @@
 {
-  "revision": "R308",
+  "revision": "R311",
   "scenario": "single Engineer permission-only approval -> Backend file CAS -> independent Frontend file CAS -> signed Test Child -> real Docker and researcher acceptance",
   "checks": [
     "native Rust/EVM VP",
@@ -14,6 +14,7 @@
   "production_mutations": false,
   "reference_implementation_provenance": "CI owner fixture, not LLM agents",
   "approval": "no paid AI",
-  "regression_fix": "R306 E2E PASS; R308 exercises canonical GatewayRuntime mutation and Runner dispatch",
-  "canonical_gateway_runtime": true
+  "regression_fix": "R308 canonical GatewayRuntime PASS; R310 owner host plus R311 canonical HTTP run_tests Docker E2E",
+  "canonical_gateway_runtime": true,
+  "canonical_gateway_http_test_execute": true
 }

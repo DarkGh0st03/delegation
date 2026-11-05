@@ -43,6 +43,8 @@ import {invokeNativeCrypto}
  from "../../agent-runtime/src/native-crypto-ipc.ts";
 
 import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
+import {startTrustedAuthorityOnlyGatewayServer}
+ from "../../../apps/gateway/src/trusted-authority-only-host.ts";
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from "../../../apps/gateway/src/trusted-authority-only-mutation-preflight.ts";
@@ -691,31 +693,45 @@ try{
   authorityOnlyMutationExecutor:undefined,
   authorityOnlyRunnerEnabled:true,
   authorityOnlyRunnerExecutor:ownedRunnerExecutor};
- // Separate canonical runtime view with both owner ports; it shares the
- // exact durable admission, request store, verifier, OPA and audit sink.
- const runnerRuntime=new GatewayRuntime(gatewayConfig,{
-  store,audit,verifier,policy,executor,authorityOnlyAdmissions:gate,
-  authorityOnlyMutationEnabled:true,
-  authorityOnlyMutationExecutor:mutationExecutor,
-  authorityOnlyRunnerEnabled:true,
-  authorityOnlyRunnerExecutor:ownedRunnerExecutor
- });
+ // R311: exercise the REAL owner-assembled canonical HTTP listener.
+ // The host builds its own fixed native Rust verifier and real OPA/Gitea
+ // clients; it cannot inherit the fixture's injected verifier or executor.
+ // The exact private request store and both owner-bound effect executors
+ // are shared, and no authority control endpoint is exposed on HTTP.
+ const gatewayHost=await startTrustedAuthorityOnlyGatewayServer(
+  gatewayConfig,{
+   admissions:gate,mutationExecutor,runnerExecutor:ownedRunnerExecutor,
+   store,audit
+  });
+ const gatewayAddress=gatewayHost.server.address();
+ assert.ok(gatewayAddress&&typeof gatewayAddress!=="string");
  let testResult;
  try{
-  testResult=await runnerRuntime.execute({
-   request_id:runnerPrepared.request_id,
-   signed_vp:testPresentation.signed_vp
-  });
+  const response=await fetch("http://127.0.0.1:"+
+   gatewayAddress.port+"/v1/authorization/execute",{
+    method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({
+     request_id:runnerPrepared.request_id,
+     signed_vp:testPresentation.signed_vp
+    })
+   });
+  testResult=await response.json();
+  if(response.status!==200)
+   throw Error("R311 canonical Gateway HTTP Test denied: status="+
+    response.status+" code="+(testResult?.error??"unclassified"));
  }catch(error){
   const files=await readdir(path("runner-intent"));
   process.stdout.write(JSON.stringify({
-   event:"r305_runner_sanitized_gateway_failure",
+   event:"r311_http_runner_sanitized_gateway_failure",
    code:typeof error?.code==="string"?error.code:"unclassified",
    runner_calls:runnerCalls,
    irreversible_attempt:files.some(x=>x.endsWith(".attempt.json")),
    audit_reason:audit.events.at(-1)?.reason??null
   })+"\n");
   throw error;
+ }finally{
+  await gatewayHost.close();
  }
  assert.equal(testResult.decision,"allow");
  assert.equal(testResult.execution.provider,"runner");
@@ -787,6 +803,7 @@ try{
   completion_attested:true,old_head_pinned:true,legacy_writes:legacyWriteCalls,
   runner_posts:runnerCalls,test_completion_attested:true,dependent_tasks:3,frontend_cas:true,
   paid_model_calls:0,canonical_gateway_runtime:true,
+  canonical_gateway_http_test_execute:true,
   completed_app_source:"owner_only_fixture",
   delegated_functional_edits:0,fixture_files_changed:functionalFixture.files_changed
  })+"\n");
