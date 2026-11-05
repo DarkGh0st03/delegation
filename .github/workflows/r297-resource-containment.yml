@@ -5,6 +5,7 @@ on:
     paths:
       - 'src/delegation/authorization/resource_uri.rs'
       - 'src/delegation/authorization/permission.rs'
+      - 'src/delegation/verification/delegation_verifier.rs'
       - '.github/workflows/r297-resource-containment.yml'
   workflow_dispatch:
 permissions:
@@ -19,3 +20,4 @@ jobs:
       - name: Verify resource and permission contracts
         run: |
           cargo test --locked delegation::authorization::
+          cargo test --locked required_leaf_must_be_covered_by_cryptographically_authenticated_vp_scope

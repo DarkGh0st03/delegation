@@ -1,4 +1,7 @@
 import { GiteaExecutor } from "./gitea-executor.ts";
+import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
+import {giteaPermissionCovers}
+ from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 import { performance } from "node:perf_hooks";
 import {
   GatewayError,
@@ -76,9 +79,12 @@ function includesPermission(permissions: Permission[], required: Permission): bo
 
 function validateVerifiedDelegation(
   verified: VerifiedDelegation,
-  record: PreparedRequestRecord
+  record: PreparedRequestRecord,
+  allowVerifiedScope:boolean
 ): void {
-  if (!includesPermission(verified.permissions, record.required_permission)) {
+  if (!includesPermission(verified.permissions, record.required_permission)&&
+      !(allowVerifiedScope&&verified.permissions.some(
+        p=>giteaPermissionCovers(p,record.required_permission)))) {
     throw new VerificationUnavailableError(
       "Verifier response did not contain the required permission"
     );
@@ -173,7 +179,16 @@ export async function executeAuthorization(
       required_permission: record.required_permission,
       signed_vp: request.signed_vp
     });
-    validateVerifiedDelegation(verified, record);
+    // R299: scope expansion is confined to the authority-only read flow.
+    // The concrete native Rust verifier must have explicitly verified the
+    // required leaf against a signed directory grant and its chain.
+    validateVerifiedDelegation(verified, record,
+      !!record.authority_only_digest&&
+      dependencies.authorityOnlyReadEnabled===true&&
+      dependencies.authorityOnlyAdmissions!==undefined&&
+      dependencies.verifier instanceof DirectCoreRustVerifier&&
+      dependencies.verifier.allowsGiteaScopeCoverage&&
+      record.request.tool==="read_file");
   } catch (error) {
     const verificationMs = elapsed(verificationStarted, durationNow);
     const unavailable = error instanceof VerificationUnavailableError;

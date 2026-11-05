@@ -1,0 +1,52 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {giteaPermissionCovers as covers} from "../src/gitea-permission-containment.mjs";
+
+const root="gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension";
+const p=(suffix,operation="read_file")=>({resource:root+"/"+suffix,operation});
+test("R299 exact permissions stay exact and branch/root operations never gain descendants",()=>{
+ assert.equal(covers(p("files/apps/backend/user.ts"),p("files/apps/backend/user.ts")),true);
+ assert.equal(covers(p("files/apps/backend/user.ts"),p("files/apps/backend/user2.ts")),false);
+ assert.equal(covers({resource:root,operation:"run_tests"},p("files/apps/backend/user.ts","run_tests")),false);
+ assert.equal(covers({resource:root,operation:"create_branch"},p("directories","create_branch")),false);
+});
+test("R299 directory grants cover nested directories/files for the SAME operation",()=>{
+ for(const op of ["read_file","update_file","create_file","list_directory"]){
+  const parent=p("directories/apps/backend",op);
+  assert.equal(covers(parent,p("directories/apps/backend/src",op)),true);
+  assert.equal(covers(parent,p("files/apps/backend/src/user.ts",op)),true);
+  assert.equal(covers(p("directories",op),p("files/apps/backend/src/user.ts",op)),true);
+  assert.equal(covers(parent,p("files/apps/backend-extra/escape.ts",op)),false);
+  assert.equal(covers(parent,p("files/apps/backend/src/user.ts","run_tests")),false);
+ }
+});
+test("R299 no prefix, branch/repository crossing, traversal, URI aliases or encoded-path expansion",()=>{
+ const parent=p("directories/apps/backend");
+ for(const denied of [
+  "files/apps/backend-extra/file.ts",
+  "files/apps/backends/file.ts",
+  "files/apps/backend/../secret.ts",
+  "files/apps/backend/%2E%2E/secret.ts",
+  "files/apps/backend/a%2Fb",
+  "files/apps/backend/%252E",
+  "files/apps/backend//bad.ts",
+  "files/apps/backend/evil?query",
+  "files/apps/backend/evil#fragment",
+  "files/apps/backend/evil\0bad",
+  "files/apps/backend/a..b",
+  "directories/apps/backend/../../secret",
+ ]){
+  assert.equal(covers(parent,p(denied)),false,denied);
+ }
+ assert.equal(covers(parent,{resource:"gitea://gitea.local/thesis/other/branches/feature%2Faccount-suspension/files/apps/backend/u.ts",operation:"read_file"}),false);
+ assert.equal(covers(parent,{resource:"gitea://other.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/u.ts",operation:"read_file"}),false);
+ assert.equal(covers(parent,{resource:"gitea://gitea.local/thesis/iam-console-poc/branches/main/files/apps/backend/u.ts",operation:"read_file"}),false);
+ assert.equal(covers(parent,{resource:root.replace("feature%2Faccount-suspension","feature%2faccount-suspension")+"/files/apps/backend/u.ts",operation:"read_file"}),false);
+ assert.equal(covers(p("files/apps/backend"),p("files/apps/backend/u.ts")),false);
+});
+test("R299 file grant, unknown operation or malformed input never create implicit authority",()=>{
+ assert.equal(covers(null,p("files/apps/backend/u.ts")),false);
+ assert.equal(covers(p("directories/apps/backend","read_file"),p("files/apps/backend/u.ts","update_file")),false);
+ assert.equal(covers(p("directories/apps/backend","delete_file"),p("files/apps/backend/u.ts","delete_file")),false);
+ assert.equal(covers({resource:"not-a-uri",operation:"read_file"},p("files/apps/backend/u.ts")),false);
+});

@@ -1,3 +1,5 @@
+import {giteaPermissionCovers}
+ from "../../plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R290 — owner-only Child DC issuance tied to Engineer-signed authority
  * and the Coordinator's immutable, already registered Task/epoch.
@@ -99,8 +101,9 @@ export class TrustedAuthorityOnlyChildIssuer {
      !Array.isArray(task.permissions)||task.permissions.length<1||
      task.permissions.length>128)
    fail("Task does not match live Engineer authority");
-  const approved=new Set(root.root_permissions.map(PAIR));
-  if(task.permissions.some(p=>!approved.has(PAIR(p))))
+  const approved=root.root_permissions;
+  if(task.permissions.some(p=>!approved.some(
+     grant=>giteaPermissionCovers(grant,p))))
    fail("Task permissions exceed operational root");
   if(!parameters||typeof parameters!=="object"||
      Object.keys(parameters).sort().join(",")!==

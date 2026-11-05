@@ -1,3 +1,5 @@
+import {giteaPermissionCovers}
+ from "../../plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R286 — authority-only operational Coordinator, opt-in admission preflight.
  *
@@ -260,8 +262,8 @@ export class TrustedAuthorityOnlyExecutionCoordinator{
   if(!Array.isArray(raw.permissions)||raw.permissions.length<1||
      raw.permissions.length>128)
     fail("invalid Task permission count");
-  const approved=new Set(grant.permissions.map(PAIR));
-  const issued=new Set(root.permissions.map(PAIR));
+  const approved=grant.permissions;
+  const issued=root.permissions;
   const seen=new Set<string>();
   for(const p of raw.permissions){
    exact(p,["resource","operation"]);
@@ -270,7 +272,9 @@ export class TrustedAuthorityOnlyExecutionCoordinator{
       !TOOLS.has(p.operation))
     fail("unknown Task operation or resource");
    const key=PAIR(p);
-   if(seen.has(key)||!approved.has(key)||!issued.has(key))
+   if(seen.has(key)||
+      !approved.some(parent=>giteaPermissionCovers(parent,p))||
+      !issued.some(parent=>giteaPermissionCovers(parent,p)))
     fail("Task attempts authority escalation or duplicate pair");
    if(!pinned.capabilities.includes(p.operation))
     fail("agent does not advertise requested capability");

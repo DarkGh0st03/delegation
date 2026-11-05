@@ -10,6 +10,8 @@
  * public-material cache: the future native build must use a shared, verified,
  * read-only public-material/status source, anchored to the real EVM registry.
  */
+import {giteaPermissionCovers}
+ from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 import {
   VerificationRejectedError,
   VerificationUnavailableError
@@ -52,7 +54,8 @@ function samePermission(a:Permission,b:Permission):boolean {
   return a.resource===b.resource && a.operation===b.operation;
 }
 function validateRustResult(
-  raw:unknown, expectedPresenter:string, required:readonly Permission[]
+  raw:unknown, expectedPresenter:string, required:readonly Permission[],
+  allowGiteaScopeCoverage:boolean
 ):VerifiedDelegation {
   const value=typeof raw==="string" ? JSON.parse(raw) as unknown : raw;
   if(value===null || typeof value!=="object" || Array.isArray(value)) {
@@ -75,7 +78,9 @@ function validateRustResult(
     throw new Error("Malformed verified Rust root credential provenance");
   }
   const verified=v.permissions.map(permission);
-  if(!required.every(p=>verified.some(actual=>samePermission(actual,p)))) {
+  if(!required.every(p=>verified.some(actual=>
+    samePermission(actual,p)||
+    (allowGiteaScopeCoverage&&giteaPermissionCovers(actual,p))))) {
     throw new Error("Native Rust verifier response omits an authorized permission");
   }
   return {
@@ -93,8 +98,10 @@ function validateRustResult(
 export class DirectCoreRustVerifier implements VerifierPort {
   readonly #binding: CoreRustBinding;
   readonly #identities:CoreRustIdentityMap;
+  readonly #allowGiteaScopeCoverage:boolean;
 
-  constructor(binding:CoreRustBinding, identities:CoreRustIdentityMap) {
+  constructor(binding:CoreRustBinding, identities:CoreRustIdentityMap,
+    options?:Readonly<{allowGiteaScopeCoverage?:boolean}>) {
     if(!binding || typeof binding.verify_verifiable_presentation!=="function") {
       throw new Error("A loaded native Rust Core verifier binding is required");
     }
@@ -108,6 +115,12 @@ export class DirectCoreRustVerifier implements VerifierPort {
     }
     this.#binding=binding;
     this.#identities=Object.freeze({...identities});
+    this.#allowGiteaScopeCoverage=options?.allowGiteaScopeCoverage===true;
+  }
+
+  /** Must be explicitly enabled by the trusted authority-only owner. */
+  get allowsGiteaScopeCoverage():boolean {
+    return this.#allowGiteaScopeCoverage;
   }
 
   async verify(request:VerificationRequest):Promise<VerifiedDelegation> {
@@ -160,7 +173,8 @@ export class DirectCoreRustVerifier implements VerifierPort {
       throw new VerificationRejectedError("Rust Core rejected the signed VP or trust context");
     }
     try {
-      return validateRustResult(nativeResult,presenterId,required);
+      return validateRustResult(nativeResult,presenterId,required,
+        this.#allowGiteaScopeCoverage);
     }catch{
       throw new VerificationUnavailableError(
         "Native Rust Core returned an inconsistent verification result"

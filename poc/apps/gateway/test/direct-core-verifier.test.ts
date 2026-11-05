@@ -211,3 +211,32 @@ test("R159 standalone Gateway defaults to native Rust, not issuing Adapter verif
   }
  }
 });
+
+test("R299 native scope-result corroboration requires explicit trusted opt-in",async()=>{
+ const parent:Permission={
+  resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fwork/directories/apps/backend",
+  operation:"read_file"
+ };
+ const file:Permission={
+  resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Fwork/files/apps/backend/src/user.ts",
+  operation:"read_file"
+ };
+ const req:VerificationRequest={...legacy,required_permission:file};
+ const binding=fakeBinding(()=>result([parent]));
+ const historical=new DirectCoreRustVerifier(binding,ids);
+ assert.equal(historical.allowsGiteaScopeCoverage,false);
+ await assert.rejects(historical.verify(req),VerificationUnavailableError);
+ const scoped=new DirectCoreRustVerifier(binding,ids,{allowGiteaScopeCoverage:true});
+ assert.equal(scoped.allowsGiteaScopeCoverage,true);
+ const accepted=await scoped.verify(req);
+ assert.deepEqual(accepted.permissions,[parent]);
+ for(const wrong of [
+  {...file,resource:file.resource.replace("/apps/backend/","/apps/backend-extra/")},
+  {...file,resource:file.resource.replace("feature%2Fwork","feature%2Fother")},
+  {...file,operation:"update_file" as const},
+  {...file,resource:file.resource.replace("/src/user.ts","/../secret.ts")}
+ ]){
+  await assert.rejects(scoped.verify({...req,required_permission:wrong}),
+   VerificationUnavailableError);
+ }
+});

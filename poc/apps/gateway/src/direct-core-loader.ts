@@ -33,7 +33,9 @@ function identitiesFromEnvironment():CoreRustIdentityMap {
 }
 
 /** Fixed relative path: never pass caller/environment-controlled paths. */
-export function loadDirectCoreRustVerifier():DirectCoreRustVerifier {
+export function loadDirectCoreRustVerifier(
+  options?:Readonly<{allowGiteaScopeCoverage?:boolean}>
+):DirectCoreRustVerifier {
   let native:unknown;
   try{
     native=requireNative("./native/delegation-core.node") as unknown;
@@ -58,6 +60,6 @@ export function loadDirectCoreRustVerifier():DirectCoreRustVerifier {
     throw new Error("Native Rust Core verification sources are not ready; refusing startup");
   }
   return new DirectCoreRustVerifier(
-    native as CoreRustBinding,identitiesFromEnvironment()
+    native as CoreRustBinding,identitiesFromEnvironment(),options
   );
 }

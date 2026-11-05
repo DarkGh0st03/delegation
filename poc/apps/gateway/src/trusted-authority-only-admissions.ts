@@ -1,3 +1,5 @@
+import {giteaPermissionCovers}
+ from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
 /**
  * R287 — opt-in, in-process Gateway admission of permission-only Engineer
  * authority and trusted dynamic Coordinator Task bindings.
@@ -248,12 +250,13 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(!Array.isArray(row.depends_on)||
      row.depends_on.some(id=>!this.#taskIds.has(id)))
    deny("Task depends on unregistered Gateway Task");
-  const scoped=new Set(this.#authorizedPermissions!.map(pair));
-  const actual=new Set(root.root_permissions.map(pair));
+  const scoped=this.#authorizedPermissions!;
+  const actual=root.root_permissions;
   if(!Array.isArray(row.permissions)||row.permissions.length<1||
      row.permissions.length>128||
      row.permissions.some(p=>!IMPLEMENTED.has(p.operation)||
-       !scoped.has(pair(p))||!actual.has(pair(p))))
+       !scoped.some(grant=>giteaPermissionCovers(grant,p))||
+       !actual.some(grant=>giteaPermissionCovers(grant,p))))
    deny("Task grant exceeds signed Engineer authority");
   const bound:BoundTask={row:structuredClone(row),runtime_task_id:runtimeTaskId};
   this.#bindingInFlight=true;
@@ -444,7 +447,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   })).digest("hex");
   if(digest!==record.request_fingerprint||
      pair(normalized.required_permission)!==pair(record.required_permission)||
-     !verified.permissions.some(p=>pair(p)===pair(record.required_permission)))
+     !verified.permissions.some(p=>giteaPermissionCovers(p,record.required_permission)))
    deny("completed read permission or prepared request fingerprint changed");
   return Object.freeze({
    ...structuredClone(flight),agent_did:bound.row.agent_did
@@ -554,9 +557,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      deny("operation outside signed work branch");
   }
   const required=deriveRequiredPermission(this.#repository,request.request);
-  if(!bound.row.permissions.some(p=>pair(p)===pair(required))||
-     !this.#authorizedPermissions!.some(p=>pair(p)===pair(required))||
-     !this.#rootPermissions!.some(p=>pair(p)===pair(required)))
+  if(!bound.row.permissions.some(p=>giteaPermissionCovers(p,required))||
+     !this.#authorizedPermissions!.some(p=>giteaPermissionCovers(p,required))||
+     !this.#rootPermissions!.some(p=>giteaPermissionCovers(p,required)))
    deny("request operation or resource not in exact signed Task grant");
   return Object.freeze({
    status:"gateway_permission_preflight_only",
@@ -614,7 +617,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(current.authority_digest!==record.authority_only_digest||
      current.plan_task_id!==record.authority_only_plan_task_id||
      pair(current.required_permission)!==pair(record.required_permission)||
-     !verified.permissions.some(p=>pair(p)===pair(record.required_permission)))
+     !verified.permissions.some(p=>giteaPermissionCovers(p,record.required_permission)))
    deny("prepared canonical Task grant changed during VP and OPA");
   // Missing: native Child DC rooted in this operational grant, status and
   // epoch binding. Do NOT fall back to legacy Gateways or providers.

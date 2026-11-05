@@ -6,7 +6,8 @@
  * existing signed-plan runtime. An independently authenticated Engineer must
  * control use of the private key; a valid signature alone proves no GUI click.
  *
- * Hierarchical resource containment is intentionally excluded pending R2/R3.
+ * R299 accepts canonical directory grants for file operations; containment
+ * is independently checked during Task binding, Rust VP verification and OPA.
  */
 import {createHash,createPrivateKey,createPublicKey,sign,verify}
   from "node:crypto";
@@ -74,7 +75,12 @@ function validatePermissionKinds(rows,repo,branch){
   }else if(op==="run_tests"){
    if(r!==branchUri)deny("runner operation has wrong resource kind");
   }else if(["read_file","update_file","create_file"].includes(op)){
-   if(!r.startsWith(branchUri+"/files/"))deny("file operation has wrong resource kind");
+   // A directory grant is a recursive maximum scope, never an operation
+   // executed against a directory. The Gateway derives a concrete file URI.
+   if(!r.startsWith(branchUri+"/files/")&&
+      r!==branchUri+"/directories"&&
+      !r.startsWith(branchUri+"/directories/"))
+    deny("file operation has wrong resource kind");
   }else if(op==="list_directory"){
    if(r!==branchUri+"/directories"&&
       !r.startsWith(branchUri+"/directories/"))

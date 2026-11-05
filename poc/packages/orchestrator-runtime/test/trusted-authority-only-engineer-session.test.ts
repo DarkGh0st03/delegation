@@ -1540,3 +1540,88 @@ test("R296 opt-in read without durable flight never calls Gitea",async()=>{
   assert.equal(giteaCalls,0);
  });
 });
+
+test("R299 signed Engineer directory grant permits narrower trusted Task, enrolled Child and Gateway read preflight",async()=>{
+ const scope={resource:root+"/branches/feature%2Faccount-suspension/directories/apps/backend",
+  operation:"read_file"};
+ const draft={schema_version:"1.0.0",session_id:sessionId,
+  repository:{...repo},branch,base_revision:hash,requirement,
+  requested_permissions:[scope]};
+ const grant=selectAuthorityOnlyGrant(draft,[scope],{allowedOperations:operations});
+ const receipt=signAuthorityOnlyGrant({authorization:grant,engineerDid:did,keyId,
+  privateKeyPem,issuedAt:"2026-11-05T07:00:00Z",
+  expiresAt:"2026-11-05T09:00:00Z",allowedOperations:operations});
+ await fixture(async({session,approvals,taskJournal,childJournal,
+  gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  const task:AuthorityOnlyTaskProposal={
+   ...nextTask(),permissions:[{resource:file,operation:"read_file"}]
+  };
+  await coordinator.registerTask(task);
+  const calls:ExactTrustedChildIssuance[]=[];
+  const issuer=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort(calls),
+   journal:childJournal,nowMs:()=>nowMs
+  });
+  const child=await issuer.issueForRegisteredTask("task-backend",
+   params("urn:authority:r299-leaf-child","963",600));
+  assert.deepEqual(child.permissions,task.permissions);
+  assert.equal(calls.length,1);
+  const gateway=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
+   nowMs:()=>nowMs
+  });
+  await gateway.activate(sessionId,hash);
+  await gateway.bindTrustedTask("task-backend","runtime-r299","backend");
+  await gateway.enrollTrustedIssuedChild("task-backend","runtime-r299",issuer);
+  const req={task_id:"runtime-r299",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"}} as const;
+  const allowed=gateway.preflightCanonicalRequest(req);
+  assert.deepEqual(allowed.required_permission,{resource:file,operation:"read_file"});
+  assert.equal(allowed.gateway_execution_authorized,false);
+  assert.throws(()=>gateway.preflightCanonicalRequest({
+   ...req,arguments:{branch,path:"apps/backend-extra/user.ts"}
+  }),/not in exact signed Task grant/);
+  assert.throws(()=>gateway.preflightCanonicalRequest({
+   ...req,tool:"update_file",
+   arguments:{branch,path:"apps/backend/user.ts",content:"forbidden"}
+  }),/not in exact signed Task grant/);
+  assert.throws(()=>gateway.assertExecutionReady(),/unavailable/);
+ },receipt);
+});
+
+test("R299 signed directory grant cannot authorize sibling Task scope",async()=>{
+ const scope={resource:root+"/branches/feature%2Faccount-suspension/directories/apps/backend",
+  operation:"read_file"};
+ const draft={schema_version:"1.0.0",session_id:sessionId,
+  repository:{...repo},branch,base_revision:hash,requirement,
+  requested_permissions:[scope]};
+ const grant=selectAuthorityOnlyGrant(draft,[scope],{allowedOperations:operations});
+ const receipt=signAuthorityOnlyGrant({authorization:grant,engineerDid:did,keyId,
+  privateKeyPem,issuedAt:"2026-11-05T07:00:00Z",
+  expiresAt:"2026-11-05T09:00:00Z",allowedOperations:operations});
+ await fixture(async({session,approvals,taskJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await assert.rejects(coordinator.registerTask({
+   ...nextTask(),permissions:[{
+    resource:root+"/branches/feature%2Faccount-suspension/files/apps/backend-extra/user.ts",
+    operation:"read_file"
+   }]
+  }),/Task attempts authority escalation/);
+  assert.equal(coordinator.phase,"active");
+ },receipt);
+});

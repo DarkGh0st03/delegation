@@ -102,7 +102,7 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
         let missing = context
             .required_permissions()
             .iter()
-            .filter(|required| !permissions.contains(required))
+            .filter(|required| !permissions.iter().any(|grant| grant.covers(required)))
             .map(ToString::to_string)
             .collect::<Vec<_>>();
         if !missing.is_empty() {
@@ -1103,6 +1103,96 @@ mod tests {
                 .verify_verifiable_presentation(context, signed_vp)
                 .is_err()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn required_leaf_must_be_covered_by_cryptographically_authenticated_vp_scope(
+    ) -> Result<(), String> {
+        type Curve = Bn254;
+        let scope = |suffix: &str, op: Operation| {
+            Permission::new(
+                format!(
+                    "gitea://gitea.local/thesis/repo/branches/feature%2Fwork/{suffix}"
+                ),
+                op,
+            )
+            .unwrap()
+        };
+        let trust = Rc::new(InMemoryTrustStore::<Curve>::new());
+        let issuer_id = String::from("https://vc.example/delegators/r299-root");
+        let root = prepared_issuer(issuer_id, trust.clone())?;
+        trust.set_trust_anchor(root.holder_id(), true)?;
+        let holder_id = String::from("https://vc.example/delegators/r299-holder");
+        let scoped = scope("directories/apps/backend", Operation::ReadFile);
+        let credential = root.issue_delegation_verifiable_credential(
+            vec![String::from("https://www.w3.org/ns/credentials/v2")],
+            String::from("http://delegation.example/credentials/r299-directory"),
+            test_status(299),
+            String::from("2026-01-01T00:00:00Z"),
+            holder_id.clone(),
+            Duration::new(3600, 0),
+            vec![scoped.clone()],
+            None,
+        )?;
+        let status = resolver_for_vc(&credential)?;
+        let holder = prepared_issuer(holder_id.clone(), trust.clone())?;
+        let signed = holder.issue_delegation_verifiable_presentation(
+            credential,
+            vec![scoped.clone()],
+            String::from("cloud-access-gateway"),
+            String::from("r299-challenge"),
+        )?;
+        let verifier = DelegationVerifier::new(trust, status)?;
+        let allowed = [
+            scope("files/apps/backend/user.ts", Operation::ReadFile),
+            scope("files/apps/backend/src/nested.ts", Operation::ReadFile),
+        ];
+        let authorized = AuthorizationContext::new_multiple(
+            holder_id.clone(),
+            String::from("cloud-access-gateway"),
+            String::from("r299-challenge"),
+            allowed.to_vec(),
+        )?;
+        let verified = verifier.verify_verifiable_presentation(authorized, signed.clone())?;
+        assert_eq!(verified.permissions(), &vec![scoped]);
+        for denied in [
+            scope("files/apps/backend-extra/user.ts", Operation::ReadFile),
+            scope("files/apps/backend/../secret.ts", Operation::ReadFile),
+            scope("files/apps/backend/%2E%2E/secret.ts", Operation::ReadFile),
+            scope("files/apps/backend/user.ts", Operation::UpdateFile),
+            Permission::new(
+                "gitea://gitea.local/thesis/other/branches/feature%2Fwork/files/apps/backend/user.ts".to_owned(),
+                Operation::ReadFile,
+            )?,
+            Permission::new(
+                "gitea://gitea.local/thesis/repo/branches/main/files/apps/backend/user.ts".to_owned(),
+                Operation::ReadFile,
+            )?,
+        ] {
+            let context = AuthorizationContext::new(
+                holder_id.clone(),
+                String::from("cloud-access-gateway"),
+                String::from("r299-challenge"),
+                denied,
+            )?;
+            let error = verifier
+                .verify_verifiable_presentation(context, signed.clone())
+                .expect_err("out-of-scope signed VP must fail");
+            assert!(error.contains("Required permissions not disclosed"));
+        }
+        let mixed = AuthorizationContext::new_multiple(
+            holder_id,
+            String::from("cloud-access-gateway"),
+            String::from("r299-challenge"),
+            vec![
+                allowed[0].clone(),
+                scope("files/apps/backend-extra/user.ts", Operation::ReadFile),
+            ],
+        )?;
+        assert!(verifier
+            .verify_verifiable_presentation(mixed, signed)
+            .is_err());
         Ok(())
     }
 
