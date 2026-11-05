@@ -87,6 +87,7 @@ export class TrustedAuthorityOnlyExecutionCoordinator{
  #rootExpiry?:string;
  #epoch=0;
  readonly #taskIds=new Set<string>();
+ readonly #registered=new Map<string,RegisteredAuthorityOnlyTask>();
  #bindingInFlight=false;
 
  constructor(opts:{
@@ -191,6 +192,39 @@ export class TrustedAuthorityOnlyExecutionCoordinator{
   }
  }
  /**
+  * Host-private projection for an opt-in Gateway authority admission gate.
+  * Never an HTTP/MCP/A2A handler. The Gateway MUST still independently
+  * verify the signed receipt, root status/VP, OPA and provider effects.
+  */
+ assertTrustedGatewayAuthorityBinding(){
+  const root=this.#assertCurrentRoot();
+  const grant=this.#authority!.authorization;
+  return Object.freeze({
+   session_id:this.#sessionId,
+   repository:structuredClone(grant.repository),
+   branch:grant.branch,
+   base_revision:grant.base_revision,
+   requirement_sha256:grant.requirement_sha256,
+   authority_digest:this.#authority!.authority_digest,
+   engineer_did:this.#authority!.authenticated_engineer_did,
+   expires_at:this.#authority!.expires_at,
+   root_credential_id:root.credential_id,
+   root_expires_at:root.root_expires_at,
+   root_permissions:structuredClone(root.permissions)
+  });
+ }
+ /** The Gateway obtains Task grants from THIS admitted Coordinator state,
+  * never from an A2A/LLM-supplied serialized registration receipt. */
+ assertTrustedGatewayRegisteredTask(taskId:string):RegisteredAuthorityOnlyTask{
+  this.#assertCurrentRoot();
+  if(typeof taskId!=="string"||!ID.test(taskId))
+   fail("invalid trusted Task lookup");
+  const row=this.#registered.get(taskId);
+  if(!row||!this.#taskIds.has(taskId))
+   fail("Task not admitted in trusted Coordinator");
+  return structuredClone(row);
+ }
+ /**
   * Host-only registration of an epoch-specific Task. A trusted registry
   * supplies DID and card_ref: the model supplies neither. Dependencies must
   * name earlier registered Tasks (not model-claimed completed Tasks).
@@ -261,6 +295,7 @@ export class TrustedAuthorityOnlyExecutionCoordinator{
    this.#assertCurrentRoot();
    this.#epoch=raw.epoch;
    this.#taskIds.add(raw.task_id);
+   this.#registered.set(raw.task_id,structuredClone(receipt));
    return receipt;
   }catch(error){
    this.#phase="failed_closed";

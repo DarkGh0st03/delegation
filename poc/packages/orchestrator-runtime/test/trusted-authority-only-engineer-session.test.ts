@@ -5,6 +5,10 @@ import {mkdtemp,chmod,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
+import {TrustedOperationalSessionStore}
+ from "../../../apps/gateway/src/trusted-operational-session-store.ts";
+import {TrustedAuthorityOnlyGatewayAdmissions}
+ from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {signAuthorityOnlyGrant,verifyAuthorityOnlyGrant,
  selectAuthorityOnlyGrant} from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
 import {SignedAuthorityOnlyFileStore} from "../src/signed-authority-only-store.ts";
@@ -94,16 +98,22 @@ async function fixture(fn:(x:{
  log:Array<{event:string;id?:string;permissions?:readonly DelegatedPermission[]}>;
  journal:DurableAuthorityOnlyActivationJournal;
  taskJournal:DurableAuthorityTaskJournal;
+ gatewayTaskJournal:DurableAuthorityTaskJournal;
+ gatewaySessionStore:TrustedOperationalSessionStore;
  approvals:SignedAuthorityOnlyFileStore;
  createSession:()=>TrustedAuthorityOnlyEngineerSession;
  save:(receipt?:object)=>Promise<void>
 })=>Promise<void>,receipt=signedReceipt()){
  const directory=await mkdtemp(join(tmpdir(),"delegation-r285-"));
  const receiptDir=join(directory,"approvals"),journalDir=join(directory,"journal"),
-  taskDir=join(directory,"task-journal");
+  taskDir=join(directory,"task-journal"),
+  gatewayDir=join(directory,"gateway-sessions"),
+  gatewayTaskDir=join(directory,"gateway-tasks");
  const {mkdir}=await import("node:fs/promises");
  await mkdir(receiptDir,{mode:0o700});await mkdir(journalDir,{mode:0o700});
  await mkdir(taskDir,{mode:0o700});
+ await mkdir(gatewayDir,{mode:0o700});
+ await mkdir(gatewayTaskDir,{mode:0o700});
  const save=async(raw:object=receipt)=>{
   await writeFile(join(receiptDir,sessionId+".json"),JSON.stringify(raw),{mode:0o600});
   await chmod(join(receiptDir,sessionId+".json"),0o600);
@@ -116,6 +126,8 @@ async function fixture(fn:(x:{
    engineerDid:did,trustedKeys,nowMs:()=>nowMs});
   const journal=new DurableAuthorityOnlyActivationJournal(journalDir);
   const taskJournal=new DurableAuthorityTaskJournal(taskDir);
+  const gatewayTaskJournal=new DurableAuthorityTaskJournal(gatewayTaskDir);
+  const gatewaySessionStore=new TrustedOperationalSessionStore(gatewayDir);
   const createSession=()=>new TrustedAuthorityOnlyEngineerSession({
    snapshot:snapshot(),requirement,credentials:issuer,approvals,journal,
    authenticatedEngineerDid:did,nowMs:()=>nowMs,
@@ -129,7 +141,8 @@ async function fixture(fn:(x:{
     async end(taskId){log.push({event:"revision.end",id:taskId});}
    }
   });
-  await fn({issuer,session:createSession(),log,journal,taskJournal,approvals,createSession,save});
+  await fn({issuer,session:createSession(),log,journal,taskJournal,
+   gatewayTaskJournal,gatewaySessionStore,approvals,createSession,save});
  }finally{await rm(directory,{recursive:true,force:true});}
 }
 test("R285 only authority pairs are issued after confirmed Planning retirement and Rust revocation",async()=>{
@@ -389,5 +402,131 @@ test("R286 Coordinator cannot activate after root expiry or with fake verified E
    journal:taskJournal,trustedAgentRegistry:registry,nowMs:()=>nowMs
   });
   await assert.rejects(forged.activate(),/unverified Engineer authority/);
+ });
+});
+
+
+// R287: Gateway authority-only admission is opt-in and PREPARE/EXECUTE
+// remain unreachable from this registry until Rust VP and OPA are integrated.
+test("R287 Gateway independently verifies Engineer signature and exact dynamic Task scope",async()=>{
+ await fixture(async({session,approvals,taskJournal,
+  gatewayTaskJournal,gatewaySessionStore,log})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  const gateway=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  const started=await gateway.activate(sessionId,hash);
+  assert.equal(started.status,"gateway_authority_admitted_preflight_only");
+  assert.equal(started.gateway_execution_authorized,false);
+  await assert.rejects(gateway.bindTrustedTask("unknown","runtime-unknown","backend"),
+   /Task not admitted/);
+  const receipt=await coordinator.registerTask(nextTask());
+  assert.equal(receipt.gateway_registered,false);
+  await assert.rejects(gateway.bindTrustedTask("task-backend","runtime-a","frontend"),
+   /Task differs/);
+  const admitted=await gateway.bindTrustedTask("task-backend","runtime-a","backend");
+  assert.equal(admitted.gateway_execution_authorized,false);
+  const allowed=gateway.preflightCanonicalRequest({
+   task_id:"runtime-a",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"}
+  });
+  assert.equal(allowed.status,"gateway_permission_preflight_only");
+  assert.equal(allowed.required_permission.resource,file);
+  assert.equal(allowed.gateway_execution_authorized,false);
+  for(const raw of [
+   {task_id:"unbound",agent_role:"backend",tool:"read_file",
+    arguments:{branch,path:"apps/backend/user.ts"}},
+   {task_id:"runtime-a",agent_role:"frontend",tool:"read_file",
+    arguments:{branch,path:"apps/backend/user.ts"}},
+   {task_id:"runtime-a",agent_role:"backend",tool:"update_file",
+    arguments:{branch,path:"apps/backend/user.ts",content:"not approved by Task"}},
+   {task_id:"runtime-a",agent_role:"backend",tool:"read_file",
+    arguments:{branch,path:"apps/backend-extra/user.ts"}},
+   {task_id:"runtime-a",agent_role:"backend",tool:"read_file",
+    arguments:{branch:"main",path:"apps/backend/user.ts"}},
+   {task_id:"runtime-a",agent_role:"backend",tool:"read_file",
+    arguments:{branch,path:"../private/.env"}}
+  ])assert.throws(()=>gateway.preflightCanonicalRequest(raw as never));
+  assert.throws(()=>gateway.assertExecutionReady(),/unavailable/);
+  assert.deepEqual(log.filter(x=>x.event==="issue").map(x=>x.id),
+   [preliminary.credential_id,operational.credential_id]);
+ });
+});
+
+test("R287 Gateway denies replay, dependencies without trusted completion and double-binding",async()=>{
+ await fixture(async({session,approvals,taskJournal,
+  gatewayTaskJournal,gatewaySessionStore})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  const create=()=>new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  const gateway=create();
+  await gateway.activate(sessionId,hash);
+  const duplicate=create();
+  await assert.rejects(duplicate.activate(sessionId,hash),
+   /operational session already used or retired/);
+  assert.equal(duplicate.phase,"failed_closed");
+  await coordinator.registerTask(nextTask());
+  await gateway.bindTrustedTask("task-backend","runtime-a","backend");
+  await coordinator.registerTask(nextTask("frontend",2,"task-frontend"));
+  const second=await gateway.bindTrustedTask("task-frontend","runtime-b","frontend");
+  assert.equal(second.gateway_execution_authorized,false);
+  assert.throws(()=>gateway.preflightCanonicalRequest({
+   task_id:"runtime-b",agent_role:"frontend",tool:"update_file",
+   arguments:{branch,path:"apps/backend/user.ts",content:"not yet attested"}
+  }),/dependency completion not yet Gateway-attested/);
+  await assert.rejects(gateway.bindTrustedTask("task-backend","runtime-c","backend"),
+   /replayed or invalid/);
+  assert.equal(gateway.registeredTaskCount,2);
+ });
+});
+
+test("R287 Gateway denies untrusted receipt reader, changed repo and expired root",async()=>{
+ await fixture(async({session,approvals,taskJournal,
+  gatewayTaskJournal,gatewaySessionStore})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  assert.throws(()=>new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,
+   approvals:{...approvals} as never,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  }),/trusted Gateway admission dependencies missing/);
+  const wrong=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:{...repo,repository:"outside"},engineerDid:did,
+   coordinator,approvals,operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  await assert.rejects(wrong.activate(sessionId,hash),
+   /Coordinator root belongs to different trusted session/);
+  const expired=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,
+   nowMs:()=>Date.parse("2026-11-05T07:45:00Z")
+  });
+  await assert.rejects(expired.activate(sessionId,hash),/expired/);
+  assert.equal(expired.phase,"failed_closed");
  });
 });
