@@ -3,6 +3,9 @@ import {
   createGeminiAdkModel,
   SPECIALIZED_AGENT_ROLES,
   startSpecializedAgentServer,
+  TrustedEffectStagingTaskRegistry,
+  connectTrustedOwnerEffectStagingClient,
+  createTrustedEffectAgentBindingServer,
   type SpecializedAgentRole
 } from "@thesis/agent-runtime";
 import {requireProductionDirectGatewayTools,requireProductionNativeCrypto} from "./mcp-tool-flags.ts";
@@ -70,6 +73,20 @@ const roleToken = {
   frontend: "ADAPTER_CALLER_FRONTEND",
   test: "ADAPTER_CALLER_TEST"
 }[role];
+const architecture=process.env.DELEGATION_GATEWAY_ARCHITECTURE;
+if(architecture!==undefined&&
+   architecture!=="authority-only"&&architecture!=="legacy-signed-dag")
+ throw Error("Unsupported Gateway architecture selector");
+const ownerOnly=architecture==="authority-only";
+if(ownerOnly&&engine!=="adk")
+ throw Error("Authority-only Task binding requires ADK runtime");
+const effectRegistry=ownerOnly?new TrustedEffectStagingTaskRegistry():undefined;
+const ownerIpcFiles=[
+ "ADK_OWNER_STAGE_SOCKET","ADK_OWNER_STAGE_SECRET_FILE",
+ "ADK_PRIVATE_TASK_BIND_SOCKET","ADK_PRIVATE_TASK_BIND_SECRET_FILE"
+] as const;
+if(!ownerOnly&&ownerIpcFiles.some(name=>process.env[name]!==undefined))
+ throw Error("Private authority-only Task transport cannot run in legacy mode");
 const provider = process.env.ADK_MODEL_PROVIDER ?? "openai";
 if (engine === "adk" && provider !== "openai" && provider !== "gemini") {
   throw new Error("ADK_MODEL_PROVIDER must be openai or gemini");
@@ -83,6 +100,7 @@ const adk = engine === "adk"
           })
         : new OpenAIAdkModel({ apiKey: required("OPENAI_API_KEY") }),
       gatewayBaseUrl: required("GATEWAY_URL"),
+      ...(effectRegistry?{trustedEffectTaskRegistry:effectRegistry}:{}),
       // One native Rust crypto socket handles Child DC and VP; no Adapter HTTP URL.
       adapterToken: required(roleToken),
       maxModelTurns: turnsFromEnvironment(),
@@ -103,13 +121,34 @@ const mcpTaskSigning=localKeys
      signingPublicKeyPem:localKeys.publicKey.export({
        format:"pem",type:"spki"}).toString()}
   : undefined;
-const runtime = await startSpecializedAgentServer({
+// Owner-provisioned paths point to 0600 secret files in 0700 directories.
+ // Env values select endpoints only: no Task, Child, HEAD or signer is
+ // accepted from environment variables, A2A metadata, MCP or model calls.
+const stageClient=effectRegistry
+ ?await connectTrustedOwnerEffectStagingClient({
+   socketPath:required("ADK_OWNER_STAGE_SOCKET"),
+   secretFile:required("ADK_OWNER_STAGE_SECRET_FILE")
+  }):undefined;
+const bindingServer=effectRegistry&&stageClient
+ ?await createTrustedEffectAgentBindingServer({
+   socketPath:required("ADK_PRIVATE_TASK_BIND_SOCKET"),
+   secretFile:required("ADK_PRIVATE_TASK_BIND_SECRET_FILE"),
+   registry:effectRegistry,ownerStageClient:stageClient
+  }):undefined;
+await bindingServer?.start(); // HMAC owner bind ready BEFORE A2A starts
+let runtime:Awaited<ReturnType<typeof startSpecializedAgentServer>>;
+try{
+ runtime=await startSpecializedAgentServer({
   role,
   port,
   host: process.env.AGENT_BIND_HOST ?? "127.0.0.1",
   ...(adk ? { adk } : {}),
   ...(mcpTaskSigning ? {mcpTaskSigning} : {})
-});
+ });
+}catch(error){
+ await bindingServer?.close(); // close and fence pending Task pins
+ throw error;
+}
 
 process.stdout.write(
   JSON.stringify({
@@ -122,8 +161,10 @@ process.stdout.write(
 );
 
 async function shutdown(): Promise<void> {
-  await runtime.close();
-  process.exit(0);
+  const result=await Promise.allSettled([
+    runtime.close(),bindingServer?.close()
+  ]);
+  process.exit(result.some(r=>r.status==="rejected")?1:0);
 }
 
 process.on("SIGTERM", () => void shutdown());

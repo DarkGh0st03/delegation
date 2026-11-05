@@ -28,3 +28,11 @@ export {startTrustedBackendDiscoveryHost} from "./trusted-backend-discovery-host
 export {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
 
 export {TrustedEffectStagingTaskRegistry} from "./trusted-effect-staging-task-registry.ts";
+
+export {
+ TrustedOwnerEffectStagingRegistry,
+ createTrustedOwnerEffectStagingServer,
+ connectTrustedOwnerEffectStagingClient,
+ createTrustedEffectAgentBindingServer,
+ connectTrustedEffectAgentBindingClient
+} from "./trusted-effect-staging-unix-ipc.ts";
