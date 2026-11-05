@@ -9,7 +9,7 @@ import {
 import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
-import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
+import { GatewayControlledToolClient, type TrustedEffectStagingPort } from "./gateway-tool-client.ts";
 import {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
 import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A,
  type TrustedBackendDiscoveryA2ABinding} from "./trusted-backend-discovery-a2a-binding.ts";
@@ -27,6 +27,8 @@ import {safeAdkResponseShape,classifyAdkResponseFailure,
 type FetchLike = typeof fetch;
 
 export interface AdkA2ATaskHandlerConfig {
+  /** Owner-prebound one-effect staging port; never supplied by A2A payload. */
+  trustedEffectStager?:TrustedEffectStagingPort;
   model: BaseLlm;
   gatewayBaseUrl: string;
   /** Optional for native task-local Rust; legacy unsigned HTTP fixtures only. */
@@ -286,6 +288,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         })
       : selectedDiscovery;
     const gatewayClient = new GatewayControlledToolClient({
+      ...(config.trustedEffectStager?{trustedEffectStager:config.trustedEffectStager}:{}),
       gatewayBaseUrl: config.gatewayBaseUrl,
       agentRole: context.role,
       taskId: context.trusted_gateway_task_id??context.task_id,

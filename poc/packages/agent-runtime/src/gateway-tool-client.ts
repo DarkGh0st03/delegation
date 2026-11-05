@@ -18,7 +18,15 @@ export const SPECIALIZED_TOOL_NAMES = [
 ] as const;
 export type SpecializedToolName = (typeof SPECIALIZED_TOOL_NAMES)[number];
 
+/** Owner-private port; implementations must resolve request IDs in the
+ * owner's shared store and enforce prebound Task/operation/HEAD pins. */
+export interface TrustedEffectStagingPort {
+  stage(requestId:string):Promise<unknown>;
+}
+
 export interface GatewayControlledToolClientConfig {
+  /** Installed only by the trusted host, never from tool/A2A arguments. */
+  trustedEffectStager?:TrustedEffectStagingPort;
   gatewayBaseUrl: string;
   agentRole: SpecializedAgentRole;
   taskId: string;
@@ -75,6 +83,7 @@ async function parseJson(response: Response, label: string): Promise<unknown> {
 }
 
 export class GatewayControlledToolClient {
+  readonly #trustedEffectStager?:TrustedEffectStagingPort;
   readonly #gatewayBaseUrl: string;
   readonly #agentRole: SpecializedAgentRole;
   readonly #taskId: string;
@@ -96,6 +105,10 @@ export class GatewayControlledToolClient {
       throw new Error("Gateway task id cannot be empty");
     }
 
+    if(config.trustedEffectStager!==undefined&&
+       typeof config.trustedEffectStager?.stage!=="function")
+      throw new Error("Invalid trusted effect staging port");
+    this.#trustedEffectStager=config.trustedEffectStager;
     this.#gatewayBaseUrl = config.gatewayBaseUrl.replace(/\/+$/u, "");
     this.#agentRole = config.agentRole;
     this.#taskId = config.taskId;
@@ -177,6 +190,17 @@ export class GatewayControlledToolClient {
     }
 
     this.#signal?.throwIfAborted();
+    if(this.#trustedEffectStager){
+      try{
+        await this.#trustedEffectStager.stage(prepared.request_id);
+      }catch{
+        // Owner errors may contain private provider data. Fail closed before
+        // presentation/execute without exposing the error to model tools.
+        throw new ControlledToolError("tool_unavailable",
+          "Trusted effect staging failed");
+      }
+      this.#signal?.throwIfAborted();
+    }
     // Both paths keep the signed VP in trusted runtime memory; the MCP path
     // returns only an opaque reference to its private worker before executing.
     const signedVp = this.#cryptoPresentation
