@@ -28,6 +28,12 @@ import {DurableAuthorityTaskJournal}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-task-journal.ts";
 import {DurableAuthorityOnlyChildJournal}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts";
+import {DurableAuthorityOnlyTaskFenceJournal,
+ type TrustedTaskFlight}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-task-fence-journal.ts";
+import {TrustedAuthorityOnlyCompletionObserver,
+ type TrustedCompletionExpectation}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
 import {TrustedAuthorityOnlyChildIssuer,type VerifiedStagedChild}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts";
 import {assertVerifiedAuthorityOnlyGrant}
@@ -55,6 +61,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #activationStore:TrustedOperationalSessionStore;
  readonly #taskJournal:DurableAuthorityTaskJournal;
  readonly #childJournal?:DurableAuthorityOnlyChildJournal;
+ readonly #effectFenceJournal?:DurableAuthorityOnlyTaskFenceJournal;
+ readonly #completionObserver?:TrustedAuthorityOnlyCompletionObserver;
  readonly #nowMs:()=>number;
  #phase:Phase="inactive";
  #session?:string;
@@ -69,8 +77,12 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #tasks=new Map<string,BoundTask>();
  readonly #taskIds=new Set<string>();
  readonly #enrolledChildren=new Map<string,VerifiedStagedChild>();
+ readonly #flights=new Map<string,TrustedTaskFlight>();
+ readonly #completed=new Set<string>();
  #bindingInFlight=false;
  #enrollmentInFlight=false;
+ #flightInFlight=false;
+ #completionInFlight=false;
 
  constructor(opts:{
   repository:GatewayRepositoryConfig;
@@ -80,6 +92,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   operationalSessionStore:TrustedOperationalSessionStore;
   taskJournal:DurableAuthorityTaskJournal;
   childJournal?:DurableAuthorityOnlyChildJournal;
+  effectFenceJournal?:DurableAuthorityOnlyTaskFenceJournal;
+  completionObserver?:TrustedAuthorityOnlyCompletionObserver;
   nowMs?:()=>number;
  }){
   if(!opts||
@@ -103,10 +117,19 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      !(opts.childJournal instanceof DurableAuthorityOnlyChildJournal))
    deny("trusted native Child enrollment journal missing");
   this.#childJournal=opts.childJournal;
+  if(opts.effectFenceJournal!==undefined&&
+     !(opts.effectFenceJournal instanceof DurableAuthorityOnlyTaskFenceJournal))
+   deny("independent owner-private effect flight journal required");
+  if(opts.completionObserver!==undefined&&
+     !(opts.completionObserver instanceof TrustedAuthorityOnlyCompletionObserver))
+   deny("owner-controlled completion verification reader required");
+  this.#effectFenceJournal=opts.effectFenceJournal;
+  this.#completionObserver=opts.completionObserver;
   this.#nowMs=opts.nowMs??Date.now;
  }
  get phase():Phase{return this.#phase;}
  get registeredTaskCount():number{return this.#tasks.size;}
+ get stagedCompletedTaskCount():number{return this.#completed.size;}
  #now():number{
   const now=this.#nowMs();
   if(!Number.isSafeInteger(now)||now<0)deny("trusted Gateway clock invalid");
@@ -309,6 +332,136 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#enrollmentInFlight=false;}
  }
  /**
+  * R293: reserve exactly ONE Task flight in an independent durable journal.
+  * The caller supplies a previously protected local Gateway Prepare record,
+  * never permissions or a provider result. This is a staged fence, NOT a
+  * replacement for native VP / OPA / provider execution validation.
+  */
+ async stageTrustedTaskFlight(record:PreparedRequestRecord):Promise<Readonly<{
+  status:"task_flight_reserved_no_provider_execution";
+  task_id:string;runtime_task_id:string;
+  gateway_execution_authorized:false
+ }>>{
+  const root=this.#live();
+  if(!(this.#effectFenceJournal instanceof DurableAuthorityOnlyTaskFenceJournal))
+   deny("owner-private Task flight journal missing");
+  if(this.#flightInFlight)deny("concurrent Task flight admission denied");
+  if(!record||typeof record!=="object"||record.consumed!==false)
+   deny("untrusted or already consumed Gateway Prepare binding");
+  const bound=this.#tasks.get(record.task_id);
+  const child=this.#enrolledChildren.get(record.task_id);
+  if(!bound||!child||this.#flights.has(bound.row.task_id)||
+     this.#completed.has(bound.row.task_id)||
+     bound.row.task_id!==record.authority_only_plan_task_id||
+     bound.row.agent_id!==record.agent_role||
+     bound.row.agent_did!==record.authority_only_agent_did||
+     record.authority_only_digest!==root.authority_digest||
+     child.credential_id===root.root_credential_id||
+     child.epoch!==bound.row.epoch||
+     child.agent_did!==bound.row.agent_did||
+     child.authority_digest!==root.authority_digest||
+     child.root_credential_id!==root.root_credential_id||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("Task flight lacks exact native Child and prepared authority binding");
+  const allowed=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  if(pair(allowed.required_permission)!==pair(record.required_permission))
+   deny("Task flight request differs from canonical signed grant");
+  const flight:TrustedTaskFlight=Object.freeze({
+   session_id:root.session_id,authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,
+   task_id:bound.row.task_id,runtime_task_id:record.task_id,
+   epoch:bound.row.epoch,credential_id:child.credential_id,
+   request_id:record.request_id,request_fingerprint:record.request_fingerprint
+  });
+  this.#flightInFlight=true;
+  try{
+   await this.#effectFenceJournal.reserveFlight(flight);
+   this.#live();
+   if(this.#now()>=Date.parse(child.expires_at))
+    deny("native Child expired during durable Task effect reservation");
+   this.#flights.set(bound.row.task_id,flight);
+   return Object.freeze({
+    status:"task_flight_reserved_no_provider_execution",
+    task_id:bound.row.task_id,runtime_task_id:record.task_id,
+    gateway_execution_authorized:false
+   });
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#flightInFlight=false;}
+ }
+ /**
+  * R293: the caller passes IDs only, never an untrusted success claim.
+  * A separately owner-injected completion observer must independently
+  * inspect provider/Runner evidence against all pinned local fields.
+  * This method records a staged completion; it NEVER grants provider I/O.
+  */
+ async attestTrustedTaskCompletion(
+  taskId:string,runtimeTaskId:string
+ ):Promise<Readonly<{
+  status:"task_completion_observed_staged";
+  task_id:string;runtime_task_id:string;
+  gateway_execution_authorized:false
+ }>>{
+  const root=this.#live();
+  if(!(this.#effectFenceJournal instanceof DurableAuthorityOnlyTaskFenceJournal)||
+     !(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver))
+   deny("trusted completion observer or owner-private journal missing");
+  if(this.#completionInFlight||this.#completed.has(taskId))
+   deny("concurrent or duplicate Task completion attestation");
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const flight=this.#flights.get(taskId);
+  if(!bound||!child||!flight||
+     bound.row.task_id!==taskId||flight.task_id!==taskId||
+     flight.runtime_task_id!==runtimeTaskId||
+     flight.epoch!==bound.row.epoch||
+     flight.session_id!==root.session_id||
+     flight.authority_digest!==root.authority_digest||
+     flight.root_credential_id!==root.root_credential_id||
+     flight.credential_id!==child.credential_id||
+     child.agent_did!==bound.row.agent_did||
+     child.epoch!==bound.row.epoch||
+     this.#now()>=Date.parse(child.expires_at)||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
+   deny("Task completion not tied to an active enrolled Child flight and dependencies");
+  const expectation:TrustedCompletionExpectation=Object.freeze({
+   ...flight,agent_did:bound.row.agent_did
+  });
+  this.#completionInFlight=true;
+  try{
+   const observation=await this.#completionObserver.observe(expectation);
+   if(!observation||typeof observation!=="object"||
+      observation.status!=="owner_verified_provider_result"||
+      !Object.keys(expectation).every(key=>
+       (observation as unknown as Record<string,unknown>)[key]===
+       (expectation as unknown as Record<string,unknown>)[key])||
+      Object.keys(observation).sort().join(",")!==[
+       ...Object.keys(expectation),"status","evidence_sha256",
+       "completed_at_ms"].sort().join(",")||
+      !SHA64.test(observation.evidence_sha256)||
+      !Number.isSafeInteger(observation.completed_at_ms)||
+      observation.completed_at_ms>this.#now()+60_000||
+      observation.completed_at_ms<this.#now()-30*60_000)
+    deny("independent completion evidence does not match protected Task flight");
+   await this.#effectFenceJournal.reserveCompletion({
+    ...flight,evidence_sha256:observation.evidence_sha256,
+    completed_at_ms:observation.completed_at_ms
+   });
+   this.#live();
+   if(this.#now()>=Date.parse(child.expires_at))
+    deny("native Child expired during completion attestation");
+   this.#completed.add(taskId);
+   return Object.freeze({
+    status:"task_completion_observed_staged",
+    task_id:taskId,runtime_task_id:runtimeTaskId,
+    gateway_execution_authorized:false
+   });
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#completionInFlight=false;}
+ }
+ /**
   * Derive the exact permission from a normalized Gateway request,
   * not from an agent-claimed authorization. Scope preflight only:
   * NO challenge, Rust VP verification, OPA evaluation or provider effect.
@@ -325,7 +478,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const bound=this.#tasks.get(request.task_id);
   if(!bound||bound.row.agent_id!==request.agent_role)
    deny("unbound runtime Task or presenter role");
-  if(bound.row.depends_on.length>0)
+  if(bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
    deny("dependency completion not yet Gateway-attested");
   const {tool,arguments:args}=request.request;
   switch(tool){

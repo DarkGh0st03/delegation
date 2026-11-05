@@ -25,6 +25,10 @@ import {DurableAuthorityTaskJournal}
  from "../src/trusted-authority-task-journal.ts";
 import {DurableAuthorityOnlyChildJournal}
  from "../src/trusted-authority-only-child-journal.ts";
+import {DurableAuthorityOnlyTaskFenceJournal}
+ from "../src/trusted-authority-only-task-fence-journal.ts";
+import {TrustedAuthorityOnlyCompletionObserver}
+ from "../src/trusted-authority-only-completion-observer.ts";
 import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
 import type {ExactTrustedChildIssuance,TrustedChildCryptographyPort}
@@ -113,6 +117,7 @@ async function fixture(fn:(x:{
  gatewaySessionStore:TrustedOperationalSessionStore;
  childJournal:DurableAuthorityOnlyChildJournal;
  gatewayChildJournal:DurableAuthorityOnlyChildJournal;
+ effectFenceJournal:DurableAuthorityOnlyTaskFenceJournal;
  approvals:SignedAuthorityOnlyFileStore;
  createSession:()=>TrustedAuthorityOnlyEngineerSession;
  save:(receipt?:object)=>Promise<void>
@@ -123,13 +128,15 @@ async function fixture(fn:(x:{
   gatewayDir=join(directory,"gateway-sessions"),
   gatewayTaskDir=join(directory,"gateway-tasks"),
   childDir=join(directory,"child-intents"),
-  gatewayChildDir=join(directory,"gateway-child-intents");
+  gatewayChildDir=join(directory,"gateway-child-intents"),
+  effectFenceDir=join(directory,"gateway-effect-fences");
  await mkdir(receiptDir,{mode:0o700});await mkdir(journalDir,{mode:0o700});
  await mkdir(taskDir,{mode:0o700});
  await mkdir(gatewayDir,{mode:0o700});
  await mkdir(gatewayTaskDir,{mode:0o700});
  await mkdir(childDir,{mode:0o700});
  await mkdir(gatewayChildDir,{mode:0o700});
+ await mkdir(effectFenceDir,{mode:0o700});
  const save=async(raw:object=receipt)=>{
   await writeFile(join(receiptDir,sessionId+".json"),JSON.stringify(raw),{mode:0o600});
   await chmod(join(receiptDir,sessionId+".json"),0o600);
@@ -146,6 +153,7 @@ async function fixture(fn:(x:{
   const gatewaySessionStore=new TrustedOperationalSessionStore(gatewayDir);
  const childJournal=new DurableAuthorityOnlyChildJournal(childDir);
  const gatewayChildJournal=new DurableAuthorityOnlyChildJournal(gatewayChildDir);
+ const effectFenceJournal=new DurableAuthorityOnlyTaskFenceJournal(effectFenceDir);
   const createSession=()=>new TrustedAuthorityOnlyEngineerSession({
    snapshot:snapshot(),requirement,credentials:issuer,approvals,journal,
    authenticatedEngineerDid:did,nowMs:()=>nowMs,
@@ -161,7 +169,7 @@ async function fixture(fn:(x:{
   });
   await fn({issuer,session:createSession(),log,journal,taskJournal,
    gatewayTaskJournal,gatewaySessionStore,childJournal,gatewayChildJournal,
-   approvals,createSession,save});
+   effectFenceJournal,approvals,createSession,save});
  }finally{await rm(directory,{recursive:true,force:true});}
 }
 test("R285 only authority pairs are issued after confirmed Planning retirement and Rust revocation",async()=>{
@@ -996,5 +1004,157 @@ test("R291 cannot enroll a Child without separately provisioned Gateway journal"
   await gate.bindTrustedTask("task-backend","runtime-r291","backend");
   await assert.rejects(gate.enrollTrustedIssuedChild("task-backend",
    "runtime-r291",issuer),/independent Gateway child journal missing/);
+ });
+});
+
+test("R293 independently observed completion unblocks exact dependency preflight without provider I/O",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal,
+  gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal,effectFenceJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  await coordinator.registerTask(nextTask("frontend",2,"task-frontend"));
+  const issuer=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort([]),journal:childJournal,
+   nowMs:()=>nowMs
+  });
+  const issued=await issuer.issueForRegisteredTask("task-backend",
+   params("urn:authority:r293-child","993",600));
+  let reads=0;
+  const observer=new TrustedAuthorityOnlyCompletionObserver({
+   async readVerifiedCompletion(expected){
+    reads++;
+    assert.equal(expected.task_id,"task-backend");
+    assert.equal(expected.runtime_task_id,"runtime-be-r293");
+    assert.equal(expected.credential_id,issued.credential_id);
+    assert.equal(expected.agent_did,"did:thesis:backend");
+    assert.equal(expected.root_credential_id,operational.credential_id);
+    assert.equal(expected.request_id,"request-r293");
+    return {...expected,status:"owner_verified_provider_result" as const,
+     evidence_sha256:"c".repeat(64),completed_at_ms:nowMs};
+   }
+  });
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
+   effectFenceJournal,completionObserver:observer,nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-be-r293","backend");
+  await gate.bindTrustedTask("task-frontend","runtime-fe-r293","frontend");
+  await gate.enrollTrustedIssuedChild("task-backend","runtime-be-r293",issuer);
+  const frontReq={task_id:"runtime-fe-r293",agent_role:"frontend",
+   tool:"update_file",arguments:{branch,path:"apps/backend/user.ts",
+    content:"pending until trusted evidence"}};
+  assert.throws(()=>gate.preflightCanonicalRequest(frontReq as never),
+   /dependency completion not yet Gateway-attested/);
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const prepared=prepareAuthorization({
+   task_id:"runtime-be-r293",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+   {store,audit,nowMs:()=>nowMs,requestId:()=>"request-r293",
+    challenge:()=>"challenge-r293",authorityOnlyAdmissions:gate});
+  const record=store.get(prepared.request_id);
+  assert.ok(record);
+  const flight=await gate.stageTrustedTaskFlight(record);
+  assert.equal(flight.status,"task_flight_reserved_no_provider_execution");
+  assert.equal(flight.gateway_execution_authorized,false);
+  await assert.rejects(gate.stageTrustedTaskFlight(record),
+   /lacks exact native Child/);
+  const completed=await gate.attestTrustedTaskCompletion(
+   "task-backend","runtime-be-r293");
+  assert.equal(completed.status,"task_completion_observed_staged");
+  assert.equal(completed.gateway_execution_authorized,false);
+  assert.equal(reads,1);
+  assert.equal(gate.stagedCompletedTaskCount,1);
+  const unblocked=gate.preflightCanonicalRequest(frontReq as never);
+  assert.equal(unblocked.status,"gateway_permission_preflight_only");
+  assert.equal(unblocked.gateway_execution_authorized,false);
+  await assert.rejects(gate.attestTrustedTaskCompletion(
+   "task-backend","runtime-be-r293"),/duplicate Task completion/);
+  assert.throws(()=>gate.assertExecutionReady(),/unavailable/);
+ });
+});
+test("R293 bogus completion observer fails closed; no dependency unlock",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal,
+  gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal,effectFenceJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const issuer=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort([]),
+   journal:childJournal,nowMs:()=>nowMs
+  });
+  await issuer.issueForRegisteredTask("task-backend",
+   params("urn:r293-fail-child","905",600));
+  const observer=new TrustedAuthorityOnlyCompletionObserver({
+   async readVerifiedCompletion(expected){
+    return {...expected,credential_id:"urn:forged:child",
+     status:"owner_verified_provider_result" as const,
+     evidence_sha256:"d".repeat(64),completed_at_ms:nowMs};
+   }
+  });
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
+   effectFenceJournal,completionObserver:observer,nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-fail-r293","backend");
+  await gate.enrollTrustedIssuedChild("task-backend","runtime-fail-r293",issuer);
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const prepared=prepareAuthorization({
+   task_id:"runtime-fail-r293",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+  {store,audit,nowMs:()=>nowMs,requestId:()=>"request-fail-r293",
+   challenge:()=>"challenge-r293",authorityOnlyAdmissions:gate});
+  const record=store.get(prepared.request_id);
+  assert.ok(record);
+  await gate.stageTrustedTaskFlight(record);
+  await assert.rejects(gate.attestTrustedTaskCompletion(
+   "task-backend","runtime-fail-r293"),/independent completion evidence/);
+  assert.equal(gate.phase,"failed_closed");
+  assert.equal(gate.stagedCompletedTaskCount,0);
+ });
+});
+test("R293 crash-durable completion fence rejects missing flight, duplicate flight and mismatched proof",async()=>{
+ await fixture(async({effectFenceJournal})=>{
+  const flight={
+   session_id:sessionId,authority_digest:"a".repeat(64),
+   root_credential_id:operational.credential_id,
+   task_id:"task-fence",runtime_task_id:"runtime-fence",epoch:1,
+   credential_id:"urn:child:fence",request_id:"request-fence",
+   request_fingerprint:"b".repeat(64)
+  };
+  await assert.rejects(effectFenceJournal.reserveCompletion({
+   ...flight,evidence_sha256:"c".repeat(64),completed_at_ms:nowMs
+  }),/no matching crash-durable Task flight/);
+  await effectFenceJournal.reserveFlight(flight);
+  await assert.rejects(effectFenceJournal.reserveFlight({...flight,
+   request_id:"second-request"}),/EEXIST/);
+  await assert.rejects(effectFenceJournal.reserveCompletion({
+   ...flight,credential_id:"urn:forged:child",
+   evidence_sha256:"c".repeat(64),completed_at_ms:nowMs
+  }),/no matching crash-durable Task flight/);
+  await effectFenceJournal.reserveCompletion({
+   ...flight,evidence_sha256:"c".repeat(64),completed_at_ms:nowMs
+  });
+  await assert.rejects(effectFenceJournal.reserveCompletion({
+   ...flight,evidence_sha256:"d".repeat(64),completed_at_ms:nowMs
+  }),/EEXIST/);
  });
 });
