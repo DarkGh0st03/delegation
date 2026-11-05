@@ -17,6 +17,10 @@ import { OpaPolicyClient } from "./policy-client.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
 import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions} from "./trusted-authority-only-admissions.ts";
+import type {TrustedAuthorityOnlyGiteaMutationExecutor}
+ from "./trusted-authority-only-mutation-executor.ts";
+import type {TrustedAuthorityOnlyRunnerExecutor}
+ from "./trusted-authority-only-runner-executor.ts";
 import { RunnerClient } from "./runner-client.ts";
 import {
   InMemoryAuditSink,
@@ -50,6 +54,12 @@ export interface GatewayRuntimeDependencies {
   /** Opt-in trusted Engineer-approved execution plan gate (no public mutation API). */
   approvedPlans?: TrustedApprovedExecutionPlans;
   authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
+  /** Canonical runtime only: owner-prestaged HEAD-CAS, never legacy PUT. */
+  authorityOnlyMutationEnabled?: boolean;
+  authorityOnlyMutationExecutor?: TrustedAuthorityOnlyGiteaMutationExecutor;
+  /** Canonical runtime only: owner-prestaged native Docker Test. */
+  authorityOnlyRunnerEnabled?: boolean;
+  authorityOnlyRunnerExecutor?: TrustedAuthorityOnlyRunnerExecutor;
 }
 
 function defaultExecutor(config: GatewayRuntimeConfig): ExecutionPort {
@@ -97,16 +107,38 @@ export class GatewayRuntime {
   readonly #planningRevisions?: TrustedPlanningRevisions;
   readonly #approvedPlans?: TrustedApprovedExecutionPlans;
   readonly #authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
+  readonly #authorityOnlyMutationExecutor?: TrustedAuthorityOnlyGiteaMutationExecutor;
+  readonly #authorityOnlyRunnerExecutor?: TrustedAuthorityOnlyRunnerExecutor;
+  readonly #authorityOnlyMutationEnabled:boolean;
+  readonly #authorityOnlyRunnerEnabled:boolean;
 
   constructor(config: GatewayRuntimeConfig, dependencies: GatewayRuntimeDependencies = {}) {
-    if(dependencies.authorityOnlyAdmissions&&
-       (!(dependencies.authorityOnlyAdmissions instanceof TrustedAuthorityOnlyGatewayAdmissions)||
+    const gate=dependencies.authorityOnlyAdmissions;
+    const mutation=dependencies.authorityOnlyMutationExecutor;
+    const runner=dependencies.authorityOnlyRunnerExecutor;
+    if(gate&&
+       (!(gate instanceof TrustedAuthorityOnlyGatewayAdmissions)||
         dependencies.approvedPlans||dependencies.planningRevisions))
       throw Error("Authority-only Gateway requires distinct trusted runtime without legacy gates");
+    if((dependencies.authorityOnlyMutationEnabled===true)!==Boolean(mutation)||
+       (dependencies.authorityOnlyRunnerEnabled===true)!==Boolean(runner))
+      throw Error("Authority-only Gateway effects require matching explicit enablement and owner executor");
+    if((mutation||runner)&&!gate)
+      throw Error("Authority-only Gateway effects require enrolled native authority");
+    if(gate&&(config.provider_mode!=="gitea"||config.verifier_mode==="adapter"))
+      throw Error("Authority-only Gateway requires mutable Gitea and independent Core Rust verification");
+    if(mutation&&(!mutation.isForAdmissions||!mutation.isForAdmissions(gate!)))
+      throw Error("Authority-only Gateway CAS executor differs from enrolled owner");
+    if(runner&&(!runner.isForAdmissions||!runner.isForAdmissions(gate!)))
+      throw Error("Authority-only Gateway Runner executor differs from enrolled owner");
     this.#config = config;
     this.#planningRevisions = dependencies.planningRevisions;
     this.#approvedPlans = dependencies.approvedPlans;
-    this.#authorityOnlyAdmissions = dependencies.authorityOnlyAdmissions;
+    this.#authorityOnlyAdmissions = gate;
+    this.#authorityOnlyMutationEnabled=dependencies.authorityOnlyMutationEnabled===true;
+    this.#authorityOnlyMutationExecutor=mutation;
+    this.#authorityOnlyRunnerEnabled=dependencies.authorityOnlyRunnerEnabled===true;
+    this.#authorityOnlyRunnerExecutor=runner;
     this.#store = dependencies.store ?? new InMemoryRequestStore();
     this.#compositeStore = new InMemoryCompositeStore();
     this.#audit = dependencies.audit ?? new JsonLineAuditSink();
@@ -224,6 +256,14 @@ export class GatewayRuntime {
       ...(this.#planningRevisions ? {planningRevisions:this.#planningRevisions} : {}),
       ...(this.#approvedPlans ? {approvedPlans:this.#approvedPlans} : {}),
       ...(this.#authorityOnlyAdmissions ? {authorityOnlyAdmissions:this.#authorityOnlyAdmissions} : {}),
+      ...(this.#authorityOnlyMutationEnabled ? {
+        authorityOnlyMutationEnabled:true,
+        authorityOnlyMutationExecutor:this.#authorityOnlyMutationExecutor
+      } : {}),
+      ...(this.#authorityOnlyRunnerEnabled ? {
+        authorityOnlyRunnerEnabled:true,
+        authorityOnlyRunnerExecutor:this.#authorityOnlyRunnerExecutor
+      } : {}),
       ...(signal ? {signal} : {})
     });
   }
