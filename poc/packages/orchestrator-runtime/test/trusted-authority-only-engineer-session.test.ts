@@ -1332,8 +1332,8 @@ test("R295 a configured publisher never bypasses authority-only terminal Gateway
      permissions:[{resource:file,operation:"read_file"}],
      hierarchy_depth:1,expiration:"1800000120000000000000"
     };}} as never,
-    policy:{async evaluate(){return{allow:true,policy_version:"offline-opa"};}}
-      as never
+    policy:({async evaluate(){return{allow:true,policy_version:"offline-opa"};}}
+      as never)
   }),(e:unknown)=>e instanceof Error&&"code" in e&&
     e.code==="authority_only_execution_not_enabled");
   assert.equal(executor.callCount,0);
