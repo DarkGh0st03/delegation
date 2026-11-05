@@ -42,6 +42,7 @@ import {signAuthorityOnlyGrant,selectAuthorityOnlyGrant}
 import {invokeNativeCrypto}
  from "../../agent-runtime/src/native-crypto-ipc.ts";
 
+import {GatewayRuntime} from "../../../apps/gateway/src/runtime.ts";
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from "../../../apps/gateway/src/trusted-authority-only-mutation-preflight.ts";
@@ -330,11 +331,28 @@ try{
    branch,independentGiteaClient:independentClient,nowMs
   }),observer,repository:"thesis/iam-console-poc",branch
  });
- const prepare=()=>prepareAuthorization({
+ // R308: exercise the canonical GatewayRuntime, not only its underlying
+ // prepare/execute helpers. The owner-only effect ports remain private.
+ const gatewayConfig={
+  bind_host:"127.0.0.1",bind_port:0,
+  prepare:{audience:"cloud-access-gateway",request_ttl_ms:120000,
+   repository:repo},
+  verifier_mode:"core-rust",opa_url:"http://127.0.0.1:8181",
+  opa_timeout_ms:6000,provider_mode:"gitea",
+  gitea_base_url:process.env.GITEA_HOST_BASE_URL,
+  gitea_gateway_token:process.env.GITEA_GATEWAY_TOKEN,
+  gitea_timeout_ms:6000,runner_timeout_ms:900000
+ };
+ const runtime=new GatewayRuntime(gatewayConfig,{
+  store,audit,verifier,policy,executor,authorityOnlyAdmissions:gate,
+  authorityOnlyMutationEnabled:true,
+  authorityOnlyMutationExecutor:mutationExecutor
+ });
+ assert.equal(runtime.providerLabel,"gitea");
+ const prepare=()=>runtime.prepare({
   task_id:runtimeTaskId,agent_role:"backend",tool:"update_file",
   arguments:{branch,path:mutationPath,content:newContent}
- },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
- {store,audit,authorityOnlyAdmissions:gate,nowMs});
+ });
  const sign=async(credential_id,prepared)=>{
   const signed=await invokeNativeCrypto({
    socketPath,token:tokens.backend,timeoutMs:60000
@@ -413,9 +431,9 @@ try{
   required_permission:taskPermission,signed_vp:goodVp
  }));
  await gate.stageTrustedTaskFlight(originalRecord);
- const written=await executeAuthorization({
+ const written=await runtime.execute({
   request_id:good.request_id,signed_vp:goodVp
- },deps);
+ });
  assert.equal(written.decision,"allow");
  assert.equal(gatewayCasWrites,1);
  assert.equal(legacyWriteCalls,0);
@@ -444,12 +462,10 @@ try{
  await gate.bindTrustedTask(frontendTaskId,frontendRuntimeId,"frontend");
  await gate.enrollTrustedIssuedChild(
   frontendTaskId,frontendRuntimeId,issuer);
- const frontendPrepared=prepareAuthorization({
+ const frontendPrepared=runtime.prepare({
   task_id:frontendRuntimeId,agent_role:"frontend",tool:"update_file",
   arguments:{branch,path:frontendPath,content:updatedFrontend}
- },{audience:"cloud-access-gateway",
-    request_ttl_ms:120000,repository:repo},
- {store,audit,authorityOnlyAdmissions:gate,nowMs});
+ });
  const frontendRecord=store.get(frontendPrepared.request_id);
  assert.ok(frontendRecord);
  // The original Engineer base SHA is stale after Backend. A Frontend
@@ -511,10 +527,10 @@ try{
   }
  });
  assert.equal(frontOpa.allow,true);
- const frontendWritten=await executeAuthorization({
+ const frontendWritten=await runtime.execute({
   request_id:frontendPrepared.request_id,
   signed_vp:frontendVp.signed_vp
- },deps);
+ });
  assert.equal(frontendWritten.decision,"allow");
  assert.equal(frontendWritten.execution.provider,"gitea");
  assert.equal(frontendWritten.execution.tool,"update_file");
@@ -675,12 +691,21 @@ try{
   authorityOnlyMutationExecutor:undefined,
   authorityOnlyRunnerEnabled:true,
   authorityOnlyRunnerExecutor:ownedRunnerExecutor};
+ // Separate canonical runtime view with both owner ports; it shares the
+ // exact durable admission, request store, verifier, OPA and audit sink.
+ const runnerRuntime=new GatewayRuntime(gatewayConfig,{
+  store,audit,verifier,policy,executor,authorityOnlyAdmissions:gate,
+  authorityOnlyMutationEnabled:true,
+  authorityOnlyMutationExecutor:mutationExecutor,
+  authorityOnlyRunnerEnabled:true,
+  authorityOnlyRunnerExecutor:ownedRunnerExecutor
+ });
  let testResult;
  try{
-  testResult=await executeAuthorization({
+  testResult=await runnerRuntime.execute({
    request_id:runnerPrepared.request_id,
    signed_vp:testPresentation.signed_vp
-  },runnerDeps);
+  });
  }catch(error){
   const files=await readdir(path("runner-intent"));
   process.stdout.write(JSON.stringify({
@@ -761,7 +786,8 @@ try{
   three_distinct_child_credentials:true,
   completion_attested:true,old_head_pinned:true,legacy_writes:legacyWriteCalls,
   runner_posts:runnerCalls,test_completion_attested:true,dependent_tasks:3,frontend_cas:true,
-  paid_model_calls:0,completed_app_source:"owner_only_fixture",
+  paid_model_calls:0,canonical_gateway_runtime:true,
+  completed_app_source:"owner_only_fixture",
   delegated_functional_edits:0,fixture_files_changed:functionalFixture.files_changed
  })+"\n");
 }finally{
