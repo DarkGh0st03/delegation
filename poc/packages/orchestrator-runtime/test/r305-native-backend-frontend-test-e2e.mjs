@@ -122,7 +122,10 @@ const seeded=await client.createFile(branch,mutationPath,oldContent,
  "R305 owner-provisioned disposable Gitea fixture");
 const seededFrontend=await client.createFile(branch,frontendPath,
  originalFrontend,"R305 owner-provisioned nonfunctional Frontend proof file");
-const baseRevision=seeded.commit_sha;
+// Both owner-provisioned files must exist at the Engineer-approved baseline.
+// The Frontend seed advances HEAD after the Backend seed; pin the final HEAD.
+const baseRevision=seededFrontend.commit_sha;
+assert.notEqual(baseRevision,seeded.commit_sha);
 assert.match(baseRevision,/^[a-f0-9]{40}$/u);
 assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
 const requirement="R305 disposable EVM proof for account suspension permission";
