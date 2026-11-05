@@ -9,7 +9,8 @@ import {
 import type { AgentTaskContext, AgentArtifactPayload } from "./contracts.ts";
 import { modelVisibleTaskContext } from "./agent-controller.ts";
 import { DelegationEvidenceHandler } from "./delegation-evidence-handler.ts";
-import { GatewayControlledToolClient, type TrustedEffectStagingPort } from "./gateway-tool-client.ts";
+import { GatewayControlledToolClient } from "./gateway-tool-client.ts";
+import {TrustedEffectStagingTaskRegistry} from "./trusted-effect-staging-task-registry.ts";
 import {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
 import {validateTrustedBackendDiscoveryA2ABinding,selectTrustedBackendDiscoveryA2A,
  type TrustedBackendDiscoveryA2ABinding} from "./trusted-backend-discovery-a2a-binding.ts";
@@ -27,8 +28,8 @@ import {safeAdkResponseShape,classifyAdkResponseFailure,
 type FetchLike = typeof fetch;
 
 export interface AdkA2ATaskHandlerConfig {
-  /** Owner-prebound one-effect staging port; never supplied by A2A payload. */
-  trustedEffectStager?:TrustedEffectStagingPort;
+  /** Owner-only registry of exact A2A Task/Child/operation bindings. */
+  trustedEffectTaskRegistry?:TrustedEffectStagingTaskRegistry;
   model: BaseLlm;
   gatewayBaseUrl: string;
   /** Optional for native task-local Rust; legacy unsigned HTTP fixtures only. */
@@ -191,6 +192,14 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
   if(config.trustedBackendDiscoverySlot&&
      !(config.trustedBackendDiscoverySlot instanceof TrustedBackendDiscoveryTaskSlot))
     throw Error("Untrusted Backend discovery dynamic slot");
+  if(Object.prototype.hasOwnProperty.call(config,"trustedEffectStager"))
+    throw Error("unscoped_authority_only_effect_stager_retired");
+  if(config.trustedEffectTaskRegistry&&
+     !(config.trustedEffectTaskRegistry instanceof TrustedEffectStagingTaskRegistry))
+    throw Error("Invalid trusted effect Task registry");
+  if(process.env.DELEGATION_GATEWAY_ARCHITECTURE==="authority-only"&&
+     !config.trustedEffectTaskRegistry)
+    throw Error("Authority-only ADK requires owner-prebound Task staging registry");
   // Reject stale JavaScript configurations rather than silently ignoring
   // authority-bearing options removed from the TypeScript interface.
   if(["mcpSharedUrl","mcpUpdateFile","mcpCreateFile","mcpRunTests"]
@@ -236,6 +245,9 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     const selectedDiscovery=config.trustedBackendDiscoverySlot
       ?config.trustedBackendDiscoverySlot.bindingFor(context)
       :selectTrustedBackendDiscoveryA2A(config.trustedBackendDiscovery,context);
+    // This port is claimed once, before model or FunctionTools can run.
+    // A forged A2A Task fails here without falling back to shared effects.
+    const ownerEffect=config.trustedEffectTaskRegistry?.selectFor(context);
     try{
     const taskStart = performance.now();
     // A signed Test preparation Task may create/update tests without owning
@@ -288,7 +300,7 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
         })
       : selectedDiscovery;
     const gatewayClient = new GatewayControlledToolClient({
-      ...(config.trustedEffectStager?{trustedEffectStager:config.trustedEffectStager}:{}),
+      ...(ownerEffect?{trustedEffectStager:ownerEffect}:{}),
       gatewayBaseUrl: config.gatewayBaseUrl,
       agentRole: context.role,
       taskId: context.trusted_gateway_task_id??context.task_id,
@@ -581,7 +593,11 @@ export function createAdkA2ATaskHandler(config: AdkA2ATaskHandlerConfig): Determ
     };
     }finally{
       // Active-task revocation cannot be inferred from model output.
-      selectedDiscovery?.fence();
+      try{selectedDiscovery?.fence();}
+      finally{
+        if(ownerEffect)
+          config.trustedEffectTaskRegistry!.retireFor(context.trusted_gateway_task_id!);
+      }
     }
   };
 }

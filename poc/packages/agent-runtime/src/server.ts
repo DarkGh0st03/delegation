@@ -169,7 +169,8 @@ export async function startSpecializedAgentServer(
     server,
     ...(mcpTaskRegistry?{cryptoProofCount:()=>mcpTaskRegistry.completedCryptoProofs}:{}),
     close: () => closing??=(async()=>{
-      // close() fences the private holder before its first await.
+      // close() fences private Task effects BEFORE awaiting HTTP shutdown.
+      options.adk?.trustedEffectTaskRegistry?.retireAll();
       const results=await Promise.allSettled([discovery?.close(),
         new Promise<void>((resolve,reject)=>server.close(error=>
           error?reject(error):resolve()))]);
@@ -178,6 +179,7 @@ export async function startSpecializedAgentServer(
     })()
   };
   }catch(error){
+    options.adk?.trustedEffectTaskRegistry?.retireAll();
     await discovery?.close();
     throw error;
   }

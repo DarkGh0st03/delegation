@@ -26,3 +26,5 @@ export {createTrustedBackendDiscoveryTaskBindingServer,TrustedBackendDiscoveryTa
 export {startTrustedBackendDiscoveryHost} from "./trusted-backend-discovery-host.ts";
 
 export {LocalCryptoMcpBridge} from "./local-crypto-mcp-bridge.ts";
+
+export {TrustedEffectStagingTaskRegistry} from "./trusted-effect-staging-task-registry.ts";
