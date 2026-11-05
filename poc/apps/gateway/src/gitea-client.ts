@@ -677,6 +677,20 @@ export class GiteaClient {
     };
   }
 
+  /** Independently inspect a real Git commit's immediate parent. */
+  async getSingleGitCommitParent(revision:string):Promise<string>{
+    this.#validatePinnedRevision(revision);
+    const body=object(await this.#json(this.#repoApi(
+      "/git/commits/"+revision)),"Gitea commit response");
+    if(body.sha!==revision||!Array.isArray(body.parents)||
+       body.parents.length!==1)
+      throw new ProviderUnavailableError("Gitea commit lacks a single pinned parent");
+    const parent=object(body.parents[0],"Gitea commit parent");
+    const parentSha=requiredString(parent.sha,"commit parent.sha");
+    this.#validatePinnedRevision(parentSha);
+    return parentSha;
+  }
+
   async readTextFile(
     branch: string, path: string, pinnedRevision?: string
   ): Promise<GiteaFileSnapshot> {

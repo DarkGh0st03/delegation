@@ -28,6 +28,7 @@ export class TrustedAuthorityOnlyGiteaMutationPreflight{
  readonly #branch:string;
  readonly #nowMs:()=>number;
  #inFlight=false;
+ readonly #reserved=new WeakMap<PreparedRequestRecord,TrustedGiteaMutationIntent>();
  constructor(opts:{
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
   giteaClient:GiteaClient;
@@ -50,6 +51,20 @@ export class TrustedAuthorityOnlyGiteaMutationPreflight{
   this.#repository=opts.repository;
   this.#branch=opts.branch;
   this.#nowMs=opts.nowMs??Date.now;
+ }
+ isForAdmissions(admissions:TrustedAuthorityOnlyGatewayAdmissions):boolean{
+  return this.#admissions===admissions;
+ }
+ isForClient(client:GiteaClient):boolean{return this.#client===client;}
+ /** Only the original in-memory Prepare record may retrieve its own intent. */
+ getReservedIntent(record:PreparedRequestRecord):TrustedGiteaMutationIntent{
+  const intent=this.#reserved.get(record);
+  if(!intent||intent.request_id!==record.request_id||
+     intent.request_fingerprint!==record.request_fingerprint||
+     intent.runtime_task_id!==record.task_id||
+     record.request.tool!=="update_file")
+   deny("no owner-reserved mutation intent for original prepared request");
+  return intent;
  }
  /**
   * expectedHeadSha is supplied by the trusted OWNER, NOT the agent.
@@ -108,6 +123,7 @@ export class TrustedAuthorityOnlyGiteaMutationPreflight{
     provider_write_authorized:false
    });
    await this.#journal.reserve(intent);
+   this.#reserved.set(record,intent);
    // An ambiguous reservation remains terminal even if the HEAD now moves.
    return Object.freeze({
     status:"gitea_update_intent_reserved_without_execution",

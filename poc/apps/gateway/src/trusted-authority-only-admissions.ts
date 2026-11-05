@@ -874,6 +874,72 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
+  * R302.4 OWNER-ONLY authenticated UPDATE execution binding.
+  * Called strictly after native Rust VP, OPA and durable preflight/Task
+  * flight. This verifies the exact Child, root, Task, permission and
+  * request challenge binding; it never performs a Gitea write itself.
+  */
+ assertTrustedCompletedMutationEvidenceBinding(
+  record:PreparedRequestRecord,verified:VerifiedDelegation
+ ):Readonly<TrustedCompletionExpectation>{
+  const root=this.#live();
+  if(!record||record.consumed!==true||
+     !record.authority_only_digest||
+     record.authority_only_digest!==root.authority_digest||
+     record.request.tool!=="update_file"||
+     record.expires_at_ms<=this.#now()||
+     this.#flightInFlight||this.#completionInFlight)
+   deny("successful mutation lacks live consumed authority-only Prepare");
+  const bound=this.#tasks.get(record.task_id);
+  const child=this.#enrolledChildren.get(record.task_id);
+  const taskId=bound?.row.task_id;
+  if(!bound||!child||!taskId||!verified||
+     !Array.isArray(verified.permissions)||
+     record.authority_only_plan_task_id!==taskId||
+     record.authority_only_agent_did!==bound.row.agent_did||
+     record.agent_role!==bound.row.agent_id||
+     verified.presenter_id!==bound.row.agent_did||
+     verified.credential_id!==child.credential_id||
+     verified.root_credential_id!==root.root_credential_id||
+     !Number.isSafeInteger(verified.hierarchy_depth)||
+     verified.hierarchy_depth<1||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.agent_did!==bound.row.agent_did||
+     child.epoch!==bound.row.epoch||
+     this.#now()>=Date.parse(child.expires_at)||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
+     this.#sequential.has(taskId)||this.#completed.has(taskId))
+   deny("verified native mutation Child or Task authority differs");
+  const flight=this.#flights.get(taskId);
+  if(!flight||
+     flight.session_id!==root.session_id||
+     flight.authority_digest!==root.authority_digest||
+     flight.root_credential_id!==root.root_credential_id||
+     flight.task_id!==taskId||
+     flight.runtime_task_id!==record.task_id||
+     flight.epoch!==bound.row.epoch||
+     flight.credential_id!==child.credential_id||
+     flight.request_id!==record.request_id||
+     flight.request_fingerprint!==record.request_fingerprint)
+   deny("mutation lacks matching durable one-flight Task reservation");
+  const normalized=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  const digest=createHash("sha256").update(JSON.stringify({
+   task_id:record.task_id,agent_role:record.agent_role,
+   request:record.request
+  })).digest("hex");
+  if(digest!==record.request_fingerprint||
+     pair(normalized.required_permission)!==pair(record.required_permission)||
+     !verified.permissions.some(p=>giteaPermissionCovers(
+       p,record.required_permission)))
+   deny("native mutation VP does not cover prepared concrete file");
+  return Object.freeze({...structuredClone(flight),
+   agent_did:bound.row.agent_did});
+ }
+ /**
   * R288: after the same native VerifierPort and independent OPA, re-check
   * the protected prepared binding against the current trusted Task.
   * Even a valid VP is NOT proof of a Child DC bound to this root yet.

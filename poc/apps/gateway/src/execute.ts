@@ -1,4 +1,7 @@
 import { GiteaExecutor } from "./gitea-executor.ts";
+import { OpaPolicyClient } from "./policy-client.ts";
+import {TrustedAuthorityOnlyGiteaMutationExecutor}
+ from "./trusted-authority-only-mutation-executor.ts";
 import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
 import {giteaPermissionCovers}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
@@ -109,6 +112,9 @@ export interface ExecuteDependencies {
   authorityOnlyReceiptWriter?: TrustedGatewayGiteaReadEvidencePublisher;
   /** Owner-only opt-in for one durably reserved Gitea read per Task. */
   authorityOnlyReadEnabled?: boolean;
+  /** Owner-only, opt-in atomic HEAD-CAS mutation; never the legacy PUT. */
+  authorityOnlyMutationExecutor?:TrustedAuthorityOnlyGiteaMutationExecutor;
+  authorityOnlyMutationEnabled?:boolean;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -122,6 +128,12 @@ export async function executeAuthorization(
      (dependencies.planningRevisions||dependencies.approvedPlans))
     throw new GatewayError(403,"authority_only_binding_denied",
       "Authority-only and legacy Gateway modes cannot share provider effects");
+  if(dependencies.authorityOnlyMutationExecutor&&
+     (!dependencies.authorityOnlyAdmissions||
+      !dependencies.authorityOnlyMutationExecutor.isForAdmissions(
+       dependencies.authorityOnlyAdmissions)))
+    throw new GatewayError(403,"authority_only_binding_denied",
+      "Atomic mutation owner differs from trusted Gateway authority");
   if(dependencies.authorityOnlyReceiptWriter&&
      (!dependencies.authorityOnlyAdmissions||
       !dependencies.authorityOnlyReceiptWriter.isForAdmissions(
@@ -299,6 +311,20 @@ export async function executeAuthorization(
          record.request.tool==="read_file"){
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedReadEvidenceBinding(
           record,verified);
+      }else if(record.request.tool==="update_file"&&
+         dependencies.authorityOnlyMutationEnabled===true&&
+         dependencies.authorityOnlyMutationExecutor instanceof
+           TrustedAuthorityOnlyGiteaMutationExecutor&&
+         dependencies.authorityOnlyMutationExecutor.isForAdmissions(
+           dependencies.authorityOnlyAdmissions)&&
+         dependencies.verifier instanceof DirectCoreRustVerifier&&
+         dependencies.policy instanceof OpaPolicyClient&&
+         dependencies.executor instanceof GiteaExecutor&&
+         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+        // No old blob-only PUT adapter, synthetic verifier, injected OPA,
+        // legacy signed DAG, or unsupported provider may write here.
+        dependencies.authorityOnlyAdmissions.assertTrustedCompletedMutationEvidenceBinding(
+          record,verified);
       }else{
         dependencies.authorityOnlyAdmissions.assertVerifiedVpAndPolicyForExecution(
           record,verified);
@@ -363,7 +389,19 @@ export async function executeAuthorization(
   let execution: ExecutionResult;
   try {
     dependencies.signal?.throwIfAborted();
-    execution = await dependencies.executor.execute(record,dependencies.signal);
+    if(record.authority_only_digest&&record.request.tool==="update_file"){
+      // Reached ONLY after independent native Rust VP, real OPA and durable
+      // owner-bound Task flight. Failure must not retry a pending CAS.
+      if(dependencies.authorityOnlyMutationEnabled!==true||
+         !dependencies.authorityOnlyMutationExecutor)
+        throw new ProviderOperationUnavailableError(
+          "Signed authority-only mutation executor is not configured");
+      execution=await dependencies.authorityOnlyMutationExecutor
+        .executeAfterVerifiedRustOpa(record,verified,policyDecision);
+    }else{
+      execution = await dependencies.executor.execute(
+        record,dependencies.signal);
+    }
   } catch (error) {
     releaseEffect?.();
     const providerMs = elapsed(providerStarted, durationNow);
@@ -429,14 +467,24 @@ export async function executeAuthorization(
   // GiteaExecutor success (it carries a private WeakMap result witness).
   // Only the explicitly enabled read gate above can reach this hook.
   if(record.authority_only_digest){
-    if(!dependencies.authorityOnlyReceiptWriter||
-       execution.provider!=="gitea"||
-       execution.tool!=="read_file"||execution.performed!==true)
+    if(execution.provider!=="gitea"||execution.performed!==true)
       throw new GatewayError(403,"authority_only_binding_denied",
-       "Authority-only read lacks trusted post-provider evidence publisher");
-    await dependencies.authorityOnlyReceiptWriter.publishSuccessfulRead({
-     record,verified,policy:policyDecision,execution
-    });
+       "Authority-only provider result cannot be authenticated");
+    if(execution.tool==="read_file"){
+      if(!dependencies.authorityOnlyReceiptWriter)
+        throw new GatewayError(403,"authority_only_binding_denied",
+         "Authority-only read lacks trusted result publisher");
+      await dependencies.authorityOnlyReceiptWriter.publishSuccessfulRead({
+       record,verified,policy:policyDecision,execution
+      });
+    }else if(execution.tool!=="update_file"||
+             !dependencies.authorityOnlyMutationExecutor||
+             dependencies.authorityOnlyMutationEnabled!==true){
+      throw new GatewayError(403,"authority_only_binding_denied",
+       "Unauthorized authority-only provider result");
+    }
+    // Atomic update results have already been independently attested and
+    // fsync'd inside the trusted mutation executor BEFORE returning here.
   }
   const providerMs = elapsed(providerStarted, durationNow);
   const totalMs = elapsed(totalStarted, durationNow);
