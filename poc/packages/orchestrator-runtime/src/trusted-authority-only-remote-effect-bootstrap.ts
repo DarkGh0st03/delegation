@@ -44,10 +44,12 @@ export interface TrustedAuthorityOnlyRemoteEffectBootstrapOptions {
  coordinator:TrustedAuthorityOnlyExecutionCoordinator;
  childIssuer:TrustedAuthorityOnlyChildIssuer;
  gateway:TrustedAuthorityOnlyGatewayAdmissions;
- /** Owner-owned private (0700 parent) Unix staging server socket. */
- stageSocketPath:string;
- /** Owner-only 0600 HMAC stage secret, independent of agent bind key. */
- stageSecretFile:string;
+ /** Legacy one-socket stage channel. Accepted for historical deployments. */
+ stageSocketPath?:string;
+ stageSecretFile?:string;
+ /** R333: three distinct authenticated agent->owner staging channels,
+  * sharing ONE owner registry and Engineer authority root. */
+ stageChannels?:TrustedRoleBindingChannels;
  /** Agent-owned private Unix Task binding socket; agent already running. */
  agentBindingSocketPath?:string;
  /** Separate preprovisioned 0600 owner→agent HMAC bind secret. */
@@ -63,7 +65,7 @@ type TaskResult={status:"owner_remote_effect_task_prebound_not_executed";
 
 export class TrustedAuthorityOnlyRemoteEffectBootstrap {
  readonly #owner:TrustedAuthorityOnlyRemoteEffectOwner;
- readonly #server:ServerHandle;
+ readonly #servers:readonly ServerHandle[];
  readonly #registry:TrustedOwnerEffectStagingRegistry;
  readonly #attempted=new Set<string>();
  readonly #pending=new Set<string>();
@@ -75,9 +77,9 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
 
  private constructor(
   owner:TrustedAuthorityOnlyRemoteEffectOwner,
-  registry:TrustedOwnerEffectStagingRegistry,server:ServerHandle
+  registry:TrustedOwnerEffectStagingRegistry,servers:readonly ServerHandle[]
  ){
-  this.#owner=owner;this.#registry=registry;this.#server=server;
+  this.#owner=owner;this.#registry=registry;this.#servers=servers;
  }
  static async start(opts:TrustedAuthorityOnlyRemoteEffectBootstrapOptions):
  Promise<TrustedAuthorityOnlyRemoteEffectBootstrap>{
@@ -103,8 +105,26 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
    socketPath:opts.agentBindingSocketPath!,
    secretFile:opts.agentBindingSecretFile!
   }];
+  const roleStages=opts.stageChannels;
+  const legacyStage=opts.stageSocketPath!==undefined||
+    opts.stageSecretFile!==undefined;
+  if(!!roleStages===legacyStage||
+     (roleStages&&(
+      !multi||Object.keys(roleStages).sort().join(",")!==
+       "backend,frontend,test"||
+      ROLES.some(role=>!roleStages[role]||
+       typeof roleStages[role].socketPath!=="string"||
+       typeof roleStages[role].secretFile!=="string")
+     ))||
+     (!roleStages&&(typeof opts.stageSocketPath!=="string"||
+       typeof opts.stageSecretFile!=="string")))
+   deny("exactly one legacy stage or three role-pinned stage IPC channels required");
+  const stageChannels=roleStages?ROLES.map(r=>roleStages[r]):[{
+   socketPath:opts.stageSocketPath!,
+   secretFile:opts.stageSecretFile!
+  }];
   const paths=[
-   opts.stageSocketPath,opts.stageSecretFile,
+   ...stageChannels.flatMap(x=>[x.socketPath,x.secretFile]),
    ...bindingChannels.flatMap(x=>[x.socketPath,x.secretFile])
   ];
   if(paths.some(v=>typeof v!=="string"||!v.startsWith("/")||
@@ -113,22 +133,30 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
    deny("distinct short absolute private Unix sockets and secret files required");
   // No two authorization directions or role bind channels share HMAC
   // keys; a compromised Frontend binder cannot enroll Backend Tasks.
-  const secretPaths=[opts.stageSecretFile,...bindingChannels.map(x=>x.secretFile)];
+  const secretPaths=[...stageChannels.map(x=>x.secretFile),
+   ...bindingChannels.map(x=>x.secretFile)];
   const secrets=await Promise.all(secretPaths.map(loadTrustedPlanIpcSecret));
   for(let i=0;i<secrets.length;i++)
    for(let j=i+1;j<secrets.length;j++)
     if(timingSafeEqual(secrets[i]!,secrets[j]!))
-     deny(multi?"stage and per-role bind HMAC keys must differ":
+     deny(roleStages?"all role-pinned stage and bind HMAC keys must differ":
+       multi?"stage and per-role bind HMAC keys must differ":
        "stage and bind HMAC keys must differ");
   // Confirm the Engineer root BEFORE opening a private listener.
   opts.coordinator.assertTrustedGatewayAuthorityBinding();
   const registry=new TrustedOwnerEffectStagingRegistry();
-  const server=await createTrustedOwnerEffectStagingServer({
-   socketPath:opts.stageSocketPath,secretFile:opts.stageSecretFile,
-   registry
-  });
+  const servers:ServerHandle[]=[];
   try{
-   await server.start();
+   for(let i=0;i<stageChannels.length;i++){
+    const stage=stageChannels[i]!;
+    const role=roleStages?ROLES[i]:undefined;
+    const server=await createTrustedOwnerEffectStagingServer({
+     socketPath:stage.socketPath,secretFile:stage.secretFile,
+     registry,...(role?{expectedRole:role}:{})
+    });
+    servers.push(server); // close even if start partially fails
+    await server.start();
+   }
    const clients=await Promise.all(bindingChannels.map(ch=>
     connectTrustedEffectAgentBindingClient({
      socketPath:ch.socketPath,secretFile:ch.secretFile
@@ -144,10 +172,10 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
     gateway:opts.gateway,ownerStageRegistry:registry,...binders
    });
    return new TrustedAuthorityOnlyRemoteEffectBootstrap(
-    owner,registry,server);
+    owner,registry,Object.freeze([...servers]));
   }catch(error){
    registry.retireAll();
-   await server.close();
+   await Promise.allSettled(servers.map(server=>server.close()));
    throw error;
   }
  }
@@ -234,7 +262,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
    const names=[...this.#bound];
    const results=await Promise.allSettled([
     ...names.map(id=>this.#owner.fence(id)),
-    this.#server.close()
+    ...this.#servers.map(server=>server.close())
    ]);
    const failures=results.filter(r=>r.status==="rejected");
    if(failures.length)deny("one or more private Task fences were not acknowledged");
