@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {GatewayControlledToolClient} from '../src/gateway-tool-client.ts';
-function client(fail=false){
+function client(fail=false, executeBody:unknown={request_id:'req',decision:'allow',execution:{ok:true}}){
  const calls:string[]=[];
  const gateway=new GatewayControlledToolClient({gatewayBaseUrl:'http://gateway.local',
   agentRole:'backend',taskId:'task',evidenceHandler:{} as any,
@@ -12,7 +12,7 @@ function client(fail=false){
    if(String(url).endsWith('/prepare')){calls.push('prepare');return Response.json({
     request_id:'req',audience:'gateway',challenge:'nonce',expires_at:'2099-01-01T00:00:00Z',
     required_permission:{resource:'file',operation:'update_file'}},{status:201});}
-   calls.push('execute');return Response.json({decision:'allow',execution:{ok:true}});
+   calls.push('execute');return Response.json(executeBody);
   }});
  return {gateway,calls};
 }
@@ -48,4 +48,22 @@ test('create_file in authority-only mode is denied without legacy fallback',asyn
   return true;
  });
  assert.deepEqual(f.calls,[]);
+});
+
+test('owner-staged client rejects an HTTP 200 tied to a different or absent request',async()=>{
+ for(const response of [
+  {request_id:'other',decision:'allow',execution:{ok:true}},
+  {decision:'allow',execution:{ok:true}},
+  {request_id:'req',decision:'deny',execution:{ok:true}},
+  {request_id:'req',execution:{ok:true}}
+ ]){
+  const f=client(false,response);
+  await assert.rejects(f.gateway.invoke('update_file',{}),e=>{
+   assert.equal((e as Error).message,
+    'Authority-only Gateway execute response lacks exact request decision');
+   assert.equal((e as {reason?:string}).reason,'gateway_execute_unclassified');
+   return true;
+  });
+  assert.deepEqual(f.calls,['prepare','stage','vp','execute']);
+ }
 });

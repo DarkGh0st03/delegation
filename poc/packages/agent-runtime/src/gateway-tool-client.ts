@@ -261,6 +261,20 @@ export class GatewayControlledToolClient {
       );
     }
 
+    // In owner-staged execution, a 200 from an intermediate proxy is not
+    // evidence that the exact one-shot request was authorized. Every effect
+    // (and any read on this owner client) must match the Gateway's original
+    // request_id AND explicit allow decision. No retry follows a mismatch.
+    if(this.#trustedEffectStager){
+      const bound=executeBody!==null&&typeof executeBody==="object"
+        ? executeBody as {request_id?:unknown;decision?:unknown}
+        : null;
+      if(bound?.request_id!==prepared.request_id||
+         bound?.decision!=="allow")
+        throw new ControlledToolError("authorization_denied",
+          "Authority-only Gateway execute response lacks exact request decision",
+          {reason:"gateway_execute_unclassified"});
+    }
     if (
       typeof executeBody !== "object" ||
       executeBody === null ||
