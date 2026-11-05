@@ -26,6 +26,10 @@ import {TrustedAuthorityOnlyExecutionCoordinator,type RegisteredAuthorityOnlyTas
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-execution-coordinator.ts";
 import {DurableAuthorityTaskJournal}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-task-journal.ts";
+import {DurableAuthorityOnlyChildJournal}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts";
+import {TrustedAuthorityOnlyChildIssuer,type VerifiedStagedChild}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts";
 import {assertVerifiedAuthorityOnlyGrant}
  from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
 
@@ -50,6 +54,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #store:SignedAuthorityOnlyFileStore;
  readonly #activationStore:TrustedOperationalSessionStore;
  readonly #taskJournal:DurableAuthorityTaskJournal;
+ readonly #childJournal?:DurableAuthorityOnlyChildJournal;
  readonly #nowMs:()=>number;
  #phase:Phase="inactive";
  #session?:string;
@@ -63,7 +68,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  #epoch=0;
  readonly #tasks=new Map<string,BoundTask>();
  readonly #taskIds=new Set<string>();
+ readonly #enrolledChildren=new Map<string,VerifiedStagedChild>();
  #bindingInFlight=false;
+ #enrollmentInFlight=false;
 
  constructor(opts:{
   repository:GatewayRepositoryConfig;
@@ -72,6 +79,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   approvals:SignedAuthorityOnlyFileStore;
   operationalSessionStore:TrustedOperationalSessionStore;
   taskJournal:DurableAuthorityTaskJournal;
+  childJournal?:DurableAuthorityOnlyChildJournal;
   nowMs?:()=>number;
  }){
   if(!opts||
@@ -91,6 +99,10 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   this.#store=opts.approvals;
   this.#activationStore=opts.operationalSessionStore;
   this.#taskJournal=opts.taskJournal;
+  if(opts.childJournal!==undefined&&
+     !(opts.childJournal instanceof DurableAuthorityOnlyChildJournal))
+   deny("trusted native Child enrollment journal missing");
+  this.#childJournal=opts.childJournal;
   this.#nowMs=opts.nowMs??Date.now;
  }
  get phase():Phase{return this.#phase;}
@@ -238,6 +250,65 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#bindingInFlight=false;}
  }
  /**
+  * R291: Gateway independently enrolls a Child previously returned by native
+  * Rust to THIS Coordinator and ONE already-admitted runtime Task.
+  * Never accepts a serialized Child receipt, model-supplied credential ID
+  * or agent DID. A separate crash-durable Gateway ledger is mandatory.
+  * Enrollment is evidence, NOT provider authorization.
+  */
+ async enrollTrustedIssuedChild(
+  taskId:string,runtimeTaskId:string,issuer:TrustedAuthorityOnlyChildIssuer
+ ):Promise<Readonly<{
+  status:"gateway_child_enrolled_preflight_only";
+  task_id:string;runtime_task_id:string;credential_id:string;
+  gateway_execution_authorized:false
+ }>>{
+  const root=this.#live();
+  if(!(this.#childJournal instanceof DurableAuthorityOnlyChildJournal)||
+     !(issuer instanceof TrustedAuthorityOnlyChildIssuer))
+   deny("trusted Child issuer or independent Gateway child journal missing");
+  if(this.#enrollmentInFlight||this.#enrolledChildren.has(runtimeTaskId))
+   deny("concurrent or repeated Child enrollment");
+  const bound=this.#tasks.get(runtimeTaskId);
+  if(!bound||bound.row.task_id!==taskId)
+   deny("Child not bound to admitted runtime Task");
+  const child=issuer.assertTrustedIssuedChild(taskId,this.#coordinator);
+  if(child.status!=="native_child_response_verified_staged"||
+     child.gateway_execution_authorized!==false||
+     child.session_id!==root.session_id||
+     child.authority_digest!==root.authority_digest||
+     child.root_credential_id!==root.root_credential_id||
+     child.epoch!==bound.row.epoch||
+     child.agent_id!==bound.row.agent_id||
+     child.agent_did!==bound.row.agent_did||
+     !isDeepStrictEqual(child.permissions,bound.row.permissions)||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("native Child does not match admitted Gateway Task");
+  this.#enrollmentInFlight=true;
+  try{
+   await this.#childJournal.reserveChild({
+    session_id:child.session_id,epoch:child.epoch,task_id:child.task_id,
+    credential_id:child.credential_id,
+    parent_credential_id:child.root_credential_id,
+    authority_digest:child.authority_digest,
+    permissions_sha256:createHash("sha256")
+     .update(JSON.stringify(child.permissions)).digest("hex"),
+    status_list_credential:child.status_list_credential,
+    status_list_index:child.status_list_index
+   });
+   this.#live();
+   if(this.#now()>=Date.parse(child.expires_at))
+    deny("native Child expired during durable Gateway enrollment");
+   this.#enrolledChildren.set(runtimeTaskId,structuredClone(child));
+   return Object.freeze({
+    status:"gateway_child_enrolled_preflight_only",
+    task_id:taskId,runtime_task_id:runtimeTaskId,
+    credential_id:child.credential_id,gateway_execution_authorized:false
+   });
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#enrollmentInFlight=false;}
+ }
+ /**
   * Derive the exact permission from a normalized Gateway request,
   * not from an agent-claimed authorization. Scope preflight only:
   * NO challenge, Rust VP verification, OPA evaluation or provider effect.
@@ -305,6 +376,18 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      typeof verified.credential_id!=="string"||
      !verified.credential_id.trim())
    deny("verified presenter or Task differs from trusted binding");
+  // R291: A native-verified VP must use exactly the Child enrolled for this
+  // runtime Task. A valid Child issued for another Task or session is denied.
+  const child=this.#enrolledChildren.get(record.task_id);
+  if(child&&
+     (child.task_id!==bound.row.task_id||
+      child.agent_did!==verified.presenter_id||
+      child.credential_id!==verified.credential_id||
+      child.root_credential_id!==this.#rootCredentialId||
+      child.authority_digest!==record.authority_only_digest||
+      child.epoch!==bound.row.epoch||
+      this.#now()>=Date.parse(child.expires_at)))
+   deny("verified native Child credential differs from enrolled Task");
   // R289: Rust's verified chain must descend from THIS independently issued
   // operational root. A valid but unrelated root is not session authority.
   // No assertion about an issued Task Child DC follows from this check.

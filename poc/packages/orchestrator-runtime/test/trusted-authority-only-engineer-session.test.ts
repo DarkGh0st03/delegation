@@ -112,6 +112,7 @@ async function fixture(fn:(x:{
  gatewayTaskJournal:DurableAuthorityTaskJournal;
  gatewaySessionStore:TrustedOperationalSessionStore;
  childJournal:DurableAuthorityOnlyChildJournal;
+ gatewayChildJournal:DurableAuthorityOnlyChildJournal;
  approvals:SignedAuthorityOnlyFileStore;
  createSession:()=>TrustedAuthorityOnlyEngineerSession;
  save:(receipt?:object)=>Promise<void>
@@ -121,12 +122,14 @@ async function fixture(fn:(x:{
   taskDir=join(directory,"task-journal"),
   gatewayDir=join(directory,"gateway-sessions"),
   gatewayTaskDir=join(directory,"gateway-tasks"),
-  childDir=join(directory,"child-intents");
+  childDir=join(directory,"child-intents"),
+  gatewayChildDir=join(directory,"gateway-child-intents");
  await mkdir(receiptDir,{mode:0o700});await mkdir(journalDir,{mode:0o700});
  await mkdir(taskDir,{mode:0o700});
  await mkdir(gatewayDir,{mode:0o700});
  await mkdir(gatewayTaskDir,{mode:0o700});
  await mkdir(childDir,{mode:0o700});
+ await mkdir(gatewayChildDir,{mode:0o700});
  const save=async(raw:object=receipt)=>{
   await writeFile(join(receiptDir,sessionId+".json"),JSON.stringify(raw),{mode:0o600});
   await chmod(join(receiptDir,sessionId+".json"),0o600);
@@ -142,6 +145,7 @@ async function fixture(fn:(x:{
   const gatewayTaskJournal=new DurableAuthorityTaskJournal(gatewayTaskDir);
   const gatewaySessionStore=new TrustedOperationalSessionStore(gatewayDir);
  const childJournal=new DurableAuthorityOnlyChildJournal(childDir);
+ const gatewayChildJournal=new DurableAuthorityOnlyChildJournal(gatewayChildDir);
   const createSession=()=>new TrustedAuthorityOnlyEngineerSession({
    snapshot:snapshot(),requirement,credentials:issuer,approvals,journal,
    authenticatedEngineerDid:did,nowMs:()=>nowMs,
@@ -156,7 +160,7 @@ async function fixture(fn:(x:{
    }
   });
   await fn({issuer,session:createSession(),log,journal,taskJournal,
-   gatewayTaskJournal,gatewaySessionStore,childJournal,
+   gatewayTaskJournal,gatewaySessionStore,childJournal,gatewayChildJournal,
    approvals,createSession,save});
  }finally{await rm(directory,{recursive:true,force:true});}
 }
@@ -891,5 +895,106 @@ test("R290 uncertain native issuance never retries after response mismatch or re
   await assert.rejects(reconstructed.issueForRegisteredTask("task-backend",
    params("urn:retry-child","503",600)),/EEXIST/);
   assert.equal(calls.length,1);
+ });
+});
+
+test("R291 independently enrolls native Child for exact trusted Gateway Task but still DENIES provider",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal,
+  gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const calls:ExactTrustedChildIssuance[]=[];
+  const issuer=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort(calls),
+   journal:childJournal,nowMs:()=>nowMs
+  });
+  const issued=await issuer.issueForRegisteredTask("task-backend",
+   params("urn:authority:child-r291","801",600));
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
+   nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-r291","backend");
+  const bound=await gate.enrollTrustedIssuedChild("task-backend",
+   "runtime-r291",issuer);
+  assert.equal(bound.status,"gateway_child_enrolled_preflight_only");
+  assert.equal(bound.gateway_execution_authorized,false);
+  assert.equal(bound.credential_id,issued.credential_id);
+  await assert.rejects(gate.enrollTrustedIssuedChild("task-backend",
+   "runtime-r291",issuer),/repeated Child enrollment/);
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const prepared=prepareAuthorization({
+   task_id:"runtime-r291",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+  {store,audit,nowMs:()=>nowMs,requestId:()=>"req-r291",
+   challenge:()=>"challenge-r291",authorityOnlyAdmissions:gate});
+  const record=store.get(prepared.request_id);
+  assert.ok(record);
+  const verified={
+   presenter_id:"did:thesis:backend",
+   credential_id:issued.credential_id,issuer_id:"did:thesis:orchestrator",
+   root_credential_id:operational.credential_id,
+   permissions:[{resource:file,operation:"read_file"}],
+   hierarchy_depth:1,expiration:"1800000120000000000000"
+  };
+  for(const other of [
+   {...verified,credential_id:"urn:authority:other-task-child"},
+   {...verified,root_credential_id:"urn:authority:foreign-root"},
+   {...verified,presenter_id:"did:thesis:frontend"}
+  ]) assert.throws(()=>gate.assertVerifiedVpAndPolicyForExecution(
+   record,other as never));
+  assert.throws(()=>gate.assertVerifiedVpAndPolicyForExecution(record,
+   verified as never),/native Child DC authority-only execution not enabled/);
+  const executor=new MockExecutor();
+  let rustCount=0,opaCount=0;
+  await assert.rejects(executeAuthorization({
+   request_id:prepared.request_id,signed_vp:"signed-r291"
+  },{store,audit,executor,repository:repo,nowMs:()=>nowMs+1,
+   authorityOnlyAdmissions:gate,
+   verifier:{async verify(){rustCount++;return verified;}} as never,
+   policy:{async evaluate(){opaCount++;return{allow:true,policy_version:"r291"};}} as never
+  }), (error:unknown)=>error instanceof Error&&"code" in error&&
+   error.code==="authority_only_execution_not_enabled");
+  assert.equal(rustCount,1);
+  assert.equal(opaCount,1);
+  assert.equal(executor.callCount,0);
+  assert.equal(calls.length,1);
+ });
+});
+test("R291 cannot enroll a Child without separately provisioned Gateway journal",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal,
+  gatewayTaskJournal,gatewaySessionStore})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const issuer=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort([]),journal:childJournal,
+   nowMs:()=>nowMs
+  });
+  await issuer.issueForRegisteredTask("task-backend",params("urn:r291-no-gate","902",600));
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-r291","backend");
+  await assert.rejects(gate.enrollTrustedIssuedChild("task-backend",
+   "runtime-r291",issuer),/independent Gateway child journal missing/);
  });
 });

@@ -29,6 +29,8 @@ export interface VerifiedStagedChild {
  readonly root_credential_id:string;readonly credential_id:string;
  readonly authority_digest:string;
  readonly permissions:readonly DelegatedPermission[];
+ readonly status_list_credential:string;
+ readonly status_list_index:string;
  readonly expires_at:string;
  readonly gateway_execution_authorized:false;
 }
@@ -172,6 +174,8 @@ export class TrustedAuthorityOnlyChildIssuer {
     agent_did:task.agent_did,root_credential_id:root.root_credential_id,
     credential_id:signed.id,authority_digest:root.authority_digest,
     permissions:Object.freeze(structuredClone(task.permissions)),
+    status_list_credential:status.statusListCredential,
+    status_list_index:status.statusListIndex,
     expires_at:new Date(end).toISOString(),gateway_execution_authorized:false
    });
    this.#issued.set(taskId,receipt);
