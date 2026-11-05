@@ -140,7 +140,15 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    this.#registry.retireFor(runtimeTaskId);
    throw error;
   }
-  const latest=this.#coordinator.assertTrustedGatewayAuthorityBinding();
+  // If the Engineer root is revoked or becomes unavailable DURING the
+  // remote IPC bind, this exception must also fence the local effect port.
+  let latest:ReturnType<TrustedAuthorityOnlyExecutionCoordinator[
+   "assertTrustedGatewayAuthorityBinding"]>;
+  try{latest=this.#coordinator.assertTrustedGatewayAuthorityBinding();}
+  catch(error){
+   this.#registry.retireFor(runtimeTaskId);
+   throw error;
+  }
   if(latest.root_credential_id!==root.root_credential_id||
      latest.authority_digest!==root.authority_digest||
      latest.session_id!==root.session_id){
