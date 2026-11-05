@@ -53,6 +53,8 @@ import {TrustedGatewayRunnerPassEvidencePublisher,
 import {RunnerClient} from "../../../apps/gateway/src/runner-client.ts";
 import {IsolatedDockerRunnerExecutor} from "../../../apps/test-runner-controller/src/isolated-executor.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";
+import {stageDisposableAccountSuspensionReference}
+ from "../../../apps/test-runner-controller/scripts/stage-disposable-account-suspension-reference.mjs";
 
 assert.equal(process.env.R233_NATIVE_EVM,"1");
 assert.equal(process.env.ENGINEER_CORE_NATIVE_MODE,"1");
@@ -87,13 +89,15 @@ const mainSha=(await client.getBranchMetadata("main")).commit_sha;
 const created=await client.createBranch("main","feature/account-suspension");
 assert.match(created.commit_sha,/^[a-f0-9]{40}$/u);
 const branch="feature/account-suspension";
-const mutationPath="apps/backend/users/account.ts";
-const oldContent="export const accountSuspended = false;\n";
-// Owner-only disposable CI fixture, created BEFORE the Engineer root.
-// No delegated write or Docker provider effect is enabled yet.
-const seeded=await client.createFile(branch,mutationPath,oldContent,
- "R303 owner-provisioned disposable Gitea fixture");
-const baseRevision=seeded.commit_sha;
+// Complete the UNSOLVED reference through a trusted CI fixture before
+// Engineer signs. This is NOT an agent result or an authorization effect.
+// It tests whether the real Test Agent can faithfully attest actual PASS.
+const referenceFixture=await stageDisposableAccountSuspensionReference({
+ gitea:client,branch
+});
+assert.equal(referenceFixture.engineer_approved,false);
+assert.equal(referenceFixture.delegated_agent_writes,0);
+const baseRevision=referenceFixture.base_revision;
 assert.match(baseRevision,/^[a-f0-9]{40}$/u);
 assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
 const requirement="R303 disposable EVM proof for account suspension permission";
@@ -462,7 +466,9 @@ try{
   project_tests_pass:true,researcher_acceptance_pass:true,
   runner_calls:runnerCalls,legacy_calls:legacyCalls,
   completion_attested:true,unbound_child_denied:true,
-  revoked_root_denied:true,paid_model_calls:0
+  revoked_root_denied:true,paid_model_calls:0,
+  test_input_fixture:"ci_owner_completed_reference_before_engineer_approval",
+  delegated_agent_writes:0,fixture_files_changed:referenceFixture.files_changed
  })+"\n");
 }finally{
  if(runnerServer)await new Promise(resolve=>runnerServer.close(resolve));

@@ -34,3 +34,16 @@ against disposable real Gitea, EVM, OPA and Docker, checking
 
 The next architectural increment is a real Frontend Task between
 Backend and Test, with independent CAS, then recovery and review-only PR.
+
+
+## Test-fixture provenance and scope limitation
+
+The first R304 positive integration may seed a *completed* functional
+reference through a CI-owner-only fixture **before** Engineer approval,
+then perform the genuine delegated Backend CAS on a separate
+non-functional proof file and run the dependent native Test Task.
+This is an authorization and Task-dependency E2E, NOT a claim that the
+Backend mutation implemented Account Suspension. No functional edit
+may be silently credited to an agent. The full autonomous
+Backend→Frontend→Test path still needs to solve the original unsolved
+source, pass independent acceptance and create a review-only PR.

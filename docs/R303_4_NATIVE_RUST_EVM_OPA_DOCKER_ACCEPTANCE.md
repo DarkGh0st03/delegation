@@ -51,3 +51,28 @@ and the integration log emits
 
 A Runner FAIL, ambiguous result or missed log must NEVER be counted as
 PASS. No retries, no paid model calls and no production writes.
+
+
+## R303.4b correction — actual researcher acceptance is mandatory
+
+Real Docker CI #42046581335 proved that the unsolved baseline passes
+six project phases but FAILS the independent researcher acceptance. The
+one-shot Runner correctly refused Task completion. Do not interpret
+project-tests PASS as application completion.
+
+For the positive **Runner authorization** acceptance only, the
+trusted CI owner now provisions the exact completed Account Suspension
+reference implementation on a disposable feature branch **before**
+the Engineer signs its permission-only root. The provisioning helper
+independently verifies the original unsolved baseline SHA and pinned
+blob/content for each known source file; writes the fixture only via
+the CI owner's Gitea token; and never modifies main.
+
+That setup is explicitly NOT an agent-generated implementation, an
+authorized delegated write, or proof that the Backend/Frontend agents
+can implement Account Suspension. Its sole purpose is to test a real
+native Test Agent with real project tests AND researcher acceptance
+passing on a known-complete reference. The separate R304 pathway
+tests dependent Task sequencing; the final BE→FE→Test implementation
+must operate from the unsolved baseline without preinstalling a
+completed reference.

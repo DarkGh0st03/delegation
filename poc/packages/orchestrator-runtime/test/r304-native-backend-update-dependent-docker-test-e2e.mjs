@@ -59,6 +59,8 @@ import {TrustedGatewayRunnerPassEvidencePublisher,
 import {RunnerClient} from "../../../apps/gateway/src/runner-client.ts";
 import {IsolatedDockerRunnerExecutor} from "../../../apps/test-runner-controller/src/isolated-executor.ts";
 import {createRunnerHttpServer} from "../../../apps/test-runner-controller/src/http.ts";
+import {stageDisposableAccountSuspensionReference}
+ from "../../../apps/test-runner-controller/scripts/stage-disposable-account-suspension-reference.mjs";
 
 assert.equal(process.env.R233_NATIVE_EVM,"1");
 assert.equal(process.env.ENGINEER_CORE_NATIVE_MODE,"1");
@@ -101,8 +103,15 @@ const branch="feature/account-suspension";
 const mutationPath="apps/backend/users/account.ts";
 const oldContent="export const accountSuspended = false;\n";
 const newContent="export const accountSuspended = true;\n";
-// Owner-only disposable CI fixture, created BEFORE the Engineer root.
-// No delegated write or Docker provider effect is enabled.
+// Only the trusted CI owner completes the functional reference BEFORE
+// the Engineer signs. Neither Backend nor Test claims this fixture as work.
+const functionalFixture=await stageDisposableAccountSuspensionReference({
+ gitea:client,branch
+});
+assert.equal(functionalFixture.engineer_approved,false);
+assert.equal(functionalFixture.delegated_agent_writes,0);
+// A distinct non-functional file is now provisioned for the genuine
+// permission-only Backend atomic CAS Task after approval.
 const seeded=await client.createFile(branch,mutationPath,oldContent,
  "R304 owner-provisioned disposable Gitea fixture");
 const baseRevision=seeded.commit_sha;
@@ -612,7 +621,8 @@ try{
   provider_calls:gatewayCasWrites,gateway_atomic_update_executed:true,
   completion_attested:true,old_head_pinned:true,legacy_writes:legacyWriteCalls,
   runner_posts:runnerCalls,test_completion_attested:true,dependent_tasks:2,
-  paid_model_calls:0
+  paid_model_calls:0,completed_app_source:"owner_only_fixture",
+  delegated_functional_edits:0,fixture_files_changed:functionalFixture.files_changed
  })+"\n");
 }finally{
  if(runnerServer)await new Promise(resolve=>runnerServer.close(resolve));

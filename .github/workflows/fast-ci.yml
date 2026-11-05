@@ -108,6 +108,7 @@ jobs:
           node --check poc/packages/orchestrator-runtime/test/r302-authority-only-gitea-update-native-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r303-native-gitea-docker-test-agent-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r304-native-backend-update-dependent-docker-test-e2e.mjs
+          node --test poc/apps/test-runner-controller/test/stage-disposable-account-suspension-reference.test.mjs
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs
           node --check poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.mjs
