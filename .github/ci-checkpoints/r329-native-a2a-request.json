@@ -1,8 +1,14 @@
 {
-  "revision": "R329.1",
-  "request": "native-backend-adk-a2a-secret-free-boundary-diagnostic-retry",
-  "source_commit": "4e00ffedd9f49f1af2aaed07b4f14753223f1466",
+  "revision": "R329.2",
+  "request": "single-native-adk-backend-20-minute-private-crypto-ttl-fix-validation",
+  "base_commit": "a75564db1dcf6b33f48a5da4ab57c1bc295e2f0d",
   "paid_ai": false,
-  "external_production_effects": false,
-  "purpose": "identify whether failure is in Gateway Prepare, owner staging, private crypto VP or Gateway Execute; one isolated disposable native run"
+  "production_effects": false,
+  "expected": [
+    "native Rust/EVM Child VP",
+    "real Gateway native verifier and OPA",
+    "Gitea Backend CAS via ADK/A2A",
+    "dependent Frontend CAS",
+    "pinned Docker Test"
+  ]
 }
