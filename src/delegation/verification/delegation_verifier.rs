@@ -1107,14 +1107,12 @@ mod tests {
     }
 
     #[test]
-    fn required_leaf_must_be_covered_by_cryptographically_authenticated_vp_scope(
-    ) -> Result<(), String> {
+    fn required_leaf_must_be_covered_by_cryptographically_authenticated_vp_scope()
+    -> Result<(), String> {
         type Curve = Bn254;
         let scope = |suffix: &str, op: Operation| {
             Permission::new(
-                format!(
-                    "gitea://gitea.local/thesis/repo/branches/feature%2Fwork/{suffix}"
-                ),
+                format!("gitea://gitea.local/thesis/repo/branches/feature%2Fwork/{suffix}"),
                 op,
             )
             .unwrap()
@@ -1190,9 +1188,11 @@ mod tests {
                 scope("files/apps/backend-extra/user.ts", Operation::ReadFile),
             ],
         )?;
-        assert!(verifier
-            .verify_verifiable_presentation(mixed, signed)
-            .is_err());
+        assert!(
+            verifier
+                .verify_verifiable_presentation(mixed, signed)
+                .is_err()
+        );
         Ok(())
     }
 
