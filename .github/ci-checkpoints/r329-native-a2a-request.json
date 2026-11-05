@@ -1,0 +1,8 @@
+{
+  "revision": "R329",
+  "request": "single-disposable-native-backend-adk-a2a-frontend-test-docker",
+  "base_commit": "aea63268fc0bc233553f7e7b1ae39768b0daa523",
+  "paid_ai": false,
+  "external_production_effects": false,
+  "validation": "Rust/EVM/OPA/Gitea real, Backend ADK/A2A owner HMAC, Frontend native CAS and Test Docker"
+}
