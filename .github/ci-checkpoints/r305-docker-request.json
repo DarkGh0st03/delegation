@@ -1,6 +1,6 @@
 {
-  "revision": "R312",
-  "scenario": "single Engineer permission-only approval -> Backend file CAS -> independent Frontend file CAS -> signed Test Child -> real Docker and researcher acceptance",
+  "revision": "R313",
+  "scenario": "Backend -> Frontend -> Test prepare and execute through owner Gateway HTTP",
   "checks": [
     "native Rust/EVM VP",
     "OPA",
@@ -14,8 +14,9 @@
   "production_mutations": false,
   "reference_implementation_provenance": "CI owner fixture, not LLM agents",
   "approval": "no paid AI",
-  "regression_fix": "R311 native Gateway HTTP Test execute PASS; R312 adds native Gateway HTTP prepare+execute for signed Test Child",
+  "regression_fix": "R312 Docker PASS; R313 extends HTTP prepare/execute to Backend and Frontend",
   "canonical_gateway_runtime": true,
   "canonical_gateway_http_test_execute": true,
-  "canonical_gateway_http_test_prepare": true
+  "canonical_gateway_http_test_prepare": true,
+  "canonical_gateway_http_backend_frontend": true
 }
