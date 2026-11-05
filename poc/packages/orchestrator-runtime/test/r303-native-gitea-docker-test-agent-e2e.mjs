@@ -3,7 +3,7 @@
  */
 import assert from "node:assert/strict";
 import {generateKeyPairSync,createHash,randomBytes} from "node:crypto";
-import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,mkdir,writeFile,rm,readdir} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {createRequire} from "node:module";
@@ -325,7 +325,29 @@ try{
  class ObservedRunnerClient extends RunnerClient{
   async run(request,signal){
    runnerCalls++;
-   return super.run(request,signal);
+   try{
+    const result=await super.run(request,signal);
+    // Safe CI owner-only phase diagnostics; no logs, tokens, files, VP.
+    process.stdout.write(JSON.stringify({
+     event:"r303_runner_sanitized_result",
+     status:result.status,
+     project_status:result.project_tests?.status??null,
+     acceptance_status:result.researcher_acceptance?.status??null,
+     tested_sha_matches:result.tested_commit_sha===request.commit_sha,
+     phases:result.phases.map(p=>({
+      phase:p.phase,status:p.status,
+      failed:Number.isSafeInteger(p.failed)?p.failed:null
+     }))
+    })+"\n");
+    return result;
+   }catch(error){
+    process.stdout.write(JSON.stringify({
+     event:"r303_runner_sanitized_transport_failure",
+     class_name:error?.constructor?.name??"unknown",
+     code:typeof error?.code==="string"?error.code:"unclassified"
+    })+"\n");
+    throw error;
+   }
   }
  }
  const runnerClient=new ObservedRunnerClient({
@@ -344,9 +366,26 @@ try{
   authorityOnlyAdmissions:gate,nowMs,
   authorityOnlyRunnerEnabled:true,
   authorityOnlyRunnerExecutor:runnerExecutor};
- const real=await executeAuthorization({
-  request_id:prepared.request_id,signed_vp:presentation.signed_vp
- },deps);
+ let real;
+ try{
+  real=await executeAuthorization({
+   request_id:prepared.request_id,signed_vp:presentation.signed_vp
+  },deps);
+ }catch(error){
+  // Unknown provider outcome is terminal; diagnose without retrying.
+  const entries=await readdir(path("runner-intent"));
+  const receipts=await readdir(path("runner-receipts"));
+  process.stdout.write(JSON.stringify({
+   event:"r303_gateway_sanitized_execute_failure",
+   gateway_code:typeof error?.code==="string"?error.code:"unclassified",
+   runner_post_attempts:runnerCalls,
+   intent_persisted:entries.some(x=>x.endsWith(".intent.json")),
+   attempt_persisted:entries.some(x=>x.endsWith(".attempt.json")),
+   pass_receipts:receipts.length,
+   audit_reason:audit.events.at(-1)?.reason??null
+  })+"\n");
+  throw error;
+ }
  assert.equal(real.decision,"allow");
  assert.equal(real.execution.provider,"runner");
  assert.equal(real.execution.status,"pass");

@@ -1,1 +1,1 @@
-{"revision":"R303.4","scenario":"single signed native Test Agent runs real disposable Docker project and researcher acceptance on exact Gitea SHA","model_calls":0,"main_merged":false}
+{"revision":"R303.4a","scenario":"repeat disposable native VP/OPA/Docker Runner Test Agent after masked 503","change":"owner-only allowlisted phase/result diagnostic; no provider retry within a Task","model_calls":0,"main_merged":false}
