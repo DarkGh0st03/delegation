@@ -27,3 +27,25 @@ test('staging failure stops VP and execute and hides owner error',async()=>{
  });
  assert.deepEqual(f.calls,['prepare','stage']);
 });
+
+test('read_file uses Gateway VP without reserving a mutation intent',async()=>{
+ const f=client();
+ await f.gateway.invoke('read_file',{branch:'feature/account-suspension',path:'README.md'});
+ assert.deepEqual(f.calls,['prepare','vp','execute']);
+});
+test('run_tests reserves owner intent before VP and execute',async()=>{
+ const f=client();
+ await f.gateway.invoke('run_tests',{branch:'feature/account-suspension',profile:'poc-default'});
+ assert.deepEqual(f.calls,['prepare','stage','vp','execute']);
+});
+test('create_file in authority-only mode is denied without legacy fallback',async()=>{
+ const f=client();
+ await assert.rejects(f.gateway.invoke('create_file',{
+  branch:'feature/account-suspension',path:'new.ts',content:'x'
+ }),error=>{
+  assert.equal((error as Error).message,
+   'Authority-only create_file has no trusted owner effect executor');
+  return true;
+ });
+ assert.deepEqual(f.calls,[]);
+});

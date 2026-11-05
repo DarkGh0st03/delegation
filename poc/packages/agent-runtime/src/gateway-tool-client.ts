@@ -132,6 +132,11 @@ export class GatewayControlledToolClient {
     args: Record<string, unknown>
   ): Promise<unknown> {
     this.#signal?.throwIfAborted();
+    // No authority-only create_file executor exists. Never silently fall
+    // through to a legacy provider write when native owner mode is selected.
+    if(this.#trustedEffectStager&&tool==="create_file")
+      throw new ControlledToolError("authorization_denied",
+        "Authority-only create_file has no trusted owner effect executor");
     let prepareResponse: Response;
     try {
       prepareResponse = await this.#fetch(
@@ -190,7 +195,10 @@ export class GatewayControlledToolClient {
     }
 
     this.#signal?.throwIfAborted();
-    if(this.#trustedEffectStager){
+    // Only native CAS update and controlled Runner have one-shot owner effect
+    // staging. Reads still require Gateway Rust/OPA, but no mutation intent.
+    if(this.#trustedEffectStager&&
+       (tool==="update_file"||tool==="run_tests")){
       try{
         await this.#trustedEffectStager.stage(prepared.request_id);
       }catch{

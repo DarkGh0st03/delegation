@@ -491,7 +491,11 @@ try{
  assert.equal(staged.provider_write_authorized,false);
  assert.equal(staged.intent.expected_blob_sha,seeded.blob_sha);
  assert.equal(staged.intent.expected_head_sha,baseRevision);
- await assert.rejects(preflight.stageUpdate(originalRecord,baseRevision),/EEXIST/);
+ // R318: the first private stage now reserves the Task flight. The second
+ // mutation preflight fails at the admission layer, before journal EEXIST.
+ await assert.rejects(preflight.stageUpdate(originalRecord,baseRevision),
+  /update preflight has no exact signed Task or enrolled native Child/u);
+ assert.equal(gatewayCasWrites,0);
  const valid=await verifier.verify({
   presenter:"backend",audience:good.audience,challenge:good.challenge,
   required_permission:taskPermission,signed_vp:goodVp
