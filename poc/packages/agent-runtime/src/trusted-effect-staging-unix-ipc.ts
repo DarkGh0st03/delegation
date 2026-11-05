@@ -226,7 +226,7 @@ export class TrustedOwnerEffectStagingRegistry{
      (expectedRole!==undefined&&
        (!ROLES.includes(expectedRole)||e.role!==expectedRole))||
      typeof requestId!=="string"||!REQUEST.test(requestId))
-   deny("unknown, consumed, wrong-role or malformed owner staging request");
+   deny("unknown, consumed or malformed owner staging request (including wrong role)");
   // Reject a cross-role HMAC stage WITHOUT consuming the real Task's
   // one-shot staging slot. Only a correct role can reserve the provider.
   e.used=true; // terminal on ambiguous network or provider outcome
