@@ -178,6 +178,7 @@ const socketPath=join(parent,"owner.sock");
 process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=socketPath;
 const path=name=>join(parent,name);
 let runnerServer;
+let gatewayHost;
 const names=["approvals","root-journal","coordinator-tasks","gateway-tasks",
  "gateway-activation","child-intents","gateway-child-intents","flights",
  "intent","receipts","runner-intent","runner-receipts","runner-logs"];
@@ -569,14 +570,6 @@ try{
  assert.deepEqual(runnerChild.permissions,[testTaskPermission]);
  await gate.bindTrustedTask(testTaskId,testRuntimeId,"test");
  await gate.enrollTrustedIssuedChild(testTaskId,testRuntimeId,issuer);
- const runnerPrepared=prepareAuthorization({
-  task_id:testRuntimeId,agent_role:"test",tool:"run_tests",
-  arguments:{branch,profile:"poc-default"}
- },{audience:"cloud-access-gateway",request_ttl_ms:1200000,
-    repository:repo},
- {store,audit,authorityOnlyAdmissions:gate,nowMs});
- const runnerRecord=store.get(runnerPrepared.request_id);
- assert.ok(runnerRecord);
  const pinnedHead=frontendWritten.execution.commit_sha;
  assert.notEqual(pinnedHead,written.execution.commit_sha);
  const runnerJournal=new DurableAuthorityOnlyRunnerIntentJournal(
@@ -585,43 +578,6 @@ try{
   admissions:gate,giteaClient:client,journal:runnerJournal,
   repository:"thesis/iam-console-poc",branch,nowMs
  });
- await assert.rejects(runnerPreflight.stageRunner(
-  runnerRecord,baseRevision),/Gitea Test branch changed/);
- const runnerStaged=await runnerPreflight.stageRunner(
-  runnerRecord,pinnedHead);
- assert.equal(runnerStaged.runner_execution_authorized,false);
- assert.equal(runnerStaged.intent.expected_head_sha,pinnedHead);
- assert.equal(runnerStaged.intent.credential_id,runnerChild.credential_id);
- await gate.stageTrustedTaskFlight(runnerRecord);
- const testPresentation=await invokeNativeCrypto({
-  socketPath,token:tokens.test,timeoutMs:60000
- },"create_presentation",{
-  credential_id:runnerChild.credential_id,
-  disclosed_permissions:[testTaskPermission],
-  audience:runnerPrepared.audience,challenge:runnerPrepared.challenge
- });
- const testVerified=await verifier.verify({
-  presenter:"test",audience:runnerPrepared.audience,
-  challenge:runnerPrepared.challenge,
-  required_permission:testTaskPermission,
-  signed_vp:testPresentation.signed_vp
- });
- assert.equal(testVerified.presenter_id,testDid);
- assert.equal(testVerified.credential_id,runnerChild.credential_id);
- assert.equal(testVerified.root_credential_id,operational.credential_id);
- const testOpa=await policy.evaluate({
-  request_id:runnerPrepared.request_id,task_id:testRuntimeId,
-  agent_role:"test",tool:"run_tests",
-  arguments:{branch,profile:"poc-default"},
-  required_permission:testTaskPermission,repository:repo,
-  verified_delegation:{
-   presenter_id:testVerified.presenter_id,
-   credential_id:testVerified.credential_id,
-   issuer_id:testVerified.issuer_id,
-   hierarchy_depth:testVerified.hierarchy_depth
-  }
- });
- assert.equal(testOpa.allow,true);
  // No fake Test results and no signed-DAG/legacy provider fallback.
  const bearer=randomBytes(32).toString("hex");
  const controller=new IsolatedDockerRunnerExecutor({
@@ -688,23 +644,81 @@ try{
   }),observer:runnerObserver,
   repository:"thesis/iam-console-poc",branch
  });
- const runnerDeps={...deps,
-  authorityOnlyMutationEnabled:false,
-  authorityOnlyMutationExecutor:undefined,
-  authorityOnlyRunnerEnabled:true,
-  authorityOnlyRunnerExecutor:ownedRunnerExecutor};
- // R311: exercise the REAL owner-assembled canonical HTTP listener.
+ // R312: use one canonical owner HTTP listener for Test prepare and execute.
  // The host builds its own fixed native Rust verifier and real OPA/Gitea
  // clients; it cannot inherit the fixture's injected verifier or executor.
  // The exact private request store and both owner-bound effect executors
  // are shared, and no authority control endpoint is exposed on HTTP.
- const gatewayHost=await startTrustedAuthorityOnlyGatewayServer(
-  gatewayConfig,{
+ gatewayHost=await startTrustedAuthorityOnlyGatewayServer(
+  {...gatewayConfig,prepare:{...gatewayConfig.prepare,
+   request_ttl_ms:1_200_000}},{
    admissions:gate,mutationExecutor,runnerExecutor:ownedRunnerExecutor,
    store,audit
   });
  const gatewayAddress=gatewayHost.server.address();
  assert.ok(gatewayAddress&&typeof gatewayAddress!=="string");
+ // R312: authenticated Test Task is prepared via real Gateway HTTP, not
+ // a fixture-only call to prepareAuthorization. Owner receives no credential
+ // through this route and stages the same record instance in its private store.
+ const prepareResponse=await fetch("http://127.0.0.1:"+
+  gatewayAddress.port+"/v1/authorization/prepare",{
+   method:"POST",headers:{"content-type":"application/json"},
+   body:JSON.stringify({
+    task_id:testRuntimeId,agent_role:"test",tool:"run_tests",
+    arguments:{branch,profile:"poc-default"}
+   })
+  });
+ const runnerPrepared=await prepareResponse.json();
+ assert.equal(prepareResponse.status,201,
+  "Canonical Gateway HTTP Test prepare must succeed");
+ assert.match(runnerPrepared.request_id,/^[A-Za-z0-9._:-]+$/u);
+ assert.equal(runnerPrepared.audience,"cloud-access-gateway");
+ assert.ok(typeof runnerPrepared.challenge==="string"&&
+  runnerPrepared.challenge.length>=16);
+ const runnerRecord=store.get(runnerPrepared.request_id);
+ assert.ok(runnerRecord);
+ await assert.rejects(runnerPreflight.stageRunner(
+  runnerRecord,baseRevision),/Gitea Test branch changed/);
+ const runnerStaged=await runnerPreflight.stageRunner(
+  runnerRecord,pinnedHead);
+ assert.equal(runnerStaged.runner_execution_authorized,false);
+ assert.equal(runnerStaged.intent.expected_head_sha,pinnedHead);
+ assert.equal(runnerStaged.intent.credential_id,runnerChild.credential_id);
+ await gate.stageTrustedTaskFlight(runnerRecord);
+ const testPresentation=await invokeNativeCrypto({
+  socketPath,token:tokens.test,timeoutMs:60000
+ },"create_presentation",{
+  credential_id:runnerChild.credential_id,
+  disclosed_permissions:[testTaskPermission],
+  audience:runnerPrepared.audience,challenge:runnerPrepared.challenge
+ });
+ const testVerified=await verifier.verify({
+  presenter:"test",audience:runnerPrepared.audience,
+  challenge:runnerPrepared.challenge,
+  required_permission:testTaskPermission,
+  signed_vp:testPresentation.signed_vp
+ });
+ assert.equal(testVerified.presenter_id,testDid);
+ assert.equal(testVerified.credential_id,runnerChild.credential_id);
+ assert.equal(testVerified.root_credential_id,operational.credential_id);
+ const testOpa=await policy.evaluate({
+  request_id:runnerPrepared.request_id,task_id:testRuntimeId,
+  agent_role:"test",tool:"run_tests",
+  arguments:{branch,profile:"poc-default"},
+  required_permission:testTaskPermission,repository:repo,
+  verified_delegation:{
+   presenter_id:testVerified.presenter_id,
+   credential_id:testVerified.credential_id,
+   issuer_id:testVerified.issuer_id,
+   hierarchy_depth:testVerified.hierarchy_depth
+  }
+ });
+ assert.equal(testOpa.allow,true);
+ const runnerDeps={...deps,
+  authorityOnlyMutationEnabled:false,
+  authorityOnlyMutationExecutor:undefined,
+  authorityOnlyRunnerEnabled:true,
+  authorityOnlyRunnerExecutor:ownedRunnerExecutor};
  let testResult;
  try{
   const response=await fetch("http://127.0.0.1:"+
@@ -718,7 +732,7 @@ try{
    });
   testResult=await response.json();
   if(response.status!==200)
-   throw Error("R311 canonical Gateway HTTP Test denied: status="+
+   throw Error("R312 canonical Gateway HTTP Test denied: status="+
     response.status+" code="+(testResult?.error??"unclassified"));
  }catch(error){
   const files=await readdir(path("runner-intent"));
@@ -730,8 +744,6 @@ try{
    audit_reason:audit.events.at(-1)?.reason??null
   })+"\n");
   throw error;
- }finally{
-  await gatewayHost.close();
  }
  assert.equal(testResult.decision,"allow");
  assert.equal(testResult.execution.provider,"runner");
@@ -804,10 +816,12 @@ try{
   runner_posts:runnerCalls,test_completion_attested:true,dependent_tasks:3,frontend_cas:true,
   paid_model_calls:0,canonical_gateway_runtime:true,
   canonical_gateway_http_test_execute:true,
+  canonical_gateway_http_test_prepare:true,
   completed_app_source:"owner_only_fixture",
   delegated_functional_edits:0,fixture_files_changed:functionalFixture.files_changed
  })+"\n");
 }finally{
+ if(gatewayHost)await gatewayHost.close();
  if(runnerServer)await new Promise(resolve=>runnerServer.close(resolve));
  await rm(parent,{recursive:true,force:true});
 }
