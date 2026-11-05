@@ -174,7 +174,7 @@ test("R325 signed Task/Child/Gateway mismatch fails before remote binding",async
   {receipt:{...receipt,agent_did:"did:thesis:forged"}},
   {row:{...row,permissions:[{
     resource:canonicalBranchUri(repo,branch)+"/files/../bad",
-    operation:"update_file" as const}]},
+    operation:"update_file" as const}]}},
   {row:{...row,permissions:[effect,{resource:canonicalBranchUri(repo,branch),
     operation:"run_tests" as const}]}}
  ]){
