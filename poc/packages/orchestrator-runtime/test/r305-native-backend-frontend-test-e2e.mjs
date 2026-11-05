@@ -449,6 +449,15 @@ try{
    "R313 Gateway HTTP "+route+" failed");
   return result;
  };
+ // Exercise denial through the same public boundary as successful effects.
+ const assertHttpDenied=async(payload,code)=>{
+  const expected=code==="replay_detected"?409:403;
+  const writesBefore=gatewayCasWrites,runnerBefore=runnerCalls;
+  const result=await httpCall("execute",payload,expected);
+  assert.equal(result.error,code);
+  assert.equal(gatewayCasWrites,writesBefore);
+  assert.equal(runnerCalls,runnerBefore);
+ };
  const prepare=()=>httpCall("prepare",{
   task_id:runtimeTaskId,agent_role:"backend",tool:"update_file",
   arguments:{branch,path:mutationPath,content:newContent}
@@ -545,8 +554,7 @@ try{
  const verifiedReceipt=await observer.observe(
   gate.assertTrustedCompletedMutationEvidenceBinding(originalRecord,valid));
  assert.equal(verifiedReceipt.status,"owner_verified_provider_result");
- await assert.rejects(executeAuthorization({request_id:good.request_id,signed_vp:goodVp},deps),
-  error=>error?.code==="replay_detected");
+ await assertHttpDenied({request_id:good.request_id,signed_vp:goodVp},"replay_detected");
  await gate.attestTrustedTaskCompletion(taskId,runtimeTaskId);
  assert.equal(gate.stagedCompletedTaskCount,1);
  assert.equal(gatewayCasWrites,1);
@@ -653,10 +661,10 @@ try{
  await gate.attestTrustedTaskCompletion(
   frontendTaskId,frontendRuntimeId);
  assert.equal(gate.stagedCompletedTaskCount,2);
- await assert.rejects(executeAuthorization({
+ await assertHttpDenied({
   request_id:frontendPrepared.request_id,
   signed_vp:frontendVp.signed_vp
- },deps),e=>e?.code==="replay_detected");
+ },"replay_detected");
  assert.equal(gatewayCasWrites,2);
 
  const runnerChild=await issuer.issueForRegisteredTask(
@@ -772,10 +780,10 @@ try{
  assert.equal(testWitness.status,"owner_verified_provider_result");
  await gate.attestTrustedTaskCompletion(testTaskId,testRuntimeId);
  assert.equal(gate.stagedCompletedTaskCount,3);
- await assert.rejects(executeAuthorization({
+ await assertHttpDenied({
   request_id:runnerPrepared.request_id,
   signed_vp:testPresentation.signed_vp
- },runnerDeps),e=>e?.code==="replay_detected");
+ },"replay_detected");
  assert.equal(runnerCalls,1);
  assert.equal(gatewayCasWrites,2);
 
@@ -796,9 +804,9 @@ try{
  assert.equal(validOther.root_credential_id,operational.credential_id);
  assert.throws(()=>gate.assertVerifiedVpAndPolicyForExecution(
   store.get(other.request_id),validOther),/differs from enrolled Task/u);
- await assert.rejects(executeAuthorization({
+ await assertHttpDenied({
   request_id:other.request_id,signed_vp:otherVp
- },deps),error=>error?.code==="authority_only_execution_not_enabled");
+ },"authority_only_execution_not_enabled");
  assert.equal(gatewayCasWrites,2);
 
  // An already-prepared and signed VP MUST be denied after EVM root
@@ -809,9 +817,9 @@ try{
   presenter:"backend",audience:pending.audience,challenge:pending.challenge,
   required_permission:taskPermission,signed_vp:pendingVp
  }));
- await assert.rejects(executeAuthorization({
+ await assertHttpDenied({
   request_id:pending.request_id,signed_vp:pendingVp
- },deps),error=>error?.code==="verification_rejected");
+ },"verification_rejected");
  assert.equal(gatewayCasWrites,2);
  assert.equal((await client.getBranchMetadata("main")).commit_sha,
   originalMainSha);
@@ -830,6 +838,7 @@ try{
   canonical_gateway_http_test_execute:true,
   canonical_gateway_http_test_prepare:true,
   canonical_gateway_http_backend_frontend:true,
+  canonical_gateway_http_negative_probes:true,
   completed_app_source:"owner_only_fixture",
   delegated_functional_edits:0,fixture_files_changed:functionalFixture.files_changed
  })+"\n");
