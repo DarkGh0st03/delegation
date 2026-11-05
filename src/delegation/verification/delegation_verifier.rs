@@ -132,7 +132,9 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
         for delegator in hierarchy.iter().rev() {
             let ancestor_permissions = delegator.permissions_for_verification(&permissions);
             if ancestor_permissions.len() != descendant_permissions.len()
-                || !ancestor_permissions.iter().zip(descendant_permissions.iter())
+                || !ancestor_permissions
+                    .iter()
+                    .zip(descendant_permissions.iter())
                     .all(|(parent, child)| parent.covers(child))
             {
                 return Err(String::from("Delegation scope expands ancestor authority"));
@@ -707,10 +709,13 @@ mod tests {
 
     #[test]
     fn verifies_recursive_scopes_with_fanout_and_selective_disclosure() -> Result<(), String> {
-        let scoped = |path: &str| Permission::new(
-            format!("gitea://gitea.local/thesis/repo/branches/feature%2Fwork/{path}"),
-            Operation::ReadFile,
-        ).unwrap();
+        let scoped = |path: &str| {
+            Permission::new(
+                format!("gitea://gitea.local/thesis/repo/branches/feature%2Fwork/{path}"),
+                Operation::ReadFile,
+            )
+            .unwrap()
+        };
         type Curve = Bn254;
         let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
 
@@ -723,9 +728,7 @@ mod tests {
         let valid_from = String::from("2026-01-01T00:00:00Z");
         let delegatee_id = String::from("https://vc.example/delegators/d1");
         let validity_period: Duration = Duration::new(3600, 0);
-        let permissions: Vec<Permission> = vec![
-            scoped("directories/apps"),
-        ];
+        let permissions: Vec<Permission> = vec![scoped("directories/apps")];
         let vc = issuer.issue_delegation_verifiable_credential(
             context,
             credential_id,

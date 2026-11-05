@@ -62,9 +62,10 @@ impl ResourceUri {
         }
         // Repository identity and branch are compared verbatim. URI aliases
         // never broaden authority. Reject query/fragment and empty segments.
-        if parts.iter().any(|p| {
-            p.is_empty() || *p == "." || *p == ".." || p.contains(['?', '#', '\\'])
-        }) {
+        if parts
+            .iter()
+            .any(|p| p.is_empty() || *p == "." || *p == ".." || p.contains(['?', '#', '\\']))
+        {
             return None;
         }
         if parts[5] != "directories" && parts[5] != "files" {

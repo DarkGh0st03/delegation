@@ -73,13 +73,21 @@ impl DelegationChainEntry {
         }
     }
 
-    pub fn permissions_for_verification<'a>(&'a self, legacy: &'a Vec<Permission>) -> &'a Vec<Permission> {
+    pub fn permissions_for_verification<'a>(
+        &'a self,
+        legacy: &'a Vec<Permission>,
+    ) -> &'a Vec<Permission> {
         self.ancestor_permissions.as_ref().unwrap_or(legacy)
     }
 
-    pub fn bind_ancestor_permissions(&mut self, permissions: Vec<Permission>) -> Result<(), String> {
+    pub fn bind_ancestor_permissions(
+        &mut self,
+        permissions: Vec<Permission>,
+    ) -> Result<(), String> {
         if permissions.len() != self.permission_witnesses.len() {
-            return Err(String::from("Ancestor permissions and witnesses differ in length"));
+            return Err(String::from(
+                "Ancestor permissions and witnesses differ in length",
+            ));
         }
         if self.ancestor_permissions.is_some() {
             return Err(String::from("Ancestor permissions already bound"));
@@ -116,7 +124,10 @@ impl DelegationChainEntry {
     /// an error in case of failure.
     pub fn remove_permission_witness(&mut self, i: usize) -> Result<(), String> {
         if i >= self.permission_witnesses.len()
-            || self.ancestor_permissions.as_ref().is_some_and(|p| i >= p.len())
+            || self
+                .ancestor_permissions
+                .as_ref()
+                .is_some_and(|p| i >= p.len())
         {
             return Err(String::from("Ancestor disclosure index out of bounds"));
         }
@@ -152,10 +163,15 @@ impl DelegationChainEntry {
             selected.push(witness);
         }
         if let Some(permissions) = self.ancestor_permissions.as_ref() {
-            let selected_permissions = indices.iter().map(|i| {
-                permissions.get(*i).cloned().ok_or_else(||
-                    String::from("Ancestor permission index out of bounds"))
-            }).collect::<Result<Vec<_>, _>>()?;
+            let selected_permissions = indices
+                .iter()
+                .map(|i| {
+                    permissions
+                        .get(*i)
+                        .cloned()
+                        .ok_or_else(|| String::from("Ancestor permission index out of bounds"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             self.ancestor_permissions = Some(selected_permissions);
         }
         self.permission_witnesses = selected;

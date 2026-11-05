@@ -315,8 +315,12 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                     issuer_dc.metadata_witness().clone(),
                     issuer_permission_witnesses.clone(),
                 );
-                issuer_delegator.bind_ancestor_permissions(selected_parent_indices.iter()
-                    .map(|index| issuer_permissions[*index].clone()).collect())?;
+                issuer_delegator.bind_ancestor_permissions(
+                    selected_parent_indices
+                        .iter()
+                        .map(|index| issuer_permissions[*index].clone())
+                        .collect(),
+                )?;
                 issuer_hierarchy.push(issuer_delegator);
 
                 let result_dc = DelegationCredential::new(
