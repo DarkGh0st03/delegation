@@ -23,6 +23,8 @@ const SETTINGS={
 const TIME_WINDOW=30_000,BODY_MAX=4096,ACK_MAX=1024,MAX_NONCES=1024;
 const MAC=/^[a-f0-9]{64}$/u,NONCE=/^[A-Za-z0-9_-]{22}$/u;
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
+type Role="backend"|"frontend"|"test";
+const ROLES=["backend","frontend","test"] as const;
 const REQUEST=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 function deny(message:string):never{
  throw Error("Trusted authority-only effect IPC NO-GO: "+message);
@@ -206,20 +208,27 @@ function validPins(value:unknown):value is PublicPins{
 
 /** Kept in the privileged owner process. Cannot be created by A2A payload. */
 export class TrustedOwnerEffectStagingRegistry{
- readonly #entries=new Map<string,{port:TrustedEffectStagingPort;used:boolean}>();
+ readonly #entries=new Map<string,{
+  port:TrustedEffectStagingPort;used:boolean;role?:Role
+ }>();
  #retired=false;
- bindTask(runtimeTaskId:string,stager:TrustedEffectStagingPort):void{
+ bindTask(runtimeTaskId:string,stager:TrustedEffectStagingPort,role?:Role):void{
   if(this.#retired||typeof runtimeTaskId!=="string"||
      !DISPATCH.test(runtimeTaskId)||typeof stager?.stage!=="function"||
+     (role!==undefined&&!ROLES.includes(role))||
      this.#entries.has(runtimeTaskId))
    deny("owner staging requires unique pre-approved Task and concrete port");
-  this.#entries.set(runtimeTaskId,{port:stager,used:false});
+  this.#entries.set(runtimeTaskId,{port:stager,used:false,...(role?{role}:{})});
  }
- async stage(runtimeTaskId:string,requestId:string):Promise<void>{
+ async stage(runtimeTaskId:string,requestId:string,expectedRole?:Role):Promise<void>{
   const e=this.#entries.get(runtimeTaskId);
   if(this.#retired||!e||e.used||
+     (expectedRole!==undefined&&
+       (!ROLES.includes(expectedRole)||e.role!==expectedRole))||
      typeof requestId!=="string"||!REQUEST.test(requestId))
-   deny("unknown, consumed or malformed owner staging request");
+   deny("unknown, consumed, wrong-role or malformed owner staging request");
+  // Reject a cross-role HMAC stage WITHOUT consuming the real Task's
+  // one-shot staging slot. Only a correct role can reserve the provider.
   e.used=true; // terminal on ambiguous network or provider outcome
   await e.port.stage(requestId); // the owner stage checks SAME prepared request store
  }
@@ -240,9 +249,12 @@ export class TrustedOwnerEffectStagingRegistry{
  */
 export async function createTrustedOwnerEffectStagingServer(config:{
  socketPath:string;secretFile:string;registry:TrustedOwnerEffectStagingRegistry;
+ /** R332 owner-selected role on a role-isolated staging socket. */
+ expectedRole?:Role;
 }){
- if(!(config.registry instanceof TrustedOwnerEffectStagingRegistry))
-  deny("concrete owner staging registry required");
+ if(!(config.registry instanceof TrustedOwnerEffectStagingRegistry)||
+    (config.expectedRole!==undefined&&!ROLES.includes(config.expectedRole)))
+  deny("concrete owner staging registry and trusted role required");
  return createPrivateServer({
   channel:"stage",socketPath:config.socketPath,secretFile:config.secretFile,
   onClose:()=>config.registry.retireAll(),
@@ -252,7 +264,8 @@ export async function createTrustedOwnerEffectStagingServer(config:{
       v.action!=="stage"||
       typeof v.runtime_task_id!=="string"||
       typeof v.request_id!=="string")deny("invalid owner stage request");
-   await config.registry.stage(v.runtime_task_id,v.request_id);
+   await config.registry.stage(v.runtime_task_id,v.request_id,
+    config.expectedRole);
    return {ok:true,status:"owner_intent_reserved_not_executed"};
   }
  });

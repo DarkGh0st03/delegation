@@ -152,7 +152,7 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
   // Only the signed Coordinator row selects the route: never an A2A payload.
   const binder=this.#agents?this.#agents[pins.role]:this.#agent!;
   this.#routing.set(runtimeTaskId,binder);
-  this.#registry.bindTask(runtimeTaskId,effectStager);
+  this.#registry.bindTask(runtimeTaskId,effectStager,pins.role);
   try{await binder.bindTask(pins);}
   catch(error){
    this.#registry.retireFor(runtimeTaskId);

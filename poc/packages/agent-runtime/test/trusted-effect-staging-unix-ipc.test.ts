@@ -141,3 +141,82 @@ test("R329.1 production req_UUID propagates through real owner Unix staging",asy
    /Authenticated private effect operation denied/u);
  }finally{await x.close();}
 });
+
+test("R332 role-keyed stage socket rejects cross-role authenticated HMAC without burning Backend reservation",async()=>{
+ const dir=await mkdtemp(join(tmpdir(),"r332-"));
+ const registry=new TrustedOwnerEffectStagingRegistry();
+ const backendSecret=join(dir,"be-stage.hex");
+ const frontendSecret=join(dir,"fe-stage.hex");
+ const backendSocket=join(dir,"be-stage.sock");
+ const frontendSocket=join(dir,"fe-stage.sock");
+ for(const file of [backendSecret,frontendSecret])
+  await writeFile(file,randomBytes(32).toString("hex")+"\n",
+   {mode:0o600,flag:"wx"});
+ const backend=await createTrustedOwnerEffectStagingServer({
+  socketPath:backendSocket,secretFile:backendSecret,
+  expectedRole:"backend",registry
+ });
+ const frontend=await createTrustedOwnerEffectStagingServer({
+  socketPath:frontendSocket,secretFile:frontendSecret,
+  expectedRole:"frontend",registry
+ });
+ const effects:string[]=[];
+ try{
+  await backend.start();await frontend.start();
+  const be=await connectTrustedOwnerEffectStagingClient({
+   socketPath:backendSocket,secretFile:backendSecret
+  });
+  const fe=await connectTrustedOwnerEffectStagingClient({
+   socketPath:frontendSocket,secretFile:frontendSecret
+  });
+  const requestId="req_12345678-1234-4123-8123-1234567890ab";
+  registry.bindTask(runtime,{
+   async stage(id:string){effects.push(id);}
+  },"backend");
+  // Correctly signed but WRONG role-key: the owner must not stage.
+  await assert.rejects(fe.stage(runtime,requestId),
+   /Authenticated private effect operation denied/u);
+  assert.deepEqual(effects,[]);
+  // Borrowing the correct socket with a different HMAC key also denies.
+  const wrongKey=await connectTrustedOwnerEffectStagingClient({
+   socketPath:backendSocket,secretFile:frontendSecret
+  });
+  await assert.rejects(wrongKey.stage(runtime,requestId),
+   /Authenticated private effect operation denied/u);
+  assert.deepEqual(effects,[]);
+  // Genuine signed Backend request remains possible exactly once.
+  await be.stage(runtime,requestId);
+  assert.deepEqual(effects,[requestId]);
+  await assert.rejects(be.stage(runtime,requestId),
+   /Authenticated private effect operation denied/u);
+  await assert.rejects(fe.stage(runtime,requestId),
+   /Authenticated private effect operation denied/u);
+  assert.deepEqual(effects,[requestId]);
+ }finally{
+  await Promise.allSettled([frontend.close(),backend.close()]);
+  await rm(dir,{recursive:true,force:true});
+ }
+});
+test("R332 strict role stage refuses untagged legacy Task without granting effects",async()=>{
+ const dir=await mkdtemp(join(tmpdir(),"r332-no-role-"));
+ const secretFile=join(dir,"be.hex"),socketPath=join(dir,"be.sock");
+ await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
+  {mode:0o600,flag:"wx"});
+ const registry=new TrustedOwnerEffectStagingRegistry();
+ const server=await createTrustedOwnerEffectStagingServer({
+  socketPath,secretFile,registry,expectedRole:"backend"
+ });
+ const effects:string[]=[];
+ try{
+  await server.start();
+  const client=await connectTrustedOwnerEffectStagingClient({
+   socketPath,secretFile
+  });
+  registry.bindTask(runtime,{async stage(id:string){effects.push(id);}});
+  await assert.rejects(client.stage(runtime,"r332-safe-req"),
+   /Authenticated private effect operation denied/u);
+  assert.deepEqual(effects,[]);
+ }finally{
+  await server.close();await rm(dir,{recursive:true,force:true});
+ }
+});
