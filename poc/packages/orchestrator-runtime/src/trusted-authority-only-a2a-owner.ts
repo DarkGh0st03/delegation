@@ -9,6 +9,10 @@
  * of A2A text/status as independent provider completion.
  */
 import {TaskState} from "@a2a-js/sdk";
+import {DeterministicA2AOrchestrator,
+ type A2APollingOptions} from "../../agent-runtime/src/orchestrator.ts";
+import {assertTrustedApprovedA2AStartup}
+ from "./trusted-a2a-startup-probe.ts";
 import {isDeepStrictEqual} from "node:util";
 import {canonicalBranchUri,canonicalFileUri}
  from "../../../apps/gateway/src/canonical.ts";
@@ -294,4 +298,42 @@ export async function startTrustedAuthorityOnlyA2AOwner(
  }catch(error){
   await bootstrap.close();throw error;
  }
+}
+
+/**
+ * R327 — canonical production-facing A2A SDK owner factory.
+ *
+ * A trusted owner starts THREE separate ADK/A2A agent processes itself,
+ * then supplies the loopback endpoints. Before opening private effect
+ * staging, verify each role's live Agent Card, DID, skill and A2A protocol.
+ * The authenticated Unix Task bind still precedes the actual HTTP send.
+ *
+ * A card is discovery metadata, NOT an authenticated remote caller or a
+ * native delegated grant. Only Gateway/Rust/OPA completion grants authority.
+ */
+export async function startTrustedAuthorityOnlySdkA2AOwner(
+ config:TrustedAuthorityOnlyRemoteEffectBootstrapOptions & {
+  agentBaseUrls:AgentUrls;
+  a2aPolling?:A2APollingOptions;
+ }):Promise<TrustedAuthorityOnlyA2AOwner>{
+ if(!config||Object.hasOwn(config,"a2a")||
+    !config.agentBaseUrls||
+    Object.keys(config.agentBaseUrls).sort().join(",")!==
+      "backend,frontend,test")
+  deny("canonical SDK owner requires only trusted pinned role endpoints");
+ const urls=Object.freeze({
+  backend:endpoint(config.agentBaseUrls.backend),
+  frontend:endpoint(config.agentBaseUrls.frontend),
+  test:endpoint(config.agentBaseUrls.test)
+ });
+ if(new Set(Object.values(urls)).size!==3||
+    Object.values(urls).some(url=>!/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/u.test(url)))
+  deny("canonical SDK A2A startup requires distinct loopback role hosts");
+ // Card probes use GET with no credential, then the protected SDK client
+ // performs the one-shot A2A HTTP send only after R324 private Task bind.
+ await assertTrustedApprovedA2AStartup({endpoints:urls});
+ const client=new DeterministicA2AOrchestrator(config.a2aPolling);
+ return startTrustedAuthorityOnlyA2AOwner({
+  ...config,agentBaseUrls:urls,a2a:client
+ });
 }
