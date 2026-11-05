@@ -137,6 +137,7 @@ test("ADK rejects stale unscoped owner-stager config at server assembly",()=>{
  assert.throws(()=>createAdkA2ATaskHandler({trustedEffectStager:{
   stage:async()=>{}
  }} as never),/unscoped_authority_only_effect_stager_retired/u);
- assert.throws(()=>createAdkA2ATaskHandler({trustedEffectTaskRegistry:{}}
-  as never),/Invalid trusted effect Task registry/u);
+ assert.throws(()=>createAdkA2ATaskHandler(
+  ({trustedEffectTaskRegistry:{}} as never)
+ ),/Invalid trusted effect Task registry/u);
 });
