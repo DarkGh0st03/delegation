@@ -305,6 +305,13 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      typeof verified.credential_id!=="string"||
      !verified.credential_id.trim())
    deny("verified presenter or Task differs from trusted binding");
+  // R289: Rust's verified chain must descend from THIS independently issued
+  // operational root. A valid but unrelated root is not session authority.
+  // No assertion about an issued Task Child DC follows from this check.
+  if(verified.root_credential_id!==this.#rootCredentialId||
+     !Number.isSafeInteger(verified.hierarchy_depth)||
+     verified.hierarchy_depth<1)
+   deny("verified Rust chain does not descend from active Engineer operational root");
   const current=this.preflightCanonicalRequest({
    task_id:record.task_id,agent_role:record.agent_role,
    tool:record.request.tool,arguments:record.request.arguments

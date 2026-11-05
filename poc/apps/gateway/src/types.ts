@@ -205,6 +205,8 @@ export interface VerifiedDelegation {
   presenter_id: string;
   credential_id: string;
   issuer_id: string;
+  /** Rust-authenticated root provenance. Optional for historical verifier fixtures. */
+  root_credential_id?: string;
   permissions: Permission[];
   hierarchy_depth: number;
   expiration: string | number;

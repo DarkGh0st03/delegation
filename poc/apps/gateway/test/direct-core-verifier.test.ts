@@ -70,6 +70,27 @@ test("direct Core wrapper builds Rust-compatible AuthorizationContext for single
   assert.ok(!Object.hasOwn(contexts[1],"required_permission"));
 });
 
+
+
+test("R289 trusted Rust root ancestry is forwarded and malformed provenance fails closed",async()=>{
+  const rootId="urn:authority:operational";
+  const valid=new DirectCoreRustVerifier(fakeBinding(()=>
+    JSON.stringify({...JSON.parse(result([read])),root_credential_id:rootId})
+  ),ids);
+  const verified=await valid.verify(legacy);
+  assert.equal(verified.root_credential_id,rootId);
+  for(const invalid of [null,42,""," urn:authority:operational"]) {
+    const core=new DirectCoreRustVerifier(fakeBinding(()=>
+      JSON.stringify({...JSON.parse(result([read])),root_credential_id:invalid})
+    ),ids);
+    await assert.rejects(core.verify(legacy),VerificationUnavailableError);
+  }
+  // Historical fixtures without this field remain readable, but R289
+  // authority-only admission rejects them rather than inferring a root.
+  const old=new DirectCoreRustVerifier(fakeBinding(()=>result([read])),ids);
+  assert.equal((await old.verify(legacy)).root_credential_id,undefined);
+});
+
 test("invalid, duplicate and empty authorization requirements reject before native binding",async()=>{
   let count=0;
   const core=new DirectCoreRustVerifier(fakeBinding(()=>{

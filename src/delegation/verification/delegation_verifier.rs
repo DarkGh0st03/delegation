@@ -178,6 +178,14 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
             }
         };
 
+        // Chain entries are ordered root -> immediate delegator. Each entry's
+        // credential_id has already passed witness, status and trust checks
+        // above. A direct-root VP has no hierarchy and uses its own ID.
+        let verified_root_credential_id = hierarchy
+            .first()
+            .map(|entry| entry.credential_id().clone())
+            .unwrap_or_else(|| vp.id().clone());
+
         Ok(VerifiedDelegation::new(
             presenter_id.clone(),
             vp.id().clone(),
@@ -185,7 +193,8 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
             permissions,
             hierarchy.len(),
             expiration,
-        ))
+        )
+        .with_verified_root(verified_root_credential_id))
     }
 }
 

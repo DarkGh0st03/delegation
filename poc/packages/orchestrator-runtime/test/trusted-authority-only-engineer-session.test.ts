@@ -715,3 +715,53 @@ test("R288 VP rejection and independent OPA denial both stop before provider",as
   assert.equal(executor.callCount,0);
  });
 });
+
+
+test("R289 authority-only Gateway requires native-verified operational root provenance",async()=>{
+ await fixture(async({session,approvals,taskJournal,
+  gatewayTaskJournal,gatewaySessionStore})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-r289","backend");
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const prepared=prepareAuthorization({
+   task_id:"runtime-r289",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+  {store,audit,nowMs:()=>nowMs,requestId:()=>"req-r289",
+   challenge:()=>"challenge-r289",authorityOnlyAdmissions:gate});
+  const record=store.get(prepared.request_id);
+  assert.ok(record);
+  const nativeVerified={
+   presenter_id:"did:thesis:backend",credential_id:"urn:authority:child",
+   issuer_id:"did:thesis:orchestrator",
+   root_credential_id:operational.credential_id,
+   permissions:[{resource:file,operation:"read_file"}],
+   hierarchy_depth:1,expiration:"1800000120000000000000"
+  };
+  for(const bad of [
+    {...nativeVerified,root_credential_id:undefined},
+    {...nativeVerified,root_credential_id:"urn:authority:foreign"},
+    {...nativeVerified,hierarchy_depth:0}
+  ]) {
+   assert.throws(()=>gate.assertVerifiedVpAndPolicyForExecution(record,bad as never),
+     /verified Rust chain does not descend/);
+  }
+  assert.throws(()=>gate.assertVerifiedVpAndPolicyForExecution(record,
+    nativeVerified as never),/native Child DC authority-only execution not enabled/);
+  assert.equal(record.consumed,false);
+  assert.equal(gate.phase,"active");
+ });
+});

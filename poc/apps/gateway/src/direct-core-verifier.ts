@@ -67,6 +67,13 @@ function validateRustResult(
      !(typeof v.expiration==="string" || typeof v.expiration==="number")) {
     throw new Error("Invalid native Rust verifier response or presenter mismatch");
   }
+  if(v.root_credential_id!==undefined&&
+     (typeof v.root_credential_id!=="string"||
+      !v.root_credential_id.trim()||
+      v.root_credential_id!==v.root_credential_id.trim()||
+      v.root_credential_id.length>1024)){
+    throw new Error("Malformed verified Rust root credential provenance");
+  }
   const verified=v.permissions.map(permission);
   if(!required.every(p=>verified.some(actual=>samePermission(actual,p)))) {
     throw new Error("Native Rust verifier response omits an authorized permission");
@@ -75,6 +82,8 @@ function validateRustResult(
     presenter_id:v.presenter_id,
     credential_id:v.credential_id,
     issuer_id:v.issuer_id,
+    ...(typeof v.root_credential_id==="string"
+      ? {root_credential_id:v.root_credential_id} : {}),
     permissions:verified,
     hierarchy_depth:v.hierarchy_depth as number,
     expiration:v.expiration
