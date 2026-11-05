@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {generateKeyPairSync} from "node:crypto";
+import {generateKeyPairSync,createHash} from "node:crypto";
 import {mkdtemp,chmod,writeFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
@@ -12,6 +12,11 @@ import {DurableAuthorityOnlyActivationJournal}
  from "../src/authority-only-activation-journal.ts";
 import {TrustedAuthorityOnlyEngineerSession}
  from "../src/trusted-authority-only-engineer-session.ts";
+import {DurableAuthorityTaskJournal}
+ from "../src/trusted-authority-task-journal.ts";
+import {TrustedAuthorityOnlyExecutionCoordinator,
+ type AuthorityOnlyTaskProposal}
+ from "../src/trusted-authority-only-execution-coordinator.ts";
 import type {EngineerCredentialPort,TrustedPlanningSnapshot,RootParameters}
  from "../src/trusted-engineer-authority.ts";
 import type {DelegatedPermission} from "../src/delegated-permission.ts";
@@ -88,14 +93,17 @@ async function fixture(fn:(x:{
  issuer:Issuer;session:TrustedAuthorityOnlyEngineerSession;
  log:Array<{event:string;id?:string;permissions?:readonly DelegatedPermission[]}>;
  journal:DurableAuthorityOnlyActivationJournal;
+ taskJournal:DurableAuthorityTaskJournal;
  approvals:SignedAuthorityOnlyFileStore;
  createSession:()=>TrustedAuthorityOnlyEngineerSession;
  save:(receipt?:object)=>Promise<void>
 })=>Promise<void>,receipt=signedReceipt()){
  const directory=await mkdtemp(join(tmpdir(),"delegation-r285-"));
- const receiptDir=join(directory,"approvals"),journalDir=join(directory,"journal");
+ const receiptDir=join(directory,"approvals"),journalDir=join(directory,"journal"),
+  taskDir=join(directory,"task-journal");
  const {mkdir}=await import("node:fs/promises");
  await mkdir(receiptDir,{mode:0o700});await mkdir(journalDir,{mode:0o700});
+ await mkdir(taskDir,{mode:0o700});
  const save=async(raw:object=receipt)=>{
   await writeFile(join(receiptDir,sessionId+".json"),JSON.stringify(raw),{mode:0o600});
   await chmod(join(receiptDir,sessionId+".json"),0o600);
@@ -107,6 +115,7 @@ async function fixture(fn:(x:{
   const approvals=new SignedAuthorityOnlyFileStore({directory:receiptDir,
    engineerDid:did,trustedKeys,nowMs:()=>nowMs});
   const journal=new DurableAuthorityOnlyActivationJournal(journalDir);
+  const taskJournal=new DurableAuthorityTaskJournal(taskDir);
   const createSession=()=>new TrustedAuthorityOnlyEngineerSession({
    snapshot:snapshot(),requirement,credentials:issuer,approvals,journal,
    authenticatedEngineerDid:did,nowMs:()=>nowMs,
@@ -120,7 +129,7 @@ async function fixture(fn:(x:{
     async end(taskId){log.push({event:"revision.end",id:taskId});}
    }
   });
-  await fn({issuer,session:createSession(),log,journal,approvals,createSession,save});
+  await fn({issuer,session:createSession(),log,journal,taskJournal,approvals,createSession,save});
  }finally{await rm(directory,{recursive:true,force:true});}
 }
 test("R285 only authority pairs are issued after confirmed Planning retirement and Rust revocation",async()=>{
@@ -240,5 +249,145 @@ test("R285 private Engineer cancellation confirms Gateway retirement and native 
   await assert.rejects(session.approveAndIssueOperationalRoot(operational),
    /active preliminary root missing/);
   await assert.rejects(createSession().startPlanning(preliminary),/EEXIST/u);
+ });
+});
+
+
+// R286: verified signed authority, real Engineer root session and pinned cards.
+// These tests only register trusted epoch candidates: no Gateway execution.
+const registry={
+ backend:{did:"did:thesis:backend",card_ref:"trusted:backend",
+  capabilities:["read_file","update_file"]},
+ frontend:{did:"did:thesis:frontend",card_ref:"trusted:frontend",
+  capabilities:["read_file","update_file"]},
+ test:{did:"did:thesis:test",card_ref:"trusted:test",
+  capabilities:["read_file"]}
+};
+function nextTask(agent_id="backend",epoch=1,task_id="task-backend"):AuthorityOnlyTaskProposal{
+ return {
+  session_id:sessionId,requirement_sha256:
+   (awaitRequirementHash()),
+  base_revision:hash,branch,task_id,epoch,agent_id,
+  depends_on:epoch===1?[]:["task-backend"],
+  permissions:[{resource:file,operation:epoch===1?"read_file":"update_file"}]
+ };
+}
+function awaitRequirementHash(){
+ return createHash("sha256").update(requirement,"utf8").digest("hex");
+}
+test("R286 Coordinator activation requires a genuinely issued Engineer operational root",async()=>{
+ await fixture(async({session,approvals,taskJournal})=>{
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await assert.rejects(coordinator.activate(),/operational root is not active/);
+  assert.equal(coordinator.phase,"failed_closed");
+ });
+});
+test("R286 two different signed-scope Tasks/agents are bound without a new Engineer signature",async()=>{
+ await fixture(async({session,approvals,taskJournal,log})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  const activated=await coordinator.activate();
+  assert.equal(activated.status,"authority_session_activated_preflight_only");
+  assert.equal(activated.execution_authorized,false);
+  const first=await coordinator.registerTask(nextTask());
+  assert.equal(first.status,"task_registered_preflight_only");
+  assert.equal(first.agent_did,"did:thesis:backend");
+  assert.equal(first.gateway_registered,false);
+  const second=await coordinator.registerTask(nextTask(
+   "frontend",2,"task-frontend"));
+  assert.equal(second.agent_did,"did:thesis:frontend");
+  assert.deepEqual(second.depends_on,["task-backend"]);
+  assert.equal(second.authority_digest,first.authority_digest);
+  assert.equal(second.root_credential_id,first.root_credential_id);
+  assert.equal(second.child_credential_issued,false);
+  assert.equal(coordinator.registeredTaskCount,2);
+  assert.deepEqual(log.filter(x=>x.event==="issue").map(x=>x.id),
+   [preliminary.credential_id,operational.credential_id]);
+  await assert.rejects(coordinator.registerTask(nextTask(
+   "backend",3,"task-backend")),/invalid epoch or replayed/);
+ });
+});
+test("R286 Coordinator rejects escalation, foreign agent, scope or dependency and remains reusable for corrected Task",async()=>{
+ await fixture(async({session,approvals,taskJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  const invalid=[
+   {...nextTask(),session_id:"other-session"},
+   {...nextTask(),branch:"feature/other"},
+   {...nextTask(),base_revision:"b".repeat(40)},
+   {...nextTask(),requirement_sha256:"b".repeat(64)},
+   {...nextTask(),agent_id:"unregistered"},
+   {...nextTask(),depends_on:["unknown-task"]},
+   {...nextTask(),epoch:2},
+   {...nextTask(),permissions:[{resource:file,operation:"create_file"}]},
+   {...nextTask(),permissions:[{resource:file.replace("user.ts","other.ts"),
+     operation:"read_file"}]},
+   {...nextTask(),permissions:[{resource:file,operation:"read_file"},
+     {resource:file,operation:"read_file"}]},
+   {...nextTask(),agent_id:"test",
+     permissions:[{resource:file,operation:"update_file"}]},
+   {...nextTask(),task_id:"bad..id"}
+  ];
+  for(const candidate of invalid){
+   await assert.rejects(coordinator.registerTask(candidate as AuthorityOnlyTaskProposal));
+   assert.equal(coordinator.registeredTaskCount,0);
+   assert.equal(coordinator.phase,"active");
+  }
+  const admitted=await coordinator.registerTask(nextTask());
+  assert.equal(admitted.agent_id,"backend");
+  assert.equal(coordinator.registeredTaskCount,1);
+ });
+});
+test("R286 durable Task journal rejects duplicate session activation across Coordinator objects",async()=>{
+ await fixture(async({session,approvals,taskJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const create=()=>new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  const first=create();
+  await first.activate();
+  const second=create();
+  await assert.rejects(second.activate(),/EEXIST/u);
+  assert.equal(second.phase,"failed_closed");
+  await first.registerTask(nextTask());
+  assert.equal(first.registeredTaskCount,1);
+  await assert.rejects(first.registerTask(nextTask()),/invalid epoch or replayed/);
+ });
+});
+test("R286 Coordinator cannot activate after root expiry or with fake verified Engineer receipt",async()=>{
+ await fixture(async({session,approvals,taskJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const expired=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,
+   nowMs:()=>Date.parse("2026-11-05T07:45:00Z")
+  });
+  await assert.rejects(expired.activate(),/expired/);
+  const fakeApprovals={
+   async loadAuthenticatedAuthority(){
+    const valid=await approvals.loadAuthenticatedAuthority(sessionId);
+    return structuredClone(valid);
+   }
+  };
+  const forged=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals:fakeApprovals as never,
+   journal:taskJournal,trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await assert.rejects(forged.activate(),/unverified Engineer authority/);
  });
 });

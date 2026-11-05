@@ -83,6 +83,8 @@ export class TrustedAuthorityOnlyEngineerSession{
  #phase:Phase="not_started";
  #preliminary?:RootParameters;
  #authorityDigest?:string;
+ #operationalRoot?:RootParameters;
+ #operationalPermissions?:DelegatedPermission[];
  constructor(options:{
   snapshot:TrustedPlanningSnapshot;
   requirement:string;
@@ -119,6 +121,28 @@ export class TrustedAuthorityOnlyEngineerSession{
  }
  get phase():Phase{return this.#phase;}
  get approvedAuthorityDigest():string|undefined{return this.#authorityDigest;}
+ /** Trusted in-process proof produced ONLY after native root issue success.
+  * Root credentials or Task binding are never minted by this accessor. */
+ assertLiveOperationalRoot():Readonly<{
+  session_id:string;credential_id:string;engineer_did:string;authority_digest:string;
+  root_expires_at:string;permissions:DelegatedPermission[]
+ }>{
+  if(this.#phase!=="operational"||!this.#authorityDigest||
+     !this.#operationalRoot||!this.#operationalPermissions)
+    fail("operational root is not active");
+  const expiresAt=new Date(Date.parse(this.#operationalRoot.valid_from)+
+    this.#operationalRoot.validity_seconds*1000).toISOString();
+  if(this.#nowMs()>=Date.parse(expiresAt))
+    fail("operational root expired");
+  return Object.freeze({
+   session_id:this.#snapshot.session_id,
+   credential_id:this.#operationalRoot.credential_id,
+   engineer_did:this.#engineerDid,
+   authority_digest:this.#authorityDigest,
+   root_expires_at:expiresAt,
+   permissions:structuredClone(this.#operationalPermissions)
+  });
+ }
 
  async startPlanning(root:RootParameters):Promise<{
   credential_id:string;phase:"planning";permissions:DelegatedPermission[]
@@ -241,6 +265,8 @@ export class TrustedAuthorityOnlyEngineerSession{
      !equality(issued.credentialSubject?.per,selected))
    fail("operational Rust issuer output mismatch");
   this.#authorityDigest=checked.authority_digest;
+  this.#operationalRoot=structuredClone(pinned);
+  this.#operationalPermissions=structuredClone(selected);
   this.#phase="operational";
   return {credential_id:issued.id,phase:"operational",
    authority_digest:checked.authority_digest,permissions:selected};
