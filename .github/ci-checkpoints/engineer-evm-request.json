@@ -1,7 +1,7 @@
 {
   "schema": "delegation-native-engineer-evm-checkpoint-v1",
-  "checkpoint": "R292 — exact signed Task native Child + Rust/EVM VP + real OPA deny-only rehearsal",
-  "candidate_parent_sha": "ddd6087e295de6f06b228b054c579b02b8497fd6",
+  "checkpoint": "R292.3 — owner-private native Rust socket and signed Task Child EVM/OPA terminal-deny rehearsal",
+  "candidate_parent_sha": "9247db982d9b0aac8c5fe61b391fdddb4353214a",
   "workflow": "engineer-direct-native-evm-e2e.yml",
   "paid_model_invocation": false,
   "activate_once": true,
@@ -13,7 +13,7 @@
   ],
   "verification_scope": "R292 native issuer and independent EVM verifier, OPA allow, Gateway authority-only terminal deny. Synthetic CI-only Engineer approval/Gitea pins; no production authority or provider execution.",
   "f1_free_same_owner_proof_run_id": 41919029715,
-  "trigger_reason": "R292 Fast CI #42004920221 completed SUCCESS on ddd6087e. Trigger the explicitly path-gated native EVM workflow once on this new exact SHA, not on each R292 code commit.",
+  "trigger_reason": "R292.3 native owner-private socket fixture fix; Fast CI #42006359662 SUCCESS on 9247db98. Retry one zero-model-billing Rust/EVM+OPA verification (first attempt #42005176890 failed at native startup, after old R233 real EVM proof passed).",
   "r279_previous_same_sha_success_run_id": 41921999157,
   "exclusions": [
     "No paid Gemini/OpenAI API calls",
