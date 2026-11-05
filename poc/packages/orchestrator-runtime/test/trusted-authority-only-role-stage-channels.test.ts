@@ -43,7 +43,7 @@ const root={
 };
 const row={
  status:"task_registered_preflight_only" as const,
- session_id:root.session_id,task_id,epoch:1,agent_id:"backend",
+ session_id:root.session_id,task_id:taskId,epoch:1,agent_id:"backend",
  agent_did:"did:thesis:backend-agent",card_ref:"trusted:backend",
  depends_on:[],permissions:[permission],
  root_credential_id:root.root_credential_id,
@@ -53,7 +53,7 @@ const row={
 };
 const child={
  status:"native_child_response_verified_staged" as const,
- session_id:root.session_id,task_id,epoch:1,
+ session_id:root.session_id,task_id:taskId,epoch:1,
  agent_id:"backend",agent_did:row.agent_did,
  root_credential_id:root.root_credential_id,
  credential_id:"urn:r333:child:backend",
