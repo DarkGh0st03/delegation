@@ -1,8 +1,8 @@
 {
-  "revision": "R329",
-  "request": "single-disposable-native-backend-adk-a2a-frontend-test-docker",
-  "base_commit": "aea63268fc0bc233553f7e7b1ae39768b0daa523",
+  "revision": "R329.1",
+  "request": "native-backend-adk-a2a-secret-free-boundary-diagnostic-retry",
+  "source_commit": "4e00ffedd9f49f1af2aaed07b4f14753223f1466",
   "paid_ai": false,
   "external_production_effects": false,
-  "validation": "Rust/EVM/OPA/Gitea real, Backend ADK/A2A owner HMAC, Frontend native CAS and Test Docker"
+  "purpose": "identify whether failure is in Gateway Prepare, owner staging, private crypto VP or Gateway Execute; one isolated disposable native run"
 }
