@@ -79,9 +79,10 @@ async function fixture(options?:{remoteBindFailure?:boolean;
  const agentRegistry=new TrustedEffectStagingTaskRegistry();
  const coordinator=Object.assign(Object.create(
   TrustedAuthorityOnlyExecutionCoordinator.prototype),{
-   phase:"active",assertTrustedGatewayAuthorityBinding:()=>root,
+   assertTrustedGatewayAuthorityBinding:()=>root,
    assertTrustedGatewayRegisteredTask:()=>row
   });
+ Object.defineProperty(coordinator,"phase",{value:"active"});
  const issuer=Object.assign(Object.create(
   TrustedAuthorityOnlyChildIssuer.prototype),{
    assertTrustedIssuedChild:()=>options?.badChild
@@ -89,8 +90,9 @@ async function fixture(options?:{remoteBindFailure?:boolean;
   });
  const gateway=Object.assign(Object.create(
   TrustedAuthorityOnlyGatewayAdmissions.prototype),{
-   phase:"active",assertTrustedOwnerRemoteEffectBinding:()=>gatewayProof
+   assertTrustedOwnerRemoteEffectBinding:()=>gatewayProof
   });
+ Object.defineProperty(gateway,"phase",{value:"active"});
  const server=await createTrustedEffectAgentBindingServer({
   socketPath:bindSocket,secretFile:bindSecret,
   registry:agentRegistry,
@@ -196,5 +198,30 @@ test("R324 identical IPC keys are denied before staging listener startup",async(
  const x=await fixture({sameKeys:true});
  try{
   await assert.rejects(x.start(),/stage and bind HMAC keys must differ/u);
+ }finally{await x.close();}
+});
+
+test("R324 explicit cancellation fences a Task before a suspended A2A callback can stage",async()=>{
+ const x=await fixture();
+ try{
+  const owner=await x.start();
+  let entered!:()=>void,release!:()=>void;
+  const started=new Promise<void>(resolve=>entered=resolve);
+  const pending=new Promise<void>(resolve=>release=resolve);
+  const attempt=owner.dispatchApprovedTask({
+   taskId,runtimeTaskId,effectStager:{stage:async()=>{
+    throw Error("a cancelled Task must never reach the owner port");
+   }},
+   dispatch:async()=>{
+    entered();
+    await pending;
+    const port=x.agentRegistry.selectFor(context());
+    await port.stage("r324-after-cancel");
+   }
+  });
+  await started;
+  await owner.cancelTask(runtimeTaskId);
+  release();
+  await assert.rejects(attempt,/already dispatched|retired|NO-GO/u);
  }finally{await x.close();}
 });

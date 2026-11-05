@@ -60,6 +60,7 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
  readonly #registry:TrustedOwnerEffectStagingRegistry;
  readonly #attempted=new Set<string>();
  readonly #pending=new Set<string>();
+ readonly #cancelled=new Set<string>();
  #closed=false;
  #closing?:Promise<void>;
 
@@ -142,7 +143,8 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
       receipt.runtime_task_id!==opts.runtimeTaskId)
     deny("private prebind receipt is not exact and cannot authorize execution");
    bound=true;
-   if(this.#closed)deny("owner host retired during remote bind");
+   if(this.#closed||this.#cancelled.has(opts.runtimeTaskId))
+    deny("owner Task cancelled or retired during remote bind");
    return await opts.dispatch();
   }finally{
    this.#pending.delete(opts.runtimeTaskId);
@@ -167,11 +169,25 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
  async cancelTask(runtimeTaskId:string):Promise<void>{
   if(!this.#attempted.has(runtimeTaskId))
    deny("unknown Task cancellation");
-  await this.#owner.fence(runtimeTaskId);
+  // Mark cancellation BEFORE awaiting a remote bind or fence. If the
+  // agent's bind ACK is still in flight, dispatchApprovedTask will
+  // observe this flag and refuse to invoke the A2A callback.
+  this.#cancelled.add(runtimeTaskId);
+  try{
+   await this.#owner.fence(runtimeTaskId);
+  }catch(error){
+   if(this.#pending.has(runtimeTaskId)){
+    // Binding may not have allocated a local slot yet. Completion of
+    // that in-flight bind is terminally fenced in dispatchApprovedTask.
+    return;
+   }
+   throw error;
+  }
  }
  close():Promise<void>{
   if(this.#closing)return this.#closing;
   this.#closed=true;
+  for(const id of this.#attempted)this.#cancelled.add(id);
   this.#registry.retireAll(); // synchronously block EVERY future stage
   this.#closing=(async()=>{
    const names=[...this.#attempted];
