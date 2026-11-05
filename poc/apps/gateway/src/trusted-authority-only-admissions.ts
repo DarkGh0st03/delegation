@@ -167,6 +167,55 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  get registeredTaskCount():number{return this.#tasks.size;}
  get stagedCompletedTaskCount():number{return this.#completed.size;}
  get stagedSequentialTaskCount():number{return this.#sequential.size;}
+
+ /**
+  * R323 — private owner-only, read-only proof that a registered Task and
+  * native-issued Child were enrolled under THIS live Gateway/Coordinator.
+  * This is NOT permission to stage, issue or execute an effect. Neither the
+  * A2A transport nor an ADK model can invoke this method via public routes.
+  */
+ assertTrustedOwnerRemoteEffectBinding(taskId:string,runtimeTaskId:string):
+ Readonly<{
+  status:"gateway_owner_child_task_preflight_only";
+  task_id:string;runtime_task_id:string;agent_id:string;
+  agent_did:string;credential_id:string;authority_digest:string;
+  gateway_execution_authorized:false
+ }>{
+  const root=this.#live();
+  if(this.#bindingInFlight||this.#enrollmentInFlight||
+     this.#flightInFlight||this.#completionInFlight||
+     typeof taskId!=="string"||!ID.test(taskId)||
+     typeof runtimeTaskId!=="string"||!ID.test(runtimeTaskId))
+   deny("remote owner Task proof requires quiescent active Gateway");
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  if(!bound||!child||bound.row.task_id!==taskId||
+     bound.row.session_id!==root.session_id||
+     bound.row.authority_digest!==root.authority_digest||
+     bound.row.root_credential_id!==root.root_credential_id||
+     bound.row.agent_did!==child.agent_did||
+     bound.row.agent_id!==child.agent_id||
+     bound.row.epoch!==child.epoch||
+     child.status!=="native_child_response_verified_staged"||
+     child.credential_id===root.root_credential_id||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.session_id!==root.session_id||
+     this.#now()>=Date.parse(child.expires_at)||
+     this.#flights.has(taskId)||this.#sequential.has(taskId)||
+     this.#completed.has(taskId)||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
+   deny("remote owner Task/Child not enrolled, expired or not ready");
+  return Object.freeze({
+   status:"gateway_owner_child_task_preflight_only",
+   task_id:taskId,runtime_task_id:runtimeTaskId,
+   agent_id:bound.row.agent_id,agent_did:bound.row.agent_did,
+   credential_id:child.credential_id,
+   authority_digest:root.authority_digest,
+   gateway_execution_authorized:false
+  });
+ }
+
  #now():number{
   const now=this.#nowMs();
   if(!Number.isSafeInteger(now)||now<0)deny("trusted Gateway clock invalid");
