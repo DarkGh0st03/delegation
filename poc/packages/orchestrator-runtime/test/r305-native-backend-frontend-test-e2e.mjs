@@ -352,226 +352,6 @@ try{
   authorityOnlyMutationExecutor:mutationExecutor
  });
  assert.equal(runtime.providerLabel,"gitea");
- const prepare=()=>runtime.prepare({
-  task_id:runtimeTaskId,agent_role:"backend",tool:"update_file",
-  arguments:{branch,path:mutationPath,content:newContent}
- });
- const sign=async(credential_id,prepared)=>{
-  const signed=await invokeNativeCrypto({
-   socketPath,token:tokens.backend,timeoutMs:60000
-  },"create_presentation",{
-   credential_id,disclosed_permissions:[taskPermission],
-   audience:prepared.audience,challenge:prepared.challenge
-  });
-  assert.equal(typeof signed.signed_vp,"string");
-  return signed.signed_vp;
- };
- const deps={store,audit,verifier,policy,repository:repo,executor,
-  authorityOnlyAdmissions:gate,nowMs,
-  authorityOnlyMutationEnabled:true,
-  authorityOnlyMutationExecutor:mutationExecutor};
- const good=prepare(),goodVp=await sign(child.credential_id,good);
- const originalRecord=store.get(good.request_id);
- assert.ok(originalRecord);
- await assert.rejects(preflight.stageUpdate(
-  originalRecord,"f".repeat(40)),/owner-pinned HEAD changed/);
- assert.equal(gatewayCasWrites,0);
- const staged=await preflight.stageUpdate(originalRecord,baseRevision);
- assert.equal(staged.provider_write_authorized,false);
- assert.equal(staged.intent.expected_blob_sha,seeded.blob_sha);
- assert.equal(staged.intent.expected_head_sha,baseRevision);
- await assert.rejects(preflight.stageUpdate(originalRecord,baseRevision),/EEXIST/);
- const valid=await verifier.verify({
-  presenter:"backend",audience:good.audience,challenge:good.challenge,
-  required_permission:taskPermission,signed_vp:goodVp
- });
- assert.equal(valid.presenter_id,backendDid);
- assert.equal(valid.credential_id,child.credential_id);
- assert.equal(valid.root_credential_id,operational.credential_id);
- assert.equal(valid.hierarchy_depth,1);
- assert.deepEqual(valid.permissions,[taskPermission]);
- // The root's directory permission is authenticated by the accumulator
- // ancestor witness. Only the Child's leaf permission is disclosed.
- assert.equal(valid.permissions.some(p=>p.resource===grantPermission.resource),false);
- const opa=await policy.evaluate({
-  request_id:good.request_id,task_id:runtimeTaskId,
-  agent_role:"backend",tool:"update_file",arguments:{
-   branch,path:mutationPath,content:newContent},
-  required_permission:taskPermission,repository:repo,
-  verified_delegation:{presenter_id:valid.presenter_id,
-   credential_id:valid.credential_id,issuer_id:valid.issuer_id,
-   hierarchy_depth:valid.hierarchy_depth}
- });
- assert.equal(opa.allow,true);
- // A signed VP for a leaf Child cannot authorize a sibling, branch switch,
- // operation change or traversal, even if its Engineer root is broader.
- for(const denied of [
-  {...taskPermission,
-   resource:resourcePrefix+"/files/apps/backend-extra/users/account.ts"},
-  {...taskPermission,
-   resource:resourcePrefix+"/files/apps/backend/users/other.ts"},
-  {...taskPermission,
-   resource:resourcePrefix.replace("feature%2Faccount-suspension","main")+
-    "/files/"+mutationPath},
-  {...taskPermission,operation:"read_file"},
-  {...taskPermission,
-   resource:resourcePrefix+"/files/apps/backend/../users/secrets.ts"}
- ]){
-  await assert.rejects(()=>verifier.verify({
-   presenter:"backend",audience:good.audience,challenge:good.challenge,
-   required_permission:denied,signed_vp:goodVp
-  }));
- }
- assert.throws(()=>gate.preflightCanonicalRequest({
-  task_id:runtimeTaskId,agent_role:"backend",tool:"update_file",
-  arguments:{branch,path:"apps/backend-extra/users/account.ts",content:newContent}
- }),/not in exact signed Task grant/u);
- assert.throws(()=>gate.preflightCanonicalRequest({
-  task_id:runtimeTaskId,agent_role:"backend",tool:"read_file",arguments:{branch,path:mutationPath}
- }),/not in exact signed Task grant/u);
- await assert.rejects(()=>verifier.verify({
-  presenter:"backend",audience:good.audience,challenge:"invalid-r305-nonce",
-  required_permission:taskPermission,signed_vp:goodVp
- }));
- await gate.stageTrustedTaskFlight(originalRecord);
- const written=await runtime.execute({
-  request_id:good.request_id,signed_vp:goodVp
- });
- assert.equal(written.decision,"allow");
- assert.equal(gatewayCasWrites,1);
- assert.equal(legacyWriteCalls,0);
- assert.equal((await client.getBranchMetadata(branch)).commit_sha,
-  written.execution.commit_sha);
- assert.equal((await independentClient.readTextFile(
-  branch,mutationPath,written.execution.commit_sha)).content,newContent);
- assert.equal(audit.events.at(-1)?.decision,"allow");
- const verifiedReceipt=await observer.observe(
-  gate.assertTrustedCompletedMutationEvidenceBinding(originalRecord,valid));
- assert.equal(verifiedReceipt.status,"owner_verified_provider_result");
- await assert.rejects(executeAuthorization({request_id:good.request_id,signed_vp:goodVp},deps),
-  error=>error?.code==="replay_detected");
- await gate.attestTrustedTaskCompletion(taskId,runtimeTaskId);
- assert.equal(gate.stagedCompletedTaskCount,1);
- assert.equal(gatewayCasWrites,1);
-
-  // Frontend now executes under the SAME Engineer grant, with a separate
-  // Child DC and independent authenticated commit. Test depends on Frontend.
-   const frontendChild=await issuer.issueForRegisteredTask(
-  frontendTaskId,params("urn:r305:child:frontend",29105,1200));
- assert.equal(frontendChild.agent_did,frontendDid);
- assert.notEqual(frontendChild.credential_id,child.credential_id);
- assert.equal(frontendChild.root_credential_id,operational.credential_id);
- assert.deepEqual(frontendChild.permissions,[frontendTaskPermission]);
- await gate.bindTrustedTask(frontendTaskId,frontendRuntimeId,"frontend");
- await gate.enrollTrustedIssuedChild(
-  frontendTaskId,frontendRuntimeId,issuer);
- const frontendPrepared=runtime.prepare({
-  task_id:frontendRuntimeId,agent_role:"frontend",tool:"update_file",
-  arguments:{branch,path:frontendPath,content:updatedFrontend}
- });
- const frontendRecord=store.get(frontendPrepared.request_id);
- assert.ok(frontendRecord);
- // The original Engineer base SHA is stale after Backend. A Frontend
- // mutation must use the exact newly attested Backend HEAD, not bypass it.
- await assert.rejects(preflight.stageUpdate(frontendRecord,baseRevision),
-  /owner-pinned HEAD changed/);
- const frontStaged=await preflight.stageUpdate(
-  frontendRecord,written.execution.commit_sha);
- assert.equal(frontStaged.intent.expected_blob_sha,seededFrontend.blob_sha);
- assert.equal(frontStaged.intent.expected_head_sha,
-  written.execution.commit_sha);
- assert.equal(frontStaged.intent.credential_id,
-  frontendChild.credential_id);
- await gate.stageTrustedTaskFlight(frontendRecord);
- const frontendVp=await invokeNativeCrypto({
-  socketPath,token:tokens.frontend,timeoutMs:60000
- },"create_presentation",{
-  credential_id:frontendChild.credential_id,
-  disclosed_permissions:[frontendTaskPermission],
-  audience:frontendPrepared.audience,
-  challenge:frontendPrepared.challenge
- });
- const frontVerified=await verifier.verify({
-  presenter:"frontend",audience:frontendPrepared.audience,
-  challenge:frontendPrepared.challenge,
-  required_permission:frontendTaskPermission,
-  signed_vp:frontendVp.signed_vp
- });
- assert.equal(frontVerified.presenter_id,frontendDid);
- assert.equal(frontVerified.credential_id,frontendChild.credential_id);
- assert.equal(frontVerified.root_credential_id,operational.credential_id);
- assert.equal(frontVerified.hierarchy_depth,1);
- assert.deepEqual(frontVerified.permissions,[frontendTaskPermission]);
- assert.equal(frontVerified.permissions.some(p=>
-  p.resource===frontendGrant.resource),false);
- for(const denied of [
-  {...frontendTaskPermission,operation:"read_file"},
-  {...frontendTaskPermission,
-   resource:resourcePrefix+"/files/apps/backend/users/account.ts"},
-  {...frontendTaskPermission,
-   resource:resourcePrefix+"/files/apps/frontend/permissions/other.ts"}
- ]){
-  await assert.rejects(()=>verifier.verify({
-   presenter:"frontend",audience:frontendPrepared.audience,
-   challenge:frontendPrepared.challenge,
-   required_permission:denied,signed_vp:frontendVp.signed_vp
-  }));
- }
- const frontOpa=await policy.evaluate({
-  request_id:frontendPrepared.request_id,task_id:frontendRuntimeId,
-  agent_role:"frontend",tool:"update_file",
-  arguments:{branch,path:frontendPath,content:updatedFrontend},
-  required_permission:frontendTaskPermission,repository:repo,
-  verified_delegation:{
-   presenter_id:frontVerified.presenter_id,
-   credential_id:frontVerified.credential_id,
-   issuer_id:frontVerified.issuer_id,
-   hierarchy_depth:frontVerified.hierarchy_depth
-  }
- });
- assert.equal(frontOpa.allow,true);
- const frontendWritten=await runtime.execute({
-  request_id:frontendPrepared.request_id,
-  signed_vp:frontendVp.signed_vp
- });
- assert.equal(frontendWritten.decision,"allow");
- assert.equal(frontendWritten.execution.provider,"gitea");
- assert.equal(frontendWritten.execution.tool,"update_file");
- assert.equal(frontendWritten.execution.branch,branch);
- assert.equal(frontendWritten.execution.path,frontendPath);
- assert.equal(gatewayCasWrites,2);
- assert.equal(legacyWriteCalls,0);
- const frontendHead=frontendWritten.execution.commit_sha;
- assert.notEqual(frontendHead,written.execution.commit_sha);
- assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,
-  frontendHead);
- assert.equal((await independentClient.readTextFile(
-  branch,frontendPath,frontendHead)).content,updatedFrontend);
- assert.equal((await independentClient.readTextFile(
-  branch,mutationPath,frontendHead)).content,newContent);
- const frontendProof=await mutationObserver.observe(
-  gate.assertTrustedCompletedMutationEvidenceBinding(
-   frontendRecord,frontVerified));
- assert.equal(frontendProof.status,"owner_verified_provider_result");
- await gate.attestTrustedTaskCompletion(
-  frontendTaskId,frontendRuntimeId);
- assert.equal(gate.stagedCompletedTaskCount,2);
- await assert.rejects(executeAuthorization({
-  request_id:frontendPrepared.request_id,
-  signed_vp:frontendVp.signed_vp
- },deps),e=>e?.code==="replay_detected");
- assert.equal(gatewayCasWrites,2);
-
- const runnerChild=await issuer.issueForRegisteredTask(
-  testTaskId,params("urn:r305:child:test",29106,1200));
- assert.equal(runnerChild.agent_did,testDid);
- assert.notEqual(runnerChild.credential_id,child.credential_id);
- assert.notEqual(runnerChild.credential_id,frontendChild.credential_id);
- assert.deepEqual(runnerChild.permissions,[testTaskPermission]);
- await gate.bindTrustedTask(testTaskId,testRuntimeId,"test");
- await gate.enrollTrustedIssuedChild(testTaskId,testRuntimeId,issuer);
- const pinnedHead=frontendWritten.execution.commit_sha;
- assert.notEqual(pinnedHead,written.execution.commit_sha);
  const runnerJournal=new DurableAuthorityOnlyRunnerIntentJournal(
   path("runner-intent"));
  const runnerPreflight=new TrustedAuthorityOnlyRunnerPreflight({
@@ -657,6 +437,238 @@ try{
   });
  const gatewayAddress=gatewayHost.server.address();
  assert.ok(gatewayAddress&&typeof gatewayAddress!=="string");
+
+ const httpCall=async(route,payload,expectedStatus)=>{
+  const response=await fetch("http://127.0.0.1:"+gatewayAddress.port+
+   "/v1/authorization/"+route,{
+    method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify(payload)
+   });
+  const result=await response.json();
+  assert.equal(response.status,expectedStatus,
+   "R313 Gateway HTTP "+route+" failed");
+  return result;
+ };
+ const prepare=()=>httpCall("prepare",{
+  task_id:runtimeTaskId,agent_role:"backend",tool:"update_file",
+  arguments:{branch,path:mutationPath,content:newContent}
+ },201);
+ const sign=async(credential_id,prepared)=>{
+  const signed=await invokeNativeCrypto({
+   socketPath,token:tokens.backend,timeoutMs:60000
+  },"create_presentation",{
+   credential_id,disclosed_permissions:[taskPermission],
+   audience:prepared.audience,challenge:prepared.challenge
+  });
+  assert.equal(typeof signed.signed_vp,"string");
+  return signed.signed_vp;
+ };
+ const deps={store,audit,verifier,policy,repository:repo,executor,
+  authorityOnlyAdmissions:gate,nowMs,
+  authorityOnlyMutationEnabled:true,
+  authorityOnlyMutationExecutor:mutationExecutor};
+ const good=await prepare(),goodVp=await sign(child.credential_id,good);
+ const originalRecord=store.get(good.request_id);
+ assert.ok(originalRecord);
+ await assert.rejects(preflight.stageUpdate(
+  originalRecord,"f".repeat(40)),/owner-pinned HEAD changed/);
+ assert.equal(gatewayCasWrites,0);
+ const staged=await preflight.stageUpdate(originalRecord,baseRevision);
+ assert.equal(staged.provider_write_authorized,false);
+ assert.equal(staged.intent.expected_blob_sha,seeded.blob_sha);
+ assert.equal(staged.intent.expected_head_sha,baseRevision);
+ await assert.rejects(preflight.stageUpdate(originalRecord,baseRevision),/EEXIST/);
+ const valid=await verifier.verify({
+  presenter:"backend",audience:good.audience,challenge:good.challenge,
+  required_permission:taskPermission,signed_vp:goodVp
+ });
+ assert.equal(valid.presenter_id,backendDid);
+ assert.equal(valid.credential_id,child.credential_id);
+ assert.equal(valid.root_credential_id,operational.credential_id);
+ assert.equal(valid.hierarchy_depth,1);
+ assert.deepEqual(valid.permissions,[taskPermission]);
+ // The root's directory permission is authenticated by the accumulator
+ // ancestor witness. Only the Child's leaf permission is disclosed.
+ assert.equal(valid.permissions.some(p=>p.resource===grantPermission.resource),false);
+ const opa=await policy.evaluate({
+  request_id:good.request_id,task_id:runtimeTaskId,
+  agent_role:"backend",tool:"update_file",arguments:{
+   branch,path:mutationPath,content:newContent},
+  required_permission:taskPermission,repository:repo,
+  verified_delegation:{presenter_id:valid.presenter_id,
+   credential_id:valid.credential_id,issuer_id:valid.issuer_id,
+   hierarchy_depth:valid.hierarchy_depth}
+ });
+ assert.equal(opa.allow,true);
+ // A signed VP for a leaf Child cannot authorize a sibling, branch switch,
+ // operation change or traversal, even if its Engineer root is broader.
+ for(const denied of [
+  {...taskPermission,
+   resource:resourcePrefix+"/files/apps/backend-extra/users/account.ts"},
+  {...taskPermission,
+   resource:resourcePrefix+"/files/apps/backend/users/other.ts"},
+  {...taskPermission,
+   resource:resourcePrefix.replace("feature%2Faccount-suspension","main")+
+    "/files/"+mutationPath},
+  {...taskPermission,operation:"read_file"},
+  {...taskPermission,
+   resource:resourcePrefix+"/files/apps/backend/../users/secrets.ts"}
+ ]){
+  await assert.rejects(()=>verifier.verify({
+   presenter:"backend",audience:good.audience,challenge:good.challenge,
+   required_permission:denied,signed_vp:goodVp
+  }));
+ }
+ assert.throws(()=>gate.preflightCanonicalRequest({
+  task_id:runtimeTaskId,agent_role:"backend",tool:"update_file",
+  arguments:{branch,path:"apps/backend-extra/users/account.ts",content:newContent}
+ }),/not in exact signed Task grant/u);
+ assert.throws(()=>gate.preflightCanonicalRequest({
+  task_id:runtimeTaskId,agent_role:"backend",tool:"read_file",arguments:{branch,path:mutationPath}
+ }),/not in exact signed Task grant/u);
+ await assert.rejects(()=>verifier.verify({
+  presenter:"backend",audience:good.audience,challenge:"invalid-r305-nonce",
+  required_permission:taskPermission,signed_vp:goodVp
+ }));
+ await gate.stageTrustedTaskFlight(originalRecord);
+ const written=await httpCall("execute",{
+  request_id:good.request_id,signed_vp:goodVp
+ },200);
+ assert.equal(written.decision,"allow");
+ assert.equal(gatewayCasWrites,1);
+ assert.equal(legacyWriteCalls,0);
+ assert.equal((await client.getBranchMetadata(branch)).commit_sha,
+  written.execution.commit_sha);
+ assert.equal((await independentClient.readTextFile(
+  branch,mutationPath,written.execution.commit_sha)).content,newContent);
+ assert.equal(audit.events.at(-1)?.decision,"allow");
+ const verifiedReceipt=await observer.observe(
+  gate.assertTrustedCompletedMutationEvidenceBinding(originalRecord,valid));
+ assert.equal(verifiedReceipt.status,"owner_verified_provider_result");
+ await assert.rejects(executeAuthorization({request_id:good.request_id,signed_vp:goodVp},deps),
+  error=>error?.code==="replay_detected");
+ await gate.attestTrustedTaskCompletion(taskId,runtimeTaskId);
+ assert.equal(gate.stagedCompletedTaskCount,1);
+ assert.equal(gatewayCasWrites,1);
+
+  // Frontend now executes under the SAME Engineer grant, with a separate
+  // Child DC and independent authenticated commit. Test depends on Frontend.
+   const frontendChild=await issuer.issueForRegisteredTask(
+  frontendTaskId,params("urn:r305:child:frontend",29105,1200));
+ assert.equal(frontendChild.agent_did,frontendDid);
+ assert.notEqual(frontendChild.credential_id,child.credential_id);
+ assert.equal(frontendChild.root_credential_id,operational.credential_id);
+ assert.deepEqual(frontendChild.permissions,[frontendTaskPermission]);
+ await gate.bindTrustedTask(frontendTaskId,frontendRuntimeId,"frontend");
+ await gate.enrollTrustedIssuedChild(
+  frontendTaskId,frontendRuntimeId,issuer);
+ const frontendPrepared=await httpCall("prepare",{
+  task_id:frontendRuntimeId,agent_role:"frontend",tool:"update_file",
+  arguments:{branch,path:frontendPath,content:updatedFrontend}
+ },201);
+ const frontendRecord=store.get(frontendPrepared.request_id);
+ assert.ok(frontendRecord);
+ // The original Engineer base SHA is stale after Backend. A Frontend
+ // mutation must use the exact newly attested Backend HEAD, not bypass it.
+ await assert.rejects(preflight.stageUpdate(frontendRecord,baseRevision),
+  /owner-pinned HEAD changed/);
+ const frontStaged=await preflight.stageUpdate(
+  frontendRecord,written.execution.commit_sha);
+ assert.equal(frontStaged.intent.expected_blob_sha,seededFrontend.blob_sha);
+ assert.equal(frontStaged.intent.expected_head_sha,
+  written.execution.commit_sha);
+ assert.equal(frontStaged.intent.credential_id,
+  frontendChild.credential_id);
+ await gate.stageTrustedTaskFlight(frontendRecord);
+ const frontendVp=await invokeNativeCrypto({
+  socketPath,token:tokens.frontend,timeoutMs:60000
+ },"create_presentation",{
+  credential_id:frontendChild.credential_id,
+  disclosed_permissions:[frontendTaskPermission],
+  audience:frontendPrepared.audience,
+  challenge:frontendPrepared.challenge
+ });
+ const frontVerified=await verifier.verify({
+  presenter:"frontend",audience:frontendPrepared.audience,
+  challenge:frontendPrepared.challenge,
+  required_permission:frontendTaskPermission,
+  signed_vp:frontendVp.signed_vp
+ });
+ assert.equal(frontVerified.presenter_id,frontendDid);
+ assert.equal(frontVerified.credential_id,frontendChild.credential_id);
+ assert.equal(frontVerified.root_credential_id,operational.credential_id);
+ assert.equal(frontVerified.hierarchy_depth,1);
+ assert.deepEqual(frontVerified.permissions,[frontendTaskPermission]);
+ assert.equal(frontVerified.permissions.some(p=>
+  p.resource===frontendGrant.resource),false);
+ for(const denied of [
+  {...frontendTaskPermission,operation:"read_file"},
+  {...frontendTaskPermission,
+   resource:resourcePrefix+"/files/apps/backend/users/account.ts"},
+  {...frontendTaskPermission,
+   resource:resourcePrefix+"/files/apps/frontend/permissions/other.ts"}
+ ]){
+  await assert.rejects(()=>verifier.verify({
+   presenter:"frontend",audience:frontendPrepared.audience,
+   challenge:frontendPrepared.challenge,
+   required_permission:denied,signed_vp:frontendVp.signed_vp
+  }));
+ }
+ const frontOpa=await policy.evaluate({
+  request_id:frontendPrepared.request_id,task_id:frontendRuntimeId,
+  agent_role:"frontend",tool:"update_file",
+  arguments:{branch,path:frontendPath,content:updatedFrontend},
+  required_permission:frontendTaskPermission,repository:repo,
+  verified_delegation:{
+   presenter_id:frontVerified.presenter_id,
+   credential_id:frontVerified.credential_id,
+   issuer_id:frontVerified.issuer_id,
+   hierarchy_depth:frontVerified.hierarchy_depth
+  }
+ });
+ assert.equal(frontOpa.allow,true);
+ const frontendWritten=await httpCall("execute",{
+  request_id:frontendPrepared.request_id,
+  signed_vp:frontendVp.signed_vp
+ },200);
+ assert.equal(frontendWritten.decision,"allow");
+ assert.equal(frontendWritten.execution.provider,"gitea");
+ assert.equal(frontendWritten.execution.tool,"update_file");
+ assert.equal(frontendWritten.execution.branch,branch);
+ assert.equal(frontendWritten.execution.path,frontendPath);
+ assert.equal(gatewayCasWrites,2);
+ assert.equal(legacyWriteCalls,0);
+ const frontendHead=frontendWritten.execution.commit_sha;
+ assert.notEqual(frontendHead,written.execution.commit_sha);
+ assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,
+  frontendHead);
+ assert.equal((await independentClient.readTextFile(
+  branch,frontendPath,frontendHead)).content,updatedFrontend);
+ assert.equal((await independentClient.readTextFile(
+  branch,mutationPath,frontendHead)).content,newContent);
+ const frontendProof=await mutationObserver.observe(
+  gate.assertTrustedCompletedMutationEvidenceBinding(
+   frontendRecord,frontVerified));
+ assert.equal(frontendProof.status,"owner_verified_provider_result");
+ await gate.attestTrustedTaskCompletion(
+  frontendTaskId,frontendRuntimeId);
+ assert.equal(gate.stagedCompletedTaskCount,2);
+ await assert.rejects(executeAuthorization({
+  request_id:frontendPrepared.request_id,
+  signed_vp:frontendVp.signed_vp
+ },deps),e=>e?.code==="replay_detected");
+ assert.equal(gatewayCasWrites,2);
+
+ const runnerChild=await issuer.issueForRegisteredTask(
+  testTaskId,params("urn:r305:child:test",29106,1200));
+ assert.equal(runnerChild.agent_did,testDid);
+ assert.notEqual(runnerChild.credential_id,child.credential_id);
+ assert.notEqual(runnerChild.credential_id,frontendChild.credential_id);
+ assert.deepEqual(runnerChild.permissions,[testTaskPermission]);
+ await gate.bindTrustedTask(testTaskId,testRuntimeId,"test");
+ await gate.enrollTrustedIssuedChild(testTaskId,testRuntimeId,issuer);
+ const pinnedHead=frontendWritten.execution.commit_sha;
+ assert.notEqual(pinnedHead,written.execution.commit_sha);
  // R312: authenticated Test Task is prepared via real Gateway HTTP, not
  // a fixture-only call to prepareAuthorization. Owner receives no credential
  // through this route and stages the same record instance in its private store.
@@ -776,7 +788,7 @@ try{
   valid_from:issuedAt,validity_seconds:600,
   credential_status:status(29107),permissions:[taskPermission]
  });
- const other=prepare(),otherVp=await sign(foreign.id,other);
+ const other=await prepare(),otherVp=await sign(foreign.id,other);
  const validOther=await verifier.verify({
   presenter:"backend",audience:other.audience,challenge:other.challenge,
   required_permission:taskPermission,signed_vp:otherVp
@@ -791,7 +803,7 @@ try{
 
  // An already-prepared and signed VP MUST be denied after EVM root
  // revocation (not simply because the Task registry is still loaded).
- const pending=prepare(),pendingVp=await sign(child.credential_id,pending);
+ const pending=await prepare(),pendingVp=await sign(child.credential_id,pending);
  await credentialPort.revokeRoot(operational.credential_id);
  await assert.rejects(()=>verifier.verify({
   presenter:"backend",audience:pending.audience,challenge:pending.challenge,
@@ -817,6 +829,7 @@ try{
   paid_model_calls:0,canonical_gateway_runtime:true,
   canonical_gateway_http_test_execute:true,
   canonical_gateway_http_test_prepare:true,
+  canonical_gateway_http_backend_frontend:true,
   completed_app_source:"owner_only_fixture",
   delegated_functional_edits:0,fixture_files_changed:functionalFixture.files_changed
  })+"\n");
