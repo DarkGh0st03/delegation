@@ -203,7 +203,7 @@ try{
  await session.startPlanning(preliminary);
  const approved=await session.approveAndIssueOperationalRoot(operational);
  assert.equal(approved.phase,"operational");
- assert.deepEqual(approved.permissions,[grantPermission,testGrantPermission]);
+ assert.deepEqual(approved.permissions,grant.permissions);
  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
   sessionId,engineer:session,approvals,
   journal:new DurableAuthorityTaskJournal(path("coordinator-tasks")),
@@ -243,7 +243,7 @@ try{
  assert.equal(child.gateway_execution_authorized,false);
  assert.equal(child.root_credential_id,operational.credential_id);
  assert.deepEqual(child.permissions,[taskPermission]);
- assert.deepEqual(approved.permissions,[grantPermission,testGrantPermission]);
+ assert.deepEqual(approved.permissions,grant.permissions);
  const evidenceKey=Buffer.alloc(32,96); // disposable CI receipt key
  const runnerObserver=new AuthenticatedRunnerCompletionObserver({
   directory:path("runner-receipts"),key:evidenceKey,
