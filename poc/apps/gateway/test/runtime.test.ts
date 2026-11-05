@@ -84,3 +84,22 @@ test("runtime wires mutable gitea mode without contacting the provider at startu
   );
   assert.equal(runtime.providerLabel, "gitea");
 });
+
+test("canonical runtime refuses authority-only effects with no enrolled owner", () => {
+  for(const name of ["authorityOnlyMutationEnabled","authorityOnlyRunnerEnabled"] as const){
+    assert.throws(() => new GatewayRuntime(
+      {...baseConfig, provider_mode:"mock" as const},
+      {verifier,policy,[name]:true}
+    ),/matching explicit enablement and owner executor/u);
+  }
+  assert.throws(() => new GatewayRuntime(
+    {...baseConfig, provider_mode:"mock" as const},
+    {verifier,policy,authorityOnlyMutationEnabled:true,
+     authorityOnlyMutationExecutor:{isForAdmissions:()=>true} as never}
+  ),/require enrolled native authority/u);
+  assert.throws(() => new GatewayRuntime(
+    {...baseConfig, provider_mode:"mock" as const},
+    {verifier,policy,authorityOnlyRunnerEnabled:true,
+     authorityOnlyRunnerExecutor:{isForAdmissions:()=>true} as never}
+  ),/require enrolled native authority/u);
+});
