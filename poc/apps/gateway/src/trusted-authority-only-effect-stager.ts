@@ -37,6 +37,7 @@ export class TrustedAuthorityOnlyEffectStager {
   if(this.#attempted)throw Error('Effect staging already attempted');
   const record=this.#store.get(requestId);
   if(!record||record.task_id!==this.#task||record.request.tool!==this.#tool||
+   record.consumed||!Number.isFinite(record.expires_at_ms)||
    record.expires_at_ms<=Date.now())
    throw Error('Effect staging request differs from owner pins or expired');
   // Consume before asynchronous durable reservations; ambiguous outcomes
