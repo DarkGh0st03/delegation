@@ -69,6 +69,9 @@ export class TrustedAuthorityOnlyA2AOwner {
  readonly #transport:ProtectedA2AClientPort;
  readonly #urls:AgentUrls;
  readonly #attempted=new Set<string>();
+ /** Actual owner dispatch reports, never A2A supplied evidence. */
+ readonly #reported=new Map<string,OwnerA2AReport>();
+ readonly #attestAttempted=new Set<string>();
  #closed=false;
 
  constructor(opts:{
@@ -214,20 +217,65 @@ export class TrustedAuthorityOnlyA2AOwner {
       requireTestPass:false
      }
     );
-    // Do NOT update Gateway completion or unlock dependent Tasks.
-    // Only the separate Gateway provider/Runner observer may do that.
-    return Object.freeze({
+    // No A2A status/Artifact can unlock the next dependent Task.
+    // Only the separately injected real Gateway completion observer
+    // can attest the protected provider/Runner effect.
+    const report:OwnerA2AReport=Object.freeze({
      status:"a2a_report_not_gateway_completed" as const,
      task_id:input.taskId,runtime_task_id:input.runtimeTaskId,
      role,remote_task_id:task.id,artifact,
      provider_completion_attested:false as const
     });
+    this.#reported.set(input.runtimeTaskId,report);
+    return report;
    }
   });
  }
- cancelTask(runtimeTaskId:string){return this.#bootstrap.cancelTask(runtimeTaskId);}
+ /**
+  * R326: never trust the A2A report to confirm a provider effect. The owner
+  * must call Gateway's independent completion observer, which reads the
+  * original Task flight and independently attested Gitea/Runner evidence.
+  * An ambiguous observer failure consumes the attempt and cannot retry.
+  */
+ async attestIndependentGatewayCompletion(taskId:string,runtimeTaskId:string):
+ Promise<Readonly<{
+  status:"owner_gateway_completion_independently_observed";
+  task_id:string;runtime_task_id:string;
+  gateway_execution_authorized:false;
+ }>>{
+  if(this.#closed||!ID.test(taskId)||!DISPATCH.test(runtimeTaskId)||
+     this.#attestAttempted.has(runtimeTaskId))
+   deny("closed or repeated independent completion attestation");
+  const reported=this.#reported.get(runtimeTaskId);
+  if(!reported||reported.task_id!==taskId||
+     reported.status!=="a2a_report_not_gateway_completed"||
+     reported.provider_completion_attested!==false)
+   deny("no matching previous A2A report to corroborate independently");
+  this.#attestAttempted.add(runtimeTaskId); // before any async I/O
+  // Gateway does NOT inspect this report; it observes its own durable
+  // native-verified provider flight and trusted completion evidence.
+  const confirmed=await this.#gateway.attestTrustedTaskCompletion(
+   taskId,runtimeTaskId
+  );
+  if(confirmed.status!=="task_completion_observed_staged"||
+     confirmed.task_id!==taskId||
+     confirmed.runtime_task_id!==runtimeTaskId||
+     confirmed.gateway_execution_authorized!==false)
+   deny("independent Gateway completion receipt mismatches original Task");
+  this.#reported.delete(runtimeTaskId);
+  return Object.freeze({
+   status:"owner_gateway_completion_independently_observed" as const,
+   task_id:taskId,runtime_task_id:runtimeTaskId,
+   gateway_execution_authorized:false as const
+  });
+ }
+ cancelTask(runtimeTaskId:string){
+  this.#reported.delete(runtimeTaskId);
+  return this.#bootstrap.cancelTask(runtimeTaskId);
+ }
  close():Promise<void>{
   this.#closed=true;
+  this.#reported.clear();
   return this.#bootstrap.close();
  }
 }

@@ -98,7 +98,13 @@ function fixture(patch?:{
  });
  const gateway=Object.assign(Object.create(
   TrustedAuthorityOnlyGatewayAdmissions.prototype),{
-  assertTrustedOwnerRemoteEffectBinding:()=>patch?.receipt??receipt
+  assertTrustedOwnerRemoteEffectBinding:()=>patch?.receipt??receipt,
+  attestTrustedTaskCompletion:async(task:string,rt:string)=>{
+   calls.push("gateway_independent_observer");
+   assert.equal(task,taskId);assert.equal(rt,runtimeTaskId);
+   return {status:"task_completion_observed_staged",task_id:task,
+    runtime_task_id:rt,gateway_execution_authorized:false};
+  }
  });
  const bootstrap=Object.assign(Object.create(
   TrustedAuthorityOnlyRemoteEffectBootstrap.prototype),{
@@ -223,4 +229,41 @@ test("R325 only Test role may dispatch branch-pinned run_tests",async()=>{
  // Test report cannot be fabricated without correctly pinned Test Child.
  await assert.rejects(f.owner.dispatchIssuedTask(request()));
  assert.ok(f.calls.includes("private_bind"));
+});
+
+test("R326 report by itself cannot unlock Gateway dependency; independent observer required",async()=>{
+ const f=fixture();
+ await assert.rejects(
+  f.owner.attestIndependentGatewayCompletion(taskId,runtimeTaskId),
+  /no matching previous A2A report/u
+ );
+ const report=await f.owner.dispatchIssuedTask(request());
+ assert.equal(report.provider_completion_attested,false);
+ assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+ const result=await f.owner.attestIndependentGatewayCompletion(
+  taskId,runtimeTaskId
+ );
+ assert.equal(result.status,"owner_gateway_completion_independently_observed");
+ assert.equal(result.gateway_execution_authorized,false);
+ assert.deepEqual(f.calls,[
+  "private_bind","a2a_send","gateway_independent_observer"
+ ]);
+ await assert.rejects(f.owner.attestIndependentGatewayCompletion(
+  taskId,runtimeTaskId),/repeated independent completion/u);
+});
+test("R326 forged Task ID cannot trigger the Gateway completion observer",async()=>{
+ const f=fixture();
+ await f.owner.dispatchIssuedTask(request());
+ await assert.rejects(f.owner.attestIndependentGatewayCompletion(
+  "r325-foreign",runtimeTaskId),/no matching previous A2A report/u);
+ assert.deepEqual(f.calls,["private_bind","a2a_send"]);
+});
+test("R326 rejected A2A report never reaches independent Gateway observer",async()=>{
+ const f=fixture({response:{card:{name:"Bad"},task:{
+  ...goodResponse().task,status:{state:TaskState.TASK_STATE_FAILED}
+ }}});
+ await assert.rejects(f.owner.dispatchIssuedTask(request()));
+ await assert.rejects(f.owner.attestIndependentGatewayCompletion(
+  taskId,runtimeTaskId),/no matching previous A2A report/u);
+ assert.deepEqual(f.calls,["private_bind","a2a_send"]);
 });
