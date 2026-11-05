@@ -195,8 +195,8 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
       execution:role==="test"?{
        provider:"docker-runner",performed:true,tool:"run_tests",
        status:"pass",tested_commit_sha:SHAS.test,
-       runner_profile:"poc-default",project_tests:"pass",
-       researcher_acceptance:"pass"
+       runner_profile:"poc-default",project_tests:{status:"pass"},
+       researcher_acceptance:{status:"pass"}
       }:{
        provider:"gitea",performed:true,tool:"update_file",
        branch,path:c.path,commit_sha:SHAS[role]
