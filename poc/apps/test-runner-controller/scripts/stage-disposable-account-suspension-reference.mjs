@@ -6,6 +6,7 @@
  * prove genuine project + researcher acceptance PASS.
  */
 import assert from "node:assert/strict";
+import {ProviderNotFoundError} from "../../gateway/src/errors.ts";
 import {ACCOUNT_SUSPENSION_REFERENCE_FILES} from
  "../fixtures/account-suspension-reference.mjs";
 import {
@@ -32,18 +33,36 @@ export async function stageDisposableAccountSuspensionReference({
   const expected=ACCOUNT_SUSPENSION_REFERENCE_FILES[path];
   assert.equal(typeof expected,"string");
   assert.ok(expected.length>0&&expected.length<100000);
+  const baselineSource=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[path];
+  // The unsolved baseline deliberately has no functional E2E spec. It
+  // must be CREATED as a file, not updated with a fabricated old blob.
+  if(baselineSource===undefined){
+   assert.equal(path,"tests/e2e/account-suspension.spec.ts",
+    "Only the exact previously absent researcher E2E fixture is allowed");
+   for(const sha of [baseline,observedHead]){
+    await assert.rejects(gitea.readTextFile(branch,path,sha),
+     error=>error instanceof ProviderNotFoundError,
+     "The new acceptance fixture must be absent from both snapshots");
+   }
+   const added=await gitea.createFile(branch,path,expected,
+    "CI owner-only new reference acceptance fixture: "+path);
+   assert.ok(added.commit_sha!==observedHead);
+   observedHead=added.commit_sha;
+   const actual=await gitea.readTextFile(branch,path,observedHead);
+   assert.equal(actual.content,expected);
+   assert.equal(actual.blob_sha,added.blob_sha);
+   modifications++;
+   continue;
+  }
   const current=await gitea.readTextFile(branch,path,observedHead);
   const original=await gitea.readTextFile(branch,path,baseline);
   assert.equal(current.blob_sha,original.blob_sha,
    "Reference fixture must not overwrite a prior unrelated feature edit");
-  const baselineSource=ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[path];
-  if(typeof baselineSource==="string"){
-   assert.equal(original.content,baselineSource,
-    "Original file differs from the signed baseline source snapshot");
-   assert.equal(original.blob_sha,
-    ACCOUNT_SUSPENSION_BASELINE_GIT_BLOB_HASHES[path],
-    "Original Gitea blob differs from pinned public baseline");
-  }
+  assert.equal(original.content,baselineSource,
+   "Original file differs from the signed baseline source snapshot");
+  assert.equal(original.blob_sha,
+   ACCOUNT_SUSPENSION_BASELINE_GIT_BLOB_HASHES[path],
+   "Original Gitea blob differs from pinned public baseline");
   if(current.content===expected)continue;
   const updated=await gitea.updateFile(
    branch,path,expected,"CI owner-only completed reference fixture: "+path);
