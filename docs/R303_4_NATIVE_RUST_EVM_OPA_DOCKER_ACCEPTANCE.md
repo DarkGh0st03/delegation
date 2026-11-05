@@ -76,3 +76,31 @@ passing on a known-complete reference. The separate R304 pathway
 tests dependent Task sequencing; the final BE→FE→Test implementation
 must operate from the unsolved baseline without preinstalling a
 completed reference.
+
+## Verified outcome — 2026-11-05
+
+**R303 native acceptance SUCCESS:** GitHub Actions
+`#42053505666` on commit
+`9fdbd61cc234b83107465837f43a12104f25acc9`.
+The `Fast CI` on this SHA is also SUCCESS (`#42053505488`).
+
+The native event `r303_authority_only_native_evm_real_docker_test_agent`
+confirms a signed Engineer root, native Test Child, VP, EVM status, real OPA,
+exact tested Git SHA, independent authenticated PASS receipt, Task
+completion, wrong-Child and revoked-root denial.
+
+Controlled Docker executed **one Runner POST**. All seven phases PASS:
+`dependency_install`, `typecheck`, `backend_tests`,
+`frontend_tests`, `build`, `playwright_e2e`,
+`researcher_acceptance`. No legacy provider calls or paid AI calls.
+
+The immutable initial unsolved baseline was pre-populated by a **CI
+owner** with the exact approved functional reference (11 file
+changes) before Engineer approval. The event explicitly reports
+`delegated_agent_writes:0`. This is a real Test Agent authority and
+execution proof, NOT proof of successful Backend/Frontend implementation
+by model agents. Do not count fixture writes as delegated agent edits.
+
+R304 remains a separate dependent Backend CAS -> native Test Agent
+test, and the genuine BE -> FE -> Test autonomous generation remains
+open.

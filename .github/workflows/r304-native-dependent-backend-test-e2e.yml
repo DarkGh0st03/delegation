@@ -5,6 +5,10 @@
 name: R304 Native Backend CAS to Dependent Test Docker (No AI)
 on:
   workflow_dispatch:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/ci-checkpoints/r304-docker-request.json'
 permissions:
   contents: read
 concurrency:

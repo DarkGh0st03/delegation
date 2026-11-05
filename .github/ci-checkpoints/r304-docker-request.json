@@ -1,0 +1,7 @@
+{
+  "revision": "R304.1",
+  "scenario": "permission-only Backend atomic Gitea CAS then dependent real Test Agent Runner Docker PASS after independent Task attestation",
+  "prerequisite": "R303.4 native Docker PASS on 9fdbd61cc234b83107465837f43a12104f25acc9",
+  "paid_model_calls": 0,
+  "main_writes": false
+}
