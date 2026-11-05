@@ -1,3 +1,4 @@
+import { GiteaExecutor } from "./gitea-executor.ts";
 import { performance } from "node:perf_hooks";
 import {
   GatewayError,
@@ -98,8 +99,10 @@ export interface ExecuteDependencies {
   planningRevisions?: TrustedPlanningRevisions;
   approvedPlans?: TrustedApprovedExecutionPlans;
   authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
-  /** Owner-only R295 result publisher, unreachable while R288 terminal deny holds. */
+  /** Owner-only result publisher, required for opt-in authority-only reads. */
   authorityOnlyReceiptWriter?: TrustedGatewayGiteaReadEvidencePublisher;
+  /** Owner-only opt-in for one durably reserved Gitea read per Task. */
+  authorityOnlyReadEnabled?: boolean;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -269,17 +272,22 @@ export async function executeAuthorization(
     throw new GatewayError(403, "policy_denied", "Workflow policy denied the operation");
   }
 
-  // R288: native VP and OPA have BOTH executed. A staged authority-only
-  // prepared request must now stop before ALL provider effects, even if the
-  // native cryptography and OPA would otherwise allow this operation.
-  // The guard cannot be omitted to fall back to an unbound legacy provider.
+  // Native VP and OPA have both executed. Only an explicitly enabled,
+  // durably reserved read may pass the authority-only binding gate.
   if(record.authority_only_digest||dependencies.authorityOnlyAdmissions){
     try{
       if(!dependencies.authorityOnlyAdmissions)
         throw Error("authority-only binding guard missing");
-      dependencies.authorityOnlyAdmissions.assertVerifiedVpAndPolicyForExecution(
-        record,verified
-      );
+      if(dependencies.authorityOnlyReadEnabled===true&&
+         dependencies.authorityOnlyReceiptWriter&&
+         dependencies.executor instanceof GiteaExecutor&&
+         record.request.tool==="read_file"){
+        dependencies.authorityOnlyAdmissions.assertTrustedCompletedReadEvidenceBinding(
+          record,verified);
+      }else{
+        dependencies.authorityOnlyAdmissions.assertVerifiedVpAndPolicyForExecution(
+          record,verified);
+      }
     }catch{
       dependencies.audit.emit({
         event:"authorization_executed",
@@ -300,9 +308,7 @@ export async function executeAuthorization(
       throw new GatewayError(403,"authority_only_execution_not_enabled",
         "Authority-only Child DC/VP/Task execution binding is not enabled");
     }
-    // Defensive terminal path if the trusted gate ever changes to return.
-    throw new GatewayError(403,"authority_only_execution_not_enabled",
-      "Authority-only requests must never reach the legacy provider path");
+
   }
 
   // A pending challenge must not survive trusted Planning expiry/revocation.
@@ -406,9 +412,7 @@ export async function executeAuthorization(
   }
   // R295: owner-only provenance publication must happen AFTER a *real*
   // GiteaExecutor success (it carries a private WeakMap result witness).
-  // The authority-only path above ALWAYS throws before provider I/O.
-  // Therefore this branch cannot run until a separately reviewed
-  // execution gate permits a real provider call. No legacy fallback.
+  // Only the explicitly enabled read gate above can reach this hook.
   if(record.authority_only_digest){
     if(!dependencies.authorityOnlyReceiptWriter||
        execution.provider!=="gitea"||
