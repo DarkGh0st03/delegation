@@ -13,6 +13,8 @@ import { buildPolicyInput } from "./policy-input.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
 import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
 import type { TrustedAuthorityOnlyGatewayAdmissions } from "./trusted-authority-only-admissions.ts";
+import type { TrustedGatewayGiteaReadEvidencePublisher }
+ from "./trusted-authority-only-gitea-publisher.ts";
 import { InMemoryRequestStore } from "./prepare.ts";
 import type {
   AuditSink,
@@ -96,6 +98,8 @@ export interface ExecuteDependencies {
   planningRevisions?: TrustedPlanningRevisions;
   approvedPlans?: TrustedApprovedExecutionPlans;
   authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
+  /** Owner-only R295 result publisher, unreachable while R288 terminal deny holds. */
+  authorityOnlyReceiptWriter?: TrustedGatewayGiteaReadEvidencePublisher;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -109,6 +113,12 @@ export async function executeAuthorization(
      (dependencies.planningRevisions||dependencies.approvedPlans))
     throw new GatewayError(403,"authority_only_binding_denied",
       "Authority-only and legacy Gateway modes cannot share provider effects");
+  if(dependencies.authorityOnlyReceiptWriter&&
+     (!dependencies.authorityOnlyAdmissions||
+      !dependencies.authorityOnlyReceiptWriter.isForAdmissions(
+       dependencies.authorityOnlyAdmissions)))
+    throw new GatewayError(403,"authority_only_binding_denied",
+      "Gateway receipt writer must belong to the exact trusted admission instance");
   const request = validateExecuteRequest(raw);
   const nowMs = (dependencies.nowMs ?? Date.now)();
   const durationNow = dependencies.durationNowMs ?? (() => performance.now());
@@ -393,6 +403,21 @@ export async function executeAuthorization(
     }
   } finally {
     releaseEffect?.();
+  }
+  // R295: owner-only provenance publication must happen AFTER a *real*
+  // GiteaExecutor success (it carries a private WeakMap result witness).
+  // The authority-only path above ALWAYS throws before provider I/O.
+  // Therefore this branch cannot run until a separately reviewed
+  // execution gate permits a real provider call. No legacy fallback.
+  if(record.authority_only_digest){
+    if(!dependencies.authorityOnlyReceiptWriter||
+       execution.provider!=="gitea"||
+       execution.tool!=="read_file"||execution.performed!==true)
+      throw new GatewayError(403,"authority_only_binding_denied",
+       "Authority-only read lacks trusted post-provider evidence publisher");
+    await dependencies.authorityOnlyReceiptWriter.publishSuccessfulRead({
+     record,verified,policy:policyDecision,execution
+    });
   }
   const providerMs = elapsed(providerStarted, durationNow);
   const totalMs = elapsed(totalStarted, durationNow);

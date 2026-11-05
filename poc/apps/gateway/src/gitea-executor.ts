@@ -1,5 +1,6 @@
+import {createHash} from "node:crypto";
 import { ProviderOperationUnavailableError } from "./errors.ts";
-import type { GiteaClient } from "./gitea-client.ts";
+import { GiteaClient } from "./gitea-client.ts";
 import type { RunnerClient } from "./runner-client.ts";
 import type {
   ExecutionPort,
@@ -13,6 +14,36 @@ import type {
   RunnerExecutionResult
 } from "./types.ts";
 
+const readWitnesses=new WeakMap<object,Readonly<{
+ record:PreparedRequestRecord;request_id:string;fingerprint:string;
+ branch:string;path:string;revision:string;blob_sha:string;
+ source_sha256:string;source_bytes:number
+}>>();
+/**
+ * Only an actual GiteaExecutor.read_file return is accepted as result
+ * provenance. Reconstructed JSON, mutation and foreign Prepare objects fail.
+ * This proves provider invocation in-process, not Engineer approval or VP.
+ */
+export function assertTrustedGatewayGiteaReadResult(
+ record:PreparedRequestRecord,result:GiteaReadFileExecutionResult
+):Readonly<{source_sha256:string;source_bytes:number}>{
+ const proof=readWitnesses.get(result);
+ if(!proof||proof.record!==record||proof.request_id!==record.request_id||
+    proof.fingerprint!==record.request_fingerprint||
+    result.provider!=="gitea"||result.performed!==true||
+    result.tool!=="read_file"||
+    result.branch!==proof.branch||result.path!==proof.path||
+    result.revision!==proof.revision||
+    result.blob_sha!==proof.blob_sha||
+    typeof result.content!=="string")
+  throw Error("Gateway Gitea read result missing trusted provider provenance");
+ const bytes=Buffer.from(result.content,"utf8");
+ if(bytes.length!==proof.source_bytes||
+    createHash("sha256").update(bytes).digest("hex")!==proof.source_sha256)
+  throw Error("Gateway Gitea read result changed after provider success");
+ return Object.freeze({source_sha256:proof.source_sha256,
+  source_bytes:proof.source_bytes});
+}
 const MAIN_BRANCH = "main";
 const FEATURE_BRANCH = "feature/account-suspension";
 
@@ -89,6 +120,19 @@ export class GiteaExecutor implements ExecutionPort {
         tool: "read_file",
         ...snapshot
       };
+      // Only record real GiteaClient provider output, not a mock executor.
+      // WeakMap ties THIS original in-memory result and request object.
+      if(this.#client instanceof GiteaClient){
+       const bytes=Buffer.from(result.content,"utf8");
+       readWitnesses.set(result,Object.freeze({
+        record,request_id:record.request_id,
+        fingerprint:record.request_fingerprint,
+        branch:result.branch,path:result.path,revision:result.revision,
+        blob_sha:result.blob_sha,
+        source_sha256:createHash("sha256").update(bytes).digest("hex"),
+        source_bytes:bytes.length
+       }));
+      }
       return result;
     }
 

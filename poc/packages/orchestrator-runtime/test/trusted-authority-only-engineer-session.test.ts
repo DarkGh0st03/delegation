@@ -9,6 +9,12 @@ import {TrustedOperationalSessionStore}
  from "../../../apps/gateway/src/trusted-operational-session-store.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
+import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
+import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
+import {AuthenticatedGiteaReadCompletionObserver}
+ from "../../../apps/gateway/src/trusted-authority-only-gitea-evidence.ts";
+import {TrustedGatewayGiteaReadEvidencePublisher}
+ from "../../../apps/gateway/src/trusted-authority-only-gitea-publisher.ts";
 import {prepareAuthorization,InMemoryRequestStore,InMemoryAuditSink}
  from "../../../apps/gateway/src/prepare.ts";
 import {executeAuthorization} from "../../../apps/gateway/src/execute.ts";
@@ -118,6 +124,7 @@ async function fixture(fn:(x:{
  childJournal:DurableAuthorityOnlyChildJournal;
  gatewayChildJournal:DurableAuthorityOnlyChildJournal;
  effectFenceJournal:DurableAuthorityOnlyTaskFenceJournal;
+ evidenceDir:string;
  approvals:SignedAuthorityOnlyFileStore;
  createSession:()=>TrustedAuthorityOnlyEngineerSession;
  save:(receipt?:object)=>Promise<void>
@@ -129,7 +136,8 @@ async function fixture(fn:(x:{
   gatewayTaskDir=join(directory,"gateway-tasks"),
   childDir=join(directory,"child-intents"),
   gatewayChildDir=join(directory,"gateway-child-intents"),
-  effectFenceDir=join(directory,"gateway-effect-fences");
+  effectFenceDir=join(directory,"gateway-effect-fences"),
+  evidenceDir=join(directory,"gateway-read-evidence");
  await mkdir(receiptDir,{mode:0o700});await mkdir(journalDir,{mode:0o700});
  await mkdir(taskDir,{mode:0o700});
  await mkdir(gatewayDir,{mode:0o700});
@@ -137,6 +145,7 @@ async function fixture(fn:(x:{
  await mkdir(childDir,{mode:0o700});
  await mkdir(gatewayChildDir,{mode:0o700});
  await mkdir(effectFenceDir,{mode:0o700});
+ await mkdir(evidenceDir,{mode:0o700});
  const save=async(raw:object=receipt)=>{
   await writeFile(join(receiptDir,sessionId+".json"),JSON.stringify(raw),{mode:0o600});
   await chmod(join(receiptDir,sessionId+".json"),0o600);
@@ -169,7 +178,7 @@ async function fixture(fn:(x:{
   });
   await fn({issuer,session:createSession(),log,journal,taskJournal,
    gatewayTaskJournal,gatewaySessionStore,childJournal,gatewayChildJournal,
-   effectFenceJournal,approvals,createSession,save});
+   effectFenceJournal,evidenceDir,approvals,createSession,save});
  }finally{await rm(directory,{recursive:true,force:true});}
 }
 test("R285 only authority pairs are issued after confirmed Planning retirement and Rust revocation",async()=>{
@@ -1156,5 +1165,177 @@ test("R293 crash-durable completion fence rejects missing flight, duplicate flig
   await assert.rejects(effectFenceJournal.reserveCompletion({
    ...flight,evidence_sha256:"d".repeat(64),completed_at_ms:nowMs
   }),/EEXIST/);
+ });
+});
+
+test("R295 owner-only writer seals genuine GiteaExecutor read result and reader corroborates the same exact Child flight",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal,
+  gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal,
+  effectFenceJournal,evidenceDir})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const issuer=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort([]),
+   journal:childJournal,nowMs:()=>nowMs
+  });
+  const child=await issuer.issueForRegisteredTask(
+   "task-backend",params("urn:r295:child","995",600));
+  let giteaCalls=0;
+  const content="export const userSuspended = true;\\n";
+  const blobSha="b".repeat(40);
+  const fetchFn=async(url:URL|string,init?:RequestInit)=>{
+   giteaCalls++;
+   assert.equal((init?.headers as Record<string,string>)?.authorization,
+    "token private-read-only-gitea");
+   const u=new URL(String(url));
+   if(u.pathname.endsWith("/branches/feature%2Faccount-suspension"))
+    return new Response(JSON.stringify({
+     name:branch,commit:{id:hash}
+    }));
+   if(u.pathname.endsWith("/contents/apps/backend/user.ts")){
+    assert.equal(u.searchParams.get("ref"),hash);
+    return new Response(JSON.stringify({
+     type:"file",path:"apps/backend/user.ts",encoding:"base64",
+     content:Buffer.from(content).toString("base64"),
+     sha:blobSha,size:Buffer.byteLength(content),
+     last_commit_sha:hash
+    }));
+   }
+   throw Error("untrusted Gitea URL: "+u.pathname);
+  };
+  const client=new GiteaClient({
+   baseUrl:"http://gitea.local:3000",token:"private-read-only-gitea",
+   owner:"thesis",repository:"iam-console-poc",
+   fetchFn:fetchFn as typeof fetch
+  });
+  const key=Buffer.alloc(32,81);
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
+   effectFenceJournal,
+   completionObserver:new AuthenticatedGiteaReadCompletionObserver({
+    directory:evidenceDir,key,repository:"thesis/iam-console-poc",
+    branch,giteaClient:client,nowMs:()=>nowMs
+   }).toTrustedObserver(),nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-r295","backend");
+  await gate.enrollTrustedIssuedChild("task-backend","runtime-r295",issuer);
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const prepared=prepareAuthorization({
+   task_id:"runtime-r295",agent_role:"backend",
+   tool:"read_file",arguments:{branch,path:"apps/backend/user.ts"}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+  {store,audit,nowMs:()=>nowMs,requestId:()=>"request-r295",
+   challenge:()=>"challenge-r295",authorityOnlyAdmissions:gate});
+  const record=store.get(prepared.request_id);
+  assert.ok(record);
+  const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
+   directory:evidenceDir,key,admissions:gate,
+   repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+  });
+  const fakePolicy={allow:true,policy_version:"offline-opa-stub"};
+  const verified={
+   presenter_id:"did:thesis:backend",credential_id:child.credential_id,
+   issuer_id:"did:thesis:orchestrator",
+   root_credential_id:operational.credential_id,
+   permissions:[{resource:file,operation:"read_file"}],
+   hierarchy_depth:1,expiration:"1800000120000000000000"
+  };
+  const executor=new GiteaExecutor(client);
+  const output=await executor.execute(record);
+  assert.equal(output.tool,"read_file");
+  assert.equal(output.provider,"gitea");
+  if(output.provider!=="gitea"||output.tool!=="read_file")
+   throw Error("Expected genuine read-file result");
+  await assert.rejects(publisher.publishSuccessfulRead({
+   record,verified,policy:fakePolicy,execution:output
+  }),/consumed authority-only Prepare/);
+  await gate.stageTrustedTaskFlight(record);
+  // Simulates the REAL Gateway's already-consumed challenge at the
+  // post-provider-success hook; this unit test does not activate execution.
+  record.consumed=true;
+  await assert.rejects(publisher.publishSuccessfulRead({
+   record,verified,policy:{allow:false,policy_version:"deny"},execution:output
+  }),/provider success or independent OPA/);
+  await assert.rejects(publisher.publishSuccessfulRead({
+   record,verified:{...verified,credential_id:"urn:foreign:child"},
+   policy:fakePolicy,execution:output
+  }),/enrolled Task Child/);
+  await assert.rejects(publisher.publishSuccessfulRead({
+   record,verified,policy:fakePolicy,
+   execution:{...output} as typeof output
+  }),/trusted provider provenance/);
+  const published=await publisher.publishSuccessfulRead({
+   record,verified,policy:fakePolicy,execution:output
+  });
+  assert.equal(published.status,"gateway_read_evidence_published_staged");
+  assert.equal(published.provider_execution_enabled,false);
+  assert.match(published.evidence_sha256,/^[0-9a-f]{64}$/u);
+  assert.ok(giteaCalls>=2);
+  await assert.rejects(publisher.publishSuccessfulRead({
+   record,verified,policy:fakePolicy,execution:output
+  }),/EEXIST/);
+  const completed=await gate.attestTrustedTaskCompletion(
+   "task-backend","runtime-r295");
+  assert.equal(completed.gateway_execution_authorized,false);
+  assert.equal(gate.stagedCompletedTaskCount,1);
+  assert.throws(()=>gate.assertExecutionReady(),/unavailable/);
+ });
+});
+
+test("R295 a configured publisher never bypasses authority-only terminal Gateway denial",async()=>{
+ await fixture(async({session,approvals,taskJournal,gatewayTaskJournal,
+  gatewaySessionStore,evidenceDir})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-r295-deny","backend");
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const request=prepareAuthorization({
+   task_id:"runtime-r295-deny",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+  {store,audit,nowMs:()=>nowMs,requestId:()=>"request-r295-denied",
+   challenge:()=>"challenge-r295-denied",authorityOnlyAdmissions:gate});
+  const executor=new MockExecutor();
+  const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
+   directory:evidenceDir,key:Buffer.alloc(32,11),admissions:gate,
+   repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+  });
+  await assert.rejects(executeAuthorization({
+   request_id:request.request_id,signed_vp:"synthetic-vp"
+  },{store,audit,executor,repository:repo,authorityOnlyAdmissions:gate,
+    authorityOnlyReceiptWriter:publisher,nowMs:()=>nowMs,
+    verifier:{async verify(){return {
+     presenter_id:"did:thesis:backend",credential_id:"urn:synthetic",
+     root_credential_id:operational.credential_id,
+     issuer_id:"did:thesis:orchestrator",
+     permissions:[{resource:file,operation:"read_file"}],
+     hierarchy_depth:1,expiration:"1800000120000000000000"
+    };}} as never,
+    policy:{async evaluate(){return{allow:true,policy_version:"offline-opa"};}}
+      as never
+  }),(e:unknown)=>e instanceof Error&&"code" in e&&
+    e.code==="authority_only_execution_not_enabled");
+  assert.equal(executor.callCount,0);
  });
 });

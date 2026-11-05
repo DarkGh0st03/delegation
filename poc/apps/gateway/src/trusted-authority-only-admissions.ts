@@ -392,6 +392,65 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#flightInFlight=false;}
  }
  /**
+  * R295 owner-only provenance projection. Not an execution permission.
+  * Called exclusively AFTER a real Gateway verifier+OPA decision and a
+  * genuine GiteaExecutor success. The latter is separately WeakMap-branded.
+  * Requires R293's durable one-flight reservation and exact enrolled Child.
+  */
+ assertTrustedCompletedReadEvidenceBinding(
+  record:PreparedRequestRecord,verified:VerifiedDelegation
+ ):Readonly<TrustedCompletionExpectation>{
+  const root=this.#live();
+  if(!record||record.consumed!==true||
+     !record.authority_only_digest||record.authority_only_digest!==this.#digest||
+     record.request.tool!=="read_file"||
+     record.expires_at_ms<=this.#now())
+   deny("successful read lacks live, consumed authority-only Prepare");
+  const bound=this.#tasks.get(record.task_id);
+  const child=this.#enrolledChildren.get(record.task_id);
+  if(!bound||!child||!verified||typeof verified!=="object"||
+     !Array.isArray(verified.permissions)||
+     record.authority_only_plan_task_id!==bound.row.task_id||
+     record.authority_only_agent_did!==bound.row.agent_did||
+     record.agent_role!==bound.row.agent_id||
+     child.credential_id!==verified.credential_id||
+     child.agent_did!==verified.presenter_id||
+     verified.presenter_id!==bound.row.agent_did||
+     verified.root_credential_id!==root.root_credential_id||
+     !Number.isSafeInteger(verified.hierarchy_depth)||
+     verified.hierarchy_depth<1||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.epoch!==bound.row.epoch||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("completed read lacks native-rooted enrolled Task Child");
+  const flight=this.#flights.get(bound.row.task_id);
+  if(!flight||this.#completed.has(bound.row.task_id)||
+     flight.request_id!==record.request_id||
+     flight.request_fingerprint!==record.request_fingerprint||
+     flight.runtime_task_id!==record.task_id||
+     flight.credential_id!==child.credential_id||
+     flight.root_credential_id!==root.root_credential_id||
+     flight.authority_digest!==root.authority_digest||
+     flight.epoch!==bound.row.epoch)
+   deny("completed read has no matching durable trusted flight");
+  const normalized=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  const digest=createHash("sha256").update(JSON.stringify({
+   task_id:record.task_id,agent_role:record.agent_role,
+   request:record.request
+  })).digest("hex");
+  if(digest!==record.request_fingerprint||
+     pair(normalized.required_permission)!==pair(record.required_permission)||
+     !verified.permissions.some(p=>pair(p)===pair(record.required_permission)))
+   deny("completed read permission or prepared request fingerprint changed");
+  return Object.freeze({
+   ...structuredClone(flight),agent_did:bound.row.agent_did
+  });
+ }
+ /**
   * R293: the caller passes IDs only, never an untrusted success claim.
   * A separately owner-injected completion observer must independently
   * inspect provider/Runner evidence against all pinned local fields.
