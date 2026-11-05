@@ -10,6 +10,7 @@ import {giteaPermissionCovers}
  */
 import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
+import type {IssuedDelegationCredential} from "./authority-client.ts";
 import type {RootParameters} from "./trusted-engineer-authority.ts";
 import type {DelegatedPermission} from "./delegated-permission.ts";
 import type {TrustedChildCryptographyPort,ExactTrustedChildIssuance}
@@ -42,6 +43,9 @@ export class TrustedAuthorityOnlyChildIssuer {
  readonly #journal:DurableAuthorityOnlyChildJournal;
  readonly #nowMs:()=>number;
  readonly #issued=new Map<string,VerifiedStagedChild>();
+ /** Owner-private signed DC, never returned by a Gateway Task receipt. */
+ readonly #signedForA2A=new Map<string,IssuedDelegationCredential>();
+ readonly #takenForA2A=new Set<string>();
  readonly #attempted=new Set<string>();
  #inFlight=false;
  #failed=false;
@@ -79,6 +83,32 @@ export class TrustedAuthorityOnlyChildIssuer {
      this.#nowMs()>=Date.parse(child.expires_at))
    fail("no valid native-acknowledged Child for trusted Task");
   return Object.freeze({...child,permissions:Object.freeze(structuredClone(child.permissions))});
+ }
+ /**
+  * R325: one-use transfer of the EXACT native-issued signed Child to an
+  * owner-side A2A dispatch, after R323's remote Task bind is active.
+  * Native signature/credential is NOT an ADK FunctionTool return value.
+  * This method is private to the trusted in-process owner and consumes
+  * the credential before returning; failure cannot silently reissue it.
+  */
+ takeTrustedIssuedChildCredential(
+  taskId:string,coordinator:TrustedAuthorityOnlyExecutionCoordinator
+ ):IssuedDelegationCredential{
+  const child=this.assertTrustedIssuedChild(taskId,coordinator);
+  if(this.#takenForA2A.has(taskId))
+   fail("native signed Child already transferred to trusted A2A");
+  this.#takenForA2A.add(taskId); // consume even on malformed cached signed DC
+  const signed=this.#signedForA2A.get(taskId);
+  this.#signedForA2A.delete(taskId);
+  const row=this.#coordinator.assertTrustedGatewayRegisteredTask(taskId);
+  if(!signed||signed.id!==child.credential_id||
+     signed.credentialSubject?.sub!==child.agent_did||
+     !isDeepStrictEqual(signed.credentialSubject?.per,row.permissions)||
+     signed.credentialStatus?.statusListCredential!==
+       child.status_list_credential||
+     signed.credentialStatus?.statusListIndex!==child.status_list_index)
+   fail("native signed Child no longer matches approved Task");
+  return structuredClone(signed);
  }
  /** Only trusted owner backend supplies fresh Child identity/status metadata.
   * It cannot supply delegatee, scope, parent, root, session, or Task epoch. */
@@ -182,6 +212,7 @@ export class TrustedAuthorityOnlyChildIssuer {
     expires_at:new Date(end).toISOString(),gateway_execution_authorized:false
    });
    this.#issued.set(taskId,receipt);
+   this.#signedForA2A.set(taskId,structuredClone(signed));
    return receipt;
   }catch(error){
    // Fail closed even for ambiguous journal/IPC/credential response failures.
