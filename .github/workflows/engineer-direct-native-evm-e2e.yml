@@ -60,12 +60,11 @@ jobs:
           npm --prefix poc ci --ignore-scripts --no-audit --no-fund
           npm --prefix blockchain/did-client ci --ignore-scripts --no-audit --no-fund
           node poc/scripts/init-local-env.mjs --force
-      - name: Boot only disposable Anvil and OPA (no Adapter or Gateway HTTP service)
+      - name: Boot only disposable Anvil (no Adapter or Gateway HTTP service)
         run: |
-          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil opa
+          docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml up -d anvil
           for i in {1..90}; do
-            if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1 &&
-               curl -fsS http://127.0.0.1:8181/health >/dev/null 2>&1; then exit 0; fi
+            if cast chain-id --rpc-url "$RPC_URL" >/dev/null 2>&1; then exit 0; fi
             sleep 0.5
           done
           docker compose --env-file poc/infra/.env -f poc/infra/docker-compose.yml ps
@@ -128,10 +127,6 @@ jobs:
           test ! -e /tmp/native-evm-adapter.pid
       - name: Actual Rust root + child + VP, public Gateway EVM verify, revoke, negative proof
         run: node --experimental-strip-types poc/packages/orchestrator-runtime/test/direct-engineer-native-e2e.mjs
-      - name: R292 authority-only real Rust Child -> native EVM VP -> OPA -> terminal deny
-        run: |
-          node --check poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs
-          node --experimental-strip-types poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs
       - name: Validate native Gateway root read and no HTTP downgrade (no model calls)
         run: node --experimental-strip-types --test poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: Dispose Anvil and private local socket only

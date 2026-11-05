@@ -4,7 +4,7 @@ Parent: `fa61e186e9298339ea4dd5644f019efbe69ceb8b`  •  Branch: `refactor/post-
 
 ## Scope
 
-The existing zero-LLM-billing `engineer-direct-native-evm-e2e.yml` is
+The existing zero-LLM-billing `r292-authority-only-native-evm-e2e.yml` is
 extended only when explicitly triggered via the fixed checkpoint file.
 No long native EVM suite is automatically triggered by every TypeScript
 commit. It runs disposable Anvil **and** the pinned OPA policy service,
@@ -49,3 +49,16 @@ Do not infer R292 success merely from a green Fast CI. Require the
 specifically named **Engineer Direct Rust Core - EVM VP Verification**
 workflow to pass on the exact R292 trigger SHA and inspect its R292
 step before reporting the native rehearsal as verified.
+
+## R292.5 isolation correction
+
+The first two attempts ran R233's historical signed native VP/revocation
+test **before** the R292 rehearsal on one persistent Anvil chain.
+Rust deliberately refuses startup of a second independently initialized
+issuer once EVM accumulator versions from the first process have advanced.
+This was not a Gateway verification failure. A second process with a new
+private socket cannot reuse an independently initialized Rust issuer.
+
+R292 now has its **own path-gated workflow** and a fresh disposable
+Anvil/OPA for exactly **one** Rust owner process. The historical
+R233 workflow remains unmodified and is not chained into R292.
