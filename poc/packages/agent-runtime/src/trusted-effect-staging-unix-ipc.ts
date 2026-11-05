@@ -280,7 +280,12 @@ export async function createTrustedEffectAgentBindingServer(config:{
  socketPath:string;secretFile:string;
  registry:TrustedEffectStagingTaskRegistry;
  ownerStageClient:Awaited<ReturnType<typeof connectTrustedOwnerEffectStagingClient>>;
+ /** Production agents pin their own role before accepting owner Task binds. */
+ expectedRole?:"backend"|"frontend"|"test";
 }){
+ if(config.expectedRole!==undefined&&
+    !["backend","frontend","test"].includes(config.expectedRole))
+  deny("invalid locally pinned Agent role");
  if(!(config.registry instanceof TrustedEffectStagingTaskRegistry)||
     !config.ownerStageClient||
     typeof config.ownerStageClient.stage!=="function")
@@ -293,6 +298,8 @@ export async function createTrustedEffectAgentBindingServer(config:{
    if(!v)deny("invalid Task binding envelope");
    if(exactKeys(v,"action,pins")&&v.action==="bind"&&validPins(v.pins)){
     const pins=v.pins;
+    if(config.expectedRole!==undefined&&pins.role!==config.expectedRole)
+     deny("owner Task role differs from local Agent host role");
     config.registry.bindTask({...pins,
      effectStager:{stage:async requestId=>{
       await config.ownerStageClient.stage(pins.runtimeTaskId,requestId);

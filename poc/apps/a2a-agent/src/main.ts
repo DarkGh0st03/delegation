@@ -133,7 +133,8 @@ const bindingServer=effectRegistry&&stageClient
  ?await createTrustedEffectAgentBindingServer({
    socketPath:required("ADK_PRIVATE_TASK_BIND_SOCKET"),
    secretFile:required("ADK_PRIVATE_TASK_BIND_SECRET_FILE"),
-   registry:effectRegistry,ownerStageClient:stageClient
+   registry:effectRegistry,ownerStageClient:stageClient,
+   expectedRole:role
   }):undefined;
 await bindingServer?.start(); // HMAC owner bind ready BEFORE A2A starts
 let runtime:Awaited<ReturnType<typeof startSpecializedAgentServer>>;

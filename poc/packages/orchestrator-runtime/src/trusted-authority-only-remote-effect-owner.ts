@@ -22,6 +22,12 @@ import type {TrustedOwnerEffectStagingRegistry,
  from "../../agent-runtime/src/trusted-effect-staging-unix-ipc.ts";
 
 type AgentBinder=Awaited<ReturnType<typeof connectTrustedEffectAgentBindingClient>>;
+type Role="backend"|"frontend"|"test";
+const ROLES=["backend","frontend","test"] as const;
+function validBinder(b:unknown):b is AgentBinder{
+ return !!b&&typeof (b as AgentBinder).bindTask==="function"&&
+  typeof (b as AgentBinder).fence==="function";
+}
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 function deny(message:string):never{
  throw Error("Trusted remote authority-only effect owner NO-GO: "+message);
@@ -31,30 +37,38 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
  readonly #issuer:TrustedAuthorityOnlyChildIssuer;
  readonly #gateway:TrustedAuthorityOnlyGatewayAdmissions;
  readonly #registry:TrustedOwnerEffectStagingRegistry;
- readonly #agent:AgentBinder;
+ readonly #agent:AgentBinder|null;
+ readonly #agents:Readonly<Record<Role,AgentBinder>>|null;
+ readonly #routing=new Map<string,AgentBinder>();
  readonly #attempted=new Set<string>();
  constructor(config:{
   coordinator:TrustedAuthorityOnlyExecutionCoordinator;
   childIssuer:TrustedAuthorityOnlyChildIssuer;
   gateway:TrustedAuthorityOnlyGatewayAdmissions;
   ownerStageRegistry:TrustedOwnerEffectStagingRegistry;
-  agentBindingClient:AgentBinder;
+  agentBindingClient?:AgentBinder;
+  agentBindingClients?:Readonly<Record<Role,AgentBinder>>;
  }){
+  const multi=config?.agentBindingClients;
+  const hasSingle=config?.agentBindingClient!==undefined;
+  const validMulti=!!multi&&Object.keys(multi).sort().join(",")==="backend,frontend,test"&&
+   ROLES.every(role=>validBinder(multi[role]));
+  if(hasSingle===!!multi||!(validMulti||validBinder(config?.agentBindingClient)))
+   deny("exactly one owner-selected single or three-role IPC binder configuration required");
   if(!(config?.coordinator instanceof TrustedAuthorityOnlyExecutionCoordinator)||
      !(config.childIssuer instanceof TrustedAuthorityOnlyChildIssuer)||
      !(config.gateway instanceof TrustedAuthorityOnlyGatewayAdmissions)||
      !config.ownerStageRegistry||
      typeof config.ownerStageRegistry.bindTask!=="function"||
      typeof config.ownerStageRegistry.retireFor!=="function"||
-     !config.agentBindingClient||
-     typeof config.agentBindingClient.bindTask!=="function"||
-     typeof config.agentBindingClient.fence!=="function")
+     !(validMulti||validBinder(config.agentBindingClient)))
     deny("live trusted Coordinator, native Child, Gateway and owner IPC required");
   this.#coordinator=config.coordinator;
   this.#issuer=config.childIssuer;
   this.#gateway=config.gateway;
   this.#registry=config.ownerStageRegistry;
-  this.#agent=config.agentBindingClient;
+  this.#agent=config.agentBindingClient??null;
+  this.#agents=multi?Object.freeze({...multi}):null;
  }
  /**
   * Bind one exact owner-selected mutation/Test effect. Read grants may be
@@ -134,8 +148,12 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    branch,operation:effect.operation as "update_file"|"run_tests",
    ...(path!==undefined?{path}:{})
   };
+  // R328: each role has a separate authenticated owner->agent socket.
+  // Only the signed Coordinator row selects the route: never an A2A payload.
+  const binder=this.#agents?this.#agents[pins.role]:this.#agent!;
+  this.#routing.set(runtimeTaskId,binder);
   this.#registry.bindTask(runtimeTaskId,effectStager);
-  try{await this.#agent.bindTask(pins);}
+  try{await binder.bindTask(pins);}
   catch(error){
    this.#registry.retireFor(runtimeTaskId);
    throw error;
@@ -166,6 +184,8 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
  async fence(runtimeTaskId:string):Promise<void>{
   if(!this.#attempted.has(runtimeTaskId))deny("unknown remote Task fence");
   this.#registry.retireFor(runtimeTaskId); // fence first, then remote IPC
-  await this.#agent.fence(runtimeTaskId);
+  const binder=this.#routing.get(runtimeTaskId);
+  if(!binder)deny("remote Task has no pinned owner IPC route");
+  await binder.fence(runtimeTaskId);
  }
 }

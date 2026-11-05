@@ -32,6 +32,11 @@ import type {TrustedEffectStagingPort}
  from "../../agent-runtime/src/gateway-tool-client.ts";
 
 const DISPATCH=/^dispatch_[A-Za-z0-9_-]{22}$/u;
+type Role="backend"|"frontend"|"test";
+const ROLES=["backend","frontend","test"] as const;
+export type TrustedRoleBindingChannels=Readonly<Record<Role,Readonly<{
+ socketPath:string;secretFile:string
+}>>>;
 function deny(message:string):never{
  throw Error("Authority-only remote owner bootstrap NO-GO: "+message);
 }
@@ -44,9 +49,11 @@ export interface TrustedAuthorityOnlyRemoteEffectBootstrapOptions {
  /** Owner-only 0600 HMAC stage secret, independent of agent bind key. */
  stageSecretFile:string;
  /** Agent-owned private Unix Task binding socket; agent already running. */
- agentBindingSocketPath:string;
+ agentBindingSocketPath?:string;
  /** Separate preprovisioned 0600 owner→agent HMAC bind secret. */
- agentBindingSecretFile:string;
+ agentBindingSecretFile?:string;
+ /** R328: distinct per-role owner->agent HMAC sockets, ONE staging owner. */
+ agentBindingChannels?:TrustedRoleBindingChannels;
 }
 type ServerHandle=Awaited<ReturnType<typeof createTrustedOwnerEffectStagingServer>>;
 type TaskInput={taskId:string;runtimeTaskId:string;
@@ -79,19 +86,39 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
      !(opts.gateway instanceof TrustedAuthorityOnlyGatewayAdmissions)||
      opts.coordinator.phase!=="active"||opts.gateway.phase!=="active")
    deny("live Engineer Coordinator, native Child and active Gateway required");
-  const paths=[opts.stageSocketPath,opts.agentBindingSocketPath,
-   opts.stageSecretFile,opts.agentBindingSecretFile];
+  const multi=opts.agentBindingChannels;
+  const hasSingle=opts.agentBindingSocketPath!==undefined||
+    opts.agentBindingSecretFile!==undefined;
+  if(!!multi===hasSingle||
+     (multi&&(
+      Object.keys(multi).sort().join(",")!=="backend,frontend,test"||
+      ROLES.some(role=>!multi[role]||
+       typeof multi[role].socketPath!=="string"||
+       typeof multi[role].secretFile!=="string")
+     ))||
+     (!multi&&(typeof opts.agentBindingSocketPath!=="string"||
+               typeof opts.agentBindingSecretFile!=="string")))
+   deny("exactly one legacy binder or three per-role bind IPC channels required");
+  const bindingChannels=multi?ROLES.map(r=>multi[r]):[{
+   socketPath:opts.agentBindingSocketPath!,
+   secretFile:opts.agentBindingSecretFile!
+  }];
+  const paths=[
+   opts.stageSocketPath,opts.stageSecretFile,
+   ...bindingChannels.flatMap(x=>[x.socketPath,x.secretFile])
+  ];
   if(paths.some(v=>typeof v!=="string"||!v.startsWith("/")||
      v.includes("\0")||v.length>95)||
-     new Set(paths.map(p=>resolve(p))).size!==4)
+     new Set(paths.map(p=>resolve(p))).size!==paths.length)
    deny("distinct short absolute private Unix sockets and secret files required");
-  // Independent HMAC keys: identical bytes would defeat IPC domain
-  // separation when accidentally provisioning both channels.
-  const [a,b]=await Promise.all([
-   loadTrustedPlanIpcSecret(opts.stageSecretFile),
-   loadTrustedPlanIpcSecret(opts.agentBindingSecretFile)
-  ]);
-  if(timingSafeEqual(a,b))deny("stage and bind HMAC keys must differ");
+  // No two authorization directions or role bind channels share HMAC
+  // keys; a compromised Frontend binder cannot enroll Backend Tasks.
+  const secretPaths=[opts.stageSecretFile,...bindingChannels.map(x=>x.secretFile)];
+  const secrets=await Promise.all(secretPaths.map(loadTrustedPlanIpcSecret));
+  for(let i=0;i<secrets.length;i++)
+   for(let j=i+1;j<secrets.length;j++)
+    if(timingSafeEqual(secrets[i]!,secrets[j]!))
+     deny("stage and per-role bind HMAC keys must differ");
   // Confirm the Engineer root BEFORE opening a private listener.
   opts.coordinator.assertTrustedGatewayAuthorityBinding();
   const registry=new TrustedOwnerEffectStagingRegistry();
@@ -101,14 +128,19 @@ export class TrustedAuthorityOnlyRemoteEffectBootstrap {
   });
   try{
    await server.start();
-   const binder=await connectTrustedEffectAgentBindingClient({
-    socketPath:opts.agentBindingSocketPath,
-    secretFile:opts.agentBindingSecretFile
-   });
+   const clients=await Promise.all(bindingChannels.map(ch=>
+    connectTrustedEffectAgentBindingClient({
+     socketPath:ch.socketPath,secretFile:ch.secretFile
+    })
+   ));
+   const binders=multi
+    ?{agentBindingClients:Object.fromEntries(
+      ROLES.map((role,i)=>[role,clients[i]!])
+     ) as Record<Role,(typeof clients)[number]>}
+    :{agentBindingClient:clients[0]!};
    const owner=new TrustedAuthorityOnlyRemoteEffectOwner({
     coordinator:opts.coordinator,childIssuer:opts.childIssuer,
-    gateway:opts.gateway,ownerStageRegistry:registry,
-    agentBindingClient:binder
+    gateway:opts.gateway,ownerStageRegistry:registry,...binders
    });
    return new TrustedAuthorityOnlyRemoteEffectBootstrap(
     owner,registry,server);
