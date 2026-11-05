@@ -297,8 +297,9 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
    }
   });
   Object.defineProperty(gateway,"phase",{value:"active"});
-  const urls=Object.fromEntries(roles.map(r=>[r,agents[r].baseUrl]))
-   as Record<Role,string>;
+  const urls=(Object.fromEntries(
+   roles.map(r=>[r,agents[r].baseUrl])
+  )) as Record<Role,string>;
   owner=await startTrustedAuthorityOnlySdkA2AOwner({
    coordinator,childIssuer:issuer,gateway,agentBaseUrls:urls,
    stageSocketPath:stageSocket,stageSecretFile:stageSecret,
