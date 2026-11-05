@@ -1,3 +1,4 @@
+import {TrustedAuthorityOnlyEffectStager} from "../../../apps/gateway/src/trusted-authority-only-effect-stager.ts";
 /** R305 disposable real Gitea + native Rust/EVM/OPA write and authenticated
  * completion. CI approval is synthetic; no Gemini or production credentials.
  */
@@ -482,7 +483,11 @@ try{
  await assert.rejects(preflight.stageUpdate(
   originalRecord,"f".repeat(40)),/owner-pinned HEAD changed/);
  assert.equal(gatewayCasWrites,0);
- const staged=await preflight.stageUpdate(originalRecord,baseRevision);
+ const stageEffect=(runtimeTaskId,tool,expectedHeadSha,requestId)=>
+  new TrustedAuthorityOnlyEffectStager({store,admissions:gate,
+   mutation:preflight,runner:runnerPreflight,runtimeTaskId,tool,expectedHeadSha})
+   .stage(requestId);
+ const staged=await stageEffect(runtimeTaskId,"update_file",baseRevision,good.request_id);
  assert.equal(staged.provider_write_authorized,false);
  assert.equal(staged.intent.expected_blob_sha,seeded.blob_sha);
  assert.equal(staged.intent.expected_head_sha,baseRevision);
@@ -539,7 +544,7 @@ try{
   presenter:"backend",audience:good.audience,challenge:"invalid-r305-nonce",
   required_permission:taskPermission,signed_vp:goodVp
  }));
- await gate.stageTrustedTaskFlight(originalRecord);
+
  const written=await httpCall("execute",{
   request_id:good.request_id,signed_vp:goodVp
  },200);
@@ -580,14 +585,14 @@ try{
  // mutation must use the exact newly attested Backend HEAD, not bypass it.
  await assert.rejects(preflight.stageUpdate(frontendRecord,baseRevision),
   /owner-pinned HEAD changed/);
- const frontStaged=await preflight.stageUpdate(
-  frontendRecord,written.execution.commit_sha);
+ const frontStaged=await stageEffect(frontendRuntimeId,"update_file",
+  written.execution.commit_sha,frontendPrepared.request_id);
  assert.equal(frontStaged.intent.expected_blob_sha,seededFrontend.blob_sha);
  assert.equal(frontStaged.intent.expected_head_sha,
   written.execution.commit_sha);
  assert.equal(frontStaged.intent.credential_id,
   frontendChild.credential_id);
- await gate.stageTrustedTaskFlight(frontendRecord);
+
  const frontendVp=await invokeNativeCrypto({
   socketPath,token:tokens.frontend,timeoutMs:60000
  },"create_presentation",{
@@ -699,12 +704,12 @@ try{
  assert.ok(runnerRecord);
  await assert.rejects(runnerPreflight.stageRunner(
   runnerRecord,baseRevision),/Gitea Test branch changed/);
- const runnerStaged=await runnerPreflight.stageRunner(
-  runnerRecord,pinnedHead);
+ const runnerStaged=await stageEffect(testRuntimeId,"run_tests",
+  pinnedHead,runnerPrepared.request_id);
  assert.equal(runnerStaged.runner_execution_authorized,false);
  assert.equal(runnerStaged.intent.expected_head_sha,pinnedHead);
  assert.equal(runnerStaged.intent.credential_id,runnerChild.credential_id);
- await gate.stageTrustedTaskFlight(runnerRecord);
+
  const testPresentation=await invokeNativeCrypto({
   socketPath,token:tokens.test,timeoutMs:60000
  },"create_presentation",{

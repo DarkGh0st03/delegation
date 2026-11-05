@@ -1,22 +1,8 @@
 {
-  "revision": "R313",
-  "scenario": "Backend -> Frontend -> Test prepare and execute through owner Gateway HTTP",
-  "checks": [
-    "native Rust/EVM VP",
-    "OPA",
-    "two independent Gitea HEAD CAS writes",
-    "separate Child DCs",
-    "durable Task completion",
-    "exact latest tested SHA",
-    "unmerged main"
-  ],
+  "revision": "R315",
+  "scenario": "Three HTTP Tasks with private owner-pinned effect staging and R314 HTTP denial probes",
   "allowed_model_calls": 0,
   "production_mutations": false,
   "reference_implementation_provenance": "CI owner fixture, not LLM agents",
-  "approval": "no paid AI",
-  "regression_fix": "R312 Docker PASS; R313 extends HTTP prepare/execute to Backend and Frontend",
-  "canonical_gateway_runtime": true,
-  "canonical_gateway_http_test_execute": true,
-  "canonical_gateway_http_test_prepare": true,
-  "canonical_gateway_http_backend_frontend": true
+  "approval": "no paid AI"
 }
