@@ -1,0 +1,18 @@
+{
+  "schema": "r292-authority-only-native-evm-once-v1",
+  "candidate_parent_sha": "421d16b872a7493a6fe846a6e65b9348154099bb",
+  "workflow": "r292-authority-only-native-evm-e2e.yml",
+  "purpose": "One fresh-chain single-owner Rust Engineer -> native Task Child -> signed VP -> independent EVM status/accumulator verification -> real OPA -> terminal deny with zero provider effects.",
+  "isolated_chain": true,
+  "original_r233_workflow_unchanged": true,
+  "synthetic_ci_approval_only": true,
+  "paid_model_invocation": false,
+  "activate_once": true,
+  "exclusions": [
+    "No Gemini or OpenAI API billing",
+    "No main modification or merge",
+    "No provider execution",
+    "No HTTP Adapter",
+    "No production human approval or real Gitea state"
+  ]
+}
