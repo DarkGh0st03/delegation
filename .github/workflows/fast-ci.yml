@@ -98,6 +98,7 @@ jobs:
         run: |
           node --check poc/packages/orchestrator-runtime/test/r292-authority-only-native-evm-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r300-hierarchical-gitea-native-e2e.mjs
+          node --check poc/packages/orchestrator-runtime/test/r301-sequential-hierarchical-gitea-e2e.mjs
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs
           node --check poc/apps/gateway/native-test/approved-plan-offline-adk-call-scripts.mjs
