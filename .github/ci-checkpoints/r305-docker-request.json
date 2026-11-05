@@ -1,5 +1,5 @@
 {
-  "revision": "R306",
+  "revision": "R308",
   "scenario": "single Engineer permission-only approval -> Backend file CAS -> independent Frontend file CAS -> signed Test Child -> real Docker and researcher acceptance",
   "checks": [
     "native Rust/EVM VP",
@@ -14,5 +14,6 @@
   "production_mutations": false,
   "reference_implementation_provenance": "CI owner fixture, not LLM agents",
   "approval": "no paid AI",
-  "regression_fix": "Engineer approval baseline pinned after both owner-provisioned Gitea files"
+  "regression_fix": "R306 E2E PASS; R308 exercises canonical GatewayRuntime mutation and Runner dispatch",
+  "canonical_gateway_runtime": true
 }
