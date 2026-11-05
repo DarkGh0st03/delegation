@@ -16,6 +16,7 @@ import { MockExecutor } from "./mock-executor.ts";
 import { OpaPolicyClient } from "./policy-client.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
 import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
+import {TrustedAuthorityOnlyGatewayAdmissions} from "./trusted-authority-only-admissions.ts";
 import { RunnerClient } from "./runner-client.ts";
 import {
   InMemoryAuditSink,
@@ -48,6 +49,7 @@ export interface GatewayRuntimeDependencies {
   planningRevisions?: TrustedPlanningRevisions;
   /** Opt-in trusted Engineer-approved execution plan gate (no public mutation API). */
   approvedPlans?: TrustedApprovedExecutionPlans;
+  authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
 }
 
 function defaultExecutor(config: GatewayRuntimeConfig): ExecutionPort {
@@ -94,11 +96,17 @@ export class GatewayRuntime {
   readonly #executor: ExecutionPort;
   readonly #planningRevisions?: TrustedPlanningRevisions;
   readonly #approvedPlans?: TrustedApprovedExecutionPlans;
+  readonly #authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
 
   constructor(config: GatewayRuntimeConfig, dependencies: GatewayRuntimeDependencies = {}) {
+    if(dependencies.authorityOnlyAdmissions&&
+       (!(dependencies.authorityOnlyAdmissions instanceof TrustedAuthorityOnlyGatewayAdmissions)||
+        dependencies.approvedPlans||dependencies.planningRevisions))
+      throw Error("Authority-only Gateway requires distinct trusted runtime without legacy gates");
     this.#config = config;
     this.#planningRevisions = dependencies.planningRevisions;
     this.#approvedPlans = dependencies.approvedPlans;
+    this.#authorityOnlyAdmissions = dependencies.authorityOnlyAdmissions;
     this.#store = dependencies.store ?? new InMemoryRequestStore();
     this.#compositeStore = new InMemoryCompositeStore();
     this.#audit = dependencies.audit ?? new JsonLineAuditSink();
@@ -148,12 +156,15 @@ export class GatewayRuntime {
       store: this.#store,
       audit: this.#audit,
       ...(this.#planningRevisions ? {planningRevisions:this.#planningRevisions} : {}),
-      ...(this.#approvedPlans ? {approvedPlans:this.#approvedPlans} : {})
+      ...(this.#approvedPlans ? {approvedPlans:this.#approvedPlans} : {}),
+      ...(this.#authorityOnlyAdmissions ? {authorityOnlyAdmissions:this.#authorityOnlyAdmissions} : {})
     });
   }
 
   /** Dry-run only: it never calls Gitea, Docker or the execution port. */
   prepareComposite(raw: unknown) {
+    if(this.#authorityOnlyAdmissions)
+      throw Error("Composite Gateway operations unavailable in authority-only staging");
     return prepareCompositeAuthorization(raw, {
       store:this.#compositeStore,
       audit:this.#audit,
@@ -165,6 +176,8 @@ export class GatewayRuntime {
 
   /** One read-only executable composite pinned to a trusted revision. */
   async prepareReadComposite(raw:unknown){
+    if(this.#authorityOnlyAdmissions)
+      throw Error("Composite Gateway reads unavailable in authority-only staging");
     return prepareReadCompositeAuthorization(raw,{
       store:this.#compositeStore,audit:this.#audit,verifier:this.#verifier,
       policy:this.#policy,config:this.#config.prepare,
@@ -175,6 +188,8 @@ export class GatewayRuntime {
   }
 
   async executeReadComposite(raw:unknown,signal?:AbortSignal){
+    if(this.#authorityOnlyAdmissions)
+      throw Error("Composite Gateway reads unavailable in authority-only staging");
     return executeReadCompositeAuthorization(raw,{
       store:this.#compositeStore,audit:this.#audit,verifier:this.#verifier,
       policy:this.#policy,config:this.#config.prepare,
@@ -187,6 +202,8 @@ export class GatewayRuntime {
 
   /** Returns a check result, never an executable capability or provider result. */
   async verifyComposite(raw: unknown) {
+    if(this.#authorityOnlyAdmissions)
+      throw Error("Composite Gateway verification unavailable in authority-only staging");
     return verifyCompositeAuthorization(raw, {
       store:this.#compositeStore,
       audit:this.#audit,
@@ -206,6 +223,7 @@ export class GatewayRuntime {
       executor: this.#executor,
       ...(this.#planningRevisions ? {planningRevisions:this.#planningRevisions} : {}),
       ...(this.#approvedPlans ? {approvedPlans:this.#approvedPlans} : {}),
+      ...(this.#authorityOnlyAdmissions ? {authorityOnlyAdmissions:this.#authorityOnlyAdmissions} : {}),
       ...(signal ? {signal} : {})
     });
   }

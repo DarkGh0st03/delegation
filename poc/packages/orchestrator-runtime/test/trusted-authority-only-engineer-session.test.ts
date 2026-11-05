@@ -9,6 +9,11 @@ import {TrustedOperationalSessionStore}
  from "../../../apps/gateway/src/trusted-operational-session-store.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
+import {prepareAuthorization,InMemoryRequestStore,InMemoryAuditSink}
+ from "../../../apps/gateway/src/prepare.ts";
+import {executeAuthorization} from "../../../apps/gateway/src/execute.ts";
+import {MockExecutor} from "../../../apps/gateway/src/mock-executor.ts";
+import {VerificationRejectedError} from "../../../apps/gateway/src/errors.ts";
 import {signAuthorityOnlyGrant,verifyAuthorityOnlyGrant,
  selectAuthorityOnlyGrant} from "../../../packages/plan-contracts/src/authority-only-approval.mjs";
 import {SignedAuthorityOnlyFileStore} from "../src/signed-authority-only-store.ts";
@@ -528,5 +533,185 @@ test("R287 Gateway denies untrusted receipt reader, changed repo and expired roo
   });
   await assert.rejects(expired.activate(sessionId,hash),/expired/);
   assert.equal(expired.phase,"failed_closed");
+ });
+});
+
+
+// R288: a staged Task can obtain a one-use Gateway challenge, execute
+// VerifierPort and independent OPA, but CANNOT touch the provider until a
+// native Child DC is tied to this independently issued Engineer root.
+test("R288 authority-only Prepare + verified VP + OPA allow still DENIES all provider effects",async()=>{
+ await fixture(async({session,approvals,taskJournal,
+  gatewayTaskJournal,gatewaySessionStore})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-r288","backend");
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const options={audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo};
+  const prepared=prepareAuthorization({
+   task_id:"runtime-r288",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"}
+  },options,{store,audit,nowMs:()=>nowMs,requestId:()=>"req-r288",
+   challenge:()=>"challenge-r288",authorityOnlyAdmissions:gate});
+  const record=store.get(prepared.request_id);
+  assert.equal(record?.authority_only_plan_task_id,"task-backend");
+  assert.equal(record?.authority_only_agent_did,"did:thesis:backend");
+  assert.match(record?.authority_only_digest??"",/^[0-9a-f]{64}$/u);
+  assert.equal(record?.approved_plan_digest,undefined);
+  assert.equal(record?.consumed,false);
+  let vpCalls=0,opaCalls=0;
+  const verifier={
+   async verify(input:{required_permission:{resource:string;operation:string}}){
+    vpCalls++;
+    return {presenter_id:"did:thesis:backend",credential_id:"child-verified-r288",
+     issuer_id:"did:thesis:orchestrator",
+     permissions:[input.required_permission],hierarchy_depth:1,
+     expiration:"1800000120000000000000"};
+   }
+  };
+  const policy={async evaluate(){opaCalls++;return{
+   allow:true,policy_version:"r288-policy-allow"}}};
+  const executor=new MockExecutor();
+  const dependencies={store,audit,verifier:verifier as never,
+   policy:policy as never,executor,repository:repo,nowMs:()=>nowMs+1,
+   authorityOnlyAdmissions:gate};
+  await assert.rejects(executeAuthorization({
+   request_id:prepared.request_id,signed_vp:"signed-test-vp"
+  },dependencies),(error:unknown)=>
+   error instanceof Error&&"code" in error&&
+   error.code==="authority_only_execution_not_enabled");
+  assert.equal(vpCalls,1);
+  assert.equal(opaCalls,1);
+  assert.equal(executor.callCount,0);
+  assert.equal(record?.consumed,true);
+  const event=audit.events.at(-1);
+  assert.equal(event?.event,"authorization_executed");
+  if(event?.event==="authorization_executed"){
+   assert.equal(event.decision,"deny");
+   assert.equal(event.policy_decision,"allow");
+   assert.equal(event.provider_result,"not_called");
+   assert.equal(event.reason,"authority_only_execution_not_enabled");
+  }
+  await assert.rejects(executeAuthorization({
+   request_id:prepared.request_id,signed_vp:"signed-test-vp"
+  },dependencies),(error:unknown)=>
+   error instanceof Error&&"code" in error&&error.code==="replay_detected");
+  assert.equal(executor.callCount,0);
+ });
+});
+test("R288 missing trusted authority-only execute guard cannot fall back to legacy provider",async()=>{
+ await fixture(async({session,approvals,taskJournal,
+  gatewayTaskJournal,gatewaySessionStore})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-no-fallback","backend");
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const options={audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo};
+  const valid={task_id:"runtime-no-fallback",agent_role:"backend" as const,
+   tool:"read_file" as const,arguments:{branch,path:"apps/backend/user.ts"}};
+  assert.throws(()=>prepareAuthorization({
+   ...valid,agent_role:"frontend"
+  },options,{store,audit,nowMs:()=>nowMs,authorityOnlyAdmissions:gate}));
+  assert.equal(store.size(),0);
+  const prepared=prepareAuthorization(valid,options,{
+   store,audit,nowMs:()=>nowMs,requestId:()=>"req-no-fallback",
+   challenge:()=>"challenge-r288",authorityOnlyAdmissions:gate
+  });
+  const verifier={async verify(input:{required_permission:{resource:string;operation:string}}){
+   return {presenter_id:"did:thesis:backend",credential_id:"child-test",
+    issuer_id:"did:thesis:orchestrator",hierarchy_depth:1,
+    permissions:[input.required_permission],expiration:"1800000000000000000000"};
+  }};
+  let opaCalls=0;
+  const policy={async evaluate(){opaCalls++;return{
+   allow:true,policy_version:"r288"}}};
+  const executor=new MockExecutor();
+  await assert.rejects(executeAuthorization({
+   request_id:prepared.request_id,signed_vp:"signed-test-vp"
+  },{store,audit,verifier:verifier as never,policy:policy as never,
+   repository:repo,executor,nowMs:()=>nowMs+1}),
+   (error:unknown)=>error instanceof Error&&"code" in error&&
+    error.code==="authority_only_execution_not_enabled");
+  assert.equal(opaCalls,1);
+  assert.equal(executor.callCount,0);
+ });
+});
+test("R288 VP rejection and independent OPA denial both stop before provider",async()=>{
+ await fixture(async({session,approvals,taskJournal,
+  gatewayTaskJournal,gatewaySessionStore})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-vp-opa","backend");
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const options={audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo};
+  const prepare=(id:string)=>prepareAuthorization({
+   task_id:"runtime-vp-opa",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"}
+  },options,{store,audit,nowMs:()=>nowMs,requestId:()=>id,
+   challenge:()=>"challenge-r288",authorityOnlyAdmissions:gate});
+  const executor=new MockExecutor();
+  const first=prepare("r288-bad-vp");
+  let policyCalls=0;
+  await assert.rejects(executeAuthorization({
+   request_id:first.request_id,signed_vp:"signed-bad-vp"
+  },{store,audit,verifier:{async verify(){
+   throw new VerificationRejectedError("invalid test VP");
+  }} as never,policy:{async evaluate(){policyCalls++;return{allow:true}}} as never,
+   repository:repo,executor,nowMs:()=>nowMs+1,authorityOnlyAdmissions:gate
+  }),(error:unknown)=>error instanceof Error&&"code" in error&&
+   error.code==="verification_rejected");
+  assert.equal(policyCalls,0);
+  const second=prepare("r288-opa-deny");
+  await assert.rejects(executeAuthorization({
+   request_id:second.request_id,signed_vp:"signed-opa-denied"
+  },{store,audit,verifier:{async verify(input:{required_permission:{resource:string;operation:string}}){
+    return {presenter_id:"did:thesis:backend",credential_id:"verified-child",
+     issuer_id:"did:thesis:orchestrator",
+     hierarchy_depth:1,permissions:[input.required_permission],
+     expiration:"1800000000000000000000"};
+   }} as never,policy:{async evaluate(){
+    policyCalls++;return{allow:false,policy_version:"r288-deny"};
+   }} as never,repository:repo,executor,nowMs:()=>nowMs+1,
+   authorityOnlyAdmissions:gate
+  }),(error:unknown)=>error instanceof Error&&"code" in error&&
+   error.code==="policy_denied");
+  assert.equal(policyCalls,1);
+  assert.equal(executor.callCount,0);
  });
 });

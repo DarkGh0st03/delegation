@@ -91,6 +91,10 @@ export interface PreparedRequestRecord {
   /** Created solely by the trusted approval registry, never user JSON. */
   approved_plan_digest?: string;
   approved_plan_task_id?: string;
+  /** R288 trusted, staged authority binding. Not execution authority. */
+  authority_only_digest?: string;
+  authority_only_plan_task_id?: string;
+  authority_only_agent_did?: string;
   /** Trusted signed-plan-derived branch, never public caller input. */
   approved_work_branch?: string;
   /** Trusted-only Runner SHA, never supplied by ADK, MCP or caller arguments. */

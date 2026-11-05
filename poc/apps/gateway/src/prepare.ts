@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 import { deriveRequiredPermission } from "./canonical.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
 import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
+import type { TrustedAuthorityOnlyGatewayAdmissions } from "./trusted-authority-only-admissions.ts";
 import {
   assertNoCallerSuppliedAuthority,
   validatePrepareAuthorizationRequest
@@ -51,6 +52,7 @@ export interface PrepareDependencies {
   challenge?: () => string;
   planningRevisions?: TrustedPlanningRevisions;
   approvedPlans?: TrustedApprovedExecutionPlans;
+  authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
 }
 
 function fingerprint(value: unknown): string {
@@ -69,9 +71,13 @@ export function prepareAuthorization(
   const durationNow = dependencies.durationNowMs ?? (() => performance.now());
   const started = durationNow();
 
+  if(dependencies.authorityOnlyAdmissions&&
+     (dependencies.approvedPlans||dependencies.planningRevisions))
+    throw Error("Authority-only Gateway mode cannot share legacy or Planning gates");
   assertNoCallerSuppliedAuthority(raw);
   const normalized = validatePrepareAuthorizationRequest(raw);
   const permission = deriveRequiredPermission(config.repository, normalized.request);
+  const authorityOnlyBinding=dependencies.authorityOnlyAdmissions?.preflightCanonicalRequest(raw as never);
   const pinnedRevision = dependencies.planningRevisions?.authorizePrepare(
     normalized.task_id, normalized.agent_role, normalized.request
   );
@@ -115,6 +121,11 @@ export function prepareAuthorization(
     challenge,
     request_fingerprint: requestFingerprint,
     ...(pinnedRevision ? { pinned_revision:pinnedRevision } : {}),
+    ...(authorityOnlyBinding ? {
+      authority_only_digest:authorityOnlyBinding.authority_digest,
+      authority_only_plan_task_id:authorityOnlyBinding.plan_task_id,
+      authority_only_agent_did:authorityOnlyBinding.agent_did
+    } : {}),
     ...(approvedBinding ? {
       approved_plan_digest:approvedBinding.plan_digest,
       approved_plan_task_id:approvedBinding.plan_task_id,

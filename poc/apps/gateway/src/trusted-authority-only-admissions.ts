@@ -15,7 +15,8 @@ import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {RUST_OPERATIONS} from "./operation-catalog.ts";
 import {TOOL_NAMES,type AgentRole,type PrepareAuthorizationRequest,
- type GatewayRepositoryConfig,type Permission} from "./types.ts";
+ type GatewayRepositoryConfig,type Permission,type PreparedRequestRecord,
+ type VerifiedDelegation} from "./types.ts";
 import {deriveRequiredPermission} from "./canonical.ts";
 import {validatePrepareAuthorizationRequest} from "./validation.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
@@ -245,6 +246,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   status:"gateway_permission_preflight_only";
   authority_digest:string;runtime_task_id:string;
   required_permission:Permission;
+  agent_did:string;plan_task_id:string;
   gateway_execution_authorized:false
  }>{
   this.#live();
@@ -277,8 +279,44 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    status:"gateway_permission_preflight_only",
    authority_digest:this.#digest!,runtime_task_id:request.task_id,
    required_permission:structuredClone(required),
+   agent_did:bound.row.agent_did,plan_task_id:bound.row.task_id,
    gateway_execution_authorized:false
   });
+ }
+ /**
+  * R288: after the same native VerifierPort and independent OPA, re-check
+  * the protected prepared binding against the current trusted Task.
+  * Even a valid VP is NOT proof of a Child DC bound to this root yet.
+  * This function always throws BEFORE provider execution.
+  */
+ assertVerifiedVpAndPolicyForExecution(
+  record:PreparedRequestRecord,verified:VerifiedDelegation
+ ):never{
+  this.#live();
+  if(!record.authority_only_digest||!record.authority_only_plan_task_id||
+     !record.authority_only_agent_did||
+     record.authority_only_digest!==this.#digest)
+   deny("prepared request lacks pinned authority-only binding");
+  const bound=this.#tasks.get(record.task_id);
+  if(!bound||bound.row.task_id!==record.authority_only_plan_task_id||
+     bound.row.agent_did!==record.authority_only_agent_did||
+     bound.row.agent_id!==record.agent_role||
+     verified.presenter_id!==bound.row.agent_did||
+     typeof verified.credential_id!=="string"||
+     !verified.credential_id.trim())
+   deny("verified presenter or Task differs from trusted binding");
+  const current=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  if(current.authority_digest!==record.authority_only_digest||
+     current.plan_task_id!==record.authority_only_plan_task_id||
+     pair(current.required_permission)!==pair(record.required_permission)||
+     !verified.permissions.some(p=>pair(p)===pair(record.required_permission)))
+   deny("prepared canonical Task grant changed during VP and OPA");
+  // Missing: native Child DC rooted in this operational grant, status and
+  // epoch binding. Do NOT fall back to legacy Gateways or providers.
+  deny("native Child DC authority-only execution not enabled");
  }
  /**
   * R287 MUST NOT accidentally be passed to the old Gateway execute() gate:

@@ -12,6 +12,7 @@ import {
 import { buildPolicyInput } from "./policy-input.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
 import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
+import type { TrustedAuthorityOnlyGatewayAdmissions } from "./trusted-authority-only-admissions.ts";
 import { InMemoryRequestStore } from "./prepare.ts";
 import type {
   AuditSink,
@@ -94,6 +95,7 @@ export interface ExecuteDependencies {
   executor: ExecutionPort;
   planningRevisions?: TrustedPlanningRevisions;
   approvedPlans?: TrustedApprovedExecutionPlans;
+  authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -103,6 +105,10 @@ export async function executeAuthorization(
   raw: unknown,
   dependencies: ExecuteDependencies
 ): Promise<ExecuteAuthorizationResponse> {
+  if(dependencies.authorityOnlyAdmissions&&
+     (dependencies.planningRevisions||dependencies.approvedPlans))
+    throw new GatewayError(403,"authority_only_binding_denied",
+      "Authority-only and legacy Gateway modes cannot share provider effects");
   const request = validateExecuteRequest(raw);
   const nowMs = (dependencies.nowMs ?? Date.now)();
   const durationNow = dependencies.durationNowMs ?? (() => performance.now());
@@ -251,6 +257,42 @@ export async function executeAuthorization(
       provider
     });
     throw new GatewayError(403, "policy_denied", "Workflow policy denied the operation");
+  }
+
+  // R288: native VP and OPA have BOTH executed. A staged authority-only
+  // prepared request must now stop before ALL provider effects, even if the
+  // native cryptography and OPA would otherwise allow this operation.
+  // The guard cannot be omitted to fall back to an unbound legacy provider.
+  if(record.authority_only_digest||dependencies.authorityOnlyAdmissions){
+    try{
+      if(!dependencies.authorityOnlyAdmissions)
+        throw Error("authority-only binding guard missing");
+      dependencies.authorityOnlyAdmissions.assertVerifiedVpAndPolicyForExecution(
+        record,verified
+      );
+    }catch{
+      dependencies.audit.emit({
+        event:"authorization_executed",
+        timestamp:new Date(nowMs).toISOString(),request_id:record.request_id,
+        task_id:record.task_id,agent_role:record.agent_role,
+        tool:record.request.tool,resource_uri:record.required_permission.resource,
+        operation:record.required_permission.operation,
+        decision:"deny",reason:"authority_only_execution_not_enabled",
+        verification_ms:verificationMs,opa_ms:opaMs,
+        policy_decision:"allow",policy_version:policyDecision.policy_version,
+        provider_ms:0,provider_result:"not_called",
+        total_ms:elapsed(totalStarted,durationNow),
+        vp_size_bytes:Buffer.byteLength(request.signed_vp,"utf8"),
+        chain_depth:verified.hierarchy_depth,
+        disclosed_permission_count:verified.permissions.length,
+        provider
+      });
+      throw new GatewayError(403,"authority_only_execution_not_enabled",
+        "Authority-only Child DC/VP/Task execution binding is not enabled");
+    }
+    // Defensive terminal path if the trusted gate ever changes to return.
+    throw new GatewayError(403,"authority_only_execution_not_enabled",
+      "Authority-only requests must never reach the legacy provider path");
   }
 
   // A pending challenge must not survive trusted Planning expiry/revocation.
