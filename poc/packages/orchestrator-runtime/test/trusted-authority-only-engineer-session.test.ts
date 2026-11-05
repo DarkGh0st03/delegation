@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync,createHash} from "node:crypto";
-import {mkdtemp,chmod,writeFile,rm,mkdir} from "node:fs/promises";
+import {mkdtemp,chmod,writeFile,rm,mkdir,readdir,readFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
@@ -11,6 +11,10 @@ import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
+import {DurableAuthorityOnlyGiteaMutationIntentJournal}
+ from "../../../apps/gateway/src/trusted-authority-only-mutation-intent-journal.ts";
+import {TrustedAuthorityOnlyGiteaMutationPreflight}
+ from "../../../apps/gateway/src/trusted-authority-only-mutation-preflight.ts";
 import {AuthenticatedGiteaReadCompletionObserver}
  from "../../../apps/gateway/src/trusted-authority-only-gitea-evidence.ts";
 import {TrustedGatewayGiteaReadEvidencePublisher}
@@ -1744,4 +1748,150 @@ test("R301 two read-only effects are durably sequenced before a dependent Task c
    "task-backend","runtime-r301-be"),/sequential Task completion/);
   assert.throws(()=>gate.assertExecutionReady(),/unavailable/);
  },signed);
+});
+
+
+test("R302 signed update_file Task pins HEAD/blob and reserves immutable intent WITHOUT a Gitea write",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal,
+  gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask({
+   ...nextTask(),permissions:[{resource:file,operation:"update_file"}]
+  });
+  const issuer=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort([]),
+   journal:childJournal,nowMs:()=>nowMs
+  });
+  await issuer.issueForRegisteredTask("task-backend",
+   params("urn:r302:update-child","921",600));
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
+   nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-r302","backend");
+  await gate.enrollTrustedIssuedChild("task-backend","runtime-r302",issuer);
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const content="export const accountSuspended = true;\\n";
+  const prepared=prepareAuthorization({
+   task_id:"runtime-r302",agent_role:"backend",tool:"update_file",
+   arguments:{branch,path:"apps/backend/user.ts",content}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+  {store,audit,nowMs:()=>nowMs,requestId:()=>"request-r302",
+   challenge:()=>"challenge-r302",authorityOnlyAdmissions:gate});
+  const record=store.get(prepared.request_id)!;
+  const oldContent="export const accountSuspended = false;\\n";
+  const blob="b".repeat(40);
+  let head=hash,reads=0,writes=0;
+  const client=new GiteaClient({
+   baseUrl:"http://gitea.local:3000",
+   token:"private-r302-readonly",
+   owner:"thesis",repository:"iam-console-poc",
+   fetchFn:(async(url:URL|string,init?:RequestInit)=>{
+    const u=new URL(String(url));
+    if(init?.method!=="GET"){writes++;throw Error("unexpected Gitea mutation");}
+    reads++;
+    assert.equal((init.headers as Record<string,string>).authorization,
+     "token private-r302-readonly");
+    if(u.pathname.endsWith("/branches/feature%2Faccount-suspension"))
+     return new Response(JSON.stringify({name:branch,commit:{id:head}}));
+    if(u.pathname.endsWith("/contents/apps/backend/user.ts")){
+     assert.equal(u.searchParams.get("ref"),hash);
+     return new Response(JSON.stringify({
+      type:"file",path:"apps/backend/user.ts",encoding:"base64",
+      content:Buffer.from(oldContent).toString("base64"),
+      size:Buffer.byteLength(oldContent),sha:blob,last_commit_sha:hash
+     }));
+    }
+    throw Error("unexpected Gitea endpoint "+u.pathname);
+   }) as typeof fetch
+  });
+  const privateRoot=await mkdtemp(join(tmpdir(),"r302-intent-"));
+  const directory=join(privateRoot,"owner");
+  try{
+   await mkdir(directory,{mode:0o700});
+   const journal=new DurableAuthorityOnlyGiteaMutationIntentJournal(directory);
+   const stager=new TrustedAuthorityOnlyGiteaMutationPreflight({
+    admissions:gate,giteaClient:client,journal,
+    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+   });
+   await assert.rejects(stager.stageUpdate(record,"c".repeat(40)),
+    /owner-pinned HEAD changed/);
+   assert.equal((await readdir(directory)).length,0);
+   head="c".repeat(40);
+   await assert.rejects(stager.stageUpdate(record,hash),
+    /owner-pinned HEAD changed/);
+   head=hash;
+   const result=await stager.stageUpdate(record,hash);
+   assert.equal(result.provider_write_authorized,false);
+   assert.equal(result.status,"gitea_update_intent_reserved_without_execution");
+   assert.equal(result.intent.expected_head_sha,hash);
+   assert.equal(result.intent.expected_blob_sha,blob);
+   assert.equal(result.intent.credential_id,"urn:r302:update-child");
+   assert.equal(result.intent.request_fingerprint,record.request_fingerprint);
+   assert.match(result.intent.next_content_sha256,/^[a-f0-9]{64}$/u);
+   assert.ok(reads>=4);
+   assert.equal(writes,0);
+   const entries=await readdir(directory);
+   assert.equal(entries.length,1);
+   const stored=await readFile(join(directory,entries[0]),"utf8");
+   assert.equal(stored.includes(content),false);
+   assert.equal(stored.includes(oldContent),false);
+   assert.equal(stored.includes("provider_write_authorized\":false"),true);
+   await assert.rejects(stager.stageUpdate(record,hash),/EEXIST/u);
+   const restarted=new TrustedAuthorityOnlyGiteaMutationPreflight({
+    admissions:gate,giteaClient:client,
+    journal:new DurableAuthorityOnlyGiteaMutationIntentJournal(directory),
+    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+   });
+   await assert.rejects(restarted.stageUpdate(record,hash),/EEXIST/u);
+   assert.equal(writes,0);
+   assert.throws(()=>gate.assertExecutionReady(),/unavailable/);
+  }finally{await rm(privateRoot,{recursive:true,force:true});}
+ });
+});
+
+test("R302 unbound mutation and caller-supplied HEAD fail before any provider I/O",async()=>{
+ await fixture(async({session,approvals,taskJournal,gatewayTaskJournal,
+  gatewaySessionStore})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-r302-deny","backend");
+  assert.throws(()=>prepareAuthorization({
+   task_id:"runtime-r302-deny",agent_role:"backend",
+   tool:"update_file",
+   arguments:{branch,path:"apps/backend/user.ts",content:"test"}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+  {store:new InMemoryRequestStore(),audit:new InMemoryAuditSink(),
+   nowMs:()=>nowMs,authorityOnlyAdmissions:gate}),
+   /not in exact signed Task grant/);
+  assert.throws(()=>prepareAuthorization({
+   task_id:"runtime-r302-deny",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path:"apps/backend/user.ts"},
+   expected_head_sha:hash
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,repository:repo},
+  {store:new InMemoryRequestStore(),audit:new InMemoryAuditSink(),
+   nowMs:()=>nowMs,authorityOnlyAdmissions:gate}),
+  /caller-supplied|unexpected|exactly|schema|forbidden|not allowed/i);
+ });
 });

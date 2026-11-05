@@ -816,6 +816,64 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
+  * R302: owner-only read-only preflight for a future atomic-CAS Gitea UPDATE.
+  * This does not permit execution or turn this binding into an authorization.
+  * The trusted caller must independently validate the current Gitea HEAD,
+  * file blob, durable reservation and Rust/OPA before any future write.
+  */
+ assertTrustedGiteaUpdateIntentBinding(
+  record:PreparedRequestRecord
+ ):Readonly<TrustedCompletionExpectation>{
+  const root=this.#live();
+  if(!record||typeof record!=="object"||record.consumed!==false||
+     record.request.tool!=="update_file"||
+     !record.authority_only_digest||
+     record.authority_only_digest!==root.authority_digest||
+     record.expires_at_ms<=this.#now())
+   deny("mutation preflight requires unconsumed trusted update_file Prepare");
+  const bound=this.#tasks.get(record.task_id);
+  const child=this.#enrolledChildren.get(record.task_id);
+  const taskId=bound?.row.task_id;
+  if(!bound||!child||!taskId||
+     record.authority_only_plan_task_id!==taskId||
+     record.authority_only_agent_did!==bound.row.agent_did||
+     bound.row.agent_id!==record.agent_role||
+     bound.row.permissions.every(p=>p.operation!=="update_file")||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
+     this.#flights.has(taskId)||this.#sequential.has(taskId)||
+     this.#completed.has(taskId)||
+     child.credential_id===root.root_credential_id||
+     child.epoch!==bound.row.epoch||
+     child.agent_did!==bound.row.agent_did||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("update preflight has no exact signed Task or enrolled native Child");
+  const allowed=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  const fingerprint=createHash("sha256").update(JSON.stringify({
+   task_id:record.task_id,agent_role:record.agent_role,
+   request:record.request
+  })).digest("hex");
+  if(pair(allowed.required_permission)!==pair(record.required_permission)||
+     fingerprint!==record.request_fingerprint||
+     typeof record.request.arguments.content!=="string"||
+     Buffer.byteLength(record.request.arguments.content,"utf8")>2_000_000)
+   deny("updated source does not match prepared canonical permission");
+  return Object.freeze({
+   session_id:root.session_id,
+   authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,
+   task_id:taskId,runtime_task_id:record.task_id,epoch:bound.row.epoch,
+   agent_did:bound.row.agent_did,
+   credential_id:child.credential_id,
+   request_id:record.request_id,
+   request_fingerprint:record.request_fingerprint
+  });
+ }
+ /**
   * R288: after the same native VerifierPort and independent OPA, re-check
   * the protected prepared binding against the current trusted Task.
   * Even a valid VP is NOT proof of a Child DC bound to this root yet.
