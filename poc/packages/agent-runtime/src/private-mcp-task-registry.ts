@@ -183,8 +183,14 @@ export class PrivateMcpTaskRegistry {
     // The separate total cap prevents a long task from retaining unbounded IDs.
     const activeChallenges=[...task.pendingCrypto.values()]
       .filter(entry=>!entry.used).length;
+    // GatewayRuntime's authority-only HTTP host can issue a 20-minute
+    // Prepare challenge so a Test Runner can finish without expiring. The
+    // private MCP holder MUST NOT reject the genuine signed Backend Child
+    // challenge merely because it was minted under that same host policy.
+    // No expiry is extended here: invokeCrypto still checks the original
+    // Gateway expires_at, and used request IDs remain one-shot tombstones.
     if(!Number.isFinite(deadline) || deadline<=Date.now() ||
-       deadline>Date.now()+120_000 ||
+       deadline>Date.now()+1_200_000 ||
        activeChallenges>=8 || task.pendingCrypto.size>=256 ||
        task.pendingCrypto.has(prepared.request_id)) {
       throw new PrivateMcpTaskError("invalid_tool_call");

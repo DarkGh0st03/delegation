@@ -133,3 +133,56 @@ test("crypto challenge concurrency budget permits 12 sequential proofs but never
  }finally{reg.end("bounded-crypto");}
 });
 
+
+test("R329.2 native owner 20-minute Gateway challenge is signed exactly once (no token or VP exposed to model)",async()=>{
+ const k=keys(),reg=new PrivateMcpTaskRegistry({
+  role:"backend",signingPrivateKeyPem:k.priv,signingPublicKeyPem:k.pub
+ });
+ const requestId="req_12345678-1234-4123-8123-1234567890ab";
+ let actualSigns=0;
+ const evidenceHandler={
+  credentialId:"urn:trusted:r329:child",
+  presenterId:"did:thesis:backend",
+  async createPresentation(input:{request_id:string}){
+   assert.equal(input.request_id,requestId);
+   actualSigns++;
+   return "PRIVATE_R329_TEST_NATIVE_SIGNED_VP";
+  }
+ };
+ reg.begin("r329-native-crypto",{async invoke(){throw Error("No Gateway calls");}},
+  undefined,{evidenceHandler});
+ try{
+  const prepared={
+   request_id:requestId,
+   audience:"cloud-access-gateway",
+   challenge:"r329-20minute-native-gateway-challenge",
+   expires_at:new Date(Date.now()+1_200_000).toISOString(),
+   required_permission:{
+    resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/users/account.ts",
+    operation:"update_file"
+   }
+  };
+  assert.doesNotThrow(()=>reg.stageGatewayChallenge("r329-native-crypto",prepared));
+  const auth="Bearer "+reg.bearerFor("r329-native-crypto");
+  const proof=await reg.invokeCrypto(auth,{
+   tool:"delegation_create_presentation",arguments:{request_id:requestId}
+  }) as {request_id:string;proof_ref:string;prepared:boolean};
+  assert.equal(proof.request_id,requestId);
+  assert.equal(proof.prepared,true);
+  assert.equal(actualSigns,1);
+  assert.equal(reg.takeSignedPresentation("r329-native-crypto",proof.proof_ref),
+   "PRIVATE_R329_TEST_NATIVE_SIGNED_VP");
+  await assert.rejects(reg.invokeCrypto(auth,{
+   tool:"delegation_create_presentation",arguments:{request_id:requestId}
+  }),/invalid_tool_call/u);
+  assert.equal(actualSigns,1);
+  assert.throws(()=>reg.stageGatewayChallenge("r329-native-crypto",{
+   ...prepared,request_id:"req_far_future",
+   expires_at:new Date(Date.now()+1_200_001+20_000).toISOString()
+  }),/invalid_tool_call/u);
+  assert.throws(()=>reg.stageGatewayChallenge("r329-native-crypto",{
+   ...prepared,request_id:"req_expired",
+   expires_at:new Date(Date.now()-1_000).toISOString()
+  }),/invalid_tool_call/u);
+ }finally{reg.end("r329-native-crypto");}
+});
