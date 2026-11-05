@@ -33,8 +33,12 @@ import {DurableAuthorityOnlyChildJournal}
 import {DurableAuthorityOnlyTaskFenceJournal,
  type TrustedTaskFlight}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-task-fence-journal.ts";
+import {DurableAuthorityOnlySequentialEffectJournal,
+ type TrustedSequentialManifest,type TrustedSequentialFlight}
+ from "../../../packages/orchestrator-runtime/src/trusted-authority-only-sequential-effect-journal.ts";
 import {TrustedAuthorityOnlyCompletionObserver,
- type TrustedCompletionExpectation}
+ type TrustedCompletionExpectation,
+ type ObservedTrustedTaskCompletion}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts";
 import {TrustedAuthorityOnlyChildIssuer,type VerifiedStagedChild}
  from "../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts";
@@ -55,6 +59,29 @@ interface BoundTask {
  readonly row:RegisteredAuthorityOnlyTask;
  readonly runtime_task_id:string;
 }
+interface SequentialTaskProgress {
+ readonly manifest:TrustedSequentialManifest;
+ completed:number;
+ latest_evidence_sha256:string|null;
+ active?:TrustedSequentialFlight;
+}
+function assertObservedCompletion(
+ expected:TrustedCompletionExpectation,observed:unknown,nowMs:number
+):asserts observed is ObservedTrustedTaskCompletion{
+ if(!observed||typeof observed!=="object"||
+    (observed as ObservedTrustedTaskCompletion).status!=="owner_verified_provider_result"||
+    !Object.keys(expected).every(key=>
+     (observed as Record<string,unknown>)[key]===
+     (expected as unknown as Record<string,unknown>)[key])||
+    Object.keys(observed).sort().join(",")!==[
+     ...Object.keys(expected),"status","evidence_sha256",
+     "completed_at_ms"].sort().join(",")||
+    !SHA64.test((observed as ObservedTrustedTaskCompletion).evidence_sha256)||
+    !Number.isSafeInteger((observed as ObservedTrustedTaskCompletion).completed_at_ms)||
+    (observed as ObservedTrustedTaskCompletion).completed_at_ms>nowMs+60_000||
+    (observed as ObservedTrustedTaskCompletion).completed_at_ms<nowMs-30*60_000)
+  deny("independent completion evidence does not match protected Task flight");
+}
 export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #repository:GatewayRepositoryConfig;
  readonly #engineerDid:string;
@@ -64,6 +91,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #taskJournal:DurableAuthorityTaskJournal;
  readonly #childJournal?:DurableAuthorityOnlyChildJournal;
  readonly #effectFenceJournal?:DurableAuthorityOnlyTaskFenceJournal;
+ readonly #sequentialEffectJournal?:DurableAuthorityOnlySequentialEffectJournal;
  readonly #completionObserver?:TrustedAuthorityOnlyCompletionObserver;
  readonly #nowMs:()=>number;
  #phase:Phase="inactive";
@@ -80,6 +108,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #taskIds=new Set<string>();
  readonly #enrolledChildren=new Map<string,VerifiedStagedChild>();
  readonly #flights=new Map<string,TrustedTaskFlight>();
+ readonly #sequential=new Map<string,SequentialTaskProgress>();
  readonly #completed=new Set<string>();
  #bindingInFlight=false;
  #enrollmentInFlight=false;
@@ -95,6 +124,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   taskJournal:DurableAuthorityTaskJournal;
   childJournal?:DurableAuthorityOnlyChildJournal;
   effectFenceJournal?:DurableAuthorityOnlyTaskFenceJournal;
+  sequentialEffectJournal?:DurableAuthorityOnlySequentialEffectJournal;
   completionObserver?:TrustedAuthorityOnlyCompletionObserver;
   nowMs?:()=>number;
  }){
@@ -126,12 +156,17 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      !(opts.completionObserver instanceof TrustedAuthorityOnlyCompletionObserver))
    deny("owner-controlled completion verification reader required");
   this.#effectFenceJournal=opts.effectFenceJournal;
+  if(opts.sequentialEffectJournal!==undefined&&
+     !(opts.sequentialEffectJournal instanceof DurableAuthorityOnlySequentialEffectJournal))
+   deny("independent owner-private sequential effect journal required");
+  this.#sequentialEffectJournal=opts.sequentialEffectJournal;
   this.#completionObserver=opts.completionObserver;
   this.#nowMs=opts.nowMs??Date.now;
  }
  get phase():Phase{return this.#phase;}
  get registeredTaskCount():number{return this.#tasks.size;}
  get stagedCompletedTaskCount():number{return this.#completed.size;}
+ get stagedSequentialTaskCount():number{return this.#sequential.size;}
  #now():number{
   const now=this.#nowMs();
   if(!Number.isSafeInteger(now)||now<0)deny("trusted Gateway clock invalid");
@@ -353,7 +388,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    deny("untrusted or already consumed Gateway Prepare binding");
   const bound=this.#tasks.get(record.task_id);
   const child=this.#enrolledChildren.get(record.task_id);
-  if(!bound||!child||this.#flights.has(bound.row.task_id)||
+  if(!bound||!child||this.#sequential.has(bound.row.task_id)||
+     this.#flights.has(bound.row.task_id)||
      this.#completed.has(bound.row.task_id)||
      bound.row.task_id!==record.authority_only_plan_task_id||
      bound.row.agent_id!==record.agent_role||
@@ -470,8 +506,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(!(this.#effectFenceJournal instanceof DurableAuthorityOnlyTaskFenceJournal)||
      !(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver))
    deny("trusted completion observer or owner-private journal missing");
-  if(this.#completionInFlight||this.#completed.has(taskId))
-   deny("concurrent or duplicate Task completion attestation");
+  if(this.#completionInFlight||this.#completed.has(taskId)||
+     this.#sequential.has(taskId))
+   deny("concurrent, duplicate or sequential Task completion attestation");
   const bound=this.#tasks.get(runtimeTaskId);
   const child=this.#enrolledChildren.get(runtimeTaskId);
   const flight=this.#flights.get(taskId);
@@ -494,19 +531,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   this.#completionInFlight=true;
   try{
    const observation=await this.#completionObserver.observe(expectation);
-   if(!observation||typeof observation!=="object"||
-      observation.status!=="owner_verified_provider_result"||
-      !Object.keys(expectation).every(key=>
-       (observation as unknown as Record<string,unknown>)[key]===
-       (expectation as unknown as Record<string,unknown>)[key])||
-      Object.keys(observation).sort().join(",")!==[
-       ...Object.keys(expectation),"status","evidence_sha256",
-       "completed_at_ms"].sort().join(",")||
-      !SHA64.test(observation.evidence_sha256)||
-      !Number.isSafeInteger(observation.completed_at_ms)||
-      observation.completed_at_ms>this.#now()+60_000||
-      observation.completed_at_ms<this.#now()-30*60_000)
-    deny("independent completion evidence does not match protected Task flight");
+   assertObservedCompletion(expectation,observation,this.#now());
    await this.#effectFenceJournal.reserveCompletion({
     ...flight,evidence_sha256:observation.evidence_sha256,
     completed_at_ms:observation.completed_at_ms
@@ -518,6 +543,226 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    return Object.freeze({
     status:"task_completion_observed_staged",
     task_id:taskId,runtime_task_id:runtimeTaskId,
+    gateway_execution_authorized:false
+   });
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#completionInFlight=false;}
+ }
+ /**
+  * R301: only an owner-controlled process can FIX the number of effects
+  * before executing any of them. This is NOT an agent-proposed success
+  * counter. A manifest cannot be overwritten after a crash or restart.
+  */
+ async beginTrustedSequentialReadTask(
+  taskId:string,runtimeTaskId:string,totalEffects:number
+ ):Promise<Readonly<{
+  status:"sequential_read_manifest_reserved_staged";
+  task_id:string;total_effects:number;gateway_execution_authorized:false
+ }>>{
+  const root=this.#live();
+  if(!(this.#sequentialEffectJournal instanceof DurableAuthorityOnlySequentialEffectJournal)||
+     !(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver))
+   deny("owner-controlled sequential journal and completion observer required");
+  if(!Number.isSafeInteger(totalEffects)||totalEffects<2||totalEffects>32||
+     this.#flightInFlight||this.#completionInFlight||
+     this.#sequential.has(taskId)||this.#flights.has(taskId)||
+     this.#completed.has(taskId))
+   deny("invalid, repeated or ambiguous trusted effect manifest");
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  if(!bound||!child||bound.row.task_id!==taskId||
+     bound.row.root_credential_id!==root.root_credential_id||
+     bound.row.authority_digest!==root.authority_digest||
+     bound.row.permissions.some(p=>p.operation!=="read_file")||
+     child.agent_did!==bound.row.agent_did||
+     child.epoch!==bound.row.epoch||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     this.#now()>=Date.parse(child.expires_at)||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
+   deny("sequential Task lacks enrolled read-only Child, root or dependencies");
+  const manifest:TrustedSequentialManifest=Object.freeze({
+   session_id:root.session_id,authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,
+   task_id,runtime_task_id:runtimeTaskId,epoch:bound.row.epoch,
+   credential_id:child.credential_id,total_effects:totalEffects
+  });
+  this.#flightInFlight=true;
+  try{
+   await this.#sequentialEffectJournal.reserveManifest(manifest);
+   this.#live();
+   this.#sequential.set(taskId,{
+    manifest,completed:0,latest_evidence_sha256:null
+   });
+   return Object.freeze({
+    status:"sequential_read_manifest_reserved_staged",
+    task_id:taskId,total_effects:totalEffects,
+    gateway_execution_authorized:false
+   });
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#flightInFlight=false;}
+ }
+ /**
+  * R301: one Gitea read at a time. Before another flight, the previous
+  * result MUST have been independently corroborated and durably sealed.
+  * The provider is never called by this method.
+  */
+ async stageTrustedSequentialReadEffect(
+  record:PreparedRequestRecord
+ ):Promise<Readonly<{
+  status:"sequential_read_effect_reserved_staged";
+  task_id:string;sequence:number;gateway_execution_authorized:false
+ }>>{
+  const root=this.#live();
+  const journal=this.#sequentialEffectJournal;
+  if(!journal||this.#flightInFlight||this.#completionInFlight)
+   deny("missing or concurrent sequential read reservation");
+  if(!record||record.consumed!==false||
+     record.request.tool!=="read_file")
+   deny("only a fresh canonical Gitea read may reserve a sequential effect");
+  const bound=this.#tasks.get(record.task_id);
+  const child=this.#enrolledChildren.get(record.task_id);
+  const taskId=bound?.row.task_id;
+  const state=taskId?this.#sequential.get(taskId):undefined;
+  if(!bound||!child||!state||state.active||
+     this.#flights.has(taskId!)||
+     state.completed>=state.manifest.total_effects||
+     this.#completed.has(taskId!)||
+     record.authority_only_plan_task_id!==taskId||
+     record.authority_only_agent_did!==bound.row.agent_did||
+     record.authority_only_digest!==root.authority_digest||
+     record.agent_role!==bound.row.agent_id||
+     child.credential_id!==state.manifest.credential_id||
+     child.epoch!==bound.row.epoch||
+     child.root_credential_id!==root.root_credential_id||
+     this.#now()>=Date.parse(child.expires_at)||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
+   deny("sequential read lacks trusted Task, Child or previous evidence");
+  const canonical=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  if(pair(canonical.required_permission)!==pair(record.required_permission))
+   deny("sequential read differs from canonical Gateway Prepare");
+  const next:TrustedSequentialFlight=Object.freeze({
+   ...state.manifest,
+   sequence:state.completed+1,
+   request_id:record.request_id,
+   request_fingerprint:record.request_fingerprint,
+   previous_evidence_sha256:state.latest_evidence_sha256
+  });
+  this.#flightInFlight=true;
+  try{
+   await journal.reserveEffect(next);
+   this.#live();
+   if(this.#now()>=Date.parse(child.expires_at))
+    deny("Child expired during sequential flight reservation");
+   state.active=next;
+   this.#flights.set(taskId!,{
+    session_id:next.session_id,authority_digest:next.authority_digest,
+    root_credential_id:next.root_credential_id,
+    task_id:next.task_id,runtime_task_id:next.runtime_task_id,
+    epoch:next.epoch,credential_id:next.credential_id,
+    request_id:next.request_id,request_fingerprint:next.request_fingerprint
+   });
+   return Object.freeze({
+    status:"sequential_read_effect_reserved_staged",
+    task_id:taskId!,sequence:next.sequence,
+    gateway_execution_authorized:false
+   });
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#flightInFlight=false;}
+ }
+ /**
+  * The observer (not the agent) rechecks a real Gitea outcome against
+  * each original prepared request and the protected authenticated receipt.
+  * A Task dependency is NOT unlocked by completing an intermediate effect.
+  */
+ async attestTrustedSequentialReadEffect(
+  taskId:string,runtimeTaskId:string
+ ):Promise<Readonly<{
+  status:"sequential_read_effect_attested_staged";
+  task_id:string;sequence:number;gateway_execution_authorized:false
+ }>>{
+  const root=this.#live();
+  const journal=this.#sequentialEffectJournal;
+  const observer=this.#completionObserver;
+  const state=this.#sequential.get(taskId);
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const active=state?.active;
+  if(!journal||!observer||this.#completionInFlight||this.#flightInFlight||
+     !state||!bound||!child||!active||
+     bound.row.task_id!==taskId||
+     active.runtime_task_id!==runtimeTaskId||
+     active.sequence!==state.completed+1||
+     active.previous_evidence_sha256!==state.latest_evidence_sha256||
+     active.session_id!==root.session_id||
+     active.authority_digest!==root.authority_digest||
+     active.root_credential_id!==root.root_credential_id||
+     active.credential_id!==child.credential_id||
+     child.epoch!==bound.row.epoch||
+     this.#now()>=Date.parse(child.expires_at)||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
+   deny("sequential effect not bound to pending native Child flight");
+  const expected:TrustedCompletionExpectation=Object.freeze({
+   ...this.#flights.get(taskId)!,agent_did:bound.row.agent_did
+  });
+  if(!expected.request_id||expected.request_id!==active.request_id||
+     expected.request_fingerprint!==active.request_fingerprint)
+   deny("sequential flight changed before independent evidence verification");
+  this.#completionInFlight=true;
+  try{
+   const observation=await observer.observe(expected);
+   assertObservedCompletion(expected,observation,this.#now());
+   await journal.reserveEvidence({
+    ...active,evidence_sha256:observation.evidence_sha256,
+    completed_at_ms:observation.completed_at_ms
+   });
+   this.#live();
+   if(this.#now()>=Date.parse(child.expires_at))
+    deny("Child expired while sealing sequential Gitea result");
+   state.completed=active.sequence;
+   state.latest_evidence_sha256=observation.evidence_sha256;
+   delete state.active;
+   this.#flights.delete(taskId);
+   return Object.freeze({
+    status:"sequential_read_effect_attested_staged",
+    task_id:taskId,sequence:active.sequence,
+    gateway_execution_authorized:false
+   });
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#completionInFlight=false;}
+ }
+ /** Explicit, owner-only final declaration after ALL expected receipts. */
+ async finalizeTrustedSequentialReadTask(
+  taskId:string,runtimeTaskId:string
+ ):Promise<Readonly<{
+  status:"sequential_read_task_complete_staged";
+  task_id:string;total_effects:number;gateway_execution_authorized:false
+ }>>{
+  this.#live();
+  const journal=this.#sequentialEffectJournal;
+  const state=this.#sequential.get(taskId);
+  if(!journal||!state||state.active||this.#flights.has(taskId)||
+     this.#completed.has(taskId)||this.#flightInFlight||
+     this.#completionInFlight||
+     state.manifest.runtime_task_id!==runtimeTaskId||
+     state.completed!==state.manifest.total_effects||
+     !state.latest_evidence_sha256||
+     !SHA64.test(state.latest_evidence_sha256))
+   deny("incomplete or ambiguous sequential Task cannot unlock dependencies");
+  this.#completionInFlight=true;
+  try{
+   await journal.reserveTaskFinal({
+    ...state.manifest,
+    latest_evidence_sha256:state.latest_evidence_sha256
+   });
+   this.#live();
+   this.#completed.add(taskId);
+   return Object.freeze({
+    status:"sequential_read_task_complete_staged",
+    task_id:taskId,total_effects:state.completed,
     gateway_execution_authorized:false
    });
   }catch(error){this.#phase="failed_closed";throw error;}

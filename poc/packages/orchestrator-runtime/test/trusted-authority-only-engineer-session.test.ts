@@ -33,6 +33,8 @@ import {DurableAuthorityOnlyChildJournal}
  from "../src/trusted-authority-only-child-journal.ts";
 import {DurableAuthorityOnlyTaskFenceJournal}
  from "../src/trusted-authority-only-task-fence-journal.ts";
+import {DurableAuthorityOnlySequentialEffectJournal}
+ from "../src/trusted-authority-only-sequential-effect-journal.ts";
 import {TrustedAuthorityOnlyCompletionObserver}
  from "../src/trusted-authority-only-completion-observer.ts";
 import {TrustedAuthorityOnlyChildIssuer}
@@ -124,6 +126,7 @@ async function fixture(fn:(x:{
  childJournal:DurableAuthorityOnlyChildJournal;
  gatewayChildJournal:DurableAuthorityOnlyChildJournal;
  effectFenceJournal:DurableAuthorityOnlyTaskFenceJournal;
+ sequentialEffectJournal:DurableAuthorityOnlySequentialEffectJournal;
  evidenceDir:string;
  approvals:SignedAuthorityOnlyFileStore;
  createSession:()=>TrustedAuthorityOnlyEngineerSession;
@@ -137,6 +140,7 @@ async function fixture(fn:(x:{
   childDir=join(directory,"child-intents"),
   gatewayChildDir=join(directory,"gateway-child-intents"),
   effectFenceDir=join(directory,"gateway-effect-fences"),
+  sequentialEffectDir=join(directory,"gateway-sequential-effects"),
   evidenceDir=join(directory,"gateway-read-evidence");
  await mkdir(receiptDir,{mode:0o700});await mkdir(journalDir,{mode:0o700});
  await mkdir(taskDir,{mode:0o700});
@@ -145,6 +149,7 @@ async function fixture(fn:(x:{
  await mkdir(childDir,{mode:0o700});
  await mkdir(gatewayChildDir,{mode:0o700});
  await mkdir(effectFenceDir,{mode:0o700});
+ await mkdir(sequentialEffectDir,{mode:0o700});
  await mkdir(evidenceDir,{mode:0o700});
  const save=async(raw:object=receipt)=>{
   await writeFile(join(receiptDir,sessionId+".json"),JSON.stringify(raw),{mode:0o600});
@@ -163,6 +168,8 @@ async function fixture(fn:(x:{
  const childJournal=new DurableAuthorityOnlyChildJournal(childDir);
  const gatewayChildJournal=new DurableAuthorityOnlyChildJournal(gatewayChildDir);
  const effectFenceJournal=new DurableAuthorityOnlyTaskFenceJournal(effectFenceDir);
+ const sequentialEffectJournal=new DurableAuthorityOnlySequentialEffectJournal(
+  sequentialEffectDir);
   const createSession=()=>new TrustedAuthorityOnlyEngineerSession({
    snapshot:snapshot(),requirement,credentials:issuer,approvals,journal,
    authenticatedEngineerDid:did,nowMs:()=>nowMs,
@@ -178,7 +185,7 @@ async function fixture(fn:(x:{
   });
   await fn({issuer,session:createSession(),log,journal,taskJournal,
    gatewayTaskJournal,gatewaySessionStore,childJournal,gatewayChildJournal,
-   effectFenceJournal,evidenceDir,approvals,createSession,save});
+   effectFenceJournal,sequentialEffectJournal,evidenceDir,approvals,createSession,save});
  }finally{await rm(directory,{recursive:true,force:true});}
 }
 test("R285 only authority pairs are issued after confirmed Planning retirement and Rust revocation",async()=>{
@@ -1624,4 +1631,117 @@ test("R299 signed directory grant cannot authorize sibling Task scope",async()=>
   }),/Task attempts authority escalation/);
   assert.equal(coordinator.phase,"active");
  },receipt);
+});
+
+test("R301 two read-only effects are durably sequenced before a dependent Task can run",async()=>{
+ const grant={resource:root+
+  "/branches/feature%2Faccount-suspension/directories/apps/backend",
+  operation:"read_file"};
+ const draft={schema_version:"1.0.0",session_id:sessionId,
+  repository:{...repo},branch,base_revision:hash,requirement,
+  requested_permissions:[grant]};
+ const authorization=selectAuthorityOnlyGrant(draft,[grant],
+  {allowedOperations:operations});
+ const signed=signAuthorityOnlyGrant({authorization,engineerDid:did,
+  keyId,privateKeyPem,issuedAt:"2026-11-05T07:00:00Z",
+  expiresAt:"2026-11-05T09:00:00Z",allowedOperations:operations});
+ await fixture(async({session,approvals,taskJournal,childJournal,
+  gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal,
+  sequentialEffectJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask({
+   ...nextTask(),permissions:[grant]
+  });
+  await coordinator.registerTask({
+   ...nextTask("frontend",2,"task-frontend"),
+   permissions:[{resource:file,operation:"read_file"}]
+  });
+  const issuer=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort([]),
+   journal:childJournal,nowMs:()=>nowMs
+  });
+  await issuer.issueForRegisteredTask("task-backend",
+   params("urn:r301:child","917",600));
+  const reads:string[]=[];
+  const observer=new TrustedAuthorityOnlyCompletionObserver({
+   async readVerifiedCompletion(expected){
+    reads.push(expected.request_id);
+    if(!["request-r301-1","request-r301-2"].includes(expected.request_id))
+     throw Error("unknown prepared request");
+    return {...expected,status:"owner_verified_provider_result" as const,
+     evidence_sha256:(expected.request_id.endsWith("-1")?"c":"d").repeat(64),
+     completed_at_ms:nowMs};
+   }
+  });
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
+   sequentialEffectJournal,completionObserver:observer,
+   nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-backend","runtime-r301-be","backend");
+  await gate.bindTrustedTask("task-frontend","runtime-r301-fe","frontend");
+  await gate.enrollTrustedIssuedChild("task-backend","runtime-r301-be",issuer);
+  const frontRequest={
+   task_id:"runtime-r301-fe",agent_role:"frontend",
+   tool:"read_file",arguments:{branch,path:"apps/backend/user.ts"}
+  } as const;
+  assert.throws(()=>gate.preflightCanonicalRequest(frontRequest),
+   /dependency completion not yet Gateway-attested/);
+  const begin=await gate.beginTrustedSequentialReadTask(
+   "task-backend","runtime-r301-be",2);
+  assert.equal(begin.total_effects,2);
+  assert.equal(begin.gateway_execution_authorized,false);
+  await assert.rejects(gate.beginTrustedSequentialReadTask(
+   "task-backend","runtime-r301-be",3),/invalid, repeated/);
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const prepare=(id:string,path:string)=>prepareAuthorization({
+   task_id:"runtime-r301-be",agent_role:"backend",tool:"read_file",
+   arguments:{branch,path}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,
+    repository:repo},
+   {store,audit,authorityOnlyAdmissions:gate,nowMs:()=>nowMs,
+    requestId:()=>id,challenge:()=>"challenge-"+id});
+  const p1=prepare("request-r301-1","apps/backend/user.ts");
+  const p2=prepare("request-r301-2","apps/backend/nested/second.ts");
+  const rec1=store.get(p1.request_id)!,rec2=store.get(p2.request_id)!;
+  const first=await gate.stageTrustedSequentialReadEffect(rec1);
+  assert.equal(first.sequence,1);
+  await assert.rejects(gate.stageTrustedSequentialReadEffect(rec2),
+   /sequential read lacks trusted/);
+  await assert.rejects(gate.finalizeTrustedSequentialReadTask(
+   "task-backend","runtime-r301-be"),/incomplete or ambiguous/);
+  const observed1=await gate.attestTrustedSequentialReadEffect(
+   "task-backend","runtime-r301-be");
+  assert.equal(observed1.sequence,1);
+  assert.equal(observed1.gateway_execution_authorized,false);
+  assert.equal(gate.stagedCompletedTaskCount,0);
+  assert.throws(()=>gate.preflightCanonicalRequest(frontRequest),
+   /dependency completion not yet Gateway-attested/);
+  const second=await gate.stageTrustedSequentialReadEffect(rec2);
+  assert.equal(second.sequence,2);
+  await gate.attestTrustedSequentialReadEffect("task-backend","runtime-r301-be");
+  assert.deepEqual(reads,["request-r301-1","request-r301-2"]);
+  assert.equal(gate.stagedCompletedTaskCount,0);
+  const final=await gate.finalizeTrustedSequentialReadTask(
+   "task-backend","runtime-r301-be");
+  assert.equal(final.total_effects,2);
+  assert.equal(final.gateway_execution_authorized,false);
+  assert.equal(gate.stagedCompletedTaskCount,1);
+  assert.equal(gate.preflightCanonicalRequest(frontRequest).status,
+   "gateway_permission_preflight_only");
+  await assert.rejects(gate.finalizeTrustedSequentialReadTask(
+   "task-backend","runtime-r301-be"),/incomplete or ambiguous/);
+  await assert.rejects(gate.attestTrustedTaskCompletion(
+   "task-backend","runtime-r301-be"),/sequential Task completion/);
+  assert.throws(()=>gate.assertExecutionReady(),/unavailable/);
+ },signed);
 });
