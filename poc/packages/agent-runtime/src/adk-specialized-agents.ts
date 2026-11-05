@@ -308,6 +308,7 @@ export function createAdkSpecializedAgent(
         const started = performance.now();
         let success = false;
         let errorKind: ControlledToolErrorKind | null = null;
+        let failureReason: string | undefined;
         try {
           config.signal?.throwIfAborted();
           if(scoped&&(name==="read_file"||name==="update_file"||
@@ -344,6 +345,7 @@ export function createAdkSpecializedAgent(
           // Return a controlled result to the model. Denials cannot bypass Gateway.
           if (error instanceof ControlledToolError) {
             errorKind = error.kind;
+            failureReason = error.reason;
             const payload = controlledToolErrorPayload(error);
             if(name==="run_tests"&&error.kind==="tests_failed")
               terminalTestFailure=payload;
@@ -362,6 +364,7 @@ export function createAdkSpecializedAgent(
             event: "adk_tool_timing", role: config.role, tool: name,
             ...(taskRef?{task_ref:taskRef}:{}),
             success, error_kind:errorKind,
+            ...(failureReason ? {reason:failureReason} : {}),
             duration_ms: Math.round(performance.now() - started)
           }) + "\n");
         }

@@ -513,3 +513,27 @@ test("R153 signed Task tool and model-stop shapes remain distinct across one rol
  assert.equal(tasks[1].d1_editor_revision,"no_confirmed_editor_write");
  assert.doesNotMatch(JSON.stringify(tasks),/PRIVATE|dispatch_/u);
 });
+
+test("R281 signed Test Runner denial code survives double sanitization without private data",()=>{
+  const secret="PRIVATE_PROVIDER_SECRET_DO_NOT_PUBLISH";
+  for(const reason of ["verification_rejected","policy_denied","approved_plan_denied",
+                        "gateway_execute_unclassified"]){
+    const input=JSON.stringify({
+      event:"adk_tool_timing",role:"test",task_ref:"a".repeat(16),
+      tool:"run_tests",success:false,error_kind:"authorization_denied",
+      reason,secret,arguments:{branch:secret}
+    });
+    const once=agentObservations(input);
+    assert.equal(once.length,1);
+    assert.equal(once[0].reason,reason);
+    const twice=agentObservations("[trusted-positive-ci] gemini_agent_observation "+
+      JSON.stringify(once[0]),{reported:true});
+    assert.equal(twice.length,1);
+    assert.equal(twice[0].reason,reason);
+    const report=agentSummary("[trusted-positive-ci] gemini_agent_observation "+
+      JSON.stringify(twice[0]));
+    assert.equal(report.role_evidence.test.failed_operations.run_tests[reason],1);
+    assert.equal(report.role_evidence.test.task_evidence[0].last_rejected_tool.reason,reason);
+    assert.ok(!JSON.stringify(report).includes(secret));
+  }
+});

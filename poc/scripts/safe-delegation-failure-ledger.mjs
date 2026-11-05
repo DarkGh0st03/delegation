@@ -32,7 +32,10 @@ const TOOL_REASONS=["invalid_arguments","branch_mismatch",
  "upstream_unavailable","request_validation_rejected",
  "task_binding_rejected","signed_permission_rejected","dependency_rejected",
  "task_inactive_or_expired","runtime_scope_rejected",
- "source_witness_missing","gateway_prepare_unclassified","unclassified"];
+ "source_witness_missing","gateway_prepare_unclassified",
+  "verification_rejected","policy_denied",
+  "approved_plan_denied","expired_request","replay_detected",
+  "unknown_request","gateway_execute_unclassified","unclassified"];
 const MODEL_CATEGORIES=["model_turn_budget","model_output_truncated",
  "api_rate_limit_or_quota","api_authentication","api_permission_denied",
  "api_model_not_found","api_invalid_request","api_service_unavailable",

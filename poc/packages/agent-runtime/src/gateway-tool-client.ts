@@ -219,7 +219,12 @@ export class GatewayControlledToolClient {
           `Gateway execute failed with HTTP ${executeResponse.status}`
         ),
         {
-          statusCode: executeResponse.status
+          statusCode: executeResponse.status,
+          // Only fixed Gateway error codes cross the model-facing boundary.
+          // The human-readable provider/Gateway message is never used as evidence.
+          reason: executeResponse.status >= 500 ? "upstream_unavailable" :
+            safeToolFailureReason((executeBody as {error?:unknown})?.error) ??
+            "gateway_execute_unclassified"
         }
       );
     }

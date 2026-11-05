@@ -184,3 +184,49 @@ test("trusted prepare categories are allowlisted without changing denial semanti
   assert.equal(calls,1);
  }
 });
+
+test("R281 run_tests Gateway execute denials retain only fixed native gate codes",async()=>{
+  const known=["verification_rejected","policy_denied","approved_plan_denied"];
+  const cases=[
+    ...known.map(code=>({code,expected:code,status:403})),
+    {code:"PRIVATE_PROVIDER_SECRET",expected:"gateway_execute_unclassified",status:403},
+    {code:"policy_denied",expected:"upstream_unavailable",status:503},
+    {code:"expired_request",expected:"expired_request",status:410}
+  ];
+  for(const {code,expected,status} of cases){
+    let prepareCalls=0,executeCalls=0;
+    const client=new GatewayControlledToolClient({
+      gatewayBaseUrl:"http://gateway.local",agentRole:"test",
+      taskId:"trusted-test-epoch-task",evidenceHandler:evidenceHandler(),
+      fetchFn:async(input)=>{
+        const url=String(input);
+        if(url.endsWith("/prepare")){
+          prepareCalls++;
+          return new Response(JSON.stringify({
+            request_id:"req_native_r281",audience:"cloud-access-gateway",
+            challenge:"nonce",required_permission:{
+              resource:"runner://local/poc-default",operation:"run_tests"},
+            expires_at:"2026-11-06T00:00:00.000Z"
+          }),{status:201});
+        }
+        assert.ok(url.endsWith("/execute"));
+        executeCalls++;
+        return new Response(JSON.stringify({error:code,message:"PRIVATE_PROVIDER_SECRET"}),
+          {status});
+      }
+    });
+    await assert.rejects(client.invoke("run_tests",{
+      branch:"feature/account-suspension",profile:"poc-default"
+    }),(error:unknown)=>{
+      assert.ok(error instanceof ControlledToolError);
+      assert.equal(error.kind,status>=500?"tool_unavailable":"authorization_denied");
+      assert.equal(error.reason,expected);
+      assert.equal(error.statusCode,status);
+      assert.ok(!JSON.stringify({kind:error.kind,reason:error.reason})
+        .includes("PRIVATE_PROVIDER_SECRET"));
+      return true;
+    });
+    assert.equal(prepareCalls,1);
+    assert.equal(executeCalls,1);
+  }
+});

@@ -260,3 +260,23 @@ test("R154 bounded event overflow is reported, not silently discarded",()=>{
   "public_event_limit_truncated_diagnostics"));
  assert.equal(x.private_detail_required,true);
 });
+
+test("R281 specific Runner execute denial appears in safe failure ledger without attributing blame",()=>{
+  const secret="PRIVATE_PROVIDER_SECRET_DO_NOT_PUBLISH";
+  const r=report({gemini_pilot_diagnostic:{
+    stage:"delegated_agents_gitea_docker",category:"unclassified_failure"
+  },agent_failure_evidence:{schema:"signed-gemini-agent-failure-v1",
+    role_evidence:{test:{
+      failed_operations:{run_tests:{approved_plan_denied:1}},
+      last_function_tool_error:{tool:"run_tests",error_kind:"authorization_denied"},
+      agent_failure:{category:"controlled_tool_failures",model_turns:2},
+      raw_provider_body:secret
+    }}
+  }});
+  const event=r.observed_events.find(x=>x.operation==="run_tests"&&
+    x.observed_code==="approved_plan_denied");
+  assert.ok(event);
+  assert.equal(event.affected_role,"test");
+  assert.equal(r.causal_attribution,"not_established");
+  assert.ok(!JSON.stringify(r).includes(secret));
+});
