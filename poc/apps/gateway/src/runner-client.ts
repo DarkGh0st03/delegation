@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import {safeProjectE2eFailureDiagnostic} from "../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs";
 import {safeAcceptanceFailureSummary} from "../../../runner/acceptance/failure-catalog.mjs";
 import { ProviderUnavailableError } from "./errors.ts";
@@ -47,6 +48,27 @@ export interface RunnerClientResult {
   typecheck_error_codes?: string[];
   failing_test_files?: string[];
   project_e2e_failure?: NonNullable<ReturnType<typeof import("../../test-runner-controller/scripts/project-e2e-failure-diagnostic.mjs").safeProjectE2eFailureDiagnostic>>;
+}
+
+const trustedResultWitnesses=new WeakMap<RunnerClientResult,Readonly<{
+ client:RunnerClient;request:string;digest:string
+}>>();
+const digest=(v:unknown)=>createHash("sha256").update(JSON.stringify(v)).digest("hex");
+/** A response must be the UNMODIFIED original result object produced by
+ * this precise authenticated RunnerClient instance and request. Branding
+ * alone does not prove Docker ran; it prevents model-forged result objects.
+ */
+export function assertTrustedRunnerClientResult(
+ client:RunnerClient,request:RunnerClientRequest,result:RunnerClientResult
+):void{
+ const proof=result&&trustedResultWitnesses.get(result);
+ if(!proof||proof.client!==client||proof.request!==digest(request)||
+    proof.digest!==digest(result)||
+    result.request_id!==request.request_id||
+    result.repository!==request.repository||
+    result.branch!==request.branch||
+    result.tested_commit_sha!==request.commit_sha)
+  throw new ProviderUnavailableError("Runner result lacks authenticated owner-bound request provenance");
 }
 
 const PHASES = new Set([
@@ -167,6 +189,15 @@ export class RunnerClient {
       throw new ProviderUnavailableError("Runner returned an unexpected profile");
     }
 
+    // An authenticated controller must not report PASS while sending any
+    // failure evidence (even an empty or malformed failure field).
+    if(status==="pass"&&[
+      "acceptance_failure","typecheck_diagnostics","typecheck_error_codes",
+      "failing_test_files","project_e2e_failure"
+    ].some(key=>Object.hasOwn(body,key)&&body[key]!==null))
+      throw new ProviderUnavailableError(
+        "Runner PASS response contains contradictory failure evidence");
+
     const projectTests =
       body.project_tests === undefined
         ? undefined
@@ -259,6 +290,9 @@ export class RunnerClient {
       );
     }
 
+    trustedResultWitnesses.set(result,Object.freeze({
+      client:this,request:digest(request),digest:digest(result)
+    }));
     return result;
   }
 }
