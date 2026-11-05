@@ -63,7 +63,7 @@ test("R301 effect 2 cannot start before independent evidence for effect 1",async
   await assert.rejects(journal.reserveTaskFinal(finish),/ENOENT/);
   await assert.rejects(journal.reserveEvidence({
    ...firstProof,credential_id:"urn:foreign:child"
-  }),/does not match original/);
+  }),/recorded Task manifest|does not match original/);
   await journal.reserveEvidence(firstProof);
   await assert.rejects(journal.reserveEffect({
    ...second,previous_evidence_sha256:"f".repeat(64)
