@@ -342,7 +342,10 @@ test("R328 Backend -> Frontend -> Test: independent ADK/A2A agents, per-role bin
    assert.equal(report.artifact.commit_sha,SHAS[role]);
    if(role==="test"){
     assert.equal(report.artifact.test_outcome,"pass");
-    assert.equal(report.artifact.tested_commit_sha,SHAS.frontend);
+    // An A2A-reported Runner SHA is deliberately not promoted to
+    // verified provider evidence by artifact validation (R326).
+    assert.equal(report.artifact.tested_commit_sha,undefined);
+    assert.equal(completed.has(role),false);
    }
    assert.equal(completed.has(role),false);
    assert.equal(transferred.has(role),true);
