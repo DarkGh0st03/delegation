@@ -79,7 +79,7 @@ test("R303.2 untrusted, contradictory or incomplete PASS cannot attest completio
   const {client}=clientFor(body);
   const result=await client.run(request);
   assert.throws(()=>validateTrustedRunnerPass(client,request,result),
-   /Runner PASS claim|fixed Runner|researcher acceptance/);
+   /Runner PASS claim|fixed Runner|researcher acceptance|pinned Runner phases/);
  }
 });
 test("R303.2 switched Child's Runner request, SHA or branch is not portable",async()=>{

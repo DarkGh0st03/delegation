@@ -204,7 +204,8 @@ test("RunnerClient forwards fixed acceptance labels only for an acceptance-only 
   assert.deepEqual((await run(fixture)).acceptance_failure,acceptance_failure);
   assert.equal((await run({...fixture,acceptance_failure:{...acceptance_failure,
     raw_assertion:"PRIVATE"}})).acceptance_failure,undefined);
-  assert.equal((await run({...fixture,status:"pass"})).acceptance_failure,undefined);
+  await assert.rejects(run({...fixture,status:"pass"}),
+    /contradictory failure evidence/);
   assert.equal((await run({...fixture,project_tests:{status:"fail",phases}}))
     .acceptance_failure,undefined);
   await assert.rejects(run({...fixture,tested_commit_sha:"b".repeat(40)}),/authorized request/u);
