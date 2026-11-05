@@ -1,5 +1,6 @@
 import { AdapterVerifierClient } from "./adapter-client.ts";
 import {loadDirectCoreRustVerifier} from "./direct-core-loader.ts";
+import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
 import {
   InMemoryCompositeStore,
   prepareCompositeAuthorization,
@@ -125,8 +126,17 @@ export class GatewayRuntime {
       throw Error("Authority-only Gateway effects require matching explicit enablement and owner executor");
     if((mutation||runner)&&!gate)
       throw Error("Authority-only Gateway effects require enrolled native authority");
-    if(gate&&(config.provider_mode!=="gitea"||config.verifier_mode==="adapter"))
-      throw Error("Authority-only Gateway requires mutable Gitea and independent Core Rust verification");
+    if(gate&&(config.provider_mode!=="gitea"||config.verifier_mode!=="core-rust"))
+      throw Error("Authority-only Gateway requires mutable Gitea and explicit independent Core Rust verification");
+    // Owner-only integration must never substitute an arbitrary verifier or
+    // provider executor when the public HTTP runtime is authority-only.
+    // The actual native Rust binding is still loaded by the trusted owner.
+    if(gate&&dependencies.verifier&&
+       !(dependencies.verifier instanceof DirectCoreRustVerifier))
+      throw Error("Authority-only Gateway rejects non-native verifier injection");
+    if(gate&&dependencies.executor&&
+       !(dependencies.executor instanceof GiteaExecutor))
+      throw Error("Authority-only Gateway rejects non-Gitea executor injection");
     if(mutation&&(!mutation.isForAdmissions||!mutation.isForAdmissions(gate!)))
       throw Error("Authority-only Gateway CAS executor differs from enrolled owner");
     if(runner&&(!runner.isForAdmissions||!runner.isForAdmissions(gate!)))

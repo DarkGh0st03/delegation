@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { GatewayRuntime } from "../src/runtime.ts";
+import {TrustedAuthorityOnlyGatewayAdmissions} from "../src/trusted-authority-only-admissions.ts";
+import {MockExecutor} from "../src/mock-executor.ts";
 import { InMemoryAuditSink } from "../src/prepare.ts";
 import type { PolicyInput, PolicyPort, VerificationRequest, VerifierPort } from "../src/types.ts";
 
@@ -102,4 +104,50 @@ test("canonical runtime refuses authority-only effects with no enrolled owner", 
     {verifier,policy,authorityOnlyRunnerEnabled:true,
      authorityOnlyRunnerExecutor:{isForAdmissions:()=>true} as never}
   ),/require enrolled native authority/u);
+});
+
+/**
+ * These intentionally forged gate objects only exercise constructor NO-GO
+ * paths, before any Gitea, native Rust, OPA or authorization state is used.
+ * Positive E2E tests must use a genuinely activated owner admission.
+ */
+test("canonical authority-only runtime fails closed without explicit native verifier mode",()=>{
+  const gate=Object.create(
+    TrustedAuthorityOnlyGatewayAdmissions.prototype
+  ) as TrustedAuthorityOnlyGatewayAdmissions;
+  const config={
+    ...baseConfig,provider_mode:"gitea" as const,
+    gitea_base_url:"http://gitea:3000",
+    gitea_gateway_token:"test-only"
+  };
+  assert.throws(()=>new GatewayRuntime(config,{
+    authorityOnlyAdmissions:gate,verifier,policy
+  }),/explicit independent Core Rust verification/u);
+  assert.throws(()=>new GatewayRuntime({
+    ...config,verifier_mode:"adapter" as const
+  },{authorityOnlyAdmissions:gate,verifier,policy}),
+  /explicit independent Core Rust verification/u);
+  assert.throws(()=>new GatewayRuntime({
+    ...config,provider_mode:"mock" as const,verifier_mode:"core-rust" as const
+  },{authorityOnlyAdmissions:gate,verifier,policy}),
+  /requires mutable Gitea/u);
+});
+
+test("canonical authority-only runtime rejects simulated native verifier or provider",()=>{
+  const gate=Object.create(
+    TrustedAuthorityOnlyGatewayAdmissions.prototype
+  ) as TrustedAuthorityOnlyGatewayAdmissions;
+  const config={
+    ...baseConfig,provider_mode:"gitea" as const,
+    verifier_mode:"core-rust" as const,
+    gitea_base_url:"http://gitea:3000",
+    gitea_gateway_token:"test-only"
+  };
+  assert.throws(()=>new GatewayRuntime(config,{
+    authorityOnlyAdmissions:gate,verifier,policy
+  }),/rejects non-native verifier injection/u);
+  assert.throws(()=>new GatewayRuntime(config,{
+    authorityOnlyAdmissions:gate,policy,
+    executor:new MockExecutor()
+  }),/rejects non-Gitea executor injection/u);
 });
