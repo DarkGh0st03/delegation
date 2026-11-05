@@ -128,7 +128,15 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
         let mut previous: &String;
         let mut current: &String = vp.issuer();
         // !!! It's in reverse order !!!
+        let mut descendant_permissions = &permissions;
         for delegator in hierarchy.iter().rev() {
+            let ancestor_permissions = delegator.permissions_for_verification(&permissions);
+            if ancestor_permissions.len() != descendant_permissions.len()
+                || !ancestor_permissions.iter().zip(descendant_permissions.iter())
+                    .all(|(parent, child)| parent.covers(child))
+            {
+                return Err(String::from("Delegation scope expands ancestor authority"));
+            }
             previous = delegator.delegatee_id();
             // Check that the current delegator is the delegatee in the previous credential
             if previous != current {
@@ -143,9 +151,10 @@ impl<E: Pairing> Verifier<E> for DelegationVerifier<E> {
                 delegator.id(),
                 delegator.credential_id(),
                 delegator.credential_status(),
-                &permissions,
+                ancestor_permissions,
                 now_ns,
             )?;
+            descendant_permissions = ancestor_permissions;
             current = delegator.id();
         }
         let credential_status = vp.credential_status().ok_or_else(|| {
@@ -690,6 +699,139 @@ mod tests {
         assert_eq!(
             verified.permissions(),
             &vec![permission(Operation::ReadFile)]
+        );
+        assert_eq!(verified.hierarchy_depth(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn verifies_recursive_scopes_with_fanout_and_selective_disclosure() -> Result<(), String> {
+        let scoped = |path: &str| Permission::new(
+            format!("gitea://gitea.local/thesis/repo/branches/feature%2Fwork/{path}"),
+            Operation::ReadFile,
+        ).unwrap();
+        type Curve = Bn254;
+        let trust_registry = Rc::new(InMemoryTrustStore::<Curve>::new());
+
+        let id = String::from("https://vc.example/delegators/d0");
+        let previous_vc = None;
+        let issuer: DelegationIssuer<Curve> = prepared_issuer(id, trust_registry.clone())?;
+        trust_registry.set_trust_anchor(issuer.holder_id(), true)?;
+        let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
+        let credential_id = String::from("http://delegation.example/credentials/1337");
+        let valid_from = String::from("2026-01-01T00:00:00Z");
+        let delegatee_id = String::from("https://vc.example/delegators/d1");
+        let validity_period: Duration = Duration::new(3600, 0);
+        let permissions: Vec<Permission> = vec![
+            scoped("directories/apps"),
+        ];
+        let vc = issuer.issue_delegation_verifiable_credential(
+            context,
+            credential_id,
+            test_status(101),
+            valid_from,
+            delegatee_id,
+            validity_period,
+            permissions,
+            previous_vc,
+        )?;
+
+        // println!("{}", serde_json::to_string_pretty(&vc).unwrap());
+
+        let id = String::from("https://vc.example/delegators/d1");
+        let previous_vc = Some(vc);
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, trust_registry.clone())?;
+        let context: Vec<String> = vec![String::from("https://www.w3.org/ns/credentials/v2")];
+        let credential_id = String::from("http://delegation.example/credentials/1338");
+        let valid_from = String::from("2026-01-01T00:00:00Z");
+        let delegatee_id = String::from("https://vc.example/delegators/d2");
+        let validity_period: Duration = Duration::new(3600, 0);
+        let permissions: Vec<Permission> = vec![
+            scoped("directories/apps/frontend"),
+            scoped("directories/apps/backend"),
+        ];
+        let vc = issuer.issue_delegation_verifiable_credential(
+            context.clone(),
+            credential_id,
+            test_status(102),
+            valid_from.clone(),
+            delegatee_id.clone(),
+            validity_period,
+            permissions,
+            previous_vc,
+        )?;
+
+        // println!("{}", serde_json::to_string_pretty(&vc).unwrap());
+
+        let id = String::from("https://vc.example/delegators/d2");
+        let previous_vc = Some(vc);
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, trust_registry.clone())?;
+        let credential_id = String::from("http://delegation.example/credentials/1339");
+        let delegatee_id = String::from("https://vc.example/delegators/d3");
+        let permissions: Vec<Permission> = vec![
+            scoped("files/apps/backend/user.rs"),
+            scoped("files/apps/frontend/user.ts"),
+        ];
+        let vc = issuer.issue_delegation_verifiable_credential(
+            context.clone(),
+            credential_id,
+            test_status(103),
+            valid_from.clone(),
+            delegatee_id.clone(),
+            validity_period,
+            permissions,
+            previous_vc,
+        )?;
+
+        // println!("{}", serde_json::to_string_pretty(&vc).unwrap());
+
+        let id = String::from("https://vc.example/delegators/d3");
+        let previous_vc = Some(vc);
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id, trust_registry.clone())?;
+        let credential_id = String::from("http://delegation.example/credentials/1340");
+        let delegatee_id = String::from("https://vc.example/delegators/d4");
+        let permissions: Vec<Permission> = vec![scoped("files/apps/backend/user.rs")];
+        let vc = issuer.issue_delegation_verifiable_credential(
+            context.clone(),
+            credential_id,
+            test_status(104),
+            valid_from.clone(),
+            delegatee_id.clone(),
+            validity_period,
+            permissions,
+            previous_vc,
+        )?;
+
+        // println!("{}", serde_json::to_string_pretty(&vc).unwrap());
+
+        let status_resolver = resolver_for_vc(&vc)?;
+        let id = delegatee_id.clone();
+        let issuer: DelegationIssuer<Bn254> = prepared_issuer(id.clone(), trust_registry.clone())?;
+
+        let disclosed_permissions: Vec<Permission> = vec![scoped("files/apps/backend/user.rs")];
+        let audience = String::from("cloud-access-gateway");
+        let challenge = String::from("challenge-1");
+        let signed_vp = issuer.issue_delegation_verifiable_presentation(
+            vc,
+            disclosed_permissions,
+            audience.clone(),
+            challenge.clone(),
+        )?;
+
+        let verifier = DelegationVerifier::new(trust_registry.clone(), status_resolver)?;
+        let context = AuthorizationContext::new(
+            id.clone(),
+            audience,
+            challenge,
+            scoped("files/apps/backend/user.rs"),
+        )?;
+        let verified = verifier.verify_verifiable_presentation(context, signed_vp)?;
+
+        assert_eq!(verified.presenter_id(), &id);
+        assert_eq!(
+            verified.permissions(),
+            &vec![scoped("files/apps/backend/user.rs")]
         );
         assert_eq!(verified.hierarchy_depth(), 3);
 

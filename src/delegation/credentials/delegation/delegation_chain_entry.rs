@@ -1,3 +1,4 @@
+use crate::delegation::authorization::permission::Permission;
 use crate::delegation::credentials::delegation::delegation_evidence_trait::DelegationEvidence;
 use crate::delegation::status::model::bitstring_status_list_entry::BitstringStatusListEntry;
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,10 @@ pub struct DelegationChainEntry {
     metadata_witness: String,
     #[serde(rename = "pw")]
     permission_witnesses: Vec<String>,
+    /// Permissions authenticated by this ancestor's accumulator, aligned
+    /// with pw. Missing only for legacy exact-permission chains.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "pp")]
+    ancestor_permissions: Option<Vec<Permission>>,
 }
 
 impl DelegationChainEntry {
@@ -64,7 +69,27 @@ impl DelegationChainEntry {
             accumulator_value,
             metadata_witness,
             permission_witnesses,
+            ancestor_permissions: None,
         }
+    }
+
+    pub fn permissions_for_verification<'a>(&'a self, legacy: &'a Vec<Permission>) -> &'a Vec<Permission> {
+        self.ancestor_permissions.as_ref().unwrap_or(legacy)
+    }
+
+    pub fn bind_ancestor_permissions(&mut self, permissions: Vec<Permission>) -> Result<(), String> {
+        if permissions.len() != self.permission_witnesses.len() {
+            return Err(String::from("Ancestor permissions and witnesses differ in length"));
+        }
+        if self.ancestor_permissions.is_some() {
+            return Err(String::from("Ancestor permissions already bound"));
+        }
+        self.ancestor_permissions = Some(permissions);
+        Ok(())
+    }
+
+    pub fn has_ancestor_permissions(&self) -> bool {
+        self.ancestor_permissions.is_some()
     }
 
     /// Getter function that returns the issuer's id.
@@ -90,7 +115,15 @@ impl DelegationChainEntry {
     /// Returns
     /// an error in case of failure.
     pub fn remove_permission_witness(&mut self, i: usize) -> Result<(), String> {
+        if i >= self.permission_witnesses.len()
+            || self.ancestor_permissions.as_ref().is_some_and(|p| i >= p.len())
+        {
+            return Err(String::from("Ancestor disclosure index out of bounds"));
+        }
         self.permission_witnesses.remove(i);
+        if let Some(permissions) = self.ancestor_permissions.as_mut() {
+            permissions.remove(i);
+        }
         Ok(())
     }
 
@@ -117,6 +150,13 @@ impl DelegationChainEntry {
                     )
                 })?;
             selected.push(witness);
+        }
+        if let Some(permissions) = self.ancestor_permissions.as_ref() {
+            let selected_permissions = indices.iter().map(|i| {
+                permissions.get(*i).cloned().ok_or_else(||
+                    String::from("Ancestor permission index out of bounds"))
+            }).collect::<Result<Vec<_>, _>>()?;
+            self.ancestor_permissions = Some(selected_permissions);
         }
         self.permission_witnesses = selected;
         Ok(())

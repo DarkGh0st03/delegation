@@ -269,13 +269,6 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                     }
                 }
 
-                if permissions_size > issuer_permissions_size {
-                    return Err(format!(
-                        "Cannot grant more permissions than those included in the previous Delegation Credential [{} < {}]",
-                        permissions_size, issuer_permissions_size
-                    ));
-                }
-
                 // Select witnesses in the exact order of the child permission vector.
                 // A child template can legitimately be a subset whose order differs from the
                 // parent credential. Preserving parent order here would misalign hierarchy
@@ -284,7 +277,7 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                 for permission in &permissions {
                     let index = issuer_permissions
                         .iter()
-                        .position(|issuer_permission| issuer_permission == permission)
+                        .position(|issuer_permission| issuer_permission.covers(permission))
                         .ok_or_else(|| {
                             format!(
                                 "Permission {permission} cannot be granted since it was not included in the previous Delegation Credential"
@@ -299,6 +292,9 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                     .collect::<Vec<String>>();
 
                 for delegator in issuer_hierarchy.iter_mut() {
+                    if !delegator.has_ancestor_permissions() {
+                        delegator.bind_ancestor_permissions(issuer_permissions.clone())?;
+                    }
                     delegator.retain_permission_witnesses_in_order(&selected_parent_indices)?;
                 }
 
@@ -307,7 +303,7 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                         String::from("Previous Delegation Credential has no credentialStatus")
                     })?;
 
-                let issuer_delegator = DelegationChainEntry::new(
+                let mut issuer_delegator = DelegationChainEntry::new(
                     issuer_vc.issuer().clone(),
                     issuer_vc.id().clone(),
                     issuer_credential_status,
@@ -319,6 +315,8 @@ impl<E: Pairing> Issuer<E, DelegationCredential> for DelegationIssuer<E> {
                     issuer_dc.metadata_witness().clone(),
                     issuer_permission_witnesses.clone(),
                 );
+                issuer_delegator.bind_ancestor_permissions(selected_parent_indices.iter()
+                    .map(|index| issuer_permissions[*index].clone()).collect())?;
                 issuer_hierarchy.push(issuer_delegator);
 
                 let result_dc = DelegationCredential::new(
