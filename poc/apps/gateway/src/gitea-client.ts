@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import {
   ProviderConflictError,
   ProviderNotFoundError,
@@ -73,6 +74,13 @@ export interface GiteaFileMutation {
   precondition_blob_sha?: string;
 }
 
+/** A commit moved onto the signed feature branch via an atomic old-HEAD CAS. */
+export interface GiteaHeadCasFileMutation extends GiteaFileMutation {
+  previous_head_sha:string;
+  previous_blob_sha:string;
+  staging_branch:string;
+  next_content_sha256:string;
+}
 export interface GiteaCreatedPullRequest {
   id: number;
   number: number;
@@ -527,6 +535,123 @@ export class GiteaClient {
       ...this.#parseFileMutation(body, branch, path),
       previous_revision: snapshot.revision,
       precondition_blob_sha: snapshot.blob_sha
+    };
+  }
+
+  /**
+   * R302.2 trusted provider transport: atomic branch-HEAD CAS via a disposable
+   * isolated staging ref. This is NOT wired to the Gateway's model/HTTP paths.
+   *
+   * Plain PUT /contents/{filepath} only guards the blob SHA; it cannot
+   * atomically guard an unrelated change to the feature branch. We therefore
+   * prepare a commit on a unique private staging ref initialized from the
+   * exact old SHA, then use Gitea's old_commit_id compare-and-swap to move
+   * the authorized branch. The operation is SINGLE ATTEMPT: any error or
+   * lost acknowledgment is ambiguous and MUST NOT be retried automatically.
+   */
+  async updateFileWithHeadCas(input:Readonly<{
+    branch:string;path:string;content:string;message:string;
+    requestId:string;expectedHeadSha:string;expectedBlobSha:string;
+  }>):Promise<GiteaHeadCasFileMutation>{
+    const {branch,path,content,message,requestId,expectedHeadSha,
+      expectedBlobSha}=input;
+    if(typeof branch!=="string"||branch==="main"||
+       !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(branch)||
+       branch.includes("..")||branch.includes("//")||
+       branch.startsWith("feature/r302-internal-")||
+       typeof path!=="string"||!path||path.length>512||
+       path.startsWith("/")||path.split("/").some(x=>
+        !x||x==="."||x===".."||x.includes("%")||x.includes("\\"))||
+       typeof content!=="string"||
+       Buffer.byteLength(content,"utf8")<1||
+       Buffer.byteLength(content,"utf8")>2_000_000||
+       content.includes("\0")||
+       typeof message!=="string"||!message.trim()||
+       message.length>300||
+       typeof requestId!=="string"||
+       !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(requestId)||
+       !/^[a-f0-9]{40}$/u.test(expectedHeadSha)||
+       !/^[a-f0-9]{40}$/u.test(expectedBlobSha))
+      throw new ProviderConflictError("Untrusted owner-pinned conditional Gitea update");
+    const branchBefore=await this.getBranchMetadata(branch);
+    if(branchBefore.commit_sha!==expectedHeadSha)
+      throw new ProviderConflictError("Signed feature branch advanced before CAS");
+    const original=await this.readTextFile(branch,path,expectedHeadSha);
+    if(original.blob_sha!==expectedBlobSha||
+       original.revision!==expectedHeadSha||original.path!==path)
+      throw new ProviderConflictError("Owner-pinned file blob differs from Git snapshot");
+    const nextHash=createHash("sha256").update(content,"utf8").digest("hex");
+    if(createHash("sha256").update(original.content,"utf8").digest("hex")===nextHash)
+      throw new ProviderConflictError("Identical bytes cannot create an authorized effect");
+    const stageHash=createHash("sha256")
+      .update(branch+"\n"+path+"\n"+requestId+"\n"+expectedHeadSha)
+      .digest("hex").slice(0,28);
+    const stagingBranch="feature/r302-internal-"+stageHash;
+    // Not the Engineer-authorized branch: this is an owner-only *private*
+    // implementation staging ref. Neither agent nor Gateway Executor can
+    // request or select this branch.
+    const stage=object(await this.#requestJson(this.#repoApi("/branches"),{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({
+        new_branch_name:stagingBranch,old_ref_name:expectedHeadSha
+      })
+    }),"Gitea pinned staging branch");
+    const stageCommit=object(stage.commit,"Gitea staging ref commit");
+    if(stage.name!==stagingBranch||
+       requiredString(stageCommit.id,"staging commit id")!==expectedHeadSha)
+      throw new ProviderUnavailableError("Gitea staging ref did not start at pinned HEAD");
+    if((await this.getBranchMetadata(stagingBranch)).commit_sha!==expectedHeadSha)
+      throw new ProviderUnavailableError("Gitea staging HEAD diverged before mutation");
+    // The staging branch is private and unique. File blob SHA prevents
+    // mutation if contents changed unexpectedly during prepare.
+    const staged=await this.updateFile(
+      stagingBranch,path,content,message);
+    if(staged.precondition_blob_sha!==expectedBlobSha||
+       !/^[a-f0-9]{40}$/u.test(staged.commit_sha)||
+       staged.commit_sha===expectedHeadSha||
+       !/^[a-f0-9]{40}$/u.test(staged.blob_sha))
+      throw new ProviderUnavailableError("Gitea staging commit is not bound to original blob");
+    const commit=object(await this.#json(this.#repoApi(
+      "/git/commits/"+staged.commit_sha)),"Gitea staged commit");
+    const parents=commit.parents;
+    if(commit.sha!==staged.commit_sha||!Array.isArray(parents)||
+       parents.length!==1||!parents[0]||
+       typeof parents[0]!=="object"||
+       (parents[0] as JsonObject).sha!==expectedHeadSha)
+      throw new ProviderUnavailableError("Gitea staging commit has unexpected parent");
+    const stagedFile=await this.readTextFile(
+      stagingBranch,path,staged.commit_sha);
+    if((await this.getBranchMetadata(stagingBranch)).commit_sha!==staged.commit_sha||
+       stagedFile.blob_sha!==staged.blob_sha||
+       stagedFile.content!==content)
+      throw new ProviderUnavailableError("Gitea staged file differs from proposed contents");
+    // The remote compare-and-swap is the sole authorized branch movement.
+    if((await this.getBranchMetadata(branch)).commit_sha!==expectedHeadSha)
+      throw new ProviderConflictError("Feature HEAD moved while preparing staged commit");
+    await this.#requestJson(this.#repoApi(
+      "/branches/"+encodeURIComponent(branch)),{
+        method:"PUT",headers:{"content-type":"application/json"},
+        body:JSON.stringify({
+          new_commit_id:staged.commit_sha,old_commit_id:expectedHeadSha,
+          force:false
+        })
+    });
+    // After remote CAS, any uncertain result is terminal. Callers must not
+    // retry the old intent; the stage ref remains for manual reconciliation.
+    if((await this.getBranchMetadata(branch)).commit_sha!==staged.commit_sha)
+      throw new ProviderUnavailableError("Gitea remote CAS outcome ambiguous");
+    const actual=await this.readTextFile(branch,path,staged.commit_sha);
+    if(actual.blob_sha!==staged.blob_sha||actual.content!==content)
+      throw new ProviderUnavailableError("Committed feature file differs from pinned CAS");
+    return {
+      branch,path,revision:staged.commit_sha,
+      commit_sha:staged.commit_sha,blob_sha:staged.blob_sha,
+      previous_revision:expectedHeadSha,
+      precondition_blob_sha:expectedBlobSha,
+      previous_head_sha:expectedHeadSha,
+      previous_blob_sha:expectedBlobSha,
+      staging_branch:stagingBranch,
+      next_content_sha256:nextHash
     };
   }
 

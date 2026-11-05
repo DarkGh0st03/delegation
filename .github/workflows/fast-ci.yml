@@ -66,6 +66,7 @@ jobs:
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-engineer-session.test.ts
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/trusted-authority-only-sequential-effect-journal.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/trusted-authority-only-gitea-evidence.test.ts
+          node --experimental-strip-types --test poc/apps/gateway/test/gitea-update-head-cas.test.ts
           node --experimental-strip-types --test poc/apps/gateway/test/prepare.test.ts poc/apps/gateway/test/operation-catalog.test.ts poc/apps/gateway/test/planning-revision-pinning.test.ts poc/apps/gateway/test/trusted-gateway-native-root-ipc.test.ts
       - name: ADK, A2A and task-local cryptographic MCP
         run: |
