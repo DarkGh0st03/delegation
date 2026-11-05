@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync,createHash} from "node:crypto";
-import {mkdtemp,chmod,writeFile,rm} from "node:fs/promises";
+import {mkdtemp,chmod,writeFile,rm,mkdir} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {RUST_OPERATIONS} from "../../../apps/gateway/src/operation-catalog.ts";
@@ -23,6 +23,12 @@ import {TrustedAuthorityOnlyEngineerSession}
  from "../src/trusted-authority-only-engineer-session.ts";
 import {DurableAuthorityTaskJournal}
  from "../src/trusted-authority-task-journal.ts";
+import {DurableAuthorityOnlyChildJournal}
+ from "../src/trusted-authority-only-child-journal.ts";
+import {TrustedAuthorityOnlyChildIssuer}
+ from "../src/trusted-authority-only-child-issuer.ts";
+import type {ExactTrustedChildIssuance,TrustedChildCryptographyPort}
+ from "../src/trusted-child-crypto-port.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator,
  type AuthorityOnlyTaskProposal}
  from "../src/trusted-authority-only-execution-coordinator.ts";
@@ -105,6 +111,7 @@ async function fixture(fn:(x:{
  taskJournal:DurableAuthorityTaskJournal;
  gatewayTaskJournal:DurableAuthorityTaskJournal;
  gatewaySessionStore:TrustedOperationalSessionStore;
+ childJournal:DurableAuthorityOnlyChildJournal;
  approvals:SignedAuthorityOnlyFileStore;
  createSession:()=>TrustedAuthorityOnlyEngineerSession;
  save:(receipt?:object)=>Promise<void>
@@ -113,12 +120,13 @@ async function fixture(fn:(x:{
  const receiptDir=join(directory,"approvals"),journalDir=join(directory,"journal"),
   taskDir=join(directory,"task-journal"),
   gatewayDir=join(directory,"gateway-sessions"),
-  gatewayTaskDir=join(directory,"gateway-tasks");
- const {mkdir}=await import("node:fs/promises");
+  gatewayTaskDir=join(directory,"gateway-tasks"),
+  childDir=join(directory,"child-intents");
  await mkdir(receiptDir,{mode:0o700});await mkdir(journalDir,{mode:0o700});
  await mkdir(taskDir,{mode:0o700});
  await mkdir(gatewayDir,{mode:0o700});
  await mkdir(gatewayTaskDir,{mode:0o700});
+ await mkdir(childDir,{mode:0o700});
  const save=async(raw:object=receipt)=>{
   await writeFile(join(receiptDir,sessionId+".json"),JSON.stringify(raw),{mode:0o600});
   await chmod(join(receiptDir,sessionId+".json"),0o600);
@@ -133,6 +141,7 @@ async function fixture(fn:(x:{
   const taskJournal=new DurableAuthorityTaskJournal(taskDir);
   const gatewayTaskJournal=new DurableAuthorityTaskJournal(gatewayTaskDir);
   const gatewaySessionStore=new TrustedOperationalSessionStore(gatewayDir);
+ const childJournal=new DurableAuthorityOnlyChildJournal(childDir);
   const createSession=()=>new TrustedAuthorityOnlyEngineerSession({
    snapshot:snapshot(),requirement,credentials:issuer,approvals,journal,
    authenticatedEngineerDid:did,nowMs:()=>nowMs,
@@ -147,7 +156,8 @@ async function fixture(fn:(x:{
    }
   });
   await fn({issuer,session:createSession(),log,journal,taskJournal,
-   gatewayTaskJournal,gatewaySessionStore,approvals,createSession,save});
+   gatewayTaskJournal,gatewaySessionStore,childJournal,
+   approvals,createSession,save});
  }finally{await rm(directory,{recursive:true,force:true});}
 }
 test("R285 only authority pairs are issued after confirmed Planning retirement and Rust revocation",async()=>{
@@ -763,5 +773,123 @@ test("R289 authority-only Gateway requires native-verified operational root prov
     nativeVerified as never),/native Child DC authority-only execution not enabled/);
   assert.equal(record.consumed,false);
   assert.equal(gate.phase,"active");
+ });
+});
+
+function nativeChildPort(calls:ExactTrustedChildIssuance[],
+ override?:(request:ExactTrustedChildIssuance)=>unknown):TrustedChildCryptographyPort{
+ return {kind:"rust-native",async issueChild(request){
+  calls.push(structuredClone(request));
+  if(override)return override(request) as never;
+  return {id:request.credential_id,issuer:"did:thesis:orchestrator",
+   validFrom:request.valid_from,credentialStatus:request.credential_status,
+   credentialSubject:{sub:"did:thesis:"+request.delegatee,
+    per:structuredClone(request.permissions)}} as never;
+ }};
+}
+test("R290 owner-private native Child issuance uses ONLY Coordinator Task scope and live root",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const calls:ExactTrustedChildIssuance[]=[];
+  const child=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort(calls),journal:childJournal,
+   nowMs:()=>nowMs
+  });
+  const receipt=await child.issueForRegisteredTask("task-backend",
+   params("urn:authority:child-r290","303",600));
+  assert.equal(receipt.status,"native_child_response_verified_staged");
+  assert.equal(receipt.gateway_execution_authorized,false);
+  assert.equal(receipt.root_credential_id,operational.credential_id);
+  assert.equal(receipt.epoch,1);
+  assert.equal(receipt.agent_did,"did:thesis:backend");
+  assert.equal(calls.length,1);
+  assert.equal(calls[0]?.parent_credential_id,operational.credential_id);
+  assert.equal(calls[0]?.delegatee,"backend");
+  assert.deepEqual(calls[0]?.permissions,[pairs[1]]);
+  assert.equal("agent_did" in calls[0]!,false);
+  assert.equal("task_id" in calls[0]!,false);
+  assert.equal(child.assertTrustedIssuedChild("task-backend",coordinator).credential_id,
+   receipt.credential_id);
+  await assert.rejects(child.issueForRegisteredTask("task-backend",
+   params("urn:authority:other-child","304",600)),/replayed Task issuance/);
+  assert.equal(calls.length,1);
+ });
+});
+test("R290 denies unregistered Task, unexpected permission fields, expiry and HTTP fallback",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const calls:ExactTrustedChildIssuance[]=[];
+  assert.throws(()=>new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:{...nativeChildPort(calls),
+    kind:"rust-adapter"} as never,journal:childJournal,nowMs:()=>nowMs
+  }),/native Rust issuer/);
+  const child=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort(calls),journal:childJournal,
+   nowMs:()=>nowMs
+  });
+  await assert.rejects(child.issueForRegisteredTask("unregistered",
+   params("urn:unregistered","400",600)),/Task not admitted/);
+  for(const bad of [
+   {...params("urn:bad-extra","400",600),permissions:pairs},
+   params("urn:too-long","401",5000),
+   {...params("urn:stale","402",600),valid_from:"2026-11-04T07:10:00Z"},
+   {...params("urn:status-bad","403",600),
+    credential_status:{...params("x","1").credential_status,
+     statusListCredential:"http://insecure"}},
+   {...params(operational.credential_id,"404",600)}
+  ]) await assert.rejects(child.issueForRegisteredTask("task-backend",bad as never));
+  assert.equal(calls.length,0);
+  const ok=await child.issueForRegisteredTask("task-backend",
+   params("urn:good-child","405",600));
+  assert.equal(ok.gateway_execution_authorized,false);
+  assert.equal(calls.length,1);
+ });
+});
+test("R290 uncertain native issuance never retries after response mismatch or reconstruction",async()=>{
+ await fixture(async({session,approvals,taskJournal,childJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:registry,nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  await coordinator.registerTask(nextTask());
+  const calls:ExactTrustedChildIssuance[]=[];
+  const failPort=nativeChildPort(calls,request=>({
+   id:request.credential_id,issuer:"did:thesis:orchestrator",
+   validFrom:request.valid_from,credentialStatus:request.credential_status,
+   credentialSubject:{sub:"did:thesis:frontend",per:request.permissions}
+  }));
+  const child=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:failPort,journal:childJournal,
+   nowMs:()=>nowMs
+  });
+  await assert.rejects(child.issueForRegisteredTask("task-backend",
+   params("urn:unsafe-child","501",600)),/differs from trusted Task/);
+  await assert.rejects(child.issueForRegisteredTask("task-backend",
+   params("urn:retry-child","502",600)),/ambiguous or concurrent/);
+  assert.equal(calls.length,1);
+  const reconstructed=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort(calls),
+   journal:childJournal,nowMs:()=>nowMs
+  });
+  await assert.rejects(reconstructed.issueForRegisteredTask("task-backend",
+   params("urn:retry-child","503",600)),/EEXIST/);
+  assert.equal(calls.length,1);
  });
 });
