@@ -816,6 +816,67 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
  }
  /**
+  * R303.1 owner-only Test Agent enrollment and original Gateway Prepare.
+  * This yields ONLY a signed Task/Child binding for a future pinned Runner
+  * intent; it is not permission to launch Docker or trust a test result.
+  */
+ assertTrustedRunnerIntentBinding(
+  record:PreparedRequestRecord
+ ):Readonly<TrustedCompletionExpectation>{
+  const root=this.#live();
+  if(!record||typeof record!=="object"||
+     record.consumed!==false||
+     record.request.tool!=="run_tests"||
+     record.agent_role!=="test"||
+     !record.authority_only_digest||
+     record.authority_only_digest!==root.authority_digest||
+     record.expires_at_ms<=this.#now())
+   deny("unconsumed Test Agent signed Runner Prepare is required");
+  const bound=this.#tasks.get(record.task_id);
+  const child=this.#enrolledChildren.get(record.task_id);
+  const taskId=bound?.row.task_id;
+  if(!bound||!child||!taskId||
+     bound.row.agent_id!=="test"||
+     record.authority_only_plan_task_id!==taskId||
+     record.authority_only_agent_did!==bound.row.agent_did||
+     bound.row.permissions.every(p=>p.operation!=="run_tests")||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep))||
+     this.#flights.has(taskId)||
+     this.#sequential.has(taskId)||
+     this.#completed.has(taskId)||
+     child.credential_id===root.root_credential_id||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     child.agent_id!=="test"||
+     child.agent_did!==bound.row.agent_did||
+     child.epoch!==bound.row.epoch||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("Test Agent lacks exact enrolled native Child and completed dependencies");
+  const permission=this.preflightCanonicalRequest({
+   task_id:record.task_id,agent_role:record.agent_role,
+   tool:record.request.tool,arguments:record.request.arguments
+  });
+  const fingerprint=createHash("sha256").update(JSON.stringify({
+   task_id:record.task_id,agent_role:record.agent_role,
+   request:record.request
+  })).digest("hex");
+  if(pair(permission.required_permission)!==pair(record.required_permission)||
+     record.request.arguments.profile!=="poc-default"||
+     record.request.arguments.branch!==root.branch||
+     fingerprint!==record.request_fingerprint)
+   deny("Runner Prepare or permission differs from signed Task binding");
+  return Object.freeze({
+   session_id:root.session_id,
+   authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,
+   task_id:taskId,runtime_task_id:record.task_id,epoch:bound.row.epoch,
+   agent_did:bound.row.agent_did,
+   credential_id:child.credential_id,
+   request_id:record.request_id,
+   request_fingerprint:record.request_fingerprint
+  });
+ }
+ /**
   * R302: owner-only read-only preflight for a future atomic-CAS Gitea UPDATE.
   * This does not permit execution or turn this binding into an authorization.
   * The trusted caller must independently validate the current Gitea HEAD,

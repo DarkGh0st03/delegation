@@ -13,6 +13,10 @@ import {GiteaClient} from "../../../apps/gateway/src/gitea-client.ts";
 import {GiteaExecutor} from "../../../apps/gateway/src/gitea-executor.ts";
 import {DurableAuthorityOnlyGiteaMutationIntentJournal}
  from "../../../apps/gateway/src/trusted-authority-only-mutation-intent-journal.ts";
+import {DurableAuthorityOnlyRunnerIntentJournal}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-intent-journal.ts";
+import {TrustedAuthorityOnlyRunnerPreflight}
+ from "../../../apps/gateway/src/trusted-authority-only-runner-preflight.ts";
 import {TrustedAuthorityOnlyGiteaMutationPreflight}
  from "../../../apps/gateway/src/trusted-authority-only-mutation-preflight.ts";
 import {AuthenticatedGiteaReadCompletionObserver}
@@ -1894,4 +1898,115 @@ test("R302 unbound mutation and caller-supplied HEAD fail before any provider I/
    nowMs:()=>nowMs,authorityOnlyAdmissions:gate}),
   /caller-supplied|unexpected|exactly|schema|forbidden|not allowed/i);
  });
+});
+
+
+test("R303 Test Agent may reserve only exact native Child-signed Runner profile and immutable Gitea SHA; Docker remains denied",async()=>{
+ const permission={
+  resource:root+"/branches/feature%2Faccount-suspension",
+  operation:"run_tests"
+ };
+ const draft={schema_version:"1.0.0",session_id:sessionId,
+  repository:{...repo},branch,base_revision:hash,requirement,
+  requested_permissions:[permission]};
+ const grant=selectAuthorityOnlyGrant(draft,[permission],
+  {allowedOperations:operations});
+ const signed=signAuthorityOnlyGrant({
+  authorization:grant,engineerDid:did,keyId,privateKeyPem,
+  issuedAt:"2026-11-05T07:00:00Z",
+  expiresAt:"2026-11-05T09:00:00Z",
+  allowedOperations:operations
+ });
+ await fixture(async({session,approvals,taskJournal,childJournal,
+  gatewayTaskJournal,gatewaySessionStore,gatewayChildJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,journal:taskJournal,
+   trustedAgentRegistry:{...registry,test:{
+    ...registry.test,capabilities:["run_tests"]
+   }},nowMs:()=>nowMs
+  });
+  await coordinator.activate();
+  const registered=await coordinator.registerTask({
+   ...nextTask("test",1,"task-r303"),
+   permissions:[permission]
+  });
+  assert.equal(registered.agent_id,"test");
+  const native=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativeChildPort([]),
+   journal:childJournal,nowMs:()=>nowMs
+  });
+  const child=await native.issueForRegisteredTask("task-r303",
+   params("urn:r303:test-child","934",600));
+  assert.deepEqual(child.permissions,[permission]);
+  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid:did,coordinator,approvals,
+   operationalSessionStore:gatewaySessionStore,
+   taskJournal:gatewayTaskJournal,childJournal:gatewayChildJournal,
+   nowMs:()=>nowMs
+  });
+  await gate.activate(sessionId,hash);
+  await gate.bindTrustedTask("task-r303","runtime-r303","test");
+  await gate.enrollTrustedIssuedChild("task-r303","runtime-r303",native);
+  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
+  const prepared=prepareAuthorization({
+   task_id:"runtime-r303",agent_role:"test",
+   tool:"run_tests",arguments:{branch,profile:"poc-default"}
+  },{audience:"cloud-access-gateway",request_ttl_ms:120000,
+    repository:repo},
+   {store,audit,nowMs:()=>nowMs,requestId:()=>"request-r303",
+    challenge:()=>"challenge-r303",authorityOnlyAdmissions:gate});
+  const record=store.get(prepared.request_id)!;
+  let head=hash,reads=0,runnerPosts=0;
+  const client=new GiteaClient({
+   baseUrl:"http://gitea.local:3000",token:"test-owner-read",
+   owner:"thesis",repository:"iam-console-poc",
+   fetchFn:(async(raw:URL|string,init?:RequestInit)=>{
+    if(init?.method!=="GET"){runnerPosts++;throw Error("forbidden provider call");}
+    reads++;
+    const u=new URL(String(raw));
+    assert.equal((init.headers as Record<string,string>).authorization,
+     "token test-owner-read");
+    assert.ok(u.pathname.endsWith("/branches/feature%2Faccount-suspension"));
+    return new Response(JSON.stringify({
+     name:branch,commit:{id:head}
+    }));
+   }) as typeof fetch
+  });
+  const tmp=await mkdtemp(join(tmpdir(),"r303-gateway-owner-"));
+  const dir=join(tmp,"runner");
+  try{
+   await mkdir(dir,{mode:0o700});
+   const journal=new DurableAuthorityOnlyRunnerIntentJournal(dir);
+   const preflight=new TrustedAuthorityOnlyRunnerPreflight({
+    admissions:gate,giteaClient:client,journal,
+    repository:"thesis/iam-console-poc",branch,nowMs:()=>nowMs
+   });
+   await assert.rejects(preflight.stageRunner(record,"d".repeat(40)),
+    /Gitea Test branch changed/);
+   assert.equal((await readdir(dir)).length,0);
+   head="d".repeat(40);
+   await assert.rejects(preflight.stageRunner(record,hash),
+    /Gitea Test branch changed/);
+   head=hash;
+   const staged=await preflight.stageRunner(record,hash);
+   assert.equal(staged.intent.expected_head_sha,hash);
+   assert.equal(staged.intent.credential_id,child.credential_id);
+   assert.equal(staged.intent.runner_profile,"poc-default");
+   assert.equal(staged.runner_execution_authorized,false);
+   assert.ok(reads>=4);
+   assert.equal(runnerPosts,0);
+   await journal.assertReserved(staged.intent);
+   const shadow={...record};
+   assert.throws(()=>preflight.getReservedIntent(shadow),
+    /no protected owner-pinned/);
+   assert.equal(preflight.getReservedIntent(record),staged.intent);
+   await assert.rejects(preflight.stageRunner(record,hash),/EEXIST/);
+   await journal.reserveAttempt(staged.intent);
+   await assert.rejects(journal.reserveAttempt(staged.intent),/EEXIST/);
+   assert.equal(runnerPosts,0);
+   assert.throws(()=>gate.assertExecutionReady(),/unavailable/);
+  }finally{await rm(tmp,{recursive:true,force:true});}
+ },signed);
 });
