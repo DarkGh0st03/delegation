@@ -506,9 +506,10 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(!(this.#effectFenceJournal instanceof DurableAuthorityOnlyTaskFenceJournal)||
      !(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver))
    deny("trusted completion observer or owner-private journal missing");
-  if(this.#completionInFlight||this.#completed.has(taskId)||
-     this.#sequential.has(taskId))
-   deny("concurrent, duplicate or sequential Task completion attestation");
+  if(this.#sequential.has(taskId))
+   deny("sequential Task completion must use explicit finalization");
+  if(this.#completionInFlight||this.#completed.has(taskId))
+   deny("concurrent or duplicate Task completion attestation");
   const bound=this.#tasks.get(runtimeTaskId);
   const child=this.#enrolledChildren.get(runtimeTaskId);
   const flight=this.#flights.get(taskId);
@@ -584,7 +585,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   const manifest:TrustedSequentialManifest=Object.freeze({
    session_id:root.session_id,authority_digest:root.authority_digest,
    root_credential_id:root.root_credential_id,
-   task_id,runtime_task_id:runtimeTaskId,epoch:bound.row.epoch,
+   task_id:taskId,runtime_task_id:runtimeTaskId,epoch:bound.row.epoch,
    credential_id:child.credential_id,total_effects:totalEffects
   });
   this.#flightInFlight=true;
