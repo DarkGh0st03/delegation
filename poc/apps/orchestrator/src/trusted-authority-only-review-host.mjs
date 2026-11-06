@@ -33,7 +33,7 @@ import {TrustedAuthorityOnlyPullRequestExecutor}
 import {GiteaClient} from '../../gateway/src/gitea-client.ts';
 import {InMemoryRequestStore} from '../../gateway/src/prepare.ts';
 import {TrustedAuthorityOnlyChildIssuer} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts';
-import {preflightNativeD1FailureCandidate}
+import {preflightNativeD1FailureCandidate,observeTrustedNativeTestFailure}
  from '../../../packages/orchestrator-runtime/src/trusted-native-runner-failure-d1-preflight.ts';
 import {DurableNativeD1FirstTaskAdmissionJournal,
  admitFirstNativeD1RepairTask}
@@ -124,6 +124,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
  let adaptiveLoopAttempted=false,adaptiveLoopFlight;
+ // Independently authenticated Runner failure, never a completed Task or
+ // new grant. The safe observation is bound to the ORIGINAL Engineer owner.
+ let adaptiveVerifiedFailure;
  const adaptiveInstructions=new Map();
  let branchAdmissionAttempted=false;
  const branchTaskPins=new Map(),branchStageAttempts=new Set();
@@ -576,8 +579,13 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
       if(live.root_credential_id!==original.root_credential_id||
          live.authority_digest!==original.authority_digest||
-         [...stagedTaskIds.values()].some(p=>!gatewayAttestedTaskIds.has(p.task_id)))
-       deny('adaptive next decision requires original root and independent completion of every Task');
+         (()=>{const pending=[...stagedTaskIds.values()].filter(p=>
+           !gatewayAttestedTaskIds.has(p.task_id));
+          return pending.length>0&&(!adaptiveVerifiedFailure||
+           pending.length!==1||
+           pending[0].task_id!==adaptiveVerifiedFailure.failed_task_id);
+         })())
+       deny('adaptive next decision requires independent completion or an authenticated Test FAIL');
       const head=await nativeEffectBinding.giteaClient.getBranchMetadata(branch);
       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
       return {
@@ -587,8 +595,14 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({task_id:p.task_id,agent_id:p.agent_id})),
        nextEpoch:operationalCoordinator.registeredTaskCount+1,
        executionProgress:{current_head_sha:head.commit_sha,
-        completed_work:[...stagedTaskIds.values()].map(p=>({task_id:p.task_id,agent_id:p.agent_id,
-         operation:p.operation,instruction:adaptiveInstructions.get(p.task_id)??('Verified '+p.operation)}))}
+        completed_work:[...stagedTaskIds.values()]
+         .filter(p=>gatewayAttestedTaskIds.has(p.task_id))
+         .map(p=>({task_id:p.task_id,agent_id:p.agent_id,
+          operation:p.operation,instruction:adaptiveInstructions.get(p.task_id)??('Verified '+p.operation)}))},
+       ...(adaptiveVerifiedFailure?{verifiedFailure:{
+        failed_phase:adaptiveVerifiedFailure.failed_phase,
+        source_evidence_sha256:adaptiveVerifiedFailure.source_evidence_sha256
+       }}:{})
       };
      };
      adaptiveLoopFlight=runTrustedAuthorityOnlyAdaptiveWorkLoop({
@@ -613,11 +627,35 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          runtimeTaskId,childParameters});
         const stager=executionHandle.createEnrolledNativeEffectStager({runtimeTaskId,
          expectedHeadSha:context.executionProgress.current_head_sha});
-        await executionHandle.dispatchEnrolledTask({taskId:staged.task_id,runtimeTaskId,
-         instruction:choice.instruction,effectStager:stager});
+        const dispatched=await executionHandle.dispatchEnrolledTask({
+         taskId:staged.task_id,runtimeTaskId,
+         instruction:choice.instruction,effectStager:stager
+        });
+        if(dispatched.status==='owner_verified_native_test_failure_preflight_only'){
+         if(!adaptiveVerifiedFailure||
+            adaptiveVerifiedFailure.failed_task_id!==staged.task_id||
+            adaptiveVerifiedFailure.failed_runtime_task_id!==runtimeTaskId)
+          deny('adaptive Test failure has no original authenticated owner proof');
+         // Distinct from a transport failure; only the trusted observation
+         // hook can convert this into sanitized model-facing diagnostics.
+         throw Error('Original owner observed independently verified Test FAIL');
+        }
         input.signal?.throwIfAborted();
         await executionHandle.attestEnrolledTaskCompletion({taskId:staged.task_id,runtimeTaskId});
         adaptiveInstructions.set(staged.task_id,choice.instruction.replace(/[\x00-\x1f\x7f]/gu,' '));
+       },
+       observeVerifiedTestFailure:async({task})=>{
+        if(!adaptiveVerifiedFailure||task.agent_id!=='test'||
+           adaptiveVerifiedFailure.failed_task_id!==task.task_id)
+         deny('no original authenticated Test FAIL for adaptive continuation');
+        operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+        const flight=gateway.assertTrustedFailedRunnerFlight(
+         adaptiveVerifiedFailure.failed_task_id,
+         adaptiveVerifiedFailure.failed_runtime_task_id);
+        if(flight.gateway_task_completed!==false||
+           flight.runtime_task_id!==adaptiveVerifiedFailure.failed_runtime_task_id)
+         deny('adaptive Test FAIL changed original Gateway flight');
+        return adaptiveVerifiedFailure;
        },
        confirmReady:async()=>{
         const latest=[...stagedTaskIds.entries()].filter(([,p])=>p.agent_id==='test'&&p.operation==='run_tests').at(-1);
@@ -1011,12 +1049,40 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          throw verificationError;
         }
        }
+       // R355.4: an adaptive Test may expose one native verified Runner FAIL
+       // without a preselected D1 repair. A2A error text never becomes proof;
+       // independently check original flight, MAC, Child, root and HEAD.
+       let failure=error;
+       if(adaptiveLoopAttempted&&input.d1Candidate===undefined&&
+          pin.agent_id==='test'&&pin.operation==='run_tests'&&
+          nativeEffectBinding?.failureObserver&&!adaptiveVerifiedFailure){
+        try{
+         const intent=await nativeEffectBinding.runner
+          .getAttemptedIntentForOwnerTask(input.runtimeTaskId);
+         const observed=await observeTrustedNativeTestFailure({
+          coordinator:operationalCoordinator,childIssuer,gateway,
+          failureObserver:nativeEffectBinding.failureObserver,
+          failedRunnerIntent:intent
+         });
+         if(closed||session.phase!=='operational'||
+            observed.status!=='native_test_failure_evidence_verified_only'||
+            observed.failed_task_id!==input.taskId||
+            observed.failed_runtime_task_id!==input.runtimeTaskId||
+            observed.gateway_task_completed!==false||
+            observed.recovery_authorized!==false)
+          deny('adaptive Test FAIL does not match original authenticated Runner flight');
+         adaptiveVerifiedFailure=Object.freeze({
+          ...observed,status:'owner_verified_native_test_failure_preflight_only'
+         });
+         return adaptiveVerifiedFailure;
+        }catch(observeError){failure=observeError;}
+       }
        dispatchFailed=true;
        if(session.phase==='operational'){
         try{await retire();}
         catch{deny('A2A dispatch failed and operational retirement unconfirmed');}
        }
-       throw error;
+       throw failure;
       }finally{dispatchFlight=undefined;}
      },
      /** R352.1: a verified failure may invite ONE bounded ADK proposal.
@@ -1407,6 +1473,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(a2aStarting)try{await a2aStarting;}catch{/* Recheck root below. */}
     if(dispatchFlight)try{await dispatchFlight;}catch{/* Recheck root below. */}
     if(completionFlight)try{await completionFlight;}catch{/* Recheck root below. */}
+    if(adaptiveLoopFlight)try{await adaptiveLoopFlight;}catch{/* Recheck root below. */}
     if(d1FailurePreflightFlight)try{await d1FailurePreflightFlight;}catch{/* Recheck root below. */}
     if(d1RepairAdmissionFlight)try{await d1RepairAdmissionFlight;}catch{/* Recheck root below. */}
     try{
