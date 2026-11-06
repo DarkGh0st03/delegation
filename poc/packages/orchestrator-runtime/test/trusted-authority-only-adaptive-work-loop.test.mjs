@@ -87,7 +87,7 @@ test('R355 model can stop blocked without fabricating completion',async()=>{
 /** R355.2: the simulated owner is the ONLY party allowed to convert the
  * original controlled Runner FAIL into an authenticated observation. The
  * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
-function verifiedFailureFixture({forgery,failRole='test'}={}){
+function verifiedFailureFixture({forgery,failRole='test',throwTest=false}={}){
  const done=[],events=[];let epoch=1,head='a'.repeat(40),failure,retired=false;
  const permission=grant;
  const hooks={
@@ -111,7 +111,9 @@ function verifiedFailureFixture({forgery,failRole='test'}={}){
    events.push('dispatch:'+task.task_id);epoch++;
    if(task.agent_id===failRole&&!failure){
     events.push('original-runner-fail');
-    throw Error('A2A Test FAILED: untrusted error is NOT proof');
+    if(task.agent_id!=='test'||throwTest)
+     throw Error('A2A Test FAILED: untrusted error is NOT proof');
+    return {status:'owner_verified_native_test_failure_preflight_only'};
    }
    if(task.agent_id!=='test')head='b'.repeat(40);
    done.push({...task,tested:task.agent_id==='test'?head:undefined});
@@ -179,6 +181,15 @@ for(const forgery of ['wrong-status','wrong-head','wrong-digest']){
 test('R355.2 Backend tool failure cannot masquerade as recoverable Test FAIL',async()=>{
  const f=verifiedFailureFixture({failRole:'backend'});
  const model=new Decisions([candidate('backend',0),candidate('test',1)]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /untrusted error is NOT proof/u);
+ assert.equal(model.calls,1);
+ assert.equal(f.retired,true);
+ assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
+});
+test('R355.6 untrusted thrown Test A2A failure cannot invoke recovery observer',async()=>{
+ const f=verifiedFailureFixture({throwTest:true});
+ const model=new Decisions([candidate('test',0),candidate('backend',1)]);
  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
   /untrusted error is NOT proof/u);
  assert.equal(model.calls,1);
