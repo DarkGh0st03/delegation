@@ -548,6 +548,15 @@ export async function executeAuthorization(
              !!dependencies.authorityOnlyRunnerExecutor&&
              dependencies.authorityOnlyRunnerEnabled===true){
       // Runner PASS receipt already independently attested and sealed.
+    }else if(execution.provider==="gitea"&&execution.tool==="create_pull_request"&&
+             dependencies.authorityOnlyPullRequestEnabled===true&&
+             dependencies.authorityOnlyAdmissions&&
+             TrustedAuthorityOnlyPullRequestExecutor.isNativeForAdmissions(
+              dependencies.authorityOnlyPullRequestExecutor,dependencies.authorityOnlyAdmissions)){
+      // POST, independent GET and tested HEAD were confirmed by this exact
+      // executor. This witness is not a separately completed PR Task.
+      TrustedAuthorityOnlyPullRequestExecutor.prototype.assertExecutionResult.call(
+       dependencies.authorityOnlyPullRequestExecutor,record,execution);
     }else{
       throw new GatewayError(403,"authority_only_binding_denied",
        "Unauthorized authority-only provider result");

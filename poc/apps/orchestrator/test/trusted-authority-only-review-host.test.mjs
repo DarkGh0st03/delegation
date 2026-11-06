@@ -1672,6 +1672,9 @@ for(const mode of ['missing','backend','frontend','test','failure',
          assert.equal(provider.pullRequest.draft,true);
          assert.equal(provider.pullRequest.merged,false);
          assert.equal(provider.prPosts,1);
+         assert.throws(()=>TrustedAuthorityOnlyPullRequestExecutor.prototype.assertExecutionResult.call(
+          prExecutor,store.get(prepared.request_id),structuredClone(result.execution)),
+          /not original independently confirmed/);
          assert.ok(events.indexOf('pr_native_verifier_fixture')<events.indexOf('pr_opa_fixture'));
          assert.ok(events.indexOf('pr_opa_fixture')<events.indexOf('pr_post_fixture'));
          assert.ok(events.includes('pr_get_fixture'));

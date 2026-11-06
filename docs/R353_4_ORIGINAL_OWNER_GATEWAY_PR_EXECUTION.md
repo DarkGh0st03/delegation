@@ -9,3 +9,7 @@ Offline SDK integration exercises the same original Engineer session through Bac
 A successful confirmed provider operation is not automatically a separately attested PR Task completion. The test explicitly retains three completed development/Test Tasks while the PR Task remains pending independent completion. The provider is always asked for a Draft PR, and no merge is performed. Gitea provides no atomic compare-and-create PR API; races after a POST may leave an unconfirmed Draft for review, with no success or retry claim.
 
 No new native Docker suite, paid model invocation or production PR creation is requested by this source checkpoint. Existing R352.9 native recovery PASS remains earlier evidence. Next: independent PR completion evidence and one complete native original-owner development/Test/PR proof, then continue the general Executor and remaining roadmap integrations.
+
+## R353.5 provider-result witness
+
+The initial integrated PR test reached the simulated Gitea POST/GET successfully, but the final Gateway result envelope still rejected the new effect type. The PR executor now retains a private WeakMap witness for its exact frozen, independently confirmed result and original Prepare record. The envelope accepts only that witness; a serialized clone is rejected. This confirms provider execution, not independent PR Task completion. All negative PR execution variants passed the first CI; a fresh positive CI result is required for the corrected source.

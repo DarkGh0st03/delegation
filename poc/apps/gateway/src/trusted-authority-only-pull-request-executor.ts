@@ -11,6 +11,7 @@ export class TrustedAuthorityOnlyPullRequestExecutor{
  readonly #observer:AuthenticatedRunnerCompletionObserver;
  readonly #staged=new WeakMap<PreparedRequestRecord,{head:string;digest:string;attempted:boolean}>();
  readonly #stageAttempts=new WeakSet<PreparedRequestRecord>();
+ readonly #results=new WeakMap<object,PreparedRequestRecord>();
  constructor(opts:{admissions:TrustedAuthorityOnlyGatewayAdmissions;
   giteaClient:GiteaClient;runnerObserver:AuthenticatedRunnerCompletionObserver;
   repository:string;branch:string}){
@@ -48,6 +49,15 @@ export class TrustedAuthorityOnlyPullRequestExecutor{
   return Object.freeze({status:'owner_pr_flight_reserved_no_provider_execution',
    tested_commit_sha:pin.tested_commit_sha,provider_executed:false});
  }
+ /** Exact private provider-result witness; serialized/cloned results are not evidence. */
+ assertExecutionResult(record:PreparedRequestRecord,result:unknown):void{
+  if(!result||typeof result!=='object'||this.#results.get(result)!==record)
+   deny('PR result is not original independently confirmed owner execution');
+  const value=result as GiteaCreatePullRequestExecutionResult;
+  if(value.provider!=='gitea'||value.tool!=='create_pull_request'||value.performed!==true||
+     value.revision!==this.#staged.get(record)?.head)
+   deny('PR result differs from original tested HEAD');
+ }
  async executeAfterVerifiedRustOpa(record:PreparedRequestRecord,
   verified:VerifiedDelegation,policy:PolicyDecision):Promise<GiteaCreatePullRequestExecutionResult>{
   if(record.request.tool!=='create_pull_request'||record.consumed!==true||
@@ -65,9 +75,11 @@ export class TrustedAuthorityOnlyPullRequestExecutor{
    args.head_branch,args.base_branch,args.title,intent.head,args.body);
   await this.#gate.revalidateTrustedPullRequestTest(record.task_id,this.#observer);
   this.#gate.assertTrustedCompletedPullRequestEvidenceBinding(record,verified);
-  return {provider:'gitea',performed:true,tool:'create_pull_request',
-   pull_request_id:result.id,pull_request_number:result.number,
+  const execution=Object.freeze({provider:'gitea' as const,performed:true as const,
+   tool:'create_pull_request' as const,pull_request_id:result.id,pull_request_number:result.number,
    ...(result.url?{url:result.url}:{}),head_branch:result.head_branch,
-   base_branch:result.base_branch,revision:result.head_revision};
+   base_branch:result.base_branch,revision:result.head_revision});
+  this.#results.set(execution,record);
+  return execution;
  }
 }
