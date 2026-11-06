@@ -1,0 +1,14 @@
+{
+  "checkpoint": "R364.1",
+  "baseline_native_sha": "ce6ba4113d9d230bd4c20d0ad33cc4e0e8a9411b",
+  "scenario": "account-suspension",
+  "roles": [
+    "backend",
+    "frontend"
+  ],
+  "objective": "One signed Engineer plan; two native independent Child Tasks, Backend read/CAS then Frontend read/CAS after independently finalized predecessor, Frontend pinned to updated Gitea HEAD, real A2A and scripted ADK",
+  "test": "poc/packages/orchestrator-runtime/test/r364-native-backend-frontend-dependent-adk-a2a-e2e.mjs",
+  "cost_policy": "no Gemini; disposable Anvil/OPA/Gitea only",
+  "excluded": "no Test/Docker or PR claim",
+  "status": "requested, test outcome not confirmed"
+}
