@@ -130,20 +130,37 @@ un comportamento autonomo del sistema.
   è ancora predisposto nel modello di prova (NON generato).
   Nessuna chiamata Gemini a pagamento. Il trasporto del read preliminare
   durante il Planning resta fixture, pur leggendo main reale.
-- **Prossima integrazione R357.3/R358, obbligatoria per il gate unico:**
-  introdurre una lettura `read_file` operativa autorizzata, stadiata,
-  verificata e resa disponibile **nel Task corrente** al Backend ADK
-  prima dell'aggiornamento. Non ricavare read da update, non riusare
-  implicitamente la prelettura del Planning. L'attuale `GatewayRuntime`
-  non installa ancora un esecutore authority-only di lettura con
-  journal/attestazione del medesimo Task; non usare bypass legacy.
-  Passare da contenuti modello predefiniti a edit costruiti sui file
-  realmente letti e autorizzati. Poi estendere a shared/frontend/test,
-  recovery dinamico e Draft PR nella stessa sessione branch-first.
-  Non trasformare suite con fixture in prova di autonomia Gemini.
-  Completare anche MCP/discovery e diagnostica tecnica sanificata,
-  mantenendo un solo Account Suspension, PR #38 Draft e zero paid Gemini
-  fino a consenso esplicito.
+- **R357.3 — publisher e vincoli di lettura operational (gate parziale):**
+  `GatewayRuntime` ora può ricevere il publisher già esistente
+  `TrustedGatewayGiteaReadEvidencePublisher` solo tramite opt-in
+  dell'owner e verifica la sua identità rispetto al Gateway originale;
+  in caso di mismatch o assenza, l'esecuzione resta negata. Il publisher
+  richiede un `pinned_revision` SHA-40 uguale alla revisione realmente
+  letta, un `GiteaExecutor` originale con witness in memoria, un
+  `read_file` autorizzato dopo VP/OPA e Task/Child con flight, e
+  confronta HEAD, blob e byte con un **secondo** client Gitea read-only
+  prima di sigillare MAC e fsync della ricevuta. Due pubblicazioni
+  concorrenti e tentativi replay sono negati. Test unitari con
+  admissions simulate (NON prova nativa di read nel Backend).
+  [Gateway CI 42289869434](https://github.com/DarkGh0st03/delegation/actions/runs/42289869434)
+  SUCCESS. Nessun Gemini a pagamento.
+- **Prossima integrazione R357.4/R358, obbligatoria per il gate unico:**
+  il `read_file` deve essere veramente stadiato dal **medesimo owner**
+  con un pin HEAD ottenuto e conservato in modo fidato, mai scritto dal
+  modello o inferito da `update_file`. L'attuale Task Backend
+  `update_file` dispone di una sola flight mutativa e non può ancora
+  comporre nello stesso Task una lettura attestata seguita dal CAS:
+  serve un journal di effetti sequenziali read → update che non consenta
+  riuso di nonce, tentativi ambigui o avanzamento dopo HEAD cambiato.
+  Collegare il read al Tool ADK entro grants espliciti `read_file`
+  e `update_file` firmati dall'Engineer, senza riciclare il read del
+  Planning. Poi sostituire il contenuto scriptato con edit ricavati
+  esclusivamente dai file effettivamente letti, estendere a Frontend,
+  Test, recovery e Draft PR nella stessa sessione branch-first.
+  I test fixture e il publisher da soli NON sono autonomia Gemini.
+  Completare MCP/discovery e diagnostica sanificata senza hardening
+  non bloccante; solo Account Suspension, PR #38 Draft e zero paid Gemini
+  senza consenso esplicito.
 
 Non avviare suite native complete a ogni commit. Usare test mirati e Fast CI;
 riservare la prova nativa a checkpoint di integrazione significativi. PR #38 Draft,
