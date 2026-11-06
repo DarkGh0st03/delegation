@@ -198,6 +198,20 @@ class OfflineNativeTestModel extends BaseLlm{
 /** R350.13: executable ADK Planning, but NEVER a paid provider.
  * The first turn reads the source baseline; the second proposes only the
  * directory and Test authority ceiling (no DAG or agent IDs). */
+/** Owner-verified R351.5 decision. The ADK model proposes a candidate only;
+ * neither role, epoch nor Child authority is accepted without the original
+ * Engineer Coordinator and native Gateway revalidation. */
+class OfflineR3515TaskDecisionModel extends BaseLlm{
+ constructor(candidate){
+  super({model:"r3515-native-owner-task-choice-no-paid-model"});
+  this.candidate=candidate;this.requests=[];
+ }
+ async *generateContentAsync(req){
+  this.requests.push(req);
+  yield {content:{role:"model",parts:[{text:JSON.stringify(this.candidate)}]}};
+ }
+ connect(){throw Error("Paid inference disabled for native Task choice");}
+}
 class OfflineR35013AuthorityModel extends BaseLlm{
  constructor(file,sourceBranch){
   super({model:"r35013-native-reviewed-offline-planner"});
@@ -538,21 +552,21 @@ try{
  assert.equal(approved.phase,"operational");
  assertSameExactPermissionPairs(approved.permissions,grant.permissions);
  const taskId="r305-backend-task",runtimeTaskId=nativeTaskRef("B");
- await coordinator.registerTask({
+ if(!reviewedNative)await coordinator.registerTask({
   session_id:sessionId,requirement_sha256:createHash("sha256")
    .update(requirement).digest("hex"),
   base_revision:baseRevision,branch,task_id:taskId,epoch:1,
   agent_id:"backend",depends_on:[],permissions:[taskPermission]
  });
  const frontendTaskId="r305-frontend-task",frontendRuntimeId=nativeTaskRef("F");
- await coordinator.registerTask({
+ if(!reviewedNative)await coordinator.registerTask({
   session_id:sessionId,requirement_sha256:createHash("sha256")
    .update(requirement).digest("hex"),
   base_revision:baseRevision,branch,task_id:frontendTaskId,epoch:2,
   agent_id:"frontend",depends_on:[taskId],permissions:[frontendTaskPermission]
  });
  const testTaskId="r305-test-task",testRuntimeId=nativeTaskRef("T");
- await coordinator.registerTask({
+ if(!reviewedNative)await coordinator.registerTask({
   session_id:sessionId,requirement_sha256:createHash("sha256")
    .update(requirement).digest("hex"),
   base_revision:baseRevision,branch,task_id:testTaskId,epoch:3,
@@ -562,17 +576,6 @@ try{
  const nativePort=createNativeRustChildCryptographyPort({
   bearerToken:tokens.orchestrator,timeoutMs:60000
  },socketPath);
- const issuer=new TrustedAuthorityOnlyChildIssuer({
-  coordinator,nativeCryptoPort:nativePort,
-  journal:new DurableAuthorityOnlyChildJournal(path("child-intents")),
-  nowMs
- });
- const child=await issuer.issueForRegisteredTask(taskId,
-  params("urn:r305:child:backend",29103,600));
- assert.equal(child.gateway_execution_authorized,false);
- assert.equal(child.root_credential_id,operational.credential_id);
- assert.deepEqual(child.permissions,[taskPermission]);
- assertSameExactPermissionPairs(approved.permissions,grant.permissions);
  const evidenceKey=Buffer.alloc(32,96); // disposable CI receipt key
  const runnerObserver=new AuthenticatedRunnerCompletionObserver({
   directory:path("runner-receipts"),key:evidenceKey,
@@ -584,27 +587,92 @@ try{
   repository:"thesis/iam-console-poc",branch,
   giteaClient:independentClient,nowMs
  });
- const gate=new TrustedAuthorityOnlyGatewayAdmissions({
-  repository:repo,engineerDid,coordinator,approvals,
-  operationalSessionStore:originalGatewaySessionStore,
-  taskJournal:new DurableAuthorityTaskJournal(path("gateway-tasks")),
-  childJournal:new DurableAuthorityOnlyChildJournal(path("gateway-child-intents")),
-  effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(path("flights")),
-  completionObserver:new TrustedAuthorityOnlyCompletionObserver({
-   readVerifiedCompletion:expected=>{
-    if(expected.task_id===taskId||expected.task_id===frontendTaskId)
-     return mutationObserver.observe(expected);
-    if(expected.task_id===testTaskId)return runnerObserver.observe(expected);
-    throw Error("Unknown Task attempted completion");
-   }
-  }),
-  nowMs
+ const completionObserver=new TrustedAuthorityOnlyCompletionObserver({
+  readVerifiedCompletion:expected=>{
+   if(expected.task_id===taskId||expected.task_id===frontendTaskId)
+    return mutationObserver.observe(expected);
+   if(expected.task_id===testTaskId)return runnerObserver.observe(expected);
+   throw Error("Unknown Task attempted completion");
+  }
  });
- await gate.activate(sessionId,baseRevision);
- await gate.bindTrustedTask(taskId,runtimeTaskId,"backend");
- const enrolled=await gate.enrollTrustedIssuedChild(taskId,runtimeTaskId,issuer);
- assert.equal(enrolled.credential_id,child.credential_id);
- assert.equal(enrolled.gateway_execution_authorized,false);
+ const executionDeps={
+  operationalSessionStore:originalGatewaySessionStore,
+  gatewayTaskJournal:new DurableAuthorityTaskJournal(path("gateway-tasks")),
+  issuerChildJournal:new DurableAuthorityOnlyChildJournal(path("child-intents")),
+  gatewayChildJournal:new DurableAuthorityOnlyChildJournal(path("gateway-child-intents")),
+  nativeCryptoPort:nativePort,
+  effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(path("flights")),
+  completionObserver
+ };
+ let reviewExecution,gate,issuer,child;
+ const decisionModels={};
+ const decide=async(task_id,agent_id,depends_on,permissions,runtimeTaskId,childParameters)=>{
+  const model=new OfflineR3515TaskDecisionModel({
+   task_id,agent_id,depends_on,permissions,
+   instruction:agent_id==="test"?
+    "Run exact approved poc-default Docker acceptance suite":
+    "Apply exact approved "+agent_id+" Account Suspension change"
+  });
+  decisionModels[agent_id]=model;
+  const staged=await reviewExecution.proposeAndStageTask({
+   model,runtimeTaskId,childParameters
+  });
+  assert.equal(staged.status,"owner_child_enrolled_no_provider_execution");
+  assert.equal(staged.decision_source,"owner_adk_candidate_coordinator_validated");
+  assert.equal(staged.agent_id,agent_id);
+  assert.equal(staged.task_id,task_id);
+  assert.equal(model.requests.length,1);
+  const serialized=JSON.stringify(model.requests);
+  for(const forbidden of [tokens.orchestrator,operational.credential_id,
+   childParameters.credential_id])
+   assert.equal(serialized.includes(forbidden),false);
+  return staged;
+ };
+ // R351 native Child issuance happens after each independently verified
+ // predecessor. Fresh Child validity cannot predate the already-running
+ // Docker/ADK session or extend beyond the signed operational root.
+ const freshChildParams=(id,index)=>{
+  const now=Date.now();
+  const rootEnd=Date.parse(issuedAt)+operational.validity_seconds*1000;
+  const seconds=Math.floor((rootEnd-now)/1000)-90;
+  assert.ok(seconds>90,"No operational root lifetime for next native Child");
+  return {
+   ...params(id,index,seconds),
+   valid_from:new Date(now).toISOString().replace(/\.\d{3}Z$/u,"Z")
+  };
+ };
+ if(reviewedNative){
+  reviewExecution=await reviewHost.admitOperationalExecution(executionDeps);
+  gate=reviewExecution.gateway;
+  issuer=reviewExecution.childIssuer;
+  await decide(taskId,"backend",[],[taskPermission],runtimeTaskId,
+   freshChildParams("urn:r305:child:backend",29103));
+  child=issuer.assertTrustedIssuedChild(taskId,coordinator);
+ }else{
+  issuer=new TrustedAuthorityOnlyChildIssuer({
+   coordinator,nativeCryptoPort:nativePort,
+   journal:executionDeps.issuerChildJournal,nowMs
+  });
+  child=await issuer.issueForRegisteredTask(taskId,
+   params("urn:r305:child:backend",29103,600));
+  gate=new TrustedAuthorityOnlyGatewayAdmissions({
+   repository:repo,engineerDid,coordinator,approvals,
+   operationalSessionStore:originalGatewaySessionStore,
+   taskJournal:executionDeps.gatewayTaskJournal,
+   childJournal:executionDeps.gatewayChildJournal,
+   effectFenceJournal:executionDeps.effectFenceJournal,
+   completionObserver,nowMs
+  });
+  await gate.activate(sessionId,baseRevision);
+  await gate.bindTrustedTask(taskId,runtimeTaskId,"backend");
+  const enrolled=await gate.enrollTrustedIssuedChild(taskId,runtimeTaskId,issuer);
+  assert.equal(enrolled.credential_id,child.credential_id);
+  assert.equal(enrolled.gateway_execution_authorized,false);
+ }
+ assert.equal(child.gateway_execution_authorized,false);
+ assert.equal(child.root_credential_id,operational.credential_id);
+ assert.deepEqual(child.permissions,[taskPermission]);
+ assertSameExactPermissionPairs(approved.permissions,grant.permissions);
  const verifier=loadDirectCoreRustVerifier({allowGiteaScopeCoverage:true});
  assert.equal(verifier.allowsGiteaScopeCoverage,true);
  const policy=new OpaPolicyClient({baseUrl:"http://127.0.0.1:8181",
@@ -742,7 +810,7 @@ try{
  const roleNames=["backend","frontend","test"];
  const roleTokens={backend:tokens.backend,frontend:tokens.frontend,
   test:tokens.test};
- const roleBindings={};
+ const roleBindings={},ownerStageChannels={};
  const roleEndpoints={};
  const nativeBackendModel=new OfflineNativeBackendModel(branch,mutationPath,newContent);
  const nativeFrontendModel=new OfflineNativeFrontendModel(branch,frontendPath,updatedFrontend);
@@ -809,10 +877,20 @@ try{
   await writeFile(secretFile,randomBytes(32).toString("hex")+"\n",
    {mode:0o600,flag:"wx"});
   roleBindings[role]={socketPath,secretFile};
+  if(reviewedNative){
+   const stageChannel={socketPath:path("r3515-"+role+"-stage.sock"),
+    secretFile:path("r3515-"+role+"-stage.hex")};
+   await writeFile(stageChannel.secretFile,
+    randomBytes(32).toString("hex")+"\n",{mode:0o600,flag:"wx"});
+   ownerStageChannels[role]=stageChannel;
+  }
   const registry=new TrustedEffectStagingTaskRegistry();
   registries[role]=registry;
   const bindingServer=await createTrustedEffectAgentBindingServer({
-   socketPath,secretFile,registry,ownerStageClient:stageConnector,
+   socketPath,secretFile,registry,
+   ownerStageClient:reviewedNative?
+    await connectTrustedOwnerEffectStagingClient(ownerStageChannels[role]):
+    stageConnector,
    expectedRole:role
   });
   await bindingServer.start();
@@ -845,12 +923,26 @@ try{
   a2aRoleServers.push(server);
   roleEndpoints[role]=server.baseUrl;
  }
- a2aOwner=await startTrustedAuthorityOnlySdkA2AOwner({
-  coordinator,childIssuer:issuer,gateway:gate,
-  stageSocketPath:stageSocket,stageSecretFile:stageSecret,
-  agentBindingChannels:roleBindings,agentBaseUrls:roleEndpoints,
-  a2aPolling:{deadlineMs:1_080_000,initialIntervalMs:50,maxIntervalMs:250}
- });
+ if(reviewedNative){
+  assert.equal(reviewExecution.bindNativeGatewayEffects({
+   store,mutation:preflight,runner:runnerPreflight,giteaClient:client
+  }).gateway_execution_authorized,false);
+  const started=await reviewExecution.startSdkA2AOwner({
+   stageChannels:ownerStageChannels,agentBindingChannels:roleBindings,
+   agentBaseUrls:roleEndpoints,
+   a2aPolling:{deadlineMs:1_080_000,initialIntervalMs:50,maxIntervalMs:250}
+  });
+  assert.equal(started.status,
+   "owner_protected_a2a_started_no_provider_execution");
+  assert.equal("dispatchIssuedTask" in started,false);
+ }else{
+  a2aOwner=await startTrustedAuthorityOnlySdkA2AOwner({
+   coordinator,childIssuer:issuer,gateway:gate,
+   stageSocketPath:stageSocket,stageSecretFile:stageSecret,
+   agentBindingChannels:roleBindings,agentBaseUrls:roleEndpoints,
+   a2aPolling:{deadlineMs:1_080_000,initialIntervalMs:50,maxIntervalMs:250}
+  });
+ }
  // Actual ADK model must see no signer token or credential material.
  assert.equal(nativeBackendModel.requests.length,0);
 
@@ -895,30 +987,38 @@ try{
  // R329: the ONLY Backend write is generated by the scripted ADK
  // FunctionTool after protected A2A SDK dispatch and private owner binding.
  // No manual Backend prepare/stage/sign/execute is allowed in this variant.
- const nativeBackendStager=new TrustedAuthorityOnlyEffectStager({
-  store,admissions:gate,mutation:preflight,runner:runnerPreflight,
-  runtimeTaskId,tool:"update_file",expectedHeadSha:baseRevision
- });
+ const nativeBackendStager=reviewedNative?
+  reviewExecution.createEnrolledNativeEffectStager({
+   runtimeTaskId,expectedHeadSha:baseRevision
+  }):new TrustedAuthorityOnlyEffectStager({
+   store,admissions:gate,mutation:preflight,runner:runnerPreflight,
+   runtimeTaskId,tool:"update_file",expectedHeadSha:baseRevision
+  });
  let backendReport;
  try{
-  backendReport=await a2aOwner.dispatchIssuedTask({
-   taskId,runtimeTaskId,
-   instruction:"Update the exact account suspension Backend fixture",
-   effectStager:{
-    async stage(requestId){
-     backendOwnerStageAttempted=true;
-     try{
-      const result=await nativeBackendStager.stage(requestId);
-      backendOwnerStageReserved=true;
-      return result;
-     }catch(error){
-      // Never log provider paths/HEAD, native credentials or raw errors.
-      backendOwnerStageFailureType=error?.constructor?.name??"unknown";
-      throw error;
+  backendReport=reviewedNative?
+   await reviewExecution.dispatchEnrolledTask({
+    taskId,runtimeTaskId,
+    instruction:"Update the exact account suspension Backend fixture",
+    effectStager:nativeBackendStager
+   }):
+   await a2aOwner.dispatchIssuedTask({
+    taskId,runtimeTaskId,
+    instruction:"Update the exact account suspension Backend fixture",
+    effectStager:{
+     async stage(requestId){
+      backendOwnerStageAttempted=true;
+      try{
+       const result=await nativeBackendStager.stage(requestId);
+       backendOwnerStageReserved=true;
+       return result;
+      }catch(error){
+       backendOwnerStageFailureType=error?.constructor?.name??"unknown";
+       throw error;
+      }
      }
     }
-   }
-  });
+   });
  }catch(error){
   process.stdout.write(JSON.stringify({
    event:"r329_native_adk_safe_boundary_diagnostic",
@@ -980,8 +1080,9 @@ try{
    mutation:preflight,runner:runnerPreflight,runtimeTaskId,tool,expectedHeadSha})
    .stage(requestId);
  await assertHttpDenied({request_id:good.request_id,signed_vp:goodVp},"replay_detected");
- const nativeBackendCompletion=await
-  a2aOwner.attestIndependentGatewayCompletion(taskId,runtimeTaskId);
+ const nativeBackendCompletion=reviewedNative?
+  await reviewExecution.attestEnrolledTaskCompletion({taskId,runtimeTaskId}):
+  await a2aOwner.attestIndependentGatewayCompletion(taskId,runtimeTaskId);
  assert.equal(nativeBackendCompletion.status,
   "owner_gateway_completion_independently_observed");
  assert.equal(gate.stagedCompletedTaskCount,1);
@@ -989,33 +1090,50 @@ try{
 
   // Frontend now executes under the SAME Engineer grant, with a separate
   // Child DC and independent authenticated commit. Test depends on Frontend.
-   const frontendChild=await issuer.issueForRegisteredTask(
-  frontendTaskId,params("urn:r305:child:frontend",29105,1200));
+   const frontendChild=reviewedNative?
+    (await decide(frontendTaskId,"frontend",[taskId],
+     [frontendTaskPermission],frontendRuntimeId,
+     freshChildParams("urn:r305:child:frontend",29105)),
+     issuer.assertTrustedIssuedChild(frontendTaskId,coordinator)):
+    await issuer.issueForRegisteredTask(
+     frontendTaskId,params("urn:r305:child:frontend",29105,1200));
  assert.equal(frontendChild.agent_did,frontendDid);
  assert.notEqual(frontendChild.credential_id,child.credential_id);
  assert.equal(frontendChild.root_credential_id,operational.credential_id);
  assert.deepEqual(frontendChild.permissions,[frontendTaskPermission]);
- await gate.bindTrustedTask(frontendTaskId,frontendRuntimeId,"frontend");
- await gate.enrollTrustedIssuedChild(
-  frontendTaskId,frontendRuntimeId,issuer);
+ if(!reviewedNative){
+  await gate.bindTrustedTask(frontendTaskId,frontendRuntimeId,"frontend");
+  await gate.enrollTrustedIssuedChild(
+   frontendTaskId,frontendRuntimeId,issuer);
+ }
  // R330 Frontend is a real ADK/A2A Task. The trusted owner pins the
  // next mutation to the independently observed Backend commit HEAD.
- const nativeFrontendStager=new TrustedAuthorityOnlyEffectStager({
-  store,admissions:gate,mutation:preflight,runner:runnerPreflight,
-  runtimeTaskId:frontendRuntimeId,tool:"update_file",
-  expectedHeadSha:written.execution.commit_sha
- });
+ const nativeFrontendStager=reviewedNative?
+  reviewExecution.createEnrolledNativeEffectStager({
+   runtimeTaskId:frontendRuntimeId,
+   expectedHeadSha:written.execution.commit_sha
+  }):new TrustedAuthorityOnlyEffectStager({
+   store,admissions:gate,mutation:preflight,runner:runnerPreflight,
+   runtimeTaskId:frontendRuntimeId,tool:"update_file",
+   expectedHeadSha:written.execution.commit_sha
+  });
  let frontStaged;
- const frontendReport=await a2aOwner.dispatchIssuedTask({
-  taskId:frontendTaskId,runtimeTaskId:frontendRuntimeId,
-  instruction:"Update the exact account suspension Frontend fixture",
-  effectStager:{
-   async stage(requestId){
-    frontStaged=await nativeFrontendStager.stage(requestId);
-    return frontStaged;
+ const frontendReport=reviewedNative?
+  await reviewExecution.dispatchEnrolledTask({
+   taskId:frontendTaskId,runtimeTaskId:frontendRuntimeId,
+   instruction:"Update the exact account suspension Frontend fixture",
+   effectStager:nativeFrontendStager
+  }):
+  await a2aOwner.dispatchIssuedTask({
+   taskId:frontendTaskId,runtimeTaskId:frontendRuntimeId,
+   instruction:"Update the exact account suspension Frontend fixture",
+   effectStager:{
+    async stage(requestId){
+     frontStaged=await nativeFrontendStager.stage(requestId);
+     return frontStaged;
+    }
    }
-  }
- });
+  });
  assert.equal(frontendReport.status,"a2a_report_not_gateway_completed");
  assert.equal(frontendReport.provider_completion_attested,false);
  assert.equal(frontendReport.role,"frontend");
@@ -1036,9 +1154,11 @@ try{
   frontendReport.artifact.commit_sha);
  const frontendRecord=store.get(frontendPrepared.request_id);
  assert.ok(frontendRecord);
- assert.equal(frontStaged.intent.expected_blob_sha,seededFrontend.blob_sha);
- assert.equal(frontStaged.intent.expected_head_sha,written.execution.commit_sha);
- assert.equal(frontStaged.intent.credential_id,frontendChild.credential_id);
+ if(!reviewedNative){
+  assert.equal(frontStaged.intent.expected_blob_sha,seededFrontend.blob_sha);
+  assert.equal(frontStaged.intent.expected_head_sha,written.execution.commit_sha);
+  assert.equal(frontStaged.intent.credential_id,frontendChild.credential_id);
+ }
 
  const frontVerified=await verifier.verify({
   presenter:"frontend",audience:frontendPrepared.audience,
@@ -1098,8 +1218,11 @@ try{
   gate.assertTrustedCompletedMutationEvidenceBinding(
    frontendRecord,frontVerified));
  assert.equal(frontendProof.status,"owner_verified_provider_result");
- const nativeFrontendCompletion=await a2aOwner
-  .attestIndependentGatewayCompletion(frontendTaskId,frontendRuntimeId);
+ const nativeFrontendCompletion=reviewedNative?
+  await reviewExecution.attestEnrolledTaskCompletion({
+   taskId:frontendTaskId,runtimeTaskId:frontendRuntimeId
+  }):await a2aOwner.attestIndependentGatewayCompletion(
+   frontendTaskId,frontendRuntimeId);
  assert.equal(nativeFrontendCompletion.status,
   "owner_gateway_completion_independently_observed");
  assert.equal(gate.stagedCompletedTaskCount,2);
@@ -1109,34 +1232,49 @@ try{
  },"replay_detected");
  assert.equal(gatewayCasWrites,2);
 
- const runnerChild=await issuer.issueForRegisteredTask(
-  testTaskId,params("urn:r305:child:test",29106,1200));
+ const runnerChild=reviewedNative?
+  (await decide(testTaskId,"test",[frontendTaskId],[testTaskPermission],
+   testRuntimeId,freshChildParams("urn:r305:child:test",29106)),
+   issuer.assertTrustedIssuedChild(testTaskId,coordinator)):
+  await issuer.issueForRegisteredTask(
+   testTaskId,params("urn:r305:child:test",29106,1200));
  assert.equal(runnerChild.agent_did,testDid);
  assert.notEqual(runnerChild.credential_id,child.credential_id);
  assert.notEqual(runnerChild.credential_id,frontendChild.credential_id);
  assert.deepEqual(runnerChild.permissions,[testTaskPermission]);
- await gate.bindTrustedTask(testTaskId,testRuntimeId,"test");
- await gate.enrollTrustedIssuedChild(testTaskId,testRuntimeId,issuer);
+ if(!reviewedNative){
+  await gate.bindTrustedTask(testTaskId,testRuntimeId,"test");
+  await gate.enrollTrustedIssuedChild(testTaskId,testRuntimeId,issuer);
+ }
  const pinnedHead=frontendWritten.execution.commit_sha;
  assert.notEqual(pinnedHead,written.execution.commit_sha);
  // R331: Test joins Backend and Frontend in the real protected
  // ADK/A2A route. The Test Child and exact Frontend HEAD are pinned
  // by the owner, not accepted from A2A or the model.
- const nativeTestStager=new TrustedAuthorityOnlyEffectStager({
-  store,admissions:gate,mutation:preflight,runner:runnerPreflight,
-  runtimeTaskId:testRuntimeId,tool:"run_tests",expectedHeadSha:pinnedHead
- });
+ const nativeTestStager=reviewedNative?
+  reviewExecution.createEnrolledNativeEffectStager({
+   runtimeTaskId:testRuntimeId,expectedHeadSha:pinnedHead
+  }):new TrustedAuthorityOnlyEffectStager({
+   store,admissions:gate,mutation:preflight,runner:runnerPreflight,
+   runtimeTaskId:testRuntimeId,tool:"run_tests",expectedHeadSha:pinnedHead
+  });
  let runnerStaged;
- const testReport=await a2aOwner.dispatchIssuedTask({
-  taskId:testTaskId,runtimeTaskId:testRuntimeId,
-  instruction:"Run the exact approved poc-default Docker acceptance suite",
-  effectStager:{
-   async stage(requestId){
-    runnerStaged=await nativeTestStager.stage(requestId);
-    return runnerStaged;
+ const testReport=reviewedNative?
+  await reviewExecution.dispatchEnrolledTask({
+   taskId:testTaskId,runtimeTaskId:testRuntimeId,
+   instruction:"Run the exact approved poc-default Docker acceptance suite",
+   effectStager:nativeTestStager
+  }):
+  await a2aOwner.dispatchIssuedTask({
+   taskId:testTaskId,runtimeTaskId:testRuntimeId,
+   instruction:"Run the exact approved poc-default Docker acceptance suite",
+   effectStager:{
+    async stage(requestId){
+     runnerStaged=await nativeTestStager.stage(requestId);
+     return runnerStaged;
+    }
    }
-  }
- });
+  });
  assert.equal(testReport.status,"a2a_report_not_gateway_completed");
  assert.equal(testReport.provider_completion_attested,false);
  assert.equal(testReport.role,"test");
@@ -1159,9 +1297,11 @@ try{
  assert.equal(testResult.decision,"allow");
  const runnerRecord=store.get(runnerPrepared.request_id);
  assert.ok(runnerRecord);
- assert.equal(runnerStaged.runner_execution_authorized,false);
- assert.equal(runnerStaged.intent.expected_head_sha,pinnedHead);
- assert.equal(runnerStaged.intent.credential_id,runnerChild.credential_id);
+ if(!reviewedNative){
+  assert.equal(runnerStaged.runner_execution_authorized,false);
+  assert.equal(runnerStaged.intent.expected_head_sha,pinnedHead);
+  assert.equal(runnerStaged.intent.credential_id,runnerChild.credential_id);
+ }
  const testVerified=await verifier.verify({
   presenter:"test",audience:runnerPrepared.audience,
   challenge:runnerPrepared.challenge,
@@ -1197,8 +1337,11 @@ try{
   gate.assertTrustedCompletedRunnerEvidenceBinding(
    runnerRecord,testVerified));
  assert.equal(testWitness.status,"owner_verified_provider_result");
- const nativeTestCompletion=await a2aOwner
-  .attestIndependentGatewayCompletion(testTaskId,testRuntimeId);
+ const nativeTestCompletion=reviewedNative?
+  await reviewExecution.attestEnrolledTaskCompletion({
+   taskId:testTaskId,runtimeTaskId:testRuntimeId
+  }):await a2aOwner.attestIndependentGatewayCompletion(
+   testTaskId,testRuntimeId);
  assert.equal(nativeTestCompletion.status,
   "owner_gateway_completion_independently_observed");
  assert.equal(gate.stagedCompletedTaskCount,3);
@@ -1262,6 +1405,13 @@ try{
   canonical_gateway_http_test_prepare:true,
   canonical_gateway_http_backend_frontend:true,
   canonical_gateway_http_negative_probes:true,
+  r3515_model_selected_native_tasks:reviewedNative,
+  r3515_original_engineer_execution_owner:reviewedNative,
+  r3515_original_gateway_attested_decision_dependencies:reviewedNative,
+  ...(reviewedNative?{
+   r3515_adk_decision_turns:Object.fromEntries(
+    Object.entries(decisionModels).map(([role,m])=>[role,m.requests.length]))
+  }:{}),
   native_sdk_a2a_backend:true,native_adk_backend:true,
   native_sdk_a2a_frontend:true,native_adk_frontend:true,
   native_backend_child_vp_via_local_crypto_mcp:true,
