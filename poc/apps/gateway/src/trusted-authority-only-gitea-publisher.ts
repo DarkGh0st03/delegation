@@ -13,6 +13,7 @@ import {lstat,open} from "node:fs/promises";
 import {isAbsolute,join,resolve} from "node:path";
 import {TrustedAuthorityOnlyGatewayAdmissions}
  from "./trusted-authority-only-admissions.ts";
+import {GiteaClient} from "./gitea-client.ts";
 import {assertTrustedGatewayGiteaReadResult}
  from "./gitea-executor.ts";
 import type {GiteaReadFileExecutionResult,PolicyDecision,
@@ -45,6 +46,7 @@ export class TrustedGatewayGiteaReadEvidencePublisher{
  readonly #directory:string;
  readonly #key:Buffer;
  readonly #admissions:TrustedAuthorityOnlyGatewayAdmissions;
+ readonly #reader:GiteaClient;
  readonly #repository:string;
  readonly #branch:string;
  readonly #nowMs:()=>number;
@@ -52,6 +54,7 @@ export class TrustedGatewayGiteaReadEvidencePublisher{
  constructor(opts:{
   directory:string;key:Buffer;
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
+  independentGiteaClient:GiteaClient;
   repository:string;branch:string;nowMs?:()=>number;
  }){
   if(!opts||typeof opts.directory!=="string"||
@@ -59,6 +62,7 @@ export class TrustedGatewayGiteaReadEvidencePublisher{
      opts.directory.length>512||
      !(opts.key instanceof Buffer)||opts.key.length<32||
      !(opts.admissions instanceof TrustedAuthorityOnlyGatewayAdmissions)||
+     !(opts.independentGiteaClient instanceof GiteaClient)||
      !/^[a-z0-9._-]+\/[a-z0-9._-]+$/u.test(opts.repository)||
      !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(opts.branch)||
      opts.branch.includes("..")||opts.branch.includes("//"))
@@ -66,6 +70,7 @@ export class TrustedGatewayGiteaReadEvidencePublisher{
   this.#directory=opts.directory;
   this.#key=Buffer.from(opts.key);
   this.#admissions=opts.admissions;
+  this.#reader=opts.independentGiteaClient;
   this.#repository=opts.repository;
   this.#branch=opts.branch;
   this.#nowMs=opts.nowMs??Date.now;
@@ -104,12 +109,30 @@ export class TrustedGatewayGiteaReadEvidencePublisher{
      execution.path!==record.request.arguments.path||
      execution.branch!==record.request.arguments.branch||
      execution.branch!==this.#branch||
+     !SHA40.test(record.pinned_revision??"")||
+     execution.revision!==record.pinned_revision||
      !SHA40.test(execution.revision)||
      !SHA40.test(execution.blob_sha))
    fail("provider success or independent OPA decision missing");
   const observed=assertTrustedGatewayGiteaReadResult(record,execution);
   const expected=this.#admissions.assertTrustedCompletedReadEvidenceBinding(
    record,verified);
+  // A read of an old commit cannot be published as the current Task context.
+  // Independently confirm the same HEAD and blob while the Gateway owner is
+  // still live, before authoring any MAC that could unlock a later Task.
+  const before=await this.#reader.getBranchMetadata(this.#branch);
+  if(before.commit_sha!==record.pinned_revision)
+   fail("read HEAD changed before owner evidence publication");
+  const source=await this.#reader.readTextFile(
+   this.#branch,execution.path,execution.revision);
+  const after=await this.#reader.getBranchMetadata(this.#branch);
+  if(source.branch!==this.#branch||source.path!==execution.path||
+     source.revision!==record.pinned_revision||
+     source.blob_sha!==execution.blob_sha||
+     Buffer.byteLength(source.content,"utf8")!==observed.source_bytes||
+     sha(source.content)!==observed.source_sha256||
+     after.commit_sha!==record.pinned_revision)
+   fail("independently reread provider source, blob or HEAD differs");
   const now=this.#nowMs();
   if(!Number.isSafeInteger(now)||now<=0||
      !SHA64.test(expected.authority_digest)||
