@@ -176,7 +176,7 @@ test("R357.3 exact witnessed Gitea read publishes only owner-authenticated bytes
  });
 });
 test("R357.3 missing HEAD pin, forged result or moved independent Gitea HEAD never signs",async()=>{
- await fixture(async({directory})=>{
+ await fixture(async({directory,reader})=>{
   const gate=fakeReadAdmission(),record=originalReadRecord();
   const real=await new GiteaExecutor(sourceClient("trusted-gateway")).execute(record);
   const opts={directory,key,admissions:gate,
