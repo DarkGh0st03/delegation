@@ -856,6 +856,75 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
    await assert.rejects(execution.attestEnrolledTaskCompletion({
     taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId
    }),/no matching original A2A dispatch report/);
+   if(throughFrontend){
+    // Stage the independently pinned second mutation, using the actual
+    // HEAD from the already authenticated Backend Gitea receipt.
+    frontendStaged=second;
+    const frontendStager=execution.createEnrolledNativeEffectStager({
+     runtimeTaskId:next.runtimeTaskId,expectedHeadSha:fileSha
+    });
+    const frontendReport=await execution.dispatchEnrolledTask({
+     taskId:next.task.task_id,runtimeTaskId:next.runtimeTaskId,
+     instruction:'Update the Engineer-approved Frontend file',
+     effectStager:frontendStager
+    });
+    assert.equal(frontendReport.status,'a2a_report_not_gateway_completed');
+    assert.equal(frontendReport.provider_completion_attested,false);
+    assert.equal(frontendReport.role,'frontend');
+    assert.equal(frontendReport.artifact.commit_sha,frontendSha);
+    assert.deepEqual(frontendReport.artifact.files_modified,['apps/user.ts']);
+    assert.equal(frontendModel.calls,2);
+    assert.equal(gateway.stagedCompletedTaskCount,1);
+    assert.deepEqual(events.slice(-4),[
+     'frontend_gateway_prepare_canonical','offline_pinned_gitea_read',
+     'frontend_private_vp_fixture','frontend_gateway_execute_fixture'
+    ]);
+    const testPermission=coordinator.assertTrustedGatewayAuthorityBinding()
+     .root_permissions.find(p=>p.operation==='run_tests');
+    assert.ok(testPermission,'Test Agent requires separately approved run_tests');
+    const testTask={
+     runtimeTaskId:'dispatch_'+'T'.repeat(22),
+     childParameters:{
+      credential_id:'urn:r3513:child:test',
+      credential_status:{type:'BitstringStatusListEntry',
+       statusPurpose:'revocation',statusListCredential:'https://status.invalid/r3513-test',
+       statusListIndex:'12'},
+      valid_from:new Date().toISOString(),validity_seconds:90
+     }
+    };
+    const testModel=new R351ScriptedDecision({
+     task_id:'r3513-test',agent_id:'test',
+     depends_on:[task.task.task_id,next.task.task_id],
+     permissions:[testPermission],
+     instruction:'Run approved tests on fully verified Backend and Frontend effects'
+    });
+    // An A2A report is NOT a Test prerequisite. The model must not run.
+    await assert.rejects(execution.proposeAndStageTask({
+     model:testModel,...testTask
+    }),/next ADK Task decision requires independent Gateway completion/);
+    assert.equal(testModel.calls,0);
+    const frontendAttested=await execution.attestEnrolledTaskCompletion({
+     taskId:next.task.task_id,runtimeTaskId:next.runtimeTaskId
+    });
+    assert.equal(frontendAttested.status,'owner_gateway_completion_independently_observed');
+    assert.equal(gateway.stagedCompletedTaskCount,2);
+    const chosenTest=await execution.proposeAndStageTask({
+     model:testModel,...testTask
+    });
+    assert.equal(chosenTest.task_id,'r3513-test');
+    assert.equal(chosenTest.agent_id,'test');
+    assert.equal(chosenTest.epoch,3);
+    assert.equal(chosenTest.decision_source,'owner_adk_candidate_coordinator_validated');
+    assert.equal(testModel.calls,1);
+    assert.equal(coordinator.registeredTaskCount,3);
+    assert.equal(gateway.registeredTaskCount,3);
+    const taskDecisionPrompt=JSON.stringify(testModel.requests);
+    for(const secret of [staged.credential_id,second.credential_id,
+     requestId,frontendRequestId,fileSha,frontendSha,frontendVp])
+     assert.equal(taskDecisionPrompt.includes(secret),false);
+    assert.ok(taskDecisionPrompt.includes('independently_gateway_completed_tasks'));
+    assert.equal(host.phase,'operational');
+   }
    assert.equal(host.phase,'operational');
   }else{
    await assert.rejects(execution.attestEnrolledTaskCompletion({
