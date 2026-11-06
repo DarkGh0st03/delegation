@@ -1141,7 +1141,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
       const candidate=new R351ScriptedDecision({
        task_id:'r3521-proposed-repair',
        agent_id:foreignD1Model?'frontend':'backend',
-       depends_on:[task.task.task_id,next.task.task.task_id],
+       depends_on:[task.task.task_id,next.task.task_id],
        permissions:task.task.permissions,
        instruction:'Repair the verified TypeScript typecheck failure under the signed file scope'
       });
