@@ -2,7 +2,7 @@
 // Explicitly separated from the offline mock. Never holds signer keys or DCs.
 (function(){
   const $=(id)=>document.getElementById(id);
-  let plan=null,csrf=null,digest=null,lock=false;
+  let plan=null,csrf=null,digest=null,lock=false,authorityOnly=false;
   function status(msg,failed=false){
     $("status").textContent=msg;
     $("status").style.color=failed?"#a13232":"#1b665e";
@@ -22,20 +22,32 @@
     return data;
   }
   function display(data){
-    plan=data.plan;digest=data.plan_digest;csrf=data.csrf_token;
+    authorityOnly=data.protocol==="authority-only";
+    plan=authorityOnly?data.authorization_proposal:data.plan;
+    digest=authorityOnly?data.proposal_digest:data.plan_digest;csrf=data.csrf_token;
+    $("review-heading").textContent=authorityOnly?"Approva i permessi richiesti":"Approva un piano trusted";
+    $("review-source").textContent=authorityOnly
+      ?"Proposta verificata del Planner. Approvi soltanto il perimetro dei permessi; l’Orchestrator gestisce i Task entro quel perimetro."
+      :"Il piano proviene esclusivamente dallo storage trusted del backend.";
+    $("context-label").textContent=authorityOnly?"Sessione e branch":"ID piano/versione";
+    $("digest-label").textContent=authorityOnly?"SHA-256 della proposta di permessi":"SHA-256 esatto del piano da approvare";
+    $("execution-plan-details").hidden=authorityOnly;
+    $("permission-help").textContent=authorityOnly
+      ?"Seleziona soltanto le risorse e le operazioni che vuoi concedere. Nessuna permission è selezionata automaticamente."
+      :"Verifica per ogni agente, Task e risorsa quali operazioni vuoi autorizzare.";
     $("login").hidden=true;$("approval").hidden=false;
     $("rejection-actions").hidden=data.reject_enabled!==true;
     $("reject-confirmation").value="";
     $("identity").textContent=data.engineer_did;
     $("repository").textContent=
       plan.repository.owner+"/"+plan.repository.repository+" @ "+plan.base_revision;
-    $("plan").textContent=plan.plan_id+" · v"+plan.version;
+    $("plan").textContent=authorityOnly?plan.session_id+" · "+plan.branch:plan.plan_id+" · v"+plan.version;
     $("requirement-view").textContent=plan.requirement;
     $("digest").textContent=digest;
     $("confirmation").value="";
     $("tasks").replaceChildren();$("permissions").replaceChildren();
     $("assumptions").replaceChildren();$("uncertainties").replaceChildren();
-    for(const task of plan.tasks){
+    if(!authorityOnly)for(const task of plan.tasks){
       const entry=node("div");
       entry.append(
         node("strong",task.id+" · "+task.agent_id+" · "+task.title),
@@ -57,22 +69,23 @@
       $(target).append(list);
     }
     // Use only textContent, never HTML parsing of model-authored strings.
-    renderNotes("assumptions",plan.assumptions,"Nessuna assunzione dichiarata.");
-    renderNotes("uncertainties",plan.uncertainties,
+    renderNotes("assumptions",plan.assumptions??[],"Nessuna assunzione dichiarata.");
+    renderNotes("uncertainties",plan.uncertainties??[],
       "Nessuna incertezza dichiarata dal Planner.");
-    for(const p of plan.requested_permissions){
+    for(const p of (authorityOnly?data.permissions:plan.requested_permissions)){
       const label=node("label");
       const input=node("input");
       // Explicit opt-in: no requested permission is pre-approved by the UI.
       input.type="checkbox";input.checked=false;input.value=p.id;
       input.className="approval-permission";
-      label.append(input,node("span"," "+p.id+" · "+p.agent_id+
-        " · "+p.operation+" · "+p.resource+" ("+p.reason+")"));
+      label.append(input,node("span",authorityOnly
+        ?" "+p.operation+" · "+p.resource
+        :" "+p.id+" · "+p.agent_id+" · "+p.operation+" · "+p.resource+" ("+p.reason+")"));
       $("permissions").append(label);
     }
   }
   async function refresh(){
-    try{display(await api("/api/plan"));}catch{
+    try{display(await api("/api/review"));}catch{
       $("approval").hidden=true;$("login").hidden=false;
     }
   }
@@ -83,8 +96,8 @@
         password:$("password").value
       })});
       $("password").value="";
-      display(await api("/api/plan"));
-      status("Autenticazione riuscita. Esamina e conferma il piano.");
+      display(await api("/api/review"));
+      status("Autenticazione riuscita. Esamina la proposta e seleziona i permessi.");
     }catch(e){status(e.message,true);}
     finally{lock=false;}
   });
@@ -96,7 +109,7 @@
       const response=await api("/api/approve",{
         method:"POST",headers:{"X-CSRF-Token":csrf},
         body:JSON.stringify({
-          plan_digest:digest,approved_permission_ids:ids,
+          [authorityOnly?"proposal_digest":"plan_digest"]:digest,approved_permission_ids:ids,
           confirmation:$("confirmation").value
         })
       });
@@ -112,7 +125,7 @@
       const result=await api("/api/reject",{
         method:"POST",headers:{"X-CSRF-Token":csrf},
         body:JSON.stringify({
-          plan_digest:digest,confirmation:$("reject-confirmation").value
+          [authorityOnly?"proposal_digest":"plan_digest"]:digest,confirmation:$("reject-confirmation").value
         })
       });
       $("approval").hidden=true;plan=null;csrf=null;digest=null;

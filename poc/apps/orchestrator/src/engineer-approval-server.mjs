@@ -8,6 +8,7 @@
  * repository, plan, Engineer DID or a private key.
  */
 import {createServer} from "node:http";
+import {createAuthorityOnlyEngineerReview} from "./authority-only-engineer-review.mjs";
 import {readFile,open,lstat,writeFile} from "node:fs/promises";
 import {constants} from "node:fs";
 import {dirname,join,resolve} from "node:path";
@@ -90,12 +91,18 @@ function clearCookie(){
 }
 
 export async function createAuthenticatedEngineerServer(config){
+  const authorityOnly=config?.architecture==="authority-only";
+  if(config?.architecture!==undefined&&
+     !["authority-only","legacy-signed-dag"].includes(config.architecture))
+    throw Error("Invalid Engineer architecture");
+  if(!authorityOnly&&config?.authorityCheckpointStore!==undefined)
+    throw Error("Authority checkpoint requires explicit authority-only architecture");
   if(!config||config.host && config.host!=="127.0.0.1"||
      typeof config.engineerDid!=="string"||!config.engineerDid.startsWith("did:")||
      typeof config.keyId!=="string"||
      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(config.keyId)||
      !sha40.test(config.expectedBaseRevision||"")||
-     !config.trustedPlanFile||!config.privateKeyFile||!config.receiptDirectory||
+     (!authorityOnly&&!config.trustedPlanFile)||!config.privateKeyFile||!config.receiptDirectory||
      typeof config.publicKeyPem!=="string"||!config.publicKeyPem.trim()||
      !hex.test(config.passwordSaltHex||"")||!hex.test(config.passwordScryptHex||"")||
      config.passwordSaltHex.length<32||config.passwordScryptHex.length!==128||
@@ -105,7 +112,7 @@ export async function createAuthenticatedEngineerServer(config){
       typeof config.planningIsActive!=="function")){
     throw new Error("Invalid local trusted Engineer configuration");
   }
-  const planFile=resolve(config.trustedPlanFile);
+  const planFile=authorityOnly?null:resolve(config.trustedPlanFile);
   const keyFile=resolve(config.privateKeyFile);
   const receiptDir=resolve(config.receiptDirectory);
   const salt=Buffer.from(config.passwordSaltHex,"hex");
@@ -114,14 +121,20 @@ export async function createAuthenticatedEngineerServer(config){
     throw new Error("Invalid Engineer password verifier");
   }
   await protectedDirectory(receiptDir);
-  const initial=JSON.parse(await privateText(planFile));
-  validatePlan(initial,{allowedOperations:OPERATIONS});
+  const authorityReview=authorityOnly?await createAuthorityOnlyEngineerReview(config):null;
+  const initial=authorityOnly?authorityReview.initial:JSON.parse(await privateText(planFile));
+  const sourceDigest=authorityOnly?()=>authorityReview.digest:planDigest;
+  const loadLatest=authorityOnly?()=>authorityReview.loadVerified():async()=>{
+    const p=JSON.parse(await privateText(planFile));
+    validatePlan(p,{allowedOperations:OPERATIONS});return p;
+  };
+  if(!authorityOnly)validatePlan(initial,{allowedOperations:OPERATIONS});
   if(initial.base_revision!==config.expectedBaseRevision ||
      initial.session_id!==config.expectedSessionId ||
      JSON.stringify(initial.repository)!==JSON.stringify(config.repository)){
     throw new Error("Trusted plan does not match pinned repository/session/revision");
   }
-  const pinnedDigest=planDigest(initial);
+  const pinnedDigest=sourceDigest(initial);
   const rejectionStore=new TrustedEngineerRejectionStore({
     directory:receiptDir,sessionId:config.expectedSessionId,
     baseRevision:config.expectedBaseRevision,planDigest:pinnedDigest
@@ -136,6 +149,7 @@ export async function createAuthenticatedEngineerServer(config){
      !(checkpointStore instanceof SignedPlanningCheckpointFileStore))
     throw Error("Invalid trusted Planning checkpoint store");
   const verifyCheckpoint=async()=>{
+    if(authorityOnly){await authorityReview.loadVerified();return;}
     if(config.planningIsActive&&config.planningIsActive()!==true)
       invalid("Live Planning root no longer authorizes Engineer review",409);
     if(!checkpointStore)return;
@@ -152,6 +166,9 @@ export async function createAuthenticatedEngineerServer(config){
   // Validate signer accessibility and pinned public identity at startup,
   // but re-read the protected key immediately before every signing action.
   const privateKey=await privateText(keyFile);
+  if(authorityOnly){
+    await authorityReview.signSelected(["permission-1"],privateKey);
+  }else{
   const verifierPlan=makeApproval(initial,{
     allowedOperations:OPERATIONS,
     decision_id:"startup-key-check",approved_by:config.engineerDid,
@@ -170,6 +187,7 @@ export async function createAuthenticatedEngineerServer(config){
       engineer_did:config.engineerDid,public_key_pem:config.publicKeyPem
     }}
   });
+  }
 
   const sessions=new Map();
   let loginAttempts=0,loginWindow=Date.now(),approvalInProgress=false;
@@ -228,12 +246,16 @@ export async function createAuthenticatedEngineerServer(config){
         if(token)sessions.delete(token);
         invalid("Engineer authentication required",401);
       }
-      if(req.method==="GET"&&url.pathname==="/api/plan"){
+      if(req.method==="GET"&&(url.pathname==="/api/review"||
+        (!authorityOnly&&url.pathname==="/api/plan")||
+        (authorityOnly&&url.pathname==="/api/authorization"))){
         if(decision==="rejected"||decision==="rejection_unconfirmed")
           invalid("Engineer decision already final",409);
         await verifyCheckpoint();
         respond(res,200,{
-          plan:initial,plan_digest:pinnedDigest,
+          ...(authorityOnly?{protocol:"authority-only",authorization_proposal:initial,
+            proposal_digest:pinnedDigest,permissions:authorityReview.permissions(initial)}:
+            {protocol:"legacy-signed-dag",plan:initial,plan_digest:pinnedDigest}),
           engineer_did:config.engineerDid,csrf_token:session.csrf,
           reject_enabled:typeof config.rejectPlanning==="function"
         });
@@ -251,8 +273,8 @@ export async function createAuthenticatedEngineerServer(config){
         if(req.headers["x-csrf-token"]!==session.csrf)
           invalid("CSRF rejected",403);
         const body=await readJson(req);
-        if(!exact(body,["plan_digest","confirmation"])||
-           body.plan_digest!==pinnedDigest||
+        if(!exact(body,[authorityOnly?"proposal_digest":"plan_digest","confirmation"])||
+           body[authorityOnly?"proposal_digest":"plan_digest"]!==pinnedDigest||
            body.confirmation!=="REJECT "+pinnedDigest)
           invalid("Invalid Engineer rejection confirmation",403);
         if(decision!=="reviewing"||approvalInProgress)
@@ -268,9 +290,8 @@ export async function createAuthenticatedEngineerServer(config){
             if(error.code!=="ENOENT")throw error;
           }
           await verifyCheckpoint();
-          const latest=JSON.parse(await privateText(planFile));
-          validatePlan(latest,{allowedOperations:OPERATIONS});
-          if(planDigest(latest)!==pinnedDigest)
+          const latest=await loadLatest();
+          if(sourceDigest(latest)!==pinnedDigest)
             invalid("Trusted plan changed before rejection",409);
           // Durable decision is recorded first; a crash during native
           // retirement must never reopen this session for approval.
@@ -280,7 +301,8 @@ export async function createAuthenticatedEngineerServer(config){
           sessions.clear();
           respond(res,200,{
             rejected:true,provisional_credential_revoked:true,
-            operational_credential_issued:false,plan_digest:pinnedDigest
+            operational_credential_issued:false,
+            ...(authorityOnly?{proposal_digest:pinnedDigest}:{plan_digest:pinnedDigest})
           },{"Set-Cookie":clearCookie()});
           return;
         }catch(error){
@@ -292,8 +314,8 @@ export async function createAuthenticatedEngineerServer(config){
       if(req.method==="POST"&&url.pathname==="/api/approve"){
         if(req.headers["x-csrf-token"]!==session.csrf)invalid("CSRF rejected",403);
         const body=await readJson(req);
-        if(!exact(body,["plan_digest","approved_permission_ids","confirmation"])||
-           body.plan_digest!==pinnedDigest||
+        if(!exact(body,[authorityOnly?"proposal_digest":"plan_digest","approved_permission_ids","confirmation"])||
+           body[authorityOnly?"proposal_digest":"plan_digest"]!==pinnedDigest||
            body.confirmation!=="APPROVE "+pinnedDigest||
            !Array.isArray(body.approved_permission_ids)||
            !body.approved_permission_ids.length||
@@ -308,13 +330,18 @@ export async function createAuthenticatedEngineerServer(config){
           // A valid check at startup cannot outlive checkpoint expiry,
           // revocation of provenance, or later filesystem modification.
           await verifyCheckpoint();
-          const latest=JSON.parse(await privateText(planFile));
-          validatePlan(latest,{allowedOperations:OPERATIONS});
-          if(planDigest(latest)!==pinnedDigest ||
+          const latest=await loadLatest();
+          if(sourceDigest(latest)!==pinnedDigest ||
              latest.base_revision!==config.expectedBaseRevision){
             invalid("Trusted plan changed; new validation required",409);
           }
           const now=new Date();
+          let signed,decisionId,permissionCount;
+          if(authorityOnly){
+            const latestSigner=await privateText(keyFile);
+            signed=await authorityReview.signSelected(body.approved_permission_ids,latestSigner,now);
+            decisionId="approval-"+randomUUID();permissionCount=signed.authorization.permissions.length;
+          }else{
           const approvedIds=new Set(latest.requested_permissions.map(p=>p.id));
           if(body.approved_permission_ids.some(id=>!approvedIds.has(id))){
             invalid("Permission outside the trusted plan",403);
@@ -327,7 +354,7 @@ export async function createAuthenticatedEngineerServer(config){
           const latestSigner=await privateText(keyFile);
           if(config.planningIsActive&&config.planningIsActive()!==true)
             invalid("Live Planning root revoked before Engineer signing",409);
-          const signed=signEngineerApproval({
+          signed=signEngineerApproval({
             plan:latest,approval,engineerDid:config.engineerDid,keyId:config.keyId,
             privateKeyPem:latestSigner,
             issuedAt:now.toISOString(),
@@ -339,16 +366,23 @@ export async function createAuthenticatedEngineerServer(config){
               engineer_did:config.engineerDid,public_key_pem:config.publicKeyPem
             }}
           });
+
+            decisionId=approval.decision_id;permissionCount=approval.approved_permission_ids.length;
+          }
           await protectedDirectory(receiptDir);
           if(config.planningIsActive&&config.planningIsActive()!==true)
             invalid("Live Planning root revoked before receipt persistence",409);
+          const encoded=JSON.stringify(signed,null,2)+"\n";
+          if(authorityOnly&&Buffer.byteLength(encoded)>128*1024)
+            invalid("Authority receipt exceeds bound",413);
           await writeFile(join(receiptDir,latest.session_id+".json"),
-            JSON.stringify(signed,null,2)+"\n",{mode:0o600,flag:"wx"});
+            encoded,{mode:0o600,flag:"wx"});
           decision="approved";
           sessions.clear();
           respond(res,201,{
-            decision_id:approval.decision_id,plan_digest:pinnedDigest,
-            permission_count:approval.approved_permission_ids.length,
+            decision_id:decisionId,
+            ...(authorityOnly?{proposal_digest:pinnedDigest}:{plan_digest:pinnedDigest}),
+            permission_count:permissionCount,
             signed:true,operational_credential_issued:false
           },{"Set-Cookie":clearCookie()});
           return;
@@ -368,6 +402,9 @@ export async function createAuthenticatedEngineerServer(config){
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+  if(process.env.DELEGATION_ENGINEER_ARCHITECTURE!==undefined&&
+     process.env.DELEGATION_ENGINEER_ARCHITECTURE!=="legacy-signed-dag")
+    throw Error("Authority-only Engineer requires trusted owner-assembled checkpoint configuration");
   const required=(key)=>{
     if(!process.env[key])throw new Error("Missing mandatory "+key);
     return process.env[key];
