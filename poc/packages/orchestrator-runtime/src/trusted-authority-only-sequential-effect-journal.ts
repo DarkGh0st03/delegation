@@ -138,13 +138,13 @@ export class DurableAuthorityOnlySequentialEffectJournal{
    constants.O_RDONLY|constants.O_DIRECTORY|constants.O_NOFOLLOW);
   try{await d.sync();}finally{await d.close();}
  }
- async #manifest(m:TrustedSequentialManifest){
+ async #manifest(m:TrustedSequentialManifest,checkPlan=false){
   const item=await this.#read(this.#stem(m.session_id,m.task_id)+".manifest.json");
   if(item.schema!==1||item.kind!=="manifest"||
      !sameBase(item as unknown as TrustedTaskFenceBase,m)||
      item.total_effects!==m.total_effects||
-     JSON.stringify(item.effect_plan??null)!==
-       JSON.stringify(m.effect_plan??null))
+     (checkPlan&&JSON.stringify(item.effect_plan??null)!==
+       JSON.stringify(m.effect_plan??null)))
    deny("recorded Task manifest does not match signed root and Child");
   return item;
  }
@@ -209,7 +209,7 @@ export class DurableAuthorityOnlySequentialEffectJournal{
      !SHA.test(f.latest_evidence_sha256))
    deny("invalid final effect evidence digest");
   await this.#dir();
-  await this.#manifest(f);
+  await this.#manifest(f,true);
   const stem=this.#stem(f.session_id,f.task_id);
   const last=await this.#read(stem+"."+f.total_effects+".evidence.json");
   if(f.effect_plan!==undefined&&last.operation!=="update_file")
