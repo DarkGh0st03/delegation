@@ -2487,6 +2487,41 @@ test('R353.2 only owner-selected PR decisions may propose the exact PR effect',a
   model:new R351ScriptedDecision(candidate),decisionKind:'model-selected'}),/Task choice denied/);
 });
 
+test('R357 independently completed root branch is mandatory before any Backend Child',async t=>{
+ const f=await fixture(t,{includeBranchPermission:true}),host=await f.start();
+ await f.approve(['permission-1','permission-2','permission-3']);
+ const {coordinator}=await host.activateOperational(root('urn:r357:branch-first-root',2));
+ const deps=executionDeps(f);
+ let nativeChildCalls=0;
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(){
+  nativeChildCalls++;throw Error('Backend Child must not be issued prematurely');
+ }};
+ const execution=await host.admitOperationalExecution(deps);
+ const permission=coordinator.assertTrustedGatewayAuthorityBinding()
+  .root_permissions.find(p=>p.operation==='update_file');
+ const choice={task_id:'r357-premature-backend',agent_id:'backend',
+  depends_on:[],permissions:[permission],
+  instruction:'Attempt Backend mutation without independently verified feature branch'};
+ const model=new R351ScriptedDecision(choice);
+ const runtimeTaskId='dispatch_'+'B'.repeat(22);
+ const childParameters=root('urn:r357:premature-child',3,90);
+ await assert.rejects(execution.proposeAndStageTask({
+  model,runtimeTaskId,childParameters
+ }),/independently completed original branch Task/);
+ assert.equal(model.calls,0,'no ADK Task proposal is allowed before branch completion');
+ await assert.rejects(execution.stageTask({
+  task:{task_id:choice.task_id,epoch:1,agent_id:'backend',
+   depends_on:[],permissions:[permission]},
+  runtimeTaskId,childParameters
+ }),/independently completed original branch Task/);
+ assert.equal(nativeChildCalls,0,'direct Task staging cannot bypass the branch prerequisite');
+ assert.equal(coordinator.registeredTaskCount,0);
+ assert.equal(execution.gateway.stagedCompletedTaskCount,0);
+ assert.equal(host.phase,'operational');
+ await host.close();
+ assert.equal(host.phase,'revoked');
+});
+
 for(const mode of ['pass','invalid-model','forged-pin','reader-moved']){
  test('R354 original Engineer ADK branch root lifecycle '+mode,async t=>{
   const f=await fixture(t,{includeBranchPermission:true}),host=await f.start();
