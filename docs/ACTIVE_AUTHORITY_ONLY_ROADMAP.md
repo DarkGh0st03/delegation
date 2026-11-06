@@ -72,14 +72,41 @@ un comportamento autonomo del sistema.
   [42270124666](https://github.com/DarkGh0st03/delegation/actions/runs/42270124666)
   SUCCESS sul codice `0e0c4729`: 175 test principali PASS, nessun FAIL.
   Il test SDK usa ancora provider/issuer fixture e modelli scriptati.
-- **Prossima integrazione prioritaria:** esercitare il nuovo controller adattivo
-  contro Rust/EVM, OPA, Gitea e Docker reali, poi unire *nella stessa sessione*
-  branch da main e Draft PR già validati separatamente. I codici TS sono solo
-  una diagnosi iniziale: mancano posizioni, messaggi tecnici sanificati e letture
-  di codice autorizzate tramite Gateway. Il recovery deve supportare anche altri
-  tipi di errore e specialisti, senza modificare la root firmata né fare retry
-  ciechi di provider ambigui. Conservare soltanto Account Suspension, test
-  gratuiti prima di Gemini e PR #38 Draft.
+- **R356.0 — primo Test FAIL controllato dal loop adattivo, nativo:**
+  [run 42271611943](https://github.com/DarkGh0st03/delegation/actions/runs/42271611943)
+  SUCCESS. Originale Engineer UI/review, root Rust/EVM, OPA e Gateway/Gitea
+  reali; ADK scriptato sceglie il Test tramite A2A e riceve dal Runner
+  Docker un autentico FAIL di typecheck. Una ricevuta MAC autentica il
+  fallimento; il Test non viene completato; decisione bounded blocked,
+  root revocata, main invariato. 3 Task / 2 completati / 1 Runner.
+- **R356.1 — recovery dinamico + retest nativo:**
+  [run 42273016127](https://github.com/DarkGh0st03/delegation/actions/runs/42273016127)
+  SUCCESS. Test FAIL reale → decisione Backend D1 dopo prova → Gitea CAS
+  attestata → Test di sostituzione e acceptance Docker reali PASS. Nessun
+  candidato D1 prestabilito prima del FAIL; una sola root Engineer originale.
+  5 Task / 4 completati / 2 Runner / 3 commit Gitea; il Test fallito
+  resta incompleto. Root ritirata dopo readiness.
+- **R356.2 — recovery adattivo e Draft PR native nella stessa sessione:**
+  [run 42274902525](https://github.com/DarkGh0st03/delegation/actions/runs/42274902525)
+  SUCCESS. Dopo il PASS indipendente, l'Orchestrator (VP root depth 0,
+  nessuna autodelega Child) propone e crea una sola Draft PR su Gitea
+  disposable; l'owner ne attesta separatamente HEAD e identità. Replay
+  negato, main invariato, 6 Task / 5 completati / 2 Runner / 3 commit
+  Gitea / 1 PR. Un Test FAIL resta permanentemente non-completato.
+  Tutto a costo AI zero; i modelli di scelta e i contenuti correttivi
+  rimangono **scriptati**, e la fonte applicativa iniziale è predisposta
+  dal test owner prima dell'approvazione. Questo NON prova planning
+  generativo, letture autonome del codice o feature branch creato da main
+  nella stessa sessione: il gate R354 branch-only è ancora separato.
+- **Prossima integrazione R357, obbligatoria per la prova gratuita unica:**
+  partire da main non risolta, approvazione permission-only, root
+  dell'Orchestrator crea e attesta il branch nella stessa sessione che
+  prosegue con Backend/Frontend/Test/recovery/PR. Eliminare l'applicazione
+  funzionale pre-seeded dal test owner; il modello deve poter leggere il
+  codice autorizzato e produrre la modifica reale. Completare diagnostica
+  sanificata (non solo fase, hash e codici TS), MCP/discovery e launcher
+  authority-only prima del pilot generativo. Zero paid Gemini senza
+  consenso esplicito, un solo scenario Account Suspension, PR #38 Draft.
 
 Non avviare suite native complete a ogni commit. Usare test mirati e Fast CI;
 riservare la prova nativa a checkpoint di integrazione significativi. PR #38 Draft,
