@@ -77,11 +77,12 @@ export class TrustedAuthorityOnlyRunnerPreflight{
   return a===this.#admissions;
  }
  isForGitea(g:GiteaClient):boolean{return g===this.#gitea;}
- /** Real private fields prevent a spoofed or copied failure observer from
-  * being installed for this original Runner journal and Gitea source. */
+ /** The independent observer uses a SEPARATE read-only GiteaClient.
+  * Match the original private Runner journal, not the mutation writer.
+  * Original signed branch, HEAD and owner flight are verified by R339. */
  isForFailureObserver(observer:AuthenticatedRunnerFailureObserver):boolean{
   return observer instanceof AuthenticatedRunnerFailureObserver &&
-   observer.isForJournal(this.#journal)&&observer.isForGitea(this.#gitea);
+   observer.isForJournal(this.#journal);
  }
  /** Called only after protected A2A returns an error: a fake model/A2A
   * FAIL cannot invent an attempted native Runner intent. */

@@ -34,6 +34,8 @@ import {AuthenticatedGiteaMutationCompletionObserver,
 import {AuthenticatedRunnerCompletionObserver,
  TrustedGatewayRunnerPassEvidencePublisher}
  from '../../gateway/src/trusted-authority-only-runner-evidence.ts';
+import {AuthenticatedRunnerFailureObserver,TrustedGatewayRunnerFailEvidencePublisher}
+ from '../../gateway/src/trusted-authority-only-runner-failure-evidence.ts';
 import {RunnerClient} from '../../gateway/src/runner-client.ts';
 import {TrustedAuthorityOnlyCompletionObserver}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts';
@@ -170,7 +172,7 @@ async function fixture(t,flags={}){
 
 /** Real native preflight classes and durable journals; only Gitea reads
  * are supplied by a no-network fixture for these cheap offline regressions. */
-function nativeOfflinePreflights(gateway,dirs,events=[],provider){
+function nativeOfflinePreflights(gateway,dirs,events=[],provider,originalRunnerJournal){
  class PinnedGiteaReadFixture extends GiteaClient{
   constructor(){super({baseUrl:'http://offline-gitea.invalid',
    token:'offline-no-network',owner:'thesis',repository:'iam-console-poc'});}
@@ -198,7 +200,8 @@ function nativeOfflinePreflights(gateway,dirs,events=[],provider){
   }),
   runner:new TrustedAuthorityOnlyRunnerPreflight({
    admissions:gateway,giteaClient:gitea,
-   journal:new DurableAuthorityOnlyRunnerIntentJournal(dirs.runnerIntents),
+   journal:originalRunnerJournal??
+    new DurableAuthorityOnlyRunnerIntentJournal(dirs.runnerIntents),
    repository:'thesis/iam-console-poc',branch
   })
  };
@@ -581,7 +584,9 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
  }
 });
 
-for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
+for(const mode of ['missing','backend','frontend','test','failure'])test(mode==='failure'?
+ 'R352.1 actual A2A Test FAIL is independently verified and permits only a bounded D1 candidate':
+ mode==='test'?
  'R351.4 original Engineer ADK/A2A Test invokes authenticated Runner evidence and attests PASS':
  mode==='frontend'?
  'R351.3 actual Frontend A2A Gateway evidence unlocks bounded ADK Test Agent choice':
@@ -589,7 +594,8 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
  'R351.2 original Gateway authenticated offline Gitea evidence permits next ADK Frontend choice':
  'R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',
  async t=>{
- const verified=mode!=='missing',throughTest=mode==='test',
+ const verified=mode!=='missing',throughFailure=mode==='failure',
+  throughTest=mode==='test'||throughFailure,
   throughFrontend=mode==='frontend'||throughTest;
  const f=await fixture(t,throughFrontend?{includeTestPermission:true}:{});
  const host=await f.start();
@@ -610,7 +616,7 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
  const provider={head:snapshot.base_revision,parent:snapshot.base_revision,
   blob:oldBlob,content:'export const suspended=false;\n'};
  let publisher,frontendStaged,next,testTask,testStaged,runnerClient,
-  runnerPublisher,runnerJournal;
+  runnerPublisher,runnerJournal,failureObserver,failurePublisher;
  const frontendModel=new R3513ScriptedFrontend();
  const testAgentModel=new R3514ScriptedTest();
  const runnerPhases=['dependency_install','typecheck','backend_tests',
@@ -663,17 +669,18 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
      assert.equal(request.profile,'poc-default');
      // This fixture simulates the HTTP controller; real RunnerClient
      // validates response shape and binds its original request provenance.
+     const phases=[...runnerPhases,'researcher_acceptance'].map((phase,i)=>({
+      phase,status:throughFailure?
+       i===0?'pass':i===1?'fail':'skipped':'pass'
+     }));
      return Response.json({
       request_id:request.request_id,repository:request.repository,
       branch,tested_commit_sha:frontendSha,runner_profile:'poc-default',
-      status:'pass',
-      phases:[...runnerPhases,'researcher_acceptance'].map(phase=>({
-       phase,status:'pass'
-      })),
-      project_tests:{status:'pass',phases:runnerPhases.map(phase=>({
-       phase,status:'pass'
-      }))},
-      researcher_acceptance:{phase:'researcher_acceptance',status:'pass'},
+      status:throughFailure?'fail':'pass',
+      phases,
+      project_tests:{status:throughFailure?'fail':'pass',
+       phases:phases.slice(0,-1)},
+      researcher_acceptance:phases.at(-1),
       log_reference:'runner-log://12345678-1234-1234-1234-123456789abc'
      });
     }
@@ -689,6 +696,15 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
      runnerObserver.observe(e):giteaObserver.observe(e)
    });
    runnerJournal=new DurableAuthorityOnlyRunnerIntentJournal(f.dirs.runnerIntents);
+   if(throughFailure){
+    failurePublisher=new TrustedGatewayRunnerFailEvidencePublisher({
+     ...runnerProof,runnerClient,journal:runnerJournal,
+     independentGiteaClient:reader
+    });
+    failureObserver=new AuthenticatedRunnerFailureObserver({
+     ...runnerProof,giteaClient:reader,journal:runnerJournal
+    });
+   }
   }else deps.completionObserver=giteaObserver;
   // The provider mutation is simulated by /execute below. A separate
   // observer rereads its state; no A2A artifact is accepted as evidence.
@@ -721,9 +737,11 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
  if(verified)assert.equal(firstChoice.calls,1);
  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
  const {mutation:nativeMutation,runner:nativeRunner,gitea}=
-  nativeOfflinePreflights(gateway,f.dirs,events,verified?provider:undefined);
+  nativeOfflinePreflights(gateway,f.dirs,events,verified?provider:undefined,
+   runnerJournal);
  assert.equal(execution.bindNativeGatewayEffects({
-  store,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea
+  store,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea,
+  ...(throughFailure?{failureObserver}:{})
  }).gateway_execution_authorized,false);
  const nativeStager=execution.createEnrolledNativeEffectStager({
   runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
@@ -819,14 +837,19 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
      'task_id','runtime_task_id','epoch','agent_did','credential_id',
      'request_id','request_fingerprint'];
     const binding=Object.fromEntries(keys.map(k=>[k,intent[k]]));
-    const digest=await runnerPublisher.publish(intent,binding,
-     request,result,'opa-offline-r3514');
-    await runnerJournal.reserveCompletedEvidence(intent,digest);
+    if(throughFailure){
+     await failurePublisher.publish(intent,binding,request,result,'opa-offline-r3521');
+    }else{
+     const digest=await runnerPublisher.publish(intent,binding,
+      request,result,'opa-offline-r3514');
+     await runnerJournal.reserveCompletedEvidence(intent,digest);
+    }
     return Response.json({request_id:testRequestId,decision:'allow',
      execution:{provider:'runner',performed:true,tool:'run_tests',
       branch,tested_commit_sha:frontendSha,runner_profile:'poc-default',
-      status:'pass',project_tests:{status:'pass'},
-      researcher_acceptance:{status:'pass'}}
+      status:throughFailure?'fail':'pass',
+      project_tests:{status:throughFailure?'fail':'pass'},
+      researcher_acceptance:{status:throughFailure?'skipped':'pass'}}
     });
    }
    const frontendRequest=throughFrontend&&body.request_id===frontendRequestId;
@@ -1074,8 +1097,54 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
      const testReport=await execution.dispatchEnrolledTask({
       taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId,
       instruction:'Run pinned Test on independently verified Backend/Frontend',
-      effectStager:testStager
+      effectStager:testStager,
+      ...(throughFailure?{d1Candidate:{
+       role:'backend',permissions:task.task.permissions
+      }}:{})
      });
+     if(throughFailure){
+      assert.equal(testReport.status,'owner_verified_native_test_failure_preflight_only');
+      assert.equal(testReport.failed_phase,'typecheck');
+      assert.equal(testReport.gateway_task_completed,false);
+      assert.equal(testReport.recovery_authorized,false);
+      assert.equal(testReport.child_credential_issued,false);
+      assert.equal(testReport.task_registered,false);
+      assert.equal(gateway.stagedCompletedTaskCount,2);
+      assert.equal(coordinator.registeredTaskCount,3);
+      assert.equal(testAgentModel.calls,2);
+      assert.equal((await readdir(f.dirs.runnerEvidence))
+       .filter(n=>n.endsWith('.runner-fail.json')).length,1);
+      const candidate=new R351ScriptedDecision({
+       task_id:'r3521-proposed-repair',agent_id:'backend',
+       depends_on:[task.task.task_id,next.task.task_id],
+       permissions:task.task.permissions,
+       instruction:'Repair the verified TypeScript typecheck failure under the signed Backend file scope'
+      });
+      const suggestion=await execution.proposeVerifiedD1RepairTask({model:candidate});
+      assert.equal(suggestion.status,'d1_model_candidate_not_recovery_authorized');
+      assert.equal(suggestion.failed_phase,'typecheck');
+      assert.equal(suggestion.recovery_authorized,false);
+      assert.equal(suggestion.task_registered,false);
+      assert.equal(suggestion.gateway_task_completed,false);
+      assert.equal(suggestion.child_credential_issued,false);
+      assert.equal(candidate.calls,1);
+      assert.equal(coordinator.registeredTaskCount,3);
+      assert.equal(gateway.registeredTaskCount,3);
+      assert.equal(gateway.stagedCompletedTaskCount,2);
+      const prompt=JSON.stringify(candidate.requests);
+      assert.ok(prompt.includes('independent_runner_failure'));
+      for(const secret of [testVp,testStaged.credential_id,testRequestId])
+       assert.equal(prompt.includes(secret),false);
+      await assert.rejects(execution.proposeVerifiedD1RepairTask({
+       model:new R351ScriptedDecision(candidate.candidate)
+      }),/requires authenticated original Runner failure/);
+      await assert.rejects(execution.proposeAndStageTask({
+       model:new R351ScriptedDecision(candidate.candidate),
+       runtimeTaskId:'dispatch_'+'R'.repeat(22),
+       childParameters:testTask.childParameters
+      }),/next ADK Task decision requires independent Gateway completion/);
+      assert.equal(host.phase,'operational');
+     }else{
      assert.equal(testReport.status,'a2a_report_not_gateway_completed');
      assert.equal(testReport.provider_completion_attested,false);
      assert.equal(testReport.role,'test');
@@ -1114,6 +1183,7 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
      const prompt=JSON.stringify(testAgentModel.requests);
      for(const secret of [testVp,testStaged.credential_id,testRequestId])
       assert.equal(prompt.includes(secret),false);
+     }
     }
     assert.equal(host.phase,'operational');
    }
