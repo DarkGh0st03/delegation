@@ -1296,7 +1296,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
     });
     assert.equal(frontendAttested.status,'owner_gateway_completion_independently_observed');
     assert.equal(gateway.stagedCompletedTaskCount,2);
-    if(['adaptive-observed-fail','adaptive-unverified-fail','adaptive-repair-and-retest'].includes(mode)){
+    if(['adaptive-observed-fail','adaptive-unverified-fail','adaptive-repair-and-retest','adaptive-repair-pr'].includes(mode)){
      class AdaptiveTestFailureModel extends BaseLlm{
       calls=0;requests=[];
       constructor(){super({model:'r3554-scripted-original-failure-observer'});}
