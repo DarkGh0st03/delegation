@@ -1,7 +1,7 @@
 {
-  "revision": "R350.14",
-  "request": "retest verified feature-snapshot ADK read then Engineer auth and original native R331 disposable provider path",
-  "source_commit": "0c076cf5346abcc6ab677c4f0af2a9675b162934",
+  "revision": "R350.15",
+  "request": "retest native reviewed Engineer permission-pair set equality after offline fast CI 2/2 PASS",
+  "source_commit": "234f3d7f589a3a38fe5b5f74af3873605cd2ddcf",
   "mode": "reviewed_native",
   "paid_ai": false,
   "production_effects": false,
@@ -15,6 +15,7 @@
     "immutable main, root revocation and fail-closed recovery"
   ],
   "replaced_run": 42205484506,
-  "previous_native_run": 42207993020,
-  "offline_gate_run": 42209738978
+  "previous_native_run": 42209912462,
+  "offline_gate_run": 42209738978,
+  "fast_ci_run": 42211366070
 }
