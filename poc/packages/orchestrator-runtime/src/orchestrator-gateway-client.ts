@@ -5,6 +5,8 @@
 import {deriveRequiredPermission} from "../../../apps/gateway/src/canonical.ts";
 import {validatePrepareAuthorizationRequest}
   from "../../../apps/gateway/src/validation.ts";
+import {trustedPlanningSourceBranch}
+ from "./trusted-engineer-authority.ts";
 import type {GatewayRepositoryConfig}
   from "../../../apps/gateway/src/types.ts";
 import {
@@ -14,13 +16,20 @@ import type {OrchestratorGatewayTransportConfig}
   from "./orchestrator-gateway-transport.ts";
 export {OrchestratorGatewayClientError}
   from "./orchestrator-gateway-transport.ts";
-export type {OrchestratorGatewayTransportConfig as OrchestratorPlanningGatewayReadClientConfig}
-  from "./orchestrator-gateway-transport.ts";
+export type OrchestratorPlanningGatewayReadClientConfig=
+ OrchestratorGatewayTransportConfig & {planningBranch?:string};
 
 export class OrchestratorPlanningGatewayReadClient {
   readonly #transport:OrchestratorGatewayTransport;
-  constructor(config:OrchestratorGatewayTransportConfig){
-    this.#transport=new OrchestratorGatewayTransport(config);
+  readonly #planningBranch:string;
+  constructor(config:OrchestratorPlanningGatewayReadClientConfig){
+    // This is a trusted constructor parameter from the signed snapshot.
+    // Callers of readPlanningResource cannot select or widen it per call.
+    this.#planningBranch=trustedPlanningSourceBranch({
+      planning_branch:config.planningBranch
+    });
+    const {planningBranch:_trustedBranch,...transport}=config;
+    this.#transport=new OrchestratorGatewayTransport(transport);
   }
 
   /**
@@ -41,8 +50,10 @@ export class OrchestratorPlanningGatewayReadClient {
     });
     if(normalized.request.tool!==tool ||
        (tool!=="read_repository"&&
-         (normalized.request.arguments as {branch?:string}).branch!=="main")) {
-      throw new OrchestratorGatewayClientError("Planning accepts main reads only");
+         (normalized.request.arguments as {branch?:string}).branch!==this.#planningBranch)||
+       (tool==="read_repository"&&this.#planningBranch!=="main")) {
+      throw new OrchestratorGatewayClientError(
+        "Planning accepts only trusted snapshot source-branch reads");
     }
     const permission=deriveRequiredPermission(repository,normalized.request);
     return this.#transport.invoke(

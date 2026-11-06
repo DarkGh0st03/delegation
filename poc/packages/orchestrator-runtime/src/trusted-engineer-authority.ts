@@ -120,7 +120,8 @@ function equality(a:unknown,b:unknown):boolean {
   return JSON.stringify(a)===JSON.stringify(b);
 }
 
-export function trustedPlanningSourceBranch(snapshot:TrustedPlanningSnapshot):string{
+export function trustedPlanningSourceBranch(
+ snapshot:Pick<TrustedPlanningSnapshot,"planning_branch">):string{
   const branch=snapshot.planning_branch??"main";
   if(typeof branch!=="string"||
      (branch!=="main"&&(!/^feature\/[a-z0-9][a-z0-9._/-]*$/u.test(branch)||

@@ -69,6 +69,7 @@ export class TrustedPlanningGatewayReadPort implements PlanningReadPort {
       ...(config.adapterBaseUrl!==undefined?{adapterBaseUrl:config.adapterBaseUrl}:{}),
       adapterToken:config.adapterToken,
       rootCredentialId:root.credential_id,
+      planningBranch:trustedPlanningSourceBranch(snapshot),
       ...(config.fetchFn?{fetchFn:config.fetchFn}:{}),
       ...(config.timeoutMs?{timeoutMs:config.timeoutMs}:{})
     });
