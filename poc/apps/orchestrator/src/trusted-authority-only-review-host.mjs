@@ -27,6 +27,12 @@ import {TrustedAuthorityOnlyRunnerPreflight} from '../../gateway/src/trusted-aut
 import {GiteaClient} from '../../gateway/src/gitea-client.ts';
 import {InMemoryRequestStore} from '../../gateway/src/prepare.ts';
 import {TrustedAuthorityOnlyChildIssuer} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts';
+import {preflightNativeD1FailureCandidate}
+ from '../../../packages/orchestrator-runtime/src/trusted-native-runner-failure-d1-preflight.ts';
+import {AuthenticatedRunnerFailureObserver}
+ from '../../gateway/src/trusted-authority-only-runner-failure-evidence.ts';
+import {DurableAuthorityOnlyRunnerIntentJournal}
+ from '../../gateway/src/trusted-authority-only-runner-intent-journal.ts';
 import {startTrustedAuthorityOnlySdkA2AOwner} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-a2a-owner.ts';
 import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts';
 const OPS=new Set(RUST_OPERATIONS);
@@ -94,6 +100,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  const dispatchedReports=new Map();
  const completionAttempts=new Set();
  let completionFlight,completionFailed=false;
+ // A verified Runner FAIL is NOT a successful Test completion.
+ // This separate one-shot D1 preflight can never unlock normal Task decisions.
+ let d1FailurePreflightAttempted=false,d1FailurePreflightFlight,
+  d1FailurePreflightFailed=false;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
  let dispatchFlight,dispatchFailed=false;
@@ -234,7 +244,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      async proposeAndStageTask(input){
       if(closed||session.phase!=='operational'||gateway.phase!=='active'||
          taskStageFailed||taskStageFlight||decisionFlight||
-         dispatchFlight||completionFlight||dispatchFailed||completionFailed||
+         dispatchFlight||completionFlight||d1FailurePreflightFlight||
+         d1FailurePreflightFailed||dispatchFailed||completionFailed||
          a2aStarting||a2aOwner?.phase==='failed_closed'||
          ++decisionCalls>8)
        deny('bounded owner Task decision requires active quiescent root');
@@ -465,6 +476,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      async dispatchEnrolledTask(input){
       if(closed||session.phase!=='operational'||!a2aOwner||
          taskStageFailed||dispatchFailed||dispatchFlight||
+         d1FailurePreflightFlight||d1FailurePreflightFailed||
          taskStageFlight||gateway.phase!=='active')
        deny('protected A2A dispatch requires quiescent live original session');
       if(!fields(input,['taskId','runtimeTaskId','instruction','effectStager']))
@@ -516,7 +528,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       if(closed||session.phase!=='operational'||!a2aOwner||
          gateway.phase!=='active'||dispatchFailed||completionFailed||
          taskStageFailed||taskStageFlight||dispatchFlight||
-         completionFlight)
+         completionFlight||d1FailurePreflightFlight||
+         d1FailurePreflightFailed)
        deny('independent Task completion requires a live quiescent owner');
       if(!fields(input,['taskId','runtimeTaskId'])||
          typeof input?.taskId!=='string'||
@@ -563,6 +576,73 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        }
        throw error;
       }finally{completionFlight=undefined;}
+     },
+     /** R352.0: verify a FAILED Test Runner by the original native
+      * Gateway flight + private MAC/independent Gitea observer. This is a
+      * bounded D1 PREFLIGHT only, not Test PASS, repair admission or a
+      * model-triggered Child. It never enters gatewayAttestedTaskIds. */
+     async preflightNativeD1Repair(input){
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         !a2aOwner||dispatchFailed||completionFailed||taskStageFailed||
+         dispatchFlight||completionFlight||taskStageFlight||
+         decisionFlight||d1FailurePreflightAttempted||
+         d1FailurePreflightFlight||d1FailurePreflightFailed)
+       deny('native D1 preflight needs one quiescent original Engineer owner');
+      if(!fields(input,['failureObserver','failedRunnerIntent','candidate'])||
+         !(input.failureObserver instanceof AuthenticatedRunnerFailureObserver))
+       deny('D1 cannot accept unverified model/provider failure evidence');
+      const intent=input.failedRunnerIntent;
+      if(!intent||typeof intent!=='object'||Array.isArray(intent)||
+         typeof intent.runtime_task_id!=='string'||
+         typeof intent.task_id!=='string')
+       deny('D1 requires original durable Test Task/Runner identity');
+      // Prior A2A activity only identifies the Task to cross-check. It is
+      // never proof of failure: the R339 observer validates the actual
+      // Runner attempt, MAC, Gitea HEAD, Rust owner and original Gateway.
+      const pin=stagedTaskIds.get(intent.runtime_task_id);
+      const reported=dispatchedReports.get(intent.runtime_task_id);
+      if(!pin||pin.task_id!==intent.task_id||pin.agent_id!=='test'||
+         pin.operation!=='run_tests'||
+         reported?.task_id!==intent.task_id||
+         reported.runtime_task_id!==intent.runtime_task_id||
+         completionAttempts.has(intent.runtime_task_id)||
+         gatewayAttestedTaskIds.has(intent.task_id))
+       deny('D1 requires dispatched but never-completed original Test Task');
+      d1FailurePreflightAttempted=true; // consume BEFORE observer I/O
+      d1FailurePreflightFlight=(async()=>{
+       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       const proof=await preflightNativeD1FailureCandidate({
+        coordinator:operationalCoordinator,childIssuer,gateway,
+        failureObserver:input.failureObserver,
+        failedRunnerIntent:intent,candidate:input.candidate
+       });
+       if(closed||session.phase!=='operational'||
+          gateway.phase!=='active'||
+          proof.status!=='native_d1_failure_source_preflight_only'||
+          proof.original_session_id!==snapshot.session_id||
+          proof.failed_task_id!==intent.task_id||
+          proof.failed_runtime_task_id!==intent.runtime_task_id||
+          proof.gateway_task_completed!==false||
+          proof.child_credential_issued!==false||
+          proof.task_registered!==false||
+          proof.recovery_authorized!==false)
+        deny('Runner FAIL preflight changed original Engineer session');
+       operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       // Proof is diagnostic data only. It NEVER releases the normal
+       // successful-completion gate or issues a replacement Child.
+       return proof;
+      })();
+      try{return await d1FailurePreflightFlight;}
+      catch(error){
+       d1FailurePreflightFailed=true;
+       // Ambiguous Runner/observer evidence cannot become a later D1:
+       // retire the root and require independent recovery.
+       if(session.phase==='operational'){
+        try{await retire();}
+        catch{deny('D1 failed and original root retirement unconfirmed');}
+       }
+       throw error;
+      }finally{d1FailurePreflightFlight=undefined;}
      }
     });
     return executionHandle;
@@ -588,6 +668,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(a2aStarting)try{await a2aStarting;}catch{/* Recheck root below. */}
     if(dispatchFlight)try{await dispatchFlight;}catch{/* Recheck root below. */}
     if(completionFlight)try{await completionFlight;}catch{/* Recheck root below. */}
+    if(d1FailurePreflightFlight)try{await d1FailurePreflightFlight;}catch{/* Recheck root below. */}
     try{
      try{if(a2aOwner)await a2aOwner.close();}
      finally{if(session.phase!=='revoked')await retire();}

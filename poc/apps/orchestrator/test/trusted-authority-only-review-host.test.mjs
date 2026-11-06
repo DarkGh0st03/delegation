@@ -1135,6 +1135,45 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
 });
 
 
+test('R352.0 original owner refuses Test D1 failure claims without an original A2A dispatch',async t=>{
+ const f=await fixture(t,{includeTestPermission:true}),host=await f.start();
+ await f.approve(['permission-1','permission-2','permission-3']);
+ const {coordinator}=await host.activateOperational(root('urn:r3520:preflight-root',2));
+ const deps=executionDeps(f);let signed=0;
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
+  signed++;
+  return {id:req.credential_id,validFrom:req.valid_from,
+   credentialSubject:{sub:'did:thesis:test',per:structuredClone(req.permissions)},
+   credentialStatus:structuredClone(req.credential_status)};
+ }};
+ const execution=await host.admitOperationalExecution(deps);
+ const rootBinding=coordinator.assertTrustedGatewayAuthorityBinding();
+ const runPermission=rootBinding.root_permissions.find(p=>p.operation==='run_tests');
+ assert.ok(runPermission);
+ const taskId='r3520-unexecuted-test',runtimeTaskId='dispatch_'+'T'.repeat(22);
+ await execution.stageTask({
+  task:{task_id:taskId,epoch:1,agent_id:'test',depends_on:[],
+   permissions:[runPermission]},
+  runtimeTaskId,childParameters:root('urn:r3520:unexecuted-child',3,90)
+ });
+ assert.equal(signed,1);
+ assert.equal(execution.gateway.registeredTaskCount,1);
+ assert.equal(execution.gateway.stagedCompletedTaskCount,0);
+ // Even a privileged caller cannot introduce fake Failure, Task or
+ // model proposal without both the ORIGINAL A2A dispatch and real
+ // authenticated Runner FAIL evidence.
+ const fake={task_id:taskId,runtime_task_id:runtimeTaskId};
+ await assert.rejects(execution.preflightNativeD1Repair({
+  failureObserver:{},failedRunnerIntent:fake,
+  candidate:{role:'backend',permissions:[runPermission]}
+ }),/D1 cannot accept unverified model\/provider failure evidence/);
+ assert.equal(host.phase,'operational');
+ assert.equal(coordinator.registeredTaskCount,1);
+ assert.equal(execution.gateway.stagedCompletedTaskCount,0);
+ await host.close();
+ assert.equal(host.phase,'revoked');
+});
+
 test('R350.6 never binds a foreign preflight to the same-session Gateway',async t=>{
  const f=await fixture(t),host=await f.start();
  await f.approve(['permission-1','permission-2']);
