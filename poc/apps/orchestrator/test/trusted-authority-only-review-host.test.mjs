@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {createServer} from 'node:net';
-import {generateKeyPairSync,randomBytes,scryptSync} from 'node:crypto';
+import {generateKeyPairSync,randomBytes,scryptSync,createHash} from 'node:crypto';
 import {createTrustedAuthorityOnlyReviewHost as createHost,
  reconcileTrustedAuthorityOnlyReviewRoots} from '../src/trusted-authority-only-review-host.mjs';
 import {TrustedOperationalRecoveryStore}
@@ -28,6 +28,9 @@ import {DurableAuthorityOnlyGiteaMutationIntentJournal}
 import {DurableAuthorityOnlyRunnerIntentJournal}
  from '../../gateway/src/trusted-authority-only-runner-intent-journal.ts';
 import {GiteaClient} from '../../gateway/src/gitea-client.ts';
+import {AuthenticatedGiteaMutationCompletionObserver,
+ TrustedGatewayGiteaMutationEvidencePublisher}
+ from '../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts';
 import {InMemoryRequestStore,InMemoryAuditSink,prepareAuthorization} from '../../gateway/src/prepare.ts';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
@@ -75,7 +78,7 @@ const root=(id,index,seconds=600)=>({credential_id:id,valid_from:new Date().toIS
 async function fixture(t,flags={}){
  const home=await mkdtemp(join(tmpdir(),'r349-'));t.after(()=>rm(home,{recursive:true,force:true}));
  const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys','gatewaySessions','gatewayTasks','issuerChildren','gatewayChildren','flights',
-  'mutationIntents','runnerIntents','recovery'].map(k=>[k,join(home,k)]));
+  'mutationIntents','runnerIntents','recovery','mutationEvidence'].map(k=>[k,join(home,k)]));
  for(const d of Object.values(dirs))await mkdir(d,{mode:0o700});
  const engineer=generateKeyPairSync('ed25519'),backend=generateKeyPairSync('ed25519');
  const privateKeyFile=join(dirs.keys,'engineer.pem');await writeFile(privateKeyFile,pem(engineer.privateKey,'pkcs8'),{mode:0o600});
@@ -539,28 +542,78 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
  }
 });
 
-test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',async t=>{
+for(const verified of [false,true])test(verified?
+ 'R351.2 original Gateway authenticated offline Gitea evidence permits next ADK Frontend choice':
+ 'R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',
+ async t=>{
  const f=await fixture(t),host=await f.start();
  await f.approve(['permission-1','permission-2']);
  const {coordinator}=await host.activateOperational(root('urn:r350:real-a2a-root',2));
  const deps=executionDeps(f),events=[],model=new R3504ScriptedBackend();
  deps.effectFenceJournal=new DurableAuthorityOnlyTaskFenceJournal(f.dirs.flights);
  const fileSha='e'.repeat(40),vp='r3504-private-vp',requestId='r3504-prepared-01';
+ const newContent='export const suspended=true;\n',newBlob='d'.repeat(40),oldBlob='b'.repeat(40);
+ let publisher;
+ if(verified){
+  // In-memory disposable Gitea fixture, but REAL independent receipt
+  // publisher/observer, MAC, HEAD-parent-CAS and file-content checks.
+  const provider={head:snapshot.base_revision,parent:snapshot.base_revision,
+   blob:oldBlob,content:'export const suspended=false;\n'};
+  const reader=new GiteaClient({baseUrl:'http://offline-evidence.r3512.invalid',
+   token:'trusted-offline-reader',owner:'thesis',repository:'iam-console-poc',
+   fetchFn:async(raw,init)=>{
+    assert.equal(init?.method,'GET');
+    const u=new URL(String(raw));
+    if(u.pathname.endsWith('/branches/feature%2Faccount-suspension'))
+     return Response.json({name:branch,commit:{id:provider.head}});
+    if(u.pathname.endsWith('/git/commits/'+fileSha))
+     return Response.json({sha:fileSha,parents:[{sha:provider.parent}]});
+    if(u.pathname.endsWith('/contents/apps/user.ts')){
+     assert.equal(u.searchParams.get('ref'),fileSha);
+     return Response.json({type:'file',path:'apps/user.ts',encoding:'base64',
+      content:Buffer.from(provider.content).toString('base64'),
+      size:Buffer.byteLength(provider.content),sha:provider.blob,
+      last_commit_sha:provider.head});
+    }
+    throw Error('unexpected independent Gitea fixture read');
+   }
+  });
+  const baseProof={directory:f.dirs.mutationEvidence,key:randomBytes(32),
+   repository:'thesis/iam-console-poc',branch};
+  publisher=new TrustedGatewayGiteaMutationEvidencePublisher({
+   ...baseProof,independentGiteaClient:reader
+  });
+  deps.completionObserver=new AuthenticatedGiteaMutationCompletionObserver({
+   ...baseProof,giteaClient:reader
+  }).toTrustedObserver();
+  // The provider mutation is simulated by /execute below. A separate
+  // observer rereads its state; no A2A artifact is accepted as evidence.
+  publisher.setOfflineState=()=>{provider.head=fileSha;
+   provider.parent=snapshot.base_revision;provider.blob=newBlob;
+   provider.content=newContent;};
+ }
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   events.push('native_child_fixture');
   return {'@context':['https://www.w3.org/ns/credentials/v2'],
    type:['VerifiableCredential','DelegationCredential'],
    id:req.credential_id,issuer:'did:thesis:rust',
    validFrom:req.valid_from,
-   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialSubject:{sub:'did:thesis:'+req.delegatee,per:structuredClone(req.permissions)},
    credentialStatus:structuredClone(req.credential_status),
    proof:{type:'Ed25519Signature2020',proofValue:'OFFLINE_R3504_FIXTURE'}};
  }};
  const execution=await host.admitOperationalExecution(deps);
  const {gateway,stageTask,startSdkA2AOwner}=execution;
  const task=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding());
- const staged=await stageTask(task);
+ const firstChoice=new R351ScriptedDecision({task_id:task.task.task_id,
+  agent_id:'backend',depends_on:[],permissions:task.task.permissions,
+  instruction:'Update Backend Account Suspension within signed scope'});
+ const staged=verified?await execution.proposeAndStageTask({
+  model:firstChoice,runtimeTaskId:task.runtimeTaskId,
+  childParameters:task.childParameters
+ }):await stageTask(task);
  assert.equal(staged.status,'owner_child_enrolled_no_provider_execution');
+ if(verified)assert.equal(firstChoice.calls,1);
  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
  const {mutation:nativeMutation,runner:nativeRunner,gitea}=
   nativeOfflinePreflights(gateway,f.dirs,events);
@@ -603,6 +656,32 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
    assert.equal(body.request_id,requestId);
    assert.equal(body.signed_vp,vp);
    events.push('gateway_execute_fixture');
+   if(verified){
+    const names=(await readdir(f.dirs.mutationIntents))
+     .filter(n=>n.endsWith('.intent.json'));
+    const flights=(await readdir(f.dirs.flights))
+     .filter(n=>n.endsWith('.flight.json'));
+    assert.equal(names.length,1);assert.equal(flights.length,1);
+    const intent=JSON.parse(await readFile(
+     join(f.dirs.mutationIntents,names[0]),'utf8'));
+    const flight=JSON.parse(await readFile(
+     join(f.dirs.flights,flights[0]),'utf8'));
+    assert.equal(intent.request_id,requestId);
+    assert.equal(flight.request_id,requestId);
+    assert.equal(flight.credential_id,staged.credential_id);
+    const pins=['session_id','authority_digest','root_credential_id',
+     'task_id','runtime_task_id','epoch','agent_did','credential_id',
+     'request_id','request_fingerprint'];
+    const expected=Object.fromEntries(pins.map(k=>[k,intent[k]]));
+    publisher.setOfflineState();
+    const result={branch,path:'apps/user.ts',revision:fileSha,
+     commit_sha:fileSha,blob_sha:newBlob,
+     previous_revision:snapshot.base_revision,
+     precondition_blob_sha:oldBlob,previous_head_sha:snapshot.base_revision,
+     previous_blob_sha:oldBlob,staging_branch:'feature/r3512-private',
+     next_content_sha256:createHash('sha256').update(newContent).digest('hex')};
+    await publisher.publish(intent,expected,result,'offline-opa-r3512');
+   }
    return Response.json({request_id:requestId,decision:'allow',
     execution:{provider:'gitea',performed:true,tool:'update_file',
      branch,path:'apps/user.ts',commit_sha:fileSha}});
@@ -684,11 +763,54 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
    taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId,
    instruction:'Replay',effectStager:nativeStager
   }),/protected A2A dispatch replayed/);
-  await assert.rejects(execution.attestEnrolledTaskCompletion({
-   taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId
-  }),/trusted completion observer or owner-private journal missing/);
-  assert.equal(gateway.stagedCompletedTaskCount,0);
-  assert.equal(host.phase,'revoked');
+  if(verified){
+   const next=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding(),{
+    taskId:'r3512-frontend',epoch:2,childId:'urn:r3512:frontend-child',
+    permission:task.task.permissions[0]
+   });
+   next.runtimeTaskId='dispatch_'+'M'.repeat(22);
+   next.childParameters.credential_status.statusListIndex='11';
+   const nextModel=new R351ScriptedDecision({
+    task_id:next.task.task_id,agent_id:'frontend',
+    depends_on:[task.task.task_id],permissions:next.task.permissions,
+    instruction:'Frontend after independently attested Backend change'
+   });
+   await assert.rejects(execution.proposeAndStageTask({
+    model:nextModel,runtimeTaskId:next.runtimeTaskId,
+    childParameters:next.childParameters
+   }),/next ADK Task decision requires independent Gateway completion/);
+   assert.equal(nextModel.calls,0);
+   const attested=await execution.attestEnrolledTaskCompletion({
+    taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId
+   });
+   assert.equal(attested.status,'owner_gateway_completion_independently_observed');
+   assert.equal(gateway.stagedCompletedTaskCount,1);
+   const second=await execution.proposeAndStageTask({
+    model:nextModel,runtimeTaskId:next.runtimeTaskId,
+    childParameters:next.childParameters
+   });
+   assert.equal(second.task_id,'r3512-frontend');
+   assert.equal(second.agent_id,'frontend');
+   assert.equal(second.epoch,2);
+   assert.equal(second.decision_source,'owner_adk_candidate_coordinator_validated');
+   assert.equal(nextModel.calls,1);
+   assert.equal(gateway.registeredTaskCount,2);
+   assert.equal(coordinator.registeredTaskCount,2);
+   const prompt=JSON.stringify(nextModel.requests);
+   assert.ok(prompt.includes('independently_gateway_completed_tasks'));
+   assert.equal(prompt.includes(staged.credential_id),false);
+   assert.equal(prompt.includes(fileSha),false);
+   await assert.rejects(execution.attestEnrolledTaskCompletion({
+    taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId
+   }),/no matching original A2A dispatch report/);
+   assert.equal(host.phase,'operational');
+  }else{
+   await assert.rejects(execution.attestEnrolledTaskCompletion({
+    taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId
+   }),/trusted completion observer or owner-private journal missing/);
+   assert.equal(gateway.stagedCompletedTaskCount,0);
+   assert.equal(host.phase,'revoked');
+  }
   await host.close();
  }finally{
   await Promise.allSettled(binders.reverse().map(x=>x.close()));
