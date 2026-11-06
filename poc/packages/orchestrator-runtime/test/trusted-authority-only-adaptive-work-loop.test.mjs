@@ -83,6 +83,108 @@ test('R355 model can stop blocked without fabricating completion',async()=>{
  assert.equal(result.status,'owner_adaptive_work_blocked');assert.equal(result.executed_tasks,0);
  assert.equal(f.retired,true);assert.equal(result.pr_created,false);
 });
+
+/** R355.2: the simulated owner is the ONLY party allowed to convert the
+ * original controlled Runner FAIL into an authenticated observation. The
+ * scripted LLM cannot provide a digest, change the root or complete the FAIL. */
+function verifiedFailureFixture({forgery,failRole='test'}={}){
+ const done=[],events=[];let epoch=1,head='a'.repeat(40),failure,retired=false;
+ const permission=grant;
+ const hooks={
+  async readContext(){if(retired)throw Error('retired');
+   return {
+    requirement:'Implement Account Suspension',branch,
+    rootPermissions:['backend','frontend','test'].map(permission),
+    agents:Object.fromEntries(['backend','frontend','test'].map(agent_id=>[
+     agent_id,{capabilities:[permission(agent_id).operation]}])),
+    previousTasks:done.map(p=>({task_id:p.task_id,agent_id:p.agent_id})),
+    nextEpoch:epoch,
+    executionProgress:{current_head_sha:head,completed_work:done.map(p=>({
+     task_id:p.task_id,agent_id:p.agent_id,operation:permission(p.agent_id).operation,
+     instruction:p.instruction}))},
+    ...(failure?{verifiedFailure:{failed_phase:failure.failed_phase,
+     source_evidence_sha256:failure.source_evidence_sha256}}:{})
+   };
+  },
+  async beforeDecision(){events.push('decision');},
+  async executeTask(task){
+   events.push('dispatch:'+task.task_id);epoch++;
+   if(task.agent_id===failRole&&!failure){
+    events.push('original-runner-fail');
+    throw Error('A2A Test FAILED: untrusted error is NOT proof');
+   }
+   if(task.agent_id!=='test')head='b'.repeat(40);
+   done.push({...task,tested:task.agent_id==='test'?head:undefined});
+   events.push('gateway_attested:'+task.task_id);
+  },
+  async observeVerifiedTestFailure({task,context}){
+   events.push('original-owner-observe-runner-fail');
+   const original={status:'owner_verified_native_test_failure_preflight_only',
+    failed_task_id:task.task_id,
+    failed_runtime_task_id:'dispatch_'+'F'.repeat(22),
+    gateway_task_completed:false,recovery_authorized:false,
+    tested_commit_sha:context.executionProgress.current_head_sha,
+    failed_phase:'typecheck',source_evidence_sha256:'c'.repeat(64)};
+   if(forgery==='wrong-status')return {...original,status:'a2a_claimed_test_fail'};
+   if(forgery==='wrong-head')return {...original,tested_commit_sha:'f'.repeat(40)};
+   if(forgery==='wrong-digest')return {...original,source_evidence_sha256:'not-a-digest'};
+   failure=original;
+   return original;
+  },
+  async confirmReady(){events.push('independent_latest_runner_pass');
+   const test=done.filter(p=>p.agent_id==='test').at(-1);
+   if(!test||test.tested!==head)throw Error('no verified current Test');
+   return {status:'owner_verified_tested_head_not_pr_authorized',
+    task_id:test.task_id,runtime_task_id:'dispatch_'+'P'.repeat(22),
+    tested_commit_sha:test.tested};
+  },
+  async retire(){retired=true;events.push('retire');}
+ };
+ return {hooks,done,events,get retired(){return retired;}};
+}
+test('R355.2 independently verified Test FAIL is observable, not a completed dependency',async()=>{
+ const f=verifiedFailureFixture();
+ const backend=candidate('backend',1);
+ backend.task.depends_on=[];
+ const model=new Decisions([candidate('test',0),backend,candidate('test',2),
+  {action:'ready_for_pr',reason:'The replacement Test PASS is independently attested'}]);
+ const result=await runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks});
+ assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+ assert.equal(result.executed_tasks,2,'original FAIL cannot count as completion');
+ assert.equal(result.source_test_task_id,'task-2');
+ assert.equal(result.pr_created,false);
+ assert.equal(f.retired,false);
+ assert.equal(f.events.filter(x=>x==='original-owner-observe-runner-fail').length,1);
+ assert.equal(f.done.length,2);
+ assert.equal(f.done.some(x=>x.task_id==='task-0'),false);
+ assert.deepEqual(f.done.map(x=>x.task_id),['task-1','task-2']);
+ const prompts=JSON.stringify(model.requests);
+ assert.match(prompts,/independent_runner_failure/u);
+ assert.match(prompts,/typecheck/u);
+ assert.equal(prompts.includes('A2A Test FAILED: untrusted error'),false);
+ assert.ok(f.events.indexOf('original-owner-observe-runner-fail')<
+  f.events.indexOf('dispatch:task-1'));
+});
+for(const forgery of ['wrong-status','wrong-head','wrong-digest']){
+ test('R355.2 forged Test FAIL cannot unlock model continuation: '+forgery,async()=>{
+  const f=verifiedFailureFixture({forgery});
+  const model=new Decisions([candidate('test',0),candidate('backend',1)]);
+  await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+   /not independently verified/u);
+  assert.equal(model.calls,1);
+  assert.equal(f.retired,true);
+  assert.equal(f.done.length,0);
+ });
+}
+test('R355.2 Backend tool failure cannot masquerade as recoverable Test FAIL',async()=>{
+ const f=verifiedFailureFixture({failRole:'backend'});
+ const model=new Decisions([candidate('backend',0),candidate('test',1)]);
+ await assert.rejects(runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks:f.hooks}),
+  /untrusted error is NOT proof/u);
+ assert.equal(model.calls,1);
+ assert.equal(f.retired,true);
+ assert.equal(f.events.includes('original-owner-observe-runner-fail'),false);
+});
 test('R355 retirement failure is reported as unconfirmed',async()=>{
  const f=fixture(),model=new Decisions([{action:'ready_for_pr',reason:'Premature'}]);
  f.hooks.retire=async()=>{throw Error('native unavailable');};
