@@ -1,0 +1,26 @@
+{
+  "revision": "R353.7",
+  "source_commit": "b0187ebc3d14dadf7a36fc25af4d8fb9af2a4028",
+  "request": "One reviewed native original-root D1 recovery followed by exact tested Draft PR and independent Task completion",
+  "paid_ai": false,
+  "production_effects": false,
+  "free_ci_validated": true,
+  "source_fast_ci": 42250567589,
+  "source_engineer_ci": 42250567593,
+  "prior_native_recovery": 42240217477,
+  "preliminary_planning_gateway": "fixture",
+  "autonomous_functional_generation": false,
+  "expected": {
+    "registered_tasks": 6,
+    "independently_completed_tasks": 5,
+    "original_test_remains_failed": true,
+    "cas_mutations": 3,
+    "runner_calls": 2,
+    "draft_pr_creations": 1,
+    "independent_pr_completion": true,
+    "main_unchanged": true,
+    "original_root_unchanged": true,
+    "pr_replay_denied": true,
+    "root_revocation_verified": true
+  }
+}
