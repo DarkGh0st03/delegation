@@ -412,6 +412,47 @@ test('R351.1 isolated ADK proposer accepts only explicitly completed prior Task 
   /R351 authority-only model Task choice denied/);
  assert.equal(unverifiedModel.calls,1);
 });
+test('R352.6 ADK sees Coordinator epoch after an incomplete original Test',async()=>{
+ const roots=[{operation:'update_file',
+  resource:'gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/user.ts'}];
+ const agents={backend:{capabilities:['update_file']}};
+ const model=new R351ScriptedDecision({
+  task_id:'r3526-after-incomplete-test',agent_id:'backend',
+  depends_on:['r3526-completed-b'],permissions:roots,
+  instruction:'Repair under the unchanged approved scope'
+ });
+ const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
+  model,requirement:'Account Suspension',branch:'feature/account-suspension',
+  rootPermissions:roots,agents,nextEpoch:5,
+  previousTasks:[{task_id:'r3526-completed-a',agent_id:'backend'},
+   {task_id:'r3526-completed-b',agent_id:'backend'}]
+ });
+ assert.equal((await proposer.propose()).agent_id,'backend');
+ const findContext=(value)=>{
+  if(typeof value==='string'){
+   try{const parsed=JSON.parse(value);
+    if(parsed&&typeof parsed==='object'&&
+       Object.hasOwn(parsed,'next_epoch'))return parsed;
+   }catch{/* Other ADK prompt text is not a JSON context. */}
+   return undefined;
+  }
+  if(!value||typeof value!=='object')return undefined;
+  for(const child of Object.values(value)){
+   const found=findContext(child);
+   if(found)return found;
+  }
+  return undefined;
+ };
+ const observed=findContext(model.requests);
+ assert.ok(observed,'the ADK user message must contain pinned context');
+ assert.equal(observed.next_epoch,5);
+ assert.equal(observed.independently_gateway_completed_tasks.length,2);
+ assert.equal(model.calls,1);
+ assert.throws(()=>new TrustedAuthorityOnlyAdkDecisionProposer({
+  model,requirement:'Account Suspension',branch:'feature/account-suspension',
+  rootPermissions:roots,agents,previousTasks:[],nextEpoch:0
+ }),/R351 authority-only model Task choice denied/);
+});
 test('R350.2 same Engineer root registers Task, binds Gateway, issues native Child and enrolls it',async t=>{
  const f=await fixture(t),host=await f.start();await f.approve(['permission-1','permission-2']);
  const {coordinator}=await host.activateOperational(root('urn:r350:operational-task',2));
