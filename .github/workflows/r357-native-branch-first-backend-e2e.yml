@@ -43,6 +43,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: R357.0 source syntax before costly native toolchain
+        run: node --check poc/packages/orchestrator-runtime/test/r354-native-reviewed-root-branch-e2e.mjs
       - uses: dtolnay/rust-toolchain@1.99.0
       - uses: actions/setup-node@v4
         with:
