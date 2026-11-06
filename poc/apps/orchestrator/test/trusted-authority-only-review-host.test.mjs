@@ -1022,7 +1022,9 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
     const testPermission=coordinator.assertTrustedGatewayAuthorityBinding()
      .root_permissions.find(p=>p.operation==='run_tests');
     assert.ok(testPermission,'Test Agent requires separately approved run_tests');
-    const testTask={
+    // The Gateway fixture reads the exact owner-selected Test runtime
+    // Task; do not shadow the shared pin with a block-scoped local.
+    testTask={
      runtimeTaskId:'dispatch_'+'T'.repeat(22),
      childParameters:{
       credential_id:'urn:r3513:child:test',
