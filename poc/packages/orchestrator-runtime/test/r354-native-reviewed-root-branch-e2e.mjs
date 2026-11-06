@@ -210,7 +210,7 @@ try{
   await assert.rejects(execution.proposeAndStageTask({
    model:tooEarly,runtimeTaskId:backendRuntimeTaskId,
    childParameters:params('urn:r357:must-not-issue',29404,500)
-  }),/next ADK Task decision requires independent Gateway completion/);
+  }),/independently completed original branch Task/);
   assert.equal(tooEarly.calls,0);
   assert.equal(coordinator.registeredTaskCount,1);
   assert.equal(gate.stagedCompletedTaskCount,0);
