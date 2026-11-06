@@ -584,7 +584,13 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
  }
 });
 
-for(const mode of ['missing','backend','frontend','test','failure'])test(mode==='failure'?
+for(const mode of ['missing','backend','frontend','test','failure',
+ 'failure-no-receipt','failure-model-denied'])test(
+ mode==='failure-no-receipt'?
+ 'R352.1 Test FAIL without MAC receipt retires original Engineer root':
+ mode==='failure-model-denied'?
+ 'R352.1 verified FAIL does not permit a model-selected foreign D1 role':
+ mode==='failure'?
  'R352.1 actual A2A Test FAIL is independently verified and permits only a bounded D1 candidate':
  mode==='test'?
  'R351.4 original Engineer ADK/A2A Test invokes authenticated Runner evidence and attests PASS':
@@ -594,7 +600,9 @@ for(const mode of ['missing','backend','frontend','test','failure'])test(mode===
  'R351.2 original Gateway authenticated offline Gitea evidence permits next ADK Frontend choice':
  'R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',
  async t=>{
- const verified=mode!=='missing',throughFailure=mode==='failure',
+ const verified=mode!=='missing',throughFailure=mode.startsWith('failure'),
+  noFailureReceipt=mode==='failure-no-receipt',
+  foreignD1Model=mode==='failure-model-denied',
   throughTest=mode==='test'||throughFailure,
   throughFrontend=mode==='frontend'||throughTest;
  const f=await fixture(t,throughFrontend?{includeTestPermission:true}:{});
@@ -838,7 +846,8 @@ for(const mode of ['missing','backend','frontend','test','failure'])test(mode===
      'request_id','request_fingerprint'];
     const binding=Object.fromEntries(keys.map(k=>[k,intent[k]]));
     if(throughFailure){
-     await failurePublisher.publish(intent,binding,request,result,'opa-offline-r3521');
+     if(!noFailureReceipt)
+      await failurePublisher.publish(intent,binding,request,result,'opa-offline-r3521');
     }else{
      const digest=await runnerPublisher.publish(intent,binding,
       request,result,'opa-offline-r3514');
@@ -1094,7 +1103,7 @@ for(const mode of ['missing','backend','frontend','test','failure'])test(mode===
      const testStager=execution.createEnrolledNativeEffectStager({
       runtimeTaskId:testTask.runtimeTaskId,expectedHeadSha:frontendSha
      });
-     const testReport=await execution.dispatchEnrolledTask({
+     const dispatchTest=()=>execution.dispatchEnrolledTask({
       taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId,
       instruction:'Run pinned Test on independently verified Backend/Frontend',
       effectStager:testStager,
@@ -1102,6 +1111,21 @@ for(const mode of ['missing','backend','frontend','test','failure'])test(mode===
        role:'backend',permissions:task.task.permissions
       }}:{})
      });
+     if(noFailureReceipt){
+      await assert.rejects(dispatchTest(),
+       /ENOENT|no such file|Runner FAIL|failure/);
+      assert.equal(host.phase,'revoked');
+      assert.equal(gateway.stagedCompletedTaskCount,2);
+      assert.equal(coordinator.registeredTaskCount,3);
+      await assert.rejects(execution.proposeVerifiedD1RepairTask({
+       model:new R351ScriptedDecision({
+        task_id:'forged-d1',agent_id:'backend',depends_on:[],
+        permissions:task.task.permissions,instruction:'Unverified retry'
+       })
+      }),/requires authenticated original Runner failure/);
+      return;
+     }
+     const testReport=await dispatchTest();
      if(throughFailure){
       assert.equal(testReport.status,'owner_verified_native_test_failure_preflight_only');
       assert.equal(testReport.failed_phase,'typecheck');
@@ -1115,11 +1139,25 @@ for(const mode of ['missing','backend','frontend','test','failure'])test(mode===
       assert.equal((await readdir(f.dirs.runnerEvidence))
        .filter(n=>n.endsWith('.runner-fail.json')).length,1);
       const candidate=new R351ScriptedDecision({
-       task_id:'r3521-proposed-repair',agent_id:'backend',
-       depends_on:[task.task.task_id,next.task.task_id],
+       task_id:'r3521-proposed-repair',
+       agent_id:foreignD1Model?'frontend':'backend',
+       depends_on:[task.task.task_id,next.task.task.task_id],
        permissions:task.task.permissions,
-       instruction:'Repair the verified TypeScript typecheck failure under the signed Backend file scope'
+       instruction:'Repair the verified TypeScript typecheck failure under the signed file scope'
       });
+      if(foreignD1Model){
+       await assert.rejects(execution.proposeVerifiedD1RepairTask({
+        model:candidate
+       }),/model D1 candidate not identical/);
+       assert.equal(candidate.calls,1);
+       assert.equal(coordinator.registeredTaskCount,3);
+       assert.equal(gateway.stagedCompletedTaskCount,2);
+       assert.equal(host.phase,'operational');
+       await assert.rejects(execution.proposeVerifiedD1RepairTask({
+        model:new R351ScriptedDecision(candidate.candidate)
+       }),/requires authenticated original Runner failure/);
+       return;
+      }
       const suggestion=await execution.proposeVerifiedD1RepairTask({model:candidate});
       assert.equal(suggestion.status,'d1_model_candidate_not_recovery_authorized');
       assert.equal(suggestion.failed_phase,'typecheck');
