@@ -825,7 +825,8 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
     return Response.json({request_id:testRequestId,decision:'allow',
      execution:{provider:'runner',performed:true,tool:'run_tests',
       branch,tested_commit_sha:frontendSha,runner_profile:'poc-default',
-      status:'pass',project_tests:'pass',researcher_acceptance:'pass'}
+      status:'pass',project_tests:{status:'pass'},
+      researcher_acceptance:{status:'pass'}}
     });
    }
    const frontendRequest=throughFrontend&&body.request_id===frontendRequestId;
