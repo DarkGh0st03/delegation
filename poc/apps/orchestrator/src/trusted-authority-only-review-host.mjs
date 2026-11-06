@@ -86,6 +86,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  let operationalCoordinator,executionAdmissionAttempted=false,executionAdmissionFlight;
  let taskStageFlight,taskStageFailed=false,stagedTaskCount=0;
  const stagedTaskIds=new Map();
+ // Only original Gateway-attested completions may unlock subsequent ADK
+ // choices. A2A artifacts and Task registration never enter this ledger.
+ const gatewayAttestedTaskIds=new Map();
  const dispatchAttempts=new Set();
  const issuedEffectStagers=new Map();
  const dispatchedReports=new Map();
@@ -231,8 +234,17 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      async proposeAndStageTask(input){
       if(closed||session.phase!=='operational'||gateway.phase!=='active'||
          taskStageFailed||taskStageFlight||decisionFlight||
+         dispatchFlight||completionFlight||dispatchFailed||completionFailed||
+         a2aStarting||a2aOwner?.phase==='failed_closed'||
          ++decisionCalls>8)
        deny('bounded owner Task decision requires active quiescent root');
+      // A registered Child or completed A2A report is NOT a verified
+      // Gateway result. No new model turn until all earlier Tasks have
+      // independently attested durable provider/Runner completion.
+      if(stagedTaskIds.size!==gatewayAttestedTaskIds.size||
+         [...stagedTaskIds.values()].some(pin=>
+          !gatewayAttestedTaskIds.has(pin.task_id)))
+       deny('next ADK Task decision requires independent Gateway completion');
       if(!fields(input,['model','runtimeTaskId','childParameters']))
        deny('ADK choice cannot supply root, session, or Task authorization');
       const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
@@ -243,7 +255,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry).map(
         ([agent_id,pin])=>[agent_id,{capabilities:pin.capabilities}]
        )),
-       previousTasks:[...stagedTaskIds.values()].map(p=>({
+       previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({
         task_id:p.task_id,agent_id:p.agent_id
        }))
       });
@@ -528,6 +540,17 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
           observed.runtime_task_id!==input.runtimeTaskId||
           observed.gateway_execution_authorized!==false)
         deny('independent Gateway completion receipt differs from Task');
+       // The receipt is produced by the original protected A2A Owner's
+       // independent Gateway observer (never a caller/model parameter).
+       // Keep only minimal Task/role provenance, no provider secrets,
+       // model-provided artifacts, credentials, or assumed pass claims.
+       const pin=stagedTaskIds.get(input.runtimeTaskId);
+       if(!pin||pin.task_id!==input.taskId||
+          gatewayAttestedTaskIds.has(input.taskId))
+        deny('Gateway completion no longer matches original staged Task');
+       gatewayAttestedTaskIds.set(input.taskId,Object.freeze({
+        task_id:pin.task_id,agent_id:pin.agent_id
+       }));
        dispatchedReports.delete(input.runtimeTaskId);
        return observed;
       })();

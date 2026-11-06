@@ -29,6 +29,8 @@ import {DurableAuthorityOnlyRunnerIntentJournal}
  from '../../gateway/src/trusted-authority-only-runner-intent-journal.ts';
 import {GiteaClient} from '../../gateway/src/gitea-client.ts';
 import {InMemoryRequestStore,InMemoryAuditSink,prepareAuthorization} from '../../gateway/src/prepare.ts';
+import {TrustedAuthorityOnlyAdkDecisionProposer}
+ from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
 import {DurableAuthorityOnlyTaskFenceJournal}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-task-fence-journal.ts';
 import {startSpecializedAgentServer,TrustedEffectStagingTaskRegistry,
@@ -280,6 +282,85 @@ test('R351.0 model-supplied unauthorized Task is rejected before native Child is
  assert.equal(execution.gateway.registeredTaskCount,0);
  assert.equal(host.phase,'operational');
  await host.close();
+});
+test('R351.1 unverified registered Task never unlocks another model decision',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r3511:pending-root',2));
+ const task=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding(),{
+  taskId:'r3511-first'
+ });
+ let childCalls=0;
+ const deps=executionDeps(f);deps.nativeCryptoPort={kind:'rust-native',
+  async issueChild(req){
+   childCalls++;
+   return {id:req.credential_id,validFrom:req.valid_from,
+    credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+    credentialStatus:structuredClone(req.credential_status)};
+  }
+ };
+ const execution=await host.admitOperationalExecution(deps);
+ const first=new R351ScriptedDecision({
+  task_id:'r3511-first',agent_id:'backend',depends_on:[],
+  permissions:task.task.permissions,
+  instruction:'First approved Backend effect'
+ });
+ const staged=await execution.proposeAndStageTask({
+  model:first,runtimeTaskId:task.runtimeTaskId,
+  childParameters:task.childParameters
+ });
+ assert.equal(staged.task_id,'r3511-first');
+ assert.equal(childCalls,1);
+ assert.equal(coordinator.registeredTaskCount,1);
+ const second=new R351ScriptedDecision({
+  task_id:'r3511-second',agent_id:'backend',
+  depends_on:['r3511-first'],permissions:task.task.permissions,
+  instruction:'This must not run before the first independent Gateway attestation'
+ });
+ const another=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding(),{
+  taskId:'r3511-second',epoch:2,childId:'urn:r3511:second-child'
+ });
+ another.runtimeTaskId='dispatch_'+'M'.repeat(22);
+ await assert.rejects(execution.proposeAndStageTask({
+  model:second,runtimeTaskId:another.runtimeTaskId,
+  childParameters:another.childParameters
+ }),/next ADK Task decision requires independent Gateway completion/);
+ assert.equal(second.calls,0,'unverified dependency must not be shown to an LLM');
+ assert.equal(childCalls,1);
+ assert.equal(coordinator.registeredTaskCount,1);
+ assert.equal(execution.gateway.registeredTaskCount,1);
+ assert.equal(host.phase,'operational');
+ await host.close();
+});
+test('R351.1 isolated ADK proposer accepts only explicitly completed prior Task IDs',async()=>{
+ const roots=[{operation:'update_file',
+  resource:'gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/user.ts'}];
+ const agents={backend:{capabilities:['update_file']}};
+ const choice={
+  task_id:'r3511-followup',agent_id:'backend',
+  depends_on:['r3511-verified'],permissions:roots,
+  instruction:'Follow previous verified Backend Task'
+ };
+ const verifiedModel=new R351ScriptedDecision(choice);
+ const admitted=new TrustedAuthorityOnlyAdkDecisionProposer({
+  model:verifiedModel,requirement:'Account Suspension',
+  branch:'feature/account-suspension',rootPermissions:roots,agents,
+  previousTasks:[{task_id:'r3511-verified',agent_id:'backend'}]
+ });
+ const proposal=await admitted.propose();
+ assert.deepEqual(proposal.depends_on,['r3511-verified']);
+ const prompt=JSON.stringify(verifiedModel.requests);
+ assert.equal(prompt.includes('independently_gateway_completed_tasks'),true);
+ assert.equal(prompt.includes('already_registered_tasks'),false);
+ const unverifiedModel=new R351ScriptedDecision(choice);
+ const denied=new TrustedAuthorityOnlyAdkDecisionProposer({
+  model:unverifiedModel,requirement:'Account Suspension',
+  branch:'feature/account-suspension',rootPermissions:roots,agents,
+  previousTasks:[]
+ });
+ await assert.rejects(denied.propose(),
+  /R351 authority-only model Task choice denied/);
+ assert.equal(unverifiedModel.calls,1);
 });
 test('R350.2 same Engineer root registers Task, binds Gateway, issues native Child and enrolls it',async t=>{
  const f=await fixture(t),host=await f.start();await f.approve(['permission-1','permission-2']);

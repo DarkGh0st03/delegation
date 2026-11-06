@@ -75,7 +75,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     'Propose exactly ONE next software engineering Task; never claim approval or completion.',
     'Return JSON only with exactly task_id,agent_id,depends_on,permissions,instruction.',
     'Permissions are pairs of resource and operation and may use only existing delegated scope.',
-    'Choose the specialist from registered agent IDs and the dependency IDs already registered.',
+    'Choose the specialist from registered agent IDs; dependencies may refer ONLY to independently Gateway-verified completed Task IDs.',
     'Never output keys, credentials, URLs, root status, signature, DID, epoch, or session details.',
     'The Coordinator independently validates every Task and does not trust this output.'
    ].join('\n'),
@@ -90,7 +90,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     agent_id,capabilities
    })),
    root_permission_ceiling:this.roots,
-   already_registered_tasks:this.previous,
+   independently_gateway_completed_tasks:this.previous,
    next_epoch:this.previous.length+1
   };
   let text='',failed=false;
