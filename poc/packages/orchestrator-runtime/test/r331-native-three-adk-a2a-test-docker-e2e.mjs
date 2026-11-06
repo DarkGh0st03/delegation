@@ -133,6 +133,11 @@ function assertSameExactPermissionPairs(actual,expected){
 const reviewedNative=process.env.R35013_NATIVE_REVIEW==="1";
 const reviewedD1=process.env.R3528_NATIVE_D1_RETEST==="1";
 const nativePr=process.env.R3537_NATIVE_PR==="1";
+const nativeAdaptiveFail=process.env.R356_NATIVE_ADAPTIVE_FAIL==="1";
+if(nativeAdaptiveFail)assert.equal(reviewedD1,true,
+ "R356 native adaptive Test FAIL requires the disposable broken Docker HEAD");
+if(nativeAdaptiveFail)assert.equal(nativePr,false,
+ "R356 failure-observation gate must not authorize or create a PR");
 if(nativePr)assert.equal(reviewedD1,true,"Native PR gate requires original reviewed D1 session");
 if(reviewedD1)assert.equal(reviewedNative,true,
  "Reviewed D1 requires the original authenticated Engineer host");
@@ -1276,6 +1281,75 @@ try{
  },"replay_detected");
  assert.equal(gatewayCasWrites,2);
 
+ // R356.0: original Engineer owns adaptive Test selection and native
+ // Rust Child issuance. No preselected D1 candidate, success ledger forgery
+ // or shortcut around actual Gateway/OPA/Docker and A2A are permitted.
+ if(nativeAdaptiveFail){
+  class OfflineR356NativeAdaptiveDecisionModel extends BaseLlm{
+   requests=[];
+   constructor(){super({model:"r356-free-native-adaptive-test-fail"});}
+   async *generateContentAsync(req){
+    this.requests.push(req);
+    const choice=this.requests.length===1?
+     {action:"delegate",task:{task_id:testTaskId,agent_id:"test",
+      depends_on:[frontendTaskId],permissions:[testTaskPermission],
+      instruction:"Run approved Docker Test on independently completed Frontend HEAD"}}:
+     {action:"blocked",reason:"Authenticated typecheck FAIL observed; repair deferred to R356.1"};
+    if(this.requests.length>2)throw Error("Unexpected extra R356 decision");
+    yield {content:{role:"model",parts:[{text:JSON.stringify(choice)}]}};
+   }
+   connect(){throw Error("Paid inference prohibited in native R356");}
+  }
+  const adaptiveModel=new OfflineR356NativeAdaptiveDecisionModel();
+  let childProvisionCalls=0;
+  const observed=await reviewExecution.runAdaptiveWorkLoop({
+   model:adaptiveModel,maxSteps:2,
+   nextChildParameters:({epoch,agent_id})=>{
+    childProvisionCalls++;
+    assert.equal(epoch,3);assert.equal(agent_id,"test");
+    return freshChildParams("urn:r356:child:adaptive-test",29111);
+   }
+  });
+  assert.equal(observed.status,"owner_adaptive_work_blocked");
+  assert.equal(observed.pr_created,false);
+  assert.equal(observed.executed_tasks,0);
+  assert.equal(childProvisionCalls,1);
+  assert.equal(adaptiveModel.requests.length,2);
+  const secondPrompt=JSON.stringify(adaptiveModel.requests[1]);
+  assert.match(secondPrompt,/independent_runner_failure/u);
+  assert.match(secondPrompt,/typecheck/u);
+  for(const secret of [tokens.orchestrator,tokens.test,
+   operational.credential_id,process.env.ADAPTER_EVM_PRIVATE_KEY_TEST]){
+   if(secret)assert.equal(secondPrompt.includes(secret),false);
+  }
+  assert.equal(gate.registeredTaskCount,3);
+  assert.equal(gate.stagedCompletedTaskCount,2);
+  assert.equal(runnerCalls,1);
+  assert.equal(gatewayCasWrites,2);
+  assert.equal(gatewayPrCalls,0);
+  assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,
+   frontendHead);
+  assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
+   pinnedDisposableMainSha);
+  assert.equal((await readdir(path("runner-fail-receipts")))
+   .filter(n=>n.endsWith(".runner-fail.json")).length,1);
+  assert.equal((await readdir(path("runner-receipts")))
+   .filter(n=>n.endsWith(".runner.json")).length,0);
+  assert.equal(reviewHost.phase,"revoked");
+  process.stdout.write(JSON.stringify({
+   event:"r356_native_adaptive_authenticated_fail_observed",
+   original_engineer_owner:true,real_rust_evm_opa:true,
+   actual_adk_a2a_test:true,real_docker_typecheck_fail:true,
+   original_failed_test_incomplete:true,
+   registered_tasks:3,completed_tasks:2,runner_posts:runnerCalls,
+   provider_commits:gatewayCasWrites,
+   model_chose_test_task:true,original_root_retired:true,
+   authenticated_failure_receipt:true,pr_created:false,
+   main_unchanged:true,paid_model_calls:0,
+   native_adaptive_repair_not_yet_proven:true,
+   functional_source:"owner_only_fixture"
+  })+"\n");
+ }else{
  const runnerChild=reviewedNative?
   (await decide(testTaskId,"test",[frontendTaskId],[testTaskPermission],
    testRuntimeId,freshChildParams("urn:r305:child:test",29106)),
@@ -1581,6 +1655,7 @@ try{
  assert.equal(gatewayCasWrites,2);
 
  } // Existing R351.5 successful-path proof.
+ } // R356 adaptive native FAIL vs historically preplanned Test flows.
 
  if(!reviewedD1){
  // An independently valid Child under the same root MUST NOT substitute
