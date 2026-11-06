@@ -68,6 +68,9 @@ interface SequentialTaskProgress {
  completed:number;
  latest_evidence_sha256:string|null;
  active?:TrustedSequentialFlight;
+ /** Only for the original native read->CAS mixed Task. */
+ readRevision?:string;
+ readPath?:string;
 }
 function assertObservedCompletion(
  expected:TrustedCompletionExpectation,observed:unknown,nowMs:number
@@ -770,6 +773,59 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   finally{this.#flightInFlight=false;}
  }
  /**
+  * R359.2: an owner can reserve exactly one read followed by one update,
+  * only if a single native Child already has BOTH operations for the SAME
+  * existing file. The typed manifest is durable before any provider I/O.
+  * This does not authorize either effect or expose a model/API operation.
+  */
+ async beginTrustedSequentialReadUpdateTask(taskId:string,runtimeTaskId:string):
+ Promise<Readonly<{
+  status:"sequential_read_update_manifest_reserved_staged";
+  task_id:string;total_effects:2;gateway_execution_authorized:false
+ }>>{
+  const root=this.#live(),journal=this.#sequentialEffectJournal;
+  if(!journal||!(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver)||
+     this.#flightInFlight||this.#completionInFlight||this.#bindingInFlight||
+     this.#sequential.has(taskId)||this.#flights.has(taskId)||
+     this.#completed.has(taskId))
+   deny("mixed Task requires quiescent owner and durable proof dependencies");
+  const bound=this.#tasks.get(runtimeTaskId),child=this.#enrolledChildren.get(runtimeTaskId);
+  const permissions=bound?.row.permissions;
+  const reads=permissions?.filter(p=>p.operation==="read_file")??[];
+  const writes=permissions?.filter(p=>p.operation==="update_file")??[];
+  if(!bound||!child||bound.row.task_id!==taskId||
+     !["backend","frontend"].includes(bound.row.agent_id)||
+     permissions?.length!==2||reads.length!==1||writes.length!==1||
+     reads[0]?.resource!==writes[0]?.resource||
+     bound.row.root_credential_id!==root.root_credential_id||
+     bound.row.authority_digest!==root.authority_digest||
+     child.agent_did!==bound.row.agent_did||
+     child.epoch!==bound.row.epoch||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     this.#now()>=Date.parse(child.expires_at)||
+     bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
+   deny("mixed read/update requires one exact native Child file grant");
+  const manifest:TrustedSequentialManifest=Object.freeze({
+   session_id:root.session_id,authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,
+   task_id:taskId,runtime_task_id:runtimeTaskId,epoch:bound.row.epoch,
+   credential_id:child.credential_id,total_effects:2,
+   effect_plan:Object.freeze(["read_file","update_file"] as const)
+  });
+  this.#flightInFlight=true;
+  try{
+   await journal.reserveManifest(manifest);
+   this.#live();
+   if(this.#now()>=Date.parse(child.expires_at))
+    deny("mixed Task Child expired during manifest reservation");
+   this.#sequential.set(taskId,{manifest,completed:0,latest_evidence_sha256:null});
+   return Object.freeze({status:"sequential_read_update_manifest_reserved_staged",
+    task_id:taskId,total_effects:2,gateway_execution_authorized:false});
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#flightInFlight=false;}
+ }
+ /**
   * R301: one Gitea read at a time. Before another flight, the previous
   * result MUST have been independently corroborated and durably sealed.
   * The provider is never called by this method.
@@ -794,6 +850,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(!bound||!child||!state||state.active||
      this.#flights.has(taskId!)||
      state.completed>=state.manifest.total_effects||
+     (state.manifest.effect_plan!==undefined&&state.completed!==0)||
      this.#completed.has(taskId!)||
      record.authority_only_plan_task_id!==taskId||
      record.authority_only_agent_did!==bound.row.agent_did||
@@ -811,8 +868,10 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
   if(pair(canonical.required_permission)!==pair(record.required_permission))
    deny("sequential read differs from canonical Gateway Prepare");
+  const {effect_plan:typedPlan,...base}=state.manifest;
   const next:TrustedSequentialFlight=Object.freeze({
-   ...state.manifest,
+   ...base,
+   ...(typedPlan!==undefined?{operation:"read_file" as const}:{}),
    sequence:state.completed+1,
    request_id:record.request_id,
    request_fingerprint:record.request_fingerprint,
@@ -825,6 +884,10 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    if(this.#now()>=Date.parse(child.expires_at))
     deny("Child expired during sequential flight reservation");
    state.active=next;
+   if(typedPlan!==undefined){
+    state.readRevision=record.pinned_revision;
+    state.readPath=record.request.arguments.path;
+   }
    this.#flights.set(taskId!,{
     session_id:next.session_id,authority_digest:next.authority_digest,
     root_credential_id:next.root_credential_id,
