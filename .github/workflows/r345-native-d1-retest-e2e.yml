@@ -5,6 +5,10 @@
 name: R345 Native D1 FAIL Repair and Retest PASS (No AI)
 on:
   workflow_dispatch:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/ci-checkpoints/r345-native-d1-retest-request.json'
 permissions:
   contents: read
 concurrency:
