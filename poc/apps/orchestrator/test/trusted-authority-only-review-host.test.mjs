@@ -42,6 +42,8 @@ import {TrustedAuthorityOnlyCompletionObserver}
 import {InMemoryRequestStore,InMemoryAuditSink,prepareAuthorization} from '../../gateway/src/prepare.ts';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
+import {DurableNativeD1FirstTaskAdmissionJournal}
+ from '../../../packages/orchestrator-runtime/src/trusted-native-d1-first-task-admission.ts';
 import {DurableAuthorityOnlyTaskFenceJournal}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-task-fence-journal.ts';
 import {startSpecializedAgentServer,TrustedEffectStagingTaskRegistry,
@@ -114,7 +116,7 @@ async function fixture(t,flags={}){
  const home=await mkdtemp(join(tmpdir(),'r349-'));t.after(()=>rm(home,{recursive:true,force:true}));
  const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys','gatewaySessions','gatewayTasks','issuerChildren','gatewayChildren','flights',
   'mutationIntents','runnerIntents','recovery','mutationEvidence',
-  'runnerEvidence'].map(k=>[k,join(home,k)]));
+  'runnerEvidence','d1Admissions'].map(k=>[k,join(home,k)]));
  for(const d of Object.values(dirs))await mkdir(d,{mode:0o700});
  const engineer=generateKeyPairSync('ed25519'),backend=generateKeyPairSync('ed25519');
  const privateKeyFile=join(dirs.keys,'engineer.pem');await writeFile(privateKeyFile,pem(engineer.privateKey,'pkcs8'),{mode:0o600});
@@ -1160,6 +1162,53 @@ for(const mode of ['missing','backend','frontend','test','failure',
       }
       const suggestion=await execution.proposeVerifiedD1RepairTask({model:candidate});
       assert.equal(suggestion.status,'d1_model_candidate_not_recovery_authorized');
+      if(mode==='failure'){
+       const journal=new DurableNativeD1FirstTaskAdmissionJournal(
+        f.dirs.d1Admissions);
+       // Only the private Engineer owner supplies a new revocable status
+       // allocation. Neither A2A nor ADK can select the native Child.
+       const newD1=await execution.admitVerifiedD1RepairTask({
+        journal,freshStatusEntry:{
+         statusListCredential:'https://status.invalid/list',
+         statusListIndex:'29110'
+        }
+       });
+       assert.equal(newD1.status,'native_d1_child_enrolled_no_provider_effect');
+       assert.equal(newD1.task_registered,true);
+       assert.equal(newD1.gateway_child_enrolled,true);
+       assert.equal(newD1.native_child_issued,true);
+       assert.equal(newD1.epoch,4);
+       assert.equal(newD1.failed_test_task_id,'r3513-test');
+       assert.equal(newD1.agent_id,undefined);
+       assert.equal(newD1.provider_executed,false);
+       assert.equal(newD1.recovery_completed,false);
+       assert.equal(newD1.gateway_execution_authorized,false);
+       assert.equal(newD1.decision_source,'verified_d1_model_original_coordinator');
+       assert.equal(coordinator.registeredTaskCount,4);
+       assert.equal(gateway.registeredTaskCount,4);
+       assert.equal(gateway.stagedCompletedTaskCount,2);
+       const repair=coordinator.assertTrustedGatewayRegisteredTask(
+        newD1.task_id);
+       assert.equal(repair.agent_id,'backend');
+       assert.deepEqual(repair.permissions,task.task.permissions);
+       assert.deepEqual(repair.depends_on,
+        [task.task.task_id,next.task.task_id]);
+       const original=coordinator.assertTrustedGatewayAuthorityBinding();
+       assert.equal(newD1.original_root_credential_id,
+        original.root_credential_id);
+       assert.equal((await readdir(f.dirs.d1Admissions)).length,1);
+       await assert.rejects(execution.admitVerifiedD1RepairTask({
+        journal,freshStatusEntry:{
+         statusListCredential:'https://status.invalid/list',
+         statusListIndex:'29111'
+        }
+       }),/requires one original verified proposal/);
+       await assert.rejects(execution.proposeAndStageTask({
+        model:new R351ScriptedDecision(candidate.candidate),
+        runtimeTaskId:'dispatch_'+'R'.repeat(22),
+        childParameters:testTask.childParameters
+       }),/next ADK Task decision requires independent Gateway completion/);
+      }
       assert.equal(suggestion.failed_phase,'typecheck');
       assert.equal(suggestion.recovery_authorized,false);
       assert.equal(suggestion.task_registered,false);

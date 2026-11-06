@@ -30,6 +30,11 @@ import {InMemoryRequestStore} from '../../gateway/src/prepare.ts';
 import {TrustedAuthorityOnlyChildIssuer} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts';
 import {preflightNativeD1FailureCandidate}
  from '../../../packages/orchestrator-runtime/src/trusted-native-runner-failure-d1-preflight.ts';
+import {DurableNativeD1FirstTaskAdmissionJournal,
+ admitFirstNativeD1RepairTask}
+ from '../../../packages/orchestrator-runtime/src/trusted-native-d1-first-task-admission.ts';
+import {enrollFirstNativeD1ChildAtGateway}
+ from '../../../packages/orchestrator-runtime/src/trusted-native-d1-child-gateway-bind.ts';
 import {AuthenticatedRunnerFailureObserver}
  from '../../gateway/src/trusted-authority-only-runner-failure-evidence.ts';
 import {DurableAuthorityOnlyRunnerIntentJournal}
@@ -105,7 +110,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  // This separate one-shot D1 preflight can never unlock normal Task decisions.
  let d1FailurePreflightAttempted=false,d1FailurePreflightFlight,
   d1FailurePreflightFailed=false,d1VerifiedFailure,
-  d1RepairProposalAttempted=false;
+  d1RepairProposalAttempted=false,d1RepairProposal,
+  d1RepairAdmissionAttempted=false,d1RepairAdmissionFlight;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
  let dispatchFlight,dispatchFailed=false;
@@ -550,7 +556,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
             proof.task_registered!==false)
           deny('authenticated failure flight differs from dispatched Test');
          d1VerifiedFailure=Object.freeze({
-          proof,candidate:structuredClone(input.d1Candidate)
+          proof,candidate:structuredClone(input.d1Candidate),
+          // Never accept this provenance from the model or an A2A report.
+          intent,failureObserver:nativeEffectBinding.failureObserver
          });
          // The failed Test Task is NEVER put in the successful dependency
          // ledger, and no model/agent response is returned as a PASS.
@@ -609,6 +617,20 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          createHash('sha256').update(JSON.stringify(choice.permissions))
           .digest('hex')!==proof.candidate_permissions_sha256)
        deny('model D1 candidate not identical to original preflighted permission pair');
+      const failed=operationalCoordinator.assertTrustedGatewayRegisteredTask(
+       proof.failed_task_id);
+      // A failed Test is NOT a predecessor of its own repair. The owner
+      // fixes the repair dependencies to the already-attested Test prerequisites.
+      if(!isDeepStrictEqual(choice.depends_on,failed.depends_on)||
+         choice.task_id===failed.task_id)
+       deny('D1 proposal changed the original Test prerequisite chain');
+      d1RepairProposal=Object.freeze({
+       task_id:choice.task_id,agent_id:choice.agent_id,
+       depends_on:Object.freeze([...choice.depends_on]),
+       permissions:Object.freeze(structuredClone(choice.permissions)),
+       instruction:choice.instruction,
+       source_evidence_sha256:proof.source_evidence_sha256
+      });
       return Object.freeze({
        status:'d1_model_candidate_not_recovery_authorized',
        task_id:choice.task_id,agent_id:choice.agent_id,
@@ -619,6 +641,101 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        recovery_authorized:false,child_credential_issued:false,
        task_registered:false,gateway_task_completed:false
       });
+     },
+     /** R352.2: original protected Engineer owner consumes a previously
+      * verified model proposal exactly once. Existing R341/R342 components
+      * revalidate the full independent FAIL, reserve a crash-durable source
+      * BEFORE Coordinator registration, then issue/enroll a NEW native Child.
+      * The failed Test remains uncompleted; this is NOT repair execution. */
+     async admitVerifiedD1RepairTask(input){
+      if(closed||session.phase!=='operational'||
+         gateway.phase!=='active'||!d1VerifiedFailure||!d1RepairProposal||
+         !d1RepairProposalAttempted||d1RepairAdmissionAttempted||
+         d1RepairAdmissionFlight||d1FailurePreflightFlight||
+         decisionFlight||taskStageFlight||dispatchFlight||completionFlight||
+         taskStageFailed||dispatchFailed||completionFailed||
+         !fields(input,['journal','freshStatusEntry'])||
+         !(input.journal instanceof DurableNativeD1FirstTaskAdmissionJournal)||
+         !fields(input.freshStatusEntry,
+          ['statusListCredential','statusListIndex']))
+       deny('D1 admission requires one original verified proposal and private journal');
+      d1RepairAdmissionAttempted=true; // no retries after crash/ambiguous write
+      d1RepairAdmissionFlight=(async()=>{
+       const {proof,candidate,intent,failureObserver}=d1VerifiedFailure;
+       const proposal=d1RepairProposal;
+       const rootBefore=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       const failed=operationalCoordinator.assertTrustedGatewayRegisteredTask(
+        intent.task_id);
+       if(proof.failed_task_id!==intent.task_id||
+          proof.original_session_id!==rootBefore.session_id||
+          rootBefore.root_credential_id!==intent.root_credential_id||
+          proposal.source_evidence_sha256!==proof.source_evidence_sha256||
+          proposal.agent_id!==candidate.role||
+          !isDeepStrictEqual(proposal.permissions,candidate.permissions)||
+          !isDeepStrictEqual(proposal.depends_on,failed.depends_on)||
+          failed.agent_id!=='test'||
+          failed.epoch!==intent.epoch||
+          stagedTaskIds.has(intent.runtime_task_id)===false||
+          gatewayAttestedTaskIds.has(intent.task_id)||
+          operationalCoordinator.registeredTaskCount!==intent.epoch)
+        deny('D1 proposal, original failed Runner and signed epoch disagree');
+       const admitted=await admitFirstNativeD1RepairTask({
+        coordinator:operationalCoordinator,childIssuer,gateway,
+        failureObserver,failedRunnerIntent:intent,candidate,
+        journal:input.journal
+       });
+       if(admitted.status!=='native_d1_task_registered_without_gateway_or_child'||
+          admitted.task_registered!==true||admitted.gateway_registered!==false||
+          admitted.child_credential_issued!==false||
+          admitted.recovery_execution_authorized!==false||
+          admitted.epoch!==intent.epoch+1||
+          admitted.source_evidence_sha256!==proof.source_evidence_sha256)
+        deny('original D1 Coordinator Task admission is not canonical');
+       const enrolled=await enrollFirstNativeD1ChildAtGateway({
+        coordinator:operationalCoordinator,childIssuer,gateway,
+        failureObserver,failedRunnerIntent:intent,
+        journal:input.journal,admission:admitted,
+        freshStatusEntry:input.freshStatusEntry
+       });
+       if(enrolled.status!=='native_d1_child_enrolled_no_provider_effect'||
+          enrolled.task_id!==admitted.task_id||
+          enrolled.epoch!==admitted.epoch||
+          enrolled.original_root_credential_id!==rootBefore.root_credential_id||
+          enrolled.source_evidence_sha256!==proof.source_evidence_sha256||
+          enrolled.native_child_issued!==true||
+          enrolled.gateway_child_enrolled!==true||
+          enrolled.provider_executed!==false||
+          enrolled.recovery_completed!==false||
+          enrolled.gateway_execution_authorized!==false||
+          stagedTaskIds.has(enrolled.runtime_task_id))
+        deny('new native D1 Child/Gateway enrollment differs from original root');
+       const row=operationalCoordinator.assertTrustedGatewayRegisteredTask(
+        admitted.task_id);
+       if(row.agent_id!==candidate.role||
+          !isDeepStrictEqual(row.permissions,candidate.permissions)||
+          !isDeepStrictEqual(row.depends_on,failed.depends_on))
+        deny('registered native D1 repair Task changed from trusted model proposal');
+       // Only the newly enrolled Task is eligible for the existing protected
+       // A2A dispatch path. No failed-Test or model-provided completion is added.
+       stagedTaskIds.set(enrolled.runtime_task_id,Object.freeze({
+        task_id:enrolled.task_id,agent_id:row.agent_id,
+        operation:row.permissions.find(p=>
+         p.operation==='update_file'||p.operation==='run_tests')?.operation
+       }));
+       stagedTaskCount++;
+       return Object.freeze({...enrolled,
+        decision_source:'verified_d1_model_original_coordinator',
+        failed_test_task_id:intent.task_id,
+        recovery_completed:false,provider_executed:false});
+      })();
+      try{return await d1RepairAdmissionFlight;}
+      catch(error){
+       if(session.phase==='operational'){
+        try{await retire();}
+        catch{deny('ambiguous D1 Task/Child admission and retirement unconfirmed');}
+       }
+       throw error;
+      }finally{d1RepairAdmissionFlight=undefined;}
      },
      /** R350.7 — Gateway alone can confirm an actual provider/Runner
       * completion. The owner passes only IDs pinned to its own prior A2A
@@ -768,6 +885,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(dispatchFlight)try{await dispatchFlight;}catch{/* Recheck root below. */}
     if(completionFlight)try{await completionFlight;}catch{/* Recheck root below. */}
     if(d1FailurePreflightFlight)try{await d1FailurePreflightFlight;}catch{/* Recheck root below. */}
+    if(d1RepairAdmissionFlight)try{await d1RepairAdmissionFlight;}catch{/* Recheck root below. */}
     try{
      try{if(a2aOwner)await a2aOwner.close();}
      finally{if(session.phase!=='revoked')await retire();}
