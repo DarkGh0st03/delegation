@@ -585,11 +585,21 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   task_id:string;runtime_task_id:string;
   gateway_execution_authorized:false
  }>>{
+  return this.#attestTaskCompletion(taskId,runtimeTaskId,this.#completionObserver,false);
+ }
+ async attestTrustedPullRequestCompletion(taskId:string,runtimeTaskId:string,
+  observer:TrustedAuthorityOnlyCompletionObserver){
+  const pin=this.#assertPullRequestPin(runtimeTaskId);
+  if(pin.task_id!==taskId)deny("PR completion differs from original Task");
+  return this.#attestTaskCompletion(taskId,runtimeTaskId,observer,true);
+ }
+ async #attestTaskCompletion(taskId:string,runtimeTaskId:string,
+  observer:TrustedAuthorityOnlyCompletionObserver|undefined,pullRequest:boolean){
   const root=this.#live();
   if(this.#sequential.has(taskId))
    deny("sequential Task completion must use explicit finalization");
   if(!(this.#effectFenceJournal instanceof DurableAuthorityOnlyTaskFenceJournal)||
-     !(this.#completionObserver instanceof TrustedAuthorityOnlyCompletionObserver))
+     !(observer instanceof TrustedAuthorityOnlyCompletionObserver))
    deny("trusted completion observer or owner-private journal missing");
   if(this.#completionInFlight||this.#completed.has(taskId))
    deny("concurrent or duplicate Task completion attestation");
@@ -614,8 +624,12 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   });
   this.#completionInFlight=true;
   try{
-   const observation=await this.#completionObserver.observe(expectation);
+   if(!pullRequest&&bound.row.agent_id==="orchestrator"&&
+      bound.row.permissions.some(p=>p.operation==="create_pull_request"))
+    deny("PR completion requires its independent original provider observer");
+   const observation=await observer.observe(expectation);
    assertObservedCompletion(expectation,observation,this.#now());
+   if(pullRequest)this.#assertPullRequestPin(runtimeTaskId);
    await this.#effectFenceJournal.reserveCompletion({
     ...flight,evidence_sha256:observation.evidence_sha256,
     completed_at_ms:observation.completed_at_ms
@@ -623,6 +637,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    this.#live();
    if(this.#now()>=Date.parse(child.expires_at))
     deny("native Child expired during completion attestation");
+   if(pullRequest)this.#assertPullRequestPin(runtimeTaskId);
    this.#completed.add(taskId);
    this.#completionEvidence.set(taskId,observation.evidence_sha256);
    return Object.freeze({

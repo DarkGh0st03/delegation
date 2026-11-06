@@ -654,6 +654,42 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      return TrustedAuthorityOnlyPullRequestExecutor.prototype.stage.call(
       nativeEffectBinding.pullRequestExecutor,record,pin.tested_commit_sha);
     },
+    /** Independently complete the original PR flight, not a caller's POST report. */
+    async attestEnrolledPullRequestCompletion(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        taskStageFailed||dispatchFailed||completionFailed||
+        taskStageFlight||dispatchFlight||completionFlight||decisionFlight||
+        !nativeEffectBinding?.pullRequestExecutor||
+        !fields(input,['taskId','runtimeTaskId']))
+      deny('PR completion requires original active owner and independent reader');
+     const pin=pullRequestTaskPins.get(input.runtimeTaskId);
+     if(!pin||pin.task_id!==input.taskId||
+        !pullRequestStageAttempts.has(input.runtimeTaskId)||
+        completionAttempts.has(input.runtimeTaskId))
+      deny('PR completion requires original staged flight and has not already been attempted');
+     completionAttempts.add(input.runtimeTaskId);
+     completionFlight=(async()=>{
+      const observer=TrustedAuthorityOnlyPullRequestExecutor.prototype.createCompletionObserver
+       .call(nativeEffectBinding.pullRequestExecutor);
+      const observed=await gateway.attestTrustedPullRequestCompletion(
+       input.taskId,input.runtimeTaskId,observer);
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         observed.status!=='task_completion_observed_staged'||
+         observed.task_id!==input.taskId||observed.runtime_task_id!==input.runtimeTaskId||
+         observed.gateway_execution_authorized!==false)
+       deny('PR independent completion differs from original Task flight');
+      operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      gatewayAttestedTaskIds.set(input.taskId,Object.freeze({
+       task_id:input.taskId,agent_id:'orchestrator'}));
+      return Object.freeze({...observed,status:'owner_pr_completion_independently_observed'});
+     })();
+     try{return await completionFlight;}
+     catch(error){
+      completionFailed=true;
+      if(session.phase==='operational')await retire();
+      throw error;
+     }finally{completionFlight=undefined;}
+    },
     /** Obtain a unique one-shot owner stager after enrolling the Child.
      * Pin exact original Gateway, Task ID, role/tool and owner-selected HEAD. */
     createEnrolledNativeEffectStager(input){

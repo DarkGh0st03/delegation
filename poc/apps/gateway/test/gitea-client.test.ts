@@ -668,3 +668,33 @@ test("R143 refuses non-draft PR response, without a dangerous second POST",async
  ),ProviderUnavailableError);
  assert.equal(posts,1,"Never retry a potentially created non-draft PR");
 });
+
+for(const mode of ['valid','closed','merged','not-draft','wrong-number','head-race','base-moved']){
+ test('R353.6 independent Draft PR observation '+mode,async()=>{
+  const head='a'.repeat(40),base='b'.repeat(40),branch='feature/r3536';
+  let headReads=0,prReads=0;
+  const c=clientWith((async(url,init)=>{
+   assert.equal(init?.method,'GET','completion observation must never POST');
+   const u=String(url);
+   if(u.endsWith('/branches/feature%2Fr3536')){
+    headReads++;
+    return Response.json({name:branch,commit:{id:mode==='head-race'&&headReads>1?'c'.repeat(40):head}});
+   }
+   if(u.endsWith('/branches/main'))
+    return Response.json({name:'main',commit:{id:mode==='base-moved'?'c'.repeat(40):base}});
+   assert.ok(u.endsWith('/pulls/3'));prReads++;
+   return Response.json({id:12,number:mode==='wrong-number'?4:3,
+    state:mode==='closed'?'closed':'open',merged:mode==='merged',
+    draft:mode!=='not-draft',head:{ref:branch,sha:head},base:{ref:'main',sha:base}});
+  }) as typeof fetch);
+  const observe=()=>c.inspectDraftPullRequest({number:3,headBranch:branch,
+   baseBranch:'main',expectedHeadSha:head,expectedBaseSha:base});
+  if(mode==='valid'){
+   const result=await observe();
+   assert.equal(result.id,12);assert.equal(result.number,3);
+   assert.equal(result.head_revision,head);assert.equal(result.base_revision,base);
+   assert.equal(result.draft,true);assert.equal(result.merged,false);
+   assert.equal(prReads,1);assert.equal(headReads,2);
+  }else await assert.rejects(observe());
+ });
+}

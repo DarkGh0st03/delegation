@@ -666,7 +666,9 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'failure-d1-effect','failure-d1-retest','failure-no-receipt','failure-model-denied',
  'pr','pr-denied','pr-invalid','pr-stale','pr-execute','pr-execute-stale',
  'pr-execute-opa-denied','pr-execute-vp-denied','pr-execute-no-stage',
- 'pr-execute-foreign-child','pr-execute-post-failure','pr-execute-race'])test(
+ 'pr-execute-foreign-child','pr-execute-post-failure','pr-execute-race',
+ 'pr-attest','pr-attest-closed','pr-attest-wrong-id','pr-attest-head-moved',
+ 'pr-attest-base-moved','pr-attest-before-execute'])test(
  mode.startsWith('pr')?
   'R353.2 original Engineer PR Task admission '+mode:
  mode==='failure-no-receipt'?
@@ -687,7 +689,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'R351.2 original Gateway authenticated offline Gitea evidence permits next ADK Frontend choice':
  'R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',
  async t=>{
- const executePr=mode.startsWith('pr-execute');
+ const attestPr=mode.startsWith('pr-attest');
+ const executePr=mode.startsWith('pr-execute')||attestPr;
  const verified=mode!=='missing',throughFailure=mode.startsWith('failure'),
   noFailureReceipt=mode==='failure-no-receipt',
   foreignD1Model=mode==='failure-model-denied',
@@ -723,7 +726,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
   blob:oldBlob,content:'export const suspended=false;\n',
   prEnabled:executePr,prMode:mode,prPosts:0};
  let publisher,frontendStaged,next,testTask,testStaged,runnerClient,
-  runnerPublisher,runnerJournal,runnerPassObserver,failureObserver,failurePublisher,nativeD1,
+  runnerPublisher,runnerJournal,runnerPassObserver,independentPrReader,failureObserver,failurePublisher,nativeD1,
    d1RetestTask,d1RetestStaged;
  const frontendModel=new R3513ScriptedFrontend();
  const testAgentModel=new R3514ScriptedTest(d1Retest);
@@ -732,13 +735,18 @@ for(const mode of ['missing','backend','frontend','test','failure',
  if(verified){
   // In-memory disposable Gitea fixture, but REAL independent receipt
   // publisher/observer, MAC, HEAD-parent-CAS and file-content checks.
-  const reader=new GiteaClient({baseUrl:'http://offline-evidence.r3512.invalid',
+  const reader=independentPrReader=new GiteaClient({baseUrl:'http://offline-evidence.r3512.invalid',
    token:'trusted-offline-reader',owner:'thesis',repository:'iam-console-poc',
    fetchFn:async(raw,init)=>{
     assert.equal(init?.method,'GET');
     const u=new URL(String(raw));
     if(u.pathname.endsWith('/branches/feature%2Faccount-suspension'))
      return Response.json({name:branch,commit:{id:provider.head}});
+    if(provider.prEnabled&&u.pathname.endsWith('/branches/main'))
+     return Response.json({name:'main',commit:{id:provider.baseHead??snapshot.base_revision}});
+    if(provider.prEnabled&&u.pathname.endsWith('/pulls/1')){
+     events.push('pr_independent_get_fixture');return Response.json(provider.pullRequest);
+    }
     if(u.pathname.endsWith('/git/commits/'+provider.head))
      return Response.json({sha:provider.head,parents:[{sha:provider.parent}]});
     if(u.pathname.endsWith('/contents/apps/user.ts')){
@@ -852,7 +860,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
    runnerJournal);
  const prExecutor=executePr?new TrustedAuthorityOnlyPullRequestExecutor({
   admissions:gateway,giteaClient:gitea,runnerObserver:runnerPassObserver,
-  repository:'thesis/iam-console-poc',branch}):undefined;
+  repository:'thesis/iam-console-poc',branch,
+  ...(attestPr?{independentGiteaClient:independentPrReader}:{})}):undefined;
  assert.equal(execution.bindNativeGatewayEffects({
   store,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea,
   ...(throughFailure?{failureObserver}:{}),
@@ -1635,6 +1644,9 @@ for(const mode of ['missing','backend','frontend','test','failure',
          audience:'cloud-access-gateway',request_ttl_ms:120000,repository:snapshot.repository
         },{store,audit,authorityOnlyAdmissions:gateway,
          requestId:()=> 'r3534-prepared-pr',challenge:()=> 'r3534-pr-challenge'});
+        if(attestPr)await assert.rejects(execution.attestEnrolledPullRequestCompletion({
+         taskId:admitted.task_id,runtimeTaskId:prInput.runtimeTaskId
+        }),/original staged flight/);
         if(mode!=='pr-execute-no-stage'){
          const stagedPr=await execution.stageEnrolledPullRequest({
           taskId:admitted.task_id,runtimeTaskId:prInput.runtimeTaskId,
@@ -1663,7 +1675,16 @@ for(const mode of ['missing','backend','frontend','test','failure',
          authorityOnlyPullRequestEnabled:true,authorityOnlyPullRequestExecutor:prExecutor};
         const request={request_id:prepared.request_id,signed_vp:'offline-r3534-pr-vp'};
         if(mode==='pr-execute-stale')provider.head='7'.repeat(40);
-        if(mode==='pr-execute'){
+        if(mode==='pr-attest-before-execute'){
+         await assert.rejects(execution.attestEnrolledPullRequestCompletion({
+          taskId:admitted.task_id,runtimeTaskId:prInput.runtimeTaskId
+         }),/no original confirmed PR effect/);
+         assert.equal(gateway.stagedCompletedTaskCount,3);
+         assert.equal(provider.prPosts,0);
+         assert.equal(host.phase,'revoked');
+         await host.close();return;
+        }
+        if(mode==='pr-execute'||attestPr){
          const result=await executeAuthorization(request,dependencies);
          assert.equal(result.decision,'allow');
          assert.equal(result.execution.tool,'create_pull_request');
@@ -1689,6 +1710,38 @@ for(const mode of ['missing','backend','frontend','test','failure',
         assert.equal(provider.prPosts,posts);
         assert.equal(gateway.stagedCompletedTaskCount,3,
          'PR provider result does not fabricate independent Task completion');
+        if(attestPr){
+         await assert.rejects(execution.attestEnrolledPullRequestCompletion({
+          taskId:admitted.task_id,runtimeTaskId:prInput.runtimeTaskId,receipt:{status:'pass'}
+         }),/original active owner/);
+         if(mode==='pr-attest-closed')provider.pullRequest.state='closed';
+         if(mode==='pr-attest-wrong-id')provider.pullRequest.id=99;
+         if(mode==='pr-attest-head-moved')provider.head='7'.repeat(40);
+         if(mode==='pr-attest-base-moved')provider.baseHead='6'.repeat(40);
+         const completionInput={taskId:admitted.task_id,runtimeTaskId:prInput.runtimeTaskId};
+         const before=(await readdir(f.dirs.flights)).filter(n=>n.endsWith('.completion.json'));
+         assert.equal(before.length,3);
+         if(mode==='pr-attest'){
+          const completed=await execution.attestEnrolledPullRequestCompletion(completionInput);
+          assert.equal(completed.status,'owner_pr_completion_independently_observed');
+          assert.equal(completed.gateway_execution_authorized,false);
+          assert.equal(gateway.stagedCompletedTaskCount,4);
+          assert.ok(events.includes('pr_independent_get_fixture'));
+          assert.equal((await readdir(f.dirs.flights))
+           .filter(n=>n.endsWith('.completion.json')).length,4);
+          await assert.rejects(execution.attestEnrolledPullRequestCompletion(completionInput),
+           /already been attempted/);
+         }else{
+          await assert.rejects(execution.attestEnrolledPullRequestCompletion(completionInput));
+          assert.equal(gateway.stagedCompletedTaskCount,3);
+          assert.equal((await readdir(f.dirs.flights))
+           .filter(n=>n.endsWith('.completion.json')).length,3);
+          assert.equal(host.phase,'revoked');
+          assert.equal(provider.prPosts,1);
+          await host.close();return;
+         }
+         assert.equal(provider.prPosts,1,'independent completion never retries PR creation');
+        }
        }
       }
      }else{

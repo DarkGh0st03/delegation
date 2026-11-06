@@ -419,7 +419,7 @@ export class GiteaClient {
     headBranch:string,baseBranch:string,title:string,
     expectedHeadSha:string,body?:string
   ):Promise<Readonly<GiteaCreatedPullRequest&{
-    draft:true;open:true;merged:false
+    draft:true;open:true;merged:false;base_revision:string
   }>>{
     if(typeof headBranch!=="string"||
        !/^feature\/[A-Za-z0-9][A-Za-z0-9._/-]{0,180}$/u.test(headBranch)||
@@ -491,8 +491,42 @@ export class GiteaClient {
       ...(url?{url}:{}),
       head_branch:headBranch,base_branch:baseBranch,
       head_revision:expectedHeadSha,
-      draft:true as const,open:true as const,merged:false as const
+      draft:true as const,open:true as const,merged:false as const,
+      base_revision:base.commit_sha
     });
+  }
+
+  /** Read-only independent confirmation of an already-created exact Draft PR. */
+  async inspectDraftPullRequest(input:{number:number;headBranch:string;baseBranch:string;
+    expectedHeadSha:string;expectedBaseSha:string}):Promise<Readonly<GiteaCreatedPullRequest&{
+      draft:true;open:true;merged:false;base_revision:string
+    }>>{
+    if(!input||!Number.isSafeInteger(input.number)||input.number<1||
+       !/^feature\/[A-Za-z0-9][A-Za-z0-9._/-]{0,180}$/u.test(input.headBranch)||
+       input.headBranch.includes("..")||input.headBranch.includes("//")||
+       input.baseBranch!=="main"||
+       !/^[a-f0-9]{40}$/u.test(input.expectedHeadSha)||
+       !/^[a-f0-9]{40}$/u.test(input.expectedBaseSha))
+      throw new ProviderConflictError("Invalid exact Draft PR observation request");
+    const head=await this.getBranchMetadata(input.headBranch);
+    const base=await this.getBranchMetadata(input.baseBranch);
+    if(head.commit_sha!==input.expectedHeadSha||base.commit_sha!==input.expectedBaseSha)
+      throw new ProviderConflictError("Observed PR head or base differs from original accepted SHA");
+    const pr=object(await this.#json(this.#repoApi("/pulls/"+input.number)),"Observed Draft PR");
+    const h=object(pr.head,"Observed PR head"),b=object(pr.base,"Observed PR base");
+    const id=requiredSafeInteger(pr.id,"Observed PR id");
+    if(id<1||pr.number!==input.number||pr.state!=="open"||pr.draft!==true||
+       pr.merged!==false||h.ref!==input.headBranch||h.sha!==input.expectedHeadSha||
+       b.ref!==input.baseBranch||b.sha!==input.expectedBaseSha)
+      throw new ProviderUnavailableError("Observed PR is not the original open unmerged Draft at tested SHA");
+    const after=await this.getBranchMetadata(input.headBranch);
+    const afterBase=await this.getBranchMetadata(input.baseBranch);
+    if(after.commit_sha!==input.expectedHeadSha||afterBase.commit_sha!==input.expectedBaseSha)
+      throw new ProviderConflictError("Observed PR branches changed during independent read");
+    return Object.freeze({id,number:input.number,
+      head_branch:input.headBranch,base_branch:input.baseBranch,
+      head_revision:input.expectedHeadSha,base_revision:input.expectedBaseSha,
+      draft:true as const,open:true as const,merged:false as const});
   }
 
   async createFile(
