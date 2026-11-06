@@ -20,6 +20,9 @@ import {TrustedGatewayRunnerPassEvidencePublisher,
  from "./trusted-authority-only-runner-evidence.ts";
 import {validateTrustedRunnerFailure}
  from "./trusted-authority-only-runner-failure.ts";
+import {TrustedGatewayRunnerFailEvidencePublisher,
+ AuthenticatedRunnerFailureObserver}
+ from "./trusted-authority-only-runner-failure-evidence.ts";
 import type {
  PreparedRequestRecord,VerifiedDelegation,PolicyDecision,
  RunnerExecutionResult
@@ -41,6 +44,8 @@ export class TrustedAuthorityOnlyRunnerExecutor{
  readonly #runner:RunnerClient;
  readonly #publisher:TrustedGatewayRunnerPassEvidencePublisher;
  readonly #observer:AuthenticatedRunnerCompletionObserver;
+ readonly #failurePublisher?:TrustedGatewayRunnerFailEvidencePublisher;
+ readonly #failureObserver?:AuthenticatedRunnerFailureObserver;
  readonly #repository:string;
  readonly #branch:string;
  #inFlight=false;
@@ -52,6 +57,8 @@ export class TrustedAuthorityOnlyRunnerExecutor{
   runnerClient:RunnerClient;
   publisher:TrustedGatewayRunnerPassEvidencePublisher;
   observer:AuthenticatedRunnerCompletionObserver;
+  failurePublisher?:TrustedGatewayRunnerFailEvidencePublisher;
+  failureObserver?:AuthenticatedRunnerFailureObserver;
   repository:string;branch:string;
  }){
   if(!opts||
@@ -65,6 +72,14 @@ export class TrustedAuthorityOnlyRunnerExecutor{
      !opts.preflight.isForAdmissions(opts.admissions)||
      !opts.preflight.isForGitea(opts.giteaClient)||
      !opts.publisher.isForRunner(opts.runnerClient)||
+     (!!opts.failurePublisher!==!!opts.failureObserver)||
+     (opts.failurePublisher!==undefined&&(
+       !(opts.failurePublisher instanceof TrustedGatewayRunnerFailEvidencePublisher)||
+       !(opts.failureObserver instanceof AuthenticatedRunnerFailureObserver)||
+       !opts.failurePublisher.isForRunner(opts.runnerClient)||
+       !opts.failurePublisher.isForGitea(opts.giteaClient)||
+       !opts.failureObserver.isForGitea(opts.giteaClient)
+     ))||
      !/^[a-z0-9._-]+\/[a-z0-9._-]+$/u.test(opts.repository)||
      !/^feature\/[a-z0-9][a-z0-9./_-]*$/u.test(opts.branch)||
      opts.branch.includes("..")||opts.branch.includes("//"))
@@ -76,6 +91,8 @@ export class TrustedAuthorityOnlyRunnerExecutor{
   this.#runner=opts.runnerClient;
   this.#publisher=opts.publisher;
   this.#observer=opts.observer;
+  this.#failurePublisher=opts.failurePublisher;
+  this.#failureObserver=opts.failureObserver;
   this.#repository=opts.repository;
   this.#branch=opts.branch;
  }
@@ -125,6 +142,18 @@ export class TrustedAuthorityOnlyRunnerExecutor{
     // There is no D1 authority path until a separate durable, independently
     // observed failure gate exists. Never attest or report Task completion.
     validateTrustedRunnerFailure(this.#runner,request,result,intent);
+    if(this.#failurePublisher&&this.#failureObserver){
+     // Owner-only opt-in: persist a signed non-authorizing FAIL receipt
+     // and independently reread it. A failed verification remains terminal.
+     const digest=await this.#failurePublisher.publish(
+      intent,binding,request,result,policy.policy_version);
+     const observed=await this.#failureObserver.observe(intent,binding);
+     if(observed.evidence_sha256!==digest||
+        observed.tested_commit_sha!==intent.expected_head_sha||
+        observed.request_fingerprint!==record.request_fingerprint||
+        observed.recovery_authorized!==false)
+      deny("independent Runner FAIL observation differs from original Task");
+    }
     deny("authenticated Runner FAIL: Task incomplete; D1 gate not armed");
    }
    // The controller already checks the exact request response fields.
