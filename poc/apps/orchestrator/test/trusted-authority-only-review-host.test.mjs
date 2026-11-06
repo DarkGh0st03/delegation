@@ -784,19 +784,22 @@ for(const mode of ['missing','backend','frontend','test','failure',
   if(u.endsWith('/v1/authorization/prepare')){
    const runnerRequest=throughTest&&testStaged&&
     body.task_id===testTask.runtimeTaskId;
-   if(runnerRequest){
+   const retestRequest=d1Retest&&d1RetestTask&&
+     body.task_id===d1RetestTask.runtime_task_id;
+    if(runnerRequest||retestRequest){
     assert.equal(body.agent_role,'test');
     assert.equal(body.tool,'run_tests');
     assert.deepEqual(body.arguments,{branch,profile:'poc-default'});
-    events.push('test_gateway_prepare_canonical');
+    events.push(retestRequest?'retest_gateway_prepare_canonical':'test_gateway_prepare_canonical');
     const prepared=prepareAuthorization(body,{
      audience:'cloud-access-gateway',request_ttl_ms:60000,
      repository:snapshot.repository
     },{
      store,audit,authorityOnlyAdmissions:gateway,
-     requestId:()=>testRequestId,challenge:()=>testChallenge
+     requestId:()=>retestRequest?retestRequestId:testRequestId,
+      challenge:()=>retestRequest?retestChallenge:testChallenge
     });
-    assert.equal(store.size(),3);
+    assert.equal(store.size(),retestRequest?5:3);
     return Response.json(prepared,{status:201});
    }
    const d1Request=d1Effect&&nativeD1&&
@@ -825,10 +828,12 @@ for(const mode of ['missing','backend','frontend','test','failure',
   if(u.endsWith('/v1/presentations')){
    const runnerRequest=throughTest&&testStaged&&
     body.credential_id===testStaged.credential_id;
-   if(runnerRequest){
-    assert.equal(body.challenge,testChallenge);
-    events.push('test_private_vp_fixture');
-    return Response.json({signed_vp:testVp});
+   const retestRequest=d1Retest&&d1RetestStaged&&
+     body.credential_id===d1RetestStaged.credential_id;
+    if(runnerRequest||retestRequest){
+    assert.equal(body.challenge,retestRequest?retestChallenge:testChallenge);
+    events.push(retestRequest?'retest_private_vp_fixture':'test_private_vp_fixture');
+    return Response.json({signed_vp:retestRequest?retestVp:testVp});
    }
    const d1Request=d1Effect&&nativeD1&&
     body.credential_id===nativeD1.new_child_credential_id;
@@ -844,49 +849,51 @@ for(const mode of ['missing','backend','frontend','test','failure',
     frontendRequest?frontendVp:vp});
   }
   if(u.endsWith('/v1/authorization/execute')){
-   if(throughTest&&body.request_id===testRequestId){
-    assert.equal(body.signed_vp,testVp);
-    const record=store.get(testRequestId);
+   if(throughTest&&(body.request_id===testRequestId||d1Retest&&body.request_id===retestRequestId)){
+     const retest=body.request_id===retestRequestId;
+     const failed=throughFailure&&!retest;
+    assert.equal(body.signed_vp,retest?retestVp:testVp);
+    const record=store.get(body.request_id);
     assert.ok(record);
     const intent=nativeRunner.getReservedIntent(record);
-    assert.equal(intent.request_id,testRequestId);
-    assert.equal(intent.credential_id,testStaged.credential_id);
-    assert.equal(intent.expected_head_sha,frontendSha);
+    assert.equal(intent.request_id,retest?retestRequestId:testRequestId);
+    assert.equal(intent.credential_id,retest?d1RetestStaged.credential_id:testStaged.credential_id);
+    assert.equal(intent.expected_head_sha,retest?repairSha:frontendSha);
     await runnerJournal.assertReserved(intent);
     const flights=(await readdir(f.dirs.flights))
      .filter(n=>n.endsWith('.flight.json'));
-    assert.equal(flights.length,3);
+    assert.equal(flights.length,retest?5:3);
     const all=await Promise.all(flights.map(async name=>
      JSON.parse(await readFile(join(f.dirs.flights,name),'utf8'))));
-    const flight=all.find(x=>x.request_id===testRequestId);
-    assert.equal(flight?.credential_id,testStaged.credential_id);
-    events.push('test_gateway_execute_fixture');
+    const flight=all.find(x=>x.request_id===body.request_id);
+    assert.equal(flight?.credential_id,retest?d1RetestStaged.credential_id:testStaged.credential_id);
+    events.push(retest?'retest_gateway_execute_fixture':'test_gateway_execute_fixture');
     // Reserve irrevocable one-shot Runner POST before any provider request.
     await runnerJournal.reserveAttempt(intent);
     const request={
-     request_id:testRequestId,
+      request_id:retest?retestRequestId:testRequestId,
      repository:'gitea://gitea.local/thesis/iam-console-poc',
-     branch,commit_sha:frontendSha,profile:'poc-default'
+     branch,commit_sha:retest?repairSha:frontendSha,profile:'poc-default'
     };
     const result=await runnerClient.run(request);
     const keys=['session_id','authority_digest','root_credential_id',
      'task_id','runtime_task_id','epoch','agent_did','credential_id',
      'request_id','request_fingerprint'];
     const binding=Object.fromEntries(keys.map(k=>[k,intent[k]]));
-    if(throughFailure){
-     if(!noFailureReceipt)
+    if(failed){
+      if(!noFailureReceipt)
       await failurePublisher.publish(intent,binding,request,result,'opa-offline-r3521');
     }else{
      const digest=await runnerPublisher.publish(intent,binding,
       request,result,'opa-offline-r3514');
      await runnerJournal.reserveCompletedEvidence(intent,digest);
     }
-    return Response.json({request_id:testRequestId,decision:'allow',
+    return Response.json({request_id:body.request_id,decision:'allow',
      execution:{provider:'runner',performed:true,tool:'run_tests',
-      branch,tested_commit_sha:frontendSha,runner_profile:'poc-default',
-      status:throughFailure?'fail':'pass',
-      project_tests:{status:throughFailure?'fail':'pass'},
-      researcher_acceptance:{status:throughFailure?'skipped':'pass'}}
+      branch,tested_commit_sha:retest?repairSha:frontendSha,runner_profile:'poc-default',
+      status:failed?'fail':'pass',
+      project_tests:{status:failed?'fail':'pass'},
+      researcher_acceptance:{status:failed?'skipped':'pass'}}
     });
    }
    const d1Request=d1Effect&&nativeD1&&body.request_id===repairRequestId;
