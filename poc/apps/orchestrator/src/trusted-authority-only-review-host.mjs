@@ -799,7 +799,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      if(pending.length&&!(d1RetestPassed&&pending.length===1&&
         pending[0].task_id===d1VerifiedFailure?.proof?.failed_task_id)&&
         !adaptiveReady)
-      deny('PR Task requires independent completion or ready adaptive recovery evidence');
+      deny('PR Task requires independent completion of earlier work or ready adaptive recovery evidence');
      const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
      const permission=before.root_permissions.find(p=>p.operation==='create_pull_request');
      const owner=options.trustedAgentRegistry.orchestrator;
