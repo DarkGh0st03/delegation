@@ -31,6 +31,12 @@ import {GiteaClient} from '../../gateway/src/gitea-client.ts';
 import {AuthenticatedGiteaMutationCompletionObserver,
  TrustedGatewayGiteaMutationEvidencePublisher}
  from '../../gateway/src/trusted-authority-only-gitea-mutation-evidence.ts';
+import {AuthenticatedRunnerCompletionObserver,
+ TrustedGatewayRunnerPassEvidencePublisher}
+ from '../../gateway/src/trusted-authority-only-runner-evidence.ts';
+import {RunnerClient} from '../../gateway/src/runner-client.ts';
+import {TrustedAuthorityOnlyCompletionObserver}
+ from '../../../packages/orchestrator-runtime/src/trusted-authority-only-completion-observer.ts';
 import {InMemoryRequestStore,InMemoryAuditSink,prepareAuthorization} from '../../gateway/src/prepare.ts';
 import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
@@ -77,6 +83,19 @@ class R3513ScriptedFrontend extends BaseLlm{
  }
  connect(){throw Error('Paid model connection forbidden');}
 }
+class R3514ScriptedTest extends BaseLlm{
+ calls=0; requests=[];
+ constructor(){super({model:'r3514-scripted-test-no-inference'});}
+ async *generateContentAsync(request){
+  this.calls++;this.requests.push(request);
+  if(this.calls===1)yield {content:{role:'model',parts:[{functionCall:{
+   id:'r3514-test-run',name:'run_tests',
+   args:{branch:'feature/account-suspension',profile:'poc-default'}
+  }}]}};
+  else yield {content:{role:'model',parts:[{text:'Test Runner result received'}]}};
+ }
+ connect(){throw Error('Paid model connection forbidden in R351.4');}
+}
 class Scripted extends BaseLlm{
  calls=0;
  constructor(proposal=draft){super({model:'free-owner-review-script'});this.proposal=proposal;}
@@ -92,7 +111,8 @@ const root=(id,index,seconds=600)=>({credential_id:id,valid_from:new Date().toIS
 async function fixture(t,flags={}){
  const home=await mkdtemp(join(tmpdir(),'r349-'));t.after(()=>rm(home,{recursive:true,force:true}));
  const dirs=Object.fromEntries(['receipts','checkpoints','activation','tasks','keys','gatewaySessions','gatewayTasks','issuerChildren','gatewayChildren','flights',
-  'mutationIntents','runnerIntents','recovery','mutationEvidence'].map(k=>[k,join(home,k)]));
+  'mutationIntents','runnerIntents','recovery','mutationEvidence',
+  'runnerEvidence'].map(k=>[k,join(home,k)]));
  for(const d of Object.values(dirs))await mkdir(d,{mode:0o700});
  const engineer=generateKeyPairSync('ed25519'),backend=generateKeyPairSync('ed25519');
  const privateKeyFile=join(dirs.keys,'engineer.pem');await writeFile(privateKeyFile,pem(engineer.privateKey,'pkcs8'),{mode:0o600});
@@ -561,13 +581,16 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
  }
 });
 
-for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
+for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
+ 'R351.4 original Engineer ADK/A2A Test invokes authenticated Runner evidence and attests PASS':
+ mode==='frontend'?
  'R351.3 actual Frontend A2A Gateway evidence unlocks bounded ADK Test Agent choice':
  mode==='backend'?
  'R351.2 original Gateway authenticated offline Gitea evidence permits next ADK Frontend choice':
  'R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',
  async t=>{
- const verified=mode!=='missing',throughFrontend=mode==='frontend';
+ const verified=mode!=='missing',throughTest=mode==='test',
+  throughFrontend=mode==='frontend'||throughTest;
  const f=await fixture(t,throughFrontend?{includeTestPermission:true}:{});
  const host=await f.start();
  await f.approve(throughFrontend?['permission-1','permission-2','permission-3']:
@@ -578,14 +601,20 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
  const fileSha='e'.repeat(40),frontendSha='f'.repeat(40),
   vp='r3504-private-vp',frontendVp='r3513-private-frontend-vp',
   requestId='r3504-prepared-01',frontendRequestId='r3513-prepared-frontend',
-  frontendChallenge='r3513-frontend-challenge';
+  testRequestId='r3514-prepared-runner',
+  frontendChallenge='r3513-frontend-challenge',
+  testChallenge='r3514-runner-challenge',testVp='r3514-private-test-vp';
  const newContent='export const suspended=true;\n';
  const frontendContent='export const suspended=true; export const ui="pending";\n';
  const newBlob='d'.repeat(40),frontendBlob='c'.repeat(40),oldBlob='b'.repeat(40);
  const provider={head:snapshot.base_revision,parent:snapshot.base_revision,
   blob:oldBlob,content:'export const suspended=false;\n'};
- let publisher,frontendStaged,next;
+ let publisher,frontendStaged,next,testTask,testStaged,runnerClient,
+  runnerPublisher,runnerJournal;
  const frontendModel=new R3513ScriptedFrontend();
+ const testAgentModel=new R3514ScriptedTest();
+ const runnerPhases=['dependency_install','typecheck','backend_tests',
+  'frontend_tests','build','playwright_e2e'];
  if(verified){
   // In-memory disposable Gitea fixture, but REAL independent receipt
   // publisher/observer, MAC, HEAD-parent-CAS and file-content checks.
@@ -613,9 +642,54 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
   publisher=new TrustedGatewayGiteaMutationEvidencePublisher({
    ...baseProof,independentGiteaClient:reader
   });
-  deps.completionObserver=new AuthenticatedGiteaMutationCompletionObserver({
+  const giteaObserver=new AuthenticatedGiteaMutationCompletionObserver({
    ...baseProof,giteaClient:reader
   }).toTrustedObserver();
+  if(throughTest){
+   const runnerProof={directory:f.dirs.runnerEvidence,key:randomBytes(32),
+    repository:'thesis/iam-console-poc',branch};
+   runnerClient=new RunnerClient({
+    baseUrl:'http://offline-runner.r3514.invalid',
+    gatewayToken:'owner-private-offline-runner-token',
+    fetchFn:async(url,init)=>{
+     assert.equal(String(url),'http://offline-runner.r3514.invalid/v1/runs');
+     assert.equal(init.method,'POST');
+     assert.equal(init.headers.authorization,'Bearer owner-private-offline-runner-token');
+     const request=JSON.parse(String(init.body));
+     assert.equal(request.request_id,testRequestId);
+     assert.equal(request.repository,'gitea://gitea.local/thesis/iam-console-poc');
+     assert.equal(request.branch,branch);
+     assert.equal(request.commit_sha,frontendSha);
+     assert.equal(request.profile,'poc-default');
+     // This fixture simulates the HTTP controller; real RunnerClient
+     // validates response shape and binds its original request provenance.
+     return Response.json({
+      request_id:request.request_id,repository:request.repository,
+      branch,tested_commit_sha:frontendSha,runner_profile:'poc-default',
+      status:'pass',
+      phases:[...runnerPhases,'researcher_acceptance'].map(phase=>({
+       phase,status:'pass'
+      })),
+      project_tests:{status:'pass',phases:runnerPhases.map(phase=>({
+       phase,status:'pass'
+      }))},
+      researcher_acceptance:{phase:'researcher_acceptance',status:'pass'},
+      log_reference:'runner-log://12345678-1234-1234-1234-123456789abc'
+     });
+    }
+   });
+   runnerPublisher=new TrustedGatewayRunnerPassEvidencePublisher({
+    ...runnerProof,runnerClient,independentGiteaClient:reader
+   });
+   const runnerObserver=new AuthenticatedRunnerCompletionObserver({
+    ...runnerProof,giteaClient:reader
+   });
+   deps.completionObserver=new TrustedAuthorityOnlyCompletionObserver({
+    readVerifiedCompletion:e=>e.task_id==='r3513-test'?
+     runnerObserver.observe(e):giteaObserver.observe(e)
+   });
+   runnerJournal=new DurableAuthorityOnlyRunnerIntentJournal(f.dirs.runnerIntents);
+  }else deps.completionObserver=giteaObserver;
   // The provider mutation is simulated by /execute below. A separate
   // observer rereads its state; no A2A artifact is accepted as evidence.
   publisher.setOfflineState=(head,parent,blob,content)=>{
@@ -661,6 +735,23 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
  const fetchFn=async(url,options)=>{
   const u=String(url),body=JSON.parse(String(options?.body));
   if(u.endsWith('/v1/authorization/prepare')){
+   const runnerRequest=throughTest&&testStaged&&
+    body.task_id===testTask.runtimeTaskId;
+   if(runnerRequest){
+    assert.equal(body.agent_role,'test');
+    assert.equal(body.tool,'run_tests');
+    assert.deepEqual(body.arguments,{branch,profile:'poc-default'});
+    events.push('test_gateway_prepare_canonical');
+    const prepared=prepareAuthorization(body,{
+     audience:'cloud-access-gateway',request_ttl_ms:60000,
+     repository:snapshot.repository
+    },{
+     store,audit,authorityOnlyAdmissions:gateway,
+     requestId:()=>testRequestId,challenge:()=>testChallenge
+    });
+    assert.equal(store.size(),3);
+    return Response.json(prepared,{status:201});
+   }
    const frontendRequest=throughFrontend&&next&&
     body.task_id===next.runtimeTaskId;
    assert.equal(body.task_id,frontendRequest?next.runtimeTaskId:task.runtimeTaskId);
@@ -682,6 +773,13 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
    return Response.json(prepared,{status:201});
   }
   if(u.endsWith('/v1/presentations')){
+   const runnerRequest=throughTest&&testStaged&&
+    body.credential_id===testStaged.credential_id;
+   if(runnerRequest){
+    assert.equal(body.challenge,testChallenge);
+    events.push('test_private_vp_fixture');
+    return Response.json({signed_vp:testVp});
+   }
    const frontendRequest=throughFrontend&&frontendStaged&&
     body.credential_id===frontendStaged.credential_id;
    assert.equal(body.credential_id,frontendRequest?
@@ -692,6 +790,44 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
    return Response.json({signed_vp:frontendRequest?frontendVp:vp});
   }
   if(u.endsWith('/v1/authorization/execute')){
+   if(throughTest&&body.request_id===testRequestId){
+    assert.equal(body.signed_vp,testVp);
+    const record=store.get(testRequestId);
+    assert.ok(record);
+    const intent=nativeRunner.getReservedIntent(record);
+    assert.equal(intent.request_id,testRequestId);
+    assert.equal(intent.credential_id,testStaged.credential_id);
+    assert.equal(intent.expected_head_sha,frontendSha);
+    await runnerJournal.assertReserved(intent);
+    const flights=(await readdir(f.dirs.flights))
+     .filter(n=>n.endsWith('.flight.json'));
+    assert.equal(flights.length,3);
+    const all=await Promise.all(flights.map(async name=>
+     JSON.parse(await readFile(join(f.dirs.flights,name),'utf8'))));
+    const flight=all.find(x=>x.request_id===testRequestId);
+    assert.equal(flight?.credential_id,testStaged.credential_id);
+    events.push('test_gateway_execute_fixture');
+    // Reserve irrevocable one-shot Runner POST before any provider request.
+    await runnerJournal.reserveAttempt(intent);
+    const request={
+     request_id:testRequestId,
+     repository:'gitea://gitea.local/thesis/iam-console-poc',
+     branch,commit_sha:frontendSha,profile:'poc-default'
+    };
+    const result=await runnerClient.run(request);
+    const keys=['session_id','authority_digest','root_credential_id',
+     'task_id','runtime_task_id','epoch','agent_did','credential_id',
+     'request_id','request_fingerprint'];
+    const binding=Object.fromEntries(keys.map(k=>[k,intent[k]]));
+    const digest=await runnerPublisher.publish(intent,binding,
+     request,result,'opa-offline-r3514');
+    await runnerJournal.reserveCompletedEvidence(intent,digest);
+    return Response.json({request_id:testRequestId,decision:'allow',
+     execution:{provider:'runner',performed:true,tool:'run_tests',
+      branch,tested_commit_sha:frontendSha,runner_profile:'poc-default',
+      status:'pass',project_tests:'pass',researcher_acceptance:'pass'}
+    });
+   }
    const frontendRequest=throughFrontend&&body.request_id===frontendRequestId;
    const id=frontendRequest?frontendRequestId:requestId;
    const signed=frontendRequest?frontendVp:vp;
@@ -754,8 +890,9 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
    const server=await startSpecializedAgentServer({
     role,host:'127.0.0.1',port:await localPort(),
     delegatedAuthorization:true,capabilityProfile:'approved-plan',
-    ...((role==='backend'||(throughFrontend&&role==='frontend'))?{adk:{
-     model:role==='backend'?model:frontendModel,
+    ...((role==='backend'||(throughFrontend&&role==='frontend')||
+      (throughTest&&role==='test'))?{adk:{
+     model:role==='backend'?model:role==='frontend'?frontendModel:testAgentModel,
      gatewayBaseUrl:'http://offline-gateway.r3504.invalid',
      adapterBaseUrl:'http://offline-crypto.r3504.invalid',
      adapterToken:'private-r3504-token',scopeModelPaths:true,
@@ -916,6 +1053,7 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
     });
     assert.equal(chosenTest.task_id,'r3513-test');
     assert.equal(chosenTest.agent_id,'test');
+    testStaged=chosenTest;
     assert.equal(chosenTest.epoch,3);
     assert.equal(chosenTest.decision_source,'owner_adk_candidate_coordinator_validated');
     assert.equal(testModel.calls,1);
@@ -926,6 +1064,51 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
      requestId,frontendRequestId,fileSha,frontendSha,frontendVp])
      assert.equal(taskDecisionPrompt.includes(secret),false);
     assert.ok(taskDecisionPrompt.includes('independently_gateway_completed_tasks'));
+    if(throughTest){
+     const testStager=execution.createEnrolledNativeEffectStager({
+      runtimeTaskId:testTask.runtimeTaskId,expectedHeadSha:frontendSha
+     });
+     const testReport=await execution.dispatchEnrolledTask({
+      taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId,
+      instruction:'Run pinned Test on independently verified Backend/Frontend',
+      effectStager:testStager
+     });
+     assert.equal(testReport.status,'a2a_report_not_gateway_completed');
+     assert.equal(testReport.provider_completion_attested,false);
+     assert.equal(testReport.role,'test');
+     assert.equal(testReport.artifact.test_outcome,'pass');
+     assert.equal(testReport.artifact.tested_commit_sha,frontendSha);
+     assert.equal(testReport.artifact.project_tests,'pass');
+     assert.equal(testReport.artifact.researcher_acceptance,'pass');
+     assert.equal(testAgentModel.calls,2);
+     assert.equal(gateway.stagedCompletedTaskCount,2);
+     const pending=(await readdir(f.dirs.runnerIntents))
+      .filter(n=>n.endsWith('.intent.json'));
+     const attempts=(await readdir(f.dirs.runnerIntents))
+      .filter(n=>n.endsWith('.attempt.json'));
+     const confirmed=(await readdir(f.dirs.runnerIntents))
+      .filter(n=>n.endsWith('.completed.json'));
+     assert.equal(pending.length,1);
+     assert.equal(attempts.length,1);
+     assert.equal(confirmed.length,1);
+     assert.equal((await readdir(f.dirs.runnerEvidence))
+      .filter(n=>n.endsWith('.runner.json')).length,1);
+     const attestedTest=await execution.attestEnrolledTaskCompletion({
+      taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
+     });
+     assert.equal(attestedTest.status,'owner_gateway_completion_independently_observed');
+     assert.equal(gateway.stagedCompletedTaskCount,3);
+     await assert.rejects(execution.dispatchEnrolledTask({
+      taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId,
+      instruction:'Replay Docker',effectStager:testStager
+     }),/protected A2A dispatch replayed/);
+     await assert.rejects(execution.attestEnrolledTaskCompletion({
+      taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
+     }),/no matching original A2A dispatch report/);
+     const prompt=JSON.stringify(testAgentModel.requests);
+     for(const secret of [testVp,testStaged.credential_id,testRequestId])
+      assert.equal(prompt.includes(secret),false);
+    }
     assert.equal(host.phase,'operational');
    }
    assert.equal(host.phase,'operational');
