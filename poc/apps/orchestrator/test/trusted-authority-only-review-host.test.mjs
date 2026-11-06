@@ -29,6 +29,21 @@ const snapshot={session_id:'same-root-review',repository:{authority:'gitea.local
 const requirement='Suspend accounts',branch='feature/account-suspension',did='did:thesis:engineer';
 const draft={requested_permissions:[{operation:'update_file',resource_type:'file',path:'apps/user.ts'},{operation:'read_file',resource_type:'file',path:'apps/user.ts'}],assumptions:[],uncertainties:[]};
 const pem=(k,type)=>k.export({format:'pem',type}).toString();
+class R3504ScriptedBackend extends BaseLlm{
+ calls=0; requests=[];
+ constructor(){super({model:'r3504-scripted-no-inference'});}
+ async *generateContentAsync(request){
+  this.calls++;this.requests.push(request);
+  if(this.calls===1)yield {content:{role:'model',parts:[{functionCall:{
+   id:'r3504-update',name:'update_file',
+   args:{branch:'feature/account-suspension',path:'apps/user.ts',
+    content:'export const suspended=true;\\n'}
+  }}]}};
+  else yield {content:{role:'model',parts:[{text:'Updated owner-authorized file'}]}};
+ }
+ connect(){throw Error('Paid model connection forbidden');}
+}
+
 class Scripted extends BaseLlm{
  calls=0;
  constructor(){super({model:'free-owner-review-script'});}
@@ -265,6 +280,132 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
   // Startup is NOT provider success and cannot fabricate a completion.
   await assert.rejects(owner.attestIndependentGatewayCompletion(
    stage.task.task_id,stage.runtimeTaskId),/no matching previous A2A report/);
+  await host.close();assert.equal(host.phase,'revoked');
+ }finally{
+  await Promise.allSettled(binders.reverse().map(x=>x.close()));
+  await Promise.allSettled(servers.reverse().map(x=>x.close()));
+  await rm(temp,{recursive:true,force:true});
+  if(host.phase==='operational')await host.close();
+ }
+});
+
+test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r350:real-a2a-root',2));
+ const deps=executionDeps(f),events=[],model=new R3504ScriptedBackend();
+ const fileSha='e'.repeat(40),vp='r3504-private-vp',requestId='r3504-prepared-01';
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
+  events.push('native_child_fixture');
+  return {'@context':['https://www.w3.org/ns/credentials/v2'],
+   type:['VerifiableCredential','DelegationCredential'],
+   id:req.credential_id,issuer:'did:thesis:rust',
+   validFrom:req.valid_from,
+   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialStatus:structuredClone(req.credential_status),
+   proof:{type:'Ed25519Signature2020',proofValue:'OFFLINE_R3504_FIXTURE'}};
+ }};
+ const {gateway,stageTask,startSdkA2AOwner}=await host.admitOperationalExecution(deps);
+ const task=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding());
+ const staged=await stageTask(task);
+ assert.equal(staged.status,'owner_child_enrolled_no_provider_execution');
+ const temp=await mkdtemp(join(tmpdir(),'r3504a2a-'));
+ const roles=['backend','frontend','test'],stageChannels={},
+  agentBindingChannels={},a2aUrls={},servers=[],binders=[];
+ let owner;
+ const fetchFn=async(url,options)=>{
+  const u=String(url),body=JSON.parse(String(options?.body));
+  if(u.endsWith('/v1/authorization/prepare')){
+   assert.equal(body.task_id,task.runtimeTaskId);
+   assert.equal(body.agent_role,'backend');
+   assert.equal(body.tool,'update_file');
+   assert.deepEqual(body.arguments,{branch,path:'apps/user.ts',
+    content:'export const suspended=true;\\n'});
+   events.push('gateway_prepare_fixture');
+   return Response.json({request_id:requestId,audience:'cloud-access-gateway',
+    challenge:'r3504-challenge',expires_at:new Date(Date.now()+60000).toISOString(),
+    required_permission:task.task.permissions[0]},{status:201});
+  }
+  if(u.endsWith('/v1/presentations')){
+   assert.equal(body.credential_id,staged.credential_id);
+   assert.equal(body.challenge,'r3504-challenge');
+   events.push('private_vp_fixture');
+   return Response.json({signed_vp:vp});
+  }
+  if(u.endsWith('/v1/authorization/execute')){
+   assert.equal(body.request_id,requestId);
+   assert.equal(body.signed_vp,vp);
+   events.push('gateway_execute_fixture');
+   return Response.json({request_id:requestId,decision:'allow',
+    execution:{provider:'gitea',performed:true,tool:'update_file',
+     branch,path:'apps/user.ts',commit_sha:fileSha}});
+  }
+  throw Error('Unexpected untrusted Gateway endpoint '+u);
+ };
+ try{
+  const registry=new TrustedEffectStagingTaskRegistry();
+  for(const role of roles){
+   const sc={socketPath:join(temp,role+'-stage.sock'),
+    secretFile:join(temp,role+'-stage.hex')};
+   const bc={socketPath:join(temp,role+'-bind.sock'),
+    secretFile:join(temp,role+'-bind.hex')};
+   stageChannels[role]=sc;agentBindingChannels[role]=bc;
+   for(const key of [sc.secretFile,bc.secretFile])
+    await writeFile(key,randomBytes(32).toString('hex')+'\\n',
+     {mode:0o600,flag:'wx'});
+   const server=await startSpecializedAgentServer({
+    role,host:'127.0.0.1',port:await localPort(),
+    delegatedAuthorization:true,capabilityProfile:'approved-plan',
+    ...(role==='backend'?{adk:{
+     model,gatewayBaseUrl:'http://offline-gateway.r3504.invalid',
+     adapterBaseUrl:'http://offline-crypto.r3504.invalid',
+     adapterToken:'private-r3504-token',scopeModelPaths:true,
+     maxModelTurns:4,maxModelCallMs:5000,
+     trustedEffectTaskRegistry:registry,fetchFn
+    }}:{})
+   });
+   servers.push(server);a2aUrls[role]=server.baseUrl;
+  }
+  for(const role of roles){
+   const bind=await createTrustedEffectAgentBindingServer({
+    ...agentBindingChannels[role],expectedRole:role,
+    registry:role==='backend'?registry:new TrustedEffectStagingTaskRegistry(),
+    ownerStageClient:await connectTrustedOwnerEffectStagingClient(
+     stageChannels[role])
+   });
+   binders.push(bind);await bind.start();
+  }
+  owner=await startSdkA2AOwner({stageChannels,agentBindingChannels,
+   agentBaseUrls:a2aUrls,a2aPolling:{
+    deadlineMs:15000,initialIntervalMs:25,maxIntervalMs:80}});
+  const report=await owner.dispatchIssuedTask({
+   taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId,
+   instruction:'Update only the Engineer-approved file',
+   effectStager:{async stage(id){
+    assert.equal(id,requestId);
+    events.push('owner_effect_stage_fixture');
+    return {provider_write_authorized:false};
+   }}
+  });
+  assert.equal(report.status,'a2a_report_not_gateway_completed');
+  assert.equal(report.provider_completion_attested,false);
+  assert.equal(report.artifact.commit_sha,fileSha);
+  assert.deepEqual(report.artifact.files_modified,['apps/user.ts']);
+  assert.deepEqual(events,[
+   'native_child_fixture','gateway_prepare_fixture','owner_effect_stage_fixture',
+   'private_vp_fixture','gateway_execute_fixture']);
+  assert.equal(model.calls,2);
+  for(const secret of [vp,staged.credential_id,requestId,
+    'OFFLINE_R3504_FIXTURE'])
+   assert.equal(JSON.stringify(model.requests).includes(secret),false);
+  await assert.rejects(owner.attestIndependentGatewayCompletion(
+   task.task.task_id,task.runtimeTaskId),
+   /trusted completion observer or owner-private journal missing/);
+  assert.equal(gateway.stagedCompletedTaskCount,0);
+  await assert.rejects(owner.dispatchIssuedTask({
+   taskId:task.task.task_id,runtimeTaskId:task.runtimeTaskId,
+   instruction:'Replay',effectStager:{async stage(){}}}),
+   /closed or malformed owner-selected Task/);
   await host.close();assert.equal(host.phase,'revoked');
  }finally{
   await Promise.allSettled(binders.reverse().map(x=>x.close()));
