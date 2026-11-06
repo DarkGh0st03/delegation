@@ -160,10 +160,15 @@ test("R357.3 exact witnessed Gitea read publishes only owner-authenticated bytes
    nowMs:()=>Date.parse("2026-11-05T10:00:00Z")
   });
   assert.equal(publisher.isForAdmissions(gate),true);
-  const out=await publisher.publishSuccessfulRead({
+  const first=publisher.publishSuccessfulRead({
    record,verified:verifiedRead,policy:{allow:true,policy_version:"test-only-opa-v1"},
    execution:result as GiteaReadFileExecutionResult
   });
+  await assert.rejects(publisher.publishSuccessfulRead({
+   record,verified:verifiedRead,policy:{allow:true,policy_version:"test-only-opa-v1"},
+   execution:result as GiteaReadFileExecutionResult
+  }),/concurrent evidence publication denied/);
+  const out=await first;
   assert.equal(out.status,"gateway_read_evidence_published_staged");
   assert.equal(out.provider_execution_enabled,false);
   assert.match(out.evidence_sha256,/^[a-f0-9]{64}$/u);
