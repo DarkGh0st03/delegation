@@ -110,10 +110,20 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
   if(verifiedFailure!==undefined){
    const phases=new Set(['typecheck','backend_tests','frontend_tests',
     'build','playwright_e2e','researcher_acceptance']);
-   if(!exact(verifiedFailure,['failed_phase','source_evidence_sha256'])||
+   const base=['failed_phase','source_evidence_sha256'];
+   const codes=Object.hasOwn(verifiedFailure,'typecheck_error_codes');
+   if(!(exact(verifiedFailure,base)||
+        exact(verifiedFailure,[...base,'typecheck_error_codes']))||
       !phases.has(verifiedFailure.failed_phase)||
       typeof verifiedFailure.source_evidence_sha256!=='string'||
-      !/^[a-f0-9]{64}$/u.test(verifiedFailure.source_evidence_sha256))
+      !/^[a-f0-9]{64}$/u.test(verifiedFailure.source_evidence_sha256)||
+      (codes&&(verifiedFailure.failed_phase!=='typecheck'||
+       !Array.isArray(verifiedFailure.typecheck_error_codes)||
+       verifiedFailure.typecheck_error_codes.length<1||
+       verifiedFailure.typecheck_error_codes.length>8||
+       verifiedFailure.typecheck_error_codes.some((v,i)=>
+        typeof v!=='string'||!/^TS[0-9]{4,5}$/u.test(v)||
+        (i>0&&verifiedFailure.typecheck_error_codes[i-1]>=v)))))
     fail();
    this.verifiedFailure=Object.freeze({...verifiedFailure});
   }
