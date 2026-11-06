@@ -18,6 +18,8 @@ import {DurableAuthorityOnlyRunnerIntentJournal}
 import {TrustedGatewayRunnerPassEvidencePublisher,
  AuthenticatedRunnerCompletionObserver}
  from "./trusted-authority-only-runner-evidence.ts";
+import {validateTrustedRunnerFailure}
+ from "./trusted-authority-only-runner-failure.ts";
 import type {
  PreparedRequestRecord,VerifiedDelegation,PolicyDecision,
  RunnerExecutionResult
@@ -118,6 +120,13 @@ export class TrustedAuthorityOnlyRunnerExecutor{
     profile:"poc-default"
    };
    const result=await this.#runner.run(request);
+   if(result.status==="fail"){
+    // Only a genuine owner-bound Runner FAIL may reach this classification.
+    // There is no D1 authority path until a separate durable, independently
+    // observed failure gate exists. Never attest or report Task completion.
+    validateTrustedRunnerFailure(this.#runner,request,result,intent);
+    deny("authenticated Runner FAIL: Task incomplete; D1 gate not armed");
+   }
    // The controller already checks the exact request response fields.
    // The publisher validates ALL seven phases, researcher acceptance,
    // result provenance and Gitea HEAD before any SUCCESS receipt.
