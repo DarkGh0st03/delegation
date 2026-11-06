@@ -29,14 +29,16 @@ class SingleDecisionModel extends BaseLlm{
 }
 export class TrustedAuthorityOnlyAdkDecisionProposer{
  #attempted=false;
- constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure}){
+ constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,nextEpoch}){
   if(!(model instanceof BaseLlm)||typeof requirement!=='string'||
      !requirement.trim()||requirement.length>6000||
      typeof branch!=='string'||!branch.startsWith('feature/')||
      !Array.isArray(rootPermissions)||!rootPermissions.length||
      !agents||typeof agents!=='object'||Array.isArray(agents)||
      !Object.keys(agents).length||!Array.isArray(previousTasks)||
-     previousTasks.length>255)
+     previousTasks.length>255||
+     (nextEpoch!==undefined&&(!Number.isSafeInteger(nextEpoch)||
+      nextEpoch<1||nextEpoch>256)))
    fail();
   const roots=rootPermissions.map(p=>{
    if(!exact(p,['resource','operation'])||
@@ -61,6 +63,9 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
   this.model=model;this.requirement=requirement;this.branch=branch;
   this.roots=Object.freeze(roots);this.agents=Object.freeze(pins);
   this.previous=Object.freeze(prior);
+  // A failed Test is registered but never counted as Gateway-completed.
+  // Recovery epochs therefore cannot be inferred from prior successes.
+  this.nextEpoch=nextEpoch??prior.length+1;
   if(verifiedFailure!==undefined){
    const phases=new Set(['typecheck','backend_tests','frontend_tests',
     'build','playwright_e2e','researcher_acceptance']);
@@ -101,7 +106,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    })),
    root_permission_ceiling:this.roots,
    independently_gateway_completed_tasks:this.previous,
-   next_epoch:this.previous.length+1,
+   next_epoch:this.nextEpoch,
    ...(this.verifiedFailure?{
     independent_runner_failure:{
      failed_phase:this.verifiedFailure.failed_phase,
