@@ -37,6 +37,10 @@ assert.equal(process.env.GEMINI_API_KEY,undefined);assert.equal(process.env.OPEN
 const repo={authority:'gitea.local',owner:'thesis',repository:'iam-console-poc'};
 assert.equal(process.env.GITEA_OWNER,repo.owner);assert.equal(process.env.GITEA_REPOSITORY,repo.repository);
 const branch='feature/account-suspension',sourcePath='apps/backend/src/users/user.service.ts';
+const nativeBranchToBackend=process.env.R357_NATIVE_BRANCH_TO_BACKEND==='1';
+const scopedFile='gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/'+sourcePath;
+const backendTaskId='r357-backend-after-branch',backendRuntimeTaskId='dispatch_'+'B'.repeat(22);
+const branchTaskId='r354-create-approved-branch';
 const requirement='Create the approved Account Suspension feature branch from the reviewed unsolved main baseline';
 const sessionId='r354-native-reviewed-branch',runtimeTaskId='dispatch_'+'C'.repeat(22);
 const engineerDid=process.env.ADAPTER_ID_ENGINEER,orchestratorDid=process.env.ADAPTER_ID_ORCHESTRATOR;
@@ -65,7 +69,9 @@ class Planner extends BaseLlm{
   this.calls++;
   yield {content:{role:'model',parts:this.calls===1?[{functionCall:{id:'read-main',name:'read_file',
    args:{branch:'main',path:sourcePath}}}]:[{text:JSON.stringify({requested_permissions:[
-    {operation:'create_branch',resource_type:'repository',path:null}],assumptions:[],uncertainties:[]})}]}};
+    {operation:'create_branch',resource_type:'repository',path:null},
+    ...(nativeBranchToBackend?[{operation:'update_file',resource_type:'directory',
+     path:'apps/backend/src/users'}]:[])],assumptions:[],uncertainties:[]})}]}};
  }
  connect(){throw Error('Paid inference forbidden');}
 }
@@ -73,9 +79,24 @@ class Decision extends BaseLlm{
  calls=0;
  constructor(){super({model:'r354-scripted-native-branch-decision'});}
  async *generateContentAsync(){this.calls++;yield {content:{role:'model',parts:[{text:JSON.stringify({
-  task_id:'r354-create-approved-branch',agent_id:'orchestrator',depends_on:[],
+  task_id:branchTaskId,agent_id:'orchestrator',depends_on:[],
   permissions:[{resource:'gitea://gitea.local/thesis/iam-console-poc',operation:'create_branch'}],
   instruction:'Create the approved feature branch from the reviewed main revision'})}]}};}
+ connect(){throw Error('Paid inference forbidden');}
+}
+/** R357.0: Task depends on independently completed root branch.
+ * The Engineer signs only the ceiling, never this Task selection. */
+class BackendDecision extends BaseLlm{
+ calls=0;
+ constructor(){super({model:'r357-scripted-backend-after-native-root-branch'});}
+ async *generateContentAsync(){
+  this.calls++;
+  yield {content:{role:'model',parts:[{text:JSON.stringify({
+   task_id:backendTaskId,agent_id:'backend',depends_on:[branchTaskId],
+   permissions:[{resource:scopedFile,operation:'update_file'}],
+   instruction:'Implement the Account Suspension change within approved Backend source'
+  })}]}};
+ }
  connect(){throw Error('Paid inference forbidden');}
 }
 const parent=await mkdtemp(join(tmpdir(),'r354-native-'));
@@ -138,7 +159,14 @@ try{
  const logged=await uiCall('/api/login',{password});assert.equal(logged.status,200);
  const cookie=logged.headers.get('set-cookie').split(';')[0];
  const packet=await (await uiCall('/api/review',undefined,cookie)).json();
- assert.equal(packet.protocol,'authority-only');assert.equal(packet.permissions.length,1);
+ assert.equal(packet.protocol,'authority-only');
+ assert.equal(packet.permissions.length,nativeBranchToBackend?2:1);
+ if(nativeBranchToBackend){
+  assert.ok(packet.authorization_proposal.requested_permissions.some(p=>
+   p.operation==='update_file'&&p.path==='apps/backend/src/users'));
+  assert.equal(packet.authorization_proposal.requested_permissions.some(p=>
+   Object.hasOwn(p,'task_id')||Object.hasOwn(p,'agent_id')),false);
+ }
  assert.equal(packet.authorization_proposal.requested_permissions[0].operation,'create_branch');
  assert.equal(branchPosts,0);
  const accepted=await uiCall('/api/approve',{proposal_digest:packet.proposal_digest,
@@ -187,6 +215,64 @@ try{
  assert.equal((await readdir(path('children'))).length,0);assert.equal((await readdir(path('gatewayChildren'))).length,0);
  const replay=await call('execute',{request_id:prepared.request_id,signed_vp:vp.signed_vp},409);
  assert.equal(replay.error,'replay_detected');assert.equal(branchPosts,1);assert.equal(otherWrites,0);
+ if(nativeBranchToBackend){
+  const live=coordinator.assertTrustedGatewayAuthorityBinding();
+  assert.equal(live.root_credential_id,root);
+  assert.equal(live.root_permissions.length,2);
+  const backendDecision=new BackendDecision();
+  const childParams=params('urn:r357:child:backend-after-branch',29403,500);
+  const backend=await execution.proposeAndStageTask({
+   model:backendDecision,runtimeTaskId:backendRuntimeTaskId,
+   childParameters:childParams
+  });
+  assert.equal(backend.status,'owner_child_enrolled_no_provider_execution');
+  assert.equal(backend.task_id,backendTaskId);
+  assert.equal(backend.epoch,2);
+  assert.equal(backend.agent_id,'backend');
+  assert.equal(backendDecision.calls,1);
+  assert.equal(backend.gateway_execution_authorized,false);
+  assert.notEqual(backend.credential_id,root);
+  const issued=execution.childIssuer.assertTrustedIssuedChild(backendTaskId,coordinator);
+  assert.equal(issued.root_credential_id,root);
+  assert.deepEqual(issued.permissions,[{resource:scopedFile,operation:'update_file'}]);
+  assert.equal(issued.credential_id,backend.credential_id);
+  assert.equal(gate.registeredTaskCount,2);
+  assert.equal(coordinator.registeredTaskCount,2);
+  assert.equal(gate.stagedCompletedTaskCount,1);
+  assert.equal(branchPosts,1);
+  assert.equal(otherWrites,0);
+  assert.equal((await readdir(path('children'))).length,1);
+  assert.equal((await readdir(path('gatewayChildren'))).length,1);
+  const childVp=await invokeNativeCrypto({
+   socketPath:process.env.ADAPTER_ENGINEER_NATIVE_SOCKET,
+   token:process.env.ADAPTER_CALLER_BACKEND,timeoutMs:60000
+  },'create_presentation',{
+   credential_id:backend.credential_id,
+   disclosed_permissions:[{resource:scopedFile,operation:'update_file'}],
+   audience:'cloud-access-gateway',challenge:'r357-disposable-native-backend-nonce'
+  });
+  const backendProof=await loadDirectCoreRustVerifier({
+   allowGiteaScopeCoverage:true
+  }).verify({presenter:'backend',audience:'cloud-access-gateway',
+   challenge:'r357-disposable-native-backend-nonce',
+   required_permission:{resource:scopedFile,operation:'update_file'},
+   signed_vp:childVp.signed_vp});
+  assert.equal(backendProof.credential_id,backend.credential_id);
+  assert.equal(backendProof.root_credential_id,root);
+  assert.equal(backendProof.hierarchy_depth,1);
+  assert.deepEqual(backendProof.permissions,[{resource:scopedFile,operation:'update_file'}]);
+  assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
+  process.stdout.write(JSON.stringify({
+   event:'r357_native_same_owner_branch_to_backend_child',
+   branch_provider_posts:branchPosts,branch_completion_independent:true,
+   backend_task_model_selected_after_branch:true,backend_dependency:branchTaskId,
+   genuine_rust_backend_child_vp:true,child_hierarchy_depth:1,
+   child_permissions_scoped_to_backend_file:true,
+   original_root_unchanged:true,operational_tasks:2,completed_tasks:1,
+   main_unsolved_unchanged:true,feature_mutation_not_yet_executed:true,
+   paid_model_calls:0
+  })+'\n');
+ }
  assert.equal((await client.getBranchMetadata('main')).commit_sha,baseRevision);
  assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
  await host.close();
