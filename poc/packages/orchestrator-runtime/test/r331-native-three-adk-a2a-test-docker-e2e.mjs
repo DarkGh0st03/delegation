@@ -452,10 +452,10 @@ try{
   assert.equal(packetResponse.status,200);
   const packet=await packetResponse.json();
   assert.equal(packet.protocol,"authority-only");
-  assert.deepEqual(packet.proposal.requested_permissions.map(
+  assert.deepEqual(packet.authorization_proposal.requested_permissions.map(
    p=>[p.resource,p.operation]),grant.permissions.map(
    p=>[p.resource,p.operation]));
-  const ids=packet.proposal.requested_permissions.map(p=>p.id);
+  const ids=packet.permissions.map(p=>p.id);
   const accepted=await call("/api/approve",{
    proposal_digest:packet.proposal_digest,approved_permission_ids:ids,
    confirmation:"APPROVE "+packet.proposal_digest
