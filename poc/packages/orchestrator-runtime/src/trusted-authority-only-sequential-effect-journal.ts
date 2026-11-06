@@ -23,10 +23,14 @@ function deny(reason:string):never{
 }
 export type TrustedSequentialManifest=TrustedTaskFenceBase&{
  readonly total_effects:number;
+ /** R359 opt-in: a single authenticated read followed by one CAS update.
+  * Never derived from A2A/model arguments or considered a new grant. */
+ readonly effect_plan?:readonly ["read_file","update_file"];
 };
 export type TrustedSequentialFlight=TrustedTaskFlight&{
  readonly sequence:number;readonly total_effects:number;
  readonly previous_evidence_sha256:string|null;
+ readonly operation?:"read_file"|"update_file";
 };
 export type TrustedSequentialEvidence=TrustedSequentialFlight&{
  readonly evidence_sha256:string;readonly completed_at_ms:number;
@@ -53,15 +57,24 @@ function sameBase(a:TrustedTaskFenceBase,b:TrustedTaskFenceBase){
  return BASE.every(k=>a[k]===b[k]);
 }
 function ensureManifest(m:TrustedSequentialManifest,withFinal=false){
+ const typed=Object.hasOwn(m??{},"effect_plan");
  if(!exact(m,[...BASE,"total_effects",
+      ...(typed?["effect_plan"]:[]),
       ...(withFinal?["latest_evidence_sha256"]:[])])||!baseValid(m)||
     !Number.isSafeInteger(m.total_effects)||m.total_effects<2||
-    m.total_effects>32)deny("invalid pinned Task manifest or effect count");
+    m.total_effects>32||
+    (typed&&(m.total_effects!==2||!Array.isArray(m.effect_plan)||
+      m.effect_plan.length!==2||m.effect_plan[0]!=="read_file"||
+      m.effect_plan[1]!=="update_file")))
+   deny("invalid pinned Task manifest or effect count");
 }
 function ensureFlight(f:TrustedSequentialFlight,withEvidence=false){
  if(!exact(f,[...BASE,"total_effects","sequence",
      "previous_evidence_sha256","request_id","request_fingerprint",
+     ...(Object.hasOwn(f??{},"operation")?["operation"]:[]),
      ...(withEvidence?["evidence_sha256","completed_at_ms"]:[])])||
+    (f.operation!==undefined&&f.operation!=="read_file"&&
+     f.operation!=="update_file")||
     !baseValid(f)||!ID.test(f.request_id)||!SHA.test(f.request_fingerprint)||
     !Number.isSafeInteger(f.sequence)||f.sequence<1||
     f.sequence>f.total_effects||
@@ -73,7 +86,8 @@ function sameFlight(a:TrustedSequentialFlight,b:TrustedSequentialFlight){
  return sameBase(a,b)&&a.total_effects===b.total_effects&&
   a.sequence===b.sequence&&a.request_id===b.request_id&&
   a.request_fingerprint===b.request_fingerprint&&
-  a.previous_evidence_sha256===b.previous_evidence_sha256;
+  a.previous_evidence_sha256===b.previous_evidence_sha256&&
+  a.operation===b.operation;
 }
 export class DurableAuthorityOnlySequentialEffectJournal{
  readonly #directory:string;
@@ -128,8 +142,11 @@ export class DurableAuthorityOnlySequentialEffectJournal{
   const item=await this.#read(this.#stem(m.session_id,m.task_id)+".manifest.json");
   if(item.schema!==1||item.kind!=="manifest"||
      !sameBase(item as unknown as TrustedTaskFenceBase,m)||
-     item.total_effects!==m.total_effects)
+     item.total_effects!==m.total_effects||
+     JSON.stringify(item.effect_plan??null)!==
+       JSON.stringify(m.effect_plan??null))
    deny("recorded Task manifest does not match signed root and Child");
+  return item;
  }
  async reserveManifest(m:TrustedSequentialManifest):Promise<void>{
   ensureManifest(m);
@@ -140,7 +157,17 @@ export class DurableAuthorityOnlySequentialEffectJournal{
  async reserveEffect(f:TrustedSequentialFlight):Promise<void>{
   ensureFlight(f);
   await this.#dir();
-  await this.#manifest(f);
+  const manifest=await this.#manifest(f);
+  const expectedPlan=manifest.effect_plan;
+  // An immutable typed manifest cannot accept an untyped flight, or a
+  // second read in place of the originally pinned update operation.
+  if(expectedPlan!==undefined){
+   if(!Array.isArray(expectedPlan)||
+      f.operation!==expectedPlan[f.sequence-1])
+    deny("effect operation differs from immutable read-then-update manifest");
+  }else if(f.operation!==undefined){
+   deny("legacy read-only manifest cannot accept typed mutation flights");
+  }
   const stem=this.#stem(f.session_id,f.task_id);
   // A later effect requires the precisely matching previous durable
   // verified evidence. A reserved but unconfirmed prior flight is terminal.
@@ -161,7 +188,13 @@ export class DurableAuthorityOnlySequentialEffectJournal{
      !Number.isSafeInteger(e.completed_at_ms)||e.completed_at_ms<=0)
    deny("invalid immutable provider evidence");
   await this.#dir();
-  await this.#manifest(e);
+  const manifest=await this.#manifest(e);
+  if(manifest.effect_plan!==undefined&&
+     (!Array.isArray(manifest.effect_plan)||
+      manifest.effect_plan[e.sequence-1]!==e.operation))
+   deny("typed evidence operation differs from manifest");
+  if(manifest.effect_plan===undefined&&e.operation!==undefined)
+   deny("untyped read-only evidence cannot claim mutation");
   const stem=this.#stem(e.session_id,e.task_id);
   const original=await this.#read(stem+"."+e.sequence+".flight.json");
   if(original.schema!==1||original.kind!=="flight"||
@@ -171,13 +204,16 @@ export class DurableAuthorityOnlySequentialEffectJournal{
  }
  async reserveTaskFinal(f:TrustedSequentialFinal):Promise<void>{
   ensureManifest(f,true);
-  if(!exact(f,[...BASE,"total_effects","latest_evidence_sha256"])||
+  if(!exact(f,[...BASE,"total_effects","latest_evidence_sha256",
+       ...(Object.hasOwn(f??{},"effect_plan")?["effect_plan"]:[])])||
      !SHA.test(f.latest_evidence_sha256))
    deny("invalid final effect evidence digest");
   await this.#dir();
   await this.#manifest(f);
   const stem=this.#stem(f.session_id,f.task_id);
   const last=await this.#read(stem+"."+f.total_effects+".evidence.json");
+  if(f.effect_plan!==undefined&&last.operation!=="update_file")
+   deny("typed Task cannot finalize without final verified CAS update");
   if(last.schema!==1||last.kind!=="evidence"||
      last.sequence!==f.total_effects||
      last.total_effects!==f.total_effects||

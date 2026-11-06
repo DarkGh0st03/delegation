@@ -129,3 +129,52 @@ test("R301 journal rejects shared, symlinked, malformed or untrusted stores",asy
   }),/invalid immutable effect sequence/);
  });
 });
+
+test("R359 immutable typed read-then-update manifest rejects reversed or untyped effects",async()=>{
+ await fixture(async({journal})=>{
+  const typed={...base,total_effects:2,effect_plan:["read_file","update_file"] as const};
+  await journal.reserveManifest(typed);
+  await assert.rejects(journal.reserveEffect(first),/immutable read-then-update manifest/u);
+  await assert.rejects(journal.reserveEffect({...first,operation:"update_file"}),
+   /immutable read-then-update manifest/u);
+  await journal.reserveEffect({...first,operation:"read_file"});
+  await assert.rejects(journal.reserveEffect({...second,operation:"update_file"}),/ENOENT/u);
+  await journal.reserveEvidence({...firstProof,operation:"read_file"});
+  await assert.rejects(journal.reserveEffect({...second,operation:"read_file"}),
+   /immutable read-then-update manifest/u);
+  await journal.reserveEffect({...second,operation:"update_file"});
+  await assert.rejects(journal.reserveEvidence({...secondProof,operation:"read_file"}),
+   /typed evidence operation differs from manifest/u);
+  await journal.reserveEvidence({...secondProof,operation:"update_file"});
+  await journal.reserveTaskFinal({...finish,effect_plan:typed.effect_plan});
+  await assert.rejects(journal.reserveTaskFinal({...finish,effect_plan:typed.effect_plan}),/EEXIST/u);
+ });
+});
+test("R359 typed operation cannot be added to an old read-only Task after approval",async()=>{
+ await fixture(async({journal})=>{
+  await journal.reserveManifest({...base,total_effects:2});
+  await assert.rejects(journal.reserveEffect({...first,operation:"read_file"}),
+   /legacy read-only manifest cannot accept typed mutation/u);
+  await journal.reserveEffect(first);
+  await assert.rejects(journal.reserveEvidence({...firstProof,operation:"read_file"}),
+   /untyped read-only evidence cannot claim mutation/u);
+  await journal.reserveEvidence(firstProof);
+ });
+});
+test("R359 typed manifests cannot be silently swapped or widened at finalization",async()=>{
+ await fixture(async({journal})=>{
+  const typed={...base,total_effects:2,effect_plan:["read_file","update_file"] as const};
+  await journal.reserveManifest(typed);
+  await assert.rejects(journal.reserveManifest({...typed,total_effects:3}),
+   /invalid pinned Task manifest/u);
+  await assert.rejects(journal.reserveEffect({...first,operation:"read_file",
+   total_effects:3}),/recorded Task manifest/u);
+  await journal.reserveEffect({...first,operation:"read_file"});
+  await journal.reserveEvidence({...firstProof,operation:"read_file"});
+  await journal.reserveEffect({...second,operation:"update_file"});
+  await journal.reserveEvidence({...secondProof,operation:"update_file"});
+  await assert.rejects(journal.reserveTaskFinal(finish),
+   /recorded Task manifest does not match/u);
+  await journal.reserveTaskFinal({...finish,effect_plan:typed.effect_plan});
+ });
+});
