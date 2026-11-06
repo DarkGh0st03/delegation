@@ -1,0 +1,11 @@
+{
+  "checkpoint": "R360.1",
+  "environment": "disposable-local-ci",
+  "scenario": "account_suspension",
+  "head_source_commit": "abfaff022efb418e206c776a3691f74d12c6968e",
+  "requested_test": "poc/packages/orchestrator-runtime/test/r360-mixed-read-update-native-e2e.mjs",
+  "mode": "native-rust-evm-opa-gitea-no-ai",
+  "pilot_paid": false,
+  "provider_write_target": "disposable Gitea only",
+  "claim": "request one isolated native CI run; do not infer success before run completes"
+}
