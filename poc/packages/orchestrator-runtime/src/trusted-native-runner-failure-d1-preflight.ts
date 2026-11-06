@@ -43,6 +43,7 @@ type NativeVerifiedFailedTest=Readonly<{
  failed_task_id:string;failed_runtime_task_id:string;
  original_session_id:string;tested_commit_sha:string;
  failed_phase:string;source_evidence_sha256:string;
+ typecheck_error_codes?:readonly string[];
  recovery_authorized:false;child_credential_issued:false;
  gateway_task_completed:false;task_registered:false;
 }>;
@@ -134,6 +135,8 @@ export async function observeTrustedNativeTestFailure(
   tested_commit_sha:fail.tested_commit_sha,
   failed_phase:fail.first_failed_phase,
   source_evidence_sha256:fail.evidence_sha256,
+  ...(fail.typecheck_error_codes?.length?
+   {typecheck_error_codes:Object.freeze([...fail.typecheck_error_codes])}:{}),
   recovery_authorized:false as const,
   child_credential_issued:false as const,
   gateway_task_completed:false as const,
