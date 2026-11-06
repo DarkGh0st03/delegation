@@ -37,7 +37,7 @@ class R3504ScriptedBackend extends BaseLlm{
   if(this.calls===1)yield {content:{role:'model',parts:[{functionCall:{
    id:'r3504-update',name:'update_file',
    args:{branch:'feature/account-suspension',path:'apps/user.ts',
-    content:'export const suspended=true;\\n'}
+    content:'export const suspended=true;\n'}
   }}]}};
   else yield {content:{role:'model',parts:[{text:'Updated owner-authorized file'}]}};
  }
@@ -320,7 +320,7 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
    assert.equal(body.agent_role,'backend');
    assert.equal(body.tool,'update_file');
    assert.deepEqual(body.arguments,{branch,path:'apps/user.ts',
-    content:'export const suspended=true;\\n'});
+    content:'export const suspended=true;\n'});
    events.push('gateway_prepare_fixture');
    return Response.json({request_id:requestId,audience:'cloud-access-gateway',
     challenge:'r3504-challenge',expires_at:new Date(Date.now()+60000).toISOString(),
@@ -351,7 +351,7 @@ test('R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gatew
     secretFile:join(temp,role+'-bind.hex')};
    stageChannels[role]=sc;agentBindingChannels[role]=bc;
    for(const key of [sc.secretFile,bc.secretFile])
-    await writeFile(key,randomBytes(32).toString('hex')+'\\n',
+    await writeFile(key,randomBytes(32).toString('hex')+'\n',
      {mode:0o600,flag:'wx'});
    const server=await startSpecializedAgentServer({
     role,host:'127.0.0.1',port:await localPort(),
