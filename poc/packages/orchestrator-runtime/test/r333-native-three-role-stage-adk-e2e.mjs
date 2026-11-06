@@ -181,7 +181,8 @@ class OfflineNativeTestModel extends BaseLlm{
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
-const r343NativeD1=process.env.R343_NATIVE_D1_ENROLL==="1";
+const r344NativeEdit=process.env.R344_NATIVE_D1_EDIT==="1";
+const r343NativeD1=process.env.R343_NATIVE_D1_ENROLL==="1"||r344NativeEdit;
 const r338Negative=process.env.R338_NATIVE_RUNNER_FAIL==="1"||r343NativeD1;
 let gatewayCasWrites=0;
 class ObservedGiteaClient extends GiteaClient{
@@ -393,6 +394,7 @@ try{
   repository:"thesis/iam-console-poc",branch,
   giteaClient:independentClient,nowMs
  });
+ const observedMutationTaskIds=new Set([taskId,frontendTaskId]);
  const gate=new TrustedAuthorityOnlyGatewayAdmissions({
   repository:repo,engineerDid,coordinator,approvals,
   operationalSessionStore:new TrustedOperationalSessionStore(
@@ -402,7 +404,7 @@ try{
   effectFenceJournal:new DurableAuthorityOnlyTaskFenceJournal(path("flights")),
   completionObserver:new TrustedAuthorityOnlyCompletionObserver({
    readVerifiedCompletion:expected=>{
-    if(expected.task_id===taskId||expected.task_id===frontendTaskId)
+    if(observedMutationTaskIds.has(expected.task_id))
      return mutationObserver.observe(expected);
     if(expected.task_id===testTaskId)return runnerObserver.observe(expected);
     throw Error("Unknown Task attempted completion");
@@ -1073,6 +1075,67 @@ try{
     paid_model_calls:0,main_unchanged:
      (await client.getBranchMetadata("main")).commit_sha===originalMainSha
    })+"\n");
+   if(r344NativeEdit){
+    assert.match(d1.runtime_task_id,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+    // Scripted correction of the CI-injected compiler error. This does not
+    // claim autonomous diagnosis or a functional Account Suspension change.
+    const repaired=originalError.content.replace(
+     "export const r338TypecheckFailure: string = 2026;",
+     "export const r338TypecheckFailure: number = 2026;");
+    assert.notEqual(repaired,originalError.content);
+    nativeBackendModel.path=victim;
+    nativeBackendModel.content=repaired;
+    nativeBackendModel.requests=[];
+    const stager=new TrustedAuthorityOnlyEffectStager({
+     store,admissions:gate,mutation:preflight,runner:runnerPreflight,
+     runtimeTaskId:d1.runtime_task_id,tool:"update_file",expectedHeadSha:pinnedHead
+    });
+    observedMutationTaskIds.add(d1.task_id);
+    const report=await a2aOwner.dispatchIssuedTask({
+     taskId:d1.task_id,runtimeTaskId:d1.runtime_task_id,
+     instruction:"Correct the owner-prebound Backend compiler error",
+     effectStager:stager
+    });
+    assert.equal(report.provider_completion_attested,false);
+    assert.deepEqual(report.artifact.files_modified,[victim]);
+    assert.equal(gate.stagedCompletedTaskCount,2);
+    assert.equal(gatewayCasWrites,3);
+    const result=backendGatewayExecution;
+    assert.equal(result.decision,"allow");
+    assert.equal(result.execution.commit_sha,report.artifact.commit_sha);
+    assert.notEqual(result.execution.commit_sha,pinnedHead);
+    assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,
+     result.execution.commit_sha);
+    assert.equal((await independentClient.readTextFile(
+     branch,victim,result.execution.commit_sha)).content,repaired);
+    const verified=await verifier.verify({
+     presenter:"backend",audience:backendPreparedFromAgent.audience,
+     challenge:backendPreparedFromAgent.challenge,
+     required_permission:candidate.permissions[0],
+     signed_vp:backendSignedVpFromAgent
+    });
+    assert.equal(verified.credential_id,d1.new_child_credential_id);
+    assert.equal(verified.root_credential_id,operational.credential_id);
+    await a2aOwner.attestIndependentGatewayCompletion(d1.task_id,d1.runtime_task_id);
+    assert.equal(gate.stagedCompletedTaskCount,3);
+    assert.equal(runnerCalls,1); // Original FAIL is never promoted to PASS.
+    assert.equal((await readdir(path("runner-receipts"))).length,0);
+    assert.equal((await readdir(path("runner-fail-receipts"))).length,1);
+    assert.equal(coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id,
+     operational.credential_id);
+    await assert.rejects(a2aOwner.dispatchIssuedTask({
+     taskId:d1.task_id,runtimeTaskId:d1.runtime_task_id,
+     instruction:"duplicate repair",effectStager:stager
+    }));
+    assert.equal(gatewayCasWrites,3);
+    process.stdout.write(JSON.stringify({
+     event:"r344_native_d1_adk_write_independently_attested",
+     original_root_unchanged:true,new_native_child:true,
+     original_test_still_failed:true,repair_provider_commits:1,
+     independent_gateway_completion:true,runner_posts:runnerCalls,
+     recovery_pass_attested:false,paid_model_calls:0
+    })+"\n");
+   }
   }
   await credentialPort.revokeRoot(operational.credential_id);
   assert.equal((await client.getBranchMetadata("main")).commit_sha,originalMainSha);
@@ -1082,7 +1145,7 @@ try{
    gitea_cas_changes:gatewayCasWrites,runner_posts:runnerCalls,
    real_opa:true,real_docker_fail_phase:failure.first_failed_phase,
    durable_failure_sha256:failure.evidence_sha256,
-   independent_fail_observation:true,gateway_completed_tasks:2,
+   independent_fail_observation:true,gateway_completed_tasks:gate.stagedCompletedTaskCount,
    d1_authorized:false,paid_model_calls:0,original_main_unchanged:true
   })+"\n");
  }else{
