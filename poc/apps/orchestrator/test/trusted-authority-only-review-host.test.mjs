@@ -692,38 +692,50 @@ for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
    return Response.json({signed_vp:frontendRequest?frontendVp:vp});
   }
   if(u.endsWith('/v1/authorization/execute')){
-   assert.equal(body.request_id,requestId);
-   assert.equal(body.signed_vp,vp);
-   events.push('gateway_execute_fixture');
+   const frontendRequest=throughFrontend&&body.request_id===frontendRequestId;
+   const id=frontendRequest?frontendRequestId:requestId;
+   const signed=frontendRequest?frontendVp:vp;
+   const nextSha=frontendRequest?frontendSha:fileSha;
+   const previousSha=frontendRequest?fileSha:snapshot.base_revision;
+   const previousBlob=frontendRequest?newBlob:oldBlob;
+   const blob=frontendRequest?frontendBlob:newBlob;
+   const updated=frontendRequest?frontendContent:newContent;
+   assert.equal(body.request_id,id);
+   assert.equal(body.signed_vp,signed);
+   events.push(frontendRequest?'frontend_gateway_execute_fixture':
+    'gateway_execute_fixture');
    if(verified){
     const names=(await readdir(f.dirs.mutationIntents))
      .filter(n=>n.endsWith('.intent.json'));
     const flights=(await readdir(f.dirs.flights))
      .filter(n=>n.endsWith('.flight.json'));
-    assert.equal(names.length,1);assert.equal(flights.length,1);
-    const intent=JSON.parse(await readFile(
-     join(f.dirs.mutationIntents,names[0]),'utf8'));
-    const flight=JSON.parse(await readFile(
-     join(f.dirs.flights,flights[0]),'utf8'));
-    assert.equal(intent.request_id,requestId);
-    assert.equal(flight.request_id,requestId);
-    assert.equal(flight.credential_id,staged.credential_id);
+    const count=frontendRequest?2:1;
+    assert.equal(names.length,count);assert.equal(flights.length,count);
+    const intents=await Promise.all(names.map(async n=>JSON.parse(
+     await readFile(join(f.dirs.mutationIntents,n),'utf8'))));
+    const flightsData=await Promise.all(flights.map(async n=>JSON.parse(
+     await readFile(join(f.dirs.flights,n),'utf8'))));
+    const intent=intents.find(i=>i.request_id===id);
+    const flight=flightsData.find(i=>i.request_id===id);
+    assert.ok(intent);assert.ok(flight);
+    assert.equal(flight.credential_id,frontendRequest?
+     frontendStaged.credential_id:staged.credential_id);
     const pins=['session_id','authority_digest','root_credential_id',
      'task_id','runtime_task_id','epoch','agent_did','credential_id',
      'request_id','request_fingerprint'];
     const expected=Object.fromEntries(pins.map(k=>[k,intent[k]]));
-    publisher.setOfflineState(fileSha,snapshot.base_revision,newBlob,newContent);
-    const result={branch,path:'apps/user.ts',revision:fileSha,
-     commit_sha:fileSha,blob_sha:newBlob,
-     previous_revision:snapshot.base_revision,
-     precondition_blob_sha:oldBlob,previous_head_sha:snapshot.base_revision,
-     previous_blob_sha:oldBlob,staging_branch:'feature/r3512-private',
-     next_content_sha256:createHash('sha256').update(newContent).digest('hex')};
-    await publisher.publish(intent,expected,result,'offline-opa-r3512');
+    publisher.setOfflineState(nextSha,previousSha,blob,updated);
+    const result={branch,path:'apps/user.ts',revision:nextSha,
+     commit_sha:nextSha,blob_sha:blob,
+     previous_revision:previousSha,
+     precondition_blob_sha:previousBlob,previous_head_sha:previousSha,
+     previous_blob_sha:previousBlob,staging_branch:'feature/r3513-private',
+     next_content_sha256:createHash('sha256').update(updated).digest('hex')};
+    await publisher.publish(intent,expected,result,'offline-opa-r3513');
    }
-   return Response.json({request_id:requestId,decision:'allow',
+   return Response.json({request_id:id,decision:'allow',
     execution:{provider:'gitea',performed:true,tool:'update_file',
-     branch,path:'apps/user.ts',commit_sha:fileSha}});
+     branch,path:'apps/user.ts',commit_sha:nextSha}});
   }
   throw Error('Unexpected untrusted Gateway endpoint '+u);
  };
