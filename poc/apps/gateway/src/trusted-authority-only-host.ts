@@ -22,12 +22,15 @@ import {TrustedAuthorityOnlyGiteaMutationExecutor}
  from "./trusted-authority-only-mutation-executor.ts";
 import {TrustedAuthorityOnlyRunnerExecutor}
  from "./trusted-authority-only-runner-executor.ts";
+import {TrustedAuthorityOnlyPullRequestExecutor}
+ from "./trusted-authority-only-pull-request-executor.ts";
 import type {AuditSink} from "./types.ts";
 
 export interface TrustedAuthorityOnlyGatewayOwner {
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
   mutationExecutor:TrustedAuthorityOnlyGiteaMutationExecutor;
   runnerExecutor:TrustedAuthorityOnlyRunnerExecutor;
+  pullRequestExecutor?:TrustedAuthorityOnlyPullRequestExecutor;
   store:InMemoryRequestStore;
   audit?:AuditSink;
 }
@@ -80,6 +83,10 @@ export function createTrustedAuthorityOnlyGatewayServer(
   if(!owner.mutationExecutor.isForAdmissions(owner.admissions)||
      !owner.runnerExecutor.isForAdmissions(owner.admissions))
     deny("effect executors belong to another Gateway owner");
+  if(owner.pullRequestExecutor!==undefined&&
+     !TrustedAuthorityOnlyPullRequestExecutor.isNativeForAdmissions(
+      owner.pullRequestExecutor,owner.admissions))
+    deny("PR executor belongs to another Gateway owner");
   if(owner.audit!==undefined&&
      (typeof owner.audit!=="object"||
       typeof owner.audit.emit!=="function"))
@@ -94,7 +101,9 @@ export function createTrustedAuthorityOnlyGatewayServer(
     authorityOnlyMutationEnabled:true,
     authorityOnlyMutationExecutor:owner.mutationExecutor,
     authorityOnlyRunnerEnabled:true,
-    authorityOnlyRunnerExecutor:owner.runnerExecutor
+    authorityOnlyRunnerExecutor:owner.runnerExecutor,
+    ...(owner.pullRequestExecutor?{authorityOnlyPullRequestEnabled:true,
+     authorityOnlyPullRequestExecutor:owner.pullRequestExecutor}:{})
   });
   return createGatewayHttpServer(runtime);
 }

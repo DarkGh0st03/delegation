@@ -25,6 +25,8 @@ import {TrustedAuthorityOnlyAdkDecisionProposer}
  from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
 import {TrustedAuthorityOnlyRunnerPreflight} from '../../gateway/src/trusted-authority-only-runner-preflight.ts';
+import {TrustedAuthorityOnlyPullRequestExecutor}
+ from '../../gateway/src/trusted-authority-only-pull-request-executor.ts';
 import {GiteaClient} from '../../gateway/src/gitea-client.ts';
 import {InMemoryRequestStore} from '../../gateway/src/prepare.ts';
 import {TrustedAuthorityOnlyChildIssuer} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts';
@@ -120,6 +122,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  let decisionFlight,decisionCalls=0;
  let pullRequestAdmissionAttempted=false;
  const pullRequestTaskPins=new Map();
+ const pullRequestStageAttempts=new Set();
  let dispatchFlight,dispatchFailed=false;
  let a2aOwner,a2aStarting,a2aStartAttempted=false;
  async function retire(){
@@ -444,7 +447,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         nativeEffectBindingAttempted)
       deny('native Gateway effect runtime requires active quiescent owner');
      nativeEffectBindingAttempted=true;
-     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver'])||
+     if(!fields(deps,['store','mutation','runner','giteaClient','failureObserver','runnerPassObserver','pullRequestExecutor'])||
         !(deps.store instanceof InMemoryRequestStore)||
         !GiteaClient.isPinnedRepositoryClient(
          deps.giteaClient,snapshot.repository.owner,snapshot.repository.repository)||
@@ -454,6 +457,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         !TrustedAuthorityOnlyRunnerPreflight.isNativeForOwner(
          deps.runner,gateway,deps.giteaClient,
          snapshot.repository.owner+'/'+snapshot.repository.repository,branch)||
+        (deps.pullRequestExecutor!==undefined&&
+         !TrustedAuthorityOnlyPullRequestExecutor.isNativeForOwner(
+          deps.pullRequestExecutor,gateway,deps.giteaClient,deps.runnerPassObserver))||
         (deps.runnerPassObserver!==undefined&&
          !AuthenticatedRunnerCompletionObserver.isForRepository(
           deps.runnerPassObserver,
@@ -606,6 +612,20 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       runner_evidence_sha256:current.evidence_sha256,
       root_credential_id:before.root_credential_id,
       authority_digest:before.authority_digest});
+     if(nativeEffectBinding.pullRequestExecutor){
+      try{
+       const admitted=await TrustedAuthorityOnlyPullRequestExecutor.prototype.pinTask
+        .call(nativeEffectBinding.pullRequestExecutor,staged.task_id,staged.runtime_task_id,
+         input.sourceTestTaskId,input.sourceTestRuntimeTaskId);
+       if(admitted.tested_commit_sha!==pin.tested_commit_sha||
+          admitted.runner_evidence_sha256!==pin.runner_evidence_sha256)
+        deny('Gateway PR pin differs from original Engineer Test evidence');
+      }catch(error){
+       taskStageFailed=true;
+       if(session.phase==='operational')await session.retireOperationalRoot();
+       throw error;
+      }
+     }
      pullRequestTaskPins.set(input.runtimeTaskId,pin);
      return Object.freeze({...staged,
       status:'owner_pr_child_enrolled_no_provider_execution',
@@ -614,6 +634,25 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       tested_commit_sha:pin.tested_commit_sha,
       provider_executed:false,pull_request_created:false
      });
+    },
+    /** Original owner reserves the exact prepared PR before VP/execute.
+     * No caller-selected SHA, Test evidence, credential or executor. */
+    async stageEnrolledPullRequest(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        taskStageFailed||dispatchFailed||completionFailed||
+        taskStageFlight||dispatchFlight||completionFlight||decisionFlight||
+        !nativeEffectBinding?.pullRequestExecutor||
+        !fields(input,['taskId','runtimeTaskId','requestId']))
+      deny('PR staging requires original active owner and installed executor');
+     const pin=pullRequestTaskPins.get(input.runtimeTaskId);
+     const record=nativeEffectBinding.store.get(input.requestId);
+     if(!pin||pin.task_id!==input.taskId||!record||record.consumed||
+        record.task_id!==input.runtimeTaskId||record.request.tool!=='create_pull_request'||
+        pullRequestStageAttempts.has(input.runtimeTaskId))
+      deny('PR staging differs from original enrolled Task or was already attempted');
+     pullRequestStageAttempts.add(input.runtimeTaskId);
+     return TrustedAuthorityOnlyPullRequestExecutor.prototype.stage.call(
+      nativeEffectBinding.pullRequestExecutor,record,pin.tested_commit_sha);
     },
     /** Obtain a unique one-shot owner stager after enrolling the Child.
      * Pin exact original Gateway, Task ID, role/tool and owner-selected HEAD. */

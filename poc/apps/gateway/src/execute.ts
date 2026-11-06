@@ -4,6 +4,8 @@ import {TrustedAuthorityOnlyGiteaMutationExecutor}
  from "./trusted-authority-only-mutation-executor.ts";
 import {TrustedAuthorityOnlyRunnerExecutor}
  from "./trusted-authority-only-runner-executor.ts";
+import {TrustedAuthorityOnlyPullRequestExecutor}
+ from "./trusted-authority-only-pull-request-executor.ts";
 import {DirectCoreRustVerifier} from "./direct-core-verifier.ts";
 import {giteaPermissionCovers}
  from "../../../packages/plan-contracts/src/gitea-permission-containment.mjs";
@@ -120,6 +122,8 @@ export interface ExecuteDependencies {
   /** Opt-in owner-controlled native Test Runner; never the legacy Runner. */
   authorityOnlyRunnerExecutor?:TrustedAuthorityOnlyRunnerExecutor;
   authorityOnlyRunnerEnabled?:boolean;
+  authorityOnlyPullRequestExecutor?:TrustedAuthorityOnlyPullRequestExecutor;
+  authorityOnlyPullRequestEnabled?:boolean;
   nowMs?: () => number;
   durationNowMs?: () => number;
   signal?: AbortSignal;
@@ -145,6 +149,12 @@ export async function executeAuthorization(
        dependencies.authorityOnlyAdmissions)))
     throw new GatewayError(403,"authority_only_binding_denied",
       "Atomic mutation owner differs from trusted Gateway authority");
+  if(dependencies.authorityOnlyPullRequestExecutor&&
+     (!dependencies.authorityOnlyAdmissions||
+      !TrustedAuthorityOnlyPullRequestExecutor.isNativeForAdmissions(
+       dependencies.authorityOnlyPullRequestExecutor,dependencies.authorityOnlyAdmissions)))
+    throw new GatewayError(403,"authority_only_binding_denied",
+      "PR executor differs from original Gateway authority");
   if(dependencies.authorityOnlyReceiptWriter&&
      (!dependencies.authorityOnlyAdmissions||
       !dependencies.authorityOnlyReceiptWriter.isForAdmissions(
@@ -351,6 +361,16 @@ export async function executeAuthorization(
         // never a legacy RunnerClient fallback or agent-chosen tested SHA.
         dependencies.authorityOnlyAdmissions.assertTrustedCompletedRunnerEvidenceBinding(
           record,verified);
+      }else if(record.request.tool==="create_pull_request"&&record.agent_role==="orchestrator"&&
+         dependencies.authorityOnlyPullRequestEnabled===true&&
+         TrustedAuthorityOnlyPullRequestExecutor.isNativeForAdmissions(
+          dependencies.authorityOnlyPullRequestExecutor,dependencies.authorityOnlyAdmissions)&&
+         dependencies.verifier instanceof DirectCoreRustVerifier&&
+         dependencies.policy instanceof OpaPolicyClient&&
+         dependencies.executor instanceof GiteaExecutor&&
+         !dependencies.approvedPlans&&!dependencies.planningRevisions){
+        dependencies.authorityOnlyAdmissions.assertTrustedCompletedPullRequestEvidenceBinding(
+         record,verified);
       }else{
         dependencies.authorityOnlyAdmissions.assertVerifiedVpAndPolicyForExecution(
           record,verified);
@@ -432,6 +452,13 @@ export async function executeAuthorization(
       // A FAIL or ambiguous provider response is terminal, never retried.
       execution=await dependencies.authorityOnlyRunnerExecutor
         .executeAfterVerifiedRustOpa(record,verified,policyDecision);
+    }else if(record.authority_only_digest&&record.request.tool==="create_pull_request"){
+      if(dependencies.authorityOnlyPullRequestEnabled!==true||
+         !dependencies.authorityOnlyPullRequestExecutor)
+       throw new ProviderOperationUnavailableError("Original PR executor is not configured");
+      execution=await TrustedAuthorityOnlyPullRequestExecutor.prototype
+       .executeAfterVerifiedRustOpa.call(dependencies.authorityOnlyPullRequestExecutor,
+        record,verified,policyDecision);
     }else{
       execution = await dependencies.executor.execute(
         record,dependencies.signal);

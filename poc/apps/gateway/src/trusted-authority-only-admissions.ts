@@ -19,6 +19,8 @@ import {RUST_OPERATIONS} from "./operation-catalog.ts";
 import {TOOL_NAMES,type AgentRole,type PrepareAuthorizationRequest,
  type GatewayRepositoryConfig,type Permission,type PreparedRequestRecord,
  type VerifiedDelegation} from "./types.ts";
+import {AuthenticatedRunnerCompletionObserver}
+ from "./trusted-authority-only-runner-evidence.ts";
 import {deriveRequiredPermission} from "./canonical.ts";
 import {assertOriginalIncompleteTestFlight}
  from "./trusted-authority-only-failed-test-flight.ts";
@@ -112,6 +114,12 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  readonly #flights=new Map<string,TrustedTaskFlight>();
  readonly #sequential=new Map<string,SequentialTaskProgress>();
  readonly #completed=new Set<string>();
+ readonly #completionEvidence=new Map<string,string>();
+ readonly #prPins=new Map<string,Readonly<{
+  task_id:string;epoch:number;credential_id:string;
+  source:TrustedCompletionExpectation;tested_commit_sha:string;
+  runner_evidence_sha256:string;
+ }>>();
  #bindingInFlight=false;
  #enrollmentInFlight=false;
  #flightInFlight=false;
@@ -616,6 +624,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    if(this.#now()>=Date.parse(child.expires_at))
     deny("native Child expired during completion attestation");
    this.#completed.add(taskId);
+   this.#completionEvidence.set(taskId,observation.evidence_sha256);
    return Object.freeze({
     status:"task_completion_observed_staged",
     task_id:taskId,runtime_task_id:runtimeTaskId,
@@ -844,6 +853,100 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#completionInFlight=false;}
  }
+ /** Owner-only PR admission after the original Test completion. */
+ async pinTrustedPullRequestTask(taskId:string,runtimeTaskId:string,
+  testTaskId:string,testRuntimeTaskId:string,observer:AuthenticatedRunnerCompletionObserver){
+  const root=this.#live();
+  if(this.#completionInFlight||this.#flightInFlight||this.#bindingInFlight||
+     this.#enrollmentInFlight||this.#prPins.has(runtimeTaskId)||
+     !AuthenticatedRunnerCompletionObserver.isForRepository(observer,
+      this.#repository.owner+"/"+this.#repository.repository,this.#branch!))
+   deny("PR Test pin requires original active Gateway and protected Runner observer");
+  const pr=this.#tasks.get(runtimeTaskId),child=this.#enrolledChildren.get(runtimeTaskId);
+  const test=this.#tasks.get(testRuntimeTaskId),flight=this.#flights.get(testTaskId);
+  if(!pr||!child||!test||!flight||pr.row.task_id!==taskId||
+     pr.row.agent_id!=="orchestrator"||pr.row.epoch!==this.#epoch||
+     pr.row.permissions.length!==1||pr.row.permissions[0]?.operation!=="create_pull_request"||
+     !isDeepStrictEqual(pr.row.depends_on,[testTaskId])||
+     test.row.task_id!==testTaskId||test.row.agent_id!=="test"||
+     !this.#completed.has(testTaskId)||!this.#completionEvidence.has(testTaskId)||
+     flight.runtime_task_id!==testRuntimeTaskId||flight.epoch!==test.row.epoch||
+     flight.session_id!==root.session_id||flight.authority_digest!==root.authority_digest||
+     flight.root_credential_id!==root.root_credential_id||
+     child.root_credential_id!==root.root_credential_id||
+     child.epoch!==pr.row.epoch||child.agent_did!==pr.row.agent_did||
+     this.#now()>=Date.parse(child.expires_at))
+   deny("PR Task, original native Child or completed Test differs");
+  for(const other of this.#tasks.values())
+   if(other.row.agent_id==="test"&&other.row.epoch>test.row.epoch)
+    deny("PR requires latest independently completed Test");
+  const source=Object.freeze({...flight,agent_did:test.row.agent_did});
+  this.#completionInFlight=true;
+  try{
+   const proof=await AuthenticatedRunnerCompletionObserver.prototype.observeTestedHead
+    .call(observer,source);
+   const live=this.#live();
+   if(live.root_credential_id!==root.root_credential_id||
+      this.#epoch!==pr.row.epoch||
+      proof.completion.evidence_sha256!==this.#completionEvidence.get(testTaskId))
+    deny("PR source changed during independent Test verification");
+   this.#prPins.set(runtimeTaskId,Object.freeze({task_id:taskId,
+    epoch:pr.row.epoch,credential_id:child.credential_id,source,
+    tested_commit_sha:proof.tested_commit_sha,
+    runner_evidence_sha256:proof.completion.evidence_sha256}));
+   return this.#assertPullRequestPin(runtimeTaskId);
+  }finally{this.#completionInFlight=false;}
+ }
+ #assertPullRequestPin(runtimeTaskId:string){
+  const root=this.#live(),pin=this.#prPins.get(runtimeTaskId);
+  const pr=this.#tasks.get(runtimeTaskId),child=this.#enrolledChildren.get(runtimeTaskId);
+  if(!pin||!pr||!child||pin.task_id!==pr.row.task_id||pin.epoch!==this.#epoch||
+     child.credential_id!==pin.credential_id||child.epoch!==pin.epoch||
+     child.root_credential_id!==root.root_credential_id||
+     child.authority_digest!==root.authority_digest||
+     this.#now()>=Date.parse(child.expires_at)||
+     pin.source.root_credential_id!==root.root_credential_id||
+     pin.source.authority_digest!==root.authority_digest||
+     !this.#completed.has(pin.source.task_id)||
+     this.#completionEvidence.get(pin.source.task_id)!==pin.runner_evidence_sha256||
+     this.#completed.has(pin.task_id))
+   deny("trusted Runner acceptance required before PR");
+  for(const other of this.#tasks.values())
+   if(other.row.agent_id==="test"&&other.row.epoch>pin.source.epoch)
+    deny("PR Test superseded by later Test");
+  return pin;
+ }
+ async revalidateTrustedPullRequestTest(runtimeTaskId:string,
+  observer:AuthenticatedRunnerCompletionObserver){
+  const pin=this.#assertPullRequestPin(runtimeTaskId);
+  if(!AuthenticatedRunnerCompletionObserver.isForRepository(observer,
+     this.#repository.owner+"/"+this.#repository.repository,this.#branch!))
+   deny("PR source observer differs from original repository");
+  const proof=await AuthenticatedRunnerCompletionObserver.prototype.observeTestedHead
+   .call(observer,pin.source);
+  this.#assertPullRequestPin(runtimeTaskId);
+  if(proof.tested_commit_sha!==pin.tested_commit_sha||
+     proof.completion.evidence_sha256!==pin.runner_evidence_sha256)
+   deny("PR HEAD or original Runner receipt changed");
+  return pin;
+ }
+ assertTrustedPullRequestIntentBinding(record:PreparedRequestRecord){
+  const pin=this.#assertPullRequestPin(record.task_id);
+  if(record.consumed!==false||record.request.tool!=="create_pull_request"||
+     record.agent_role!=="orchestrator"||record.expires_at_ms<=this.#now())
+   deny("PR intent requires original fresh Orchestrator Prepare");
+  const canonical=this.preflightCanonicalRequest({task_id:record.task_id,
+   agent_role:record.agent_role,tool:record.request.tool,arguments:record.request.arguments});
+  const digest=createHash("sha256").update(JSON.stringify({task_id:record.task_id,
+   agent_role:record.agent_role,request:record.request})).digest("hex");
+  if(record.authority_only_plan_task_id!==pin.task_id||
+     record.authority_only_digest!==canonical.authority_digest||
+     record.authority_only_agent_did!==canonical.agent_did||
+     pair(record.required_permission)!==pair(canonical.required_permission)||
+     record.request_fingerprint!==digest)
+   deny("PR intent differs from original canonical Task");
+  return pin;
+ }
  /**
   * Derive the exact permission from a normalized Gateway request,
   * not from an agent-claimed authorization. Scope preflight only:
@@ -872,7 +975,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    case "create_pull_request":
     if(args.head_branch!==this.#branch||args.base_branch!=="main")
      deny("PR branch outside approved feature branch");
-    deny("trusted Runner acceptance required before PR");
+    this.#assertPullRequestPin(request.task_id);
+    break;
    default:
     if("branch" in args&&args.branch!==this.#branch)
      deny("operation outside signed work branch");
@@ -1087,11 +1191,21 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  assertTrustedCompletedMutationEvidenceBinding(
   record:PreparedRequestRecord,verified:VerifiedDelegation
  ):Readonly<TrustedCompletionExpectation>{
+  return this.#assertConsumedEffectBinding(record,verified,"update_file");
+ }
+ assertTrustedCompletedPullRequestEvidenceBinding(
+  record:PreparedRequestRecord,verified:VerifiedDelegation
+ ):Readonly<TrustedCompletionExpectation>{
+  this.#assertPullRequestPin(record.task_id);
+  return this.#assertConsumedEffectBinding(record,verified,"create_pull_request");
+ }
+ #assertConsumedEffectBinding(record:PreparedRequestRecord,verified:VerifiedDelegation,
+  tool:"update_file"|"create_pull_request"):Readonly<TrustedCompletionExpectation>{
   const root=this.#live();
   if(!record||record.consumed!==true||
      !record.authority_only_digest||
      record.authority_only_digest!==root.authority_digest||
-     record.request.tool!=="update_file"||
+     record.request.tool!==tool||
      record.expires_at_ms<=this.#now()||
      this.#flightInFlight||this.#completionInFlight)
    deny("successful mutation lacks live consumed authority-only Prepare");

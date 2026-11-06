@@ -1,3 +1,8 @@
+import {TrustedAuthorityOnlyPullRequestExecutor} from '../../gateway/src/trusted-authority-only-pull-request-executor.ts';
+import {executeAuthorization} from '../../gateway/src/execute.ts';
+import {GiteaExecutor} from '../../gateway/src/gitea-executor.ts';
+import {DirectCoreRustVerifier} from '../../gateway/src/direct-core-verifier.ts';
+import {OpaPolicyClient} from '../../gateway/src/policy-client.ts';
 /** Real ADK Runner, provenance/Engineer signatures, durable stores and
  * Coordinator; credential issuer and Gateway transport are offline fixtures.
  * No native Rust/EVM/OPA/provider or paid inference success is claimed. */
@@ -184,8 +189,31 @@ async function fixture(t,flags={}){
 function nativeOfflinePreflights(gateway,dirs,events=[],provider,originalRunnerJournal){
  class PinnedGiteaReadFixture extends GiteaClient{
   constructor(){super({baseUrl:'http://offline-gitea.invalid',
-   token:'offline-no-network',owner:'thesis',repository:'iam-console-poc'});}
+   token:'offline-no-network',owner:'thesis',repository:'iam-console-poc',
+   fetchFn:async(raw,init)=>{
+    if(!provider?.prEnabled)throw Error('No offline PR fixture installed');
+    const url=new URL(String(raw));
+    if(url.pathname.endsWith('/pulls')&&init?.method==='POST'){
+     provider.prPosts++;events.push('pr_post_fixture');
+     if(provider.prMode==='pr-execute-post-failure')throw Error('Ambiguous disposable POST');
+     const args=JSON.parse(String(init.body));
+     assert.equal(args.head,branch);assert.equal(args.base,'main');
+     assert.match(args.title,/^WIP:/);
+     provider.pullRequest={id:41,number:1,state:'open',merged:false,draft:true,
+      head:{ref:branch,sha:provider.head},base:{ref:'main',sha:snapshot.base_revision},
+      html_url:'http://offline-gitea.invalid/thesis/iam-console-poc/pulls/1'};
+     if(provider.prMode==='pr-execute-race')provider.head='7'.repeat(40);
+     return Response.json(provider.pullRequest);
+    }
+    if(url.pathname.endsWith('/pulls/1')&&(!init?.method||init.method==='GET')){
+     events.push('pr_get_fixture');return Response.json(provider.pullRequest);
+    }
+    throw Error('Unexpected PR fixture provider operation');
+   }});}
+
   async getBranchMetadata(workBranch){
+   if(provider?.prEnabled&&workBranch==='main')
+    return {name:'main',commit_sha:snapshot.base_revision};
    assert.equal(workBranch,branch);
    return {name:workBranch,commit_sha:provider?.head??snapshot.base_revision};
   }
@@ -636,7 +664,9 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
 
 for(const mode of ['missing','backend','frontend','test','failure',
  'failure-d1-effect','failure-d1-retest','failure-no-receipt','failure-model-denied',
- 'pr','pr-denied','pr-invalid','pr-stale'])test(
+ 'pr','pr-denied','pr-invalid','pr-stale','pr-execute','pr-execute-stale',
+ 'pr-execute-opa-denied','pr-execute-vp-denied','pr-execute-no-stage',
+ 'pr-execute-foreign-child','pr-execute-post-failure','pr-execute-race'])test(
  mode.startsWith('pr')?
   'R353.2 original Engineer PR Task admission '+mode:
  mode==='failure-no-receipt'?
@@ -657,6 +687,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'R351.2 original Gateway authenticated offline Gitea evidence permits next ADK Frontend choice':
  'R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',
  async t=>{
+ const executePr=mode.startsWith('pr-execute');
  const verified=mode!=='missing',throughFailure=mode.startsWith('failure'),
   noFailureReceipt=mode==='failure-no-receipt',
   foreignD1Model=mode==='failure-model-denied',
@@ -689,7 +720,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
    retestRequestId='r3525-prepared-retest',
    retestChallenge='r3525-retest-challenge',retestVp='r3525-private-test-vp';
  const provider={head:snapshot.base_revision,parent:snapshot.base_revision,
-  blob:oldBlob,content:'export const suspended=false;\n'};
+  blob:oldBlob,content:'export const suspended=false;\n',
+  prEnabled:executePr,prMode:mode,prPosts:0};
  let publisher,frontendStaged,next,testTask,testStaged,runnerClient,
   runnerPublisher,runnerJournal,runnerPassObserver,failureObserver,failurePublisher,nativeD1,
    d1RetestTask,d1RetestStaged;
@@ -818,10 +850,14 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const {mutation:nativeMutation,runner:nativeRunner,gitea}=
   nativeOfflinePreflights(gateway,f.dirs,events,verified?provider:undefined,
    runnerJournal);
+ const prExecutor=executePr?new TrustedAuthorityOnlyPullRequestExecutor({
+  admissions:gateway,giteaClient:gitea,runnerObserver:runnerPassObserver,
+  repository:'thesis/iam-console-poc',branch}):undefined;
  assert.equal(execution.bindNativeGatewayEffects({
   store,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea,
   ...(throughFailure?{failureObserver}:{}),
-  ...(throughTest?{runnerPassObserver}:{})
+  ...(throughTest?{runnerPassObserver}:{}),
+  ...(prExecutor?{pullRequestExecutor:prExecutor}:{})
  }).gateway_execution_authorized,false);
  const nativeStager=execution.createEnrolledNativeEffectStager({
   runtimeTaskId:task.runtimeTaskId,expectedHeadSha:snapshot.base_revision
@@ -1555,7 +1591,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
        runtimeTaskId:'dispatch_'+'P'.repeat(22),
        childParameters:root('urn:r3532:pr-child',29118,90)};
       const issuedBefore=events.filter(e=>e==='native_child_fixture').length;
-      if(mode!=='pr'){
+      if(['pr-denied','pr-invalid','pr-stale'].includes(mode)){
        await assert.rejects(execution.proposeAndStageVerifiedPullRequestTask(prInput),
         mode==='pr-denied'?/Engineer create_pull_request grant/:
         mode==='pr-invalid'?/verified Test dependency/:/stale or moved feature branch/);
@@ -1587,10 +1623,70 @@ for(const mode of ['missing','backend','frontend','test','failure',
         ...prInput,model:replay
        }),/one decision/);
        assert.equal(replay.calls,0);
-       assert.throws(()=>gateway.preflightCanonicalRequest({
-        task_id:prInput.runtimeTaskId,agent_role:'orchestrator',tool:'create_pull_request',
-        arguments:{head_branch:branch,base_branch:'main',title:'Review change',body:'Tested'}
-       }),/trusted Runner acceptance required before PR/);
+       const prRequest={task_id:prInput.runtimeTaskId,agent_role:'orchestrator',
+        tool:'create_pull_request',arguments:{head_branch:branch,base_branch:'main',
+         title:'Review change',body:'Tested feature HEAD'}};
+       if(!executePr){
+        assert.throws(()=>gateway.preflightCanonicalRequest(prRequest),
+         /trusted Runner acceptance required before PR/);
+       }else{
+        assert.equal(provider.prPosts,0);
+        const prepared=prepareAuthorization(prRequest,{
+         audience:'cloud-access-gateway',request_ttl_ms:120000,repository:snapshot.repository
+        },{store,audit,authorityOnlyAdmissions:gateway,
+         requestId:()=> 'r3534-prepared-pr',challenge:()=> 'r3534-pr-challenge'});
+        if(mode!=='pr-execute-no-stage'){
+         const stagedPr=await execution.stageEnrolledPullRequest({
+          taskId:admitted.task_id,runtimeTaskId:prInput.runtimeTaskId,
+          requestId:prepared.request_id});
+         assert.equal(stagedPr.provider_executed,false);
+         assert.equal(stagedPr.tested_commit_sha,frontendSha);
+        }
+        const verifier=new DirectCoreRustVerifier({
+         async verify_verifiable_presentation(context,vp){
+          events.push('pr_native_verifier_fixture');
+          assert.equal(vp,'offline-r3534-pr-vp');
+          assert.equal(JSON.parse(context).challenge,prepared.challenge);
+          if(mode==='pr-execute-vp-denied')throw Error('Fixture native rejection');
+          return JSON.stringify({presenter_id:'did:thesis:orchestrator',
+           credential_id:mode==='pr-execute-foreign-child'?'foreign-child':child.credential_id,
+           issuer_id:'did:thesis:orchestrator',root_credential_id:binding.root_credential_id,
+           permissions:[permission],hierarchy_depth:1,expiration:'1900000000000000000'});
+         }
+        },Object.fromEntries(['orchestrator','backend','frontend','test']
+         .map(role=>[role,'did:thesis:'+role])));
+        const policy=new OpaPolicyClient({baseUrl:'http://offline-opa.invalid',
+         fetchFn:async()=>{events.push('pr_opa_fixture');return Response.json({result:{
+          allow:mode!=='pr-execute-opa-denied',policy_version:'offline-pr-policy'}});}});
+        const dependencies={store,audit,verifier,policy,repository:snapshot.repository,
+         executor:new GiteaExecutor(gitea),authorityOnlyAdmissions:gateway,
+         authorityOnlyPullRequestEnabled:true,authorityOnlyPullRequestExecutor:prExecutor};
+        const request={request_id:prepared.request_id,signed_vp:'offline-r3534-pr-vp'};
+        if(mode==='pr-execute-stale')provider.head='7'.repeat(40);
+        if(mode==='pr-execute'){
+         const result=await executeAuthorization(request,dependencies);
+         assert.equal(result.decision,'allow');
+         assert.equal(result.execution.tool,'create_pull_request');
+         assert.equal(result.execution.pull_request_number,1);
+         assert.equal(result.execution.revision,frontendSha);
+         assert.equal(provider.pullRequest.draft,true);
+         assert.equal(provider.pullRequest.merged,false);
+         assert.equal(provider.prPosts,1);
+         assert.ok(events.indexOf('pr_native_verifier_fixture')<events.indexOf('pr_opa_fixture'));
+         assert.ok(events.indexOf('pr_opa_fixture')<events.indexOf('pr_post_fixture'));
+         assert.ok(events.includes('pr_get_fixture'));
+        }else{
+         await assert.rejects(executeAuthorization(request,dependencies));
+         assert.equal(provider.prPosts,
+          ['pr-execute-post-failure','pr-execute-race'].includes(mode)?1:0);
+        }
+        const posts=provider.prPosts;
+        await assert.rejects(executeAuthorization(request,dependencies),
+         e=>e.code==='replay_detected');
+        assert.equal(provider.prPosts,posts);
+        assert.equal(gateway.stagedCompletedTaskCount,3,
+         'PR provider result does not fabricate independent Task completion');
+       }
       }
      }else{
      // A newer unfinished Test invalidates selection of an older PASS.
