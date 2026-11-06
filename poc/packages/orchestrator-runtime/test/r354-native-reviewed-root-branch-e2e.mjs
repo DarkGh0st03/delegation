@@ -38,6 +38,7 @@ const repo={authority:'gitea.local',owner:'thesis',repository:'iam-console-poc'}
 assert.equal(process.env.GITEA_OWNER,repo.owner);assert.equal(process.env.GITEA_REPOSITORY,repo.repository);
 const branch='feature/account-suspension',sourcePath='apps/backend/src/users/user.service.ts';
 const nativeBranchToBackend=process.env.R357_NATIVE_BRANCH_TO_BACKEND==='1';
+const scopedDir='gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/directories/apps/backend/src/users';
 const scopedFile='gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/'+sourcePath;
 const backendTaskId='r357-backend-after-branch',backendRuntimeTaskId='dispatch_'+'B'.repeat(22);
 const branchTaskId='r354-create-approved-branch';
@@ -163,7 +164,7 @@ try{
  assert.equal(packet.permissions.length,nativeBranchToBackend?2:1);
  if(nativeBranchToBackend){
   assert.ok(packet.authorization_proposal.requested_permissions.some(p=>
-   p.operation==='update_file'&&p.path==='apps/backend/src/users'));
+   p.operation==='update_file'&&p.resource===scopedDir));
   assert.equal(packet.authorization_proposal.requested_permissions.some(p=>
    Object.hasOwn(p,'task_id')||Object.hasOwn(p,'agent_id')),false);
  }
