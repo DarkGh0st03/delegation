@@ -956,7 +956,11 @@ for(const mode of ['missing','backend','frontend','test','failure',
     const flights=(await readdir(f.dirs.flights))
      .filter(n=>n.endsWith('.flight.json'));
     const count=d1Request?3:frontendRequest?2:1;
-    assert.equal(names.length,count);assert.equal(flights.length,count);
+    // A real failed Test is retained as a separate Runner flight, not a
+    // Gitea mutation. D1 must preserve that failed flight while adding
+    // one new independently verifiable CAS write.
+    assert.equal(names.length,count);
+    assert.equal(flights.length,count+(d1Request?1:0));
     const intents=await Promise.all(names.map(async n=>JSON.parse(
      await readFile(join(f.dirs.mutationIntents,n),'utf8'))));
     const flightsData=await Promise.all(flights.map(async n=>JSON.parse(
