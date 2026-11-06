@@ -19,6 +19,8 @@ import { OpaPolicyClient } from "./policy-client.ts";
 import type { TrustedPlanningRevisions } from "./planning-revisions.ts";
 import type { TrustedApprovedExecutionPlans } from "./approved-execution-plans.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions} from "./trusted-authority-only-admissions.ts";
+import {TrustedGatewayGiteaReadEvidencePublisher}
+ from "./trusted-authority-only-gitea-publisher.ts";
 import type {TrustedAuthorityOnlyGiteaMutationExecutor}
  from "./trusted-authority-only-mutation-executor.ts";
 import type {TrustedAuthorityOnlyRunnerExecutor}
@@ -58,6 +60,9 @@ export interface GatewayRuntimeDependencies {
   /** Opt-in trusted Engineer-approved execution plan gate (no public mutation API). */
   approvedPlans?: TrustedApprovedExecutionPlans;
   authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
+  /** Explicit owner-only source-read publication, never enabled by public config. */
+  authorityOnlyReadEnabled?: boolean;
+  authorityOnlyReceiptWriter?: TrustedGatewayGiteaReadEvidencePublisher;
   /** Canonical runtime only: owner-prestaged HEAD-CAS, never legacy PUT. */
   authorityOnlyMutationEnabled?: boolean;
   authorityOnlyMutationExecutor?: TrustedAuthorityOnlyGiteaMutationExecutor;
@@ -115,6 +120,8 @@ export class GatewayRuntime {
   readonly #planningRevisions?: TrustedPlanningRevisions;
   readonly #approvedPlans?: TrustedApprovedExecutionPlans;
   readonly #authorityOnlyAdmissions?: TrustedAuthorityOnlyGatewayAdmissions;
+  readonly #authorityOnlyReadEnabled:boolean;
+  readonly #authorityOnlyReceiptWriter?:TrustedGatewayGiteaReadEvidencePublisher;
   readonly #authorityOnlyMutationExecutor?: TrustedAuthorityOnlyGiteaMutationExecutor;
   readonly #authorityOnlyRunnerExecutor?: TrustedAuthorityOnlyRunnerExecutor;
   readonly #authorityOnlyMutationEnabled:boolean;
@@ -126,6 +133,7 @@ export class GatewayRuntime {
 
   constructor(config: GatewayRuntimeConfig, dependencies: GatewayRuntimeDependencies = {}) {
     const gate=dependencies.authorityOnlyAdmissions;
+    const readWriter=dependencies.authorityOnlyReceiptWriter;
     const mutation=dependencies.authorityOnlyMutationExecutor;
     const runner=dependencies.authorityOnlyRunnerExecutor;
     const pr=dependencies.authorityOnlyPullRequestExecutor;
@@ -134,12 +142,13 @@ export class GatewayRuntime {
        (!(gate instanceof TrustedAuthorityOnlyGatewayAdmissions)||
         dependencies.approvedPlans||dependencies.planningRevisions))
       throw Error("Authority-only Gateway requires distinct trusted runtime without legacy gates");
-    if((dependencies.authorityOnlyMutationEnabled===true)!==Boolean(mutation)||
+    if((dependencies.authorityOnlyReadEnabled===true)!==Boolean(readWriter)||
+       (dependencies.authorityOnlyMutationEnabled===true)!==Boolean(mutation)||
        (dependencies.authorityOnlyRunnerEnabled===true)!==Boolean(runner)||
        (dependencies.authorityOnlyPullRequestEnabled===true)!==Boolean(pr)||
        (dependencies.authorityOnlyBranchEnabled===true)!==Boolean(branch))
       throw Error("Authority-only Gateway effects require matching explicit enablement and owner executor");
-    if((mutation||runner||pr||branch)&&!gate)
+    if((readWriter||mutation||runner||pr||branch)&&!gate)
       throw Error("Authority-only Gateway effects require enrolled native authority");
     if(gate&&(config.provider_mode!=="gitea"||config.verifier_mode!=="core-rust"))
       throw Error("Authority-only Gateway requires mutable Gitea and explicit independent Core Rust verification");
@@ -152,6 +161,9 @@ export class GatewayRuntime {
     if(gate&&dependencies.executor&&
        !(dependencies.executor instanceof GiteaExecutor))
       throw Error("Authority-only Gateway rejects non-Gitea executor injection");
+    if(readWriter&&(!(readWriter instanceof TrustedGatewayGiteaReadEvidencePublisher)||
+       !readWriter.isForAdmissions(gate!)))
+      throw Error("Authority-only read publisher differs from enrolled owner");
     if(mutation&&(!mutation.isForAdmissions||!mutation.isForAdmissions(gate!)))
       throw Error("Authority-only Gateway CAS executor differs from enrolled owner");
     if(runner&&(!runner.isForAdmissions||!runner.isForAdmissions(gate!)))
@@ -168,6 +180,8 @@ export class GatewayRuntime {
     this.#planningRevisions = dependencies.planningRevisions;
     this.#approvedPlans = dependencies.approvedPlans;
     this.#authorityOnlyAdmissions = gate;
+    this.#authorityOnlyReadEnabled=dependencies.authorityOnlyReadEnabled===true;
+    this.#authorityOnlyReceiptWriter=readWriter;
     this.#authorityOnlyMutationEnabled=dependencies.authorityOnlyMutationEnabled===true;
     this.#authorityOnlyMutationExecutor=mutation;
     this.#authorityOnlyRunnerEnabled=dependencies.authorityOnlyRunnerEnabled===true;
@@ -289,6 +303,10 @@ export class GatewayRuntime {
       ...(this.#planningRevisions ? {planningRevisions:this.#planningRevisions} : {}),
       ...(this.#approvedPlans ? {approvedPlans:this.#approvedPlans} : {}),
       ...(this.#authorityOnlyAdmissions ? {authorityOnlyAdmissions:this.#authorityOnlyAdmissions} : {}),
+      ...(this.#authorityOnlyReadEnabled ? {
+        authorityOnlyReadEnabled:true,
+        authorityOnlyReceiptWriter:this.#authorityOnlyReceiptWriter
+      } : {}),
       ...(this.#authorityOnlyMutationEnabled ? {
         authorityOnlyMutationEnabled:true,
         authorityOnlyMutationExecutor:this.#authorityOnlyMutationExecutor
