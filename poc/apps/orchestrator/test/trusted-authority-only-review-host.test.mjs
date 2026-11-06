@@ -672,11 +672,13 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'pr-execute-foreign-child','pr-execute-child-depth','pr-execute-post-failure','pr-execute-race',
  'pr-attest','pr-attest-closed','pr-attest-wrong-id','pr-attest-head-moved',
  'pr-attest-base-moved','pr-attest-before-execute','adaptive-ready','adaptive-stale','adaptive-work',
- 'adaptive-observed-fail'])test(
+ 'adaptive-observed-fail','adaptive-unverified-fail'])test(
  mode==='adaptive-work'?
   'R355 original adaptive loop executes chosen Frontend through real ADK A2A and independent Gateway completion':
  mode==='adaptive-observed-fail'?
   'R355.4 original adaptive Test FAIL is verified independently before the next model turn':
+ mode==='adaptive-unverified-fail'?
+  'R355.4 missing Runner FAIL MAC cannot be converted to adaptive observation':
  mode.startsWith('adaptive')?
   'R355 original Engineer current Test readiness '+mode:
  mode.startsWith('pr')?
@@ -702,8 +704,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const attestPr=mode.startsWith('pr-attest');
  const executePr=mode.startsWith('pr-execute')||attestPr;
  const verified=mode!=='missing',throughFailure=mode.startsWith('failure')||
-  mode==='adaptive-observed-fail',
-  noFailureReceipt=mode==='failure-no-receipt',
+  mode==='adaptive-observed-fail'||mode==='adaptive-unverified-fail',
+  noFailureReceipt=mode==='failure-no-receipt'||mode==='adaptive-unverified-fail',
   foreignD1Model=mode==='failure-model-denied',
   throughTest=mode==='test'||mode.startsWith('pr')||['adaptive-ready','adaptive-stale'].includes(mode)||throughFailure,
   throughFrontend=mode==='frontend'||mode==='adaptive-work'||throughTest,
@@ -846,7 +848,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   events.push('native_child_fixture');
   if(mode==='adaptive-work'&&req.delegatee==='frontend')frontendStaged={credential_id:req.credential_id};
-  if(mode==='adaptive-observed-fail'&&req.delegatee==='test')testStaged={credential_id:req.credential_id};
+  if(['adaptive-observed-fail','adaptive-unverified-fail'].includes(mode)&&req.delegatee==='test')testStaged={credential_id:req.credential_id};
   return {'@context':['https://www.w3.org/ns/credentials/v2'],
    type:['VerifiableCredential','DelegationCredential'],
    id:req.credential_id,issuer:'did:thesis:rust',
@@ -891,7 +893,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const fetchFn=async(url,options)=>{
   const u=String(url),body=JSON.parse(String(options?.body));
   if(u.endsWith('/v1/authorization/prepare')){
-   if(mode==='adaptive-observed-fail'&&body.agent_role==='test')testTask.runtimeTaskId=body.task_id;
+   if(['adaptive-observed-fail','adaptive-unverified-fail'].includes(mode)&&body.agent_role==='test')testTask.runtimeTaskId=body.task_id;
    const runnerRequest=throughTest&&testStaged&&
     body.task_id===testTask.runtimeTaskId;
    const retestRequest=d1Retest&&d1RetestTask&&
@@ -1267,7 +1269,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
     });
     assert.equal(frontendAttested.status,'owner_gateway_completion_independently_observed');
     assert.equal(gateway.stagedCompletedTaskCount,2);
-    if(mode==='adaptive-observed-fail'){
+    if(['adaptive-observed-fail','adaptive-unverified-fail'].includes(mode)){
      class AdaptiveTestFailureModel extends BaseLlm{
       calls=0;requests=[];
       constructor(){super({model:'r3554-scripted-original-failure-observer'});}
@@ -1283,11 +1285,20 @@ for(const mode of ['missing','backend','frontend','test','failure',
       connect(){throw Error('Paid inference forbidden in R355.4');}
      }
      const adaptiveModel=new AdaptiveTestFailureModel();
-     const outcome=await execution.runAdaptiveWorkLoop({model:adaptiveModel,
+     const input={model:adaptiveModel,
       nextChildParameters:pin=>{
        assert.deepEqual(pin,{epoch:3,agent_id:'test'});
        return testTask.childParameters;
-      }});
+      }};
+     if(mode==='adaptive-unverified-fail'){
+      await assert.rejects(execution.runAdaptiveWorkLoop(input),
+       /original|NO-GO|Runner|failure|retired|not verified/u);
+      assert.equal(adaptiveModel.calls,1);
+      assert.equal(gateway.stagedCompletedTaskCount,2);
+      assert.equal(host.phase,'revoked');
+      await host.close();return;
+     }
+     const outcome=await execution.runAdaptiveWorkLoop(input);
      assert.equal(outcome.status,'owner_adaptive_work_blocked');
      assert.equal(outcome.executed_tasks,0);
      assert.equal(adaptiveModel.calls,2);
