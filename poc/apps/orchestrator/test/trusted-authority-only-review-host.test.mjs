@@ -561,23 +561,34 @@ test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after na
  }
 });
 
-for(const verified of [false,true])test(verified?
+for(const mode of ['missing','backend','frontend'])test(mode==='frontend'?
+ 'R351.3 actual Frontend A2A Gateway evidence unlocks bounded ADK Test Agent choice':
+ mode==='backend'?
  'R351.2 original Gateway authenticated offline Gitea evidence permits next ADK Frontend choice':
  'R350.4 continuous Engineer authority reaches real ADK/A2A SDK, while Gateway evidence remains required',
  async t=>{
- const f=await fixture(t),host=await f.start();
- await f.approve(['permission-1','permission-2']);
+ const verified=mode!=='missing',throughFrontend=mode==='frontend';
+ const f=await fixture(t,throughFrontend?{includeTestPermission:true}:{});
+ const host=await f.start();
+ await f.approve(throughFrontend?['permission-1','permission-2','permission-3']:
+  ['permission-1','permission-2']);
  const {coordinator}=await host.activateOperational(root('urn:r350:real-a2a-root',2));
  const deps=executionDeps(f),events=[],model=new R3504ScriptedBackend();
  deps.effectFenceJournal=new DurableAuthorityOnlyTaskFenceJournal(f.dirs.flights);
- const fileSha='e'.repeat(40),vp='r3504-private-vp',requestId='r3504-prepared-01';
- const newContent='export const suspended=true;\n',newBlob='d'.repeat(40),oldBlob='b'.repeat(40);
- let publisher;
+ const fileSha='e'.repeat(40),frontendSha='f'.repeat(40),
+  vp='r3504-private-vp',frontendVp='r3513-private-frontend-vp',
+  requestId='r3504-prepared-01',frontendRequestId='r3513-prepared-frontend',
+  frontendChallenge='r3513-frontend-challenge';
+ const newContent='export const suspended=true;\n';
+ const frontendContent='export const suspended=true; export const ui="pending";\n';
+ const newBlob='d'.repeat(40),frontendBlob='c'.repeat(40),oldBlob='b'.repeat(40);
+ const provider={head:snapshot.base_revision,parent:snapshot.base_revision,
+  blob:oldBlob,content:'export const suspended=false;\n'};
+ let publisher,frontendStaged,next;
+ const frontendModel=new R3513ScriptedFrontend();
  if(verified){
   // In-memory disposable Gitea fixture, but REAL independent receipt
   // publisher/observer, MAC, HEAD-parent-CAS and file-content checks.
-  const provider={head:snapshot.base_revision,parent:snapshot.base_revision,
-   blob:oldBlob,content:'export const suspended=false;\n'};
   const reader=new GiteaClient({baseUrl:'http://offline-evidence.r3512.invalid',
    token:'trusted-offline-reader',owner:'thesis',repository:'iam-console-poc',
    fetchFn:async(raw,init)=>{
@@ -585,10 +596,10 @@ for(const verified of [false,true])test(verified?
     const u=new URL(String(raw));
     if(u.pathname.endsWith('/branches/feature%2Faccount-suspension'))
      return Response.json({name:branch,commit:{id:provider.head}});
-    if(u.pathname.endsWith('/git/commits/'+fileSha))
-     return Response.json({sha:fileSha,parents:[{sha:provider.parent}]});
+    if(u.pathname.endsWith('/git/commits/'+provider.head))
+     return Response.json({sha:provider.head,parents:[{sha:provider.parent}]});
     if(u.pathname.endsWith('/contents/apps/user.ts')){
-     assert.equal(u.searchParams.get('ref'),fileSha);
+     assert.equal(u.searchParams.get('ref'),provider.head);
      return Response.json({type:'file',path:'apps/user.ts',encoding:'base64',
       content:Buffer.from(provider.content).toString('base64'),
       size:Buffer.byteLength(provider.content),sha:provider.blob,
@@ -607,9 +618,10 @@ for(const verified of [false,true])test(verified?
   }).toTrustedObserver();
   // The provider mutation is simulated by /execute below. A separate
   // observer rereads its state; no A2A artifact is accepted as evidence.
-  publisher.setOfflineState=()=>{provider.head=fileSha;
-   provider.parent=snapshot.base_revision;provider.blob=newBlob;
-   provider.content=newContent;};
+  publisher.setOfflineState=(head,parent,blob,content)=>{
+   provider.head=head;provider.parent=parent;
+   provider.blob=blob;provider.content=content;
+  };
  }
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   events.push('native_child_fixture');
@@ -635,7 +647,7 @@ for(const verified of [false,true])test(verified?
  if(verified)assert.equal(firstChoice.calls,1);
  const store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
  const {mutation:nativeMutation,runner:nativeRunner,gitea}=
-  nativeOfflinePreflights(gateway,f.dirs,events);
+  nativeOfflinePreflights(gateway,f.dirs,events,verified?provider:undefined);
  assert.equal(execution.bindNativeGatewayEffects({
   store,mutation:nativeMutation,runner:nativeRunner,giteaClient:gitea
  }).gateway_execution_authorized,false);
@@ -692,7 +704,7 @@ for(const verified of [false,true])test(verified?
      'task_id','runtime_task_id','epoch','agent_did','credential_id',
      'request_id','request_fingerprint'];
     const expected=Object.fromEntries(pins.map(k=>[k,intent[k]]));
-    publisher.setOfflineState();
+    publisher.setOfflineState(fileSha,snapshot.base_revision,newBlob,newContent);
     const result={branch,path:'apps/user.ts',revision:fileSha,
      commit_sha:fileSha,blob_sha:newBlob,
      previous_revision:snapshot.base_revision,
