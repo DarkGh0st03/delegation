@@ -20,6 +20,7 @@ function deny(reason:string):never{
  throw Error("Authority-only sequential read/update owner NO-GO: "+reason);
 }
 export class TrustedAuthorityOnlySequentialReadUpdateStager{
+ readonly stagedTool="read_then_update" as const;
  readonly #store:InMemoryRequestStore;
  readonly #admissions:TrustedAuthorityOnlyGatewayAdmissions;
  readonly #mutation:TrustedAuthorityOnlyGiteaMutationPreflight;
@@ -65,6 +66,21 @@ export class TrustedAuthorityOnlySequentialReadUpdateStager{
      started.gateway_execution_authorized!==false)
    deny("original immutable read/update manifest is not durably reserved");
   return new TrustedAuthorityOnlySequentialReadUpdateStager(opts);
+ }
+ /** Native private owner stager identity, never derived from an A2A claim. */
+ static isNativeForOwner(value:unknown,
+  admissions:TrustedAuthorityOnlyGatewayAdmissions,
+  planTaskId:string,runtimeTaskId:string):
+  value is TrustedAuthorityOnlySequentialReadUpdateStager{
+  return value instanceof TrustedAuthorityOnlySequentialReadUpdateStager&&
+   #admissions in value&&value.#admissions===admissions&&
+   value.#planTaskId===planTaskId&&value.#runtimeTaskId===runtimeTaskId;
+ }
+ /** Native IPC acknowledgement is independently verified, not a PASS flag. */
+ async attest(requestId:string,tool:"read_file"|"update_file"):Promise<void>{
+  if(tool==="read_file")return this.attestRead(requestId);
+  if(tool==="update_file")return this.attestMutation(requestId);
+  deny("unknown native mixed effect operation");
  }
  /** Called only between Gateway Prepare and signed VP, never from the model. */
  async stage(requestId:string):Promise<unknown>{

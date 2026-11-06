@@ -11,6 +11,8 @@ import {canonicalBranchUri,canonicalFileUri}
  from "../../../apps/gateway/src/canonical.ts";
 import {TrustedAuthorityOnlyGatewayAdmissions}
  from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
+import {TrustedAuthorityOnlySequentialReadUpdateStager}
+ from "../../../apps/gateway/src/trusted-authority-only-sequential-read-update-stager.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator}
  from "./trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
@@ -123,6 +125,18 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
      !["read_file","update_file","run_tests"].includes(p.operation)))
    deny("one supported Task provider-effect grant required");
   const effect=effects[0]!;
+  const reads=row.permissions.filter(p=>p.operation==="read_file");
+  const typedMixed=reads.length===1&&writes.length===1&&
+    row.permissions.length===2&&effect.operation==="update_file"&&
+    reads[0]?.resource===effect.resource;
+  if(typedMixed){
+   if(!["backend","frontend"].includes(row.agent_id)||
+      !TrustedAuthorityOnlySequentialReadUpdateStager.isNativeForOwner(
+       effectStager,this.#gateway,taskId,runtimeTaskId))
+    deny("mixed Task requires original native owner read/update stager");
+  }else if(effectStager.stagedTool==="read_then_update"){
+   deny("mixed owner stager cannot replace ordinary signed Task");
+  }
   const branch=root.branch;
   const branchUri=canonicalBranchUri(root.repository,branch);
   let path:string|undefined;
@@ -148,7 +162,8 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    runtimeTaskId,planTaskId:taskId,
    role:row.agent_id as "backend"|"frontend"|"test",
    childCredentialId:issued.credential_id,presenterId:row.agent_did,
-   branch,operation:effect.operation as "read_file"|"update_file"|"run_tests",
+   branch,operation:typedMixed?"read_then_update" as const:
+    effect.operation as "read_file"|"update_file"|"run_tests",
    ...(path!==undefined?{path}:{})
   };
   // R328: each role has a separate authenticated owner->agent socket.
