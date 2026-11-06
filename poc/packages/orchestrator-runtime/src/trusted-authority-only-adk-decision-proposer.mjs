@@ -111,7 +111,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    const phases=new Set(['typecheck','backend_tests','frontend_tests',
     'build','playwright_e2e','researcher_acceptance']);
    const base=['failed_phase','source_evidence_sha256'];
-   const codes=Object.hasOwn(verifiedFailure,'typecheck_error_codes');
+   const codes=verifiedFailure&&typeof verifiedFailure==='object'&&
+    Object.hasOwn(verifiedFailure,'typecheck_error_codes');
    if(!(exact(verifiedFailure,base)||
         exact(verifiedFailure,[...base,'typecheck_error_codes']))||
       !phases.has(verifiedFailure.failed_phase)||
