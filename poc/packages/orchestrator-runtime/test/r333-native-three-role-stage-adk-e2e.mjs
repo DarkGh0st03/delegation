@@ -1147,8 +1147,13 @@ try{
       branch,task_id:retestId,epoch:5,agent_id:"test",
       depends_on:[d1.task_id],permissions:[testTaskPermission]
      });
-     const retestChild=await issuer.issueForRegisteredTask(retestId,
-      params("urn:r345:child:retest",29110,600));
+     // The earlier Engineer issuance timestamp can now be older than the
+     // native Child issuer's ±60-second freshness window after Docker FAIL.
+     // Keep the SAME original root, but mint Test Child with a fresh start.
+     const retestChild=await issuer.issueForRegisteredTask(retestId,{
+      ...params("urn:r345:child:retest",29110,600),
+      valid_from:new Date().toISOString().replace(/\.\d{3}Z$/u,"Z")
+     });
      assert.notEqual(retestChild.credential_id,runnerChild.credential_id);
      assert.equal(retestChild.root_credential_id,operational.credential_id);
      await gate.bindTrustedTask(retestId,retestRuntimeId,"test");
