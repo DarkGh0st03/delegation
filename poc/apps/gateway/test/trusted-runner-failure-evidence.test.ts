@@ -104,6 +104,24 @@ test("R336 original verified Runner FAIL is durably MAC protected and NOT D1 aut
   }),/violates signed Task/);
  });
 });
+test("R355.9 authenticated Runner FAIL retains only bounded TypeScript error codes",async()=>{
+ await fixture(async({publisher,observer,runner,directory})=>{
+  const result=await runner.run(request);
+  assert.deepEqual(result.typecheck_error_codes,["TS2322","TS2345"]);
+  const digest=await publisher.publish(intent,binding,request,result,"opa-r3559");
+  const observed=await observer.observe(intent,binding);
+  assert.equal(observed.evidence_sha256,digest);
+  assert.deepEqual(observed.typecheck_error_codes,["TS2322","TS2345"]);
+  assert.equal(observed.gateway_task_completed,false);
+  assert.equal(observed.recovery_authorized,false);
+  const [name]=await readdir(directory);
+  const row=JSON.parse(await readFile(join(directory,name),"utf8"));
+  assert.deepEqual(row.typecheck_error_codes,["TS2322","TS2345"]);
+  row.typecheck_error_codes=["TS9999"];
+  await writeFile(join(directory,name),JSON.stringify(row)+"\n");
+  await assert.rejects(observer.observe(intent,binding),/MAC invalid/);
+ },{...failure(),typecheck_error_codes:["TS2322","TS2345"]});
+});
 test("R336 copied FAIL, moved Gitea and tampered MAC fail closed",async()=>{
  await fixture(async({publisher,observer,runner,move,directory})=>{
   const result=await runner.run(request);
