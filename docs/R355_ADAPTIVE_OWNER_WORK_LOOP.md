@@ -23,9 +23,11 @@ independently attested Task, not an A2A success response.
 `ready_for_pr` reopens the authenticated latest Test receipt and verifies project
 and researcher acceptance PASS at current HEAD. The result is readiness, **not** a
 PR authorization or a created PR. Existing PR admission/execution remains separate.
-A blocked decision, stale context, failed Task/completion, abort or exhausted budget
-retires the original root through the existing durable retirement/reconciliation
-path. The original eight-decision budget is not increased. Repeated loop invocation
+A blocked decision, stale context, unverified/ambiguous Task failure,
+failed completion, abort or exhausted budget retires the original root through
+the existing durable retirement/reconciliation path. A genuine authenticated
+Runner Test FAIL may now be observed for bounded recovery (R355.2–R355.5).
+No A2A text or model claim can activate that exception. The original eight-decision budget is not increased. Repeated loop invocation
 on the same owner is denied.
 
 ## Validation and limits
@@ -40,8 +42,9 @@ This is the first active work-control loop, not the completed generative Executo
 - No native E2E has yet demonstrated this new loop driving all specialists.
 - Model code-inspection tools and richer observations still need integration.
 - Automatic root VP/PR execution after readiness remains to be connected.
-- Recovery diagnostic selection remains R8: this loop stops and retires on failure;
-  it does not claim autonomous repair or reuse a preselected D1 candidate.
+- R355.5 now handles one authenticated native Runner Test FAIL without a
+  preselected D1 correction; its next Task may be chosen by ADK. It still
+  lacks model-readable source diagnostics and repeated-failure recovery.
 - Branch and recovery/PR native proofs remain separate earlier evidence.
 
 Follow ACTIVE_AUTHORITY_ONLY_ROADMAP.md. Next: exercise actual A2A work under this
@@ -62,3 +65,40 @@ socket restrictions reserve the scenario for Engineer CI.
 R355 production source 6e4c59c5: Engineer CI 42262006820 SUCCESS, main suite
 162 PASS including original-owner current/stale Test readiness, no FAIL/skips.
 Native branch and recovery/PR proofs remain earlier separate evidence.
+
+## R355.2–R355.5 authenticated adaptive Test FAIL and recovery
+
+- **R355.2** adds a fail-closed adaptive-loop transition for *owner-authenticated*
+  Runner Test failures only. The Test epoch advances but the unsuccessful Test
+  never enters the independent Gateway successful-completion ledger. Before
+  another ADK turn the owner must reread live root, exact current HEAD,
+  unchanged grants and completed history. Forged/absent proof retires the root.
+- **R355.3** splits candidate-free `observeTrustedNativeTestFailure` from the
+  historical D1 candidate preflight, reusing the same original Test/Child,
+  immutable Gateway flight, MAC receipt, current Gitea HEAD and live root
+  checks. Neither function can grant permission, issue a Child or mark Test PASS.
+- **R355.4** connects the owner-only observation to the actual Review Host.
+  Ordinary errors remain fail-closed. The model gets only the authenticated
+  failure phase and evidence hash, never raw A2A error text, VP or credentials.
+  A missing Runner FAIL receipt prevents the next decision.
+- **R355.5** adds an integrated free SDK scenario where a scripted adaptive
+  model selects Test → authentic FAIL → Backend correction → replacement Test
+  PASS → verified HEAD readiness. Child issuance, original ADK/A2A transport,
+  private Gateway staging, MAC receipts and independent completion are exercised
+  with offline issuer/provider fixtures; no Task list or D1 candidate is sent
+  to the adaptive controller. The original failed Test remains incomplete.
+  This is NOT native Rust/EVM/Gitea/Docker end-to-end evidence and NOT
+  generative Gemini diagnosis.
+
+GitHub Engineer CI **#42266112619 SUCCESS** on source `f37762bfe861768d0b3e34cd0e3e6bb2ccfc230c`:
+171 main tests PASS, including authentic-failure, absent-MAC and
+model-selected correction/retest paths. No paid calls.
+
+**Remaining R355 gates:** repeat the adaptive controller path with real native
+Rust/EVM, Gitea and Docker; integrate the already-proven root-branch and root-PR
+operations in one session; supply sanitized technical diagnostics and authorized
+read-only code inspection; allow further bounded recovery attempts (the current
+path deliberately accepts only one authenticated Test failure per session).
+Do not infer independent evidence from scripted model output. Continue using
+small free CI suites until a meaningful native checkpoint. PR #38 Draft,
+`main` unchanged, no paid Gemini without explicit permission.
