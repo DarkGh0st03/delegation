@@ -7,7 +7,7 @@ import {TrustedAuthorityOnlyEffectStager} from "../../../apps/gateway/src/truste
  * Owner fixture approval is synthetic; no Gemini or production credentials.
  */
 import assert from "node:assert/strict";
-import {generateKeyPairSync,createHash,randomBytes} from "node:crypto";
+import {generateKeyPairSync,createHash,randomBytes,scryptSync} from "node:crypto";
 import {createServer} from "node:net";
 import {BaseLlm} from "@google/adk";
 import {startSpecializedAgentServer,TrustedEffectStagingTaskRegistry,
@@ -48,6 +48,12 @@ import {DurableAuthorityTaskJournal}
  from "../src/trusted-authority-task-journal.ts";
 import {TrustedAuthorityOnlyEngineerSession}
  from "../src/trusted-authority-only-engineer-session.ts";
+import {startTrustedAuthorityOnlyReviewHost}
+ from "../../../apps/orchestrator/src/trusted-authority-only-review-host.mjs";
+import {AuthorityPlanningCheckpointStore}
+ from "../src/trusted-authority-planning-checkpoint.ts";
+import {TrustedOperationalRecoveryStore}
+ from "../src/trusted-operational-recovery-store.ts";
 import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {signAuthorityOnlyGrant,selectAuthorityOnlyGrant}
@@ -101,7 +107,10 @@ assert.match(engineerDid??"",/^did:/u);
 assert.match(backendDid??"",/^did:/u);
 assert.match(frontendDid??"",/^did:/u);
 assert.match(testDid??"",/^did:/u);
-const sessionId="r331-authority-native-three-adk-a2a-e2e";
+const reviewedNative=process.env.R35013_NATIVE_REVIEW==="1";
+const sessionId=reviewedNative?
+ "r35013-reviewed-native-three-adk-a2a-e2e":
+ "r331-authority-native-three-adk-a2a-e2e";
 const nativeTaskRef=(symbol)=>"dispatch_"+symbol.repeat(22);
 async function freeRolePort(){
  const listener=createServer();
@@ -170,6 +179,34 @@ class OfflineNativeTestModel extends BaseLlm{
  }
  connect(){return Promise.reject(Error("No paid model connection in R331"));}
 }
+/** R350.13: executable ADK Planning, but NEVER a paid provider.
+ * The first turn reads the source baseline; the second proposes only the
+ * directory and Test authority ceiling (no DAG or agent IDs). */
+class OfflineR35013AuthorityModel extends BaseLlm{
+ constructor(file){
+  super({model:"r35013-native-reviewed-offline-planner"});
+  this.file=file;this.requests=[];
+ }
+ async *generateContentAsync(req){
+  this.requests.push(req);
+  if(this.requests.length===1){
+   yield {content:{role:"model",parts:[{functionCall:{
+    id:"r35013-review-read",name:"read_file",
+    args:{branch:"main",path:this.file}
+   }}]}};
+  }else{
+   yield {content:{role:"model",parts:[{text:JSON.stringify({
+    requested_permissions:[
+     {operation:"update_file",resource_type:"directory",path:"apps/backend"},
+     {operation:"update_file",resource_type:"directory",path:"apps/frontend"},
+     {operation:"run_tests",resource_type:"branch",path:null}
+    ],
+    assumptions:[],uncertainties:[]
+   })}]}};
+  }
+ }
+ connect(){throw Error("Paid model connection forbidden in native review");}
+}
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
@@ -184,9 +221,15 @@ const independentClient=new GiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL
  token:process.env.GITEA_RUNNER_TOKEN,owner:repo.owner,repository:repo.repository});
 // Disposable CI owner provisioning, outside delegated execution.
 const originalMainSha=(await client.getBranchMetadata("main")).commit_sha;
-const created=await client.createBranch("main","feature/account-suspension");
-assert.match(created.commit_sha,/^[a-f0-9]{40}$/u);
 const branch="feature/account-suspension";
+// In the R350.13 review test the Planner MUST read the SAME immutable
+// revision that the actual native Gateway later uses as feature HEAD.
+// Seed disposable main before branching, never bypass the revision pin.
+if(!reviewedNative){
+ const created=await client.createBranch("main",branch);
+ assert.match(created.commit_sha,/^[a-f0-9]{40}$/u);
+}
+const fixtureBranch=reviewedNative?"main":branch;
 const mutationPath="apps/backend/users/account.ts";
 const frontendPath="apps/frontend/permissions/r305-staged.ts";
 const originalFrontend="export const uiPending = true;\n";
@@ -196,22 +239,28 @@ const newContent="export const accountSuspended = true;\n";
 // Only the trusted CI owner completes the functional reference BEFORE
 // the Engineer signs. Neither Backend nor Test claims this fixture as work.
 const functionalFixture=await stageDisposableAccountSuspensionReference({
- gitea:client,branch
+ gitea:client,branch:fixtureBranch
 });
 assert.equal(functionalFixture.engineer_approved,false);
 assert.equal(functionalFixture.delegated_agent_writes,0);
 // A distinct non-functional file is now provisioned for the genuine
 // permission-only Backend atomic CAS Task after approval.
-const seeded=await client.createFile(branch,mutationPath,oldContent,
+const seeded=await client.createFile(fixtureBranch,mutationPath,oldContent,
  "R305 owner-provisioned disposable Gitea fixture");
-const seededFrontend=await client.createFile(branch,frontendPath,
+const seededFrontend=await client.createFile(fixtureBranch,frontendPath,
  originalFrontend,"R305 owner-provisioned nonfunctional Frontend proof file");
 // Both owner-provisioned files must exist at the Engineer-approved baseline.
 // The Frontend seed advances HEAD after the Backend seed; pin the final HEAD.
 const baseRevision=seededFrontend.commit_sha;
 assert.notEqual(baseRevision,seeded.commit_sha);
 assert.match(baseRevision,/^[a-f0-9]{40}$/u);
+if(reviewedNative){
+ const created=await client.createBranch("main",branch);
+ assert.equal(created.commit_sha,baseRevision);
+ assert.equal((await client.getBranchMetadata("main")).commit_sha,baseRevision);
+}
 assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
+const pinnedDisposableMainSha=(await client.getBranchMetadata("main")).commit_sha;
 const requirement="R305 disposable EVM proof for account suspension permission";
 const resourcePrefix="gitea://gitea.local/thesis/iam-console-poc/branches/"+
  "feature%2Faccount-suspension";
@@ -245,7 +294,7 @@ const proposed={
 const grant=selectAuthorityOnlyGrant(proposed,[grantPermission,frontendGrant,testGrantPermission],{
  allowedOperations:new Set(RUST_OPERATIONS)
 });
-const receipt=signAuthorityOnlyGrant({
+const receipt=reviewedNative?null:signAuthorityOnlyGrant({
  authorization:grant,engineerDid,keyId:authKey,
  privateKeyPem:privateKey.export({format:"pem",type:"pkcs8"}),
  issuedAt,expiresAt:approvalExpiresAt,
@@ -260,15 +309,16 @@ process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=socketPath;
 const path=name=>join(parent,name);
 let runnerServer;
 let gatewayHost;
-let a2aOwner;
+let a2aOwner,reviewHost;
 let roleBindingServers=[];
 let a2aRoleServers=[];
 const names=["approvals","root-journal","coordinator-tasks","gateway-tasks",
  "gateway-activation","child-intents","gateway-child-intents","flights",
- "intent","receipts","runner-intent","runner-receipts","runner-logs"];
+ "intent","receipts","runner-intent","runner-receipts","runner-logs",
+ "r35013-checkpoints","r35013-keys","r35013-recovery"];
 try{
  for(const name of names)await mkdir(path(name),{mode:0o700});
- await writeFile(path("approvals")+"/"+sessionId+".json",
+ if(!reviewedNative)await writeFile(path("approvals")+"/"+sessionId+".json",
   JSON.stringify(receipt),{mode:0o600,flag:"wx"});
  const approvals=new SignedAuthorityOnlyFileStore({
   directory:path("approvals"),engineerDid,nowMs,
@@ -284,18 +334,6 @@ try{
   session_id:sessionId,repository:repo,base_revision:baseRevision,
   directories:[""],files:[]
  };
- const session=new TrustedAuthorityOnlyEngineerSession({
-  snapshot,requirement,credentials:credentialPort,approvals,
-  authenticatedEngineerDid:engineerDid,
-  journal:new DurableAuthorityOnlyActivationJournal(path("root-journal")),
-  nowMs,
-  planningRevisions:{
-   async begin(taskId){return {task_id:taskId,
-    base_revision:baseRevision,
-    expires_at:new Date(Date.now()+8*60_000).toISOString()};},
-   async end(){return;}
-  }
- });
  const status=index=>({type:"BitstringStatusListEntry",
   statusPurpose:"revocation",statusListIndex:String(index),
   statusListCredential:"https://status.example/r305"});
@@ -305,23 +343,153 @@ try{
  });
  const preliminary=params("urn:r305:preliminary",29101,360);
  const operational=params("urn:r305:operational",29102,1800);
- await session.startPlanning(preliminary);
- const approved=await session.approveAndIssueOperationalRoot(operational);
+ const registry={
+  backend:{did:backendDid,card_ref:"trusted:r305-backend",
+   capabilities:["update_file"]},
+  frontend:{did:frontendDid,card_ref:"trusted:r305-frontend",
+   capabilities:["update_file"]},
+  test:{did:testDid,card_ref:"trusted:r305-test",
+   capabilities:["run_tests"]}
+ };
+ const revisions={
+  async begin(taskId){return {task_id:taskId,
+   base_revision:baseRevision,
+   expires_at:new Date(Date.now()+8*60_000).toISOString()};},
+  async end(){return;}
+ };
+ let approved,coordinator;
+ if(reviewedNative){
+  // Genuine loopback Engineer login/CSRF/signing and native Rust issuance.
+  // The controlled PRELIMINARY read transport still uses an offline
+  // Gateway protocol fixture (backed by a real pinned Gitea read).
+  // Operational Gateway/OPA/Gitea/Runner below are 100% native.
+  const backendProvenance=generateKeyPairSync("ed25519");
+  const password="r35013-disposable-review-only";
+  const salt=randomBytes(16);
+  const reviewerPrivate=path("r35013-keys")+"/engineer.pem";
+  await writeFile(reviewerPrivate,privateKey.export({format:"pem",type:"pkcs8"}),
+   {mode:0o600,flag:"wx"});
+  const reviewSnapshot={...snapshot,
+   files:[mutationPath,frontendPath],
+   directories:["","apps","apps/backend","apps/backend/users",
+    "apps/frontend","apps/frontend/permissions"]};
+  const checkpoint=new AuthorityPlanningCheckpointStore({
+   directory:path("r35013-checkpoints"),
+   trust:{
+    trustedKeys:{backend:{public_key_pem:
+     backendProvenance.publicKey.export({format:"pem",type:"spki"})}},
+    expectedSessionId:sessionId,expectedRepository:repo,
+    expectedBaseRevision:baseRevision,expectedWorkBranch:branch,
+    expectedRequirement:requirement
+   }
+  });
+  const reviewModel=new OfflineR35013AuthorityModel(mutationPath);
+  const planningFetch=async(url,init)=>{
+   const route=String(url),body=JSON.parse(String(init.body));
+   if(route.endsWith("/prepare")){
+    assert.equal(body.tool,"read_file");
+    assert.equal(body.arguments.branch,"main");
+    assert.equal(body.arguments.path,mutationPath);
+    return Response.json({request_id:"r35013-disposable-read",
+     audience:"cloud-access-gateway",challenge:"r35013-nonce",
+     required_permission:{
+      resource:resourcePrefix+"/files/"+mutationPath,operation:"read_file"
+     }});
+   }
+   if(route.endsWith("/v1/presentations")){
+    assert.equal(body.credential_id,preliminary.credential_id);
+    return Response.json({signed_vp:"r35013-offline-planning-only"});
+   }
+   if(route.endsWith("/execute")){
+    const source=await client.readTextFile("main",mutationPath,baseRevision);
+    assert.equal(source.content,oldContent);
+    return Response.json({execution:{provider:"gitea",performed:true,
+     tool:"read_file",branch:"main",path:mutationPath,
+     revision:baseRevision,content:source.content}});
+   }
+   throw Error("Unauthorized preliminary Planning transport");
+  };
+  reviewHost=await startTrustedAuthorityOnlyReviewHost({
+   snapshot:reviewSnapshot,requirement,workBranch:branch,
+   preliminaryRoot:preliminary,
+   approvalPort:0,
+   activationJournal:new DurableAuthorityOnlyActivationJournal(path("root-journal")),
+   taskJournal:new DurableAuthorityTaskJournal(path("coordinator-tasks")),
+   operationalRecoveryStore:new TrustedOperationalRecoveryStore(path("r35013-recovery")),
+   operationalSessionStore:new TrustedOperationalSessionStore(path("gateway-activation")),
+   checkpoint:{store:checkpoint,backendKeyId:"backend",
+    backendPrivateKeyPem:backendProvenance.privateKey.export({format:"pem",type:"pkcs8"})},
+   approval:{engineerDid,keyId:authKey,privateKeyFile:reviewerPrivate,
+    publicKeyPem:publicKey.export({format:"pem",type:"spki"}),
+    receiptDirectory:path("approvals"),
+    passwordSaltHex:salt.toString("hex"),
+    passwordScryptHex:scryptSync(password,salt,64).toString("hex")},
+   planner:{model:reviewModel,planId:"r35013-owner-reviewed-scope",
+    maxModelTurns:3,maxProposalRevisions:0},
+   trustedAgentRegistry:registry,
+   credentials:credentialPort,planningRevisions:revisions,
+   gateway:{gatewayBaseUrl:"http://offline-planning.r35013.invalid",
+    adapterBaseUrl:"http://offline-planning-crypto.r35013.invalid",
+    adapterToken:"r35013-private-planning-only",
+    fetchFn:planningFetch}
+  });
+  // Real authenticated Engineer UI, not a pre-seeded receipt file.
+  const ui=reviewHost.engineerUrl;
+  const call=async(route,body,cookie,csrf)=>{
+   const r=await fetch(ui+route,{
+    method:body===undefined?"GET":"POST",
+    headers:{origin:ui,"content-type":"application/json",
+     ...(cookie?{cookie}:{}),...(csrf?{"x-csrf-token":csrf}:{})},
+    ...(body===undefined?{}:{body:JSON.stringify(body)})
+   });
+   return r;
+  };
+  const logged=await call("/api/login",{password});
+  assert.equal(logged.status,200);
+  const cookie=logged.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(cookie);
+  const packetResponse=await call("/api/review",undefined,cookie);
+  assert.equal(packetResponse.status,200);
+  const packet=await packetResponse.json();
+  assert.equal(packet.protocol,"authority-only");
+  assert.deepEqual(packet.proposal.requested_permissions.map(
+   p=>[p.resource,p.operation]),grant.permissions.map(
+   p=>[p.resource,p.operation]));
+  const ids=packet.proposal.requested_permissions.map(p=>p.id);
+  const accepted=await call("/api/approve",{
+   proposal_digest:packet.proposal_digest,approved_permission_ids:ids,
+   confirmation:"APPROVE "+packet.proposal_digest
+  },cookie,packet.csrf_token);
+  assert.equal(accepted.status,201);
+  assert.equal(reviewHost.phase,"planning");
+  const activated=await reviewHost.activateOperational(operational);
+  coordinator=activated.coordinator;
+  const binding=coordinator.assertTrustedGatewayAuthorityBinding();
+  approved={phase:"operational",permissions:binding.root_permissions};
+  assert.equal(reviewHost.phase,"operational");
+  assert.equal(reviewModel.requests.length,2);
+  // Both provider source reads and feature HEAD are pinned to the same
+  // disposable base; no silent main/feature revision substitution.
+  assert.equal((await client.getBranchMetadata("main")).commit_sha,baseRevision);
+  assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
+ }else{
+  const session=new TrustedAuthorityOnlyEngineerSession({
+   snapshot,requirement,credentials:credentialPort,approvals,
+   authenticatedEngineerDid:engineerDid,
+   journal:new DurableAuthorityOnlyActivationJournal(path("root-journal")),
+   nowMs,planningRevisions:revisions
+  });
+  await session.startPlanning(preliminary);
+  approved=await session.approveAndIssueOperationalRoot(operational);
+  coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
+   sessionId,engineer:session,approvals,
+   journal:new DurableAuthorityTaskJournal(path("coordinator-tasks")),
+   trustedAgentRegistry:registry,nowMs
+  });
+  await coordinator.activate();
+ }
  assert.equal(approved.phase,"operational");
  assert.deepEqual(approved.permissions,grant.permissions);
- const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({
-  sessionId,engineer:session,approvals,
-  journal:new DurableAuthorityTaskJournal(path("coordinator-tasks")),
-  trustedAgentRegistry:{
-   backend:{did:backendDid,card_ref:"trusted:r305-backend",
-    capabilities:["update_file"]},
-   frontend:{did:frontendDid,card_ref:"trusted:r305-frontend",
-    capabilities:["update_file"]},
-   test:{did:testDid,card_ref:"trusted:r305-test",
-    capabilities:["run_tests"]}
-  },nowMs
- });
- await coordinator.activate();
  const taskId="r305-backend-task",runtimeTaskId=nativeTaskRef("B");
  await coordinator.registerTask({
   session_id:sessionId,requirement_sha256:createHash("sha256")
@@ -1020,7 +1188,8 @@ try{
  // An already-prepared and signed VP MUST be denied after EVM root
  // revocation (not simply because the Task registry is still loaded).
  const pending=await prepare(),pendingVp=await sign(child.credential_id,pending);
- await credentialPort.revokeRoot(operational.credential_id);
+ if(reviewedNative)await reviewHost.close();
+ else await credentialPort.revokeRoot(operational.credential_id);
  await assert.rejects(()=>verifier.verify({
   presenter:"backend",audience:pending.audience,challenge:pending.challenge,
   required_permission:taskPermission,signed_vp:pendingVp
@@ -1030,7 +1199,7 @@ try{
  },"verification_rejected");
  assert.equal(gatewayCasWrites,2);
  assert.equal((await client.getBranchMetadata("main")).commit_sha,
-  originalMainSha);
+  pinnedDisposableMainSha);
  process.stdout.write(JSON.stringify({
   event:"r331_native_three_adk_a2a_backend_frontend_test_docker",
   engineer_directory_scope:true,child_file_scope:true,
@@ -1068,6 +1237,7 @@ try{
   ...a2aRoleServers.map(s=>s.close())
  ]);
  if(gatewayHost)await gatewayHost.close();
+ if(reviewHost&&reviewHost.phase==="operational")await reviewHost.close();
  if(runnerServer)await new Promise(resolve=>runnerServer.close(resolve));
  await rm(parent,{recursive:true,force:true});
 }

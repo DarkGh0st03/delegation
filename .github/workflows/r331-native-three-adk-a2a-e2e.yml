@@ -5,6 +5,15 @@
 name: R331 Native Three ADK A2A Agents and Signed Docker (No AI)
 on:
   workflow_dispatch:
+    inputs:
+      authority_mode:
+        description: 'Engineer authority intake: original fixture or R350.13 authenticated review'
+        type: choice
+        required: true
+        default: original_fixture
+        options:
+          - original_fixture
+          - reviewed_native
   push:
     branches: [refactor/post-prof-plan-contracts-20261021]
     paths:
@@ -21,6 +30,7 @@ jobs:
     timeout-minutes: 75
     env:
       ENGINEER_CORE_NATIVE_MODE: "1"
+      R35013_NATIVE_REVIEW: ${{ inputs.authority_mode == 'reviewed_native' && '1' || '0' }}
       R233_NATIVE_EVM: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
       ADAPTER_TRUST_PROFILE: evm

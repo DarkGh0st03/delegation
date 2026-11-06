@@ -44,7 +44,7 @@ jobs:
       - name: Install pinned dependencies offline for test runtime
         run: npm --prefix poc ci --ignore-scripts --no-audit --no-fund
       - name: Run local Engineer login, CSRF, signed receipt and negative tests
-        run: node --experimental-strip-types --test poc/apps/orchestrator/test/engineer-approval-server.test.mjs poc/apps/orchestrator/test/authority-only-engineer-review.test.mjs poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs poc/apps/orchestrator/test/trusted-engineer-host.test.mjs poc/apps/orchestrator/test/trusted-engineer-service.test.mjs poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs
+        run: node --check poc/packages/orchestrator-runtime/test/r331-native-three-adk-a2a-test-docker-e2e.mjs && node --experimental-strip-types --test poc/apps/orchestrator/test/engineer-approval-server.test.mjs poc/apps/orchestrator/test/authority-only-engineer-review.test.mjs poc/apps/orchestrator/test/trusted-authority-only-review-host.test.mjs poc/apps/orchestrator/test/trusted-engineer-host.test.mjs poc/apps/orchestrator/test/trusted-engineer-service.test.mjs poc/apps/orchestrator/test/trusted-reviewed-handoff-lifecycle.test.mjs
       - name: Regress trusted approval and GUI mock contracts
         run: |
           node --experimental-strip-types --test poc/packages/orchestrator-runtime/test/signed-approval-coordinator.test.ts
