@@ -5,6 +5,10 @@
 name: R344 Native D1 ADK Repair Write after Real FAIL (No AI)
 on:
   workflow_dispatch:
+  push:
+    branches: [refactor/post-prof-plan-contracts-20261021]
+    paths:
+      - '.github/ci-checkpoints/r344-native-d1-edit-request.json'
 permissions:
   contents: read
 concurrency:
