@@ -109,6 +109,20 @@ assert.match(engineerDid??"",/^did:/u);
 assert.match(backendDid??"",/^did:/u);
 assert.match(frontendDid??"",/^did:/u);
 assert.match(testDid??"",/^did:/u);
+/** Root permission pairs are unordered. A drafted proposal may list these
+ * differently from canonical signed authorization, without changing scope.
+ * Missing, duplicate or extra operation/resource pairs remain fatal. */
+function assertSameExactPermissionPairs(actual,expected){
+ const pair=p=>{
+  assert.ok(p&&typeof p.resource==="string"&&typeof p.operation==="string");
+  return JSON.stringify([p.operation,p.resource]);
+ };
+ const left=actual.map(pair),right=expected.map(pair);
+ assert.equal(new Set(left).size,left.length,"duplicate proposed authority pair");
+ assert.equal(new Set(right).size,right.length,"duplicate expected authority pair");
+ assert.deepEqual(left.sort(),right.sort(),
+  "Engineer authority must match exactly without missing or extra permission pairs");
+}
 const reviewedNative=process.env.R35013_NATIVE_REVIEW==="1";
 const sessionId=reviewedNative?
  "r35013-reviewed-native-three-adk-a2a-e2e":
@@ -485,9 +499,9 @@ try{
   assert.equal(packetResponse.status,200);
   const packet=await packetResponse.json();
   assert.equal(packet.protocol,"authority-only");
-  assert.deepEqual(packet.authorization_proposal.requested_permissions.map(
-   p=>[p.resource,p.operation]),grant.permissions.map(
-   p=>[p.resource,p.operation]));
+  assertSameExactPermissionPairs(
+   packet.authorization_proposal.requested_permissions,grant.permissions);
+  assert.equal(packet.permissions.length,grant.permissions.length);
   const ids=packet.permissions.map(p=>p.id);
   const accepted=await call("/api/approve",{
    proposal_digest:packet.proposal_digest,approved_permission_ids:ids,
@@ -522,7 +536,7 @@ try{
   await coordinator.activate();
  }
  assert.equal(approved.phase,"operational");
- assert.deepEqual(approved.permissions,grant.permissions);
+ assertSameExactPermissionPairs(approved.permissions,grant.permissions);
  const taskId="r305-backend-task",runtimeTaskId=nativeTaskRef("B");
  await coordinator.registerTask({
   session_id:sessionId,requirement_sha256:createHash("sha256")
@@ -558,7 +572,7 @@ try{
  assert.equal(child.gateway_execution_authorized,false);
  assert.equal(child.root_credential_id,operational.credential_id);
  assert.deepEqual(child.permissions,[taskPermission]);
- assert.deepEqual(approved.permissions,grant.permissions);
+ assertSameExactPermissionPairs(approved.permissions,grant.permissions);
  const evidenceKey=Buffer.alloc(32,96); // disposable CI receipt key
  const runnerObserver=new AuthenticatedRunnerCompletionObserver({
   directory:path("runner-receipts"),key:evidenceKey,
