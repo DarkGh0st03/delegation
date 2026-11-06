@@ -1285,40 +1285,89 @@ try{
  },"replay_detected");
  assert.equal(gatewayCasWrites,2);
 
- // R356.0: original Engineer owns adaptive Test selection and native
- // Rust Child issuance. No preselected D1 candidate, success ledger forgery
- // or shortcut around actual Gateway/OPA/Docker and A2A are permitted.
- if(nativeAdaptiveFail){
+ // R356.0/1: this original Engineer owns a real ADK-selected Test Task,
+ // native Rust Child, protected SDK A2A, OPA/Gateway and actual Docker run.
+ // R356.1 also lets scripted ADK choose Backend repair and replacement Test
+ // after the independently attested FAIL. These are NOT generative models.
+ if(nativeAdaptive){
+  const repairTaskId="r356-adaptive-repair";
+  const retestTaskId="r356-adaptive-retest";
+  const repairPermission={resource:resourcePrefix+"/files/"+repairPath,
+   operation:"update_file"};
+  const originalRoot=coordinator.assertTrustedGatewayAuthorityBinding()
+   .root_credential_id;
+  let repairedContent;
+  if(nativeAdaptiveRepair){
+   const broken=await independentClient.readTextFile(branch,repairPath,frontendHead);
+   repairedContent=broken.content.replace(
+    "export const r338TypecheckFailure: string = 2026;",
+    "export const r338TypecheckFailure: number = 2026;");
+   assert.notEqual(repairedContent,broken.content);
+   // Scripted specialist fixture only: the LLM does not yet diagnose or
+   // generate this source edit. The Task selection remains at runtime.
+   nativeBackendModel.path=repairPath;
+   nativeBackendModel.content=repairedContent;
+   mutationTaskIds.add(repairTaskId);
+   runnerTaskIds.add(retestTaskId);
+  }
   class OfflineR356NativeAdaptiveDecisionModel extends BaseLlm{
    requests=[];
-   constructor(){super({model:"r356-free-native-adaptive-test-fail"});}
+   constructor(){super({model:"r356-free-native-adaptive-work"});}
    async *generateContentAsync(req){
     this.requests.push(req);
-    const choice=this.requests.length===1?
-     {action:"delegate",task:{task_id:testTaskId,agent_id:"test",
-      depends_on:[frontendTaskId],permissions:[testTaskPermission],
-      instruction:"Run approved Docker Test on independently completed Frontend HEAD"}}:
-     {action:"blocked",reason:"Authenticated typecheck FAIL observed; repair deferred to R356.1"};
-    if(this.requests.length>2)throw Error("Unexpected extra R356 decision");
+    const turn=this.requests.length;
+    const encoded=JSON.stringify(req);
+    if(turn===2){
+     assert.match(encoded,/independent_runner_failure/u);
+     assert.match(encoded,/typecheck/u);
+    }
+    let choice;
+    if(turn===1)choice={action:"delegate",task:{
+     task_id:testTaskId,agent_id:"test",
+     depends_on:[frontendTaskId],permissions:[testTaskPermission],
+     instruction:"Run approved Docker Test on independently completed Frontend HEAD"
+    }};
+    else if(turn===2&&nativeAdaptiveRepair)choice={action:"delegate",task:{
+     task_id:repairTaskId,agent_id:"backend",
+     depends_on:[frontendTaskId],permissions:[repairPermission],
+     instruction:"Repair authenticated typecheck FAIL within signed Backend file scope"
+    }};
+    else if(turn===3&&nativeAdaptiveRepair)choice={action:"delegate",task:{
+     task_id:retestTaskId,agent_id:"test",
+     depends_on:[frontendTaskId,repairTaskId],permissions:[testTaskPermission],
+     instruction:"Retest independently repaired HEAD with approved Docker acceptance"
+    }};
+    else if(turn===4&&nativeAdaptiveRepair)choice={
+     action:"ready_for_pr",
+     reason:"Latest replacement Docker Test and acceptance are independently verified"
+    };
+    else if(turn===2&&!nativeAdaptiveRepair)choice={
+     action:"blocked",
+     reason:"Authenticated typecheck FAIL observed; repair deferred to R356.1"
+    };
+    else throw Error("Unexpected extra R356 adaptive model decision");
     yield {content:{role:"model",parts:[{text:JSON.stringify(choice)}]}};
    }
    connect(){throw Error("Paid inference prohibited in native R356");}
   }
   const adaptiveModel=new OfflineR356NativeAdaptiveDecisionModel();
   let childProvisionCalls=0;
-  const observed=await reviewExecution.runAdaptiveWorkLoop({
-   model:adaptiveModel,maxSteps:2,
+  const outcome=await reviewExecution.runAdaptiveWorkLoop({
+   model:adaptiveModel,maxSteps:nativeAdaptiveRepair?4:2,
    nextChildParameters:({epoch,agent_id})=>{
     childProvisionCalls++;
-    assert.equal(epoch,3);assert.equal(agent_id,"test");
-    return freshChildParams("urn:r356:child:adaptive-test",29111);
+    if(epoch===3&&agent_id==="test")
+     return freshChildParams("urn:r356:child:adaptive-test",29111);
+    if(nativeAdaptiveRepair&&epoch===4&&agent_id==="backend")
+     return freshChildParams("urn:r356:child:adaptive-repair",29112);
+    if(nativeAdaptiveRepair&&epoch===5&&agent_id==="test")
+     return freshChildParams("urn:r356:child:adaptive-retest",29113);
+    throw Error("Unexpected owner Child candidate or epoch");
    }
   });
-  assert.equal(observed.status,"owner_adaptive_work_blocked");
-  assert.equal(observed.pr_created,false);
-  assert.equal(observed.executed_tasks,0);
-  assert.equal(childProvisionCalls,1);
-  assert.equal(adaptiveModel.requests.length,2);
+  assert.equal(outcome.pr_created,false);
+  assert.equal(adaptiveModel.requests.length,nativeAdaptiveRepair?4:2);
+  assert.equal(childProvisionCalls,nativeAdaptiveRepair?3:1);
   const secondPrompt=JSON.stringify(adaptiveModel.requests[1]);
   assert.match(secondPrompt,/independent_runner_failure/u);
   assert.match(secondPrompt,/typecheck/u);
@@ -1326,33 +1375,71 @@ try{
    operational.credential_id,process.env.ADAPTER_EVM_PRIVATE_KEY_TEST]){
    if(secret)assert.equal(secondPrompt.includes(secret),false);
   }
-  assert.equal(gate.registeredTaskCount,3);
-  assert.equal(gate.stagedCompletedTaskCount,2);
-  assert.equal(runnerCalls,1);
-  assert.equal(gatewayCasWrites,2);
   assert.equal(gatewayPrCalls,0);
-  assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,
-   frontendHead);
   assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
    pinnedDisposableMainSha);
   assert.equal((await readdir(path("runner-fail-receipts")))
    .filter(n=>n.endsWith(".runner-fail.json")).length,1);
-  assert.equal((await readdir(path("runner-receipts")))
-   .filter(n=>n.endsWith(".runner.json")).length,0);
-  assert.equal(reviewHost.phase,"revoked");
-  process.stdout.write(JSON.stringify({
-   event:"r356_native_adaptive_authenticated_fail_observed",
-   original_engineer_owner:true,real_rust_evm_opa:true,
-   actual_adk_a2a_test:true,real_docker_typecheck_fail:true,
-   original_failed_test_incomplete:true,
-   registered_tasks:3,completed_tasks:2,runner_posts:runnerCalls,
-   provider_commits:gatewayCasWrites,
-   model_chose_test_task:true,original_root_retired:true,
-   authenticated_failure_receipt:true,pr_created:false,
-   main_unchanged:true,paid_model_calls:0,
-   native_adaptive_repair_not_yet_proven:true,
-   functional_source:"owner_only_fixture"
-  })+"\n");
+  if(nativeAdaptiveRepair){
+   assert.equal(outcome.status,"owner_adaptive_work_ready_for_pr");
+   assert.equal(outcome.source_test_task_id,retestTaskId);
+   assert.equal(outcome.executed_tasks,2);
+   assert.equal(gate.registeredTaskCount,5);
+   assert.equal(gate.stagedCompletedTaskCount,4);
+   assert.equal(runnerCalls,2);
+   assert.equal(gatewayCasWrites,3);
+   const repairedHead=(await independentClient.getBranchMetadata(branch)).commit_sha;
+   assert.equal(outcome.tested_commit_sha,repairedHead);
+   assert.equal((await independentClient.readTextFile(
+    branch,repairPath,repairedHead)).content,repairedContent);
+   assert.equal((await readdir(path("runner-receipts")))
+    .filter(n=>n.endsWith(".runner.json")).length,1);
+   assert.equal(coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id,
+    originalRoot);
+   assert.equal(reviewHost.phase,"operational");
+   await reviewHost.close();
+   assert.equal(reviewHost.phase,"revoked");
+   process.stdout.write(JSON.stringify({
+    event:"r356_native_adaptive_fail_repair_retest_pass",
+    original_engineer_owner:true,real_rust_evm_opa:true,
+    actual_adk_a2a_dispatch:true,real_docker_fail_then_pass:true,
+    original_failed_test_incomplete:true,
+    registered_tasks:5,completed_tasks:4,
+    runner_posts:runnerCalls,provider_commits:gatewayCasWrites,
+    model_selected_backend_repair:true,
+    model_selected_replacement_test:true,
+    independent_repair_completion:true,
+    independent_retest_pass:true,original_root_unchanged:true,
+    original_root_retired_after_readiness:true,
+    pr_created:false,main_unchanged:true,paid_model_calls:0,
+    autonomous_source_generation:false,functional_source:"owner_only_fixture"
+   })+"\n");
+  }else{
+   assert.equal(outcome.status,"owner_adaptive_work_blocked");
+   assert.equal(outcome.executed_tasks,0);
+   assert.equal(gate.registeredTaskCount,3);
+   assert.equal(gate.stagedCompletedTaskCount,2);
+   assert.equal(runnerCalls,1);
+   assert.equal(gatewayCasWrites,2);
+   assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,
+    frontendHead);
+   assert.equal((await readdir(path("runner-receipts")))
+    .filter(n=>n.endsWith(".runner.json")).length,0);
+   assert.equal(reviewHost.phase,"revoked");
+   process.stdout.write(JSON.stringify({
+    event:"r356_native_adaptive_authenticated_fail_observed",
+    original_engineer_owner:true,real_rust_evm_opa:true,
+    actual_adk_a2a_test:true,real_docker_typecheck_fail:true,
+    original_failed_test_incomplete:true,
+    registered_tasks:3,completed_tasks:2,runner_posts:runnerCalls,
+    provider_commits:gatewayCasWrites,
+    model_chose_test_task:true,original_root_retired:true,
+    authenticated_failure_receipt:true,pr_created:false,
+    main_unchanged:true,paid_model_calls:0,
+    native_adaptive_repair_not_yet_proven:true,
+    functional_source:"owner_only_fixture"
+   })+"\n");
+  }
  }else{
  const runnerChild=reviewedNative?
   (await decide(testTaskId,"test",[frontendTaskId],[testTaskPermission],
