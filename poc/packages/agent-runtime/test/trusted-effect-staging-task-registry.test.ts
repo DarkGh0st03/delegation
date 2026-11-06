@@ -157,3 +157,39 @@ test("R358 prebound read-only Task needs an exact signed file-read grant and bur
  assert.throws(()=>bad.selectFor(context()),/differs from trusted owner Task pins/u);
  assert.throws(()=>bad.selectFor(readContext),/already dispatched/u);
 });
+
+test("R359.5 mixed Task cannot stage update before native read attestation",async()=>{
+ const f=pins(),calls:string[]=[];
+ const reg=new TrustedEffectStagingTaskRegistry();
+ reg.bindTask({...f.binding,operation:"read_then_update",
+  effectStager:{stagedTool:"read_then_update",async stage(id){
+   calls.push("stage:"+id);return {provider_write_authorized:false};
+  },async attest(id,tool){calls.push("attest:"+tool+":"+id);}}
+ });
+ const contextMixed:AgentTaskContext={...context(),subtask:{...context().subtask,
+  approved_file_permissions:[{path,operation:"read_file"},
+   {path,operation:"update_file"}]}};
+ const port=reg.selectFor(contextMixed);
+ assert.equal(port.stagedTool,"read_then_update");
+ await port.stage("read-r359");
+ await assert.rejects(port.stage("write-too-early"),/out of sequence/u);
+ await assert.rejects(port.attest!("foreign","read_file"),/cannot attest/u);
+ await port.attest!("read-r359","read_file");
+ await port.stage("update-r359");
+ await port.attest!("update-r359","update_file");
+ assert.deepEqual(calls,["stage:read-r359","attest:read_file:read-r359",
+  "stage:update-r359","attest:update_file:update-r359"]);
+ await assert.rejects(port.stage("third"),/out of sequence/u);
+});
+test("R359.5 mixed A2A cannot reuse a mismatched or enlarged operation grant",()=>{
+ const f=pins(),reg=new TrustedEffectStagingTaskRegistry();
+ reg.bindTask({...f.binding,operation:"read_then_update",
+  effectStager:{stagedTool:"read_then_update",async stage(){},
+   async attest(){}}
+ });
+ const forged:AgentTaskContext={...context(),subtask:{...context().subtask,
+  approved_file_permissions:[{path,operation:"read_file"},
+   {path:"apps/backend/other.ts",operation:"update_file"}]}};
+ assert.throws(()=>reg.selectFor(forged),/differs from trusted owner/u);
+ assert.throws(()=>reg.selectFor(context()),/already dispatched/u);
+});

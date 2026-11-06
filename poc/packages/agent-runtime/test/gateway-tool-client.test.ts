@@ -256,3 +256,40 @@ test("R358 authenticated read-only Task stages before signed VP and Gateway exec
  await gateway.invoke("read_file",{branch:"feature/account-suspension",path:"source.ts"});
  assert.deepEqual(calls,["prepare","stage","execute"]);
 });
+
+test("R359.5 mixed owner client stages and independently attests both provider effects",async()=>{
+ const calls:string[]=[];
+ let index=0;
+ const client=new GatewayControlledToolClient({
+  gatewayBaseUrl:"http://gateway.local",agentRole:"backend",taskId:"mixed",
+  evidenceHandler:evidenceHandler(),
+  trustedEffectStager:{stagedTool:"read_then_update",
+   async stage(id){calls.push("stage:"+id);},
+   async attest(id,tool){calls.push("attest:"+tool+":"+id);}},
+  fetchFn:async(input,init)=>{
+   const url=String(input),body=JSON.parse(String(init?.body));
+   if(url.endsWith("/prepare")){
+    const req=++index;calls.push("prepare:"+req);
+    return Response.json({request_id:"r359-"+req,audience:"gateway",
+     challenge:"c",required_permission:{resource:"signed",operation:"read_file"},
+     expires_at:new Date(Date.now()+60000).toISOString()},{status:201});
+   }
+   calls.push("execute:"+body.request_id);
+   const read=body.request_id==="r359-1";
+   return Response.json({request_id:body.request_id,decision:"allow",
+    execution:{provider:"gitea",performed:true,
+     tool:read?"read_file":"update_file",
+     branch:"feature/account-suspension",path:"source.ts",
+     ...(read?{revision:"a".repeat(40),content:"old"}:
+      {commit_sha:"b".repeat(40)})}});
+  }
+ });
+ await client.invoke("read_file",{branch:"feature/account-suspension",path:"source.ts"});
+ await client.invoke("update_file",{branch:"feature/account-suspension",
+  path:"source.ts",content:"new"});
+ assert.deepEqual(calls,["prepare:1","stage:r359-1","execute:r359-1",
+  "attest:read_file:r359-1","prepare:2","stage:r359-2","execute:r359-2",
+  "attest:update_file:r359-2"]);
+ await assert.rejects(client.invoke("run_tests",{branch:"feature/account-suspension"}),
+  /Mixed native Task supports only/u);
+});

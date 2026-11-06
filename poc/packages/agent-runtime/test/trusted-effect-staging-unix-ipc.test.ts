@@ -220,3 +220,31 @@ test("R332 strict role stage refuses untagged legacy Task without granting effec
   await server.close();await rm(dir,{recursive:true,force:true});
  }
 });
+
+test("R359.5 two authenticated Unix IPC stages require separate independent evidence acks",async()=>{
+ const x=await fixtures();
+ const calls:string[]=[];
+ try{
+  const mixed={...pins,operation:"read_then_update" as const};
+  x.owner.bindTask(runtime,{stagedTool:"read_then_update",
+   async stage(requestId){calls.push("stage:"+requestId);},
+   async attest(requestId,tool){calls.push("attest:"+tool+":"+requestId);}
+  });
+  await x.client.bindTask(mixed);
+  const ctx:AgentTaskContext={...task(),subtask:{...task().subtask,
+   approved_file_permissions:[{path,operation:"read_file"},
+    {path,operation:"update_file"}]}};
+  const port=x.agent.selectFor(ctx);
+  await port.stage("r359-read");
+  await assert.rejects(port.stage("r359-premature"),/out of sequence/u);
+  await assert.rejects(port.attest!("r359-read","update_file"),/cannot attest/u);
+  await port.attest!("r359-read","read_file");
+  await port.stage("r359-update");
+  await port.attest!("r359-update","update_file");
+  await assert.rejects(port.stage("r359-third"),/out of sequence/u);
+  assert.deepEqual(calls,["stage:r359-read","attest:read_file:r359-read",
+   "stage:r359-update","attest:update_file:r359-update"]);
+  await assert.rejects(x.remote.attest(runtime,"r359-update","update_file"),
+   /Authenticated private effect operation denied/u);
+ }finally{await x.close();}
+});

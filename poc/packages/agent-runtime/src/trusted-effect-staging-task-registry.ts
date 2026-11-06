@@ -29,7 +29,7 @@ export interface TrustedEffectTaskOwnerPins {
   childCredentialId:string;
   presenterId:string;
   branch:string;
-  operation:"read_file"|"update_file"|"run_tests";
+  operation:"read_file"|"update_file"|"run_tests"|"read_then_update";
   /** Required for a pinned read or update; never model provided. */
   path?:string;
   /** Owner-side gateway stager, permanently bound to its original request store. */
@@ -40,6 +40,10 @@ interface Entry {
  readonly stager:TrustedEffectStagingPort;
  state:"ready"|"selected"|"retired";
  attempted:boolean;
+ /** Private read->CAS sequencing: no agent supplied claim can skip attestation. */
+ mixedPhase:"read_ready"|"read_pending"|"read_attested"|
+  "update_pending"|"finished"|"failed";
+ mixedRequest?:string;
 }
 export class TrustedEffectStagingTaskRegistry {
  readonly #entries=new Map<string,Entry>();
@@ -52,12 +56,15 @@ export class TrustedEffectStagingTaskRegistry {
      !ID.test(input.planTaskId)||!ID.test(input.childCredentialId)||
      !DID.test(input.presenterId)||
      !["backend","frontend","test"].includes(input.role)||
-     !["read_file","update_file","run_tests"].includes(input.operation)||
-     typeof input.effectStager?.stage!=="function")
+     !["read_file","update_file","run_tests","read_then_update"].includes(input.operation)||
+     typeof input.effectStager?.stage!=="function"||
+     (input.operation==="read_then_update"&&
+      (input.effectStager.stagedTool!=="read_then_update"||
+       typeof input.effectStager.attest!=="function")))
    deny("exact trusted owner Task/Child and one-shot effect port required");
   try{validatePrivateApprovedBranch(input.branch);}
   catch{deny("invalid owner-pinned feature branch");}
-  if(input.operation==="update_file"||input.operation==="read_file"){
+  if(["update_file","read_file","read_then_update"].includes(input.operation)){
    if(typeof input.path!=="string"||!PATH.test(input.path)||
       input.path.startsWith("/")||input.path.includes("//")||
       input.path.split("/").some(p=>p==="."||p===".."||!p))
@@ -79,7 +86,8 @@ export class TrustedEffectStagingTaskRegistry {
     operation:input.operation,
     ...(input.path!==undefined?{path:input.path}:{})
    }),
-   stager:input.effectStager,state:"ready",attempted:false
+   stager:input.effectStager,state:"ready",attempted:false,
+   mixedPhase:"read_ready"
   });
  }
 
@@ -102,7 +110,13 @@ export class TrustedEffectStagingTaskRegistry {
      context.delegation_evidence?.credential_id!==p.childCredentialId||
      context.delegation_evidence?.presenter_id!==p.presenterId||
      !Array.isArray(hints)||
-     (p.operation==="update_file"||p.operation==="read_file"
+     (p.operation==="read_then_update"
+       ? p.role==="test"||hints.length!==2||
+         !hints.some(row=>row?.operation==="read_file"&&row.path===p.path)||
+         !hints.some(row=>row?.operation==="update_file"&&row.path===p.path)||
+         !Array.isArray(sub.relevant_paths)||
+         sub.relevant_paths.length!==1||sub.relevant_paths[0]!==p.path
+       : p.operation==="update_file"||p.operation==="read_file"
        ? !hints.some(row=>row?.operation===p.operation&&row.path===p.path)||
          !Array.isArray(sub.relevant_paths)||
          !sub.relevant_paths.includes(p.path!)
@@ -111,14 +125,39 @@ export class TrustedEffectStagingTaskRegistry {
   return Object.freeze({
    stagedTool:p.operation,
    stage:async(requestId:string):Promise<unknown>=>{
-    if(this.#retired||b.state!=="selected"||b.attempted)
+    if(this.#retired||b.state!=="selected"||
+       (p.operation!=="read_then_update"&&b.attempted))
      deny("one-shot owner effect already consumed or retired");
-    // Reserve BEFORE checking the untrusted Gateway request ID; owner
-    // preflight subsequently checks the original PreparedRequestRecord.
+    if(p.operation==="read_then_update"){
+      const phase=b.mixedPhase;
+      if(phase!=="read_ready"&&phase!=="read_attested")
+       deny("mixed effect out of sequence or previous evidence missing");
+      // Burn the phase BEFORE any asynchronous authenticated owner call.
+      b.mixedPhase=phase==="read_ready"?"read_pending":"update_pending";
+      b.mixedRequest=requestId;
+      if(typeof requestId!=="string"||!ID.test(requestId)){
+       b.mixedPhase="failed";deny("malformed mixed request ID");
+      }
+      try{return await b.stager.stage(requestId);}
+      catch(error){b.mixedPhase="failed";throw error;}
+    }
     b.attempted=true;
     if(typeof requestId!=="string"||!ID.test(requestId))
      deny("malformed Gateway request ID");
     return b.stager.stage(requestId);
+   },
+   attest:async(requestId:string,tool:"read_file"|"update_file"):Promise<void>=>{
+    if(this.#retired||b.state!=="selected"||
+       p.operation!=="read_then_update"||
+       (b.mixedPhase!=="read_pending"&&b.mixedPhase!=="update_pending")||
+       !ID.test(requestId)||requestId!==b.mixedRequest||
+       tool!==(b.mixedPhase==="read_pending"?"read_file":"update_file")||
+       typeof b.stager.attest!=="function")
+     deny("mixed native effect cannot attest out of order or without request");
+    const phase=b.mixedPhase;
+    b.mixedPhase="failed"; // ambiguous observer receipt is terminal
+    await b.stager.attest(requestId,tool);
+    b.mixedPhase=phase==="read_pending"?"read_attested":"finished";
    }
   });
  }

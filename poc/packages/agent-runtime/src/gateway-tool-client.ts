@@ -23,7 +23,9 @@ export type SpecializedToolName = (typeof SPECIALIZED_TOOL_NAMES)[number];
 export interface TrustedEffectStagingPort {
   stage(requestId:string):Promise<unknown>;
   /** Optional exact read-only effect pin from the authenticated Task registry. */
-  stagedTool?:"read_file"|"update_file"|"run_tests";
+  stagedTool?:"read_file"|"update_file"|"run_tests"|"read_then_update";
+  /** Owner-only independent native evidence confirmation, never model data. */
+  attest?(requestId:string,tool:"read_file"|"update_file"):Promise<void>;
 }
 
 export interface GatewayControlledToolClientConfig {
@@ -136,6 +138,10 @@ export class GatewayControlledToolClient {
     this.#signal?.throwIfAborted();
     // No authority-only create_file executor exists. Never silently fall
     // through to a legacy provider write when native owner mode is selected.
+    if(this.#trustedEffectStager?.stagedTool==="read_then_update"&&
+       tool!=="read_file"&&tool!=="update_file")
+      throw new ControlledToolError("authorization_denied",
+        "Mixed native Task supports only exact read_file and update_file");
     if(this.#trustedEffectStager&&tool==="create_file")
       throw new ControlledToolError("authorization_denied",
         "Authority-only create_file has no trusted owner effect executor");
@@ -200,11 +206,13 @@ export class GatewayControlledToolClient {
     // R358: the authenticated owner may additionally select one read-only
     // flight. Legacy mutation/Runner ports keep their previous behavior.
     // A read in an update Task is NOT silently converted into a second flight.
+    const mixed=this.#trustedEffectStager?.stagedTool==="read_then_update";
     const ownerRead=tool==="read_file"&&
-      this.#trustedEffectStager?.stagedTool==="read_file";
+      (this.#trustedEffectStager?.stagedTool==="read_file"||mixed);
     const ownerWrite=(tool==="update_file"||tool==="run_tests")&&
       (this.#trustedEffectStager?.stagedTool===undefined||
-       this.#trustedEffectStager?.stagedTool===tool);
+       this.#trustedEffectStager?.stagedTool===tool||
+       (mixed&&tool==="update_file"));
     if(this.#trustedEffectStager&&(ownerRead||ownerWrite)){
       try{
         await this.#trustedEffectStager.stage(prepared.request_id);
@@ -309,6 +317,30 @@ export class GatewayControlledToolClient {
       );
     }
 
+    // R359.5: a model/HTTP claim cannot advance a mixed Task. Check the
+    // exact native Gitea result, then ask the authenticated owner to
+    // INDEPENDENTLY inspect the original provider receipt and seal it.
+    // If this fails, the one-use owner slot remains terminally consumed.
+    if(mixed){
+      const observed=execution!==null&&typeof execution==="object"
+        ? execution as Record<string,unknown>:null;
+      const revision=tool==="read_file"?observed?.revision:observed?.commit_sha;
+      if(!observed||observed.provider!=="gitea"||
+         observed.performed!==true||observed.tool!==tool||
+         observed.branch!==args.branch||observed.path!==args.path||
+         typeof revision!=="string"||!/^[a-f0-9]{40}$/u.test(revision)||
+         typeof this.#trustedEffectStager?.attest!=="function")
+        throw new ControlledToolError("authorization_denied",
+          "Mixed native effect lacks exact Gitea execution receipt");
+      try{
+        await this.#trustedEffectStager.attest(prepared.request_id,tool as
+          "read_file"|"update_file");
+      }catch{
+        throw new ControlledToolError("tool_unavailable",
+          "Trusted independent effect attestation failed");
+      }
+      this.#signal?.throwIfAborted();
+    }
     if(tool==="read_file"&&this.#onTrustedDiscoveryRead){
       // A 200 from an untrusted proxy is not an ALLOW. Require exact
       // Gateway decision/request match before private source capture.

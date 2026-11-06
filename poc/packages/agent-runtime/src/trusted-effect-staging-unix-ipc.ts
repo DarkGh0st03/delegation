@@ -200,7 +200,7 @@ function validPins(value:unknown):value is PublicPins{
     typeof v.presenterId!=="string"||
     typeof v.branch!=="string"||
     !["backend","frontend","test"].includes(v.role as string)||
-    !["read_file","update_file","run_tests"].includes(v.operation as string))
+    !["read_file","update_file","run_tests","read_then_update"].includes(v.operation as string))
   return false;
  return v.operation==="run_tests" ? !("path" in v)
   :typeof v.path==="string";
@@ -209,7 +209,10 @@ function validPins(value:unknown):value is PublicPins{
 /** Kept in the privileged owner process. Cannot be created by A2A payload. */
 export class TrustedOwnerEffectStagingRegistry{
  readonly #entries=new Map<string,{
-  port:TrustedEffectStagingPort;used:boolean;role?:Role
+  port:TrustedEffectStagingPort;used:boolean;role?:Role;
+  mixedPhase:"read_ready"|"read_pending"|"read_attested"|
+   "update_pending"|"finished"|"failed";
+  mixedRequest?:string
  }>();
  #retired=false;
  bindTask(runtimeTaskId:string,stager:TrustedEffectStagingPort,role?:Role):void{
@@ -218,28 +221,60 @@ export class TrustedOwnerEffectStagingRegistry{
      (role!==undefined&&!ROLES.includes(role))||
      this.#entries.has(runtimeTaskId))
    deny("owner staging requires unique pre-approved Task and concrete port");
-  this.#entries.set(runtimeTaskId,{port:stager,used:false,...(role?{role}:{})});
+  if(stager.stagedTool==="read_then_update"&&
+     typeof stager.attest!=="function")
+   deny("mixed owner Task lacks independent attestation port");
+  this.#entries.set(runtimeTaskId,{port:stager,used:false,
+   mixedPhase:"read_ready",...(role?{role}:{})});
  }
  async stage(runtimeTaskId:string,requestId:string,expectedRole?:Role):Promise<void>{
   const e=this.#entries.get(runtimeTaskId);
-  if(this.#retired||!e||e.used||
+  if(this.#retired||!e||
+     (e.port.stagedTool==="read_then_update"
+       ? e.mixedPhase!=="read_ready"&&e.mixedPhase!=="read_attested"
+       : e.used)||
      (expectedRole!==undefined&&
        (!ROLES.includes(expectedRole)||e.role!==expectedRole))||
      typeof requestId!=="string"||!REQUEST.test(requestId))
    deny("unknown, consumed or malformed owner staging request (including wrong role)");
   // Reject a cross-role HMAC stage WITHOUT consuming the real Task's
   // one-shot staging slot. Only a correct role can reserve the provider.
-  e.used=true; // terminal on ambiguous network or provider outcome
-  await e.port.stage(requestId); // the owner stage checks SAME prepared request store
+  if(e.port.stagedTool==="read_then_update"){
+   const phase=e.mixedPhase;
+   e.mixedPhase=phase==="read_ready"?"read_pending":"update_pending";
+   e.mixedRequest=requestId;
+   try{await e.port.stage(requestId);}
+   catch(error){e.mixedPhase="failed";throw error;}
+  }else{
+   e.used=true; // terminal on ambiguous network or provider outcome
+   await e.port.stage(requestId);
+  }
+ }
+ async attest(runtimeTaskId:string,requestId:string,
+  tool:"read_file"|"update_file",expectedRole?:Role):Promise<void>{
+  const e=this.#entries.get(runtimeTaskId);
+  if(this.#retired||!e||e.port.stagedTool!=="read_then_update"||
+     typeof e.port.attest!=="function"||
+     (expectedRole!==undefined&&e.role!==expectedRole)||
+     !REQUEST.test(requestId)||e.mixedRequest!==requestId||
+     (e.mixedPhase!=="read_pending"&&e.mixedPhase!=="update_pending")||
+     tool!==(e.mixedPhase==="read_pending"?"read_file":"update_file"))
+   deny("mixed native effect is not ready for independent attestation");
+  const phase=e.mixedPhase;
+  e.mixedPhase="failed"; // no repeated attestation after ambiguous outcomes
+  await e.port.attest(requestId,tool);
+  e.mixedPhase=phase==="read_pending"?"read_attested":"finished";
  }
  retireFor(runtimeTaskId:string):void{
   const e=this.#entries.get(runtimeTaskId);
   if(!e)deny("unknown owner Task");
-  e.used=true;
+  e.used=true;e.mixedPhase="failed";
  }
  retireAll():void{
   this.#retired=true;
-  for(const e of this.#entries.values())e.used=true;
+  for(const e of this.#entries.values()){
+   e.used=true;e.mixedPhase="failed";
+  }
  }
 }
 
@@ -260,13 +295,20 @@ export async function createTrustedOwnerEffectStagingServer(config:{
   onClose:()=>config.registry.retireAll(),
   handle:async body=>{
    const v=record(body);
-   if(!v||!exactKeys(v,"action,request_id,runtime_task_id")||
-      v.action!=="stage"||
-      typeof v.runtime_task_id!=="string"||
+   if(!v||typeof v.runtime_task_id!=="string"||
       typeof v.request_id!=="string")deny("invalid owner stage request");
-   await config.registry.stage(v.runtime_task_id,v.request_id,
-    config.expectedRole);
-   return {ok:true,status:"owner_intent_reserved_not_executed"};
+   if(exactKeys(v,"action,request_id,runtime_task_id")&&v.action==="stage"){
+    await config.registry.stage(v.runtime_task_id,v.request_id,
+     config.expectedRole);
+    return {ok:true,status:"owner_intent_reserved_not_executed"};
+   }
+   if(exactKeys(v,"action,request_id,runtime_task_id,tool")&&
+      v.action==="attest"&&(v.tool==="read_file"||v.tool==="update_file")){
+    await config.registry.attest(v.runtime_task_id,v.request_id,v.tool,
+     config.expectedRole);
+    return {ok:true,status:"owner_native_effect_independently_attested"};
+   }
+   deny("invalid private owner action or attestation operation");
   }
  });
 }
@@ -284,6 +326,17 @@ export async function connectTrustedOwnerEffectStagingClient(
    if(!exactKeys(v,"ok,status")||
       v.status!=="owner_intent_reserved_not_executed")
     deny("missing authenticated owner reservation acknowledgement");
+  },
+  async attest(runtimeTaskId:string,requestId:string,
+   tool:"read_file"|"update_file"):Promise<void>{
+   if(!DISPATCH.test(runtimeTaskId)||!REQUEST.test(requestId)||
+      !["read_file","update_file"].includes(tool))
+    deny("malformed agent attestation or Gateway request ID");
+   const v=await channel.send({action:"attest",runtime_task_id:runtimeTaskId,
+    request_id:requestId,tool});
+   if(!exactKeys(v,"ok,status")||
+      v.status!=="owner_native_effect_independently_attested")
+    deny("missing independent owner attestation acknowledgement");
   }
  });
 }
@@ -292,7 +345,8 @@ export async function connectTrustedOwnerEffectStagingClient(
 export async function createTrustedEffectAgentBindingServer(config:{
  socketPath:string;secretFile:string;
  registry:TrustedEffectStagingTaskRegistry;
- ownerStageClient:Awaited<ReturnType<typeof connectTrustedOwnerEffectStagingClient>>;
+ ownerStageClient:Pick<Awaited<ReturnType<typeof connectTrustedOwnerEffectStagingClient>>,"stage"> &
+  Partial<Pick<Awaited<ReturnType<typeof connectTrustedOwnerEffectStagingClient>>,"attest">>;
  /** Production agents pin their own role before accepting owner Task binds. */
  expectedRole?:"backend"|"frontend"|"test";
 }){
@@ -313,8 +367,17 @@ export async function createTrustedEffectAgentBindingServer(config:{
     const pins=v.pins;
     if(config.expectedRole!==undefined&&pins.role!==config.expectedRole)
      deny("owner Task role differs from local Agent host role");
+    if(pins.operation==="read_then_update"&&
+       typeof config.ownerStageClient.attest!=="function")
+     deny("mixed Task needs original private independent attestation channel");
     config.registry.bindTask({...pins,
-     effectStager:{stage:async requestId=>{
+     effectStager:{
+      ...(pins.operation==="read_then_update"
+       ?{stagedTool:"read_then_update" as const,
+         attest:async(requestId:string,tool:"read_file"|"update_file")=>{
+          await config.ownerStageClient.attest!(pins.runtimeTaskId,requestId,tool);
+         }}:{}),
+      stage:async requestId=>{
       await config.ownerStageClient.stage(pins.runtimeTaskId,requestId);
       // This private ACK never claims a provider write.
       return {provider_write_authorized:false};
