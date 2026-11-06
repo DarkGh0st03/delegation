@@ -123,6 +123,74 @@ test("R350.13 trusted feature Planning permissions never authorize main read",()
   }
 });
 
+
+/** End-to-end ADK read-function result regression for the signed source
+ * branch. This uses a scripted model and in-process read port, no paid API. */
+test("R350.14 ADK Planner accepts verified feature read, refuses main provider substitution",async()=>{
+  const workBranch="feature/invoice-sort";
+  const feature={...snapshot,planning_branch:workBranch};
+  const authorityDraft={requested_permissions:[
+    {operation:"update_file",resource_type:"file",path:FILE},
+    {operation:"run_tests",resource_type:"branch",path:null}
+  ],assumptions:[],uncertainties:[]};
+  class FeatureReadScriptedPlanner extends BaseLlm{
+    requests:LlmRequest[]=[];
+    constructor(){super({model:"offline-r35014-feature-source"});}
+    override async *generateContentAsync(request:LlmRequest):
+      AsyncGenerator<LlmResponse,void>{
+      this.requests.push(request);
+      if(this.requests.length===1){
+        yield {content:{role:"model",parts:[{functionCall:{
+          id:"feature-read-1",name:"read_file",
+          args:{branch:workBranch,path:FILE}
+        }}]}};
+      }else{
+        yield {content:{role:"model",parts:[{text:JSON.stringify(authorityDraft)}]}};
+      }
+    }
+    override connect(_request:LlmRequest):Promise<BaseLlmConnection>{
+      return Promise.reject(Error("No live model allowed"));
+    }
+  }
+  const observed:string[]=[];
+  const readPort={
+    async invoke(tool:string,args:Record<string,unknown>){
+      assert.equal(tool,"read_file");
+      assert.deepEqual(args,{branch:workBranch,path:FILE});
+      observed.push("read");
+      return {provider:"gitea",performed:true,tool,branch:workBranch,
+        path:FILE,revision:SHA,content:"export const invoices = [];\n"};
+    }
+  };
+  const model=new FeatureReadScriptedPlanner(),events:any[]=[];
+  const planner=new TrustedAdkReadOnlyPlanner({
+    snapshot:feature,requirement:"Fix invoices in the reviewed feature branch",
+    workBranch,agents,readPort,model,planId:"r35014-feature-authority",
+    maxModelTurns:3,maxProposalRevisions:0,
+    onObservation:event=>events.push(event)
+  });
+  const result=await planner.proposeAuthority();
+  assert.equal(result.status,"unapproved_authority_proposal");
+  assert.equal(result.verified_source_reads,1);
+  assert.equal(result.proposal.branch,workBranch);
+  assert.deepEqual(result.proposal.requested_permissions.map(p=>p.operation),
+    ["update_file","run_tests"]);
+  assert.deepEqual(observed,["read"]);
+  assert.equal(model.requests.length,2);
+  assert.equal(events.filter(e=>e.kind==="read"&&e.status==="verified").length,1);
+  const denied=new TrustedAdkReadOnlyPlanner({
+    snapshot:feature,requirement:"Fix invoices in the reviewed feature branch",
+    workBranch,agents,model:new FeatureReadScriptedPlanner(),
+    readPort:{async invoke(){return {
+      provider:"gitea",performed:true,tool:"read_file",
+      branch:"main",path:FILE,revision:SHA,content:"foreign baseline"
+    };}},
+    planId:"r35014-main-substitution",maxModelTurns:3,maxProposalRevisions:0
+  });
+  await assert.rejects(denied.proposeAuthority(),
+    /no verified read-only grounded proposal/);
+});
+
 class ScriptedPlanner extends BaseLlm {
   requests:LlmRequest[]=[];
   constructor(){super({model:"offline-planner-with-gateway"});}

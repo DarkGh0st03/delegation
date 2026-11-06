@@ -684,7 +684,7 @@ export class TrustedAdkReadOnlyPlanner {
           verified();
           return {ok:true,revision:result.revision,default_branch:"main"};
         }
-        if(result.path!==args.path||result.branch!=="main")
+        if(result.path!==args.path||result.branch!==sourceBranch)
           throw Error("provider path mismatched");
         if(tool==="list_directory"){
           if(!Array.isArray(result.entries)||result.entries.length>200)
