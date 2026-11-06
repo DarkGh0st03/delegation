@@ -563,7 +563,8 @@ try{
    backend_task_model_selected_after_branch:true,backend_dependency:branchTaskId,
    genuine_rust_backend_child_vp:true,child_hierarchy_depth:1,
    child_permissions_scoped_to_backend_file:true,
-   original_root_unchanged:true,operational_tasks:2,completed_tasks:1,
+   original_root_unchanged:true,operational_tasks:2,
+   completed_tasks:gate.stagedCompletedTaskCount,
    main_unsolved_unchanged:true,feature_mutation_not_yet_executed:!nativeBackendCas,
    backend_protected_a2a_completed:nativeBackendA2A,
    paid_model_calls:0
