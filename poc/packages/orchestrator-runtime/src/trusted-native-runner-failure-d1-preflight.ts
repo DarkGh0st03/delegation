@@ -30,23 +30,28 @@ const keys=["session_id","authority_digest","root_credential_id","task_id",
  "runtime_task_id","epoch","agent_did","credential_id",
  "request_id","request_fingerprint"] as const;
 function deny(s:string):never{throw Error("Native D1 failure preflight NO-GO: "+s);}
-export async function preflightNativeD1FailureCandidate(input:{
+type NativeFailedTestSource={
  coordinator:TrustedAuthorityOnlyExecutionCoordinator;
  childIssuer:TrustedAuthorityOnlyChildIssuer;
  gateway:TrustedAuthorityOnlyGatewayAdmissions;
  failureObserver:AuthenticatedRunnerFailureObserver;
  failedRunnerIntent:TrustedAuthorityOnlyRunnerIntent;
- candidate:{role:Role;permissions:readonly DelegatedPermission[]};
  nowMs?:()=>number;
-}):Promise<Readonly<{
- status:"native_d1_failure_source_preflight_only";
+};
+type NativeVerifiedFailedTest=Readonly<{
+ status:"native_test_failure_evidence_verified_only";
  failed_task_id:string;failed_runtime_task_id:string;
  original_session_id:string;tested_commit_sha:string;
  failed_phase:string;source_evidence_sha256:string;
- candidate_role:Role;candidate_permissions_sha256:string;
  recovery_authorized:false;child_credential_issued:false;
  gateway_task_completed:false;task_registered:false;
-}>>{
+}>;
+/** R355.3: independently observe a native Test FAIL WITHOUT preselecting
+ * a correction role or permissions. No Task/DC is admitted or completed.
+ * A2A/provider errors alone do not qualify as authenticated evidence. */
+export async function observeTrustedNativeTestFailure(
+ input:NativeFailedTestSource
+):Promise<NativeVerifiedFailedTest>{
  if(!(input?.coordinator instanceof TrustedAuthorityOnlyExecutionCoordinator)||
     !(input.childIssuer instanceof TrustedAuthorityOnlyChildIssuer)||
     !(input.gateway instanceof TrustedAuthorityOnlyGatewayAdmissions)||
@@ -83,45 +88,6 @@ export async function preflightNativeD1FailureCandidate(input:{
     child.authority_digest!==root.authority_digest||
     !isDeepStrictEqual(child.permissions,row.permissions))
    deny("failed Test/Child not bound to original signed Engineer root");
- const proposed=input.candidate;
- if(!proposed||!["backend","frontend","test"].includes(proposed.role)||
-    !Array.isArray(proposed.permissions)||proposed.permissions.length<1||
-    proposed.permissions.length>32)
-  deny("bounded, trusted owner-selected D1 candidate required");
- let effects=0;
- const seen=new Set<string>();
- for(const permission of proposed.permissions){
-  if(!permission||Object.keys(permission).sort().join(",")!=="operation,resource"||
-     typeof permission.resource!=="string"||
-     typeof permission.operation!=="string")
-   deny("malformed permission pair");
-  const key=JSON.stringify([permission.resource,permission.operation]);
-  if(seen.has(key)||!root.root_permissions.some(parent=>
-     giteaPermissionCovers(parent,permission)))
-   deny("proposed D1 permission exceeds original Engineer ceiling");
-  seen.add(key);
-  if(permission.operation==="run_tests"){
-   if(proposed.role!=="test"||permission.resource!==branchUri)
-    deny("branch Runner effect must be a signed Test Task");
-   effects++;continue;
-  }
-  if(!["read_file","update_file"].includes(permission.operation)||
-     proposed.role==="test")
-   deny("unsupported D1 operation for specialized role");
-  const prefix=branchUri+"/files/";
-  if(!permission.resource.startsWith(prefix))
-   deny("noncanonical file permission branch");
-  let file:string;
-  try{file=permission.resource.slice(prefix.length).split("/")
-    .map(decodeURIComponent).join("/");}
-  catch{deny("invalid encoded file scope");}
-  if(!file||file.startsWith("/")||file.includes("\\")||file.includes("%")||
-     file.split("/").some(s=>!s||s==="."||s==="..")||
-     canonicalFileUri(root.repository,root.branch,file)!==permission.resource)
-   deny("noncanonical D1 path");
-  if(permission.operation==="update_file")effects++;
- }
- if(effects!==1)deny("exactly one approved side effect per candidate Task");
  // The Gateway must independently re-read its ORIGINAL reserved flight.
  // An A2A or caller-supplied Test ID cannot manufacture this evidence.
  const nativeFlight=input.gateway.assertTrustedFailedRunnerFlight(
@@ -162,18 +128,76 @@ export async function preflightNativeD1FailureCandidate(input:{
     (input.nowMs??Date.now)()>=Date.parse(live.root_expires_at))
    deny("original authority changed while reading independent FAIL");
  return Object.freeze({
-  status:"native_d1_failure_source_preflight_only" as const,
+  status:"native_test_failure_evidence_verified_only" as const,
   failed_task_id:intent.task_id,failed_runtime_task_id:intent.runtime_task_id,
   original_session_id:root.session_id,
   tested_commit_sha:fail.tested_commit_sha,
   failed_phase:fail.first_failed_phase,
   source_evidence_sha256:fail.evidence_sha256,
-  candidate_role:proposed.role,
-  candidate_permissions_sha256:createHash("sha256")
-   .update(JSON.stringify(proposed.permissions)).digest("hex"),
   recovery_authorized:false as const,
   child_credential_issued:false as const,
   gateway_task_completed:false as const,
   task_registered:false as const
+ });
+}
+/** Original D1 admission path remains candidate-scoped and fail-closed.
+ * Its candidate does NOT influence the independent FAIL observation. */
+export async function preflightNativeD1FailureCandidate(input:
+ NativeFailedTestSource & {
+  candidate:{role:Role;permissions:readonly DelegatedPermission[]};
+ }):Promise<Readonly<Omit<NativeVerifiedFailedTest,"status"> & {
+  status:"native_d1_failure_source_preflight_only";
+  candidate_role:Role;candidate_permissions_sha256:string;
+ }>>{
+ if(!(input?.coordinator instanceof TrustedAuthorityOnlyExecutionCoordinator))
+  deny("original live Engineer required");
+ const root=input.coordinator.assertTrustedGatewayAuthorityBinding();
+ const branchUri=canonicalBranchUri(root.repository,root.branch);
+ const proposed=input.candidate;
+ if(!proposed||!["backend","frontend","test"].includes(proposed.role)||
+    !Array.isArray(proposed.permissions)||proposed.permissions.length<1||
+    proposed.permissions.length>32)
+  deny("bounded, trusted owner-selected D1 candidate required");
+ let effects=0;
+ const seen=new Set<string>();
+ for(const permission of proposed.permissions){
+  if(!permission||Object.keys(permission).sort().join(",")!=="operation,resource"||
+     typeof permission.resource!=="string"||
+     typeof permission.operation!=="string")
+   deny("malformed permission pair");
+  const key=JSON.stringify([permission.resource,permission.operation]);
+  if(seen.has(key)||!root.root_permissions.some(parent=>
+     giteaPermissionCovers(parent,permission)))
+   deny("proposed D1 permission exceeds original Engineer ceiling");
+  seen.add(key);
+  if(permission.operation==="run_tests"){
+   if(proposed.role!=="test"||permission.resource!==branchUri)
+    deny("branch Runner effect must be a signed Test Task");
+   effects++;continue;
+  }
+  if(!["read_file","update_file"].includes(permission.operation)||
+     proposed.role==="test")
+   deny("unsupported D1 operation for specialized role");
+  const prefix=branchUri+"/files/";
+  if(!permission.resource.startsWith(prefix))
+   deny("noncanonical file permission branch");
+  let file:string;
+  try{file=permission.resource.slice(prefix.length).split("/")
+    .map(decodeURIComponent).join("/");}
+  catch{deny("invalid encoded file scope");}
+  if(!file||file.startsWith("/")||file.includes("\\")||file.includes("%")||
+     file.split("/").some(s=>!s||s==="."||s==="..")||
+     canonicalFileUri(root.repository,root.branch,file)!==permission.resource)
+   deny("noncanonical D1 path");
+  if(permission.operation==="update_file")effects++;
+ }
+ if(effects!==1)deny("exactly one approved side effect per candidate Task");
+ const observed=await observeTrustedNativeTestFailure(input);
+ return Object.freeze({
+  ...observed,
+  status:"native_d1_failure_source_preflight_only" as const,
+  candidate_role:proposed.role,
+  candidate_permissions_sha256:createHash("sha256")
+   .update(JSON.stringify(proposed.permissions)).digest("hex")
  });
 }
