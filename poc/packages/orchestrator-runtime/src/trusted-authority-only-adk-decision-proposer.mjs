@@ -174,6 +174,8 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
     independent_runner_failure:{
      failed_phase:this.verifiedFailure.failed_phase,
      source_evidence_sha256:this.verifiedFailure.source_evidence_sha256,
+     ...(this.verifiedFailure.typecheck_error_codes?.length?
+      {typecheck_error_codes:[...this.verifiedFailure.typecheck_error_codes]}:{}),
      status:'verified_failure_preflight_only_not_approval'
     }
    }:{})
