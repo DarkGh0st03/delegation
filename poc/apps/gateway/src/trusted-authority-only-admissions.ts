@@ -207,6 +207,24 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    deny("remote owner Task proof requires quiescent active Gateway");
   const bound=this.#tasks.get(runtimeTaskId);
   const child=this.#enrolledChildren.get(runtimeTaskId);
+  const mixed=this.#sequential.get(taskId);
+  // R361: the exact typed manifest may already be durably reserved before
+  // authenticated A2A/IPC prebind. Permit ONLY its untouched first state.
+  // A read-only sequence, active flight, intermediate receipt or final Task
+  // must never be eligible for a new remote binding.
+  const pristineMixed=mixed!==undefined&&
+    mixed.manifest.effect_plan?.join(",")==="read_file,update_file"&&
+    mixed.manifest.total_effects===2&&mixed.completed===0&&
+    mixed.latest_evidence_sha256===null&&mixed.active===undefined&&
+    mixed.readRevision===undefined&&mixed.readPath===undefined&&
+    mixed.manifest.session_id===root.session_id&&
+    mixed.manifest.task_id===taskId&&
+    mixed.manifest.runtime_task_id===runtimeTaskId&&
+    mixed.manifest.root_credential_id===root.root_credential_id&&
+    mixed.manifest.authority_digest===root.authority_digest&&
+    mixed.manifest.credential_id===child?.credential_id&&
+    mixed.manifest.epoch===bound?.row.epoch&&
+    SHA40.test(mixed.pinnedHead??"");
   if(!bound||!child||bound.row.task_id!==taskId||
      bound.row.session_id!==root.session_id||
      bound.row.authority_digest!==root.authority_digest||
@@ -220,7 +238,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      child.authority_digest!==root.authority_digest||
      child.session_id!==root.session_id||
      this.#now()>=Date.parse(child.expires_at)||
-     this.#flights.has(taskId)||this.#sequential.has(taskId)||
+     this.#flights.has(taskId)||(mixed!==undefined&&!pristineMixed)||
      this.#completed.has(taskId)||
      bound.row.depends_on.some(dep=>!this.#completed.has(dep)))
    deny("remote owner Task/Child not enrolled, expired or not ready");

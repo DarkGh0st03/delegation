@@ -1,5 +1,5 @@
 {
-  "checkpoint": "R361.1",
+  "checkpoint": "R361.1a",
   "baseline_native_sha": "a00bf7891a31d6de3e2331f6b86d3d230d03ed3a",
   "objective": "Actual Coordinator/Child owner HMAC Unix IPC -> GatewayControlledToolClient -> signed native Rust VP -> real OPA and disposable Gitea read then CAS",
   "test": "poc/packages/orchestrator-runtime/test/r361-native-owner-ipc-gateway-e2e.mjs",
@@ -7,5 +7,7 @@
   "remote_a2a_network_covered": false,
   "adk_model_inference_covered": false,
   "paid_model_calls_allowed": false,
-  "status": "requested; outcome requires dedicated GitHub Actions run"
+  "status": "requested; no PASS assumed",
+  "previous_sha": "9729d4fbb94777b68421c98df0ae51430abfe537",
+  "correction": "Narrow allow for the untouched, durably pinned mixed Task manifest in original owner IPC prebind; deny after any native effect"
 }

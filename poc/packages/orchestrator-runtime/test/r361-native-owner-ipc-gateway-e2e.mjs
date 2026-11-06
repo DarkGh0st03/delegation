@@ -409,6 +409,10 @@ try{
   assert.equal(read.tool,"read_file");
   assert.equal(read.content,oldContent);
   assert.equal(read.revision,baseRevision);
+  // After a native read receipt the same Task can NOT be rebound: this
+  // owner-only projection is legal solely before its first native flight.
+  assert.throws(()=>gate.assertTrustedOwnerRemoteEffectBinding(
+   taskId,runtimeTaskId),/not enrolled, expired or not ready/u);
   assert.equal(gatewayCasWrites,0);
   assert.equal(gate.stagedCompletedTaskCount,0);
   assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
