@@ -120,7 +120,8 @@ export async function enrollFirstNativeD1ChildAtGateway(input:{
  if(!Number.isSafeInteger(now)||!Number.isSafeInteger(seconds)||
     seconds<1)
    deny("original root no longer has time for new Child issuance");
- const runtimeTaskId="dispatch_"+randomBytes(16).toString("hex");
+ // Native ADK/A2A owner and private binder require exactly 22 suffix chars.
+ const runtimeTaskId="dispatch_"+randomBytes(11).toString("hex");
  // Gateway chooses its actual bound row from the SAME live Coordinator.
  // A denial here cannot proceed to Rust issuance.
  const bound=await input.gateway.bindTrustedTask(

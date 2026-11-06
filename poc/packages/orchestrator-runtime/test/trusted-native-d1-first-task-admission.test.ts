@@ -213,7 +213,7 @@ test("R342 original D1 Task is bound, native Child issued, Gateway enrolled, no 
    bindTrustedTask:async(taskId:string,runtimeTaskId:string,role:string)=>{
     events.push("gateway_bind");
     assert.equal(taskId,a.task_id);
-    assert.match(runtimeTaskId,/^dispatch_[a-f0-9]{32}$/);
+    assert.match(runtimeTaskId,/^dispatch_[a-f0-9]{22}$/);
     assert.equal(role,"backend");
     return {status:"gateway_task_bound_preflight_only",
      task_id:taskId,runtime_task_id:runtimeTaskId,
@@ -223,7 +223,7 @@ test("R342 original D1 Task is bound, native Child issued, Gateway enrolled, no 
    enrollTrustedIssuedChild:async(taskId:string,runtimeTaskId:string)=>{
     events.push("gateway_enroll");
     assert.equal(taskId,a.task_id);
-    assert.match(runtimeTaskId,/^dispatch_[a-f0-9]{32}$/);
+    assert.match(runtimeTaskId,/^dispatch_[a-f0-9]{22}$/);
     return {status:"gateway_child_enrolled_preflight_only",
      task_id:taskId,runtime_task_id:runtimeTaskId,
      credential_id:"child-r342",gateway_execution_authorized:false};
