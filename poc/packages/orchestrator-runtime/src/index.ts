@@ -27,6 +27,7 @@ export * from "./trusted-a2a-observer.ts";
 export * from "./trusted-approved-a2a-dispatcher.ts";
 export * from "./trusted-approved-child-issuer.ts";
 export * from "./trusted-adk-planner.ts";
+export * from "./authority-only-planning-proposal.ts";
 export * from "./trusted-planning-gateway-port.ts";
 export * from "./trusted-planning-review-gate.ts";
 export * from "./trusted-gemini-execution-readiness.ts";
