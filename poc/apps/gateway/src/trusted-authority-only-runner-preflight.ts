@@ -93,6 +93,15 @@ export class TrustedAuthorityOnlyRunnerPreflight{
   await this.#journal.assertAttempted(intent);
   return intent;
  }
+ /** Original successful Runner intent plus its durably verified receipt digest.
+  * Read-only; cannot reopen the failed-Runner recovery path or launch Docker. */
+ async getCompletedIntentForOwnerTask(runtimeTaskId:string){
+  const intent=this.#byRuntimeTask.get(runtimeTaskId);
+  if(!intent||intent.runtime_task_id!==runtimeTaskId)
+   deny("no original completed Runner Task intent");
+  const verified_evidence_sha256=await this.#journal.assertCompleted(intent);
+  return Object.freeze({intent,verified_evidence_sha256});
+ }
  /** Only the ORIGINAL in-memory Prepare may retrieve this immutable intent. */
  getReservedIntent(record:PreparedRequestRecord):TrustedAuthorityOnlyRunnerIntent{
   const intent=this.#reserved.get(record);

@@ -166,7 +166,7 @@ export class DurableAuthorityOnlyRunnerIntentJournal{
   * R337: independent, read-only exact-Task proof of the original one-shot
   * Runner POST reservation. A prepared intent alone is insufficient.
   */
- async assertAttempted(intent:TrustedAuthorityOnlyRunnerIntent):Promise<void>{
+ async #assertOriginalAttempt(intent:TrustedAuthorityOnlyRunnerIntent):Promise<void>{
   await this.assertReserved(intent);
   const actual=await this.#read(this.#filename(intent,"attempt"));
   const expected={
@@ -181,6 +181,28 @@ export class DurableAuthorityOnlyRunnerIntentJournal{
   };
   if(!isDeepStrictEqual(actual,expected))
    deny("Runner attempt differs from original immutable Test Task");
+ }
+ /** Reopens the original successful completion; never a FAIL/retry path. */
+ async assertCompleted(intent:TrustedAuthorityOnlyRunnerIntent):Promise<string>{
+  await this.#assertOriginalAttempt(intent);
+  const raw=await this.#read(this.#filename(intent,"completed"));
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))
+   deny("no original successful Runner completion");
+  const row=raw as Record<string,unknown>;
+  const digest=row.verified_evidence_sha256;
+  if(typeof digest!=="string"||!SHA64.test(digest)||
+     !isDeepStrictEqual(row,{
+      schema:"authority-only-runner-completion-v1",
+      session_id:intent.session_id,task_id:intent.task_id,
+      request_id:intent.request_id,
+      request_fingerprint:intent.request_fingerprint,
+      verified_evidence_sha256:digest
+     }))
+   deny("successful Runner completion differs from original Test attempt");
+  return digest;
+ }
+ async assertAttempted(intent:TrustedAuthorityOnlyRunnerIntent):Promise<void>{
+  await this.#assertOriginalAttempt(intent);
   // A single Task can never simultaneously have PASS and FAIL proof.
   try{
    await lstat(join(this.#dir,this.#filename(intent,"completed")));

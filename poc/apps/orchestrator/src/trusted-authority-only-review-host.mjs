@@ -492,8 +492,9 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
        deny('PR tested HEAD requires latest original Test');
      }
      completionFlight=(async()=>{
-      const intent=await nativeEffectBinding.runner
-       .getAttemptedIntentForOwnerTask(input.runtimeTaskId);
+      const completed=await nativeEffectBinding.runner
+       .getCompletedIntentForOwnerTask(input.runtimeTaskId);
+      const {intent}=completed;
       const child=childIssuer.assertTrustedIssuedChild(input.taskId,operationalCoordinator);
       const expected=Object.fromEntries([
        'session_id','authority_digest','root_credential_id','task_id',
@@ -518,6 +519,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          operationalCoordinator.registeredTaskCount!==taskCount||
          proof.repository!==intent.repository||proof.branch!==intent.branch||
          proof.tested_commit_sha!==intent.expected_head_sha||
+         proof.completion.evidence_sha256!==completed.verified_evidence_sha256||
          proof.project_tests!=='pass'||proof.researcher_acceptance!=='pass'||
          !Object.keys(expected).every(k=>proof.completion[k]===expected[k]))
        deny('PR tested HEAD changed during independent verification');

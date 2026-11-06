@@ -142,3 +142,26 @@ test("R337 exact durable POST attempt is required and PASS excludes FAIL",async(
    /successful Runner completion excludes a conflicting FAIL receipt/);
  });
 });
+
+
+test("R353.1 completed Test read requires original POST and exact protected completion",async()=>{
+ await fixture(async({directory,journal})=>{
+  await journal.reserve(intent);
+  await assert.rejects(journal.assertCompleted(intent),/ENOENT/);
+  await journal.reserveAttempt(intent);
+  await assert.rejects(journal.assertCompleted(intent),/ENOENT/);
+  await journal.reserveCompletedEvidence(intent,"f".repeat(64));
+  assert.equal(await journal.assertCompleted(intent),"f".repeat(64));
+  const restarted=new DurableAuthorityOnlyRunnerIntentJournal(directory);
+  assert.equal(await restarted.assertCompleted(intent),"f".repeat(64));
+  await assert.rejects(journal.assertAttempted(intent),/excludes a conflicting FAIL/);
+  const name=(await readdir(directory)).find(n=>n.endsWith(".completed.json"))!;
+  const path=join(directory,name);
+  const original=JSON.parse(await readFile(path,"utf8"));
+  for(const patch of [{request_id:"foreign-request"},
+    {verified_evidence_sha256:"invalid"},{extra:"untrusted"}]){
+   await writeFile(path,JSON.stringify({...original,...patch})+"\n");
+   await assert.rejects(journal.assertCompleted(intent),/differs from original/);
+  }
+ });
+});
