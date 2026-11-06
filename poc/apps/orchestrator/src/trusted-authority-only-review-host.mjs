@@ -133,6 +133,15 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  const adaptiveInstructions=new Map();
  let branchAdmissionAttempted=false;
  const branchTaskPins=new Map(),branchStageAttempts=new Set();
+ // R357: a signed create_branch ceiling cannot admit a worker Child before
+ // the exact original root-owned branch has independent Gateway completion.
+ // Neither a preexisting provider branch nor a model/A2A report suffices.
+ function branchReadyForWorkers(){
+  const root=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+  if(!root.root_permissions.some(p=>p.operation==='create_branch'))return true;
+  return [...branchTaskPins.values()].some(pin=>
+   gatewayAttestedTaskIds.has(pin.task_id));
+ }
  let pullRequestAdmissionAttempted=false;
  const pullRequestTaskPins=new Map();
  const pullRequestStageAttempts=new Set();
@@ -279,6 +288,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          a2aStarting||a2aOwner?.phase==='failed_closed'||
          ++decisionCalls>8)
        deny('bounded owner Task decision requires active quiescent root');
+      if(!branchReadyForWorkers())
+       deny('Backend/Frontend/Test require independently completed original branch Task');
       // A registered Child or completed A2A report is NOT a verified
       // Gateway result. No new model turn until all earlier Tasks have
       // independently attested durable provider/Runner completion.
@@ -333,6 +344,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      if(closed||session.phase!=='operational'||taskStageFailed||
         gateway.phase!=='active'||taskStageFlight)
       deny('Task staging requires quiescent live owner, root and Gateway');
+     if(!branchReadyForWorkers())
+      deny('worker Child admission requires independently completed original branch Task');
      if(!fields(input,['task','runtimeTaskId','childParameters'])||
         !fields(input.task,['task_id','epoch','agent_id','depends_on','permissions'])||
         !fields(input.childParameters,['credential_id','credential_status',
