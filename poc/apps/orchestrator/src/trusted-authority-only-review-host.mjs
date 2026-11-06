@@ -555,7 +555,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         completionFlight||decisionFlight||d1FailurePreflightFlight||
         d1RepairAdmissionFlight||
         !fields(input,['model','sourceTestTaskId','sourceTestRuntimeTaskId',
-         'runtimeTaskId','childParameters']))
+         'runtimeTaskId']))
       deny('PR Task admission requires quiescent original owner and one decision');
      const pending=[...stagedTaskIds.values()].filter(p=>!gatewayAttestedTaskIds.has(p.task_id));
      if(pending.length&&!(d1RetestPassed&&pending.length===1&&
@@ -590,7 +590,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         !isDeepStrictEqual(choice.permissions,[permission])||
         !isDeepStrictEqual(choice.depends_on,[input.sourceTestTaskId]))
       deny('PR Task differs from exact owner grant or verified Test dependency');
-     // Reopen the actual receipt/HEAD after the model turn, before native issuance.
+     // Reopen the actual receipt/HEAD after the model turn, before root Task binding.
      const current=await executionHandle.inspectVerifiedPullRequestHead(source);
      const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
      if(current.tested_commit_sha!==first.tested_commit_sha||
@@ -598,12 +598,33 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
         live.root_credential_id!==before.root_credential_id||
         live.authority_digest!==before.authority_digest||
         operationalCoordinator.registeredTaskCount!==epoch-1)
-      deny('PR Task source changed before original Child issuance');
-     const staged=await executionHandle.stageTask({
-      task:{task_id:choice.task_id,epoch,agent_id:'orchestrator',
-       depends_on:[input.sourceTestTaskId],permissions:[permission]},
-      runtimeTaskId:input.runtimeTaskId,childParameters:input.childParameters
-     });
+      deny('PR Task source changed before original root Task binding');
+     let staged;
+     taskStageFlight=(async()=>{
+      const registered=await operationalCoordinator.registerTask({
+       session_id:live.session_id,requirement_sha256:live.requirement_sha256,
+       base_revision:live.base_revision,branch:live.branch,
+       task_id:choice.task_id,epoch,agent_id:'orchestrator',
+       depends_on:[input.sourceTestTaskId],permissions:[permission]});
+      const bound=await gateway.bindTrustedTask(
+       registered.task_id,input.runtimeTaskId,'orchestrator');
+      const after=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         after.root_credential_id!==before.root_credential_id||
+         bound.authority_digest!==before.authority_digest)
+       deny('PR root Task changed during original owner binding');
+      stagedTaskCount++;
+      stagedTaskIds.set(input.runtimeTaskId,Object.freeze({
+       task_id:registered.task_id,agent_id:'orchestrator',operation:'create_pull_request'}));
+      return Object.freeze({task_id:registered.task_id,runtime_task_id:input.runtimeTaskId,
+       epoch:registered.epoch,agent_id:'orchestrator',
+       credential_id:before.root_credential_id,gateway_execution_authorized:false});
+     })();
+     try{staged=await taskStageFlight;}
+     catch(error){taskStageFailed=true;
+      if(session.phase==='operational')await session.retireOperationalRoot();
+      throw error;
+     }finally{taskStageFlight=undefined;}
      const pin=Object.freeze({task_id:staged.task_id,
       runtime_task_id:staged.runtime_task_id,instruction:choice.instruction,
       source_test_task_id:input.sourceTestTaskId,
@@ -628,7 +649,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
      }
      pullRequestTaskPins.set(input.runtimeTaskId,pin);
      return Object.freeze({...staged,
-      status:'owner_pr_child_enrolled_no_provider_execution',
+      status:'owner_pr_root_task_bound_no_provider_execution',
       decision_source:'verified_test_adk_original_pr_task',
       instruction:pin.instruction,source_test_task_id:pin.source_test_task_id,
       tested_commit_sha:pin.tested_commit_sha,

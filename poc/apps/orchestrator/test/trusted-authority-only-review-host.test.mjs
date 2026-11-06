@@ -666,7 +666,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'failure-d1-effect','failure-d1-retest','failure-no-receipt','failure-model-denied',
  'pr','pr-denied','pr-invalid','pr-stale','pr-execute','pr-execute-stale',
  'pr-execute-opa-denied','pr-execute-vp-denied','pr-execute-no-stage',
- 'pr-execute-foreign-child','pr-execute-post-failure','pr-execute-race',
+ 'pr-execute-foreign-child','pr-execute-child-depth','pr-execute-post-failure','pr-execute-race',
  'pr-attest','pr-attest-closed','pr-attest-wrong-id','pr-attest-head-moved',
  'pr-attest-base-moved','pr-attest-before-execute'])test(
  mode.startsWith('pr')?
@@ -1543,8 +1543,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
        instruction:'Premature PR must not reach the model'});
       await assert.rejects(execution.proposeAndStageVerifiedPullRequestTask({
        model:early,sourceTestTaskId:'r3513-test',sourceTestRuntimeTaskId:testTask.runtimeTaskId,
-       runtimeTaskId:'dispatch_'+'P'.repeat(22),
-       childParameters:root('urn:r3532:premature-pr',29117,90)
+       runtimeTaskId:'dispatch_'+'P'.repeat(22)
       }),/independent completion of earlier work/);
       assert.equal(early.calls,0);
      }
@@ -1597,8 +1596,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
       })(candidate):new R351ScriptedDecision(candidate);
       const prInput={model:chooser,sourceTestTaskId:'r3513-test',
        sourceTestRuntimeTaskId:testTask.runtimeTaskId,
-       runtimeTaskId:'dispatch_'+'P'.repeat(22),
-       childParameters:root('urn:r3532:pr-child',29118,90)};
+       runtimeTaskId:'dispatch_'+'P'.repeat(22)};
       const issuedBefore=events.filter(e=>e==='native_child_fixture').length;
       if(['pr-denied','pr-invalid','pr-stale'].includes(mode)){
        await assert.rejects(execution.proposeAndStageVerifiedPullRequestTask(prInput),
@@ -1609,7 +1607,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
        assert.equal(coordinator.registeredTaskCount,3);
       }else{
        const admitted=await execution.proposeAndStageVerifiedPullRequestTask(prInput);
-       assert.equal(admitted.status,'owner_pr_child_enrolled_no_provider_execution');
+       assert.equal(admitted.status,'owner_pr_root_task_bound_no_provider_execution');
        assert.equal(admitted.agent_id,'orchestrator');
        assert.equal(admitted.epoch,4);
        assert.equal(admitted.tested_commit_sha,frontendSha);
@@ -1620,10 +1618,9 @@ for(const mode of ['missing','backend','frontend','test','failure',
        const row=coordinator.assertTrustedGatewayRegisteredTask(admitted.task_id);
        assert.deepEqual(row.permissions,[permission]);
        assert.deepEqual(row.depends_on,['r3513-test']);
-       const child=execution.childIssuer.assertTrustedIssuedChild(admitted.task_id,coordinator);
-       assert.equal(child.root_credential_id,binding.root_credential_id);
-       assert.equal(child.agent_did,'did:thesis:orchestrator');
-       assert.equal(events.filter(e=>e==='native_child_fixture').length,issuedBefore+1);
+       assert.throws(()=>execution.childIssuer.assertTrustedIssuedChild(admitted.task_id,coordinator));
+       assert.equal(admitted.credential_id,binding.root_credential_id);
+       assert.equal(events.filter(e=>e==='native_child_fixture').length,issuedBefore);
        assert.equal(coordinator.registeredTaskCount,4);
        assert.equal(gateway.registeredTaskCount,4);
        assert.equal(gateway.stagedCompletedTaskCount,3);
@@ -1661,9 +1658,9 @@ for(const mode of ['missing','backend','frontend','test','failure',
           assert.equal(JSON.parse(context).challenge,prepared.challenge);
           if(mode==='pr-execute-vp-denied')throw Error('Fixture native rejection');
           return JSON.stringify({presenter_id:'did:thesis:orchestrator',
-           credential_id:mode==='pr-execute-foreign-child'?'foreign-child':child.credential_id,
-           issuer_id:'did:thesis:orchestrator',root_credential_id:binding.root_credential_id,
-           permissions:[permission],hierarchy_depth:1,expiration:'1900000000000000000'});
+           credential_id:mode==='pr-execute-foreign-child'?'foreign-child':binding.root_credential_id,
+           issuer_id:'did:thesis:engineer',root_credential_id:binding.root_credential_id,
+           permissions:[permission],hierarchy_depth:mode==='pr-execute-child-depth'?1:0,expiration:'1900000000000000000'});
          }
         },Object.fromEntries(['orchestrator','backend','frontend','test']
          .map(role=>[role,'did:thesis:'+role])));

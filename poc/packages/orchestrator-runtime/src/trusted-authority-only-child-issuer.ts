@@ -20,7 +20,7 @@ import {TrustedAuthorityOnlyExecutionCoordinator} from
 import {DurableAuthorityOnlyChildJournal} from "./trusted-authority-only-child-journal.ts";
 
 const ID=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const ROLE=new Set(["backend","frontend","test","orchestrator"]);
+const ROLE=new Set(["backend","frontend","test"]);
 const PAIR=(p:DelegatedPermission)=>JSON.stringify([p.resource,p.operation]);
 const sha=(value:unknown)=>createHash("sha256")
  .update(JSON.stringify(value)).digest("hex");
@@ -131,9 +131,6 @@ export class TrustedAuthorityOnlyChildIssuer {
      !Array.isArray(task.permissions)||task.permissions.length<1||
      task.permissions.length>128)
    fail("Task does not match live Engineer authority");
-  if(task.agent_id==="orchestrator"&&
-     (task.permissions.length!==1||task.permissions[0]?.operation!=="create_pull_request"))
-   fail("Orchestrator Child requires exact repository PR Task");
   const approved=root.root_permissions;
   if(task.permissions.some(p=>!approved.some(
      grant=>giteaPermissionCovers(grant,p))))

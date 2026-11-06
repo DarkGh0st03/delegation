@@ -2012,7 +2012,7 @@ test("R303 Test Agent may reserve only exact native Child-signed Runner profile 
 });
 
 
-test("R353.3 Orchestrator Child admission cannot widen to non-PR effects",async()=>{
+test("R353.8 Orchestrator cannot receive a self-delegated Child",async()=>{
  await fixture(async({session,approvals,taskJournal,childJournal})=>{
   await session.startPlanning(preliminary);
   await session.approveAndIssueOperationalRoot(operational);
@@ -2028,7 +2028,56 @@ test("R353.3 Orchestrator Child admission cannot widen to non-PR effects",async(
   const issuer=new TrustedAuthorityOnlyChildIssuer({coordinator,
    nativeCryptoPort:nativeChildPort(calls),journal:childJournal,nowMs:()=>nowMs});
   await assert.rejects(issuer.issueForRegisteredTask("task-backend",
-   params("urn:r3533:non-pr-child","3533",600)),/exact repository PR Task/);
+   params("urn:r3533:non-pr-child","3533",600)),/Task does not match live Engineer authority/);
   assert.equal(calls.length,0);
  });
+});
+
+test("R353.8 root PR fence remains separate from specialist Child flights",async()=>{
+ await fixture(async({effectFenceJournal})=>{
+  const flight={session_id:sessionId,authority_digest:"a".repeat(64),
+   root_credential_id:operational.credential_id,credential_id:operational.credential_id,
+   task_id:"task-root-pr",runtime_task_id:"runtime-root-pr",epoch:1,
+   request_id:"request-root-pr",request_fingerprint:"b".repeat(64)};
+  const completion={...flight,evidence_sha256:"c".repeat(64),completed_at_ms:nowMs};
+  await assert.rejects(effectFenceJournal.reserveFlight(flight),/invalid pinned/);
+  await assert.rejects(effectFenceJournal.reserveRootPullRequestFlight({
+   ...flight,credential_id:"urn:child:cannot-be-root"}),/invalid pinned/);
+  await assert.rejects(effectFenceJournal.reserveRootPullRequestCompletion(completion),
+   /no matching crash-durable/);
+  await effectFenceJournal.reserveRootPullRequestFlight(flight);
+  await assert.rejects(effectFenceJournal.reserveFlight(flight),/invalid pinned/);
+  await assert.rejects(effectFenceJournal.reserveCompletion(completion),/invalid pinned/);
+  await assert.rejects(effectFenceJournal.reserveRootPullRequestCompletion({
+   ...completion,request_fingerprint:"d".repeat(64)}),/no matching crash-durable/);
+  await effectFenceJournal.reserveRootPullRequestCompletion(completion);
+  await assert.rejects(effectFenceJournal.reserveRootPullRequestFlight(flight),/EEXIST/);
+  await assert.rejects(effectFenceJournal.reserveRootPullRequestCompletion(completion),/EEXIST/);
+ });
+});
+
+test("R353.8 even a signed Orchestrator PR grant cannot issue an Orchestrator Child",async()=>{
+ const permission={resource:root,operation:"create_pull_request"};
+ const draft={schema_version:"1.0.0",session_id:sessionId,
+  repository:{...repo},branch,base_revision:hash,requirement,
+  requested_permissions:[permission]};
+ const authorization=selectAuthorityOnlyGrant(draft,[permission],{allowedOperations:operations});
+ const receipt=signAuthorityOnlyGrant({authorization,engineerDid:did,keyId,privateKeyPem,
+  issuedAt:"2026-11-05T07:00:00Z",expiresAt:"2026-11-05T09:00:00Z",allowedOperations:operations});
+ await fixture(async({session,approvals,taskJournal,childJournal})=>{
+  await session.startPlanning(preliminary);
+  await session.approveAndIssueOperationalRoot(operational);
+  const coordinator=new TrustedAuthorityOnlyExecutionCoordinator({sessionId,engineer:session,
+   approvals,journal:taskJournal,trustedAgentRegistry:{...registry,orchestrator:{
+    did:"did:thesis:orchestrator",card_ref:"trusted:orchestrator",
+    capabilities:["create_pull_request"]}},nowMs:()=>nowMs});
+  await coordinator.activate();
+  await coordinator.registerTask({...nextTask(),agent_id:"orchestrator",permissions:[permission]});
+  const calls:ExactTrustedChildIssuance[]=[];
+  const issuer=new TrustedAuthorityOnlyChildIssuer({coordinator,nativeCryptoPort:nativeChildPort(calls),
+   journal:childJournal,nowMs:()=>nowMs});
+  await assert.rejects(issuer.issueForRegisteredTask("task-backend",
+   params("urn:r3538:self-pr-child","3538",600)),/Task does not match live Engineer authority/);
+  assert.equal(calls.length,0);
+ },receipt);
 });

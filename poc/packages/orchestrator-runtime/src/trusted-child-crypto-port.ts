@@ -21,7 +21,7 @@ type FetchLike=typeof fetch;
 export interface ExactTrustedChildIssuance {
   parent_credential_id:string;
   credential_id:string;
-  delegatee:"backend"|"frontend"|"test"|"orchestrator";
+  delegatee:"backend"|"frontend"|"test";
   valid_from:string;
   validity_seconds:number;
   credential_status:CredentialStatusInput;

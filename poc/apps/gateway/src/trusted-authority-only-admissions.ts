@@ -513,6 +513,32 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#flightInFlight=false;}
  }
+ /** Original Orchestrator PR uses its operational root, never a Child. */
+ async stageTrustedRootPullRequestFlight(record:PreparedRequestRecord){
+  const root=this.#live();
+  const pin=this.assertTrustedPullRequestIntentBinding(record);
+  const bound=this.#tasks.get(record.task_id)!;
+  if(!(this.#effectFenceJournal instanceof DurableAuthorityOnlyTaskFenceJournal)||
+     this.#flightInFlight||this.#completionInFlight||
+     this.#flights.has(pin.task_id)||this.#sequential.has(pin.task_id))
+   deny("root PR requires original durable one-flight reservation");
+  const flight:TrustedTaskFlight=Object.freeze({
+   session_id:root.session_id,authority_digest:root.authority_digest,
+   root_credential_id:root.root_credential_id,credential_id:root.root_credential_id,
+   task_id:pin.task_id,runtime_task_id:record.task_id,epoch:bound.row.epoch,
+   request_id:record.request_id,request_fingerprint:record.request_fingerprint
+  });
+  this.#flightInFlight=true;
+  try{
+   await this.#effectFenceJournal.reserveRootPullRequestFlight(flight);
+   this.#assertPullRequestPin(record.task_id);
+   this.#flights.set(pin.task_id,flight);
+   return Object.freeze({status:"task_flight_reserved_no_provider_execution",
+    task_id:pin.task_id,runtime_task_id:record.task_id,
+    gateway_execution_authorized:false});
+  }catch(error){this.#phase="failed_closed";throw error;}
+  finally{this.#flightInFlight=false;}
+ }
  /**
   * R295 owner-only provenance projection. Not an execution permission.
   * Called exclusively AFTER a real Gateway verifier+OPA decision and a
@@ -604,7 +630,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   if(this.#completionInFlight||this.#completed.has(taskId))
    deny("concurrent or duplicate Task completion attestation");
   const bound=this.#tasks.get(runtimeTaskId);
-  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const child=pullRequest?this.#rootPullRequestAuthority(runtimeTaskId):
+   this.#enrolledChildren.get(runtimeTaskId);
   const flight=this.#flights.get(taskId);
   if(!bound||!child||!flight||
      bound.row.task_id!==taskId||flight.task_id!==taskId||
@@ -630,7 +657,9 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    const observation=await observer.observe(expectation);
    assertObservedCompletion(expectation,observation,this.#now());
    if(pullRequest)this.#assertPullRequestPin(runtimeTaskId);
-   await this.#effectFenceJournal.reserveCompletion({
+   await (pullRequest?
+    this.#effectFenceJournal.reserveRootPullRequestCompletion.bind(this.#effectFenceJournal):
+    this.#effectFenceJournal.reserveCompletion.bind(this.#effectFenceJournal))({
     ...flight,evidence_sha256:observation.evidence_sha256,
     completed_at_ms:observation.completed_at_ms
    });
@@ -868,6 +897,17 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
   }catch(error){this.#phase="failed_closed";throw error;}
   finally{this.#completionInFlight=false;}
  }
+ #rootPullRequestAuthority(runtimeTaskId:string){
+  const root=this.#live(),pr=this.#tasks.get(runtimeTaskId);
+  if(!pr||pr.row.agent_id!=="orchestrator"||pr.row.epoch!==this.#epoch||
+     this.#enrolledChildren.has(runtimeTaskId)||
+     pr.row.permissions.length!==1||pr.row.permissions[0]?.operation!=="create_pull_request"||
+     !root.root_permissions.some(p=>pair(p)===pair(pr.row.permissions[0]!)))
+   deny("PR requires original Orchestrator Task within operational root");
+  return Object.freeze({credential_id:root.root_credential_id,
+   root_credential_id:root.root_credential_id,authority_digest:root.authority_digest,
+   epoch:pr.row.epoch,agent_did:pr.row.agent_did,expires_at:root.root_expires_at});
+ }
  /** Owner-only PR admission after the original Test completion. */
  async pinTrustedPullRequestTask(taskId:string,runtimeTaskId:string,
   testTaskId:string,testRuntimeTaskId:string,observer:AuthenticatedRunnerCompletionObserver){
@@ -877,7 +917,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      !AuthenticatedRunnerCompletionObserver.isForRepository(observer,
       this.#repository.owner+"/"+this.#repository.repository,this.#branch!))
    deny("PR Test pin requires original active Gateway and protected Runner observer");
-  const pr=this.#tasks.get(runtimeTaskId),child=this.#enrolledChildren.get(runtimeTaskId);
+  const pr=this.#tasks.get(runtimeTaskId),child=this.#rootPullRequestAuthority(runtimeTaskId);
   const test=this.#tasks.get(testRuntimeTaskId),flight=this.#flights.get(testTaskId);
   if(!pr||!child||!test||!flight||pr.row.task_id!==taskId||
      pr.row.agent_id!=="orchestrator"||pr.row.epoch!==this.#epoch||
@@ -914,7 +954,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
  }
  #assertPullRequestPin(runtimeTaskId:string){
   const root=this.#live(),pin=this.#prPins.get(runtimeTaskId);
-  const pr=this.#tasks.get(runtimeTaskId),child=this.#enrolledChildren.get(runtimeTaskId);
+  const pr=this.#tasks.get(runtimeTaskId),child=this.#rootPullRequestAuthority(runtimeTaskId);
   if(!pin||!pr||!child||pin.task_id!==pr.row.task_id||pin.epoch!==this.#epoch||
      child.credential_id!==pin.credential_id||child.epoch!==pin.epoch||
      child.root_credential_id!==root.root_credential_id||
@@ -1225,7 +1265,8 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      this.#flightInFlight||this.#completionInFlight)
    deny("successful mutation lacks live consumed authority-only Prepare");
   const bound=this.#tasks.get(record.task_id);
-  const child=this.#enrolledChildren.get(record.task_id);
+  const child=tool==="create_pull_request"?this.#rootPullRequestAuthority(record.task_id):
+   this.#enrolledChildren.get(record.task_id);
   const taskId=bound?.row.task_id;
   if(!bound||!child||!taskId||!verified||
      !Array.isArray(verified.permissions)||
@@ -1236,7 +1277,7 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
      verified.credential_id!==child.credential_id||
      verified.root_credential_id!==root.root_credential_id||
      !Number.isSafeInteger(verified.hierarchy_depth)||
-     verified.hierarchy_depth<1||
+     (tool==="create_pull_request"?verified.hierarchy_depth!==0:verified.hierarchy_depth<1)||
      child.root_credential_id!==root.root_credential_id||
      child.authority_digest!==root.authority_digest||
      child.agent_did!==bound.row.agent_did||

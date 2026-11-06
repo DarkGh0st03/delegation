@@ -1422,7 +1422,7 @@ try{
    .filter(n=>n.endsWith(".runner.json")).length,1);
   assert.equal(coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id,rootBefore);
   assert.equal((await client.getBranchMetadata("main")).commit_sha,pinnedDisposableMainSha);
-  let prPresentation,prPrepared,prChild;
+  let prPresentation,prPrepared;
   if(nativePr){
    const choice=new OfflineR3515TaskDecisionModel({task_id:"r3537-final-pr",
     agent_id:"orchestrator",depends_on:[retest.task_id],permissions:[prPermission],
@@ -1430,12 +1430,11 @@ try{
    const runtimeId=nativeTaskRef("P");
    const staged=await reviewExecution.proposeAndStageVerifiedPullRequestTask({
     model:choice,sourceTestTaskId:retest.task_id,sourceTestRuntimeTaskId:retest.runtime_task_id,
-    runtimeTaskId:runtimeId,childParameters:freshChildParams("urn:r3537:child:pr",29111)});
-   assert.equal(staged.status,"owner_pr_child_enrolled_no_provider_execution");
+    runtimeTaskId:runtimeId});
+   assert.equal(staged.status,"owner_pr_root_task_bound_no_provider_execution");
    assert.equal(staged.tested_commit_sha,repairedHead);
-   prChild=issuer.assertTrustedIssuedChild(staged.task_id,coordinator);
-   assert.equal(prChild.agent_did,process.env.ADAPTER_ID_ORCHESTRATOR);
-   assert.equal(prChild.root_credential_id,rootBefore);
+   assert.throws(()=>issuer.assertTrustedIssuedChild(staged.task_id,coordinator));
+   assert.equal(staged.credential_id,rootBefore);
    assert.equal(gate.registeredTaskCount,6);
    assert.equal(gate.stagedCompletedTaskCount,4);
    prPrepared=await httpCall("prepare",{task_id:runtimeId,agent_role:"orchestrator",
@@ -1444,14 +1443,15 @@ try{
    await reviewExecution.stageEnrolledPullRequest({taskId:staged.task_id,
     runtimeTaskId:runtimeId,requestId:prPrepared.request_id});
    prPresentation=await invokeNativeCrypto({socketPath,token:tokens.orchestrator,timeoutMs:60000},
-    "create_presentation",{credential_id:prChild.credential_id,disclosed_permissions:[prPermission],
+    "create_presentation",{credential_id:rootBefore,disclosed_permissions:[prPermission],
      audience:prPrepared.audience,challenge:prPrepared.challenge});
    const result=await httpCall("execute",{request_id:prPrepared.request_id,
     signed_vp:prPresentation.signed_vp},200);
    assert.equal(result.execution.tool,"create_pull_request");
    assert.equal(result.execution.revision,repairedHead);
-   assert.equal(result.verified_delegation.credential_id,prChild.credential_id);
+   assert.equal(result.verified_delegation.credential_id,rootBefore);
    assert.equal(result.verified_delegation.root_credential_id,rootBefore);
+   assert.equal(result.verified_delegation.hierarchy_depth,0);
    assert.equal(gatewayPrCalls,1);
    assert.equal(gate.stagedCompletedTaskCount,4,"POST alone is not Task completion");
    const completed=await reviewExecution.attestEnrolledPullRequestCompletion({
@@ -1480,7 +1480,7 @@ try{
    independent_repair_completion:true,independent_retest_pass:true,
    registered_tasks:nativePr?6:5,completed_tasks:nativePr?5:4,
    runner_posts:2,provider_commits:3,
-   ...(nativePr?{native_pr_child:true,native_pr_vp:true,opa_pr_allow:true,
+   ...(nativePr?{native_pr_root_vp:true,orchestrator_self_delegation:false,native_pr_vp:true,opa_pr_allow:true,
     draft_pr_created:true,independent_pr_completion:true,pr_provider_calls:gatewayPrCalls,
     pr_replay_denied:true,pr_root_revocation_verified:true,preliminary_gateway_transport:"fixture"}:{}),
    main_unchanged:true,paid_model_calls:0,

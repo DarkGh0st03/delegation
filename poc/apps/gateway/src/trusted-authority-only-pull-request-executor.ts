@@ -58,7 +58,7 @@ export class TrustedAuthorityOnlyPullRequestExecutor{
   if(pin.tested_commit_sha!==expectedHeadSha)deny('PR HEAD differs from original owner pin');
   await this.#gate.revalidateTrustedPullRequestTest(record.task_id,this.#observer);
   // O_EXCL flight is durable before signing/POST; reconstruction cannot retry.
-  await this.#gate.stageTrustedTaskFlight(record);
+  await this.#gate.stageTrustedRootPullRequestFlight(record);
   this.#staged.set(record,{head:pin.tested_commit_sha,
    digest:pin.runner_evidence_sha256,attempted:false});
   return Object.freeze({status:'owner_pr_flight_reserved_no_provider_execution',
