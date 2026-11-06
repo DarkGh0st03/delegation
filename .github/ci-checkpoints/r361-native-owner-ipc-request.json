@@ -1,0 +1,11 @@
+{
+  "checkpoint": "R361.1",
+  "baseline_native_sha": "a00bf7891a31d6de3e2331f6b86d3d230d03ed3a",
+  "objective": "Actual Coordinator/Child owner HMAC Unix IPC -> GatewayControlledToolClient -> signed native Rust VP -> real OPA and disposable Gitea read then CAS",
+  "test": "poc/packages/orchestrator-runtime/test/r361-native-owner-ipc-gateway-e2e.mjs",
+  "provider": "disposable Gitea only",
+  "remote_a2a_network_covered": false,
+  "adk_model_inference_covered": false,
+  "paid_model_calls_allowed": false,
+  "status": "requested; outcome requires dedicated GitHub Actions run"
+}

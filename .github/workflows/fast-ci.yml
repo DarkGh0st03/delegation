@@ -123,6 +123,7 @@ jobs:
           node --check poc/packages/orchestrator-runtime/test/r304-native-backend-update-dependent-docker-test-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r305-native-backend-frontend-test-e2e.mjs
           node --check poc/packages/orchestrator-runtime/test/r360-mixed-read-update-native-e2e.mjs
+          node --check poc/packages/orchestrator-runtime/test/r361-native-owner-ipc-gateway-e2e.mjs
           node --experimental-strip-types --test poc/apps/test-runner-controller/test/stage-disposable-account-suspension-reference.test.mjs
           node --check poc/apps/gateway/native-test/native-planning-read-core-evm-e2e.mjs
           node --check poc/apps/gateway/native-test/native-approved-planner-dag-positive.mjs
