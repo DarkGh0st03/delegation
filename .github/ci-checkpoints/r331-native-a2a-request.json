@@ -1,7 +1,7 @@
 {
-  "revision": "R350.13-native-planning-diagnostic",
-  "request": "run reviewed-native with sanitized ADK Planning failure telemetry",
-  "source_commit": "a52cae90494eec1ee5943c13010c4634c62520db",
+  "revision": "R350.14",
+  "request": "retest verified feature-snapshot ADK read then Engineer auth and original native R331 disposable provider path",
+  "source_commit": "0c076cf5346abcc6ab677c4f0af2a9675b162934",
   "mode": "reviewed_native",
   "paid_ai": false,
   "production_effects": false,
@@ -15,5 +15,6 @@
     "immutable main, root revocation and fail-closed recovery"
   ],
   "replaced_run": 42205484506,
-  "previous_native_run": 42206120077
+  "previous_native_run": 42207993020,
+  "offline_gate_run": 42209738978
 }
