@@ -134,12 +134,15 @@ const reviewedNative=process.env.R35013_NATIVE_REVIEW==="1";
 const reviewedD1=process.env.R3528_NATIVE_D1_RETEST==="1";
 const nativePr=process.env.R3537_NATIVE_PR==="1";
 const nativeAdaptiveFail=process.env.R356_NATIVE_ADAPTIVE_FAIL==="1";
-const nativeAdaptiveRepair=process.env.R356_NATIVE_ADAPTIVE_REPAIR==="1";
+const nativeAdaptivePr=process.env.R3562_NATIVE_ADAPTIVE_PR==="1";
+const nativeAdaptiveRepair=process.env.R356_NATIVE_ADAPTIVE_REPAIR==="1"||nativeAdaptivePr;
 const nativeAdaptive=nativeAdaptiveFail||nativeAdaptiveRepair;
 if(nativeAdaptive)assert.equal(reviewedD1,true,
  "R356 adaptive native Test requires the disposable broken Docker HEAD");
-if(nativeAdaptive)assert.equal(nativePr,false,
- "R356 adaptive native gate must not preauthorize a Draft PR");
+if(nativeAdaptive&&!nativeAdaptivePr)assert.equal(nativePr,false,
+ "R356.0/1 native gate must not preauthorize a Draft PR");
+if(nativeAdaptivePr)assert.equal(nativePr,true,
+ "R356.2 requires Engineer-signed create_pull_request as part of original permission ceiling");
 if(nativeAdaptiveFail&&nativeAdaptiveRepair)
  throw Error("R356 native sub-gates must not run simultaneously");
 if(nativePr)assert.equal(reviewedD1,true,"Native PR gate requires original reviewed D1 session");
@@ -1398,21 +1401,86 @@ try{
    assert.equal(coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id,
     originalRoot);
    assert.equal(reviewHost.phase,"operational");
+   if(nativeAdaptivePr){
+    // R356.2: after the adaptive loop independently proves latest Test
+    // PASS, reuse the SAME original root and owner PR admission. There
+    // is no Child for the Orchestrator and the failed Test stays incomplete.
+    const choice=new OfflineR3515TaskDecisionModel({
+     task_id:"r3562-final-adaptive-pr",agent_id:"orchestrator",
+     depends_on:[outcome.source_test_task_id],permissions:[prPermission],
+     instruction:"Open a Draft PR for the independently repaired and retested account suspension"
+    });
+    const runtimeId=nativeTaskRef("P");
+    const staged=await reviewExecution.proposeAndStageVerifiedPullRequestTask({
+     model:choice,sourceTestTaskId:outcome.source_test_task_id,
+     sourceTestRuntimeTaskId:outcome.source_test_runtime_task_id,
+     runtimeTaskId:runtimeId
+    });
+    assert.equal(staged.status,"owner_pr_root_task_bound_no_provider_execution");
+    assert.equal(staged.tested_commit_sha,repairedHead);
+    assert.equal(staged.credential_id,originalRoot);
+    assert.throws(()=>issuer.assertTrustedIssuedChild(staged.task_id,coordinator));
+    assert.equal(gate.registeredTaskCount,6);
+    assert.equal(gate.stagedCompletedTaskCount,4);
+    const prepared=await httpCall("prepare",{task_id:runtimeId,
+     agent_role:"orchestrator",tool:"create_pull_request",
+     arguments:{head_branch:branch,base_branch:"main",
+      title:"Account Suspension",
+      body:"Adaptive correction passed the controlled test and acceptance suite."}},201);
+    await reviewExecution.stageEnrolledPullRequest({
+     taskId:staged.task_id,runtimeTaskId:runtimeId,requestId:prepared.request_id
+    });
+    const presentation=await invokeNativeCrypto({
+     socketPath,token:tokens.orchestrator,timeoutMs:60000
+    },"create_presentation",{
+     credential_id:originalRoot,disclosed_permissions:[prPermission],
+     audience:prepared.audience,challenge:prepared.challenge
+    });
+    const prResult=await httpCall("execute",{
+     request_id:prepared.request_id,signed_vp:presentation.signed_vp
+    },200);
+    assert.equal(prResult.execution.tool,"create_pull_request");
+    assert.equal(prResult.execution.revision,repairedHead);
+    assert.equal(prResult.verified_delegation.credential_id,originalRoot);
+    assert.equal(prResult.verified_delegation.root_credential_id,originalRoot);
+    assert.equal(prResult.verified_delegation.hierarchy_depth,0);
+    assert.equal(gatewayPrCalls,1);
+    assert.equal(gate.stagedCompletedTaskCount,4,"provider POST is not Task completion");
+    const completed=await reviewExecution.attestEnrolledPullRequestCompletion({
+     taskId:staged.task_id,runtimeTaskId:runtimeId
+    });
+    assert.equal(completed.status,"owner_pr_completion_independently_observed");
+    assert.equal(gate.stagedCompletedTaskCount,5);
+    await assertHttpDenied({request_id:prepared.request_id,
+     signed_vp:presentation.signed_vp},"replay_detected");
+    await assert.rejects(reviewExecution.attestEnrolledPullRequestCompletion({
+     taskId:staged.task_id,runtimeTaskId:runtimeId}),/already been attempted/);
+    assert.equal(gatewayPrCalls,1);
+    assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,
+     repairedHead);
+    assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,
+     pinnedDisposableMainSha);
+   }
    await reviewHost.close();
    assert.equal(reviewHost.phase,"revoked");
    process.stdout.write(JSON.stringify({
-    event:"r356_native_adaptive_fail_repair_retest_pass",
+    event:nativeAdaptivePr?"r3562_native_adaptive_fail_repair_retest_draft_pr":
+     "r356_native_adaptive_fail_repair_retest_pass",
     original_engineer_owner:true,real_rust_evm_opa:true,
     actual_adk_a2a_dispatch:true,real_docker_fail_then_pass:true,
     original_failed_test_incomplete:true,
-    registered_tasks:5,completed_tasks:4,
+    registered_tasks:nativeAdaptivePr?6:5,completed_tasks:nativeAdaptivePr?5:4,
     runner_posts:runnerCalls,provider_commits:gatewayCasWrites,
+    ...(nativeAdaptivePr?{draft_pr_created:true,
+     orchestrator_self_delegation:false,original_root_pr_vp:true,
+     independent_pr_completion:true,pr_provider_calls:gatewayPrCalls,
+     pr_replay_denied:true}:{}),
     model_selected_backend_repair:true,
     model_selected_replacement_test:true,
     independent_repair_completion:true,
     independent_retest_pass:true,original_root_unchanged:true,
     original_root_retired_after_readiness:true,
-    pr_created:false,main_unchanged:true,paid_model_calls:0,
+    pr_created:nativeAdaptivePr,main_unchanged:true,paid_model_calls:0,
     autonomous_source_generation:false,functional_source:"owner_only_fixture"
    })+"\n");
   }else{
