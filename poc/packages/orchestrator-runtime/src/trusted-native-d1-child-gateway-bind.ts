@@ -64,7 +64,15 @@ export async function enrollFirstNativeD1ChildAtGateway(input:{
     a.epoch!==intent.epoch+1||
     a.failed_test_task_id!==intent.task_id)
    deny("not the previously verified first D1 Task admission");
- const row=input.coordinator.assertTrustedGatewayRegisteredTask(a.task_id);
+ let row:ReturnType<TrustedAuthorityOnlyExecutionCoordinator[
+  "assertTrustedGatewayRegisteredTask"]>;
+ try{
+  row=input.coordinator.assertTrustedGatewayRegisteredTask(a.task_id);
+ }catch{
+  // A model/foreign Task ID is not a trusted Coordinator admission.
+  // Do not allow an internal lookup error to escape this D1 boundary.
+  deny("no exact registered D1 Task under original failed Runner");
+ }
  const root=input.coordinator.assertTrustedGatewayAuthorityBinding();
  if(row.status!=="task_registered_preflight_only"||
     row.task_id!==a.task_id||row.epoch!==a.epoch||
