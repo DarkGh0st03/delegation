@@ -8,6 +8,8 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
     !hooks||['readContext','beforeDecision','executeTask','confirmReady','retire']
      .some(k=>typeof hooks[k]!=='function')||
     (hooks.runDecision!==undefined&&typeof hooks.runDecision!=='function')||
+    (hooks.observeVerifiedTestFailure!==undefined&&
+     typeof hooks.observeVerifiedTestFailure!=='function')||
     (signal!==undefined&&!(signal instanceof AbortSignal)))deny('invalid original owner loop configuration');
  let executed=0;
  try{
@@ -36,7 +38,49 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
      source_test_task_id:proof.task_id,source_test_runtime_task_id:proof.runtime_task_id,
      tested_commit_sha:proof.tested_commit_sha,pr_created:false});
    }
-   await hooks.executeTask(decision.task,before);
+   try{
+    await hooks.executeTask(decision.task,before);
+   }catch(error){
+    // Only an original-owner independent Runner/Gateway FAIL observation
+    // may preserve the root. A2A FAILED, a thrown tool error or a model
+    // assertion alone NEVER qualifies; every other error retires the root.
+    if(!hooks.observeVerifiedTestFailure||decision.task.agent_id!=='test'||
+       decision.task.permissions.filter(p=>p.operation==='run_tests').length!==1)
+     throw error;
+    const observed=await hooks.observeVerifiedTestFailure(Object.freeze({
+     task:decision.task,context:before,error
+    }));
+    signal?.throwIfAborted();
+    if(observed?.status!=='owner_verified_native_test_failure_preflight_only'||
+       observed.failed_task_id!==decision.task.task_id||
+       typeof observed.failed_runtime_task_id!=='string'||
+       !/^dispatch_[A-Za-z0-9_-]{22}$/u.test(observed.failed_runtime_task_id)||
+       observed.gateway_task_completed!==false||
+       observed.recovery_authorized!==false||
+       observed.tested_commit_sha!==before.executionProgress?.current_head_sha||
+       !['typecheck','backend_tests','frontend_tests','build',
+         'playwright_e2e','researcher_acceptance'].includes(observed.failed_phase)||
+       !/^[a-f0-9]{64}$/u.test(observed.source_evidence_sha256))
+     deny('Test failure is not independently verified by the original owner');
+    const progress=await hooks.readContext();
+    if(progress.nextEpoch!==before.nextEpoch+1||
+       JSON.stringify(progress.rootPermissions)!==JSON.stringify(before.rootPermissions)||
+       progress.branch!==before.branch||
+       progress.requirement!==before.requirement||
+       JSON.stringify(progress.agents)!==JSON.stringify(before.agents)||
+       JSON.stringify(progress.previousTasks)!==JSON.stringify(before.previousTasks)||
+       progress.executionProgress?.current_head_sha!==observed.tested_commit_sha||
+       JSON.stringify(progress.executionProgress?.completed_work)!==
+        JSON.stringify(before.executionProgress?.completed_work)||
+       JSON.stringify(progress.verifiedFailure)!==JSON.stringify({
+        failed_phase:observed.failed_phase,
+        source_evidence_sha256:observed.source_evidence_sha256
+       }))
+     deny('verified Test FAIL did not preserve the original authority and success ledger');
+    // The failed Task is registered (epoch advances), but NOT completed.
+    // Its evidence is diagnostic input for the next model decision only.
+    continue;
+   }
    signal?.throwIfAborted();
    const progress=await hooks.readContext();
    if(progress.nextEpoch!==before.nextEpoch+1||
