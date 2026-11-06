@@ -152,7 +152,8 @@ export class TrustedAuthorityOnlyA2AOwner {
    }
    if(p.operation!=="read_file"&&p.operation!=="update_file")
     deny("unsupported A2A Task grant is not a native effect");
-   if(p.operation==="update_file")effects++;
+   if(p.operation==="update_file"||
+      (p.operation==="read_file"&&row.permissions.length===1))effects++;
    const prefix=branchUri+"/files/";
    if(!p.resource.startsWith(prefix))
     deny("Task file grant outside native approved branch");
@@ -167,7 +168,7 @@ export class TrustedAuthorityOnlyA2AOwner {
    filePermissions.push({path,operation:p.operation});
   }
   if(effects!==1||filePermissions.length>32)
-   deny("Task needs one native mutation or Runner effect");
+   deny("Task needs one native read, mutation or Runner effect");
   const hasRunner=row.permissions.some(p=>p.operation==="run_tests");
   const paths=[...new Set(filePermissions.map(x=>x.path))];
   const subtask:DeterministicSubtask=Object.freeze({

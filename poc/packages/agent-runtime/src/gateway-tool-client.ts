@@ -22,6 +22,8 @@ export type SpecializedToolName = (typeof SPECIALIZED_TOOL_NAMES)[number];
  * owner's shared store and enforce prebound Task/operation/HEAD pins. */
 export interface TrustedEffectStagingPort {
   stage(requestId:string):Promise<unknown>;
+  /** Optional exact read-only effect pin from the authenticated Task registry. */
+  stagedTool?:"read_file"|"update_file"|"run_tests";
 }
 
 export interface GatewayControlledToolClientConfig {
@@ -195,10 +197,15 @@ export class GatewayControlledToolClient {
     }
 
     this.#signal?.throwIfAborted();
-    // Only native CAS update and controlled Runner have one-shot owner effect
-    // staging. Reads still require Gateway Rust/OPA, but no mutation intent.
-    if(this.#trustedEffectStager&&
-       (tool==="update_file"||tool==="run_tests")){
+    // R358: the authenticated owner may additionally select one read-only
+    // flight. Legacy mutation/Runner ports keep their previous behavior.
+    // A read in an update Task is NOT silently converted into a second flight.
+    const ownerRead=tool==="read_file"&&
+      this.#trustedEffectStager?.stagedTool==="read_file";
+    const ownerWrite=(tool==="update_file"||tool==="run_tests")&&
+      (this.#trustedEffectStager?.stagedTool===undefined||
+       this.#trustedEffectStager?.stagedTool===tool);
+    if(this.#trustedEffectStager&&(ownerRead||ownerWrite)){
       try{
         await this.#trustedEffectStager.stage(prepared.request_id);
       }catch{

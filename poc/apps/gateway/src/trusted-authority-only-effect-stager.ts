@@ -11,14 +11,14 @@ export class TrustedAuthorityOnlyEffectStager {
  readonly #mutation:TrustedAuthorityOnlyGiteaMutationPreflight;
  readonly #runner:TrustedAuthorityOnlyRunnerPreflight;
  readonly #task:string;
- readonly #tool:'update_file'|'run_tests';
+ readonly #tool:'read_file'|'update_file'|'run_tests';
  readonly #head:string;
  #attempted=false;
  constructor(opts:{store:InMemoryRequestStore;
   admissions:TrustedAuthorityOnlyGatewayAdmissions;
   mutation:TrustedAuthorityOnlyGiteaMutationPreflight;
   runner:TrustedAuthorityOnlyRunnerPreflight;
-  runtimeTaskId:string;tool:'update_file'|'run_tests';expectedHeadSha:string}) {
+  runtimeTaskId:string;tool:'read_file'|'update_file'|'run_tests';expectedHeadSha:string}) {
   if(!(opts?.store instanceof InMemoryRequestStore)||
    !(opts.admissions instanceof TrustedAuthorityOnlyGatewayAdmissions)||
    !(opts.mutation instanceof TrustedAuthorityOnlyGiteaMutationPreflight)||
@@ -26,7 +26,7 @@ export class TrustedAuthorityOnlyEffectStager {
    !opts.mutation.isForAdmissions(opts.admissions)||
    !opts.runner.isForAdmissions(opts.admissions)||
    typeof opts.runtimeTaskId!=='string'||!opts.runtimeTaskId||
-   !['update_file','run_tests'].includes(opts.tool)||
+   !['read_file','update_file','run_tests'].includes(opts.tool)||
    !/^[a-f0-9]{40}$/.test(opts.expectedHeadSha))
    throw Error('Effect staging requires matching trusted owner and exact HEAD');
   this.#store=opts.store;this.#gate=opts.admissions;
@@ -36,7 +36,7 @@ export class TrustedAuthorityOnlyEffectStager {
  /** Exact same native Gateway and original owner-pinned Task/effect.
    * A foreign session's stager must never be accepted by an A2A Owner. */
  isForOwnerTask(admissions:TrustedAuthorityOnlyGatewayAdmissions,
-  runtimeTaskId:string,tool:'update_file'|'run_tests'):boolean{
+  runtimeTaskId:string,tool:'read_file'|'update_file'|'run_tests'):boolean{
   return this.#gate===admissions&&this.#task===runtimeTaskId&&
     this.#tool===tool;
  }
@@ -50,6 +50,13 @@ export class TrustedAuthorityOnlyEffectStager {
   // Consume before asynchronous durable reservations; ambiguous outcomes
   // cannot be retried through this instance. Journals protect reconstruction.
   this.#attempted=true;
+  if(this.#tool==='read_file'){
+   // A read-only Task has no mutation intent, but must still reserve
+   // exactly one durable flight before native VP/OPA/provider execution.
+   if(record.pinned_revision!==this.#head)
+    throw Error('Read flight differs from owner-pinned Gitea HEAD');
+   return this.#gate.stageTrustedTaskFlight(record);
+  }
   const reserved=this.#tool==='update_file'
    ?await this.#mutation.stageUpdate(record,this.#head)
    :await this.#runner.stageRunner(record,this.#head);

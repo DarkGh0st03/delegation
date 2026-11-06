@@ -141,3 +141,19 @@ test("ADK rejects stale unscoped owner-stager config at server assembly",()=>{
   ({trustedEffectTaskRegistry:{}} as never)
  ),/Invalid trusted effect Task registry/u);
 });
+
+test("R358 prebound read-only Task needs an exact signed file-read grant and burns its slot",async()=>{
+ const f=pins();const registry=new TrustedEffectStagingTaskRegistry();
+ const binding={...f.binding,operation:"read_file" as const};
+ registry.bindTask(binding);
+ const readContext:AgentTaskContext={...context(),subtask:{...context().subtask,
+  approved_file_permissions:[{path,operation:"read_file"}]}};
+ const port=registry.selectFor(readContext);
+ assert.equal(port.stagedTool,"read_file");
+ await port.stage("read-request");
+ assert.deepEqual(f.calls,["read-request"]);
+ await assert.rejects(port.stage("second-read"),/already consumed/u);
+ const bad=new TrustedEffectStagingTaskRegistry();bad.bindTask(binding);
+ assert.throws(()=>bad.selectFor(context()),/differs from trusted owner Task pins/u);
+ assert.throws(()=>bad.selectFor(readContext),/already dispatched/u);
+});

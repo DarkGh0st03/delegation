@@ -230,3 +230,29 @@ test("R281 run_tests Gateway execute denials retain only fixed native gate codes
     assert.equal(executeCalls,1);
   }
 });
+
+test("R358 authenticated read-only Task stages before signed VP and Gateway execute",async()=>{
+ const calls:string[]=[];
+ const gateway=new GatewayControlledToolClient({
+  gatewayBaseUrl:"http://gateway.local",agentRole:"backend",taskId:"owner-read-only",
+  evidenceHandler:evidenceHandler(),
+  trustedEffectStager:{stagedTool:"read_file",async stage(id){
+   assert.equal(id,"read-r358");calls.push("stage");return {gateway_execution_authorized:false};
+  }},
+  fetchFn:async(input)=>{
+   if(String(input).endsWith("/prepare")){
+    calls.push("prepare");return new Response(JSON.stringify({
+     request_id:"read-r358",audience:"gateway",challenge:"nonce",
+     expires_at:"2026-11-06T21:00:00Z",required_permission:{
+      resource:"gitea://local/repo/files/source.ts",operation:"read_file"
+     }
+    }),{status:201});
+   }
+   calls.push("execute");
+   return new Response(JSON.stringify({request_id:"read-r358",decision:"allow",
+    execution:{provider:"gitea",performed:true,tool:"read_file",content:"ok"}}),{status:200});
+  }
+ });
+ await gateway.invoke("read_file",{branch:"feature/account-suspension",path:"source.ts"});
+ assert.deepEqual(calls,["prepare","stage","execute"]);
+});

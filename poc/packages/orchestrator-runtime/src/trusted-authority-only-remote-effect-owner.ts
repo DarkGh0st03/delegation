@@ -114,16 +114,19 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
      gateway.authority_digest!==root.authority_digest||
      !isDeepStrictEqual(row.permissions,issued.permissions))
     deny("owner root, Coordinator, native Child and Gateway disagree");
-  const effects=row.permissions.filter(p=>
+  const writes=row.permissions.filter(p=>
    p.operation==="update_file"||p.operation==="run_tests");
+  const effects=writes.length? writes :
+   row.permissions.length===1&&row.permissions[0]?.operation==="read_file"
+    ?[row.permissions[0]]:[];
   if(effects.length!==1||row.permissions.some(p=>
      !["read_file","update_file","run_tests"].includes(p.operation)))
-   deny("one supported Task side-effect grant required");
+   deny("one supported Task provider-effect grant required");
   const effect=effects[0]!;
   const branch=root.branch;
   const branchUri=canonicalBranchUri(root.repository,branch);
   let path:string|undefined;
-  if(effect.operation==="update_file"){
+  if(effect.operation==="read_file"||effect.operation==="update_file"){
    const prefix=branchUri+"/files/";
    if(!effect.resource.startsWith(prefix))deny("effect file outside original branch");
    const fragment=effect.resource.slice(prefix.length);
@@ -145,7 +148,7 @@ export class TrustedAuthorityOnlyRemoteEffectOwner {
    runtimeTaskId,planTaskId:taskId,
    role:row.agent_id as "backend"|"frontend"|"test",
    childCredentialId:issued.credential_id,presenterId:row.agent_did,
-   branch,operation:effect.operation as "update_file"|"run_tests",
+   branch,operation:effect.operation as "read_file"|"update_file"|"run_tests",
    ...(path!==undefined?{path}:{})
   };
   // R328: each role has a separate authenticated owner->agent socket.

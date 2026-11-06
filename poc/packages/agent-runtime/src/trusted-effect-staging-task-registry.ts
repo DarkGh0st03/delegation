@@ -29,8 +29,8 @@ export interface TrustedEffectTaskOwnerPins {
   childCredentialId:string;
   presenterId:string;
   branch:string;
-  operation:"update_file"|"run_tests";
-  /** Required only for exact file mutations. Never model provided. */
+  operation:"read_file"|"update_file"|"run_tests";
+  /** Required for a pinned read or update; never model provided. */
   path?:string;
   /** Owner-side gateway stager, permanently bound to its original request store. */
   effectStager:TrustedEffectStagingPort;
@@ -52,16 +52,17 @@ export class TrustedEffectStagingTaskRegistry {
      !ID.test(input.planTaskId)||!ID.test(input.childCredentialId)||
      !DID.test(input.presenterId)||
      !["backend","frontend","test"].includes(input.role)||
-     !["update_file","run_tests"].includes(input.operation)||
+     !["read_file","update_file","run_tests"].includes(input.operation)||
      typeof input.effectStager?.stage!=="function")
    deny("exact trusted owner Task/Child and one-shot effect port required");
   try{validatePrivateApprovedBranch(input.branch);}
   catch{deny("invalid owner-pinned feature branch");}
-  if(input.operation==="update_file"){
+  if(input.operation==="update_file"||input.operation==="read_file"){
    if(typeof input.path!=="string"||!PATH.test(input.path)||
       input.path.startsWith("/")||input.path.includes("//")||
       input.path.split("/").some(p=>p==="."||p===".."||!p))
-    deny("canonical update path required");
+    deny(input.operation==="read_file"?"canonical read path required":
+     "canonical update path required");
   }else if(input.role!=="test"||input.path!==undefined){
    deny("run_tests must be an exact Test Task without file path");
   }
@@ -101,13 +102,14 @@ export class TrustedEffectStagingTaskRegistry {
      context.delegation_evidence?.credential_id!==p.childCredentialId||
      context.delegation_evidence?.presenter_id!==p.presenterId||
      !Array.isArray(hints)||
-     (p.operation==="update_file"
-       ? !hints.some(row=>row?.operation==="update_file"&&row.path===p.path)||
+     (p.operation==="update_file"||p.operation==="read_file"
+       ? !hints.some(row=>row?.operation===p.operation&&row.path===p.path)||
          !Array.isArray(sub.relevant_paths)||
          !sub.relevant_paths.includes(p.path!)
        : sub.approved_run_tests!==true))
    deny("A2A identity/operation differs from trusted owner Task pins");
   return Object.freeze({
+   stagedTool:p.operation,
    stage:async(requestId:string):Promise<unknown>=>{
     if(this.#retired||b.state!=="selected"||b.attempted)
      deny("one-shot owner effect already consumed or retired");

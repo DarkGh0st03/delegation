@@ -200,7 +200,7 @@ function validPins(value:unknown):value is PublicPins{
     typeof v.presenterId!=="string"||
     typeof v.branch!=="string"||
     !["backend","frontend","test"].includes(v.role as string)||
-    !["update_file","run_tests"].includes(v.operation as string))
+    !["read_file","update_file","run_tests"].includes(v.operation as string))
   return false;
  return v.operation==="run_tests" ? !("path" in v)
   :typeof v.path==="string";
