@@ -2,6 +2,12 @@
  * protocol and ADK decisions are scripted; operational Rust/EVM/OPA/Gitea are real. */
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,randomBytes,scryptSync} from 'node:crypto';
+import {createServer} from 'node:net';
+import {startSpecializedAgentServer,TrustedEffectStagingTaskRegistry,
+ createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
+ from '../../agent-runtime/src/index.ts';
+import {TrustedAuthorityOnlyCompletionObserver}
+ from '../src/trusted-authority-only-completion-observer.ts';
 import {mkdtemp,mkdir,writeFile,rm,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -46,7 +52,8 @@ assert.equal(process.env.GEMINI_API_KEY,undefined);assert.equal(process.env.OPEN
 const repo={authority:'gitea.local',owner:'thesis',repository:'iam-console-poc'};
 assert.equal(process.env.GITEA_OWNER,repo.owner);assert.equal(process.env.GITEA_REPOSITORY,repo.repository);
 const branch='feature/account-suspension',sourcePath='apps/backend/src/users/user.service.ts';
-const nativeBackendCas=process.env.R3571_NATIVE_BACKEND_CAS==='1';
+const nativeBackendA2A=process.env.R3572_NATIVE_BACKEND_A2A==='1';
+const nativeBackendCas=process.env.R3571_NATIVE_BACKEND_CAS==='1'||nativeBackendA2A;
 const nativeBranchToBackend=process.env.R357_NATIVE_BRANCH_TO_BACKEND==='1'||nativeBackendCas;
 const scopedDir='gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/directories/apps/backend/src/users';
 const scopedFile='gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/'+sourcePath;
@@ -110,12 +117,41 @@ class BackendDecision extends BaseLlm{
  }
  connect(){throw Error('Paid inference forbidden');}
 }
+class BackendSdkEditModel extends BaseLlm{
+ requests=[];
+ constructor(content){super({model:'r3572-scripted-backend-A2A-no-paid-inference'});this.content=content;}
+ async *generateContentAsync(request){
+  this.requests.push(request);
+  if(this.requests.length===1)
+   yield {content:{role:'model',parts:[{functionCall:{
+    id:'r3572-edit',name:'update_file',
+    args:{branch,path:sourcePath,content:this.content}
+   }}]}};
+  else yield {content:{role:'model',parts:[{
+   text:'Backend file update attempted through protected A2A and native Gateway'
+  }]}};
+ }
+ connect(){throw Error('No paid provider in R357.2');}
+}
+class InertSdkModel extends BaseLlm{
+ constructor(role){super({model:'r3572-inert-'+role});}
+ async *generateContentAsync(){throw Error('Unused specialist must not run');}
+ connect(){throw Error('No paid provider');}
+}
+async function freeRolePort(){
+ const srv=createServer();
+ await new Promise((ok,bad)=>{srv.once('error',bad);srv.listen(0,'127.0.0.1',ok);});
+ const address=srv.address();
+ if(!address||typeof address==='string')throw Error('No free loopback port');
+ await new Promise((ok,bad)=>srv.close(error=>error?bad(error):ok()));
+ return address.port;
+}
 const parent=await mkdtemp(join(tmpdir(),'r354-native-'));
 const names=['approvals','activation','tasks','sessions','gatewayTasks','children','gatewayChildren','flights',
  'checkpoints','keys','recovery','mutations','runner','mutationEvidence'];
 const path=n=>join(parent,n);
 process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=path('owner.sock');
-let host,http;
+let host,http,roleBindingServers=[],a2aRoleServers=[];
 try{
  for(const n of names)await mkdir(path(n),{mode:0o700});
  const engineer=generateKeyPairSync('ed25519'),backend=generateKeyPairSync('ed25519');
@@ -186,7 +222,16 @@ try{
  await assert.rejects(client.getBranchMetadata(branch),e=>e instanceof ProviderNotFoundError);
  const {coordinator}=await host.activateOperational(operational);
  const root=coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id;
+ const evidenceKey=nativeBackendCas?randomBytes(32):undefined;
+ const mutationObserver=nativeBackendCas?new AuthenticatedGiteaMutationCompletionObserver({
+  directory:path('mutationEvidence'),key:evidenceKey,
+  repository:repo.owner+'/'+repo.repository,branch,giteaClient:reader
+ }):undefined;
+ const completionObserver=nativeBackendA2A?new TrustedAuthorityOnlyCompletionObserver({
+  readVerifiedCompletion:expected=>mutationObserver.observe(expected)
+ }):undefined;
  const execution=await host.admitOperationalExecution({operationalSessionStore:sessions,
+  ...(completionObserver?{completionObserver}:{}),
   gatewayTaskJournal:new DurableAuthorityTaskJournal(path('gatewayTasks')),
   issuerChildJournal:new DurableAuthorityOnlyChildJournal(path('children')),
   gatewayChildJournal:new DurableAuthorityOnlyChildJournal(path('gatewayChildren')),
@@ -201,11 +246,6 @@ try{
   journal:mutationJournal,repository:repositoryPath,branch});
  const runner=new TrustedAuthorityOnlyRunnerPreflight({admissions:gate,giteaClient:client,
   journal:new DurableAuthorityOnlyRunnerIntentJournal(path('runner')),repository:repositoryPath,branch});
- const evidenceKey=nativeBackendCas?randomBytes(32):undefined;
- const mutationObserver=nativeBackendCas?new AuthenticatedGiteaMutationCompletionObserver({
-  directory:path('mutationEvidence'),key:evidenceKey,repository:repositoryPath,branch,
-  giteaClient:reader
- }):undefined;
  const mutationExecutor=nativeBackendCas?new TrustedAuthorityOnlyGiteaMutationExecutor({
   admissions:gate,preflight:mutation,journal:mutationJournal,giteaClient:client,
   publisher:new TrustedGatewayGiteaMutationEvidencePublisher({
@@ -415,7 +455,9 @@ try{
   replay_denied:true,root_revocation_verified:true,paid_model_calls:0,autonomous_functional_generation:false,
   preliminary_gateway_transport:'fixture'})+'\n');
 }finally{
- if(http)await new Promise(resolve=>http.close(resolve));
  if(host)await host.close();
+ await Promise.allSettled([...roleBindingServers,...a2aRoleServers]
+  .map(s=>s.close()));
+ if(http)await new Promise(resolve=>http.close(resolve));
  await rm(parent,{recursive:true,force:true});
 }
