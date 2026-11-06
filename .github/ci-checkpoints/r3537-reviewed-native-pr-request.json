@@ -1,12 +1,12 @@
 {
-  "revision": "R353.7",
-  "source_commit": "b0187ebc3d14dadf7a36fc25af4d8fb9af2a4028",
-  "request": "One reviewed native original-root D1 recovery followed by exact tested Draft PR and independent Task completion",
+  "revision": "R353.9",
+  "source_commit": "9eb884772baa42da2280b0e51d6062e98abfd19c",
+  "request": "Retry native reviewed D1 and independently attested Draft PR with original Orchestrator operational-root VP; no self-delegated Child",
   "paid_ai": false,
   "production_effects": false,
   "free_ci_validated": true,
-  "source_fast_ci": 42250567589,
-  "source_engineer_ci": 42250567593,
+  "source_fast_ci": 42255016974,
+  "source_engineer_ci": 42255017048,
   "prior_native_recovery": 42240217477,
   "preliminary_planning_gateway": "fixture",
   "autonomous_functional_generation": false,
@@ -21,6 +21,11 @@
     "main_unchanged": true,
     "original_root_unchanged": true,
     "pr_replay_denied": true,
-    "root_revocation_verified": true
-  }
+    "root_revocation_verified": true,
+    "native_pr_root_vp": true,
+    "pr_hierarchy_depth": 0,
+    "orchestrator_self_delegation": false
+  },
+  "source_gateway_ci": 42255017145,
+  "prior_failed_pr_native": 42250882152
 }
