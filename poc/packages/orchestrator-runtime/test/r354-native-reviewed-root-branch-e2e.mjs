@@ -256,8 +256,10 @@ try{
   assert.equal(gate.stagedCompletedTaskCount,1);
   assert.equal(branchPosts,1);
   assert.equal(otherWrites,0);
-  assert.equal((await readdir(path('children'))).length,1);
-  assert.equal((await readdir(path('gatewayChildren'))).length,1);
+  // Issuance journals persist TWO unique O_EXCL guards per Child:
+  // one for Task replay and one for credential-ID reuse.
+  assert.equal((await readdir(path('children'))).length,2);
+  assert.equal((await readdir(path('gatewayChildren'))).length,2);
   const childVp=await invokeNativeCrypto({
    socketPath:process.env.ADAPTER_ENGINEER_NATIVE_SOCKET,
    token:process.env.ADAPTER_CALLER_BACKEND,timeoutMs:60000
