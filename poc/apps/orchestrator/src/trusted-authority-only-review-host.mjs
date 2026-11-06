@@ -592,6 +592,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       if(closed||session.phase!=='operational'||gateway.phase!=='active'||
          taskStageFailed||dispatchFailed||completionFailed||taskStageFlight||dispatchFlight||completionFlight)
        deny('adaptive observations require live quiescent original owner');
+      if(!branchReadyForWorkers())
+       deny('adaptive Executor requires independently completed original branch Task');
       const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
       if(live.root_credential_id!==original.root_credential_id||
          live.authority_digest!==original.authority_digest||
