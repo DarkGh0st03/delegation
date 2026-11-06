@@ -8,6 +8,7 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
+import {createServer} from 'node:net';
 import {generateKeyPairSync,randomBytes,scryptSync} from 'node:crypto';
 import {createTrustedAuthorityOnlyReviewHost as createHost} from '../src/trusted-authority-only-review-host.mjs';
 import {startOwnerControlledEngineerReviewHost} from '../src/trusted-engineer-host.mjs';
@@ -16,6 +17,9 @@ import {DurableAuthorityOnlyActivationJournal} from '../../../packages/orchestra
 import {DurableAuthorityTaskJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-task-journal.ts';
 import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts';
 import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operational-session-store.ts';
+import {startSpecializedAgentServer,TrustedEffectStagingTaskRegistry,
+ createTrustedEffectAgentBindingServer,connectTrustedOwnerEffectStagingClient}
+ from '../../../packages/agent-runtime/src/index.ts';
 import {preliminaryReadPermissions} from '../../../packages/orchestrator-runtime/src/trusted-engineer-authority.ts';
 import {TrustedAuthorityOnlyEngineerSession} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-engineer-session.ts';
 import {TrustedPlanningGatewayReadPort} from '../../../packages/orchestrator-runtime/src/trusted-planning-gateway-port.ts';
@@ -200,6 +204,74 @@ test('R350.2 treats a mismatched native Child signature response as terminal',as
  assert.equal(gateway.registeredTaskCount,1);
  assert.equal(host.phase,'revoked');
  await host.close();
+});
+
+
+async function localPort(){
+ const server=createServer();
+ await new Promise((ok,bad)=>{server.once('error',bad);server.listen(0,'127.0.0.1',ok);});
+ const addr=server.address();
+ if(!addr||typeof addr==='string')throw Error('missing loopback A2A port');
+ await new Promise((ok,bad)=>server.close(e=>e?bad(e):ok()));
+ return addr.port;
+}
+test('R350.3 same-session Owner starts three pinned A2A SDK agent cards after native Child enrollment',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r350:sdk-root',2));
+ const deps=executionDeps(f);
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
+  return {id:req.credential_id,validFrom:req.valid_from,
+   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialStatus:structuredClone(req.credential_status)};
+ }};
+ const {stageTask,startSdkA2AOwner}=await host.admitOperationalExecution(deps);
+ const stage=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding());
+ await stageTask(stage);
+ const temp=await mkdtemp(join(tmpdir(),'r350sdk-'));
+ const roles=['backend','frontend','test'];
+ const stageChannels={},agentBindingChannels={},a2aUrls={};
+ const servers=[],binders=[];
+ try{
+  for(const role of roles){
+   const socket={socketPath:join(temp,role+'-stage.sock'),
+    secretFile:join(temp,role+'-stage.hex')};
+   const binding={socketPath:join(temp,role+'-bind.sock'),
+    secretFile:join(temp,role+'-bind.hex')};
+   stageChannels[role]=socket;agentBindingChannels[role]=binding;
+   for(const path of [socket.secretFile,binding.secretFile])
+    await writeFile(path,randomBytes(32).toString('hex')+'\n',{mode:0o600,flag:'wx'});
+   const agent=await startSpecializedAgentServer({role,
+    host:'127.0.0.1',port:await localPort(),
+    delegatedAuthorization:true,capabilityProfile:'approved-plan'});
+   servers.push(agent);a2aUrls[role]=agent.baseUrl;
+  }
+  for(const role of roles){
+   const bind=await createTrustedEffectAgentBindingServer({
+    ...agentBindingChannels[role],expectedRole:role,
+    registry:new TrustedEffectStagingTaskRegistry(),
+    ownerStageClient:await connectTrustedOwnerEffectStagingClient(
+     stageChannels[role])
+   });
+   binders.push(bind);await bind.start();
+  }
+  const owner=await startSdkA2AOwner({
+   stageChannels,agentBindingChannels,agentBaseUrls:a2aUrls
+  });
+  assert.equal(typeof owner.dispatchIssuedTask,'function');
+  await assert.rejects(startSdkA2AOwner({
+   stageChannels,agentBindingChannels,agentBaseUrls:a2aUrls
+  }),/requires an enrolled Child/);
+  // Startup is NOT provider success and cannot fabricate a completion.
+  await assert.rejects(owner.attestIndependentGatewayCompletion(
+   stage.task.task_id,stage.runtimeTaskId),/no matching previous A2A report/);
+  await host.close();assert.equal(host.phase,'revoked');
+ }finally{
+  await Promise.allSettled(binders.reverse().map(x=>x.close()));
+  await Promise.allSettled(servers.reverse().map(x=>x.close()));
+  await rm(temp,{recursive:true,force:true});
+  if(host.phase==='operational')await host.close();
+ }
 });
 
 test('same preliminary root feeds actual ADK review, then selected receipt retires it before independent root and Coordinator',async t=>{

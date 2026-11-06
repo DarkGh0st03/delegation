@@ -18,6 +18,7 @@ import {RUST_OPERATIONS} from '../../gateway/src/operation-catalog.ts';
 import {TrustedOperationalSessionStore} from '../../gateway/src/trusted-operational-session-store.ts';
 import {TrustedAuthorityOnlyGatewayAdmissions} from '../../gateway/src/trusted-authority-only-admissions.ts';
 import {TrustedAuthorityOnlyChildIssuer} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-issuer.ts';
+import {startTrustedAuthorityOnlySdkA2AOwner} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-a2a-owner.ts';
 import {DurableAuthorityOnlyChildJournal} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-child-journal.ts';
 const OPS=new Set(RUST_OPERATIONS);
 const fields=(o,allowed)=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.keys(o).every(k=>allowed.includes(k));
@@ -67,7 +68,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  }));
  let server,attempted=false,closed=false,closing,activationFlight;
  let operationalCoordinator,executionAdmissionAttempted=false,executionAdmissionFlight;
- let taskStageFlight,taskStageFailed=false;
+ let taskStageFlight,taskStageFailed=false,stagedTaskCount=0;
+ let a2aOwner,a2aStarting,a2aStartAttempted=false;
  async function retire(){
   if(session.phase==='planning')await session.cancelPlanning();
   else if(session.phase==='operational')await session.retireOperationalRoot();
@@ -223,6 +225,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
          enrolled.runtime_task_id!==input.runtimeTaskId||
          enrolled.gateway_execution_authorized!==false)
        deny('Task, native Child and Gateway enrollment disagree');
+      stagedTaskCount++;
       return Object.freeze({
        status:'owner_child_enrolled_no_provider_execution',
        task_id:registered.task_id,
@@ -242,7 +245,46 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       }
       throw error;
      }finally{taskStageFlight=undefined;}
-    }
+    },
+    /** R350.3: only the trusted owner may provision SDK A2A agent endpoints
+     * and distinct private role-pinned IPC. No LLM/HTTP/Engineer approval
+     * endpoint can pass a Coordinator, issuer, Gateway or signing key. */
+    async startSdkA2AOwner(config){
+     if(closed||session.phase!=='operational'||taskStageFailed||
+        taskStageFlight||stagedTaskCount<1||gateway.phase!=='active'||
+        a2aStartAttempted||a2aStarting||a2aOwner)
+      deny('A2A Owner requires an enrolled Child and quiescent live root');
+     if(!fields(config,['agentBaseUrls','stageChannels','agentBindingChannels',
+       'a2aPolling'])||
+        !fields(config.agentBaseUrls,['backend','frontend','test'])||
+        !fields(config.stageChannels,['backend','frontend','test'])||
+        !fields(config.agentBindingChannels,['backend','frontend','test']))
+      deny('A2A Owner cannot accept root, transport overrides or legacy channels');
+     a2aStartAttempted=true;
+     a2aStarting=(async()=>{
+      const owner=await startTrustedAuthorityOnlySdkA2AOwner({
+       coordinator:operationalCoordinator,childIssuer,gateway,
+       agentBaseUrls:config.agentBaseUrls,
+       stageChannels:config.stageChannels,
+       agentBindingChannels:config.agentBindingChannels,
+       ...(config.a2aPolling===undefined?{}:{a2aPolling:config.a2aPolling})
+      });
+      if(closed||session.phase!=='operational'){
+       await owner.close();
+       deny('Engineer root retired during A2A Owner startup');
+      }
+      operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      a2aOwner=owner;
+      return owner;
+     })();
+     try{return await a2aStarting;}
+     catch(error){
+      if(session.phase==='operational'){
+       try{await session.retireOperationalRoot();}
+       catch{deny('A2A Owner startup failed and root retirement unconfirmed');}
+      }
+      throw error;
+     }finally{a2aStarting=undefined;}
     });
    })();
    try{return await executionAdmissionFlight;}
@@ -262,7 +304,10 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(activationFlight)try{await activationFlight;}catch{/* Recheck state below. */}
     if(executionAdmissionFlight)try{await executionAdmissionFlight;}catch{/* Fail closed below. */}
     if(taskStageFlight)try{await taskStageFlight;}catch{/* Recheck root below. */}
-    try{if(session.phase!=='revoked')await retire();}
+    if(a2aStarting)try{await a2aStarting;}catch{/* Recheck root below. */}
+    try{
+     if(a2aOwner)await a2aOwner.close();
+    }finally{if(session.phase!=='revoked')await retire();}
     finally{
      if(server.listening)await new Promise((ok,bad)=>server.close(e=>e?bad(e):ok()));
     }
