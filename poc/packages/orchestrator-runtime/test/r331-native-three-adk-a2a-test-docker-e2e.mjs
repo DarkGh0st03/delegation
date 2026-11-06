@@ -1,3 +1,5 @@
+import {TrustedAuthorityOnlyPullRequestExecutor}
+ from '../../../apps/gateway/src/trusted-authority-only-pull-request-executor.ts';
 import {TrustedAuthorityOnlyEffectStager} from "../../../apps/gateway/src/trusted-authority-only-effect-stager.ts";
 /** R331 disposable *real* Gitea, Rust/EVM, OPA and Docker proof.
  * Backend update is sent by the actual A2A SDK to a scripted Google ADK
@@ -130,6 +132,8 @@ function assertSameExactPermissionPairs(actual,expected){
 }
 const reviewedNative=process.env.R35013_NATIVE_REVIEW==="1";
 const reviewedD1=process.env.R3528_NATIVE_D1_RETEST==="1";
+const nativePr=process.env.R3537_NATIVE_PR==="1";
+if(nativePr)assert.equal(reviewedD1,true,"Native PR gate requires original reviewed D1 session");
 if(reviewedD1)assert.equal(reviewedNative,true,
  "Reviewed D1 requires the original authenticated Engineer host");
 const sessionId=reviewedNative?
@@ -237,7 +241,8 @@ class OfflineR35013AuthorityModel extends BaseLlm{
     requested_permissions:[
      {operation:"update_file",resource_type:"directory",path:"apps/backend"},
      {operation:"update_file",resource_type:"directory",path:"apps/frontend"},
-     {operation:"run_tests",resource_type:"branch",path:null}
+     {operation:"run_tests",resource_type:"branch",path:null},
+     ...(nativePr?[{operation:"create_pull_request",resource_type:"repository",path:null}]:[])
     ],
     assumptions:[],uncertainties:[]
    })}]}};
@@ -248,8 +253,9 @@ class OfflineR35013AuthorityModel extends BaseLlm{
 const repo={authority:"gitea.local",owner:"thesis",repository:"iam-console-poc"};
 assert.equal(process.env.GITEA_OWNER,"thesis");
 assert.equal(process.env.GITEA_REPOSITORY,"iam-console-poc");
-let gatewayCasWrites=0;
+let gatewayCasWrites=0,gatewayPrCalls=0;
 class ObservedGiteaClient extends GiteaClient{
+ async createDraftPullRequest(...args){gatewayPrCalls++;return super.createDraftPullRequest(...args);}
  async updateFileWithHeadCas(input){gatewayCasWrites++;return super.updateFileWithHeadCas(input);}
 }
 const client=new ObservedGiteaClient({baseUrl:process.env.GITEA_HOST_BASE_URL,
@@ -325,12 +331,14 @@ const approvalExpiresAt=new Date(start.getTime()+55*60_000)
  .toISOString().replace(/\.\d{3}Z$/u,"Z");
 const authKey="r305-disposable-ed25519";
 const {publicKey,privateKey}=generateKeyPairSync("ed25519");
+const prPermission={resource:"gitea://gitea.local/thesis/iam-console-poc",operation:"create_pull_request"};
+const expectedPermissions=[grantPermission,frontendGrant,testGrantPermission,...(nativePr?[prPermission]:[])];
 const proposed={
  schema_version:"1.0.0",session_id:sessionId,repository:repo,branch,
  base_revision:baseRevision,requirement,
- requested_permissions:[grantPermission,frontendGrant,testGrantPermission]
+ requested_permissions:expectedPermissions
 };
-const grant=selectAuthorityOnlyGrant(proposed,[grantPermission,frontendGrant,testGrantPermission],{
+const grant=selectAuthorityOnlyGrant(proposed,expectedPermissions,{
  allowedOperations:new Set(RUST_OPERATIONS)
 });
 const receipt=reviewedNative?null:signAuthorityOnlyGrant({
@@ -390,8 +398,9 @@ try{
    capabilities:["update_file"]},
   frontend:{did:frontendDid,card_ref:"trusted:r305-frontend",
    capabilities:["update_file"]},
-  test:{did:testDid,card_ref:"trusted:r305-test",
-   capabilities:["run_tests"]}
+  test:{did:testDid,card_ref:"trusted:r305-test",capabilities:["run_tests"]},
+  ...(nativePr?{orchestrator:{did:process.env.ADAPTER_ID_ORCHESTRATOR,
+   card_ref:"trusted:r3537-orchestrator",capabilities:["create_pull_request"]}}:{})
  };
  const revisions={
   async begin(taskId){return {task_id:taskId,
@@ -824,11 +833,15 @@ try{
  // clients; it cannot inherit the fixture's injected verifier or executor.
  // The exact private request store and both owner-bound effect executors
  // are shared, and no authority control endpoint is exposed on HTTP.
+ const prExecutor=nativePr?new TrustedAuthorityOnlyPullRequestExecutor({
+  admissions:gate,giteaClient:client,runnerObserver,
+  independentGiteaClient:independentClient,repository:"thesis/iam-console-poc",branch
+ }):undefined;
  gatewayHost=await startTrustedAuthorityOnlyGatewayServer(
   {...gatewayConfig,prepare:{...gatewayConfig.prepare,
    request_ttl_ms:1_200_000}},{
    admissions:gate,mutationExecutor,runnerExecutor:ownedRunnerExecutor,
-   store,audit
+   ...(prExecutor?{pullRequestExecutor:prExecutor}:{}),store,audit
   });
  const gatewayAddress=gatewayHost.server.address();
  assert.ok(gatewayAddress&&typeof gatewayAddress!=="string");
@@ -955,7 +968,8 @@ try{
  if(reviewedNative){
   assert.equal(reviewExecution.bindNativeGatewayEffects({
    store,mutation:preflight,runner:runnerPreflight,giteaClient:client,
-   ...(reviewedD1?{failureObserver:failObserver}:{})
+   ...(reviewedD1?{failureObserver:failObserver}:{}),
+   ...(prExecutor?{runnerPassObserver:runnerObserver,pullRequestExecutor:prExecutor}:{})
   }).gateway_execution_authorized,false);
   const started=await reviewExecution.startSdkA2AOwner({
    stageChannels:ownerStageChannels,agentBindingChannels:roleBindings,
@@ -1408,14 +1422,67 @@ try{
    .filter(n=>n.endsWith(".runner.json")).length,1);
   assert.equal(coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id,rootBefore);
   assert.equal((await client.getBranchMetadata("main")).commit_sha,pinnedDisposableMainSha);
+  let prPresentation,prPrepared,prChild;
+  if(nativePr){
+   const choice=new OfflineR3515TaskDecisionModel({task_id:"r3537-final-pr",
+    agent_id:"orchestrator",depends_on:[retest.task_id],permissions:[prPermission],
+    instruction:"Open a Draft PR for the independently tested Account Suspension feature"});
+   const runtimeId=nativeTaskRef("P");
+   const staged=await reviewExecution.proposeAndStageVerifiedPullRequestTask({
+    model:choice,sourceTestTaskId:retest.task_id,sourceTestRuntimeTaskId:retest.runtime_task_id,
+    runtimeTaskId:runtimeId,childParameters:freshChildParams("urn:r3537:child:pr",29111)});
+   assert.equal(staged.status,"owner_pr_child_enrolled_no_provider_execution");
+   assert.equal(staged.tested_commit_sha,repairedHead);
+   prChild=issuer.assertTrustedIssuedChild(staged.task_id,coordinator);
+   assert.equal(prChild.agent_did,process.env.ADAPTER_ID_ORCHESTRATOR);
+   assert.equal(prChild.root_credential_id,rootBefore);
+   assert.equal(gate.registeredTaskCount,6);
+   assert.equal(gate.stagedCompletedTaskCount,4);
+   prPrepared=await httpCall("prepare",{task_id:runtimeId,agent_role:"orchestrator",
+    tool:"create_pull_request",arguments:{head_branch:branch,base_branch:"main",
+     title:"Account Suspension",body:"Implementation and recovery passed the controlled test suite."}},201);
+   await reviewExecution.stageEnrolledPullRequest({taskId:staged.task_id,
+    runtimeTaskId:runtimeId,requestId:prPrepared.request_id});
+   prPresentation=await invokeNativeCrypto({socketPath,token:tokens.orchestrator,timeoutMs:60000},
+    "create_presentation",{credential_id:prChild.credential_id,disclosed_permissions:[prPermission],
+     audience:prPrepared.audience,challenge:prPrepared.challenge});
+   const result=await httpCall("execute",{request_id:prPrepared.request_id,
+    signed_vp:prPresentation.signed_vp},200);
+   assert.equal(result.execution.tool,"create_pull_request");
+   assert.equal(result.execution.revision,repairedHead);
+   assert.equal(result.verified_delegation.credential_id,prChild.credential_id);
+   assert.equal(result.verified_delegation.root_credential_id,rootBefore);
+   assert.equal(gatewayPrCalls,1);
+   assert.equal(gate.stagedCompletedTaskCount,4,"POST alone is not Task completion");
+   const completed=await reviewExecution.attestEnrolledPullRequestCompletion({
+    taskId:staged.task_id,runtimeTaskId:runtimeId});
+   assert.equal(completed.status,"owner_pr_completion_independently_observed");
+   assert.equal(gate.stagedCompletedTaskCount,5);
+   assert.equal((await readdir(path("flights"))).filter(n=>n.endsWith(".completion.json")).length,5);
+   await assertHttpDenied({request_id:prPrepared.request_id,
+    signed_vp:prPresentation.signed_vp},"replay_detected");
+   await assert.rejects(reviewExecution.attestEnrolledPullRequestCompletion({
+    taskId:staged.task_id,runtimeTaskId:runtimeId}),/already been attempted/);
+   assert.equal(gatewayPrCalls,1);
+   assert.equal((await independentClient.getBranchMetadata("main")).commit_sha,pinnedDisposableMainSha);
+   assert.equal((await independentClient.getBranchMetadata(branch)).commit_sha,repairedHead);
+  }
   await reviewHost.close();
   assert.equal(reviewHost.phase,"revoked");
+  if(nativePr)await assert.rejects(verifier.verify({presenter:"orchestrator",
+   audience:prPrepared.audience,challenge:prPrepared.challenge,
+   required_permission:prPermission,signed_vp:prPresentation.signed_vp}));
   process.stdout.write(JSON.stringify({
-   event:"r3528_reviewed_native_fail_repair_retest_pass",
+   event:nativePr?"r3537_reviewed_native_d1_and_independent_pr_complete":
+    "r3528_reviewed_native_fail_repair_retest_pass",
    original_engineer_owner:true,original_root_unchanged:true,
    original_test_incomplete:true,fresh_native_children:true,
    independent_repair_completion:true,independent_retest_pass:true,
-   registered_tasks:5,completed_tasks:4,runner_posts:2,provider_commits:3,
+   registered_tasks:nativePr?6:5,completed_tasks:nativePr?5:4,
+   runner_posts:2,provider_commits:3,
+   ...(nativePr?{native_pr_child:true,native_pr_vp:true,opa_pr_allow:true,
+    draft_pr_created:true,independent_pr_completion:true,pr_provider_calls:gatewayPrCalls,
+    pr_replay_denied:true,pr_root_revocation_verified:true,preliminary_gateway_transport:"fixture"}:{}),
    main_unchanged:true,paid_model_calls:0,
    autonomous_functional_generation:false,completed_app_source:"owner_only_fixture"
   })+"\n");
@@ -1597,7 +1664,7 @@ try{
   ...a2aRoleServers.map(s=>s.close())
  ]);
  if(gatewayHost)await gatewayHost.close();
- if(reviewHost&&reviewHost.phase==="operational")await reviewHost.close();
+ if(reviewHost)await reviewHost.close();
  if(runnerServer)await new Promise(resolve=>runnerServer.close(resolve));
  await rm(parent,{recursive:true,force:true});
 }
