@@ -20,6 +20,8 @@ import {TOOL_NAMES,type AgentRole,type PrepareAuthorizationRequest,
  type GatewayRepositoryConfig,type Permission,type PreparedRequestRecord,
  type VerifiedDelegation} from "./types.ts";
 import {deriveRequiredPermission} from "./canonical.ts";
+import {assertOriginalIncompleteTestFlight}
+ from "./trusted-authority-only-failed-test-flight.ts";
 import {validatePrepareAuthorizationRequest} from "./validation.ts";
 import {TrustedOperationalSessionStore} from "./trusted-operational-session-store.ts";
 import {SignedAuthorityOnlyFileStore} from
@@ -213,6 +215,30 @@ export class TrustedAuthorityOnlyGatewayAdmissions {
    credential_id:child.credential_id,
    authority_digest:root.authority_digest,
    gateway_execution_authorized:false
+  });
+ }
+
+ /**
+  * R340: owner-private post-POST flight projection for independent FAIL
+  * corroboration. Cannot be called through ADK, A2A, MCP or HTTP.
+  */
+ assertTrustedFailedRunnerFlight(taskId:string,runtimeTaskId:string){
+  const root=this.#live();
+  if(this.#bindingInFlight||this.#enrollmentInFlight||
+     this.#flightInFlight||this.#completionInFlight)
+   deny("original Test flight inspection during concurrent owner transition");
+  const bound=this.#tasks.get(runtimeTaskId);
+  const child=this.#enrolledChildren.get(runtimeTaskId);
+  const flight=this.#flights.get(taskId);
+  if(!bound||!child||!flight||this.#sequential.has(taskId))
+   deny("no original durable native Test flight to inspect");
+  return assertOriginalIncompleteTestFlight({
+   root,row:bound.row,child,flight,taskId,runtimeTaskId,
+   approved:this.#authorizedPermissions!,
+   completed:this.#completed.has(taskId),
+   predecessorsComplete:bound.row.depends_on.every(
+    predecessor=>this.#completed.has(predecessor)),
+   nowMs:this.#now()
   });
  }
 

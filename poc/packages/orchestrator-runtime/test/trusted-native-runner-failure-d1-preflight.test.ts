@@ -6,6 +6,8 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "../src/trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
  from "../src/trusted-authority-only-child-issuer.ts";
+import {TrustedAuthorityOnlyGatewayAdmissions}
+ from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {AuthenticatedRunnerFailureObserver}
  from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
 import {preflightNativeD1FailureCandidate}
@@ -53,6 +55,15 @@ const child={
  authority_digest:intent.authority_digest,
  credential_id:intent.credential_id,permissions:testPermission
 };
+const flight={
+ ...Object.fromEntries(["session_id","authority_digest",
+  "root_credential_id","task_id","runtime_task_id","epoch",
+  "agent_did","credential_id","request_id","request_fingerprint"]
+  .map(k=>[k,intent[k as keyof typeof intent]])),
+ status:"gateway_original_test_flight_preflight_only",
+ gateway_task_completed:false,recovery_authorized:false,
+ gateway_execution_authorized:false
+};
 const expected={
  ...Object.fromEntries(["session_id","authority_digest",
   "root_credential_id","task_id","runtime_task_id","epoch",
@@ -69,7 +80,7 @@ const candidate={role:"backend" as const,permissions:[{
  operation:"update_file" as const
 }]};
 function fixture(patch?:{root?:typeof root;row?:typeof row;child?:typeof child;
- expected?:typeof expected;secondRoot?:typeof root}){
+ flight?:typeof flight;expected?:typeof expected;secondRoot?:typeof root}){
  let checks=0,reads=0;
  const coordinator=Object.assign(Object.create(
   TrustedAuthorityOnlyExecutionCoordinator.prototype),{
@@ -84,11 +95,15 @@ function fixture(patch?:{root?:typeof root;row?:typeof row;child?:typeof child;
   TrustedAuthorityOnlyChildIssuer.prototype),{
   assertTrustedIssuedChild:()=>patch?.child??child
  });
+ const gateway=Object.assign(Object.create(
+  TrustedAuthorityOnlyGatewayAdmissions.prototype),{
+  assertTrustedFailedRunnerFlight:()=>patch?.flight??flight
+ });
  const observer=Object.assign(Object.create(
   AuthenticatedRunnerFailureObserver.prototype),{
   observe:async()=>{reads++;return patch?.expected??expected;}
  });
- return {config:{coordinator,childIssuer:issuer,failureObserver:observer,
+ return {config:{coordinator,childIssuer:issuer,gateway,failureObserver:observer,
   failedRunnerIntent:intent,candidate},get reads(){return reads;}};
 }
 test("R339 authentic Test FAIL only permits original-ceiling planning preflight",async()=>{
@@ -139,4 +154,17 @@ test("R339 expired original root denies even a valid independent FAIL",async()=>
  await assert.rejects(preflightNativeD1FailureCandidate(f.config),
   /NO-GO/);
  assert.equal(f.reads,0);
+});
+
+test("R340 original Gateway flight must be exact, never model-reconstructed",async()=>{
+ for(const bad of [
+  {request_id:"foreign"},
+  {credential_id:"foreign-child"},
+  {status:"untrusted"},
+  {gateway_task_completed:true}
+ ]){
+  const f=fixture({flight:{...flight,...bad}} as never);
+  await assert.rejects(preflightNativeD1FailureCandidate(f.config),/NO-GO/);
+  assert.equal(f.reads,0);
+ }
 });

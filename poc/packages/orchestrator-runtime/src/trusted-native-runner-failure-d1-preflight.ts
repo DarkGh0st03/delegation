@@ -13,6 +13,8 @@ import {TrustedAuthorityOnlyExecutionCoordinator}
  from "./trusted-authority-only-execution-coordinator.ts";
 import {TrustedAuthorityOnlyChildIssuer}
  from "./trusted-authority-only-child-issuer.ts";
+import {TrustedAuthorityOnlyGatewayAdmissions}
+ from "../../../apps/gateway/src/trusted-authority-only-admissions.ts";
 import {AuthenticatedRunnerFailureObserver}
  from "../../../apps/gateway/src/trusted-authority-only-runner-failure-evidence.ts";
 import {DurableAuthorityOnlyRunnerIntentJournal,
@@ -31,6 +33,7 @@ function deny(s:string):never{throw Error("Native D1 failure preflight NO-GO: "+
 export async function preflightNativeD1FailureCandidate(input:{
  coordinator:TrustedAuthorityOnlyExecutionCoordinator;
  childIssuer:TrustedAuthorityOnlyChildIssuer;
+ gateway:TrustedAuthorityOnlyGatewayAdmissions;
  failureObserver:AuthenticatedRunnerFailureObserver;
  failedRunnerIntent:TrustedAuthorityOnlyRunnerIntent;
  candidate:{role:Role;permissions:readonly DelegatedPermission[]};
@@ -46,6 +49,7 @@ export async function preflightNativeD1FailureCandidate(input:{
 }>>{
  if(!(input?.coordinator instanceof TrustedAuthorityOnlyExecutionCoordinator)||
     !(input.childIssuer instanceof TrustedAuthorityOnlyChildIssuer)||
+    !(input.gateway instanceof TrustedAuthorityOnlyGatewayAdmissions)||
     !(input.failureObserver instanceof AuthenticatedRunnerFailureObserver)||
     input.coordinator.phase!=="active"||
     (input.nowMs!==undefined&&typeof input.nowMs!=="function"))
@@ -118,7 +122,17 @@ export async function preflightNativeD1FailureCandidate(input:{
   if(permission.operation==="update_file")effects++;
  }
  if(effects!==1)deny("exactly one approved side effect per candidate Task");
- const expected=Object.fromEntries(keys.map(k=>[k,intent[k]]));
+ // The Gateway must independently re-read its ORIGINAL reserved flight.
+ // An A2A or caller-supplied Test ID cannot manufacture this evidence.
+ const nativeFlight=input.gateway.assertTrustedFailedRunnerFlight(
+  intent.task_id,intent.runtime_task_id);
+ if(nativeFlight.status!=="gateway_original_test_flight_preflight_only"||
+    nativeFlight.gateway_task_completed!==false||
+    nativeFlight.gateway_execution_authorized!==false||
+    nativeFlight.recovery_authorized!==false||
+    keys.some(k=>nativeFlight[k]!==intent[k]))
+  deny("Runner FAIL does not match original Gateway Test flight");
+ const expected=Object.fromEntries(keys.map(k=>[k,nativeFlight[k]]));
  // R336/R337 observer: original one-shot POST, authenticated FAIL
  // receipt, current exact Gitea HEAD. A2A/model text is not evidence.
  const fail=await input.failureObserver.observe(intent,expected as never);
@@ -131,6 +145,10 @@ export async function preflightNativeD1FailureCandidate(input:{
     fail.recovery_authorized!==false||
     fail.gateway_task_completed!==false)
    deny("original Runner FAIL is not independently actionable");
+ const lastFlight=input.gateway.assertTrustedFailedRunnerFlight(
+  intent.task_id,intent.runtime_task_id);
+ if(!isDeepStrictEqual(lastFlight,nativeFlight))
+  deny("Gateway Test flight changed during independent FAIL observation");
  const live=input.coordinator.assertTrustedGatewayAuthorityBinding();
  const liveChild=input.childIssuer.assertTrustedIssuedChild(
   intent.task_id,input.coordinator);
