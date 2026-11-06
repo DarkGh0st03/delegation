@@ -1303,7 +1303,21 @@ for(const mode of ['missing','backend','frontend','test','failure',
         assert.deepEqual(repairReport.artifact.files_modified,['apps/user.ts']);
         assert.equal(gateway.stagedCompletedTaskCount,2);
         assert.equal(model.calls,4);
-        const repaired=await execution.attestEnrolledTaskCompletion({
+        if(d1Retest){
+          const premature=new R351ScriptedDecision({
+           task_id:'r3525-premature',agent_id:'test',
+           depends_on:[task.task.task_id,next.task.task_id,newD1.task_id],
+           permissions:[coordinator.assertTrustedGatewayAuthorityBinding()
+            .root_permissions.find(p=>p.operation==='run_tests')],
+           instruction:'Unattested D1 retest must not run'
+          });
+          await assert.rejects(execution.proposeAndStageVerifiedD1Retest({
+           model:premature,runtimeTaskId:'dispatch_'+'Q'.repeat(22),
+           childParameters:testTask.childParameters
+          }),/new D1 Test requires independent repair/);
+          assert.equal(premature.calls,0);
+         }
+         const repaired=await execution.attestEnrolledTaskCompletion({
          taskId:newD1.task_id,runtimeTaskId:newD1.runtime_task_id
         });
         assert.equal(repaired.status,'owner_gateway_completion_independently_observed');
