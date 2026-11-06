@@ -1378,6 +1378,23 @@ for(const mode of ['missing','backend','frontend','test','failure',
        const live=coordinator.assertTrustedGatewayAuthorityBinding();
        const permission=live.root_permissions.find(p=>p.operation==='create_pull_request');
        assert.ok(permission,'Engineer-signed repo PR permission required');
+       // A failed Test cannot be used as a PR source, even after a later
+       // independently completed retest. The rejected model is never invoked,
+       // and the one-shot root PR admission must remain available for the
+       // correct final Test rather than consuming a provider effect.
+       const forged=new R351ScriptedDecision({
+        task_id:'r3562-forged-failed-test-pr',agent_id:'orchestrator',
+        depends_on:['r3513-test'],permissions:[permission],
+        instruction:'Attempt PR from original incomplete Test'
+       });
+       await assert.rejects(execution.proposeAndStageVerifiedPullRequestTask({
+        model:forged,sourceTestTaskId:'r3513-test',
+        sourceTestRuntimeTaskId:testTask.runtimeTaskId,
+        runtimeTaskId:'dispatch_'+'Z'.repeat(22)
+       }),/independent completion of earlier work/);
+       assert.equal(forged.calls,0);
+       assert.equal(coordinator.registeredTaskCount,5);
+       assert.equal(gateway.stagedCompletedTaskCount,4);
        const prChoice=new R351ScriptedDecision({
         task_id:'r3562-adaptive-pr',agent_id:'orchestrator',
         depends_on:[outcome.source_test_task_id],permissions:[permission],
