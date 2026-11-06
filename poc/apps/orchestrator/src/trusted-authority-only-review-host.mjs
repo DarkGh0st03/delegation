@@ -1,3 +1,5 @@
+import {randomBytes} from 'node:crypto';
+import {runTrustedAuthorityOnlyAdaptiveWorkLoop} from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adaptive-work-loop.mjs';
 import {TrustedAuthorityOnlyBranchExecutor} from '../../gateway/src/trusted-authority-only-branch-executor.ts';
 /** Owner-assembled permission-only Planning -> authenticated Engineer review
  * -> independent native root -> dynamic Coordinator. No public root issuer.
@@ -121,6 +123,8 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
   d1RetestAttempted=false,d1RetestPin,d1RetestPassed=false;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
  let decisionFlight,decisionCalls=0;
+ let adaptiveLoopAttempted=false,adaptiveLoopFlight;
+ const adaptiveInstructions=new Map();
  let branchAdmissionAttempted=false;
  const branchTaskPins=new Map(),branchStageAttempts=new Set();
  let pullRequestAdmissionAttempted=false;
@@ -553,6 +557,76 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     /** R353.2: ADK may propose a PR Task only after original Test evidence.
      * Root/epoch/Child and exact tested SHA stay with the original owner.
      * Admission is not permission to issue a provider POST. */
+    /** Original-owner adaptive WORK loop. PR readiness is not PR execution.
+     * The only external callback provisions fresh Child metadata; it grants no scope. */
+    async runAdaptiveWorkLoop(input){
+     if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+        taskStageFailed||dispatchFailed||completionFailed||adaptiveLoopAttempted||
+        adaptiveLoopFlight||taskStageFlight||dispatchFlight||completionFlight||decisionFlight||
+        pullRequestAdmissionAttempted||!nativeEffectBinding||
+        !fields(input,['model','nextChildParameters','maxSteps','signal'])||
+        typeof input.nextChildParameters!=='function')
+      deny('adaptive loop requires original quiescent owner and private Child metadata provisioner');
+     adaptiveLoopAttempted=true;
+     const original=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+     const readContext=async()=>{
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         taskStageFailed||dispatchFailed||completionFailed||taskStageFlight||dispatchFlight||completionFlight)
+       deny('adaptive observations require live quiescent original owner');
+      const live=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      if(live.root_credential_id!==original.root_credential_id||
+         live.authority_digest!==original.authority_digest||
+         [...stagedTaskIds.values()].some(p=>!gatewayAttestedTaskIds.has(p.task_id)))
+       deny('adaptive next decision requires original root and independent completion of every Task');
+      const head=await nativeEffectBinding.giteaClient.getBranchMetadata(branch);
+      operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      return {
+       requirement,branch,rootPermissions:live.root_permissions,
+       agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry)
+        .map(([id,p])=>[id,{capabilities:p.capabilities}])),
+       previousTasks:[...gatewayAttestedTaskIds.values()].map(p=>({task_id:p.task_id,agent_id:p.agent_id})),
+       nextEpoch:operationalCoordinator.registeredTaskCount+1,
+       executionProgress:{current_head_sha:head.commit_sha,
+        completed_work:[...stagedTaskIds.values()].map(p=>({task_id:p.task_id,agent_id:p.agent_id,
+         operation:p.operation,instruction:adaptiveInstructions.get(p.task_id)??('Verified '+p.operation)}))}
+      };
+     };
+     adaptiveLoopFlight=runTrustedAuthorityOnlyAdaptiveWorkLoop({
+      model:input.model,maxSteps:input.maxSteps,signal:input.signal,
+      hooks:{readContext,
+       beforeDecision:async()=>{
+        if(decisionFlight||++decisionCalls>8)deny('adaptive loop exceeds original owner decision budget');
+       },
+       runDecision:async decide=>{
+        decisionFlight=decide();
+        try{return await decisionFlight;}finally{decisionFlight=undefined;}
+       },
+       executeTask:async(choice,context)=>{
+        if(!a2aOwner||a2aOwner.phase==='failed_closed')deny('adaptive work requires original protected A2A owner');
+        const childParameters=await input.nextChildParameters(Object.freeze({epoch:context.nextEpoch,agent_id:choice.agent_id}));
+        input.signal?.throwIfAborted();
+        const current=await readContext();
+        if(JSON.stringify(current)!==JSON.stringify(context))deny('adaptive Task context changed before staging');
+        const runtimeTaskId='dispatch_'+randomBytes(16).toString('base64url');
+        const staged=await executionHandle.stageTask({task:{task_id:choice.task_id,epoch:context.nextEpoch,
+         agent_id:choice.agent_id,depends_on:[...choice.depends_on],permissions:[...choice.permissions]},
+         runtimeTaskId,childParameters});
+        const stager=executionHandle.createEnrolledNativeEffectStager({runtimeTaskId,
+         expectedHeadSha:context.executionProgress.current_head_sha});
+        await executionHandle.dispatchEnrolledTask({taskId:staged.task_id,runtimeTaskId,
+         instruction:choice.instruction,effectStager:stager});
+        input.signal?.throwIfAborted();
+        await executionHandle.attestEnrolledTaskCompletion({taskId:staged.task_id,runtimeTaskId});
+        adaptiveInstructions.set(staged.task_id,choice.instruction.replace(/[\x00-\x1f\x7f]/gu,' '));
+       },
+       confirmReady:async()=>{
+        const latest=[...stagedTaskIds.entries()].filter(([,p])=>p.agent_id==='test'&&p.operation==='run_tests').at(-1);
+        if(!latest)deny('adaptive PR readiness requires independently verified latest Test');
+        return executionHandle.inspectVerifiedPullRequestHead({taskId:latest[1].task_id,runtimeTaskId:latest[0]});
+       },retire
+      }});
+     try{return await adaptiveLoopFlight;}finally{adaptiveLoopFlight=undefined;}
+    },
     async proposeAndStageBranchTask(input){
      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
         taskStageFailed||dispatchFailed||completionFailed||branchAdmissionAttempted||

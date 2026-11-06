@@ -671,7 +671,9 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'pr-execute-opa-denied','pr-execute-vp-denied','pr-execute-no-stage',
  'pr-execute-foreign-child','pr-execute-child-depth','pr-execute-post-failure','pr-execute-race',
  'pr-attest','pr-attest-closed','pr-attest-wrong-id','pr-attest-head-moved',
- 'pr-attest-base-moved','pr-attest-before-execute'])test(
+ 'pr-attest-base-moved','pr-attest-before-execute','adaptive-ready','adaptive-stale'])test(
+ mode.startsWith('adaptive')?
+  'R355 original Engineer current Test readiness '+mode:
  mode.startsWith('pr')?
   'R353.2 original Engineer PR Task admission '+mode:
  mode==='failure-no-receipt'?
@@ -697,7 +699,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const verified=mode!=='missing',throughFailure=mode.startsWith('failure'),
   noFailureReceipt=mode==='failure-no-receipt',
   foreignD1Model=mode==='failure-model-denied',
-  throughTest=mode==='test'||mode.startsWith('pr')||throughFailure,
+  throughTest=mode==='test'||mode.startsWith('pr')||mode.startsWith('adaptive')||throughFailure,
   throughFrontend=mode==='frontend'||throughTest,
   d1Retest=mode==='failure-d1-retest',
    d1Effect=mode==='failure-d1-effect'||d1Retest;
@@ -1583,6 +1585,24 @@ for(const mode of ['missing','backend','frontend','test','failure',
      const prompt=JSON.stringify(testAgentModel.requests);
      for(const secret of [testVp,testStaged.credential_id,testRequestId])
       assert.equal(prompt.includes(secret),false);
+     if(mode.startsWith('adaptive')){
+      if(mode==='adaptive-stale')provider.head='7'.repeat(40);
+      const loopModel=new R351ScriptedDecision({action:'ready_for_pr',reason:'Request verified PR readiness'});
+      const input={model:loopModel,nextChildParameters:()=>{throw Error('Readiness cannot issue another Child');}};
+      if(mode==='adaptive-stale'){
+       await assert.rejects(execution.runAdaptiveWorkLoop(input),/stale or moved feature branch/);
+       assert.equal(host.phase,'revoked');
+      }else{
+       const result=await execution.runAdaptiveWorkLoop(input);
+       assert.equal(result.status,'owner_adaptive_work_ready_for_pr');
+       assert.equal(result.executed_tasks,0);assert.equal(result.tested_commit_sha,frontendSha);
+       assert.equal(result.source_test_task_id,'r3513-test');assert.equal(result.pr_created,false);
+       assert.equal(host.phase,'operational');
+       await assert.rejects(execution.runAdaptiveWorkLoop(input),/original quiescent owner/);
+      }
+      assert.equal(loopModel.calls,1);
+      await host.close();return;
+     }
      if(mode.startsWith('pr')){
       const binding=coordinator.assertTrustedGatewayAuthorityBinding();
       const permission=binding.root_permissions.find(p=>p.operation==='create_pull_request');
@@ -2331,5 +2351,32 @@ for(const mode of ['pass','invalid-model','forged-pin','reader-moved']){
    assert.equal(coordinator.assertTrustedGatewayAuthorityBinding().root_credential_id,original.root_credential_id);
   }
   assert.equal(childCalls,0);await host.close();
+ });
+}
+
+for(const mode of ['blocked','premature-pr','missing-a2a']){
+ test('R355 original owner adaptive loop '+mode,async t=>{
+  const f=await fixture(t),host=await f.start();
+  await f.approve(['permission-1','permission-2']);
+  const {coordinator}=await host.activateOperational(root('urn:r355:original-root',2));
+  const execution=await host.admitOperationalExecution(executionDeps(f));
+  const native=nativeOfflinePreflights(execution.gateway,f.dirs);
+  execution.bindNativeGatewayEffects({store:new InMemoryRequestStore(),giteaClient:native.gitea,
+   mutation:native.mutation,runner:native.runner});
+  const permission=coordinator.assertTrustedGatewayAuthorityBinding().root_permissions.find(p=>p.operation==='update_file');
+  const answer=mode==='missing-a2a'?{action:'delegate',task:{task_id:'r355-no-a2a',agent_id:'backend',
+   depends_on:[],permissions:[permission],instruction:'Perform approved work'}}:
+   {action:mode==='blocked'?'blocked':'ready_for_pr',reason:'Model asks to stop'};
+  const model=new R351ScriptedDecision(answer);
+  let metadataCalls=0;
+  const input={model,nextChildParameters:()=>{metadataCalls++;throw Error('No Child metadata needed');}};
+  if(mode==='blocked'){
+   const result=await execution.runAdaptiveWorkLoop(input);
+   assert.equal(result.status,'owner_adaptive_work_blocked');assert.equal(result.executed_tasks,0);
+  }else await assert.rejects(execution.runAdaptiveWorkLoop(input),
+   mode==='missing-a2a'?/original protected A2A owner/:/independently verified latest Test/);
+  assert.equal(host.phase,'revoked');assert.equal(metadataCalls,0);
+  assert.equal(coordinator.registeredTaskCount,0);assert.equal(model.calls,1);
+  await host.close();
  });
 }

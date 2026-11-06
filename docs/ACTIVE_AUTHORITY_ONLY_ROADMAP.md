@@ -51,13 +51,18 @@ un comportamento autonomo del sistema.
 - **Limite del branch:** il trasporto preliminare Gateway rimane fixture, pur con
   lettura reale di main e VP preliminare nativa. È una prova branch-only, distinta
   dalla prova nativa recovery/PR: non chiude la prova gratuita unica R11.
-- **Prossimo blocco: Executor autonomo.** Il controller deve possedere il ciclo
-  osservazione/scelta/esecuzione/verifica e riusare l'owner originale. Le attestazioni
-  Gateway devono sbloccare le decisioni successive. Integrare branch da main e
-  successiva esecuzione senza riutilizzare la baseline feature già risolta di R353.9.
-  Restano letture di codice autorizzate per il modello e recovery con diagnosi
-  utilizzabili, senza candidato correttivo predisposto dal test harness. Conservare
-  l'unico scenario Account Suspension e distinguere modelli scriptati/generazione reale.
+- **Executor R355 avviato:** l'owner originale espone un ciclo ADK limitato che
+  sceglie Task/stop/blocco, registra/delega, esegue A2A e attesta prima della scelta
+  successiva. Non riceve una lista di Task. La richiesta di PR è una readiness
+  verificata sulla HEAD corrente, non una PR già creata. Si riusano i registri e
+  gli esecutori esistenti; il budget originale resta invariato.
+- **Prossima integrazione:** dimostrare il nuovo ciclo con dispatch A2A effettivo
+  e provider nativi, poi unire branch da main e PR. I test del controller simulano
+  le hook di esecuzione; non sostituiscono questa prova. Restano letture autorizzate
+  di codice per il modello e recovery con diagnosi utilizzabili, senza candidato
+  predisposto dall'harness. Il nuovo ciclo attualmente ritira la root al fallimento.
+  Conservare l'unico scenario Account Suspension e distinguere sempre modelli
+  scriptati, fixture e generazione reale.
 
 Non avviare suite native complete a ogni commit. Usare test mirati e Fast CI;
 riservare la prova nativa a checkpoint di integrazione significativi. PR #38 Draft,

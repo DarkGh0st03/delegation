@@ -29,7 +29,7 @@ class SingleDecisionModel extends BaseLlm{
 }
 export class TrustedAuthorityOnlyAdkDecisionProposer{
  #attempted=false;
- constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,nextEpoch,decisionKind='agent'}){
+ constructor({model,requirement,branch,rootPermissions,agents,previousTasks,verifiedFailure,nextEpoch,decisionKind='agent',executionProgress}){
   if(!(model instanceof BaseLlm)||typeof requirement!=='string'||
      !requirement.trim()||requirement.length>6000||
      typeof branch!=='string'||!branch.startsWith('feature/')||
@@ -40,7 +40,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
      (nextEpoch!==undefined&&(!Number.isSafeInteger(nextEpoch)||
       nextEpoch<1||nextEpoch>256)))
    fail();
-  if(!['agent','pull_request','branch'].includes(decisionKind))fail();
+  if(!['agent','pull_request','branch','adaptive'].includes(decisionKind))fail();
   this.decisionKind=decisionKind;
   const roots=rootPermissions.map(p=>{
    if(!exact(p,['resource','operation'])||
@@ -68,6 +68,22 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
   // A failed Test is registered but never counted as Gateway-completed.
   // Recovery epochs therefore cannot be inferred from prior successes.
   this.nextEpoch=nextEpoch??prior.length+1;
+  if(decisionKind==='adaptive'){
+   if(!exact(executionProgress,['current_head_sha','completed_work'])||
+      !/^[a-f0-9]{40}$/u.test(executionProgress.current_head_sha)||
+      !Array.isArray(executionProgress.completed_work)||
+      executionProgress.completed_work.length!==prior.length)fail();
+   const ids=new Set();
+   for(const item of executionProgress.completed_work){
+    if(!exact(item,['task_id','agent_id','operation','instruction'])||ids.has(item.task_id)||
+       !prior.some(p=>p.task_id===item.task_id&&p.agent_id===item.agent_id)||
+       !['create_branch','update_file','run_tests','create_pull_request'].includes(item.operation)||
+       typeof item.instruction!=='string'||!item.instruction.trim()||
+       item.instruction.length>4000||/[\x00-\x1f\x7f]/u.test(item.instruction))fail();
+    ids.add(item.task_id);
+   }
+   this.executionProgress=Object.freeze(structuredClone(executionProgress));
+  }else if(executionProgress!==undefined)fail();
   if(verifiedFailure!==undefined){
    const phases=new Set(['typecheck','backend_tests','frontend_tests',
     'build','playwright_e2e','researcher_acceptance']);
@@ -89,12 +105,15 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    description:'Suggest one Task; trusted Coordinator validates and owns all grants',
    model,
    instruction:[
+    this.decisionKind==='adaptive'?
+     'Choose the next action from verified execution progress. Return {"action":"delegate","task":TASK} or {"action":"ready_for_pr","reason":"..."} or {"action":"blocked","reason":"..."}. TASK has exactly task_id,agent_id,depends_on,permissions,instruction. Do not claim completion: the owner independently verifies current Test evidence before PR readiness.':
     this.decisionKind==='branch'?
      'Propose exactly ONE orchestrator create_branch Task with no dependencies; never claim that a branch exists.':
     this.decisionKind==='pull_request'?
      'Propose exactly ONE orchestrator create_pull_request Task depending on the independently completed Test; never claim that a PR exists.':
      'Propose exactly ONE next software engineering Task; never claim approval or completion.',
-    'Return JSON only with exactly task_id,agent_id,depends_on,permissions,instruction.',
+    this.decisionKind==='adaptive'?'Return JSON only using the action schema above.':
+     'Return JSON only with exactly task_id,agent_id,depends_on,permissions,instruction.',
     'Permissions are pairs of resource and operation and may use only existing delegated scope.',
     'Choose the specialist from registered agent IDs; dependencies may refer ONLY to independently Gateway-verified completed Task IDs.',
     'Never output keys, credentials, URLs, root status, signature, DID, epoch, or session details.',
@@ -113,6 +132,7 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
    root_permission_ceiling:this.roots,
    independently_gateway_completed_tasks:this.previous,
    next_epoch:this.nextEpoch,
+   ...(this.executionProgress?{verified_execution_progress:this.executionProgress}:{}),
    ...(this.verifiedFailure?{
     independent_runner_failure:{
      failed_phase:this.verifiedFailure.failed_phase,
@@ -134,6 +154,14 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
   if(failed||deadline.aborted||model.calls!==1||!text||text.length>16000)fail();
   let raw;
   try{raw=JSON.parse(text);}catch{fail();}
+  if(this.decisionKind==='adaptive'){
+   if(exact(raw,['action','reason'])&&['ready_for_pr','blocked'].includes(raw.action)&&
+      typeof raw.reason==='string'&&raw.reason.trim()&&raw.reason.length<=1000&&
+      !/[\x00-\x1f\x7f]/u.test(raw.reason))
+    return Object.freeze({action:raw.action,reason:raw.reason});
+   if(!exact(raw,['action','task'])||raw.action!=='delegate')fail();
+   raw=raw.task;
+  }
   if(!exact(raw,['task_id','agent_id','depends_on','permissions','instruction'])||
      typeof raw.task_id!=='string'||!ID.test(raw.task_id)||
      typeof raw.agent_id!=='string'||!Object.hasOwn(this.agents,raw.agent_id)||
@@ -165,8 +193,9 @@ export class TrustedAuthorityOnlyAdkDecisionProposer{
   }else if(selected.some(p=>p.operation==='create_pull_request')||
     selected.filter(p=>p.operation==='update_file'||p.operation==='run_tests').length!==1)
    fail();
-  return Object.freeze({task_id:raw.task_id,agent_id:raw.agent_id,
+  const choice=Object.freeze({task_id:raw.task_id,agent_id:raw.agent_id,
    depends_on:Object.freeze([...raw.depends_on]),
    permissions:Object.freeze(selected),instruction:raw.instruction});
+  return this.decisionKind==='adaptive'?Object.freeze({action:'delegate',task:choice}):choice;
  }
 }
