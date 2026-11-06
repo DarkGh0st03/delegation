@@ -1,16 +1,17 @@
 {
-  "revision": "R331",
-  "request": "one-disposable-native-three-ADK-A2A-Rust-EVM-OPA-Gitea-Docker-proof",
-  "source_commit": "7d7c52a0bc170f2e0678505ea3f40fefa30fb7ae",
+  "revision": "R350.13",
+  "request": "one-disposable-review-approved-native-Rust-EVM-OPA-Gitea-Docker-proof",
+  "source_commit": "5b1ad5408a3c3d3d2c13046e67a89b6c59bd9be8",
+  "mode": "reviewed_native",
   "paid_ai": false,
   "production_effects": false,
   "expected": [
-    "native Rust Root and three distinct signed Child VPs",
-    "real EVM status and OPA gating",
-    "Backend ADK/A2A real Gitea CAS",
-    "Frontend ADK/A2A real Gitea CAS",
-    "Test ADK/A2A controlled Docker PASS pinned to Frontend HEAD",
-    "three separate independent Gateway task-completion attestations",
-    "negative Child/root revocation and scope checks"
+    "scripted real ADK authority-only Planner on signed feature snapshot",
+    "authenticated Engineer GUI consent and actual Ed25519 permission-only receipt",
+    "native Rust preliminary revocation and independent operational root",
+    "original R349 Coordinator bound to R331 native Child / Gateway",
+    "three real ADK A2A agents, native Rust VP / OPA / Gitea CAS and Docker",
+    "three independent verified Gateway Task completions",
+    "immutable main, root revocation and fail-closed recovery"
   ]
 }

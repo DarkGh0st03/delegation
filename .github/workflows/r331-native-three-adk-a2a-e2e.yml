@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 75
     env:
       ENGINEER_CORE_NATIVE_MODE: "1"
-      R35013_NATIVE_REVIEW: ${{ inputs.authority_mode == 'reviewed_native' && '1' || '0' }}
+      R35013_NATIVE_REVIEW: ${{ (github.event_name == 'push' || inputs.authority_mode == 'reviewed_native') && '1' || '0' }}
       R233_NATIVE_EVM: "1"
       APPROVED_RUNNER_NATIVE_MCP: "1"
       ADAPTER_TRUST_PROFILE: evm
