@@ -1080,9 +1080,12 @@ for(const mode of ['missing','backend','frontend','test'])test(mode==='test'?
      assert.equal(testReport.provider_completion_attested,false);
      assert.equal(testReport.role,'test');
      assert.equal(testReport.artifact.test_outcome,'pass');
-     assert.equal(testReport.artifact.tested_commit_sha,frontendSha);
-     assert.equal(testReport.artifact.project_tests,'pass');
-     assert.equal(testReport.artifact.researcher_acceptance,'pass');
+     assert.equal(testReport.artifact.commit_sha,frontendSha);
+     // An A2A PASS is UNTRUSTED. The owner intentionally redacts Runner
+     // outcome fields until original Gateway attestation succeeds.
+     assert.equal(testReport.artifact.tested_commit_sha,undefined);
+     assert.equal(testReport.artifact.project_tests,undefined);
+     assert.equal(testReport.artifact.researcher_acceptance,undefined);
      assert.equal(testAgentModel.calls,2);
      assert.equal(gateway.stagedCompletedTaskCount,2);
      const pending=(await readdir(f.dirs.runnerIntents))
