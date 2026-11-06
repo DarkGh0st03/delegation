@@ -7,6 +7,13 @@ import {join} from "node:path";
 import {GiteaClient} from "../src/gitea-client.ts";
 import {AuthenticatedGiteaReadCompletionObserver}
  from "../src/trusted-authority-only-gitea-evidence.ts";
+import {TrustedGatewayGiteaReadEvidencePublisher}
+ from "../src/trusted-authority-only-gitea-publisher.ts";
+import {TrustedAuthorityOnlyGatewayAdmissions}
+ from "../src/trusted-authority-only-admissions.ts";
+import {GiteaExecutor} from "../src/gitea-executor.ts";
+import type {PreparedRequestRecord,VerifiedDelegation,GiteaReadFileExecutionResult}
+ from "../src/types.ts";
 
 const sha=(s:string)=>createHash("sha256").update(s).digest("hex");
 function canonical(v:unknown):string{
@@ -88,6 +95,114 @@ async function fixture(fn:(arg:{
  try{await fn({directory,record,sign,save,reader});}
  finally{await rm(directory,{recursive:true,force:true});}
 }
+// R357.3 unit-only: the real admission gate is tested separately. The
+// prototype fixture supplies expected binding solely to exercise publisher
+// witness, independent read, MAC and file-replay behavior, NOT EVM/OPA.
+function sourceClient(token:string,head=revision){
+ const fetchFn=async(url:URL|string,init?:RequestInit)=>{
+  assert.equal((init?.headers as Record<string,string>)?.authorization,"token "+token);
+  const u=new URL(String(url));
+  if(u.pathname.endsWith("/branches/feature%2Faccount-suspension"))
+   return new Response(JSON.stringify({name:"feature/account-suspension",commit:{id:head}}));
+  if(u.pathname.endsWith("/contents/apps/backend/user.ts"))
+   return new Response(JSON.stringify({type:"file",path:"apps/backend/user.ts",
+    encoding:"base64",content:Buffer.from(contents).toString("base64"),
+    size:Buffer.byteLength(contents),sha:blobSha}));
+  throw Error("Unexpected Gitea URI "+u.pathname);
+ };
+ return new GiteaClient({
+  baseUrl:"http://gitea.local:3000",owner:"thesis",repository:"iam-console-poc",
+  token,fetchFn:fetchFn as typeof fetch
+ });
+}
+function originalReadRecord():PreparedRequestRecord{
+ return {
+  request_id:expected.request_id,task_id:expected.runtime_task_id,
+  agent_role:"backend",
+  request:{tool:"read_file",arguments:{branch:"feature/account-suspension",
+   path:"apps/backend/user.ts"}},
+  required_permission:{operation:"read_file",
+   resource:"gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/user.ts"},
+  audience:"cloud-access-gateway",challenge:"r3573-local",
+  request_fingerprint:expected.request_fingerprint,
+  pinned_revision:revision,authority_only_digest:expected.authority_digest,
+  authority_only_plan_task_id:expected.task_id,
+  authority_only_agent_did:expected.agent_did,
+  created_at_ms:1,expires_at_ms:Date.now()+60_000,consumed:true
+ };
+}
+const verifiedRead:VerifiedDelegation={
+ presenter_id:expected.agent_did,credential_id:expected.credential_id,
+ issuer_id:"did:thesis:engineer",root_credential_id:expected.root_credential_id,
+ permissions:[{operation:"read_file",resource:
+  "gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/apps/backend/user.ts"}],
+ hierarchy_depth:1,expiration:"999999999999"
+};
+function fakeReadAdmission(){
+ return Object.assign(Object.create(TrustedAuthorityOnlyGatewayAdmissions.prototype),{
+  assertTrustedCompletedReadEvidenceBinding(
+   record:PreparedRequestRecord,verified:VerifiedDelegation
+  ){
+   assert.equal(record.authority_only_digest,expected.authority_digest);
+   assert.equal(verified.credential_id,expected.credential_id);
+   return expected;
+  }
+ }) as TrustedAuthorityOnlyGatewayAdmissions;
+}
+test("R357.3 exact witnessed Gitea read publishes only owner-authenticated bytes",async()=>{
+ await fixture(async({directory,reader})=>{
+  const record=originalReadRecord(),gate=fakeReadAdmission();
+  const result=await new GiteaExecutor(sourceClient("trusted-gateway")).execute(record);
+  const publisher=new TrustedGatewayGiteaReadEvidencePublisher({
+   directory,key,admissions:gate,
+   independentGiteaClient:sourceClient("separate-read-only"),
+   repository:"thesis/iam-console-poc",branch:"feature/account-suspension",
+   nowMs:()=>Date.parse("2026-11-05T10:00:00Z")
+  });
+  assert.equal(publisher.isForAdmissions(gate),true);
+  const out=await publisher.publishSuccessfulRead({
+   record,verified:verifiedRead,policy:{allow:true,policy_version:"test-only-opa-v1"},
+   execution:result as GiteaReadFileExecutionResult
+  });
+  assert.equal(out.status,"gateway_read_evidence_published_staged");
+  assert.equal(out.provider_execution_enabled,false);
+  assert.match(out.evidence_sha256,/^[a-f0-9]{64}$/u);
+  const observed=await reader().observe(expected);
+  assert.equal(observed.evidence_sha256,out.evidence_sha256);
+  await assert.rejects(publisher.publishSuccessfulRead({
+   record,verified:verifiedRead,policy:{allow:true,policy_version:"test-only-opa-v1"},
+   execution:result as GiteaReadFileExecutionResult
+  }),/EEXIST/u);
+ });
+});
+test("R357.3 missing HEAD pin, forged result or moved independent Gitea HEAD never signs",async()=>{
+ await fixture(async({directory})=>{
+  const gate=fakeReadAdmission(),record=originalReadRecord();
+  const real=await new GiteaExecutor(sourceClient("trusted-gateway")).execute(record);
+  const opts={directory,key,admissions:gate,
+   repository:"thesis/iam-console-poc",branch:"feature/account-suspension",
+   nowMs:()=>Date.parse("2026-11-05T10:00:00Z")};
+  const live=new TrustedGatewayGiteaReadEvidencePublisher({
+   ...opts,independentGiteaClient:sourceClient("read-only")
+  });
+  await assert.rejects(live.publishSuccessfulRead({
+   record:{...record,pinned_revision:undefined},
+   verified:verifiedRead,policy:{allow:true,policy_version:"test-only-opa-v1"},
+   execution:real as GiteaReadFileExecutionResult
+  }),/provider success or independent OPA decision missing/);
+  await assert.rejects(live.publishSuccessfulRead({
+   record,verified:verifiedRead,policy:{allow:true,policy_version:"test-only-opa-v1"},
+   execution:{...real} as GiteaReadFileExecutionResult
+  }),/trusted provider provenance/);
+  const moved=new TrustedGatewayGiteaReadEvidencePublisher({
+   ...opts,independentGiteaClient:sourceClient("read-only-moved","f".repeat(40))
+  });
+  await assert.rejects(moved.publishSuccessfulRead({
+   record,verified:verifiedRead,policy:{allow:true,policy_version:"test-only-opa-v1"},
+   execution:real as GiteaReadFileExecutionResult
+  }),/HEAD changed before owner evidence publication/);
+ });
+});
 test("R294 real Gitea client evidence reader binds MAC, exact Task, branch HEAD and file bytes",async()=>{
  await fixture(async({record,sign,save,reader})=>{
   await save(sign(record()));
