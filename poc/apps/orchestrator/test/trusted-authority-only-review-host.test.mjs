@@ -212,6 +212,75 @@ function stagedBackend(rootBinding,{taskId='r350-backend',epoch=1,childId='urn:r
     statusListIndex:'3'}}
  };
 }
+class R351ScriptedDecision extends BaseLlm{
+ constructor(candidate){super({model:'r351-scripted-free-decision'});this.candidate=candidate;this.calls=0;this.requests=[];}
+ async *generateContentAsync(req){
+  this.calls++;this.requests.push(req);
+  yield {content:{role:'model',parts:[{text:JSON.stringify(this.candidate)}]}};
+ }
+ connect(){throw Error('No paid inference in R351 scripted decision test');}
+}
+test('R351.0 ADK chooses a dynamic Task and Engineer owner stages original native Child',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r351:chosen-root',2));
+ const choice=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding(),{
+  taskId:'r351-model-selected'
+ });
+ const signed=[],deps=executionDeps(f);
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
+  signed.push(req);
+  return {id:req.credential_id,validFrom:req.valid_from,
+   credentialSubject:{sub:'did:thesis:backend',per:structuredClone(req.permissions)},
+   credentialStatus:structuredClone(req.credential_status)};
+ }};
+ const execution=await host.admitOperationalExecution(deps);
+ const model=new R351ScriptedDecision({
+  task_id:choice.task.task_id,agent_id:'backend',depends_on:[],
+  permissions:choice.task.permissions,
+  instruction:'Update account suspension Backend within approved scope'
+ });
+ const result=await execution.proposeAndStageTask({
+  model,runtimeTaskId:choice.runtimeTaskId,
+  childParameters:choice.childParameters
+ });
+ assert.equal(result.status,'owner_child_enrolled_no_provider_execution');
+ assert.equal(result.decision_source,'owner_adk_candidate_coordinator_validated');
+ assert.equal(result.task_id,'r351-model-selected');
+ assert.equal(result.agent_id,'backend');
+ assert.equal(coordinator.registeredTaskCount,1);
+ assert.equal(execution.gateway.registeredTaskCount,1);
+ assert.equal(signed.length,1);
+ assert.equal(model.calls,1);
+ const prompt=JSON.stringify(model.requests);
+ assert.equal(prompt.includes('urn:r351:chosen-root'),false);
+ assert.equal(prompt.includes(choice.childParameters.credential_id),false);
+ assert.equal(prompt.includes(f.options.approval.privateKeyFile),false);
+ await host.close();
+ assert.equal(host.phase,'revoked');
+});
+test('R351.0 model-supplied unauthorized Task is rejected before native Child issuance',async t=>{
+ const f=await fixture(t),host=await f.start();
+ await f.approve(['permission-1','permission-2']);
+ const {coordinator}=await host.activateOperational(root('urn:r351:denied-root',2));
+ const choice=stagedBackend(coordinator.assertTrustedGatewayAuthorityBinding());
+ const deps=executionDeps(f);let issued=0;
+ deps.nativeCryptoPort={kind:'rust-native',async issueChild(){issued++;throw Error('should not issue');}};
+ const execution=await host.admitOperationalExecution(deps);
+ const model=new R351ScriptedDecision({
+  task_id:'r351-outside-scope',agent_id:'backend',depends_on:[],
+  permissions:[{operation:'update_file',resource:'gitea://gitea.local/thesis/iam-console-poc/branches/main/files/secrets.ts'}],
+  instruction:'Attempt to edit an unrelated secret'
+ });
+ await assert.rejects(execution.proposeAndStageTask({
+  model,runtimeTaskId:choice.runtimeTaskId,childParameters:choice.childParameters
+ }),/R351 authority-only model Task choice denied/);
+ assert.equal(issued,0);
+ assert.equal(coordinator.registeredTaskCount,0);
+ assert.equal(execution.gateway.registeredTaskCount,0);
+ assert.equal(host.phase,'operational');
+ await host.close();
+});
 test('R350.2 same Engineer root registers Task, binds Gateway, issues native Child and enrolls it',async t=>{
  const f=await fixture(t),host=await f.start();await f.approve(['permission-1','permission-2']);
  const {coordinator}=await host.activateOperational(root('urn:r350:operational-task',2));

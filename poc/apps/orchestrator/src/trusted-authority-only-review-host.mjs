@@ -20,6 +20,8 @@ import {TrustedOperationalRecoveryStore,reconcileOrphanedOperationalRoots}
  from '../../../packages/orchestrator-runtime/src/trusted-operational-recovery-store.ts';
 import {TrustedAuthorityOnlyGatewayAdmissions} from '../../gateway/src/trusted-authority-only-admissions.ts';
 import {TrustedAuthorityOnlyEffectStager} from '../../gateway/src/trusted-authority-only-effect-stager.ts';
+import {TrustedAuthorityOnlyAdkDecisionProposer}
+ from '../../../packages/orchestrator-runtime/src/trusted-authority-only-adk-decision-proposer.mjs';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../gateway/src/trusted-authority-only-mutation-preflight.ts';
 import {TrustedAuthorityOnlyRunnerPreflight} from '../../gateway/src/trusted-authority-only-runner-preflight.ts';
 import {GiteaClient} from '../../gateway/src/gitea-client.ts';
@@ -90,6 +92,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
  const completionAttempts=new Set();
  let completionFlight,completionFailed=false;
  let nativeEffectBindingAttempted=false,nativeEffectBinding;
+ let decisionFlight,decisionCalls=0;
  let dispatchFlight,dispatchFailed=false;
  let a2aOwner,a2aStarting,a2aStartAttempted=false;
  async function retire(){
@@ -222,7 +225,49 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     if(live.root_credential_id!==root.root_credential_id||
        live.authority_digest!==root.authority_digest)
      deny('operational root changed during Gateway admission');
-    return Object.freeze({admission,gateway,childIssuer,
+    const executionHandle=Object.freeze({admission,gateway,childIssuer,
+     /** R351.0: ADK selects the Task and specialist; only this trusted
+      * owner derives the epoch, signed root pins and native Child request. */
+     async proposeAndStageTask(input){
+      if(closed||session.phase!=='operational'||gateway.phase!=='active'||
+         taskStageFailed||taskStageFlight||decisionFlight||
+         ++decisionCalls>8)
+       deny('bounded owner Task decision requires active quiescent root');
+      if(!fields(input,['model','runtimeTaskId','childParameters']))
+       deny('ADK choice cannot supply root, session, or Task authorization');
+      const before=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+      const epoch=operationalCoordinator.registeredTaskCount+1;
+      const proposer=new TrustedAuthorityOnlyAdkDecisionProposer({
+       model:input.model,requirement,branch:before.branch,
+       rootPermissions:before.root_permissions,
+       agents:Object.fromEntries(Object.entries(options.trustedAgentRegistry).map(
+        ([agent_id,pin])=>[agent_id,{capabilities:pin.capabilities}]
+       )),
+       previousTasks:[...stagedTaskIds.values()].map(p=>({
+        task_id:p.task_id,agent_id:p.agent_id
+       }))
+      });
+      decisionFlight=(async()=>{
+       const choice=await proposer.propose();
+       const after=operationalCoordinator.assertTrustedGatewayAuthorityBinding();
+       if(closed||session.phase!=='operational'||
+          after.root_credential_id!==before.root_credential_id||
+          after.authority_digest!==before.authority_digest||
+          operationalCoordinator.registeredTaskCount!==epoch-1)
+        deny('owner changed during ADK Task decision');
+       const staged=await executionHandle.stageTask({
+        task:{task_id:choice.task_id,epoch,agent_id:choice.agent_id,
+         depends_on:[...choice.depends_on],permissions:[...choice.permissions]},
+        runtimeTaskId:input.runtimeTaskId,
+        childParameters:input.childParameters
+       });
+       return Object.freeze({...staged,
+        decision_source:'owner_adk_candidate_coordinator_validated',
+        instruction:choice.instruction});
+      })();
+      try{return await decisionFlight;}
+      finally{decisionFlight=undefined;}
+     },
      /** R350.2: owner-private Task -> Gateway -> native Child -> enrollment.
      * The caller supplies only Task choices and fresh Child metadata;
      * session, revision, requirement, root and DID come from trusted state.
@@ -497,6 +542,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
       }finally{completionFlight=undefined;}
      }
     });
+    return executionHandle;
    })();
    try{return await executionAdmissionFlight;}
    catch(error){
@@ -514,6 +560,7 @@ export async function createTrustedAuthorityOnlyReviewHost(options){
     // Await the transition owner before deciding which root to retire.
     if(activationFlight)try{await activationFlight;}catch{/* Recheck state below. */}
     if(executionAdmissionFlight)try{await executionAdmissionFlight;}catch{/* Fail closed below. */}
+    if(decisionFlight)try{await decisionFlight;}catch{/* Recheck root below. */}
     if(taskStageFlight)try{await taskStageFlight;}catch{/* Recheck root below. */}
     if(a2aStarting)try{await a2aStarting;}catch{/* Recheck root below. */}
     if(dispatchFlight)try{await dispatchFlight;}catch{/* Recheck root below. */}
