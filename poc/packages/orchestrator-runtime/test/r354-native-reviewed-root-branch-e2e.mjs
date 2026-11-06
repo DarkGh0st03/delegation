@@ -305,7 +305,92 @@ try{
   assert.equal(backendProof.root_credential_id,root);
   assert.equal(backendProof.hierarchy_depth,1);
   assert.deepEqual(backendProof.permissions,[{resource:scopedFile,operation:'update_file'}]);
-  assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
+  if(nativeBackendCas){
+   // No test-owner pre-seeding: start from exact independently pinned
+   // UNSOLVED main bytes. This source is a SCRIPTED Backend edit (not
+   // LLM-generated), and the Gateway itself must commit it using atomic
+   // branch HEAD CAS under the new genuine Child VP.
+   const original=await reader.readTextFile(branch,sourcePath,baseRevision);
+   assert.equal(original.content,ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES[sourcePath]);
+   const next=ACCOUNT_SUSPENSION_REFERENCE_FILES[sourcePath];
+   assert.equal(typeof next,'string');
+   assert.notEqual(next,original.content);
+   assert.equal(otherWrites,0);
+   const preparedUpdate=await call('prepare',{
+    task_id:backendRuntimeTaskId,agent_role:'backend',tool:'update_file',
+    arguments:{branch,path:sourcePath,content:next}
+   },201);
+   assert.equal(preparedUpdate.required_permission.operation,'update_file');
+   assert.equal(preparedUpdate.required_permission.resource,scopedFile);
+   const nativeStager=execution.createEnrolledNativeEffectStager({
+    runtimeTaskId:backendRuntimeTaskId,expectedHeadSha:baseRevision
+   });
+   const reserved=await nativeStager.stage(preparedUpdate.request_id);
+   assert.equal(reserved.status,'gitea_update_intent_reserved_without_execution');
+   assert.equal(reserved.provider_write_authorized,false);
+   assert.equal(otherWrites,0,'preflight is never a Gitea write');
+   const nextVp=await invokeNativeCrypto({
+    socketPath:process.env.ADAPTER_ENGINEER_NATIVE_SOCKET,
+    token:process.env.ADAPTER_CALLER_BACKEND,timeoutMs:60000
+   },'create_presentation',{
+    credential_id:backend.credential_id,
+    disclosed_permissions:[preparedUpdate.required_permission],
+    audience:preparedUpdate.audience,challenge:preparedUpdate.challenge
+   });
+   const changed=await call('execute',{
+    request_id:preparedUpdate.request_id,signed_vp:nextVp.signed_vp
+   },200);
+   assert.equal(changed.execution.tool,'update_file');
+   assert.equal(changed.execution.branch,branch);
+   assert.equal(changed.execution.path,sourcePath);
+   assert.equal(changed.verified_delegation.credential_id,backend.credential_id);
+   assert.equal(changed.verified_delegation.root_credential_id,root);
+   assert.equal(changed.verified_delegation.hierarchy_depth,1);
+   const committed=changed.execution.commit_sha;
+   assert.match(committed,/^[a-f0-9]{40}$/u);
+   assert.notEqual(committed,baseRevision);
+   const independent=await reader.getBranchMetadata(branch);
+   assert.equal(independent.commit_sha,committed);
+   assert.equal((await reader.readTextFile(branch,sourcePath,committed)).content,next);
+   const intent=reserved.intent;
+   const expectation=Object.fromEntries([
+    'session_id','authority_digest','root_credential_id',
+    'task_id','runtime_task_id','epoch','agent_did','credential_id',
+    'request_id','request_fingerprint'
+   ].map(key=>[key,intent[key]]));
+   const observed=await mutationObserver.observe(expectation);
+   assert.equal(observed.status,'owner_verified_provider_result');
+   assert.match(observed.evidence_sha256,/^[a-f0-9]{64}$/u);
+   assert.equal(observed.task_id,backendTaskId);
+   assert.equal(observed.runtime_task_id,backendRuntimeTaskId);
+   assert.equal(observed.credential_id,backend.credential_id);
+   assert.equal(gate.stagedCompletedTaskCount,1,
+    'independent provider receipt is not protected A2A Task completion');
+   const replay=await call('execute',{
+    request_id:preparedUpdate.request_id,signed_vp:nextVp.signed_vp
+   },409);
+   assert.equal(replay.error,'replay_detected');
+   assert.equal((await reader.getBranchMetadata(branch)).commit_sha,committed);
+   assert.equal((await reader.getBranchMetadata('main')).commit_sha,baseRevision);
+   assert.ok(otherWrites>0,'native Gateway performed at least one real Gitea CAS write');
+   assert.equal((await readdir(path('mutationEvidence')))
+    .filter(name=>name.endsWith('.mutation.json')).length,1);
+   process.stdout.write(JSON.stringify({
+    event:'r3571_native_branch_first_backend_cas',
+    unsolved_main_unchanged:true,feature_branch_created_after_approval:true,
+    original_root_branch_vp:true,native_backend_child_vp:true,
+    original_engineer_root_unchanged:true,provider_cas_performed:true,
+    backend_source_modified_without_owner_preseed:true,
+    independent_gitea_cas_mac_receipt:true,
+    original_branch_task_completed:true,backend_task_completed:false,
+    protected_a2a_backend_not_yet_tested:true,
+    script_selected_backend_content:true,paid_model_calls:0,
+    gateway_registered_tasks:gate.registeredTaskCount,
+    gateway_completed_tasks:gate.stagedCompletedTaskCount
+   })+'\n');
+  }else{
+   assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
+  }
   process.stdout.write(JSON.stringify({
    event:'r357_native_same_owner_branch_to_backend_child',
    branch_provider_posts:branchPosts,branch_completion_independent:true,
@@ -313,12 +398,12 @@ try{
    genuine_rust_backend_child_vp:true,child_hierarchy_depth:1,
    child_permissions_scoped_to_backend_file:true,
    original_root_unchanged:true,operational_tasks:2,completed_tasks:1,
-   main_unsolved_unchanged:true,feature_mutation_not_yet_executed:true,
+   main_unsolved_unchanged:true,feature_mutation_not_yet_executed:!nativeBackendCas,
    paid_model_calls:0
   })+'\n');
  }
  assert.equal((await client.getBranchMetadata('main')).commit_sha,baseRevision);
- assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
+ if(!nativeBackendCas)assert.equal((await client.getBranchMetadata(branch)).commit_sha,baseRevision);
  await host.close();
  const verifier=loadDirectCoreRustVerifier({allowGiteaScopeCoverage:true});
  await assert.rejects(verifier.verify({presenter:'orchestrator',audience:prepared.audience,challenge:prepared.challenge,
