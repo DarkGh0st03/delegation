@@ -1272,6 +1272,76 @@ for(const mode of ['missing','backend','frontend','test','failure',
         assert.equal(provider.parent,frontendSha);
         assert.equal(provider.content,repairContent);
         assert.equal(events.at(-1),'d1_gateway_execute_fixture');
+         if(d1Retest){
+          // Only a verified D1 CAS unlocks a fresh Test; original FAIL remains.
+          const testGrant=coordinator.assertTrustedGatewayAuthorityBinding()
+           .root_permissions.find(p=>p.operation==='run_tests');
+          const retestModel=new R351ScriptedDecision({
+           task_id:'r3525-retest',agent_id:'test',
+           depends_on:[task.task.task_id,next.task.task_id,newD1.task_id],
+           permissions:[testGrant],
+           instruction:'Retest exact independently repaired HEAD under original root'
+          });
+          d1RetestTask=await execution.proposeAndStageVerifiedD1Retest({
+           model:retestModel,runtimeTaskId:'dispatch_'+'U'.repeat(22),
+           childParameters:{
+            credential_id:'urn:r3525:child:retest',
+            credential_status:{type:'BitstringStatusListEntry',
+             statusPurpose:'revocation',
+             statusListCredential:'https://status.invalid/r3525-test',
+             statusListIndex:'29112'},
+            valid_from:new Date().toISOString(),validity_seconds:90
+           }
+          });
+          d1RetestStaged=d1RetestTask;
+          assert.equal(d1RetestTask.task_id,'r3525-retest');
+          assert.equal(d1RetestTask.epoch,5);
+          assert.equal(d1RetestTask.original_failed_test_task_id,'r3513-test');
+          assert.equal(d1RetestTask.original_test_completed,false);
+          assert.equal(coordinator.registeredTaskCount,5);
+          assert.equal(gateway.stagedCompletedTaskCount,3);
+          await assert.rejects(execution.proposeAndStageVerifiedD1Retest({
+           model:new R351ScriptedDecision(retestModel.candidate),
+           runtimeTaskId:'dispatch_'+'V'.repeat(22),
+           childParameters:testTask.childParameters
+          }),/new D1 Test requires independent repair/);
+          const retestStager=execution.createEnrolledNativeEffectStager({
+           runtimeTaskId:d1RetestTask.runtime_task_id,expectedHeadSha:repairSha
+          });
+          await assert.rejects(execution.dispatchEnrolledTask({
+           taskId:d1RetestTask.task_id,runtimeTaskId:d1RetestTask.runtime_task_id,
+           instruction:'forged retest command',effectStager:retestStager
+          }),/D1 retest dispatch requires original owner-pinned Test instruction/);
+          const report=await execution.dispatchEnrolledTask({
+           taskId:d1RetestTask.task_id,runtimeTaskId:d1RetestTask.runtime_task_id,
+           instruction:d1RetestTask.instruction,effectStager:retestStager
+          });
+          assert.equal(report.status,'a2a_report_not_gateway_completed');
+          assert.equal(report.provider_completion_attested,false);
+          assert.equal(report.artifact.test_outcome,'pass');
+          assert.equal(report.artifact.commit_sha,repairSha);
+          assert.equal(gateway.stagedCompletedTaskCount,3);
+          const attested=await execution.attestEnrolledTaskCompletion({
+           taskId:d1RetestTask.task_id,runtimeTaskId:d1RetestTask.runtime_task_id
+          });
+          assert.equal(attested.status,'owner_gateway_completion_independently_observed');
+          assert.equal(attested.task_id,d1RetestTask.task_id);
+          assert.equal(gateway.stagedCompletedTaskCount,4);
+          assert.equal(coordinator.registeredTaskCount,5);
+          assert.equal(testAgentModel.calls,4);
+          assert.equal(events.at(-1),'retest_gateway_execute_fixture');
+          assert.equal((await readdir(f.dirs.runnerEvidence))
+           .filter(n=>n.endsWith('.runner-fail.json')).length,1);
+          assert.equal((await readdir(f.dirs.runnerEvidence))
+           .filter(n=>n.endsWith('.runner.json')).length,1);
+          await assert.rejects(execution.dispatchEnrolledTask({
+           taskId:d1RetestTask.task_id,runtimeTaskId:d1RetestTask.runtime_task_id,
+           instruction:d1RetestTask.instruction,effectStager:retestStager
+          }),/protected A2A dispatch replayed/);
+          await assert.rejects(execution.attestEnrolledTaskCompletion({
+           taskId:'r3513-test',runtimeTaskId:testTask.runtimeTaskId
+          }),/no matching original A2A dispatch report/);
+         }
         await assert.rejects(execution.dispatchEnrolledTask({
          taskId:newD1.task_id,runtimeTaskId:newD1.runtime_task_id,
          instruction:newD1.instruction,effectStager:d1Stager
