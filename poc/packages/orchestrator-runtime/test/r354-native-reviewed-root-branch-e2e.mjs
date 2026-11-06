@@ -24,6 +24,15 @@ import {GatewayRuntime} from '../../../apps/gateway/src/runtime.ts';
 import {createGatewayHttpServer} from '../../../apps/gateway/src/http.ts';
 import {loadDirectCoreRustVerifier} from '../../../apps/gateway/src/direct-core-loader.ts';
 import {InMemoryRequestStore,InMemoryAuditSink} from '../../../apps/gateway/src/prepare.ts';
+import {TrustedAuthorityOnlyGiteaMutationExecutor}
+ from '../../../apps/gateway/src/trusted-authority-only-mutation-executor.ts';
+import {TrustedGatewayGiteaMutationEvidencePublisher,
+ AuthenticatedGiteaMutationCompletionObserver}
+ from '../../../apps/gateway/src/trusted-authority-only-gitea-mutation-evidence.ts';
+import {ACCOUNT_SUSPENSION_REFERENCE_FILES}
+ from '../../../apps/test-runner-controller/fixtures/account-suspension-reference.mjs';
+import {ACCOUNT_SUSPENSION_UNSOLVED_BASELINE_FILES}
+ from '../../../apps/test-runner-controller/fixtures/account-suspension-unsolved-baseline.mjs';
 import {TrustedAuthorityOnlyGiteaMutationPreflight} from '../../../apps/gateway/src/trusted-authority-only-mutation-preflight.ts';
 import {TrustedAuthorityOnlyRunnerPreflight} from '../../../apps/gateway/src/trusted-authority-only-runner-preflight.ts';
 import {DurableAuthorityOnlyGiteaMutationIntentJournal} from '../../../apps/gateway/src/trusted-authority-only-mutation-intent-journal.ts';
@@ -37,7 +46,8 @@ assert.equal(process.env.GEMINI_API_KEY,undefined);assert.equal(process.env.OPEN
 const repo={authority:'gitea.local',owner:'thesis',repository:'iam-console-poc'};
 assert.equal(process.env.GITEA_OWNER,repo.owner);assert.equal(process.env.GITEA_REPOSITORY,repo.repository);
 const branch='feature/account-suspension',sourcePath='apps/backend/src/users/user.service.ts';
-const nativeBranchToBackend=process.env.R357_NATIVE_BRANCH_TO_BACKEND==='1';
+const nativeBackendCas=process.env.R3571_NATIVE_BACKEND_CAS==='1';
+const nativeBranchToBackend=process.env.R357_NATIVE_BRANCH_TO_BACKEND==='1'||nativeBackendCas;
 const scopedDir='gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/directories/apps/backend/src/users';
 const scopedFile='gitea://gitea.local/thesis/iam-console-poc/branches/feature%2Faccount-suspension/files/'+sourcePath;
 const backendTaskId='r357-backend-after-branch',backendRuntimeTaskId='dispatch_'+'B'.repeat(22);
@@ -102,7 +112,7 @@ class BackendDecision extends BaseLlm{
 }
 const parent=await mkdtemp(join(tmpdir(),'r354-native-'));
 const names=['approvals','activation','tasks','sessions','gatewayTasks','children','gatewayChildren','flights',
- 'checkpoints','keys','recovery','mutations','runner'];
+ 'checkpoints','keys','recovery','mutations','runner','mutationEvidence'];
 const path=n=>join(parent,n);
 process.env.ADAPTER_ENGINEER_NATIVE_SOCKET=path('owner.sock');
 let host,http;
@@ -185,16 +195,32 @@ try{
  const gate=execution.gateway,store=new InMemoryRequestStore(),audit=new InMemoryAuditSink();
  const branchExecutor=new TrustedAuthorityOnlyBranchExecutor({admissions:gate,giteaClient:client,
   independentGiteaClient:reader,repository:repo.owner+'/'+repo.repository});
+ const repositoryPath=repo.owner+'/'+repo.repository;
+ const mutationJournal=new DurableAuthorityOnlyGiteaMutationIntentJournal(path('mutations'));
+ const mutation=new TrustedAuthorityOnlyGiteaMutationPreflight({admissions:gate,giteaClient:client,
+  journal:mutationJournal,repository:repositoryPath,branch});
+ const runner=new TrustedAuthorityOnlyRunnerPreflight({admissions:gate,giteaClient:client,
+  journal:new DurableAuthorityOnlyRunnerIntentJournal(path('runner')),repository:repositoryPath,branch});
+ const evidenceKey=nativeBackendCas?randomBytes(32):undefined;
+ const mutationObserver=nativeBackendCas?new AuthenticatedGiteaMutationCompletionObserver({
+  directory:path('mutationEvidence'),key:evidenceKey,repository:repositoryPath,branch,
+  giteaClient:reader
+ }):undefined;
+ const mutationExecutor=nativeBackendCas?new TrustedAuthorityOnlyGiteaMutationExecutor({
+  admissions:gate,preflight:mutation,journal:mutationJournal,giteaClient:client,
+  publisher:new TrustedGatewayGiteaMutationEvidencePublisher({
+   directory:path('mutationEvidence'),key:evidenceKey,repository:repositoryPath,branch,
+   independentGiteaClient:reader
+  }),observer:mutationObserver,repository:repositoryPath,branch
+ }):undefined;
  execution.bindNativeGatewayEffects({store,giteaClient:client,branchExecutor,
-  mutation:new TrustedAuthorityOnlyGiteaMutationPreflight({admissions:gate,giteaClient:client,
-   journal:new DurableAuthorityOnlyGiteaMutationIntentJournal(path('mutations')),repository:repo.owner+'/'+repo.repository,branch}),
-  runner:new TrustedAuthorityOnlyRunnerPreflight({admissions:gate,giteaClient:client,
-   journal:new DurableAuthorityOnlyRunnerIntentJournal(path('runner')),repository:repo.owner+'/'+repo.repository,branch})});
+  mutation,runner});
  const runtime=new GatewayRuntime({bind_host:'127.0.0.1',bind_port:0,prepare:{audience:'cloud-access-gateway',request_ttl_ms:120000,repository:repo},
   verifier_mode:'core-rust',opa_url:'http://127.0.0.1:8181',opa_timeout_ms:6000,provider_mode:'gitea',
   gitea_base_url:process.env.GITEA_HOST_BASE_URL,gitea_gateway_token:process.env.GITEA_GATEWAY_TOKEN,
   gitea_timeout_ms:6000,runner_timeout_ms:900000},
-  {store,audit,authorityOnlyAdmissions:gate,authorityOnlyBranchEnabled:true,authorityOnlyBranchExecutor:branchExecutor});
+  {store,audit,authorityOnlyAdmissions:gate,authorityOnlyBranchEnabled:true,authorityOnlyBranchExecutor:branchExecutor,
+   ...(nativeBackendCas?{authorityOnlyMutationEnabled:true,authorityOnlyMutationExecutor:mutationExecutor}:{})});
  http=createGatewayHttpServer(runtime);await new Promise((ok,bad)=>{http.once('error',bad);http.listen(0,'127.0.0.1',ok);});
  const api='http://127.0.0.1:'+http.address().port;
  const call=async(route,body,status=200)=>{const r=await fetch(api+'/v1/authorization/'+route,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
