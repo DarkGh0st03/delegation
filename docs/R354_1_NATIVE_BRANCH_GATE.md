@@ -25,3 +25,19 @@ The workflow triggers only on a dedicated checkpoint or manual dispatch, never o
 every source edit. Source syntax and original-owner branch regressions pass locally;
 Fast CI and Engineer regression must be checked before launching the native gate.
 No paid models, new scenario, merge or main mutation.
+
+## Evidenza R354.2 confermata
+
+Checkpoint d21ac06b84bef0e9f7f5313e9bad5abf7a9a9762:
+https://github.com/DarkGh0st03/delegation/actions/runs/42258775959 — SUCCESS.
+Fast CI 42258775993 — SUCCESS sulla stessa SHA.
+Il log `r354_native_reviewed_root_branch_complete` conferma baseline irrisolta e
+main invariati, assenza del branch prima dell'approvazione, un POST, una root VP
+a profondità zero, nessuna Child, un Task registrato/completato, completamento
+indipendente, replay negato, revoca efficace e zero chiamate a pagamento.
+I tre test aggiuntivi del reader Gateway nativo sono PASS.
+
+Sorgente f0c522873015dfed1fed2325238600e94a56de96: Fast CI 42258410503 ed
+Engineer CI 42258410306 SUCCESS. L'evidenza branch-only non sostituisce la futura
+prova unica con Executor autonomo, sviluppo, Test, eventuale D1 e PR. I limiti
+Planning fixture/modelli scriptati descritti sopra restano validi.

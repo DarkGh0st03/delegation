@@ -39,14 +39,25 @@ un comportamento autonomo del sistema.
 - **Limiti della prova:** modelli scriptati, applicazione funzionale predisposta
   dal test owner, trasporto preliminare Gateway fixture. Non è prova di generazione
   autonoma Gemini, né di Planning completamente reale.
-- **Branch R354:** implementazione owner/ADK/Gateway/provider con root, revisione
-  immutabile di main e lettore indipendente. Test mirati locali PASS; prova nativa
-  del branch e sua integrazione al workflow completo ancora da realizzare.
-- **Prossima integrazione:** il vecchio harness native crea e popola il branch prima
-  dell'approvazione e usa quel suo HEAD come baseline. Non basta chiamare il nuovo
-  executor: occorre una baseline main revisionata correttamente e creare il branch
-  soltanto dopo l'approvazione attraverso Gateway. Conservare l'unico scenario Account
-  Suspension e dichiarare esplicitamente il codice ancora prodotto dalla fixture.
+- **Branch nativo confermato:** R354.2, checkpoint `d21ac06b84bef0e9f7f5313e9bad5abf7a9a9762`,
+  [run 42258775959](https://github.com/DarkGh0st03/delegation/actions/runs/42258775959)
+  SUCCESS; Fast CI 42258775993 SUCCESS sulla stessa SHA. Sorgente R354.1 `f0c52287`
+  con Fast CI 42258410503 ed Engineer CI 42258410306 SUCCESS.
+  Baseline main irrisolta invariata; branch assente fino all'approvazione; Task scelto
+  da ADK scriptato e registrato dall'owner originale, una VP root a profondità zero,
+  Rust/EVM e OPA reali, HTTP GatewayRuntime, un solo POST Gitea e completamento
+  attestato da client read-only indipendente. Un Task registrato/completato, zero
+  Child, replay e revoca verificati, zero chiamate a pagamento. Nessun file predisposto.
+- **Limite del branch:** il trasporto preliminare Gateway rimane fixture, pur con
+  lettura reale di main e VP preliminare nativa. È una prova branch-only, distinta
+  dalla prova nativa recovery/PR: non chiude la prova gratuita unica R11.
+- **Prossimo blocco: Executor autonomo.** Il controller deve possedere il ciclo
+  osservazione/scelta/esecuzione/verifica e riusare l'owner originale. Le attestazioni
+  Gateway devono sbloccare le decisioni successive. Integrare branch da main e
+  successiva esecuzione senza riutilizzare la baseline feature già risolta di R353.9.
+  Restano letture di codice autorizzate per il modello e recovery con diagnosi
+  utilizzabili, senza candidato correttivo predisposto dal test harness. Conservare
+  l'unico scenario Account Suspension e distinguere modelli scriptati/generazione reale.
 
 Non avviare suite native complete a ogni commit. Usare test mirati e Fast CI;
 riservare la prova nativa a checkpoint di integrazione significativi. PR #38 Draft,
