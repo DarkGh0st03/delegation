@@ -671,7 +671,9 @@ for(const mode of ['missing','backend','frontend','test','failure',
  'pr-execute-opa-denied','pr-execute-vp-denied','pr-execute-no-stage',
  'pr-execute-foreign-child','pr-execute-child-depth','pr-execute-post-failure','pr-execute-race',
  'pr-attest','pr-attest-closed','pr-attest-wrong-id','pr-attest-head-moved',
- 'pr-attest-base-moved','pr-attest-before-execute','adaptive-ready','adaptive-stale'])test(
+ 'pr-attest-base-moved','pr-attest-before-execute','adaptive-ready','adaptive-stale','adaptive-work'])test(
+ mode==='adaptive-work'?
+  'R355 original adaptive loop executes chosen Frontend through real ADK A2A and independent Gateway completion':
  mode.startsWith('adaptive')?
   'R355 original Engineer current Test readiness '+mode:
  mode.startsWith('pr')?
@@ -699,8 +701,8 @@ for(const mode of ['missing','backend','frontend','test','failure',
  const verified=mode!=='missing',throughFailure=mode.startsWith('failure'),
   noFailureReceipt=mode==='failure-no-receipt',
   foreignD1Model=mode==='failure-model-denied',
-  throughTest=mode==='test'||mode.startsWith('pr')||mode.startsWith('adaptive')||throughFailure,
-  throughFrontend=mode==='frontend'||throughTest,
+  throughTest=mode==='test'||mode.startsWith('pr')||['adaptive-ready','adaptive-stale'].includes(mode)||throughFailure,
+  throughFrontend=mode==='frontend'||mode==='adaptive-work'||throughTest,
   d1Retest=mode==='failure-d1-retest',
    d1Effect=mode==='failure-d1-effect'||d1Retest;
  const f=await fixture(t,throughFrontend?{includeTestPermission:true,
@@ -839,6 +841,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
  }
  deps.nativeCryptoPort={kind:'rust-native',async issueChild(req){
   events.push('native_child_fixture');
+  if(mode==='adaptive-work'&&req.delegatee==='frontend')frontendStaged={credential_id:req.credential_id};
   return {'@context':['https://www.w3.org/ns/credentials/v2'],
    type:['VerifiableCredential','DelegationCredential'],
    id:req.credential_id,issuer:'did:thesis:rust',
@@ -903,6 +906,7 @@ for(const mode of ['missing','backend','frontend','test','failure',
     assert.equal(store.size(),retestRequest?5:3);
     return Response.json(prepared,{status:201});
    }
+   if(mode==='adaptive-work'&&body.agent_role==='frontend')next.runtimeTaskId=body.task_id;
    const d1Request=d1Effect&&nativeD1&&
     body.task_id===nativeD1.runtime_task_id;
    const frontendRequest=throughFrontend&&next&&
@@ -1152,6 +1156,39 @@ for(const mode of ['missing','backend','frontend','test','failure',
    });
    assert.equal(attested.status,'owner_gateway_completion_independently_observed');
    assert.equal(gateway.stagedCompletedTaskCount,1);
+   if(mode==='adaptive-work'){
+    class AdaptiveWorkModel extends BaseLlm{
+     calls=0;requests=[];
+     constructor(){super({model:'r355-free-original-owner-adaptive-work'});}
+     async *generateContentAsync(request){
+      this.requests.push(request);this.calls++;
+      yield {content:{role:'model',parts:[{text:JSON.stringify(this.calls===1?
+       {action:'delegate',task:{task_id:next.task.task_id,agent_id:'frontend',
+        depends_on:[task.task.task_id],permissions:next.task.permissions,
+        instruction:'Frontend after independently attested Backend change'}}:
+       {action:'blocked',reason:'Stop this bounded offline integration proof'})}]}};
+     }
+     connect(){throw Error('Paid model forbidden');}
+    }
+    const loopModel=new AdaptiveWorkModel();let metadataCalls=0;
+    const result=await execution.runAdaptiveWorkLoop({model:loopModel,
+     nextChildParameters:info=>{
+      metadataCalls++;assert.deepEqual(info,{epoch:2,agent_id:'frontend'});return next.childParameters;
+     }});
+    assert.equal(result.status,'owner_adaptive_work_blocked');assert.equal(result.executed_tasks,1);
+    assert.equal(result.pr_created,false);assert.equal(loopModel.calls,2);assert.equal(metadataCalls,1);
+    assert.equal(frontendModel.calls,2);assert.equal(gateway.stagedCompletedTaskCount,2);
+    assert.equal(coordinator.registeredTaskCount,2);assert.equal(host.phase,'revoked');
+    assert.match(next.runtimeTaskId,/^dispatch_[A-Za-z0-9_-]{22}$/u);
+    assert.notEqual(next.runtimeTaskId,'dispatch_'+'M'.repeat(22));
+    const secondPrompt=JSON.stringify(loopModel.requests[1]);
+    assert.ok(secondPrompt.includes('r3512-frontend'));
+    assert.ok(secondPrompt.includes(frontendSha));
+    for(const secret of [staged.credential_id,frontendStaged.credential_id,frontendVp,frontendRequestId])
+     assert.equal(secondPrompt.includes(secret),false);
+    assert.equal((await readdir(f.dirs.flights)).filter(n=>n.endsWith('.completion.json')).length,2);
+    await host.close();return;
+   }
    const second=await execution.proposeAndStageTask({
     model:nextModel,runtimeTaskId:next.runtimeTaskId,
     childParameters:next.childParameters

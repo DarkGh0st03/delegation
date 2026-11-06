@@ -47,3 +47,18 @@ This is the first active work-control loop, not the completed generative Executo
 Follow ACTIVE_AUTHORITY_ONLY_ROADMAP.md. Next: exercise actual A2A work under this
 controller, integrate the separately proven branch/PR operations, then diagnostic
 recovery and the remaining architecture migration. No paid inference or merge.
+
+## R355.1 actual SDK work connector
+
+Adds one original-owner integration scenario: after independently verified Backend
+work, the adaptive model chooses a Frontend Task, the loop allocates its runtime ID
+and provisions Child metadata, dispatches through actual ADK/A2A SDK and authenticated
+Unix binding/staging, and awaits separate Gateway/Gitea receipt completion before its
+second model decision. The next scripted decision stops blocked and retires the root.
+No manually staged/dispatched Frontend Task is used in this scenario. Crypto/provider
+responses remain explicit fixtures; this is not a native full-loop proof. Local Unix
+socket restrictions reserve the scenario for Engineer CI.
+
+R355 production source 6e4c59c5: Engineer CI 42262006820 SUCCESS, main suite
+162 PASS including original-owner current/stale Test readiness, no FAIL/skips.
+Native branch and recovery/PR proofs remain earlier separate evidence.
