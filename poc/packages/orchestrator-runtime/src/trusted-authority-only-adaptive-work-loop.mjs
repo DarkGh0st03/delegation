@@ -38,17 +38,16 @@ export async function runTrustedAuthorityOnlyAdaptiveWorkLoop({model,hooks,maxSt
      source_test_task_id:proof.task_id,source_test_runtime_task_id:proof.runtime_task_id,
      tested_commit_sha:proof.tested_commit_sha,pr_created:false});
    }
-   try{
-    await hooks.executeTask(decision.task,before);
-   }catch(error){
-    // Only an original-owner independent Runner/Gateway FAIL observation
-    // may preserve the root. A2A FAILED, a thrown tool error or a model
-    // assertion alone NEVER qualifies; every other error retires the root.
+   // A thrown A2A/provider error is *always* terminal. Recovery is
+   // possible only through the original owner's explicit authenticated
+   // Runner-FAIL result; never "catch error" and attempt to reclassify it.
+   const effect=await hooks.executeTask(decision.task,before);
+   if(effect?.status==='owner_verified_native_test_failure_preflight_only'){
     if(!hooks.observeVerifiedTestFailure||decision.task.agent_id!=='test'||
        decision.task.permissions.filter(p=>p.operation==='run_tests').length!==1)
-     throw error;
+     deny('untrusted or unexpected recoverable Test failure result');
     const observed=await hooks.observeVerifiedTestFailure(Object.freeze({
-     task:decision.task,context:before,error
+     task:decision.task,context:before
     }));
     signal?.throwIfAborted();
     if(observed?.status!=='owner_verified_native_test_failure_preflight_only'||
