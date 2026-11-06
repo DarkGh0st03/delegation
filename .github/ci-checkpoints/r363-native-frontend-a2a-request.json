@@ -1,0 +1,10 @@
+{
+  "checkpoint": "R363.1",
+  "baseline_native_sha": "84c0e80c0785565599a925068adeb25ca56d3683",
+  "scope": "Frontend only",
+  "objective": "Native Rust signed Frontend Child via real A2A SDK scripted ADK and owner HMAC IPC reads then CAS-updates same file in disposable Gitea; cross-role Backend file and identity denied",
+  "test": "poc/packages/orchestrator-runtime/test/r363-native-frontend-a2a-adk-mixed-read-update-e2e.mjs",
+  "paid_api_calls_allowed": false,
+  "expected_evidence": "independent source+CAS receipts, exact role and path, one Gitea write",
+  "status": "requested; PASS unverified"
+}
