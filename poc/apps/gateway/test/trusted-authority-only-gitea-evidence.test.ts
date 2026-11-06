@@ -98,7 +98,7 @@ async function fixture(fn:(arg:{
 // R357.3 unit-only: the real admission gate is tested separately. The
 // prototype fixture supplies expected binding solely to exercise publisher
 // witness, independent read, MAC and file-replay behavior, NOT EVM/OPA.
-function sourceClient(token:string,head=revision){
+function sourceClient(token:string,head=revision,data=contents){
  const fetchFn=async(url:URL|string,init?:RequestInit)=>{
   assert.equal((init?.headers as Record<string,string>)?.authorization,"token "+token);
   const u=new URL(String(url));
@@ -106,8 +106,8 @@ function sourceClient(token:string,head=revision){
    return new Response(JSON.stringify({name:"feature/account-suspension",commit:{id:head}}));
   if(u.pathname.endsWith("/contents/apps/backend/user.ts"))
    return new Response(JSON.stringify({type:"file",path:"apps/backend/user.ts",
-    encoding:"base64",content:Buffer.from(contents).toString("base64"),
-    size:Buffer.byteLength(contents),sha:blobSha}));
+    encoding:"base64",content:Buffer.from(data).toString("base64"),
+    size:Buffer.byteLength(data),sha:blobSha}));
   throw Error("Unexpected Gitea URI "+u.pathname);
  };
  return new GiteaClient({
@@ -201,6 +201,15 @@ test("R357.3 missing HEAD pin, forged result or moved independent Gitea HEAD nev
    record,verified:verifiedRead,policy:{allow:true,policy_version:"test-only-opa-v1"},
    execution:real as GiteaReadFileExecutionResult
   }),/HEAD changed before owner evidence publication/);
+  const tamperedSource=new TrustedGatewayGiteaReadEvidencePublisher({
+   ...opts,independentGiteaClient:sourceClient("read-only-tampered",revision,
+    "export const suspended = false;\\n")
+  });
+  await assert.rejects(tamperedSource.publishSuccessfulRead({
+   record,verified:verifiedRead,policy:{allow:true,policy_version:"test-only-opa-v1"},
+   execution:real as GiteaReadFileExecutionResult
+  }),/independently reread provider source, blob or HEAD differs/);
+  await assert.rejects(reader().observe(expected),/ENOENT/);
  });
 });
 test("R294 real Gitea client evidence reader binds MAC, exact Task, branch HEAD and file bytes",async()=>{
